@@ -788,7 +788,7 @@ export class ToolBroker {
       this.reapWarm(),
       this.reapRetiredWarm(),
       this.#reapOrphanedActivations(),
-      this.#reapTerminalRunActivations(),
+      this.#reapTerminalRunActivations(0),
       this.#reapOrphanedTerminals(),
     ]);
     if (this.#provider.openTerminal === undefined) {
@@ -1049,7 +1049,7 @@ export class ToolBroker {
       this.reapWarm(),
       this.reapRetiredWarm(),
       this.#reapOrphanedActivations(),
-      this.#reapTerminalRunActivations(),
+      this.#reapTerminalRunActivations(0),
     ]);
     if (
       request.environment.profileKey !== DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY ||
@@ -2019,8 +2019,11 @@ export class ToolBroker {
     }
   }
 
-  async #reapTerminalRunActivations(): Promise<void> {
-    const orphaned = await this.#stateRepository.claimTerminalRunActivations(16);
+  async #reapTerminalRunActivations(minimumTerminalAgeMs?: number): Promise<void> {
+    const orphaned = await this.#stateRepository.claimTerminalRunActivations(
+      16,
+      minimumTerminalAgeMs,
+    );
     for (const orphan of orphaned) {
       const local = this.#activations.get(orphan.activationId);
       if (local !== undefined) this.#revoke(orphan.activationId, local);

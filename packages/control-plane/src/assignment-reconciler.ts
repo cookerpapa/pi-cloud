@@ -562,6 +562,18 @@ export class AssignmentReconciler {
         transitionId: randomUUID(),
       },
     );
+    await transaction
+      .updateTable("model_requests")
+      .set({
+        state: "failed",
+        failure_code: ASSIGNMENT_LOST,
+        settled_at: now,
+      })
+      .where("tenant_id", "=", session.tenant_id)
+      .where("run_id", "=", run.runId)
+      .where("attempt_id", "=", run.attemptId)
+      .where("state", "=", "reserved")
+      .execute();
     for (const command of commands) {
       if (!NONTERMINAL_COMMAND_STATES.has(command.state)) continue;
       await transaction

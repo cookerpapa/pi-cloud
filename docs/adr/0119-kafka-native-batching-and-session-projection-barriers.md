@@ -78,7 +78,9 @@ the browser, or expose Kafka offsets through the product API.
 Worker loss
   -> expire and fence the old connection/Attempt authority
   -> best-effort physical stop; a dead endpoint cannot block logical retirement
-  -> settle the interrupted Run and return the Session to idle
+  -> settle the interrupted Run and its model reservation
+  -> synchronously retire any terminal Tool activation needed by the next writer
+  -> return the Session to idle
   -> next Run appends Session projection barrier
   -> all older Session mutations are applied or rejected
   -> recheck new fence

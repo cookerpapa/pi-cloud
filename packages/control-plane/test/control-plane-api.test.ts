@@ -2295,6 +2295,27 @@ describe.sequential("single-user durable turn intake API", () => {
       phase: "acknowledged",
       expired: true,
     });
+    const modelRequestId = globalThis.crypto.randomUUID();
+    await database
+      .insertInto("model_requests")
+      .values({
+        id: modelRequestId,
+        tenant_id: IDS.tenant,
+        session_id: fixture.assignedSession.sessionId,
+        turn_id: fixture.accepted.turnId,
+        run_id: fixture.accepted.runId,
+        attempt_id: fixture.attemptId,
+        model_profile_id: fixture.assignedSession.modelProfileId,
+        request_sequence: 1,
+        requested_provider: "pi-cloud-fake",
+        requested_model_id: "pi-cloud-fake",
+        state: "reserved",
+        reserved_input_tokens: "1",
+        reserved_output_tokens: "1",
+        reserved_cost_microusd: "0",
+        reservation_expires_at: new Date(Date.now() + 300_000),
+      })
+      .executeTakeFirstOrThrow();
     const orphan: SandboxRuntimeAssignment = {
       ...fixture.runtime,
       runtimeId: "orphan-runtime",
@@ -2341,6 +2362,17 @@ describe.sequential("single-user durable turn intake API", () => {
         .where("turn_id", "=", fixture.accepted.turnId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({ type: "turn.failed" });
+    await expect(
+      database
+        .selectFrom("model_requests")
+        .select(["state", "failure_code", "settled_at"])
+        .where("id", "=", modelRequestId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toMatchObject({
+      state: "failed",
+      failure_code: "assignment_lost",
+      settled_at: expect.any(Date),
+    });
     expect(
       await database
         .selectFrom("sandboxes")

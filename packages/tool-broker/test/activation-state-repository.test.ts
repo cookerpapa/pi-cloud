@@ -468,17 +468,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .where("id", "=", parentRunId)
       .executeTakeFirstOrThrow();
     await expect(repository.claimTerminalRunActivations(16)).resolves.toEqual([]);
-    await database
-      .updateTable("run_attempts")
-      .set({ settled_at: new Date(Date.now() - 31_000) })
-      .where("id", "=", activation.assignment.attemptId)
-      .executeTakeFirstOrThrow();
-    await database
-      .updateTable("runs")
-      .set({ settled_at: new Date(Date.now() - 31_000) })
-      .where("id", "=", parentRunId)
-      .executeTakeFirstOrThrow();
-    await expect(repository.claimTerminalRunActivations(16)).resolves.toEqual([
+    await expect(repository.claimTerminalRunActivations(16, 0)).resolves.toEqual([
       expect.objectContaining({ activationId: activation.activationId }),
     ]);
     await expect(

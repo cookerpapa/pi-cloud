@@ -93,6 +93,21 @@
       "invariant": "After connection and lease expiry, a dead management endpoint cannot strand the interrupted Run or Session."
     },
     {
+      "id": "assignment-loss-releases-model-reservation",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-plane-api.test.ts",
+      "test": "terminates expired and orphan runtimes before settling a lost assignment",
+      "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
+      "invariant": "Worker loss settles its model reservation so the replacement Run does not wait for quota TTL."
+    },
+    {
+      "id": "terminal-tool-activation-before-next-writer",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/activation-state-repository.test.ts",
+      "test": "resolves a Workspace through its Sandbox Domain without ambiguous columns",
+      "invariant": "A replacement writer can synchronously claim and retire the failed Run's fenced Tool activation."
+    },
+    {
       "id": "checkpoint-corruption-and-cas",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/checkpoint-store.test.ts",

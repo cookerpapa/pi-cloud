@@ -152,7 +152,10 @@ export interface SandboxActivationStateRepository {
     failureCode?: string,
   ): Promise<void>;
   claimOrphanedActivations(limit: number): Promise<readonly SandboxOrphanedActivation[]>;
-  claimTerminalRunActivations(limit: number): Promise<readonly SandboxOrphanedActivation[]>;
+  claimTerminalRunActivations(
+    limit: number,
+    minimumTerminalAgeMs?: number,
+  ): Promise<readonly SandboxOrphanedActivation[]>;
   listRetiredWarmActivationIds(): Promise<readonly string[]>;
   listRuntimeAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]>;
   releaseRuntimeAssignment(assignment: SupervisorRuntimeAssignment): Promise<void>;
@@ -1875,14 +1878,26 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     });
   }
 
-  async claimTerminalRunActivations(limit: number): Promise<readonly SandboxOrphanedActivation[]> {
+  async claimTerminalRunActivations(
+    limit: number,
+    minimumTerminalAgeMs = Math.max(this.#leaseMs * 2, 30_000),
+  ): Promise<readonly SandboxOrphanedActivation[]> {
     const boundedLimit = positiveInteger(limit, "terminal Run activation cleanup limit");
+    if (
+      !Number.isSafeInteger(minimumTerminalAgeMs) ||
+      minimumTerminalAgeMs < 0 ||
+      minimumTerminalAgeMs > 300_000
+    ) {
+      throw new TypeError("terminal Run activation cleanup age is invalid");
+    }
     const now = validDate(this.#clock);
     // Run settlement and Tool Broker release are separate network operations.
     // A terminal Run in PostgreSQL is not proof that the trusted Runner has
     // finished checkpointing/revoking its physical Cube yet. Give that normal
-    // handoff at least two Broker lease windows before orphan reconciliation.
-    const orphanedBefore = new Date(now.valueOf() - Math.max(this.#leaseMs * 2, 30_000));
+    // background handoff at least two Broker lease windows. A newly admitted
+    // writer passes zero only after the old Run is terminal and fenced, because
+    // waiting for this grace period would strand the Workspace behind dead code.
+    const orphanedBefore = new Date(now.valueOf() - minimumTerminalAgeMs);
     return this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
       const rows = await transaction
