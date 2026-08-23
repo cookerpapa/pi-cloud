@@ -378,7 +378,10 @@ const report = {
   piCloudRevision: await capture("git", ["rev-parse", "HEAD"]),
   checkedAt: new Date().toISOString(),
   developmentEnvironmentId: development.environmentId,
-  workspaceId: project.workspaceId,
+  workspaceId: development.workspaceId,
+  ipAddress: (await api.listDevelopmentEnvironments()).environments.find(
+    (environment) => environment.environmentId === development.environmentId,
+  )?.ipAddress,
   cubeIdentityStableAcrossPause: true,
   processSurvivedTerminalReconnect: true,
   processSurvivedPauseResume: true,
