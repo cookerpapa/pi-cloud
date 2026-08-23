@@ -225,6 +225,7 @@ try {
     toolWorkerProtocolVersion: 1,
     type: "worker.initialize",
     activationId,
+    toolRoot: "/workspace",
     environment: {
       environmentVersionId: randomUUID(),
       versionNumber: 1,
@@ -342,7 +343,7 @@ try {
       "x-pi-cloud-fencing-token": String(currentAuthority.fencingToken),
       "x-pi-cloud-binding-sha256": currentAuthority.bindingSha256,
     },
-    body: JSON.stringify({ rows: 24, cols: 100 }),
+    body: JSON.stringify({ rows: 24, cols: 100, admin: false }),
     signal: AbortSignal.timeout(15_000),
   });
   assert(
