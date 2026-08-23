@@ -102,7 +102,6 @@ export function AdminPage({
     <main className="product-admin-page">
       <header className="product-admin-header">
         <div>
-          <div className="product-logo">A</div>
           <div>
             <strong>PiCloud 管理后台</strong>
             <span>平台运行配置</span>

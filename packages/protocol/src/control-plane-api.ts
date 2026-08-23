@@ -118,23 +118,24 @@ export const InternalCubeProxyConfigurationResourceSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const AccountUsernameSchema = Type.String({
+  minLength: 3,
+  maxLength: 48,
+  pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{2,47}$",
+});
+
 export const TenantIdentityResourceSchema = Type.Object(
   {
     tenantId: UuidSchema,
     tenantSlug: Type.String({ minLength: 1, maxLength: 256 }),
     userId: UuidSchema,
+    username: Type.Optional(AccountUsernameSchema),
     displayName: Type.String({ minLength: 1, maxLength: 256 }),
     role: TenantApiRoleSchema,
     platformAdministrator: Type.Boolean(),
   },
   { additionalProperties: false },
 );
-
-export const AccountUsernameSchema = Type.String({
-  minLength: 3,
-  maxLength: 48,
-  pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{2,47}$",
-});
 
 const AccountPasswordSchema = Type.String({ minLength: 10, maxLength: 128 });
 

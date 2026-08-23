@@ -184,11 +184,12 @@ describe("control-plane public API schemas", () => {
         tenantId: "80000000-0000-4000-8000-000000000001",
         tenantSlug: "private-alpha",
         userId: "80000000-0000-4000-8000-000000000002",
+        username: "alpha.operator",
         displayName: "Alpha Operator",
         role: "member",
         platformAdministrator: false,
       }),
-    ).toMatchObject({ tenantSlug: "private-alpha", role: "member" });
+    ).toMatchObject({ username: "alpha.operator", tenantSlug: "private-alpha", role: "member" });
     expect(
       parseTenantRegistrationResource({
         tenantId: "80000000-0000-4000-8000-000000000001",

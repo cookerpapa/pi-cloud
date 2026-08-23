@@ -36,12 +36,6 @@ import { useResizablePanel } from "./use-resizable-panel.ts";
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
 
-const EXAMPLE_PROMPTS = [
-  "帮我分析这个项目，并说明它的核心架构",
-  "实现一个 REST API，并补充单元测试",
-  "检查当前代码中的 bug，修复后运行测试",
-] as const;
-
 function conversationTitle(prompt: string): string {
   const compact = prompt.replace(/\s+/g, " ").trim();
   return compact.length > 54 ? `${compact.slice(0, 54)}…` : compact || "新对话";
@@ -1053,8 +1047,7 @@ export default function ChatApp() {
   if (authPhase === "checking") {
     return (
       <main className="product-loading-page">
-        <div className="product-logo product-logo-large">A</div>
-        <span>PiCloud · 正在恢复登录状态…</span>
+        <div aria-label="正在恢复登录状态" className="product-loading-indicator" role="status" />
       </main>
     );
   }
@@ -1116,10 +1109,6 @@ export default function ChatApp() {
         </button>
         {conversationPanel.collapsed ? <span className="product-collapsed-label">会话</span> : null}
         <div className="product-panel-content product-sidebar-content">
-          <header className="product-sidebar-brand">
-            <div className="product-logo">A</div>
-            <strong>PiCloud</strong>
-          </header>
           <div className="product-sidebar-actions">
             <button
               className="product-new-chat"
@@ -1139,19 +1128,16 @@ export default function ChatApp() {
           <nav className="product-conversation-list" aria-label="对话列表">
             <span className="product-sidebar-label">最近对话</span>
             {conversations.length === 0 ? (
-              <div className="product-conversation-empty">还没有对话</div>
+              <div className="product-conversation-empty" aria-hidden="true" />
             ) : (
               rootConversations.map((conversation) => renderConversationNode(conversation))
             )}
           </nav>
           <footer className="product-account">
             <div className="product-account-avatar">
-              {identity.displayName.slice(0, 1).toUpperCase()}
+              {(identity.username ?? identity.displayName).slice(0, 1).toUpperCase()}
             </div>
-            <div>
-              <strong>{identity.displayName}</strong>
-              <span>@{identity.tenantSlug}</span>
-            </div>
+            <strong>{identity.username ?? identity.displayName}</strong>
             <button
               aria-label="退出登录"
               onClick={() => void logout()}
@@ -1276,7 +1262,6 @@ export default function ChatApp() {
               <header>
                 <div>
                   <h2>新建对话</h2>
-                  <p>先选择计算方式，再把对话绑定到一个可替换的 Workspace。</p>
                 </div>
                 <button
                   onClick={() => {
@@ -1298,7 +1283,6 @@ export default function ChatApp() {
                   />
                   <span>
                     <strong>弹性执行（推荐）</strong>
-                    <small>按需分配 Cube，空闲后回收计算资源；Workspace 文件持续保留</small>
                   </span>
                 </label>
                 <label className="product-choice-card">
@@ -1312,7 +1296,6 @@ export default function ChatApp() {
                   />
                   <span>
                     <strong>独享运行环境</strong>
-                    <small>使用仅你可见的持久 Cube，跨多轮保留后台进程、服务、终端与 SSH</small>
                   </span>
                 </label>
               </fieldset>
@@ -1441,10 +1424,6 @@ export default function ChatApp() {
                               选择目录…
                             </button>
                           </div>
-                          <p className="product-resource-boundary-note">
-                            此目录属于独享 VM。暂停会保存整机状态；释放环境会销毁 VM，
-                            对话历史仍保留，但需要重新绑定运行环境。
-                          </p>
                         </>
                       )}
                     </fieldset>
@@ -1732,19 +1711,7 @@ export default function ChatApp() {
             ref={chatScrollerRef}
           >
             {state.turns.length === 0 ? (
-              <div className="product-welcome">
-                <div className="product-logo product-logo-large">A</div>
-                <h1>你好，{identity.displayName}</h1>
-                <p>今天想让 PiCloud 帮你完成什么？</p>
-                <div className="product-examples">
-                  {EXAMPLE_PROMPTS.map((example) => (
-                    <button key={example} onClick={() => setPrompt(example)} type="button">
-                      {example}
-                      <span>→</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <div className="product-chat-empty" aria-hidden="true" />
             ) : (
               <div className="product-transcript">
                 {state.inheritedMessages.length === 0 ? null : (
@@ -1898,7 +1865,6 @@ export default function ChatApp() {
           {steerNotice === null ? null : (
             <small className="product-steer-notice">{steerNotice}</small>
           )}
-          <small>Agent 可能会出错，请检查重要的代码修改和测试结果。</small>
         </footer>
       </main>
     </div>

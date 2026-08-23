@@ -100,6 +100,7 @@ describe("tenant-aware browser API", () => {
       tenantId: "10000000-0000-4000-8000-000000000002",
       tenantSlug: "u-alice-12345678",
       userId: "10000000-0000-4000-8000-000000000003",
+      username: "alice",
       displayName: "Alice",
       role: "owner" as const,
       platformAdministrator: false,

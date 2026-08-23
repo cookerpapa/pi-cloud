@@ -40,11 +40,7 @@ export function AuthScreen({
   return (
     <main className="product-auth-page">
       <section className="product-auth-brand">
-        <div className="product-logo product-logo-large" aria-hidden="true">
-          A
-        </div>
         <h1>PiCloud</h1>
-        <p>你的云端 Coding Agent</p>
       </section>
       <form className="product-auth-card" onSubmit={(event) => void submit(event)}>
         <div className="product-auth-tabs" role="tablist" aria-label="账户操作">
@@ -74,7 +70,6 @@ export function AuthScreen({
           </button>
         </div>
         <h2>{mode === "login" ? "欢迎回来" : "创建账户"}</h2>
-        <p>{mode === "login" ? "登录后继续你的对话" : "注册后即可开始使用，无需配置模型"}</p>
         {mode === "register" ? (
           <label>
             <span>显示名称</span>
@@ -121,7 +116,6 @@ export function AuthScreen({
           {busy ? "请稍候…" : mode === "login" ? "登录" : "注册并继续"}
         </button>
       </form>
-      <footer>账户、对话和 Workspace 按租户隔离</footer>
     </main>
   );
 }

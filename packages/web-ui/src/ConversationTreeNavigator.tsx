@@ -317,7 +317,7 @@ export function ConversationTreeNavigator({
           {loading && root === null ? (
             <div className="product-tree-empty">正在读取会话树…</div>
           ) : root === null ? (
-            <div className="product-tree-empty">发送第一条消息后，这里会显示对话路径。</div>
+            <div className="product-tree-empty" aria-hidden="true" />
           ) : (
             <TreeBranch
               activeTurnId={activeTurnId}

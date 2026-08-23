@@ -50,8 +50,8 @@ describe("product chat experience", () => {
 
   it("restores a durable login without rendering the old operator console", () => {
     const markup = renderToStaticMarkup(<ChatApp />);
-    expect(markup).toContain("PiCloud");
     expect(markup).toContain("正在恢复登录状态");
+    expect(markup).not.toContain(">A<");
     expect(markup).not.toContain("PostgreSQL outbox");
     expect(markup).not.toContain("Configure tenant model credential");
   });
@@ -133,11 +133,12 @@ describe("product chat experience", () => {
         workspaces={[]}
       />,
     );
-    expect(markup).toContain("开发资源");
-    expect(markup).toContain("Workspace 只在“弹性执行”新建对话时创建");
+    expect(markup).toContain(">资源<");
+    expect(markup).toContain("暂无 Workspace");
+    expect(markup).not.toContain("Workspace 只在“弹性执行”新建对话时创建");
     expect(markup).not.toContain("新建 Workspace");
-    expect(markup).toContain("独享运行环境");
-    expect(markup).toContain("返回对话");
+    expect(markup).toContain("独享环境");
+    expect(markup).toContain("> 对话</button>");
   });
 
   it("presents an exclusive environment directory as an Explorer-style persisted root", () => {

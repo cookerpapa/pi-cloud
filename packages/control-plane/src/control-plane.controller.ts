@@ -155,6 +155,7 @@ export class ControlPlaneController {
       tenantId: identity.tenantId,
       tenantSlug: identity.tenantSlug,
       userId: identity.userId,
+      ...(identity.username === undefined ? {} : { username: identity.username }),
       displayName: identity.displayName,
       role: identity.role,
       platformAdministrator: this.platformRuntimeSettings.isPlatformAdministrator(identity),

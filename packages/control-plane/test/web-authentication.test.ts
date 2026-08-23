@@ -111,7 +111,7 @@ describe.sequential("product web authentication", () => {
     expect(response.statusCode).toBe(201);
     registration = response.json<AuthSessionResource>();
     expect(registration).toMatchObject({
-      identity: { displayName: "Alice", role: "owner" },
+      identity: { username: "alice.dev", displayName: "Alice", role: "owner" },
     });
     expect(response.body).not.toContain("apiToken");
     expect(response.body).not.toContain(PASSWORD);
@@ -269,6 +269,7 @@ describe.sequential("product web authentication", () => {
       payload: { username: "ALICE.DEV", password: PASSWORD },
     });
     expect(login.statusCode).toBe(200);
+    expect(login.json<AuthSessionResource>().identity.username).toBe("alice.dev");
     const loginCookie = String(login.headers["set-cookie"]).split(";", 1)[0]!;
     expect(loginCookie).not.toBe(cookie);
 

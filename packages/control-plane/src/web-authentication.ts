@@ -128,6 +128,7 @@ function identityResource(
     tenantId: identity.tenantId,
     tenantSlug: identity.tenantSlug,
     userId: identity.userId,
+    ...(identity.username === undefined ? {} : { username: identity.username }),
     displayName: identity.displayName,
     role: identity.role,
     platformAdministrator:
@@ -248,6 +249,7 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
         tenantId: created.tenantId,
         tenantSlug: created.tenantSlug,
         userId: created.ownerUserId,
+        username: request.username,
         displayName: request.displayName,
         role: "owner",
         defaultModelProfileId: created.defaultModelProfileId,
@@ -313,6 +315,7 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
       tenantId: row.tenantId,
       tenantSlug: row.tenantSlug,
       userId: row.userId,
+      username: row.username,
       displayName: row.displayName,
       role: row.role,
       defaultModelProfileId: row.defaultModelProfileId,
@@ -329,6 +332,11 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
           .onRef("user_row.id", "=", "session.user_id"),
       )
       .innerJoin("tenants as tenant", "tenant.id", "session.tenant_id")
+      .leftJoin("user_password_credentials as credential", (join) =>
+        join
+          .onRef("credential.tenant_id", "=", "session.tenant_id")
+          .onRef("credential.user_id", "=", "session.user_id"),
+      )
       .innerJoin("tenant_runtime_policies as policy", "policy.tenant_id", "session.tenant_id")
       .select([
         "session.session_id as sessionId",
@@ -338,6 +346,7 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
         "session.secret_sha256 as secretSha256",
         "session.expires_at as expiresAt",
         "session.revoked_at as revokedAt",
+        "credential.username",
         "user_row.display_name as displayName",
         "tenant.slug as tenantSlug",
         "policy.default_model_profile_id as defaultModelProfileId",
@@ -377,6 +386,7 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
       tenantId: row.tenantId,
       tenantSlug: row.tenantSlug,
       userId: row.userId,
+      ...(row.username === null ? {} : { username: row.username }),
       displayName: row.displayName,
       role: row.role,
       defaultModelProfileId: row.defaultModelProfileId,

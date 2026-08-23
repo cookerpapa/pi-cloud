@@ -16,6 +16,7 @@ export type TenantRequestIdentity = Readonly<{
   tenantId: string;
   tenantSlug: string;
   userId: string;
+  username?: string;
   displayName: string;
   role: TenantApiCredentialRole;
   defaultModelProfileId: string;
