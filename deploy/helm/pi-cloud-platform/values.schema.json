@@ -337,7 +337,8 @@
                 "type": "string",
                 "pattern": "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/(?:2[4-9]|3[0-2])$"
               }
-            }
+            },
+            "requestTimeoutMs": { "type": "integer", "minimum": 1000, "maximum": 300000 }
           }
         },
         "toolBrokerResources": { "$ref": "#/$defs/resources" },

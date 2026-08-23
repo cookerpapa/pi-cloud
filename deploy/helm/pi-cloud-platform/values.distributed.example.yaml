@@ -92,6 +92,7 @@ sandboxPlane:
     egressProxyHost: 10.255.255.254
     egressProxyPort: 3128
     directPrivateCidrs: []
+    requestTimeoutMs: 120000
 
 pi-workers:
   image:

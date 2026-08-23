@@ -305,7 +305,7 @@ export async function loadToolBrokerConfig(
       ),
       requestTimeoutMs: integer(
         environment.PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS,
-        30_000,
+        120_000,
         1_000,
         300_000,
       ),

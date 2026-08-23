@@ -154,6 +154,7 @@ sandboxPlane:
     egressProxyHost: 10.255.255.254
     egressProxyPort: 3128
     directPrivateCidrs: []
+    requestTimeoutMs: 120000
   toolBrokerResources:
     requests: { cpu: 250m, memory: 256Mi }
     limits: { cpu: "2", memory: 768Mi }
