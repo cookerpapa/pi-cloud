@@ -7,16 +7,9 @@ import type {
   WorkspaceSummaryResource,
 } from "@pi-cloud/protocol";
 import { newIdempotencyKey, PiCloudApi } from "./api.ts";
+import { LanguageSelect, useI18n } from "./i18n.tsx";
 
 const ACTIVE_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "cancelling"]);
-
-const ENVIRONMENT_STATE_LABELS: Readonly<Record<string, string>> = {
-  creating: "创建中",
-  running: "运行中",
-  paused: "已暂停",
-  failed: "异常",
-  released: "已释放",
-};
 
 function associations(
   conversations: readonly ConversationSummaryResource[],
@@ -51,6 +44,7 @@ export function ResourceManagementPage({
   profiles: DevelopmentEnvironmentListResource["profiles"];
   workspaces: readonly WorkspaceSummaryResource[];
 }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<"workspaces" | "environments">("workspaces");
   const [profileKey, setProfileKey] = useState<DevelopmentEnvironmentProfileKey>("standard");
   const [busy, setBusy] = useState(false);
@@ -74,7 +68,7 @@ export function ResourceManagementPage({
       await action();
       await onRefresh();
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "资源操作失败");
+      setError(reason instanceof Error ? reason.message : t("resource.operationFailed"));
     } finally {
       setBusy(false);
     }
@@ -85,16 +79,17 @@ export function ResourceManagementPage({
       <div className="product-resource-shell">
         <header className="product-resource-header">
           <button className="product-resource-back" onClick={onClose} type="button">
-            <span aria-hidden="true">←</span> 对话
+            <span aria-hidden="true">←</span> {t("common.conversation")}
           </button>
-          <h1>资源</h1>
-          <div className="product-resource-summary" aria-label="资源概览">
+          <h1>{t("resource.title")}</h1>
+          <div className="product-resource-summary" aria-label={t("resource.summary")}>
             <span>
               <strong>{String(elasticWorkspaces.length)}</strong> Workspace
             </span>
             <span>
-              <strong>{String(liveEnvironments.length)}</strong> 独享环境
+              <strong>{String(liveEnvironments.length)}</strong> {t("resource.exclusive")}
             </span>
+            <LanguageSelect compact />
           </div>
         </header>
 
@@ -111,7 +106,7 @@ export function ResourceManagementPage({
             onClick={() => setTab("environments")}
             type="button"
           >
-            独享环境 <span>{String(liveEnvironments.length)}</span>
+            {t("resource.exclusive")} <span>{String(liveEnvironments.length)}</span>
           </button>
         </nav>
         {error === null ? null : <div className="product-form-error">{error}</div>}
@@ -119,7 +114,7 @@ export function ResourceManagementPage({
         {tab === "workspaces" ? (
           <section className="product-resource-section">
             {elasticWorkspaces.length === 0 ? (
-              <div className="product-resource-empty">暂无 Workspace</div>
+              <div className="product-resource-empty">{t("resource.emptyWorkspace")}</div>
             ) : (
               <div className="product-resource-grid">
                 {elasticWorkspaces.map((workspace) => {
@@ -135,16 +130,18 @@ export function ResourceManagementPage({
                           <span className="product-resource-kind">W</span>
                           <div>
                             <h3>{workspace.name}</h3>
-                            <span>{String(linked.length)} 个对话</span>
+                            <span>
+                              {t("resource.workspaceConversations", { count: linked.length })}
+                            </span>
                           </div>
                         </div>
                         <span className={`product-resource-status${active ? " active" : ""}`}>
-                          {active ? "使用中" : "可用"}
+                          {active ? t("resource.inUse") : t("common.available")}
                         </span>
                       </header>
                       <dl className="product-resource-metadata">
                         <div>
-                          <dt>最近规格</dt>
+                          <dt>{t("resource.latestProfile")}</dt>
                           <dd>
                             {workspaceProfile === undefined
                               ? "—"
@@ -154,13 +151,15 @@ export function ResourceManagementPage({
                           </dd>
                         </div>
                         <div>
-                          <dt>文件状态</dt>
-                          <dd>已持久化</dd>
+                          <dt>{t("resource.fileState")}</dt>
+                          <dd>{t("resource.persisted")}</dd>
                         </div>
                       </dl>
                       {linked.length === 0 ? null : (
                         <div className="product-resource-links">
-                          <span className="product-resource-links-label">关联对话</span>
+                          <span className="product-resource-links-label">
+                            {t("resource.relatedConversations")}
+                          </span>
                           {linked.map((conversation) => (
                             <span key={conversation.sessionId}>{conversation.title}</span>
                           ))}
@@ -173,7 +172,7 @@ export function ResourceManagementPage({
                           onClick={() => {
                             if (
                               !window.confirm(
-                                `永久删除 Workspace“${workspace.name}”及其中的文件？关联对话会保留并等待重新绑定。`,
+                                t("resource.deleteWorkspaceConfirm", { name: workspace.name }),
                               )
                             )
                               return;
@@ -186,9 +185,9 @@ export function ResourceManagementPage({
                           }}
                           type="button"
                         >
-                          删除
+                          {t("common.delete")}
                         </button>
-                        {active ? <small>Agent 正在运行</small> : null}
+                        {active ? <small>{t("resource.agentRunning")}</small> : null}
                       </div>
                     </article>
                   );
@@ -200,7 +199,7 @@ export function ResourceManagementPage({
           <section className="product-resource-section">
             <div className="product-resource-provisioner">
               <header>
-                <h2>申请独享环境</h2>
+                <h2>{t("resource.createExclusive")}</h2>
                 {selectedProfile === undefined ? null : <span>{selectedProfile.label}</span>}
               </header>
               <form
@@ -213,7 +212,7 @@ export function ResourceManagementPage({
                 }}
               >
                 <label>
-                  <span>CPU</span>
+                  <span>{t("resource.cpu")}</span>
                   <select
                     onChange={(event) => {
                       const cpu = Number(event.target.value);
@@ -224,13 +223,13 @@ export function ResourceManagementPage({
                   >
                     {profiles.map((profile) => (
                       <option key={profile.key} value={profile.cpuCount}>
-                        {String(profile.cpuCount)} 核
+                        {t("resource.cores", { count: profile.cpuCount })}
                       </option>
                     ))}
                   </select>
                 </label>
                 <label>
-                  <span>内存</span>
+                  <span>{t("resource.memory")}</span>
                   <select
                     onChange={(event) => {
                       const memory = Number(event.target.value);
@@ -247,7 +246,7 @@ export function ResourceManagementPage({
                   </select>
                 </label>
                 <label>
-                  <span>系统盘</span>
+                  <span>{t("resource.systemDisk")}</span>
                   <select
                     onChange={(event) => {
                       const disk = Number(event.target.value);
@@ -268,13 +267,13 @@ export function ResourceManagementPage({
                   disabled={busy || selectedProfile === undefined}
                   type="submit"
                 >
-                  {busy ? "处理中…" : "申请"}
+                  {busy ? t("common.processing") : t("resource.apply")}
                 </button>
               </form>
             </div>
 
             {liveEnvironments.length === 0 ? (
-              <div className="product-resource-empty">暂无独享环境</div>
+              <div className="product-resource-empty">{t("resource.emptyExclusive")}</div>
             ) : (
               <div className="product-resource-grid">
                 {liveEnvironments.map((environment) => {
@@ -298,22 +297,24 @@ export function ResourceManagementPage({
                           </div>
                         </div>
                         <span className={`product-resource-status ${environment.state}`}>
-                          {ENVIRONMENT_STATE_LABELS[environment.state] ?? environment.state}
+                          {t(`resource.state.${environment.state}` as const)}
                         </span>
                       </header>
                       <dl className="product-resource-metadata">
                         <div>
-                          <dt>IP 地址</dt>
+                          <dt>{t("resource.ip")}</dt>
                           <dd>{environment.ipAddress ?? "—"}</dd>
                         </div>
                         <div>
-                          <dt>关联对话</dt>
+                          <dt>{t("resource.relatedConversations")}</dt>
                           <dd>{String(linked.length)}</dd>
                         </div>
                       </dl>
                       {linked.length === 0 ? null : (
                         <div className="product-resource-links">
-                          <span className="product-resource-links-label">工作目录</span>
+                          <span className="product-resource-links-label">
+                            {t("resource.workingDirectory")}
+                          </span>
                           {linked.map((conversation) => (
                             <span key={conversation.sessionId}>
                               {conversation.title} · {conversation.workingDirectory}
@@ -336,7 +337,7 @@ export function ResourceManagementPage({
                             }
                             type="button"
                           >
-                            暂停
+                            {t("resource.pause")}
                           </button>
                         ) : null}
                         {environment.state === "paused" ? (
@@ -353,7 +354,7 @@ export function ResourceManagementPage({
                             }
                             type="button"
                           >
-                            恢复
+                            {t("resource.resume")}
                           </button>
                         ) : null}
                         {environment.state === "failed" ? (
@@ -370,14 +371,14 @@ export function ResourceManagementPage({
                             }
                             type="button"
                           >
-                            重建
+                            {t("resource.rebuild")}
                           </button>
                         ) : null}
                         <button
                           className="product-danger-button"
                           disabled={busy || active}
                           onClick={() => {
-                            if (!window.confirm("释放这台独享环境？对话会保留。")) return;
+                            if (!window.confirm(t("resource.releaseConfirm"))) return;
                             void mutate(() =>
                               api.developmentEnvironmentAction(
                                 environment.environmentId,
@@ -388,9 +389,9 @@ export function ResourceManagementPage({
                           }}
                           type="button"
                         >
-                          释放
+                          {t("resource.release")}
                         </button>
-                        {active ? <small>Agent 正在运行</small> : null}
+                        {active ? <small>{t("resource.agentRunning")}</small> : null}
                       </div>
                     </article>
                   );

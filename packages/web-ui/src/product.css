@@ -80,12 +80,43 @@ button:disabled {
 }
 
 .product-auth-page {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(260px, 420px);
   place-content: center;
   justify-items: stretch;
   gap: 24px;
   padding: 48px 20px 28px;
+}
+
+.product-auth-language {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+}
+
+.product-language-select {
+  min-height: 34px;
+  padding: 6px 28px 6px 10px;
+  border: 1px solid #343434;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #b9b9b9;
+  font-size: 11px;
+  outline: 0;
+}
+
+.product-language-select:hover,
+.product-language-select:focus {
+  border-color: #525252;
+  color: #eeeeee;
+}
+
+.product-language-select.compact {
+  width: 62px;
+  min-height: 30px;
+  padding-block: 4px;
+  background: transparent;
 }
 
 .product-auth-brand {
@@ -488,7 +519,7 @@ body.product-panel-resizing {
 
 .product-account {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 9px;
   padding: 10px 12px;

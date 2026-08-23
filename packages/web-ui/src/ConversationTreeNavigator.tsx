@@ -5,13 +5,14 @@ import type {
   ConversationTreeView,
 } from "@pi-cloud/protocol";
 import { selectActiveTurn } from "./active-turn-selection.ts";
+import { useI18n, type Translate } from "./i18n.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";
 
 const PROGRAMMATIC_SCROLL_GUARD_MS = 1_000;
 
-function compact(value: string, maximum = 76): string {
+function compact(value: string, maximum = 76, emptyMessage = "（空消息）"): string {
   const text = value.replace(/\s+/gu, " ").trim();
-  return text.length > maximum ? `${text.slice(0, maximum)}…` : text || "（空消息）";
+  return text.length > maximum ? `${text.slice(0, maximum)}…` : text || emptyMessage;
 }
 
 function turnElements(scroller: HTMLElement): ReadonlyMap<string, HTMLElement> {
@@ -52,16 +53,20 @@ function branchChildren(tree: ConversationTreeResource) {
   return children;
 }
 
-function contextLabel(mode: NonNullable<ConversationTreeBranchResource["contextMode"]>): string {
-  return mode === "fork" ? "继承上下文" : "独立上下文";
+function contextLabel(
+  mode: NonNullable<ConversationTreeBranchResource["contextMode"]>,
+  t: Translate,
+): string {
+  return mode === "fork" ? t("chat.context.inherited") : t("chat.context.fresh");
 }
 
 function workspaceLabel(
   mode: NonNullable<ConversationTreeBranchResource["workspaceMode"]>,
+  t: Translate,
 ): string {
-  if (mode === "shared_serialized") return "共享工作区";
-  if (mode === "isolated") return "隔离工作区";
-  return "无工具";
+  if (mode === "shared_serialized") return t("chat.workspace.shared");
+  if (mode === "isolated") return t("chat.workspace.isolated");
+  return t("chat.workspace.none");
 }
 
 function TreeBranch({
@@ -79,6 +84,7 @@ function TreeBranch({
   currentSessionId: string;
   navigate: (sessionId: string, target?: { turnId: string; entryId: string }) => void;
 }) {
+  const { t } = useI18n();
   const unanchoredChildren = children.get(`${branch.sessionId}:__root__`) ?? [];
   return (
     <div className="product-tree-branch" style={{ "--tree-depth": depth } as React.CSSProperties}>
@@ -103,7 +109,7 @@ function TreeBranch({
             branch.contextMode !== undefined &&
             branch.workspaceMode !== undefined ? (
               <small>
-                {contextLabel(branch.contextMode)} · {workspaceLabel(branch.workspaceMode)} ·{" "}
+                {contextLabel(branch.contextMode, t)} · {workspaceLabel(branch.workspaceMode, t)} ·{" "}
                 {branch.delegatedState}
               </small>
             ) : null}
@@ -133,13 +139,13 @@ function TreeBranch({
               onClick={() =>
                 navigate(branch.sessionId, { turnId: entry.turnId, entryId: entry.entryId })
               }
-              title={compact(entry.text, 240)}
+              title={compact(entry.text, 240, t("tree.emptyMessage"))}
               type="button"
             >
               <span className="product-tree-connector" aria-hidden="true">
                 {entry.role === "user" ? "U" : "A"}
               </span>
-              <span>{compact(entry.text)}</span>
+              <span>{compact(entry.text, 76, t("tree.emptyMessage"))}</span>
             </button>
             {nested.map((child) => (
               <TreeBranch
@@ -174,6 +180,7 @@ export function ConversationTreeNavigator({
   onViewChange: (view: ConversationTreeView) => void;
   onNavigate: (sessionId: string, target?: { turnId: string; entryId: string }) => void;
 }) {
+  const { t } = useI18n();
   const panel = useResizablePanel({
     storageKey: "pi-cloud:conversation-tree",
     initialWidth: 300,
@@ -275,47 +282,47 @@ export function ConversationTreeNavigator({
       style={{ width: panel.collapsed ? 42 : panel.width }}
     >
       <button
-        aria-label={panel.collapsed ? "展开对话导航" : "收起对话导航"}
+        aria-label={panel.collapsed ? t("tree.expand") : t("tree.collapse")}
         className="product-panel-collapse"
         onClick={panel.toggle}
-        title={panel.collapsed ? "展开对话导航" : "收起对话导航"}
+        title={panel.collapsed ? t("tree.expand") : t("tree.collapse")}
         type="button"
       >
         {panel.collapsed ? "›" : "‹"}
       </button>
-      {panel.collapsed ? <span className="product-collapsed-label">导航</span> : null}
+      {panel.collapsed ? <span className="product-collapsed-label">{t("tree.label")}</span> : null}
       <div className="product-panel-content">
         <header className="product-tree-header">
           <div>
-            <strong>对话导航</strong>
+            <strong>{t("tree.title")}</strong>
             <span>
               {tree === null
-                ? "选择一个对话"
+                ? t("tree.selectConversation")
                 : loading
-                  ? "正在同步…"
-                  : `${String(tree.branches.length)} 条分支`}
+                  ? t("tree.syncing")
+                  : t("tree.branches", { count: tree.branches.length })}
             </span>
           </div>
-          <div className="product-tree-view-switch" role="group" aria-label="树视图">
+          <div className="product-tree-view-switch" role="group" aria-label={t("tree.view")}>
             <button
               className={view === "focus" ? "active" : ""}
               onClick={() => onViewChange("focus")}
               type="button"
             >
-              当前分支
+              {t("tree.focus")}
             </button>
             <button
               className={view === "full" ? "active" : ""}
               onClick={() => onViewChange("full")}
               type="button"
             >
-              整棵树
+              {t("tree.full")}
             </button>
           </div>
         </header>
-        <nav aria-busy={loading} className="product-tree-nav" aria-label="Pi 会话树">
+        <nav aria-busy={loading} className="product-tree-nav" aria-label={t("tree.sessionTree")}>
           {loading && root === null ? (
-            <div className="product-tree-empty">正在读取会话树…</div>
+            <div className="product-tree-empty">{t("tree.loading")}</div>
           ) : root === null ? (
             <div className="product-tree-empty" aria-hidden="true" />
           ) : (
@@ -332,7 +339,7 @@ export function ConversationTreeNavigator({
       </div>
       {panel.collapsed ? null : (
         <div
-          aria-label="调整对话导航宽度"
+          aria-label={t("tree.resize")}
           className="product-panel-resizer"
           onKeyDown={(event) => {
             if (event.key === "ArrowLeft") panel.setWidth(panel.width - 12);

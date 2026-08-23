@@ -7,6 +7,7 @@ shell operations run in CubeSandbox KVM microVMs.
 ## What you get
 
 - browser registration/login and tenant-isolated conversations;
+- per-browser Chinese/English UI selection without translating prompts, Tool output or model replies;
 - multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
@@ -78,6 +79,10 @@ After deployment:
    - **Elastic execution** selects/creates a Workspace and chooses a deployment-owned size;
    - **Exclusive environment** selects a running user-owned Cube and a live
      directory from its complete guest filesystem.
+
+The language selector is available on the sign-in page and beside the current
+username. It is a browser-local presentation preference: switching it does not
+modify Session context, system prompts, user messages or Agent output.
 
 Service preview is a same-origin HTTP proxy to any unprivileged HTTP port inside
 the active Cube. When the Agent reports a `localhost` application URL, the Web

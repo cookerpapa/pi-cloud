@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import type { TenantIdentityResource } from "@pi-cloud/protocol";
 import type { PiCloudApi } from "./api.ts";
 import { errorMessage } from "./ui-errors.ts";
+import { LanguageSelect, useI18n } from "./i18n.tsx";
 
 type AuthMode = "login" | "register";
 
@@ -12,6 +13,7 @@ export function AuthScreen({
   api: PiCloudApi;
   onAuthenticated: (identity: TenantIdentityResource) => void;
 }) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<AuthMode>("login");
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -31,7 +33,7 @@ export function AuthScreen({
           : await api.registerAccount(username.trim().toLowerCase(), displayName.trim(), password);
       onAuthenticated(session.identity);
     } catch (caught: unknown) {
-      setError(errorMessage(caught));
+      setError(errorMessage(caught, t));
     } finally {
       setBusy(false);
     }
@@ -39,11 +41,14 @@ export function AuthScreen({
 
   return (
     <main className="product-auth-page">
+      <div className="product-auth-language">
+        <LanguageSelect />
+      </div>
       <section className="product-auth-brand">
         <h1>PiCloud</h1>
       </section>
       <form className="product-auth-card" onSubmit={(event) => void submit(event)}>
-        <div className="product-auth-tabs" role="tablist" aria-label="账户操作">
+        <div className="product-auth-tabs" role="tablist" aria-label={t("auth.accountActions")}>
           <button
             aria-selected={mode === "login"}
             className={mode === "login" ? "active" : ""}
@@ -54,7 +59,7 @@ export function AuthScreen({
             role="tab"
             type="button"
           >
-            登录
+            {t("auth.login")}
           </button>
           <button
             aria-selected={mode === "register"}
@@ -66,25 +71,25 @@ export function AuthScreen({
             role="tab"
             type="button"
           >
-            注册
+            {t("auth.register")}
           </button>
         </div>
-        <h2>{mode === "login" ? "欢迎回来" : "创建账户"}</h2>
+        <h2>{mode === "login" ? t("auth.welcomeBack") : t("auth.createAccount")}</h2>
         {mode === "register" ? (
           <label>
-            <span>显示名称</span>
+            <span>{t("auth.displayName")}</span>
             <input
               autoComplete="name"
               maxLength={256}
               onChange={(event) => setDisplayName(event.target.value)}
-              placeholder="你希望我们如何称呼你"
+              placeholder={t("auth.displayNamePlaceholder")}
               required
               value={displayName}
             />
           </label>
         ) : null}
         <label>
-          <span>用户名</span>
+          <span>{t("auth.username")}</span>
           <input
             autoCapitalize="none"
             autoComplete="username"
@@ -92,20 +97,20 @@ export function AuthScreen({
             minLength={3}
             onChange={(event) => setUsername(event.target.value)}
             pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,47}"
-            placeholder="3–48 位字母、数字或 . _ -"
+            placeholder={t("auth.usernamePlaceholder")}
             required
             spellCheck={false}
             value={username}
           />
         </label>
         <label>
-          <span>密码</span>
+          <span>{t("auth.password")}</span>
           <input
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             maxLength={128}
             minLength={10}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="至少 10 个字符"
+            placeholder={t("auth.passwordPlaceholder")}
             required
             type="password"
             value={password}
@@ -113,7 +118,11 @@ export function AuthScreen({
         </label>
         {error ? <div className="product-auth-error">{error}</div> : null}
         <button className="product-primary-button" disabled={busy} type="submit">
-          {busy ? "请稍候…" : mode === "login" ? "登录" : "注册并继续"}
+          {busy
+            ? t("auth.pleaseWait")
+            : mode === "login"
+              ? t("auth.login")
+              : t("auth.registerContinue")}
         </button>
       </form>
     </main>

@@ -352,7 +352,7 @@ describe("product chat experience", () => {
     expect(markup).toContain("$</span><code>python3 bubble_sort.py</code>");
     expect(markup).toContain("python3: command not found");
     expect(markup).toContain("Command exited with code 127");
-    expect(markup).toContain("Took 1.2s");
+    expect(markup).toContain("耗时 1.2s");
     expect(markup).not.toContain("&quot;content&quot;");
     expect(markup).not.toContain("输入</span>");
   });
@@ -412,8 +412,8 @@ describe("product chat experience", () => {
     );
     expect(markup).toContain("<strong>write</strong><code>/workspace/bubble_sort.py</code>");
     expect(markup).toContain("line 1");
-    expect(markup).toContain("4 more lines");
+    expect(markup).toContain("后面还有 4 行");
     expect(markup).not.toContain("Successfully wrote");
-    expect(markup).toContain("Took 0.0s");
+    expect(markup).toContain("耗时 0.0s");
   });
 });

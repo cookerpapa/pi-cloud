@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WorkspaceFileResource, WorkspaceVersionResource } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError } from "./api.ts";
 import { WorkspaceTerminal } from "./WorkspaceTerminal.tsx";
+import { useI18n, type Translate } from "./i18n.tsx";
 
 export const MAXIMUM_WORKSPACE_PREVIEW_BYTES = 512 * 1_024;
 
@@ -15,12 +16,12 @@ export type DirectoryEntry =
       file: WorkspaceFileResource;
     }>;
 
-function message(error: unknown): string {
+function message(error: unknown, t: Translate): string {
   if (error instanceof PiCloudApiError) return error.message;
   if (error instanceof Error && error.message.trim().length > 0) {
-    return `Workspace 目录读取失败：${error.message}`;
+    return t("inspector.readFailed", { message: error.message });
   }
-  return "Workspace 目录暂时无法读取。";
+  return t("inspector.unavailable");
 }
 
 export function directoryEntries(
@@ -117,6 +118,7 @@ export function WorkspaceInspector({
   workspaceId: string | null;
   workspaceName: string | null;
 }) {
+  const { t } = useI18n();
   const [version, setVersion] = useState<WorkspaceVersionResource | null>(null);
   const [files, setFiles] = useState<readonly WorkspaceFileResource[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -217,12 +219,12 @@ export function WorkspaceInspector({
       for (;;) {
         const listed = await api.listWorkspaceFiles(current.versionId, cursor);
         if (listed.versionId !== current.versionId) {
-          throw new Error("目录分页返回了错误的 Workspace 版本");
+          throw new Error(t("inspector.wrongVersion"));
         }
         listedFiles.push(...listed.files);
         if (!listed.truncated) break;
         if (listed.nextCursor === undefined || seenCursors.has(listed.nextCursor)) {
-          throw new Error("目录分页游标无效");
+          throw new Error(t("inspector.invalidCursor"));
         }
         seenCursors.add(listed.nextCursor);
         cursor = listed.nextCursor;
@@ -233,12 +235,12 @@ export function WorkspaceInspector({
       if (generation === directoryLoadGeneration.current) {
         setVersion(null);
         setFiles([]);
-        onErrorRef.current(message(error));
+        onErrorRef.current(message(error, t));
       }
     } finally {
       if (generation === directoryLoadGeneration.current) setLoading(false);
     }
-  }, [api, sessionId]);
+  }, [api, sessionId, t]);
 
   useEffect(() => {
     void refresh();
@@ -268,7 +270,7 @@ export function WorkspaceInspector({
       setSelectedText(text);
       setSelectedBinary(text === null);
     } catch (error: unknown) {
-      if (generation === fileLoadGeneration.current) onErrorRef.current(message(error));
+      if (generation === fileLoadGeneration.current) onErrorRef.current(message(error, t));
     } finally {
       if (generation === fileLoadGeneration.current) setFileLoading(false);
     }
@@ -291,7 +293,7 @@ export function WorkspaceInspector({
   }
 
   return (
-    <aside className="workspace-directory" aria-label="Workspace 目录">
+    <aside className="workspace-directory" aria-label={t("common.workspace")}>
       <header className="workspace-directory-header">
         <div>
           <span>WORKSPACE</span>
@@ -299,20 +301,28 @@ export function WorkspaceInspector({
           <small>/workspace</small>
         </div>
         <div>
-          <button disabled={loading} onClick={() => void refresh()} title="刷新目录" type="button">
+          <button
+            disabled={loading}
+            onClick={() => void refresh()}
+            title={t("inspector.refresh")}
+            type="button"
+          >
             ↻
           </button>
-          <button onClick={onClose} title="关闭" type="button">
+          <button onClick={onClose} title={t("common.close")} type="button">
             ×
           </button>
         </div>
       </header>
       <div className="workspace-directory-meta">
         {version === null
-          ? "尚无已提交的文件版本"
-          : `版本 ${String(version.versionNumber)} · ${String(version.fileCount)} 个文件`}
+          ? t("inspector.noVersion")
+          : t("inspector.version", {
+              version: version.versionNumber,
+              count: version.fileCount,
+            })}
       </div>
-      <div className="workspace-view-tabs" role="tablist" aria-label="Workspace 视图">
+      <div className="workspace-view-tabs" role="tablist" aria-label={t("inspector.views")}>
         <button
           aria-selected={view === "files"}
           className={view === "files" ? "active" : ""}
@@ -320,7 +330,7 @@ export function WorkspaceInspector({
           role="tab"
           type="button"
         >
-          文件
+          {t("inspector.files")}
         </button>
         <button
           aria-selected={view === "terminal"}
@@ -329,7 +339,7 @@ export function WorkspaceInspector({
           role="tab"
           type="button"
         >
-          终端
+          {t("inspector.terminal")}
         </button>
       </div>
       {view === "terminal" ? (
@@ -341,7 +351,7 @@ export function WorkspaceInspector({
         />
       ) : (
         <div className="workspace-directory-body">
-          <nav className="workspace-file-tree" aria-label="/workspace 文件">
+          <nav className="workspace-file-tree" aria-label={t("inspector.fileTree")}>
             <button
               aria-expanded={rootExpanded}
               className="workspace-root-row"
@@ -352,11 +362,9 @@ export function WorkspaceInspector({
               <strong>/workspace</strong>
             </button>
             {loading ? (
-              <div className="workspace-empty">正在读取目录…</div>
+              <div className="workspace-empty">{t("inspector.loadingDirectory")}</div>
             ) : entries.length === 0 ? (
-              <div className="workspace-empty">
-                这个目录还是空的。让 Agent 创建文件后，完成的版本会显示在这里。
-              </div>
+              <div className="workspace-empty">{t("inspector.emptyDirectory")}</div>
             ) : (
               visibleEntries.map((entry) =>
                 entry.kind === "directory" ? (
@@ -392,8 +400,8 @@ export function WorkspaceInspector({
           <section className="workspace-file-preview">
             {selectedFile === null ? (
               <div className="workspace-preview-empty">
-                <span>选择一个文件</span>
-                <small>文件内容来自当前已提交的 Workspace 版本。</small>
+                <span>{t("inspector.selectFile")}</span>
+                <small>{t("inspector.fileSource")}</small>
               </div>
             ) : (
               <>
@@ -402,17 +410,18 @@ export function WorkspaceInspector({
                   <span>{sizeLabel(selectedFile.sizeBytes)}</span>
                 </header>
                 {fileLoading ? (
-                  <div className="workspace-preview-empty">正在读取文件…</div>
+                  <div className="workspace-preview-empty">{t("inspector.loadingFile")}</div>
                 ) : selectedTooLarge ? (
                   <div className="workspace-preview-empty">
-                    <span>文件较大，无法在线预览</span>
+                    <span>{t("inspector.largeFile")}</span>
                     <small>
-                      网页预览上限为 {sizeLabel(MAXIMUM_WORKSPACE_PREVIEW_BYTES)}
-                      ，Agent 仍可在 Sandbox 中读取和处理此文件。
+                      {t("inspector.largeFileDetail", {
+                        size: sizeLabel(MAXIMUM_WORKSPACE_PREVIEW_BYTES),
+                      })}
                     </small>
                   </div>
                 ) : selectedBinary ? (
-                  <div className="workspace-preview-empty">这是二进制文件，无法在此预览。</div>
+                  <div className="workspace-preview-empty">{t("inspector.binaryFile")}</div>
                 ) : (
                   <pre>
                     <code>{selectedText ?? ""}</code>

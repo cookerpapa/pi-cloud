@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TranscriptItem, TurnView } from "./session-view.ts";
+import { useI18n, type Translate } from "./i18n.tsx";
 
 type SourceHighlightModule = typeof import("./source-highlight.ts");
 type SourceHighlightResult = ReturnType<SourceHighlightModule["highlightSource"]>;
@@ -116,10 +117,12 @@ function useSourceHighlight(text: string, path: string | null): SourceHighlightR
     : null;
 }
 
-function safeDisplay(value: unknown): string {
+function safeDisplay(value: unknown, t?: Translate): string {
   const rendered = typeof value === "string" ? value : JSON.stringify(value, null, 2);
   if (rendered === undefined) return "";
-  return rendered.length > 12_000 ? `${rendered.slice(0, 12_000)}\n…输出已截断` : rendered;
+  return rendered.length > 12_000
+    ? `${rendered.slice(0, 12_000)}\n${t?.("turn.outputTruncated") ?? "…输出已截断"}`
+    : rendered;
 }
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -132,10 +135,10 @@ function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function toolOutputText(value: unknown): string {
+function toolOutputText(value: unknown, t: Translate): string {
   if (typeof value === "string") return value;
   const output = objectValue(value);
-  if (output === null || !Array.isArray(output.content)) return safeDisplay(value);
+  if (output === null || !Array.isArray(output.content)) return safeDisplay(value, t);
   const content = output.content
     .map((part) => {
       const candidate = objectValue(part);
@@ -143,7 +146,7 @@ function toolOutputText(value: unknown): string {
     })
     .filter((part): part is string => part !== null)
     .join("\n");
-  return content.length > 0 ? content : safeDisplay(value);
+  return content.length > 0 ? content : safeDisplay(value, t);
 }
 
 function durationLabel(startedAt: string, completedAt: string | undefined): string | null {
@@ -168,6 +171,7 @@ function ExpandableToolText({
   sourcePath?: string | null;
   streaming?: boolean;
 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const normalized = text.replace(/\n+$/, "");
   const lines = normalized.split("\n");
@@ -185,7 +189,7 @@ function ExpandableToolText({
     <div className="product-tool-text">
       {omitted > 0 && !expanded && direction === "tail" ? (
         <button type="button" onClick={() => setExpanded(true)}>
-          … {String(omitted)} earlier lines · 展开完整输出
+          {t("turn.earlierLines", { count: omitted })}
         </button>
       ) : null}
       <pre className={className}>
@@ -201,12 +205,12 @@ function ExpandableToolText({
       </pre>
       {omitted > 0 && direction === "head" && !expanded ? (
         <button type="button" onClick={() => setExpanded(true)}>
-          … {String(omitted)} more lines · 展开
+          {t("turn.moreLines", { count: omitted })}
         </button>
       ) : null}
       {omitted > 0 && expanded ? (
         <button type="button" onClick={() => setExpanded(false)}>
-          收起
+          {t("turn.collapse")}
         </button>
       ) : null}
     </div>
@@ -244,6 +248,7 @@ export function Markdown({
   children: string;
   sessionId?: string | undefined;
 }) {
+  const { t } = useI18n();
   return (
     <div className="product-markdown">
       <ReactMarkdown
@@ -258,7 +263,9 @@ export function Markdown({
               {label}
             </a>
           ),
-          img: ({ alt }) => <span className="product-image-placeholder">[图片：{alt ?? ""}]</span>,
+          img: ({ alt }) => (
+            <span className="product-image-placeholder">{t("turn.image", { alt: alt ?? "" })}</span>
+          ),
         }}
       >
         {children}
@@ -268,11 +275,12 @@ export function Markdown({
 }
 
 export function ToolActivity({ item }: { item: Extract<TranscriptItem, { kind: "tool" }> }) {
+  const { t } = useI18n();
   const input = objectValue(item.input);
   const command = stringValue(input?.command);
   const path = stringValue(input?.path);
   const content = stringValue(input?.content);
-  const output = item.output === undefined ? "" : toolOutputText(item.output);
+  const output = item.output === undefined ? "" : toolOutputText(item.output, t);
   const multilineCommand = command !== null && command.includes("\n");
   const displayedCommand =
     command === null
@@ -285,12 +293,12 @@ export function ToolActivity({ item }: { item: Extract<TranscriptItem, { kind: "
   const conventionalWriteResult = /^Successfully wrote \d+ bytes to /u.test(output.trim());
   const statusLabel =
     item.status === "running"
-      ? "执行中"
+      ? t("turn.executing")
       : item.status === "unknown"
-        ? "结果未知"
+        ? t("turn.unknown")
         : item.status === "failed"
-          ? "执行失败"
-          : "执行完成";
+          ? t("turn.failed")
+          : t("turn.completed");
   const icon =
     item.status === "running"
       ? "◌"
@@ -308,7 +316,7 @@ export function ToolActivity({ item }: { item: Extract<TranscriptItem, { kind: "
     ) : item.toolName === "bash" && multilineCommand ? (
       <div className="product-tool-operation product-tool-multiline-label">
         <strong>bash</strong>
-        <span>{String(command.split("\n").length)} 行命令</span>
+        <span>{t("turn.commandLines", { count: command.split("\n").length })}</span>
       </div>
     ) : (
       <div className="product-tool-operation">
@@ -347,7 +355,7 @@ export function ToolActivity({ item }: { item: Extract<TranscriptItem, { kind: "
           <ExpandableToolText
             className="product-tool-source"
             direction="head"
-            text={safeDisplay(item.input)}
+            text={safeDisplay(item.input, t)}
           />
         ) : null}
         {output.length > 0 && !(item.toolName === "write" && conventionalWriteResult) ? (
@@ -357,7 +365,9 @@ export function ToolActivity({ item }: { item: Extract<TranscriptItem, { kind: "
             text={output}
           />
         ) : null}
-        {duration === null ? null : <div className="product-tool-duration">Took {duration}</div>}
+        {duration === null ? null : (
+          <div className="product-tool-duration">{t("turn.took", { duration })}</div>
+        )}
       </div>
     </section>
   );
@@ -376,6 +386,7 @@ function AssistantItem({
   processNarration: boolean;
   streaming: boolean;
 }) {
+  const { t } = useI18n();
   if (item.kind === "text") {
     return (
       <AssistantTextItem
@@ -398,8 +409,8 @@ function AssistantItem({
   return (
     <div className="product-notification">
       {item.outcome === undefined
-        ? `等待确认：${item.approval.title}`
-        : `已处理：${item.approval.title}`}
+        ? t("turn.awaitingApproval", { title: item.approval.title })
+        : t("turn.approvalHandled", { title: item.approval.title })}
     </div>
   );
 }
@@ -442,6 +453,7 @@ export function ConversationTurn({
   onPrune?: () => void;
   onPresentationProgress?: () => void;
 }) {
+  const { t } = useI18n();
   const working =
     turn.status === "queued" || turn.status === "running" || turn.status === "cancelling";
   const lastToolIndex = turn.items.reduce(
@@ -467,7 +479,7 @@ export function ConversationTurn({
               <i />
               <i />
               <i />
-              <span>正在思考</span>
+              <span>{t("turn.thinking")}</span>
             </div>
           ) : (
             turn.items.map((item, index) => (
@@ -483,17 +495,23 @@ export function ConversationTurn({
           )}
           {turn.failure ? (
             <div className="product-turn-error">
-              <strong>这次运行失败了</strong>
-              <span>{turn.failure.message}</span>
+              <strong>{t("turn.runFailed")}</strong>
+              <span>
+                {turn.failure.code === "run_timed_out"
+                  ? t("error.runTimedOut")
+                  : turn.failure.message === "这次运行失败了，请重试。"
+                    ? t("error.runFailed")
+                    : turn.failure.message}
+              </span>
             </div>
           ) : null}
-          {turn.cancellation ? <div className="product-muted-line">已停止生成</div> : null}
+          {turn.cancellation ? <div className="product-muted-line">{t("turn.stopped")}</div> : null}
           {turn.status === "completed" && (onFork || onPrune) ? (
             <div className="product-answer-actions">
               {onFork ? (
                 <button disabled={!canFork} onClick={onFork} type="button">
                   <span aria-hidden="true">↳</span>
-                  从此对话开始
+                  {t("turn.fork")}
                 </button>
               ) : null}
               {onPrune ? (
@@ -504,7 +522,7 @@ export function ConversationTurn({
                   type="button"
                 >
                   <span aria-hidden="true">⌫</span>
-                  删除后续
+                  {t("turn.prune")}
                 </button>
               ) : null}
             </div>

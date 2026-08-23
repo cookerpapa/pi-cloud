@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DevelopmentEnvironmentDirectoryResource } from "@pi-cloud/protocol";
 import { PiCloudApi } from "./api.ts";
+import { useI18n } from "./i18n.tsx";
 
 function parent(path: string): string {
   if (path === "/") return "/";
@@ -30,6 +31,7 @@ export function WorkspaceDirectoryPicker({
   onChoose: (directory: string) => void;
   workspaceName: string;
 }) {
+  const { t } = useI18n();
   const [directory, setDirectory] = useState(initialDirectory);
   const [listing, setListing] = useState<DevelopmentEnvironmentDirectoryResource | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,7 +51,7 @@ export function WorkspaceDirectoryPicker({
       .catch((reason: unknown) => {
         if (!cancelled) {
           setListing(null);
-          setError(reason instanceof Error ? reason.message : "运行环境目录读取失败");
+          setError(reason instanceof Error ? reason.message : t("directory.error"));
         }
       })
       .finally(() => {
@@ -58,7 +60,7 @@ export function WorkspaceDirectoryPicker({
     return () => {
       cancelled = true;
     };
-  }, [api, directory, environmentId]);
+  }, [api, directory, environmentId, t]);
 
   const parts = useMemo(
     () => (directory === "/" ? [] : directory.slice(1).split("/")),
@@ -70,8 +72,8 @@ export function WorkspaceDirectoryPicker({
       <section className="product-workspace-modal product-directory-picker">
         <header>
           <div>
-            <h2>选择机器工作目录</h2>
-            <p>{workspaceName} 的实时文件系统；空目录和普通文件也会显示。</p>
+            <h2>{t("directory.title")}</h2>
+            <p>{t("directory.description", { name: workspaceName })}</p>
           </div>
           <button onClick={onCancel} type="button">
             ×
@@ -96,15 +98,15 @@ export function WorkspaceDirectoryPicker({
             onClick={() => setDirectory(parent(directory))}
             type="button"
           >
-            ← 上一级
+            {t("directory.up")}
           </button>
           <code>{directory}</code>
         </div>
         <div className="product-directory-browser">
-          {loading ? <span>正在读取机器目录…</span> : null}
+          {loading ? <span>{t("directory.loading")}</span> : null}
           {error === null ? null : <span className="product-form-error">{error}</span>}
           {!loading && error === null && listing?.entries.length === 0 ? (
-            <span className="product-empty-directory">这是一个空目录，可以直接选择</span>
+            <span className="product-empty-directory">{t("directory.empty")}</span>
           ) : null}
           {listing?.entries.map((entry) => (
             <button
@@ -120,21 +122,23 @@ export function WorkspaceDirectoryPicker({
                 {entry.kind === "directory" ? "📁" : entry.kind === "symlink" ? "🔗" : "📄"}
               </span>
               <strong>{entry.name}</strong>
-              <small>{entry.kind === "directory" ? "双击打开" : sizeLabel(entry.sizeBytes)}</small>
+              <small>
+                {entry.kind === "directory" ? t("directory.open") : sizeLabel(entry.sizeBytes)}
+              </small>
             </button>
           ))}
         </div>
-        <div className="product-directory-selection">当前选择：{directory}</div>
+        <div className="product-directory-selection">{t("directory.current", { directory })}</div>
         <footer>
           <button onClick={onCancel} type="button">
-            取消
+            {t("common.cancel")}
           </button>
           <button
             className="product-primary-button"
             onClick={() => onChoose(directory)}
             type="button"
           >
-            选择此目录
+            {t("directory.choose")}
           </button>
         </footer>
       </section>

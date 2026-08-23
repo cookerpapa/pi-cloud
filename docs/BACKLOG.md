@@ -26,6 +26,8 @@ retired and remain only in Git history or explicitly superseded ADRs.
 - [x] Exercise the cookie-authenticated browser API surface end to end,
       including Workspace source reads under full Cube capacity, Terminal→Run
       writer handoff, Steer, Cancel/recovery, tree operations and deletion.
+- [x] Add a browser-local Chinese/English UI preference while preserving prompts,
+      conversation content and Tool/model output byte-for-byte.
 - [x] Verify Cube destruction followed by attachment of the same persistent
       Workspace Volume to a fresh KVM.
 

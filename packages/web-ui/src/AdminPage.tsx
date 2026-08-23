@@ -7,6 +7,7 @@ import type {
 } from "@pi-cloud/protocol";
 import { PiCloudApiError, type PiCloudApi } from "./api.ts";
 import { errorMessage } from "./ui-errors.ts";
+import { LanguageSelect, useI18n } from "./i18n.tsx";
 
 export function AdminPage({
   api,
@@ -17,6 +18,7 @@ export function AdminPage({
   identity: TenantIdentityResource;
   onLogout: () => void;
 }) {
+  const { t } = useI18n();
   const [modelConfiguration, setModelConfiguration] = useState<ModelConfigurationResource | null>(
     null,
   );
@@ -47,7 +49,7 @@ export function AdminPage({
           setModelConfiguration(null);
           return;
         }
-        setError(errorMessage(caught));
+        setError(errorMessage(caught, t));
       });
     return () => {
       cancelled = true;
@@ -58,7 +60,7 @@ export function AdminPage({
     if (modelConfiguration === null || settingsSaving !== null) return;
     const apiKey = modelApiKey.trim();
     if (!/^[A-Za-z0-9._-]{16,512}$/.test(apiKey)) {
-      setError("DeepSeek API Key 格式无效。");
+      setError(t("admin.invalidApiKey"));
       return;
     }
     setSettingsSaving("model");
@@ -68,7 +70,7 @@ export function AdminPage({
       setModelConfiguration(configured);
       setModelApiKey("");
     } catch (caught: unknown) {
-      setError(errorMessage(caught));
+      setError(errorMessage(caught, t));
     } finally {
       setSettingsSaving(null);
     }
@@ -78,7 +80,7 @@ export function AdminPage({
     if (cubeProxyConfiguration === null || settingsSaving !== null) return;
     const proxyUrl = cubeProxyUrl.trim();
     if (cubeProxyEnabled && proxyUrl.length === 0) {
-      setError("启用 Cube 联网前需要填写上游代理地址。");
+      setError(t("admin.proxyRequired"));
       return;
     }
     setSettingsSaving("proxy");
@@ -92,7 +94,7 @@ export function AdminPage({
       setCubeProxyEnabled(configured.enabled);
       setCubeProxyUrl(configured.proxyUrl ?? "");
     } catch (caught: unknown) {
-      setError(errorMessage(caught));
+      setError(errorMessage(caught, t));
     } finally {
       setSettingsSaving(null);
     }
@@ -103,14 +105,15 @@ export function AdminPage({
       <header className="product-admin-header">
         <div>
           <div>
-            <strong>PiCloud 管理后台</strong>
-            <span>平台运行配置</span>
+            <strong>{t("admin.title")}</strong>
+            <span>{t("admin.subtitle")}</span>
           </div>
         </div>
         <div>
           <span>{identity.displayName}</span>
+          <LanguageSelect compact />
           <button onClick={onLogout} type="button">
-            退出登录
+            {t("admin.logout")}
           </button>
         </div>
       </header>
@@ -124,18 +127,18 @@ export function AdminPage({
       ) : null}
       <section className="product-admin-content">
         <div className="product-admin-intro">
-          <span>ADMINISTRATION</span>
-          <h1>运行配置</h1>
-          <p>配置写入持久化控制面，新任务或新连接热生效，无需重启集群。</p>
+          <span>{t("admin.administration")}</span>
+          <h1>{t("admin.runtimeConfiguration")}</h1>
+          <p>{t("admin.runtimeDescription")}</p>
         </div>
         <div className="product-admin-grid">
           <section className="product-settings-section">
             <div>
-              <h2>Pi Worker 模型</h2>
-              <p>Key 加密保存且不会进入 Cube；运行中的任务保留启动时的模型快照。</p>
+              <h2>{t("admin.workerModel")}</h2>
+              <p>{t("admin.workerModelDescription")}</p>
             </div>
             <label>
-              <span>模型</span>
+              <span>{t("admin.model")}</span>
               <select
                 disabled={settingsSaving !== null}
                 onChange={(event) => setSelectedModelId(event.target.value as DeepSeekModelId)}
@@ -151,7 +154,7 @@ export function AdminPage({
                 autoComplete="off"
                 disabled={settingsSaving !== null}
                 onChange={(event) => setModelApiKey(event.target.value)}
-                placeholder={modelConfiguration?.mode === "real" ? "输入新 Key 以轮换" : "sk-…"}
+                placeholder={modelConfiguration?.mode === "real" ? t("admin.rotateKey") : "sk-…"}
                 spellCheck={false}
                 type="password"
                 value={modelApiKey}
@@ -159,10 +162,12 @@ export function AdminPage({
             </label>
             <div className="product-settings-action">
               <small>
-                当前凭据版本{" "}
-                {modelConfiguration === null
-                  ? "读取中"
-                  : String(modelConfiguration.credentialVersion)}
+                {t("admin.credentialVersion", {
+                  version:
+                    modelConfiguration === null
+                      ? t("common.loading")
+                      : String(modelConfiguration.credentialVersion),
+                })}
               </small>
               <button
                 className="product-primary-button"
@@ -174,14 +179,14 @@ export function AdminPage({
                 onClick={() => void saveModelConfiguration()}
                 type="button"
               >
-                {settingsSaving === "model" ? "加密并发布中…" : "更新模型配置"}
+                {settingsSaving === "model" ? t("admin.encrypting") : t("admin.updateModel")}
               </button>
             </div>
           </section>
           <section className="product-settings-section">
             <div>
-              <h2>CubeSandbox 公网代理</h2>
-              <p>MicroVM 只能连接可信网关；新 HTTP/HTTPS 连接读取最新配置。</p>
+              <h2>{t("admin.proxy")}</h2>
+              <p>{t("admin.proxyDescription")}</p>
             </div>
             <label className="product-settings-toggle">
               <input
@@ -190,10 +195,10 @@ export function AdminPage({
                 onChange={(event) => setCubeProxyEnabled(event.target.checked)}
                 type="checkbox"
               />
-              <span>允许代理感知的软件访问公网 HTTP/HTTPS</span>
+              <span>{t("admin.proxyToggle")}</span>
             </label>
             <label>
-              <span>WSL / 宿主机上游代理</span>
+              <span>{t("admin.upstreamProxy")}</span>
               <input
                 autoComplete="off"
                 disabled={settingsSaving !== null}
@@ -206,10 +211,12 @@ export function AdminPage({
             </label>
             <div className="product-settings-action">
               <small>
-                当前代理版本{" "}
-                {cubeProxyConfiguration === null
-                  ? "读取中"
-                  : String(cubeProxyConfiguration.revision)}
+                {t("admin.proxyVersion", {
+                  version:
+                    cubeProxyConfiguration === null
+                      ? t("common.loading")
+                      : String(cubeProxyConfiguration.revision),
+                })}
               </small>
               <button
                 className="product-primary-button"
@@ -221,7 +228,7 @@ export function AdminPage({
                 onClick={() => void saveCubeProxyConfiguration()}
                 type="button"
               >
-                {settingsSaving === "proxy" ? "发布中…" : "应用代理配置"}
+                {settingsSaving === "proxy" ? t("admin.publishing") : t("admin.applyProxy")}
               </button>
             </div>
           </section>

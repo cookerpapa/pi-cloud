@@ -6,6 +6,7 @@ import {
   type WorkspaceTerminalClientFrame,
 } from "@pi-cloud/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useI18n } from "./i18n.tsx";
 
 type TerminalState = "disconnected" | "connecting" | "ready" | "failed";
 
@@ -45,17 +46,23 @@ export function WorkspaceTerminal({
   environmentId?: string | null;
   onError: (message: string) => void;
 }) {
+  const { t } = useI18n();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const stateRef = useRef<TerminalState>("disconnected");
   const onErrorRef = useRef(onError);
+  const tRef = useRef(t);
   const [state, setStateValue] = useState<TerminalState>("disconnected");
 
   useEffect(() => {
     onErrorRef.current = onError;
   }, [onError]);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   const setState = useCallback((next: TerminalState): void => {
     stateRef.current = next;
@@ -97,7 +104,7 @@ export function WorkspaceTerminal({
     const terminal = terminalRef.current;
     if (terminal === null) return;
     terminal.reset();
-    terminal.writeln("\x1b[38;5;245m正在启动隔离的 Workspace 终端…\x1b[0m");
+    terminal.writeln(`\x1b[38;5;245m${tRef.current("terminal.starting")}\x1b[0m`);
     setState("connecting");
     const socket = new WebSocket(
       socketUrl({
@@ -123,7 +130,7 @@ export function WorkspaceTerminal({
         } else if (frame.type === "workspace_terminal.output") {
           terminal.write(bytes(frame.data));
         } else if (frame.type === "workspace_terminal.exit") {
-          terminal.writeln("\r\n\x1b[38;5;245m终端已断开。\x1b[0m");
+          terminal.writeln(`\r\n\x1b[38;5;245m${tRef.current("terminal.disconnected")}\x1b[0m`);
           setState("disconnected");
         } else if (frame.type === "workspace_terminal.error") {
           terminal.writeln(`\r\n\x1b[31m${frame.message}\x1b[0m`);
@@ -131,19 +138,19 @@ export function WorkspaceTerminal({
           onErrorRef.current(frame.message);
         }
       } catch {
-        terminal.writeln("\r\n\x1b[31m终端返回了无效数据。\x1b[0m");
+        terminal.writeln(`\r\n\x1b[31m${tRef.current("terminal.invalidData")}\x1b[0m`);
         setState("failed");
       }
     });
     socket.addEventListener("close", () => {
       if (socketRef.current === socket) socketRef.current = null;
       if (stateRef.current === "ready" || stateRef.current === "connecting") {
-        terminal.writeln("\r\n\x1b[38;5;245m终端连接已关闭。\x1b[0m");
+        terminal.writeln(`\r\n\x1b[38;5;245m${tRef.current("terminal.closed")}\x1b[0m`);
         setState("disconnected");
       }
     });
     socket.addEventListener("error", () => {
-      terminal.writeln("\r\n\x1b[31m无法连接 Workspace 终端。\x1b[0m");
+      terminal.writeln(`\r\n\x1b[31m${tRef.current("terminal.connectionFailed")}\x1b[0m`);
       setState("failed");
     });
   }, [environmentId, sessionId, setState, transmit]);
@@ -175,12 +182,12 @@ export function WorkspaceTerminal({
       setState("failed");
       onErrorRef.current(
         error instanceof Error && error.message
-          ? `Workspace 终端初始化失败：${error.message}`
-          : "Workspace 终端初始化失败。",
+          ? tRef.current("terminal.initializationFailed", { message: error.message })
+          : tRef.current("terminal.initializationFailedGeneric"),
       );
       return;
     }
-    terminal.writeln("\x1b[38;5;245m点击“连接终端”进入 /workspace。\x1b[0m");
+    terminal.writeln(`\x1b[38;5;245m${tRef.current("terminal.connectHint")}\x1b[0m`);
     terminalRef.current = terminal;
     fitRef.current = fit;
     const input = terminal.onData((data) => {
@@ -227,21 +234,21 @@ export function WorkspaceTerminal({
   useEffect(() => disconnect, [disconnect, environmentId, sessionId]);
 
   return (
-    <section className="workspace-terminal-panel" aria-label="Workspace 终端">
+    <section className="workspace-terminal-panel" aria-label={t("terminal.label")}>
       <div className="workspace-terminal-toolbar">
         <div>
-          <strong>隔离终端</strong>
+          <strong>{t("terminal.title")}</strong>
           <small>
             {state === "ready"
-              ? "已连接 · /workspace"
+              ? t("terminal.connected")
               : state === "connecting"
-                ? "正在启动 Cube KVM"
-                : "未连接"}
+                ? t("terminal.startingCube")
+                : t("terminal.notConnected")}
           </small>
         </div>
         {state === "ready" || state === "connecting" ? (
           <button onClick={disconnect} type="button">
-            断开
+            {t("terminal.disconnect")}
           </button>
         ) : (
           <button
@@ -252,14 +259,14 @@ export function WorkspaceTerminal({
             onClick={connect}
             type="button"
           >
-            {state === "failed" ? "重新连接" : "连接终端"}
+            {state === "failed" ? t("terminal.reconnect") : t("terminal.connect")}
           </button>
         )}
       </div>
       <p className="workspace-terminal-notice">
         {environmentId === null || environmentId === undefined
-          ? "连接期间 Agent 不会同时修改此 Workspace；断开后文件仍会保留，但这个临时终端的进程不会保留。"
-          : "断开只关闭当前 PTY；独占 Cube、后台进程与 Workspace 会继续运行，直到暂停或释放环境。"}
+          ? t("terminal.elasticBoundary")
+          : t("terminal.exclusiveBoundary")}
       </p>
       <div className="workspace-terminal-host" ref={hostRef} />
     </section>

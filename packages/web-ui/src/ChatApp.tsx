@@ -33,36 +33,63 @@ import { WorkspaceInspector } from "./WorkspaceInspector.tsx";
 import { WorkspaceDirectoryPicker } from "./WorkspaceDirectoryPicker.tsx";
 import { ResourceManagementPage } from "./ResourceManagementPage.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";
+import { LanguageSelect, useI18n, type Translate, type UiLanguage } from "./i18n.tsx";
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
 
-function conversationTitle(prompt: string): string {
+function conversationTitle(prompt: string, fallback: string): string {
   const compact = prompt.replace(/\s+/g, " ").trim();
-  return compact.length > 54 ? `${compact.slice(0, 54)}…` : compact || "新对话";
+  return compact.length > 54 ? `${compact.slice(0, 54)}…` : compact || fallback;
 }
 
-function relativeTime(value: string): string {
+function relativeTime(value: string, language: UiLanguage, t: Translate): string {
   const timestamp = new Date(value).valueOf();
   if (!Number.isFinite(timestamp)) return "";
   const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1_000));
-  if (seconds < 60) return "刚刚";
-  if (seconds < 3_600) return `${String(Math.floor(seconds / 60))} 分钟前`;
-  if (seconds < 86_400) return `${String(Math.floor(seconds / 3_600))} 小时前`;
-  if (seconds < 604_800) return `${String(Math.floor(seconds / 86_400))} 天前`;
-  return new Date(value).toLocaleDateString();
+  if (seconds < 60) return t("chat.relative.now");
+  if (seconds < 3_600) return t("chat.relative.minutes", { count: Math.floor(seconds / 60) });
+  if (seconds < 86_400) return t("chat.relative.hours", { count: Math.floor(seconds / 3_600) });
+  if (seconds < 604_800) return t("chat.relative.days", { count: Math.floor(seconds / 86_400) });
+  return new Date(value).toLocaleDateString(language);
 }
 
-function delegatedContextLabel(mode: DelegatedSessionSummaryResource["contextMode"]): string {
-  return mode === "fork" ? "继承上下文" : "独立上下文";
+function delegatedContextLabel(
+  mode: DelegatedSessionSummaryResource["contextMode"],
+  t: Translate,
+): string {
+  return mode === "fork" ? t("chat.context.inherited") : t("chat.context.fresh");
 }
 
-function delegatedWorkspaceLabel(mode: DelegatedSessionSummaryResource["workspaceMode"]): string {
-  if (mode === "shared_serialized") return "共享工作区";
-  if (mode === "isolated") return "隔离工作区";
-  return "无工具";
+function delegatedWorkspaceLabel(
+  mode: DelegatedSessionSummaryResource["workspaceMode"],
+  t: Translate,
+): string {
+  if (mode === "shared_serialized") return t("chat.workspace.shared");
+  if (mode === "isolated") return t("chat.workspace.isolated");
+  return t("chat.workspace.none");
+}
+
+function delegatedStateLabel(
+  state: DelegatedSessionSummaryResource["state"],
+  t: Translate,
+): string {
+  if (state === "queued") return t("chat.state.queued");
+  if (state === "running") return t("chat.state.running");
+  if (state === "completed") return t("chat.state.completed");
+  if (state === "failed") return t("chat.state.failed");
+  if (state === "cancelled") return t("chat.state.cancelled");
+  return state;
+}
+
+function developmentStateLabel(
+  state: DevelopmentEnvironmentResource["state"],
+  t: Translate,
+): string {
+  return t(`resource.state.${state}` as const);
 }
 
 export default function ChatApp() {
+  const { language, t } = useI18n();
   const api = useMemo(() => new PiCloudApi(), []);
   const [authPhase, setAuthPhase] = useState<AuthPhase>("checking");
   const [identity, setIdentity] = useState<TenantIdentityResource | null>(null);
@@ -328,7 +355,7 @@ export default function ChatApp() {
         }
       },
       (error: unknown) => {
-        if (!cancelled) update({ type: "api.error", message: errorMessage(error) });
+        if (!cancelled) update({ type: "api.error", message: errorMessage(error, t) });
       },
     );
     return () => {
@@ -339,14 +366,14 @@ export default function ChatApp() {
   useEffect(() => {
     if (authPhase !== "authenticated" || identity?.platformAdministrator === true) return;
     void refreshWorkspaces().catch((error: unknown) => {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     });
   }, [authPhase, identity?.platformAdministrator, identity?.tenantId, refreshWorkspaces, update]);
 
   useEffect(() => {
     if (authPhase !== "authenticated" || identity?.platformAdministrator === true) return;
     void refreshDevelopmentEnvironments().catch((error: unknown) => {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     });
   }, [
     authPhase,
@@ -386,7 +413,7 @@ export default function ChatApp() {
           if (!cancelled) setConversationTree(tree);
         },
         (error: unknown) => {
-          if (!cancelled) update({ type: "api.error", message: errorMessage(error) });
+          if (!cancelled) update({ type: "api.error", message: errorMessage(error, t) });
         },
       )
       .finally(() => {
@@ -433,7 +460,7 @@ export default function ChatApp() {
       },
     }).catch(() => {
       if (!controller.signal.aborted) {
-        update({ type: "api.error", message: "实时连接已中断，正在等待重新连接。" });
+        update({ type: "api.error", message: t("chat.streamDisconnected") });
       }
     });
     return () => controller.abort();
@@ -446,6 +473,7 @@ export default function ChatApp() {
     refreshConversationTree,
     state.session?.sessionId,
     treeView,
+    t,
     update,
   ]);
 
@@ -592,7 +620,7 @@ export default function ChatApp() {
       if (jumpTarget !== undefined) setPendingTreeJump(jumpTarget);
       setSidebarOpen(false);
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setConversationLoading(null);
     }
@@ -633,7 +661,7 @@ export default function ChatApp() {
         refreshConversations(),
       ]);
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setOperation(null);
     }
@@ -647,9 +675,7 @@ export default function ChatApp() {
     if (
       operation !== null ||
       state.session?.sessionId !== target.sourceSessionId ||
-      !window.confirm(
-        "保留这条回复，删除它之后的对话、分支和 Subagent 记录？Workspace 文件不会回滚。",
-      )
+      !window.confirm(t("chat.pruneConfirm"))
     ) {
       return;
     }
@@ -675,7 +701,7 @@ export default function ChatApp() {
         refreshWorkspaces(),
       ]);
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setOperation(null);
     }
@@ -684,7 +710,9 @@ export default function ChatApp() {
   function beginNewConversation(initialPrompt: string | null = null): void {
     resetConversation();
     setPendingInitialPrompt(initialPrompt);
-    setNewConversationTitle(initialPrompt === null ? "" : conversationTitle(initialPrompt));
+    setNewConversationTitle(
+      initialPrompt === null ? "" : conversationTitle(initialPrompt, t("chat.newConversation")),
+    );
     setWorkspaceChoice(elasticWorkspaces.length === 0 ? "new" : "existing");
     setSelectedWorkspaceId(elasticWorkspaces[0]?.workspaceId ?? "");
     setNewWorkspaceName("");
@@ -720,7 +748,7 @@ export default function ChatApp() {
             )
           : undefined;
       if (executionMode === "exclusive" && existingEnvironment === undefined) {
-        update({ type: "api.error", message: "请选择一个可用的独享运行环境。" });
+        update({ type: "api.error", message: t("chat.selectExclusiveError") });
         return;
       }
       if (existingEnvironment?.state === "paused") {
@@ -744,7 +772,7 @@ export default function ChatApp() {
           (workspace) => workspace.workspaceId === selectedWorkspaceId,
         );
         if (selected === undefined) {
-          update({ type: "api.error", message: "请选择一个 Workspace。" });
+          update({ type: "api.error", message: t("chat.selectWorkspaceError") });
           return;
         }
         projectId = selected.projectId;
@@ -784,7 +812,7 @@ export default function ChatApp() {
       }
       setPendingInitialPrompt(null);
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setOperation(null);
     }
@@ -808,7 +836,7 @@ export default function ChatApp() {
       }
       setDirectoryPickerOpen(true);
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
       await refreshDevelopmentEnvironments().catch(() => undefined);
     } finally {
       setOperation(null);
@@ -823,8 +851,8 @@ export default function ChatApp() {
       operation !== null ||
       !window.confirm(
         deletesChildren
-          ? `删除对话“${conversation.title}”及其全部分支和 Subagent？Workspace 文件不会被删除。`
-          : `删除对话“${conversation.title}”？Workspace 文件不会被删除。`,
+          ? t("chat.deleteTreeConfirm", { title: conversation.title })
+          : t("chat.deleteConfirm", { title: conversation.title }),
       )
     ) {
       return;
@@ -835,7 +863,7 @@ export default function ChatApp() {
       if (state.session?.sessionId === conversation.sessionId) resetConversation();
       await Promise.all([refreshConversations(), refreshWorkspaces()]);
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setOperation(null);
     }
@@ -871,7 +899,7 @@ export default function ChatApp() {
       await Promise.all([refreshConversations(), refreshWorkspaces()]);
       focusComposer();
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setOperation(null);
     }
@@ -885,7 +913,7 @@ export default function ChatApp() {
     try {
       setSshTicket(await api.issueSshAccessTicket(sessionId));
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setOperation(null);
     }
@@ -914,7 +942,7 @@ export default function ChatApp() {
       setPrompt("");
       await refreshConversations();
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setOperation(null);
       focusComposer();
@@ -932,7 +960,7 @@ export default function ChatApp() {
       );
       update({ type: "turn.cancellation.requested", turnId: currentTurn.turnId });
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setOperation(null);
       focusComposer();
@@ -960,9 +988,9 @@ export default function ChatApp() {
         newIdempotencyKey("steer"),
       );
       setPrompt("");
-      setSteerNotice("已引导当前任务；Pi 会在当前工具调用结束后、下一次模型调用前处理。");
+      setSteerNotice(t("chat.steerAccepted"));
     } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
+      update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
       setOperation(null);
     }
@@ -993,8 +1021,10 @@ export default function ChatApp() {
               {delegated.agentName} · Subagent
             </strong>
             <small>
-              第 {delegated.depth} 层 · {delegatedContextLabel(delegated.contextMode)} ·{" "}
-              {delegatedWorkspaceLabel(delegated.workspaceMode)} · {delegated.state}
+              {t("chat.subagentDepth", { depth: delegated.depth })} ·{" "}
+              {delegatedContextLabel(delegated.contextMode, t)} ·{" "}
+              {delegatedWorkspaceLabel(delegated.workspaceMode, t)} ·{" "}
+              {delegatedStateLabel(delegated.state, t)}
             </small>
           </button>
         </div>
@@ -1024,15 +1054,15 @@ export default function ChatApp() {
               {conversation.title}
             </strong>
             <small>
-              {conversation.workspaceName} · {relativeTime(conversation.lastActiveAt)}
+              {conversation.workspaceName} · {relativeTime(conversation.lastActiveAt, language, t)}
             </small>
           </button>
           <button
-            aria-label={`删除对话 ${conversation.title}`}
+            aria-label={t("chat.deleteConversation", { title: conversation.title })}
             className="product-delete-conversation"
             disabled={conversationLoading !== null || operation !== null}
             onClick={() => void deleteConversation(conversation)}
-            title="删除对话"
+            title={t("common.delete")}
             type="button"
           >
             ×
@@ -1047,7 +1077,11 @@ export default function ChatApp() {
   if (authPhase === "checking") {
     return (
       <main className="product-loading-page">
-        <div aria-label="正在恢复登录状态" className="product-loading-indicator" role="status" />
+        <div
+          aria-label={t("chat.loadingIdentity")}
+          className="product-loading-indicator"
+          role="status"
+        />
       </main>
     );
   }
@@ -1087,7 +1121,7 @@ export default function ChatApp() {
   return (
     <div className="product-shell">
       <button
-        aria-label="关闭侧边栏"
+        aria-label={t("chat.sidebar.close")}
         className={`product-sidebar-backdrop ${sidebarOpen ? "visible" : ""}`}
         onClick={() => setSidebarOpen(false)}
         type="button"
@@ -1099,15 +1133,21 @@ export default function ChatApp() {
         style={{ width: conversationPanel.collapsed ? 42 : conversationPanel.width }}
       >
         <button
-          aria-label={conversationPanel.collapsed ? "展开会话列表" : "收起会话列表"}
+          aria-label={
+            conversationPanel.collapsed ? t("chat.sidebar.expand") : t("chat.sidebar.collapse")
+          }
           className="product-panel-collapse"
           onClick={conversationPanel.toggle}
-          title={conversationPanel.collapsed ? "展开会话列表" : "收起会话列表"}
+          title={
+            conversationPanel.collapsed ? t("chat.sidebar.expand") : t("chat.sidebar.collapse")
+          }
           type="button"
         >
           {conversationPanel.collapsed ? "›" : "‹"}
         </button>
-        {conversationPanel.collapsed ? <span className="product-collapsed-label">会话</span> : null}
+        {conversationPanel.collapsed ? (
+          <span className="product-collapsed-label">{t("chat.sidebar.label")}</span>
+        ) : null}
         <div className="product-panel-content product-sidebar-content">
           <div className="product-sidebar-actions">
             <button
@@ -1115,18 +1155,18 @@ export default function ChatApp() {
               onClick={() => beginNewConversation()}
               type="button"
             >
-              <span>＋</span> 新对话
+              <span>＋</span> {t("chat.newConversation")}
             </button>
             <button
               className="product-resource-nav"
               onClick={() => setResourcePageOpen(true)}
               type="button"
             >
-              <span>▦</span> 资源管理
+              <span>▦</span> {t("chat.resources")}
             </button>
           </div>
-          <nav className="product-conversation-list" aria-label="对话列表">
-            <span className="product-sidebar-label">最近对话</span>
+          <nav className="product-conversation-list" aria-label={t("chat.sidebar.label")}>
+            <span className="product-sidebar-label">{t("chat.recent")}</span>
             {conversations.length === 0 ? (
               <div className="product-conversation-empty" aria-hidden="true" />
             ) : (
@@ -1138,10 +1178,11 @@ export default function ChatApp() {
               {(identity.username ?? identity.displayName).slice(0, 1).toUpperCase()}
             </div>
             <strong>{identity.username ?? identity.displayName}</strong>
+            <LanguageSelect compact />
             <button
-              aria-label="退出登录"
+              aria-label={t("chat.logout")}
               onClick={() => void logout()}
-              title="退出登录"
+              title={t("chat.logout")}
               type="button"
             >
               ↪
@@ -1150,7 +1191,7 @@ export default function ChatApp() {
         </div>
         {conversationPanel.collapsed ? null : (
           <div
-            aria-label="调整会话列表宽度"
+            aria-label={t("chat.sidebar.resize")}
             className="product-panel-resizer"
             onKeyDown={(event) => {
               if (event.key === "ArrowLeft")
@@ -1189,30 +1230,32 @@ export default function ChatApp() {
             ☰
           </button>
           <div className="product-topbar-title">
-            <strong>{state.session?.title ?? "新对话"}</strong>
+            <strong>{state.session?.title ?? t("chat.newConversation")}</strong>
             {selectedDelegatedSession === null ? null : (
               <span className="product-delegated-title">
                 {selectedDelegatedSession.agentName} ·{" "}
-                {delegatedContextLabel(selectedDelegatedSession.contextMode)} ·{" "}
-                {delegatedWorkspaceLabel(selectedDelegatedSession.workspaceMode)} · 只读
+                {delegatedContextLabel(selectedDelegatedSession.contextMode, t)} ·{" "}
+                {delegatedWorkspaceLabel(selectedDelegatedSession.workspaceMode, t)} ·{" "}
+                {t("chat.readOnly")}
               </span>
             )}
             {state.project ? (
               <span>
                 {currentDevelopmentEnvironment === undefined
-                  ? `/workspace · ${state.project.name} · 弹性执行`
-                  : `${state.session?.workingDirectory ?? "/workspace"} · 独享环境 ${currentDevelopmentEnvironment.environmentId.slice(
-                      0,
-                      8,
-                    )} · ${String(currentDevelopmentEnvironment.cpuCount)}C/${String(
+                  ? `/workspace · ${state.project.name} · ${t("chat.elastic")}`
+                  : `${state.session?.workingDirectory ?? "/workspace"} · ${t("chat.exclusive", {
+                      id: currentDevelopmentEnvironment.environmentId.slice(0, 8),
+                    })} · ${String(currentDevelopmentEnvironment.cpuCount)}C/${String(
                       currentDevelopmentEnvironment.memoryMiB / 1024,
                     )}G`}
-                {state.session?.workspaceState === "missing" ? " · Workspace 已删除" : ""}
+                {state.session?.workspaceState === "missing"
+                  ? ` · ${t("chat.workspaceDeleted")}`
+                  : ""}
               </span>
             ) : null}
             {state.session ? (
               <span className={state.connection.phase === "live" ? "online" : ""}>
-                {state.connection.phase === "live" ? "已连接" : "连接中"}
+                {state.connection.phase === "live" ? t("chat.connected") : t("chat.connecting")}
               </span>
             ) : null}
             {state.session?.sandboxRetention !== "persistent" ||
@@ -1221,10 +1264,10 @@ export default function ChatApp() {
                 <button
                   disabled={currentTurn !== undefined || operation !== null}
                   onClick={() => void createSshTicket()}
-                  title="仅独享运行环境支持 SSH"
+                  title={t("chat.sshExclusiveOnly")}
                   type="button"
                 >
-                  SSH
+                  {t("chat.ssh")}
                 </button>
               </div>
             )}
@@ -1232,7 +1275,7 @@ export default function ChatApp() {
           <div className="product-topbar-actions">
             {state.connection.phase === "failed" ? (
               <button onClick={() => setReconnectGeneration((value) => value + 1)} type="button">
-                重新连接
+                {t("chat.reconnect")}
               </button>
             ) : null}
             <button
@@ -1240,12 +1283,12 @@ export default function ChatApp() {
               onClick={() => setInspectorOpen((value) => !value)}
               title={
                 selectedDelegatedSession === null
-                  ? "查看 Workspace"
-                  : "Subagent 执行记录为只读；请从父会话查看 Workspace"
+                  ? t("chat.inspectWorkspace")
+                  : t("chat.inspectParentWorkspace")
               }
               type="button"
             >
-              工作区
+              {t("chat.workspaceButton")}
             </button>
           </div>
         </header>
@@ -1261,7 +1304,7 @@ export default function ChatApp() {
             >
               <header>
                 <div>
-                  <h2>新建对话</h2>
+                  <h2>{t("chat.create.title")}</h2>
                 </div>
                 <button
                   onClick={() => {
@@ -1274,7 +1317,7 @@ export default function ChatApp() {
                 </button>
               </header>
               <fieldset className="product-workspace-choice product-execution-mode-choice">
-                <legend>选择运行方式</legend>
+                <legend>{t("chat.create.executionMode")}</legend>
                 <label className="product-choice-card">
                   <input
                     checked={executionMode === "elastic"}
@@ -1282,7 +1325,7 @@ export default function ChatApp() {
                     type="radio"
                   />
                   <span>
-                    <strong>弹性执行（推荐）</strong>
+                    <strong>{t("chat.create.elasticRecommended")}</strong>
                   </span>
                 </label>
                 <label className="product-choice-card">
@@ -1295,7 +1338,7 @@ export default function ChatApp() {
                     type="radio"
                   />
                   <span>
-                    <strong>独享运行环境</strong>
+                    <strong>{t("chat.create.exclusive")}</strong>
                   </span>
                 </label>
               </fieldset>
@@ -1303,12 +1346,12 @@ export default function ChatApp() {
               {executionMode === null ? null : (
                 <div className="product-progressive-options">
                   <label>
-                    <span>对话标题</span>
+                    <span>{t("chat.create.conversationTitle")}</span>
                     <input
                       autoFocus
                       maxLength={256}
                       onChange={(event) => setNewConversationTitle(event.target.value)}
-                      placeholder="例如：修复订单服务的并发问题"
+                      placeholder={t("chat.create.titlePlaceholder")}
                       required
                       value={newConversationTitle}
                     />
@@ -1318,7 +1361,7 @@ export default function ChatApp() {
                     <fieldset className="product-workspace-choice">
                       <legend>Workspace</legend>
                       <label>
-                        <span>选择已有 Workspace 或新建</span>
+                        <span>{t("chat.create.workspaceSelect")}</span>
                         <select
                           onChange={(event) => {
                             const value = event.target.value;
@@ -1329,29 +1372,32 @@ export default function ChatApp() {
                         >
                           {elasticWorkspaces.map((workspace) => (
                             <option key={workspace.workspaceId} value={workspace.workspaceId}>
-                              {workspace.name} · {String(workspace.sessionCount)} 个对话
+                              {t("chat.create.workspaceSessions", {
+                                name: workspace.name,
+                                count: workspace.sessionCount,
+                              })}
                             </option>
                           ))}
-                          <option value="__new__">＋ 新建 Workspace</option>
+                          <option value="__new__">{t("chat.create.newWorkspace")}</option>
                         </select>
                       </label>
                       {workspaceChoice === "new" ? (
                         <label>
-                          <span>Workspace 名称</span>
+                          <span>{t("chat.create.workspaceName")}</span>
                           <input
                             maxLength={256}
                             onChange={(event) => setNewWorkspaceName(event.target.value)}
-                            placeholder="例如：order-service"
+                            placeholder={t("chat.create.workspacePlaceholder")}
                             required
                             value={newWorkspaceName}
                           />
                         </label>
                       ) : null}
-                      <legend>弹性沙箱规格</legend>
+                      <legend>{t("chat.create.elasticProfile")}</legend>
                       <div
                         className="product-resource-profiles"
                         role="radiogroup"
-                        aria-label="弹性沙箱规格"
+                        aria-label={t("chat.create.elasticProfile")}
                       >
                         {developmentProfiles.map((profile) => (
                           <button
@@ -1366,19 +1412,21 @@ export default function ChatApp() {
                               <strong>
                                 {String(profile.cpuCount)}C / {String(profile.memoryMiB / 1024)}G
                               </strong>
-                              {profile.recommended ? <em>推荐</em> : null}
+                              {profile.recommended ? <em>{t("chat.create.recommended")}</em> : null}
                             </span>
-                            <small>{String(profile.systemDiskGiB)}G 系统盘</small>
+                            <small>
+                              {t("chat.create.systemDisk", { size: profile.systemDiskGiB })}
+                            </small>
                           </button>
                         ))}
                       </div>
                     </fieldset>
                   ) : (
                     <fieldset className="product-workspace-choice product-exclusive-environment-choice">
-                      <legend>独享运行环境</legend>
+                      <legend>{t("chat.create.exclusive")}</legend>
                       {selectableDevelopmentEnvironments.length === 0 ? (
                         <div className="product-resource-boundary-note">
-                          还没有可用的独享环境。请先到资源管理页申请。
+                          {t("chat.create.noExclusive")}
                           <button
                             onClick={() => {
                               setWorkspacePanelOpen(false);
@@ -1386,13 +1434,13 @@ export default function ChatApp() {
                             }}
                             type="button"
                           >
-                            前往资源管理
+                            {t("chat.create.openResources")}
                           </button>
                         </div>
                       ) : (
                         <>
                           <label>
-                            <span>选择独享 CubeSandbox</span>
+                            <span>{t("chat.create.selectExclusive")}</span>
                             <select
                               onChange={(event) => {
                                 setSelectedDevelopmentEnvironmentId(event.target.value);
@@ -1405,23 +1453,26 @@ export default function ChatApp() {
                                   key={environment.environmentId}
                                   value={environment.environmentId}
                                 >
-                                  独享环境 {environment.environmentId.slice(0, 8)} ·{" "}
-                                  {String(environment.cpuCount)}C/
-                                  {String(environment.memoryMiB / 1024)}G · {environment.state}
+                                  {t("chat.create.exclusiveOption", {
+                                    id: environment.environmentId.slice(0, 8),
+                                    cpu: environment.cpuCount,
+                                    memory: environment.memoryMiB / 1024,
+                                    state: developmentStateLabel(environment.state, t),
+                                  })}
                                 </option>
                               ))}
                             </select>
                           </label>
                           <div className="product-working-directory-choice">
                             <div>
-                              <span>工作目录</span>
+                              <span>{t("chat.create.workingDirectory")}</span>
                               <code>{workingDirectory}</code>
                             </div>
                             <button
                               onClick={() => void openEnvironmentDirectoryPicker()}
                               type="button"
                             >
-                              选择目录…
+                              {t("chat.create.chooseDirectory")}
                             </button>
                           </div>
                         </>
@@ -1438,7 +1489,7 @@ export default function ChatApp() {
                   }}
                   type="button"
                 >
-                  取消
+                  {t("common.cancel")}
                 </button>
                 <button
                   className="product-primary-button"
@@ -1452,7 +1503,7 @@ export default function ChatApp() {
                   }
                   type="submit"
                 >
-                  {operation === "creating" ? "创建中…" : "创建对话"}
+                  {operation === "creating" ? t("chat.create.creating") : t("chat.create.submit")}
                 </button>
               </footer>
             </form>
@@ -1475,7 +1526,9 @@ export default function ChatApp() {
                     setWorkingDirectory(directory);
                     setDirectoryPickerOpen(false);
                   }}
-                  workspaceName={`独享环境 ${environment.environmentId.slice(0, 8)}`}
+                  workspaceName={t("chat.exclusive", {
+                    id: environment.environmentId.slice(0, 8),
+                  })}
                 />
               );
             })()
@@ -1492,15 +1545,15 @@ export default function ChatApp() {
             >
               <header>
                 <div>
-                  <h2>为对话选择新的 Workspace</h2>
-                  <p>对话历史仍然完整；原 Workspace 文件已被删除。重新绑定后即可继续。</p>
+                  <h2>{t("chat.rebind.title")}</h2>
+                  <p>{t("chat.rebind.description")}</p>
                 </div>
                 <button onClick={() => setWorkspaceRebindOpen(false)} type="button">
                   ×
                 </button>
               </header>
               <fieldset className="product-workspace-choice">
-                <legend>新的 Workspace</legend>
+                <legend>{t("chat.rebind.workspace")}</legend>
                 {elasticWorkspaces.length > 0 ? (
                   <label className="product-choice-card">
                     <input
@@ -1509,8 +1562,8 @@ export default function ChatApp() {
                       type="radio"
                     />
                     <span>
-                      <strong>选择已有 Workspace</strong>
-                      <small>使用其中当前的文件状态继续这段对话</small>
+                      <strong>{t("chat.rebind.existing")}</strong>
+                      <small>{t("chat.rebind.existingDescription")}</small>
                     </span>
                   </label>
                 ) : null}
@@ -1533,22 +1586,22 @@ export default function ChatApp() {
                     type="radio"
                   />
                   <span>
-                    <strong>创建新 Workspace</strong>
-                    <small>创建空目录并将这段对话绑定过去</small>
+                    <strong>{t("chat.rebind.new")}</strong>
+                    <small>{t("chat.rebind.newDescription")}</small>
                   </span>
                 </label>
                 {rebindWorkspaceChoice === "new" ? (
                   <input
                     maxLength={256}
                     onChange={(event) => setRebindWorkspaceName(event.target.value)}
-                    placeholder="例如：recovered-order-service"
+                    placeholder={t("chat.rebind.placeholder")}
                     value={rebindWorkspaceName}
                   />
                 ) : null}
               </fieldset>
               <footer>
                 <button onClick={() => setWorkspaceRebindOpen(false)} type="button">
-                  取消
+                  {t("common.cancel")}
                 </button>
                 <button
                   className="product-primary-button"
@@ -1559,7 +1612,9 @@ export default function ChatApp() {
                   }
                   type="submit"
                 >
-                  {operation === "rebinding-workspace" ? "绑定中…" : "绑定并继续"}
+                  {operation === "rebinding-workspace"
+                    ? t("chat.rebind.binding")
+                    : t("chat.rebind.submit")}
                 </button>
               </footer>
             </form>
@@ -1571,9 +1626,11 @@ export default function ChatApp() {
             <section className="product-workspace-modal product-ssh-ticket-modal">
               <header>
                 <div>
-                  <h2>通过 SSH 连接独享环境</h2>
+                  <h2>{t("chat.ssh.title")}</h2>
                   <p>
-                    凭据只能使用一次，并在 {new Date(sshTicket.expiresAt).toLocaleString()} 失效。
+                    {t("chat.ssh.expires", {
+                      time: new Date(sshTicket.expiresAt).toLocaleString(language),
+                    })}
                   </p>
                 </div>
                 <button onClick={() => setSshTicket(null)} type="button">
@@ -1581,30 +1638,27 @@ export default function ChatApp() {
                 </button>
               </header>
               <label>
-                <span>一行连接（需要本机安装 sshpass）</span>
+                <span>{t("chat.ssh.oneLine")}</span>
                 <code>{sshTicket.oneLineCommand}</code>
               </label>
               <label>
-                <span>手动连接</span>
+                <span>{t("chat.ssh.manual")}</span>
                 <code>{sshTicket.command}</code>
               </label>
-              <p className="product-resource-boundary-note">
-                一行命令会把一次性密码放入当前 Shell 命令，请勿分享或保存到脚本。地址由部署方的 SSH
-                advertised host 决定；公网服务器应配置公网 IP 或域名，而不是自动替换 127.0.0.1。
-              </p>
+              <p className="product-resource-boundary-note">{t("chat.ssh.warning")}</p>
               <footer>
                 <button
                   onClick={() => void navigator.clipboard.writeText(sshTicket.oneLineCommand)}
                   type="button"
                 >
-                  复制一行命令
+                  {t("chat.ssh.copyCommand")}
                 </button>
                 <button
                   className="product-primary-button"
                   onClick={() => void navigator.clipboard.writeText(sshTicket.password)}
                   type="button"
                 >
-                  复制密码
+                  {t("chat.ssh.copyPassword")}
                 </button>
               </footer>
             </section>
@@ -1622,8 +1676,8 @@ export default function ChatApp() {
             >
               <header>
                 <div>
-                  <h2>从此对话开始</h2>
-                  <p>复制这里之前的 Pi 对话上下文并创建一条新分支。</p>
+                  <h2>{t("chat.fork.title")}</h2>
+                  <p>{t("chat.fork.description")}</p>
                 </div>
                 <button
                   onClick={() => {
@@ -1636,20 +1690,16 @@ export default function ChatApp() {
                 </button>
               </header>
               <label>
-                <span>分支名称（可选）</span>
+                <span>{t("chat.fork.name")}</span>
                 <input
                   autoFocus
                   maxLength={256}
                   onChange={(event) => setForkTitle(event.target.value)}
-                  placeholder="例如：改用事件驱动方案"
+                  placeholder={t("chat.fork.placeholder")}
                   value={forkTitle}
                 />
               </label>
-              <p className="product-fork-note">
-                Workspace 继续使用当前目录；此操作只分叉对话上下文，不会把文件回退到历史状态。
-                分支首次调用工具时会取得这个 Workspace
-                的执行权；其他分支持久沙箱里的后台进程不会跨分支保留。
-              </p>
+              <p className="product-fork-note">{t("chat.fork.warning")}</p>
               <footer>
                 <button
                   onClick={() => {
@@ -1658,14 +1708,14 @@ export default function ChatApp() {
                   }}
                   type="button"
                 >
-                  取消
+                  {t("common.cancel")}
                 </button>
                 <button
                   className="product-primary-button"
                   disabled={operation !== null}
                   type="submit"
                 >
-                  {operation === "forking" ? "创建中…" : "创建分支"}
+                  {operation === "forking" ? t("chat.fork.creating") : t("chat.fork.submit")}
                 </button>
               </footer>
             </form>
@@ -1683,7 +1733,7 @@ export default function ChatApp() {
 
         {state.session?.workspaceState === "missing" ? (
           <div className="product-workspace-missing-banner">
-            <span>这个对话的 Workspace 已被删除，但对话历史仍可查看。</span>
+            <span>{t("chat.missingWorkspace")}</span>
             <button
               disabled={!canMutate}
               onClick={() => {
@@ -1694,7 +1744,7 @@ export default function ChatApp() {
               }}
               type="button"
             >
-              选择新的 Workspace
+              {t("chat.chooseWorkspace")}
             </button>
           </div>
         ) : null}
@@ -1717,8 +1767,8 @@ export default function ChatApp() {
                 {state.inheritedMessages.length === 0 ? null : (
                   <section className="product-inherited-context">
                     <header>
-                      <strong>继承的对话上下文</strong>
-                      <span>以下内容来自 Subagent 创建时的父会话快照</span>
+                      <strong>{t("chat.inherited.title")}</strong>
+                      <span>{t("chat.inherited.description")}</span>
                     </header>
                     {state.inheritedMessages.map((message) => (
                       <div
@@ -1741,7 +1791,7 @@ export default function ChatApp() {
                       </div>
                     ))}
                     <div className="product-inherited-divider">
-                      <span>Subagent 独立执行从这里开始</span>
+                      <span>{t("chat.inherited.divider")}</span>
                     </div>
                   </section>
                 )}
@@ -1792,7 +1842,7 @@ export default function ChatApp() {
               }}
               type="button"
             >
-              回到最新 ↓
+              {t("chat.latest")}
             </button>
           )}
           {inspectorOpen ? (
@@ -1810,13 +1860,11 @@ export default function ChatApp() {
 
         <footer className="product-composer-area">
           {selectedDelegatedSession === null ? null : (
-            <div className="product-delegated-readonly">
-              这是一次 Subagent 执行记录。后续消息请回到父会话发送。
-            </div>
+            <div className="product-delegated-readonly">{t("chat.subagentReadOnly")}</div>
           )}
           <div className="product-composer">
             <textarea
-              aria-label="发送消息"
+              aria-label={t("chat.sendLabel")}
               disabled={!canMutate || !canQueue}
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={(event) => {
@@ -1825,7 +1873,7 @@ export default function ChatApp() {
                   void submitTurn();
                 }
               }}
-              placeholder={currentTurn ? "继续输入，消息会在当前任务后执行" : "给 PiCloud 发送消息"}
+              placeholder={currentTurn ? t("chat.queuePlaceholder") : t("chat.promptPlaceholder")}
               ref={composerRef}
               rows={1}
               value={prompt}
@@ -1836,15 +1884,15 @@ export default function ChatApp() {
                   className="product-steer-button"
                   disabled={!prompt.trim() || operation !== null}
                   onClick={() => void steerTurn()}
-                  title="将这条消息注入当前运行中的 Agent Loop"
+                  title={t("chat.steerTitle")}
                   type="button"
                 >
-                  引导
+                  {t("chat.steer")}
                 </button>
                 <button
                   className="product-stop-button"
                   onClick={() => void cancelTurn()}
-                  title="停止"
+                  title={t("chat.stop")}
                   type="button"
                 >
                   ■
@@ -1855,7 +1903,7 @@ export default function ChatApp() {
                 className="product-send-button"
                 disabled={!prompt.trim() || !canQueue || operation !== null}
                 onClick={() => void submitTurn()}
-                title="发送"
+                title={t("chat.send")}
                 type="button"
               >
                 ↑
