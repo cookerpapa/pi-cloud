@@ -21,7 +21,7 @@ export const PI_SANDBOX_RESET_MESSAGE = [
 
 export const PI_WORKSPACE_CHANGED_MESSAGE = [
   "<workspace_changed>",
-  "This session is now attached to a different workspace. Files, dependencies, Git state, running processes and in-memory environment state from the previous workspace are not available in the current /workspace.",
+  "The previous workspace is not available to the current tool environment. The current /workspace is a different workspace; files, dependencies, Git state, running processes and in-memory environment state from the previous workspace are not present here.",
   "</workspace_changed>",
 ].join("\n");
 

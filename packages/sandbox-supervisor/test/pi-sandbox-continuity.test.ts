@@ -199,7 +199,8 @@ describe("Pi per-Step runtime world-state harness", () => {
       ]);
       const context = JSON.stringify(manager.buildSessionContext().messages);
       expect(context).toContain("<workspace_changed>");
-      expect(context).toContain("different workspace");
+      expect(context).toContain("previous workspace is not available");
+      expect(context).toContain("current /workspace is a different workspace");
       expect(context).not.toContain(FIRST_WORKSPACE_SHA256);
       expect(context).not.toContain(SECOND_WORKSPACE_SHA256);
       expect(context).not.toContain(FIRST_ACTIVATION);
