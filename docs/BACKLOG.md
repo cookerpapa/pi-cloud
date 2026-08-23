@@ -71,6 +71,8 @@ retired and remain only in Git history or explicitly superseded ADRs.
       revision path.
 - [x] Remove the redundant pre-Kafka group-commit scheduler and require a
       Session-keyed mutation projection barrier before cross-Worker reads.
+- [x] Keep Kafka batch durability independent from a browser-only progressive
+      text reveal so larger acknowledged chunks do not flash into the transcript.
 - [x] Let a durably fenced, expired Worker settle its interrupted Run even when
       its dead management endpoint cannot confirm a physical stop.
 

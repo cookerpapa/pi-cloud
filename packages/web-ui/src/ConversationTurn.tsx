@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TranscriptItem, TurnView } from "./session-view.ts";
@@ -8,6 +8,94 @@ type SourceHighlightResult = ReturnType<SourceHighlightModule["highlightSource"]
 
 let loadedSourceHighlighter: SourceHighlightModule | null = null;
 let sourceHighlighterPromise: Promise<SourceHighlightModule> | null = null;
+
+const MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME = 1_024;
+
+export function nextProgressiveTextIndex(text: string, currentIndex: number): number {
+  if (!Number.isSafeInteger(currentIndex) || currentIndex < 0 || currentIndex > text.length) {
+    throw new TypeError("Progressive text index is invalid");
+  }
+  const remaining = text.length - currentIndex;
+  if (remaining <= 0) return text.length;
+  const step = Math.min(
+    MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME,
+    Math.max(2, Math.ceil(remaining / 5)),
+  );
+  let next = Math.min(text.length, currentIndex + step);
+  const previousCodeUnit = text.charCodeAt(next - 1);
+  const nextCodeUnit = text.charCodeAt(next);
+  if (
+    previousCodeUnit >= 0xd800 &&
+    previousCodeUnit <= 0xdbff &&
+    nextCodeUnit >= 0xdc00 &&
+    nextCodeUnit <= 0xdfff
+  ) {
+    next += 1;
+  }
+  const nearbyBoundary = text
+    .slice(next, Math.min(text.length, next + 12))
+    .search(/[\s，。！？；：、,.!?;:)]/u);
+  return nearbyBoundary < 0 ? next : Math.min(text.length, next + nearbyBoundary + 1);
+}
+
+function useProgressiveText(
+  text: string,
+  streaming: boolean,
+  onProgress: (() => void) | undefined,
+): string {
+  const animated = useRef(streaming);
+  const callback = useRef(onProgress);
+  const frameRef = useRef<number | null>(null);
+  const targetRef = useRef(text);
+  const visibleRef = useRef(streaming ? "" : text);
+  const [visible, setVisible] = useState(visibleRef.current);
+
+  useEffect(() => {
+    callback.current = onProgress;
+  }, [onProgress]);
+
+  useEffect(() => {
+    targetRef.current = text;
+    if (streaming) animated.current = true;
+    const current = visibleRef.current;
+    const reduceMotion =
+      document.visibilityState === "hidden" ||
+      (typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    if (!animated.current || reduceMotion || !text.startsWith(current)) {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+      visibleRef.current = text;
+      setVisible(text);
+      return;
+    }
+    if (current.length >= text.length || frameRef.current !== null) return;
+    const advance = (): void => {
+      const target = targetRef.current;
+      const nextIndex = nextProgressiveTextIndex(target, visibleRef.current.length);
+      const next = target.slice(0, nextIndex);
+      visibleRef.current = next;
+      setVisible(next);
+      frameRef.current = nextIndex < target.length ? requestAnimationFrame(advance) : null;
+    };
+    frameRef.current = requestAnimationFrame(advance);
+  }, [streaming, text]);
+
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (visible.length === 0) return;
+    const frame = requestAnimationFrame(() => callback.current?.());
+    return () => cancelAnimationFrame(frame);
+  }, [visible]);
+
+  return visible;
+}
 
 function useSourceHighlight(text: string, path: string | null): SourceHighlightResult {
   const [ready, setReady] = useState(loadedSourceHighlighter !== null);
@@ -243,16 +331,23 @@ export function ToolActivity({ item }: { item: Extract<TranscriptItem, { kind: "
 
 function AssistantItem({
   item,
+  onPresentationProgress,
   processNarration,
+  streaming,
 }: {
   item: TranscriptItem;
+  onPresentationProgress: (() => void) | undefined;
   processNarration: boolean;
+  streaming: boolean;
 }) {
   if (item.kind === "text") {
     return (
-      <div className={processNarration ? "product-agent-stage" : "product-agent-answer"}>
-        <Markdown>{item.text}</Markdown>
-      </div>
+      <AssistantTextItem
+        item={item}
+        onPresentationProgress={onPresentationProgress}
+        processNarration={processNarration}
+        streaming={streaming}
+      />
     );
   }
   if (item.kind === "tool") return <ToolActivity item={item} />;
@@ -272,18 +367,39 @@ function AssistantItem({
   );
 }
 
+function AssistantTextItem({
+  item,
+  onPresentationProgress,
+  processNarration,
+  streaming,
+}: {
+  item: Extract<TranscriptItem, { kind: "text" }>;
+  onPresentationProgress: (() => void) | undefined;
+  processNarration: boolean;
+  streaming: boolean;
+}) {
+  const visibleText = useProgressiveText(item.text, streaming, onPresentationProgress);
+  return (
+    <div className={processNarration ? "product-agent-stage" : "product-agent-answer"}>
+      <Markdown>{visibleText}</Markdown>
+    </div>
+  );
+}
+
 export function ConversationTurn({
   turn,
   canFork = false,
   onFork,
   canPrune = false,
   onPrune,
+  onPresentationProgress,
 }: {
   turn: TurnView;
   canFork?: boolean;
   onFork?: () => void;
   canPrune?: boolean;
   onPrune?: () => void;
+  onPresentationProgress?: () => void;
 }) {
   const working =
     turn.status === "queued" || turn.status === "running" || turn.status === "cancelling";
@@ -317,7 +433,9 @@ export function ConversationTurn({
               <AssistantItem
                 item={item}
                 key={item.key}
+                onPresentationProgress={onPresentationProgress}
                 processNarration={item.kind === "text" && index < lastToolIndex}
+                streaming={working && item.kind === "text"}
               />
             ))
           )}

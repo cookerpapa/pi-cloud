@@ -517,6 +517,12 @@ export default function ChatApp() {
     setFollowingConversationTail(follow);
   }, []);
 
+  const followProgressiveText = useCallback((): void => {
+    if (!followingConversationTailRef.current) return;
+    const scroller = chatScrollerRef.current;
+    if (scroller !== null) scroller.scrollTo({ top: scroller.scrollHeight, behavior: "auto" });
+  }, []);
+
   useEffect(() => {
     followConversationTail(true);
   }, [followConversationTail, state.session?.sessionId]);
@@ -1794,6 +1800,7 @@ export default function ChatApp() {
                         target.sourceSessionId === state.session?.sessionId
                       }
                       key={turn.turnId}
+                      onPresentationProgress={followProgressiveText}
                       {...(target === undefined
                         ? {}
                         : {

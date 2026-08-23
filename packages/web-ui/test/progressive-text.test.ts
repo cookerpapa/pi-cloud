@@ -1,0 +1,37 @@
+import { describe, expect, it } from "vitest";
+import { nextProgressiveTextIndex } from "../src/ConversationTurn.tsx";
+
+describe("progressive durable text presentation", () => {
+  it("reveals a durable batch across several bounded animation frames", () => {
+    const text = "这是一段已经由 Kafka 确认、但需要在浏览器中平滑展示的中文文本。".repeat(80);
+    let index = 0;
+    const frames: number[] = [];
+    while (index < text.length) {
+      const next = nextProgressiveTextIndex(text, index);
+      expect(next).toBeGreaterThan(index);
+      expect(next - index).toBeLessThanOrEqual(1_036);
+      frames.push(next);
+      index = next;
+    }
+    expect(frames.length).toBeGreaterThan(3);
+    expect(frames.at(-1)).toBe(text.length);
+  });
+
+  it("does not split a surrogate pair while choosing the next frame boundary", () => {
+    const text = `${"a".repeat(10)}😀${"b".repeat(40)}`;
+    let index = 0;
+    while (index < text.length) {
+      index = nextProgressiveTextIndex(text, index);
+      const previous = text.charCodeAt(index - 1);
+      const next = text.charCodeAt(index);
+      expect(previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff).toBe(
+        false,
+      );
+    }
+  });
+
+  it("rejects presentation cursors outside the acknowledged text", () => {
+    expect(() => nextProgressiveTextIndex("durable", -1)).toThrow(/index/u);
+    expect(() => nextProgressiveTextIndex("durable", 8)).toThrow(/index/u);
+  });
+});

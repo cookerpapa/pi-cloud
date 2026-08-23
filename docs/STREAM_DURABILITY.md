@@ -29,6 +29,14 @@ cursor. An older reconnect reloads `P` from PostgreSQL. This prevents Gateway
 memory from growing with old token fragments while retaining durable-before-
 visible behavior.
 
+Kafka batching and browser presentation are deliberately decoupled. React first
+accepts the complete `K`-acknowledged text block into its in-memory target, then
+reveals that target over bounded animation frames. Later semantic events remain
+authoritative and refresh/reconnect still renders the complete durable target;
+the animation is neither another event log nor another acknowledgement. Hidden
+tabs and reduced-motion clients skip the animation, and manual scrolling stops
+automatic tail following while the local reveal continues.
+
 Gateway startup seeks each Accepted-Kafka partition to a configurable recent
 window instead of scanning the broker's complete retention period. That window
 must cover the maximum Run duration plus settlement grace, so every possibly
