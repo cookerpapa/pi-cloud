@@ -281,8 +281,19 @@ const runtimeName = await psql(
 assert(runtimeName, "Development environment did not persist its Cube identity");
 await terminalCommand(
   `/v1/development-environments/${development.environmentId}/terminal`,
-  `printf 'EXCLUSIVE_FILE_OK\\n' > /workspace/exclusive.txt; printf '<!doctype html><html><head><title>PiCloud Preview</title></head><body>PI_CLOUD_PREVIEW_OK</body></html>\\n' > /workspace/index.html; setsid sh -c 'while true; do date +%s > /workspace/heartbeat; sleep 1; done' </dev/null >/tmp/exclusive-loop.log 2>&1 & echo $! > /workspace/exclusive.pid; setsid python3 -m http.server ${String(previewPort)} --bind 0.0.0.0 --directory /workspace </dev/null >/tmp/preview.log 2>&1 & echo EXCLUSIVE_FIRST_OK`,
+  `test "$(id -u)" = 0; printf 'EXCLUSIVE_ROOTFS_OK\\n' > /etc/pi-cloud-exclusive-marker; mkdir -p /home/node/empty-project; chown -R 1000:1000 /home/node; printf 'EXCLUSIVE_FILE_OK\\n' > /workspace/exclusive.txt; printf '<!doctype html><html><head><title>PiCloud Preview</title></head><body>PI_CLOUD_PREVIEW_OK</body></html>\\n' > /workspace/index.html; setsid sh -c 'while true; do date +%s > /var/tmp/pi-cloud-exclusive-heartbeat; sleep 1; done' </dev/null >/tmp/exclusive-loop.log 2>&1 & echo $! > /var/tmp/pi-cloud-exclusive.pid; setsid python3 -m http.server ${String(previewPort)} --bind 0.0.0.0 --directory /workspace </dev/null >/tmp/preview.log 2>&1 & echo EXCLUSIVE_FIRST_OK`,
   "EXCLUSIVE_FIRST_OK",
+);
+const rootDirectory = await api.listDevelopmentEnvironmentDirectory(development.environmentId, "/");
+assert(rootDirectory.entries.some((entry) => entry.name === "etc" && entry.kind === "directory"));
+const homeDirectory = await api.listDevelopmentEnvironmentDirectory(
+  development.environmentId,
+  "/home/node",
+);
+assert(
+  homeDirectory.entries.some(
+    (entry) => entry.name === "empty-project" && entry.kind === "directory",
+  ),
 );
 await wait(2_000);
 const preview = await fetch(
@@ -296,7 +307,7 @@ assert.equal(preview.status, 200);
 assert.match(await preview.text(), /PI_CLOUD_PREVIEW_OK/);
 await terminalCommand(
   `/v1/development-environments/${development.environmentId}/terminal`,
-  'test "$(cat /workspace/exclusive.txt)" = EXCLUSIVE_FILE_OK && kill -0 "$(cat /workspace/exclusive.pid)" && echo EXCLUSIVE_RECONNECT_OK',
+  'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && test "$(cat /workspace/exclusive.txt)" = EXCLUSIVE_FILE_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_RECONNECT_OK',
   "EXCLUSIVE_RECONNECT_OK",
 );
 
@@ -306,11 +317,11 @@ const session = await api.createSession(
   `Agent handoff into exclusive environment ${suffix}`,
   "persistent",
   "standard",
-  "/workspace",
+  "/home/node/empty-project",
 );
 const agentRun = await api.acceptTurn(
   session.sessionId,
-  "Use bash to write EXCLUSIVE_AGENT_HANDOFF_OK into /workspace/agent-handoff.txt, read it back, and report the verified marker.",
+  "Use bash to write EXCLUSIVE_AGENT_HANDOFF_OK into agent-handoff.txt in the current working directory, read it back, and report the verified marker.",
   newIdempotencyKey("turn"),
   "off",
 );
@@ -329,14 +340,38 @@ assert.equal(
 );
 await terminalCommand(
   `/v1/conversations/${session.sessionId}/terminal`,
-  'test "$(cat /workspace/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && kill -0 "$(cat /workspace/exclusive.pid)" && echo EXCLUSIVE_AGENT_RETURN_OK',
+  'test "$(cat /home/node/empty-project/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_AGENT_RETURN_OK',
   "EXCLUSIVE_AGENT_RETURN_OK",
 );
 const sshTicket = await api.issueSshAccessTicket(session.sessionId);
 await sshCommand(
   sshTicket,
-  'test "$(cat /workspace/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && echo EXCLUSIVE_SSH_OK',
+  'test "$(id -u)" = 0 && test "$(cat /home/node/empty-project/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && echo EXCLUSIVE_SSH_OK',
   "EXCLUSIVE_SSH_OK",
+);
+
+await capture(
+  process.execPath,
+  ["scripts/production-compose.mjs", "restart", "tool-broker"],
+  5 * 60_000,
+);
+const recoveredAfterBrokerRestart = await waitForEnvironment(development.environmentId, "paused");
+assert.equal(
+  await psql(
+    `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
+  ),
+  runtimeName,
+);
+const resumedAfterBrokerRestart = await api.developmentEnvironmentAction(
+  development.environmentId,
+  "resume",
+  newIdempotencyKey("environment"),
+);
+assert.equal(resumedAfterBrokerRestart.state, "running");
+await terminalCommand(
+  `/v1/development-environments/${development.environmentId}/terminal`,
+  'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_BROKER_RECOVERY_OK',
+  "EXCLUSIVE_BROKER_RECOVERY_OK",
 );
 
 const paused = await api.developmentEnvironmentAction(
@@ -360,8 +395,22 @@ assert.equal(
 );
 await terminalCommand(
   `/v1/development-environments/${development.environmentId}/terminal`,
-  'kill -0 "$(cat /workspace/exclusive.pid)" && echo EXCLUSIVE_RESUME_OK',
+  'kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && echo EXCLUSIVE_RESUME_OK',
   "EXCLUSIVE_RESUME_OK",
+);
+
+await api.deleteConversation(session.sessionId, newIdempotencyKey("delete-conversation"));
+const replacementSession = await api.createSession(
+  development.projectId,
+  development.workspaceId,
+  `Replacement conversation ${suffix}`,
+  "persistent",
+  "standard",
+  "/home/node/empty-project",
+);
+assert.equal(
+  (await api.getConversation(replacementSession.sessionId)).session.sessionId,
+  replacementSession.sessionId,
 );
 
 const released = await api.developmentEnvironmentAction(
@@ -372,7 +421,7 @@ const released = await api.developmentEnvironmentAction(
 assert.equal(released.state, "released");
 assert.equal(await cube.read(runtimeName), undefined);
 await terminalCommand(
-  `/v1/conversations/${session.sessionId}/terminal`,
+  `/v1/conversations/${replacementSession.sessionId}/terminal`,
   'test "$(cat /workspace/exclusive.txt)" = EXCLUSIVE_FILE_OK && echo EXCLUSIVE_VOLUME_OK',
   "EXCLUSIVE_VOLUME_OK",
 );
@@ -393,6 +442,10 @@ const report = {
   workspaceVolumeSurvivedRelease: true,
   authenticatedHttpPreviewPassed: true,
   previewPort,
+  rootFilesystemPreserved: true,
+  brokerRestartAdoptedSameCube: recoveredAfterBrokerRestart.state === "paused",
+  emptyDirectoryBrowsePassed: true,
+  archivedSessionDidNotReleaseMachine: true,
   oneTimeSshGatewayPassed: true,
   selectedProfile: development.profileKey,
 };
