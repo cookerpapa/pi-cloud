@@ -253,6 +253,29 @@ async function connectCdp(portNumber) {
   throw new Error("Chrome DevTools endpoint did not become ready");
 }
 
+async function stopChrome(chrome, profile) {
+  if (chrome.exitCode === null && chrome.signalCode === null) {
+    chrome.kill("SIGTERM");
+    await Promise.race([
+      new Promise((resolvePromise) => chrome.once("exit", resolvePromise)),
+      wait(5_000),
+    ]);
+  }
+  if (chrome.exitCode === null && chrome.signalCode === null) {
+    chrome.kill("SIGKILL");
+    await new Promise((resolvePromise) => chrome.once("exit", resolvePromise));
+  }
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      return;
+    } catch {
+      if (attempt === 5) return;
+      await wait(attempt * 100);
+    }
+  }
+}
+
 async function exerciseGame({ username, password, previewPath, screenshotPath }) {
   const browserBinary = await chromeBinary();
   const profile = await mkdtemp(resolve(tmpdir(), "pi-cloud-snake-chrome-"));
@@ -360,36 +383,69 @@ async function exerciseGame({ username, password, previewPath, screenshotPath })
     };
   } finally {
     cdp?.socket.close();
-    chrome.kill("SIGTERM");
-    await rm(profile, { recursive: true, force: true });
+    await stopChrome(chrome, profile);
   }
 }
 
 const suffix = Date.now().toString(36);
-const username = `snake.acceptance.${suffix}`.slice(0, 48);
-const password = `Snake acceptance ${suffix} 9!`;
+const reusedSessionId = process.env.PI_CLOUD_SNAKE_REUSE_SESSION_ID;
+const username =
+  process.env.PI_CLOUD_SNAKE_REUSE_USERNAME ?? `snake.acceptance.${suffix}`.slice(0, 48);
+const password = process.env.PI_CLOUD_SNAKE_REUSE_PASSWORD ?? `Snake acceptance ${suffix} 9!`;
+if (
+  reusedSessionId !== undefined &&
+  (process.env.PI_CLOUD_SNAKE_REUSE_USERNAME === undefined ||
+    process.env.PI_CLOUD_SNAKE_REUSE_PASSWORD === undefined)
+) {
+  throw new Error("Snake reuse requires username, password and Session ID together");
+}
 const browser = new BrowserCookieFetch();
 const api = new PiCloudApi(browser.fetch);
 const screenshotPath = resolve(tmpdir(), "pi-cloud-snake-preview-latest.png");
 
-progress("registering browser account and creating exclusive Cube");
-const registration = await api.registerAccount(username, "Snake Acceptance", password);
-const development = await api.createDevelopmentEnvironment(
-  "standard",
-  newIdempotencyKey("environment"),
-);
-await waitForEnvironment(api, development.environmentId, "running");
-const session = await api.createSession(
-  development.projectId,
-  development.workspaceId,
-  `Snake preview acceptance ${suffix}`,
-  "persistent",
-  "standard",
-  DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
-);
-
-progress("asking the real model to build, test and serve Snake");
-const coding = await runCodingTurn(api, browser, session.sessionId);
+let session;
+let development;
+let coding;
+if (reusedSessionId === undefined) {
+  progress("registering browser account and creating exclusive Cube");
+  await api.registerAccount(username, "Snake Acceptance", password);
+  development = await api.createDevelopmentEnvironment(
+    "standard",
+    newIdempotencyKey("environment"),
+  );
+  await waitForEnvironment(api, development.environmentId, "running");
+  session = await api.createSession(
+    development.projectId,
+    development.workspaceId,
+    `Snake preview acceptance ${suffix}`,
+    "persistent",
+    "standard",
+    DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
+  );
+  progress("asking the real model to build, test and serve Snake");
+  coding = await runCodingTurn(api, browser, session.sessionId);
+} else {
+  progress("reusing a completed Snake coding Session for browser interaction recovery");
+  await api.loginAccount(username, password);
+  const conversation = await api.getConversation(reusedSessionId);
+  const latest = conversation.turns.at(-1);
+  if (latest?.state !== "completed" || latest.runId === null) {
+    throw new Error("Reused Snake Session does not have a completed Run");
+  }
+  session = conversation.session;
+  development = (await api.listDevelopmentEnvironments()).environments.find(
+    (candidate) => candidate.workspaceId === conversation.session.workspaceId,
+  );
+  if (development === undefined || development.state !== "running") {
+    throw new Error("Reused Snake development environment is not running");
+  }
+  coding = {
+    accepted: { runId: latest.runId },
+    toolStarts: latest.transcript.items.filter((item) => item.kind === "tool").length,
+    firstTextMs: null,
+    settledMs: null,
+  };
+}
 const preview = await waitForPreview(browser, session.sessionId);
 assert.match(preview.html, /game-canvas/);
 assert.match(preview.html, /start-button/);
@@ -423,6 +479,7 @@ const report = {
   browserInteraction: interaction,
   screenshotPath,
   conversationRetainedForInspection: true,
+  reusedCompletedCodingSession: reusedSessionId !== undefined,
   systemPromptModified: false,
   modelOutputTranslated: false,
 };
