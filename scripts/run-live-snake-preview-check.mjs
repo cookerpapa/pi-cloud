@@ -360,7 +360,18 @@ async function exerciseGame({ username, password, previewPath, screenshotPath })
       returnByValue: true,
       expression: "window.__snakeTestState()",
     });
-    assert.equal(paused.result.value.running, false, "Pause button did not stop the game loop");
+    await wait(450);
+    const pausedAfterWait = await cdp.send("Runtime.evaluate", {
+      returnByValue: true,
+      expression: "window.__snakeTestState()",
+    });
+    assert.equal(
+      pausedAfterWait.result.value.tick,
+      paused.result.value.tick,
+      "Pause button did not stop the game loop",
+    );
+    assert.equal(pausedAfterWait.result.value.headX, paused.result.value.headX);
+    assert.equal(pausedAfterWait.result.value.headY, paused.result.value.headY);
     await cdp.send("Runtime.evaluate", {
       expression: 'document.querySelector("#reset-button").click()',
     });
@@ -379,6 +390,7 @@ async function exerciseGame({ username, password, previewPath, screenshotPath })
       before: before.result.value,
       after: after.result.value,
       paused: paused.result.value,
+      pausedAfterWait: pausedAfterWait.result.value,
       reset: reset.result.value,
     };
   } finally {
