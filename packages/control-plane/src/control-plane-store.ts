@@ -1880,9 +1880,6 @@ export class ControlPlaneStore {
       project: {
         projectId: conversation.projectId,
         workspaceId: conversation.workspaceId,
-        ...(conversation.developmentEnvironmentId === null
-          ? {}
-          : { developmentEnvironmentId: conversation.developmentEnvironmentId }),
         name: conversation.projectName,
         createdAt: isoTimestamp(conversation.projectCreatedAt),
         source: workspaceSourceResource(conversationSource),
@@ -1893,6 +1890,9 @@ export class ControlPlaneStore {
         title: conversation.sessionTitle,
         projectId: conversation.projectId,
         workspaceId: conversation.workspaceId,
+        ...(conversation.developmentEnvironmentId === null
+          ? {}
+          : { developmentEnvironmentId: conversation.developmentEnvironmentId }),
         workspaceState: conversation.workspaceDeletedAt === null ? "attached" : "missing",
         state: conversation.sessionState,
         sandboxRetention: conversation.sandboxRetention,
