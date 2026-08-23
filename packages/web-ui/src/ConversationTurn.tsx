@@ -213,14 +213,48 @@ function ExpandableToolText({
   );
 }
 
-export function Markdown({ children }: { children: string }) {
+export function conversationPreviewHref(
+  href: string | undefined,
+  sessionId: string | undefined,
+): string | undefined {
+  if (href === undefined || sessionId === undefined) return href;
+  try {
+    const target = new URL(href);
+    const port = Number(target.port || (target.protocol === "https:" ? 443 : 80));
+    if (
+      target.protocol !== "http:" ||
+      !new Set(["localhost", "127.0.0.1", "0.0.0.0"]).has(target.hostname) ||
+      !Number.isSafeInteger(port) ||
+      port < 1_024 ||
+      port > 65_535 ||
+      port === 49_984
+    ) {
+      return href;
+    }
+    return `/v1/conversations/${encodeURIComponent(sessionId)}/preview/${String(port)}${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return href;
+  }
+}
+
+export function Markdown({
+  children,
+  sessionId,
+}: {
+  children: string;
+  sessionId?: string | undefined;
+}) {
   return (
     <div className="product-markdown">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ children: label, href }) => (
-            <a href={href} rel="noreferrer noopener" target="_blank">
+            <a
+              href={conversationPreviewHref(href, sessionId)}
+              rel="noreferrer noopener"
+              target="_blank"
+            >
               {label}
             </a>
           ),
@@ -331,11 +365,13 @@ export function ToolActivity({ item }: { item: Extract<TranscriptItem, { kind: "
 
 function AssistantItem({
   item,
+  sessionId,
   onPresentationProgress,
   processNarration,
   streaming,
 }: {
   item: TranscriptItem;
+  sessionId: string | undefined;
   onPresentationProgress: (() => void) | undefined;
   processNarration: boolean;
   streaming: boolean;
@@ -344,6 +380,7 @@ function AssistantItem({
     return (
       <AssistantTextItem
         item={item}
+        sessionId={sessionId}
         onPresentationProgress={onPresentationProgress}
         processNarration={processNarration}
         streaming={streaming}
@@ -369,11 +406,13 @@ function AssistantItem({
 
 function AssistantTextItem({
   item,
+  sessionId,
   onPresentationProgress,
   processNarration,
   streaming,
 }: {
   item: Extract<TranscriptItem, { kind: "text" }>;
+  sessionId: string | undefined;
   onPresentationProgress: (() => void) | undefined;
   processNarration: boolean;
   streaming: boolean;
@@ -381,13 +420,14 @@ function AssistantTextItem({
   const visibleText = useProgressiveText(item.text, streaming, onPresentationProgress);
   return (
     <div className={processNarration ? "product-agent-stage" : "product-agent-answer"}>
-      <Markdown>{visibleText}</Markdown>
+      <Markdown sessionId={sessionId}>{visibleText}</Markdown>
     </div>
   );
 }
 
 export function ConversationTurn({
   turn,
+  sessionId,
   canFork = false,
   onFork,
   canPrune = false,
@@ -395,6 +435,7 @@ export function ConversationTurn({
   onPresentationProgress,
 }: {
   turn: TurnView;
+  sessionId?: string | undefined;
   canFork?: boolean;
   onFork?: () => void;
   canPrune?: boolean;
@@ -435,6 +476,7 @@ export function ConversationTurn({
                 key={item.key}
                 onPresentationProgress={onPresentationProgress}
                 processNarration={item.kind === "text" && index < lastToolIndex}
+                sessionId={sessionId}
                 streaming={working && item.kind === "text"}
               />
             ))

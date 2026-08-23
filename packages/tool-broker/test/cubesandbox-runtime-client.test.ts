@@ -36,6 +36,17 @@ beforeAll(async () => {
         return;
       }
       if (host.startsWith("49984-cube-runtime-1.")) {
+        if (request.url === "/v1/service-proxy") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              status: 200,
+              headers: { "content-type": "text/html; charset=utf-8" },
+              body: Buffer.from("<html>private-preview-ok</html>").toString("base64"),
+            }),
+          );
+          return;
+        }
         if (request.url === "/v1/terminal/open") {
           response.writeHead(200, { "content-type": "application/x-ndjson" });
           response.write(`${JSON.stringify({ type: "ready", pid: 73 })}\n`);
@@ -52,11 +63,6 @@ beforeAll(async () => {
         }
         response.writeHead(200, { "content-type": "application/json" });
         response.end('{"kernelRelease":"cube-guest"}');
-        return;
-      }
-      if (host.startsWith("8000-cube-runtime-1.")) {
-        response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        response.end("<html>private-preview-ok</html>");
         return;
       }
       if (
@@ -237,23 +243,31 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     });
     await expect(
       client.requestService!(instance, {
-        port: 8000,
+        port: 5173,
         method: "GET",
         path: "/",
         headers: { accept: "text/html" },
         maximumResponseBytes: 64 * 1_024,
         timeoutMs: 1_000,
+        authority: {
+          handoffSecret: `pcch_${"h".repeat(43)}`,
+          fencingToken: 7,
+          bindingSha256: "a".repeat(64),
+        },
       }),
     ).resolves.toMatchObject({
       status: 200,
       headers: { "content-type": "text/html; charset=utf-8" },
       body: Buffer.from("<html>private-preview-ok</html>"),
     });
-    expect(observed.find((request) => request.headers.host?.startsWith("8000-"))).toMatchObject({
+    expect(observed.find((request) => request.path === "/v1/service-proxy")).toMatchObject({
       headers: {
+        host: "49984-cube-runtime-1.cube.test",
         "e2b-traffic-access-token": "private-traffic-token",
         "cube-traffic-access-token": "private-traffic-token",
+        "x-pi-cloud-handoff-secret": `pcch_${"h".repeat(43)}`,
       },
+      body: expect.objectContaining({ port: 5173, method: "GET", path: "/" }),
     });
     const terminal = await client.openTerminal(instance, {
       rows: 24,

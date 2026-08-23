@@ -20,7 +20,6 @@ import type {
   TenantIdentityResource,
   WorkspaceSummaryResource,
 } from "@pi-cloud/protocol";
-import { SANDBOX_PREVIEW_PORTS } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
 import { AdminPage } from "./AdminPage.tsx";
 import { AuthScreen } from "./AuthScreen.tsx";
@@ -117,8 +116,6 @@ export default function ChatApp() {
     "existing",
   );
   const [rebindWorkspaceName, setRebindWorkspaceName] = useState("");
-  const [previewPort, setPreviewPort] = useState("8000");
-  const [previewNotice, setPreviewNotice] = useState<string | null>(null);
   const [sshTicket, setSshTicket] = useState<SshAccessTicketResource | null>(null);
   const [followingConversationTail, setFollowingConversationTail] = useState(true);
   const [newConversationTitle, setNewConversationTitle] = useState("");
@@ -850,24 +847,6 @@ export default function ChatApp() {
     }
   }
 
-  async function openConversationPreview(): Promise<void> {
-    const sessionId = state.session?.sessionId;
-    const port = Number(previewPort);
-    if (sessionId === undefined || !Number.isSafeInteger(port)) return;
-    setPreviewNotice("正在检查沙箱服务…");
-    try {
-      const path = await api.probeConversationPreview(sessionId, port);
-      setPreviewNotice(null);
-      window.open(path, "_blank", "noopener,noreferrer");
-    } catch (error: unknown) {
-      setPreviewNotice(
-        error instanceof PiCloudApiError && error.code === "preview_unavailable"
-          ? `端口 ${String(port)} 尚未监听。请让应用绑定 0.0.0.0:${String(port)} 后重试。`
-          : errorMessage(error),
-      );
-    }
-  }
-
   async function createSshTicket(): Promise<void> {
     const sessionId = state.session?.sessionId;
     if (sessionId === undefined || operation !== null || currentTurn !== undefined) return;
@@ -1213,34 +1192,6 @@ export default function ChatApp() {
               <span className={state.connection.phase === "live" ? "online" : ""}>
                 {state.connection.phase === "live" ? "已连接" : "连接中"}
               </span>
-            ) : null}
-            {state.session !== null && selectedDelegatedSession === null ? (
-              <div className="product-preview-control">
-                <label title="访问应用在 CubeSandbox 内监听的 HTTP 端口；应用必须绑定 0.0.0.0">
-                  应用预览端口
-                  <select
-                    aria-label="预览端口"
-                    onChange={(event) => setPreviewPort(event.target.value)}
-                    value={previewPort}
-                  >
-                    {SANDBOX_PREVIEW_PORTS.map((port) => (
-                      <option key={port} value={port}>
-                        {port}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  className="product-preview-link"
-                  onClick={() => void openConversationPreview()}
-                  type="button"
-                >
-                  打开应用 ↗
-                </button>
-                {previewNotice === null ? null : (
-                  <span className="product-preview-notice">{previewNotice}</span>
-                )}
-              </div>
             ) : null}
             {state.session?.sandboxRetention !== "persistent" ||
             currentDevelopmentEnvironment?.state !== "running" ? null : (
@@ -1777,7 +1728,9 @@ export default function ChatApp() {
                           <div className="product-inherited-assistant">
                             <span className="product-avatar">A</span>
                             <div className="product-assistant-content">
-                              <Markdown>{message.text}</Markdown>
+                              <Markdown sessionId={selectedDelegatedSession?.sessionId}>
+                                {message.text}
+                              </Markdown>
                             </div>
                           </div>
                         )}
@@ -1807,6 +1760,7 @@ export default function ChatApp() {
                       }
                       key={turn.turnId}
                       onPresentationProgress={followProgressiveText}
+                      sessionId={selectedDelegatedSession?.sessionId ?? state.session?.sessionId}
                       {...(target === undefined
                         ? {}
                         : {

@@ -38,9 +38,10 @@ a tenant-safe raw SSH endpoint for ordinary Sandboxes.
   provider injects the private Cube traffic token. Neither CubeAPI credentials,
   Sandbox IDs nor traffic tokens reach the browser.
 - Preview supports bounded HTTP bodies and response sizes. WebSocket ingress and
-  raw TCP are separate future contracts. Cube allows three custom exposed ports;
-  the Tool Service consumes one, so only application ports 3000 and 8000 are
-  accepted. The product does not call the Web terminal "SSH".
+  raw TCP are separate contracts. Cube exposes only the authenticated Tool
+  Service; it proxies any unprivileged guest-local HTTP port except its own.
+  Fixed application-port reservations are unnecessary. The product does not
+  call the Web terminal "SSH".
 - User-owned development environments select one deployment-owned profile:
   starter (1 vCPU/2 GiB/8 GiB), standard (2 vCPU/4 GiB/16 GiB), or performance
   (4 vCPU/8 GiB/32 GiB). Each profile maps to an immutable Cube template built

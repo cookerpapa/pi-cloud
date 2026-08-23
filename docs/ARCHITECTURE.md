@@ -313,19 +313,21 @@ persistent Volume is guaranteed across that failure.
 
 The browser reaches a service through a same-origin PiCloud preview path. The
 Control Plane authenticates the user and resolves the conversation or owned
-development environment. Tool Broker resolves the local live handle and the
-Cube provider forwards HTTP through CubeProxy with the Sandbox's private
-traffic token. That token and the physical Sandbox ID never leave the trusted
-execution plane. Responses are bounded and security-sensitive hop-by-hop
-headers are not forwarded. Applications listen on `0.0.0.0` and should use
-relative asset URLs under the path-based preview endpoint. HTML responses get
-a per-response CSP nonce on inline script/style blocks. This permits common
-single-file Agent-generated applications without granting arbitrary script
-origins or direct private Sandbox ingress.
-Cube allows three custom exposed ports per template. Port 49984 belongs to the
-trusted Tool Service, so PiCloud reserves the remaining two slots for
-application ports 3000 and 8000. The public protocol rejects every other port
-rather than returning a late CubeProxy routing failure.
+development environment. Tool Broker resolves the local live handle and sends
+the request through Cube's private ingress to the trusted Tool Service on port
+49984. That service proxies only to `127.0.0.1:<requested-port>` inside the same
+microVM. Cube traffic tokens, physical Sandbox IDs and external routing details
+never leave the trusted execution plane. Responses are bounded and
+security-sensitive hop-by-hop headers are not forwarded. Applications may use
+any unprivileged HTTP port other than the trusted service port and should use
+relative asset URLs under the path-based preview endpoint. HTML responses get a
+per-response CSP nonce on inline script/style blocks.
+
+Cube templates support only a small explicit exposed-port set, so PiCloud does
+not reserve fixed application ports. The template exposes only the authenticated
+Tool Service. Assistant `localhost` links are rewritten by the Web client to the
+same-origin conversation Preview route. The Agent reports the guest-local port;
+it never calculates a public IP or NAT mapping.
 
 Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented. PiCloud does not
 expose Sandbox port 22. A separate trusted SSH gateway validates a one-time

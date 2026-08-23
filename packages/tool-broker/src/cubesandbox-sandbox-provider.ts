@@ -1170,6 +1170,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
     return this.#client.requestService(activation.instance, {
       ...request,
+      authority: this.#authority(activation),
       maximumResponseBytes: 16 * 1_024 * 1_024,
       timeoutMs: 60_000,
     });

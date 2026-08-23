@@ -77,10 +77,12 @@ After deployment:
    - **Elastic execution** selects/creates a Workspace and chooses a deployment-owned size;
    - **Exclusive environment** selects a running user-owned Cube and a persisted directory.
 
-Service preview is a same-origin HTTP proxy to an application listening on
-`0.0.0.0:3000` or `0.0.0.0:8000` inside the active Cube. SSH is available only
-for exclusive environments, only while no Agent Run or browser terminal owns
-the environment, and each password can be used once.
+Service preview is a same-origin HTTP proxy to any unprivileged HTTP port inside
+the active Cube. When the Agent reports a `localhost` application URL, the Web
+client opens it through the authenticated PiCloud gateway; Cube addresses and
+public port mappings are never exposed to the Agent. SSH is available only for
+exclusive environments, only while no Agent Run or browser terminal owns the
+environment, and each password can be used once.
 
 Re-running `./install.sh` reconciles the same private runtime. Generated
 credentials and state live under `deploy/production/runtime/` by default and

@@ -61,10 +61,10 @@ contract for exposing an ordinary Sandbox's port 22 directly.
   elastic versus exclusive execution and progressively discloses the relevant
   Workspace, machine specification, environment and directory choices. Releasing compute
   preserves both Session and Workspace.
-- HTTP preview remains a same-origin authenticated proxy. Port 3000 or 8000 is
-  meaningful only when an application listens on `0.0.0.0` inside the live
-  Cube; the UI probes and explains an absent listener instead of exposing a raw
-  502/503 page.
+- HTTP preview remains a same-origin authenticated proxy. Applications may use
+  any unprivileged port; the trusted Tool Service reaches that port inside the
+  live Cube, while the Web client maps assistant `localhost` links to the
+  authenticated conversation route.
 - Native OpenSSH access terminates at a trusted PiCloud SSH gateway. The user
   obtains a one-use ticket through the authenticated conversation API. An
   unused ticket expires after 24 hours by default; the gateway consumes it on

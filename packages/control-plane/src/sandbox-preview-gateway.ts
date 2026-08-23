@@ -1,7 +1,9 @@
 import type { Database } from "@pi-cloud/database";
 import {
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
-  SANDBOX_PREVIEW_PORTS,
+  SANDBOX_PREVIEW_MAXIMUM_PORT,
+  SANDBOX_PREVIEW_MINIMUM_PORT,
+  SANDBOX_TRUSTED_TOOL_SERVICE_PORT,
   parseSandboxPreviewResponse,
   parseUuidPathParameter,
   type SandboxPreviewRequest,
@@ -27,8 +29,13 @@ export type SandboxPreviewGatewayOptions = Readonly<{
 
 function previewPort(value: unknown): SandboxPreviewRequest["port"] {
   const parsed = Number(value);
-  if (!SANDBOX_PREVIEW_PORTS.some((port) => port === parsed)) {
-    throw new Error("Preview port is not exposed by the deployment template");
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed < SANDBOX_PREVIEW_MINIMUM_PORT ||
+    parsed > SANDBOX_PREVIEW_MAXIMUM_PORT ||
+    parsed === SANDBOX_TRUSTED_TOOL_SERVICE_PORT
+  ) {
+    throw new Error("Preview port is outside the application port range");
   }
   return parsed as SandboxPreviewRequest["port"];
 }

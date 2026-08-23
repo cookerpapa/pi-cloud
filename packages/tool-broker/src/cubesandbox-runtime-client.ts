@@ -75,6 +75,7 @@ export type CubeSandboxServiceRequest = Readonly<{
   body?: Uint8Array;
   maximumResponseBytes: number;
   timeoutMs: number;
+  authority: CubeSandboxHandoffAuthority;
 }>;
 
 export type CubeSandboxServiceResponse = Readonly<{
@@ -599,30 +600,58 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     instance: CubeSandboxInstance,
     input: CubeSandboxServiceRequest,
   ): Promise<CubeSandboxServiceResponse> {
-    const token = instance.trafficAccessToken;
-    if (token === undefined) {
-      throw new CubeRuntimeClientError("CubeSandbox private-ingress token was unavailable");
-    }
     const port = positiveInteger(input.port, 3_000, 1_024, 65_535);
+    if (port === CUBESANDBOX_TOOL_SERVICE_PORT) {
+      throw new TypeError("CubeSandbox preview cannot target the trusted Tool service");
+    }
     if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*$/.test(input.path)) {
       throw new TypeError("CubeSandbox preview path was invalid");
     }
-    const host = `${String(port)}-${instance.sandboxId}.${instance.domain}`;
-    const timeout = AbortSignal.timeout(positiveInteger(input.timeoutMs, 30_000, 100, 300_000));
-    const response = await fetch(`${this.#proxyScheme}://${host}${input.path}`, {
-      method: input.method,
-      headers: {
-        ...input.headers,
-        "e2b-traffic-access-token": token,
-        "cube-traffic-access-token": token,
-      },
-      ...(input.body === undefined || input.method === "GET" || input.method === "HEAD"
-        ? {}
-        : { body: Buffer.from(input.body) }),
-      dispatcher: this.#dispatcher,
-      redirect: "manual",
-      signal: timeout,
-    });
+    const encodedBody =
+      input.body === undefined ? undefined : Buffer.from(input.body).toString("base64");
+    const value = record(
+      await this.request(instance, {
+        method: "POST",
+        path: "/v1/service-proxy",
+        body: {
+          port,
+          method: input.method,
+          path: input.path,
+          headers: input.headers,
+          ...(encodedBody === undefined ? {} : { body: encodedBody }),
+          timeoutMs: positiveInteger(input.timeoutMs, 30_000, 100, 300_000),
+          maximumResponseBytes: positiveInteger(
+            input.maximumResponseBytes,
+            16 * 1_024 * 1_024,
+            1,
+            24 * 1_024 * 1_024,
+          ),
+        },
+        authority: input.authority,
+        timeoutMs: input.timeoutMs + 1_000,
+        maximumResponseBytes: Math.ceil((input.maximumResponseBytes * 4) / 3) + 64 * 1_024,
+      }),
+      "CubeSandbox service proxy",
+    );
+    const status = value.status;
+    const rawHeaders = value.headers;
+    const body = value.body;
+    if (
+      !Number.isSafeInteger(status) ||
+      (status as number) < 100 ||
+      (status as number) > 599 ||
+      typeof rawHeaders !== "object" ||
+      rawHeaders === null ||
+      Array.isArray(rawHeaders) ||
+      typeof body !== "string" ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(body)
+    ) {
+      throw new CubeRuntimeClientError("CubeSandbox service proxy response was invalid");
+    }
+    const decoded = Buffer.from(body, "base64");
+    if (decoded.byteLength > input.maximumResponseBytes || decoded.toString("base64") !== body) {
+      throw new CubeRuntimeClientError("CubeSandbox service proxy body was invalid");
+    }
     const allowedResponseHeaders = new Set([
       "accept-ranges",
       "cache-control",
@@ -635,26 +664,21 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       "location",
     ]);
     const headers: Record<string, string> = {};
-    for (const [name, value] of response.headers) {
-      if (!allowedResponseHeaders.has(name.toLowerCase())) continue;
-      if (name.toLowerCase() === "location") {
-        try {
-          const location = new URL(value, `${this.#proxyScheme}://${host}`);
-          headers.location =
-            location.host === host
-              ? `${location.pathname}${location.search}${location.hash}`
-              : value;
-        } catch {
-          continue;
-        }
-      } else {
-        headers[name.toLowerCase()] = value;
+    for (const [name, headerValue] of Object.entries(rawHeaders as Record<string, unknown>)) {
+      const lower = name.toLowerCase();
+      if (
+        !allowedResponseHeaders.has(lower) ||
+        typeof headerValue !== "string" ||
+        headerValue.length > 8_192
+      ) {
+        continue;
       }
+      headers[lower] = headerValue;
     }
     return {
-      status: response.status,
+      status: status as number,
       headers: Object.freeze(headers),
-      body: await readBoundedResponse(response, input.maximumResponseBytes),
+      body: decoded,
     };
   }
 

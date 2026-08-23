@@ -3,10 +3,13 @@ import { Value } from "typebox/value";
 import { UuidSchema } from "./protocol-primitives.ts";
 
 export const TOOL_BROKER_SANDBOX_PREVIEW_PATH = "/internal/v1/sandbox-preview" as const;
-// Cube permits three custom exposed ports per template. The trusted Tool Service
-// owns 49984, leaving two product-facing application ports.
-export const SANDBOX_PREVIEW_PORTS = Object.freeze([3000, 8000] as const);
-const SandboxPreviewPortSchema = Type.Union([Type.Literal(3000), Type.Literal(8000)]);
+export const SANDBOX_PREVIEW_MINIMUM_PORT = 1_024 as const;
+export const SANDBOX_PREVIEW_MAXIMUM_PORT = 65_535 as const;
+export const SANDBOX_TRUSTED_TOOL_SERVICE_PORT = 49_984 as const;
+const SandboxPreviewPortSchema = Type.Union([
+  Type.Integer({ minimum: SANDBOX_PREVIEW_MINIMUM_PORT, maximum: 49_983 }),
+  Type.Integer({ minimum: 49_985, maximum: SANDBOX_PREVIEW_MAXIMUM_PORT }),
+]);
 
 const PreviewHeadersSchema = Type.Record(
   Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z0-9-]+$" }),

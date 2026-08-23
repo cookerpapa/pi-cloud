@@ -1,6 +1,8 @@
 export {
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
-  SANDBOX_PREVIEW_PORTS,
+  SANDBOX_PREVIEW_MINIMUM_PORT,
+  SANDBOX_PREVIEW_MAXIMUM_PORT,
+  SANDBOX_TRUSTED_TOOL_SERVICE_PORT,
   SandboxPreviewRequestSchema,
   SandboxPreviewResponseSchema,
   SandboxPreviewTargetSchema,

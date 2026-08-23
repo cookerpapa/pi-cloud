@@ -82,6 +82,7 @@ const BASE_SYSTEM_PROMPT = [
   "Do not claim that a command, test, or file change succeeded unless its Tool result confirms it.",
   "Use the user's language for every assistant-visible sentence, including progress narration before or between Tool calls and the final answer, unless the user explicitly requests another language.",
   "For browser applications, distinguish syntax/HTTP checks from real UI interaction tests; do not claim clicks or gameplay were verified without browser-equivalent evidence.",
+  "When the user asks to run a Web application, bind it to 0.0.0.0 on any unprivileged port, leave the service running after validation, and report its localhost URL; do not terminate that service unless the user asks you to stop it.",
   "Keep the final answer concise and report the files changed and verification performed.",
 ].join("\n");
 

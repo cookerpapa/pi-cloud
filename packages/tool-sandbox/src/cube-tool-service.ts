@@ -9,7 +9,12 @@ import {
 } from "@pi-cloud/protocol";
 import { captureWorkspaceIndex } from "@pi-cloud/workspace-runtime";
 import { execFile } from "node:child_process";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+  createServer,
+  request as requestHttp,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { networkInterfaces } from "node:os";
@@ -27,6 +32,18 @@ const TOOL_GID = 1_000;
 const HANDOFF_SECRET_PATTERN = /^pcch_[A-Za-z0-9_-]{43}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAXIMUM_TERMINAL_INPUT_BYTES = 64 * 1_024;
+const MAXIMUM_PREVIEW_RESPONSE_BYTES = 16 * 1_024 * 1_024;
+const PREVIEW_RESPONSE_HEADERS = new Set([
+  "accept-ranges",
+  "cache-control",
+  "content-encoding",
+  "content-language",
+  "content-range",
+  "content-type",
+  "etag",
+  "last-modified",
+  "location",
+]);
 
 type Pending<T> = {
   resolve(value: T): void;
@@ -240,6 +257,183 @@ function terminalInput(value: unknown): Buffer {
     throw new CubeToolServiceError(400, "Terminal input was invalid");
   }
   return decoded;
+}
+
+type LocalServiceProxyRequest = Readonly<{
+  port: number;
+  method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
+  path: string;
+  headers: Readonly<Record<string, string>>;
+  body?: Buffer;
+  timeoutMs: number;
+  maximumResponseBytes: number;
+}>;
+
+function parseLocalServiceProxyRequest(value: unknown): LocalServiceProxyRequest {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new CubeToolServiceError(400, "Service proxy request was invalid");
+  }
+  const input = value as Record<string, unknown>;
+  const methods = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
+  if (
+    !Number.isSafeInteger(input.port) ||
+    (input.port as number) < 1_024 ||
+    (input.port as number) > 65_535 ||
+    input.port === SERVICE_PORT ||
+    typeof input.method !== "string" ||
+    !methods.has(input.method) ||
+    typeof input.path !== "string" ||
+    input.path.length < 1 ||
+    input.path.length > 8_192 ||
+    !/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*$/.test(input.path) ||
+    typeof input.headers !== "object" ||
+    input.headers === null ||
+    Array.isArray(input.headers) ||
+    !Number.isSafeInteger(input.timeoutMs) ||
+    (input.timeoutMs as number) < 100 ||
+    (input.timeoutMs as number) > 300_000 ||
+    !Number.isSafeInteger(input.maximumResponseBytes) ||
+    (input.maximumResponseBytes as number) < 1 ||
+    (input.maximumResponseBytes as number) > MAXIMUM_PREVIEW_RESPONSE_BYTES
+  ) {
+    throw new CubeToolServiceError(400, "Service proxy request was invalid");
+  }
+  const headers: Record<string, string> = {};
+  const entries = Object.entries(input.headers as Record<string, unknown>);
+  if (entries.length > 32) {
+    throw new CubeToolServiceError(400, "Service proxy headers were invalid");
+  }
+  for (const [name, headerValue] of entries) {
+    const lower = name.toLowerCase();
+    if (
+      !/^[a-z0-9-]{1,128}$/.test(lower) ||
+      typeof headerValue !== "string" ||
+      headerValue.length > 8_192 ||
+      /[\r\n]/.test(headerValue) ||
+      new Set(["connection", "host", "transfer-encoding", "upgrade"]).has(lower)
+    ) {
+      throw new CubeToolServiceError(400, "Service proxy headers were invalid");
+    }
+    headers[lower] = headerValue;
+  }
+  let body: Buffer | undefined;
+  if (input.body !== undefined) {
+    if (
+      typeof input.body !== "string" ||
+      input.body.length > Math.ceil((MAXIMUM_REQUEST_BYTES * 4) / 3) + 4 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(input.body)
+    ) {
+      throw new CubeToolServiceError(400, "Service proxy body was invalid");
+    }
+    body = Buffer.from(input.body, "base64");
+    if (body.byteLength > MAXIMUM_REQUEST_BYTES || body.toString("base64") !== input.body) {
+      throw new CubeToolServiceError(400, "Service proxy body was invalid");
+    }
+  }
+  return {
+    port: input.port as number,
+    method: input.method as LocalServiceProxyRequest["method"],
+    path: input.path,
+    headers: Object.freeze(headers),
+    ...(body === undefined ? {} : { body }),
+    timeoutMs: input.timeoutMs as number,
+    maximumResponseBytes: input.maximumResponseBytes as number,
+  };
+}
+
+function proxyLocalService(input: LocalServiceProxyRequest): Promise<
+  Readonly<{
+    status: number;
+    headers: Readonly<Record<string, string>>;
+    body: string;
+  }>
+> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    let settled = false;
+    const finish = (
+      error: Error | undefined,
+      value?: Readonly<{
+        status: number;
+        headers: Readonly<Record<string, string>>;
+        body: string;
+      }>,
+    ): void => {
+      if (settled) return;
+      settled = true;
+      if (error !== undefined) rejectPromise(error);
+      else resolvePromise(value!);
+    };
+    const upstream = requestHttp(
+      {
+        hostname: "127.0.0.1",
+        port: input.port,
+        method: input.method,
+        path: input.path,
+        headers: input.headers,
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        let bytes = 0;
+        response.on("data", (chunk: Buffer) => {
+          const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          bytes += value.byteLength;
+          if (bytes > input.maximumResponseBytes) {
+            upstream.destroy();
+            finish(new CubeToolServiceError(413, "Service response exceeded its byte limit"));
+            return;
+          }
+          chunks.push(value);
+        });
+        response.once("error", () =>
+          finish(new CubeToolServiceError(502, "Sandbox HTTP service response failed")),
+        );
+        response.once("end", () => {
+          const headers: Record<string, string> = {};
+          for (const [name, raw] of Object.entries(response.headers)) {
+            const lower = name.toLowerCase();
+            const headerValue = Array.isArray(raw) ? raw[0] : raw;
+            if (
+              !PREVIEW_RESPONSE_HEADERS.has(lower) ||
+              typeof headerValue !== "string" ||
+              headerValue.length > 8_192
+            ) {
+              continue;
+            }
+            if (lower === "location") {
+              try {
+                const location = new URL(headerValue, `http://127.0.0.1:${String(input.port)}`);
+                headers[lower] =
+                  new Set(["127.0.0.1", "localhost", "0.0.0.0"]).has(location.hostname) &&
+                  Number(location.port || "80") === input.port
+                    ? `${location.pathname}${location.search}${location.hash}`
+                    : headerValue;
+              } catch {
+                continue;
+              }
+            } else {
+              headers[lower] = headerValue;
+            }
+          }
+          finish(undefined, {
+            status: response.statusCode ?? 502,
+            headers: Object.freeze(headers),
+            body: Buffer.concat(chunks).toString("base64"),
+          });
+        });
+      },
+    );
+    upstream.setTimeout(input.timeoutMs, () => {
+      upstream.destroy();
+      finish(new CubeToolServiceError(504, "Sandbox HTTP service timed out"));
+    });
+    upstream.once("error", () =>
+      finish(new CubeToolServiceError(502, "Sandbox HTTP service is not reachable")),
+    );
+    if (input.body !== undefined && input.method !== "GET" && input.method !== "HEAD") {
+      upstream.write(input.body);
+    }
+    upstream.end();
+  });
 }
 
 function sendTerminalFrame(response: ServerResponse, value: unknown): boolean {
@@ -905,6 +1099,15 @@ const server = createServer((request, response) => {
       // The execution is owned by operationId and the active handoff fence.
       // Losing this HTTP response leaves it attachable for a bounded window.
       sendJson(response, 200, await readyBridge().operation(operation));
+      return;
+    }
+    if (url.pathname === "/v1/service-proxy") {
+      requireAuthority(request);
+      sendJson(
+        response,
+        200,
+        await proxyLocalService(parseLocalServiceProxyRequest(await readJson(request))),
+      );
       return;
     }
     if (url.pathname === "/v1/terminal/open") {

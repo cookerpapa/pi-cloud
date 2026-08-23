@@ -585,7 +585,6 @@ try {
 }
 
 const clusterImage = `${clusterRegistryRepository}@${digest}`;
-const previewPorts = Object.freeze([3000, 8000]);
 const templateDefinitions = Object.freeze({
   agent: Object.freeze({
     label: "Agent Tool Runtime",
@@ -616,7 +615,10 @@ function specification(definition) {
   return Object.freeze({
     image: clusterImage,
     writableLayerSize: definition.writableLayerSize,
-    exposedPorts: [49_984, ...previewPorts],
+    // Cube limits templates to a small explicit exposed-port set. PiCloud
+    // keeps one authenticated ingress and proxies arbitrary guest HTTP ports
+    // from inside the microVM instead of reserving application ports here.
+    exposedPorts: [49_984],
     probePort: 49_984,
     probePath: "/health",
     cpuMillicores: definition.cpuMillicores,

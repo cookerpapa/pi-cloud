@@ -22,9 +22,15 @@ describe("private Sandbox preview protocol", () => {
     headers: { accept: "text/html" },
   } as const;
 
-  it("accepts only deployment-exposed ports and bounded HTTP envelopes", () => {
-    expect(parseSandboxPreviewRequest(request)).toMatchObject({ port: 8000, method: "GET" });
+  it("accepts arbitrary application ports while reserving the trusted ingress", () => {
+    expect(parseSandboxPreviewRequest({ ...request, port: 5173 })).toMatchObject({
+      port: 5173,
+      method: "GET",
+    });
     expect(() => parseSandboxPreviewRequest({ ...request, port: 22 })).toThrow(
+      SandboxPreviewProtocolError,
+    );
+    expect(() => parseSandboxPreviewRequest({ ...request, port: 49_984 })).toThrow(
       SandboxPreviewProtocolError,
     );
     expect(() => parseSandboxPreviewRequest({ ...request, admin: true })).toThrow(

@@ -122,7 +122,7 @@ cannot blank or repeatedly reload the directory.
 Workspace file preview is deliberately inert: at most 512 KiB of valid UTF-8 is rendered in an
 escaped `<pre>`, binary data is labelled, and repository HTML/scripts are never
 embedded. Application preview is a separate authenticated reverse proxy to
-ports 3000/8000 in a live Cube. It injects a path base and a per-response CSP
+arbitrary unprivileged HTTP ports in a live Cube. It injects a path base and a per-response CSP
 nonce so ordinary inline single-file apps work without granting arbitrary
 script origins. The same panel offers a brokered xterm session without exposing
 Cube ports or credentials. Deleting a parent recursively archives its human

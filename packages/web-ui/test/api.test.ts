@@ -21,33 +21,6 @@ const environment = {
 } as const;
 
 describe("tenant-aware browser API", () => {
-  it("probes a private Preview before opening it and explains an absent listener", async () => {
-    const sessionId = "10000000-0000-4000-8000-000000000001";
-    const unavailable = new PiCloudApi(
-      async () =>
-        new Response(
-          JSON.stringify({
-            error: "sandbox_preview_unavailable",
-            message: "Sandbox service is not currently reachable",
-          }),
-          { status: 503, headers: { "content-type": "application/json" } },
-        ),
-    );
-    await expect(unavailable.probeConversationPreview(sessionId, 8000)).rejects.toMatchObject({
-      code: "preview_unavailable",
-      status: 503,
-    });
-
-    const available = new PiCloudApi(async (input, init) => {
-      expect(String(input)).toBe(`/v1/conversations/${sessionId}/preview/8000/`);
-      expect(init?.headers).toMatchObject({ range: "bytes=0-0" });
-      return new Response("P", { status: 206 });
-    });
-    await expect(available.probeConversationPreview(sessionId, 8000)).resolves.toBe(
-      `/v1/conversations/${sessionId}/preview/8000/`,
-    );
-  });
-
   it("manages user-owned development environments through same-origin APIs", async () => {
     const createdAt = "2026-08-20T00:00:00.000Z";
     const environmentId = "10000000-0000-4000-8000-000000000021";

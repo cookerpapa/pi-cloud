@@ -208,33 +208,6 @@ export class PiCloudApi {
     );
   }
 
-  async probeConversationPreview(sessionId: string, port: number): Promise<string> {
-    const path = `/v1/conversations/${encodeURIComponent(sessionId)}/preview/${encodeURIComponent(
-      String(port),
-    )}/`;
-    let response: Response;
-    try {
-      response = await this.#fetch(path, {
-        method: "GET",
-        credentials: "same-origin",
-        headers: { range: "bytes=0-0" },
-      });
-    } catch {
-      throw new PiCloudApiError(0, "network_error", "服务预览网关不可用");
-    }
-    if (response.status === 502 || response.status === 503) {
-      let message = "沙箱正在运行，但所选端口还没有可访问的 HTTP 服务";
-      try {
-        const body = (await response.json()) as { message?: unknown };
-        if (typeof body.message === "string" && body.message.length > 0) message = body.message;
-      } catch {
-        /* An upstream service may itself return a non-JSON 502 response. */
-      }
-      throw new PiCloudApiError(response.status, "preview_unavailable", message);
-    }
-    return path;
-  }
-
   async registerAccount(
     username: string,
     displayName: string,

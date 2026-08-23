@@ -4,7 +4,11 @@ import { AdminPage } from "../src/AdminPage.tsx";
 import { AuthScreen } from "../src/AuthScreen.tsx";
 import ChatApp from "../src/ChatApp.tsx";
 import { ConversationTreeNavigator } from "../src/ConversationTreeNavigator.tsx";
-import { ConversationTurn, ToolActivity } from "../src/ConversationTurn.tsx";
+import {
+  ConversationTurn,
+  ToolActivity,
+  conversationPreviewHref,
+} from "../src/ConversationTurn.tsx";
 import { PiCloudApi } from "../src/api.ts";
 import { ResourceManagementPage } from "../src/ResourceManagementPage.tsx";
 import type { TurnView } from "../src/session-view.ts";
@@ -31,6 +35,19 @@ function turn(turnId: string, prompt: string): TurnView {
 }
 
 describe("product chat experience", () => {
+  it("maps arbitrary localhost application links through the authenticated conversation gateway", () => {
+    const sessionId = "10000000-0000-4000-8000-000000000001";
+    expect(conversationPreviewHref("http://localhost:5173/game?mode=demo", sessionId)).toBe(
+      `/v1/conversations/${sessionId}/preview/5173/game?mode=demo`,
+    );
+    expect(conversationPreviewHref("https://example.com/app", sessionId)).toBe(
+      "https://example.com/app",
+    );
+    expect(conversationPreviewHref("http://localhost:49984/health", sessionId)).toBe(
+      "http://localhost:49984/health",
+    );
+  });
+
   it("restores a durable login without rendering the old operator console", () => {
     const markup = renderToStaticMarkup(<ChatApp />);
     expect(markup).toContain("PiCloud");
