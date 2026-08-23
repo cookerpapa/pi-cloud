@@ -99,6 +99,8 @@ jobs:
             dockerfile: packages/cube-api-authorizer/Dockerfile
           - image: cube-egress-gateway
             dockerfile: packages/cube-egress-gateway/Dockerfile
+          - image: ssh-gateway
+            dockerfile: packages/ssh-gateway/Dockerfile
           - image: cubesandbox-tool
             dockerfile: deploy/cubesandbox/Dockerfile.tool
 
