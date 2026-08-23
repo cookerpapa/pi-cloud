@@ -26,6 +26,7 @@ export type ProductionControlPlaneConfig = {
   sshGatewayEnabled: boolean;
   sshAdvertisedHost: string;
   sshAdvertisedPort: number;
+  sshTicketTtlMs: number;
   supervisorIdPrefix: string;
   supervisorMaximumCapacity: number;
   supervisorManagementBaseUrlTemplates: readonly string[];
@@ -413,6 +414,13 @@ export async function loadProductionControlPlaneConfig(
       253,
     ),
     sshAdvertisedPort: integerValue(environment, "PI_CLOUD_SSH_ADVERTISED_PORT", 2_222, 1, 65_535),
+    sshTicketTtlMs: integerValue(
+      environment,
+      "PI_CLOUD_SSH_TICKET_TTL_MS",
+      24 * 60 * 60_000,
+      60_000,
+      24 * 60 * 60_000,
+    ),
     supervisorIdPrefix: supervisorIdPrefixValue(
       required(environment, "PI_CLOUD_SUPERVISOR_ID_PREFIX"),
     ),

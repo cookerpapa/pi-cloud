@@ -16,6 +16,7 @@ import {
   EnvironmentValidationReportSchema,
 } from "./environment.ts";
 import { CloudToolCapabilitySnapshotSchema, CloudToolNameSchema } from "./tool-capabilities.ts";
+import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
 
 export const MAX_TOOL_COMMAND_BYTES = 64 * 1_024;
 export const MAX_TOOL_FILE_BYTES = 512 * 1_024;
@@ -128,6 +129,7 @@ export const ToolSandboxCreateRequestSchema = Type.Object(
     attemptContextSha256: Sha256Schema,
     allowedTools: CloudToolCapabilitySnapshotSchema,
     retention: SandboxRetentionPolicySchema,
+    sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
     environment: EnvironmentRuntimeSnapshotSchema,
     workspaceSeed: AgentWorkspaceSeedSchema,
     workspaceRestore: Type.Optional(SandboxCheckpointBlobSchema),

@@ -655,8 +655,8 @@ export class CubeSandboxProvider implements SandboxProvider {
     });
     const instance = await this.#client.create({
       templateId:
-        spec.lifetime === "development_environment" && spec.developmentProfileKey !== undefined
-          ? this.#developmentTemplateIds.get(spec.developmentProfileKey)!
+        spec.sandboxProfileKey !== undefined
+          ? this.#developmentTemplateIds.get(spec.sandboxProfileKey)!
           : this.#templateId,
       timeoutSeconds:
         spec.lifetime === "development_environment" || spec.lifetime === "persistent_conversation"

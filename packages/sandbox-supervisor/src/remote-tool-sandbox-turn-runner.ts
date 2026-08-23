@@ -427,6 +427,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         attemptContextSha256: cloudAttempt.sha256,
         allowedTools: cloudTurn.context.tools.names,
         retention: command.payload.sandboxRetention,
+        sandboxProfileKey: command.payload.sandboxProfileKey,
         environment: command.payload.environment,
         workspaceSeed:
           workspaceSeed === undefined
@@ -768,6 +769,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             remainingToolCalls: command.payload.budgets?.remainingToolCalls ?? 128,
             maximumToolOutputBytes: command.payload.budgets?.maximumToolOutputBytes ?? 65_536,
             toolOutputDirectory,
+            workingDirectory: command.payload.workingDirectory,
             ...(projectInstructions === undefined ? {} : { projectInstructions }),
             ...(downstreamTrace === undefined
               ? {}

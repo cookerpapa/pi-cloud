@@ -84,6 +84,7 @@ import * as workspaceTerminalFencing from "./082_workspace_terminal_fencing.ts";
 import * as removeDuplicateCompactionLedger from "./083_remove_duplicate_compaction_ledger.ts";
 import * as conversationWorkspaceRebinding from "./084_conversation_workspace_rebinding.ts";
 import * as sshAccessTickets from "./085_ssh_access_tickets.ts";
+import * as sessionExecutionProfiles from "./086_session_execution_profiles.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -173,6 +174,7 @@ export const migrationProvider: MigrationProvider = {
       "083_remove_duplicate_compaction_ledger": removeDuplicateCompactionLedger,
       "084_conversation_workspace_rebinding": conversationWorkspaceRebinding,
       "085_ssh_access_tickets": sshAccessTickets,
+      "086_session_execution_profiles": sessionExecutionProfiles,
     };
   },
 };
@@ -485,3 +487,7 @@ export {
   down as downSshAccessTickets,
   up as upSshAccessTickets,
 } from "./085_ssh_access_tickets.ts";
+export {
+  down as downSessionExecutionProfiles,
+  up as upSessionExecutionProfiles,
+} from "./086_session_execution_profiles.ts";

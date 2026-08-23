@@ -179,7 +179,7 @@ beforeAll(async () => {
       project.projectId,
       project.workspaceId,
       "exclusive conversation",
-      "ephemeral",
+      "persistent",
     )
   ).sessionId;
   identity = {
@@ -262,7 +262,9 @@ describe("user-owned development environments", () => {
       environmentId: created.environmentId,
       command: "ssh -p 2222 picloud@127.0.0.1",
       username: "picloud",
+      expiresAt: "2026-08-24T00:00:00.000Z",
     });
+    expect(ticket.oneLineCommand).toContain("sshpass -e ssh");
     expect(ticket.password).toMatch(/^pcssh_/);
     expect(
       JSON.stringify(
@@ -319,6 +321,22 @@ describe("user-owned development environments", () => {
       service.action(identity, created.environmentId, "resume-exclusive", { action: "resume" }),
     ).resolves.toMatchObject({ state: "running" });
     expect(resumes).toHaveBeenCalledOnce();
+    await database
+      .updateTable("development_environments")
+      .set({ agent_activation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })
+      .where("id", "=", created.environmentId)
+      .executeTakeFirstOrThrow();
+    await expect(
+      service.action(identity, created.environmentId, "release-exclusive-busy", {
+        action: "release",
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect(destroys).not.toHaveBeenCalled();
+    await database
+      .updateTable("development_environments")
+      .set({ agent_activation_id: null })
+      .where("id", "=", created.environmentId)
+      .executeTakeFirstOrThrow();
     await expect(
       service.action(identity, created.environmentId, "release-exclusive", { action: "release" }),
     ).resolves.toMatchObject({ state: "released", releasedAt: expect.any(String) });

@@ -79,6 +79,7 @@ sshGateway:
   replicas: 2
   advertisedHost: ssh.pi-cloud.example.com
   port: 2222
+  ticketTtlMs: 86400000
   serviceType: LoadBalancer
   resources:
     requests: { cpu: 50m, memory: 64Mi }

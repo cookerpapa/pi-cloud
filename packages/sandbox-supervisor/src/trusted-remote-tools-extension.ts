@@ -99,6 +99,7 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   remainingToolCalls: number;
   maximumToolOutputBytes: number;
   toolOutputDirectory: string;
+  workingDirectory: string;
   projectInstructions?: string;
   traceparent?: string;
   tracestate?: string;
@@ -125,6 +126,7 @@ function validateRuntimeConfiguration(
   const remainingToolCalls = candidate.remainingToolCalls;
   const maximumToolOutputBytes = candidate.maximumToolOutputBytes;
   const configuredToolOutputDirectory = candidate.toolOutputDirectory;
+  const workingDirectory = candidate.workingDirectory;
   const projectInstructions = candidate.projectInstructions;
   const traceparent = candidate.traceparent;
   const tracestate = candidate.tracestate;
@@ -152,7 +154,8 @@ function validateRuntimeConfiguration(
     maximumToolOutputBytes > 1_048_576 ||
     !isAbsolute(configuredToolOutputDirectory) ||
     toolOutputDirectory !== configuredToolOutputDirectory ||
-    toolOutputDirectory === "/"
+    toolOutputDirectory === "/" ||
+    !/^\/workspace(?:\/[A-Za-z0-9._-]+)*$/u.test(workingDirectory)
   ) {
     throw new Error("Trusted Tool Sandbox identity is invalid");
   }
@@ -193,6 +196,7 @@ function validateRuntimeConfiguration(
     remainingToolCalls,
     maximumToolOutputBytes,
     toolOutputDirectory,
+    workingDirectory,
     ...(projectInstructions === undefined ? {} : { projectInstructions }),
     ...(traceparent === undefined ? {} : { traceparent }),
     ...(tracestate === undefined ? {} : { tracestate }),
@@ -635,13 +639,13 @@ function registerTrustedRemoteTools(
 
   pi.on("before_agent_start", async (event) => {
     const cwdLine = /^Current working directory:.*$/m;
-    const sandboxLine = "Current working directory: /workspace (isolated Tool Sandbox)";
+    const sandboxLine = `Current working directory: ${runtime.workingDirectory} (isolated Tool Sandbox)`;
     const basePrompt = cwdLine.test(event.systemPrompt)
       ? event.systemPrompt.replace(cwdLine, sandboxLine)
       : `${event.systemPrompt}\n\n${sandboxLine}`;
     const platformContext = [
       "## PiCloud execution context",
-      "All file and command tools operate in the isolated /workspace Tool Sandbox.",
+      `All file and command tools operate in the isolated /workspace Tool Sandbox. Start in ${runtime.workingDirectory}.`,
       "Large tool results are bounded in model context and preserved as tenant-scoped artifacts.",
     ].join("\n");
     if (runtime.projectInstructions === undefined) {

@@ -94,7 +94,7 @@ export type SandboxCreateSpec = Readonly<{
   workspaceRestore?: SandboxCheckpointBlob;
   policy: SandboxPolicy;
   lifetime?: "persistent_conversation" | "development_environment";
-  developmentProfileKey?: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
+  sandboxProfileKey?: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
 }>;
 
 export type SandboxHandle = Readonly<{

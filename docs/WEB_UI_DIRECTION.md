@@ -73,10 +73,14 @@ authenticated service Preview, the brokered terminal and active Pi steer are sup
 restores a durable HttpOnly-cookie session on reload. The authenticated shell
 shows tenant-scoped named conversations, typed Subagent children and a
 focused/full Pi Session tree at left, with the selected transcript at right.
-Starting a conversation requires selecting an existing named Workspace or
-creating a new empty one. The browser has no repository-import workflow. No API
-token, provider key, model profile, or model picker is shown to an ordinary
-user.
+The new-conversation dialog discloses only two modes first. Elastic execution
+then selects/creates a named Workspace and a deployment-owned resource profile.
+Exclusive execution selects one user-owned Cube and a persisted directory under
+its `/workspace` Volume. Workspace deletion and exclusive-environment lifecycle
+actions live on a separate resource page, where associated conversations and
+active-Run deletion locks are visible. The browser has no repository-import
+workflow. No API token, provider key, model profile, or model picker is shown to
+an ordinary user.
 
 The transcript preserves event order, merges adjacent text deltas, renders
 Markdown without raw HTML or remote-image fetches, collapses tool input/output,
@@ -107,12 +111,15 @@ files and the selected file body. Operational Runs, usage and environment
 diagnostics remain in telemetry/admin APIs, so a denied unrelated request
 cannot blank or repeatedly reload the directory.
 
-Preview is deliberately inert: at most 512 KiB of valid UTF-8 is rendered in an
+Workspace file preview is deliberately inert: at most 512 KiB of valid UTF-8 is rendered in an
 escaped `<pre>`, binary data is labelled, and repository HTML/scripts are never
-embedded. The same panel offers a brokered xterm session without exposing Cube
-ports or credentials. Deleting a parent recursively archives its human and
-Subagent descendants. Tail pruning retains the selected final answer and moves
-Pi's active lane back to it; neither operation rolls back Workspace bytes.
+embedded. Application preview is a separate authenticated reverse proxy to
+ports 3000/8000 in a live Cube. It injects a path base and a per-response CSP
+nonce so ordinary inline single-file apps work without granting arbitrary
+script origins. The same panel offers a brokered xterm session without exposing
+Cube ports or credentials. Deleting a parent recursively archives its human
+and Subagent descendants. Tail pruning retains the selected final answer and
+moves Pi's active lane back to it; neither operation rolls back Workspace bytes.
 
 A dedicated platform administrator bypasses the conversation shell and lands
 on the settings page for model and Cube proxy configuration. Tenant owners

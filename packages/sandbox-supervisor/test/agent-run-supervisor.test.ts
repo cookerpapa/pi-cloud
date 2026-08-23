@@ -58,6 +58,8 @@ function command(
       nextEventSeq: 1,
       input: { kind: "prompt", text: "hello" },
       sandboxRetention: "ephemeral",
+      sandboxProfileKey: "standard",
+      workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],
       model: {
         profileId: "profile-1",

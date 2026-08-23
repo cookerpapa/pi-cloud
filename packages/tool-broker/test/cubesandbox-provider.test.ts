@@ -401,7 +401,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       policy: provider.defaultPolicy,
       lifetime: "development_environment",
-      developmentProfileKey: "standard",
+      sandboxProfileKey: "standard",
     });
     expect(runtime.creates[0]).toMatchObject({
       templateId: "tpl-standard0000000000000000",
@@ -437,6 +437,7 @@ describe("CubeSandbox Provider contract", () => {
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.create",
       requestId: "10000000-0000-4000-8000-000000000011",
+      sandboxProfileKey: "standard",
       assignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
@@ -591,6 +592,7 @@ describe("CubeSandbox Provider contract", () => {
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.create",
       requestId: "10000000-0000-4000-8000-000000000027",
+      sandboxProfileKey: "standard",
       assignment: idleAssignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
@@ -629,6 +631,7 @@ describe("CubeSandbox Provider contract", () => {
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.create",
       requestId: "10000000-0000-4000-8000-000000000032",
+      sandboxProfileKey: "standard",
       assignment: nextAssignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,

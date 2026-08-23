@@ -58,6 +58,7 @@ const BASE_CONFIGURATION = {
   remainingToolCalls: 0,
   maximumToolOutputBytes: 1_024,
   toolOutputDirectory: "/tmp/pi-cloud-tool-output-test",
+  workingDirectory: "/workspace",
   traceparent: "00-11111111111111111111111111111111-2222222222222222-01",
 } as const;
 
@@ -141,6 +142,7 @@ describe("trusted remote tools extension governance", () => {
       remainingToolCalls: 0,
       maximumToolOutputBytes: 1_024,
       toolOutputDirectory: "/tmp/pi-cloud-sdk-tool-output-test",
+      workingDirectory: "/workspace",
       projectInstructions: "SDK activation-local instructions.",
     });
     if (typeof extension !== "function") throw new Error("Expected an inline extension factory");

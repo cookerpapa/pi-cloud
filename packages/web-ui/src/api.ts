@@ -602,12 +602,20 @@ export class PiCloudApi {
     workspaceId: string,
     title: string,
     sandboxRetention: SandboxRetentionPolicy,
+    sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey = "standard",
+    workingDirectory = "/workspace",
   ): Promise<SessionResource> {
     return parseSessionResource(
       await request(
         this.#fetch,
         `/v1/projects/${encodeURIComponent(projectId)}/sessions`,
-        jsonRequest({ workspaceId, title, sandboxRetention }),
+        jsonRequest({
+          workspaceId,
+          title,
+          sandboxRetention,
+          sandboxProfileKey,
+          workingDirectory,
+        }),
         this.#authorizationToken,
       ),
     );

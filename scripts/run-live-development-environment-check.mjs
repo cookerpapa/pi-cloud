@@ -302,7 +302,9 @@ const session = await api.createSession(
   project.projectId,
   project.workspaceId,
   `Agent handoff into exclusive environment ${suffix}`,
-  "ephemeral",
+  "persistent",
+  "standard",
+  "/workspace",
 );
 const agentRun = await api.acceptTurn(
   session.sessionId,

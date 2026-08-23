@@ -576,6 +576,7 @@ const environment = [
   "PI_CLOUD_SSH_ADVERTISED_PORT=2222",
   "PI_CLOUD_SSH_BIND_ADDRESS=127.0.0.1",
   "PI_CLOUD_SSH_PORT=2222",
+  "PI_CLOUD_SSH_TICKET_TTL_MS=86400000",
   `PI_CLOUD_APPLICATION_UID=${String(application.uid)}`,
   `PI_CLOUD_APPLICATION_GID=${String(application.gid)}`,
   "PI_CLOUD_TENANT_SLUG=pi-cloud",

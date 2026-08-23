@@ -9,8 +9,8 @@ shell operations run in CubeSandbox KVM microVMs.
 - browser registration/login and tenant-isolated conversations;
 - multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
 - durable recursive Subagents with bounded depth/concurrency;
-- named Workspaces, source browsing, Web Terminal, service preview and one-time SSH;
-- elastic or user-owned persistent Cube environments;
+- named Workspaces, source browsing, Web Terminal and authenticated service preview;
+- elastic Sandboxes or user-owned persistent Cube environments with one-use SSH access;
 - resumable SSE whose visible bytes were acknowledged by Kafka first;
 - horizontally replaceable Pi Workers and Kubernetes/KEDA deployment support.
 
@@ -72,7 +72,15 @@ After deployment:
 
 3. Sign in again and configure the provider, model, encrypted API key and Cube
    proxy in the administrator page.
-4. Create/select a Workspace, start a conversation and submit a coding task.
+4. Open **开发资源** to create Workspaces or an optional exclusive environment.
+5. Start a conversation in either mode:
+   - **Elastic execution** selects/creates a Workspace and chooses a deployment-owned size;
+   - **Exclusive environment** selects a running user-owned Cube and a persisted directory.
+
+Service preview is a same-origin HTTP proxy to an application listening on
+`0.0.0.0:3000` or `0.0.0.0:8000` inside the active Cube. SSH is available only
+for exclusive environments, only while no Agent Run or browser terminal owns
+the environment, and each password can be used once.
 
 Re-running `./install.sh` reconciles the same private runtime. Generated
 credentials and state live under `deploy/production/runtime/` by default and

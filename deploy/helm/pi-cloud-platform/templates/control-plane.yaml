@@ -78,6 +78,7 @@ spec:
             - { name: PI_CLOUD_SSH_GATEWAY_ENABLED, value: {{ .Values.sshGateway.enabled | quote }} }
             - { name: PI_CLOUD_SSH_ADVERTISED_HOST, value: {{ .Values.sshGateway.advertisedHost | quote }} }
             - { name: PI_CLOUD_SSH_ADVERTISED_PORT, value: {{ .Values.sshGateway.port | quote }} }
+            - { name: PI_CLOUD_SSH_TICKET_TTL_MS, value: {{ .Values.sshGateway.ticketTtlMs | quote }} }
             - name: PI_CLOUD_TOOL_BROKER_URLS
               value: {{ join "," $toolBrokerUrls | quote }}
             - { name: PI_CLOUD_IMAGE_REVISION, value: {{ .Values.global.imageRevision | quote }} }

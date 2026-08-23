@@ -294,6 +294,14 @@ standard or performance). CPU, memory and system-disk values come from the
 registered Cube template catalog; arbitrary template IDs and resource overrides
 are never accepted from the browser.
 
+An exclusive environment owns one persistent Workspace Volume but may serve
+several conversations. Each conversation freezes a working directory under
+`/workspace`; this is a directory binding, not a second Volume. Persistent
+conversations may share the environment, while Workspace single-writer
+admission still permits only one active Agent Run or human terminal at a time.
+Elastic conversations cannot bind to a Workspace currently attached to an
+exclusive environment.
+
 The allocation participates in tenant/Domain Sandbox quotas and the global
 Workspace single-writer rule. `agent_activation_id` and `terminal_active` are
 durable admission facts. Tool Broker lazily seals and rebinds the same Cube to a
@@ -311,7 +319,10 @@ Cube provider forwards HTTP through CubeProxy with the Sandbox's private
 traffic token. That token and the physical Sandbox ID never leave the trusted
 execution plane. Responses are bounded and security-sensitive hop-by-hop
 headers are not forwarded. Applications listen on `0.0.0.0` and should use
-relative asset URLs under the path-based preview endpoint.
+relative asset URLs under the path-based preview endpoint. HTML responses get
+a per-response CSP nonce on inline script/style blocks. This permits common
+single-file Agent-generated applications without granting arbitrary script
+origins or direct private Sandbox ingress.
 Cube allows three custom exposed ports per template. Port 49984 belongs to the
 trusted Tool Service, so PiCloud reserves the remaining two slots for
 application ports 3000 and 8000. The public protocol rejects every other port
@@ -320,7 +331,10 @@ rather than returning a late CubeProxy routing failure.
 Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented. PiCloud does not
 expose Sandbox port 22. A separate trusted SSH gateway validates a one-time
 PostgreSQL ticket and translates a standard SSH shell channel to the existing
-Tool Broker PTY protocol. It has no CubeAPI or model credential.
+Tool Broker PTY protocol. Tickets are issued only for an owned, running
+exclusive environment with no active Agent or terminal. An unused ticket lasts
+24 hours by default, but the first successful authentication consumes it. The
+gateway has no CubeAPI or model credential.
 
 ### Independent resource lifetimes
 

@@ -250,7 +250,13 @@ export class DevelopmentEnvironmentService {
     const replayed = await this.#database.transaction().execute(async (transaction) => {
       const environment = await transaction
         .selectFrom("development_environments")
-        .select(["state", "generation", "workspace_id as workspaceId"])
+        .select([
+          "state",
+          "generation",
+          "workspace_id as workspaceId",
+          "agent_activation_id as agentActivationId",
+          "terminal_active as terminalActive",
+        ])
         .where("tenant_id", "=", identity.tenantId)
         .where("owner_user_id", "=", identity.userId)
         .where("id", "=", environmentId)
@@ -286,6 +292,26 @@ export class DevelopmentEnvironmentService {
           "conflict",
           `Development environment cannot ${request.action} from ${environment.state}`,
         );
+      }
+      if (request.action === "release") {
+        const activeRun = await transaction
+          .selectFrom("runs")
+          .select("id")
+          .where("tenant_id", "=", identity.tenantId)
+          .where("workspace_id", "=", environment.workspaceId)
+          .where("state", "in", ["claimed", "running", "cancel_requested"])
+          .limit(1)
+          .executeTakeFirst();
+        if (
+          activeRun !== undefined ||
+          environment.agentActivationId !== null ||
+          environment.terminalActive
+        ) {
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Wait for the active Agent Run or terminal before releasing the environment",
+          );
+        }
       }
       if (request.action === "start") {
         await transaction

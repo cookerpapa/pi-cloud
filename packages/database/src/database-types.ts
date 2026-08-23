@@ -73,6 +73,7 @@ export type GitHubPullRequestDeliveryState = "pending" | "delivering" | "complet
 export type GitHubWebhookDeliveryStatus = "processed" | "ignored" | "failed";
 export type ModelRequestState = "reserved" | "completed" | "failed" | "aborted" | "budget_denied";
 export type EnvironmentVersionState = "pending" | "validated" | "failed";
+export type SandboxProfileKey = "starter" | "standard" | "performance";
 export type EnvironmentValidationStatus = "validated" | "failed";
 export type EnvironmentOperationKind = "create" | "activate" | "rollback" | "validate";
 export type SandboxDomainState = "active" | "draining" | "disabled";
@@ -486,6 +487,8 @@ export interface SessionTable {
   desired_model_profile_id: string;
   state: SessionState;
   sandbox_retention_policy: Generated<SandboxRetentionPolicy>;
+  working_directory: Generated<string>;
+  sandbox_profile_key: Generated<SandboxProfileKey>;
   session_kind: Generated<SessionKind>;
   tool_capabilities: GeneratedJsonArray;
   workspace_snapshot_key: string | null;
@@ -602,6 +605,8 @@ export interface RunTable {
   turn_id: string;
   command_id: string;
   environment_version_id: string;
+  working_directory: Generated<string>;
+  sandbox_profile_key: Generated<SandboxProfileKey>;
   agent_system_prompt: GeneratedNullable<string>;
   tool_capability_snapshot: GeneratedJsonArray;
   source_set_snapshot: GeneratedJsonObject;

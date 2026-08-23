@@ -53,18 +53,23 @@ contract for exposing an ordinary Sandbox's port 22 directly.
   deployment-owned size profile. It binds one persistent Workspace Volume. An
   Agent Run and a human terminal borrow the same Cube through a fenced,
   serialized Tool Broker handoff; two VMs never write that Volume concurrently.
-- Environment pause/resume/release controls live in the new-conversation and
-  conversation surfaces. There is no separate tenant development-environment
-  page. Releasing compute preserves both Session and Workspace.
+  Several conversations may select different directories beneath that Volume;
+  Workspace single-writer admission still serializes their mutable Runs.
+- Workspace creation/deletion and environment create/pause/resume/release live
+  on a dedicated user resource page. The new-conversation dialog only selects
+  elastic versus exclusive execution and progressively discloses the relevant
+  Workspace, profile, environment and directory choices. Releasing compute
+  preserves both Session and Workspace.
 - HTTP preview remains a same-origin authenticated proxy. Port 3000 or 8000 is
   meaningful only when an application listens on `0.0.0.0` inside the live
   Cube; the UI probes and explains an absent listener instead of exposing a raw
   502/503 page.
 - Native OpenSSH access terminates at a trusted PiCloud SSH gateway. The user
-  obtains a one-use, five-minute ticket through the authenticated conversation
-  API. The gateway consumes it atomically, rechecks environment ownership and
-  bridges the SSH channel to the existing Tool Broker PTY. Cube port 22,
-  Sandbox IDs, traffic tokens and control credentials are never public.
+  obtains a one-use ticket through the authenticated conversation API. An
+  unused ticket expires after 24 hours by default; the gateway consumes it on
+  first successful authentication, rechecks environment ownership and bridges
+  the SSH channel to the existing Tool Broker PTY. Cube port 22, Sandbox IDs,
+  traffic tokens and control credentials are never public.
 - Teleport was considered for SSH access. Its identity proxy, certificates,
   reverse tunnels and audit plane are appropriate for a broader enterprise
   infrastructure estate, but would duplicate PiCloud's existing tenant

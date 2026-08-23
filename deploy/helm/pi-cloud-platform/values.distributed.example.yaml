@@ -44,6 +44,7 @@ sshGateway:
   enabled: true
   advertisedHost: ssh.pi-cloud.example.com
   port: 2222
+  ticketTtlMs: 86400000
   serviceType: LoadBalancer
 
 web:

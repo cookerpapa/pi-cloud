@@ -292,6 +292,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
           input: { kind: "prompt", text: request.input.prompt },
           sandboxRetention: request.sandboxRetention,
+          sandboxProfileKey: request.sandboxProfileKey,
+          workingDirectory: request.workingDirectory,
           toolCapabilities: request.toolCapabilities,
           ...(request.agentSystemPrompt === undefined
             ? {}

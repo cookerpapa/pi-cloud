@@ -41,9 +41,10 @@ export type CloudTurnContext = Readonly<{
     specSha256: string;
     recipeSha256: string;
   }>;
-  workspace: Readonly<{ baseRevision: string | null }>;
+  workspace: Readonly<{ baseRevision: string | null; workingDirectory: string }>;
   sandbox: Readonly<{
     retention: ExecuteTurnCommandMessage["payload"]["sandboxRetention"];
+    profileKey: ExecuteTurnCommandMessage["payload"]["sandboxProfileKey"];
   }>;
   tools: Readonly<{
     registryVersion: typeof REMOTE_TOOL_REGISTRY_VERSION;
@@ -160,8 +161,14 @@ export function createCloudTurnContext(
       specSha256: payload.environment.specSha256,
       recipeSha256: payload.environment.recipeSha256,
     },
-    workspace: { baseRevision: workspaceBaseRevision ?? null },
-    sandbox: { retention: payload.sandboxRetention },
+    workspace: {
+      baseRevision: workspaceBaseRevision ?? null,
+      workingDirectory: payload.workingDirectory,
+    },
+    sandbox: {
+      retention: payload.sandboxRetention,
+      profileKey: payload.sandboxProfileKey,
+    },
     tools: {
       registryVersion: REMOTE_TOOL_REGISTRY_VERSION,
       names: parseCloudToolCapabilitySnapshot(payload.toolCapabilities),
@@ -177,6 +184,7 @@ export function createCloudTurnContext(
     workspaceBindingSha256: sha256({
       tenantId: context.identity.tenantId,
       workspaceId: context.identity.workspaceId,
+      workingDirectory: context.workspace.workingDirectory,
     }),
   });
 }

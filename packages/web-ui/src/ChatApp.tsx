@@ -31,6 +31,8 @@ import { activeTurn, createInitialSessionView, sessionViewReducer } from "./sess
 import { streamSessionEvents } from "./sse.ts";
 import { errorMessage } from "./ui-errors.ts";
 import { WorkspaceInspector } from "./WorkspaceInspector.tsx";
+import { WorkspaceDirectoryPicker } from "./WorkspaceDirectoryPicker.tsx";
+import { ResourceManagementPage } from "./ResourceManagementPage.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
@@ -108,6 +110,8 @@ export default function ChatApp() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorRefreshSignal, setInspectorRefreshSignal] = useState(0);
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
+  const [resourcePageOpen, setResourcePageOpen] = useState(false);
+  const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
   const [workspaceRebindOpen, setWorkspaceRebindOpen] = useState(false);
   const [rebindWorkspaceChoice, setRebindWorkspaceChoice] = useState<"existing" | "new">(
     "existing",
@@ -121,11 +125,11 @@ export default function ChatApp() {
   const [workspaceChoice, setWorkspaceChoice] = useState<"existing" | "new">("new");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [executionMode, setExecutionMode] = useState<"elastic" | "exclusive">("elastic");
-  const [exclusiveChoice, setExclusiveChoice] = useState<"existing" | "new">("new");
+  const [executionMode, setExecutionMode] = useState<"elastic" | "exclusive" | null>(null);
   const [selectedDevelopmentEnvironmentId, setSelectedDevelopmentEnvironmentId] = useState("");
   const [developmentProfileKey, setDevelopmentProfileKey] =
     useState<DevelopmentEnvironmentProfileKey>("standard");
+  const [workingDirectory, setWorkingDirectory] = useState("/workspace");
   const [pendingInitialPrompt, setPendingInitialPrompt] = useState<string | null>(null);
   const [reconnectGeneration, setReconnectGeneration] = useState(0);
   const [pendingTreeJump, setPendingTreeJump] = useState<{
@@ -144,11 +148,9 @@ export default function ChatApp() {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const followingConversationTailRef = useRef(true);
   const currentTurn = activeTurn(state);
-  const selectedWorkspace = workspaces.find(
-    (workspace) => workspace.workspaceId === selectedWorkspaceId,
-  );
   const currentDevelopmentEnvironment = developmentEnvironments.find(
     (environment) =>
+      state.session?.sandboxRetention === "persistent" &&
       environment.workspaceId === state.session?.workspaceId &&
       ["requested", "provisioning", "running", "paused", "releasing", "failed", "unknown"].includes(
         environment.state,
@@ -156,6 +158,13 @@ export default function ChatApp() {
   );
   const selectableDevelopmentEnvironments = developmentEnvironments.filter((environment) =>
     ["running", "paused"].includes(environment.state),
+  );
+  const elasticWorkspaces = workspaces.filter(
+    (workspace) =>
+      !developmentEnvironments.some(
+        (environment) =>
+          environment.workspaceId === workspace.workspaceId && environment.state !== "released",
+      ),
   );
   const conversationPanel = useResizablePanel({
     storageKey: "pi-cloud:conversation-list",
@@ -672,13 +681,13 @@ export default function ChatApp() {
     resetConversation();
     setPendingInitialPrompt(initialPrompt);
     setNewConversationTitle(initialPrompt === null ? "" : conversationTitle(initialPrompt));
-    setWorkspaceChoice(workspaces.length === 0 ? "new" : "existing");
-    setSelectedWorkspaceId(workspaces[0]?.workspaceId ?? "");
+    setWorkspaceChoice(elasticWorkspaces.length === 0 ? "new" : "existing");
+    setSelectedWorkspaceId(elasticWorkspaces[0]?.workspaceId ?? "");
     setNewWorkspaceName("");
-    setExecutionMode("elastic");
-    setExclusiveChoice(selectableDevelopmentEnvironments.length === 0 ? "new" : "existing");
+    setExecutionMode(null);
     setSelectedDevelopmentEnvironmentId(selectableDevelopmentEnvironments[0]?.environmentId ?? "");
     setDevelopmentProfileKey("standard");
+    setWorkingDirectory("/workspace");
     setWorkspacePanelOpen(true);
   }
 
@@ -690,17 +699,14 @@ export default function ChatApp() {
     try {
       let projectId: string;
       let workspaceId: string;
+      if (executionMode === null) return;
       const existingEnvironment =
-        executionMode === "exclusive" && exclusiveChoice === "existing"
+        executionMode === "exclusive"
           ? selectableDevelopmentEnvironments.find(
               (environment) => environment.environmentId === selectedDevelopmentEnvironmentId,
             )
           : undefined;
-      if (
-        executionMode === "exclusive" &&
-        exclusiveChoice === "existing" &&
-        existingEnvironment === undefined
-      ) {
+      if (executionMode === "exclusive" && existingEnvironment === undefined) {
         update({ type: "api.error", message: "请选择一个可用的独享运行环境。" });
         return;
       }
@@ -721,7 +727,7 @@ export default function ChatApp() {
         projectId = created.projectId;
         workspaceId = created.workspaceId;
       } else {
-        const selected = workspaces.find(
+        const selected = elasticWorkspaces.find(
           (workspace) => workspace.workspaceId === selectedWorkspaceId,
         );
         if (selected === undefined) {
@@ -731,14 +737,15 @@ export default function ChatApp() {
         projectId = selected.projectId;
         workspaceId = selected.workspaceId;
       }
-      if (executionMode === "exclusive" && existingEnvironment === undefined) {
-        await api.createDevelopmentEnvironment(
-          workspaceId,
-          developmentProfileKey,
-          newIdempotencyKey("environment"),
-        );
-      }
-      const session = await api.createSession(projectId, workspaceId, title, "ephemeral");
+      const sandboxProfileKey = existingEnvironment?.profileKey ?? developmentProfileKey;
+      const session = await api.createSession(
+        projectId,
+        workspaceId,
+        title,
+        executionMode === "exclusive" ? "persistent" : "ephemeral",
+        sandboxProfileKey,
+        executionMode === "exclusive" ? workingDirectory : "/workspace",
+      );
       const loaded = await loadConversation(session.sessionId);
       lastSequenceRef.current = loaded.replayAfterSequence;
       update({
@@ -789,32 +796,6 @@ export default function ChatApp() {
       await api.deleteConversation(conversation.sessionId, newIdempotencyKey("delete"));
       if (state.session?.sessionId === conversation.sessionId) resetConversation();
       await Promise.all([refreshConversations(), refreshWorkspaces()]);
-    } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
-    } finally {
-      setOperation(null);
-    }
-  }
-
-  async function deleteWorkspace(workspace: WorkspaceSummaryResource): Promise<void> {
-    if (
-      operation !== null ||
-      !window.confirm(
-        `永久删除 Workspace“${workspace.name}”及其中的全部文件？${
-          workspace.sessionCount > 0
-            ? `关联的 ${String(workspace.sessionCount)} 个对话会保留，并在下次继续前要求选择新的 Workspace。`
-            : ""
-        }此操作无法撤销。`,
-      )
-    ) {
-      return;
-    }
-    setOperation("deleting-workspace");
-    update({ type: "api.error.cleared" });
-    try {
-      await api.deleteWorkspace(workspace.workspaceId, newIdempotencyKey("delete"));
-      await Promise.all([refreshWorkspaces(), refreshConversations()]);
-      if (workspaces.length === 1) setWorkspaceChoice("new");
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error) });
     } finally {
@@ -873,35 +854,6 @@ export default function ChatApp() {
           ? `端口 ${String(port)} 尚未监听。请让应用绑定 0.0.0.0:${String(port)} 后重试。`
           : errorMessage(error),
       );
-    }
-  }
-
-  async function manageCurrentEnvironment(
-    action: "start" | "pause" | "resume" | "release",
-  ): Promise<void> {
-    const environment = currentDevelopmentEnvironment;
-    if (
-      environment === undefined ||
-      operation !== null ||
-      currentTurn !== undefined ||
-      (action === "release" &&
-        !window.confirm("释放这台 Cube KVM？对话和 Workspace 文件会保留，后台进程会停止。"))
-    ) {
-      return;
-    }
-    setOperation("creating");
-    update({ type: "api.error.cleared" });
-    try {
-      await api.developmentEnvironmentAction(
-        environment.environmentId,
-        action,
-        newIdempotencyKey("environment"),
-      );
-      await refreshDevelopmentEnvironments();
-    } catch (error: unknown) {
-      update({ type: "api.error", message: errorMessage(error) });
-    } finally {
-      setOperation(null);
     }
   }
 
@@ -1094,6 +1046,25 @@ export default function ChatApp() {
   if (identity.platformAdministrator) {
     return <AdminPage api={api} identity={identity} onLogout={() => void logout()} />;
   }
+  if (resourcePageOpen) {
+    return (
+      <ResourceManagementPage
+        api={api}
+        conversations={conversations}
+        environments={developmentEnvironments}
+        onClose={() => setResourcePageOpen(false)}
+        onRefresh={async () => {
+          await Promise.all([
+            refreshConversations(),
+            refreshWorkspaces(),
+            refreshDevelopmentEnvironments(),
+          ]);
+        }}
+        profiles={developmentProfiles}
+        workspaces={workspaces}
+      />
+    );
+  }
   return (
     <div className="product-shell">
       <button
@@ -1130,6 +1101,13 @@ export default function ChatApp() {
               type="button"
             >
               <span>＋</span> 新对话
+            </button>
+            <button
+              className="product-resource-nav"
+              onClick={() => setResourcePageOpen(true)}
+              type="button"
+            >
+              <span>▦</span> 资源管理
             </button>
           </div>
           <nav className="product-conversation-list" aria-label="对话列表">
@@ -1225,11 +1203,10 @@ export default function ChatApp() {
                 {state.connection.phase === "live" ? "已连接" : "连接中"}
               </span>
             ) : null}
-            {state.session?.sandboxRetention === "persistent" ||
-            currentDevelopmentEnvironment?.state === "running" ? (
+            {state.session !== null && selectedDelegatedSession === null ? (
               <div className="product-preview-control">
-                <label title="沙箱内应用监听的 HTTP 端口">
-                  服务端口
+                <label title="访问应用在 CubeSandbox 内监听的 HTTP 端口；应用必须绑定 0.0.0.0">
+                  应用预览端口
                   <select
                     aria-label="预览端口"
                     onChange={(event) => setPreviewPort(event.target.value)}
@@ -1247,63 +1224,24 @@ export default function ChatApp() {
                   onClick={() => void openConversationPreview()}
                   type="button"
                 >
-                  打开预览 ↗
+                  打开应用 ↗
                 </button>
                 {previewNotice === null ? null : (
                   <span className="product-preview-notice">{previewNotice}</span>
                 )}
               </div>
             ) : null}
-            {currentDevelopmentEnvironment === undefined ? null : (
+            {state.session?.sandboxRetention !== "persistent" ||
+            currentDevelopmentEnvironment?.state !== "running" ? null : (
               <div className="product-environment-controls">
-                {currentDevelopmentEnvironment.state === "running" ? (
-                  <>
-                    <button
-                      disabled={currentTurn !== undefined || operation !== null}
-                      onClick={() => void createSshTicket()}
-                      type="button"
-                    >
-                      SSH
-                    </button>
-                    <button
-                      disabled={currentTurn !== undefined || operation !== null}
-                      onClick={() => void manageCurrentEnvironment("pause")}
-                      type="button"
-                    >
-                      暂停环境
-                    </button>
-                  </>
-                ) : currentDevelopmentEnvironment.state === "paused" ? (
-                  <button
-                    disabled={currentTurn !== undefined || operation !== null}
-                    onClick={() => void manageCurrentEnvironment("resume")}
-                    type="button"
-                  >
-                    恢复环境
-                  </button>
-                ) : currentDevelopmentEnvironment.state === "failed" ? (
-                  <button
-                    disabled={currentTurn !== undefined || operation !== null}
-                    onClick={() => void manageCurrentEnvironment("start")}
-                    type="button"
-                  >
-                    重建环境
-                  </button>
-                ) : null}
-                {["running", "paused", "requested", "failed", "unknown"].includes(
-                  currentDevelopmentEnvironment.state,
-                ) ? (
-                  <button
-                    className="product-danger-button"
-                    disabled={currentTurn !== undefined || operation !== null}
-                    onClick={() => void manageCurrentEnvironment("release")}
-                    type="button"
-                  >
-                    释放环境
-                  </button>
-                ) : (
-                  <span className="product-preview-notice">环境正在准备，请稍候…</span>
-                )}
+                <button
+                  disabled={currentTurn !== undefined || operation !== null}
+                  onClick={() => void createSshTicket()}
+                  title="仅独享运行环境支持 SSH"
+                  type="button"
+                >
+                  SSH
+                </button>
               </div>
             )}
           </div>
@@ -1352,19 +1290,8 @@ export default function ChatApp() {
                   ×
                 </button>
               </header>
-              <label>
-                <span>对话标题</span>
-                <input
-                  autoFocus
-                  maxLength={256}
-                  onChange={(event) => setNewConversationTitle(event.target.value)}
-                  placeholder="例如：修复订单服务的并发问题"
-                  required
-                  value={newConversationTitle}
-                />
-              </label>
               <fieldset className="product-workspace-choice product-execution-mode-choice">
-                <legend>运行方式</legend>
+                <legend>选择运行方式</legend>
                 <label className="product-choice-card">
                   <input
                     checked={executionMode === "elastic"}
@@ -1373,7 +1300,7 @@ export default function ChatApp() {
                   />
                   <span>
                     <strong>弹性执行（推荐）</strong>
-                    <small>需要工具时分配 Cube 计算资源；空闲后回收，Workspace 文件独立保留</small>
+                    <small>按需分配 Cube，空闲后回收计算资源；Workspace 文件持续保留</small>
                   </span>
                 </label>
                 <label className="product-choice-card">
@@ -1384,168 +1311,141 @@ export default function ChatApp() {
                   />
                   <span>
                     <strong>独享运行环境</strong>
-                    <small>申请或选择仅你可见的 Cube KVM，跨多轮保留后台进程、服务和终端状态</small>
+                    <small>使用仅你可见的持久 Cube，跨多轮保留后台进程、服务、终端与 SSH</small>
                   </span>
                 </label>
-                {executionMode === "exclusive" ? (
-                  <p className="product-resource-boundary-note">
-                    Cube 是计算与进程环境；Workspace 是挂载其中的持久文件卷。释放或故障重建 Cube
-                    不会删除对话，也不会删除 Workspace 文件。
-                  </p>
-                ) : null}
               </fieldset>
 
-              {executionMode === "exclusive" ? (
-                <fieldset className="product-workspace-choice product-exclusive-environment-choice">
-                  <legend>独享运行环境</legend>
-                  {selectableDevelopmentEnvironments.length > 0 ? (
-                    <label className="product-choice-card">
-                      <input
-                        checked={exclusiveChoice === "existing"}
-                        onChange={() => setExclusiveChoice("existing")}
-                        type="radio"
-                      />
-                      <span>
-                        <strong>使用已有环境</strong>
-                        <small>继续使用同一台 KVM 中的进程、服务和 Workspace</small>
-                      </span>
-                    </label>
-                  ) : null}
-                  {exclusiveChoice === "existing" &&
-                  selectableDevelopmentEnvironments.length > 0 ? (
-                    <label>
-                      <span>环境</span>
-                      <select
-                        onChange={(event) =>
-                          setSelectedDevelopmentEnvironmentId(event.target.value)
-                        }
-                        value={selectedDevelopmentEnvironmentId}
-                      >
-                        {selectableDevelopmentEnvironments.map((environment) => (
-                          <option key={environment.environmentId} value={environment.environmentId}>
-                            {environment.workspaceName} · {String(environment.cpuCount)}C ·{" "}
-                            {String(environment.memoryMiB / 1024)}G · {environment.state}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  <label className="product-choice-card">
+              {executionMode === null ? null : (
+                <div className="product-progressive-options">
+                  <label>
+                    <span>对话标题</span>
                     <input
-                      checked={exclusiveChoice === "new"}
-                      onChange={() => setExclusiveChoice("new")}
-                      type="radio"
+                      autoFocus
+                      maxLength={256}
+                      onChange={(event) => setNewConversationTitle(event.target.value)}
+                      placeholder="例如：修复订单服务的并发问题"
+                      required
+                      value={newConversationTitle}
                     />
-                    <span>
-                      <strong>申请新环境</strong>
-                      <small>为所选 Workspace 创建一台独占 KVM</small>
-                    </span>
                   </label>
-                  {exclusiveChoice === "new" ? (
-                    <div
-                      className="product-resource-profiles"
-                      role="radiogroup"
-                      aria-label="运行环境规格"
-                    >
-                      {developmentProfiles.map((profile) => (
-                        <button
-                          aria-checked={profile.key === developmentProfileKey}
-                          className={profile.key === developmentProfileKey ? "active" : ""}
-                          key={profile.key}
-                          onClick={() => setDevelopmentProfileKey(profile.key)}
-                          role="radio"
-                          type="button"
-                        >
-                          <span>
-                            <strong>{profile.label}</strong>
-                            {profile.recommended ? <em>推荐</em> : null}
-                          </span>
-                          <b>{String(profile.cpuCount)} vCPU</b>
-                          <small>{String(profile.memoryMiB / 1024)} GiB 内存</small>
-                          <small>{String(profile.systemDiskGiB)} GiB 系统盘</small>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </fieldset>
-              ) : null}
 
-              {executionMode === "elastic" || exclusiveChoice === "new" ? (
-                <fieldset className="product-workspace-choice">
-                  <legend>Workspace</legend>
-                  {workspaces.length > 0 ? (
-                    <label className="product-choice-card">
-                      <input
-                        checked={workspaceChoice === "existing"}
-                        onChange={() => setWorkspaceChoice("existing")}
-                        type="radio"
-                      />
-                      <span>
-                        <strong>选择已有 Workspace</strong>
-                        <small>继续使用已有文件、依赖和 Git 状态</small>
-                      </span>
-                    </label>
-                  ) : null}
-                  {workspaceChoice === "existing" && workspaces.length > 0 ? (
-                    <div className="product-workspace-selection">
+                  {executionMode === "elastic" ? (
+                    <fieldset className="product-workspace-choice">
+                      <legend>Workspace</legend>
                       <label>
-                        <span>目录</span>
+                        <span>选择已有 Workspace 或新建</span>
                         <select
-                          onChange={(event) => setSelectedWorkspaceId(event.target.value)}
-                          value={selectedWorkspaceId}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setWorkspaceChoice(value === "__new__" ? "new" : "existing");
+                            if (value !== "__new__") setSelectedWorkspaceId(value);
+                          }}
+                          value={workspaceChoice === "new" ? "__new__" : selectedWorkspaceId}
                         >
-                          {workspaces.map((workspace) => (
+                          {elasticWorkspaces.map((workspace) => (
                             <option key={workspace.workspaceId} value={workspace.workspaceId}>
-                              {workspace.name}（{String(workspace.sessionCount)} 个对话）
+                              {workspace.name} · {String(workspace.sessionCount)} 个对话
                             </option>
                           ))}
+                          <option value="__new__">＋ 新建 Workspace</option>
                         </select>
                       </label>
-                      {selectedWorkspace === undefined ? null : (
-                        <div className="product-workspace-delete">
+                      {workspaceChoice === "new" ? (
+                        <label>
+                          <span>Workspace 名称</span>
+                          <input
+                            maxLength={256}
+                            onChange={(event) => setNewWorkspaceName(event.target.value)}
+                            placeholder="例如：order-service"
+                            required
+                            value={newWorkspaceName}
+                          />
+                        </label>
+                      ) : null}
+                      <legend>弹性沙箱规格</legend>
+                      <div
+                        className="product-resource-profiles"
+                        role="radiogroup"
+                        aria-label="弹性沙箱规格"
+                      >
+                        {developmentProfiles.map((profile) => (
                           <button
-                            className="product-danger-button"
-                            disabled={!canMutate || operation !== null}
-                            onClick={() => void deleteWorkspace(selectedWorkspace)}
+                            aria-checked={profile.key === developmentProfileKey}
+                            className={profile.key === developmentProfileKey ? "active" : ""}
+                            key={profile.key}
+                            onClick={() => setDevelopmentProfileKey(profile.key)}
+                            role="radio"
                             type="button"
                           >
-                            {operation === "deleting-workspace" ? "删除中…" : "删除 Workspace"}
+                            <span>
+                              <strong>
+                                {String(profile.cpuCount)}C / {String(profile.memoryMiB / 1024)}G
+                              </strong>
+                              {profile.recommended ? <em>推荐</em> : null}
+                            </span>
+                            <small>{String(profile.systemDiskGiB)}G 系统盘</small>
                           </button>
-                          {selectedWorkspace.sessionCount > 0 ? (
-                            <small>
-                              删除只移除文件；{String(selectedWorkspace.sessionCount)}{" "}
-                              个对话会保留并等待重新绑定。
-                            </small>
-                          ) : null}
+                        ))}
+                      </div>
+                    </fieldset>
+                  ) : (
+                    <fieldset className="product-workspace-choice product-exclusive-environment-choice">
+                      <legend>独享运行环境</legend>
+                      {selectableDevelopmentEnvironments.length === 0 ? (
+                        <div className="product-resource-boundary-note">
+                          还没有可用的独享环境。请先到资源管理页申请。
+                          <button
+                            onClick={() => {
+                              setWorkspacePanelOpen(false);
+                              setResourcePageOpen(true);
+                            }}
+                            type="button"
+                          >
+                            前往资源管理
+                          </button>
                         </div>
+                      ) : (
+                        <>
+                          <label>
+                            <span>选择独享 CubeSandbox</span>
+                            <select
+                              onChange={(event) => {
+                                setSelectedDevelopmentEnvironmentId(event.target.value);
+                                setWorkingDirectory("/workspace");
+                              }}
+                              value={selectedDevelopmentEnvironmentId}
+                            >
+                              {selectableDevelopmentEnvironments.map((environment) => (
+                                <option
+                                  key={environment.environmentId}
+                                  value={environment.environmentId}
+                                >
+                                  {environment.workspaceName} · {String(environment.cpuCount)}C/
+                                  {String(environment.memoryMiB / 1024)}G · {environment.state}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="product-working-directory-choice">
+                            <div>
+                              <span>工作目录</span>
+                              <code>{workingDirectory}</code>
+                            </div>
+                            <button onClick={() => setDirectoryPickerOpen(true)} type="button">
+                              选择目录…
+                            </button>
+                          </div>
+                          <p className="product-resource-boundary-note">
+                            此目录位于该环境绑定的持久 Workspace Volume 中。释放 Cube
+                            不会删除文件或对话。
+                          </p>
+                        </>
                       )}
-                    </div>
-                  ) : null}
-                  <label className="product-choice-card">
-                    <input
-                      checked={workspaceChoice === "new"}
-                      onChange={() => setWorkspaceChoice("new")}
-                      type="radio"
-                    />
-                    <span>
-                      <strong>创建新 Workspace</strong>
-                      <small>创建一个新的空 /workspace 目录</small>
-                    </span>
-                  </label>
-                  {workspaceChoice === "new" ? (
-                    <label>
-                      <span>Workspace 名称</span>
-                      <input
-                        maxLength={256}
-                        onChange={(event) => setNewWorkspaceName(event.target.value)}
-                        placeholder="例如：order-service"
-                        required
-                        value={newWorkspaceName}
-                      />
-                    </label>
-                  ) : null}
-                </fieldset>
-              ) : null}
+                    </fieldset>
+                  )}
+                </div>
+              )}
               <footer>
                 <button
                   onClick={() => {
@@ -1560,9 +1460,11 @@ export default function ChatApp() {
                   className="product-primary-button"
                   disabled={
                     operation !== null ||
-                    (executionMode === "exclusive" &&
-                      exclusiveChoice === "existing" &&
-                      selectedDevelopmentEnvironmentId === "")
+                    executionMode === null ||
+                    (executionMode === "exclusive" && selectedDevelopmentEnvironmentId === "") ||
+                    (executionMode === "elastic" &&
+                      workspaceChoice === "new" &&
+                      newWorkspaceName.trim() === "")
                   }
                   type="submit"
                 >
@@ -1572,6 +1474,33 @@ export default function ChatApp() {
             </form>
           </div>
         ) : null}
+
+        {directoryPickerOpen
+          ? (() => {
+              const environment = selectableDevelopmentEnvironments.find(
+                (candidate) => candidate.environmentId === selectedDevelopmentEnvironmentId,
+              );
+              if (environment === undefined) return null;
+              const reference = conversations.find(
+                (conversation) =>
+                  conversation.workspaceId === environment.workspaceId &&
+                  conversation.sandboxRetention === "persistent",
+              );
+              return (
+                <WorkspaceDirectoryPicker
+                  api={api}
+                  initialDirectory={workingDirectory}
+                  onCancel={() => setDirectoryPickerOpen(false)}
+                  onChoose={(directory) => {
+                    setWorkingDirectory(directory);
+                    setDirectoryPickerOpen(false);
+                  }}
+                  referenceSessionId={reference?.sessionId ?? null}
+                  workspaceName={environment.workspaceName}
+                />
+              );
+            })()
+          : null}
 
         {workspaceRebindOpen && state.session?.workspaceState === "missing" ? (
           <div className="product-modal-backdrop" role="presentation">
@@ -1665,8 +1594,7 @@ export default function ChatApp() {
                 <div>
                   <h2>通过 SSH 连接独享环境</h2>
                   <p>
-                    凭据只能使用一次，并在 {new Date(sshTicket.expiresAt).toLocaleTimeString()}{" "}
-                    失效。
+                    凭据只能使用一次，并在 {new Date(sshTicket.expiresAt).toLocaleString()} 失效。
                   </p>
                 </div>
                 <button onClick={() => setSshTicket(null)} type="button">
@@ -1674,23 +1602,23 @@ export default function ChatApp() {
                 </button>
               </header>
               <label>
-                <span>命令</span>
-                <code>{sshTicket.command}</code>
+                <span>一行连接（需要本机安装 sshpass）</span>
+                <code>{sshTicket.oneLineCommand}</code>
               </label>
               <label>
-                <span>一次性密码</span>
-                <code>{sshTicket.password}</code>
+                <span>手动连接</span>
+                <code>{sshTicket.command}</code>
               </label>
               <p className="product-resource-boundary-note">
-                SSH 在可信网关完成用户鉴权，再接入 Cube 的 PTY；沙箱不会暴露 22 端口、平台凭据或
-                Cube 控制令牌。
+                一行命令会把一次性密码放入当前 Shell 命令，请勿分享或保存到脚本。地址由部署方的 SSH
+                advertised host 决定；公网服务器应配置公网 IP 或域名，而不是自动替换 127.0.0.1。
               </p>
               <footer>
                 <button
-                  onClick={() => void navigator.clipboard.writeText(sshTicket.command)}
+                  onClick={() => void navigator.clipboard.writeText(sshTicket.oneLineCommand)}
                   type="button"
                 >
-                  复制命令
+                  复制一行命令
                 </button>
                 <button
                   className="product-primary-button"

@@ -16,6 +16,7 @@ import {
   UuidSchema,
 } from "./protocol-primitives.ts";
 import { EnvironmentRuntimeSnapshotSchema } from "./environment.ts";
+import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
 import { CloudToolCapabilitySnapshotSchema } from "./tool-capabilities.ts";
 
 export const TWO_PHASE_COMMAND_CAPABILITY = "command.two_phase.v1";
@@ -202,6 +203,12 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
         nextEventSeq: PositiveSafeIntegerSchema,
         input: Type.Union([PromptInputSchema, ContinueInputSchema]),
         sandboxRetention: SandboxRetentionPolicySchema,
+        sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
+        workingDirectory: Type.String({
+          minLength: 10,
+          maxLength: 1_024,
+          pattern: "^/workspace(?:/[A-Za-z0-9._-]+)*$",
+        }),
         toolCapabilities: CloudToolCapabilitySnapshotSchema,
         agentSystemPrompt: Type.Optional(Type.String({ minLength: 1, maxLength: 100_000 })),
         model: TurnModelSnapshotSchema,

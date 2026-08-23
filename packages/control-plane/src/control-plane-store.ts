@@ -17,6 +17,7 @@ import type {
   ConversationTurnState,
   CreateProjectRequest,
   CreateTurnCancellationRequest,
+  DevelopmentEnvironmentProfileKey,
   ProjectResource,
   ProjectEnvironmentResource,
   EnvironmentRuntimeSnapshot,
@@ -878,6 +879,11 @@ export class ControlPlaneStore {
     workspaceId: string,
     title: string,
     sandboxRetention: SandboxRetentionPolicy,
+    execution: Readonly<{
+      sandboxProfileKey?: DevelopmentEnvironmentProfileKey;
+      workingDirectory?: string;
+      ownerUserId?: string;
+    }> = {},
   ): Promise<SessionResource> {
     const sessionId = this.#idGenerator();
     return this.#database.transaction().execute(async (transaction) => {
@@ -940,15 +946,73 @@ export class ControlPlaneStore {
         .where("workspace_id", "=", workspace.id)
         .where("archived_at", "is", null)
         .execute();
-      if (
-        (sandboxRetention === "persistent" && liveWorkspaceSessions.length > 0) ||
-        liveWorkspaceSessions.some((existing) => existing.sandbox_retention_policy === "persistent")
+      const incompatibleSession = liveWorkspaceSessions.some(
+        (existing) => existing.sandbox_retention_policy !== sandboxRetention,
+      );
+      if (incompatibleSession) {
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Elastic and exclusive conversations cannot share one Workspace",
+        );
+      }
+
+      const developmentEnvironment = await transaction
+        .selectFrom("development_environments")
+        .select(["owner_user_id", "profile_key", "state"])
+        .where("tenant_id", "=", this.#tenantId)
+        .where("workspace_id", "=", workspace.id)
+        .where("state", "!=", "released")
+        .orderBy("updated_at", "desc")
+        .executeTakeFirst();
+      if (sandboxRetention === "persistent") {
+        if (
+          execution.ownerUserId !== undefined &&
+          developmentEnvironment !== undefined &&
+          (developmentEnvironment.owner_user_id !== execution.ownerUserId ||
+            !["running", "paused"].includes(developmentEnvironment.state))
+        ) {
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Exclusive environment is not available to this user",
+          );
+        }
+        if (
+          developmentEnvironment !== undefined &&
+          execution.sandboxProfileKey !== undefined &&
+          developmentEnvironment.profile_key !== execution.sandboxProfileKey
+        ) {
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Conversation profile does not match its exclusive environment",
+          );
+        }
+      } else if (developmentEnvironment !== undefined) {
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Elastic conversation cannot use a Workspace attached to an exclusive environment",
+        );
+      } else if (
+        execution.workingDirectory !== undefined &&
+        execution.workingDirectory !== "/workspace"
       ) {
         throw new ControlPlaneStoreError(
           "conflict",
-          "A persistent Sandbox conversation requires an otherwise unused Workspace",
+          "Elastic conversation working directory must be the Workspace root",
         );
       }
+      const environmentProfileKey = developmentEnvironment?.profile_key;
+      if (
+        environmentProfileKey !== undefined &&
+        environmentProfileKey !== "starter" &&
+        environmentProfileKey !== "standard" &&
+        environmentProfileKey !== "performance"
+      ) {
+        throw new ControlPlaneStoreError(
+          "control_plane_misconfigured",
+          "Exclusive environment profile is invalid",
+        );
+      }
+      const sandboxProfileKey = environmentProfileKey ?? execution.sandboxProfileKey ?? "standard";
 
       await this.#resolveModelSnapshot(transaction);
       const session = await transaction
@@ -962,6 +1026,8 @@ export class ControlPlaneStore {
           desired_model_profile_id: policy.defaultModelProfileId,
           state: "cold",
           sandbox_retention_policy: sandboxRetention,
+          sandbox_profile_key: sandboxProfileKey,
+          working_directory: execution.workingDirectory ?? "/workspace",
           workspace_snapshot_key: workspace.workspaceSnapshotKey,
           current_workspace_version_id: workspace.currentVersionId,
         })
@@ -972,6 +1038,8 @@ export class ControlPlaneStore {
           "workspace_id",
           "state",
           "sandbox_retention_policy",
+          "sandbox_profile_key",
+          "working_directory",
           "created_at",
         ])
         .executeTakeFirstOrThrow();
@@ -998,6 +1066,8 @@ export class ControlPlaneStore {
         workspaceState: "attached",
         state: "cold",
         sandboxRetention: session.sandbox_retention_policy,
+        sandboxProfileKey: session.sandbox_profile_key,
+        workingDirectory: session.working_directory,
         modelProfileId: policy.defaultModelProfileId,
         createdAt: isoTimestamp(session.created_at),
       };
@@ -1516,6 +1586,8 @@ export class ControlPlaneStore {
         "session_row.workspace_id as workspaceId",
         "session_row.state as state",
         "session_row.sandbox_retention_policy as sandboxRetention",
+        "session_row.sandbox_profile_key as sandboxProfileKey",
+        "session_row.working_directory as workingDirectory",
         "session_row.created_at as createdAt",
         "session_row.updated_at as updatedAt",
         "session_row.last_active_at as lastActiveAt",
@@ -1534,6 +1606,8 @@ export class ControlPlaneStore {
         "session_row.workspace_id",
         "session_row.state",
         "session_row.sandbox_retention_policy",
+        "session_row.sandbox_profile_key",
+        "session_row.working_directory",
         "session_row.created_at",
         "session_row.updated_at",
         "session_row.last_active_at",
@@ -1561,6 +1635,8 @@ export class ControlPlaneStore {
         workspaceState: row.workspaceDeletedAt === null ? "attached" : "missing",
         state: row.state,
         sandboxRetention: row.sandboxRetention,
+        sandboxProfileKey: row.sandboxProfileKey,
+        workingDirectory: row.workingDirectory,
         turnCount: nonNegativeSafeInteger(row.turnCount, "Conversation turn count"),
         createdAt: isoTimestamp(row.createdAt),
         updatedAt: isoTimestamp(row.updatedAt),
@@ -1604,6 +1680,8 @@ export class ControlPlaneStore {
         "session_row.desired_model_profile_id as modelProfileId",
         "session_row.state as sessionState",
         "session_row.sandbox_retention_policy as sandboxRetention",
+        "session_row.sandbox_profile_key as sandboxProfileKey",
+        "session_row.working_directory as workingDirectory",
         "session_row.created_at as sessionCreatedAt",
         "session_row.updated_at as sessionUpdatedAt",
         "session_row.last_active_at as lastActiveAt",
@@ -1779,6 +1857,8 @@ export class ControlPlaneStore {
         workspaceState: conversation.workspaceDeletedAt === null ? "attached" : "missing",
         state: conversation.sessionState,
         sandboxRetention: conversation.sandboxRetention,
+        sandboxProfileKey: conversation.sandboxProfileKey,
+        workingDirectory: conversation.workingDirectory,
         modelProfileId: conversation.modelProfileId,
         createdAt: isoTimestamp(conversation.sessionCreatedAt),
         updatedAt: isoTimestamp(conversation.sessionUpdatedAt),
@@ -2209,6 +2289,8 @@ export class ControlPlaneStore {
           "desired_model_profile_id",
           "session_kind",
           "state",
+          "working_directory",
+          "sandbox_profile_key",
           "next_event_seq",
           "next_mailbox_position",
           "current_workspace_version_id",
@@ -2423,6 +2505,8 @@ export class ControlPlaneStore {
           turn_id: turnId,
           command_id: command.id,
           environment_version_id: environment.environmentVersionId,
+          working_directory: session.working_directory,
+          sandbox_profile_key: session.sandbox_profile_key,
           tool_capability_snapshot: sql<unknown[]>`${JSON.stringify(toolCapabilities)}::jsonb`,
           source_set_snapshot: sql<Record<string, unknown>>`${canonicalWorkspaceSourceSetJson(
             sourceSet,

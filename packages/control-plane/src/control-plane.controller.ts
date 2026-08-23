@@ -477,7 +477,15 @@ export class ControlPlaneController {
     const identity = this.tenantRequestContext.requireMutation(httpRequest);
     return this.controlPlaneStores
       .forIdentity(identity)
-      .createSession(projectId, request.workspaceId, request.title, request.sandboxRetention);
+      .createSession(projectId, request.workspaceId, request.title, request.sandboxRetention, {
+        ownerUserId: identity.userId,
+        ...(request.sandboxProfileKey === undefined
+          ? {}
+          : { sandboxProfileKey: request.sandboxProfileKey }),
+        ...(request.workingDirectory === undefined
+          ? {}
+          : { workingDirectory: request.workingDirectory }),
+      });
   }
 
   @Post("sessions/:sessionId/turns")

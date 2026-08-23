@@ -331,6 +331,8 @@ export class PostgresSubagentJobProvider {
           "parent_session.id as sessionId",
           "parent_session.desired_model_profile_id as modelProfileId",
           "parent_session.sandbox_retention_policy as sandboxRetention",
+          "parent_session.sandbox_profile_key as sandboxProfileKey",
+          "parent_session.working_directory as workingDirectory",
           "parent_session.session_kind as sessionKind",
           "parent_session.workspace_snapshot_key as workspaceSnapshotKey",
           "parent_session.current_workspace_version_id as sessionWorkspaceVersionId",
@@ -577,6 +579,8 @@ export class PostgresSubagentJobProvider {
           desired_model_profile_id: parent.modelProfileId,
           state: "cold",
           sandbox_retention_policy: "ephemeral",
+          sandbox_profile_key: parent.sandboxProfileKey,
+          working_directory: parent.workingDirectory,
           session_kind: "subagent",
           tool_capabilities: sql<unknown[]>`${JSON.stringify(tools)}::jsonb`,
           workspace_snapshot_key:

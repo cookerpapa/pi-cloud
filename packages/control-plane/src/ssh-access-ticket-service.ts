@@ -5,7 +5,7 @@ import type { Kysely } from "kysely";
 import { ControlPlaneStoreError } from "./control-plane-store.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
-const DEFAULT_TICKET_TTL_MS = 5 * 60_000;
+const DEFAULT_TICKET_TTL_MS = 24 * 60 * 60_000;
 
 export type SshAccessTicketServiceOptions = Readonly<{
   database: Kysely<Database>;
@@ -49,7 +49,11 @@ export class SshAccessTicketService {
       throw new TypeError("SSH advertised port is invalid");
     }
     this.#ttlMs = options.ticketTtlMs ?? DEFAULT_TICKET_TTL_MS;
-    if (!Number.isSafeInteger(this.#ttlMs) || this.#ttlMs < 30_000 || this.#ttlMs > 15 * 60_000) {
+    if (
+      !Number.isSafeInteger(this.#ttlMs) ||
+      this.#ttlMs < 60_000 ||
+      this.#ttlMs > 24 * 60 * 60_000
+    ) {
       throw new TypeError("SSH access ticket TTL is invalid");
     }
     this.#clock = options.clock ?? (() => new Date());
@@ -89,6 +93,7 @@ export class SshAccessTicketService {
       .where("session_row.tenant_id", "=", identity.tenantId)
       .where("session_row.id", "=", sessionId)
       .where("session_row.archived_at", "is", null)
+      .where("session_row.sandbox_retention_policy", "=", "persistent")
       .where("workspace.deleted_at", "is", null)
       .where("development.owner_user_id", "=", identity.userId)
       .where("development.state", "=", "running")
@@ -117,6 +122,7 @@ export class SshAccessTicketService {
       })
       .executeTakeFirstOrThrow();
     const command = `ssh -p ${String(this.#port)} picloud@${this.#host}`;
+    const oneLineCommand = `SSHPASS='${password}' sshpass -e ssh -o StrictHostKeyChecking=accept-new -p ${String(this.#port)} picloud@${this.#host}`;
     return {
       ticketId,
       sessionId,
@@ -126,6 +132,7 @@ export class SshAccessTicketService {
       username: "picloud",
       password,
       command,
+      oneLineCommand,
       expiresAt: expiresAt.toISOString(),
     };
   }

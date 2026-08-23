@@ -188,6 +188,7 @@ export async function startControlPlane(): Promise<void> {
       enabled: config.sshGatewayEnabled,
       advertisedHost: config.sshAdvertisedHost,
       advertisedPort: config.sshAdvertisedPort,
+      ticketTtlMs: config.sshTicketTtlMs,
     });
     runtime = await createControlPlaneRuntime({
       database,

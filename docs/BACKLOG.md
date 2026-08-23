@@ -111,12 +111,15 @@ retired and remain only in Git history or explicitly superseded ADRs.
 - [x] Keep Cube credentials and cluster inventory behind Tool Broker.
 - [x] Support create, persistent PTY, pause, resume and release while preserving
       Workspace Volume bytes.
-- [x] Preserve one persistent conversation Cube across owner terminal handoff.
+- [x] Share one user-owned Cube across several directory-bound conversations
+      while preserving Workspace single-writer admission.
 - [x] Add private-token HTTP service preview and deployment-owned development
       environment size profiles.
 - [x] Hand an exclusive Cube between human Terminal and Agent Run under durable
       single-writer admission instead of allocating a second VM.
 - [x] Add one-use SSH tickets and a trusted SSH-to-Tool-Broker PTY gateway.
+- [x] Separate Workspace/environment management from progressive conversation
+      creation and expose deployment-owned profiles to elastic Runs.
 - [ ] Add a bounded WebSocket preview tunnel for HMR and application sockets.
 
 ## Product expansion rule

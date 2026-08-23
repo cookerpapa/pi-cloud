@@ -37,6 +37,8 @@ const command: ExecuteTurnCommandMessage = {
     nextEventSeq: 1,
     input: { kind: "prompt", text: "Return the deterministic fake response." },
     sandboxRetention: "ephemeral",
+    sandboxProfileKey: "standard",
+    workingDirectory: "/workspace",
     toolCapabilities: ["read", "write", "edit", "bash"],
     model: {
       profileId: "profile-1",

@@ -108,12 +108,21 @@
     "sshGateway": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "replicas", "advertisedHost", "port", "serviceType", "resources"],
+      "required": [
+        "enabled",
+        "replicas",
+        "advertisedHost",
+        "port",
+        "ticketTtlMs",
+        "serviceType",
+        "resources"
+      ],
       "properties": {
         "enabled": { "type": "boolean" },
         "replicas": { "type": "integer", "minimum": 1, "maximum": 32 },
         "advertisedHost": { "$ref": "#/$defs/dnsName" },
         "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "ticketTtlMs": { "type": "integer", "minimum": 60000, "maximum": 86400000 },
         "serviceType": { "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
         "resources": { "$ref": "#/$defs/resources" }
       }

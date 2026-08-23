@@ -6,7 +6,9 @@ import ChatApp from "../src/ChatApp.tsx";
 import { ConversationTreeNavigator } from "../src/ConversationTreeNavigator.tsx";
 import { ConversationTurn, ToolActivity } from "../src/ConversationTurn.tsx";
 import { PiCloudApi } from "../src/api.ts";
+import { ResourceManagementPage } from "../src/ResourceManagementPage.tsx";
 import type { TurnView } from "../src/session-view.ts";
+import { WorkspaceDirectoryPicker } from "../src/WorkspaceDirectoryPicker.tsx";
 import { WorkspaceInspector } from "../src/WorkspaceInspector.tsx";
 
 function turn(turnId: string, prompt: string): TurnView {
@@ -90,6 +92,50 @@ describe("product chat experience", () => {
     expect(markup).toContain("/workspace");
     expect(markup).not.toContain("runs");
     expect(markup).not.toContain("usage");
+  });
+
+  it("keeps Workspace and exclusive-environment lifecycle controls on a dedicated page", () => {
+    const api = new PiCloudApi(async () => new Response(null, { status: 500 }));
+    const markup = renderToStaticMarkup(
+      <ResourceManagementPage
+        api={api}
+        conversations={[]}
+        environments={[]}
+        onClose={() => undefined}
+        onRefresh={async () => undefined}
+        profiles={[
+          {
+            key: "standard",
+            label: "标准",
+            cpuCount: 2,
+            memoryMiB: 4096,
+            systemDiskGiB: 40,
+            recommended: true,
+          },
+        ]}
+        workspaces={[]}
+      />,
+    );
+    expect(markup).toContain("开发资源");
+    expect(markup).toContain("新建 Workspace");
+    expect(markup).toContain("独享运行环境");
+    expect(markup).toContain("返回对话");
+  });
+
+  it("presents an exclusive environment directory as an Explorer-style persisted root", () => {
+    const markup = renderToStaticMarkup(
+      <WorkspaceDirectoryPicker
+        api={new PiCloudApi(async () => new Response(null, { status: 500 }))}
+        initialDirectory="/workspace"
+        onCancel={() => undefined}
+        onChoose={() => undefined}
+        referenceSessionId={null}
+        workspaceName="exclusive-devbox"
+      />,
+    );
+    expect(markup).toContain("选择工作目录");
+    expect(markup).toContain("🏠 ~");
+    expect(markup).toContain("当前选择：/workspace");
   });
 
   it("renders Pi conversation forks in focused and whole-tree navigation", () => {

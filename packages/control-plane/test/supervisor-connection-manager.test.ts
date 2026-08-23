@@ -336,6 +336,8 @@ async function createAcceptedTurn(): Promise<{
       nextEventSeq: "1",
       input: { kind: "prompt", prompt: "keep this assignment alive" },
       sandboxRetention: "ephemeral",
+      sandboxProfileKey: "standard",
+      workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],
       model: {
         profileId,

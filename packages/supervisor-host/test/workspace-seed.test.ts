@@ -99,6 +99,8 @@ function command(tenantId: string = IDS.tenant): ExecuteTurnCommandMessage {
       nextEventSeq: 1,
       input: { kind: "prompt", text: "Inspect the imported repository" },
       sandboxRetention: "ephemeral",
+      sandboxProfileKey: "standard",
+      workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],
       model: {
         profileId: IDS.profile,

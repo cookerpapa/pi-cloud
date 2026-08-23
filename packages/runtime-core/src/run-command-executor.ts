@@ -53,6 +53,8 @@ export type TurnExecutionRequest = {
     prompt: string;
   };
   sandboxRetention: import("@pi-cloud/protocol").SandboxRetentionPolicy;
+  sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
+  workingDirectory: string;
   toolCapabilities: CloudToolCapabilitySnapshot;
   agentSystemPrompt?: string;
   model: {
@@ -632,6 +634,8 @@ export class RunCommandExecutor {
           "run.trace_id as traceId",
           "run.tool_capability_snapshot as toolCapabilitySnapshot",
           "run.agent_system_prompt as agentSystemPrompt",
+          "run.working_directory as workingDirectory",
+          "run.sandbox_profile_key as sandboxProfileKey",
           "run.queued_at as runQueuedAt",
           "run.state as runState",
           "run.current_attempt_id as currentAttemptId",
@@ -1039,6 +1043,8 @@ export class RunCommandExecutor {
           nextEventSeq: row.nextEventSeq,
           input: { kind: "prompt", prompt: row.inputText },
           sandboxRetention: row.sandboxRetention,
+          sandboxProfileKey: row.sandboxProfileKey,
+          workingDirectory: row.workingDirectory,
           toolCapabilities,
           ...(row.agentSystemPrompt === null ? {} : { agentSystemPrompt: row.agentSystemPrompt }),
           model: {

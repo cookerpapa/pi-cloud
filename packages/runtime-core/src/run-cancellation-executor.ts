@@ -412,6 +412,8 @@ export class RunCancellationExecutor {
           "session_row.sandbox_retention_policy as sandboxRetention",
           "session_row.next_event_seq as nextEventSeq",
           "run.id as runId",
+          "run.sandbox_profile_key as sandboxProfileKey",
+          "run.working_directory as workingDirectory",
           "run.tool_capability_snapshot as toolCapabilitySnapshot",
           "run_attempt.id as runAttemptId",
           "run_attempt.attempt_number as runAttemptNumber",
@@ -517,6 +519,8 @@ export class RunCancellationExecutor {
             nextEventSeq: row.nextEventSeq,
             input: { kind: "prompt", prompt: row.inputText },
             sandboxRetention: row.sandboxRetention,
+            sandboxProfileKey: row.sandboxProfileKey,
+            workingDirectory: row.workingDirectory,
             toolCapabilities: parseCloudToolCapabilitySnapshot(row.toolCapabilitySnapshot),
             model: {
               profileId: row.modelProfileId,

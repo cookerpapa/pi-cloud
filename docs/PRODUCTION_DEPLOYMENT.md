@@ -34,7 +34,9 @@ Users open the browser terminal from the Workspace panel or request a one-time
 SSH password for an exclusive environment. SSH binds to `127.0.0.1:2222` by
 default. Set `PI_CLOUD_SSH_BIND_ADDRESS`, `PI_CLOUD_SSH_ADVERTISED_HOST` and
 `PI_CLOUD_SSH_PORT` only when the host firewall and host-key trust policy are
-ready; no manual Cube credential is exposed.
+ready; `127.0.0.1` is not automatically replaced by a public address. Unused
+tickets expire after `PI_CLOUD_SSH_TICKET_TTL_MS` (24 hours by default) and are
+consumed by the first successful login. No Cube credential is exposed.
 
 ## Services
 

@@ -50,6 +50,8 @@ const session: SessionResource = {
   workspaceState: "attached",
   state: "cold",
   sandboxRetention: "ephemeral",
+  sandboxProfileKey: "standard",
+  workingDirectory: "/workspace",
   modelProfileId: "50000000-0000-4000-8000-000000000001",
   createdAt: CREATED_AT,
 };

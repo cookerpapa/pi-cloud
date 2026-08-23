@@ -77,6 +77,7 @@ const createRequest: ToolSandboxCreateRequest = {
   toolBrokerProtocolVersion: 1,
   type: "tool_sandbox.create",
   requestId: "10000000-0000-4000-8000-000000000011",
+  sandboxProfileKey: "standard",
   assignment,
   turnContextSha256: TURN_CONTEXT_SHA256,
   attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
@@ -309,7 +310,7 @@ describe("provider-backed Tool Tool Broker", () => {
         workspaceSeed: { kind: "sample_java" },
       }),
     ).resolves.toMatchObject({ state: "running" });
-    const agent = await manager.create(createRequest);
+    const agent = await manager.create({ ...createRequest, retention: "persistent" });
     expect(agent.activationId).toBe(ACTIVATION_ID);
     await expect(
       manager.execute(agent.capability, operation("21111111-1111-4111-8111-111111111111")),
@@ -341,6 +342,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...createRequest,
       requestId: "21111111-1111-4111-8111-111111111117",
       assignment: secondAssignment,
+      retention: "persistent",
     });
     await manager.execute(secondAgent.capability, {
       ...operation("21111111-1111-4111-8111-111111111118"),

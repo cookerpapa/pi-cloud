@@ -9,7 +9,7 @@ import {
 } from "@pi-cloud/protocol";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Kysely } from "kysely";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { tenantRequestIdentity } from "./tenant-identity.ts";
 
 export const CONVERSATION_PREVIEW_PATH = "/v1/conversations/:sessionId/preview/:port/*";
@@ -69,13 +69,18 @@ function publicPrefix(target: SandboxPreviewTarget, port: number): string {
     : `/v1/development-environments/${encodeURIComponent(target.environmentId)}/preview/${String(port)}`;
 }
 
-function rewriteHtml(body: Buffer, prefix: string): Buffer {
+export function rewritePreviewHtml(body: Buffer, prefix: string, nonce: string): Buffer {
   if (body.byteLength > 4 * 1_024 * 1_024) return body;
   const html = body.toString("utf8");
   if (!/<(?:html|head)[\s>]/iu.test(html)) return body;
   const base = `<base href="${prefix}/">`;
+  const rewritten = html
+    .replace(/<script(?![^>]*\bsrc=)(?![^>]*\bnonce=)([^>]*)>/giu, `<script nonce="${nonce}"$1>`)
+    .replace(/<style(?![^>]*\bnonce=)([^>]*)>/giu, `<style nonce="${nonce}"$1>`);
   return Buffer.from(
-    /<head[\s>]/iu.test(html) ? html.replace(/(<head[^>]*>)/iu, `$1${base}`) : `${base}${html}`,
+    /<head[\s>]/iu.test(rewritten)
+      ? rewritten.replace(/(<head[^>]*>)/iu, `$1${base}`)
+      : `${base}${rewritten}`,
     "utf8",
   );
 }
@@ -164,6 +169,7 @@ export class SandboxPreviewGateway {
         throw new Error("Preview owner redirect did not resolve");
       }
       const prefix = publicPrefix(target, port);
+      const previewNonce = randomBytes(18).toString("base64");
       for (const [name, value] of Object.entries(response.headers)) {
         if (name === "content-encoding") continue;
         reply.header(
@@ -175,13 +181,14 @@ export class SandboxPreviewGateway {
       reply.header(
         "content-security-policy",
         "sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads; " +
-          "default-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'",
+          `default-src 'self' data: blob:; script-src 'self' 'nonce-${previewNonce}' blob:; ` +
+          `style-src 'self' 'nonce-${previewNonce}' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'`,
       );
       reply.header("cross-origin-resource-policy", "same-origin");
       reply.header("x-content-type-options", "nosniff");
       let responseBody: Uint8Array = Buffer.from(response.body, "base64");
       if ((response.headers["content-type"] ?? "").toLowerCase().includes("text/html")) {
-        responseBody = rewriteHtml(Buffer.from(responseBody), prefix);
+        responseBody = rewritePreviewHtml(Buffer.from(responseBody), prefix, previewNonce);
       }
       await reply
         .code(response.status)
@@ -211,6 +218,7 @@ export class SandboxPreviewGateway {
       .where("session_row.tenant_id", "=", tenantId)
       .where("session_row.id", "=", target.sessionId)
       .where("session_row.archived_at", "is", null)
+      .where("session_row.sandbox_retention_policy", "=", "persistent")
       .where("development.owner_user_id", "=", userId)
       .where("development.state", "=", "running")
       .orderBy("development.updated_at", "desc")

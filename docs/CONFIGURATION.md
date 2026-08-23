@@ -113,11 +113,16 @@ than its request timeout.
 | `PI_CLOUD_SSH_PORT` | `2222` | SSH listener port |
 | `PI_CLOUD_SSH_ADVERTISED_HOST` | `127.0.0.1` | host shown to users |
 | `PI_CLOUD_SSH_ADVERTISED_PORT` | `2222` | port shown to users |
+| `PI_CLOUD_SSH_TICKET_TTL_MS` | `86400000` | maximum wait before an unused one-use password expires |
 | `PI_CLOUD_PRODUCTION_PROFILES` | empty | comma-separated `observability` and/or `github` |
 
 LAN/public SSH requires host firewall, stable host-key trust and explicit bind
-and advertised addresses. The GitHub profile is an infrastructure experiment,
-not a complete PR product workflow.
+and advertised addresses. `127.0.0.1` never changes automatically: set the bind
+address to `0.0.0.0` and the advertised host to the server's routable IP or DNS
+name. The UI offers a one-line `sshpass` command and a normal `ssh` command with
+the password separate. The ticket remains one-use even though its default
+unused lifetime is 24 hours. The GitHub profile is an infrastructure
+experiment, not a complete PR product workflow.
 
 ## Safety-coupled one-host budgets
 

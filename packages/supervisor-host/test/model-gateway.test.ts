@@ -246,6 +246,8 @@ beforeAll(async () => {
       nextEventSeq: 1,
       input: { kind: "prompt", text: "Repair it" },
       sandboxRetention: "ephemeral",
+      sandboxProfileKey: "standard",
+      workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],
       model: {
         profileId: tenant.defaultModelProfileId,

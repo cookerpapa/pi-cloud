@@ -1599,6 +1599,8 @@ describe.sequential("single-user durable turn intake API", () => {
             nextEventSeq: Number(request.nextEventSeq),
             input: { kind: "prompt", text: request.input.prompt },
             sandboxRetention: request.sandboxRetention,
+            sandboxProfileKey: request.sandboxProfileKey,
+            workingDirectory: request.workingDirectory,
             toolCapabilities: request.toolCapabilities,
             model: {
               ...request.model,

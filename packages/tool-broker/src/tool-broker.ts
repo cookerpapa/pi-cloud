@@ -526,7 +526,7 @@ export class ToolBroker {
         workspaceSeed: request.workspaceSeed,
         policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
         lifetime: "development_environment",
-        developmentProfileKey: request.profileKey,
+        sandboxProfileKey: request.profileKey,
       });
       if (
         !handleMatches(
@@ -1152,6 +1152,23 @@ export class ToolBroker {
         environment.reservation.tenantId === request.assignment.tenantId &&
         environment.reservation.workspaceId === request.assignment.workspaceId,
     );
+    if (developmentEnvironment !== undefined && request.retention !== "persistent") {
+      throw new ToolBrokerError(
+        "development_environment_requires_exclusive_session",
+        "Workspace is attached to an exclusive development environment",
+        false,
+      );
+    }
+    if (
+      developmentEnvironment !== undefined &&
+      developmentEnvironment.reservation.profileKey !== request.sandboxProfileKey
+    ) {
+      throw new ToolBrokerError(
+        "development_environment_profile_mismatch",
+        "Conversation Sandbox profile does not match its exclusive environment",
+        false,
+      );
+    }
     if (
       developmentEnvironment !== undefined &&
       (developmentEnvironment.terminal !== undefined ||
@@ -1189,6 +1206,7 @@ export class ToolBroker {
         ? {}
         : { workspaceRestore: request.workspaceRestore }),
       policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
+      sandboxProfileKey: request.sandboxProfileKey,
       ...(request.retention === "persistent"
         ? { lifetime: "persistent_conversation" as const }
         : {}),

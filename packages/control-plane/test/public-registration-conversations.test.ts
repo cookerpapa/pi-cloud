@@ -423,7 +423,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     });
   });
 
-  it("persists the Sandbox retention policy and reserves a Workspace for its persistent conversation", async () => {
+  it("persists execution profiles, allows several exclusive conversations, and prevents elastic mixing", async () => {
     const projectResponse = await http.inject({
       method: "POST",
       url: "/v1/projects",
@@ -455,6 +455,26 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     expect(detail.statusCode).toBe(200);
     expect(detail.json<ConversationDetailResource>().session.sandboxRetention).toBe("persistent");
 
+    const siblingResponse = await http.inject({
+      method: "POST",
+      url: `/v1/projects/${project.projectId}/sessions`,
+      headers: authorization(alpha.apiToken),
+      payload: {
+        workspaceId: project.workspaceId,
+        title: "Second directory in the same environment",
+        sandboxRetention: "persistent",
+        sandboxProfileKey: "performance",
+        workingDirectory: "/workspace/frontend",
+      },
+    });
+    expect(siblingResponse.statusCode).toBe(201);
+    const sibling = siblingResponse.json<SessionResource>();
+    expect(sibling).toMatchObject({
+      sandboxRetention: "persistent",
+      sandboxProfileKey: "performance",
+      workingDirectory: "/workspace/frontend",
+    });
+
     const conflicting = await http.inject({
       method: "POST",
       url: `/v1/projects/${project.projectId}/sessions`,
@@ -476,6 +496,18 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       },
     });
     expect(archived.statusCode).toBe(200);
+    expect(
+      (
+        await http.inject({
+          method: "DELETE",
+          url: `/v1/conversations/${sibling.sessionId}`,
+          headers: {
+            ...authorization(alpha.apiToken),
+            "idempotency-key": "archive-persistent-devbox-sibling",
+          },
+        })
+      ).statusCode,
+    ).toBe(200);
 
     const replacement = await http.inject({
       method: "POST",
