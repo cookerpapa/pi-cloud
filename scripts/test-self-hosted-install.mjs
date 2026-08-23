@@ -3,6 +3,7 @@ import { strict as assert } from "node:assert";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
 
 const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -32,6 +33,8 @@ assert.match(plan.stdout, /http:\/\/127\.0\.0\.1:18080/u);
 
 const installerSource = await readFile(installer, "utf8");
 assert.match(installerSource, /\/healthz/u);
+assert.match(installerSource, /production:administrator -- --username/u);
+assert.match(installerSource, /clean Git checkout/u);
 assert.doesNotMatch(installerSource, /health_url=.*\/health(?:["'])/u);
 
 const composeWrapper = await readFile(
@@ -55,6 +58,23 @@ const productionCompose = await readFile(
 assert.match(productionCompose, /pi-cloud\.agent-events\.raw\.v1/u);
 assert.match(productionCompose, /pi-cloud\.agent-events\.accepted\.v1/u);
 assert.doesNotMatch(productionCompose, /event-gateway|valkey/u);
+validateProductionRuntimeEnvironment({});
+assert.throws(
+  () =>
+    validateProductionRuntimeEnvironment({
+      PI_CLOUD_AGENT_EVENT_RETENTION_MS: "3600000",
+      PI_CLOUD_KAFKA_GATEWAY_REPLAY_WINDOW_MS: "7200000",
+    }),
+  /retention must cover/u,
+);
+assert.throws(
+  () =>
+    validateProductionRuntimeEnvironment({
+      PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_QUEUE_WAIT_TIMEOUT_MS: "300000",
+      PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS: "300000",
+    }),
+  /queue wait must be shorter/u,
+);
 
 await assert.rejects(
   execute("bash", [installer, "--print-plan", "--pi-workers", "invalid"], {

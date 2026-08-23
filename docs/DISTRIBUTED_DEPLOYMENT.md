@@ -57,6 +57,11 @@ npm run kubernetes:distributed:preflight -- --values values.yaml
 npm run kubernetes:distributed:deploy -- --values values.yaml
 ```
 
+`render` permits documented placeholders so the chart can be inspected without
+a cluster. `preflight` and `deploy` reject example domains, image references,
+Git revisions and Cube template IDs, run strict Helm/schema validation, and
+check the coupled Turn/lease/replay budgets before creating the namespace.
+
 The platform Secret must contain database URLs, API/bootstrap credentials,
 Cube/Tool credentials, Kafka credentials/CA material and metrics tokens.
 No S3 or Temporal credential is required.

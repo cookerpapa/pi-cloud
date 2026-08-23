@@ -28,9 +28,10 @@ new Attempt takes ownership.
 
 ### Durable authorities
 
-PostgreSQL owns Runs, Pi Sessions and the bounded live-event tail; the
-persistent Cube Volume owns Workspace bytes. Worker caches are rebuildable.
-There is no competing workflow or checkpoint head.
+PostgreSQL owns Runs and canonical Pi Sessions; Accepted Kafka owns the bounded
+live-event tail; the persistent Cube Volume owns Workspace bytes. Worker and
+Gateway caches are rebuildable. There is no competing workflow or checkpoint
+head.
 
 ## Key threats and controls
 

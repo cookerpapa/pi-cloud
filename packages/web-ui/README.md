@@ -10,11 +10,12 @@ PostgreSQL, Cube or provider credentials directly.
 - tenant-scoped named Workspaces and conversations;
 - resizable conversation list and focused/full Pi Session tree;
 - typed, read-only Subagent child Sessions with context/Workspace-mode labels;
-- ordered assistant, thinking and Tool rendering from durable SSE;
+- ordered assistant, Tool and lifecycle rendering from durable SSE;
 - active Turn cancellation and steer;
 - conversation forks, recursive subtree deletion and settled-answer tail
   pruning;
-- committed Workspace directory/source preview and a brokered xterm terminal;
+- committed Workspace directory/source view, authenticated service preview and
+  a brokered xterm terminal;
 - a separate administrator settings product for model and Cube proxy policy.
 
 Tail pruning changes conversation context only. It retains the selected final

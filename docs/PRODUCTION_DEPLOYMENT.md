@@ -1,7 +1,8 @@
 # One-host production deployment
 
-The supported one-host profile targets x86_64 Debian/Ubuntu or WSL2 with
-systemd, KVM and enough CPU/RAM for Cube microVMs.
+The supported one-host profile requires a clean Git checkout on x86_64
+Debian/Ubuntu or WSL2 with systemd, writable `/dev/kvm`, at least 8 GiB RAM and
+40 GiB free disk.
 
 ```bash
 ./install.sh
@@ -15,8 +16,13 @@ the application. It is resumable and supports a read-only preflight:
 ./install.sh --check-only
 ```
 
-Open `http://127.0.0.1:8080`, register the designated administrator and set the
-model provider/key in the administrator page.
+Open `http://127.0.0.1:8080`, register the designated administrator, then run:
+
+```bash
+npm run production:administrator -- --username <registered-username>
+```
+
+Sign in again and set the model provider/key in the administrator page.
 
 The safe default binds the Web/Preview entry to loopback. For a trusted LAN,
 set `PI_CLOUD_HTTP_BIND_ADDRESS=0.0.0.0` in the private production environment
@@ -59,9 +65,9 @@ PostgreSQL backup.
 ## Acceptance
 
 ```bash
-npm run production:check
-npm run production:worker-pool-check
-npm run production:control-plane-restart-check
+PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
+PI_CLOUD_LIVE_WORKER_POOL_CHECK=1 npm run production:worker-pool-check
+PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 npm run production:control-plane-restart-check
 PI_CLOUD_LIVE_LONG_CONTEXT_CHECK=1 npm run production:long-context-check
 ```
 

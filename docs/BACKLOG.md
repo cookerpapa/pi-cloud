@@ -11,6 +11,13 @@ retired and remain only in Git history or explicitly superseded ADRs.
 - [x] Make the maintained architecture documents explicitly distinguish
       ephemeral RunAttempt ownership from the removed Worker-affinity design,
       and label migrations/discussion logs as historical evidence.
+- [x] Make README a concise product/deployment entry, validate local links and
+      documented npm commands in CI, and align package-level authority docs.
+- [x] Centralize one-host operator settings in the generated private `.env`,
+      validate cross-service retention/lease/queue relations, and provide an
+      idempotent registered-account administrator command.
+- [x] Run strict Helm/value-policy checks before distributed preflight mutates
+      a cluster, including placeholder and coupled-budget rejection.
 - [x] Keep formatting, typecheck, unit/integration, build, Helm and security
       gates green.
 - [ ] Run a clean self-hosted install after every deployment contract change.
@@ -59,6 +66,9 @@ retired and remain only in Git history or explicitly superseded ADRs.
       explicit rebind before later Turns.
 - [x] Distinguish a Session Workspace rebind from same-Workspace Cube recovery
       with one compactable, model-visible World State fact.
+- [x] Remove the unreachable Tool Worker portable-capture route; current Cube
+      settlement uses only the provider checkpoint and persistent-Volume
+      revision path.
 - [x] Remove the redundant pre-Kafka group-commit scheduler and require a
       Session-keyed mutation projection barrier before cross-Worker reads.
 - [x] Let a durably fenced, expired Worker settle its interrupted Run even when

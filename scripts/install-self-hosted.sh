@@ -184,7 +184,7 @@ run_read_only_checks() {
   elif sudo_docker_usable; then
     check_warn "Docker works through passwordless sudo but this shell lacks direct access"
   else
-    check_fail "Docker Engine and Compose are not usable"
+    check_warn "Docker Engine/Compose absent; normal installation supplies them"
   fi
   if command -v node >/dev/null 2>&1 && node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=19)?0:1)'; then
     check_pass "Node.js $(node --version) satisfies the repository engine"
@@ -194,7 +194,13 @@ run_read_only_checks() {
   command -v helm >/dev/null 2>&1 && check_pass "Helm is available" ||
     check_warn "Helm absent; normal installation supplies a pinned copy"
   [[ -x /usr/local/bin/k3s && -e /etc/rancher/k3s/k3s.yaml ]] && check_pass "K3s is installed" ||
-    check_fail "K3s and its kubeconfig are not installed"
+    check_warn "K3s absent; normal installation supplies the pinned version"
+  if [[ -d "${repository_root}/.git" ]] &&
+    [[ -z "$(git -C "${repository_root}" status --porcelain 2>/dev/null)" ]]; then
+    check_pass "PiCloud checkout is a clean Git revision"
+  else
+    check_fail "PiCloud deployment requires a clean Git checkout"
+  fi
   if [[ -d "${cube_repository}/.git" ]]; then
     [[ "$(git -C "${cube_repository}" rev-parse HEAD 2>/dev/null || true)" == "${CUBE_COMMIT}" ]] &&
       check_pass "CubeSandbox checkout is pinned" || check_fail "Cube checkout is at the wrong commit"
@@ -220,6 +226,9 @@ current_phase="host validation"
 [[ "$(uname -s)" == "Linux" ]] || fail "only Linux is supported"
 [[ "$(uname -m)" == "x86_64" ]] || fail "CubeSandbox requires x86_64"
 [[ "$(id -u)" -ne 0 ]] || fail "run as the deployment user, not root; sudo is requested only when needed"
+[[ -d "${repository_root}/.git" ]] || fail "PiCloud deployment requires a Git checkout"
+[[ -z "$(git -C "${repository_root}" status --porcelain)" ]] ||
+  fail "commit or discard PiCloud changes before deployment"
 systemd_usable || fail "systemd must be enabled and running"
 [[ -c /dev/kvm && -r /dev/kvm && -w /dev/kvm ]] || fail "/dev/kvm must be readable and writable"
 (( $(memory_kib) >= 7500000 )) || fail "CubeSandbox requires at least 8 GB RAM"
@@ -582,10 +591,9 @@ cat <<EOF
 
   Next:
     1. Register the dedicated platform administrator account.
-    2. Put its tenant UUID in PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID in:
-       ${runtime_directory}/.env
-    3. Restart the Control Plane and configure the provider/model key in the
-       administrator page. The key is never handled by this installer.
+    2. Run: npm run production:administrator -- --username <registered-username>
+    3. Sign in again and configure the provider/model key in the administrator
+       page. The key is never handled by this installer.
 
   Reconcile later:       ./install.sh
   Read-only diagnosis:   ./install.sh --check-only

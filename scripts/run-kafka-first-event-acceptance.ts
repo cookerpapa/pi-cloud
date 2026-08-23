@@ -11,11 +11,15 @@ import { writeFile } from "node:fs/promises";
 const { Kafka, logLevel } = KafkaJS;
 const brokers = (process.env.PI_CLOUD_KAFKA_BROKERS ?? "127.0.0.1:19092").split(",");
 const sessionCount = Number(process.env.PI_CLOUD_KAFKA_ACCEPTANCE_SESSIONS ?? "256");
-const eventsPerEnvelope = Number(process.env.PI_CLOUD_KAFKA_ACCEPTANCE_EVENTS ?? "16");
+const eventsPerSessionPhase = Number(process.env.PI_CLOUD_KAFKA_ACCEPTANCE_EVENTS ?? "16");
 if (!Number.isSafeInteger(sessionCount) || sessionCount < 2 || sessionCount > 4_096) {
   throw new Error("PI_CLOUD_KAFKA_ACCEPTANCE_SESSIONS is invalid");
 }
-if (!Number.isSafeInteger(eventsPerEnvelope) || eventsPerEnvelope < 1 || eventsPerEnvelope > 128) {
+if (
+  !Number.isSafeInteger(eventsPerSessionPhase) ||
+  eventsPerSessionPhase < 1 ||
+  eventsPerSessionPhase > 128
+) {
   throw new Error("PI_CLOUD_KAFKA_ACCEPTANCE_EVENTS is invalid");
 }
 
@@ -81,7 +85,7 @@ const consumer = new KafkaAgentEventConsumer({
     observed.set(first.sessionId, sequences);
     if (
       observed.size === sessionCount &&
-      [...observed.values()].every((item) => item.length === eventsPerEnvelope * 2)
+      [...observed.values()].every((item) => item.length === eventsPerSessionPhase * 2)
     ) {
       resolveComplete();
     }
@@ -97,7 +101,7 @@ try {
   const startedAt = performance.now();
   await Promise.all(
     sessions.map(async (sessionId) => {
-      for (let sequence = 1; sequence <= eventsPerEnvelope * 2; sequence += 1) {
+      for (let sequence = 1; sequence <= eventsPerSessionPhase * 2; sequence += 1) {
         await producer.ingest(publication(sessionId, sequence));
       }
     }),
@@ -112,13 +116,14 @@ try {
   for (const sessionId of sessions) {
     const sequences = observed.get(sessionId);
     if (
-      sequences?.length !== eventsPerEnvelope * 2 ||
+      sequences?.length !== eventsPerSessionPhase * 2 ||
       sequences.some((sequence, index) => sequence !== index + 1)
     ) {
       throw new Error(`Kafka did not preserve Session order for ${sessionId}`);
     }
   }
-  const logicalEvents = sessionCount * eventsPerEnvelope * 2;
+  const eventsPerSession = eventsPerSessionPhase * 2;
+  const logicalEvents = sessionCount * eventsPerSession;
   const report = {
     format: "pi-cloud.kafka-first-event-acceptance.v1",
     generatedAt: new Date().toISOString(),
@@ -126,7 +131,7 @@ try {
       process.env.PI_CLOUD_REVISION ??
       execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     topology: { brokers, partitions: 16, producerAcks: "all", idempotentProducer: true },
-    input: { sessionCount, eventsPerEnvelope, logicalEvents, envelopes: logicalEvents },
+    input: { sessionCount, eventsPerSession, logicalEvents, kafkaRecords: logicalEvents },
     result: {
       durationMs: Number(durationMs.toFixed(2)),
       eventsPerSecond: Number(((logicalEvents * 1_000) / durationMs).toFixed(2)),

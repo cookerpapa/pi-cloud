@@ -3,7 +3,6 @@ import {
   parseToolWorkerInput,
   parseToolWorkerOutput,
   type EnvironmentToolchainReport,
-  type ToolSandboxCaptureResponse,
   type ToolSandboxOperationResponse,
   type ToolWorkerInput,
   type ToolWorkerOutput,
@@ -54,11 +53,6 @@ type HandoffAuthority = {
   fencingToken: number;
   bindingSha256: string;
 };
-
-type CubeCapturedWorkspace = Omit<
-  Extract<ToolSandboxCaptureResponse, { type: "tool_sandbox.captured" }>,
-  "environment"
->;
 
 class CubeToolServiceError extends Error {
   readonly statusCode: number;
@@ -518,7 +512,6 @@ class ToolWorkerBridge {
     ReturnType<typeof parseToolSandboxOperationRequest>,
     ToolSandboxOperationResponse
   >();
-  readonly #captures = new Map<string, Pending<CubeCapturedWorkspace>>();
   #failed: Error | undefined;
 
   constructor() {
@@ -541,7 +534,7 @@ class ToolWorkerBridge {
   }
 
   get busy(): boolean {
-    return this.#ready !== undefined || this.#operationWaiters.size > 0 || this.#captures.size > 0;
+    return this.#ready !== undefined || this.#operationWaiters.size > 0;
   }
 
   async initialize(message: ToolWorkerInput): Promise<EnvironmentToolchainReport> {
@@ -596,29 +589,6 @@ class ToolWorkerBridge {
       activationId,
       operationId,
     });
-  }
-
-  async capture(activationId: string, requestId: string): Promise<CubeCapturedWorkspace> {
-    this.#assertActivation(activationId);
-    if (!/^[0-9a-f-]{36}$/.test(requestId)) {
-      throw new CubeToolServiceError(400, "Tool capture ID was invalid");
-    }
-    if (this.#captures.has(requestId)) {
-      throw new CubeToolServiceError(409, "Tool capture ID was already active");
-    }
-    const result = deferred<CubeCapturedWorkspace>("Tool capture");
-    this.#captures.set(requestId, result.pending);
-    try {
-      await this.#write({
-        toolWorkerProtocolVersion: 1,
-        type: "worker.capture",
-        activationId,
-        requestId,
-      });
-      return await result.promise;
-    } finally {
-      this.#captures.delete(requestId);
-    }
   }
 
   async close(): Promise<void> {
@@ -681,24 +651,9 @@ class ToolWorkerBridge {
       this.#operationWaiters.get(output.response.operationId)?.resolve(output.response);
       return;
     }
-    if (output.type === "worker.captured") {
-      this.#captures.get(output.requestId)?.resolve({
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.captured",
-        requestId: output.requestId,
-        activationId: output.activationId,
-        workspace: output.workspace,
-        ...(output.workspacePatch === undefined ? {} : { workspacePatch: output.workspacePatch }),
-      });
-      return;
-    }
     const error = new CubeToolServiceError(output.retryable ? 503 : 400, output.message);
     if (output.operationId !== undefined) {
       this.#operationWaiters.get(output.operationId)?.reject(error);
-      return;
-    }
-    if (output.requestId !== undefined) {
-      this.#captures.get(output.requestId)?.reject(error);
       return;
     }
     this.#fail(error);
@@ -710,10 +665,8 @@ class ToolWorkerBridge {
     this.#ready?.reject(error);
     this.#ready = undefined;
     for (const pending of this.#operationWaiters.values()) pending.reject(error);
-    for (const pending of this.#captures.values()) pending.reject(error);
     this.#operationWaiters.clear();
     this.#operationLedger.close();
-    this.#captures.clear();
   }
 }
 
@@ -1009,19 +962,6 @@ const server = createServer((request, response) => {
       }
       await readyBridge().cancel(input.activationId, input.operationId);
       sendJson(response, 200, { cancelled: true });
-      return;
-    }
-    if (url.pathname === "/v1/capture") {
-      requireAuthority(request);
-      const input = parseToolWorkerInput({
-        toolWorkerProtocolVersion: 1,
-        type: "worker.capture",
-        ...((await readJson(request)) as object),
-      });
-      if (input.type !== "worker.capture") {
-        throw new CubeToolServiceError(400, "Tool capture was invalid");
-      }
-      sendJson(response, 200, await readyBridge().capture(input.activationId, input.requestId));
       return;
     }
     if (url.pathname === "/v1/checkpoint") {

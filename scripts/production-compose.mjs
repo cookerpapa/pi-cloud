@@ -4,6 +4,7 @@ import { access, lstat, open, readFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const composeFile = resolve(repositoryRoot, "deploy/production/compose.yaml");
@@ -25,6 +26,7 @@ const recreatesOnlyControlPlane =
   command === "up" &&
   positionalCommandArguments.length === 1 &&
   positionalCommandArguments[0] === "control-plane";
+const runsDatabaseBootstrap = command === "run" && commandArguments.includes("database-bootstrap");
 const runtimeEnvironment = Object.fromEntries(
   (await readFile(environmentFile, "utf8"))
     .split(/\r?\n/u)
@@ -41,6 +43,9 @@ const piWorkerDeployment =
   "compose";
 if (piWorkerDeployment !== "compose" && piWorkerDeployment !== "kubernetes") {
   throw new Error("PI_CLOUD_PI_WORKER_DEPLOYMENT must be compose or kubernetes");
+}
+if (new Set(["config", "run", "up"]).has(command)) {
+  validateProductionRuntimeEnvironment({ ...runtimeEnvironment, ...process.env });
 }
 const supportedOptionalProfiles = new Set(["observability", "github"]);
 const requestedOptionalProfiles = (
@@ -61,6 +66,7 @@ if (unsupportedOptionalProfiles.length > 0) {
 }
 const allowsStaleCubeTemplate =
   recreatesOnlyControlPlane ||
+  runsDatabaseBootstrap ||
   new Set(["build", "down", "stop", "kill", "rm", "ps", "logs", "exec"]).has(command);
 await access(environmentFile);
 if (composeOverride !== undefined) await access(composeOverride);

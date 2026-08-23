@@ -5,7 +5,8 @@ the conversation product:
 
 ```text
 Web → Control Plane → PostgreSQL queue → Pi Worker → Tool Broker → Cube
-                    ↘ PostgreSQL Session/event storage
+                    ↘ PostgreSQL Session storage
+Worker → Raw/Accepted Kafka → resumable SSE
 ```
 
 The Control Plane exposes authentication, model/proxy settings, projects,
@@ -17,7 +18,7 @@ research APIs are not compiled into the product.
 Prometheus, Jaeger and Grafana are already an explicit Compose profile:
 
 ```bash
-docker compose --profile observability up -d
+npm run production:up:observability
 ```
 
 ## GitHub gateway
@@ -37,7 +38,7 @@ The default production build does not build or start this profile.
 ## Removed product surfaces
 
 The following unfinished product workflows are not part of either core or the
-advanced Web product: Web Preview, structured Diff, Artifact download,
+advanced Web product: structured Diff, Artifact download,
 test-result navigation, Workspace rollback, GitHub App/PR delivery, and
 organization, RBAC or audit-search pages. Conversation forks, recursive tree
 deletion and conversation-tail pruning are current core features; none of them

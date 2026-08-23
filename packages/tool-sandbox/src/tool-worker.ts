@@ -19,12 +19,7 @@ import {
   type ToolWebProxyBootstrap,
   type ToolWorkerOutput,
 } from "@pi-cloud/protocol";
-import {
-  captureWorkspaceSnapshot,
-  decodeWorkspaceSnapshotBlob,
-  encodeWorkspaceSnapshotBlob,
-  restoreWorkspaceSnapshot,
-} from "@pi-cloud/workspace-runtime";
+import { decodeWorkspaceSnapshotBlob, restoreWorkspaceSnapshot } from "@pi-cloud/workspace-runtime";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
@@ -1112,10 +1107,7 @@ export async function runToolWorker(): Promise<void> {
     if (active?.operationId === operationId) active = undefined;
   };
 
-  const fail = async (
-    error: unknown,
-    identity?: { requestId?: string; operationId?: string },
-  ): Promise<void> => {
+  const fail = async (error: unknown, identity?: { operationId?: string }): Promise<void> => {
     // This stream is collected only by the trusted Tool Broker. Keep the
     // protocol response deliberately generic, but retain an operator-facing
     // diagnostic so startup failures can be distinguished without weakening
@@ -1130,7 +1122,6 @@ export async function runToolWorker(): Promise<void> {
       toolWorkerProtocolVersion: 1,
       type: "worker.failed",
       ...(activationId === undefined ? {} : { activationId }),
-      ...(identity?.requestId === undefined ? {} : { requestId: identity.requestId }),
       ...(identity?.operationId === undefined ? {} : { operationId: identity.operationId }),
       code: failure.code,
       message: failure.message,
@@ -1221,32 +1212,6 @@ export async function runToolWorker(): Promise<void> {
         process.stdin.pause();
         return;
       }
-      if (message.type === "worker.capture") {
-        try {
-          if (active !== undefined) {
-            throw new ToolWorkerError(
-              "tool_operation_overlap",
-              "Tool capture overlapped an operation",
-            );
-          }
-          await writeOutput({
-            toolWorkerProtocolVersion: 1,
-            type: "worker.captured",
-            activationId,
-            requestId: message.requestId,
-            workspace: encodeWorkspaceSnapshotBlob(
-              await captureWorkspaceSnapshot(TOOL_WORKSPACE_DIRECTORY),
-            ),
-          });
-        } catch (error: unknown) {
-          // Preserve request correlation for a capture-specific failure. Without
-          // it, the bridge can only fail the entire worker and the caller loses
-          // the distinction between an invalid Workspace and a dead runtime.
-          await fail(error, { requestId: message.requestId });
-        }
-        return;
-      }
-
       const request = message.request;
       if (request.activationId !== activationId) {
         throw new ToolWorkerError(

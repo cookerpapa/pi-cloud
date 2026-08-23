@@ -9,8 +9,8 @@ PiCloud.
 - Projects, named Workspaces and named conversations;
 - Run/Attempt admission, idempotency and Session ordering;
 - leases, fencing tokens, heartbeats and terminal commit;
-- canonical terminal conversation persistence and resumable SSE cursors;
-- immutable Pi/Workspace checkpoint pointers;
+- canonical Pi Session persistence and resumable SSE cursors;
+- bounded Workspace revision/index references;
 - PostgreSQL-backed Run queue publication and cancellation;
 - model/proxy configuration and usage;
 - tenant-scoped file/version APIs.
@@ -46,9 +46,9 @@ durable side effects.
 
 ## State
 
-PostgreSQL is authoritative for business state, complete Pi messages, the
-bounded live-event tail and event cursors. It also stores immutable Pi Session
-records and Run history; persistent Cube Volumes own Workspace bytes.
+PostgreSQL is authoritative for business state, complete Pi Session records,
+Run history and settled conversation projections. Accepted Kafka owns the
+bounded live-event tail; persistent Cube Volumes own Workspace bytes.
 
 Conversation titles are independent from Workspace names. A Workspace may be
 shared by multiple conversations. Archived conversations are excluded from
@@ -60,6 +60,12 @@ The configured platform-operator tenant is exposed as
 `platformAdministrator: true` in the authenticated identity. Only that identity
 can read or replace platform model and Cube proxy settings. Ordinary tenant
 owners receive `false`.
+
+For a one-host installation, register the account first and then run:
+
+```bash
+npm run production:administrator -- --username <registered-username>
+```
 
 ## Verification
 

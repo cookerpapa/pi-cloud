@@ -275,7 +275,7 @@ describe.sequential("production bootstrap and configuration", () => {
           maximumProjects: 10,
           maximumSessions: 100,
           maximumUnsettledTurns: 10,
-          maximumConcurrentTurns: 2,
+          maximumConcurrentTurns: 4,
           maximumActiveSandboxes: 2,
         },
       },

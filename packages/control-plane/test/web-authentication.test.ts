@@ -15,6 +15,7 @@ import {
   WebAuthenticationService,
   createControlPlaneApplication,
   createPrivateTenant,
+  resolveRegisteredPlatformAdministrator,
   resolvePlatformInitialModel,
 } from "../src/index.ts";
 
@@ -130,6 +131,14 @@ describe.sequential("product web authentication", () => {
     expect(account.passwordHash).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(account.passwordSalt).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(JSON.stringify(account)).not.toContain(PASSWORD);
+    await expect(resolveRegisteredPlatformAdministrator(database, "ALICE.DEV")).resolves.toEqual({
+      username: "alice.dev",
+      tenantId: registration.identity.tenantId,
+      userId: registration.identity.userId,
+    });
+    await expect(resolveRegisteredPlatformAdministrator(database, "missing.user")).rejects.toThrow(
+      "was not found",
+    );
 
     const profile = await database
       .selectFrom("tenant_runtime_policies as policy")

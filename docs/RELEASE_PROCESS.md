@@ -1,6 +1,6 @@
 # Release evidence process
 
-PiCloud's supported release process binds a clean Git revision to six
+PiCloud's supported release process binds a clean Git revision to seven
 application images and the three images owned by its CubeSandbox execution
 plane, plus machine-readable dependency/security evidence. It does not
 currently push, sign, or publish images; registry policy and signing need a
@@ -12,8 +12,8 @@ separate deployment decision.
 - install only the lockfile with `npm ci --ignore-scripts`, then run
   `npm run dependencies:harden` to apply and verify the reviewed Pi shrinkwrap
   security patches;
-- run `npm run ci`,
-  `npm run cubesandbox:live-check`, and `npm run production:check`;
+- run `npm run ci`, `npm run cubesandbox:live-check`, and
+  `PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check`;
 - install the Cube platform images and register the immutable Tool template
   from the same clean Git revision;
 - verify the pinned Cube template, KVM guest evidence, fixed network policy and
@@ -50,7 +50,7 @@ pi-cloud-root.cdx.json
 images/control-plane.cdx.json
 images/control-plane.vulnerabilities.json
 images/control-plane.policy-vulnerabilities.json
-... one SBOM/two-report set for each of nine images
+... one SBOM/two-report set for each of ten images
 ```
 
 `manifest.json` records:
@@ -94,13 +94,13 @@ inheriting stale packages from an older prebuilt Caddy image while preserving
 the standard Caddy module set. The actual final image, not either build stage,
 is what the release gate scans.
 
-CI independently builds a matrix of all nine images, generates CycloneDX with
+CI independently builds a matrix of all ten images, generates CycloneDX with
 Anchore SBOM Action, records all HIGH/CRITICAL findings with Trivy, runs the same
 fixable-finding gate, and uploads each evidence set for 14 days. Checkout,
 Node, Anchore, Trivy, Gitleaks, and artifact Actions are pinned to immutable
 commits in `.github/workflows/ci.yml`.
 
-GitHub-hosted CI runs deterministic zero-token checks plus the nine-image SBOM
+GitHub-hosted CI runs deterministic zero-token checks plus the ten-image SBOM
 and vulnerability matrix. The matrix still builds the Cube Tool image, but the
 full `cubesandbox:template-check` is a release-host precondition: rebuilding the
 same large toolchain a second time on every push exceeded the hosted Runner's

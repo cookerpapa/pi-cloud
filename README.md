@@ -1,277 +1,147 @@
 # PiCloud
 
-PiCloud is a self-hosted, multi-tenant Cloud Coding Agent built on the Pi
-SDK. It keeps the Agent Loop and provider credentials in a trusted Worker pool,
-while every model-generated file or shell operation runs in a CubeSandbox KVM
-microVM.
+PiCloud is a self-hosted, multi-tenant Cloud Coding Agent built on the Pi SDK.
+Pi and model credentials run in a trusted Worker pool; model-generated file and
+shell operations run in CubeSandbox KVM microVMs.
 
-The current architecture has three deliberately narrow durable authorities:
+## What you get
 
-- PostgreSQL owns product state, the Run queue, attempts/leases/fences and
-  canonical Pi Session records;
-- Kafka owns the bounded hot Agent event log used for resumable SSE;
-- a persistent Cube Volume owns each Workspace's bytes.
+- browser registration/login and tenant-isolated conversations;
+- multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
+- durable recursive Subagents with bounded depth/concurrency;
+- named Workspaces, source browsing, Web Terminal, service preview and one-time SSH;
+- elastic or user-owned persistent Cube environments;
+- resumable SSE whose visible bytes were acknowledged by Kafka first;
+- horizontally replaceable Pi Workers and Kubernetes/KEDA deployment support.
 
-Temporal, execution Cells, MinIO/S3 conversation checkpoints, Kopia Workspace
-copies and alternate container runtimes are not part of the current product
-path.
+PiCloud targets private or controlled enterprise deployments. It is not a
+hostile public-SaaS security or abuse-management product.
 
-### Current scheduling invariant
-
-PiCloud has no user-, Session- or Workspace-to-Worker affinity. All healthy Pi
-Workers compete for one PostgreSQL ready-Run queue, and any later Run may be
-claimed by a different Worker. A `worker_id`/Supervisor identity recorded on a
-RunAttempt means only “this Worker currently owns this leased Attempt”; it is
-cleared or superseded with that Attempt and is not a routing preference.
-
-Ordered migration files still contain retired table names so a new database can
-replay the pre-production schema history. They do not describe the migrated
-schema or maintained deployment. The current sources of truth are this README,
-`docs/ARCHITECTURE.md`, `docs/RUN_LIFECYCLE.md` and the indexed current ADRs.
-
-## Product
-
-- browser registration/login with tenant-isolated conversations and Workspaces;
-- Chat-style multi-round Pi conversations and resumable streaming;
-- Pi Session tree navigation with focused/full-tree views, conversation forks,
-  recursive subtree deletion and settled-message tail pruning;
-- the pinned community `pi-subagents` workflow contract, with durable Child
-  Sessions/Runs, deployment-bounded recursive Agent trees, focused/full tree
-  navigation, cross-Worker supervisor messaging, and shared or isolated Cube
-  execution;
-- pure chat without Sandbox activation;
-- lazy Cube activation, warm reuse and optional persistent Sandbox retention;
-- a Workspace directory/source browser, isolated Web Terminal, and safe deletion;
-- Session history that survives Workspace deletion and can be rebound before a
-  later Turn;
-- user-owned exclusive Cube environments selected inside the conversation flow,
-  with fenced Agent/terminal handoff, deployment-owned resource profiles,
-  authenticated HTTP previews, one-time SSH access and pause/resume/release;
-- administrator-only hot model credentials and Cube proxy configuration.
-
-## One user message
+## Architecture
 
 ```text
-Browser
-  │ REST + resumable SSE
-  ▼
-Control Plane ── transaction ──► PostgreSQL Run queue
-                                      │ LISTEN/NOTIFY + poll
-                                      ▼
-                              shared Pi Worker pool
-                              Pi SDK + model gateway
-                                      │ fenced Tool RPC
-                                      ▼
-                                  Tool Broker
-                                      │ Cube API
-                                      ▼
-                               CubeSandbox KVM
-                               persistent /workspace
+Browser ──REST/SSE──> Control Plane ──> PostgreSQL Run queue
+                                             │
+                                      shared Pi Workers
+                                      Pi SDK / Agent Loop
+                                             │ fenced Tool RPC
+                                             ▼
+                                         Tool Broker
+                                             │
+                                             ▼
+                                      CubeSandbox KVM
+                                      persistent /workspace
 
-Assistant deltas ── coalesce ──► native Kafka batch ──► Raw Kafka ── authority ──► Accepted Kafka ──► SSE
-complete Pi entries/records + recovery barrier ───────► Session Mutation Kafka ──► PostgreSQL
-Run/Attempt/Lease/Fence + terminal outbox ─────────────────────────► PostgreSQL
+Worker events ──> Raw Kafka ──fence check──> Accepted Kafka ──> SSE
+complete Pi entries ──> Session Mutation Kafka ──> PostgreSQL
 ```
 
-The Control Plane authenticates and commits an idempotent command before
-acknowledging it. Any healthy Worker may claim ready work, but the existing
-Run/Attempt lease and monotonically increasing fence decide whether it may
-produce effects. PostgreSQL `NOTIFY` only removes polling latency; losing a
-notification cannot lose a Run.
+There are three durable authorities:
 
-Pi's native `SessionStorage` port stores entries, operation records and
-compaction boundaries directly in PostgreSQL. The production Worker uses a
-thin cloud runtime around Pi's public `Agent`, Session and compaction
-primitives: it reads only the newest compaction plus the active suffix and
-appends complete messages incrementally. It does not download a lifetime
-`session.jsonl`, synthesize model context from the browser transcript or
-reimplement Pi's unused generic Harness surface.
+- PostgreSQL owns product state, the Run queue and canonical Pi Sessions;
+- Kafka owns the bounded hot event log used for live replay;
+- a persistent Cube Volume owns Workspace bytes.
 
-Before any replacement Worker reads that state, it appends a Session-keyed
-projection barrier to the mutation topic. Completion means every older mutation
-for that Session has been applied idempotently or rejected by its old fence;
-the Worker then rechecks its own authority and reads PostgreSQL. Browser
-Gateways do not participate in this barrier and recover independently from the
-Accepted Kafka suffix.
-
-The tenant-scoped PostgreSQL adapter implements Pi's public `SessionRepo` and
-`SessionStorage` ports. CI runs Pi 0.84.1's unmodified backend conformance suite
-against it; PiCloud then adds separate transaction-scoped authority and
-tenant-isolation contracts required by the cloud Worker path.
-
-The browser projects the same native parent-linked entries as a human-readable
-conversation tree. “从此对话开始” creates an idempotent child Session by copying
-the selected PostgreSQL branch; it does not download JSONL or copy/rewind the
-shared Workspace.
-
-The same opaque execution authority fences both Session mutations and remote
-Tool admission. Lease and fence representations stay out of model messages and
-Tool arguments, while unfinished Tool effects are recorded as unknown instead
-of being replayed blindly.
-
-Built-in Tool visibility is also Run-scoped. A Session grant is frozen into the
-accepted Run, the Agent Host registers only those Pi Tool proxies, and Tool
-Broker independently verifies both the granted Tool name and its low-level
-operation. Concurrent Agent runtimes in one Host never share a global Tool set.
-
-Pi subagents use the maintained `pi-subagents` workflow and agent-profile
-contract rather than a PiCloud-specific orchestration language. The package's
-local child-process boundary is replaced by a PostgreSQL-backed Child Session
-and Child Run on the same Worker pool. Eligible Child Runs may delegate again;
-the resulting tree shares one root Run budget (depth 4, 32 nodes and 3 active
-descendants by default), and every edge remains a durable fenced execution.
-Tool-free reviewers consume no Cube;
-`shared_serialized` children temporarily receive the parent's Cube authority;
-`worktree:true` creates a trusted persistent-Volume fork and an independent
-Cube while preserving the selected agent's independent `fresh`/`fork` context
-policy, then returns the settled patch to the parent. Child Session entries and
-compaction remain native Pi PostgreSQL records. The UI exposes each Child as a
-typed, read-only branch and labels context inheritance separately from
-Workspace sharing. `contact_supervisor` requests use a durable PostgreSQL
-channel rather than Worker-local files, so parent and Child may coordinate on
-different Worker replicas without replaying the Child task. Parent cancellation is relayed
-to admitted children, and Worker capacity reserves a child lane so a pool of
-waiting parents cannot starve every delegated Run.
-
-The first Tool call attaches the Workspace's stable Cube Volume to a fresh or
-warm KVM. Stopping a Cube loses processes, sockets and memory, but not files.
-The committed Workspace revision is a bounded file/hash/Git-baseline reference,
-not another archive of the directory.
-
-The Workspace panel can also open an interactive Web Terminal. The Control
-Plane derives tenant, Session and Workspace identity from the authenticated
-browser request, then proxies a separate short-lived human terminal authority
-through the Tool Broker to a fenced PTY inside Cube. A human terminal and an
-Agent Run cannot write the same Workspace concurrently. For a persistent
-conversation, terminal access rebinds and later returns the same idle Cube
-instead of discarding its process world.
-
-Ordinary users may also request an exclusive development environment for one
-Workspace. PostgreSQL binds the allocation to the authenticated user while Tool
-Broker creates one never-timeout Cube KVM. Reconnecting a terminal opens a new
-PTY in the same VM; disconnecting does not stop background processes. Pause and
-resume use Cube's native memory/filesystem lifecycle, while release destroys
-the VM and preserves the persistent Workspace Volume. The allocation is a
-Workspace writer. A Run may borrow that exact Cube only after Broker proves no
-human terminal is active; the Run's fence/secret replaces human authority, and
-terminal ownership is restored after Workspace settlement. The new-session
-dialog is the single place to choose elastic execution or select/apply an
-exclusive environment.
-Cube's cluster WebUI remains an operator console and is never the tenant
-authorization boundary.
-
-For command-line access, the authenticated Web UI issues a one-use, five-minute
-SSH ticket. A trusted SSH gateway consumes it atomically and bridges standard
-OpenSSH to the same brokered PTY. Cube port 22, Sandbox identity and platform
-credentials remain private. The one-host listener binds to `127.0.0.1:2222` by
-default; LAN/public exposure is an explicit operator decision.
-
-Session, Workspace and execution environment have independent lifetimes.
-Deleting a Workspace removes its files only after writers settle; conversations
-remain readable with a missing-Workspace marker and can be rebound to another
-Workspace. Releasing an exclusive Cube preserves both the conversation and its
-persistent Volume.
-
-## Recovery and correctness
-
-- multiple Workers compete safely through transactional claims;
-- one Session remains serialized without a permanently assigned process;
-- every Pi Session mutation and Tool effect checks opaque execution authority;
-- stale/expired Workers cannot commit messages or advance Workspace state;
-- arbitrary shell operations are not blindly replayed after an ambiguous loss;
-- interruption and Sandbox reset facts survive Pi compaction and Worker changes;
-- Workspace rebinding is a distinct World State transition: the next model
-  Step receives one hidden `workspace_changed` fact instead of a misleading
-  same-Workspace reset claim;
-- browser-visible live bytes receive an Accepted Kafka broker ACK before SSE exposure;
-- Workers rely on Kafka's native producer accumulator rather than a second
-  application group-commit queue;
-- Pi `message_end` writes complete SessionStorage state independently of its
-  short-lived delta rows;
-- failed/cancelled visible prefixes remain in Pi context as bounded
-  interruption facts;
-- Pi Session entries are the only stored complete-message bodies; the ordered
-  Pi log contains references rather than duplicate message JSON.
-
-## Security boundary
-
-- Cube receives no model, database, Kubernetes or Cube control
-  credential;
-- the Worker never executes user Bash and never receives the Cube management
-  credential;
-- the Tool Broker validates tenant, Workspace, Session, Run, Attempt, lease,
-  fence, Cloud Step identity and the immutable Run Tool snapshot;
-- public egress crosses a deployment-owned proxy that blocks private,
-  link-local, metadata and platform destinations;
-- provider/runtime policy and mounts are deployment-owned, never model-owned.
-
-See [Architecture](docs/ARCHITECTURE.md),
+Any healthy Worker may run a Session's next message. RunAttempt leases and
+fencing tokens reject stale effects; no Session is permanently assigned to a
+process. See [Architecture](docs/ARCHITECTURE.md),
 [Run lifecycle](docs/RUN_LIFECYCLE.md) and
-[Threat model](docs/THREAT_MODEL.md).
+[stream durability](docs/STREAM_DURABILITY.md) for the detailed contracts.
 
-## Technology
+## One-host quick start
 
-TypeScript, Node.js 24, React, Fastify/NestJS, PostgreSQL/Kysely, Kafka, Pi SDK,
-Kubernetes/KEDA and Tencent CubeSandbox/KVM. OpenTelemetry,
-Prometheus, Grafana and Jaeger are optional.
-
-## One-host deployment
-
-On x86_64 Debian/Ubuntu or WSL2 with systemd and KVM:
-
-```bash
-./install.sh
-```
-
-Open `http://127.0.0.1:8080`, create the designated administrator account and
-configure the model. Useful operations:
+Requirements: a clean Git checkout on x86_64 Debian/Ubuntu or WSL2 with
+systemd, writable `/dev/kvm`, at least 8 GiB RAM and 40 GiB free disk.
 
 ```bash
 ./install.sh --check-only
-npm run production:ps
-npm run production:logs
-npm run production:check
-npm run production:product-surface-check
-npm run production:subagents-check
-npm run production:development-environment-check
-npm run production:long-context-check
-npm run production:backup
+./install.sh
 ```
 
-`production:check` consumes real model tokens and exercises Cube KVM. The
-product-surface gate drives the same cookie-authenticated REST, SSE and
-WebSocket APIs used by the browser, including tree/fork/prune, source browsing,
-Terminal, Steer, Cancel, recovery and deletion. It also consumes real model
-tokens and Cube capacity. The long-context gate additionally requires
-`PI_CLOUD_LIVE_LONG_CONTEXT_CHECK=1`; it runs sustained coding Turns until Pi
-performs native compaction, then verifies post-compaction coding and
-cross-Worker recovery.
+The installer can supply Docker, K3s, Node.js, Helm and the pinned Cube source.
+It never asks for a model key or administrator password.
 
-## Kubernetes deployment
+After deployment:
 
-The chart in `deploy/helm/pi-cloud-platform` expects external PostgreSQL,
-Kafka, ReadWriteMany persistent Workspace storage and Cube authorities. KEDA
-scales the shared Worker pool from the PostgreSQL ready-Run backlog.
+1. Open `http://127.0.0.1:8080` and register the platform administrator.
+2. Promote that registered account and restart the Control Plane:
+
+   ```bash
+   npm run production:administrator -- --username <registered-username>
+   ```
+
+3. Sign in again and configure the provider, model, encrypted API key and Cube
+   proxy in the administrator page.
+4. Create/select a Workspace, start a conversation and submit a coding task.
+
+Re-running `./install.sh` reconciles the same private runtime. Generated
+credentials and state live under `deploy/production/runtime/` by default and
+must never be committed.
+
+Common operations:
+
+```bash
+npm run production:ps
+npm run production:logs
+npm run production:config
+npm run production:backup
+npm run production:restore
+npm run production:down
+```
+
+See [one-host deployment](docs/PRODUCTION_DEPLOYMENT.md) and
+[configuration](docs/CONFIGURATION.md) before changing bind addresses,
+registration quotas, retention, SSH or Sandbox capacity.
+
+## Distributed Kubernetes deployment
+
+The Helm chart expects external PostgreSQL/PgBouncer, Kafka, ReadWriteMany
+Workspace storage and Cube control/compute authorities. Copy and replace every
+example endpoint, image, UUID and CIDR before preflight:
 
 ```bash
 cp deploy/helm/pi-cloud-platform/values.distributed.example.yaml values.yaml
+npm run kubernetes:distributed:render -- --values values.yaml
 npm run kubernetes:distributed:preflight -- --values values.yaml
 npm run kubernetes:distributed:deploy -- --values values.yaml
 ```
 
-Kubernetes scales Pods; the target environment still needs a node autoscaler.
-See [Distributed deployment](docs/DISTRIBUTED_DEPLOYMENT.md).
+KEDA scales Worker replicas from PostgreSQL ready-Run backlog; database claim
+and fence logic remains the scheduling authority. See
+[distributed deployment](docs/DISTRIBUTED_DEPLOYMENT.md).
 
 ## Verification
 
+Deterministic, zero-token checks:
+
 ```bash
-npm ci
-npm run ci
-npm run test --workspace @pi-cloud/pi-session-postgres
-npm run cubesandbox:template-check
-npm run production:check
+npm ci --ignore-scripts
+npm run dependencies:harden
+npm run check
+npm run runtime-policy:check
+npm run helm:check
 ```
 
-Only the final command requires a running production topology and explicit
-real-token acknowledgement. Claims should always reference evidence from the
-exact tested revision.
+Live checks consume model tokens and Cube capacity, so each requires an
+explicit acknowledgement:
+
+```bash
+PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
+PI_CLOUD_LIVE_PRODUCT_SURFACE_CHECK=1 npm run production:product-surface-check
+PI_CLOUD_LIVE_WORKER_POOL_CHECK=1 npm run production:worker-pool-check
+PI_CLOUD_LIVE_SUBAGENT_CHECK=1 npm run production:subagents-check
+PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-environment-check
+PI_CLOUD_LIVE_LONG_CONTEXT_CHECK=1 npm run production:long-context-check
+```
+
+Reports under `docs/reports/` are evidence for their named revision and test
+topology, not timeless capacity or HA claims. See [Evaluation](docs/EVALUATION.md).
+
+## Documentation
+
+- [Documentation map](docs/README.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [Threat model](docs/THREAT_MODEL.md)
+- [Cube provider](docs/CUBESANDBOX_PROVIDER.md)
+- [Current ADRs](docs/adr/README.md)
+- [Roadmap](docs/ROADMAP.md) and [backlog](docs/BACKLOG.md)

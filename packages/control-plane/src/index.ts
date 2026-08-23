@@ -66,6 +66,10 @@ export {
   PlatformModelConfigurationError,
   resolvePlatformInitialModel,
 } from "./platform-model-configuration.ts";
+export {
+  resolveRegisteredPlatformAdministrator,
+  type RegisteredPlatformAdministrator,
+} from "./platform-administrator.ts";
 
 export {
   WEB_SESSION_COOKIE_NAME,

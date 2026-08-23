@@ -60,8 +60,8 @@ multi-region saturation claims.
 
 ```bash
 npm run cubesandbox:live-check
-npm run production:check
-npm run production:worker-pool-check
+PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
+PI_CLOUD_LIVE_WORKER_POOL_CHECK=1 npm run production:worker-pool-check
 ```
 
 The Cube gate attests real KVM guests, tenant-separated persistent Workspaces,

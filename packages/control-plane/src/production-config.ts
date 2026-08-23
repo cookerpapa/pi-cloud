@@ -316,7 +316,7 @@ export async function loadProductionControlPlaneConfig(
   const publicTenantMaximumConcurrentTurns = integerValue(
     environment,
     "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS",
-    2,
+    4,
     1,
     256,
   );

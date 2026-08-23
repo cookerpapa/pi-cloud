@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { validateDistributedDeploymentValues } from "./distributed-values-policy.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const chart = resolve(repositoryRoot, "deploy/helm/pi-cloud-platform");
@@ -61,6 +62,24 @@ function loadValues(path) {
     fail("values file must contain a YAML mapping");
   }
   return values;
+}
+
+function mergeValues(base, override) {
+  if (
+    base === null ||
+    override === null ||
+    typeof base !== "object" ||
+    typeof override !== "object" ||
+    Array.isArray(base) ||
+    Array.isArray(override)
+  ) {
+    return structuredClone(override);
+  }
+  const merged = structuredClone(base);
+  for (const [key, value] of Object.entries(override)) {
+    merged[key] = key in merged ? mergeValues(merged[key], value) : structuredClone(value);
+  }
+  return merged;
 }
 
 function ensureNamespace(namespace) {
@@ -176,8 +195,10 @@ if (action === "status") {
 
 if (valuesPath === "") fail("--values <file> is required");
 const values = loadValues(valuesPath);
+const effectiveValues = mergeValues(loadValues(resolve(chart, "values.yaml")), values);
 requireBinary("helm");
 run("helm", ["dependency", "build", chart]);
+run("helm", ["lint", chart, "--strict", "--values", valuesPath]);
 
 if (action === "render") {
   run("helm", ["template", release, chart, "--namespace", namespace, "--values", valuesPath], {
@@ -187,6 +208,11 @@ if (action === "render") {
 }
 
 if (action !== "preflight" && action !== "deploy") fail(`unknown action: ${action}`);
+try {
+  validateDistributedDeploymentValues(effectiveValues);
+} catch (error) {
+  fail(error instanceof Error ? error.message : "distributed values are invalid");
+}
 ensureNamespace(namespace);
 preflight(namespace, values);
 if (action === "deploy") {

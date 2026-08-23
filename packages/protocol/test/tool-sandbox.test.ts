@@ -8,6 +8,7 @@ import {
   parseToolBrokerRequest,
   parseToolBrokerResponse,
   parseToolSandboxOperationRequest,
+  parseToolWorkerInput,
   parseToolWorkerOutput,
   ToolSandboxProtocolError,
 } from "../src/index.ts";
@@ -136,5 +137,16 @@ describe("Tool Sandbox protocol", () => {
       type: "worker.operation_result",
       response: { operation: "file.read" },
     });
+  });
+
+  it("keeps Workspace settlement on the provider checkpoint path", () => {
+    expect(() =>
+      parseToolWorkerInput({
+        toolWorkerProtocolVersion: 1,
+        type: "worker.capture",
+        activationId: "10000000-0000-4000-8000-000000000008",
+        requestId: "10000000-0000-4000-8000-000000000009",
+      }),
+    ).toThrow(ToolSandboxProtocolError);
   });
 });

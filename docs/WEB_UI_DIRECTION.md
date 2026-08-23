@@ -38,7 +38,7 @@ The product page adds:
 - session state and reconnect/replay status;
 - no model picker or credential form; platform model policy is an operator
   concern;
-- streamed assistant text and tool lifecycle from `PiCloudEvent`;
+- streamed assistant text and complete Tool lifecycle from `PiCloudEvent`;
 - inline approval cards for confirm/select/input/editor;
 - a visible turn-cancel control and clear cancelling/failed states;
 - compact sandbox/runner health details for debugging;
@@ -49,12 +49,12 @@ must never appear in the DOM or browser developer logs.
 
 ## Deliberately omitted behavior
 
-The current product does not expose Web Preview, structured Diff, Artifact or
-test-result navigation, Workspace rollback, GitHub App/PR delivery, or
+The current product does not expose structured Diff, Artifact or test-result
+navigation, Workspace rollback, GitHub App/PR delivery, or
 organization, RBAC and audit-search pages. Their unfinished routes and browser
 client methods were removed rather than presented as a partial product.
 Conversation forks, recursive tree deletion, tail pruning, Workspace browsing,
-the brokered terminal and active Pi steer are supported.
+authenticated service Preview, the brokered terminal and active Pi steer are supported.
 
 ## Visual acceptance
 

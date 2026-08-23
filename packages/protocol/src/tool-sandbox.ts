@@ -549,15 +549,6 @@ export const ToolWorkerInputSchema = Type.Union([
   Type.Object(
     {
       ...WorkerEnvelope,
-      type: Type.Literal("worker.capture"),
-      activationId: UuidSchema,
-      requestId: UuidSchema,
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...WorkerEnvelope,
       type: Type.Literal("worker.shutdown"),
       activationId: UuidSchema,
     },
@@ -586,20 +577,8 @@ export const ToolWorkerOutputSchema = Type.Union([
   Type.Object(
     {
       ...WorkerEnvelope,
-      type: Type.Literal("worker.captured"),
-      activationId: UuidSchema,
-      requestId: UuidSchema,
-      workspace: SandboxCheckpointBlobSchema,
-      workspacePatch: Type.Optional(WorkspacePatchSchema),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...WorkerEnvelope,
       type: Type.Literal("worker.failed"),
       activationId: Type.Optional(UuidSchema),
-      requestId: Type.Optional(UuidSchema),
       operationId: Type.Optional(UuidSchema),
       code: SafeCodeSchema,
       message: Type.String({ minLength: 1, maxLength: 512 }),

@@ -28,6 +28,7 @@ const PRODUCTION_IMAGE_NAMES = [
   "github-gateway",
   "web-ui",
   "provider-egress-relay",
+  "ssh-gateway",
 ];
 const CUBE_PLATFORM_IMAGES = ["cube-api-authorizer", "cube-egress-gateway"];
 const MAX_CAPTURE_BYTES = 64 * 1_024 * 1_024;
