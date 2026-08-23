@@ -233,6 +233,10 @@ await withChromePage(
       120_000,
     );
     await page.waitFor('document.querySelector(".product-environment-card")', 120_000);
+    await page.waitFor(
+      '[...document.querySelectorAll(".product-environment-card button")].some(button=>button.textContent.includes("暂停"))',
+      30_000,
+    );
     await clickText(".product-environment-card button", "暂停", "resources.pauseExclusive");
     await waitFor(
       async () =>
@@ -243,6 +247,9 @@ await withChromePage(
       "paused environment",
     );
     await page.waitFor('document.body.innerText.includes("已暂停")');
+    await page.waitFor(
+      '[...document.querySelectorAll(".product-environment-card button")].some(button=>button.textContent.includes("恢复"))',
+    );
     await clickText(".product-environment-card button", "恢复", "resources.resumeExclusive");
     await waitFor(
       async () =>
