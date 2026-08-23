@@ -46,17 +46,20 @@ describe("SSH gateway", () => {
         allowInsecureInternalHttp: true,
       },
       authority: authority as never,
-      openTerminal: async () => ({
-        output: {
-          async *[Symbol.asyncIterator]() {
-            await new Promise<void>((resolve) => setTimeout(resolve, 20));
-            yield Buffer.from("PI_CLOUD_SSH_OK\r\n");
+      openTerminal: async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+        return {
+          output: {
+            async *[Symbol.asyncIterator]() {
+              await new Promise<void>((resolve) => setTimeout(resolve, 20));
+              yield Buffer.from("PI_CLOUD_SSH_OK\r\n");
+            },
           },
-        },
-        input,
-        async resize() {},
-        async close() {},
-      }),
+          input,
+          async resize() {},
+          async close() {},
+        };
+      },
     });
     servers.push(server);
     await new Promise<void>((resolve, reject) => {

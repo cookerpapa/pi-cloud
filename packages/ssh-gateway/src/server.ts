@@ -56,6 +56,12 @@ export function createSshGateway(options: {
             return;
           }
           const channel: ServerChannel = acceptShell();
+          let channelClosed = false;
+          channel.pause();
+          channel.once("close", () => {
+            channelClosed = true;
+            void terminal?.close();
+          });
           void openTerminal({
             grant,
             terminalToken: options.config.terminalToken,
@@ -65,11 +71,15 @@ export function createSshGateway(options: {
           }).then(
             async (opened) => {
               terminal = opened;
+              if (channelClosed) {
+                await opened.close();
+                return;
+              }
               channel.on(
                 "data",
                 (data: Buffer) => void opened.input(data).catch(() => channel.close()),
               );
-              channel.on("close", () => void opened.close());
+              channel.resume();
               try {
                 for await (const chunk of opened.output) {
                   if (!channel.write(Buffer.from(chunk))) {
