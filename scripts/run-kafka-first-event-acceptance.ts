@@ -7,7 +7,6 @@ import type { EventPublishMessage } from "@pi-cloud/protocol";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
-import { format } from "prettier";
 
 const { Kafka, logLevel } = KafkaJS;
 const brokers = (process.env.PI_CLOUD_KAFKA_BROKERS ?? "127.0.0.1:19092").split(",");
@@ -142,7 +141,7 @@ try {
   if (process.argv.includes("--report")) {
     await writeFile(
       "docs/reports/kafka-first-event-acceptance-latest.json",
-      await format(JSON.stringify(report), { parser: "json" }),
+      `${JSON.stringify(report, null, 2)}\n`,
     );
     await writeFile(
       "docs/reports/kafka-first-event-acceptance-latest.md",

@@ -41,3 +41,14 @@ await new Promise((resolve, reject) => {
       );
   });
 });
+
+execFileSync(
+  process.execPath,
+  [
+    `${root}/node_modules/prettier/bin/prettier.cjs`,
+    "--write",
+    `${reports}/kafka-first-event-acceptance-latest.json`,
+    `${reports}/kafka-first-event-acceptance-latest.md`,
+  ],
+  { cwd: root, stdio: "ignore" },
+);
