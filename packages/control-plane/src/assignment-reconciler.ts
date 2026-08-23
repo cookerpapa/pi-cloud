@@ -222,54 +222,27 @@ export class AssignmentReconciler {
       const result = emptyResult(runtimes.length);
       result.terminatedRuntimes = runtimes.length;
       result.orphanRuntimes = orphans.length;
-      await this.#database.transaction().execute(async (transaction) => {
-        for (const assignment of durableAssignments) {
-          const finalized = await this.#finalizeLease(transaction, assignment, now, false);
-          if (finalized === "requeued") result.requeuedAssignments += 1;
-          if (finalized === "settled" || finalized === "released") {
-            result.settledAssignments += 1;
-          }
-        }
-        const remaining = await transaction
-          .selectFrom("session_leases")
-          .select((expression) => expression.fn.countAll<string>().as("count"))
-          .where("sandbox_id", "=", this.#sandboxId)
-          .executeTakeFirstOrThrow();
-        if (safeInteger(remaining.count, "remaining sandbox lease count") !== 0) {
-          throw new AssignmentReconcilerError(
-            "assignment_reconciliation_incomplete",
-            "Sandbox retirement retained an assignment",
-            true,
-          );
-        }
-        const row = await transaction
-          .selectFrom("sandboxes")
-          .select(["state"])
-          .where("id", "=", this.#sandboxId)
-          .forUpdate()
-          .executeTakeFirstOrThrow();
-        if (row.state !== "terminated") {
-          if (row.state !== "draining" && row.state !== "failed" && row.state !== "provisioning") {
-            throw new AssignmentReconcilerError(
-              "sandbox_retirement_invariant",
-              "Sandbox was not fenced before retirement",
-              false,
-            );
-          }
-          await transaction
-            .updateTable("sandboxes")
-            .set({
-              state: transitionSandbox(row.state, "terminated"),
-              active_sessions: 0,
-              updated_at: now,
-              terminated_at: now,
-            })
-            .where("id", "=", this.#sandboxId)
-            .where("state", "=", row.state)
-            .executeTakeFirstOrThrow();
-        }
-      });
-      return { ...result, sandboxState: "terminated" };
+      return await this.#finalizeRetirement(durableAssignments, result, now);
+    } catch (error: unknown) {
+      await this.#quarantineSandbox(now).catch(() => undefined);
+      throw this.#normalizeError(error);
+    }
+  }
+
+  /**
+   * Finalizes only durable state after the owner connection, Sandbox and lease
+   * have already been fenced but the dead/partitioned process has no reachable
+   * management endpoint. No runtime is adopted or assumed to be reusable.
+   */
+  async retireFencedSandbox(): Promise<SandboxRetirementResult> {
+    const now = validDate(this.#clock);
+    try {
+      await this.#beginRetirement(now);
+      return await this.#finalizeRetirement(
+        await this.#loadDurableAssignments(),
+        emptyResult(0),
+        now,
+      );
     } catch (error: unknown) {
       await this.#quarantineSandbox(now).catch(() => undefined);
       throw this.#normalizeError(error);
@@ -651,7 +624,7 @@ export class AssignmentReconciler {
     await transaction
       .updateTable("sessions")
       .set({
-        state: transitionSession(session.state, "failed"),
+        state: transitionSession(session.state, "idle"),
         row_version: sql<string>`${sql.ref("row_version")} + 1`,
         updated_at: now,
         last_active_at: now,
@@ -719,6 +692,60 @@ export class AssignmentReconciler {
         true,
       );
     }
+  }
+
+  async #finalizeRetirement(
+    assignments: readonly DurableAssignment[],
+    result: AssignmentReconciliationResult,
+    now: Date,
+  ): Promise<SandboxRetirementResult> {
+    await this.#database.transaction().execute(async (transaction) => {
+      for (const assignment of assignments) {
+        const finalized = await this.#finalizeLease(transaction, assignment, now, false);
+        if (finalized === "requeued") result.requeuedAssignments += 1;
+        if (finalized === "settled" || finalized === "released") {
+          result.settledAssignments += 1;
+        }
+      }
+      const remaining = await transaction
+        .selectFrom("session_leases")
+        .select((expression) => expression.fn.countAll<string>().as("count"))
+        .where("sandbox_id", "=", this.#sandboxId)
+        .executeTakeFirstOrThrow();
+      if (safeInteger(remaining.count, "remaining sandbox lease count") !== 0) {
+        throw new AssignmentReconcilerError(
+          "assignment_reconciliation_incomplete",
+          "Sandbox retirement retained an assignment",
+          true,
+        );
+      }
+      const row = await transaction
+        .selectFrom("sandboxes")
+        .select("state")
+        .where("id", "=", this.#sandboxId)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      if (row.state === "terminated") return;
+      if (row.state !== "draining" && row.state !== "failed" && row.state !== "provisioning") {
+        throw new AssignmentReconcilerError(
+          "sandbox_retirement_invariant",
+          "Sandbox was not fenced before retirement",
+          false,
+        );
+      }
+      await transaction
+        .updateTable("sandboxes")
+        .set({
+          state: transitionSandbox(row.state, "terminated"),
+          active_sessions: 0,
+          updated_at: now,
+          terminated_at: now,
+        })
+        .where("id", "=", this.#sandboxId)
+        .where("state", "=", row.state)
+        .executeTakeFirstOrThrow();
+    });
+    return { ...result, sandboxState: "terminated" };
   }
 
   async #synchronizeCapacity(transaction: Transaction<Database>, now: Date): Promise<void> {

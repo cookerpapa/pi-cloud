@@ -2331,7 +2331,7 @@ describe.sequential("single-user durable turn intake API", () => {
       turnState: "failed",
       turnFailureCode: "assignment_lost",
       failureRetryable: false,
-      sessionState: "failed",
+      sessionState: "idle",
     });
     await expect(
       database
@@ -2438,7 +2438,7 @@ describe.sequential("single-user durable turn intake API", () => {
     expect(await readTurnExecution(fixture.accepted)).toMatchObject({
       commandState: "failed",
       turnState: "failed",
-      sessionState: "failed",
+      sessionState: "idle",
     });
     expect(
       await database
@@ -2474,7 +2474,7 @@ describe.sequential("single-user durable turn intake API", () => {
       commandState: "failed",
       commandFailureCode: "assignment_lost",
       turnState: "failed",
-      sessionState: "failed",
+      sessionState: "idle",
     });
     expect(
       await database

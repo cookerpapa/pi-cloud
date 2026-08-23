@@ -59,6 +59,8 @@ retired and remain only in Git history or explicitly superseded ADRs.
       explicit rebind before later Turns.
 - [x] Remove the redundant pre-Kafka group-commit scheduler and require a
       Session-keyed mutation projection barrier before cross-Worker reads.
+- [x] Let a durably fenced, expired Worker settle its interrupted Run even when
+      its dead management endpoint cannot confirm a physical stop.
 
 ## Distributed deployment
 

@@ -76,7 +76,9 @@ the browser, or expose Kafka offsets through the product API.
 
 ```text
 Worker loss
-  -> fence/settle the old Attempt
+  -> expire and fence the old connection/Attempt authority
+  -> best-effort physical stop; a dead endpoint cannot block logical retirement
+  -> settle the interrupted Run and return the Session to idle
   -> next Run appends Session projection barrier
   -> all older Session mutations are applied or rejected
   -> recheck new fence
@@ -99,6 +101,10 @@ Gateway loss
   native accumulator.
 - Worker recovery waits only for the state it will read, not unrelated
   presentation consumers.
+- Once the heartbeat and execution lease are expired, inability to call a dead
+  Worker's management endpoint does not keep a Session permanently running.
+  The durable fence is the correctness boundary; the old process is never
+  adopted or trusted again.
 - The public cursor contract becomes one logical Session sequence over a
   canonical PostgreSQL prefix and an Accepted-Kafka suffix.
 - The Session marker adds one low-frequency Kafka/PG round trip per Run. This

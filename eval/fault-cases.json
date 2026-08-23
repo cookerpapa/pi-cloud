@@ -86,6 +86,13 @@
       "invariant": "A stale Control Channel cannot retire a Worker whose active RunAttempt still has fresh database authority."
     },
     {
+      "id": "dead-worker-management-unavailable",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/supervisor-connection-manager.test.ts",
+      "test": "settles a fenced active Run when the dead Worker has no management endpoint",
+      "invariant": "After connection and lease expiry, a dead management endpoint cannot strand the interrupted Run or Session."
+    },
+    {
       "id": "checkpoint-corruption-and-cas",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/checkpoint-store.test.ts",

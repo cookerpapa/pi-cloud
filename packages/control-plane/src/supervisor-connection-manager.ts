@@ -55,6 +55,7 @@ export interface SupervisorOwnerBoundary {
 
 export interface SupervisorAssignmentRetirer {
   retireSandbox(): Promise<SandboxRetirementResult>;
+  retireFencedSandbox?(): Promise<SandboxRetirementResult>;
 }
 
 export type SupervisorConnectionManagerOptions = {
@@ -740,9 +741,28 @@ export class SupervisorConnectionManager {
     const claim = await this.#claimRetirement(validDate(this.#clock));
     if (claim === undefined) return { kind: "idle" };
     try {
-      await this.#ownerBoundary.stopAndConfirm(claim.identity);
-      await this.#renewRetirementClaim(claim, validDate(this.#clock));
-      const reconciliation = await this.#assignmentRetirerFactory(claim.identity).retireSandbox();
+      const retirer = this.#assignmentRetirerFactory(claim.identity);
+      let reconciliation: SandboxRetirementResult;
+      try {
+        await this.#ownerBoundary.stopAndConfirm(claim.identity);
+        await this.#renewRetirementClaim(claim, validDate(this.#clock));
+        reconciliation = await retirer.retireSandbox();
+      } catch (error: unknown) {
+        const normalized = safeErrorCode(error);
+        if (
+          retirer.retireFencedSandbox === undefined ||
+          (normalized.code !== "supervisor_management_unavailable" &&
+            normalized.code !== "boot_generation_unknown")
+        ) {
+          throw error;
+        }
+        // The connection, Sandbox row and RunAttempt lease were fenced before
+        // retirement became eligible. A partitioned old process can no longer
+        // publish Accepted events, mutate SessionStorage or enter Tool Broker.
+        // Management unavailability must not strand the durable Session.
+        await this.#renewRetirementClaim(claim, validDate(this.#clock));
+        reconciliation = await retirer.retireFencedSandbox();
+      }
       await this.#completeRetirementClaim(claim, validDate(this.#clock));
       return {
         kind: "retired",

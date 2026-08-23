@@ -47,6 +47,7 @@ making restart time proportional to a day's token volume.
 | after `T`, before terminal SSE | canonical result is complete | terminal outbox relay republishes; reconnect can reload PostgreSQL |
 | Gateway process loss | no canonical loss | rebuild only the retained Kafka suffix; settled tails fold during replay |
 | Worker loss during an arbitrary Tool | outcome may be unknown | revoke the fence, record `UNKNOWN`, never auto-run the Tool again |
+| Worker process is unreachable after its lease expires | management stop cannot be confirmed over the dead endpoint | durable fence blocks every later effect; settle the Run as interrupted, return the Session to idle and retire the logical owner without adopting its process |
 | Cube loss | process/memory world is gone | persistent Volume keeps files; the next model sees a minimal Sandbox-reset fact |
 | PostgreSQL projection lag | live Kafka may continue | the same Session cannot cross its projection barrier into a stale next Step |
 | Worker replacement with mutation records in flight | old records precede the keyed barrier | wait for `B`, recheck the new fence, then read PostgreSQL |

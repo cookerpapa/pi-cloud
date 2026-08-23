@@ -885,6 +885,61 @@ describe.sequential("durable supervisor registration and health management", () 
     ).toEqual({ state: "blocked", last_error: "owner_identity_mismatch" });
   });
 
+  it("settles a fenced active Run when the dead Worker has no management endpoint", async () => {
+    let now = testTime(5);
+    let stopAttempts = 0;
+    const transportAuthority = authority();
+    const connectionManager = manager({
+      clock: () => new Date(now),
+      ownerBoundary: {
+        async stopAndConfirm() {
+          stopAttempts += 1;
+          throw new SupervisorOwnerBoundaryError(
+            "supervisor_management_unavailable",
+            "Injected dead Worker endpoint",
+            true,
+          );
+        },
+      },
+    });
+    await provisionSandbox(transportAuthority);
+    const registered = await connectionManager.register(
+      registration(transportAuthority),
+      transportAuthority,
+    );
+    const accepted = await createAcceptedTurn();
+    const coordinator = await connectionManager.leaseCoordinator(
+      registered.payload.connectionId,
+      transportAuthority,
+    );
+    await coordinator.acquire(accepted.request);
+    await markAssignmentAcknowledged({ ...accepted, now });
+
+    now = new Date(now.valueOf() + 60_001);
+    await expect(connectionManager.expireConnections()).resolves.toMatchObject({
+      expiredConnections: 1,
+    });
+    await expect(connectionManager.processNextRetirement()).resolves.toMatchObject({
+      kind: "retired",
+      reconciliation: { settledAssignments: 1, sandboxState: "terminated" },
+    });
+    expect(stopAttempts).toBe(1);
+    await expect(
+      database
+        .selectFrom("sessions")
+        .select("state")
+        .where("id", "=", accepted.sessionId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ state: "idle" });
+    await expect(
+      database
+        .selectFrom("runs")
+        .select(["state", "failure_code"])
+        .where("id", "=", accepted.request.runId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ state: "failed", failure_code: "assignment_lost" });
+  });
+
   it("lets another control-plane instance reclaim an abandoned retirement claim", async () => {
     let now = testTime(6);
     let releaseFirstOwner!: () => void;

@@ -413,6 +413,10 @@ claimed as durable.
 - arbitrary shell start is not exactly-once and is never blindly replayed;
 - stale Workers cannot mutate Pi SessionStorage, execute Tools, commit a
   terminal Run or advance a Workspace revision;
+- an unreachable Worker endpoint cannot strand a Session after its connection
+  and lease expire: logical retirement proceeds under the durable fence, the
+  interrupted Run fails, and the Session returns to idle for a barriered next
+  Run;
 - cancellation revokes authority before process termination;
 - during `cancel_requested`, Tool authority is revoked while the current
   Attempt/Fence retains narrowly bounded Pi Session write authority to commit
