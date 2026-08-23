@@ -1,9 +1,9 @@
 {
   "accepted": true,
-  "piCloudRevision": "42166ea26132c4e475592c4c3ca1abb8a043436c",
-  "checkedAt": "2026-08-23T14:20:18.016Z",
-  "developmentEnvironmentId": "e8f748e5-1726-4a18-b659-1876bc0900d9",
-  "workspaceId": "723c7bdf-611a-4b7f-bc61-cd88d9669536",
+  "piCloudRevision": "7c352c6682699a3b6eae2dd500f63f6e0b73ca0a",
+  "checkedAt": "2026-08-23T17:13:07.741Z",
+  "developmentEnvironmentId": "84adc6e3-008a-42e6-8619-7fabf29cc7dd",
+  "workspaceId": "6c63088d-63e0-42e6-9274-cef9413fb93c",
   "ipAddress": "169.254.68.6",
   "cubeIdentityStableAcrossPause": true,
   "processSurvivedTerminalReconnect": true,
@@ -12,6 +12,10 @@
   "workspaceVolumeSurvivedRelease": true,
   "authenticatedHttpPreviewPassed": true,
   "previewPort": 5173,
+  "rootFilesystemPreserved": true,
+  "brokerRestartAdoptedSameCube": true,
+  "emptyDirectoryBrowsePassed": true,
+  "archivedSessionDidNotReleaseMachine": true,
   "oneTimeSshGatewayPassed": true,
   "selectedProfile": "standard"
 }
