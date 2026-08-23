@@ -211,9 +211,10 @@ specification or PiCloud Git revision does not match.
 
 The primary Compose overlay starts two credential-free fixed-target relays.
 The Tool Broker remains on internal networks, holds the Cube API key from
-the private file, and forces every create request to enable outbound public
-Internet while denying private/link-local/metadata ranges and public inbound
-traffic. The per-microVM Cube traffic token remains inside the trusted Provider.
+the private file, and forces every create request to allow only the governed
+public proxy plus deployment-configured RFC1918 CIDRs while denying all other
+egress and public inbound traffic. The per-microVM Cube traffic token remains
+inside the trusted Provider.
 
 Cube is the only Tool and environment-setup runtime. Project recipes execute in
 the same deployment-owned Cube boundary and use the configured Web proxy when
@@ -223,7 +224,9 @@ runtime or fallback.
 The guest receives `HTTP_PROXY`/`HTTPS_PROXY` for the trusted Cube egress
 gateway. The gateway can hot-route new connections through the
 administrator-configured WSL/host upstream proxy while continuing to deny
-private, link-local, metadata and platform destinations. Proxy-unaware
+private, link-local, metadata and platform destinations except RFC1918 CIDRs
+explicitly configured by `PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS`. Those
+CIDRs are also added to `NO_PROXY` for direct company-network access. Proxy-unaware
 protocols do not gain an implicit direct route through that gateway.
 
 ## Lifecycle and rollback

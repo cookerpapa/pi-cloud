@@ -328,7 +328,16 @@
             "proxyScheme": { "type": "string", "enum": ["http", "https"] },
             "domain": { "$ref": "#/$defs/dnsName" },
             "egressProxyHost": { "$ref": "#/$defs/boundedText" },
-            "egressProxyPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            "egressProxyPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "directPrivateCidrs": {
+              "type": "array",
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+              }
+            }
           }
         },
         "toolBrokerResources": { "$ref": "#/$defs/resources" },

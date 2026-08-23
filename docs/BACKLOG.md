@@ -87,7 +87,8 @@ retired and remain only in Git history or explicitly superseded ADRs.
 
 ## Security and operations
 
-- [ ] Add an enterprise egress allowlist and searchable network audit trail.
+- [x] Add deployment-owned direct RFC1918 CIDRs for company-network debugging.
+- [ ] Add per-tenant egress policy and a searchable network audit trail.
 - [ ] Add administrator-owned MCP connections and Session Tool grants on top
       of the Run capability snapshot; never load tenant code in the Pi Host.
 - [ ] Add tenant/session hard deletion and PostgreSQL/Volume retention.

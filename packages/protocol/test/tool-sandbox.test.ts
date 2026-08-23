@@ -86,6 +86,25 @@ describe("Tool Sandbox protocol", () => {
     ).toThrow(ToolSandboxProtocolError);
   });
 
+  it("carries deployment-owned direct private CIDRs into the Tool process environment", () => {
+    expect(
+      parseToolWorkerInput({
+        toolWorkerProtocolVersion: 1,
+        type: "worker.initialize",
+        activationId: "10000000-0000-4000-8000-000000000005",
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        webProxy: {
+          host: "10.255.255.254",
+          port: 3_128,
+          directPrivateCidrs: ["192.168.31.0/24"],
+        },
+      }),
+    ).toMatchObject({
+      webProxy: { directPrivateCidrs: ["192.168.31.0/24"] },
+    });
+  });
+
   it("rejects unknown fields and out-of-bound operation parameters", () => {
     expect(() =>
       parseToolSandboxOperationRequest({

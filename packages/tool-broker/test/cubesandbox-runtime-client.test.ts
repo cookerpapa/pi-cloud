@@ -171,6 +171,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
       proxyScheme: "http",
       sandboxDomain: "cube.test",
       egressProxyIp: "10.255.255.254",
+      directPrivateCidrs: ["192.168.31.0/24"],
     });
     await client.checkHealth();
     expect(observed.find((request) => request.path === "/health")).toMatchObject({
@@ -203,7 +204,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
         allow_internet_access: true,
         network: {
           allowPublicTraffic: false,
-          allowOut: ["10.255.255.254/32"],
+          allowOut: ["10.255.255.254/32", "192.168.31.0/24"],
           denyOut: ["0.0.0.0/0"],
         },
         lifecycle: { on_timeout: "kill", auto_resume: false },

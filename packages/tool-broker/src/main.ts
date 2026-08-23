@@ -36,11 +36,13 @@ const provider = new CubeSandboxProvider({
     proxyScheme: cube.proxyScheme,
     sandboxDomain: cube.sandboxDomain,
     egressProxyIp: cube.egressProxyHost,
+    directPrivateCidrs: [...cube.directPrivateCidrs],
     requestTimeoutMs: cube.requestTimeoutMs,
   },
   webProxy: {
     host: cube.egressProxyHost,
     port: cube.egressProxyPort,
+    directPrivateCidrs: [...cube.directPrivateCidrs],
   },
   workspaceVolumeGateway: new HttpWorkspaceVolumeGateway({
     baseUrl: cube.workspaceVolumeGatewayUrl,

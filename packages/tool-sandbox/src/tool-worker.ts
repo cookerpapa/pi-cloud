@@ -530,11 +530,14 @@ export function safeToolEnvironment(
       no_proxy: loopbackNoProxy,
     };
   } else if (webProxy !== undefined) {
+    const directPrivateCidrs = webProxy.directPrivateCidrs ?? [];
     if (
       !isIPv4(webProxy.host) ||
       !Number.isSafeInteger(webProxy.port) ||
       webProxy.port < 1 ||
-      webProxy.port > 65_535
+      webProxy.port > 65_535 ||
+      directPrivateCidrs.length > 32 ||
+      directPrivateCidrs.some((cidr) => !/^(?:\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/u.test(cidr))
     ) {
       throw new ToolWorkerError(
         "tool_web_network_invalid",
@@ -543,14 +546,15 @@ export function safeToolEnvironment(
       );
     }
     const proxy = `http://${webProxy.host}:${String(webProxy.port)}`;
+    const noProxy = [loopbackNoProxy, ...directPrivateCidrs].join(",");
     proxyEnvironment = {
       HTTP_PROXY: proxy,
       HTTPS_PROXY: proxy,
       http_proxy: proxy,
       https_proxy: proxy,
       NODE_USE_ENV_PROXY: "1",
-      NO_PROXY: loopbackNoProxy,
-      no_proxy: loopbackNoProxy,
+      NO_PROXY: noProxy,
+      no_proxy: noProxy,
     };
   }
   return {

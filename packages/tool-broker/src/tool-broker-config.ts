@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
+import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
 
 export type ToolBrokerConfig = {
   host: string;
@@ -28,6 +29,7 @@ export type ToolBrokerConfig = {
     sandboxDomain: string;
     egressProxyHost: string;
     egressProxyPort: number;
+    directPrivateCidrs: readonly string[];
     requestTimeoutMs: number;
     workspaceVolumeGatewayUrl: string;
     workspaceVolumeGatewayToken: string;
@@ -297,6 +299,9 @@ export async function loadToolBrokerConfig(
         3_128,
         1,
         65_535,
+      ),
+      directPrivateCidrs: directPrivateEgressCidrs(
+        environment.PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS,
       ),
       requestTimeoutMs: integer(
         environment.PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS,

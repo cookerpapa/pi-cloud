@@ -115,6 +115,7 @@ describe("credential-free Tool Sandbox worker", () => {
       const environment = safeToolEnvironment(undefined, {
         host: "10.255.255.254",
         port: 3_128,
+        directPrivateCidrs: ["192.168.31.0/24"],
       });
       expect(environment).toMatchObject({
         HTTP_PROXY: "http://10.255.255.254:3128",
@@ -122,8 +123,8 @@ describe("credential-free Tool Sandbox worker", () => {
         NODE_USE_ENV_PROXY: "1",
         http_proxy: "http://10.255.255.254:3128",
         https_proxy: "http://10.255.255.254:3128",
-        NO_PROXY: "127.0.0.1,localhost,::1",
-        no_proxy: "127.0.0.1,localhost,::1",
+        NO_PROXY: "127.0.0.1,localhost,::1,192.168.31.0/24",
+        no_proxy: "127.0.0.1,localhost,::1,192.168.31.0/24",
       });
       expect(JSON.stringify(environment)).not.toContain("inherited-proxy.invalid");
     } finally {

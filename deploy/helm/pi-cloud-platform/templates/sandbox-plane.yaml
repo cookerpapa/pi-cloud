@@ -110,6 +110,7 @@ spec:
             - { name: PI_CLOUD_CUBESANDBOX_DOMAIN, value: {{ .Values.sandboxPlane.cube.domain | quote }} }
             - { name: PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_HOST, value: {{ .Values.sandboxPlane.cube.egressProxyHost | quote }} }
             - { name: PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_PORT, value: {{ .Values.sandboxPlane.cube.egressProxyPort | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS, value: {{ join "," (.Values.sandboxPlane.cube.directPrivateCidrs | default (list)) | quote }} }
             - { name: PI_CLOUD_METRICS_HOST, value: 0.0.0.0 }
             - { name: PI_CLOUD_METRICS_PORT, value: "9466" }
             - { name: PI_CLOUD_METRICS_TOKEN_FILE, value: /run/pi-cloud-secrets/metrics-token }

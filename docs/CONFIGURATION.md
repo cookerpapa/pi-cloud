@@ -99,10 +99,17 @@ combinations.
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS` | `660000` | Broker-to-Volume request timeout |
 | `PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS` | `30000` | deleted-Workspace scan interval |
 | `PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE` | `16` | deletions considered per scan |
+| `PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS` | empty | comma-separated RFC1918 CIDRs that Cube guests may reach directly |
 
 Kafka retention must cover the Gateway replay window. The replay window must
 cover a maximum Turn plus settlement grace. Volume queue wait must be shorter
 than its request timeout.
+
+Direct private CIDRs are frozen when a Cube is created. Commands receive the
+same CIDRs in `NO_PROXY`, so HTTP(S) clients bypass the public-only egress proxy
+for these destinations. Existing warm or exclusive Cubes must be recreated to
+pick up a changed list. This grants guest-initiated outbound access only; it
+does not expose Sandbox ports to the private network.
 
 ### SSH and optional profiles
 

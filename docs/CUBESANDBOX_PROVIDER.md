@@ -78,8 +78,10 @@ second `envd` command channel.
 
 The guest has no route to platform services. Optional public HTTP/HTTPS egress
 crosses a deployment-owned proxy that resolves targets and rejects loopback,
-private, link-local, metadata, Kubernetes and platform destinations. Proxy
-configuration grants public dependency access, not trusted-network access.
+private, link-local, metadata, Kubernetes and platform destinations. A
+deployment may separately add bounded RFC1918 CIDRs to Cube `allowOut`; these
+destinations bypass the proxy through `NO_PROXY` and are reached directly from
+the guest. No tenant-controlled request may expand that list.
 
 ## Template and resource policy
 
@@ -109,7 +111,7 @@ npm run production:check
 ```
 
 The live gate is required for claims about guest identity, credentials,
-cross-tenant file isolation, private-network denial, public proxy behavior,
+cross-tenant file isolation, configured private-network reachability, public proxy behavior,
 timeout/cancellation, persistent Volume reattachment and orphan cleanup. The
 one-host profile still shares one physical host and does not claim host or Cube
 administrator compromise tolerance.

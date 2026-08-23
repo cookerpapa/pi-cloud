@@ -79,6 +79,12 @@ export const ToolWebProxyBootstrapSchema = Type.Object(
   {
     host: Type.String({ minLength: 7, maxLength: 15, pattern: "^[0-9.]+$" }),
     port: Type.Integer({ minimum: 1, maximum: 65_535 }),
+    directPrivateCidrs: Type.Optional(
+      Type.Array(Type.String({ pattern: "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$" }), {
+        maxItems: 32,
+        uniqueItems: true,
+      }),
+    ),
   },
   { additionalProperties: false },
 );

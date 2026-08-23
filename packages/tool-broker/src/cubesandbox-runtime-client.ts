@@ -1,13 +1,13 @@
 import { Agent, buildConnector, fetch, type Dispatcher } from "undici";
+import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
 
 export const CUBESANDBOX_TOOL_SERVICE_PORT = 49_984;
 const MAXIMUM_TERMINAL_FRAME_BYTES = 256 * 1_024;
 
 /**
- * Cube evaluates explicit allow entries before deny entries, so PiCloud
- * never supplies an allow list in full-public mode. Keep every non-public or
- * infrastructure-relevant IPv4 class explicit even when Cube also installs
- * part of this list as a built-in protection.
+ * Cube evaluates explicit allow entries before deny entries. PiCloud keeps a
+ * deny-all fallback and admits only its egress proxy plus deployment-owned
+ * direct private CIDRs.
  */
 export const CUBESANDBOX_BLOCKED_EGRESS_CIDRS = Object.freeze([
   "0.0.0.0/8",
@@ -127,6 +127,7 @@ export type OfficialCubeSandboxRuntimeClientOptions = Readonly<{
   proxyScheme: "http" | "https";
   sandboxDomain: string;
   egressProxyIp: string;
+  directPrivateCidrs?: readonly string[];
   requestTimeoutMs?: number;
 }>;
 
@@ -380,6 +381,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   readonly #sandboxDomain: string;
   readonly #requestTimeoutMs: number;
   readonly #egressProxyIp: string;
+  readonly #directPrivateCidrs: readonly string[];
   readonly #dispatcher: Dispatcher;
 
   constructor(options: OfficialCubeSandboxRuntimeClientOptions) {
@@ -390,6 +392,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     this.#sandboxDomain = validateHost(options.sandboxDomain, "CubeSandbox domain");
     this.#requestTimeoutMs = positiveInteger(options.requestTimeoutMs, 30_000, 1_000, 300_000);
     this.#egressProxyIp = validateHost(options.egressProxyIp, "CubeSandbox egress proxy IP");
+    this.#directPrivateCidrs = directPrivateEgressCidrs(options.directPrivateCidrs);
     const proxyNodeIp = validateHost(options.proxyNodeIp, "CubeSandbox proxy node IP");
     const baseConnect = buildConnector({ timeout: this.#requestTimeoutMs });
     this.#dispatcher = new Agent({
@@ -472,7 +475,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         network: {
           allowPublicTraffic: false,
           maskRequestHost: "localhost:${PORT}",
-          allowOut: [`${this.#egressProxyIp}/32`],
+          allowOut: [...new Set([`${this.#egressProxyIp}/32`, ...this.#directPrivateCidrs])],
           denyOut: ["0.0.0.0/0"],
         },
         // PiCloud owns the shorter Session warm TTL and explicit destroy.

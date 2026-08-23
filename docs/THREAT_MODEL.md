@@ -47,7 +47,7 @@ head.
 | stale Worker mutation | transaction-scoped authority and monotonically increasing fence |
 | duplicate queue delivery | idempotent command plus transactional RunAttempt claim |
 | ambiguous shell result | `UNKNOWN`; no automatic replay |
-| SSRF/data exfiltration to internal network | governed egress proxy and deny network policy |
+| SSRF/data exfiltration to internal network | private access denied except deployment-owned direct CIDRs; public HTTP uses governed egress proxy |
 | path/symlink escape | rooted/O_NOFOLLOW trusted Volume operations |
 | infinite output/process/resource use | byte, timeout, PID, CPU, memory and disk limits |
 | browser observes non-durable output | Accepted Kafka broker ACK before SSE; complete Pi entries remain PostgreSQL canonical state |

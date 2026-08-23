@@ -577,7 +577,12 @@ export class CubeSandboxProvider implements SandboxProvider {
     ) {
       throw new TypeError("CubeSandbox web proxy configuration is invalid");
     }
-    this.#webProxy = Object.freeze({ ...options.webProxy });
+    this.#webProxy = Object.freeze({
+      ...options.webProxy,
+      ...(options.webProxy.directPrivateCidrs === undefined
+        ? {}
+        : { directPrivateCidrs: [...options.webProxy.directPrivateCidrs] }),
+    });
     if (options.runtimeClient !== undefined) {
       this.#client = options.runtimeClient;
     } else {

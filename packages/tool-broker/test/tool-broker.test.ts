@@ -1590,6 +1590,8 @@ describe("provider-backed Tool Tool Broker", () => {
           PI_CLOUD_CUBESANDBOX_TEMPLATE_ID: "pi-cloud-tool-v1",
           PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP: "10.20.30.40",
           PI_CLOUD_CUBESANDBOX_PROXY_SCHEME: "https",
+          PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS:
+            "192.168.31.183/24,10.20.0.0/16,192.168.31.0/24",
           PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL: "http://workspace-volume-gateway:4500",
           PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE: workspaceVolumeGatewayTokenPath,
         }),
@@ -1606,6 +1608,7 @@ describe("provider-backed Tool Tool Broker", () => {
           proxyNodeIp: "10.20.30.40",
           proxyPort: 443,
           proxyScheme: "https",
+          directPrivateCidrs: ["192.168.31.0/24", "10.20.0.0/16"],
           sandboxDomain: "cube.app",
           workspaceVolumeGatewayUrl: "http://workspace-volume-gateway:4500",
           workspaceVolumeGatewayToken: "m".repeat(48),
