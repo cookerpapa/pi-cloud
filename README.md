@@ -146,6 +146,7 @@ explicit acknowledgement:
 PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
 PI_CLOUD_LIVE_PRODUCT_SURFACE_CHECK=1 npm run production:product-surface-check
 PI_CLOUD_LIVE_SNAKE_PREVIEW_CHECK=1 npm run production:snake-preview-check
+PI_CLOUD_LIVE_BROWSER_UI_CHECK=1 npm run production:browser-ui-check
 PI_CLOUD_LIVE_WORKER_POOL_CHECK=1 npm run production:worker-pool-check
 PI_CLOUD_LIVE_SUBAGENT_CHECK=1 npm run production:subagents-check
 PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-environment-check

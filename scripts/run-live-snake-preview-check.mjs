@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import WebSocket from "ws";
 import { DEFAULT_EXCLUSIVE_WORKING_DIRECTORY } from "../packages/protocol/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { withChromePage } from "./lib/chrome-cdp.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -193,210 +193,52 @@ async function waitForPreview(browser, sessionId) {
   throw new Error(`Snake preview did not become reachable; last HTTP status ${String(lastStatus)}`);
 }
 
-async function chromeBinary() {
-  for (const candidate of [
-    process.env.PI_CLOUD_CHROME_BINARY,
-    "google-chrome",
-    "chromium",
-    "chromium-browser",
-  ]) {
-    if (candidate === undefined) continue;
-    try {
-      execFileSync(candidate, ["--version"], { stdio: "ignore" });
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-  throw new Error("A Chrome/Chromium binary is required for Snake interaction acceptance");
-}
-
-async function connectCdp(portNumber) {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    try {
-      const targets = await fetch(`http://127.0.0.1:${String(portNumber)}/json`).then((response) =>
-        response.json(),
-      );
-      const page = targets.find((candidate) => candidate.type === "page");
-      if (page?.webSocketDebuggerUrl !== undefined) {
-        const socket = new WebSocket(page.webSocketDebuggerUrl);
-        await new Promise((resolvePromise, rejectPromise) => {
-          socket.once("open", resolvePromise);
-          socket.once("error", rejectPromise);
-        });
-        let nextId = 0;
-        const pending = new Map();
-        socket.on("message", (raw) => {
-          const message = JSON.parse(String(raw));
-          if (message.id === undefined || !pending.has(message.id)) return;
-          const request = pending.get(message.id);
-          pending.delete(message.id);
-          if (message.error === undefined) request.resolve(message.result);
-          else request.reject(new Error(message.error.message));
-        });
-        return {
-          socket,
-          send(method, params = {}) {
-            return new Promise((resolvePromise, rejectPromise) => {
-              const id = ++nextId;
-              pending.set(id, { resolve: resolvePromise, reject: rejectPromise });
-              socket.send(JSON.stringify({ id, method, params }));
-            });
-          },
-        };
-      }
-    } catch {
-      await wait(100);
-    }
-  }
-  throw new Error("Chrome DevTools endpoint did not become ready");
-}
-
-async function stopChrome(chrome, profile) {
-  if (chrome.exitCode === null && chrome.signalCode === null) {
-    chrome.kill("SIGTERM");
-    await Promise.race([
-      new Promise((resolvePromise) => chrome.once("exit", resolvePromise)),
-      wait(5_000),
-    ]);
-  }
-  if (chrome.exitCode === null && chrome.signalCode === null) {
-    chrome.kill("SIGKILL");
-    await new Promise((resolvePromise) => chrome.once("exit", resolvePromise));
-  }
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
-    try {
-      await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-      return;
-    } catch {
-      if (attempt === 5) return;
-      await wait(attempt * 100);
-    }
-  }
-}
-
 async function exerciseGame({ username, password, previewPath, screenshotPath }) {
-  const browserBinary = await chromeBinary();
-  const profile = await mkdtemp(resolve(tmpdir(), "pi-cloud-snake-chrome-"));
-  const debuggingPort = 9_300 + Math.floor(Math.random() * 300);
-  const chrome = spawn(
-    browserBinary,
-    [
-      "--headless=new",
-      "--no-sandbox",
-      "--disable-gpu",
-      `--remote-debugging-port=${String(debuggingPort)}`,
-      `--user-data-dir=${profile}`,
-      "about:blank",
-    ],
-    { stdio: "ignore" },
-  );
-  let cdp;
-  try {
-    cdp = await connectCdp(debuggingPort);
-    await cdp.send("Page.enable");
-    await cdp.send("Runtime.enable");
-    await cdp.send("Emulation.setDeviceMetricsOverride", {
-      width: 1_280,
-      height: 900,
-      deviceScaleFactor: 1,
-      mobile: false,
-    });
-    await cdp.send("Page.navigate", { url: baseUrl.toString() });
-    await wait(800);
-    const login = await cdp.send("Runtime.evaluate", {
-      awaitPromise: true,
-      returnByValue: true,
-      expression: `fetch("/v1/auth/login", {method:"POST", credentials:"same-origin", headers:{"content-type":"application/json"}, body:JSON.stringify(${JSON.stringify({ username, password })})}).then(response => response.status)`,
-    });
-    assert.equal(login.result.value, 200, "Chrome login failed");
-    await cdp.send("Page.navigate", { url: new URL(previewPath, baseUrl).toString() });
-    const readyDeadline = Date.now() + 30_000;
-    let ready = false;
-    while (Date.now() < readyDeadline && !ready) {
-      await wait(100);
-      const result = await cdp.send("Runtime.evaluate", {
-        returnByValue: true,
-        expression:
-          'Boolean(document.querySelector("#game-canvas") && document.querySelector("#start-button") && typeof window.__snakeTestState === "function")',
+  return withChromePage(
+    { profilePrefix: "pi-cloud-snake-chrome-", width: 1_280, height: 900 },
+    async (page) => {
+      await page.navigate(baseUrl.toString(), 800);
+      const login = await page.evaluate(
+        `fetch("/v1/auth/login", {method:"POST", credentials:"same-origin", headers:{"content-type":"application/json"}, body:JSON.stringify(${JSON.stringify({ username, password })})}).then(response => response.status)`,
+      );
+      assert.equal(login, 200, "Chrome login failed");
+      await page.navigate(new URL(previewPath, baseUrl).toString());
+      await page.waitFor(
+        'document.querySelector("#game-canvas") && document.querySelector("#start-button") && typeof window.__snakeTestState === "function"',
+      );
+      const before = await page.evaluate("window.__snakeTestState()");
+      await page.evaluate('document.querySelector("#start-button").click()');
+      await page.send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "ArrowDown",
+        code: "ArrowDown",
       });
-      ready = result.result.value === true;
-    }
-    assert(ready, "Snake page did not expose its required controls and test state");
-    const before = await cdp.send("Runtime.evaluate", {
-      returnByValue: true,
-      expression: "window.__snakeTestState()",
-    });
-    await cdp.send("Runtime.evaluate", {
-      expression: 'document.querySelector("#start-button").click()',
-    });
-    await cdp.send("Input.dispatchKeyEvent", {
-      type: "keyDown",
-      key: "ArrowDown",
-      code: "ArrowDown",
-    });
-    await cdp.send("Input.dispatchKeyEvent", {
-      type: "keyUp",
-      key: "ArrowDown",
-      code: "ArrowDown",
-    });
-    await wait(650);
-    const after = await cdp.send("Runtime.evaluate", {
-      returnByValue: true,
-      expression: "window.__snakeTestState()",
-    });
-    assert.equal(after.result.value.running, true, "Snake did not enter its running state");
-    assert(
-      after.result.value.tick > before.result.value.tick ||
-        after.result.value.headX !== before.result.value.headX ||
-        after.result.value.headY !== before.result.value.headY,
-      "Snake head did not move after starting the game",
-    );
-    await cdp.send("Runtime.evaluate", {
-      expression: 'document.querySelector("#pause-button").click()',
-    });
-    const paused = await cdp.send("Runtime.evaluate", {
-      returnByValue: true,
-      expression: "window.__snakeTestState()",
-    });
-    await wait(450);
-    const pausedAfterWait = await cdp.send("Runtime.evaluate", {
-      returnByValue: true,
-      expression: "window.__snakeTestState()",
-    });
-    assert.equal(
-      pausedAfterWait.result.value.tick,
-      paused.result.value.tick,
-      "Pause button did not stop the game loop",
-    );
-    assert.equal(pausedAfterWait.result.value.headX, paused.result.value.headX);
-    assert.equal(pausedAfterWait.result.value.headY, paused.result.value.headY);
-    await cdp.send("Runtime.evaluate", {
-      expression: 'document.querySelector("#reset-button").click()',
-    });
-    const reset = await cdp.send("Runtime.evaluate", {
-      returnByValue: true,
-      expression: "window.__snakeTestState()",
-    });
-    assert.equal(reset.result.value.score, 0, "Reset button did not reset the score");
-    const screenshot = await cdp.send("Page.captureScreenshot", {
-      format: "png",
-      fromSurface: true,
-      captureBeyondViewport: false,
-    });
-    await writeFile(screenshotPath, Buffer.from(screenshot.data, "base64"));
-    return {
-      before: before.result.value,
-      after: after.result.value,
-      paused: paused.result.value,
-      pausedAfterWait: pausedAfterWait.result.value,
-      reset: reset.result.value,
-    };
-  } finally {
-    cdp?.socket.close();
-    await stopChrome(chrome, profile);
-  }
+      await page.send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        key: "ArrowDown",
+        code: "ArrowDown",
+      });
+      await page.wait(650);
+      const after = await page.evaluate("window.__snakeTestState()");
+      assert.equal(after.running, true, "Snake did not enter its running state");
+      assert(
+        after.tick > before.tick || after.headX !== before.headX || after.headY !== before.headY,
+        "Snake head did not move after starting the game",
+      );
+      await page.evaluate('document.querySelector("#pause-button").click()');
+      const paused = await page.evaluate("window.__snakeTestState()");
+      await page.wait(450);
+      const pausedAfterWait = await page.evaluate("window.__snakeTestState()");
+      assert.equal(pausedAfterWait.tick, paused.tick, "Pause button did not stop the game loop");
+      assert.equal(pausedAfterWait.headX, paused.headX);
+      assert.equal(pausedAfterWait.headY, paused.headY);
+      await page.evaluate('document.querySelector("#reset-button").click()');
+      const reset = await page.evaluate("window.__snakeTestState()");
+      assert.equal(reset.score, 0, "Reset button did not reset the score");
+      await page.screenshot(screenshotPath);
+      return { before, after, paused, pausedAfterWait, reset };
+    },
+  );
 }
 
 const suffix = Date.now().toString(36);
