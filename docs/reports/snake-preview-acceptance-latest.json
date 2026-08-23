@@ -1,0 +1,57 @@
+{
+  "accepted": true,
+  "piCloudRevision": "5c81d5d19f9e630c1627d83367af2686c916e038",
+  "checkedAt": "2026-08-23T18:55:17.375Z",
+  "account": "snake.acceptance.mt65aqj1",
+  "sessionId": "c7fef80b-330d-4341-a477-b8007bd26dcf",
+  "workspaceId": "2d2935be-3dae-49a6-bd9f-e2134061876d",
+  "developmentEnvironmentId": "f25f53dc-85f4-465a-8d9b-8edd4722d5ac",
+  "runId": "dcc4e326-b5b3-45ab-b805-b80155d945dd",
+  "toolCalls": 9,
+  "firstTextMs": null,
+  "settledMs": null,
+  "hostPreviewStatus": 200,
+  "previewPath": "/v1/conversations/c7fef80b-330d-4341-a477-b8007bd26dcf/preview/4173/",
+  "browserInteraction": {
+    "before": {
+      "headX": 10,
+      "headY": 10,
+      "score": 0,
+      "running": false,
+      "tick": 0
+    },
+    "after": {
+      "headX": 10,
+      "headY": 14,
+      "score": 0,
+      "running": true,
+      "tick": 4
+    },
+    "paused": {
+      "headX": 10,
+      "headY": 14,
+      "score": 0,
+      "running": true,
+      "tick": 4
+    },
+    "pausedAfterWait": {
+      "headX": 10,
+      "headY": 14,
+      "score": 0,
+      "running": true,
+      "tick": 4
+    },
+    "reset": {
+      "headX": 10,
+      "headY": 10,
+      "score": 0,
+      "running": false,
+      "tick": 0
+    }
+  },
+  "screenshotPath": "/tmp/pi-cloud-snake-preview-latest.png",
+  "conversationRetainedForInspection": true,
+  "reusedCompletedCodingSession": true,
+  "systemPromptModified": false,
+  "modelOutputTranslated": false
+}
