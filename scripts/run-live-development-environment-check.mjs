@@ -142,6 +142,27 @@ async function waitForEnvironment(environmentId, expectedState) {
   throw new Error(`Development environment ${environmentId} did not reach ${expectedState}`);
 }
 
+async function waitForToolBrokerReady() {
+  const deadline = Date.now() + 2 * 60_000;
+  while (Date.now() < deadline) {
+    try {
+      await capture(process.execPath, [
+        "scripts/production-compose.mjs",
+        "exec",
+        "-T",
+        "tool-broker",
+        "node",
+        "-e",
+        "fetch('http://127.0.0.1:4300/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+      ]);
+      return;
+    } catch {
+      await wait(250);
+    }
+  }
+  throw new Error("Tool Broker did not become ready after restart");
+}
+
 async function terminalCommand(path, command, marker) {
   const target = new URL(path, baseUrl);
   target.protocol = target.protocol === "https:" ? "wss:" : "ws:";
@@ -355,6 +376,7 @@ await capture(
   ["scripts/production-compose.mjs", "restart", "tool-broker"],
   5 * 60_000,
 );
+await waitForToolBrokerReady();
 const recoveredAfterBrokerRestart = await waitForEnvironment(development.environmentId, "paused");
 assert.equal(
   await psql(
