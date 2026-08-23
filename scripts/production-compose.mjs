@@ -270,6 +270,7 @@ const serviceArguments =
         "control-plane",
         "supervisor-host",
         "tool-broker",
+        "ssh-gateway",
         "web",
         "provider-egress-relay-image",
         ...(requestedOptionalProfiles.includes("github") ? ["github-gateway"] : []),

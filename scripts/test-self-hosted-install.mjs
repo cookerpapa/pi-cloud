@@ -43,6 +43,11 @@ assert.match(
   /new Set\(\["build", "down"/u,
   "production image build must not require a template that it is about to create",
 );
+assert.match(
+  composeWrapper,
+  /"ssh-gateway"/u,
+  "production deployment must rebuild the SSH gateway with the current revision",
+);
 const productionCompose = await readFile(
   fileURLToPath(new URL("../deploy/production/compose.yaml", import.meta.url)),
   "utf8",
