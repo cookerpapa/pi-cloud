@@ -285,6 +285,13 @@ describe("supervisor/control-plane wire protocol", () => {
     expect(() =>
       parseSupervisorToControlMessage({
         ...publish,
+        type: "event.publish_batch",
+        payload: { ...publish.payload, event: undefined, events: [event] },
+      }),
+    ).toThrow(PiCloudWireProtocolError);
+    expect(() =>
+      parseSupervisorToControlMessage({
+        ...publish,
         payload: {
           ...publish.payload,
           event: { ...event, rawPiEvent: { type: "message_update" } },

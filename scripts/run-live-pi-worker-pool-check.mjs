@@ -193,6 +193,18 @@ async function waitForRun(runId) {
   throw new Error(`Run ${runId} did not settle`);
 }
 
+async function waitForTerminalRun(runId) {
+  const deadline = Date.now() + 10 * 60_000;
+  while (Date.now() < deadline) {
+    const run = await api.getRun(runId);
+    if (["completed", "failed", "cancelled", "timed_out", "superseded"].includes(run.state)) {
+      return run;
+    }
+    await wait(100);
+  }
+  throw new Error(`Run ${runId} did not reach a terminal state`);
+}
+
 async function runTurn(sessionId, prompt, afterSequence = 0) {
   const submittedAt = performance.now();
   const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("pool"), "off");
@@ -323,6 +335,102 @@ async function stopWorker(supervisorId) {
   return { mode: "kubernetes" };
 }
 
+async function killWorker(supervisorId) {
+  if (workerDeployment === "compose") {
+    const service = composeService(supervisorId);
+    await capture(process.execPath, [
+      "scripts/production-compose.mjs",
+      "kill",
+      "--signal",
+      "SIGKILL",
+      service,
+    ]);
+    return { mode: "compose", service };
+  }
+  return stopWorker(supervisorId);
+}
+
+async function crashStreamingTurn(sessionId) {
+  const marker = `PI-WORKER-CRASH-${suffix.toUpperCase()}`;
+  const accepted = await api.acceptTurn(
+    sessionId,
+    [
+      "Do not call tools.",
+      `Start with this exact marker: ${marker}.`,
+      "Then write eighty numbered Chinese sentences about distributed recovery.",
+      "Each sentence must contain at least fifteen Chinese characters.",
+    ].join(" "),
+    newIdempotencyKey("worker-crash"),
+    "off",
+  );
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(new Error("Worker crash stream timed out")),
+    10 * 60_000,
+  );
+  let crash;
+  let terminal;
+  let firstVisibleSequence;
+  const visibleText = [];
+  try {
+    const cursor = await streamSessionEvents({
+      sessionId,
+      afterSequence: 0,
+      signal: controller.signal,
+      authorizationToken: token,
+      fetchImplementation: fetchFromProduction,
+      retryDelayMs: 100,
+      onStatus() {},
+      onEvent(event) {
+        if (event.turnId !== accepted.turnId) return;
+        if (event.type === "assistant.text.delta") {
+          visibleText.push(event.payload.text);
+          if (crash === undefined) {
+            firstVisibleSequence = event.seq;
+            crash = runEvidence(accepted.runId).then(async (evidence) => ({
+              evidence,
+              stopped: await killWorker(evidence.supervisorId),
+            }));
+          }
+        }
+        if (
+          event.type === "turn.completed" ||
+          event.type === "turn.failed" ||
+          event.type === "turn.cancelled"
+        ) {
+          terminal = event;
+          controller.abort();
+        }
+      },
+    });
+    assert(crash, "The Worker crash workload did not produce an Accepted text event");
+    const killed = await crash;
+    stoppedWorker = killed.stopped;
+    assert(firstVisibleSequence, "The Worker crash workload had no visible sequence");
+    assert(terminal, "Worker loss did not produce a terminal event");
+    assert.notEqual(terminal.type, "turn.completed", "The killed Worker completed unexpectedly");
+    const run = await waitForTerminalRun(accepted.runId);
+    assert.notEqual(run.state, "completed");
+    assert(
+      visibleText.join("").includes(marker),
+      "The Accepted prefix before Worker loss omitted its marker",
+    );
+    return {
+      ...accepted,
+      cursor,
+      marker,
+      terminal,
+      firstVisibleSequence,
+      visibleText: visibleText.join(""),
+      killed,
+      run,
+    };
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
+  }
+}
+
 async function restoreWorker(stoppedWorker) {
   if (stoppedWorker.mode === "compose") {
     await capture(process.execPath, [
@@ -412,6 +520,45 @@ try {
   await restoreWorker(stoppedWorker);
   stoppedWorker = undefined;
 
+  const crashProject = await api.createProject(`Pi Worker crash ${suffix}`);
+  const crashSession = await api.createSession(
+    crashProject.projectId,
+    crashProject.workspaceId,
+    `Pi Worker crash ${suffix}`,
+  );
+  const crashed = await crashStreamingTurn(crashSession.sessionId);
+  const crashSurvivors = await waitForWorkers(1);
+  assert(!crashSurvivors.includes(crashed.killed.evidence.supervisorId));
+  const recovered = await runTurn(
+    crashSession.sessionId,
+    "The previous Run was interrupted. Do not call tools. Reply exactly RECOVERY-BARRIER-OK.",
+    crashed.cursor,
+  );
+  assert(recovered.text.includes("RECOVERY-BARRIER-OK"));
+  const barrierCount = Number(
+    await psql(
+      `select count(*)
+         from pi_session_mutation_results
+        where run_id = ${sqlLiteral(recovered.runId)}
+          and result ->> 'kind' = 'projection_barrier'`,
+    ),
+  );
+  assert(barrierCount >= 1, "The replacement Worker did not cross its Session projection barrier");
+  const interruptedPrefixCount = Number(
+    await psql(
+      `select count(*)
+         from pi_session_entries
+        where session_id = ${sqlLiteral(crashSession.sessionId)}
+          and custom_type = 'pi-cloud.interrupted_assistant_prefix'`,
+    ),
+  );
+  assert(
+    interruptedPrefixCount >= 1,
+    "The Accepted prefix was not projected into Pi context after Worker loss",
+  );
+  await restoreWorker(stoppedWorker);
+  stoppedWorker = undefined;
+
   const concurrent = await Promise.all(
     Array.from({ length: 4 }, async (_, index) => {
       const concurrentProject = await api.createProject(`Pi pool lane ${index + 1} ${suffix}`);
@@ -449,6 +596,7 @@ try {
   const allTurns = [
     ...candidates.map(({ turn }) => turn),
     followUp,
+    recovered,
     ...concurrent.map(({ turn }) => turn),
   ];
   const totalUsage = sumUsage(allTurns);
@@ -467,6 +615,15 @@ try {
       firstSettledMs: first.settledMs,
       followUpSettledMs: followUp.settledMs,
       candidateRuns: candidates.length,
+    },
+    activeCrashRecovery: {
+      killedWorker: crashed.killed.evidence.supervisorId,
+      terminalState: crashed.run.state,
+      firstVisibleSequence: crashed.firstVisibleSequence,
+      terminalSequence: crashed.terminal.seq,
+      acceptedPrefixProjected: interruptedPrefixCount >= 1,
+      sessionProjectionBarriers: barrierCount,
+      replacementRunId: recovered.runId,
     },
     concurrency: {
       runs: concurrent.length,
@@ -498,6 +655,9 @@ try {
       `- Cross-Worker restore: ${report.failover.firstWorker} -> ${report.failover.followUpWorker}`,
       `- PostgreSQL Pi Session restored: ${String(report.failover.postgresSessionRestored)}`,
       `- Previous-turn marker recovered: ${String(report.failover.markerRecovered)}`,
+      `- Active Worker crash terminal state: ${report.activeCrashRecovery.terminalState}`,
+      `- Accepted prefix projected after crash: ${String(report.activeCrashRecovery.acceptedPrefixProjected)}`,
+      `- Replacement Session projection barriers: ${String(report.activeCrashRecovery.sessionProjectionBarriers)}`,
       `- Concurrent Runs / distinct Workers: ${String(report.concurrency.runs)} / ${String(report.concurrency.distinctWorkers)}`,
       `- Concurrent assignment: ${report.concurrency.workerIds.join(", ")}`,
       `- Real requests/input/output tokens: ${String(report.totalUsage.requests)} / ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)}`,

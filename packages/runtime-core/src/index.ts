@@ -2,7 +2,6 @@ export * from "./checkpoint-object-cache.ts";
 export * from "./checkpoint-store.ts";
 export * from "./conversation-turn-projection.ts";
 export * from "./durable-event-store.ts";
-export * from "./grouped-durable-event-ingestor.ts";
 export * from "./kafka-agent-event-log.ts";
 export * from "./kafka-first-event-runtime.ts";
 export * from "./kafka-live-event-store.ts";

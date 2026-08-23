@@ -35,6 +35,13 @@
       "invariant": "At-least-once Session mutation delivery creates one canonical PostgreSQL effect."
     },
     {
+      "id": "session-projection-barrier-before-read",
+      "workspace": "@pi-cloud/pi-session-postgres",
+      "file": "test/postgres-durable-agent-session.test.ts",
+      "test": "waits for older Session mutations before rechecking the new fence",
+      "invariant": "A replacement Worker crosses the Session-keyed projection barrier and rechecks its fence before reading PostgreSQL."
+    },
+    {
       "id": "message-stream-independence",
       "workspace": "@pi-cloud/pi-session-postgres",
       "file": "test/cloud-agent-runtime.test.ts",

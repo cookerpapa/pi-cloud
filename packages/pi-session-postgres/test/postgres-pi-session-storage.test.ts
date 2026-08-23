@@ -154,6 +154,7 @@ describe.sequential("PostgresPiSessionStorage", () => {
       tenantId: TENANT_ID,
       sessionId: SESSION_ID,
       mutationPublisher: {
+        async synchronize() {},
         async mutate(operation) {
           operations.push(operation);
           if (operation.kind === "append_entry") {

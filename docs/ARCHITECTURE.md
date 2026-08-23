@@ -351,8 +351,9 @@ events. The public adapter intentionally ignores thinking fragments, streamed
 Tool-call JSON and partial Tool stdout. It publishes only coalesced Assistant
 text, complete Tool start/result Items and low-frequency lifecycle boundaries.
 
-Workers combine adjacent text for 100 ms or 4 KiB, then independent Sessions
-share a bounded Host-level Kafka append. Raw records are keyed by Session. An
+Workers combine adjacent text for 100 ms or 4 KiB, then publish directly to a
+native idempotent Kafka producer whose accumulator batches by partition. There
+is no second application group-commit scheduler. Raw records are keyed by Session. An
 authority consumer checks Run, Attempt, lease and fence in PostgreSQL before it
 publishes to the Accepted topic. Only an Accepted broker ACK advances the
 Worker boundary and makes bytes eligible for SSE.
@@ -365,12 +366,14 @@ than the retained window reloads canonical PostgreSQL conversation state.
 
 Pi SessionStorage mutations use a separate Session-keyed Kafka topic. A
 PostgreSQL projector applies complete entries, records and compaction facts
-idempotently, while the active Worker waits at a projection barrier before the
-next model Step. PostgreSQL therefore stores semantic Pi state, not token
-fragments. Terminal Run state and a one-row Kafka outbox commit in the same
-PostgreSQL transaction. Abnormal interruption recovery reads only the retained
-Accepted tail needed to preserve a visible prefix that never reached
-`message_end`.
+idempotently. Before opening a Session, every Run appends a keyed recovery
+barrier and waits for its projection; all older Session mutations have then
+been applied or fenced before the Worker reads PostgreSQL. Each semantic Pi
+write also waits for its own mutation result before the Agent Loop advances.
+PostgreSQL therefore stores semantic Pi state, not token fragments. Terminal
+Run state and a one-row Kafka outbox commit in the same PostgreSQL transaction.
+Abnormal interruption recovery reads only the retained Accepted tail needed to
+preserve a visible prefix that never reached `message_end`.
 
 ## State ownership
 
@@ -398,8 +401,9 @@ plane. If Pi chooses a Tool, the Broker lazily creates Cube and mounts the
 Workspace Volume.
 
 For a later message, any Worker can resume the same Pi Session from PostgreSQL.
-Pi reconstructs the active model context and respects its native compaction
-boundary. If the previous Cube is still warm it is rebound under a newer fence;
+It first crosses the Session mutation projection barrier, rechecks its newer
+fence, then Pi reconstructs the active model context and respects its native
+compaction boundary. If the previous Cube is still warm it is rebound under a newer fence;
 otherwise a new KVM mounts the same persistent Volume. Process state is not
 claimed as durable.
 

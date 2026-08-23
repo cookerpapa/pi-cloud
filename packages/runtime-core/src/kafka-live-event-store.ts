@@ -56,26 +56,7 @@ function positiveInteger(value: number, name: string): number {
 function eventPublications(
   envelope: KafkaAcceptedAgentEventEnvelope,
 ): readonly EventPublishMessage[] {
-  return envelope.publications.flatMap((publication) =>
-    publication.type === "event.publish"
-      ? [publication]
-      : publication.payload.events.map((event): EventPublishMessage => ({
-          protocolVersion: 1,
-          messageId: publication.messageId,
-          sentAt: publication.sentAt,
-          type: "event.publish",
-          payload: {
-            leaseId: publication.payload.leaseId,
-            fencingToken: publication.payload.fencingToken,
-            runId: publication.payload.runId,
-            attemptId: publication.payload.attemptId,
-            ...(publication.payload.commandId === undefined
-              ? {}
-              : { commandId: publication.payload.commandId }),
-            event,
-          },
-        })),
-  );
+  return envelope.publications;
 }
 
 /**

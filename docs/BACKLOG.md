@@ -57,6 +57,8 @@ retired and remain only in Git history or explicitly superseded ADRs.
       restart memory is bounded by active/hot Sessions rather than history.
 - [x] Preserve conversations when their Workspace is deleted and require an
       explicit rebind before later Turns.
+- [x] Remove the redundant pre-Kafka group-commit scheduler and require a
+      Session-keyed mutation projection barrier before cross-Worker reads.
 
 ## Distributed deployment
 

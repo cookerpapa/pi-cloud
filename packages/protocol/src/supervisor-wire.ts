@@ -431,24 +431,6 @@ export const EventPublishMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const EventPublishBatchMessageSchema = Type.Object(
-  {
-    ...WireEnvelopeProperties,
-    type: Type.Literal("event.publish_batch"),
-    payload: Type.Object(
-      {
-        ...LeaseProperties,
-        commandId: Type.Optional(UuidSchema),
-        runId: UuidSchema,
-        attemptId: UuidSchema,
-        events: Type.Array(PiCloudEventSchema, { minItems: 1, maxItems: 128 }),
-      },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
-
 export const EventAckMessageSchema = Type.Object(
   {
     ...WireEnvelopeProperties,
@@ -544,7 +526,6 @@ export const SupervisorToControlMessageSchema = Type.Union([
   CommandAckMessageSchema,
   CommandResultMessageSchema,
   EventPublishMessageSchema,
-  EventPublishBatchMessageSchema,
   SupervisorHeartbeatMessageSchema,
 ]);
 
@@ -572,7 +553,6 @@ export type CommandCommitMessage = Static<typeof CommandCommitMessageSchema>;
 export type CommandReleaseMessage = Static<typeof CommandReleaseMessageSchema>;
 export type CommandResultMessage = Static<typeof CommandResultMessageSchema>;
 export type EventPublishMessage = Static<typeof EventPublishMessageSchema>;
-export type EventPublishBatchMessage = Static<typeof EventPublishBatchMessageSchema>;
 export type EventAckMessage = Static<typeof EventAckMessageSchema>;
 export type EventRejectedMessage = Static<typeof EventRejectedMessageSchema>;
 export type SupervisorHeartbeatMessage = Static<typeof SupervisorHeartbeatMessageSchema>;
@@ -583,7 +563,6 @@ export type SupervisorToControlMessage =
   | CommandAckMessage
   | CommandResultMessage
   | EventPublishMessage
-  | EventPublishBatchMessage
   | SupervisorHeartbeatMessage;
 
 export type ControlToSupervisorMessage =

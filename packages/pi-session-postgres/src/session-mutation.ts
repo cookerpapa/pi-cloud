@@ -10,8 +10,10 @@ export type PiSessionMutationOperation =
     }>
   | Readonly<{ kind: "append_record"; record: NewRecord<LaneRecord> }>
   | Readonly<{ kind: "set_name"; name: string }>
-  | Readonly<{ kind: "set_label"; id: string; label?: string }>;
+  | Readonly<{ kind: "set_label"; id: string; label?: string }>
+  | Readonly<{ kind: "projection_barrier" }>;
 
 export interface PiSessionMutationPublisher {
   mutate(operation: PiSessionMutationOperation): Promise<unknown>;
+  synchronize(): Promise<void>;
 }

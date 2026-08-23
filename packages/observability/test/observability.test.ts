@@ -46,8 +46,6 @@ describe("PiCloud observability primitives", () => {
     metrics.runs.inc({ outcome: "completed" });
     metrics.turnAdmissionDuration.labels("accepted").observe(0.012);
     metrics.tenantAdmissionLockWait.observe(0.003);
-    metrics.eventDurabilityDuration.labels("success").observe(0.02);
-    metrics.eventDurabilityGroupSize.observe(16);
     const endpoint = await startMetricsEndpoint({
       host: "127.0.0.1",
       port: 0,
@@ -68,12 +66,6 @@ describe("PiCloud observability primitives", () => {
       );
       expect(body).toContain(
         'pi_cloud_tenant_admission_lock_wait_seconds_count{service="test-service"} 1',
-      );
-      expect(body).toContain(
-        'pi_cloud_event_durability_seconds_count{service="test-service",outcome="success"} 1',
-      );
-      expect(body).toContain(
-        'pi_cloud_event_durability_group_events_count{service="test-service"} 1',
       );
       expect(body).not.toContain("tenant_id");
     } finally {

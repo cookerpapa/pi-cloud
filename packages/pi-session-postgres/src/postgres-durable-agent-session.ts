@@ -30,6 +30,14 @@ export type PostgresDurableAgentSession = Readonly<{
   authority: PostgresRunExecutionAuthority;
 }>;
 
+export async function synchronizePiSessionProjectionBeforeRead(
+  publisher: PiSessionMutationPublisher | undefined,
+  authority: Pick<PostgresRunExecutionAuthority, "assertCurrent">,
+): Promise<void> {
+  await publisher?.synchronize();
+  await authority.assertCurrent();
+}
+
 /**
  * Opens a Pi Session and the exact same opaque authority used by Session writes
  * and remote Tool effects.
@@ -51,6 +59,7 @@ export async function openPostgresDurableAgentSession(
   await authority.assertCurrent();
   authority.start();
   try {
+    await synchronizePiSessionProjectionBeforeRead(options.mutationPublisher, authority);
     const repository = new PostgresPiSessionRepository({
       database: options.database,
       tenantId: options.scope.tenantId,

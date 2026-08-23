@@ -322,27 +322,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       const command = parsed;
       prepared = this.#supervisor.prepare(command, async (message) => {
         const eventMessage = parseSupervisorToControlMessage(message);
-        const publications =
-          eventMessage.type === "event.publish"
-            ? [eventMessage]
-            : eventMessage.type === "event.publish_batch"
-              ? eventMessage.payload.events.map((event) => ({
-                  protocolVersion: 1 as const,
-                  messageId: eventMessage.messageId,
-                  sentAt: eventMessage.sentAt,
-                  type: "event.publish" as const,
-                  payload: {
-                    leaseId: eventMessage.payload.leaseId,
-                    fencingToken: eventMessage.payload.fencingToken,
-                    runId: eventMessage.payload.runId,
-                    attemptId: eventMessage.payload.attemptId,
-                    ...(eventMessage.payload.commandId === undefined
-                      ? {}
-                      : { commandId: eventMessage.payload.commandId }),
-                    event,
-                  },
-                }))
-              : [];
+        const publications = eventMessage.type === "event.publish" ? [eventMessage] : [];
         if (
           publications.length === 0 ||
           publications.some(

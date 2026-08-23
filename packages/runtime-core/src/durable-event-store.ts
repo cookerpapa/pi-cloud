@@ -2,7 +2,6 @@ import {
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
   type EventAckMessage,
-  type EventPublishMessage,
   type PiCloudEvent,
 } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
@@ -41,10 +40,6 @@ export interface DurableEventIngestor {
   ingest(value: unknown): Promise<EventAckMessage>;
 }
 
-export interface DurableEventGroupIngestor extends DurableEventIngestor {
-  ingestGroup(values: readonly unknown[]): Promise<readonly EventAckMessage[]>;
-}
-
 export interface DurableEventLog extends DurableEventIngestor {
   openReplayWindow(
     tenantId: string,
@@ -71,7 +66,7 @@ export type DurableEventStoreOptions = Readonly<{
  * maintained production path injects KafkaLiveEventStore and never constructs
  * this class.
  */
-export class DurableEventStore implements DurableEventLog, DurableEventGroupIngestor {
+export class DurableEventStore implements DurableEventLog {
   readonly #events = new Map<string, PiCloudEvent[]>();
   readonly #database: Kysely<Database> | undefined;
 
@@ -80,54 +75,25 @@ export class DurableEventStore implements DurableEventLog, DurableEventGroupInge
   }
 
   async ingest(value: unknown): Promise<EventAckMessage> {
-    return (await this.ingestGroup([value]))[0]!;
-  }
-
-  async ingestGroup(values: readonly unknown[]): Promise<readonly EventAckMessage[]> {
-    if (values.length < 1) {
-      throw new DurableEventStoreError("invalid_event", "Event publication group was empty");
+    const publication = parseSupervisorToControlMessage(value);
+    if (publication.type !== "event.publish") {
+      throw new DurableEventStoreError("invalid_event", "Expected an event publication");
     }
-    return values.map((value) => {
-      const parsed = parseSupervisorToControlMessage(value);
-      if (parsed.type !== "event.publish" && parsed.type !== "event.publish_batch") {
-        throw new DurableEventStoreError("invalid_event", "Expected an event publication");
-      }
-      const publications: EventPublishMessage[] =
-        parsed.type === "event.publish"
-          ? [parsed]
-          : parsed.payload.events.map((event) => ({
-              protocolVersion: 1,
-              messageId: parsed.messageId,
-              sentAt: parsed.sentAt,
-              type: "event.publish",
-              payload: {
-                leaseId: parsed.payload.leaseId,
-                fencingToken: parsed.payload.fencingToken,
-                runId: parsed.payload.runId,
-                attemptId: parsed.payload.attemptId,
-                ...(parsed.payload.commandId === undefined
-                  ? {}
-                  : { commandId: parsed.payload.commandId }),
-                event,
-              },
-            }));
-      for (const publication of publications) this.#append(publication.payload.event);
-      const last = publications.at(-1)!;
-      const acknowledgement = parseControlToSupervisorMessage({
-        protocolVersion: 1,
-        messageId: globalThis.crypto.randomUUID(),
-        sentAt: new Date().toISOString(),
-        type: "event.ack",
-        payload: {
-          sessionId: last.payload.event.sessionId,
-          leaseId: last.payload.leaseId,
-          fencingToken: last.payload.fencingToken,
-          acknowledgedThroughSeq: last.payload.event.seq,
-        },
-      });
-      if (acknowledgement.type !== "event.ack") throw new Error("Invalid event ACK");
-      return acknowledgement;
+    this.#append(publication.payload.event);
+    const acknowledgement = parseControlToSupervisorMessage({
+      protocolVersion: 1,
+      messageId: globalThis.crypto.randomUUID(),
+      sentAt: new Date().toISOString(),
+      type: "event.ack",
+      payload: {
+        sessionId: publication.payload.event.sessionId,
+        leaseId: publication.payload.leaseId,
+        fencingToken: publication.payload.fencingToken,
+        acknowledgedThroughSeq: publication.payload.event.seq,
+      },
     });
+    if (acknowledgement.type !== "event.ack") throw new Error("Invalid event ACK");
+    return acknowledgement;
   }
 
   async openReplayWindow(

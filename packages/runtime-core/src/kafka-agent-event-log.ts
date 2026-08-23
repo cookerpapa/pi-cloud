@@ -6,10 +6,9 @@ import type {
 import {
   parseSupervisorToControlMessage,
   type EventAckMessage,
-  type EventPublishBatchMessage,
   type EventPublishMessage,
 } from "@pi-cloud/protocol";
-import type { DurableEventGroupIngestor, DurableEventIngestor } from "./durable-event-store.ts";
+import type { DurableEventIngestor } from "./durable-event-store.ts";
 import type { Database } from "@pi-cloud/database";
 import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
@@ -21,13 +20,13 @@ type Admin = ReturnType<InstanceType<typeof Kafka>["admin"]>;
 
 export type KafkaAgentEventEnvelope = Readonly<{
   schemaVersion: 1;
-  publications: readonly (EventPublishMessage | EventPublishBatchMessage)[];
+  publications: readonly EventPublishMessage[];
 }>;
 
 export type KafkaAcceptedAgentEventEnvelope = Readonly<{
   schemaVersion: 1;
   tenantId: string;
-  publications: readonly (EventPublishMessage | EventPublishBatchMessage)[];
+  publications: readonly EventPublishMessage[];
 }>;
 
 export type KafkaAgentEventPosition = Readonly<{
@@ -107,24 +106,20 @@ function kafka(options: KafkaAgentEventLogOptions): InstanceType<typeof Kafka> {
   });
 }
 
-function publications(value: unknown): readonly (EventPublishMessage | EventPublishBatchMessage)[] {
+function publication(value: unknown): EventPublishMessage {
   const parsed = parseSupervisorToControlMessage(value);
-  if (parsed.type !== "event.publish" && parsed.type !== "event.publish_batch") {
+  if (parsed.type !== "event.publish") {
     throw new TypeError("Kafka event producer accepts only event publications");
   }
-  return [parsed];
+  return parsed;
 }
 
-function firstEvent(publication: EventPublishMessage | EventPublishBatchMessage) {
-  return publication.type === "event.publish"
-    ? publication.payload.event
-    : publication.payload.events[0]!;
+function firstEvent(publication: EventPublishMessage) {
+  return publication.payload.event;
 }
 
-function lastEvent(publication: EventPublishMessage | EventPublishBatchMessage) {
-  return publication.type === "event.publish"
-    ? publication.payload.event
-    : publication.payload.events.at(-1)!;
+function lastEvent(publication: EventPublishMessage) {
+  return publication.payload.event;
 }
 
 async function boundedParallelMap<Input, Output>(
@@ -163,7 +158,7 @@ export function parseKafkaAgentEventEnvelope(
   ) {
     throw new TypeError("Kafka Agent event envelope is invalid");
   }
-  const decoded = candidate.publications.flatMap(publications);
+  const decoded = candidate.publications.map(publication);
   const sessionId = firstEvent(decoded[0]!).sessionId;
   if (decoded.some((publication) => firstEvent(publication).sessionId !== sessionId)) {
     throw new TypeError("Kafka Agent event envelope mixes Sessions");
@@ -199,7 +194,7 @@ export function parseKafkaAcceptedAgentEventEnvelope(
     const payload = message.payload;
     if (
       message.protocolVersion !== 1 ||
-      (message.type !== "event.publish" && message.type !== "event.publish_batch") ||
+      message.type !== "event.publish" ||
       typeof payload !== "object" ||
       payload === null ||
       Array.isArray(payload)
@@ -207,7 +202,7 @@ export function parseKafkaAcceptedAgentEventEnvelope(
       throw new TypeError("Kafka accepted Agent event publication is invalid");
     }
     const body = payload as Record<string, unknown>;
-    const events = message.type === "event.publish" ? [body.event] : body.events;
+    const events = [body.event];
     if (
       typeof body.leaseId !== "string" ||
       !Number.isSafeInteger(body.fencingToken) ||
@@ -232,7 +227,7 @@ export function parseKafkaAcceptedAgentEventEnvelope(
     ) {
       throw new TypeError("Kafka accepted Agent event publication is invalid");
     }
-    return message as EventPublishMessage | EventPublishBatchMessage;
+    return message as EventPublishMessage;
   });
   const sessionId = firstEvent(decoded[0]!).sessionId;
   if (decoded.some((publication) => firstEvent(publication).sessionId !== sessionId)) {
@@ -245,7 +240,7 @@ export function parseKafkaAcceptedAgentEventEnvelope(
   });
 }
 
-export class KafkaAgentEventProducer implements DurableEventIngestor, DurableEventGroupIngestor {
+export class KafkaAgentEventProducer implements DurableEventIngestor {
   readonly #topic: string;
   readonly #producer: Producer;
   readonly #acceptedBarrier: PostgresAcceptedEventBarrier | undefined;
@@ -263,57 +258,47 @@ export class KafkaAgentEventProducer implements DurableEventIngestor, DurableEve
       "delivery.timeout.ms": 30_000,
       "linger.ms": 5,
       acks: -1,
-      "compression.codec": CompressionTypes.GZIP,
+      "compression.codec": CompressionTypes.LZ4,
     });
     this.#producer.logger().setLogLevel(logLevel.NOTHING);
   }
 
   async ingest(value: unknown): Promise<EventAckMessage> {
-    return (await this.ingestGroup([value]))[0]!;
-  }
-
-  async ingestGroup(values: readonly unknown[]): Promise<readonly EventAckMessage[]> {
     if (this.#closed) throw new Error("Kafka Agent event producer is closed");
-    if (values.length < 1 || values.length > 2_048) {
-      throw new TypeError("Kafka Agent event group is invalid");
-    }
-    const decoded = values.map((value) => publications(value)[0]!);
+    const decoded = publication(value);
     await this.#connect();
     await this.#producer.send({
       topic: this.#topic,
-      messages: decoded.map((publication) => {
-        const event = firstEvent(publication);
-        const envelope: KafkaAgentEventEnvelope = {
-          schemaVersion: 1,
-          publications: [publication],
-        };
-        return {
-          key: event.sessionId,
-          value: JSON.stringify(envelope),
+      messages: [
+        {
+          key: decoded.payload.event.sessionId,
+          value: JSON.stringify({
+            schemaVersion: 1,
+            publications: [decoded],
+          } satisfies KafkaAgentEventEnvelope),
           headers: {
             "pi-cloud-schema": "agent-events-v1",
-            "pi-cloud-run": publication.payload.runId,
-            "pi-cloud-attempt": publication.payload.attemptId,
+            "pi-cloud-run": decoded.payload.runId,
+            "pi-cloud-attempt": decoded.payload.attemptId,
           },
-        };
-      }),
+        },
+      ],
     });
     if (this.#acceptedBarrier !== undefined) {
-      await Promise.all(decoded.map((publication) => this.#acceptedBarrier!.wait(publication)));
+      await this.#acceptedBarrier.wait(decoded);
     }
-    const now = new Date().toISOString();
-    return decoded.map((publication) => ({
+    return {
       protocolVersion: 1,
       messageId: globalThis.crypto.randomUUID(),
-      sentAt: now,
+      sentAt: new Date().toISOString(),
       type: "event.ack",
       payload: {
-        sessionId: firstEvent(publication).sessionId,
-        leaseId: publication.payload.leaseId,
-        fencingToken: publication.payload.fencingToken,
-        acknowledgedThroughSeq: lastEvent(publication).seq,
+        sessionId: decoded.payload.event.sessionId,
+        leaseId: decoded.payload.leaseId,
+        fencingToken: decoded.payload.fencingToken,
+        acknowledgedThroughSeq: decoded.payload.event.seq,
       },
-    }));
+    };
   }
 
   async checkHealth(): Promise<void> {
@@ -352,7 +337,7 @@ export class KafkaAcceptedAgentEventProducer {
       "delivery.timeout.ms": 30_000,
       "linger.ms": 5,
       acks: -1,
-      "compression.codec": CompressionTypes.GZIP,
+      "compression.codec": CompressionTypes.LZ4,
     });
     this.#producer.logger().setLogLevel(logLevel.NOTHING);
   }
@@ -582,7 +567,7 @@ export class PostgresAcceptedEventBarrier {
     this.#pollIntervalMs = options.pollIntervalMs ?? 10;
   }
 
-  async wait(publication: EventPublishMessage | EventPublishBatchMessage): Promise<void> {
+  async wait(publication: EventPublishMessage): Promise<void> {
     const throughSequence = lastEvent(publication).seq;
     const deadline = Date.now() + this.#timeoutMs;
     while (true) {

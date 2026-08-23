@@ -1741,24 +1741,10 @@ export class ControlPlaneStore {
     const canonicalEventSequence =
       nonNegativeSafeInteger(conversation.nextEventSequence, "Conversation next event sequence") -
       1;
-    let replayAfterSequence = Math.max(
+    const replayAfterSequence = Math.max(
       canonicalEventSequence,
       ...currentTerminalTranscripts.map((transcript) => transcript.throughSequence),
     );
-    const unprojectedTurnIds = includedRows
-      .filter((row) => row.originSessionId === sessionId)
-      .filter((row) => !transcriptByTurnId.has(row.turnId))
-      .map((row) => row.turnId);
-    if (unprojectedTurnIds.length > 0) {
-      // An active Turn is not yet represented by canonical Pi entries. Start
-      // SSE after the latest settled projection so the browser replays its
-      // already-durable accepted Kafka events from the retained hot tail.
-      replayAfterSequence = Math.max(
-        canonicalEventSequence,
-        ...currentTerminalTranscripts.map((transcript) => transcript.throughSequence),
-      );
-    }
-
     const environment = await this.#loadActiveProjectEnvironment(conversation.projectId);
     const inheritedMessages =
       conversation.sessionKind === "subagent"

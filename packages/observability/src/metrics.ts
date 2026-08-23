@@ -1,7 +1,6 @@
 import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from "prom-client";
 
 const DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300];
-const GROUP_SIZE_BUCKETS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1_024];
 
 export class PiCloudMetrics {
   readonly registry: Registry;
@@ -21,8 +20,6 @@ export class PiCloudMetrics {
   readonly cancellationDuration: Histogram<"outcome">;
   readonly turnAdmissionDuration: Histogram<"outcome">;
   readonly tenantAdmissionLockWait: Histogram;
-  readonly eventDurabilityDuration: Histogram<"outcome">;
-  readonly eventDurabilityGroupSize: Histogram;
   readonly activeRuns: Gauge;
   readonly queuedRuns: Gauge;
   readonly sandboxActive: Gauge<"provider">;
@@ -142,19 +139,6 @@ export class PiCloudMetrics {
       name: "pi_cloud_tenant_admission_lock_wait_seconds",
       help: "Time waiting for the tenant quota serialization row",
       buckets: DURATION_BUCKETS,
-      registers: [this.registry],
-    });
-    this.eventDurabilityDuration = new Histogram({
-      name: "pi_cloud_event_durability_seconds",
-      help: "Time until a grouped Worker event publication commits to PostgreSQL",
-      labelNames: ["outcome"],
-      buckets: DURATION_BUCKETS,
-      registers: [this.registry],
-    });
-    this.eventDurabilityGroupSize = new Histogram({
-      name: "pi_cloud_event_durability_group_events",
-      help: "Worker events acknowledged in one PostgreSQL group commit",
-      buckets: GROUP_SIZE_BUCKETS,
       registers: [this.registry],
     });
     this.activeRuns = new Gauge({

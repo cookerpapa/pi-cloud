@@ -10,6 +10,8 @@ state. The following symbols make the boundary explicit:
   PostgreSQL;
 - `T` — PostgreSQL atomically committed the terminal Run state and terminal
   Kafka outbox row.
+- `B` — the Session-keyed mutation projection barrier committed after all
+  earlier mutation records reached an applied-or-fenced outcome.
 
 The maintained invariants are:
 
@@ -17,6 +19,7 @@ The maintained invariants are:
 V implies K
 T(success) implies P
 next model Step starts only after the required P projection barrier
+replacement Worker reads SessionStorage only after B and a fresh fence check
 arbitrary Tool effects are never inferred from R, K or V
 ```
 
@@ -46,6 +49,7 @@ making restart time proportional to a day's token volume.
 | Worker loss during an arbitrary Tool | outcome may be unknown | revoke the fence, record `UNKNOWN`, never auto-run the Tool again |
 | Cube loss | process/memory world is gone | persistent Volume keeps files; the next model sees a minimal Sandbox-reset fact |
 | PostgreSQL projection lag | live Kafka may continue | the same Session cannot cross its projection barrier into a stale next Step |
+| Worker replacement with mutation records in flight | old records precede the keyed barrier | wait for `B`, recheck the new fence, then read PostgreSQL |
 
 The automated contracts cover accepted-order validation, duplicate delivery,
 terminal folding, expired cursor reload, terminal outbox idempotence, Pi

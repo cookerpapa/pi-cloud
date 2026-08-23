@@ -31,7 +31,8 @@ Pi SessionStorage in PostgreSQL fits the second.
 - The persistent Cube Volume remains authoritative for Workspace bytes.
 - Kafka is authoritative only for the bounded hot Agent event stream.
 - Workers publish to `pi-cloud.agent-events.raw.v1`, keyed by Session ID, with
-  `acks=all`, idempotent production and bounded batching.
+  `acks=all`, idempotent production and Kafka-native bounded batching. The
+  application does not place another group-commit scheduler before Kafka.
 - An authority projector validates Run, Attempt, lease, fence, command and
   Session identity against PostgreSQL, then republishes valid records to
   `pi-cloud.agent-events.accepted.v1`.
@@ -63,7 +64,9 @@ Pi SessionStorage in PostgreSQL fits the second.
   projected into PostgreSQL at semantic boundaries. Token deltas, thinking
   fragments and partial Tool output never become canonical rows.
 - A Worker does not start the next model Step or settle a Run until the relevant
-  Session mutation has been acknowledged by the PostgreSQL projector. Kafka is
+  Session mutation has been acknowledged by the PostgreSQL projector. Before
+  restoring a Session, it also waits for a Session-keyed projection barrier so
+  every older mutation has reached an applied-or-fenced outcome. Kafka is
   therefore asynchronous between components but Pi's Agent Loop still observes
   a read-your-writes projection barrier.
 - Projector writes are idempotent. Kafka delivery is at least once; canonical

@@ -256,7 +256,7 @@ describe("PiWorkerRuntime", () => {
         },
         sessionMutationProducer: {
           scoped() {
-            return { async mutate() {} };
+            return { async mutate() {}, async synchronize() {} };
           },
           async checkHealth() {},
           async close() {},
@@ -284,7 +284,7 @@ describe("PiWorkerRuntime", () => {
         },
         sessionMutationProducer: {
           scoped() {
-            return { async mutate() {} };
+            return { async mutate() {}, async synchronize() {} };
           },
           async checkHealth() {},
           async close() {},

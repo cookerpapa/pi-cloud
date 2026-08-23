@@ -49,10 +49,7 @@ server.on("connection", (socket) => {
       );
       return;
     }
-    if (
-      (message.type === "event.publish" || message.type === "event.publish_batch") &&
-      connectionId !== undefined
-    ) {
+    if (message.type === "event.publish" && connectionId !== undefined) {
       const event =
         message.type === "event.publish" ? message.payload.event : message.payload.events.at(-1);
       process.send?.({ type: "event_received", sequence: event.seq });

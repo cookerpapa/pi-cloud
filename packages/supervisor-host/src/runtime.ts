@@ -5,7 +5,6 @@ import {
   TtlCheckpointObjectStore,
 } from "@pi-cloud/runtime-core/checkpoint-runtime";
 import type { DurableEventIngestor } from "@pi-cloud/runtime-core/durable-event-store";
-import { GroupedDurableEventIngestor } from "@pi-cloud/runtime-core/grouped-durable-event-ingestor";
 import {
   KafkaAgentEventProducer,
   PostgresAcceptedEventBarrier,
@@ -664,13 +663,7 @@ export class PiWorkerRuntime {
               acceptedBarrier: new PostgresAcceptedEventBarrier({ database: this.#database }),
             })
           : undefined;
-      const eventIngestor =
-        this.#eventIngestor ??
-        new GroupedDurableEventIngestor({
-          store: eventProducer!,
-          maximumDelayMs: 4,
-          maximumGroupSize: 64,
-        });
+      const eventIngestor = this.#eventIngestor ?? eventProducer!;
       this.#ownedEventProducer = eventProducer;
       if (eventProducer !== undefined) await eventProducer.checkHealth();
       else await this.#eventIngestor?.checkHealth?.();

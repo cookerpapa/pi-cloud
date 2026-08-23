@@ -124,6 +124,8 @@ function parseOperation(value: unknown): PiSessionMutationOperation {
           ? {}
           : { label: string(candidate.label, "Pi label", 1_024) }),
       };
+    case "projection_barrier":
+      return { kind: "projection_barrier" };
     default:
       throw new TypeError("Pi Session mutation kind is invalid");
   }
@@ -181,13 +183,18 @@ export class KafkaPiSessionMutationProducer {
       "delivery.timeout.ms": 30_000,
       "linger.ms": 5,
       acks: -1,
-      "compression.codec": CompressionTypes.GZIP,
+      "compression.codec": CompressionTypes.LZ4,
     });
     this.#producer.logger().setLogLevel(logLevel.NOTHING);
   }
 
   scoped(scope: KafkaPiSessionMutationScope): PiSessionMutationPublisher {
-    return { mutate: (operation) => this.#mutate(scope, operation) };
+    return {
+      mutate: (operation) => this.#mutate(scope, operation),
+      synchronize: async () => {
+        await this.#mutate(scope, { kind: "projection_barrier" });
+      },
+    };
   }
 
   async checkHealth(): Promise<void> {
@@ -329,7 +336,10 @@ export class KafkaPiSessionMutationProjector {
       projectedMutationId: envelope.mutationId,
     });
     try {
-      const result = await applyOperation(storage, envelope.operation);
+      const result =
+        envelope.operation.kind === "projection_barrier"
+          ? await authority.assertCurrent().then(() => ({ kind: "projection_barrier" as const }))
+          : await applyOperation(storage, envelope.operation);
       await this.#database
         .insertInto("pi_session_mutation_results")
         .values({
@@ -391,5 +401,7 @@ async function applyOperation(
     case "set_label":
       await storage.setLabel(operation.id, operation.label);
       return undefined;
+    case "projection_barrier":
+      throw new Error("Projection barriers do not mutate Pi SessionStorage");
   }
 }

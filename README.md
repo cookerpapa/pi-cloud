@@ -68,8 +68,8 @@ Control Plane ── transaction ──► PostgreSQL Run queue
                                CubeSandbox KVM
                                persistent /workspace
 
-Assistant deltas ── coalesce/group ──► Raw Kafka ── authority ──► Accepted Kafka ──► SSE
-complete Pi entries/records ─────────► Session Mutation Kafka ──► PostgreSQL
+Assistant deltas ── coalesce ──► native Kafka batch ──► Raw Kafka ── authority ──► Accepted Kafka ──► SSE
+complete Pi entries/records + recovery barrier ───────► Session Mutation Kafka ──► PostgreSQL
 Run/Attempt/Lease/Fence + terminal outbox ─────────────────────────► PostgreSQL
 ```
 
@@ -86,6 +86,13 @@ primitives: it reads only the newest compaction plus the active suffix and
 appends complete messages incrementally. It does not download a lifetime
 `session.jsonl`, synthesize model context from the browser transcript or
 reimplement Pi's unused generic Harness surface.
+
+Before any replacement Worker reads that state, it appends a Session-keyed
+projection barrier to the mutation topic. Completion means every older mutation
+for that Session has been applied idempotently or rejected by its old fence;
+the Worker then rechecks its own authority and reads PostgreSQL. Browser
+Gateways do not participate in this barrier and recover independently from the
+Accepted Kafka suffix.
 
 The tenant-scoped PostgreSQL adapter implements Pi's public `SessionRepo` and
 `SessionStorage` ports. CI runs Pi 0.84.1's unmodified backend conformance suite
@@ -174,6 +181,8 @@ persistent Volume.
 - arbitrary shell operations are not blindly replayed after an ambiguous loss;
 - interruption and Sandbox reset facts survive Pi compaction and Worker changes;
 - browser-visible live bytes receive an Accepted Kafka broker ACK before SSE exposure;
+- Workers rely on Kafka's native producer accumulator rather than a second
+  application group-commit queue;
 - Pi `message_end` writes complete SessionStorage state independently of its
   short-lived delta rows;
 - failed/cancelled visible prefixes remain in Pi context as bounded

@@ -73,11 +73,14 @@ execution path and failure semantics.
 
 ### Event and recovery semantics
 
-- Adjacent text fragments are coalesced once; one bounded Host-level queue
-  groups independent Sessions into Kafka appends. Provider Tool-call JSON,
+- Adjacent text fragments are coalesced once; the native Kafka producer
+  accumulates concurrent Session writes by partition. No application
+  group-commit queue precedes Kafka. Provider Tool-call JSON,
   thinking deltas and partial Tool output are not public events. There is no
   Worker disk WAL.
-- Pi SessionStorage and the browser stream are independent projections.
+- Pi SessionStorage and the browser stream are independent projections. A
+  Session-keyed projection barrier completes before a replacement Worker reads
+  PostgreSQL; it does not wait for Gateway consumers.
   `message_end` publishes a complete Pi message to the Session mutation topic;
   the PostgreSQL projector applies it before the next model Step. Pi's ordered
   log stores stable identifiers and hydrates canonical entries/records on read.

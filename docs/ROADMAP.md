@@ -20,6 +20,7 @@
   persistent Workspace terminals, fenced Agent handoff and one-time SSH access;
 - Session/Workspace lifetime independence with missing-Workspace rebinding;
 - terminal-boundary folding for the Kafka-backed Gateway replay projection.
+- Kafka-native Worker batching and Session-keyed PostgreSQL projection barriers.
 
 ## Current release gate
 

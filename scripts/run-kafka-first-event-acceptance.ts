@@ -1,13 +1,13 @@
 import { KafkaJS } from "@confluentinc/kafka-javascript";
 import {
-  KafkaAcceptedAgentEventConsumer,
-  KafkaAcceptedAgentEventProducer,
-  type KafkaAcceptedAgentEventEnvelope,
+  KafkaAgentEventConsumer,
+  KafkaAgentEventProducer,
 } from "@pi-cloud/runtime-core/kafka-agent-event-log";
-import type { EventPublishBatchMessage } from "@pi-cloud/protocol";
+import type { EventPublishMessage } from "@pi-cloud/protocol";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
+import { format } from "prettier";
 
 const { Kafka, logLevel } = KafkaJS;
 const brokers = (process.env.PI_CLOUD_KAFKA_BROKERS ?? "127.0.0.1:19092").split(",");
@@ -30,65 +30,59 @@ const kafka = new Kafka({
 });
 const admin = kafka.admin();
 const sessions = Array.from({ length: sessionCount }, () => randomUUID());
-const tenantId = randomUUID();
 const observed = new Map<string, number[]>();
 let resolveComplete!: () => void;
 const complete = new Promise<void>((resolve) => {
   resolveComplete = resolve;
 });
 
-function envelope(sessionId: string, firstSequence: number): KafkaAcceptedAgentEventEnvelope {
+function publication(sessionId: string, sequence: number): EventPublishMessage {
   const occurredAt = new Date().toISOString();
-  const publication: EventPublishBatchMessage = {
+  return {
     protocolVersion: 1,
     messageId: randomUUID(),
     sentAt: occurredAt,
-    type: "event.publish_batch",
+    type: "event.publish",
     payload: {
       commandId: randomUUID(),
       runId: randomUUID(),
       attemptId: randomUUID(),
       leaseId: randomUUID(),
       fencingToken: 1,
-      events: Array.from({ length: eventsPerEnvelope }, (_, index) => ({
+      event: {
         schemaVersion: 1 as const,
         eventId: randomUUID(),
         sessionId,
         turnId: randomUUID(),
         agentId: "root",
-        seq: firstSequence + index,
+        seq: sequence,
         occurredAt,
         type: "assistant.text.delta" as const,
-        payload: { text: `chunk-${String(firstSequence + index)} ` },
-      })),
+        payload: { text: `chunk-${String(sequence)} ` },
+      },
     },
   };
-  return { schemaVersion: 1, tenantId, publications: [publication] };
 }
 
-const producer = new KafkaAcceptedAgentEventProducer({
+const producer = new KafkaAgentEventProducer({
   brokers,
   clientId: "pi-cloud-kafka-first-acceptance-producer",
   topic,
 });
-const consumer = new KafkaAcceptedAgentEventConsumer({
+const consumer = new KafkaAgentEventConsumer({
   brokers,
   clientId: "pi-cloud-kafka-first-acceptance-consumer",
   topic,
   groupId: `pi-cloud-kafka-first-acceptance-${randomUUID()}`,
   partitionsConsumedConcurrently: 8,
   onEnvelope: async (value) => {
-    const publication = value.publications[0]!;
-    const first =
-      publication.type === "event.publish"
-        ? publication.payload.event
-        : publication.payload.events[0]!;
+    const first = value.publications[0]!.payload.event;
     const sequences = observed.get(first.sessionId) ?? [];
     sequences.push(first.seq);
     observed.set(first.sessionId, sequences);
     if (
       observed.size === sessionCount &&
-      [...observed.values()].every((item) => item.length === 2)
+      [...observed.values()].every((item) => item.length === eventsPerEnvelope * 2)
     ) {
       resolveComplete();
     }
@@ -102,9 +96,12 @@ try {
   });
   await consumer.start();
   const startedAt = performance.now();
-  await producer.appendGroup(sessions.map((sessionId) => envelope(sessionId, 1)));
-  await producer.appendGroup(
-    sessions.map((sessionId) => envelope(sessionId, eventsPerEnvelope + 1)),
+  await Promise.all(
+    sessions.map(async (sessionId) => {
+      for (let sequence = 1; sequence <= eventsPerEnvelope * 2; sequence += 1) {
+        await producer.ingest(publication(sessionId, sequence));
+      }
+    }),
   );
   await Promise.race([
     complete,
@@ -115,7 +112,10 @@ try {
   const durationMs = performance.now() - startedAt;
   for (const sessionId of sessions) {
     const sequences = observed.get(sessionId);
-    if (sequences?.[0] !== 1 || sequences[1] !== eventsPerEnvelope + 1) {
+    if (
+      sequences?.length !== eventsPerEnvelope * 2 ||
+      sequences.some((sequence, index) => sequence !== index + 1)
+    ) {
       throw new Error(`Kafka did not preserve Session order for ${sessionId}`);
     }
   }
@@ -127,7 +127,7 @@ try {
       process.env.PI_CLOUD_REVISION ??
       execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     topology: { brokers, partitions: 16, producerAcks: "all", idempotentProducer: true },
-    input: { sessionCount, eventsPerEnvelope, logicalEvents, envelopes: sessionCount * 2 },
+    input: { sessionCount, eventsPerEnvelope, logicalEvents, envelopes: logicalEvents },
     result: {
       durationMs: Number(durationMs.toFixed(2)),
       eventsPerSecond: Number(((logicalEvents * 1_000) / durationMs).toFixed(2)),
@@ -142,11 +142,11 @@ try {
   if (process.argv.includes("--report")) {
     await writeFile(
       "docs/reports/kafka-first-event-acceptance-latest.json",
-      `${JSON.stringify(report, null, 2)}\n`,
+      await format(JSON.stringify(report), { parser: "json" }),
     );
     await writeFile(
       "docs/reports/kafka-first-event-acceptance-latest.md",
-      `# Kafka-first event acceptance\n\n- Sessions: ${sessionCount}\n- Logical events: ${logicalEvents}\n- Envelopes: ${sessionCount * 2}\n- Duration: ${durationMs.toFixed(2)} ms\n- Throughput: ${report.result.eventsPerSecond.toFixed(2)} logical events/s\n- Session-order violations: 0\n\nThis is a single-local-broker transport check; real model/Cube and PostgreSQL projection use separate gates.\n`,
+      `# Kafka-first event acceptance\n\n- Sessions: ${sessionCount}\n- Logical events: ${logicalEvents}\n- Kafka records: ${logicalEvents}\n- Duration: ${durationMs.toFixed(2)} ms\n- Throughput: ${report.result.eventsPerSecond.toFixed(2)} logical events/s\n- Session-order violations: 0\n\nThis is a single-local-broker transport check; real model/Cube and PostgreSQL projection use separate gates.\n`,
     );
   }
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
