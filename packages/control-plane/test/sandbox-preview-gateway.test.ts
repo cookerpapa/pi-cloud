@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rewritePreviewHtml } from "../src/sandbox-preview-gateway.ts";
+import { previewSecurityHeaders, rewritePreviewHtml } from "../src/sandbox-preview-gateway.ts";
 
 describe("SandboxPreviewGateway HTML policy", () => {
   it("adds a Preview base and nonces inline code without changing external scripts", () => {
@@ -15,5 +15,13 @@ describe("SandboxPreviewGateway HTML policy", () => {
     expect(rewritten).toContain('<style nonce="nonce-value">');
     expect(rewritten).toContain('<script nonce="nonce-value">window.game=true</script>');
     expect(rewritten).toContain('<script src="game.js"></script>');
+  });
+
+  it("allows authenticated subresources to load inside the opaque sandbox origin", () => {
+    const headers = previewSecurityHeaders("nonce-value");
+    expect(headers["content-security-policy"]).toContain("sandbox allow-scripts");
+    expect(headers["content-security-policy"]).not.toContain("allow-same-origin");
+    expect(headers["cross-origin-resource-policy"]).toBe("cross-origin");
+    expect(headers["x-content-type-options"]).toBe("nosniff");
   });
 });

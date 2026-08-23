@@ -92,6 +92,21 @@ export function rewritePreviewHtml(body: Buffer, prefix: string, nonce: string):
   );
 }
 
+export function previewSecurityHeaders(nonce: string): Readonly<Record<string, string>> {
+  return Object.freeze({
+    "content-security-policy":
+      "sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads; " +
+      `default-src 'self' data: blob:; script-src 'self' 'nonce-${nonce}' blob:; ` +
+      `style-src 'self' 'nonce-${nonce}' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'`,
+    // CSP sandbox deliberately gives the application document an opaque
+    // origin. Its authenticated CSS/JS therefore cannot satisfy `same-origin`
+    // CORP even though their public URLs share the PiCloud host. Cross-site
+    // callers still receive 401 because browser auth cookies are SameSite.
+    "cross-origin-resource-policy": "cross-origin",
+    "x-content-type-options": "nosniff",
+  });
+}
+
 export class SandboxPreviewGateway {
   readonly #database: Kysely<Database>;
   readonly #previewToken: string;
@@ -185,14 +200,9 @@ export class SandboxPreviewGateway {
         );
       }
       reply.header("cache-control", response.headers["cache-control"] ?? "no-store");
-      reply.header(
-        "content-security-policy",
-        "sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads; " +
-          `default-src 'self' data: blob:; script-src 'self' 'nonce-${previewNonce}' blob:; ` +
-          `style-src 'self' 'nonce-${previewNonce}' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'`,
-      );
-      reply.header("cross-origin-resource-policy", "same-origin");
-      reply.header("x-content-type-options", "nosniff");
+      for (const [name, value] of Object.entries(previewSecurityHeaders(previewNonce))) {
+        reply.header(name, value);
+      }
       let responseBody: Uint8Array = Buffer.from(response.body, "base64");
       if ((response.headers["content-type"] ?? "").toLowerCase().includes("text/html")) {
         responseBody = rewritePreviewHtml(Buffer.from(responseBody), prefix, previewNonce);
