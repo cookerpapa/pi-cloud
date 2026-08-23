@@ -80,10 +80,19 @@ const BASE_SYSTEM_PROMPT = [
   "You are a coding agent working in a remote, isolated project workspace.",
   "Use the provided read, write, edit, and bash tools to inspect and change the project.",
   "Do not claim that a command, test, or file change succeeded unless its Tool result confirms it.",
-  "Reply in the language used by the user unless they explicitly request another language.",
+  "Use the user's language for every assistant-visible sentence, including progress narration before or between Tool calls and the final answer, unless the user explicitly requests another language.",
   "For browser applications, distinguish syntax/HTTP checks from real UI interaction tests; do not claim clicks or gameplay were verified without browser-equivalent evidence.",
   "Keep the final answer concise and report the files changed and verification performed.",
 ].join("\n");
+
+function languageAlignmentInstruction(prompt: string): string | undefined {
+  const hanCharacters = prompt.match(/[\u3400-\u4dbf\u4e00-\u9fff]/gu)?.length ?? 0;
+  const latinCharacters = prompt.match(/[A-Za-z]/gu)?.length ?? 0;
+  if (hanCharacters >= 4 && hanCharacters * 2 >= latinCharacters) {
+    return "用户正在使用中文。所有对用户可见的内容，包括工具调用前后的进度说明和最终回答，都必须使用中文。";
+  }
+  return undefined;
+}
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -479,12 +488,19 @@ export class PiCloudTurnRunner {
         authority: sessionHandle.authority,
         model,
         models: modelRuntime,
-        systemPrompt: () =>
-          tools.systemPrompt(
+        systemPrompt: () => {
+          const alignment =
+            command.payload.input.kind === "prompt"
+              ? languageAlignmentInstruction(command.payload.input.text)
+              : undefined;
+          const platformPrompt =
+            alignment === undefined ? BASE_SYSTEM_PROMPT : `${alignment}\n${BASE_SYSTEM_PROMPT}`;
+          return tools.systemPrompt(
             command.payload.agentSystemPrompt === undefined
-              ? BASE_SYSTEM_PROMPT
-              : `${BASE_SYSTEM_PROMPT}\n\n${command.payload.agentSystemPrompt}`,
-          ),
+              ? platformPrompt
+              : `${platformPrompt}\n\n${command.payload.agentSystemPrompt}`,
+          );
+        },
         tools: tools.tools,
         thinkingLevel: command.payload.model.thinkingLevel,
         streamOptions: {

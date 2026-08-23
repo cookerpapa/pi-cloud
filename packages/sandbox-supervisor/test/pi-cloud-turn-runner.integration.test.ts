@@ -35,7 +35,7 @@ const command: ExecuteTurnCommandMessage = {
     leaseId: "33333333-3333-4333-8333-333333333333",
     fencingToken: 7,
     nextEventSeq: 1,
-    input: { kind: "prompt", text: "Return the deterministic fake response." },
+    input: { kind: "prompt", text: "请返回确定性的测试响应。" },
     sandboxRetention: "ephemeral",
     sandboxProfileKey: "standard",
     workingDirectory: "/workspace",
@@ -91,6 +91,7 @@ describe("PiCloudTurnRunner integration", () => {
     });
     let stepSequence = 0;
     let authorityWasActiveAtSettlement = false;
+    let receivedSystemPrompt = "";
     const sourceEvents: string[] = [];
     const runner = new PiCloudTurnRunner({
       resolveModelRuntime: () => ({
@@ -113,6 +114,7 @@ describe("PiCloudTurnRunner integration", () => {
       createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
         tools: [],
         async systemPrompt(base) {
+          receivedSystemPrompt = base;
           return base;
         },
         async transformContext(messages, purpose = "agent") {
@@ -186,6 +188,7 @@ describe("PiCloudTurnRunner integration", () => {
       expect(prompt!.seq).toBeGreaterThan(baseline!.seq);
       expect(authorityWasActiveAtSettlement).toBe(true);
       expect(authority.closed).toBe(true);
+      expect(receivedSystemPrompt).toContain("所有对用户可见的内容");
     } finally {
       await fake.stop();
     }
