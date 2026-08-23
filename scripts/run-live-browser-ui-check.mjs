@@ -88,7 +88,10 @@ const api = new PiCloudApi(cookieFetch.fetch);
 await api.registerAccount(username, "Browser Acceptance", password);
 
 const clicked = [];
-const record = (name) => clicked.push(name);
+const record = (name) => {
+  clicked.push(name);
+  process.stdout.write(`[browser-ui-check] ${name}\n`);
+};
 const screenshotPath = resolve("/tmp", "pi-cloud-browser-ui-latest.png");
 
 function selectorExpression(selector) {
@@ -171,7 +174,25 @@ await withChromePage(
     );
     await page.waitFor('!document.querySelector(".product-send-button").disabled');
     await click(".product-send-button", "composer.send");
-    await page.waitFor('document.body.innerText.includes("BROWSER-UI-CHAT-OK")', 180_000);
+    await page.waitFor(
+      '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-CHAT-OK"))',
+      180_000,
+    );
+    const elasticConversation = await waitFor(
+      async () =>
+        (await api.listConversations()).conversations.find(
+          (candidate) => candidate.title === `UI acceptance ${suffix}`,
+        ),
+      "elastic conversation",
+    );
+    await waitFor(
+      async () => {
+        const runs = await api.listRuns(elasticConversation.sessionId);
+        return runs.runs.at(-1)?.state === "completed";
+      },
+      "completed browser-submitted Run",
+      180_000,
+    );
 
     await clickText(".product-tree-view-switch button", "整棵树", "tree.full");
     await clickText(".product-tree-view-switch button", "当前分支", "tree.focus");
