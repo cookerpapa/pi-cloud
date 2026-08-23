@@ -814,6 +814,19 @@ function totalUsage(...usage) {
 }
 
 await cube.checkHealth();
+const maximumActiveToolSandboxes = Number(
+  environment.PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES ?? "2",
+);
+const existingCubeCount = (await cube.list()).length;
+if (
+  !Number.isSafeInteger(maximumActiveToolSandboxes) ||
+  maximumActiveToolSandboxes < 2 ||
+  maximumActiveToolSandboxes - existingCubeCount < 2
+) {
+  throw new Error(
+    `Cube production acceptance requires two free Sandbox slots; configured=${String(maximumActiveToolSandboxes)}, active=${String(existingCubeCount)}`,
+  );
+}
 progress("Cube API is healthy; registering an isolated acceptance tenant");
 const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const registration = await new PiCloudApi(fetchFromProduction).registerTenant(
