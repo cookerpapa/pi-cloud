@@ -1,100 +1,88 @@
 import { useEffect, useMemo, useState } from "react";
-import type { WorkspaceFileResource } from "@pi-cloud/protocol";
+import type { DevelopmentEnvironmentDirectoryResource } from "@pi-cloud/protocol";
 import { PiCloudApi } from "./api.ts";
 
 function parent(path: string): string {
+  if (path === "/") return "/";
   const index = path.lastIndexOf("/");
-  return index < 0 ? "" : path.slice(0, index);
+  return index <= 0 ? "/" : path.slice(0, index);
 }
 
-function directorySet(files: readonly WorkspaceFileResource[]): readonly string[] {
-  const directories = new Set<string>();
-  for (const file of files) {
-    const parts = file.path.split("/");
-    for (let index = 1; index < parts.length; index += 1) {
-      directories.add(parts.slice(0, index).join("/"));
-    }
-  }
-  return [...directories].sort((left, right) => left.localeCompare(right));
+function sizeLabel(bytes: number | undefined): string {
+  if (bytes === undefined) return "";
+  if (bytes < 1_024) return `${String(bytes)} B`;
+  if (bytes < 1_024 * 1_024) return `${(bytes / 1_024).toFixed(1)} KiB`;
+  return `${(bytes / (1_024 * 1_024)).toFixed(1)} MiB`;
 }
 
 export function WorkspaceDirectoryPicker({
   api,
+  environmentId,
   initialDirectory,
   onCancel,
   onChoose,
-  referenceSessionId,
   workspaceName,
 }: {
   api: PiCloudApi;
+  environmentId: string;
   initialDirectory: string;
   onCancel: () => void;
   onChoose: (directory: string) => void;
-  referenceSessionId: string | null;
   workspaceName: string;
 }) {
-  const initialRelative = initialDirectory === "/workspace" ? "" : initialDirectory.slice(11);
-  const [directory, setDirectory] = useState(initialRelative);
-  const [directories, setDirectories] = useState<readonly string[]>([]);
-  const [loading, setLoading] = useState(referenceSessionId !== null);
+  const [directory, setDirectory] = useState(initialDirectory);
+  const [listing, setListing] = useState<DevelopmentEnvironmentDirectoryResource | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (referenceSessionId === null) return;
     let cancelled = false;
-    void (async () => {
-      try {
-        const versions = await api.listWorkspaceVersions(referenceSessionId);
-        const current = versions.versions.find(
-          (version) => version.versionId === versions.currentVersionId,
-        );
-        if (current === undefined) return;
-        const files: WorkspaceFileResource[] = [];
-        let cursor: string | undefined;
-        do {
-          const page = await api.listWorkspaceFiles(current.versionId, cursor);
-          files.push(...page.files);
-          cursor = page.truncated ? page.nextCursor : undefined;
-        } while (cursor !== undefined);
-        if (!cancelled) setDirectories(directorySet(files));
-      } catch (reason: unknown) {
+    setLoading(true);
+    setError(null);
+    void api
+      .listDevelopmentEnvironmentDirectory(environmentId, directory)
+      .then((resource) => {
+        if (cancelled) return;
+        setListing(resource);
+        if (resource.path !== directory) setDirectory(resource.path);
+      })
+      .catch((reason: unknown) => {
         if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : "工作目录读取失败");
+          setListing(null);
+          setError(reason instanceof Error ? reason.message : "运行环境目录读取失败");
         }
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    })();
+      });
     return () => {
       cancelled = true;
     };
-  }, [api, referenceSessionId]);
+  }, [api, directory, environmentId]);
 
-  const children = useMemo(
-    () => directories.filter((path) => parent(path) === directory),
-    [directories, directory],
+  const parts = useMemo(
+    () => (directory === "/" ? [] : directory.slice(1).split("/")),
+    [directory],
   );
-  const parts = directory === "" ? [] : directory.split("/");
-  const selected = directory === "" ? "/workspace" : `/workspace/${directory}`;
 
   return (
     <div className="product-modal-backdrop product-directory-picker-backdrop" role="presentation">
       <section className="product-workspace-modal product-directory-picker">
         <header>
           <div>
-            <h2>选择工作目录</h2>
-            <p>{workspaceName} 的持久文件卷；根目录在沙箱中挂载为 /workspace。</p>
+            <h2>选择机器工作目录</h2>
+            <p>{workspaceName} 的实时文件系统；空目录和普通文件也会显示。</p>
           </div>
           <button onClick={onCancel} type="button">
             ×
           </button>
         </header>
         <div className="product-directory-address">
-          <button onClick={() => setDirectory("")} type="button">
-            🏠 ~
+          <button onClick={() => setDirectory("/")} type="button">
+            🖥️ /
           </button>
           {parts.map((part, index) => {
-            const target = parts.slice(0, index + 1).join("/");
+            const target = `/${parts.slice(0, index + 1).join("/")}`;
             return (
               <button key={target} onClick={() => setDirectory(target)} type="button">
                 / {part}
@@ -102,28 +90,48 @@ export function WorkspaceDirectoryPicker({
             );
           })}
         </div>
+        <div className="product-directory-toolbar">
+          <button
+            disabled={directory === "/"}
+            onClick={() => setDirectory(parent(directory))}
+            type="button"
+          >
+            ← 上一级
+          </button>
+          <code>{directory}</code>
+        </div>
         <div className="product-directory-browser">
-          {loading ? <span>正在读取目录…</span> : null}
+          {loading ? <span>正在读取机器目录…</span> : null}
           {error === null ? null : <span className="product-form-error">{error}</span>}
-          {!loading && children.length === 0 ? (
-            <span className="product-empty-directory">此目录没有可选择的子目录</span>
+          {!loading && error === null && listing?.entries.length === 0 ? (
+            <span className="product-empty-directory">这是一个空目录，可以直接选择</span>
           ) : null}
-          {children.map((path) => (
-            <button key={path} onDoubleClick={() => setDirectory(path)} type="button">
-              <span>📁</span>
-              <strong>{path.split("/").at(-1)}</strong>
-              <small>双击打开</small>
+          {listing?.entries.map((entry) => (
+            <button
+              className={`product-directory-entry product-directory-entry-${entry.kind}`}
+              disabled={entry.kind !== "directory"}
+              key={entry.path}
+              onDoubleClick={() => {
+                if (entry.kind === "directory") setDirectory(entry.path);
+              }}
+              type="button"
+            >
+              <span>
+                {entry.kind === "directory" ? "📁" : entry.kind === "symlink" ? "🔗" : "📄"}
+              </span>
+              <strong>{entry.name}</strong>
+              <small>{entry.kind === "directory" ? "双击打开" : sizeLabel(entry.sizeBytes)}</small>
             </button>
           ))}
         </div>
-        <div className="product-directory-selection">当前选择：{selected}</div>
+        <div className="product-directory-selection">当前选择：{directory}</div>
         <footer>
           <button onClick={onCancel} type="button">
             取消
           </button>
           <button
             className="product-primary-button"
-            onClick={() => onChoose(selected)}
+            onClick={() => onChoose(directory)}
             type="button"
           >
             选择此目录

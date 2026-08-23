@@ -442,6 +442,25 @@ function positiveSafeInteger(value: string, description: string): number {
   return parsed;
 }
 
+function validMachineDirectory(path: string): boolean {
+  if (
+    path.length < 1 ||
+    path.length > 4_096 ||
+    !path.startsWith("/") ||
+    /[\u0000-\u001f\u007f]/.test(path) ||
+    (path.length > 1 && path.endsWith("/"))
+  ) {
+    return false;
+  }
+  return (
+    path === "/" ||
+    path
+      .slice(1)
+      .split("/")
+      .every((part) => part !== "" && part !== "." && part !== "..")
+  );
+}
+
 function nonNegativeSafeInteger(value: string | number | bigint, description: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
@@ -886,6 +905,13 @@ export class ControlPlaneStore {
     }> = {},
   ): Promise<SessionResource> {
     const sessionId = this.#idGenerator();
+    const workingDirectory = execution.workingDirectory ?? "/workspace";
+    if (!validMachineDirectory(workingDirectory)) {
+      throw new ControlPlaneStoreError(
+        "invalid_request",
+        "Conversation working directory is invalid",
+      );
+    }
     return this.#database.transaction().execute(async (transaction) => {
       const policy = await this.#lockTenantPolicy(transaction);
       const workspace = await transaction
@@ -958,7 +984,7 @@ export class ControlPlaneStore {
 
       const developmentEnvironment = await transaction
         .selectFrom("development_environments")
-        .select(["owner_user_id", "profile_key", "state"])
+        .select(["id", "owner_user_id", "profile_key", "state"])
         .where("tenant_id", "=", this.#tenantId)
         .where("workspace_id", "=", workspace.id)
         .where("state", "!=", "released")
@@ -991,10 +1017,7 @@ export class ControlPlaneStore {
           "conflict",
           "Elastic conversation cannot use a Workspace attached to an exclusive environment",
         );
-      } else if (
-        execution.workingDirectory !== undefined &&
-        execution.workingDirectory !== "/workspace"
-      ) {
+      } else if (workingDirectory !== "/workspace") {
         throw new ControlPlaneStoreError(
           "conflict",
           "Elastic conversation working directory must be the Workspace root",
@@ -1023,11 +1046,12 @@ export class ControlPlaneStore {
           tenant_id: this.#tenantId,
           project_id: workspace.project_id,
           workspace_id: workspace.id,
+          development_environment_id: developmentEnvironment?.id ?? null,
           desired_model_profile_id: policy.defaultModelProfileId,
           state: "cold",
           sandbox_retention_policy: sandboxRetention,
           sandbox_profile_key: sandboxProfileKey,
-          working_directory: execution.workingDirectory ?? "/workspace",
+          working_directory: workingDirectory,
           workspace_snapshot_key: workspace.workspaceSnapshotKey,
           current_workspace_version_id: workspace.currentVersionId,
         })
@@ -1036,6 +1060,7 @@ export class ControlPlaneStore {
           "title",
           "project_id",
           "workspace_id",
+          "development_environment_id",
           "state",
           "sandbox_retention_policy",
           "sandbox_profile_key",
@@ -1063,6 +1088,9 @@ export class ControlPlaneStore {
         title: session.title,
         projectId: session.project_id,
         workspaceId: session.workspace_id,
+        ...(session.development_environment_id === null
+          ? {}
+          : { developmentEnvironmentId: session.development_environment_id }),
         workspaceState: "attached",
         state: "cold",
         sandboxRetention: session.sandbox_retention_policy,
@@ -1527,6 +1555,8 @@ export class ControlPlaneStore {
           current_workspace_version_id: target.currentVersionId,
           workspace_snapshot_key: null,
           sandbox_retention_policy: "ephemeral",
+          development_environment_id: null,
+          working_directory: "/workspace",
           row_version: sql<string>`${sql.ref("row_version")} + 1`,
           updated_at: boundAt,
         })
@@ -1584,6 +1614,7 @@ export class ControlPlaneStore {
         "session_row.title as title",
         "session_row.project_id as projectId",
         "session_row.workspace_id as workspaceId",
+        "session_row.development_environment_id as developmentEnvironmentId",
         "session_row.state as state",
         "session_row.sandbox_retention_policy as sandboxRetention",
         "session_row.sandbox_profile_key as sandboxProfileKey",
@@ -1604,6 +1635,7 @@ export class ControlPlaneStore {
         "session_row.title",
         "session_row.project_id",
         "session_row.workspace_id",
+        "session_row.development_environment_id",
         "session_row.state",
         "session_row.sandbox_retention_policy",
         "session_row.sandbox_profile_key",
@@ -1631,6 +1663,9 @@ export class ControlPlaneStore {
         title: row.title,
         projectId: row.projectId,
         workspaceId: row.workspaceId,
+        ...(row.developmentEnvironmentId === null
+          ? {}
+          : { developmentEnvironmentId: row.developmentEnvironmentId }),
         workspaceName: row.workspaceName,
         workspaceState: row.workspaceDeletedAt === null ? "attached" : "missing",
         state: row.state,
@@ -1677,6 +1712,7 @@ export class ControlPlaneStore {
         "session_row.title as sessionTitle",
         "session_row.project_id as projectId",
         "session_row.workspace_id as workspaceId",
+        "session_row.development_environment_id as developmentEnvironmentId",
         "session_row.desired_model_profile_id as modelProfileId",
         "session_row.state as sessionState",
         "session_row.sandbox_retention_policy as sandboxRetention",
@@ -1844,6 +1880,9 @@ export class ControlPlaneStore {
       project: {
         projectId: conversation.projectId,
         workspaceId: conversation.workspaceId,
+        ...(conversation.developmentEnvironmentId === null
+          ? {}
+          : { developmentEnvironmentId: conversation.developmentEnvironmentId }),
         name: conversation.projectName,
         createdAt: isoTimestamp(conversation.projectCreatedAt),
         source: workspaceSourceResource(conversationSource),
@@ -2097,7 +2136,7 @@ export class ControlPlaneStore {
       .execute();
     const transitions = await this.#database
       .selectFrom("run_attempt_transitions")
-      .select(["attempt_id", "from_state", "to_state", "reason", "occurred_at"])
+      .select(["id", "attempt_id", "from_state", "to_state", "reason", "occurred_at"])
       .where("tenant_id", "=", this.#tenantId)
       .where("run_id", "=", run.id)
       .orderBy("occurred_at", "asc")
@@ -2210,11 +2249,11 @@ export class ControlPlaneStore {
           transitions: transitions
             .filter((transition) => transition.attempt_id === attempt.id)
             .sort((left, right) => {
+              const rank = transitionRank[left.to_state]! - transitionRank[right.to_state]!;
+              if (rank !== 0) return rank;
               const time =
                 new Date(left.occurred_at).valueOf() - new Date(right.occurred_at).valueOf();
-              return time !== 0
-                ? time
-                : transitionRank[left.to_state]! - transitionRank[right.to_state]!;
+              return time !== 0 ? time : left.id.localeCompare(right.id);
             })
             .map((transition) => ({
               fromState: transition.from_state,

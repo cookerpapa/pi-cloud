@@ -93,6 +93,7 @@ export type SandboxCreateSpec = Readonly<{
   workspaceSeed: AgentWorkspaceSeed;
   workspaceRestore?: SandboxCheckpointBlob;
   policy: SandboxPolicy;
+  toolRoot?: string;
   lifetime?: "persistent_conversation" | "development_environment";
   sandboxProfileKey?: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
 }>;
@@ -114,6 +115,23 @@ export type SandboxWorkspaceForkResult = Readonly<{
   sourceHandle: SandboxHandle;
   sourceRevision: string;
   targetRevision: string;
+}>;
+
+export type PersistentSandboxCapsule = Readonly<{
+  handle: SandboxHandle;
+  capsule: string;
+}>;
+
+export type SandboxDirectoryEntry = Readonly<{
+  name: string;
+  path: string;
+  kind: "directory" | "file" | "symlink" | "other";
+  sizeBytes?: number;
+}>;
+
+export type SandboxDirectoryListing = Readonly<{
+  path: string;
+  entries: readonly SandboxDirectoryEntry[];
 }>;
 
 type SandboxRuntimeIsolation = Readonly<{
@@ -230,7 +248,11 @@ export interface SandboxProvider {
     activationId: string,
     assignment: ToolSandboxAssignment,
   ): Promise<SandboxHandle | undefined>;
-  rebind(handle: SandboxHandle, assignment: ToolSandboxAssignment): Promise<SandboxHandle>;
+  rebind(
+    handle: SandboxHandle,
+    assignment: ToolSandboxAssignment,
+    toolRoot?: string,
+  ): Promise<SandboxHandle>;
   exec(
     handle: SandboxHandle,
     request: ToolSandboxOperationRequest,
@@ -257,6 +279,14 @@ export interface SandboxProvider {
   pause?(handle: SandboxHandle): Promise<void>;
   /** Resume the same paused Cube identity and return its refreshed handle. */
   resume?(handle: SandboxHandle): Promise<SandboxHandle>;
+  /** Encrypt enough Provider-local state to adopt one exclusive machine after restart. */
+  persistentCapsule?(handle: SandboxHandle): Promise<PersistentSandboxCapsule>;
+  /** Restore a previously validated exclusive machine into this Provider process. */
+  adoptPersistentCapsule?(capsule: string): Promise<SandboxHandle>;
+  /** Forget a preserved machine without destroying its physical Cube. */
+  detachPersistent?(handle: SandboxHandle): Promise<void>;
+  /** Browse the tenant-owned guest filesystem without a Session checkpoint. */
+  listDirectory?(handle: SandboxHandle, path: string): Promise<SandboxDirectoryListing>;
   snapshot(handle: SandboxHandle, requestId: string): Promise<ToolSandboxCaptureResponse>;
   forkWorkspace?(
     handle: SandboxHandle,

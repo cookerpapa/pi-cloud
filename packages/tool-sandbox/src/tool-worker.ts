@@ -41,7 +41,7 @@ import { createInterface } from "node:readline";
 import { isIPv4 } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
-const TOOL_WORKSPACE_DIRECTORY = "/workspace";
+let TOOL_WORKSPACE_DIRECTORY = "/workspace";
 const SAMPLE_JAVA_FIXTURE = "/opt/pi-cloud/sample-java-repair";
 const TOOL_IMAGE_REVISION_FILE = "/opt/pi-cloud/image-revision";
 
@@ -1170,6 +1170,24 @@ export async function runToolWorker(): Promise<void> {
           );
         }
         activationId = message.activationId;
+        const requestedToolRoot = resolve("/", message.toolRoot);
+        const canonicalToolRoot = await realpath(requestedToolRoot).catch(() => undefined);
+        const toolRootMetadata =
+          canonicalToolRoot === undefined
+            ? undefined
+            : await lstat(canonicalToolRoot).catch(() => undefined);
+        if (
+          canonicalToolRoot === undefined ||
+          toolRootMetadata === undefined ||
+          !toolRootMetadata.isDirectory()
+        ) {
+          throw new ToolWorkerError(
+            "tool_root_unavailable",
+            "Selected machine working directory was unavailable",
+            false,
+          );
+        }
+        TOOL_WORKSPACE_DIRECTORY = canonicalToolRoot;
         webProxy = message.webProxy;
         safeToolEnvironment(undefined, webProxy);
         const environment = await validateToolEnvironment(message.environment);
@@ -1203,7 +1221,10 @@ export async function runToolWorker(): Promise<void> {
               false,
             );
           }
-          await validateAttachedWorkspaceRoot(TOOL_WORKSPACE_DIRECTORY, true);
+          await validateAttachedWorkspaceRoot(
+            TOOL_WORKSPACE_DIRECTORY,
+            TOOL_WORKSPACE_DIRECTORY === "/workspace",
+          );
           environment.recipeCommands = [...message.workspaceAttach.recipeCommands];
         }
         initialized = true;

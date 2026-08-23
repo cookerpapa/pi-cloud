@@ -121,6 +121,10 @@ retired and remain only in Git history or explicitly superseded ADRs.
 - [x] Hand an exclusive Cube between human Terminal and Agent Run under durable
       single-writer admission instead of allocating a second VM.
 - [x] Add one-use SSH tickets and a trusted SSH-to-Tool-Broker PTY gateway.
+- [x] Preserve an exclusive Cube across Tool Broker replacement with an
+      encrypted reconnect capsule and Cube pause instead of destroy.
+- [x] Browse the live exclusive guest filesystem from `/`, including empty
+      directories, without depending on a reference Session checkpoint.
 - [x] Separate Workspace/environment management from progressive conversation
       creation and expose deployment-owned profiles to elastic Runs.
 - [x] Allocate exclusive environments without asking for an elastic Workspace,

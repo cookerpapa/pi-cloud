@@ -31,7 +31,6 @@ import { extname, isAbsolute, resolve, sep } from "node:path";
 import type { FrozenCloudStep } from "./cloud-context.ts";
 import type { PiWorldStateModelMessage } from "./pi-sandbox-continuity.ts";
 
-const WORKSPACE_ROOT = "/workspace";
 const MAX_RESPONSE_BYTES = 5 * 1_024 * 1_024;
 const MAX_PROJECT_INSTRUCTIONS_BYTES = 16 * 1_024;
 
@@ -155,7 +154,9 @@ function validateRuntimeConfiguration(
     !isAbsolute(configuredToolOutputDirectory) ||
     toolOutputDirectory !== configuredToolOutputDirectory ||
     toolOutputDirectory === "/" ||
-    !/^\/workspace(?:\/[A-Za-z0-9._-]+)*$/u.test(workingDirectory)
+    !workingDirectory.startsWith("/") ||
+    workingDirectory.length > 4_096 ||
+    /[\u0000-\u001f\u007f]/.test(workingDirectory)
   ) {
     throw new Error("Trusted Tool Sandbox identity is invalid");
   }
@@ -645,7 +646,7 @@ function registerTrustedRemoteTools(
       : `${event.systemPrompt}\n\n${sandboxLine}`;
     const platformContext = [
       "## PiCloud execution context",
-      `All file and command tools operate in the isolated /workspace Tool Sandbox. Start in ${runtime.workingDirectory}.`,
+      `All file and command tools operate inside the selected machine directory ${runtime.workingDirectory}.`,
       "Large tool results are bounded in model context and preserved as tenant-scoped artifacts.",
     ].join("\n");
     if (runtime.projectInstructions === undefined) {
@@ -678,10 +679,11 @@ function registerTrustedRemoteTools(
     currentSamplingHeadersIssued = true;
   });
 
-  const readTool = createReadTool(WORKSPACE_ROOT);
-  const writeTool = createWriteTool(WORKSPACE_ROOT);
-  const editTool = createEditTool(WORKSPACE_ROOT);
-  const bashTool = createBashTool(WORKSPACE_ROOT);
+  const toolRoot = runtime.workingDirectory;
+  const readTool = createReadTool(toolRoot);
+  const writeTool = createWriteTool(toolRoot);
+  const editTool = createEditTool(toolRoot);
+  const bashTool = createBashTool(toolRoot);
   const allowedTools = new Set(runtime.allowedTools);
 
   if (allowedTools.has("read")) {
@@ -692,7 +694,7 @@ function registerTrustedRemoteTools(
         consumeToolCall();
         const input = params as ReadToolInput;
         if (/\.(?:png|jpe?g|gif|webp|bmp)$/i.test(input.path)) {
-          return createReadTool(WORKSPACE_ROOT, { operations: readOperations("read", id) }).execute(
+          return createReadTool(toolRoot, { operations: readOperations("read", id) }).execute(
             id,
             params,
             signal,
@@ -755,7 +757,7 @@ function registerTrustedRemoteTools(
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();
-        return createWriteTool(WORKSPACE_ROOT, { operations: writeOperations }).execute(
+        return createWriteTool(toolRoot, { operations: writeOperations }).execute(
           id,
           params,
           signal,
@@ -770,7 +772,7 @@ function registerTrustedRemoteTools(
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();
-        return createEditTool(WORKSPACE_ROOT, { operations: editOperations }).execute(
+        return createEditTool(toolRoot, { operations: editOperations }).execute(
           id,
           params,
           signal,
@@ -785,7 +787,7 @@ function registerTrustedRemoteTools(
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();
-        return createBashTool(WORKSPACE_ROOT, { operations: bashOperations(id) }).execute(
+        return createBashTool(toolRoot, { operations: bashOperations(id) }).execute(
           id,
           params,
           signal,

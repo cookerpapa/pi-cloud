@@ -14,6 +14,7 @@ import {
   type DevelopmentEnvironmentActionRequest,
   type DevelopmentEnvironmentBrokerRequest,
   type DevelopmentEnvironmentListResource,
+  type DevelopmentEnvironmentDirectoryResource,
   type DevelopmentEnvironmentResource,
 } from "@pi-cloud/protocol";
 import { createWorkspaceSnapshot, encodeWorkspaceSnapshotBlob } from "@pi-cloud/workspace-runtime";
@@ -145,6 +146,45 @@ export class DevelopmentEnvironmentService {
       throw new ControlPlaneStoreError("not_found", "Development environment was not found");
     }
     return resource(row);
+  }
+
+  async directory(
+    identity: TenantRequestIdentity,
+    environmentId: string,
+    path: string,
+  ): Promise<DevelopmentEnvironmentDirectoryResource> {
+    if (
+      path.length < 1 ||
+      path.length > 4_096 ||
+      !path.startsWith("/") ||
+      /[\u0000-\u001f\u007f]/.test(path)
+    ) {
+      throw new ControlPlaneStoreError("invalid_request", "Machine directory path is invalid");
+    }
+    const environment = await this.get(identity, environmentId);
+    if (environment.state !== "running") {
+      throw new ControlPlaneStoreError(
+        "conflict",
+        "Exclusive machine must be running before browsing its filesystem",
+      );
+    }
+    const descriptor = await this.#descriptor(identity, environmentId);
+    const result = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.directory",
+      requestId: this.#id(),
+      environmentId,
+      tenantId: identity.tenantId,
+      userId: identity.userId,
+      path,
+    });
+    if (result.type !== "development_environment.directory") {
+      throw new ControlPlaneStoreError(
+        "control_plane_misconfigured",
+        "Tool Broker returned the wrong machine directory response",
+      );
+    }
+    return { environmentId, path: result.path, entries: result.entries };
   }
 
   async create(
@@ -407,6 +447,7 @@ export class DevelopmentEnvironmentService {
             environment_version_id: null,
             runtime_id: null,
             runtime_name: null,
+            runtime_capsule: null,
             generation: String(currentGeneration + 1),
             failure_code: null,
             released_at: null,
@@ -446,6 +487,7 @@ export class DevelopmentEnvironmentService {
               owner_base_url: null,
               runtime_id: null,
               runtime_name: null,
+              runtime_capsule: null,
               released_at: new Date(),
               updated_at: new Date(),
             })
@@ -684,8 +726,11 @@ export class DevelopmentEnvironmentService {
         );
       }
       const parsed = parseDevelopmentEnvironmentBrokerResponse(body);
-      if (parsed.type === "development_environment.state") return parsed;
-      baseUrl = await this.#validatedOwnerRedirect(domainId, parsed.ownerBaseUrl);
+      if (parsed.type === "development_environment.owner_redirect") {
+        baseUrl = await this.#validatedOwnerRedirect(domainId, parsed.ownerBaseUrl);
+        continue;
+      }
+      return parsed;
     }
     throw new ControlPlaneStoreError(
       "control_plane_misconfigured",

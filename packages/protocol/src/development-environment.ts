@@ -56,9 +56,47 @@ export const DevelopmentEnvironmentLifecycleRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const DevelopmentEnvironmentDirectoryRequestSchema = Type.Object(
+  {
+    developmentEnvironmentProtocolVersion: Type.Literal(1),
+    type: Type.Literal("development_environment.directory"),
+    requestId: UuidSchema,
+    environmentId: UuidSchema,
+    tenantId: UuidSchema,
+    userId: UuidSchema,
+    path: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
+  },
+  { additionalProperties: false },
+);
+
+export const DevelopmentEnvironmentDirectoryEntrySchema = Type.Object(
+  {
+    name: Type.String({ minLength: 1, maxLength: 255 }),
+    path: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
+    kind: Type.Union([
+      Type.Literal("directory"),
+      Type.Literal("file"),
+      Type.Literal("symlink"),
+      Type.Literal("other"),
+    ]),
+    sizeBytes: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+  },
+  { additionalProperties: false },
+);
+
+export const DevelopmentEnvironmentDirectoryResourceSchema = Type.Object(
+  {
+    environmentId: UuidSchema,
+    path: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
+    entries: Type.Array(DevelopmentEnvironmentDirectoryEntrySchema, { maxItems: 1_000 }),
+  },
+  { additionalProperties: false },
+);
+
 export const DevelopmentEnvironmentBrokerRequestSchema = Type.Union([
   DevelopmentEnvironmentProvisionRequestSchema,
   DevelopmentEnvironmentLifecycleRequestSchema,
+  DevelopmentEnvironmentDirectoryRequestSchema,
 ]);
 
 export const DevelopmentEnvironmentBrokerResponseSchema = Type.Union([
@@ -70,6 +108,15 @@ export const DevelopmentEnvironmentBrokerResponseSchema = Type.Union([
       environmentId: UuidSchema,
       state: DevelopmentEnvironmentBrokerStateSchema,
       ipAddress: Type.Optional(Type.String({ minLength: 7, maxLength: 45 })),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      developmentEnvironmentProtocolVersion: Type.Literal(1),
+      type: Type.Literal("development_environment.directory"),
+      requestId: UuidSchema,
+      ...DevelopmentEnvironmentDirectoryResourceSchema.properties,
     },
     { additionalProperties: false },
   ),
@@ -103,6 +150,12 @@ export type DevelopmentEnvironmentProvisionRequest = Static<
 >;
 export type DevelopmentEnvironmentLifecycleRequest = Static<
   typeof DevelopmentEnvironmentLifecycleRequestSchema
+>;
+export type DevelopmentEnvironmentDirectoryRequest = Static<
+  typeof DevelopmentEnvironmentDirectoryRequestSchema
+>;
+export type DevelopmentEnvironmentDirectoryResource = Static<
+  typeof DevelopmentEnvironmentDirectoryResourceSchema
 >;
 export type DevelopmentEnvironmentBrokerRequest = Static<
   typeof DevelopmentEnvironmentBrokerRequestSchema
@@ -165,5 +218,15 @@ export function parseDevelopmentEnvironmentTerminalOpenRequest(
     DevelopmentEnvironmentTerminalOpenRequestSchema,
     value,
     "development environment terminal request",
+  );
+}
+
+export function parseDevelopmentEnvironmentDirectoryResource(
+  value: unknown,
+): DevelopmentEnvironmentDirectoryResource {
+  return parse(
+    DevelopmentEnvironmentDirectoryResourceSchema,
+    value,
+    "development environment directory",
   );
 }

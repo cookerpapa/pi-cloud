@@ -10,7 +10,7 @@ shell operations run in CubeSandbox KVM microVMs.
 - multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
-- elastic Sandboxes or user-owned persistent Cube environments with one-use SSH access;
+- elastic Sandboxes or user-owned full-VM Cube environments with root SSH/terminal access;
 - resumable SSE whose visible bytes were acknowledged by Kafka first;
 - horizontally replaceable Pi Workers and Kubernetes/KEDA deployment support.
 
@@ -30,7 +30,7 @@ Browser ──REST/SSE──> Control Plane ──> PostgreSQL Run queue
                                              │
                                              ▼
                                       CubeSandbox KVM
-                                      persistent /workspace
+                                elastic Volume / exclusive VM state
 
 Worker events ──> Raw Kafka ──fence check──> Accepted Kafka ──> SSE
 complete Pi entries ──> Session Mutation Kafka ──> PostgreSQL
@@ -40,7 +40,8 @@ There are three durable authorities:
 
 - PostgreSQL owns product state, the Run queue and canonical Pi Sessions;
 - Kafka owns the bounded hot event log used for live replay;
-- a persistent Cube Volume owns Workspace bytes.
+- a persistent Cube Volume owns elastic Workspace bytes; Cube pause state owns
+  an exclusive machine's guest root, memory and processes on its compute node.
 
 Any healthy Worker may run a Session's next message. RunAttempt leases and
 fencing tokens reject stale effects; no Session is permanently assigned to a
@@ -75,7 +76,8 @@ After deployment:
 4. Open **开发资源** to create Workspaces or an optional exclusive environment.
 5. Start a conversation in either mode:
    - **Elastic execution** selects/creates a Workspace and chooses a deployment-owned size;
-   - **Exclusive environment** selects a running user-owned Cube and a persisted directory.
+   - **Exclusive environment** selects a running user-owned Cube and a live
+     directory from its complete guest filesystem.
 
 Service preview is a same-origin HTTP proxy to any unprivileged HTTP port inside
 the active Cube. When the Agent reports a `localhost` application URL, the Web

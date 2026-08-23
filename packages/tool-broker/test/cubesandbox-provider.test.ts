@@ -125,6 +125,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   readonly instances = new Map<string, CubeSandboxInstance>();
   healthChecks = 0;
   closed = false;
+  readonly terminalAdmins: boolean[] = [];
 
   constructor(readonly imageRevision = "development") {}
 
@@ -145,7 +146,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       state: "running",
       domain: "cube.internal",
       metadata: Object.freeze({ ...input.metadata }),
-      trafficAccessToken: `traffic-${String(this.creates.length)}`,
+      trafficAccessToken: `private-traffic-token-${String(this.creates.length)}`,
       cpuCount: 1,
       memoryMB: 768,
     };
@@ -281,7 +282,10 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     throw new Error(`unexpected path ${input.path}`);
   }
 
-  async openTerminal(): Promise<{
+  async openTerminal(
+    _instance: CubeSandboxInstance,
+    input: Readonly<{ admin: boolean }>,
+  ): Promise<{
     pid: number;
     output: AsyncIterable<Uint8Array>;
     sendInput(data: Uint8Array): Promise<void>;
@@ -289,6 +293,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     kill(): Promise<void>;
     disconnect(): void;
   }> {
+    this.terminalAdmins.push(input.admin);
     return {
       pid: 41,
       output: {
@@ -383,6 +388,7 @@ describe("CubeSandbox Provider contract", () => {
 
   it("uses Cube never-timeout lifecycle and preserves identity across development pause/resume", async () => {
     const runtime = new FakeCubeRuntimeClient();
+    const persistentStateKey = Buffer.alloc(32, 9);
     const provider = new CubeSandboxProvider({
       templateId: "pi-cloud-tool-v1",
       developmentTemplateIds: {
@@ -394,6 +400,7 @@ describe("CubeSandbox Provider contract", () => {
       webProxy: WEB_PROXY,
       runtimeClient: runtime,
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+      persistentStateKey,
     });
     const handle = await provider.create({
       activationId: ACTIVATION_ID,
@@ -404,18 +411,39 @@ describe("CubeSandbox Provider contract", () => {
       lifetime: "development_environment",
       sandboxProfileKey: "standard",
     });
+    const terminal = await provider.openTerminal(handle, { rows: 24, cols: 100 });
+    expect(runtime.terminalAdmins).toEqual([true]);
+    await terminal.kill();
     expect(runtime.creates[0]).toMatchObject({
       templateId: "tpl-standard0000000000000000",
       timeoutSeconds: -1,
       lifecycle: { onTimeout: "pause", autoResume: true },
     });
     await provider.pause(handle);
-    await expect(provider.resume(handle)).resolves.toMatchObject({
+    const persisted = await provider.persistentCapsule(handle);
+    expect(persisted.capsule).not.toContain(handle.runtimeName);
+    await provider.detachPersistent(handle);
+    const replacement = new CubeSandboxProvider({
+      templateId: "pi-cloud-tool-v1",
+      developmentTemplateIds: {
+        starter: "tpl-starter00000000000000000",
+        standard: "tpl-standard0000000000000000",
+        performance: "tpl-performance00000000000000",
+      },
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+      persistentStateKey,
+    });
+    const adopted = await replacement.adoptPersistentCapsule(persisted.capsule);
+    await expect(replacement.resume(adopted)).resolves.toMatchObject({
       activationId: ACTIVATION_ID,
       runtimeId: handle.runtimeId,
     });
-    await provider.destroy(handle);
+    await replacement.destroy(adopted);
     await provider.close();
+    await replacement.close();
   });
 
   it("preserves Tool Broker capabilities, assignment inventory and content checkpoints", async () => {
@@ -439,6 +467,7 @@ describe("CubeSandbox Provider contract", () => {
       type: "tool_sandbox.create",
       requestId: "10000000-0000-4000-8000-000000000011",
       sandboxProfileKey: "standard",
+      toolRoot: "/workspace",
       assignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
@@ -594,6 +623,7 @@ describe("CubeSandbox Provider contract", () => {
       type: "tool_sandbox.create",
       requestId: "10000000-0000-4000-8000-000000000027",
       sandboxProfileKey: "standard",
+      toolRoot: "/workspace",
       assignment: idleAssignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
@@ -633,6 +663,7 @@ describe("CubeSandbox Provider contract", () => {
       type: "tool_sandbox.create",
       requestId: "10000000-0000-4000-8000-000000000032",
       sandboxProfileKey: "standard",
+      toolRoot: "/workspace",
       assignment: nextAssignment,
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,

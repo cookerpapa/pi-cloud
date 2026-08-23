@@ -82,6 +82,12 @@ export type DevelopmentEnvironmentOwnerResult =
   | { status: "redirect"; ownerBaseUrl: string }
   | { status: "unavailable" };
 
+export type RecoverableDevelopmentEnvironment = Readonly<{
+  reservation: DevelopmentEnvironmentReservation;
+  state: "running" | "paused" | "unknown";
+  runtimeCapsule: string;
+}>;
+
 export type SandboxPreviewOwnerResult =
   { status: "owned" } | { status: "redirect"; ownerBaseUrl: string } | { status: "unavailable" };
 
@@ -101,7 +107,7 @@ export interface SandboxActivationStateRepository {
     environmentId: string,
     activationId: string,
     outcome: "running" | "failed",
-    detail?: { handle?: SandboxHandle; failureCode?: string },
+    detail?: { handle?: SandboxHandle; failureCode?: string; runtimeCapsule?: string },
   ): Promise<void>;
   reserveDevelopmentEnvironmentTerminal(environmentId: string): Promise<boolean>;
   releaseDevelopmentEnvironmentTerminal(environmentId: string): Promise<void>;
@@ -123,8 +129,11 @@ export interface SandboxActivationStateRepository {
   setDevelopmentEnvironmentState(
     environmentId: string,
     state: Exclude<DevelopmentEnvironmentState, "requested">,
-    detail?: { handle?: SandboxHandle; failureCode?: string },
+    detail?: { handle?: SandboxHandle; failureCode?: string; runtimeCapsule?: string | null },
   ): Promise<void>;
+  claimRecoverableDevelopmentEnvironments(
+    limit: number,
+  ): Promise<readonly RecoverableDevelopmentEnvironment[]>;
   claimOrphanedDevelopmentEnvironments(
     limit: number,
   ): Promise<readonly DevelopmentEnvironmentReservation[]>;
@@ -337,6 +346,11 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
     } else if (environment !== undefined) {
       environment.state = state;
     }
+  }
+  async claimRecoverableDevelopmentEnvironments(): Promise<
+    readonly RecoverableDevelopmentEnvironment[]
+  > {
+    return [];
   }
   async claimOrphanedDevelopmentEnvironments(): Promise<
     readonly DevelopmentEnvironmentReservation[]
@@ -1406,7 +1420,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
   async setDevelopmentEnvironmentState(
     environmentId: string,
     state: Exclude<DevelopmentEnvironmentState, "requested">,
-    detail: { handle?: SandboxHandle; failureCode?: string } = {},
+    detail: { handle?: SandboxHandle; failureCode?: string; runtimeCapsule?: string | null } = {},
   ): Promise<void> {
     const now = validDate(this.#clock);
     const updated = await this.#database.transaction().execute(async (transaction) => {
@@ -1419,6 +1433,11 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           ...(state === "released" ? { owner_instance_id: null, owner_base_url: null } : {}),
           runtime_id: detail.handle?.runtimeId ?? null,
           runtime_name: detail.handle?.runtimeName ?? null,
+          ...(state === "released"
+            ? { runtime_capsule: null }
+            : detail.runtimeCapsule === undefined
+              ? {}
+              : { runtime_capsule: detail.runtimeCapsule }),
           failure_code: failureCode(detail.failureCode),
           released_at: state === "released" ? now : null,
           updated_at: now,
@@ -1440,7 +1459,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     environmentId: string,
     activationId: string,
     outcome: "running" | "failed",
-    detail: { handle?: SandboxHandle; failureCode?: string } = {},
+    detail: { handle?: SandboxHandle; failureCode?: string; runtimeCapsule?: string } = {},
   ): Promise<void> {
     const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
@@ -1453,6 +1472,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           state: outcome,
           runtime_id: outcome === "running" ? (detail.handle?.runtimeId ?? null) : null,
           runtime_name: outcome === "running" ? (detail.handle?.runtimeName ?? null) : null,
+          runtime_capsule: outcome === "running" ? (detail.runtimeCapsule ?? null) : null,
           failure_code: outcome === "failed" ? failureCode(detail.failureCode) : null,
           updated_at: now,
         })
@@ -1523,6 +1543,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         ])
         .where("sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("state", "=", "unknown")
+        .where("runtime_capsule", "is", null)
         .where("environment_version_id", "is not", null)
         .orderBy("updated_at", "asc")
         .limit(boundedLimit)
@@ -1555,6 +1576,81 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         generation: Number(row.generation),
         profileKey: developmentProfileKey(row.profile_key),
       }));
+    });
+  }
+
+  async claimRecoverableDevelopmentEnvironments(
+    limit: number,
+  ): Promise<readonly RecoverableDevelopmentEnvironment[]> {
+    const boundedLimit = positiveInteger(limit, "development environment recovery limit");
+    const now = validDate(this.#clock);
+    return this.#database.transaction().execute(async (transaction) => {
+      await this.#assertCurrentOwner(transaction, now);
+      const rows = await transaction
+        .selectFrom("development_environments as environment")
+        .leftJoin("tool_broker_instances as owner", (join) =>
+          join.onRef("owner.instance_id", "=", "environment.owner_instance_id"),
+        )
+        .select([
+          "environment.id",
+          "environment.tenant_id",
+          "environment.owner_user_id",
+          "environment.project_id",
+          "environment.workspace_id",
+          "environment.environment_version_id",
+          "environment.generation",
+          "environment.profile_key",
+          "environment.state",
+          "environment.runtime_capsule",
+        ])
+        .where("environment.sandbox_domain_id", "=", this.#sandboxDomainId)
+        .where("environment.state", "in", ["running", "paused", "unknown"])
+        .where("environment.runtime_capsule", "is not", null)
+        .where("environment.environment_version_id", "is not", null)
+        .where("environment.agent_activation_id", "is", null)
+        .where("environment.terminal_active", "=", false)
+        .where((expression) =>
+          expression.or([
+            expression("owner.instance_id", "is", null),
+            expression("owner.state", "!=", "ready"),
+            expression("owner.lease_expires_at", "<=", now),
+          ]),
+        )
+        .orderBy("environment.updated_at", "asc")
+        .limit(boundedLimit)
+        .forUpdate("environment")
+        .skipLocked()
+        .execute();
+      const recovered: RecoverableDevelopmentEnvironment[] = [];
+      for (const row of rows) {
+        const updated = await transaction
+          .updateTable("development_environments")
+          .set({
+            owner_instance_id: this.#instanceId,
+            owner_base_url: this.#ownerBaseUrl,
+            failure_code: null,
+            updated_at: now,
+          })
+          .where("id", "=", row.id)
+          .where("runtime_capsule", "=", row.runtime_capsule)
+          .executeTakeFirst();
+        if (updated.numUpdatedRows !== 1n) continue;
+        recovered.push({
+          reservation: {
+            environmentId: row.id,
+            tenantId: row.tenant_id,
+            userId: row.owner_user_id,
+            projectId: row.project_id,
+            workspaceId: row.workspace_id,
+            environmentVersionId: row.environment_version_id!,
+            generation: Number(row.generation),
+            profileKey: developmentProfileKey(row.profile_key),
+          },
+          state: row.state as "running" | "paused" | "unknown",
+          runtimeCapsule: row.runtime_capsule!,
+        });
+      }
+      return recovered;
     });
   }
 
@@ -2131,6 +2227,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         })
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "in", ["provisioning", "running", "paused", "releasing"])
+        .where("runtime_capsule", "is", null)
         .execute();
       await transaction
         .updateTable("tool_broker_instances")

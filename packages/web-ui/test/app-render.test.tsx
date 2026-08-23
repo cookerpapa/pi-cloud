@@ -144,16 +144,16 @@ describe("product chat experience", () => {
     const markup = renderToStaticMarkup(
       <WorkspaceDirectoryPicker
         api={new PiCloudApi(async () => new Response(null, { status: 500 }))}
-        initialDirectory="/workspace"
+        environmentId="10000000-0000-4000-8000-000000000099"
+        initialDirectory="/home"
         onCancel={() => undefined}
         onChoose={() => undefined}
-        referenceSessionId={null}
         workspaceName="exclusive-devbox"
       />,
     );
-    expect(markup).toContain("选择工作目录");
-    expect(markup).toContain("🏠 ~");
-    expect(markup).toContain("当前选择：/workspace");
+    expect(markup).toContain("选择机器工作目录");
+    expect(markup).toContain("🖥️ /");
+    expect(markup).toContain("当前选择：/home");
   });
 
   it("renders Pi conversation forks in focused and whole-tree navigation", () => {

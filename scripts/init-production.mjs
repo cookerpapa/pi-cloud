@@ -96,6 +96,23 @@ async function ensureModelCredentialMasterKey(runtimeDirectory) {
   return true;
 }
 
+async function ensureCubePersistentStateKey(runtimeDirectory) {
+  const path = resolve(runtimeDirectory, "secrets/cube-persistent-state-key");
+  try {
+    const existing = (await readPrivateFile(path)).trim();
+    if (!/^[A-Za-z0-9_-]{43}$/.test(existing) || Buffer.from(existing, "base64url").length !== 32) {
+      throw new Error("Production Cube persistent-state key is invalid");
+    }
+    return false;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  await writePrivateFile(path, `${randomBytes(32).toString("base64url")}\n`);
+  const application = applicationIdentity();
+  if (application.changeOwnership) await chown(path, application.uid, application.gid);
+  return true;
+}
+
 async function ensureToolBrokerToken(runtimeDirectory) {
   const path = resolve(runtimeDirectory, "secrets/tool-broker-token");
   try {
@@ -402,6 +419,7 @@ await assertPrivateDirectory(runtimeDirectory);
 
 if (await validateExisting(runtimeDirectory)) {
   const modelCredentialMasterKeyCreated = await ensureModelCredentialMasterKey(runtimeDirectory);
+  const cubePersistentStateKeyCreated = await ensureCubePersistentStateKey(runtimeDirectory);
   const toolBrokerTokenCreated = await ensureToolBrokerToken(runtimeDirectory);
   const sandboxMaterializerTokenCreated = await ensureSandboxMaterializerToken(runtimeDirectory);
   const workspaceTerminalTokenCreated = await ensureWorkspaceTerminalToken(runtimeDirectory);
@@ -417,6 +435,7 @@ if (await validateExisting(runtimeDirectory)) {
       initialized: true,
       reused: true,
       modelCredentialMasterKeyCreated,
+      cubePersistentStateKeyCreated,
       toolBrokerTokenCreated,
       sandboxMaterializerTokenCreated,
       workspaceTerminalTokenCreated,
@@ -524,6 +543,10 @@ await writePrivateFile(
 await writePrivateFile(resolve(secretsDirectory, "api-token"), `${apiToken}\n`);
 await writePrivateFile(
   resolve(secretsDirectory, "model-credential-master-key"),
+  `${randomBytes(32).toString("base64url")}\n`,
+);
+await writePrivateFile(
+  resolve(secretsDirectory, "cube-persistent-state-key"),
   `${randomBytes(32).toString("base64url")}\n`,
 );
 await writePrivateFile(

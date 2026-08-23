@@ -44,6 +44,9 @@ head.
 | user enumerates another user's development environment | every list, lifecycle and Terminal lookup binds tenant plus authenticated owner user; no Cube ID is public |
 | terminal races an Agent writer | PostgreSQL-backed human-terminal lease and shared Workspace writer exclusion |
 | exclusive environment races an Agent writer | durable `terminal_active`/`agent_activation_id` CAS plus Tool Broker authority handoff |
+| exclusive owner has root inside its own VM | KVM is the tenant boundary; the guest contains no platform/model/database credentials and the external Tool Broker still validates every Run fence |
+| Broker replacement loses or swaps an exclusive VM | encrypted reconnect capsule plus PostgreSQL owner CAS and Cube physical metadata/runtime identity validation before adoption |
+| directory picker exposes another runtime | tenant/user/environment authorization at Control Plane and Tool Broker; listing is read from the selected live Cube only |
 | stale Worker mutation | transaction-scoped authority and monotonically increasing fence |
 | duplicate queue delivery | idempotent command plus transactional RunAttempt claim |
 | ambiguous shell result | `UNKNOWN`; no automatic replay |

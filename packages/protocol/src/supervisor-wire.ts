@@ -205,9 +205,9 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
         sandboxRetention: SandboxRetentionPolicySchema,
         sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
         workingDirectory: Type.String({
-          minLength: 10,
-          maxLength: 1_024,
-          pattern: "^/workspace(?:/[A-Za-z0-9._-]+)*$",
+          minLength: 1,
+          maxLength: 4_096,
+          pattern: "^/",
         }),
         toolCapabilities: CloudToolCapabilitySnapshotSchema,
         agentSystemPrompt: Type.Optional(Type.String({ minLength: 1, maxLength: 100_000 })),

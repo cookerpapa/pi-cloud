@@ -428,6 +428,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         allowedTools: cloudTurn.context.tools.names,
         retention: command.payload.sandboxRetention,
         sandboxProfileKey: command.payload.sandboxProfileKey,
+        toolRoot: command.payload.workingDirectory,
         environment: command.payload.environment,
         workspaceSeed:
           workspaceSeed === undefined

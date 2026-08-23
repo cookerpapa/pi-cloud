@@ -1,6 +1,7 @@
 import type {
   AgentWorkspaceSeed,
   DevelopmentEnvironmentBrokerResponse,
+  DevelopmentEnvironmentBrokerRequest,
   DevelopmentEnvironmentLifecycleRequest,
   DevelopmentEnvironmentProvisionRequest,
   DevelopmentEnvironmentTerminalOpenRequest,
@@ -429,6 +430,65 @@ export class ToolBroker {
     return this.#activations.size;
   }
 
+  async recoverPersistentDevelopmentEnvironments(): Promise<number> {
+    if (this.#provider.adoptPersistentCapsule === undefined) return 0;
+    const recoverable = await this.#stateRepository.claimRecoverableDevelopmentEnvironments(256);
+    let recovered = 0;
+    for (const candidate of recoverable) {
+      try {
+        const handle = await this.#provider.adoptPersistentCapsule(candidate.runtimeCapsule);
+        const expected = developmentEnvironmentAssignment({
+          environmentId: candidate.reservation.environmentId,
+          tenantId: candidate.reservation.tenantId,
+          projectId: candidate.reservation.projectId,
+          workspaceId: candidate.reservation.workspaceId,
+          generation: candidate.reservation.generation,
+        });
+        if (
+          handle.activationId !== candidate.reservation.environmentId ||
+          !sameAssignment(handle.assignment, expected)
+        ) {
+          throw new ToolBrokerError(
+            "persistent_machine_recovery_identity_mismatch",
+            "Recovered exclusive machine identity did not match PostgreSQL",
+            false,
+          );
+        }
+        this.#developmentEnvironments.set(candidate.reservation.environmentId, {
+          reservation: candidate.reservation,
+          assignment: expected,
+          handle,
+        });
+        this.#admitted.set(candidate.reservation.environmentId, expected);
+        const capsule = await this.#persistentCapsule(handle);
+        if (capsule === undefined) {
+          throw new ToolBrokerError(
+            "persistent_machine_state_unsupported",
+            "Recovered exclusive machine could not refresh its encrypted state",
+            false,
+          );
+        }
+        const inspection = await this.#provider.inspect(handle);
+        const recoveredState =
+          inspection.state === "stopped" || candidate.state === "paused" ? "paused" : "running";
+        await this.#stateRepository.setDevelopmentEnvironmentState(
+          candidate.reservation.environmentId,
+          recoveredState,
+          { handle, runtimeCapsule: capsule },
+        );
+        recovered += 1;
+      } catch (error: unknown) {
+        await this.#stateRepository
+          .setDevelopmentEnvironmentState(candidate.reservation.environmentId, "unknown", {
+            failureCode: operationFailureCode(error),
+            runtimeCapsule: candidate.runtimeCapsule,
+          })
+          .catch(() => undefined);
+      }
+    }
+    return recovered;
+  }
+
   get warmCount(): number {
     return this.#warm.size;
   }
@@ -528,6 +588,7 @@ export class ToolBroker {
         environment: request.environment,
         workspaceSeed: request.workspaceSeed,
         policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
+        toolRoot: "/workspace",
         lifetime: "development_environment",
         sandboxProfileKey: request.profileKey,
       });
@@ -551,8 +612,10 @@ export class ToolBroker {
         assignment,
         handle,
       });
+      const runtimeCapsule = await this.#persistentCapsule(handle);
       await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "running", {
         handle,
+        ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
       });
       return {
         developmentEnvironmentProtocolVersion: 1,
@@ -628,8 +691,10 @@ export class ToolBroker {
           .catch(() => undefined);
         throw error;
       }
+      const runtimeCapsule = await this.#persistentCapsule(environment.handle);
       await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "paused", {
         handle: environment.handle,
+        ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
       });
       return {
         developmentEnvironmentProtocolVersion: 1,
@@ -657,8 +722,10 @@ export class ToolBroker {
           .catch(() => undefined);
         throw error;
       }
+      const runtimeCapsule = await this.#persistentCapsule(environment.handle);
       await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "running", {
         handle: environment.handle,
+        ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
       });
       return {
         developmentEnvironmentProtocolVersion: 1,
@@ -690,6 +757,60 @@ export class ToolBroker {
       requestId: request.requestId,
       environmentId: request.environmentId,
       state: "released",
+    };
+  }
+
+  async browseDevelopmentEnvironment(
+    request: Extract<
+      DevelopmentEnvironmentBrokerRequest,
+      { type: "development_environment.directory" }
+    >,
+  ): Promise<DevelopmentEnvironmentBrokerResponse> {
+    if (this.#provider.listDirectory === undefined) {
+      throw new ToolBrokerError(
+        "development_environment_directory_unsupported",
+        "Sandbox Provider cannot browse an exclusive machine filesystem",
+        false,
+      );
+    }
+    const ownership = await this.#stateRepository.developmentEnvironmentOwner(
+      request.tenantId,
+      request.userId,
+      request.environmentId,
+    );
+    if (ownership.status === "redirect") {
+      throw new ToolBrokerOwnerRedirectError(ownership.ownerBaseUrl);
+    }
+    const environment = this.#developmentEnvironments.get(request.environmentId);
+    if (
+      ownership.status !== "owned" ||
+      ownership.state !== "running" ||
+      environment === undefined
+    ) {
+      throw new ToolBrokerError(
+        "development_environment_directory_unavailable",
+        "Exclusive machine is not running on its owning Tool Broker",
+        true,
+      );
+    }
+    if (
+      environment.reservation.tenantId !== request.tenantId ||
+      environment.reservation.userId !== request.userId
+    ) {
+      throw new ToolBrokerError(
+        "development_environment_unauthorized",
+        "Exclusive machine ownership did not match",
+        false,
+      );
+    }
+    const directory = await this.#provider.listDirectory(environment.handle, request.path);
+    return {
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.directory",
+      requestId: request.requestId,
+      environmentId: request.environmentId,
+      path: directory.path,
+      entries: [...directory.entries],
     };
   }
 
@@ -895,7 +1016,7 @@ export class ToolBroker {
           warmEntry[1].handle.assignment.sessionId === input.sessionId
         ) {
           this.#warm.delete(warmEntry[0]);
-          handle = await this.#provider.rebind(warmEntry[1].handle, assignment);
+          handle = await this.#provider.rebind(warmEntry[1].handle, assignment, "/workspace");
           retainedWarm = {
             key: warmEntry[0],
             activationId: retired.activationId,
@@ -923,6 +1044,7 @@ export class ToolBroker {
           environment: input.environment,
           workspaceSeed: input.workspaceSeed,
           policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
+          toolRoot: "/workspace",
         });
       }
       if (handle === undefined) {
@@ -1210,6 +1332,7 @@ export class ToolBroker {
         ? {}
         : { workspaceRestore: request.workspaceRestore }),
       policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
+      toolRoot: request.toolRoot,
       sandboxProfileKey: request.sandboxProfileKey,
       ...(request.retention === "persistent"
         ? { lifetime: "persistent_conversation" as const }
@@ -1521,16 +1644,20 @@ export class ToolBroker {
           );
         }
         if (activation.materializedForCurrentAssignment) {
-          handle = await this.#provider.rebind(handle, environment.assignment);
+          handle = await this.#provider.rebind(handle, environment.assignment, "/workspace");
         }
         environment.handle = handle;
         delete environment.agentActivationId;
         this.#activations.delete(request.activationId);
+        const runtimeCapsule = await this.#persistentCapsule(handle);
         await this.#stateRepository.returnDevelopmentEnvironment(
           environment.reservation.environmentId,
           request.activationId,
           "running",
-          { handle },
+          {
+            handle,
+            ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
+          },
         );
         return {
           toolBrokerProtocolVersion: 1,
@@ -1781,13 +1908,38 @@ export class ToolBroker {
     for (const [environmentId, environment] of this.#developmentEnvironments) {
       environment.terminal?.disconnect();
       await environment.terminal?.kill().catch(() => undefined);
-      await this.#provider.destroy(environment.handle).catch(() => undefined);
+      let capsule: string | undefined;
+      try {
+        capsule = await this.#persistentCapsule(environment.handle);
+        if (this.#provider.pause !== undefined) {
+          try {
+            await this.#provider.pause(environment.handle);
+          } catch (error: unknown) {
+            if (
+              !(error instanceof ToolBrokerError) ||
+              error.code !== "development_environment_pause_invalid"
+            ) {
+              throw error;
+            }
+          }
+        }
+        capsule = await this.#persistentCapsule(environment.handle);
+        await this.#stateRepository.setDevelopmentEnvironmentState(environmentId, "paused", {
+          handle: environment.handle,
+          ...(capsule === undefined ? {} : { runtimeCapsule: capsule }),
+        });
+        if (capsule !== undefined) await this.#provider.detachPersistent?.(environment.handle);
+      } catch (error: unknown) {
+        await this.#stateRepository
+          .setDevelopmentEnvironmentState(environmentId, "unknown", {
+            handle: environment.handle,
+            failureCode: operationFailureCode(error),
+            ...(capsule === undefined ? {} : { runtimeCapsule: capsule }),
+          })
+          .catch(() => undefined);
+        await this.#provider.detachPersistent?.(environment.handle).catch(() => undefined);
+      }
       this.#releaseAdmission(environmentId);
-      await this.#stateRepository
-        .setDevelopmentEnvironmentState(environmentId, "failed", {
-          failureCode: "tool_broker_stopped",
-        })
-        .catch(() => undefined);
     }
     this.#developmentEnvironments.clear();
     const ownedActivationIds = new Set([
@@ -1812,6 +1964,20 @@ export class ToolBroker {
       }
     } finally {
       await this.#stateRepository.close();
+    }
+  }
+
+  async #persistentCapsule(handle: SandboxHandle): Promise<string | undefined> {
+    if (this.#provider.persistentCapsule === undefined) {
+      return undefined;
+    }
+    try {
+      return (await this.#provider.persistentCapsule(handle)).capsule;
+    } catch (error: unknown) {
+      if (error instanceof ToolBrokerError && error.code === "persistent_capsule_key_missing") {
+        return undefined;
+      }
+      throw error;
     }
   }
 
@@ -1900,7 +2066,11 @@ export class ToolBroker {
             if (activation.developmentEnvironmentId !== undefined) {
               await this.#provider.snapshot(handle, this.#idGenerator());
             }
-            handle = await this.#provider.rebind(handle, activation.assignment);
+            handle = await this.#provider.rebind(
+              handle,
+              activation.assignment,
+              activation.spec.toolRoot,
+            );
           } catch (error: unknown) {
             try {
               await this.#provider.stop(handle);
@@ -1974,7 +2144,11 @@ export class ToolBroker {
     let restoredHandle: SandboxHandle | undefined;
     if (handle !== undefined) {
       try {
-        restoredHandle = await this.#provider.rebind(handle, suspended.activation.assignment);
+        restoredHandle = await this.#provider.rebind(
+          handle,
+          suspended.activation.assignment,
+          suspended.activation.spec.toolRoot,
+        );
       } catch {
         await this.#provider.stop(handle).catch(() => undefined);
       }

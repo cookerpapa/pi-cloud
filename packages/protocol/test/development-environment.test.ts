@@ -8,6 +8,7 @@ import {
   DevelopmentEnvironmentProtocolError,
   parseDevelopmentEnvironmentBrokerRequest,
   parseDevelopmentEnvironmentTerminalOpenRequest,
+  parseDevelopmentEnvironmentBrokerResponse,
 } from "../src/index.ts";
 
 describe("development environment Broker protocol", () => {
@@ -57,5 +58,21 @@ describe("development environment Broker protocol", () => {
         cols: 100,
       }),
     ).toMatchObject({ rows: 24, cols: 100 });
+  });
+
+  it("carries a live full-machine directory listing without a reference Session", () => {
+    expect(
+      parseDevelopmentEnvironmentBrokerResponse({
+        developmentEnvironmentProtocolVersion: 1,
+        type: "development_environment.directory",
+        requestId: "30000000-0000-4000-8000-000000000001",
+        environmentId: "30000000-0000-4000-8000-000000000002",
+        path: "/home/node",
+        entries: [
+          { name: "empty-project", path: "/home/node/empty-project", kind: "directory" },
+          { name: ".bashrc", path: "/home/node/.bashrc", kind: "file", sizeBytes: 220 },
+        ],
+      }),
+    ).toMatchObject({ path: "/home/node", entries: [{ kind: "directory" }, { kind: "file" }] });
   });
 });

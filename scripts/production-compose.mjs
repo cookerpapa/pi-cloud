@@ -83,6 +83,7 @@ const applicationSecretNames = [
   "tool-broker-token",
   "sandbox-materializer-token",
   "workspace-terminal-token",
+  "cube-persistent-state-key",
   "ssh-host-key.pem",
   "workspace-volume-gateway-token",
   "supervisor-enrollment-token",

@@ -86,6 +86,7 @@ import * as conversationWorkspaceRebinding from "./084_conversation_workspace_re
 import * as sshAccessTickets from "./085_ssh_access_tickets.ts";
 import * as sessionExecutionProfiles from "./086_session_execution_profiles.ts";
 import * as developmentEnvironmentMachineIdentity from "./087_development_environment_machine_identity.ts";
+import * as exclusiveVmState from "./088_exclusive_vm_state.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -177,6 +178,7 @@ export const migrationProvider: MigrationProvider = {
       "085_ssh_access_tickets": sshAccessTickets,
       "086_session_execution_profiles": sessionExecutionProfiles,
       "087_development_environment_machine_identity": developmentEnvironmentMachineIdentity,
+      "088_exclusive_vm_state": exclusiveVmState,
     };
   },
 };
@@ -493,3 +495,7 @@ export {
   down as downSessionExecutionProfiles,
   up as upSessionExecutionProfiles,
 } from "./086_session_execution_profiles.ts";
+export {
+  down as downExclusiveVmState,
+  up as upExclusiveVmState,
+} from "./088_exclusive_vm_state.ts";

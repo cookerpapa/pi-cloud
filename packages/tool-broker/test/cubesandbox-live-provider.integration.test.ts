@@ -167,6 +167,7 @@ function createRequest(
     type: "tool_sandbox.create",
     requestId: randomUUID(),
     sandboxProfileKey: "standard",
+    toolRoot: "/workspace",
     assignment: assigned,
     turnContextSha256: STEP_CONTEXT_SHA256,
     attemptContextSha256: STEP_CONTEXT_SHA256,

@@ -106,6 +106,7 @@ export interface CubeSandboxRuntimeClient {
       rows: number;
       cols: number;
       authority: CubeSandboxHandoffAuthority;
+      admin: boolean;
     }>,
   ): Promise<CubeSandboxTerminal>;
   close(): Promise<void>;
@@ -688,6 +689,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       rows: number;
       cols: number;
       authority: CubeSandboxHandoffAuthority;
+      admin: boolean;
     }>,
   ): Promise<CubeSandboxTerminal> {
     const size = terminalSize(input);
@@ -705,7 +707,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
             "content-type": "application/json",
             ...authorityHeaders(input.authority),
           },
-          body: Buffer.from(JSON.stringify(size), "utf8"),
+          body: Buffer.from(JSON.stringify({ ...size, admin: input.admin }), "utf8"),
           signal: controller.signal,
         },
       );

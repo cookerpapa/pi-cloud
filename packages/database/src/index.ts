@@ -148,6 +148,8 @@ export {
   downConversationWorkspaceRebinding,
   upSshAccessTickets,
   downSshAccessTickets,
+  upExclusiveVmState,
+  downExclusiveVmState,
 } from "./migrations/index.ts";
 
 export {

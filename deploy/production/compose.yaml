@@ -758,6 +758,7 @@ services:
       PI_CLOUD_TOOL_BROKER_TOKEN_FILE: /run/pi-cloud-secrets/tool-broker-token
       PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE: /run/pi-cloud-secrets/sandbox-materializer-token
       PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: /run/pi-cloud-secrets/workspace-terminal-token
+      PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE: /run/pi-cloud-secrets/cube-persistent-state-key
       PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL: http://workspace-volume-gateway:4500
       PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE: /run/pi-cloud-secrets/workspace-volume-gateway-token
       PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS: ${PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS:-660000}
@@ -784,6 +785,10 @@ services:
       - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/workspace-terminal-token
         target: /run/pi-cloud-secrets/workspace-terminal-token
+        read_only: true
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/cube-persistent-state-key
+        target: /run/pi-cloud-secrets/cube-persistent-state-key
         read_only: true
       - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/workspace-volume-gateway-token

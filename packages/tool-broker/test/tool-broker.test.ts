@@ -78,6 +78,7 @@ const createRequest: ToolSandboxCreateRequest = {
   type: "tool_sandbox.create",
   requestId: "10000000-0000-4000-8000-000000000011",
   sandboxProfileKey: "standard",
+  toolRoot: "/workspace",
   assignment,
   turnContextSha256: TURN_CONTEXT_SHA256,
   attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
@@ -1572,6 +1573,11 @@ describe("provider-backed Tool Tool Broker", () => {
       const workspaceVolumeGatewayTokenPath = join(directory, "workspace-volume-gateway-token");
       await writeFile(workspaceVolumeGatewayTokenPath, `${"m".repeat(48)}\n`, { mode: 0o600 });
       await chmod(workspaceVolumeGatewayTokenPath, 0o600);
+      const persistentStateKeyPath = join(directory, "cube-persistent-state-key");
+      await writeFile(persistentStateKeyPath, `${Buffer.alloc(32, 7).toString("base64url")}\n`, {
+        mode: 0o600,
+      });
+      await chmod(persistentStateKeyPath, 0o600);
       const databaseUrlPath = join(directory, "database-url");
       await writeFile(databaseUrlPath, "postgresql://pi-cloud:secret@postgres:5432/pi-cloud\n", {
         mode: 0o600,
@@ -1584,6 +1590,7 @@ describe("provider-backed Tool Tool Broker", () => {
           PI_CLOUD_TOOL_BROKER_ADVERTISED_URL: "http://tool-broker-0:4300",
           PI_CLOUD_TOOL_BROKER_TOKEN_FILE: tokenPath,
           PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: terminalTokenPath,
+          PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE: persistentStateKeyPath,
           PI_CLOUD_IMAGE_REVISION: "development",
           PI_CLOUD_CUBESANDBOX_API_URL: "https://cube-api.internal",
           PI_CLOUD_CUBESANDBOX_API_KEY_FILE: cubeKeyPath,

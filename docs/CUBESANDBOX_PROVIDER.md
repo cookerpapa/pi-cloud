@@ -85,8 +85,11 @@ the guest. No tenant-controlled request may expand that list.
 
 ## Template and resource policy
 
-The deployment-owned immutable template supplies the fixed non-root user,
-language toolchain and private Tool service. Users cannot submit a template,
+The deployment-owned immutable template supplies the language toolchain and
+private Tool service. Elastic Agent Tools use the fixed non-root user. An
+exclusive machine's authenticated human terminal/SSH channel may start as guest
+root; KVM and the absence of platform credentials are then the tenant boundary.
+Users cannot submit a template,
 kernel, device, host mount, privileged flag or network policy. Cube and the
 Tool service enforce bounded CPU, memory, process count, open files, output and
 execution time.

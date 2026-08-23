@@ -102,6 +102,24 @@ function provider(): SandboxProvider {
         disconnect() {},
       };
     },
+    async listDirectory(_handle, path) {
+      return {
+        path,
+        entries: [
+          {
+            name: "empty-project",
+            path: `${path === "/" ? "" : path}/empty-project`,
+            kind: "directory",
+          },
+          {
+            name: "README",
+            path: `${path === "/" ? "" : path}/README`,
+            kind: "file",
+            sizeBytes: 12,
+          },
+        ],
+      };
+    },
     pause: pauses,
     resume: resumes,
     async snapshot() {
@@ -246,6 +264,15 @@ describe("user-owned development environments", () => {
     }
     expect(running.state).toBe("running");
     expect(running.ipAddress).toBe("169.254.68.4");
+    await expect(
+      service.directory(identity, created.environmentId, "/home"),
+    ).resolves.toMatchObject({
+      path: "/home",
+      entries: [{ name: "empty-project", kind: "directory" }, { kind: "file" }],
+    });
+    await expect(service.directory(otherIdentity, created.environmentId, "/home")).rejects.toThrow(
+      /not found/u,
+    );
     const sshTickets = new SshAccessTicketService({
       database,
       enabled: true,

@@ -24,6 +24,7 @@ import {
   parseWorkspaceDeletionResource,
   parseDevelopmentEnvironmentListResource,
   parseDevelopmentEnvironmentResource,
+  parseDevelopmentEnvironmentDirectoryResource,
   parseWorkspaceListResource,
   parseWorkspaceOperationResource,
   parseWorkspaceVersionListResource,
@@ -58,6 +59,7 @@ import {
   type DevelopmentEnvironmentAction,
   type DevelopmentEnvironmentListResource,
   type DevelopmentEnvironmentResource,
+  type DevelopmentEnvironmentDirectoryResource,
   type WorkspaceListResource,
   type WorkspaceOperationResource,
   type WorkspaceSourceRequest,
@@ -355,6 +357,20 @@ export class PiCloudApi {
         this.#fetch,
         `/v1/development-environments/${encodeURIComponent(environmentId)}/actions`,
         jsonRequest({ action }, idempotencyKey),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async listDevelopmentEnvironmentDirectory(
+    environmentId: string,
+    path: string,
+  ): Promise<DevelopmentEnvironmentDirectoryResource> {
+    return parseDevelopmentEnvironmentDirectoryResource(
+      await request(
+        this.#fetch,
+        `/v1/development-environments/${encodeURIComponent(environmentId)}/directory?path=${encodeURIComponent(path)}`,
+        { method: "GET" },
         this.#authorizationToken,
       ),
     );

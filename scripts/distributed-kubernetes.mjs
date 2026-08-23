@@ -138,6 +138,7 @@ function preflight(namespace, values) {
     "tool-broker-token",
     "sandbox-materializer-token",
     "workspace-terminal-token",
+    "cube-persistent-state-key",
     "supervisor-enrollment-token",
     "supervisor-management-token",
     "workspace-volume-gateway-token",

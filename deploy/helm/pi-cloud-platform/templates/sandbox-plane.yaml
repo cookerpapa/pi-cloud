@@ -97,6 +97,7 @@ spec:
             - { name: PI_CLOUD_TOOL_BROKER_TOKEN_FILE, value: /run/pi-cloud-secrets/tool-broker-token }
             - { name: PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE, value: /run/pi-cloud-secrets/sandbox-materializer-token }
             - { name: PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-terminal-token }
+            - { name: PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE, value: /run/pi-cloud-secrets/cube-persistent-state-key }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL, value: http://workspace-volume-gateway:4500 }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-volume-gateway-token }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS, value: {{ .Values.sandboxPlane.volumeGatewayRequestTimeoutMs | quote }} }
@@ -127,6 +128,7 @@ spec:
             - { name: secrets, mountPath: /run/pi-cloud-secrets/tool-broker-token, subPath: tool-broker-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/sandbox-materializer-token, subPath: sandbox-materializer-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/workspace-terminal-token, subPath: workspace-terminal-token, readOnly: true }
+            - { name: secrets, mountPath: /run/pi-cloud-secrets/cube-persistent-state-key, subPath: cube-persistent-state-key, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/workspace-volume-gateway-token, subPath: workspace-volume-gateway-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/cubesandbox-api-key, subPath: cubesandbox-api-key, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/metrics-token, subPath: metrics-token, readOnly: true }

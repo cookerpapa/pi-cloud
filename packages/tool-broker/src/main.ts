@@ -28,6 +28,7 @@ const provider = new CubeSandboxProvider({
   templateId: cube.templateId,
   developmentTemplateIds: cube.developmentTemplateIds,
   imageRevision: config.imageRevision,
+  persistentStateKey: config.persistentStateKey,
   runtime: {
     apiUrl: cube.apiUrl,
     apiKey: cube.apiKey,
@@ -71,6 +72,7 @@ const server = new ToolBrokerServer({
   metrics: observability.metrics,
 });
 
+await broker.recoverPersistentDevelopmentEnvironments();
 await server.listen();
 process.stdout.write("PiCloud Tool Broker ready\n");
 

@@ -63,6 +63,7 @@ import {
   type WorkspaceDeletionResource,
   type DevelopmentEnvironmentListResource,
   type DevelopmentEnvironmentResource,
+  type DevelopmentEnvironmentDirectoryResource,
   type LiveTurnSnapshotResource,
   type SshAccessTicketResource,
 } from "@pi-cloud/protocol";
@@ -241,6 +242,22 @@ export class ControlPlaneController {
       this.tenantRequestContext.requireMutation(request),
       parseIdempotencyKey(idempotencyKeyValue),
       parseCreateDevelopmentEnvironmentRequest(body),
+    );
+  }
+
+  @Get("development-environments/:environmentId/directory")
+  async developmentEnvironmentDirectory(
+    @Req() request: FastifyRequest,
+    @Param("environmentId") environmentIdValue: unknown,
+    @Query("path") pathValue: unknown,
+  ): Promise<DevelopmentEnvironmentDirectoryResource> {
+    if (typeof pathValue !== "string") {
+      throw new Error("Machine directory path is required");
+    }
+    return this.developmentEnvironments.directory(
+      this.tenantRequestContext.resolve(request),
+      parseUuidPathParameter(environmentIdValue, "environmentId"),
+      pathValue,
     );
   }
 

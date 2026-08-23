@@ -75,6 +75,7 @@ export type ToolBrokerBackend = Pick<
       | "openTerminal"
       | "provisionDevelopmentEnvironment"
       | "developmentEnvironmentLifecycle"
+      | "browseDevelopmentEnvironment"
       | "openDevelopmentEnvironmentTerminal"
       | "preview"
     >
@@ -367,6 +368,7 @@ export class ToolBrokerServer {
       this.#terminalDigest !== undefined &&
       this.#broker.provisionDevelopmentEnvironment !== undefined &&
       this.#broker.developmentEnvironmentLifecycle !== undefined &&
+      this.#broker.browseDevelopmentEnvironment !== undefined &&
       this.#broker.openDevelopmentEnvironmentTerminal !== undefined
     ) {
       this.#server.register(async (scope) => {
@@ -383,7 +385,9 @@ export class ToolBrokerServer {
               .send(
                 message.type === "development_environment.provision"
                   ? await this.#broker.provisionDevelopmentEnvironment!(message)
-                  : await this.#broker.developmentEnvironmentLifecycle!(message),
+                  : message.type === "development_environment.lifecycle"
+                    ? await this.#broker.developmentEnvironmentLifecycle!(message)
+                    : await this.#broker.browseDevelopmentEnvironment!(message),
               );
           } catch (error: unknown) {
             if (error instanceof ToolBrokerOwnerRedirectError) {

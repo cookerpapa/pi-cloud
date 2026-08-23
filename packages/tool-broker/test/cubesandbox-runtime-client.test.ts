@@ -272,6 +272,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     const terminal = await client.openTerminal(instance, {
       rows: 24,
       cols: 100,
+      admin: false,
       authority: {
         handoffSecret: `pcch_${"h".repeat(43)}`,
         fencingToken: 7,
@@ -296,7 +297,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
         "x-pi-cloud-binding-sha256": "a".repeat(64),
       },
     });
-    expect(start?.body).toEqual({ rows: 24, cols: 100 });
+    expect(start?.body).toEqual({ rows: 24, cols: 100, admin: false });
     expect(observed.find((request) => request.path === "/v1/terminal/input")).toMatchObject({
       body: { data: Buffer.from("pwd\r").toString("base64") },
     });

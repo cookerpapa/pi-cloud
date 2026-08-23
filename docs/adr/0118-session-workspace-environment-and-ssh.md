@@ -49,9 +49,9 @@ contract for exposing an ordinary Sandbox's port 22 directly.
   revision as World State.
 - An elastic execution allocates Cube on first Tool use and may keep it warm for
   a bounded idle period. Reclamation loses processes, not Workspace bytes.
-- An exclusive execution environment is a user-owned Cube resource with a
-  deployment-owned size profile. It allocates its own persistent Volume instead
-  of consuming a user-selected elastic Workspace. An Agent Run and a human
+- An exclusive execution environment is a user-owned full Cube machine with a
+  deployment-owned size profile. Its complete guest state follows ADR-0120; a
+  mounted Volume is no longer the definition of its durability. An Agent Run and a human
   terminal borrow the same Cube through a fenced, serialized Tool Broker
   handoff; two VMs never write that Volume concurrently. Several conversations
   may select different directories beneath that Volume; Workspace single-writer
@@ -90,9 +90,9 @@ the same PostgreSQL, compaction and cross-Worker recovery path as other hidden
 Harness facts. Repeated context hooks and later Turns on the same binding do
 not append it again.
 
-An exclusive Cube feels like a small development VM during normal use, but the
-durability claim remains precise: memory/process preservation depends on that
-Cube; Workspace files and conversation history have separate authorities.
+An exclusive Cube is a node-affine development VM. Cube pause preserves its
+rootfs, memory and processes; conversation history remains a separate authority.
+Cross-node VM recovery is not claimed until Cube provides replicated snapshots.
 
 The SSH gateway is reachable only on the operator-configured bind address. The
 one-host default is loopback. LAN or public exposure requires an explicit bind,

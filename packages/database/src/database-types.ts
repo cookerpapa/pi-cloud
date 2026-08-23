@@ -205,6 +205,7 @@ export interface DevelopmentEnvironmentTable {
   system_disk_gib: number;
   runtime_id: string | null;
   runtime_name: string | null;
+  runtime_capsule: string | null;
   ip_address: string | null;
   agent_activation_id: string | null;
   terminal_active: GeneratedBoolean;
@@ -485,6 +486,7 @@ export interface SessionTable {
   tenant_id: string;
   project_id: string;
   workspace_id: string;
+  development_environment_id: GeneratedNullable<string>;
   desired_model_profile_id: string;
   state: SessionState;
   sandbox_retention_policy: Generated<SandboxRetentionPolicy>;

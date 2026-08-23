@@ -19,7 +19,8 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { networkInterfaces } from "node:os";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { readFile, readdir } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { RecoverableOperationLedger } from "./recoverable-operation-ledger.ts";
@@ -164,13 +165,16 @@ function sameAuthority(left: HandoffAuthority, right: HandoffAuthority): boolean
   );
 }
 
-function parseRebind(value: unknown): HandoffAuthority & { activationId: string } {
+function parseRebind(value: unknown): HandoffAuthority & {
+  activationId: string;
+  toolRoot?: string;
+} {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new CubeToolServiceError(400, "Tool rebind was invalid");
   }
   const input = value as Record<string, unknown>;
   if (
-    Object.keys(input).length !== 4 ||
+    (Object.keys(input).length !== 4 && Object.keys(input).length !== 5) ||
     typeof input.handoffSecret !== "string" ||
     !HANDOFF_SECRET_PATTERN.test(input.handoffSecret) ||
     !Number.isSafeInteger(input.fencingToken) ||
@@ -180,7 +184,13 @@ function parseRebind(value: unknown): HandoffAuthority & { activationId: string 
     typeof input.activationId !== "string" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
       input.activationId,
-    )
+    ) ||
+    (input.toolRoot !== undefined &&
+      (typeof input.toolRoot !== "string" ||
+        input.toolRoot.length < 1 ||
+        input.toolRoot.length > 4_096 ||
+        !input.toolRoot.startsWith("/") ||
+        /[\u0000-\u001f\u007f]/.test(input.toolRoot)))
   ) {
     throw new CubeToolServiceError(400, "Tool rebind was invalid");
   }
@@ -189,6 +199,7 @@ function parseRebind(value: unknown): HandoffAuthority & { activationId: string 
     fencingToken: input.fencingToken as number,
     bindingSha256: input.bindingSha256,
     activationId: input.activationId,
+    ...(input.toolRoot === undefined ? {} : { toolRoot: input.toolRoot as string }),
   };
 }
 
@@ -234,6 +245,17 @@ function terminalSize(value: unknown): Readonly<{ rows: number; cols: number }> 
   return { rows: input.rows as number, cols: input.cols as number };
 }
 
+function terminalOpen(value: unknown): Readonly<{ rows: number; cols: number; admin: boolean }> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new CubeToolServiceError(400, "Terminal open request was invalid");
+  }
+  const input = value as Record<string, unknown>;
+  if (Object.keys(input).length !== 3 || typeof input.admin !== "boolean") {
+    throw new CubeToolServiceError(400, "Terminal open request was invalid");
+  }
+  return { ...terminalSize({ rows: input.rows, cols: input.cols }), admin: input.admin };
+}
+
 function terminalInput(value: unknown): Buffer {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new CubeToolServiceError(400, "Terminal input was invalid");
@@ -257,6 +279,77 @@ function terminalInput(value: unknown): Buffer {
     throw new CubeToolServiceError(400, "Terminal input was invalid");
   }
   return decoded;
+}
+
+function guestDirectoryPath(value: unknown): string {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== 1 ||
+    typeof (value as Record<string, unknown>).path !== "string"
+  ) {
+    throw new CubeToolServiceError(400, "Guest directory request was invalid");
+  }
+  const path = (value as { path: string }).path;
+  if (
+    path.length < 1 ||
+    path.length > 4_096 ||
+    !path.startsWith("/") ||
+    /[\u0000-\u001f\u007f]/.test(path)
+  ) {
+    throw new CubeToolServiceError(400, "Guest directory path was invalid");
+  }
+  return resolve("/", path);
+}
+
+async function listGuestDirectory(path: string): Promise<
+  Readonly<{
+    path: string;
+    entries: readonly Readonly<{
+      name: string;
+      path: string;
+      kind: "directory" | "file" | "symlink" | "other";
+      sizeBytes?: number;
+    }>[];
+  }>
+> {
+  const canonical = await realpath(path).catch(() => {
+    throw new CubeToolServiceError(404, "Guest directory was not found");
+  });
+  const metadata = await lstat(canonical).catch(() => undefined);
+  if (metadata === undefined || !metadata.isDirectory()) {
+    throw new CubeToolServiceError(400, "Guest directory path was not a directory");
+  }
+  const names = await readdir(canonical);
+  if (names.length > 1_000) {
+    throw new CubeToolServiceError(413, "Guest directory contains too many entries");
+  }
+  const entries = await Promise.all(
+    names
+      .sort((left, right) => left.localeCompare(right))
+      .map(async (name) => {
+        if (name.length < 1 || name.length > 255 || /[\u0000/]/.test(name)) {
+          throw new CubeToolServiceError(500, "Guest directory entry was invalid");
+        }
+        const childPath = canonical === "/" ? `/${name}` : `${canonical}/${name}`;
+        const child = await lstat(childPath);
+        const kind = child.isDirectory()
+          ? "directory"
+          : child.isFile()
+            ? "file"
+            : child.isSymbolicLink()
+              ? "symlink"
+              : "other";
+        return {
+          name,
+          path: childPath,
+          kind,
+          ...(child.isFile() ? { sizeBytes: child.size } : {}),
+        } as const;
+      }),
+  );
+  return { path: canonical, entries: Object.freeze(entries) };
 }
 
 type LocalServiceProxyRequest = Readonly<{
@@ -516,21 +609,21 @@ class CubeTerminalSession {
   static async open(
     response: ServerResponse,
     size: Readonly<{ rows: number; cols: number }>,
+    admin: boolean,
   ): Promise<CubeTerminalSession> {
     const command = `stty rows ${String(size.rows)} cols ${String(size.cols)} 2>/dev/null; exec /bin/bash -i -l`;
     const child = spawn("/usr/bin/script", ["-qfec", command, "/dev/null"], {
-      cwd: "/workspace",
+      cwd: admin ? "/root" : "/workspace",
       detached: true,
       env: {
-        HOME: "/tmp/pi-cloud-tool-home",
+        HOME: admin ? "/root" : "/tmp/pi-cloud-tool-home",
         LANG: "C.UTF-8",
         LC_ALL: "C.UTF-8",
         PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         TERM: "xterm-256color",
       },
       stdio: ["pipe", "pipe", "pipe"],
-      uid: TOOL_UID,
-      gid: TOOL_GID,
+      ...(admin ? {} : { uid: TOOL_UID, gid: TOOL_GID }),
     });
     await new Promise<void>((resolvePromise, rejectPromise) => {
       child.once("spawn", resolvePromise);
@@ -1030,6 +1123,7 @@ type InitializedToolState = {
   workspaceSeed: Extract<ToolWorkerInput, { type: "worker.initialize" }>["workspaceSeed"];
   webProxy: Extract<ToolWorkerInput, { type: "worker.initialize" }>["webProxy"];
   toolchain: EnvironmentToolchainReport;
+  toolRoot: string;
 };
 
 let bridge: ToolWorkerBridge | undefined = new ToolWorkerBridge();
@@ -1086,6 +1180,7 @@ const server = createServer((request, response) => {
         workspaceSeed: input.workspaceSeed,
         webProxy: input.webProxy,
         toolchain,
+        toolRoot: input.toolRoot,
       };
       sendJson(response, 200, toolchain);
       return;
@@ -1110,15 +1205,23 @@ const server = createServer((request, response) => {
       );
       return;
     }
+    if (url.pathname === "/v1/directory") {
+      requireAuthority(request);
+      sendJson(
+        response,
+        200,
+        await listGuestDirectory(guestDirectoryPath(await readJson(request))),
+      );
+      return;
+    }
     if (url.pathname === "/v1/terminal/open") {
       requireAuthority(request);
       const current = readyBridge();
       if (activeTerminal !== undefined || current.busy) {
         throw new CubeToolServiceError(409, "Workspace terminal was already active");
       }
-      const body = await readJson(request);
-      const size = terminalSize(body);
-      const opened = await CubeTerminalSession.open(response, size);
+      const input = terminalOpen(await readJson(request));
+      const opened = await CubeTerminalSession.open(response, input, input.admin);
       activeTerminal = opened;
       response.once("close", () => {
         if (activeTerminal === opened) activeTerminal = undefined;
@@ -1303,6 +1406,7 @@ const server = createServer((request, response) => {
           toolWorkerProtocolVersion: 1,
           type: "worker.initialize",
           activationId: next.activationId,
+          toolRoot: next.toolRoot ?? initialized.toolRoot,
           environment: initialized.environment,
           workspaceSeed: initialized.workspaceSeed,
           ...(initialized.webProxy === undefined ? {} : { webProxy: initialized.webProxy }),
@@ -1316,7 +1420,12 @@ const server = createServer((request, response) => {
           fencingToken: next.fencingToken,
           bindingSha256: next.bindingSha256,
         };
-        initialized = { ...initialized, activationId: next.activationId, toolchain };
+        initialized = {
+          ...initialized,
+          activationId: next.activationId,
+          toolchain,
+          toolRoot: next.toolRoot ?? initialized.toolRoot,
+        };
         sealed = false;
         sendJson(response, 200, {
           rebound: true,

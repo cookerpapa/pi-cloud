@@ -148,7 +148,9 @@ export default function ChatApp() {
   const currentDevelopmentEnvironment = developmentEnvironments.find(
     (environment) =>
       state.session?.sandboxRetention === "persistent" &&
-      environment.workspaceId === state.session?.workspaceId &&
+      (state.session.developmentEnvironmentId === undefined
+        ? environment.workspaceId === state.session.workspaceId
+        : environment.environmentId === state.session.developmentEnvironmentId) &&
       ["requested", "provisioning", "running", "paused", "releasing", "failed", "unknown"].includes(
         environment.state,
       ),
@@ -708,10 +710,19 @@ export default function ChatApp() {
       let projectId: string;
       let workspaceId: string;
       if (executionMode === null) return;
+      const freshDevelopmentEnvironments =
+        executionMode === "exclusive"
+          ? (await api.listDevelopmentEnvironments()).environments
+          : developmentEnvironments;
+      if (executionMode === "exclusive") {
+        setDevelopmentEnvironments(freshDevelopmentEnvironments);
+      }
       const existingEnvironment =
         executionMode === "exclusive"
-          ? selectableDevelopmentEnvironments.find(
-              (environment) => environment.environmentId === selectedDevelopmentEnvironmentId,
+          ? freshDevelopmentEnvironments.find(
+              (environment) =>
+                environment.environmentId === selectedDevelopmentEnvironmentId &&
+                ["running", "paused"].includes(environment.state),
             )
           : undefined;
       if (executionMode === "exclusive" && existingEnvironment === undefined) {
@@ -780,6 +791,31 @@ export default function ChatApp() {
       setPendingInitialPrompt(null);
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error) });
+    } finally {
+      setOperation(null);
+    }
+  }
+
+  async function openEnvironmentDirectoryPicker(): Promise<void> {
+    const environment = developmentEnvironments.find(
+      (candidate) => candidate.environmentId === selectedDevelopmentEnvironmentId,
+    );
+    if (environment === undefined || operation !== null) return;
+    setOperation("managing-environment");
+    update({ type: "api.error.cleared" });
+    try {
+      if (environment.state === "paused") {
+        await api.developmentEnvironmentAction(
+          environment.environmentId,
+          "resume",
+          newIdempotencyKey("environment"),
+        );
+        await refreshDevelopmentEnvironments();
+      }
+      setDirectoryPickerOpen(true);
+    } catch (error: unknown) {
+      update({ type: "api.error", message: errorMessage(error) });
+      await refreshDevelopmentEnvironments().catch(() => undefined);
     } finally {
       setOperation(null);
     }
@@ -1268,7 +1304,10 @@ export default function ChatApp() {
                 <label className="product-choice-card">
                   <input
                     checked={executionMode === "exclusive"}
-                    onChange={() => setExecutionMode("exclusive")}
+                    onChange={() => {
+                      setExecutionMode("exclusive");
+                      setWorkingDirectory("/home");
+                    }}
                     type="radio"
                   />
                   <span>
@@ -1374,7 +1413,7 @@ export default function ChatApp() {
                             <select
                               onChange={(event) => {
                                 setSelectedDevelopmentEnvironmentId(event.target.value);
-                                setWorkingDirectory("/workspace");
+                                setWorkingDirectory("/home");
                               }}
                               value={selectedDevelopmentEnvironmentId}
                             >
@@ -1395,13 +1434,16 @@ export default function ChatApp() {
                               <span>工作目录</span>
                               <code>{workingDirectory}</code>
                             </div>
-                            <button onClick={() => setDirectoryPickerOpen(true)} type="button">
+                            <button
+                              onClick={() => void openEnvironmentDirectoryPicker()}
+                              type="button"
+                            >
                               选择目录…
                             </button>
                           </div>
                           <p className="product-resource-boundary-note">
-                            此目录位于该环境绑定的持久 Workspace Volume 中。释放 Cube
-                            不会删除文件或对话。
+                            此目录属于独享 VM。暂停会保存整机状态；释放环境会销毁 VM，
+                            对话历史仍保留，但需要重新绑定运行环境。
                           </p>
                         </>
                       )}
@@ -1444,21 +1486,16 @@ export default function ChatApp() {
                 (candidate) => candidate.environmentId === selectedDevelopmentEnvironmentId,
               );
               if (environment === undefined) return null;
-              const reference = conversations.find(
-                (conversation) =>
-                  conversation.workspaceId === environment.workspaceId &&
-                  conversation.sandboxRetention === "persistent",
-              );
               return (
                 <WorkspaceDirectoryPicker
                   api={api}
+                  environmentId={environment.environmentId}
                   initialDirectory={workingDirectory}
                   onCancel={() => setDirectoryPickerOpen(false)}
                   onChoose={(directory) => {
                     setWorkingDirectory(directory);
                     setDirectoryPickerOpen(false);
                   }}
-                  referenceSessionId={reference?.sessionId ?? null}
                   workspaceName={`独享环境 ${environment.environmentId.slice(0, 8)}`}
                 />
               );

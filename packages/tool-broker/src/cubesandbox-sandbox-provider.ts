@@ -45,6 +45,7 @@ import {
   type SandboxTerminalSize,
   type SandboxWriteFileInput,
 } from "./sandbox-provider.ts";
+import { CubePersistentCapsuleCodec } from "./cube-persistent-capsule.ts";
 
 const READY_TIMEOUT_MS = 60_000;
 const TOOL_RESPONSE_LIMIT_BYTES = 8 * 1_024 * 1_024;
@@ -148,6 +149,7 @@ type CubeActivation = {
   state: "running" | "quiesced" | "idle" | "paused";
   volumeId: string;
   lifetime: "agent_turn" | "persistent_conversation" | "development_environment";
+  toolRoot: string;
 };
 
 export type CubeSandboxProviderOptions = Readonly<{
@@ -159,6 +161,7 @@ export type CubeSandboxProviderOptions = Readonly<{
   readyTimeoutMs?: number;
   webProxy: ToolWebProxyBootstrap;
   workspaceVolumeGateway: WorkspaceVolumeGateway;
+  persistentStateKey?: Uint8Array;
 }>;
 
 function bounded(value: string, label: string, maximum = 1_024): string {
@@ -553,6 +556,7 @@ export class CubeSandboxProvider implements SandboxProvider {
   readonly #readyTimeoutMs: number;
   readonly #webProxy: ToolWebProxyBootstrap;
   readonly #workspaceVolumeGateway: WorkspaceVolumeGateway;
+  readonly #persistentCapsules: CubePersistentCapsuleCodec | undefined;
   readonly #activations = new Map<string, CubeActivation>();
   #runtimeProbe: Promise<void> | undefined;
 
@@ -571,6 +575,10 @@ export class CubeSandboxProvider implements SandboxProvider {
     this.#imageRevision = bounded(options.imageRevision, "CubeSandbox image revision", 128);
     this.#readyTimeoutMs = positiveInteger(options.readyTimeoutMs, READY_TIMEOUT_MS, 300_000);
     this.#workspaceVolumeGateway = options.workspaceVolumeGateway;
+    this.#persistentCapsules =
+      options.persistentStateKey === undefined
+        ? undefined
+        : new CubePersistentCapsuleCodec(options.persistentStateKey);
     if (
       !isIPv4(options.webProxy.host) ||
       !Number.isSafeInteger(options.webProxy.port) ||
@@ -646,6 +654,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
+    const toolRoot = spec.toolRoot ?? "/workspace";
     const bindingSha256 = physicalBindingSha256(
       spec.activationId,
       spec.assignment,
@@ -693,6 +702,7 @@ export class CubeSandboxProvider implements SandboxProvider {
             toolWorkerProtocolVersion: 1,
             type: "worker.initialize",
             activationId: spec.activationId,
+            toolRoot,
             environment: spec.environment,
             workspaceSeed: spec.workspaceSeed,
             ...(prepared.attached
@@ -764,6 +774,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         state: "running",
         volumeId,
         lifetime: spec.lifetime ?? "agent_turn",
+        toolRoot,
       });
       return handle;
     } catch (error: unknown) {
@@ -872,7 +883,11 @@ export class CubeSandboxProvider implements SandboxProvider {
     return activation.handle;
   }
 
-  async rebind(handle: SandboxHandle, assignment: ToolSandboxAssignment): Promise<SandboxHandle> {
+  async rebind(
+    handle: SandboxHandle,
+    assignment: ToolSandboxAssignment,
+    toolRoot = "/workspace",
+  ): Promise<SandboxHandle> {
     this.#assertHandle(handle);
     const activation = this.#activations.get(handle.activationId);
     if (
@@ -902,6 +917,7 @@ export class CubeSandboxProvider implements SandboxProvider {
             handoffSecret: nextSecret,
             fencingToken: nextAuthorityEpoch,
             bindingSha256: activation.bindingSha256,
+            toolRoot,
           },
           timeoutMs: this.#readyTimeoutMs,
           maximumResponseBytes: 1 * 1_024 * 1_024,
@@ -935,6 +951,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       activation.handoffSecret = nextSecret;
       activation.authorityEpoch = nextAuthorityEpoch;
       activation.toolchain = toolchain;
+      activation.toolRoot = toolRoot;
       activation.state = "running";
       activation.seenOperationIds.clear();
       activation.seenCaptureIds.clear();
@@ -1136,6 +1153,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       rows: size.rows,
       cols: size.cols,
       authority: this.#authority(activation),
+      admin: activation.lifetime === "development_environment",
     });
     return Object.freeze({
       pid: terminal.pid,
@@ -1174,6 +1192,61 @@ export class CubeSandboxProvider implements SandboxProvider {
       maximumResponseBytes: 16 * 1_024 * 1_024,
       timeoutMs: 60_000,
     });
+  }
+
+  async listDirectory(
+    handle: SandboxHandle,
+    path: string,
+  ): Promise<import("./sandbox-provider.ts").SandboxDirectoryListing> {
+    const activation = await this.#owned(handle);
+    if (activation.state !== "running" && activation.state !== "idle") {
+      throw new ToolBrokerError(
+        "development_environment_directory_unavailable",
+        "Exclusive machine must be running before browsing its filesystem",
+        true,
+      );
+    }
+    const raw = record(
+      await this.#client.request(activation.instance, {
+        method: "POST",
+        path: "/v1/directory",
+        body: { path },
+        timeoutMs: 15_000,
+        maximumResponseBytes: 2 * 1_024 * 1_024,
+        authority: this.#authority(activation),
+      }),
+      "Cube guest directory",
+    );
+    if (typeof raw.path !== "string" || !Array.isArray(raw.entries) || raw.entries.length > 1_000) {
+      throw new ToolBrokerError(
+        "development_environment_directory_invalid",
+        "Cube guest directory response was invalid",
+        false,
+      );
+    }
+    const entries = raw.entries.map((entry) => {
+      const candidate = record(entry, "Cube guest directory entry");
+      if (
+        typeof candidate.name !== "string" ||
+        typeof candidate.path !== "string" ||
+        !new Set(["directory", "file", "symlink", "other"]).has(String(candidate.kind)) ||
+        (candidate.sizeBytes !== undefined &&
+          (!Number.isSafeInteger(candidate.sizeBytes) || (candidate.sizeBytes as number) < 0))
+      ) {
+        throw new ToolBrokerError(
+          "development_environment_directory_invalid",
+          "Cube guest directory entry was invalid",
+          false,
+        );
+      }
+      return Object.freeze({
+        name: candidate.name,
+        path: candidate.path,
+        kind: candidate.kind as "directory" | "file" | "symlink" | "other",
+        ...(candidate.sizeBytes === undefined ? {} : { sizeBytes: candidate.sizeBytes as number }),
+      });
+    });
+    return { path: raw.path, entries: Object.freeze(entries) };
   }
 
   async pause(handle: SandboxHandle): Promise<void> {
@@ -1221,6 +1294,147 @@ export class CubeSandboxProvider implements SandboxProvider {
     });
     activation.state = "running";
     return activation.handle;
+  }
+
+  async persistentCapsule(
+    handle: SandboxHandle,
+  ): Promise<import("./sandbox-provider.ts").PersistentSandboxCapsule> {
+    const activation = await this.#owned(handle);
+    if (this.#persistentCapsules === undefined) {
+      throw new ToolBrokerError(
+        "persistent_capsule_key_missing",
+        "Exclusive machine recovery key was not configured",
+        false,
+      );
+    }
+    if (activation.lifetime !== "development_environment") {
+      throw new ToolBrokerError(
+        "persistent_capsule_lifetime_invalid",
+        "Only an exclusive development environment has durable machine state",
+        false,
+      );
+    }
+    return {
+      handle: activation.handle,
+      capsule: this.#persistentCapsules.seal({
+        version: 1,
+        imageRevision: this.#imageRevision,
+        instance: activation.instance,
+        handle: activation.handle,
+        evidence: activation.evidence,
+        toolchain: activation.toolchain,
+        bindingSha256: activation.bindingSha256,
+        handoffSecret: activation.handoffSecret,
+        authorityEpoch: activation.authorityEpoch,
+        state: activation.state,
+        volumeId: activation.volumeId,
+        lifetime: activation.lifetime,
+        toolRoot: activation.toolRoot,
+      }),
+    };
+  }
+
+  async adoptPersistentCapsule(capsule: string): Promise<SandboxHandle> {
+    if (this.#persistentCapsules === undefined) {
+      throw new ToolBrokerError(
+        "persistent_capsule_key_missing",
+        "Exclusive machine recovery key was not configured",
+        false,
+      );
+    }
+    const raw = record(this.#persistentCapsules.open(capsule), "Cube persistent machine capsule");
+    const instance = raw.instance as CubeSandboxInstance;
+    const handle = raw.handle as SandboxHandle;
+    const evidence = raw.evidence as CubeRuntimeEvidence;
+    const toolchain = raw.toolchain as EnvironmentToolchainReport;
+    if (
+      raw.version !== 1 ||
+      raw.imageRevision !== this.#imageRevision ||
+      raw.lifetime !== "development_environment" ||
+      typeof raw.bindingSha256 !== "string" ||
+      !/^[0-9a-f]{64}$/.test(raw.bindingSha256) ||
+      typeof raw.handoffSecret !== "string" ||
+      !/^pcch_[A-Za-z0-9_-]{43}$/.test(raw.handoffSecret) ||
+      !Number.isSafeInteger(raw.authorityEpoch) ||
+      (raw.authorityEpoch as number) < 1 ||
+      typeof raw.volumeId !== "string" ||
+      !/^pcw-[0-9a-f]{48}$/.test(raw.volumeId) ||
+      typeof raw.toolRoot !== "string" ||
+      !raw.toolRoot.startsWith("/") ||
+      typeof instance !== "object" ||
+      instance === null ||
+      typeof instance.sandboxId !== "string" ||
+      typeof instance.trafficAccessToken !== "string" ||
+      instance.trafficAccessToken.length < 16 ||
+      typeof handle !== "object" ||
+      handle === null
+    ) {
+      throw new ToolBrokerError(
+        "persistent_capsule_invalid",
+        "Exclusive machine recovery state was invalid",
+        false,
+      );
+    }
+    this.#assertHandle(handle);
+    if (this.#activations.has(handle.activationId)) {
+      throw new ToolBrokerError(
+        "persistent_capsule_replay",
+        "Exclusive machine was already adopted",
+        false,
+      );
+    }
+    const current = await this.#client.read(handle.runtimeName);
+    if (
+      current === undefined ||
+      runtimeUuid(current.sandboxId) !== handle.runtimeId ||
+      !metadataMatchesPhysicalBinding(
+        current.metadata,
+        handle.activationId,
+        handle.assignment,
+        raw.bindingSha256,
+      )
+    ) {
+      throw new ToolBrokerError(
+        "persistent_machine_identity_mismatch",
+        "Exclusive machine physical identity did not match its recovery state",
+        false,
+      );
+    }
+    const recoveredInstance = Object.freeze({
+      ...instance,
+      ...current,
+      metadata: instance.metadata,
+      trafficAccessToken: instance.trafficAccessToken,
+    });
+    const state = current.state.toLowerCase() === "paused" ? "paused" : "running";
+    this.#activations.set(handle.activationId, {
+      instance: recoveredInstance,
+      handle,
+      evidence,
+      toolchain,
+      seenOperationIds: new Set(),
+      seenCaptureIds: new Set(),
+      bindingSha256: raw.bindingSha256,
+      handoffSecret: raw.handoffSecret,
+      authorityEpoch: raw.authorityEpoch as number,
+      state,
+      volumeId: raw.volumeId,
+      lifetime: "development_environment",
+      toolRoot: raw.toolRoot,
+    });
+    return handle;
+  }
+
+  async detachPersistent(handle: SandboxHandle): Promise<void> {
+    const activation = await this.#owned(handle);
+    if (activation.lifetime !== "development_environment") {
+      throw new ToolBrokerError(
+        "persistent_detach_lifetime_invalid",
+        "Only an exclusive machine can detach without destruction",
+        false,
+      );
+    }
+    this.#activations.delete(handle.activationId);
   }
 
   async snapshot(handle: SandboxHandle, requestId: string): Promise<ToolSandboxCaptureResponse> {

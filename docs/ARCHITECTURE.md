@@ -38,7 +38,7 @@ The current Worker invariant is deliberately precise:
 The Web product provides authentication, resizable conversation/tree panels,
 focused or whole-tree navigation, conversation forks, recursive subtree
 deletion, settled-message tail pruning, named Workspaces, resumable output,
-file browsing, user-owned development environments, authenticated service
+file browsing, user-owned full-VM development environments, authenticated service
 previews, one-time SSH access, Workspace rebinding and administrator settings. The Control Plane
 commits each idempotent message and its Run command in one PostgreSQL
 transaction. It enforces tenant quota and same-Session serialization.
@@ -297,17 +297,20 @@ are never accepted from the browser.
 An exclusive environment is requested independently from user Workspaces. The
 Control Plane allocates its private persistent Volume and internal project
 identity transactionally; neither is shown in the elastic Workspace inventory.
-Several conversations may then select working directories under `/workspace`.
-Each directory is a binding, not a second Volume. Workspace single-writer
-admission still permits only one active Agent Run or human terminal at a time.
+Several conversations may select working directories from the complete guest
+filesystem. The directory is a Session binding, not another Volume. Machine
+single-writer admission still permits only one active Agent Run or human
+terminal at a time.
 
 The allocation participates in tenant/Domain Sandbox quotas and the global
 Workspace single-writer rule. `agent_activation_id` and `terminal_active` are
 durable admission facts. Tool Broker lazily seals and rebinds the same Cube to a
 Run's opaque authority on first Tool use, then captures and returns it to the
 environment authority. Worker scans wait while a human terminal is active. A
-lost Broker owner causes fail-closed orphan cleanup and a fresh start; only the
-persistent Volume is guaranteed across that failure.
+A planned Broker shutdown pauses each idle exclusive Cube, stores an encrypted
+reconnect capsule in PostgreSQL and leaves the physical VM intact. A replacement
+Broker validates the capsule, PostgreSQL ownership and Cube metadata before it
+adopts the same runtime. Elastic Cubes retain fail-closed orphan cleanup.
 
 ### Authenticated Sandbox service preview
 
@@ -361,9 +364,11 @@ Volume gateway. It does not copy Workspaces to Kopia or object storage. It:
 - serializes operations with a process lock and PostgreSQL advisory lock;
 - creates revision-bound internal Volume copies for isolated Subagent lanes.
 
-Stopping a Cube loses its processes and memory. A new Cube attaches the same
-persistent Volume, so files and dependencies remain. A Workspace revision is a
-reference to that authority, not a historical byte-for-byte backup.
+Stopping an elastic Cube loses its processes and memory. A new elastic Cube
+attaches the same persistent Volume, so project files and dependencies remain.
+An exclusive Cube is paused and adopted as the same machine; its rootfs, memory
+and process state are node-affine Cube state. A Workspace revision remains a
+reference to the elastic Volume authority, not a full-machine backup.
 
 Source browsing materializes bounded files directly through the trusted Volume
 gateway. It neither creates a Cube nor consumes Cube admission capacity; the
@@ -412,12 +417,14 @@ preserve a visible prefix that never reached `message_end`.
 | conversation parent/fork graph | PostgreSQL |
 | canonical completed conversation | PostgreSQL |
 | bounded live SSE replay | Accepted Kafka topic + rebuildable Gateway memory |
-| Workspace bytes | persistent Cube Volume |
+| elastic Workspace bytes | persistent Cube Volume |
+| exclusive guest root, memory and processes | one Cube pause snapshot on its compute node |
+| encrypted exclusive reconnect capsule | PostgreSQL; key held only by Tool Broker |
 | Workspace revision/reference and Git baseline | PostgreSQL + trusted Volume envelope |
 | live process tree | one Cube KVM only |
 | active in-memory `messages[]` | Pi SDK for one active Run |
 | development-environment ownership/lifecycle | PostgreSQL |
-| development-environment process/memory state | one Cube KVM |
+| development-environment process/memory/rootfs state | one node-affine Cube KVM snapshot |
 
 ## First and later messages
 

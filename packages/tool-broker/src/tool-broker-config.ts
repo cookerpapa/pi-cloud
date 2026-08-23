@@ -14,6 +14,7 @@ export type ToolBrokerConfig = {
   serviceToken: string;
   materializerToken?: string;
   terminalToken: string;
+  persistentStateKey: Uint8Array;
   imageRevision: string;
   maximumActiveSandboxes: number;
   warmTtlMs: number;
@@ -158,6 +159,15 @@ async function readCubeApiKey(path: string): Promise<string> {
   }
 }
 
+async function readPersistentStateKey(path: string): Promise<Uint8Array> {
+  const value = await readSecret(path);
+  const decoded = Buffer.from(value, "base64url");
+  if (value.length !== 43 || decoded.byteLength !== 32) {
+    throw new TypeError("Cube persistent-state key file is invalid");
+  }
+  return decoded;
+}
+
 async function readDatabaseUrl(path: string): Promise<string> {
   if (!isAbsolute(path) || path.includes("\0")) {
     throw new TypeError("DATABASE_URL_FILE must be an absolute path");
@@ -228,6 +238,9 @@ export async function loadToolBrokerConfig(
     serviceToken: await readSecret(required(environment, "PI_CLOUD_TOOL_BROKER_TOKEN_FILE")),
     terminalToken: await readSecret(
       required(environment, "PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE"),
+    ),
+    persistentStateKey: await readPersistentStateKey(
+      required(environment, "PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE"),
     ),
     ...(environment.PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE === undefined
       ? {}
