@@ -1,9 +1,9 @@
 {
   "accepted": true,
-  "piCloudRevision": "38cd850019b0f9865a4fb6ef5b3b1809ba18fe9d",
-  "checkedAt": "2026-08-23T13:03:06.454Z",
-  "developmentEnvironmentId": "30298fba-4e49-487e-bc63-7eba661700ee",
-  "workspaceId": "ead5428f-8368-4445-a477-c173c6431ca2",
+  "piCloudRevision": "53d55115bfaf8d696452a452d9b13bbe43cab7a5",
+  "checkedAt": "2026-08-23T14:07:53.108Z",
+  "developmentEnvironmentId": "6f606718-0a4d-4fc5-8bb2-8938a2757138",
+  "workspaceId": "e264db83-859d-426e-8f0a-d3faf2499883",
   "ipAddress": "169.254.68.6",
   "cubeIdentityStableAcrossPause": true,
   "processSurvivedTerminalReconnect": true,
