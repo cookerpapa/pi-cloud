@@ -199,6 +199,44 @@ try {
         180_000,
       );
 
+      await setValue(
+        ".product-composer textarea",
+        "Use bash exactly once to run sleep 8. Then reply exactly OLD-BROWSER-UI-STEER.",
+      );
+      await page.waitFor('!document.querySelector(".product-send-button").disabled');
+      await click(".product-send-button", "composer.sendForSteer");
+      await page.waitFor('document.querySelector(".product-steer-button")', 60_000);
+      await setValue(
+        ".product-composer textarea",
+        "Replace the final reply with exactly BROWSER-UI-STEER-OK.",
+      );
+      await click(".product-steer-button", "composer.steer");
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-STEER-OK"))',
+        180_000,
+      );
+      await page.waitFor('!document.querySelector(".product-stop-button")');
+
+      await setValue(
+        ".product-composer textarea",
+        "Use bash exactly once to run sleep 60, then report completion.",
+      );
+      await page.waitFor('!document.querySelector(".product-send-button").disabled');
+      await click(".product-send-button", "composer.sendForStop");
+      await page.waitFor('document.querySelector(".product-stop-button")', 60_000);
+      await click(".product-stop-button", "composer.stop");
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-muted-line,.product-turn-error")].some(element=>element.innerText.includes("停止")||element.innerText.includes("失败"))',
+        90_000,
+      );
+
+      await page.evaluate("window.confirm=()=>true");
+      await click(
+        ".product-turn:first-child .product-prune-action",
+        "conversation.pruneLaterTurns",
+      );
+      await page.waitFor('document.querySelectorAll(".product-turn").length===1', 60_000);
+
       await clickText(".product-tree-view-switch button", "整棵树", "tree.full");
       await clickText(".product-tree-view-switch button", "当前分支", "tree.focus");
 
@@ -216,7 +254,6 @@ try {
       await clickText(".workspace-view-tabs button", "文件", "workspace.filesTab");
       await click('.workspace-directory-header button[title="关闭"]', "workspace.close");
 
-      await page.evaluate("window.confirm=()=>true");
       await click(".product-answer-actions button:first-child", "conversation.forkOpen");
       await page.waitFor('document.querySelector(".product-fork-modal")');
       await setValue(".product-fork-modal input", `UI fork ${suffix}`);
@@ -318,6 +355,48 @@ try {
       );
       await click(".product-resource-back", "resources.finalBack");
       await page.waitFor('document.querySelector(".product-shell")');
+      await click(
+        ".product-conversation-row.active .product-delete-conversation",
+        "conversation.deleteExclusive",
+      );
+      await page.waitFor(
+        `!document.body.innerText.includes(${JSON.stringify(`UI exclusive ${suffix}`)})`,
+      );
+      await clickText(
+        ".product-conversation-row > button:first-child",
+        `UI acceptance ${suffix}`,
+        "conversation.openElasticForDelete",
+      );
+      await click(
+        ".product-conversation-row.active .product-delete-conversation",
+        "conversation.deleteElastic",
+      );
+      await page.waitFor(
+        `!document.body.innerText.includes(${JSON.stringify(`UI acceptance ${suffix}`)})`,
+      );
+      await click(".product-resource-nav", "resources.cleanupOpen");
+      await page.waitFor('document.querySelector(".product-resource-page")');
+      await page.waitFor(
+        'document.querySelectorAll(".product-resource-card .product-danger-button").length>=2',
+        60_000,
+      );
+      for (
+        let remaining = await page.evaluate(
+          'document.querySelectorAll(".product-resource-card .product-danger-button").length',
+        );
+        remaining > 0;
+        remaining -= 1
+      ) {
+        await click(
+          ".product-resource-card .product-danger-button",
+          `resources.deleteWorkspace${String(remaining)}`,
+        );
+        await page.waitFor(
+          `document.querySelectorAll(".product-resource-card .product-danger-button").length<${String(remaining)}`,
+          60_000,
+        );
+      }
+      await click(".product-resource-back", "resources.cleanupBack");
       await click('.product-account button[aria-label="退出登录"]', "account.logout");
       await page.waitFor('document.querySelector(".product-auth-card")');
     },

@@ -8,6 +8,7 @@ import type {
 } from "@pi-cloud/protocol";
 import { newIdempotencyKey, PiCloudApi } from "./api.ts";
 import { LanguageSelect, useI18n } from "./i18n.tsx";
+import { selectElasticWorkspaces } from "./workspace-resources.ts";
 
 const ACTIVE_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "cancelling"]);
 
@@ -59,11 +60,7 @@ export function ResourceManagementPage({
   const [error, setError] = useState<string | null>(null);
   const liveEnvironments = environments.filter((environment) => environment.state !== "released");
   const elasticWorkspaces = useMemo(
-    () =>
-      workspaces.filter(
-        (workspace) =>
-          !environments.some((environment) => environment.workspaceId === workspace.workspaceId),
-      ),
+    () => selectElasticWorkspaces(workspaces, environments),
     [environments, workspaces],
   );
   const selectedProfile = profiles.find((candidate) => candidate.key === profileKey) ?? profiles[0];

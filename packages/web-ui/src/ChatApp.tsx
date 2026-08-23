@@ -35,6 +35,7 @@ import { WorkspaceDirectoryPicker } from "./WorkspaceDirectoryPicker.tsx";
 import { ResourceManagementPage } from "./ResourceManagementPage.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";
 import { LanguageSelect, useI18n, type Translate, type UiLanguage } from "./i18n.tsx";
+import { selectElasticWorkspaces } from "./workspace-resources.ts";
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
 
@@ -179,12 +180,7 @@ export default function ChatApp() {
   const selectableDevelopmentEnvironments = developmentEnvironments.filter((environment) =>
     ["running", "paused"].includes(environment.state),
   );
-  const elasticWorkspaces = workspaces.filter(
-    (workspace) =>
-      !developmentEnvironments.some(
-        (environment) => environment.workspaceId === workspace.workspaceId,
-      ),
-  );
+  const elasticWorkspaces = selectElasticWorkspaces(workspaces, developmentEnvironments);
   const conversationPanel = useResizablePanel({
     storageKey: "pi-cloud:conversation-list",
     initialWidth: 260,
