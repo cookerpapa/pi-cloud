@@ -64,6 +64,7 @@ export {
   DevelopmentEnvironmentProvisionRequestSchema,
   DevelopmentEnvironmentTerminalOpenRequestSchema,
   DevelopmentEnvironmentProtocolError,
+  DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
   DEVELOPMENT_ENVIRONMENT_PROFILES,
   DevelopmentEnvironmentProfileKeySchema,
   parseDevelopmentEnvironmentBrokerRequest,

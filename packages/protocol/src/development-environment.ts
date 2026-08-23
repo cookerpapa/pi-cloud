@@ -5,6 +5,7 @@ import { EnvironmentRuntimeSnapshotSchema } from "./environment.ts";
 import { UuidSchema } from "./protocol-primitives.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
 export {
+  DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
   DEVELOPMENT_ENVIRONMENT_PROFILES,
   DevelopmentEnvironmentProfileKeySchema,
   type DevelopmentEnvironmentProfileKey,

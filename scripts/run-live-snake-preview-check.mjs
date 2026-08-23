@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
+import { DEFAULT_EXCLUSIVE_WORKING_DIRECTORY } from "../packages/protocol/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 
@@ -384,7 +385,7 @@ const session = await api.createSession(
   `Snake preview acceptance ${suffix}`,
   "persistent",
   "standard",
-  "/home/pi-cloud",
+  DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
 );
 
 progress("asking the real model to build, test and serve Snake");

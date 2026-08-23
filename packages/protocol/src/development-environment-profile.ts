@@ -10,6 +10,11 @@ export type DevelopmentEnvironmentProfileKey = Static<
   typeof DevelopmentEnvironmentProfileKeySchema
 >;
 
+// The pinned Cube tool image keeps uid 1000's writable home here. Product UI,
+// Agent admission and live acceptance share one value so they cannot drift to
+// a root-owned or nonexistent directory.
+export const DEFAULT_EXCLUSIVE_WORKING_DIRECTORY = "/home/user" as const;
+
 export const DEVELOPMENT_ENVIRONMENT_PROFILES = Object.freeze([
   Object.freeze({
     key: "starter" as const,

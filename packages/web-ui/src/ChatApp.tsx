@@ -20,6 +20,7 @@ import type {
   TenantIdentityResource,
   WorkspaceSummaryResource,
 } from "@pi-cloud/protocol";
+import { DEFAULT_EXCLUSIVE_WORKING_DIRECTORY } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
 import { AdminPage } from "./AdminPage.tsx";
 import { AuthScreen } from "./AuthScreen.tsx";
@@ -36,7 +37,6 @@ import { useResizablePanel } from "./use-resizable-panel.ts";
 import { LanguageSelect, useI18n, type Translate, type UiLanguage } from "./i18n.tsx";
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
-const EXCLUSIVE_HOME_DIRECTORY = "/home/pi-cloud";
 
 function conversationTitle(prompt: string, fallback: string): string {
   const compact = prompt.replace(/\s+/g, " ").trim();
@@ -1334,7 +1334,7 @@ export default function ChatApp() {
                     checked={executionMode === "exclusive"}
                     onChange={() => {
                       setExecutionMode("exclusive");
-                      setWorkingDirectory(EXCLUSIVE_HOME_DIRECTORY);
+                      setWorkingDirectory(DEFAULT_EXCLUSIVE_WORKING_DIRECTORY);
                     }}
                     type="radio"
                   />
@@ -1445,7 +1445,7 @@ export default function ChatApp() {
                             <select
                               onChange={(event) => {
                                 setSelectedDevelopmentEnvironmentId(event.target.value);
-                                setWorkingDirectory(EXCLUSIVE_HOME_DIRECTORY);
+                                setWorkingDirectory(DEFAULT_EXCLUSIVE_WORKING_DIRECTORY);
                               }}
                               value={selectedDevelopmentEnvironmentId}
                             >
