@@ -12,7 +12,7 @@ function normalizePrivateCidr(value: string): string {
   const octets = match.slice(1, 5).map(Number);
   const prefix = Number(match[5]);
   if (
-    prefix < 1 ||
+    prefix < 24 ||
     prefix > 32 ||
     octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
   ) {
@@ -28,7 +28,7 @@ function normalizePrivateCidr(value: string): string {
     (prefix >= 12 && first === 172 && second >= 16 && second <= 31) ||
     (prefix >= 16 && first === 192 && second === 168);
   if (!privateRange) {
-    throw new TypeError("CubeSandbox direct egress must be an RFC1918 CIDR");
+    throw new TypeError("CubeSandbox direct egress must be an RFC1918 /24 to /32 CIDR");
   }
   return `${ipv4Text(network)}/${String(prefix)}`;
 }
@@ -42,6 +42,6 @@ export function directPrivateEgressCidrs(
       : typeof input === "string"
         ? input.split(",")
         : [...input];
-  if (values.length > 32) throw new TypeError("Too many CubeSandbox direct private CIDRs");
+  if (values.length > 8) throw new TypeError("Too many CubeSandbox direct private CIDRs");
   return Object.freeze([...new Set(values.map(normalizePrivateCidr))]);
 }

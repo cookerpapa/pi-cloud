@@ -536,8 +536,8 @@ export function safeToolEnvironment(
       !Number.isSafeInteger(webProxy.port) ||
       webProxy.port < 1 ||
       webProxy.port > 65_535 ||
-      directPrivateCidrs.length > 32 ||
-      directPrivateCidrs.some((cidr) => !/^(?:\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/u.test(cidr))
+      directPrivateCidrs.length > 8 ||
+      directPrivateCidrs.some((cidr) => !/^(?:\d{1,3}\.){3}\d{1,3}\/(?:2[4-9]|3[0-2])$/u.test(cidr))
     ) {
       throw new ToolWorkerError(
         "tool_web_network_invalid",
@@ -546,7 +546,26 @@ export function safeToolEnvironment(
       );
     }
     const proxy = `http://${webProxy.host}:${String(webProxy.port)}`;
-    const noProxy = [loopbackNoProxy, ...directPrivateCidrs].join(",");
+    const directPrivateHosts = directPrivateCidrs.flatMap((cidr) => {
+      const [address, prefixText] = cidr.split("/");
+      const octets = address!.split(".").map(Number);
+      if (octets.length !== 4 || octets.some((octet) => octet < 0 || octet > 255)) {
+        throw new ToolWorkerError(
+          "tool_web_network_invalid",
+          "Tool web proxy configuration was invalid",
+          false,
+        );
+      }
+      const prefix = Number(prefixText);
+      const base =
+        (octets[0]! * 2 ** 24 + octets[1]! * 2 ** 16 + octets[2]! * 2 ** 8 + octets[3]!) >>> 0;
+      const count = 2 ** (32 - prefix);
+      return Array.from({ length: count }, (_, offset) => {
+        const value = (base + offset) >>> 0;
+        return [24, 16, 8, 0].map((shift) => String((value >>> shift) & 0xff)).join(".");
+      });
+    });
+    const noProxy = [loopbackNoProxy, ...directPrivateCidrs, ...directPrivateHosts].join(",");
     proxyEnvironment = {
       HTTP_PROXY: proxy,
       HTTPS_PROXY: proxy,

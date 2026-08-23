@@ -123,9 +123,10 @@ describe("credential-free Tool Sandbox worker", () => {
         NODE_USE_ENV_PROXY: "1",
         http_proxy: "http://10.255.255.254:3128",
         https_proxy: "http://10.255.255.254:3128",
-        NO_PROXY: "127.0.0.1,localhost,::1,192.168.31.0/24",
-        no_proxy: "127.0.0.1,localhost,::1,192.168.31.0/24",
       });
+      expect(environment.NO_PROXY).toContain("192.168.31.0/24");
+      expect(environment.NO_PROXY).toContain("192.168.31.183");
+      expect(environment.no_proxy).toBe(environment.NO_PROXY);
       expect(JSON.stringify(environment)).not.toContain("inherited-proxy.invalid");
     } finally {
       delete process.env.HTTP_PROXY;

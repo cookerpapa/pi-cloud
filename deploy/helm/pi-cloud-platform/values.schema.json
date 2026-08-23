@@ -331,11 +331,11 @@
             "egressProxyPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
             "directPrivateCidrs": {
               "type": "array",
-              "maxItems": 32,
+              "maxItems": 8,
               "uniqueItems": true,
               "items": {
                 "type": "string",
-                "pattern": "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+                "pattern": "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/(?:2[4-9]|3[0-2])$"
               }
             }
           }
