@@ -42,14 +42,14 @@ There is no competing workflow or checkpoint head.
 | browser forges terminal identity | Control Plane derives tenant/Workspace/Session; browser frames carry only input/resize/control |
 | user enumerates another user's development environment | every list, lifecycle and Terminal lookup binds tenant plus authenticated owner user; no Cube ID is public |
 | terminal races an Agent writer | PostgreSQL-backed human-terminal lease and shared Workspace writer exclusion |
-| exclusive environment races an Agent writer | PostgreSQL Worker admission excludes every live development-environment state for that Workspace |
+| exclusive environment races an Agent writer | durable `terminal_active`/`agent_activation_id` CAS plus Tool Broker authority handoff |
 | stale Worker mutation | transaction-scoped authority and monotonically increasing fence |
 | duplicate queue delivery | idempotent command plus transactional RunAttempt claim |
 | ambiguous shell result | `UNKNOWN`; no automatic replay |
 | SSRF/data exfiltration to internal network | governed egress proxy and deny network policy |
 | path/symlink escape | rooted/O_NOFOLLOW trusted Volume operations |
 | infinite output/process/resource use | byte, timeout, PID, CPU, memory and disk limits |
-| browser observes non-durable output | PostgreSQL commit before SSE notification |
+| browser observes non-durable output | Accepted Kafka broker ACK before SSE; complete Pi entries remain PostgreSQL canonical state |
 | Cube loss | process world reset marker plus same persistent Workspace Volume |
 | secret leakage in events | bounded schemas and redaction; credentials never enter model context |
 
@@ -58,12 +58,13 @@ destinations. KVM isolation protects the platform and other tenants; it is not
 a data-loss-prevention system. Enterprise deployments should add explicit
 destination allowlists and audit.
 
-Workspace Web Terminal access does not expose SSH or Cube envd to the public;
-the PiCloud image does not run envd at all. It uses the logged-in user's
-tenant role, the fenced Cube Tool Service, a separate Control
-Plane-to-Tool-Broker credential and bounded WebSocket frames. Terminal output
-is intentionally not a durable conversation record; ordinary Workspace file
-persistence and platform audit metadata remain authoritative.
+Workspace terminal access does not expose Cube envd or Sandbox port 22. The
+browser path uses the logged-in user's tenant role and bounded WebSocket
+frames. Standard SSH terminates at a trusted gateway using a one-use,
+short-lived password whose hash is consumed atomically from PostgreSQL; it then
+bridges to the same fenced PTY. Neither path receives CubeAPI/model credentials.
+Terminal output is intentionally not a durable conversation record; Workspace
+files and platform audit metadata remain authoritative.
 
 ## Not guaranteed
 

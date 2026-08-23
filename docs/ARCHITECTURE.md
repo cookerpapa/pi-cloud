@@ -39,7 +39,7 @@ The Web product provides authentication, resizable conversation/tree panels,
 focused or whole-tree navigation, conversation forks, recursive subtree
 deletion, settled-message tail pruning, named Workspaces, resumable output,
 file browsing, user-owned development environments, authenticated service
-previews and administrator settings. The Control Plane
+previews, one-time SSH access, Workspace rebinding and administrator settings. The Control Plane
 commits each idempotent message and its Run command in one PostgreSQL
 transaction. It enforces tenant quota and same-Session serialization.
 
@@ -286,10 +286,12 @@ registered Cube template catalog; arbitrary template IDs and resource overrides
 are never accepted from the browser.
 
 The allocation participates in tenant/Domain Sandbox quotas and the global
-Workspace single-writer rule. PostgreSQL Worker scans exclude Runs whose
-Workspace has a requested, provisioning, running, paused, releasing or unknown
-environment. A lost Broker owner causes fail-closed orphan cleanup and a fresh
-start; only the persistent Volume is guaranteed across that failure.
+Workspace single-writer rule. `agent_activation_id` and `terminal_active` are
+durable admission facts. Tool Broker lazily seals and rebinds the same Cube to a
+Run's opaque authority on first Tool use, then captures and returns it to the
+environment authority. Worker scans wait while a human terminal is active. A
+lost Broker owner causes fail-closed orphan cleanup and a fresh start; only the
+persistent Volume is guaranteed across that failure.
 
 ### Authenticated Sandbox service preview
 
@@ -306,8 +308,19 @@ trusted Tool Service, so PiCloud reserves the remaining two slots for
 application ports 3000 and 8000. The public protocol rejects every other port
 rather than returning a late CubeProxy routing failure.
 
-Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented; PiCloud currently
-provides a brokered Web terminal rather than claiming raw SSH support.
+Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented. PiCloud does not
+expose Sandbox port 22. A separate trusted SSH gateway validates a one-time
+PostgreSQL ticket and translates a standard SSH shell channel to the existing
+Tool Broker PTY protocol. It has no CubeAPI or model credential.
+
+### Independent resource lifetimes
+
+A Session's Pi entries and tree remain in PostgreSQL when its Workspace is
+soft-deleted. The Session reports `workspaceState=missing`, accepts no new Turn
+and can be rebound idempotently to another live tenant Workspace. Historical
+Runs keep the original Workspace foreign key; a new Run freezes the new
+binding. Workspace deletion never archives a Session or Subagent transcript
+merely to release storage.
 
 ### Persistent Workspace Volume gateway
 

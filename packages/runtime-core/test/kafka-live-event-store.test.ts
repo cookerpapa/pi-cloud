@@ -62,6 +62,27 @@ function accepted(sequence: number, text = `chunk-${String(sequence)}`) {
   } satisfies KafkaAcceptedAgentEventEnvelope;
 }
 
+function terminal(sequence: number): KafkaAcceptedAgentEventEnvelope {
+  const envelope = accepted(sequence);
+  const publication = envelope.publications[0]! as EventPublishMessage;
+  return {
+    ...envelope,
+    publications: [
+      {
+        ...publication,
+        payload: {
+          ...publication.payload,
+          event: {
+            ...publication.payload.event,
+            type: "turn.completed",
+            payload: { stopReason: "stop" },
+          },
+        },
+      },
+    ],
+  } as KafkaAcceptedAgentEventEnvelope;
+}
+
 describe("KafkaLiveEventStore", () => {
   it("replays only the broker-accepted contiguous suffix", async () => {
     const store = new KafkaLiveEventStore({ database: database() });
@@ -97,5 +118,45 @@ describe("KafkaLiveEventStore", () => {
       highWaterMark: 3,
       events: [{ seq: 2 }, { seq: 3 }],
     });
+  });
+
+  it("folds settled fragments into one terminal replay boundary", async () => {
+    const store = new KafkaLiveEventStore({ database: database(3) });
+    store.append(accepted(1));
+    store.append(accepted(2));
+    store.append(terminal(3));
+
+    await expect(store.openReplayWindow(IDS.tenant, IDS.session, 1)).rejects.toMatchObject({
+      code: "cursor_expired",
+    });
+    await expect(store.openReplayWindow(IDS.tenant, IDS.session, 2)).resolves.toMatchObject({
+      highWaterMark: 3,
+      events: [{ seq: 3, type: "turn.completed" }],
+    });
+  });
+
+  it("ignores an at-least-once batch prefix below a folded terminal boundary", () => {
+    const store = new KafkaLiveEventStore({ database: database(3) });
+    const first = accepted(1);
+    const second = accepted(2);
+    const settled = terminal(3);
+    store.append(first);
+    store.append(second);
+    store.append(settled);
+
+    expect(() => {
+      store.append(first);
+      store.append(second);
+      store.append(settled);
+    }).not.toThrow();
+  });
+
+  it("does not rebuild settled token history into Gateway memory", () => {
+    const store = new KafkaLiveEventStore({ database: database(2_000) });
+    for (let sequence = 1; sequence <= 2_000; sequence += 2) {
+      store.append(accepted(sequence));
+      store.append(terminal(sequence + 1));
+    }
+    expect(store.projectionSize()).toEqual({ sessions: 1, events: 1 });
   });
 });

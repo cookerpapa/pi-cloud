@@ -12,6 +12,7 @@
     "bootstrap",
     "controlPlane",
     "web",
+    "sshGateway",
     "external",
     "networkPolicy",
     "sandboxPlane",
@@ -61,11 +62,12 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["controlPlane", "web", "toolBroker"],
+      "required": ["controlPlane", "web", "toolBroker", "sshGateway"],
       "properties": {
         "controlPlane": { "$ref": "#/$defs/image" },
         "web": { "$ref": "#/$defs/image" },
-        "toolBroker": { "$ref": "#/$defs/image" }
+        "toolBroker": { "$ref": "#/$defs/image" },
+        "sshGateway": { "$ref": "#/$defs/image" }
       }
     },
     "bootstrap": {
@@ -103,6 +105,19 @@
       }
     },
     "controlPlane": { "$ref": "#/$defs/httpWorkload" },
+    "sshGateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "replicas", "advertisedHost", "port", "serviceType", "resources"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "replicas": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "advertisedHost": { "$ref": "#/$defs/dnsName" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "serviceType": { "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "resources": { "$ref": "#/$defs/resources" }
+      }
+    },
     "web": {
       "allOf": [
         { "$ref": "#/$defs/httpWorkload" },

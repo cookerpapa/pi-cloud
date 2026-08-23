@@ -332,6 +332,45 @@ export class WorkspaceTerminalGateway {
         },
       };
     }
+    const dedicated = await this.#database
+      .selectFrom("sessions as session_row")
+      .innerJoin("development_environments as development", (join) =>
+        join
+          .onRef("development.tenant_id", "=", "session_row.tenant_id")
+          .onRef("development.workspace_id", "=", "session_row.workspace_id"),
+      )
+      .innerJoin("sandbox_domains as domain", "domain.id", "development.sandbox_domain_id")
+      .select([
+        "development.id",
+        "development.sandbox_domain_id as domainId",
+        "domain.tool_broker_base_url as toolBrokerBaseUrl",
+      ])
+      .where("session_row.tenant_id", "=", identity.tenantId)
+      .where("session_row.id", "=", identity.sessionId)
+      .where("session_row.archived_at", "is", null)
+      .where("development.owner_user_id", "=", identity.userId)
+      .where("development.state", "=", "running")
+      .where("development.agent_activation_id", "is", null)
+      .where("domain.state", "=", "active")
+      .orderBy("development.updated_at", "desc")
+      .executeTakeFirst();
+    if (dedicated !== undefined) {
+      return {
+        domainId: dedicated.domainId,
+        toolBrokerBaseUrl: dedicated.toolBrokerBaseUrl,
+        internalPath: TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
+        open: {
+          developmentEnvironmentProtocolVersion: 1,
+          type: "development_environment_terminal.open",
+          requestId: randomUUID(),
+          environmentId: dedicated.id,
+          tenantId: identity.tenantId,
+          userId: identity.userId,
+          rows: 24,
+          cols: 100,
+        },
+      };
+    }
     const row = await this.#database
       .selectFrom("sessions as session_row")
       .innerJoin("workspaces as workspace", (join) =>

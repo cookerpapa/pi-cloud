@@ -204,6 +204,8 @@ export interface DevelopmentEnvironmentTable {
   system_disk_gib: number;
   runtime_id: string | null;
   runtime_name: string | null;
+  agent_activation_id: string | null;
+  terminal_active: GeneratedBoolean;
   state: DevelopmentEnvironmentState;
   failure_code: string | null;
   idempotency_key: string;
@@ -222,6 +224,29 @@ export interface DevelopmentEnvironmentOperationTable {
   action: DevelopmentEnvironmentAction;
   request_sha256: string;
   result_state: DevelopmentEnvironmentState;
+  created_at: GeneratedTimestamp;
+}
+
+export interface ConversationWorkspaceRebindOperationTable {
+  operation_id: string;
+  tenant_id: string;
+  session_id: string;
+  from_workspace_id: string;
+  to_workspace_id: string;
+  idempotency_key: string;
+  request_sha256: string;
+  created_at: GeneratedTimestamp;
+}
+
+export interface SshAccessTicketTable {
+  ticket_id: string;
+  tenant_id: string;
+  user_id: string;
+  session_id: string;
+  environment_id: string;
+  secret_sha256: string;
+  expires_at: Timestamp;
+  consumed_at: NullableTimestamp;
   created_at: GeneratedTimestamp;
 }
 
@@ -377,6 +402,7 @@ export interface WorkspaceDeleteOperationTable {
   workspace_id: string;
   idempotency_key: string;
   deleted_at: Timestamp;
+  detached_session_count: GeneratedInteger;
   created_at: GeneratedTimestamp;
 }
 
@@ -1145,6 +1171,8 @@ export interface Database {
   workspace_terminal_sessions: WorkspaceTerminalSessionTable;
   development_environments: DevelopmentEnvironmentTable;
   development_environment_operations: DevelopmentEnvironmentOperationTable;
+  conversation_workspace_rebind_operations: ConversationWorkspaceRebindOperationTable;
+  ssh_access_tickets: SshAccessTicketTable;
   tenants: TenantTable;
   users: UserTable;
   tenant_runtime_policies: TenantRuntimePolicyTable;

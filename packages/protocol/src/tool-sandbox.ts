@@ -3,7 +3,12 @@ import { Value } from "typebox/value";
 import { WorkspacePatchSchema } from "./event-envelope.ts";
 import { GitHubRepositorySourceSchema } from "./control-plane-api.ts";
 import { AgentWorkspaceSeedSchema, SandboxCheckpointBlobSchema } from "./agent-runtime.ts";
-import { OpaqueIdSchema, PositiveSafeIntegerSchema, UuidSchema } from "./protocol-primitives.ts";
+import {
+  OpaqueIdSchema,
+  PositiveSafeIntegerSchema,
+  SandboxRetentionPolicySchema,
+  UuidSchema,
+} from "./protocol-primitives.ts";
 import {
   EnvironmentRuntimeSnapshotSchema,
   EnvironmentRecipeCommandResultSchema,
@@ -122,6 +127,7 @@ export const ToolSandboxCreateRequestSchema = Type.Object(
     turnContextSha256: Sha256Schema,
     attemptContextSha256: Sha256Schema,
     allowedTools: CloudToolCapabilitySnapshotSchema,
+    retention: SandboxRetentionPolicySchema,
     environment: EnvironmentRuntimeSnapshotSchema,
     workspaceSeed: AgentWorkspaceSeedSchema,
     workspaceRestore: Type.Optional(SandboxCheckpointBlobSchema),

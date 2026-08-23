@@ -52,8 +52,9 @@ unprivileged process.
 8. Terminal keystrokes and output are not durably recorded. Audit state stores
    only identity, lifecycle and bounded failure metadata. This avoids creating
    a second conversation/event log containing secrets typed into a shell.
-9. Port 22 is not exposed. A real SSH bastion may later reuse the same durable
-   lease and broker contract, but it must not become a second execution path.
+9. Port 22 is not exposed. ADR-0118 adds a trusted one-time-ticket SSH gateway
+   that translates into this exact PTY contract rather than creating a second
+   execution path.
 
 ## Consequences
 

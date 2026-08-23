@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, chown, lstat, mkdir, open, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -142,6 +142,31 @@ async function ensureWorkspaceTerminalToken(runtimeDirectory) {
     if (error?.code !== "ENOENT") throw error;
   }
   await writePrivateFile(path, `${randomSecret()}\n`);
+  const application = applicationIdentity();
+  if (application.changeOwnership) await chown(path, application.uid, application.gid);
+  return true;
+}
+
+function sshHostPrivateKey() {
+  return generateKeyPairSync("rsa", {
+    modulusLength: 3_072,
+    privateKeyEncoding: { type: "pkcs1", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" },
+  }).privateKey;
+}
+
+async function ensureSshHostKey(runtimeDirectory) {
+  const path = resolve(runtimeDirectory, "secrets/ssh-host-key.pem");
+  try {
+    const existing = await readPrivateFile(path);
+    if (!existing.includes("BEGIN RSA PRIVATE KEY")) {
+      throw new Error("Production SSH host key is invalid");
+    }
+    return false;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  await writePrivateFile(path, sshHostPrivateKey());
   const application = applicationIdentity();
   if (application.changeOwnership) await chown(path, application.uid, application.gid);
   return true;
@@ -380,6 +405,7 @@ if (await validateExisting(runtimeDirectory)) {
   const toolBrokerTokenCreated = await ensureToolBrokerToken(runtimeDirectory);
   const sandboxMaterializerTokenCreated = await ensureSandboxMaterializerToken(runtimeDirectory);
   const workspaceTerminalTokenCreated = await ensureWorkspaceTerminalToken(runtimeDirectory);
+  const sshHostKeyCreated = await ensureSshHostKey(runtimeDirectory);
   await ensureWorkspaceVolumeGatewayState(runtimeDirectory);
   const workspaceVolumeGatewaySecretsCreated =
     await ensureWorkspaceVolumeGatewaySecrets(runtimeDirectory);
@@ -394,6 +420,7 @@ if (await validateExisting(runtimeDirectory)) {
       toolBrokerTokenCreated,
       sandboxMaterializerTokenCreated,
       workspaceTerminalTokenCreated,
+      sshHostKeyCreated,
       workspaceVolumeGatewaySecretsCreated,
       cubeEgressConfigTokenCreated,
       githubGatewaySecretsCreated,
@@ -516,6 +543,7 @@ await writePrivateFile(
   resolve(secretsDirectory, "workspace-terminal-token"),
   `${randomSecret()}\n`,
 );
+await writePrivateFile(resolve(secretsDirectory, "ssh-host-key.pem"), sshHostPrivateKey());
 await writePrivateFile(
   resolve(secretsDirectory, "workspace-volume-gateway-token"),
   `${randomSecret()}\n`,
@@ -543,6 +571,11 @@ const environment = [
   "NPM_CONFIG_REGISTRY=https://registry.npmjs.org",
   `PI_CLOUD_HTTP_BIND_ADDRESS=${bindAddress}`,
   `PI_CLOUD_HTTP_PORT=${httpPort()}`,
+  "PI_CLOUD_SSH_GATEWAY_ENABLED=true",
+  "PI_CLOUD_SSH_ADVERTISED_HOST=127.0.0.1",
+  "PI_CLOUD_SSH_ADVERTISED_PORT=2222",
+  "PI_CLOUD_SSH_BIND_ADDRESS=127.0.0.1",
+  "PI_CLOUD_SSH_PORT=2222",
   `PI_CLOUD_APPLICATION_UID=${String(application.uid)}`,
   `PI_CLOUD_APPLICATION_GID=${String(application.gid)}`,
   "PI_CLOUD_TENANT_SLUG=pi-cloud",

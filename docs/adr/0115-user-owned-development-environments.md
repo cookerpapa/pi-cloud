@@ -26,11 +26,10 @@ user-owned development-environment lifecycle.
 - Only Tool Broker may call CubeAPI. The browser uses authenticated PiCloud
   REST and WebSocket endpoints and never receives Cube IDs, traffic tokens or
   control credentials.
-- A live allocation has one Cube KVM and one Workspace writer. Ordinary Agent
-  Runs for that Workspace remain queued while the exclusive environment is
-  provisioning, running, paused or being released. The first release does not
-  pretend that a separately fenced Agent Run can safely share the same live
-  process world.
+- A live allocation has one Cube KVM and one Workspace writer. A human terminal
+  keeps Agent Runs queued. Otherwise Tool Broker may seal the current boundary,
+  rotate authority to one fenced Agent Run and return the same Cube after
+  settlement. No second Cube writes the Volume.
 - Support explicit `start`, `pause`, `resume` and `release` operations. Pause
   uses Cube's memory/filesystem snapshot lifecycle; resume reconnects the same
   Sandbox identity. Release destroys the VM but preserves the Workspace
@@ -53,8 +52,6 @@ user-owned development-environment lifecycle.
 - From the user's perspective the environment behaves like a small managed
   development VM: an independent kernel, persistent files, long-lived
   processes, pause/resume and an interactive terminal.
-- It is intentionally not SSH infrastructure, a general cloud-instance API or
-  a second Workspace authority.
-- A later ADR may define a safe Agent-to-development-environment handoff. Until
-  then, explicit exclusivity is safer and easier to explain than silently
-  running an Agent in a second Cube against the same Volume.
+- It is not a second Workspace authority or a general cloud-instance API.
+- SSH is a separate trusted ticket gateway over the same PTY, not a public
+  Sandbox port or a parallel execution path.

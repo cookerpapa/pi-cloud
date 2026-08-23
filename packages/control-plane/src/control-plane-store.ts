@@ -13,6 +13,7 @@ import type {
   AcceptedTurnResource,
   ConversationDetailResource,
   ConversationListResource,
+  ConversationWorkspaceBindingResource,
   ConversationTurnState,
   CreateProjectRequest,
   CreateTurnCancellationRequest,
@@ -994,6 +995,7 @@ export class ControlPlaneStore {
         title: session.title,
         projectId: session.project_id,
         workspaceId: session.workspace_id,
+        workspaceState: "attached",
         state: "cold",
         sandboxRetention: session.sandbox_retention_policy,
         modelProfileId: policy.defaultModelProfileId,
@@ -1090,6 +1092,7 @@ export class ControlPlaneStore {
             "operation.workspace_id as workspaceId",
             "operation.deleted_at as deletedAt",
             "workspace.storage_purged_at as storagePurgedAt",
+            "operation.detached_session_count as detachedSessionCount",
           ])
           .where("operation.tenant_id", "=", this.#tenantId)
           .where("operation.workspace_id", "=", workspaceId)
@@ -1100,6 +1103,10 @@ export class ControlPlaneStore {
             operationId: replay.operationId,
             workspaceId: replay.workspaceId,
             storageState: replay.storagePurgedAt === null ? "pending" : "purged",
+            detachedSessionCount: nonNegativeSafeInteger(
+              replay.detachedSessionCount,
+              "Detached conversation count",
+            ),
             replayed: true,
             deletedAt: isoTimestamp(replay.deletedAt),
           };
@@ -1118,20 +1125,31 @@ export class ControlPlaneStore {
         }
 
         let deletedAt = workspace.deleted_at;
+        let detachedSessionCount = 0;
         if (deletedAt === null) {
-          const liveSession = await transaction
-            .selectFrom("sessions")
-            .select("id")
-            .where("tenant_id", "=", this.#tenantId)
-            .where("workspace_id", "=", workspaceId)
-            .where("session_kind", "=", "conversation")
-            .where("archived_at", "is", null)
+          const activeTurn = await transaction
+            .selectFrom("turns as turn")
+            .innerJoin("sessions as session_row", (join) =>
+              join
+                .onRef("session_row.tenant_id", "=", "turn.tenant_id")
+                .onRef("session_row.id", "=", "turn.session_id"),
+            )
+            .select("turn.id")
+            .where("turn.tenant_id", "=", this.#tenantId)
+            .where("session_row.workspace_id", "=", workspaceId)
+            .where("turn.state", "in", [
+              "queued",
+              "dispatching",
+              "running",
+              "waiting_approval",
+              "cancelling",
+            ])
             .limit(1)
             .executeTakeFirst();
-          if (liveSession !== undefined) {
+          if (activeTurn !== undefined) {
             throw new ControlPlaneStoreError(
               "conflict",
-              "Delete every conversation in this Workspace before deleting the Workspace",
+              "Wait for every conversation Run to settle before deleting the Workspace",
             );
           }
 
@@ -1177,26 +1195,18 @@ export class ControlPlaneStore {
             );
           }
 
-          const childSessionIds = transaction
-            .selectFrom("subagent_executions as execution")
-            .innerJoin("sessions as root", (join) =>
-              join
-                .onRef("root.tenant_id", "=", "execution.tenant_id")
-                .onRef("root.id", "=", "execution.root_session_id"),
-            )
-            .select("execution.child_session_id")
-            .where("execution.tenant_id", "=", this.#tenantId)
-            .where("root.workspace_id", "=", workspaceId);
-          await transaction
-            .updateTable("sessions")
-            .set({
-              archived_at: sql<Date>`coalesce(${sql.ref("archived_at")}, now())`,
-              row_version: sql<string>`${sql.ref("row_version")} + 1`,
-              updated_at: sql<Date>`now()`,
-            })
+          const detached = await transaction
+            .selectFrom("sessions")
+            .select(({ fn }) => fn.countAll<string>().as("count"))
             .where("tenant_id", "=", this.#tenantId)
-            .where("id", "in", childSessionIds)
-            .execute();
+            .where("workspace_id", "=", workspaceId)
+            .where("session_kind", "=", "conversation")
+            .where("archived_at", "is", null)
+            .executeTakeFirstOrThrow();
+          detachedSessionCount = nonNegativeSafeInteger(
+            detached.count,
+            "Detached conversation count",
+          );
 
           deletedAt = new Date();
           await transaction
@@ -1246,12 +1256,14 @@ export class ControlPlaneStore {
             workspace_id: workspaceId,
             idempotency_key: idempotencyKey,
             deleted_at: deletedAt,
+            detached_session_count: detachedSessionCount,
           })
           .executeTakeFirstOrThrow();
         return {
           operationId,
           workspaceId,
           storageState: workspace.storage_purged_at === null ? "pending" : "purged",
+          detachedSessionCount,
           replayed: false,
           deletedAt: isoTimestamp(deletedAt),
         };
@@ -1272,6 +1284,7 @@ export class ControlPlaneStore {
           "operation.workspace_id as workspaceId",
           "operation.deleted_at as deletedAt",
           "workspace.storage_purged_at as storagePurgedAt",
+          "operation.detached_session_count as detachedSessionCount",
         ])
         .where("operation.tenant_id", "=", this.#tenantId)
         .where("operation.workspace_id", "=", workspaceId)
@@ -1281,10 +1294,200 @@ export class ControlPlaneStore {
         operationId: replay.operationId,
         workspaceId: replay.workspaceId,
         storageState: replay.storagePurgedAt === null ? "pending" : "purged",
+        detachedSessionCount: nonNegativeSafeInteger(
+          replay.detachedSessionCount,
+          "Detached conversation count",
+        ),
         replayed: true,
         deletedAt: isoTimestamp(replay.deletedAt),
       };
     }
+  }
+
+  async rebindConversationWorkspace(
+    sessionId: string,
+    workspaceId: string,
+    idempotencyKey: string,
+  ): Promise<ConversationWorkspaceBindingResource> {
+    const requestSha256 = createHash("sha256")
+      .update("pi-cloud.conversation-workspace-rebind.v1\0", "utf8")
+      .update(workspaceId, "utf8")
+      .digest("hex");
+    const operationId = this.#idGenerator();
+    return this.#database.transaction().execute(async (transaction) => {
+      const replay = await transaction
+        .selectFrom("conversation_workspace_rebind_operations as operation")
+        .innerJoin("workspaces as workspace", (join) =>
+          join
+            .onRef("workspace.tenant_id", "=", "operation.tenant_id")
+            .onRef("workspace.id", "=", "operation.to_workspace_id"),
+        )
+        .innerJoin("projects as project", (join) =>
+          join
+            .onRef("project.tenant_id", "=", "workspace.tenant_id")
+            .onRef("project.id", "=", "workspace.project_id"),
+        )
+        .select([
+          "operation.operation_id as operationId",
+          "operation.request_sha256 as requestSha256",
+          "operation.session_id as sessionId",
+          "operation.to_workspace_id as workspaceId",
+          "operation.created_at as boundAt",
+          "workspace.project_id as projectId",
+          "project.name as workspaceName",
+        ])
+        .where("operation.tenant_id", "=", this.#tenantId)
+        .where("operation.session_id", "=", sessionId)
+        .where("operation.idempotency_key", "=", idempotencyKey)
+        .executeTakeFirst();
+      if (replay !== undefined) {
+        if (replay.requestSha256 !== requestSha256) {
+          throw new ControlPlaneStoreError(
+            "idempotency_conflict",
+            "Idempotency-Key was reused for another Workspace binding",
+          );
+        }
+        return {
+          operationId: replay.operationId,
+          sessionId: replay.sessionId,
+          projectId: replay.projectId,
+          workspaceId: replay.workspaceId,
+          workspaceName: replay.workspaceName,
+          workspaceState: "attached",
+          replayed: true,
+          boundAt: isoTimestamp(replay.boundAt),
+        };
+      }
+
+      const session = await transaction
+        .selectFrom("sessions as session_row")
+        .innerJoin("workspaces as current_workspace", (join) =>
+          join
+            .onRef("current_workspace.tenant_id", "=", "session_row.tenant_id")
+            .onRef("current_workspace.id", "=", "session_row.workspace_id"),
+        )
+        .select([
+          "session_row.id",
+          "session_row.workspace_id as currentWorkspaceId",
+          "session_row.session_kind as sessionKind",
+          "session_row.archived_at as archivedAt",
+          "current_workspace.deleted_at as workspaceDeletedAt",
+        ])
+        .where("session_row.tenant_id", "=", this.#tenantId)
+        .where("session_row.id", "=", sessionId)
+        .forUpdate("session_row")
+        .executeTakeFirst();
+      if (session === undefined) {
+        throw new ControlPlaneStoreError("not_found", "Conversation was not found");
+      }
+      if (session.sessionKind !== "conversation" || session.archivedAt !== null) {
+        throw new ControlPlaneStoreError("conflict", "Conversation cannot change Workspace");
+      }
+      if (session.workspaceDeletedAt === null) {
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Conversation Workspace is still available and does not need rebinding",
+        );
+      }
+      const activeTurn = await transaction
+        .selectFrom("turns")
+        .select("id")
+        .where("tenant_id", "=", this.#tenantId)
+        .where("session_id", "=", sessionId)
+        .where("state", "in", [
+          "queued",
+          "dispatching",
+          "running",
+          "waiting_approval",
+          "cancelling",
+        ])
+        .limit(1)
+        .executeTakeFirst();
+      if (activeTurn !== undefined) {
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Wait for the active Run to settle before rebinding the Workspace",
+        );
+      }
+      const target = await transaction
+        .selectFrom("workspaces as workspace")
+        .innerJoin("projects as project", (join) =>
+          join
+            .onRef("project.tenant_id", "=", "workspace.tenant_id")
+            .onRef("project.id", "=", "workspace.project_id"),
+        )
+        .select([
+          "workspace.id",
+          "workspace.project_id as projectId",
+          "workspace.current_workspace_version_id as currentVersionId",
+          "project.name as workspaceName",
+        ])
+        .where("workspace.tenant_id", "=", this.#tenantId)
+        .where("workspace.id", "=", workspaceId)
+        .where("workspace.workspace_kind", "=", "user")
+        .where("workspace.deleted_at", "is", null)
+        .where("project.deleted_at", "is", null)
+        .forUpdate("workspace")
+        .executeTakeFirst();
+      if (target === undefined) {
+        throw new ControlPlaneStoreError("not_found", "Target Workspace was not found");
+      }
+      const conflictingPersistentSession = await transaction
+        .selectFrom("sessions")
+        .select("id")
+        .where("tenant_id", "=", this.#tenantId)
+        .where("workspace_id", "=", workspaceId)
+        .where("archived_at", "is", null)
+        .where("sandbox_retention_policy", "=", "persistent")
+        .limit(1)
+        .executeTakeFirst();
+      if (conflictingPersistentSession !== undefined) {
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Target Workspace is reserved by an exclusive execution environment",
+        );
+      }
+
+      const boundAt = new Date();
+      await transaction
+        .updateTable("sessions")
+        .set({
+          project_id: target.projectId,
+          workspace_id: target.id,
+          current_workspace_version_id: target.currentVersionId,
+          workspace_snapshot_key: null,
+          sandbox_retention_policy: "ephemeral",
+          row_version: sql<string>`${sql.ref("row_version")} + 1`,
+          updated_at: boundAt,
+        })
+        .where("tenant_id", "=", this.#tenantId)
+        .where("id", "=", sessionId)
+        .where("workspace_id", "=", session.currentWorkspaceId)
+        .executeTakeFirstOrThrow();
+      await transaction
+        .insertInto("conversation_workspace_rebind_operations")
+        .values({
+          operation_id: operationId,
+          tenant_id: this.#tenantId,
+          session_id: sessionId,
+          from_workspace_id: session.currentWorkspaceId,
+          to_workspace_id: target.id,
+          idempotency_key: idempotencyKey,
+          request_sha256: requestSha256,
+          created_at: boundAt,
+        })
+        .executeTakeFirstOrThrow();
+      return {
+        operationId,
+        sessionId,
+        projectId: target.projectId,
+        workspaceId: target.id,
+        workspaceName: target.workspaceName,
+        workspaceState: "attached",
+        replayed: false,
+        boundAt: boundAt.toISOString(),
+      };
+    });
   }
 
   async listConversations(): Promise<ConversationListResource> {
@@ -1294,6 +1497,11 @@ export class ControlPlaneStore {
         join
           .onRef("project.tenant_id", "=", "session_row.tenant_id")
           .onRef("project.id", "=", "session_row.project_id"),
+      )
+      .innerJoin("workspaces as workspace", (join) =>
+        join
+          .onRef("workspace.tenant_id", "=", "session_row.tenant_id")
+          .onRef("workspace.id", "=", "session_row.workspace_id"),
       )
       .leftJoin("turns as turn", (join) =>
         join
@@ -1313,6 +1521,7 @@ export class ControlPlaneStore {
         "session_row.last_active_at as lastActiveAt",
         "session_row.conversation_parent_session_id as parentSessionId",
         "project.name as workspaceName",
+        "workspace.deleted_at as workspaceDeletedAt",
       ])
       .select((expression) => expression.fn.count<string>("turn.id").as("turnCount"))
       .where("session_row.tenant_id", "=", this.#tenantId)
@@ -1330,6 +1539,7 @@ export class ControlPlaneStore {
         "session_row.last_active_at",
         "session_row.conversation_parent_session_id",
         "project.name",
+        "workspace.deleted_at",
       ])
       .orderBy("session_row.last_active_at", "desc")
       .orderBy("session_row.id", "desc")
@@ -1348,6 +1558,7 @@ export class ControlPlaneStore {
         projectId: row.projectId,
         workspaceId: row.workspaceId,
         workspaceName: row.workspaceName,
+        workspaceState: row.workspaceDeletedAt === null ? "attached" : "missing",
         state: row.state,
         sandboxRetention: row.sandboxRetention,
         turnCount: nonNegativeSafeInteger(row.turnCount, "Conversation turn count"),
@@ -1368,6 +1579,11 @@ export class ControlPlaneStore {
         join
           .onRef("project.tenant_id", "=", "session_row.tenant_id")
           .onRef("project.id", "=", "session_row.project_id"),
+      )
+      .innerJoin("workspaces as workspace", (join) =>
+        join
+          .onRef("workspace.tenant_id", "=", "session_row.tenant_id")
+          .onRef("workspace.id", "=", "session_row.workspace_id"),
       )
       .innerJoin("workspace_sources as source", (join) =>
         join
@@ -1394,6 +1610,7 @@ export class ControlPlaneStore {
         "session_row.conversation_parent_session_id as parentSessionId",
         "project.name as projectName",
         "project.created_at as projectCreatedAt",
+        "workspace.deleted_at as workspaceDeletedAt",
         "source.kind as sourceKind",
         "source.repository as sourceRepository",
         "source.commit_sha as sourceCommitSha",
@@ -1573,6 +1790,7 @@ export class ControlPlaneStore {
         title: conversation.sessionTitle,
         projectId: conversation.projectId,
         workspaceId: conversation.workspaceId,
+        workspaceState: conversation.workspaceDeletedAt === null ? "attached" : "missing",
         state: conversation.sessionState,
         sandboxRetention: conversation.sandboxRetention,
         modelProfileId: conversation.modelProfileId,
@@ -2046,7 +2264,13 @@ export class ControlPlaneStore {
         .where("workspace.id", "=", session.workspace_id)
         .where("workspace.deleted_at", "is", null)
         .forUpdate("workspace")
-        .executeTakeFirstOrThrow();
+        .executeTakeFirst();
+      if (workspace === undefined) {
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Conversation Workspace is no longer available; choose a new Workspace to continue",
+        );
+      }
       if (session.archived_at !== null) {
         throw new ControlPlaneStoreError("conflict", "Archived Session cannot accept turns");
       }

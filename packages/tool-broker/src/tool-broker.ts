@@ -89,6 +89,7 @@ type ManagedActivation = {
     Readonly<{ requestSha256: string; result: Promise<ToolSandboxOperationResponse> }>
   >;
   seenCaptureIds: Set<string>;
+  developmentEnvironmentId?: string;
 };
 
 type WarmActivation = {
@@ -143,6 +144,7 @@ type ManagedDevelopmentEnvironment = {
   assignment: ToolSandboxAssignment;
   handle: SandboxHandle;
   terminal?: SandboxTerminalSession;
+  agentActivationId?: string;
 };
 
 type AdmissionWaiter = {
@@ -597,6 +599,13 @@ export class ToolBroker {
         false,
       );
     }
+    if (environment.agentActivationId !== undefined) {
+      throw new ToolBrokerError(
+        "development_environment_agent_active",
+        "Wait for the active Agent Run before changing the development environment",
+        true,
+      );
+    }
     if (request.action === "pause") {
       if (ownership.state !== "running" || environment.terminal !== undefined) {
         throw new ToolBrokerError(
@@ -720,6 +729,13 @@ export class ToolBroker {
         false,
       );
     }
+    if (environment.agentActivationId !== undefined) {
+      throw new ToolBrokerError(
+        "development_environment_agent_active",
+        "Development environment is currently owned by an Agent Run",
+        true,
+      );
+    }
     if (environment.terminal !== undefined) {
       throw new ToolBrokerError(
         "development_environment_terminal_busy",
@@ -727,10 +743,25 @@ export class ToolBroker {
         true,
       );
     }
-    const terminal = await this.#provider.openTerminal(environment.handle, {
-      rows: input.rows,
-      cols: input.cols,
-    });
+    if (!(await this.#stateRepository.reserveDevelopmentEnvironmentTerminal(input.environmentId))) {
+      throw new ToolBrokerError(
+        "development_environment_terminal_busy",
+        "Development environment terminal or Agent authority is already active",
+        true,
+      );
+    }
+    let terminal: SandboxTerminalSession;
+    try {
+      terminal = await this.#provider.openTerminal(environment.handle, {
+        rows: input.rows,
+        cols: input.cols,
+      });
+    } catch (error: unknown) {
+      await this.#stateRepository
+        .releaseDevelopmentEnvironmentTerminal(input.environmentId)
+        .catch(() => undefined);
+      throw error;
+    }
     environment.terminal = terminal;
     let closed = false;
     return Object.freeze({
@@ -745,6 +776,9 @@ export class ToolBroker {
         terminal.disconnect();
         await terminal.kill().catch(() => undefined);
         if (environment.terminal === terminal) delete environment.terminal;
+        await this.#stateRepository
+          .releaseDevelopmentEnvironmentTerminal(input.environmentId)
+          .catch(() => undefined);
       },
     });
   }
@@ -1113,8 +1147,28 @@ export class ToolBroker {
     }
     if (inherited !== undefined) this.#warm.delete(key);
 
+    const developmentEnvironment = [...this.#developmentEnvironments.values()].find(
+      (environment) =>
+        environment.reservation.tenantId === request.assignment.tenantId &&
+        environment.reservation.workspaceId === request.assignment.workspaceId,
+    );
+    if (
+      developmentEnvironment !== undefined &&
+      (developmentEnvironment.terminal !== undefined ||
+        developmentEnvironment.agentActivationId !== undefined)
+    ) {
+      throw new ToolBrokerError(
+        "development_environment_workspace_busy",
+        "Exclusive development environment is currently in use",
+        true,
+      );
+    }
+
     const activationId = validActivationId(
-      delegatedParent?.spec.activationId ?? inherited?.handle.activationId ?? this.#idGenerator(),
+      developmentEnvironment?.reservation.environmentId ??
+        delegatedParent?.spec.activationId ??
+        inherited?.handle.activationId ??
+        this.#idGenerator(),
     );
     if (this.#activations.has(activationId)) {
       throw new ToolBrokerError(
@@ -1135,6 +1189,9 @@ export class ToolBroker {
         ? {}
         : { workspaceRestore: request.workspaceRestore }),
       policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
+      ...(request.retention === "persistent"
+        ? { lifetime: "persistent_conversation" as const }
+        : {}),
     } as const;
     const reservationInput: SandboxActivationReservation = {
       activationId,
@@ -1196,6 +1253,20 @@ export class ToolBroker {
         true,
       );
     }
+    if (
+      reservation.status === "development_environment" &&
+      (developmentEnvironment === undefined ||
+        reservation.environmentId !== developmentEnvironment.reservation.environmentId)
+    ) {
+      throw new ToolBrokerError(
+        "development_environment_identity_conflict",
+        "Development environment handoff identity did not match",
+        false,
+      );
+    }
+    if (reservation.status === "development_environment") {
+      developmentEnvironment!.agentActivationId = activationId;
+    }
     this.#activations.set(activationId, {
       assignment: request.assignment,
       turnContextSha256: request.turnContextSha256,
@@ -1204,11 +1275,13 @@ export class ToolBroker {
       allowedTools: new Set(allowedTools),
       spec,
       reservation: reservationInput,
-      ...(delegatedParent?.handle === undefined
-        ? inherited === undefined
-          ? {}
-          : { handle: inherited.handle }
-        : { handle: delegatedParent.handle }),
+      ...(developmentEnvironment !== undefined
+        ? { handle: developmentEnvironment.handle, developmentEnvironmentId: activationId }
+        : delegatedParent?.handle === undefined
+          ? inherited === undefined
+            ? {}
+            : { handle: inherited.handle }
+          : { handle: delegatedParent.handle }),
       materializedForCurrentAssignment: false,
       activeOperations: 0,
       exclusiveOperation: false,
@@ -1408,6 +1481,59 @@ export class ToolBroker {
     if (activation.materializing !== undefined) {
       handle = await activation.materializing.catch(() => undefined);
     }
+    if (activation.developmentEnvironmentId !== undefined) {
+      const environment = this.#developmentEnvironments.get(activation.developmentEnvironmentId);
+      if (environment === undefined || environment.agentActivationId !== request.activationId) {
+        throw new ToolBrokerError(
+          "development_environment_identity_conflict",
+          "Development environment Agent handoff was lost",
+          false,
+        );
+      }
+      try {
+        if (handle === undefined) {
+          throw new ToolBrokerError(
+            "development_environment_unavailable",
+            "Development environment runtime was unavailable after Agent execution",
+            true,
+          );
+        }
+        if (activation.materializedForCurrentAssignment) {
+          handle = await this.#provider.rebind(handle, environment.assignment);
+        }
+        environment.handle = handle;
+        delete environment.agentActivationId;
+        this.#activations.delete(request.activationId);
+        await this.#stateRepository.returnDevelopmentEnvironment(
+          environment.reservation.environmentId,
+          request.activationId,
+          "running",
+          { handle },
+        );
+        return {
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.released",
+          requestId: request.requestId,
+          activationId: request.activationId,
+          retained: true,
+        };
+      } catch (error: unknown) {
+        if (handle !== undefined) await this.#provider.stop(handle).catch(() => undefined);
+        delete environment.agentActivationId;
+        this.#developmentEnvironments.delete(environment.reservation.environmentId);
+        this.#activations.delete(request.activationId);
+        this.#releaseAdmission(environment.reservation.environmentId);
+        await this.#stateRepository
+          .returnDevelopmentEnvironment(
+            environment.reservation.environmentId,
+            request.activationId,
+            "failed",
+            { failureCode: operationFailureCode(error) },
+          )
+          .catch(() => undefined);
+        throw error;
+      }
+    }
     const retainRequested = request.disposition !== "destroy";
     if (retainRequested && handle !== undefined && this.#provider.supportsWarmRebind !== false) {
       try {
@@ -1423,10 +1549,11 @@ export class ToolBroker {
         await this.#provider.stop(handle).catch(() => undefined);
         this.#releaseAdmission(handle.activationId);
         handle = undefined;
-        // A best-effort warm cache may fall back to cold restore. A user who
-        // explicitly selected a persistent process world must never receive
-        // a successful Run while that world was silently destroyed.
-        if (request.disposition === "keep_persistent") throw error;
+        // A stale idle runtime can disappear before this Run ever invokes a
+        // Tool. The Runner distinguishes that unused handoff from a runtime it
+        // actually materialized: only the latter may fail the Run's process-
+        // retention guarantee. Either way the durable Workspace remains the
+        // recovery authority.
       }
     }
     const key = workspaceKey(request.assignment);
@@ -1502,6 +1629,29 @@ export class ToolBroker {
         "Tool Sandbox assignment identity did not match",
         false,
       );
+    }
+    if (activation.developmentEnvironmentId !== undefined) {
+      const environment = this.#developmentEnvironments.get(activation.developmentEnvironmentId);
+      const handle =
+        activation.materializing === undefined
+          ? activation.handle
+          : await activation.materializing.catch(() => undefined);
+      if (handle !== undefined) await this.#provider.stop(handle).catch(() => undefined);
+      this.#activations.delete(activationId);
+      if (environment !== undefined) {
+        delete environment.agentActivationId;
+        this.#developmentEnvironments.delete(environment.reservation.environmentId);
+        this.#releaseAdmission(environment.reservation.environmentId);
+        await this.#stateRepository
+          .returnDevelopmentEnvironment(
+            environment.reservation.environmentId,
+            activationId,
+            "failed",
+            { failureCode: "agent_execution_interrupted" },
+          )
+          .catch(() => undefined);
+      }
+      return;
     }
     this.#revoke(activationId, activation);
     const handle =
@@ -1710,7 +1860,9 @@ export class ToolBroker {
     if (activation.materializing !== undefined) return activation.materializing;
     const materializing = (async (): Promise<SandboxHandle> => {
       await this.#stateRepository.setActivationState(activationId, "materializing");
-      await this.#acquireAdmission(activationId, activation.assignment, signal);
+      if (activation.developmentEnvironmentId === undefined) {
+        await this.#acquireAdmission(activationId, activation.assignment, signal);
+      }
       let releaseAdmissionOnFailure = true;
       try {
         if (this.#activations.get(activationId) !== activation || signal?.aborted) {
@@ -1723,6 +1875,9 @@ export class ToolBroker {
         let handle = activation.handle;
         if (handle !== undefined) {
           try {
+            if (activation.developmentEnvironmentId !== undefined) {
+              await this.#provider.snapshot(handle, this.#idGenerator());
+            }
             handle = await this.#provider.rebind(handle, activation.assignment);
           } catch (error: unknown) {
             try {
@@ -1772,7 +1927,9 @@ export class ToolBroker {
         await this.#stateRepository.setActivationState(activationId, "active", { handle });
         return handle;
       } catch (error: unknown) {
-        if (releaseAdmissionOnFailure) this.#releaseAdmission(activationId);
+        if (releaseAdmissionOnFailure && activation.developmentEnvironmentId === undefined) {
+          this.#releaseAdmission(activationId);
+        }
         await this.#stateRepository
           .setActivationState(activationId, "unknown", {
             failureCode: operationFailureCode(error),

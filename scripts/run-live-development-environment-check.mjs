@@ -5,6 +5,7 @@ import { mkdir, open, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
+import { Client as SshClient } from "ssh2";
 import { OfficialCubeSandboxRuntimeClient } from "../packages/tool-broker/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
@@ -184,6 +185,51 @@ async function terminalCommand(path, command, marker) {
   });
 }
 
+async function sshCommand(ticket, command, marker) {
+  const client = new SshClient();
+  return new Promise((resolvePromise, rejectPromise) => {
+    const timeout = setTimeout(() => {
+      client.destroy();
+      rejectPromise(new Error(`SSH did not produce ${marker}`));
+    }, 60_000);
+    client.once("error", (error) => {
+      clearTimeout(timeout);
+      rejectPromise(error);
+    });
+    client.once("ready", () => {
+      client.shell({ rows: 24, cols: 100 }, (error, channel) => {
+        if (error) {
+          clearTimeout(timeout);
+          rejectPromise(error);
+          return;
+        }
+        let output = "";
+        channel.on("data", (chunk) => {
+          output += chunk.toString("utf8");
+        });
+        channel.stderr.on("data", (chunk) => {
+          output += chunk.toString("utf8");
+        });
+        channel.once("close", () => {
+          clearTimeout(timeout);
+          client.end();
+          if (output.includes(marker)) resolvePromise(output);
+          else rejectPromise(new Error(`SSH output omitted ${marker}: ${output.slice(-2_000)}`));
+        });
+        channel.end(`${command}\nexit\n`);
+      });
+    });
+    client.connect({
+      host: ticket.host,
+      port: ticket.port,
+      username: ticket.username,
+      password: ticket.password,
+      hostVerifier: () => true,
+      readyTimeout: 10_000,
+    });
+  });
+}
+
 const cluster = JSON.parse(
   await readPrivate(
     resolve(runtimeDirectory, "cubesandbox/cluster.json"),
@@ -238,17 +284,39 @@ await terminalCommand(
 const session = await api.createSession(
   project.projectId,
   project.workspaceId,
-  `Queued behind exclusive environment ${suffix}`,
+  `Agent handoff into exclusive environment ${suffix}`,
   "ephemeral",
 );
-const queued = await api.acceptTurn(
+const agentRun = await api.acceptTurn(
   session.sessionId,
-  "Reply exactly EXCLUSIVE_QUEUE_RELEASED_OK without using tools.",
+  "Use bash to write EXCLUSIVE_AGENT_HANDOFF_OK into /workspace/agent-handoff.txt, read it back, and report the verified marker.",
   newIdempotencyKey("turn"),
   "off",
 );
-await wait(2_000);
-assert.equal((await api.getRun(queued.runId)).state, "queued");
+await waitForRun(agentRun.runId);
+assert.equal(
+  await psql(
+    `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
+  ),
+  runtimeName,
+);
+assert.equal(
+  await psql(
+    `select state || ':' || coalesce(agent_activation_id::text, 'idle') from development_environments where id = ${sqlLiteral(development.environmentId)}`,
+  ),
+  "running:idle",
+);
+await terminalCommand(
+  `/v1/conversations/${session.sessionId}/terminal`,
+  'test "$(cat /workspace/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && kill -0 "$(cat /workspace/exclusive.pid)" && echo EXCLUSIVE_AGENT_RETURN_OK',
+  "EXCLUSIVE_AGENT_RETURN_OK",
+);
+const sshTicket = await api.issueSshAccessTicket(session.sessionId);
+await sshCommand(
+  sshTicket,
+  'test "$(cat /workspace/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && echo EXCLUSIVE_SSH_OK',
+  "EXCLUSIVE_SSH_OK",
+);
 
 const paused = await api.developmentEnvironmentAction(
   development.environmentId,
@@ -282,7 +350,6 @@ const released = await api.developmentEnvironmentAction(
 );
 assert.equal(released.state, "released");
 assert.equal(await cube.read(runtimeName), undefined);
-await waitForRun(queued.runId);
 await terminalCommand(
   `/v1/conversations/${session.sessionId}/terminal`,
   'test "$(cat /workspace/exclusive.txt)" = EXCLUSIVE_FILE_OK && echo EXCLUSIVE_VOLUME_OK',
@@ -297,9 +364,10 @@ const report = {
   cubeIdentityStableAcrossPause: true,
   processSurvivedTerminalReconnect: true,
   processSurvivedPauseResume: true,
-  agentRunQueuedUntilRelease: true,
+  agentRunBorrowedAndReturnedSameCube: true,
   workspaceVolumeSurvivedRelease: true,
   authenticatedHttpPreviewPassed: true,
+  oneTimeSshGatewayPassed: true,
   selectedProfile: development.profileKey,
 };
 await cube.close();

@@ -1,0 +1,80 @@
+{{- if and .Values.globalPlaneEnabled .Values.sshGateway.enabled }}
+{{- $name := include "pi-cloud-platform.name" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-ssh-gateway
+  labels:
+    {{- include "pi-cloud-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ssh-gateway
+spec:
+  replicas: {{ .Values.sshGateway.replicas }}
+  minReadySeconds: 5
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: ssh-gateway }
+  template:
+    metadata:
+      labels:
+        {{- include "pi-cloud-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ssh-gateway
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.trustedNodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.trustedTolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ssh-gateway
+          image: {{ include "pi-cloud-platform.image" .Values.images.sshGateway | quote }}
+          imagePullPolicy: {{ .Values.images.sshGateway.pullPolicy }}
+          ports: [{ name: ssh, containerPort: 2222 }]
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: HOST, value: 0.0.0.0 }
+            - { name: PORT, value: "2222" }
+            - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
+            - { name: PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-terminal-token }
+            - { name: PI_CLOUD_SSH_HOST_KEY_FILE, value: /run/pi-cloud-secrets/ssh-host-key.pem }
+            - { name: PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP, value: "true" }
+          readinessProbe: { tcpSocket: { port: ssh }, periodSeconds: 5, timeoutSeconds: 2 }
+          livenessProbe: { tcpSocket: { port: ssh }, periodSeconds: 10, timeoutSeconds: 2 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.sshGateway.resources | nindent 12 }}
+          volumeMounts:
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: {{ .Values.external.database.secretKey }}, readOnly: true }
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/workspace-terminal-token, subPath: workspace-terminal-token, readOnly: true }
+            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/ssh-host-key.pem, subPath: ssh-host-key.pem, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: platform-secrets
+          secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
+        - name: tmp
+          emptyDir: { sizeLimit: 32Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-ssh-gateway
+  labels:
+    {{- include "pi-cloud-platform.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.sshGateway.serviceType }}
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: ssh-gateway }
+  ports: [{ name: ssh, port: {{ .Values.sshGateway.port }}, targetPort: ssh }]
+{{- end }}

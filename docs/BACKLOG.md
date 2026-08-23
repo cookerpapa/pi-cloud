@@ -53,6 +53,10 @@ retired and remain only in Git history or explicitly superseded ADRs.
 - [ ] Add branch rename controls to the tree UI.
 - [ ] Expand orphan reconciliation for Cube activations and persistent Volumes.
 - [x] Publish Kafka hot-event and PostgreSQL complete-message projection evidence.
+- [x] Fold settled Accepted-Kafka tails at the terminal cursor so Gateway
+      restart memory is bounded by active/hot Sessions rather than history.
+- [x] Preserve conversations when their Workspace is deleted and require an
+      explicit rebind before later Turns.
 
 ## Distributed deployment
 
@@ -94,9 +98,10 @@ retired and remain only in Git history or explicitly superseded ADRs.
 - [x] Preserve one persistent conversation Cube across owner terminal handoff.
 - [x] Add private-token HTTP service preview and deployment-owned development
       environment size profiles.
+- [x] Hand an exclusive Cube between human Terminal and Agent Run under durable
+      single-writer admission instead of allocating a second VM.
+- [x] Add one-use SSH tickets and a trusted SSH-to-Tool-Broker PTY gateway.
 - [ ] Add a bounded WebSocket preview tunnel for HMR and application sockets.
-- [ ] Define an explicit fenced Agent handoff into a live development
-      environment; until then Agent Runs remain queued behind its writer lock.
 
 ## Product expansion rule
 

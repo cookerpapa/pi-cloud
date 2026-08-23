@@ -47,6 +47,7 @@ const session: SessionResource = {
   title: "修复订单服务",
   projectId: project.projectId,
   workspaceId: project.workspaceId,
+  workspaceState: "attached",
   state: "cold",
   sandboxRetention: "ephemeral",
   modelProfileId: "50000000-0000-4000-8000-000000000001",

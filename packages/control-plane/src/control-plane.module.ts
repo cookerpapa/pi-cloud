@@ -31,6 +31,7 @@ import { TurnSteeringService } from "./turn-steering-service.ts";
 import type { TurnSteerBackend } from "./turn-steer.ts";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
+import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import {
   EmptyLiveTurnSnapshotSource,
   type LiveTurnSnapshotSource,
@@ -57,6 +58,7 @@ export type ControlPlaneModuleOptions = Omit<
   supervisorWebSocketGateway?: SupervisorWebSocketGateway;
   turnSteerBackendFactory?: (sandboxId: string) => Promise<TurnSteerBackend>;
   developmentEnvironmentService?: DevelopmentEnvironmentService;
+  sshAccessTicketService?: SshAccessTicketService;
 };
 
 export type ControlPlaneEventRuntime = {
@@ -199,6 +201,12 @@ export class ControlPlaneModule {
               allowInsecureInternalHttp: false,
               ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
             }),
+        },
+        {
+          provide: SshAccessTicketService,
+          useValue:
+            options.sshAccessTicketService ??
+            new SshAccessTicketService({ database: options.database, enabled: false }),
         },
         {
           provide: WorkspaceVersionService,

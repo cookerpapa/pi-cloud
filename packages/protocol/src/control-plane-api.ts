@@ -395,12 +395,18 @@ export const CreateSessionRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const ConversationWorkspaceStateSchema = Type.Union([
+  Type.Literal("attached"),
+  Type.Literal("missing"),
+]);
+
 export const SessionResourceSchema = Type.Object(
   {
     sessionId: UuidSchema,
     title: Type.String({ minLength: 1, maxLength: 256 }),
     projectId: UuidSchema,
     workspaceId: UuidSchema,
+    workspaceState: ConversationWorkspaceStateSchema,
     state: Type.Literal("cold"),
     sandboxRetention: SandboxRetentionPolicySchema,
     modelProfileId: UuidSchema,
@@ -427,6 +433,7 @@ export const ConversationSummaryResourceSchema = Type.Object(
     projectId: UuidSchema,
     workspaceId: UuidSchema,
     workspaceName: Type.String({ minLength: 1, maxLength: 256 }),
+    workspaceState: ConversationWorkspaceStateSchema,
     state: SessionStateSchema,
     sandboxRetention: SandboxRetentionPolicySchema,
     turnCount: NonNegativeSafeIntegerSchema,
@@ -500,6 +507,7 @@ export const ConversationSessionResourceSchema = Type.Object(
     title: Type.String({ minLength: 1, maxLength: 256 }),
     projectId: UuidSchema,
     workspaceId: UuidSchema,
+    workspaceState: ConversationWorkspaceStateSchema,
     state: SessionStateSchema,
     sandboxRetention: SandboxRetentionPolicySchema,
     modelProfileId: UuidSchema,
@@ -536,8 +544,43 @@ export const WorkspaceDeletionResourceSchema = Type.Object(
     operationId: UuidSchema,
     workspaceId: UuidSchema,
     storageState: Type.Union([Type.Literal("pending"), Type.Literal("purged")]),
+    detachedSessionCount: NonNegativeSafeIntegerSchema,
     replayed: Type.Boolean(),
     deletedAt: UtcTimestampSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const RebindConversationWorkspaceRequestSchema = Type.Object(
+  { workspaceId: UuidSchema },
+  { additionalProperties: false },
+);
+
+export const ConversationWorkspaceBindingResourceSchema = Type.Object(
+  {
+    operationId: UuidSchema,
+    sessionId: UuidSchema,
+    projectId: UuidSchema,
+    workspaceId: UuidSchema,
+    workspaceName: Type.String({ minLength: 1, maxLength: 256 }),
+    workspaceState: Type.Literal("attached"),
+    replayed: Type.Boolean(),
+    boundAt: UtcTimestampSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const SshAccessTicketResourceSchema = Type.Object(
+  {
+    ticketId: UuidSchema,
+    sessionId: UuidSchema,
+    environmentId: UuidSchema,
+    host: Type.String({ minLength: 1, maxLength: 253 }),
+    port: Type.Integer({ minimum: 1, maximum: 65_535 }),
+    username: Type.Literal("picloud"),
+    password: Type.String({ minLength: 64, maxLength: 256 }),
+    command: Type.String({ minLength: 16, maxLength: 1_024 }),
+    expiresAt: UtcTimestampSchema,
   },
   { additionalProperties: false },
 );
@@ -1141,6 +1184,14 @@ export type SessionResource = Static<typeof SessionResourceSchema>;
 export type WorkspaceSummaryResource = Static<typeof WorkspaceSummaryResourceSchema>;
 export type WorkspaceListResource = Static<typeof WorkspaceListResourceSchema>;
 export type WorkspaceDeletionResource = Static<typeof WorkspaceDeletionResourceSchema>;
+export type ConversationWorkspaceState = Static<typeof ConversationWorkspaceStateSchema>;
+export type RebindConversationWorkspaceRequest = Static<
+  typeof RebindConversationWorkspaceRequestSchema
+>;
+export type ConversationWorkspaceBindingResource = Static<
+  typeof ConversationWorkspaceBindingResourceSchema
+>;
+export type SshAccessTicketResource = Static<typeof SshAccessTicketResourceSchema>;
 export type DevelopmentEnvironmentState = Static<typeof DevelopmentEnvironmentStateSchema>;
 export type DevelopmentEnvironmentProfileKey = Static<
   typeof DevelopmentEnvironmentProfileKeySchema
@@ -1556,6 +1607,30 @@ export function parseWorkspaceListResource(value: unknown): WorkspaceListResourc
 
 export function parseWorkspaceDeletionResource(value: unknown): WorkspaceDeletionResource {
   return parseSchema(WorkspaceDeletionResourceSchema, value, "workspace deletion resource");
+}
+
+export function parseRebindConversationWorkspaceRequest(
+  value: unknown,
+): RebindConversationWorkspaceRequest {
+  return parseSchema(
+    RebindConversationWorkspaceRequestSchema,
+    value,
+    "conversation Workspace rebind request",
+  );
+}
+
+export function parseConversationWorkspaceBindingResource(
+  value: unknown,
+): ConversationWorkspaceBindingResource {
+  return parseSchema(
+    ConversationWorkspaceBindingResourceSchema,
+    value,
+    "conversation Workspace binding resource",
+  );
+}
+
+export function parseSshAccessTicketResource(value: unknown): SshAccessTicketResource {
+  return parseSchema(SshAccessTicketResourceSchema, value, "SSH access ticket resource");
 }
 
 export function parseCreateDevelopmentEnvironmentRequest(

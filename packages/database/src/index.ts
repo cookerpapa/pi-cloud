@@ -144,6 +144,10 @@ export {
   downWorkspaceTerminalFencing,
   upRemoveDuplicateCompactionLedger,
   downRemoveDuplicateCompactionLedger,
+  upConversationWorkspaceRebinding,
+  downConversationWorkspaceRebinding,
+  upSshAccessTickets,
+  downSshAccessTickets,
 } from "./migrations/index.ts";
 
 export {

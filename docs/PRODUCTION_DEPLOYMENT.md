@@ -23,16 +23,20 @@ set `PI_CLOUD_HTTP_BIND_ADDRESS=0.0.0.0` in the private production environment
 and access `http://<host-ip>:8080`. Internet publication should use a TLS
 reverse proxy and firewall; CubeAPI, Cube WebUI and Tool Broker remain private.
 
-The installer also creates a private Workspace-terminal service credential.
-Users open the terminal from the Workspace panel; there is no SSH listener or
-manual Cube credential to configure.
+The installer also creates private Workspace-terminal and SSH host credentials.
+Users open the browser terminal from the Workspace panel or request a one-time
+SSH password for an exclusive environment. SSH binds to `127.0.0.1:2222` by
+default. Set `PI_CLOUD_SSH_BIND_ADDRESS`, `PI_CLOUD_SSH_ADVERTISED_HOST` and
+`PI_CLOUD_SSH_PORT` only when the host firewall and host-key trust policy are
+ready; no manual Cube credential is exposed.
 
 ## Services
 
 The default topology includes PostgreSQL, Kafka, Control Plane, two trusted Pi
 Workers, Tool Broker, persistent Workspace Volume
 gateway, Cube integration, provider proxy and Web. Observability and GitHub
-experiments are optional profiles.
+experiments are optional profiles. The trusted SSH gateway is enabled by
+default in the one-host profile.
 
 Temporal, Valkey, MinIO and Kopia are not installed.
 

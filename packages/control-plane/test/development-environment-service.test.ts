@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { DevelopmentEnvironmentService } from "../src/development-environment-service.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
+import { SshAccessTicketService } from "../src/ssh-access-ticket-service.ts";
 import type { TenantRequestIdentity } from "../src/tenant-identity.ts";
 
 const DOMAIN_ID = "sandbox-domain-development";
@@ -35,6 +36,7 @@ let stateRepository: PostgresSandboxActivationStateRepository;
 let identity: TenantRequestIdentity;
 let otherIdentity: TenantRequestIdentity;
 let workspaceId: string;
+let sessionId: string;
 const pauses = vi.fn(async () => undefined);
 const resumes = vi.fn(async (handle: SandboxHandle) => handle);
 const destroys = vi.fn(async (_handle: SandboxHandle) => undefined);
@@ -172,6 +174,14 @@ beforeAll(async () => {
     source: { kind: "empty" },
   });
   workspaceId = project.workspaceId;
+  sessionId = (
+    await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "exclusive conversation",
+      "ephemeral",
+    )
+  ).sessionId;
   identity = {
     credentialId: tenant.credential.credentialId,
     tenantId: tenant.tenantId,
@@ -230,6 +240,32 @@ describe("user-owned development environments", () => {
       profileKey: "standard",
     });
     expect(created).toMatchObject({ workspaceId, state: "running", generation: 1 });
+    const sshTickets = new SshAccessTicketService({
+      database,
+      enabled: true,
+      advertisedHost: "127.0.0.1",
+      advertisedPort: 2_222,
+      clock: () => new Date("2026-08-23T00:00:00.000Z"),
+      idGenerator: () => "12121212-1212-4212-8212-121212121212",
+      secretGenerator: () => "s".repeat(43),
+    });
+    const ticket = await sshTickets.issue(identity, sessionId);
+    expect(ticket).toMatchObject({
+      sessionId,
+      environmentId: created.environmentId,
+      command: "ssh -p 2222 picloud@127.0.0.1",
+      username: "picloud",
+    });
+    expect(ticket.password).toMatch(/^pcssh_/);
+    expect(
+      JSON.stringify(
+        await database
+          .selectFrom("ssh_access_tickets")
+          .select("secret_sha256")
+          .where("ticket_id", "=", ticket.ticketId)
+          .executeTakeFirstOrThrow(),
+      ),
+    ).not.toContain(ticket.password);
     await expect(
       stateRepository.reserve({
         activationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",

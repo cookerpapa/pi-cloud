@@ -20,6 +20,7 @@ import type { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
 import type { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import type { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gateway.ts";
 import type { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
+import type { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 
 export type ControlPlaneApplicationOptions = Omit<
   ControlPlaneStoreOptions,
@@ -45,6 +46,7 @@ export type ControlPlaneApplicationOptions = Omit<
   developmentEnvironmentService?: DevelopmentEnvironmentService;
   terminalTurnProjectionGateway?: TerminalTurnProjectionGateway;
   sandboxPreviewGateway?: SandboxPreviewGateway;
+  sshAccessTicketService?: SshAccessTicketService;
 };
 
 export async function createControlPlaneApplication(

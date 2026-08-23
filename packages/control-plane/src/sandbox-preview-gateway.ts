@@ -130,6 +130,10 @@ export class SandboxPreviewGateway {
               kind,
               environmentId: parseUuidPathParameter(params.environmentId, "environmentId"),
             };
+      const forwardedTarget =
+        target.kind === "conversation"
+          ? await this.#conversationPreviewTarget(identity.tenantId, identity.userId, target)
+          : target;
       const port = previewPort(params.port);
       const suffix = typeof params["*"] === "string" ? params["*"] : "";
       const search = new URL(request.raw.url ?? "/", "http://pi-cloud.local").search;
@@ -137,7 +141,11 @@ export class SandboxPreviewGateway {
       if (!new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]).has(method)) {
         throw new Error("Preview HTTP method is unsupported");
       }
-      const baseUrl = await this.#resolveBaseUrl(identity.tenantId, identity.userId, target);
+      const baseUrl = await this.#resolveBaseUrl(
+        identity.tenantId,
+        identity.userId,
+        forwardedTarget,
+      );
       const body = requestBody(request);
       const response = await this.#forward(baseUrl, 0, {
         sandboxPreviewProtocolVersion: 1,
@@ -145,7 +153,7 @@ export class SandboxPreviewGateway {
         requestId: randomUUID(),
         tenantId: identity.tenantId,
         userId: identity.userId,
-        target,
+        target: forwardedTarget,
         port,
         method,
         path: `/${suffix}${search}`,
@@ -185,6 +193,31 @@ export class SandboxPreviewGateway {
         message: "Sandbox service is not currently reachable",
       });
     }
+  }
+
+  async #conversationPreviewTarget(
+    tenantId: string,
+    userId: string,
+    target: Extract<SandboxPreviewTarget, { kind: "conversation" }>,
+  ): Promise<SandboxPreviewTarget> {
+    const environment = await this.#database
+      .selectFrom("sessions as session_row")
+      .innerJoin("development_environments as development", (join) =>
+        join
+          .onRef("development.tenant_id", "=", "session_row.tenant_id")
+          .onRef("development.workspace_id", "=", "session_row.workspace_id"),
+      )
+      .select("development.id")
+      .where("session_row.tenant_id", "=", tenantId)
+      .where("session_row.id", "=", target.sessionId)
+      .where("session_row.archived_at", "is", null)
+      .where("development.owner_user_id", "=", userId)
+      .where("development.state", "=", "running")
+      .orderBy("development.updated_at", "desc")
+      .executeTakeFirst();
+    return environment === undefined
+      ? target
+      : { kind: "development_environment", environmentId: environment.id };
   }
 
   async #resolveBaseUrl(

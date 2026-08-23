@@ -16,8 +16,10 @@
 - human Pi Session tree navigation and transactional conversation forks.
 - Run-scoped built-in Tool capability snapshots enforced independently by the
   Agent Host and Tool Broker.
-- user-owned exclusive Cube development environments with pause/resume and
-  persistent Workspace terminals.
+- user-owned exclusive Cube development environments with pause/resume,
+  persistent Workspace terminals, fenced Agent handoff and one-time SSH access;
+- Session/Workspace lifetime independence with missing-Workspace rebinding;
+- terminal-boundary folding for the Kafka-backed Gateway replay projection.
 
 ## Current release gate
 

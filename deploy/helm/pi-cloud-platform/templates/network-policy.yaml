@@ -59,6 +59,31 @@ spec:
         - { protocol: TCP, port: {{ . }} }
         {{- end }}
     {{- end }}
+{{- if .Values.sshGateway.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: {{ $name }}-ssh-gateway }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: ssh-gateway }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports: [{ protocol: TCP, port: 2222 }]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to:
+        - namespaceSelector:
+            matchLabels: { {{ $labelKey }}: {{ $labelValue | quote }} }
+      ports:
+        - { protocol: TCP, port: 4300 }
+        - { protocol: TCP, port: 5432 }
+{{- end }}
 {{- if .Values.sandboxPlaneEnabled }}
 ---
 apiVersion: networking.k8s.io/v1

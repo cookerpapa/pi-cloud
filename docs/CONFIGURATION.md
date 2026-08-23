@@ -30,6 +30,7 @@ Important operator values include:
 - public-registration and tenant quotas;
 - Tool, model and Turn timeouts;
 - Cube warm/persistent retention and capacity;
+- SSH gateway bind address/port, advertised host and generated host key;
 - Workspace Volume gateway concurrency;
 - Workspace deletion reaper interval and batch size;
 - Kafka broker/topic names and bounded time/byte retention;
@@ -95,5 +96,6 @@ npm run helm:check
 Never place credentials in committed Helm values or environment files. Use
 private files/Kubernetes Secrets for database URLs, model encryption key,
 Worker enrollment/management tokens, Tool Broker token, Cube API key and
-metrics token. Enterprise Kafka credentials and CA material belong in
+metrics token. The SSH host private key and one-time ticket hashes also stay in
+the trusted plane. Enterprise Kafka credentials and CA material belong in
 Kubernetes Secrets/ACL configuration. Cube receives none of them.

@@ -28,6 +28,8 @@ import {
   parseWorkspaceOperationResource,
   parseWorkspaceVersionListResource,
   parseWorkspaceVersionResource,
+  parseConversationWorkspaceBindingResource,
+  parseSshAccessTicketResource,
   type ConversationDetailResource,
   type AuthSessionResource,
   type ConversationListResource,
@@ -61,6 +63,8 @@ import {
   type WorkspaceSourceRequest,
   type WorkspaceVersionListResource,
   type WorkspaceVersionResource,
+  type ConversationWorkspaceBindingResource,
+  type SshAccessTicketResource,
 } from "@pi-cloud/protocol";
 
 export class PiCloudApiError extends Error {
@@ -202,6 +206,33 @@ export class PiCloudApi {
     return parseTenantIdentityResource(
       await request(this.#fetch, "/v1/identity", { method: "GET" }, this.#authorizationToken),
     );
+  }
+
+  async probeConversationPreview(sessionId: string, port: number): Promise<string> {
+    const path = `/v1/conversations/${encodeURIComponent(sessionId)}/preview/${encodeURIComponent(
+      String(port),
+    )}/`;
+    let response: Response;
+    try {
+      response = await this.#fetch(path, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: { range: "bytes=0-0" },
+      });
+    } catch {
+      throw new PiCloudApiError(0, "network_error", "服务预览网关不可用");
+    }
+    if (response.status === 502 || response.status === 503) {
+      let message = "沙箱正在运行，但所选端口还没有可访问的 HTTP 服务";
+      try {
+        const body = (await response.json()) as { message?: unknown };
+        if (typeof body.message === "string" && body.message.length > 0) message = body.message;
+      } catch {
+        /* An upstream service may itself return a non-JSON 502 response. */
+      }
+      throw new PiCloudApiError(response.status, "preview_unavailable", message);
+    }
+    return path;
   }
 
   async registerAccount(
@@ -369,6 +400,32 @@ export class PiCloudApi {
           method: "DELETE",
           headers: { "idempotency-key": idempotencyKey },
         },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async rebindConversationWorkspace(
+    sessionId: string,
+    workspaceId: string,
+    idempotencyKey: string,
+  ): Promise<ConversationWorkspaceBindingResource> {
+    return parseConversationWorkspaceBindingResource(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/workspace`,
+        jsonRequest({ workspaceId }, idempotencyKey, "PUT"),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async issueSshAccessTicket(sessionId: string): Promise<SshAccessTicketResource> {
+    return parseSshAccessTicketResource(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/ssh-tickets`,
+        jsonRequest({}),
         this.#authorizationToken,
       ),
     );
@@ -613,7 +670,16 @@ export class PiCloudApi {
 
 export function newIdempotencyKey(
   prefix:
-    "turn" | "cancel" | "steer" | "archive" | "delete" | "retry" | "fork" | "prune" | "environment",
+    | "turn"
+    | "cancel"
+    | "steer"
+    | "archive"
+    | "delete"
+    | "retry"
+    | "fork"
+    | "prune"
+    | "environment"
+    | "workspace-rebind",
 ): string {
   return `${prefix}:${globalThis.crypto.randomUUID()}`;
 }

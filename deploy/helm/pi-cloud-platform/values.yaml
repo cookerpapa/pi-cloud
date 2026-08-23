@@ -32,6 +32,10 @@ images:
     repository: pi-cloud/tool-broker
     tag: production
     pullPolicy: IfNotPresent
+  sshGateway:
+    repository: pi-cloud/ssh-gateway
+    tag: production
+    pullPolicy: IfNotPresent
 
 bootstrap:
   enabled: true
@@ -69,6 +73,16 @@ controlPlane:
   resources:
     requests: { cpu: 500m, memory: 1Gi }
     limits: { cpu: "2", memory: 4Gi }
+
+sshGateway:
+  enabled: true
+  replicas: 2
+  advertisedHost: ssh.pi-cloud.example.com
+  port: 2222
+  serviceType: LoadBalancer
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
 
 web:
   replicas: 2

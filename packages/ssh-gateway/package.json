@@ -1,0 +1,21 @@
+{
+  "name": "@pi-cloud/ssh-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@pi-cloud/database": "0.1.0",
+    "@pi-cloud/protocol": "0.1.0",
+    "ssh2": "1.17.0",
+    "tsx": "4.23.1",
+    "ws": "8.21.1"
+  },
+  "devDependencies": {
+    "@types/ssh2": "1.15.5"
+  }
+}

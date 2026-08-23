@@ -45,9 +45,12 @@ a tenant-safe raw SSH endpoint for ordinary Sandboxes.
   (4 vCPU/8 GiB/32 GiB). Each profile maps to an immutable Cube template built
   from the same trusted tool image. The user cannot supply a template ID or
   arbitrary VM resources.
-- The development-environment page is an independent product route and remains
-  available when no Agent Run is active. A running environment can also be
-  opened from its Workspace panel in chat.
+- Environment allocation, profile selection, pause/resume/release, Preview,
+  Terminal and SSH are part of the conversation resource flow. The former
+  standalone development-environment page has been removed.
+- A fenced Agent Run may borrow the same exclusive Cube after Tool Broker
+  proves there is no active human terminal. It returns the Cube to its
+  user-owned authority at Run settlement instead of starting a second writer.
 
 ## Consequences
 

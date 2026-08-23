@@ -170,6 +170,7 @@ function createRequest(
     turnContextSha256: STEP_CONTEXT_SHA256,
     attemptContextSha256: STEP_CONTEXT_SHA256,
     allowedTools: ["read", "write", "edit", "bash"],
+    retention: "ephemeral",
     environment: {
       environmentVersionId: randomUUID(),
       versionNumber: 1,

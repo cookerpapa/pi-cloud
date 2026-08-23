@@ -146,7 +146,7 @@ type CubeActivation = {
   authorityEpoch: number;
   state: "running" | "quiesced" | "idle" | "paused";
   volumeId: string;
-  lifetime: "agent_turn" | "development_environment";
+  lifetime: "agent_turn" | "persistent_conversation" | "development_environment";
 };
 
 export type CubeSandboxProviderOptions = Readonly<{
@@ -659,7 +659,7 @@ export class CubeSandboxProvider implements SandboxProvider {
           ? this.#developmentTemplateIds.get(spec.developmentProfileKey)!
           : this.#templateId,
       timeoutSeconds:
-        spec.lifetime === "development_environment"
+        spec.lifetime === "development_environment" || spec.lifetime === "persistent_conversation"
           ? -1
           : Math.ceil(spec.policy.resources.turnWallClockTimeoutMs / 1_000),
       metadata: assignmentMetadata(
@@ -671,7 +671,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       allowInternetAccess: true,
       allowPublicTraffic: false,
       volumeMounts: [{ name: volumeId, path: "/workspace" }],
-      ...(spec.lifetime === "development_environment"
+      ...(spec.lifetime === "development_environment" || spec.lifetime === "persistent_conversation"
         ? { lifecycle: { onTimeout: "pause" as const, autoResume: true } }
         : {}),
     });

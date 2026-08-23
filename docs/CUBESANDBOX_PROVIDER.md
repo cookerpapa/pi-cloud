@@ -70,7 +70,9 @@ authenticated browser WebSocket
 ```
 
 A human terminal and an Agent Run cannot write the same Workspace at the same
-time. There is no public SSH port and no second `envd` command channel.
+time. Standard SSH is terminated by PiCloud's trusted ticket gateway and
+translated into this PTY protocol; Cube port 22 remains private and there is no
+second `envd` command channel.
 
 ## Network policy
 

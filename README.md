@@ -42,9 +42,11 @@ schema or maintained deployment. The current sources of truth are this README,
 - pure chat without Sandbox activation;
 - lazy Cube activation, warm reuse and optional persistent Sandbox retention;
 - a Workspace directory/source browser, isolated Web Terminal, and safe deletion;
-- user-owned exclusive Cube development environments with reconnectable
-  terminals, deployment-owned resource profiles, authenticated HTTP service
-  previews and explicit pause/resume/release;
+- Session history that survives Workspace deletion and can be rebound before a
+  later Turn;
+- user-owned exclusive Cube environments selected inside the conversation flow,
+  with fenced Agent/terminal handoff, deployment-owned resource profiles,
+  authenticated HTTP previews, one-time SSH access and pause/resume/release;
 - administrator-only hot model credentials and Cube proxy configuration.
 
 ## One user message
@@ -135,8 +137,7 @@ browser request, then proxies a separate short-lived human terminal authority
 through the Tool Broker to a fenced PTY inside Cube. A human terminal and an
 Agent Run cannot write the same Workspace concurrently. For a persistent
 conversation, terminal access rebinds and later returns the same idle Cube
-instead of discarding its process world. No public SSH port or platform
-credential is exposed.
+instead of discarding its process world.
 
 Ordinary users may also request an exclusive development environment for one
 Workspace. PostgreSQL binds the allocation to the authenticated user while Tool
@@ -144,9 +145,25 @@ Broker creates one never-timeout Cube KVM. Reconnecting a terminal opens a new
 PTY in the same VM; disconnecting does not stop background processes. Pause and
 resume use Cube's native memory/filesystem lifecycle, while release destroys
 the VM and preserves the persistent Workspace Volume. The allocation is a
-Workspace writer, so ordinary Agent Runs remain queued until it is released.
+Workspace writer. A Run may borrow that exact Cube only after Broker proves no
+human terminal is active; the Run's fence/secret replaces human authority, and
+terminal ownership is restored after Workspace settlement. The new-session
+dialog is the single place to choose elastic execution or select/apply an
+exclusive environment.
 Cube's cluster WebUI remains an operator console and is never the tenant
 authorization boundary.
+
+For command-line access, the authenticated Web UI issues a one-use, five-minute
+SSH ticket. A trusted SSH gateway consumes it atomically and bridges standard
+OpenSSH to the same brokered PTY. Cube port 22, Sandbox identity and platform
+credentials remain private. The one-host listener binds to `127.0.0.1:2222` by
+default; LAN/public exposure is an explicit operator decision.
+
+Session, Workspace and execution environment have independent lifetimes.
+Deleting a Workspace removes its files only after writers settle; conversations
+remain readable with a missing-Workspace marker and can be rebound to another
+Workspace. Releasing an exclusive Cube preserves both the conversation and its
+persistent Volume.
 
 ## Recovery and correctness
 

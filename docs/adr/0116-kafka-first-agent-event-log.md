@@ -49,6 +49,10 @@ Pi SessionStorage in PostgreSQL fits the second.
 - `Last-Event-ID` replays from that retained projection. A cursor older than
   Kafka retention receives an explicit expired-cursor response and reloads the
   canonical conversation from PostgreSQL.
+- An accepted terminal event folds that Session's in-memory Gateway tail to
+  one terminal cursor. Replaying a day of retained Kafka history therefore
+  cannot recreate every settled token fragment in RAM. A client behind the
+  fold boundary reloads canonical Pi messages from PostgreSQL.
 - An event is eligible for SSE only after the accepted-topic broker ACK. This
   preserves "durable before visible" without inserting token fragments into
   PostgreSQL.
@@ -106,6 +110,8 @@ Pi SessionStorage in PostgreSQL fits the second.
 - One-host deployment gains Kafka and a rebuildable in-process Gateway
   projection, but does not gain Valkey, a second scheduler or another Workspace
   store.
+- The formal crash boundaries and recovery invariants are maintained in
+  `docs/STREAM_DURABILITY.md`.
 - Acceptance must cover broker ACK visibility, duplicate delivery, projector
   restart, Gateway rebuild, stale fence rejection, projection lag, SSE resume,
   real multi-round coding and component-loss behavior.

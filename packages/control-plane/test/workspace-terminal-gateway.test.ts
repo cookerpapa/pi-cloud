@@ -145,7 +145,7 @@ async function seed(database: Kysely<Database>, toolBrokerBaseUrl: string): Prom
 }
 
 describe("WorkspaceTerminalGateway", () => {
-  it("admits a pending first-use environment, derives identity, and rejects failed environments", async () => {
+  it("admits first use, derives identity, and routes a conversation to its exclusive environment", async () => {
     let observedOpen: Record<string, unknown> | undefined;
     let observedInput: Record<string, unknown> | undefined;
     let observedDevelopmentOpen: Record<string, unknown> | undefined;
@@ -355,9 +355,9 @@ describe("WorkspaceTerminalGateway", () => {
       failed.once("error", reject);
     });
     await expect(nextFailedFrame()).resolves.toMatchObject({
-      type: "workspace_terminal.error",
-      code: "workspace_terminal_unavailable",
+      type: "workspace_terminal.ready",
     });
+    expect(observedDevelopmentOpen).toMatchObject({ environmentId: IDS.development });
 
     const unauthorized = new WebSocket(terminalUrl);
     await expect(

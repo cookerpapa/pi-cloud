@@ -49,6 +49,7 @@ describe("Tool Sandbox protocol", () => {
         turnContextSha256: "a".repeat(64),
         attemptContextSha256: "b".repeat(64),
         allowedTools: ["read", "write", "edit", "bash"],
+        retention: "persistent",
         environment,
         workspaceSeed: { kind: "sample_java" },
       }),

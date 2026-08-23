@@ -39,6 +39,9 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   PI_CLOUD_TOOL_BROKER_URLS: http://tool-broker:4300
   PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE: /run/pi-cloud-secrets/sandbox-materializer-token
   PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: /run/pi-cloud-secrets/workspace-terminal-token
+  PI_CLOUD_SSH_GATEWAY_ENABLED: ${PI_CLOUD_SSH_GATEWAY_ENABLED:-true}
+  PI_CLOUD_SSH_ADVERTISED_HOST: ${PI_CLOUD_SSH_ADVERTISED_HOST:-127.0.0.1}
+  PI_CLOUD_SSH_ADVERTISED_PORT: ${PI_CLOUD_SSH_PORT:-2222}
   PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true"
   PI_CLOUD_SUPERVISOR_ID_PREFIX: ${PI_CLOUD_SUPERVISOR_ID_PREFIX:-pi-cloud-worker-}
   PI_CLOUD_SUPERVISOR_MAXIMUM_CAPACITY: ${PI_CLOUD_SUPERVISOR_CAPACITY:-2}
@@ -312,6 +315,67 @@ services:
     mem_limit: 768m
     cpus: 1.5
     stop_grace_period: 30s
+    logging: *bounded-logging
+
+  ssh-gateway:
+    image: pi-cloud/ssh-gateway:${PI_CLOUD_IMAGE_VERSION:-production}
+    build:
+      context: ../..
+      dockerfile: packages/ssh-gateway/Dockerfile
+      args: *application-build-args
+      network: host
+    restart: unless-stopped
+    depends_on:
+      database-bootstrap:
+        condition: service_completed_successfully
+      tool-broker:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "2222"
+      DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
+      PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: /run/pi-cloud-secrets/workspace-terminal-token
+      PI_CLOUD_SSH_HOST_KEY_FILE: /run/pi-cloud-secrets/ssh-host-key.pem
+      PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true"
+    volumes:
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/database-url
+        target: /run/pi-cloud-secrets/database-url
+        read_only: true
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/workspace-terminal-token
+        target: /run/pi-cloud-secrets/workspace-terminal-token
+        read_only: true
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/ssh-host-key.pem
+        target: /run/pi-cloud-secrets/ssh-host-key.pem
+        read_only: true
+    ports:
+      - ${PI_CLOUD_SSH_BIND_ADDRESS:-127.0.0.1}:${PI_CLOUD_SSH_PORT:-2222}:2222
+    networks:
+      - database
+      - sandbox-control
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "const s=require('node:net').connect(2222,'127.0.0.1');s.setTimeout(2000);s.once('connect',()=>{s.destroy();process.exit(0)});s.once('error',()=>process.exit(1));s.once('timeout',()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
+    <<: *application-security
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777,uid=${PI_CLOUD_APPLICATION_UID:-1000},gid=${PI_CLOUD_APPLICATION_GID:-1000}
+    pids_limit: 96
+    mem_limit: 192m
+    cpus: 0.5
+    stop_grace_period: 15s
     logging: *bounded-logging
 
   provider-relay-volume-bootstrap:

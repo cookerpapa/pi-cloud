@@ -27,6 +27,7 @@ import {
   parseCreateConversationPruneRequest,
   parseCreateDevelopmentEnvironmentRequest,
   parseDevelopmentEnvironmentActionRequest,
+  parseRebindConversationWorkspaceRequest,
   parseConversationTreeView,
   parseIdempotencyKey,
   parseLastEventIdHeader,
@@ -43,6 +44,7 @@ import {
   type ConversationTreeResource,
   type ConversationForkResource,
   type ConversationPruneResource,
+  type ConversationWorkspaceBindingResource,
   type ProjectResource,
   type ModelConfigurationResource,
   type CubeProxyConfigurationResource,
@@ -62,6 +64,7 @@ import {
   type DevelopmentEnvironmentListResource,
   type DevelopmentEnvironmentResource,
   type LiveTurnSnapshotResource,
+  type SshAccessTicketResource,
 } from "@pi-cloud/protocol";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ControlPlaneStoreFactory } from "./control-plane-store-factory.ts";
@@ -77,6 +80,7 @@ import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import type { LiveTurnSnapshotSource } from "@pi-cloud/runtime-core/live-turn-snapshot";
 import { LIVE_TURN_SNAPSHOT_SOURCE } from "./event-runtime-token.ts";
+import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 
 @Controller("v1")
 export class ControlPlaneController {
@@ -102,6 +106,8 @@ export class ControlPlaneController {
     private readonly conversationTrees: ConversationTreeService,
     @Inject(DevelopmentEnvironmentService)
     private readonly developmentEnvironments: DevelopmentEnvironmentService,
+    @Inject(SshAccessTicketService)
+    private readonly sshAccessTickets: SshAccessTicketService,
   ) {}
 
   @Post("auth/register")
@@ -279,6 +285,35 @@ export class ControlPlaneController {
       parseIdempotencyKey(idempotencyKeyValue),
       sessionId,
       { archived: true },
+    );
+  }
+
+  @Put("conversations/:sessionId/workspace")
+  async rebindConversationWorkspace(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionIdValue: unknown,
+    @Headers("idempotency-key") idempotencyKeyValue: unknown,
+    @Body() body: unknown,
+  ): Promise<ConversationWorkspaceBindingResource> {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    const binding = parseRebindConversationWorkspaceRequest(body);
+    return this.controlPlaneStores
+      .forIdentity(identity)
+      .rebindConversationWorkspace(
+        parseUuidPathParameter(sessionIdValue, "sessionId"),
+        binding.workspaceId,
+        parseIdempotencyKey(idempotencyKeyValue),
+      );
+  }
+
+  @Post("conversations/:sessionId/ssh-tickets")
+  async issueSshAccessTicket(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionIdValue: unknown,
+  ): Promise<SshAccessTicketResource> {
+    return this.sshAccessTickets.issue(
+      this.tenantRequestContext.requireMutation(request),
+      parseUuidPathParameter(sessionIdValue, "sessionId"),
     );
   }
 

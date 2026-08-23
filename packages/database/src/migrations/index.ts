@@ -82,6 +82,8 @@ import * as reconcileCodingModelLimits from "./080_reconcile_coding_model_limits
 import * as developmentEnvironmentProfiles from "./081_development_environment_profiles.ts";
 import * as workspaceTerminalFencing from "./082_workspace_terminal_fencing.ts";
 import * as removeDuplicateCompactionLedger from "./083_remove_duplicate_compaction_ledger.ts";
+import * as conversationWorkspaceRebinding from "./084_conversation_workspace_rebinding.ts";
+import * as sshAccessTickets from "./085_ssh_access_tickets.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -169,6 +171,8 @@ export const migrationProvider: MigrationProvider = {
       "081_development_environment_profiles": developmentEnvironmentProfiles,
       "082_workspace_terminal_fencing": workspaceTerminalFencing,
       "083_remove_duplicate_compaction_ledger": removeDuplicateCompactionLedger,
+      "084_conversation_workspace_rebinding": conversationWorkspaceRebinding,
+      "085_ssh_access_tickets": sshAccessTickets,
     };
   },
 };
@@ -473,3 +477,11 @@ export {
   down as downRemoveDuplicateCompactionLedger,
   up as upRemoveDuplicateCompactionLedger,
 } from "./083_remove_duplicate_compaction_ledger.ts";
+export {
+  down as downConversationWorkspaceRebinding,
+  up as upConversationWorkspaceRebinding,
+} from "./084_conversation_workspace_rebinding.ts";
+export {
+  down as downSshAccessTickets,
+  up as upSshAccessTickets,
+} from "./085_ssh_access_tickets.ts";

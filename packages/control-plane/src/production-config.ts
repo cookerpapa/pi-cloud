@@ -22,6 +22,9 @@ export type ProductionControlPlaneConfig = {
   toolBrokerBaseUrls: readonly string[];
   sandboxMaterializerToken: string;
   workspaceTerminalToken: string;
+  sshGatewayEnabled: boolean;
+  sshAdvertisedHost: string;
+  sshAdvertisedPort: number;
   supervisorIdPrefix: string;
   supervisorMaximumCapacity: number;
   supervisorManagementBaseUrlTemplates: readonly string[];
@@ -395,6 +398,13 @@ export async function loadProductionControlPlaneConfig(
       "PI_CLOUD_WORKSPACE_TERMINAL_TOKEN",
       allowInlineSecrets,
     ),
+    sshGatewayEnabled: booleanValue(environment, "PI_CLOUD_SSH_GATEWAY_ENABLED"),
+    sshAdvertisedHost: bounded(
+      environment.PI_CLOUD_SSH_ADVERTISED_HOST ?? "127.0.0.1",
+      "PI_CLOUD_SSH_ADVERTISED_HOST",
+      253,
+    ),
+    sshAdvertisedPort: integerValue(environment, "PI_CLOUD_SSH_ADVERTISED_PORT", 2_222, 1, 65_535),
     supervisorIdPrefix: supervisorIdPrefixValue(
       required(environment, "PI_CLOUD_SUPERVISOR_ID_PREFIX"),
     ),

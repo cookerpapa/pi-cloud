@@ -23,6 +23,10 @@ images:
     repository: registry.example.com/pi-cloud/tool-broker
     tag: git-sha-0123456789abcdef
     pullPolicy: IfNotPresent
+  sshGateway:
+    repository: registry.example.com/pi-cloud/ssh-gateway
+    tag: git-sha-0123456789abcdef
+    pullPolicy: IfNotPresent
 
 bootstrap:
   tenantId: 4e0e7b96-4fe4-4f69-aef3-491335662c6f
@@ -35,6 +39,12 @@ bootstrap:
 controlPlane:
   platformModelSourceTenantId: 4e0e7b96-4fe4-4f69-aef3-491335662c6f
   platformOperatorTenantId: 4e0e7b96-4fe4-4f69-aef3-491335662c6f
+
+sshGateway:
+  enabled: true
+  advertisedHost: ssh.pi-cloud.example.com
+  port: 2222
+  serviceType: LoadBalancer
 
 web:
   ingress:

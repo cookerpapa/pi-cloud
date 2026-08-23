@@ -6,7 +6,8 @@ Use documentation in this order:
 2. [`ARCHITECTURE.md`](ARCHITECTURE.md) — maintained component and authority
    model.
 3. [`RUN_LIFECYCLE.md`](RUN_LIFECYCLE.md) and
-   [`THREAT_MODEL.md`](THREAT_MODEL.md) — correctness and security invariants.
+   [`STREAM_DURABILITY.md`](STREAM_DURABILITY.md) — Run, streaming and crash
+   invariants; [`THREAT_MODEL.md`](THREAT_MODEL.md) — security boundaries.
    [`CUBESANDBOX_PROVIDER.md`](CUBESANDBOX_PROVIDER.md) defines the current Tool
    execution boundary.
 4. [`CONFIGURATION.md`](CONFIGURATION.md),

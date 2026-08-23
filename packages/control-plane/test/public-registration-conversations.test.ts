@@ -491,40 +491,9 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     const replacementSession = replacement.json<SessionResource>();
     expect(replacementSession.sandboxRetention).toBe("ephemeral");
 
-    const blockedDeletion = await http.inject({
-      method: "DELETE",
-      url: `/v1/workspaces/${project.workspaceId}`,
-      headers: {
-        ...authorization(alpha.apiToken),
-        "idempotency-key": "delete-live-persistent-workspace",
-      },
-    });
-    expect(blockedDeletion.statusCode).toBe(409);
-    expect(blockedDeletion.json()).toMatchObject({ error: { code: "conflict" } });
-
-    const foreignDeletion = await http.inject({
-      method: "DELETE",
-      url: `/v1/workspaces/${project.workspaceId}`,
-      headers: {
-        ...authorization(bravo.apiToken),
-        "idempotency-key": "delete-foreign-workspace",
-      },
-    });
-    expect(foreignDeletion.statusCode).toBe(404);
-
-    const archiveReplacement = await http.inject({
-      method: "DELETE",
-      url: `/v1/conversations/${replacementSession.sessionId}`,
-      headers: {
-        ...authorization(alpha.apiToken),
-        "idempotency-key": "archive-replacement-devbox",
-      },
-    });
-    expect(archiveReplacement.statusCode).toBe(200);
-
     const deletionHeaders = {
       ...authorization(alpha.apiToken),
-      "idempotency-key": "delete-persistent-workspace",
+      "idempotency-key": "delete-live-persistent-workspace",
     };
     const deletedWorkspace = await http.inject({
       method: "DELETE",
@@ -536,8 +505,66 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     expect(deletion).toMatchObject({
       workspaceId: project.workspaceId,
       storageState: "pending",
+      detachedSessionCount: 1,
       replayed: false,
     });
+
+    const detachedConversation = await http.inject({
+      method: "GET",
+      url: `/v1/conversations/${replacementSession.sessionId}`,
+      headers: authorization(alpha.apiToken),
+    });
+    expect(detachedConversation.statusCode).toBe(200);
+    expect(detachedConversation.json<ConversationDetailResource>().session.workspaceState).toBe(
+      "missing",
+    );
+    const rejectedTurn = await http.inject({
+      method: "POST",
+      url: `/v1/sessions/${replacementSession.sessionId}/turns`,
+      headers: {
+        ...authorization(alpha.apiToken),
+        "idempotency-key": "detached-turn",
+      },
+      payload: { prompt: "continue", thinkingLevel: "off" },
+    });
+    expect(rejectedTurn.statusCode).toBe(409);
+
+    const rebound = await http.inject({
+      method: "PUT",
+      url: `/v1/conversations/${replacementSession.sessionId}/workspace`,
+      headers: {
+        ...authorization(alpha.apiToken),
+        "idempotency-key": "rebind-detached-conversation",
+      },
+      payload: { workspaceId: alphaProject.workspaceId },
+    });
+    expect(rebound.statusCode).toBe(200);
+    expect(rebound.json()).toMatchObject({
+      sessionId: replacementSession.sessionId,
+      workspaceId: alphaProject.workspaceId,
+      workspaceState: "attached",
+      replayed: false,
+    });
+    expect(
+      (
+        await http.inject({
+          method: "GET",
+          url: `/v1/conversations/${replacementSession.sessionId}`,
+          headers: authorization(alpha.apiToken),
+        })
+      ).json<ConversationDetailResource>().session.workspaceState,
+    ).toBe("attached");
+
+    const foreignDeletion = await http.inject({
+      method: "DELETE",
+      url: `/v1/workspaces/${project.workspaceId}`,
+      headers: {
+        ...authorization(bravo.apiToken),
+        "idempotency-key": "delete-foreign-workspace",
+      },
+    });
+    expect(foreignDeletion.statusCode).toBe(404);
+
     const replay = await http.inject({
       method: "DELETE",
       url: `/v1/workspaces/${project.workspaceId}`,

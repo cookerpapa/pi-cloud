@@ -441,6 +441,7 @@ describe("CubeSandbox Provider contract", () => {
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
+      retention: "ephemeral",
       environment,
       workspaceSeed: { kind: "sample_java" },
     });
@@ -594,6 +595,7 @@ describe("CubeSandbox Provider contract", () => {
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
+      retention: "ephemeral",
       environment,
       workspaceSeed: { kind: "sample_java" },
       workspaceRevision: "a".repeat(64),
@@ -631,6 +633,7 @@ describe("CubeSandbox Provider contract", () => {
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
+      retention: "ephemeral",
       environment,
       workspaceSeed: { kind: "sample_java" },
       workspaceRevision: "a".repeat(64),

@@ -93,7 +93,7 @@ export type SandboxCreateSpec = Readonly<{
   workspaceSeed: AgentWorkspaceSeed;
   workspaceRestore?: SandboxCheckpointBlob;
   policy: SandboxPolicy;
-  lifetime?: "development_environment";
+  lifetime?: "persistent_conversation" | "development_environment";
   developmentProfileKey?: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
 }>;
 

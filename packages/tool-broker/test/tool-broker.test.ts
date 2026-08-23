@@ -81,6 +81,7 @@ const createRequest: ToolSandboxCreateRequest = {
   turnContextSha256: TURN_CONTEXT_SHA256,
   attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
   allowedTools: ["read", "write", "edit", "bash"],
+  retention: "ephemeral",
   environment,
   workspaceSeed: { kind: "sample_java" },
 };
@@ -308,9 +309,59 @@ describe("provider-backed Tool Tool Broker", () => {
         workspaceSeed: { kind: "sample_java" },
       }),
     ).resolves.toMatchObject({ state: "running" });
-    await expect(manager.create(createRequest)).rejects.toMatchObject({
-      code: "tool_sandbox_workspace_busy",
+    const agent = await manager.create(createRequest);
+    expect(agent.activationId).toBe(ACTIVATION_ID);
+    await expect(
+      manager.execute(agent.capability, operation("21111111-1111-4111-8111-111111111111")),
+    ).resolves.toMatchObject({ exitCode: 0 });
+    await manager.capture(agent.activationId, assignment, "21111111-1111-4111-8111-111111111112");
+    await expect(
+      manager.release({
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.release",
+        requestId: "21111111-1111-4111-8111-111111111113",
+        activationId: agent.activationId,
+        assignment,
+        disposition: "keep_warm",
+        workspaceRevision: "1".repeat(64),
+      }),
+    ).resolves.toMatchObject({ retained: true });
+    expect(fixture.createCount).toBe(1);
+    expect(fixture.rebind).toHaveBeenCalledTimes(2);
+    expect(fixture.snapshot).toHaveBeenCalledTimes(2);
+    const secondAssignment = {
+      ...assignment,
+      turnId: "21111111-1111-4111-8111-111111111114",
+      commandId: "second-development-environment-run",
+      attemptId: "21111111-1111-4111-8111-111111111115",
+      leaseId: "21111111-1111-4111-8111-111111111116",
+      fencingToken: 3,
+    };
+    const secondAgent = await manager.create({
+      ...createRequest,
+      requestId: "21111111-1111-4111-8111-111111111117",
+      assignment: secondAssignment,
     });
+    await manager.execute(secondAgent.capability, {
+      ...operation("21111111-1111-4111-8111-111111111118"),
+      activationId: secondAgent.activationId,
+    });
+    await manager.capture(
+      secondAgent.activationId,
+      secondAssignment,
+      "21111111-1111-4111-8111-111111111119",
+    );
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: "21111111-1111-4111-8111-111111111120",
+      activationId: secondAgent.activationId,
+      assignment: secondAssignment,
+      disposition: "keep_warm",
+      workspaceRevision: "2".repeat(64),
+    });
+    expect(fixture.createCount).toBe(1);
+    expect(fixture.rebind).toHaveBeenCalledTimes(4);
     const terminal = await manager.openDevelopmentEnvironmentTerminal({
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment_terminal.open",
@@ -471,7 +522,7 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
-  it("fails closed instead of silently destroying a requested persistent process world", async () => {
+  it("reports a lost persistent handoff so the Runner can apply its materialization boundary", async () => {
     const fixture = providerFixture();
     fixture.provider.retainForWarm = async () => {
       throw new ToolBrokerError(
@@ -497,7 +548,7 @@ describe("provider-backed Tool Tool Broker", () => {
         disposition: "keep_persistent",
         workspaceRevision: "1".repeat(64),
       }),
-    ).rejects.toMatchObject({ code: "cubesandbox_handoff_state_invalid" });
+    ).resolves.toMatchObject({ retained: false });
     expect(fixture.stopped).toBe(true);
     await manager.close();
   });

@@ -426,6 +426,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         turnContextSha256: cloudTurn.sha256,
         attemptContextSha256: cloudAttempt.sha256,
         allowedTools: cloudTurn.context.tools.names,
+        retention: command.payload.sandboxRetention,
         environment: command.payload.environment,
         workspaceSeed:
           workspaceSeed === undefined

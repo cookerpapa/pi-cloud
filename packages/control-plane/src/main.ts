@@ -30,6 +30,7 @@ import { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gateway.ts";
 import { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
+import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 
 async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Promise<void> {
   const profile = await database
@@ -181,6 +182,12 @@ export async function startControlPlane(): Promise<void> {
       terminalToken: config.workspaceTerminalToken,
       allowInsecureInternalHttp: config.allowInsecureInternalHttp,
     });
+    const sshAccessTicketService = new SshAccessTicketService({
+      database,
+      enabled: config.sshGatewayEnabled,
+      advertisedHost: config.sshAdvertisedHost,
+      advertisedPort: config.sshAdvertisedPort,
+    });
     runtime = await createControlPlaneRuntime({
       database,
       controlPlaneInstanceId,
@@ -191,6 +198,7 @@ export async function startControlPlane(): Promise<void> {
         terminalTurnProjectionSource: kafkaEvents.terminalTurnProjectionSource,
       },
       developmentEnvironmentService,
+      sshAccessTicketService,
       supervisorAuthorizer: new PostgresSupervisorCredentialAuthorizer({ database }),
       supervisorOwnerBoundary: new RoutedHttpSupervisorOwnerBoundary(resolveManagementClient),
       assignmentInventoryFactory: (identity) =>

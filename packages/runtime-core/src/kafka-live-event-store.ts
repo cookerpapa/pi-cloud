@@ -31,6 +31,14 @@ type SessionBuffer = {
   events: PiCloudEvent[];
 };
 
+function isTerminalEvent(event: PiCloudEvent): boolean {
+  return (
+    event.type === "turn.completed" ||
+    event.type === "turn.failed" ||
+    event.type === "turn.cancelled"
+  );
+}
+
 export type KafkaLiveEventStoreOptions = Readonly<{
   database: Kysely<Database>;
   eventHub?: SessionEventHub;
@@ -92,6 +100,16 @@ export class KafkaLiveEventStore implements DurableEventLog {
     this.#maximumSessions = positiveInteger(options.maximumSessions ?? 10_000, "maximumSessions");
   }
 
+  projectionSize(): Readonly<{ sessions: number; events: number }> {
+    return {
+      sessions: this.#buffers.size,
+      events: [...this.#buffers.values()].reduce(
+        (total, buffer) => total + buffer.events.length,
+        0,
+      ),
+    };
+  }
+
   async ingest(_value: unknown): Promise<EventAckMessage> {
     throw new DurableEventStoreError(
       "event_store_invariant",
@@ -119,6 +137,11 @@ export class KafkaLiveEventStore implements DurableEventLog {
         };
         this.#buffers.set(key, buffer);
       }
+      // Kafka delivery is at-least-once. A redelivered batch may begin before
+      // the terminal boundary that already compacted this in-memory hot tail.
+      // Those records are immutable broker history and no longer participate
+      // in replay, so accepting them again must be a no-op.
+      if (event.seq <= buffer.floorSequence) continue;
       const last = buffer.events.at(-1);
       if (last !== undefined && event.seq <= last.seq) {
         const existing = buffer.events.find((candidate) => candidate.seq === event.seq);
@@ -140,6 +163,16 @@ export class KafkaLiveEventStore implements DurableEventLog {
         buffer.floorSequence = removed.seq;
       }
       this.#eventHub?.publish(envelope.tenantId, event);
+      if (isTerminalEvent(event)) {
+        // Complete Pi messages are already canonical in PostgreSQL before the
+        // terminal outbox reaches Accepted Kafka. Once the terminal event has
+        // been exposed, keeping every text fragment from that settled Turn in
+        // every Gateway replica only makes memory grow with history. Preserve
+        // the terminal boundary for connected clients and force older cursors
+        // to reload the canonical conversation.
+        buffer.floorSequence = event.seq - 1;
+        buffer.events = [event];
+      }
     }
   }
 
