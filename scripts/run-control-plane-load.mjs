@@ -149,12 +149,18 @@ const project = projectResult.body;
 const stages = [];
 
 for (const concurrency of [10, 50, 100]) {
-  const creation = await runConcurrent("create_cold_session", concurrency, () =>
+  const creation = await runConcurrent("create_cold_session", concurrency, (index) =>
     request(
       `/v1/projects/${encodeURIComponent(project.projectId)}/sessions`,
       {
         method: "POST",
-        body: JSON.stringify({ workspaceId: project.workspaceId }),
+        body: JSON.stringify({
+          workspaceId: project.workspaceId,
+          title: `Load eval ${String(concurrency)}-${String(index + 1)}`,
+          sandboxRetention: "ephemeral",
+          sandboxProfileKey: "standard",
+          workingDirectory: "/workspace",
+        }),
       },
       201,
     ),
