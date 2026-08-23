@@ -121,7 +121,6 @@ export default function ChatApp() {
     | "forking"
     | "pruning"
     | "deleting-conversation"
-    | "deleting-workspace"
     | "rebinding-workspace"
     | "managing-environment"
     | null
@@ -727,7 +726,7 @@ export default function ChatApp() {
   async function createConversation(): Promise<void> {
     const title = newConversationTitle.trim();
     if (title.length === 0 || operation !== null) return;
-    setOperation("managing-environment");
+    setOperation("creating");
     update({ type: "api.error.cleared" });
     try {
       let projectId: string;
