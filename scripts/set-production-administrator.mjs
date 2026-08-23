@@ -57,9 +57,7 @@ if (
   account === null ||
   account.username !== username ||
   typeof account.tenantId !== "string" ||
-  !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
-    account.tenantId,
-  )
+  !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(account.tenantId)
 ) {
   throw new Error("Platform administrator lookup returned an invalid identity");
 }

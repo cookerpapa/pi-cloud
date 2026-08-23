@@ -391,30 +391,6 @@ try {
     "Workspace path traversal was not rejected",
   );
 
-  const captured = await jsonRequest(baseUrl, "/v1/capture", {
-    activationId,
-    requestId: randomUUID(),
-  });
-  assert(captured.type === "tool_sandbox.captured", "Workspace was not captured");
-  const workspaceBytes = Buffer.from(captured.workspace.data, "base64");
-  assert(
-    workspaceBytes.byteLength === captured.workspace.sizeBytes,
-    "Workspace checkpoint size evidence did not match",
-  );
-  assert(
-    createHash("sha256").update(workspaceBytes).digest("hex") === captured.workspace.sha256,
-    "Workspace checkpoint hash evidence did not match",
-  );
-  const manifest = JSON.parse(workspaceBytes.toString("utf8"));
-  assert(
-    manifest.files.some(
-      (file) =>
-        file.path === "counting_sort.py" &&
-        Buffer.from(file.content, "base64").toString("utf8") === source,
-    ),
-    "Workspace checkpoint omitted the tested source file",
-  );
-
   const background = await jsonRequest(
     baseUrl,
     "/v1/operation",
@@ -445,6 +421,12 @@ try {
       checkpointed.frozenToolProcesses.some((process) => process.pid === backgroundPid) &&
       checkpointed.files.some((file) => file.path === "counting_sort.py"),
     "Cube guest did not prepare a quiescent Workspace checkpoint",
+  );
+  const indexedSource = checkpointed.files.find((file) => file.path === "counting_sort.py");
+  assert(
+    indexedSource?.sizeBytes === Buffer.byteLength(source, "utf8") &&
+      indexedSource.sha256 === createHash("sha256").update(source, "utf8").digest("hex"),
+    "Workspace checkpoint index did not describe the tested source file",
   );
   const staleWhileSealed = await requestStatus(
     baseUrl,
@@ -550,9 +532,9 @@ try {
         staleAuthorityRejected: true,
       },
       checkpoint: {
-        files: manifest.files.length,
-        sizeBytes: captured.workspace.sizeBytes,
-        sha256: captured.workspace.sha256,
+        files: checkpointed.files.length,
+        sourceSizeBytes: indexedSource.sizeBytes,
+        sourceSha256: indexedSource.sha256,
       },
     })}\n`,
   );
