@@ -116,9 +116,10 @@ await withChromePage(
 
     async function setValue(selector, value) {
       const changed = await page.evaluate(
-        `(()=>{const element=${selectorExpression(selector)};if(!element)return false;const prototype=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,"value").set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event("input",{bubbles:true}));element.dispatchEvent(new Event("change",{bubbles:true}));return true})()`,
+        `(()=>{const element=${selectorExpression(selector)};if(!element)return false;element.focus();const prototype=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,"value").set.call(element,${JSON.stringify(value)});element.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:${JSON.stringify(value)}}));element.dispatchEvent(new Event("change",{bubbles:true}));return element.value===${JSON.stringify(value)}})()`,
       );
       assert.equal(changed, true, `Could not set ${selector}`);
+      await page.wait(50);
     }
 
     await page.navigate(baseUrl.toString(), 800);
@@ -168,6 +169,7 @@ await withChromePage(
       ".product-composer textarea",
       "Do not call tools. Reply with exactly BROWSER-UI-CHAT-OK.",
     );
+    await page.waitFor('!document.querySelector(".product-send-button").disabled');
     await click(".product-send-button", "composer.send");
     await page.waitFor('document.body.innerText.includes("BROWSER-UI-CHAT-OK")', 180_000);
 
