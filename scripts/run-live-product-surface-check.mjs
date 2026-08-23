@@ -428,6 +428,14 @@ try {
     "ephemeral",
   );
   createdSessionIds.add(sibling.sessionId);
+  const siblingBaseline = await runTurn({
+    api,
+    browser,
+    sessionId: sibling.sessionId,
+    prompt: "Do not call tools. Reply with exactly PRODUCT-SURFACE-PRE-REBIND-OK.",
+    afterSequence: 0,
+    expectTools: false,
+  });
   await api.archiveSession(sibling.sessionId, true, newIdempotencyKey("archive"));
   assert(
     !(await api.listConversations()).conversations.some(
@@ -476,8 +484,9 @@ try {
     api,
     browser,
     sessionId: sibling.sessionId,
-    prompt: "Do not call tools. Reply with exactly PRODUCT-SURFACE-REBIND-OK.",
-    afterSequence: 0,
+    prompt:
+      "Do not call tools. If the hidden Harness context says this Session is attached to a different workspace, reply exactly PRODUCT-SURFACE-WORKSPACE-CHANGE-SEEN. Otherwise reply exactly PRODUCT-SURFACE-WORKSPACE-CHANGE-MISSING.",
+    afterSequence: siblingBaseline.cursor,
     expectTools: false,
   });
   assert.match(
@@ -485,7 +494,7 @@ try {
       .filter((event) => event.type === "assistant.text.delta")
       .map((event) => event.payload.text)
       .join(""),
-    /PRODUCT-SURFACE-REBIND-OK/,
+    /PRODUCT-SURFACE-WORKSPACE-CHANGE-SEEN/,
   );
   await api.deleteConversation(sibling.sessionId, newIdempotencyKey("delete"));
   await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
