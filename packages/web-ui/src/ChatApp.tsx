@@ -36,6 +36,7 @@ import { useResizablePanel } from "./use-resizable-panel.ts";
 import { LanguageSelect, useI18n, type Translate, type UiLanguage } from "./i18n.tsx";
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
+const EXCLUSIVE_HOME_DIRECTORY = "/home/pi-cloud";
 
 function conversationTitle(prompt: string, fallback: string): string {
   const compact = prompt.replace(/\s+/g, " ").trim();
@@ -1333,7 +1334,7 @@ export default function ChatApp() {
                     checked={executionMode === "exclusive"}
                     onChange={() => {
                       setExecutionMode("exclusive");
-                      setWorkingDirectory("/home");
+                      setWorkingDirectory(EXCLUSIVE_HOME_DIRECTORY);
                     }}
                     type="radio"
                   />
@@ -1444,7 +1445,7 @@ export default function ChatApp() {
                             <select
                               onChange={(event) => {
                                 setSelectedDevelopmentEnvironmentId(event.target.value);
-                                setWorkingDirectory("/home");
+                                setWorkingDirectory(EXCLUSIVE_HOME_DIRECTORY);
                               }}
                               value={selectedDevelopmentEnvironmentId}
                             >

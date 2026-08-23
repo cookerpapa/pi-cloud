@@ -384,7 +384,7 @@ const session = await api.createSession(
   `Snake preview acceptance ${suffix}`,
   "persistent",
   "standard",
-  "/home/node",
+  "/home/pi-cloud",
 );
 
 progress("asking the real model to build, test and serve Snake");

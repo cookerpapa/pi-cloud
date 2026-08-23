@@ -151,6 +151,12 @@ function providerFixture() {
     headers: { "content-type": "text/html; charset=utf-8" },
     body: Buffer.from("<html><body>preview-ok</body></html>"),
   }));
+  const listDirectory = vi.fn<NonNullable<SandboxProvider["listDirectory"]>>(
+    async (_handle, path) => ({
+      path,
+      entries: [],
+    }),
+  );
   const provider: SandboxProvider = {
     providerId: "cubesandbox",
     async checkHealth() {},
@@ -193,6 +199,7 @@ function providerFixture() {
       };
     },
     previewHttp,
+    listDirectory,
     pause,
     resume,
     snapshot,
@@ -252,6 +259,7 @@ function providerFixture() {
     pause,
     resume,
     previewHttp,
+    listDirectory,
     get createSpec() {
       return createSpec;
     },
@@ -407,6 +415,62 @@ describe("provider-backed Tool Tool Broker", () => {
       action: "release",
     });
     expect(fixture.destroyed).toBe(true);
+    await manager.close();
+  });
+
+  it("rejects a missing exclusive working directory without destroying the user's machine", async () => {
+    const fixture = providerFixture();
+    const manager = new ToolBroker({
+      provider: fixture.provider,
+      idGenerator: () => ACTIVATION_ID,
+      capabilityGenerator: () => CAPABILITY,
+    });
+    await manager.provisionDevelopmentEnvironment({
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.provision",
+      requestId: "51111111-1111-4111-8111-111111111111",
+      environmentId: ACTIVATION_ID,
+      tenantId: assignment.tenantId,
+      userId: "77777777-7777-4777-8777-777777777777",
+      projectId: assignment.projectId,
+      workspaceId: assignment.workspaceId,
+      generation: 1,
+      profileKey: "standard",
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+    });
+    fixture.listDirectory.mockRejectedValueOnce(
+      new ToolBrokerError(
+        "development_environment_directory_unavailable",
+        "Directory does not exist",
+        false,
+      ),
+    );
+    await expect(
+      manager.create({
+        ...createRequest,
+        toolRoot: "/missing",
+        retention: "persistent",
+      }),
+    ).rejects.toMatchObject({
+      code: "development_environment_working_directory_unavailable",
+      retryable: false,
+    });
+    expect(fixture.snapshot).not.toHaveBeenCalled();
+    expect(fixture.rebind).not.toHaveBeenCalled();
+    expect(fixture.stopped).toBe(false);
+    expect(fixture.destroyed).toBe(false);
+    const terminal = await manager.openDevelopmentEnvironmentTerminal({
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment_terminal.open",
+      requestId: "51111111-1111-4111-8111-111111111112",
+      environmentId: ACTIVATION_ID,
+      tenantId: assignment.tenantId,
+      userId: "77777777-7777-4777-8777-777777777777",
+      rows: 24,
+      cols: 100,
+    });
+    await terminal.close();
     await manager.close();
   });
 

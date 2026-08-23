@@ -231,7 +231,6 @@ function sameAssignment(left: ToolSandboxAssignment, right: ToolSandboxAssignmen
     left.bootId === right.bootId &&
     left.sandboxId === right.sandboxId &&
     left.commandId === right.commandId &&
-    left.workspaceId === right.workspaceId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
     left.attemptId === right.attemptId &&
@@ -1306,6 +1305,9 @@ export class ToolBroker {
         true,
       );
     }
+    if (developmentEnvironment !== undefined) {
+      await this.#validateDevelopmentToolRoot(developmentEnvironment.handle, request.toolRoot);
+    }
 
     const activationId = validActivationId(
       developmentEnvironment?.reservation.environmentId ??
@@ -2037,6 +2039,19 @@ export class ToolBroker {
     this.#cancelAdmissionWaiter(activationId);
   }
 
+  async #validateDevelopmentToolRoot(handle: SandboxHandle, toolRoot: string | undefined) {
+    if (this.#provider.listDirectory === undefined) return;
+    try {
+      await this.#provider.listDirectory(handle, toolRoot ?? "/workspace");
+    } catch {
+      throw new ToolBrokerError(
+        "development_environment_working_directory_unavailable",
+        "The selected exclusive machine working directory is unavailable",
+        false,
+      );
+    }
+  }
+
   async #materialize(
     activationId: string,
     activation: ManagedActivation,
@@ -2061,6 +2076,9 @@ export class ToolBroker {
           );
         }
         let handle = activation.handle;
+        if (handle !== undefined && activation.developmentEnvironmentId !== undefined) {
+          await this.#validateDevelopmentToolRoot(handle, activation.spec.toolRoot);
+        }
         if (handle !== undefined) {
           try {
             if (activation.developmentEnvironmentId !== undefined) {
