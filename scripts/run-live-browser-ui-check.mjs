@@ -98,214 +98,233 @@ function selectorExpression(selector) {
   return `document.querySelector(${JSON.stringify(selector)})`;
 }
 
-await withChromePage(
-  { profilePrefix: "pi-cloud-browser-ui-", width: 1_440, height: 960 },
-  async (page) => {
-    async function click(selector, name) {
-      const clickedElement = await page.evaluate(
-        `(()=>{const element=${selectorExpression(selector)};if(!element)return false;element.click();return true})()`,
+let acceptanceError;
+try {
+  await withChromePage(
+    { profilePrefix: "pi-cloud-browser-ui-", width: 1_440, height: 960 },
+    async (page) => {
+      async function click(selector, name) {
+        const clickedElement = await page.evaluate(
+          `(()=>{const element=${selectorExpression(selector)};if(!element)return false;element.click();return true})()`,
+        );
+        assert.equal(clickedElement, true, `${name} button was unavailable`);
+        record(name);
+      }
+
+      async function clickText(selector, text, name) {
+        const clickedElement = await page.evaluate(
+          `(()=>{const element=[...document.querySelectorAll(${JSON.stringify(selector)})].find(candidate=>candidate.textContent.includes(${JSON.stringify(text)}));if(!element)return false;element.click();return true})()`,
+        );
+        assert.equal(clickedElement, true, `${name} button was unavailable`);
+        record(name);
+      }
+
+      async function setValue(selector, value) {
+        const changed = await page.evaluate(
+          `(()=>{const element=${selectorExpression(selector)};if(!element)return false;element.focus();const prototype=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,"value").set.call(element,${JSON.stringify(value)});element.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:${JSON.stringify(value)}}));element.dispatchEvent(new Event("change",{bubbles:true}));return element.value===${JSON.stringify(value)}})()`,
+        );
+        assert.equal(changed, true, `Could not set ${selector}`);
+        await page.wait(50);
+      }
+
+      await page.navigate(baseUrl.toString(), 800);
+      await page.evaluate('localStorage.setItem("pi-cloud:ui-language","zh-CN")');
+      await page.send("Page.reload", { ignoreCache: true });
+      await page.waitFor('document.querySelector(".product-auth-card")');
+      await clickText(".product-auth-tabs button", "注册", "auth.registerTab");
+      await page.waitFor('document.querySelector("input[autocomplete=name]")');
+      await clickText(".product-auth-tabs button", "登录", "auth.loginTab");
+      await setValue('input[autocomplete="username"]', username);
+      await setValue('input[type="password"]', password);
+      await click('.product-auth-card button[type="submit"]', "auth.login");
+      await page.waitFor('document.querySelector(".product-shell")', 30_000);
+
+      await page.evaluate(
+        `(()=>{const select=document.querySelector(".product-account .product-language-select");select.value="en-US";select.dispatchEvent(new Event("change",{bubbles:true}))})()`,
       );
-      assert.equal(clickedElement, true, `${name} button was unavailable`);
-      record(name);
-    }
-
-    async function clickText(selector, text, name) {
-      const clickedElement = await page.evaluate(
-        `(()=>{const element=[...document.querySelectorAll(${JSON.stringify(selector)})].find(candidate=>candidate.textContent.includes(${JSON.stringify(text)}));if(!element)return false;element.click();return true})()`,
+      await page.waitFor('document.body.innerText.includes("New chat")');
+      record("account.languageEnglish");
+      await page.evaluate(
+        `(()=>{const select=document.querySelector(".product-account .product-language-select");select.value="zh-CN";select.dispatchEvent(new Event("change",{bubbles:true}))})()`,
       );
-      assert.equal(clickedElement, true, `${name} button was unavailable`);
-      record(name);
-    }
+      await page.waitFor('document.body.innerText.includes("新对话")');
+      record("account.languageChinese");
 
-    async function setValue(selector, value) {
-      const changed = await page.evaluate(
-        `(()=>{const element=${selectorExpression(selector)};if(!element)return false;element.focus();const prototype=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(prototype,"value").set.call(element,${JSON.stringify(value)});element.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:${JSON.stringify(value)}}));element.dispatchEvent(new Event("change",{bubbles:true}));return element.value===${JSON.stringify(value)}})()`,
+      await click(".product-sidebar > .product-panel-collapse", "sidebar.collapse");
+      await click(".product-sidebar > .product-panel-collapse", "sidebar.expand");
+      await click(".product-tree-panel > .product-panel-collapse", "tree.collapse");
+      await click(".product-tree-panel > .product-panel-collapse", "tree.expand");
+
+      await click(".product-new-chat", "conversation.new");
+      await page.waitFor('document.querySelector(".product-workspace-modal")');
+      await click(
+        '.product-execution-mode-choice input[type="radio"]:first-of-type',
+        "conversation.elasticMode",
       );
-      assert.equal(changed, true, `Could not set ${selector}`);
-      await page.wait(50);
-    }
+      await setValue(".product-progressive-options > label input", `UI acceptance ${suffix}`);
+      await setValue('input[placeholder*="order-service"]', `ui-workspace-${suffix}`);
+      await click(
+        ".product-resource-profiles button:last-child",
+        "conversation.performanceProfile",
+      );
+      await click(".product-workspace-modal footer .product-primary-button", "conversation.create");
+      await page.waitFor('!document.querySelector(".product-workspace-modal")', 60_000);
+      await page.waitFor(
+        `document.body.innerText.includes(${JSON.stringify(`UI acceptance ${suffix}`)})`,
+      );
 
-    await page.navigate(baseUrl.toString(), 800);
-    await page.evaluate('localStorage.setItem("pi-cloud:ui-language","zh-CN")');
-    await page.send("Page.reload", { ignoreCache: true });
-    await page.waitFor('document.querySelector(".product-auth-card")');
-    await clickText(".product-auth-tabs button", "注册", "auth.registerTab");
-    await page.waitFor('document.querySelector("input[autocomplete=name]")');
-    await clickText(".product-auth-tabs button", "登录", "auth.loginTab");
-    await setValue('input[autocomplete="username"]', username);
-    await setValue('input[type="password"]', password);
-    await click('.product-auth-card button[type="submit"]', "auth.login");
-    await page.waitFor('document.querySelector(".product-shell")', 30_000);
+      await setValue(
+        ".product-composer textarea",
+        "Do not call tools. Reply with exactly BROWSER-UI-CHAT-OK.",
+      );
+      await page.waitFor('!document.querySelector(".product-send-button").disabled');
+      await click(".product-send-button", "composer.send");
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-CHAT-OK"))',
+        180_000,
+      );
+      const elasticConversation = await waitFor(
+        async () =>
+          (await api.listConversations()).conversations.find(
+            (candidate) => candidate.title === `UI acceptance ${suffix}`,
+          ),
+        "elastic conversation",
+      );
+      await waitFor(
+        async () => {
+          const runs = await api.listRuns(elasticConversation.sessionId);
+          return runs.runs.at(-1)?.state === "completed";
+        },
+        "completed browser-submitted Run",
+        180_000,
+      );
 
-    await page.evaluate(
-      `(()=>{const select=document.querySelector(".product-account .product-language-select");select.value="en-US";select.dispatchEvent(new Event("change",{bubbles:true}))})()`,
-    );
-    await page.waitFor('document.body.innerText.includes("New chat")');
-    record("account.languageEnglish");
-    await page.evaluate(
-      `(()=>{const select=document.querySelector(".product-account .product-language-select");select.value="zh-CN";select.dispatchEvent(new Event("change",{bubbles:true}))})()`,
-    );
-    await page.waitFor('document.body.innerText.includes("新对话")');
-    record("account.languageChinese");
+      await clickText(".product-tree-view-switch button", "整棵树", "tree.full");
+      await clickText(".product-tree-view-switch button", "当前分支", "tree.focus");
 
-    await click(".product-sidebar > .product-panel-collapse", "sidebar.collapse");
-    await click(".product-sidebar > .product-panel-collapse", "sidebar.expand");
-    await click(".product-tree-panel > .product-panel-collapse", "tree.collapse");
-    await click(".product-tree-panel > .product-panel-collapse", "tree.expand");
+      await click(".product-topbar-actions button:last-child", "workspace.open");
+      await page.waitFor('document.querySelector(".workspace-directory")');
+      await click('.workspace-directory-header button[title="刷新目录"]', "workspace.refresh");
+      await clickText(".workspace-view-tabs button", "终端", "workspace.terminalTab");
+      await clickText(
+        ".workspace-terminal-toolbar button",
+        "连接终端",
+        "workspace.terminalConnect",
+      );
+      await page.waitFor('document.body.innerText.includes("已连接 · /workspace")', 90_000);
+      await clickText(".workspace-terminal-toolbar button", "断开", "workspace.terminalDisconnect");
+      await clickText(".workspace-view-tabs button", "文件", "workspace.filesTab");
+      await click('.workspace-directory-header button[title="关闭"]', "workspace.close");
 
-    await click(".product-new-chat", "conversation.new");
-    await page.waitFor('document.querySelector(".product-workspace-modal")');
-    await click(
-      '.product-execution-mode-choice input[type="radio"]:first-of-type',
-      "conversation.elasticMode",
-    );
-    await setValue(".product-progressive-options > label input", `UI acceptance ${suffix}`);
-    await setValue('input[placeholder*="order-service"]', `ui-workspace-${suffix}`);
-    await click(".product-resource-profiles button:last-child", "conversation.performanceProfile");
-    await click(".product-workspace-modal footer .product-primary-button", "conversation.create");
-    await page.waitFor('!document.querySelector(".product-workspace-modal")', 60_000);
-    await page.waitFor(
-      `document.body.innerText.includes(${JSON.stringify(`UI acceptance ${suffix}`)})`,
-    );
+      await page.evaluate("window.confirm=()=>true");
+      await click(".product-answer-actions button:first-child", "conversation.forkOpen");
+      await page.waitFor('document.querySelector(".product-fork-modal")');
+      await setValue(".product-fork-modal input", `UI fork ${suffix}`);
+      await click(".product-fork-modal .product-primary-button", "conversation.forkCreate");
+      await page.waitFor('!document.querySelector(".product-fork-modal")', 60_000);
+      await page.waitFor(
+        `document.body.innerText.includes(${JSON.stringify(`UI fork ${suffix}`)})`,
+      );
+      await click(
+        ".product-conversation-row.active .product-delete-conversation",
+        "conversation.deleteFork",
+      );
+      await page.waitFor(
+        `!document.body.innerText.includes(${JSON.stringify(`UI fork ${suffix}`)})`,
+      );
 
-    await setValue(
-      ".product-composer textarea",
-      "Do not call tools. Reply with exactly BROWSER-UI-CHAT-OK.",
-    );
-    await page.waitFor('!document.querySelector(".product-send-button").disabled');
-    await click(".product-send-button", "composer.send");
-    await page.waitFor(
-      '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-CHAT-OK"))',
-      180_000,
-    );
-    const elasticConversation = await waitFor(
-      async () =>
-        (await api.listConversations()).conversations.find(
-          (candidate) => candidate.title === `UI acceptance ${suffix}`,
-        ),
-      "elastic conversation",
-    );
-    await waitFor(
-      async () => {
-        const runs = await api.listRuns(elasticConversation.sessionId);
-        return runs.runs.at(-1)?.state === "completed";
-      },
-      "completed browser-submitted Run",
-      180_000,
-    );
+      await click(".product-resource-nav", "resources.open");
+      await page.waitFor('document.querySelector(".product-resource-page")');
+      await clickText(".product-resource-tabs button", "独享环境", "resources.exclusiveTab");
+      await click(".product-resource-create .product-primary-button", "resources.createExclusive");
+      const development = await waitFor(
+        async () => {
+          const environments = (await api.listDevelopmentEnvironments()).environments;
+          return environments.find((candidate) => candidate.state === "running");
+        },
+        "UI-created exclusive environment",
+        120_000,
+      );
+      await page.waitFor('document.querySelector(".product-environment-card")', 120_000);
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-environment-card button")].some(button=>button.textContent.includes("暂停"))',
+        30_000,
+      );
+      await clickText(".product-environment-card button", "暂停", "resources.pauseExclusive");
+      await waitFor(
+        async () =>
+          (await api.listDevelopmentEnvironments()).environments.find(
+            (candidate) =>
+              candidate.environmentId === development.environmentId && candidate.state === "paused",
+          ),
+        "paused environment",
+      );
+      await page.waitFor('document.body.innerText.includes("已暂停")');
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-environment-card button")].some(button=>button.textContent.includes("恢复"))',
+      );
+      await clickText(".product-environment-card button", "恢复", "resources.resumeExclusive");
+      await waitFor(
+        async () =>
+          (await api.listDevelopmentEnvironments()).environments.find(
+            (candidate) =>
+              candidate.environmentId === development.environmentId &&
+              candidate.state === "running",
+          ),
+        "resumed environment",
+      );
+      await clickText(".product-resource-tabs button", "Workspace", "resources.workspaceTab");
+      await click(".product-resource-back", "resources.back");
+      await page.waitFor('document.querySelector(".product-shell")');
 
-    await clickText(".product-tree-view-switch button", "整棵树", "tree.full");
-    await clickText(".product-tree-view-switch button", "当前分支", "tree.focus");
+      await click(".product-new-chat", "conversation.newExclusive");
+      await clickText(
+        ".product-execution-mode-choice .product-choice-card",
+        "独享运行环境",
+        "conversation.exclusiveMode",
+      );
+      await setValue(".product-progressive-options > label input", `UI exclusive ${suffix}`);
+      await click(".product-working-directory-choice button", "conversation.directoryPicker");
+      await page.waitFor('document.querySelector(".product-directory-picker")');
+      await click(".product-directory-picker footer button:first-child", "directory.cancel");
+      await click(
+        ".product-workspace-modal footer .product-primary-button",
+        "conversation.createExclusive",
+      );
+      await page.waitFor('!document.querySelector(".product-workspace-modal")', 60_000);
+      await page.waitFor(
+        `document.body.innerText.includes(${JSON.stringify(`UI exclusive ${suffix}`)})`,
+      );
 
-    await click(".product-topbar-actions button:last-child", "workspace.open");
-    await page.waitFor('document.querySelector(".workspace-directory")');
-    await click('.workspace-directory-header button[title="刷新目录"]', "workspace.refresh");
-    await clickText(".workspace-view-tabs button", "终端", "workspace.terminalTab");
-    await clickText(".workspace-terminal-toolbar button", "连接终端", "workspace.terminalConnect");
-    await page.waitFor('document.body.innerText.includes("已连接 · /workspace")', 90_000);
-    await clickText(".workspace-terminal-toolbar button", "断开", "workspace.terminalDisconnect");
-    await clickText(".workspace-view-tabs button", "文件", "workspace.filesTab");
-    await click('.workspace-directory-header button[title="关闭"]', "workspace.close");
+      await clickText(".product-environment-controls button", "SSH", "ssh.open");
+      await page.waitFor('document.querySelector(".product-ssh-ticket-modal")', 30_000);
+      await clickText(".product-ssh-ticket-modal footer button", "复制一行命令", "ssh.copyCommand");
+      await clickText(".product-ssh-ticket-modal footer button", "复制密码", "ssh.copyPassword");
+      await click(".product-ssh-ticket-modal header button", "ssh.close");
 
-    await page.evaluate("window.confirm=()=>true");
-    await click(".product-answer-actions button:first-child", "conversation.forkOpen");
-    await page.waitFor('document.querySelector(".product-fork-modal")');
-    await setValue(".product-fork-modal input", `UI fork ${suffix}`);
-    await click(".product-fork-modal .product-primary-button", "conversation.forkCreate");
-    await page.waitFor('!document.querySelector(".product-fork-modal")', 60_000);
-    await page.waitFor(`document.body.innerText.includes(${JSON.stringify(`UI fork ${suffix}`)})`);
-    await click(
-      ".product-conversation-row.active .product-delete-conversation",
-      "conversation.deleteFork",
-    );
-    await page.waitFor(`!document.body.innerText.includes(${JSON.stringify(`UI fork ${suffix}`)})`);
-
-    await click(".product-resource-nav", "resources.open");
-    await page.waitFor('document.querySelector(".product-resource-page")');
-    await clickText(".product-resource-tabs button", "独享环境", "resources.exclusiveTab");
-    await click(".product-resource-create .product-primary-button", "resources.createExclusive");
-    const development = await waitFor(
-      async () => {
-        const environments = (await api.listDevelopmentEnvironments()).environments;
-        return environments.find((candidate) => candidate.state === "running");
-      },
-      "UI-created exclusive environment",
-      120_000,
-    );
-    await page.waitFor('document.querySelector(".product-environment-card")', 120_000);
-    await page.waitFor(
-      '[...document.querySelectorAll(".product-environment-card button")].some(button=>button.textContent.includes("暂停"))',
-      30_000,
-    );
-    await clickText(".product-environment-card button", "暂停", "resources.pauseExclusive");
-    await waitFor(
-      async () =>
-        (await api.listDevelopmentEnvironments()).environments.find(
-          (candidate) =>
-            candidate.environmentId === development.environmentId && candidate.state === "paused",
-        ),
-      "paused environment",
-    );
-    await page.waitFor('document.body.innerText.includes("已暂停")');
-    await page.waitFor(
-      '[...document.querySelectorAll(".product-environment-card button")].some(button=>button.textContent.includes("恢复"))',
-    );
-    await clickText(".product-environment-card button", "恢复", "resources.resumeExclusive");
-    await waitFor(
-      async () =>
-        (await api.listDevelopmentEnvironments()).environments.find(
-          (candidate) =>
-            candidate.environmentId === development.environmentId && candidate.state === "running",
-        ),
-      "resumed environment",
-    );
-    await clickText(".product-resource-tabs button", "Workspace", "resources.workspaceTab");
-    await click(".product-resource-back", "resources.back");
-    await page.waitFor('document.querySelector(".product-shell")');
-
-    await click(".product-new-chat", "conversation.newExclusive");
-    await click(
-      '.product-execution-mode-choice input[type="radio"]:last-of-type',
-      "conversation.exclusiveMode",
-    );
-    await setValue(".product-progressive-options > label input", `UI exclusive ${suffix}`);
-    await click(".product-working-directory-choice button", "conversation.directoryPicker");
-    await page.waitFor('document.querySelector(".product-directory-picker")');
-    await click(".product-directory-picker footer button:first-child", "directory.cancel");
-    await click(
-      ".product-workspace-modal footer .product-primary-button",
-      "conversation.createExclusive",
-    );
-    await page.waitFor('!document.querySelector(".product-workspace-modal")', 60_000);
-    await page.waitFor(
-      `document.body.innerText.includes(${JSON.stringify(`UI exclusive ${suffix}`)})`,
-    );
-
-    await clickText(".product-environment-controls button", "SSH", "ssh.open");
-    await page.waitFor('document.querySelector(".product-ssh-ticket-modal")', 30_000);
-    await clickText(".product-ssh-ticket-modal footer button", "复制一行命令", "ssh.copyCommand");
-    await clickText(".product-ssh-ticket-modal footer button", "复制密码", "ssh.copyPassword");
-    await click(".product-ssh-ticket-modal header button", "ssh.close");
-
-    await page.screenshot(screenshotPath);
-    await click(".product-resource-nav", "resources.reopen");
-    await clickText(".product-resource-tabs button", "独享环境", "resources.exclusiveTabAgain");
-    await page.waitFor('document.querySelector(".product-environment-card")');
-    await clickText(".product-environment-card button", "释放", "resources.releaseExclusive");
-    await waitFor(
-      async () =>
-        !(await api.listDevelopmentEnvironments()).environments.some(
-          (candidate) =>
-            candidate.environmentId === development.environmentId && candidate.state !== "released",
-        ),
-      "released environment",
-    );
-    await click(".product-resource-back", "resources.finalBack");
-    await page.waitFor('document.querySelector(".product-shell")');
-    await click('.product-account button[aria-label="退出登录"]', "account.logout");
-    await page.waitFor('document.querySelector(".product-auth-card")');
-  },
-);
+      await page.screenshot(screenshotPath);
+      await click(".product-resource-nav", "resources.reopen");
+      await clickText(".product-resource-tabs button", "独享环境", "resources.exclusiveTabAgain");
+      await page.waitFor('document.querySelector(".product-environment-card")');
+      await clickText(".product-environment-card button", "释放", "resources.releaseExclusive");
+      await waitFor(
+        async () =>
+          !(await api.listDevelopmentEnvironments()).environments.some(
+            (candidate) =>
+              candidate.environmentId === development.environmentId &&
+              candidate.state !== "released",
+          ),
+        "released environment",
+      );
+      await click(".product-resource-back", "resources.finalBack");
+      await page.waitFor('document.querySelector(".product-shell")');
+      await click('.product-account button[aria-label="退出登录"]', "account.logout");
+      await page.waitFor('document.querySelector(".product-auth-card")');
+    },
+  );
+} catch (error) {
+  acceptanceError = error;
+}
 
 const remainingConversations = (await api.listConversations()).conversations;
 for (const conversation of remainingConversations) {
@@ -328,6 +347,8 @@ for (const workspace of (await api.listWorkspaces()).workspaces) {
     .deleteWorkspace(workspace.workspaceId, newIdempotencyKey("delete"))
     .catch(() => undefined);
 }
+
+if (acceptanceError !== undefined) throw acceptanceError;
 
 const report = {
   accepted: true,
