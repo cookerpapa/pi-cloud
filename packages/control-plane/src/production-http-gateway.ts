@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { bindTenantRequestIdentity, type TenantApiAuthenticator } from "./tenant-identity.ts";
 import { readWebSessionCookie } from "./web-authentication.ts";
+import { isPreviewAccessPath } from "./sandbox-preview-gateway.ts";
 
 export const CONTROL_PLANE_LIVE_PATH = "/health/live";
 export const CONTROL_PLANE_READY_PATH = "/health/ready";
@@ -41,6 +42,10 @@ export class ProductionHttpGateway {
     fastify.addHook("onRequest", async (request, reply) => {
       const path = request.raw.url?.split("?", 1)[0] ?? "";
       if (!path.startsWith("/v1/") && path !== "/v1") return;
+      // Opaque-origin Preview subresources carry a target-scoped path
+      // authority that is verified by SandboxPreviewGateway. No other API
+      // route bypasses browser/API credential authentication.
+      if (isPreviewAccessPath(path)) return;
       if (request.method === "GET" && path === CUBE_EGRESS_CONFIGURATION_INTERNAL_PATH) {
         return;
       }

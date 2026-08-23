@@ -24,6 +24,11 @@ const PREVIEW_ACCESS_SEGMENT = "__pi_cloud_access__";
 const PREVIEW_ACCESS_TTL_MS = 15 * 60 * 1_000;
 const PREVIEW_ACCESS_PATTERN = /^pcpa_([A-Za-z0-9_-]{32,1024})\.([A-Za-z0-9_-]{43})$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATH_SOURCE = "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+const PREVIEW_ACCESS_PATH_PATTERN = new RegExp(
+  `^/v1/(?:conversations|development-environments)/${UUID_PATH_SOURCE}/preview/[0-9]{4,5}/${PREVIEW_ACCESS_SEGMENT}/pcpa_[A-Za-z0-9_-]{32,1024}\\.[A-Za-z0-9_-]{43}(?:/|$)`,
+  "i",
+);
 
 export type SandboxPreviewGatewayOptions = Readonly<{
   database: Kysely<Database>;
@@ -170,6 +175,10 @@ function previewAccessRoute(
     token: parts[1] ?? "",
     upstreamSuffix: parts.slice(2).join("/"),
   };
+}
+
+export function isPreviewAccessPath(path: string): boolean {
+  return path.length <= 2_048 && PREVIEW_ACCESS_PATH_PATTERN.test(path);
 }
 
 export function rewritePreviewHtml(body: Buffer, prefix: string, nonce: string): Buffer {
