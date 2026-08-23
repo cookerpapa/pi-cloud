@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   ConversationSummaryResource,
   DevelopmentEnvironmentListResource,
@@ -24,6 +24,14 @@ function activeConversation(
 ): boolean {
   return associations(conversations, workspaceId).some((conversation) =>
     ACTIVE_SESSION_STATES.has(conversation.state),
+  );
+}
+
+export function resourceRefreshPending(
+  environments: readonly DevelopmentEnvironmentResource[],
+): boolean {
+  return environments.some((environment) =>
+    ["requested", "provisioning", "releasing"].includes(environment.state),
   );
 }
 
@@ -59,6 +67,21 @@ export function ResourceManagementPage({
     [environments, workspaces],
   );
   const selectedProfile = profiles.find((candidate) => candidate.key === profileKey) ?? profiles[0];
+
+  useEffect(() => {
+    if (!resourceRefreshPending(environments)) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async (): Promise<void> => {
+      await onRefresh().catch(() => undefined);
+      if (!cancelled) timer = setTimeout(() => void refresh(), 750);
+    };
+    timer = setTimeout(() => void refresh(), 750);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [environments, onRefresh]);
 
   async function mutate(action: () => Promise<unknown>): Promise<void> {
     if (busy) return;

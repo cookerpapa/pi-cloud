@@ -10,7 +10,7 @@ import {
   conversationPreviewHref,
 } from "../src/ConversationTurn.tsx";
 import { PiCloudApi } from "../src/api.ts";
-import { ResourceManagementPage } from "../src/ResourceManagementPage.tsx";
+import { ResourceManagementPage, resourceRefreshPending } from "../src/ResourceManagementPage.tsx";
 import type { TurnView } from "../src/session-view.ts";
 import { WorkspaceDirectoryPicker } from "../src/WorkspaceDirectoryPicker.tsx";
 import { WorkspaceInspector } from "../src/WorkspaceInspector.tsx";
@@ -35,6 +35,24 @@ function turn(turnId: string, prompt: string): TurnView {
 }
 
 describe("product chat experience", () => {
+  it("polls resource projection only while an environment is transitioning", () => {
+    const environment = {
+      environmentId: "10000000-0000-4000-8000-000000000001",
+      projectId: "10000000-0000-4000-8000-000000000002",
+      workspaceId: "10000000-0000-4000-8000-000000000003",
+      workspaceName: "acceptance",
+      generation: 1,
+      profileKey: "standard" as const,
+      cpuCount: 2,
+      memoryMiB: 4_096,
+      systemDiskGiB: 16,
+      createdAt: "2026-08-24T00:00:00.000Z",
+      updatedAt: "2026-08-24T00:00:00.000Z",
+    };
+    expect(resourceRefreshPending([{ ...environment, state: "provisioning" }])).toBe(true);
+    expect(resourceRefreshPending([{ ...environment, state: "running" }])).toBe(false);
+  });
+
   it("maps arbitrary localhost application links through the authenticated conversation gateway", () => {
     const sessionId = "10000000-0000-4000-8000-000000000001";
     expect(conversationPreviewHref("http://localhost:5173/game?mode=demo", sessionId)).toBe(
