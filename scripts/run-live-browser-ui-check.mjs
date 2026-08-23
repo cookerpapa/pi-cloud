@@ -367,6 +367,9 @@ try {
         `UI acceptance ${suffix}`,
         "conversation.openElasticForDelete",
       );
+      await page.waitFor(
+        `[...document.querySelectorAll(".product-conversation-row.active strong")].some(element=>element.innerText.includes(${JSON.stringify(`UI acceptance ${suffix}`)}))`,
+      );
       await click(
         ".product-conversation-row.active .product-delete-conversation",
         "conversation.deleteElastic",
