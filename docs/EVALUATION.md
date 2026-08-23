@@ -82,6 +82,40 @@ Current evidence:
 - [Cube KVM acceptance](reports/cubesandbox-kvm-acceptance-latest.md)
 - [Production acceptance](reports/cubesandbox-production-acceptance-latest.md)
 - [Shared Worker-pool acceptance](reports/pi-worker-pool-acceptance-latest.md)
+- [Interactive Snake Preview acceptance](reports/snake-preview-acceptance-latest.json)
+- [Browser UI control acceptance](reports/browser-ui-acceptance-latest.json)
+
+The Snake gate requires a real model to create and serve a multi-file browser
+game, then drives start, keyboard movement, pause and reset in headless Chrome
+through the authenticated opaque-origin Preview gateway. The browser UI gate
+clicks the ordinary user-facing controls for authentication, localization,
+conversation/tree navigation, Workspace Terminal, Fork/Delete, resource
+lifecycle, directory selection and SSH. It does not mutate administrator model
+or proxy settings.
+
+## Load and live restart acceptance
+
+```bash
+npm run eval:load
+PI_CLOUD_LIVE_MULTI_TENANT_LOAD=1 npm run production:multi-tenant-model-load
+PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 npm run production:control-plane-restart-check
+PI_CLOUD_LIVE_KAFKA_RESTART_CHECK=1 npm run production:kafka-restart-check
+PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-environment-check
+```
+
+`eval:load` measures 10/50/100 concurrent cold-Session creates and reads; it
+does not claim equivalent active model/Cube concurrency. The multi-tenant gate
+uses real simultaneous model Runs across the shared Worker pool. Restart gates
+kill or replace one named process only after a visible stream boundary, then
+verify ordered completion/recovery from PostgreSQL and Kafka.
+
+Current evidence:
+
+- [Control Plane load](reports/control-plane-load-latest.md)
+- [Multi-tenant real-model load](reports/multi-tenant-model-load-latest.md)
+- [Control Plane restart](reports/control-plane-restart-acceptance-latest.md)
+- [Kafka restart](reports/kafka-restart-acceptance-latest.md)
+- [Exclusive development environment recovery](reports/development-environment-acceptance-latest.json)
 
 ## Long-context compaction
 

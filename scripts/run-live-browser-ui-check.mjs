@@ -357,7 +357,7 @@ const report = {
   account: username,
   clickedControls: clicked,
   clickedControlCount: clicked.length,
-  screenshotPath,
+  screenshotCaptured: true,
   cleanupCompleted: true,
 };
 await writeFile(

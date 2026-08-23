@@ -331,7 +331,7 @@ const report = {
   hostPreviewStatus: 200,
   previewPath: preview.path,
   browserInteraction: interaction,
-  screenshotPath,
+  screenshotCaptured: true,
   conversationRetainedForInspection: true,
   reusedCompletedCodingSession: reusedSessionId !== undefined,
   systemPromptModified: false,
