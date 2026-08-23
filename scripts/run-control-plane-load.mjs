@@ -147,6 +147,7 @@ const projectResult = await request(
 if (!projectResult.success) throw new Error(projectResult.failure);
 const project = projectResult.body;
 const stages = [];
+const createdSessionIds = [];
 
 for (const concurrency of [10, 50, 100]) {
   const creation = await runConcurrent("create_cold_session", concurrency, (index) =>
@@ -168,6 +169,7 @@ for (const concurrency of [10, 50, 100]) {
   const sessionIds = creation.results
     .filter((result) => result.success)
     .map((result) => result.body.sessionId);
+  createdSessionIds.push(...sessionIds);
   const reads = await runConcurrent("read_conversation", sessionIds.length, (index) =>
     request(`/v1/conversations/${encodeURIComponent(sessionIds[index])}`),
   );
@@ -182,6 +184,26 @@ for (const concurrency of [10, 50, 100]) {
 
 await new Promise((resolvePromise) => setTimeout(resolvePromise, 16_000));
 const metrics = await prometheusSnapshot();
+const cleanupResults = [];
+for (let offset = 0; offset < createdSessionIds.length; offset += 25) {
+  cleanupResults.push(
+    ...(await Promise.all(
+      createdSessionIds.slice(offset, offset + 25).map((sessionId) =>
+        request(`/v1/conversations/${encodeURIComponent(sessionId)}`, {
+          method: "DELETE",
+          headers: { "idempotency-key": `delete:${randomUUID()}` },
+        }),
+      ),
+    )),
+  );
+}
+cleanupResults.push(
+  await request(`/v1/workspaces/${encodeURIComponent(project.workspaceId)}`, {
+    method: "DELETE",
+    headers: { "idempotency-key": `delete:${randomUUID()}` },
+  }),
+);
+const cleanupErrors = cleanupResults.filter((result) => !result.success).length;
 const allSummaries = stages.flatMap((stage) => [stage.sessionCreation, stage.conversationRead]);
 const report = {
   format: "pi-cloud.control-plane-load-report.v1",
@@ -197,6 +219,10 @@ const report = {
   stages,
   totalRequests: allSummaries.reduce((sum, summary) => sum + summary.requests, 0),
   totalErrors: allSummaries.reduce((sum, summary) => sum + summary.errors, 0),
+  cleanup: {
+    resources: cleanupResults.length,
+    errors: cleanupErrors,
+  },
   prometheus: metrics,
 };
 const markdown =
@@ -206,6 +232,7 @@ const markdown =
   `It does **not** claim 100 concurrent model/sandbox Runs; active execution capacity is evaluated separately.\n\n` +
   `- Requests: ${report.totalRequests}\n` +
   `- Errors: ${report.totalErrors}\n\n` +
+  `- Cleanup errors: ${String(report.cleanup.errors)}\n\n` +
   `| Operation | Concurrency | Success | Errors | Throughput | p50 | p95 | p99 |\n` +
   `| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n` +
   allSummaries
@@ -219,4 +246,4 @@ const markdown =
 await mkdir(dirname(outputJson), { recursive: true });
 await writeFile(outputJson, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 await writeFile(outputMarkdown, markdown, "utf8");
-if (report.totalErrors !== 0) process.exitCode = 1;
+if (report.totalErrors !== 0 || report.cleanup.errors !== 0) process.exitCode = 1;
