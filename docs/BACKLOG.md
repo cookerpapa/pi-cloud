@@ -123,6 +123,8 @@ retired and remain only in Git history or explicitly superseded ADRs.
 - [x] Add one-use SSH tickets and a trusted SSH-to-Tool-Broker PTY gateway.
 - [x] Separate Workspace/environment management from progressive conversation
       creation and expose deployment-owned profiles to elastic Runs.
+- [x] Allocate exclusive environments without asking for an elastic Workspace,
+      expose CPU/memory/disk selectors and record the Cube guest IP.
 - [ ] Add a bounded WebSocket preview tunnel for HMR and application sockets.
 
 ## Product expansion rule

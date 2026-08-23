@@ -33,6 +33,7 @@ let database: Kysely<Database>;
 let server: ToolBrokerServer;
 let service: DevelopmentEnvironmentService;
 let stateRepository: PostgresSandboxActivationStateRepository;
+let store: ControlPlaneStore;
 let identity: TenantRequestIdentity;
 let otherIdentity: TenantRequestIdentity;
 let workspaceId: string;
@@ -71,6 +72,7 @@ function provider(): SandboxProvider {
         activationId: spec.activationId,
         runtimeId: spec.activationId,
         runtimeName: `development-${spec.activationId}`,
+        ipAddress: "169.254.68.4",
         workspaceRoot: "/workspace",
         assignment: spec.assignment,
         environment: spec.environment,
@@ -163,25 +165,12 @@ beforeAll(async () => {
     .set({ state: "disabled" })
     .where("id", "=", "sandbox-domain-0001")
     .execute();
-  const store = new ControlPlaneStore({
+  store = new ControlPlaneStore({
     database,
     tenantId: tenant.tenantId,
     defaultModelProfileId: tenant.defaultModelProfileId,
     environmentImageRevision: IMAGE_REVISION,
   });
-  const project = await store.createProject({
-    name: "exclusive-workspace",
-    source: { kind: "empty" },
-  });
-  workspaceId = project.workspaceId;
-  sessionId = (
-    await store.createSession(
-      project.projectId,
-      project.workspaceId,
-      "exclusive conversation",
-      "persistent",
-    )
-  ).sessionId;
   identity = {
     credentialId: tenant.credential.credentialId,
     tenantId: tenant.tenantId,
@@ -224,6 +213,7 @@ beforeAll(async () => {
     terminalToken: TOKEN,
     allowInsecureInternalHttp: true,
     backgroundProvisioning: false,
+    environmentImageRevision: IMAGE_REVISION,
   });
 }, 30_000);
 
@@ -237,16 +227,25 @@ afterAll(async () => {
 describe("user-owned development environments", () => {
   it("provisions, isolates visibility, pauses, resumes and releases one Workspace KVM", async () => {
     const created = await service.create(identity, "create-exclusive", {
-      workspaceId,
       profileKey: "standard",
     });
-    expect(created).toMatchObject({ workspaceId, generation: 1 });
+    workspaceId = created.workspaceId;
+    sessionId = (
+      await store.createSession(
+        created.projectId,
+        created.workspaceId,
+        "exclusive conversation",
+        "persistent",
+      )
+    ).sessionId;
+    expect(created).toMatchObject({ generation: 1 });
     let running = created;
     for (let attempt = 0; attempt < 100 && running.state !== "running"; attempt += 1) {
       await new Promise<void>((resolve) => setTimeout(resolve, 10));
       running = await service.get(identity, created.environmentId);
     }
     expect(running.state).toBe("running");
+    expect(running.ipAddress).toBe("169.254.68.4");
     const sshTickets = new SshAccessTicketService({
       database,
       enabled: true,
@@ -307,11 +306,10 @@ describe("user-owned development environments", () => {
       code: "not_found",
     });
     await expect(
-      service.create(identity, "create-exclusive-replay", {
-        workspaceId,
-        profileKey: "standard",
+      service.create(identity, "create-exclusive", {
+        profileKey: "performance",
       }),
-    ).rejects.toMatchObject({ code: "conflict" });
+    ).rejects.toMatchObject({ code: "idempotency_conflict" });
 
     await expect(
       service.action(identity, created.environmentId, "pause-exclusive", { action: "pause" }),

@@ -294,13 +294,12 @@ standard or performance). CPU, memory and system-disk values come from the
 registered Cube template catalog; arbitrary template IDs and resource overrides
 are never accepted from the browser.
 
-An exclusive environment owns one persistent Workspace Volume but may serve
-several conversations. Each conversation freezes a working directory under
-`/workspace`; this is a directory binding, not a second Volume. Persistent
-conversations may share the environment, while Workspace single-writer
+An exclusive environment is requested independently from user Workspaces. The
+Control Plane allocates its private persistent Volume and internal project
+identity transactionally; neither is shown in the elastic Workspace inventory.
+Several conversations may then select working directories under `/workspace`.
+Each directory is a binding, not a second Volume. Workspace single-writer
 admission still permits only one active Agent Run or human terminal at a time.
-Elastic conversations cannot bind to a Workspace currently attached to an
-exclusive environment.
 
 The allocation participates in tenant/Domain Sandbox quotas and the global
 Workspace single-writer rule. `agent_activation_id` and `terminal_active` are
@@ -344,6 +343,8 @@ and can be rebound idempotently to another live tenant Workspace. Historical
 Runs keep the original Workspace foreign key; a new Run freezes the new
 binding. Workspace deletion never archives a Session or Subagent transcript
 merely to release storage.
+The browser opens this rebind chooser immediately when such a Session is
+selected, instead of waiting for the user to submit a Turn that must fail.
 
 ### Persistent Workspace Volume gateway
 

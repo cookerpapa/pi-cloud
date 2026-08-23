@@ -269,9 +269,7 @@ const cube = new OfficialCubeSandboxRuntimeClient({
 });
 
 const suffix = Date.now().toString(36);
-const project = await api.createProject(`Exclusive environment acceptance ${suffix}`);
 const development = await api.createDevelopmentEnvironment(
-  project.workspaceId,
   "standard",
   newIdempotencyKey("environment"),
 );
@@ -299,8 +297,8 @@ await terminalCommand(
 );
 
 const session = await api.createSession(
-  project.projectId,
-  project.workspaceId,
+  development.projectId,
+  development.workspaceId,
   `Agent handoff into exclusive environment ${suffix}`,
   "persistent",
   "standard",

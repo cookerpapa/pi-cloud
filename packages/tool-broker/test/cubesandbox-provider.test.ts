@@ -185,6 +185,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       return {
         imageRevision: this.imageRevision,
         kernelRelease: "6.12.0-cube.guest",
+        ipAddress: "169.254.68.4",
         cpuCount: 1,
         memoryBytes: 740 * 1_024 * 1_024,
         uid: 1_000,

@@ -44,22 +44,19 @@ export function ResourceManagementPage({
   workspaces: readonly WorkspaceSummaryResource[];
 }) {
   const [tab, setTab] = useState<"workspaces" | "environments">("workspaces");
-  const [workspaceName, setWorkspaceName] = useState("");
-  const [environmentWorkspaceId, setEnvironmentWorkspaceId] = useState("");
   const [profileKey, setProfileKey] = useState<DevelopmentEnvironmentProfileKey>("standard");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const liveEnvironments = environments.filter((environment) => environment.state !== "released");
-  const availableWorkspaces = useMemo(
+  const elasticWorkspaces = useMemo(
     () =>
       workspaces.filter(
         (workspace) =>
-          !liveEnvironments.some(
-            (environment) => environment.workspaceId === workspace.workspaceId,
-          ),
+          !environments.some((environment) => environment.workspaceId === workspace.workspaceId),
       ),
-    [liveEnvironments, workspaces],
+    [environments, workspaces],
   );
+  const selectedProfile = profiles.find((candidate) => candidate.key === profileKey) ?? profiles[0];
 
   async function mutate(action: () => Promise<unknown>): Promise<void> {
     if (busy) return;
@@ -107,40 +104,14 @@ export function ResourceManagementPage({
 
       {tab === "workspaces" ? (
         <section className="product-resource-section">
-          <form
-            className="product-resource-create"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const name = workspaceName.trim();
-              if (name === "") return;
-              void mutate(async () => {
-                await api.createProject(name);
-                setWorkspaceName("");
-              });
-            }}
-          >
-            <label>
-              <span>新建 Workspace</span>
-              <input
-                maxLength={256}
-                onChange={(event) => setWorkspaceName(event.target.value)}
-                placeholder="例如：order-service"
-                value={workspaceName}
-              />
-            </label>
-            <button
-              className="product-primary-button"
-              disabled={busy || workspaceName.trim() === ""}
-              type="submit"
-            >
-              创建
-            </button>
-          </form>
+          <p className="product-resource-boundary-note">
+            Workspace 只在“弹性执行”新建对话时创建；这里用于查看文件资源、规格和关联对话。
+          </p>
           <div className="product-resource-grid">
-            {workspaces.map((workspace) => {
+            {elasticWorkspaces.map((workspace) => {
               const linked = associations(conversations, workspace.workspaceId);
-              const environment = liveEnvironments.find(
-                (candidate) => candidate.workspaceId === workspace.workspaceId,
+              const workspaceProfile = profiles.find(
+                (profile) => profile.key === linked[0]?.sandboxProfileKey,
               );
               const active = activeConversation(conversations, workspace.workspaceId);
               return (
@@ -152,6 +123,14 @@ export function ResourceManagementPage({
                     </div>
                     <span className="product-resource-status">持久文件</span>
                   </header>
+                  <p>
+                    最近沙箱规格：
+                    {workspaceProfile === undefined
+                      ? "尚未运行"
+                      : `${String(workspaceProfile.cpuCount)}C/${String(
+                          workspaceProfile.memoryMiB / 1024,
+                        )}G/${String(workspaceProfile.systemDiskGiB)}G`}
+                  </p>
                   <div className="product-resource-links">
                     {linked.length === 0 ? (
                       <span>暂无关联对话</span>
@@ -163,15 +142,9 @@ export function ResourceManagementPage({
                       ))
                     )}
                   </div>
-                  {environment === undefined ? null : (
-                    <p>
-                      独享环境：{String(environment.cpuCount)}C/
-                      {String(environment.memoryMiB / 1024)}G · {environment.state}
-                    </p>
-                  )}
                   <button
                     className="product-danger-button"
-                    disabled={busy || active || environment !== undefined}
+                    disabled={busy || active}
                     onClick={() => {
                       if (
                         !window.confirm(
@@ -188,7 +161,6 @@ export function ResourceManagementPage({
                     删除 Workspace
                   </button>
                   {active ? <small>有 Agent Run 正在执行，暂时不能删除。</small> : null}
-                  {environment !== undefined ? <small>请先释放关联的独享运行环境。</small> : null}
                 </article>
               );
             })}
@@ -200,49 +172,65 @@ export function ResourceManagementPage({
             className="product-resource-create product-environment-create"
             onSubmit={(event) => {
               event.preventDefault();
-              if (environmentWorkspaceId === "") return;
               void mutate(() =>
-                api.createDevelopmentEnvironment(
-                  environmentWorkspaceId,
-                  profileKey,
-                  newIdempotencyKey("environment"),
-                ),
+                api.createDevelopmentEnvironment(profileKey, newIdempotencyKey("environment")),
               );
             }}
           >
             <label>
-              <span>Workspace</span>
+              <span>CPU 核数</span>
               <select
-                onChange={(event) => setEnvironmentWorkspaceId(event.target.value)}
-                value={environmentWorkspaceId}
+                onChange={(event) => {
+                  const cpu = Number(event.target.value);
+                  const candidate = profiles.find((profile) => profile.cpuCount === cpu);
+                  if (candidate !== undefined) setProfileKey(candidate.key);
+                }}
+                value={selectedProfile?.cpuCount ?? 1}
               >
-                <option value="">选择 Workspace</option>
-                {availableWorkspaces.map((workspace) => (
-                  <option key={workspace.workspaceId} value={workspace.workspaceId}>
-                    {workspace.name}
+                {profiles.map((profile) => (
+                  <option key={profile.key} value={profile.cpuCount}>
+                    {String(profile.cpuCount)} 核
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              <span>规格</span>
+              <span>内存大小</span>
               <select
-                onChange={(event) =>
-                  setProfileKey(event.target.value as DevelopmentEnvironmentProfileKey)
-                }
-                value={profileKey}
+                onChange={(event) => {
+                  const memory = Number(event.target.value);
+                  const candidate = profiles.find((profile) => profile.memoryMiB === memory);
+                  if (candidate !== undefined) setProfileKey(candidate.key);
+                }}
+                value={selectedProfile?.memoryMiB ?? 2_048}
               >
                 {profiles.map((profile) => (
-                  <option key={profile.key} value={profile.key}>
-                    {profile.label} · {String(profile.cpuCount)}C/{String(profile.memoryMiB / 1024)}
-                    G/{String(profile.systemDiskGiB)}G
+                  <option key={profile.key} value={profile.memoryMiB}>
+                    {String(profile.memoryMiB / 1024)} GB
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>磁盘大小</span>
+              <select
+                onChange={(event) => {
+                  const disk = Number(event.target.value);
+                  const candidate = profiles.find((profile) => profile.systemDiskGiB === disk);
+                  if (candidate !== undefined) setProfileKey(candidate.key);
+                }}
+                value={selectedProfile?.systemDiskGiB ?? 8}
+              >
+                {profiles.map((profile) => (
+                  <option key={profile.key} value={profile.systemDiskGiB}>
+                    {String(profile.systemDiskGiB)} GB
                   </option>
                 ))}
               </select>
             </label>
             <button
               className="product-primary-button"
-              disabled={busy || environmentWorkspaceId === ""}
+              disabled={busy || selectedProfile === undefined}
               type="submit"
             >
               申请环境
@@ -259,7 +247,7 @@ export function ResourceManagementPage({
                 >
                   <header>
                     <div>
-                      <h3>{environment.workspaceName}</h3>
+                      <h3>独享环境 {environment.environmentId.slice(0, 8)}</h3>
                       <span>
                         {String(environment.cpuCount)}C · {String(environment.memoryMiB / 1024)}G
                         内存 · {String(environment.systemDiskGiB)}G 系统盘
@@ -269,6 +257,7 @@ export function ResourceManagementPage({
                       {environment.state}
                     </span>
                   </header>
+                  <p>IP 地址：{environment.ipAddress ?? "等待 Cube 分配"}</p>
                   <div className="product-resource-links">
                     {linked.length === 0 ? (
                       <span>暂无关联对话</span>

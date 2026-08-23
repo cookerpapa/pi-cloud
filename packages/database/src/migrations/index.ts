@@ -85,6 +85,7 @@ import * as removeDuplicateCompactionLedger from "./083_remove_duplicate_compact
 import * as conversationWorkspaceRebinding from "./084_conversation_workspace_rebinding.ts";
 import * as sshAccessTickets from "./085_ssh_access_tickets.ts";
 import * as sessionExecutionProfiles from "./086_session_execution_profiles.ts";
+import * as developmentEnvironmentMachineIdentity from "./087_development_environment_machine_identity.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -175,6 +176,7 @@ export const migrationProvider: MigrationProvider = {
       "084_conversation_workspace_rebinding": conversationWorkspaceRebinding,
       "085_ssh_access_tickets": sshAccessTickets,
       "086_session_execution_profiles": sessionExecutionProfiles,
+      "087_development_environment_machine_identity": developmentEnvironmentMachineIdentity,
     };
   },
 };

@@ -103,6 +103,7 @@ export type SandboxHandle = Readonly<{
   activationId: string;
   runtimeId: string;
   runtimeName: string;
+  ipAddress?: string;
   workspaceRoot: "/workspace";
   assignment: ToolSandboxAssignment;
   environment: EnvironmentRuntimeSnapshot;

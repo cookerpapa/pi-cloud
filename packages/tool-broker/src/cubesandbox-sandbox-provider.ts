@@ -132,6 +132,7 @@ type CubeRuntimeEvidence = Readonly<{
   readOnlyRootFilesystem: boolean;
   supervisorUid: number;
   supervisorGid: number;
+  ipAddress: string;
 }>;
 
 type CubeActivation = {
@@ -246,6 +247,7 @@ function parseEvidence(value: unknown): CubeRuntimeEvidence {
     readOnlyRootFilesystem: booleanField(candidate, "readOnlyRootFilesystem"),
     supervisorUid: integerField(candidate, "supervisorUid"),
     supervisorGid: integerField(candidate, "supervisorGid"),
+    ipAddress: stringField(candidate, "ipAddress", 45),
   });
 }
 
@@ -743,6 +745,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         activationId: spec.activationId,
         runtimeId: runtimeUuid(instance.sandboxId),
         runtimeName: bounded(instance.sandboxId, "CubeSandbox runtime name", 128),
+        ipAddress: evidence.ipAddress,
         workspaceRoot: "/workspace",
         assignment: spec.assignment,
         environment: spec.environment,

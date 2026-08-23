@@ -476,6 +476,9 @@ export class ToolBroker {
         requestId: request.requestId,
         environmentId: request.environmentId,
         state: "running",
+        ...(existing.handle.ipAddress === undefined
+          ? {}
+          : { ipAddress: existing.handle.ipAddress }),
       };
     }
     const reservation: DevelopmentEnvironmentReservation = {
@@ -557,6 +560,7 @@ export class ToolBroker {
         requestId: request.requestId,
         environmentId: request.environmentId,
         state: "running",
+        ...(handle.ipAddress === undefined ? {} : { ipAddress: handle.ipAddress }),
       };
     } catch (error: unknown) {
       if (handle !== undefined) await this.#provider.destroy(handle).catch(() => undefined);

@@ -205,6 +205,7 @@ export interface DevelopmentEnvironmentTable {
   system_disk_gib: number;
   runtime_id: string | null;
   runtime_name: string | null;
+  ip_address: string | null;
   agent_activation_id: string | null;
   terminal_active: GeneratedBoolean;
   state: DevelopmentEnvironmentState;

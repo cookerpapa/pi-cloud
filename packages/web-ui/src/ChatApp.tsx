@@ -162,8 +162,7 @@ export default function ChatApp() {
   const elasticWorkspaces = workspaces.filter(
     (workspace) =>
       !developmentEnvironments.some(
-        (environment) =>
-          environment.workspaceId === workspace.workspaceId && environment.state !== "released",
+        (environment) => environment.workspaceId === workspace.workspaceId,
       ),
   );
   const conversationPanel = useResizablePanel({
@@ -590,6 +589,12 @@ export default function ChatApp() {
         conversation: loaded.conversation,
         ...(loaded.liveSnapshot === undefined ? {} : { liveSnapshot: loaded.liveSnapshot }),
       });
+      if (loaded.conversation.session.workspaceState === "missing") {
+        setSelectedWorkspaceId(elasticWorkspaces[0]?.workspaceId ?? "");
+        setRebindWorkspaceChoice(elasticWorkspaces.length === 0 ? "new" : "existing");
+        setRebindWorkspaceName("");
+        setWorkspaceRebindOpen(true);
+      }
       setSelectedDelegatedSession(delegatedSession);
       if (jumpTarget !== undefined) setPendingTreeJump(jumpTarget);
       setSidebarOpen(false);
@@ -1193,12 +1198,12 @@ export default function ChatApp() {
             )}
             {state.project ? (
               <span>
-                /workspace · {state.project.name}
                 {currentDevelopmentEnvironment === undefined
-                  ? state.session?.sandboxRetention === "persistent"
-                    ? " · 旧版持久沙箱"
-                    : " · 弹性执行"
-                  : ` · 独享 ${String(currentDevelopmentEnvironment.cpuCount)}C/${String(
+                  ? `/workspace · ${state.project.name} · 弹性执行`
+                  : `${state.session?.workingDirectory ?? "/workspace"} · 独享环境 ${currentDevelopmentEnvironment.environmentId.slice(
+                      0,
+                      8,
+                    )} · ${String(currentDevelopmentEnvironment.cpuCount)}C/${String(
                       currentDevelopmentEnvironment.memoryMiB / 1024,
                     )}G`}
                 {state.session?.workspaceState === "missing" ? " · Workspace 已删除" : ""}
@@ -1427,7 +1432,8 @@ export default function ChatApp() {
                                   key={environment.environmentId}
                                   value={environment.environmentId}
                                 >
-                                  {environment.workspaceName} · {String(environment.cpuCount)}C/
+                                  独享环境 {environment.environmentId.slice(0, 8)} ·{" "}
+                                  {String(environment.cpuCount)}C/
                                   {String(environment.memoryMiB / 1024)}G · {environment.state}
                                 </option>
                               ))}
@@ -1502,7 +1508,7 @@ export default function ChatApp() {
                     setDirectoryPickerOpen(false);
                   }}
                   referenceSessionId={reference?.sessionId ?? null}
-                  workspaceName={environment.workspaceName}
+                  workspaceName={`独享环境 ${environment.environmentId.slice(0, 8)}`}
                 />
               );
             })()
@@ -1528,7 +1534,7 @@ export default function ChatApp() {
               </header>
               <fieldset className="product-workspace-choice">
                 <legend>新的 Workspace</legend>
-                {workspaces.length > 0 ? (
+                {elasticWorkspaces.length > 0 ? (
                   <label className="product-choice-card">
                     <input
                       checked={rebindWorkspaceChoice === "existing"}
@@ -1541,12 +1547,12 @@ export default function ChatApp() {
                     </span>
                   </label>
                 ) : null}
-                {rebindWorkspaceChoice === "existing" && workspaces.length > 0 ? (
+                {rebindWorkspaceChoice === "existing" && elasticWorkspaces.length > 0 ? (
                   <select
                     onChange={(event) => setSelectedWorkspaceId(event.target.value)}
                     value={selectedWorkspaceId}
                   >
-                    {workspaces.map((workspace) => (
+                    {elasticWorkspaces.map((workspace) => (
                       <option key={workspace.workspaceId} value={workspace.workspaceId}>
                         {workspace.name}
                       </option>
@@ -1714,8 +1720,8 @@ export default function ChatApp() {
             <button
               disabled={!canMutate}
               onClick={() => {
-                setSelectedWorkspaceId(workspaces[0]?.workspaceId ?? "");
-                setRebindWorkspaceChoice(workspaces.length === 0 ? "new" : "existing");
+                setSelectedWorkspaceId(elasticWorkspaces[0]?.workspaceId ?? "");
+                setRebindWorkspaceChoice(elasticWorkspaces.length === 0 ? "new" : "existing");
                 setRebindWorkspaceName("");
                 setWorkspaceRebindOpen(true);
               }}

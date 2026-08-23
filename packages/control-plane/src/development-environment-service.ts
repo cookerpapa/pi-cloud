@@ -3,6 +3,11 @@ import type { Database } from "@pi-cloud/database";
 import {
   TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_PATH,
   DEVELOPMENT_ENVIRONMENT_PROFILES,
+  DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
+  DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+  DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
   parseDevelopmentEnvironmentBrokerResponse,
   parseEnvironmentRuntimeSnapshot,
   type CreateDevelopmentEnvironmentRequest,
@@ -12,7 +17,7 @@ import {
   type DevelopmentEnvironmentResource,
 } from "@pi-cloud/protocol";
 import { createWorkspaceSnapshot, encodeWorkspaceSnapshotBlob } from "@pi-cloud/workspace-runtime";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { ControlPlaneStoreError } from "./control-plane-store.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
@@ -25,6 +30,7 @@ export type DevelopmentEnvironmentServiceOptions = Readonly<{
   allowInsecureInternalHttp: boolean;
   idGenerator?: () => string;
   backgroundProvisioning?: boolean;
+  environmentImageRevision?: string;
 }>;
 
 function requestHash(value: unknown): string {
@@ -57,6 +63,7 @@ function resource(row: {
   createdAt: Date | string;
   updatedAt: Date | string;
   releasedAt: Date | string | null;
+  ipAddress: string | null;
 }): DevelopmentEnvironmentResource {
   const generation = Number(row.generation);
   const selectedProfile = profile(row.profileKey);
@@ -77,6 +84,7 @@ function resource(row: {
     cpuCount: row.cpuCount,
     memoryMiB: row.memoryMiB,
     systemDiskGiB: row.systemDiskGiB,
+    ...(row.ipAddress === null ? {} : { ipAddress: row.ipAddress }),
     ...(row.failureCode === null ? {} : { failureCode: row.failureCode }),
     createdAt: new Date(row.createdAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
@@ -90,6 +98,7 @@ export class DevelopmentEnvironmentService {
   readonly #allowInsecureInternalHttp: boolean;
   readonly #id: () => string;
   readonly #backgroundProvisioning: boolean;
+  readonly #environmentImageRevision: string;
   readonly #provisioning = new Map<string, Promise<void>>();
 
   constructor(options: DevelopmentEnvironmentServiceOptions) {
@@ -101,6 +110,7 @@ export class DevelopmentEnvironmentService {
     this.#allowInsecureInternalHttp = options.allowInsecureInternalHttp;
     this.#id = options.idGenerator ?? randomUUID;
     this.#backgroundProvisioning = options.backgroundProvisioning ?? true;
+    this.#environmentImageRevision = options.environmentImageRevision ?? "development";
   }
 
   async list(identity: TenantRequestIdentity): Promise<DevelopmentEnvironmentListResource> {
@@ -160,68 +170,109 @@ export class DevelopmentEnvironmentService {
         }
         return replay.id;
       }
-      const workspace = await transaction
-        .selectFrom("workspaces")
-        .select(["id", "project_id", "sandbox_domain_id"])
-        .where("tenant_id", "=", identity.tenantId)
-        .where("id", "=", request.workspaceId)
-        .where("workspace_kind", "=", "user")
-        .where("deleted_at", "is", null)
+      const id = this.#id();
+      const projectId = this.#id();
+      const workspaceId = this.#id();
+      const environmentVersionId = this.#id();
+      const selectedProfile = profile(request.profileKey);
+      const domain = await transaction
+        .selectFrom("sandbox_domains")
+        .select(["id", "assigned_workspaces", "maximum_active_sandboxes"])
+        .where("state", "=", "active")
+        .orderBy(
+          sql<number>`(${sql.ref("assigned_workspaces")}::numeric / ${sql.ref("maximum_active_sandboxes")})`,
+          "asc",
+        )
+        .orderBy("id", "asc")
+        .limit(1)
         .forUpdate()
         .executeTakeFirst();
-      if (workspace === undefined) {
-        throw new ControlPlaneStoreError("not_found", "Workspace was not found");
-      }
-      const activeRun = await transaction
-        .selectFrom("runs")
-        .select("id")
-        .where("tenant_id", "=", identity.tenantId)
-        .where("workspace_id", "=", workspace.id)
-        .where("state", "in", ["claimed", "running", "cancel_requested"])
-        .limit(1)
-        .executeTakeFirst();
-      if (activeRun !== undefined) {
+      if (domain === undefined) {
         throw new ControlPlaneStoreError(
-          "conflict",
-          "Wait for the active Agent Run before requesting an exclusive environment",
+          "control_plane_misconfigured",
+          "No active Sandbox Domain is available",
         );
       }
-      const live = await transaction
-        .selectFrom("development_environments")
-        .select("id")
-        .where("tenant_id", "=", identity.tenantId)
-        .where("workspace_id", "=", workspace.id)
-        .where("state", "in", [
-          "requested",
-          "provisioning",
-          "running",
-          "paused",
-          "releasing",
-          "unknown",
-        ])
-        .executeTakeFirst();
-      if (live !== undefined) {
-        throw new ControlPlaneStoreError(
-          "conflict",
-          "Workspace already has an exclusive development environment",
-        );
-      }
-      const id = this.#id();
-      const selectedProfile = profile(request.profileKey);
+      await transaction
+        .updateTable("sandbox_domains")
+        .set({
+          assigned_workspaces: sql<string>`${sql.ref("assigned_workspaces")} + 1`,
+          updated_at: new Date(),
+        })
+        .where("id", "=", domain.id)
+        .executeTakeFirstOrThrow();
+      await transaction
+        .insertInto("projects")
+        .values({
+          id: projectId,
+          tenant_id: identity.tenantId,
+          name: `exclusive-${id.slice(0, 8)}`,
+        })
+        .executeTakeFirstOrThrow();
+      await transaction
+        .insertInto("workspaces")
+        .values({
+          id: workspaceId,
+          tenant_id: identity.tenantId,
+          project_id: projectId,
+          sandbox_domain_id: domain.id,
+          object_snapshot_key: null,
+        })
+        .executeTakeFirstOrThrow();
+      await transaction
+        .insertInto("environment_versions")
+        .values({
+          id: environmentVersionId,
+          tenant_id: identity.tenantId,
+          project_id: projectId,
+          version_number: 1,
+          profile_key: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
+          profile_version: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
+          image_revision: this.#environmentImageRevision,
+          spec_sha256: DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
+          recipe: sql<Record<string, unknown>>`${JSON.stringify(
+            DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+          )}::jsonb`,
+          recipe_sha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+          state: "pending",
+          active: true,
+          validated_at: null,
+        })
+        .executeTakeFirstOrThrow();
+      await transaction
+        .insertInto("workspace_sources")
+        .values({
+          tenant_id: identity.tenantId,
+          workspace_id: workspaceId,
+          kind: "empty",
+          repository: null,
+          commit_sha: null,
+          status: "ready",
+          object_key: null,
+          sha256: null,
+          size_bytes: null,
+          import_lease_id: null,
+          lease_expires_at: null,
+          failure_code: null,
+          github_installation_id: null,
+          github_repository_id: null,
+        })
+        .executeTakeFirstOrThrow();
       await transaction
         .insertInto("development_environments")
         .values({
           id,
           tenant_id: identity.tenantId,
           owner_user_id: identity.userId,
-          project_id: workspace.project_id,
-          workspace_id: workspace.id,
-          sandbox_domain_id: workspace.sandbox_domain_id,
+          project_id: projectId,
+          workspace_id: workspaceId,
+          sandbox_domain_id: domain.id,
           environment_version_id: null,
           owner_instance_id: null,
           owner_base_url: null,
           runtime_id: null,
           runtime_name: null,
+          ip_address: null,
           profile_key: selectedProfile.key,
           cpu_count: selectedProfile.cpuCount,
           memory_mib: selectedProfile.memoryMiB,
@@ -469,6 +520,7 @@ export class DevelopmentEnvironmentService {
         "development.cpu_count as cpuCount",
         "development.memory_mib as memoryMiB",
         "development.system_disk_gib as systemDiskGiB",
+        "development.ip_address as ipAddress",
         "development.failure_code as failureCode",
         "development.created_at as createdAt",
         "development.updated_at as updatedAt",
@@ -480,7 +532,7 @@ export class DevelopmentEnvironmentService {
 
   async #provision(identity: TenantRequestIdentity, environmentId: string): Promise<void> {
     const descriptor = await this.#descriptor(identity, environmentId);
-    await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
+    const result = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.provision",
       requestId: this.#id(),
@@ -494,6 +546,15 @@ export class DevelopmentEnvironmentService {
       environment: descriptor.environment,
       workspaceSeed: descriptor.workspaceSeed,
     });
+    if (result.type === "development_environment.state" && result.ipAddress !== undefined) {
+      await this.#database
+        .updateTable("development_environments")
+        .set({ ip_address: result.ipAddress, updated_at: new Date() })
+        .where("tenant_id", "=", identity.tenantId)
+        .where("owner_user_id", "=", identity.userId)
+        .where("id", "=", environmentId)
+        .executeTakeFirstOrThrow();
+    }
   }
 
   async #lifecycle(
@@ -587,7 +648,7 @@ export class DevelopmentEnvironmentService {
     domainId: string,
     initialBaseUrl: string,
     message: DevelopmentEnvironmentBrokerRequest,
-  ): Promise<void> {
+  ): Promise<import("@pi-cloud/protocol").DevelopmentEnvironmentBrokerResponse> {
     let baseUrl = initialBaseUrl;
     for (let redirects = 0; redirects <= MAXIMUM_REDIRECTS; redirects += 1) {
       const target = new URL(TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_PATH, baseUrl);
@@ -623,7 +684,7 @@ export class DevelopmentEnvironmentService {
         );
       }
       const parsed = parseDevelopmentEnvironmentBrokerResponse(body);
-      if (parsed.type === "development_environment.state") return;
+      if (parsed.type === "development_environment.state") return parsed;
       baseUrl = await this.#validatedOwnerRedirect(domainId, parsed.ownerBaseUrl);
     }
     throw new ControlPlaneStoreError(

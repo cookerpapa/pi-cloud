@@ -75,12 +75,20 @@ shows tenant-scoped named conversations, typed Subagent children and a
 focused/full Pi Session tree at left, with the selected transcript at right.
 The new-conversation dialog discloses only two modes first. Elastic execution
 then selects/creates a named Workspace and a deployment-owned resource profile.
-Exclusive execution selects one user-owned Cube and a persisted directory under
-its `/workspace` Volume. Workspace deletion and exclusive-environment lifecycle
+Exclusive execution selects one independently allocated user-owned Cube and a
+persisted directory under its `/workspace` Volume. Applying for that environment
+requires only CPU, memory and disk selectors; it never consumes a pre-existing
+elastic Workspace. Workspace deletion and exclusive-environment lifecycle
 actions live on a separate resource page, where associated conversations and
 active-Run deletion locks are visible. The browser has no repository-import
 workflow. No API token, provider key, model profile, or model picker is shown to
 an ordinary user.
+
+The resource page does not create Workspaces. Its Workspace tab lists only
+elastic-conversation file resources, their latest Sandbox specification and
+associated conversations. The exclusive-environment tab lists machine
+resources, their CPU/memory/disk specification, Cube guest IP and associated
+conversations.
 
 The transcript preserves event order, merges adjacent text deltas, renders
 Markdown without raw HTML or remote-image fetches, collapses tool input/output,

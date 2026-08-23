@@ -619,7 +619,7 @@ export const DevelopmentEnvironmentActionSchema = Type.Union([
 ]);
 
 export const CreateDevelopmentEnvironmentRequestSchema = Type.Object(
-  { workspaceId: UuidSchema, profileKey: DevelopmentEnvironmentProfileKeySchema },
+  { profileKey: DevelopmentEnvironmentProfileKeySchema },
   { additionalProperties: false },
 );
 
@@ -640,6 +640,7 @@ export const DevelopmentEnvironmentResourceSchema = Type.Object(
     cpuCount: PositiveSafeIntegerSchema,
     memoryMiB: PositiveSafeIntegerSchema,
     systemDiskGiB: PositiveSafeIntegerSchema,
+    ipAddress: Type.Optional(Type.String({ minLength: 7, maxLength: 45 })),
     failureCode: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,

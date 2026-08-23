@@ -359,7 +359,6 @@ export class PiCloudApi {
   }
 
   async createDevelopmentEnvironment(
-    workspaceId: string,
     profileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey,
     idempotencyKey: string,
   ): Promise<DevelopmentEnvironmentResource> {
@@ -367,7 +366,7 @@ export class PiCloudApi {
       await request(
         this.#fetch,
         "/v1/development-environments",
-        jsonRequest({ workspaceId, profileKey }, idempotencyKey),
+        jsonRequest({ profileKey }, idempotencyKey),
         this.#authorizationToken,
       ),
     );

@@ -49,10 +49,7 @@ const ENVIRONMENT_SNAPSHOT = {
 describe("control-plane public API schemas", () => {
   it("validates user-owned development environment resources and actions", () => {
     const createdAt = "2026-08-20T00:00:00.000Z";
-    expect(
-      parseCreateDevelopmentEnvironmentRequest({ workspaceId: UUID, profileKey: "standard" }),
-    ).toEqual({
-      workspaceId: UUID,
+    expect(parseCreateDevelopmentEnvironmentRequest({ profileKey: "standard" })).toEqual({
       profileKey: "standard",
     });
     expect(parseDevelopmentEnvironmentActionRequest({ action: "pause" })).toEqual({

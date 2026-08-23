@@ -69,6 +69,7 @@ export const DevelopmentEnvironmentBrokerResponseSchema = Type.Union([
       requestId: UuidSchema,
       environmentId: UuidSchema,
       state: DevelopmentEnvironmentBrokerStateSchema,
+      ipAddress: Type.Optional(Type.String({ minLength: 7, maxLength: 45 })),
     },
     { additionalProperties: false },
   ),

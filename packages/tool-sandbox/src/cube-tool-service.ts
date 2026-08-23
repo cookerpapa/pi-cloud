@@ -12,6 +12,7 @@ import { execFile } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { networkInterfaces } from "node:os";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
@@ -46,6 +47,7 @@ type CubeRuntimeEvidence = {
   readOnlyRootFilesystem: boolean;
   supervisorUid: number;
   supervisorGid: number;
+  ipAddress: string;
 };
 
 type HandoffAuthority = {
@@ -487,6 +489,12 @@ async function runtimeEvidence(workerPid: number | undefined): Promise<CubeRunti
   if (capabilities === undefined || rootMount === undefined) {
     throw new CubeToolServiceError(500, "Cube runtime process evidence was invalid");
   }
+  const ipAddress = Object.values(networkInterfaces())
+    .flatMap((addresses) => addresses ?? [])
+    .find((address) => address.family === "IPv4" && !address.internal)?.address;
+  if (ipAddress === undefined) {
+    throw new CubeToolServiceError(500, "Cube runtime network evidence was invalid");
+  }
   return {
     imageRevision: oneLine(imageRevision, "Image revision"),
     kernelRelease: oneLine(kernel, "Kernel"),
@@ -500,6 +508,7 @@ async function runtimeEvidence(workerPid: number | undefined): Promise<CubeRunti
     readOnlyRootFilesystem: rootMount[5]?.split(",").includes("ro") ?? false,
     supervisorUid: process.getuid?.() ?? -1,
     supervisorGid: process.getgid?.() ?? -1,
+    ipAddress,
   };
 }
 

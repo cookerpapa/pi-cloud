@@ -117,7 +117,8 @@ describe("product chat experience", () => {
       />,
     );
     expect(markup).toContain("开发资源");
-    expect(markup).toContain("新建 Workspace");
+    expect(markup).toContain("Workspace 只在“弹性执行”新建对话时创建");
+    expect(markup).not.toContain("新建 Workspace");
     expect(markup).toContain("独享运行环境");
     expect(markup).toContain("返回对话");
   });

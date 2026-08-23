@@ -50,15 +50,16 @@ contract for exposing an ordinary Sandbox's port 22 directly.
 - An elastic execution allocates Cube on first Tool use and may keep it warm for
   a bounded idle period. Reclamation loses processes, not Workspace bytes.
 - An exclusive execution environment is a user-owned Cube resource with a
-  deployment-owned size profile. It binds one persistent Workspace Volume. An
-  Agent Run and a human terminal borrow the same Cube through a fenced,
-  serialized Tool Broker handoff; two VMs never write that Volume concurrently.
-  Several conversations may select different directories beneath that Volume;
-  Workspace single-writer admission still serializes their mutable Runs.
+  deployment-owned size profile. It allocates its own persistent Volume instead
+  of consuming a user-selected elastic Workspace. An Agent Run and a human
+  terminal borrow the same Cube through a fenced, serialized Tool Broker
+  handoff; two VMs never write that Volume concurrently. Several conversations
+  may select different directories beneath that Volume; Workspace single-writer
+  admission still serializes their mutable Runs.
 - Workspace creation/deletion and environment create/pause/resume/release live
   on a dedicated user resource page. The new-conversation dialog only selects
   elastic versus exclusive execution and progressively discloses the relevant
-  Workspace, profile, environment and directory choices. Releasing compute
+  Workspace, machine specification, environment and directory choices. Releasing compute
   preserves both Session and Workspace.
 - HTTP preview remains a same-origin authenticated proxy. Port 3000 or 8000 is
   meaningful only when an application listens on `0.0.0.0` inside the live

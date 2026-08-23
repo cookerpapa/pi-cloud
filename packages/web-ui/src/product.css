@@ -2436,7 +2436,7 @@ body.product-panel-resizing {
 }
 .product-environment-create {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr 1fr auto;
 }
 .product-resource-grid {
   display: grid;

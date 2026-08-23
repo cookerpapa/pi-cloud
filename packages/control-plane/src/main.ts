@@ -182,6 +182,7 @@ export async function startControlPlane(): Promise<void> {
       database,
       terminalToken: config.workspaceTerminalToken,
       allowInsecureInternalHttp: config.allowInsecureInternalHttp,
+      environmentImageRevision: config.environmentImageRevision,
     });
     const sshAccessTicketService = new SshAccessTicketService({
       database,
