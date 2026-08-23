@@ -11,7 +11,7 @@ import {
 } from "@pi-cloud/protocol";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Kysely } from "kysely";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { tenantRequestIdentity } from "./tenant-identity.ts";
 
 export const CONVERSATION_PREVIEW_PATH = "/v1/conversations/:sessionId/preview/:port/*";
@@ -20,6 +20,10 @@ export const DEVELOPMENT_ENVIRONMENT_PREVIEW_PATH =
 
 const MAXIMUM_REDIRECTS = 3;
 const MAXIMUM_REQUEST_BYTES = 4 * 1_024 * 1_024;
+const PREVIEW_ACCESS_SEGMENT = "__pi_cloud_access__";
+const PREVIEW_ACCESS_TTL_MS = 15 * 60 * 1_000;
+const PREVIEW_ACCESS_PATTERN = /^pcpa_([A-Za-z0-9_-]{32,1024})\.([A-Za-z0-9_-]{43})$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type SandboxPreviewGatewayOptions = Readonly<{
   database: Kysely<Database>;
@@ -76,6 +80,98 @@ function publicPrefix(target: SandboxPreviewTarget, port: number): string {
     : `/v1/development-environments/${encodeURIComponent(target.environmentId)}/preview/${String(port)}`;
 }
 
+type PreviewAccessClaims = Readonly<{
+  tenantId: string;
+  userId: string;
+  target: SandboxPreviewTarget;
+  port: number;
+  expiresAt: number;
+}>;
+
+function previewAccessPayload(claims: PreviewAccessClaims): string {
+  return Buffer.from(
+    JSON.stringify({
+      version: 1,
+      tenantId: claims.tenantId,
+      userId: claims.userId,
+      targetKind: claims.target.kind,
+      targetId:
+        claims.target.kind === "conversation"
+          ? claims.target.sessionId
+          : claims.target.environmentId,
+      port: claims.port,
+      expiresAt: claims.expiresAt,
+    }),
+    "utf8",
+  ).toString("base64url");
+}
+
+export function issuePreviewAccessToken(
+  secret: string,
+  claims: Omit<PreviewAccessClaims, "expiresAt">,
+  now = Date.now(),
+): string {
+  const payload = previewAccessPayload({ ...claims, expiresAt: now + PREVIEW_ACCESS_TTL_MS });
+  const signature = createHmac("sha256", secret).update(payload, "utf8").digest("base64url");
+  return `pcpa_${payload}.${signature}`;
+}
+
+export function verifyPreviewAccessToken(
+  secret: string,
+  token: string,
+  expectedTarget: SandboxPreviewTarget,
+  expectedPort: number,
+  now = Date.now(),
+): Readonly<{ tenantId: string; userId: string }> | undefined {
+  const match = PREVIEW_ACCESS_PATTERN.exec(token);
+  if (match === null) return undefined;
+  const payload = match[1]!;
+  const candidate = Buffer.from(match[2]!, "base64url");
+  const expected = createHmac("sha256", secret).update(payload, "utf8").digest();
+  if (candidate.byteLength !== expected.byteLength || !timingSafeEqual(candidate, expected)) {
+    return undefined;
+  }
+  try {
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+    const expectedTargetId =
+      expectedTarget.kind === "conversation"
+        ? expectedTarget.sessionId
+        : expectedTarget.environmentId;
+    if (
+      claims.version !== 1 ||
+      typeof claims.tenantId !== "string" ||
+      !UUID_PATTERN.test(claims.tenantId) ||
+      typeof claims.userId !== "string" ||
+      !UUID_PATTERN.test(claims.userId) ||
+      claims.targetKind !== expectedTarget.kind ||
+      claims.targetId !== expectedTargetId ||
+      claims.port !== expectedPort ||
+      !Number.isSafeInteger(claims.expiresAt) ||
+      (claims.expiresAt as number) <= now ||
+      (claims.expiresAt as number) > now + PREVIEW_ACCESS_TTL_MS
+    ) {
+      return undefined;
+    }
+    return { tenantId: claims.tenantId, userId: claims.userId };
+  } catch {
+    return undefined;
+  }
+}
+
+function previewAccessRoute(
+  suffix: string,
+): Readonly<{ token: string; upstreamSuffix: string }> | undefined {
+  const parts = suffix.split("/");
+  if (parts[0] !== PREVIEW_ACCESS_SEGMENT) return undefined;
+  return {
+    token: parts[1] ?? "",
+    upstreamSuffix: parts.slice(2).join("/"),
+  };
+}
+
 export function rewritePreviewHtml(body: Buffer, prefix: string, nonce: string): Buffer {
   if (body.byteLength > 4 * 1_024 * 1_024) return body;
   const html = body.toString("utf8");
@@ -103,6 +199,7 @@ export function previewSecurityHeaders(nonce: string): Readonly<Record<string, s
     // CORP even though their public URLs share the PiCloud host. Cross-site
     // callers still receive 401 because browser auth cookies are SameSite.
     "cross-origin-resource-policy": "cross-origin",
+    "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
   });
 }
@@ -140,11 +237,7 @@ export class SandboxPreviewGateway {
     reply: FastifyReply,
     kind: SandboxPreviewTarget["kind"],
   ): Promise<void> {
-    const identity = tenantRequestIdentity(request);
-    if (identity === undefined) {
-      await reply.code(401).send({ error: "authentication_required" });
-      return;
-    }
+    const browserIdentity = tenantRequestIdentity(request);
     try {
       const params = request.params as Record<string, unknown>;
       const target: SandboxPreviewTarget =
@@ -157,29 +250,60 @@ export class SandboxPreviewGateway {
               kind,
               environmentId: parseUuidPathParameter(params.environmentId, "environmentId"),
             };
+      const port = previewPort(params.port);
+      const rawSuffix = typeof params["*"] === "string" ? params["*"] : "";
+      const accessRoute = previewAccessRoute(rawSuffix);
+      let tenantId: string;
+      let userId: string;
+      let accessToken: string;
+      let suffix: string;
+      if (accessRoute !== undefined) {
+        const access = verifyPreviewAccessToken(
+          this.#previewToken,
+          accessRoute.token,
+          target,
+          port,
+        );
+        if (access === undefined) {
+          await reply.code(401).send({ error: "preview_access_invalid" });
+          return;
+        }
+        tenantId = access.tenantId;
+        userId = access.userId;
+        accessToken = accessRoute.token;
+        suffix = accessRoute.upstreamSuffix;
+      } else {
+        if (browserIdentity === undefined) {
+          await reply.code(401).send({ error: "authentication_required" });
+          return;
+        }
+        tenantId = browserIdentity.tenantId;
+        userId = browserIdentity.userId;
+        accessToken = issuePreviewAccessToken(this.#previewToken, {
+          tenantId,
+          userId,
+          target,
+          port,
+        });
+        suffix = rawSuffix;
+      }
       const forwardedTarget =
         target.kind === "conversation"
-          ? await this.#conversationPreviewTarget(identity.tenantId, identity.userId, target)
+          ? await this.#conversationPreviewTarget(tenantId, userId, target)
           : target;
-      const port = previewPort(params.port);
-      const suffix = typeof params["*"] === "string" ? params["*"] : "";
       const search = new URL(request.raw.url ?? "/", "http://pi-cloud.local").search;
       const method = request.method as SandboxPreviewRequest["method"];
       if (!new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]).has(method)) {
         throw new Error("Preview HTTP method is unsupported");
       }
-      const baseUrl = await this.#resolveBaseUrl(
-        identity.tenantId,
-        identity.userId,
-        forwardedTarget,
-      );
+      const baseUrl = await this.#resolveBaseUrl(tenantId, userId, forwardedTarget);
       const body = requestBody(request);
       const response = await this.#forward(baseUrl, 0, {
         sandboxPreviewProtocolVersion: 1,
         type: "sandbox_preview.request",
         requestId: randomUUID(),
-        tenantId: identity.tenantId,
-        userId: identity.userId,
+        tenantId,
+        userId,
         target: forwardedTarget,
         port,
         method,
@@ -191,21 +315,22 @@ export class SandboxPreviewGateway {
         throw new Error("Preview owner redirect did not resolve");
       }
       const prefix = publicPrefix(target, port);
+      const accessPrefix = `${prefix}/${PREVIEW_ACCESS_SEGMENT}/${accessToken}`;
       const previewNonce = randomBytes(18).toString("base64");
       for (const [name, value] of Object.entries(response.headers)) {
-        if (name === "content-encoding") continue;
+        if (name === "content-encoding" || name === "content-length") continue;
         reply.header(
           name,
-          name === "location" && value.startsWith("/") ? `${prefix}${value}` : value,
+          name === "location" && value.startsWith("/") ? `${accessPrefix}${value}` : value,
         );
       }
-      reply.header("cache-control", response.headers["cache-control"] ?? "no-store");
+      reply.header("cache-control", "no-store");
       for (const [name, value] of Object.entries(previewSecurityHeaders(previewNonce))) {
         reply.header(name, value);
       }
       let responseBody: Uint8Array = Buffer.from(response.body, "base64");
       if ((response.headers["content-type"] ?? "").toLowerCase().includes("text/html")) {
-        responseBody = rewritePreviewHtml(Buffer.from(responseBody), prefix, previewNonce);
+        responseBody = rewritePreviewHtml(Buffer.from(responseBody), accessPrefix, previewNonce);
       }
       await reply
         .code(response.status)
