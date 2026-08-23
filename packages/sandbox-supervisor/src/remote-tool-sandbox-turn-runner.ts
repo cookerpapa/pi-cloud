@@ -624,6 +624,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           activationId: activeSandbox?.activationId ?? command.payload.attemptId,
           continuity: activeSandbox?.continuity ?? "cold_restore",
           environmentSha256: cloudTurn.environmentSha256,
+          workspaceBindingSha256: cloudTurn.workspaceBindingSha256,
           committedWorkspaceRevision: loadedCheckpoint?.workspaceRevision ?? null,
           toolPolicySha256: cloudTurn.toolPolicySha256,
         },

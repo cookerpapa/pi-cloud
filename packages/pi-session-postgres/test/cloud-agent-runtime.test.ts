@@ -9,6 +9,10 @@ import type {
 } from "@earendil-works/pi-ai";
 import { EventStream } from "@earendil-works/pi-ai";
 import { getModel } from "@earendil-works/pi-ai/compat";
+import type {
+  AgentMessage,
+  CustomEntryContextMessageProjector,
+} from "@earendil-works/pi-agent-core";
 import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -481,5 +485,96 @@ describe.sequential("CloudAgentRuntime", () => {
       completedCompaction?.result?.tokensBefore ?? 0,
     );
     expect(JSON.stringify(contexts[0]?.messages)).toContain("summary of earlier work");
+  });
+
+  it("retains one selected Harness fact through Compaction and a replacement Runtime", async () => {
+    const storage = await createStorage();
+    const session = storage.asSession();
+    const customType = "pi-cloud.workspace_changed";
+    const content = [
+      "<workspace_changed>",
+      "This session is now attached to a different workspace.",
+      "</workspace_changed>",
+    ].join("\n");
+    await session.appendCustomEntry(customType, {
+      content,
+      details: { schemaVersion: 1, changeSha256: "a".repeat(64) },
+    });
+    await session.appendMessage({
+      role: "user",
+      content: "x".repeat(2_000),
+      timestamp: Date.now(),
+    });
+    await session.appendMessage({
+      ...assistant("old answer"),
+      usage: {
+        input: 50_000,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 50_001,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    });
+    const projector: CustomEntryContextMessageProjector = (entry) => {
+      if (
+        entry.customType !== customType ||
+        typeof entry.data !== "object" ||
+        entry.data === null ||
+        !("content" in entry.data) ||
+        typeof entry.data.content !== "string"
+      ) {
+        return undefined;
+      }
+      return [
+        {
+          role: "custom",
+          customType,
+          content: entry.data.content,
+          display: false,
+          timestamp: entry.timestamp,
+        } as AgentMessage,
+      ];
+    };
+    const entryProjectors = { [customType]: projector };
+    const firstContexts: Context[] = [];
+    const model = { ...getModel("openai", "gpt-4o-mini"), contextWindow: 256 };
+    const first = new CloudAgentRuntime({
+      session,
+      authority: new TestAuthority(),
+      model,
+      models: {
+        streamSimple: scriptedStream(["after compaction"], firstContexts),
+        async completeSimple() {
+          return assistant("summary without copied Harness markup");
+        },
+      } as unknown as Models,
+      systemPrompt: "test",
+      entryProjectors,
+      compactionRetainedCustomTypes: [customType],
+      compaction: { enabled: true, reserveTokens: 32, keepRecentTokens: 32 },
+    });
+    await first.run("continue after compacting");
+
+    const count = (value: unknown): number =>
+      (JSON.stringify(value).match(/<workspace_changed>/g) ?? []).length;
+    expect(count(firstContexts[0]?.messages)).toBe(1);
+    const [compaction] = await storage.findEntries({ type: "compaction" });
+    if (compaction?.type !== "compaction") throw new Error("Expected a Compaction entry");
+    expect(count(compaction.retainedTail)).toBe(1);
+
+    const replacementContexts: Context[] = [];
+    const replacement = new CloudAgentRuntime({
+      session: storage.asSession(),
+      authority: new TestAuthority(),
+      model,
+      streamFn: scriptedStream(["replacement answer"], replacementContexts),
+      systemPrompt: "test",
+      entryProjectors,
+      compactionRetainedCustomTypes: [customType],
+      compaction: { enabled: false, reserveTokens: 32, keepRecentTokens: 32 },
+    });
+    await replacement.run("continue on another Worker");
+    expect(count(replacementContexts[0]?.messages)).toBe(1);
   });
 });

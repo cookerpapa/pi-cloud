@@ -180,6 +180,9 @@ persistent Volume.
 - stale/expired Workers cannot commit messages or advance Workspace state;
 - arbitrary shell operations are not blindly replayed after an ambiguous loss;
 - interruption and Sandbox reset facts survive Pi compaction and Worker changes;
+- Workspace rebinding is a distinct World State transition: the next model
+  Step receives one hidden `workspace_changed` fact instead of a misleading
+  same-Workspace reset claim;
 - browser-visible live bytes receive an Accepted Kafka broker ACK before SSE exposure;
 - Workers rely on Kafka's native producer accumulator rather than a second
   application group-commit queue;

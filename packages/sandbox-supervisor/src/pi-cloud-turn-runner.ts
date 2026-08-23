@@ -306,6 +306,9 @@ export class PiCloudTurnRunner {
         sessionHandle.session,
         this.#options.sandboxContinuity,
       );
+      // Persist execution-world changes before the accepted user prompt is
+      // appended so later context preserves the causal boundary.
+      await worldState.capture();
       const samplingSteps = new PiSamplingStepController();
       let toolStarted = false;
       let pendingTextEvent: CloudAgentRuntimeEvent | undefined;
@@ -504,6 +507,7 @@ export class PiCloudTurnRunner {
             Record<string, string | null>
           >,
         entryProjectors: PI_WORLD_STATE_ENTRY_PROJECTORS,
+        compactionRetainedCustomTypes: Object.keys(PI_WORLD_STATE_ENTRY_PROJECTORS),
         onEvent: async (event) => {
           this.#options.observeEvent?.(event);
           queueEvent(event);

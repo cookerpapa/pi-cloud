@@ -32,6 +32,14 @@ The Worker opens Pi's native Session state and appends the accepted user
 message. Pi may perform multiple model sampling steps. Pure chat never contacts
 Cube.
 
+Before that prompt is appended, the Worker compares the current execution
+World State with the newest persisted baseline. A new Cube around the same
+Workspace produces `sandbox_reset`; a different stable Workspace binding
+produces `workspace_changed`. Both are hidden Pi custom facts, never browser
+messages or modifications to the user's text. Repeated context hooks on the
+same binding do not append another fact, and Compaction retains the newest
+material fact for cross-Worker recovery.
+
 For a Tool call, the Worker sends the Tool Broker a server-generated capability
 bound to tenant, Workspace, Session, Run, Attempt, fence and Step. The Broker
 checks current authority, lazily creates/rebinds Cube, attaches the stable

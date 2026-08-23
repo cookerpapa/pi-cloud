@@ -12,6 +12,7 @@ import {
   createCloudAttemptContext,
   createCloudStepContext,
   createCloudTurnContext,
+  PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
   PiCloudTurnRunner,
 } from "../src/index.ts";
 
@@ -103,6 +104,7 @@ describe("PiCloudTurnRunner integration", () => {
         activationId: "88888888-8888-4888-8888-888888888888",
         continuity: "cold_restore",
         environmentSha256: turn.environmentSha256,
+        workspaceBindingSha256: turn.workspaceBindingSha256,
         committedWorkspaceRevision: null,
         toolPolicySha256: turn.toolPolicySha256,
       },
@@ -169,6 +171,17 @@ describe("PiCloudTurnRunner integration", () => {
         "text",
       ]);
       expect((await session.getStats()).messageCount).toBe(2);
+      const entries = await session.findEntriesOnBranch();
+      const baseline = entries.find(
+        (entry) =>
+          entry.type === "custom" && entry.customType === PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
+      );
+      const prompt = entries.find(
+        (entry) => entry.type === "message" && entry.message.role === "user",
+      );
+      expect(baseline).toBeDefined();
+      expect(prompt).toBeDefined();
+      expect(prompt!.seq).toBeGreaterThan(baseline!.seq);
       expect(authorityWasActiveAtSettlement).toBe(true);
       expect(authority.closed).toBe(true);
     } finally {

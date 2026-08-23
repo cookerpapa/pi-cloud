@@ -9,6 +9,7 @@ import type { CloudStepWorldState } from "./cloud-context.ts";
 
 export const PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE = "pi-cloud.runtime_world_state";
 export const PI_SANDBOX_RESET_CUSTOM_TYPE = "pi-cloud.sandbox_reset";
+export const PI_WORKSPACE_CHANGED_CUSTOM_TYPE = "pi-cloud.workspace_changed";
 export const PI_ENVIRONMENT_CHANGED_CUSTOM_TYPE = "pi-cloud.environment_changed";
 export const PI_TOOL_POLICY_CHANGED_CUSTOM_TYPE = "pi-cloud.tool_policy_changed";
 
@@ -16,6 +17,12 @@ export const PI_SANDBOX_RESET_MESSAGE = [
   "<sandbox_reset>",
   "The previous sandbox is no longer available. The committed workspace is preserved, but running processes and in-memory environment state were not carried forward.",
   "</sandbox_reset>",
+].join("\n");
+
+export const PI_WORKSPACE_CHANGED_MESSAGE = [
+  "<workspace_changed>",
+  "This session is now attached to a different workspace. Files, dependencies, Git state, running processes and in-memory environment state from the previous workspace are not available in the current /workspace.",
+  "</workspace_changed>",
 ].join("\n");
 
 export const PI_ENVIRONMENT_CHANGED_MESSAGE = [
@@ -31,12 +38,13 @@ export const PI_TOOL_POLICY_CHANGED_MESSAGE = [
 ].join("\n");
 
 export type PiRuntimeWorldState = Readonly<{
-  schemaVersion: 2;
+  schemaVersion: 3;
   sandbox: Readonly<{
     status: "inactive" | "active" | "unavailable";
     continuityId: string | null;
   }>;
   environmentSha256: string;
+  workspaceBindingSha256: string;
   committedWorkspaceRevision: string | null;
   toolPolicySha256: string;
 }>;
@@ -45,6 +53,7 @@ export type PiSandboxContinuity = Readonly<{
   activationId: string;
   continuity: "cold_restore" | "warm_reuse";
   environmentSha256: string;
+  workspaceBindingSha256: string;
   committedWorkspaceRevision: string | null;
   toolPolicySha256: string;
 }>;
@@ -52,6 +61,7 @@ export type PiSandboxContinuity = Readonly<{
 export type PiWorldStateModelMessage = Readonly<{
   customType:
     | typeof PI_SANDBOX_RESET_CUSTOM_TYPE
+    | typeof PI_WORKSPACE_CHANGED_CUSTOM_TYPE
     | typeof PI_ENVIRONMENT_CHANGED_CUSTOM_TYPE
     | typeof PI_TOOL_POLICY_CHANGED_CUSTOM_TYPE;
   content: string;
@@ -74,12 +84,13 @@ function runtimeWorldState(entry: SessionEntry): PiRuntimeWorldState | undefined
   if (typeof sandbox !== "object" || sandbox === null || Array.isArray(sandbox)) return undefined;
   const sandboxCandidate = sandbox as Record<string, unknown>;
   if (
-    candidate.schemaVersion !== 2 ||
+    candidate.schemaVersion !== 3 ||
     (sandboxCandidate.status !== "inactive" &&
       sandboxCandidate.status !== "active" &&
       sandboxCandidate.status !== "unavailable") ||
     (sandboxCandidate.continuityId !== null && typeof sandboxCandidate.continuityId !== "string") ||
     !sha256(candidate.environmentSha256) ||
+    !sha256(candidate.workspaceBindingSha256) ||
     (candidate.committedWorkspaceRevision !== null &&
       !sha256(candidate.committedWorkspaceRevision)) ||
     !sha256(candidate.toolPolicySha256)
@@ -87,12 +98,13 @@ function runtimeWorldState(entry: SessionEntry): PiRuntimeWorldState | undefined
     return undefined;
   }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     sandbox: {
       status: sandboxCandidate.status,
       continuityId: sandboxCandidate.continuityId,
     },
     environmentSha256: candidate.environmentSha256,
+    workspaceBindingSha256: candidate.workspaceBindingSha256,
     committedWorkspaceRevision: candidate.committedWorkspaceRevision,
     toolPolicySha256: candidate.toolPolicySha256,
   };
@@ -132,6 +144,9 @@ function modelMessage(
   } as const;
   if (customType === PI_SANDBOX_RESET_CUSTOM_TYPE) {
     return { customType, content: PI_SANDBOX_RESET_MESSAGE, display: false, details };
+  }
+  if (customType === PI_WORKSPACE_CHANGED_CUSTOM_TYPE) {
+    return { customType, content: PI_WORKSPACE_CHANGED_MESSAGE, display: false, details };
   }
   if (customType === PI_ENVIRONMENT_CHANGED_CUSTOM_TYPE) {
     return { customType, content: PI_ENVIRONMENT_CHANGED_MESSAGE, display: false, details };
@@ -173,6 +188,7 @@ export class PiStepWorldStateController {
               : createHash("sha256").update(state.sandbox.continuityId, "utf8").digest("hex"),
         },
         environmentSha256: state.environmentSha256,
+        workspaceBindingSha256: state.workspaceBindingSha256,
         committedWorkspaceRevision: state.committedWorkspaceRevision,
         toolPolicySha256: state.toolPolicySha256,
       },
@@ -192,12 +208,13 @@ export class PiStepWorldStateController {
 
   #current(): PiRuntimeWorldState {
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       sandbox: {
         status: this.#status,
         continuityId: this.#status === "inactive" ? null : this.#continuity.activationId,
       },
       environmentSha256: this.#continuity.environmentSha256,
+      workspaceBindingSha256: this.#continuity.workspaceBindingSha256,
       committedWorkspaceRevision: this.#continuity.committedWorkspaceRevision,
       toolPolicySha256: this.#continuity.toolPolicySha256,
     };
@@ -209,13 +226,17 @@ export class PiStepWorldStateController {
     if (previous !== undefined && sameState(previous, current)) return current;
 
     const material: PiWorldStateModelMessage["customType"][] = [];
+    const workspaceChanged =
+      previous !== undefined && previous.workspaceBindingSha256 !== current.workspaceBindingSha256;
     if (
+      !workspaceChanged &&
       previous?.sandbox.status === "active" &&
       (current.sandbox.status !== "active" ||
         previous.sandbox.continuityId !== current.sandbox.continuityId)
     ) {
       material.push(PI_SANDBOX_RESET_CUSTOM_TYPE);
     }
+    if (workspaceChanged) material.push(PI_WORKSPACE_CHANGED_CUSTOM_TYPE);
     if (previous !== undefined && previous.environmentSha256 !== current.environmentSha256) {
       material.push(PI_ENVIRONMENT_CHANGED_CUSTOM_TYPE);
     }
@@ -246,6 +267,7 @@ function customWorldStateProjector(entry: {
 }): AgentMessage[] | undefined {
   if (
     entry.customType !== PI_SANDBOX_RESET_CUSTOM_TYPE &&
+    entry.customType !== PI_WORKSPACE_CHANGED_CUSTOM_TYPE &&
     entry.customType !== PI_ENVIRONMENT_CHANGED_CUSTOM_TYPE &&
     entry.customType !== PI_TOOL_POLICY_CHANGED_CUSTOM_TYPE
   ) {
@@ -281,6 +303,7 @@ export const PI_WORLD_STATE_ENTRY_PROJECTORS: Readonly<
   Record<string, CustomEntryContextMessageProjector>
 > = Object.freeze({
   [PI_SANDBOX_RESET_CUSTOM_TYPE]: customWorldStateProjector,
+  [PI_WORKSPACE_CHANGED_CUSTOM_TYPE]: customWorldStateProjector,
   [PI_ENVIRONMENT_CHANGED_CUSTOM_TYPE]: customWorldStateProjector,
   [PI_TOOL_POLICY_CHANGED_CUSTOM_TYPE]: customWorldStateProjector,
 });
@@ -338,6 +361,7 @@ export class PiSessionWorldStateController {
               : createHash("sha256").update(state.sandbox.continuityId, "utf8").digest("hex"),
         },
         environmentSha256: state.environmentSha256,
+        workspaceBindingSha256: state.workspaceBindingSha256,
         committedWorkspaceRevision: state.committedWorkspaceRevision,
         toolPolicySha256: state.toolPolicySha256,
       },
@@ -357,12 +381,13 @@ export class PiSessionWorldStateController {
 
   #current(): PiRuntimeWorldState {
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       sandbox: {
         status: this.#status,
         continuityId: this.#status === "inactive" ? null : this.#continuity.activationId,
       },
       environmentSha256: this.#continuity.environmentSha256,
+      workspaceBindingSha256: this.#continuity.workspaceBindingSha256,
       committedWorkspaceRevision: this.#continuity.committedWorkspaceRevision,
       toolPolicySha256: this.#continuity.toolPolicySha256,
     };
@@ -374,13 +399,17 @@ export class PiSessionWorldStateController {
     if (previous !== undefined && sameState(previous, current)) return current;
 
     const material: PiWorldStateModelMessage["customType"][] = [];
+    const workspaceChanged =
+      previous !== undefined && previous.workspaceBindingSha256 !== current.workspaceBindingSha256;
     if (
+      !workspaceChanged &&
       previous?.sandbox.status === "active" &&
       (current.sandbox.status !== "active" ||
         previous.sandbox.continuityId !== current.sandbox.continuityId)
     ) {
       material.push(PI_SANDBOX_RESET_CUSTOM_TYPE);
     }
+    if (workspaceChanged) material.push(PI_WORKSPACE_CHANGED_CUSTOM_TYPE);
     if (previous !== undefined && previous.environmentSha256 !== current.environmentSha256) {
       material.push(PI_ENVIRONMENT_CHANGED_CUSTOM_TYPE);
     }

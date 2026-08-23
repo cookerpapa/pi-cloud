@@ -30,6 +30,18 @@ contract for exposing an ordinary Sandbox's port 22 directly.
   authority only after active writers settle. Referencing Sessions remain
   readable with `workspaceState=missing` and can be rebound to another live
   Workspace through an idempotent operation.
+- The Agent Harness treats the Workspace binding as execution World State,
+  separately from the content revision and the physical Cube identity. A
+  rebind appends one hidden, model-visible `workspace_changed` fact before the
+  next provider request. It states only that files, dependency state, Git state
+  and processes from the previous Workspace are unavailable; tenant,
+  Workspace, Run and Activation identifiers never enter model context.
+- Recreating Cube around the same persistent Workspace emits `sandbox_reset`
+  and preserves the file-continuity claim. Rebinding to another Workspace
+  emits `workspace_changed` instead, so the Harness never claims that the old
+  files survived. The persisted binding fingerprint, not a path or content
+  hash, distinguishes two different Workspaces that both mount at
+  `/workspace` or currently contain identical bytes.
 - An elastic execution allocates Cube on first Tool use and may keep it warm for
   a bounded idle period. Reclamation loses processes, not Workspace bytes.
 - An exclusive execution environment is a user-owned Cube resource with a
@@ -61,6 +73,11 @@ contract for exposing an ordinary Sandbox's port 22 directly.
 Deleting files can no longer erase or archive conversation knowledge. A
 rebound Session intentionally keeps its Pi context while the model-visible
 world state reports that the Workspace changed.
+
+The binding fact is part of Pi's native Session history and therefore follows
+the same PostgreSQL, compaction and cross-Worker recovery path as other hidden
+Harness facts. Repeated context hooks and later Turns on the same binding do
+not append it again.
 
 An exclusive Cube feels like a small development VM during normal use, but the
 durability claim remains precise: memory/process preservation depends on that

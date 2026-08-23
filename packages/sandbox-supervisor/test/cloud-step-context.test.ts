@@ -122,6 +122,7 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
     const worldState = {
       sandbox: { status: "active" as const, continuitySha256: "e".repeat(64) },
       environmentSha256: turn.environmentSha256,
+      workspaceBindingSha256: turn.workspaceBindingSha256,
       committedWorkspaceRevision: "c".repeat(64),
       toolPolicySha256: turn.toolPolicySha256,
     };

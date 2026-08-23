@@ -5,7 +5,7 @@ function capture(sequence: number) {
   return {
     step: {
       context: {
-        schemaVersion: 1 as const,
+        schemaVersion: 2 as const,
         sequence,
         turnContextSha256: "a".repeat(64),
         attemptContextSha256: "b".repeat(64),
@@ -13,6 +13,7 @@ function capture(sequence: number) {
         worldState: {
           sandbox: { status: "inactive" as const, continuitySha256: null },
           environmentSha256: "c".repeat(64),
+          workspaceBindingSha256: "f".repeat(64),
           committedWorkspaceRevision: null,
           toolPolicySha256: "d".repeat(64),
         },

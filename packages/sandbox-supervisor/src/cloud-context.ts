@@ -8,7 +8,7 @@ import type { SandboxRuntimeIdentity } from "./sandbox-assignment-inventory.ts";
 
 export const CLOUD_TURN_CONTEXT_SCHEMA_VERSION = 1 as const;
 export const CLOUD_ATTEMPT_CONTEXT_SCHEMA_VERSION = 1 as const;
-export const CLOUD_STEP_CONTEXT_SCHEMA_VERSION = 1 as const;
+export const CLOUD_STEP_CONTEXT_SCHEMA_VERSION = 2 as const;
 export const REMOTE_TOOL_REGISTRY_VERSION = "pi-remote-tools.v2" as const;
 export const TOOL_NETWORK_POLICY_VERSION = "cube-proxy-public-egress.v1" as const;
 
@@ -58,6 +58,7 @@ export type FrozenCloudTurn = Readonly<{
   sha256: string;
   toolPolicySha256: string;
   environmentSha256: string;
+  workspaceBindingSha256: string;
 }>;
 
 /** Physical ownership of one Turn execution, rotated on Worker takeover. */
@@ -87,6 +88,7 @@ export type CloudStepWorldState = Readonly<{
     continuitySha256: string | null;
   }>;
   environmentSha256: string;
+  workspaceBindingSha256: string;
   committedWorkspaceRevision: string | null;
   toolPolicySha256: string;
 }>;
@@ -172,6 +174,10 @@ export function createCloudTurnContext(
     sha256: sha256(context),
     toolPolicySha256: sha256(context.tools),
     environmentSha256: sha256(context.environment),
+    workspaceBindingSha256: sha256({
+      tenantId: context.identity.tenantId,
+      workspaceId: context.identity.workspaceId,
+    }),
   });
 }
 
@@ -225,6 +231,7 @@ export function createCloudStepContext(input: {
     worldState: {
       sandbox: { ...input.worldState.sandbox },
       environmentSha256: input.worldState.environmentSha256,
+      workspaceBindingSha256: input.worldState.workspaceBindingSha256,
       committedWorkspaceRevision: input.worldState.committedWorkspaceRevision,
       toolPolicySha256: input.worldState.toolPolicySha256,
     },

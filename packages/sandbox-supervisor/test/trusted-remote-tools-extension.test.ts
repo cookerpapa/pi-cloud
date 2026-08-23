@@ -18,7 +18,7 @@ function createStepCapture() {
   return (activeTools: readonly string[]) => {
     sequence += 1;
     const context = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       sequence,
       turnContextSha256: TURN_CONTEXT_SHA256,
       attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
@@ -26,6 +26,7 @@ function createStepCapture() {
       worldState: {
         sandbox: { status: "inactive" as const, continuitySha256: null },
         environmentSha256: "c".repeat(64),
+        workspaceBindingSha256: "f".repeat(64),
         committedWorkspaceRevision: null,
         toolPolicySha256: "d".repeat(64),
       },

@@ -11,6 +11,7 @@ import {
   type AgentEvent,
   type AgentMessage,
   type AgentTool,
+  type CompactionPreparation,
   type CompactionSettings,
   type CustomEntryContextMessageProjector,
   type Session,
@@ -80,6 +81,7 @@ export type CloudAgentRuntimeOptions = Readonly<{
     headers: Record<string, string | null>,
   ) => Record<string, string | null> | Promise<Record<string, string | null>>;
   entryProjectors?: Readonly<Record<string, CustomEntryContextMessageProjector>>;
+  compactionRetainedCustomTypes?: readonly string[];
   prepareFollowUp?: () => AgentMessage | undefined | Promise<AgentMessage | undefined>;
   onEvent?: (event: CloudAgentRuntimeEvent) => Promise<void> | void;
   idGenerator?: () => string;
@@ -213,6 +215,38 @@ function recoveryMarker(reason: string): string {
     "Treat unfinished work as uncertain and inspect relevant state before continuing.",
     "</turn_aborted>",
   ].join("\n");
+}
+
+function retainedCustomType(message: AgentMessage, types: ReadonlySet<string>): string | undefined {
+  if (message.role !== "custom" || !types.has(message.customType)) return undefined;
+  return message.customType;
+}
+
+function preserveCompactionFacts(
+  preparation: CompactionPreparation,
+  context: readonly AgentMessage[],
+  customTypes: readonly string[],
+): typeof preparation {
+  const retainedTypes = new Set(customTypes);
+  if (retainedTypes.size === 0) return preparation;
+
+  const latest = new Map<string, AgentMessage>();
+  for (const message of context) {
+    const customType = retainedCustomType(message, retainedTypes);
+    if (customType === undefined) continue;
+    latest.delete(customType);
+    latest.set(customType, message);
+  }
+  if (latest.size === 0) return preparation;
+
+  const ordinary = (messages: readonly AgentMessage[]): AgentMessage[] =>
+    messages.filter((message) => retainedCustomType(message, retainedTypes) === undefined);
+  return {
+    ...preparation,
+    messagesToSummarize: ordinary(preparation.messagesToSummarize),
+    turnPrefixMessages: ordinary(preparation.turnPrefixMessages),
+    retainedTail: [...latest.values(), ...ordinary(preparation.retainedTail)],
+  };
 }
 
 /**
@@ -589,8 +623,12 @@ export class CloudAgentRuntime {
       compactionReason: "threshold",
     });
     const compactionModels = this.#modelsWithHeaders();
+    const compactable = preserveCompactionFacts(preparation.value, context, [
+      INTERRUPTION_CUSTOM_TYPE,
+      ...(this.#options.compactionRetainedCustomTypes ?? []),
+    ]);
     const result = await compact(
-      preparation.value,
+      compactable,
       compactionModels,
       this.#options.model,
       undefined,
