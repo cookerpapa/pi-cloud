@@ -674,7 +674,6 @@ async function registerTemplate(key, definition) {
         definition.writableLayerSize,
         "--expose-port",
         "49984",
-        ...previewPorts.flatMap((port) => ["--expose-port", String(port)]),
         "--probe",
         "49984",
         "--probe-path",
