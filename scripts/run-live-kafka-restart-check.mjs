@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { constants } from "node:fs";
 import { mkdir, open, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -10,6 +10,10 @@ import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: repositoryRoot,
+  encoding: "utf8",
+}).trim();
 if (process.env.PI_CLOUD_LIVE_KAFKA_RESTART_CHECK !== "1") {
   throw new Error(
     "Set PI_CLOUD_LIVE_KAFKA_RESTART_CHECK=1 to acknowledge a real model call and controlled Kafka broker restart",
@@ -193,6 +197,7 @@ try {
 
   const report = {
     accepted: true,
+    piCloudRevision: testedRevision,
     checkedAt: new Date().toISOString(),
     provider: model.provider,
     modelId: model.modelId,

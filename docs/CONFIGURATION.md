@@ -34,6 +34,8 @@ Important operator values include:
 - Workspace Volume gateway concurrency;
 - Workspace deletion reaper interval and batch size;
 - Kafka broker/topic names and bounded time/byte retention;
+- Kafka Gateway startup replay window (separate from broker retention and at
+  least one maximum Run plus settlement grace);
 - optional GitHub and observability profiles.
 
 The Worker requires both:

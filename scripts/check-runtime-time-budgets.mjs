@@ -87,6 +87,11 @@ validateWorkerPolicy(
   },
   "Compose Pi Worker",
 );
+assert.ok(
+  composeDefaultInteger(composeText, "PI_CLOUD_KAFKA_GATEWAY_REPLAY_WINDOW_MS") >=
+    composeInteger("PI_CLOUD_PI_TURN_TIMEOUT_MS") + WORKER_SETTLEMENT_GRACE_MS,
+  "Compose Kafka Gateway replay window can omit a still-recoverable Run",
+);
 
 const composeDataMover = composeText.slice(
   composeText.indexOf("\n  workspace-volume-gateway:"),
@@ -122,7 +127,6 @@ validateWorkspaceVolumeGatewayPolicy(
   },
   "Compose Workspace Volume Gateway",
 );
-
 function yaml(path) {
   const document = parseDocument(readFileSync(path, "utf8"));
   assert.equal(document.errors.length, 0, `${path} is invalid YAML`);
@@ -153,6 +157,11 @@ validateWorkspaceVolumeGatewayPolicy(
     terminationGraceMs: 720_000,
   },
   "Platform Helm Workspace Volume Gateway",
+);
+assert.ok(
+  platformValues.external.kafka.gatewayReplayWindowMs >=
+    platformValues["pi-workers"].runtime.timeouts.turnMs + WORKER_SETTLEMENT_GRACE_MS,
+  "Platform Kafka Gateway replay window can omit a still-recoverable Run",
 );
 
 process.stdout.write("runtime_time_budget_check_passed\n");

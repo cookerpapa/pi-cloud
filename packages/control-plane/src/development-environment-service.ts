@@ -24,6 +24,7 @@ export type DevelopmentEnvironmentServiceOptions = Readonly<{
   terminalToken: string;
   allowInsecureInternalHttp: boolean;
   idGenerator?: () => string;
+  backgroundProvisioning?: boolean;
 }>;
 
 function requestHash(value: unknown): string {
@@ -88,6 +89,8 @@ export class DevelopmentEnvironmentService {
   readonly #terminalToken: string;
   readonly #allowInsecureInternalHttp: boolean;
   readonly #id: () => string;
+  readonly #backgroundProvisioning: boolean;
+  readonly #provisioning = new Map<string, Promise<void>>();
 
   constructor(options: DevelopmentEnvironmentServiceOptions) {
     if (!/^[A-Za-z0-9._~+/=-]{32,4096}$/.test(options.terminalToken)) {
@@ -97,6 +100,7 @@ export class DevelopmentEnvironmentService {
     this.#terminalToken = options.terminalToken;
     this.#allowInsecureInternalHttp = options.allowInsecureInternalHttp;
     this.#id = options.idGenerator ?? randomUUID;
+    this.#backgroundProvisioning = options.backgroundProvisioning ?? true;
   }
 
   async list(identity: TenantRequestIdentity): Promise<DevelopmentEnvironmentListResource> {
@@ -105,6 +109,11 @@ export class DevelopmentEnvironmentService {
       .orderBy("development.id", "desc")
       .limit(MAXIMUM_ENVIRONMENTS + 1)
       .execute();
+    for (const row of rows) {
+      if (row.state === "requested" && this.#backgroundProvisioning) {
+        this.#scheduleProvision(identity, row.id);
+      }
+    }
     return {
       environments: rows.slice(0, MAXIMUM_ENVIRONMENTS).map(resource),
       profiles: DEVELOPMENT_ENVIRONMENT_PROFILES.map((candidate) => ({
@@ -226,7 +235,8 @@ export class DevelopmentEnvironmentService {
         .executeTakeFirstOrThrow();
       return id;
     });
-    await this.#provision(identity, environmentId);
+    if (this.#backgroundProvisioning) this.#scheduleProvision(identity, environmentId);
+    else await this.#provision(identity, environmentId);
     return this.get(identity, environmentId);
   }
 
@@ -346,7 +356,8 @@ export class DevelopmentEnvironmentService {
     });
     if (!replayed) {
       if (request.action === "start") {
-        await this.#provision(identity, environmentId);
+        if (this.#backgroundProvisioning) this.#scheduleProvision(identity, environmentId);
+        else await this.#provision(identity, environmentId);
       } else if (request.action === "release") {
         const current = await this.get(identity, environmentId);
         if (current.state === "requested" || current.state === "failed") {
@@ -380,7 +391,37 @@ export class DevelopmentEnvironmentService {
         .where("idempotency_key", "=", idempotencyKey)
         .executeTakeFirstOrThrow();
     }
+    if (request.action === "start" && this.#backgroundProvisioning) {
+      this.#scheduleProvision(identity, environmentId);
+    }
     return this.get(identity, environmentId);
+  }
+
+  #scheduleProvision(identity: TenantRequestIdentity, environmentId: string): void {
+    const key = `${identity.tenantId}\0${environmentId}`;
+    if (this.#provisioning.has(key)) return;
+    const task = this.#provision(identity, environmentId)
+      .catch(async () => {
+        // Tool Broker owns provisioning/running failure transitions once it
+        // claims the row. This fallback covers a request that failed before a
+        // Broker could claim it, while avoiding a race with a slow successful
+        // Cube creation.
+        await this.#database
+          .updateTable("development_environments")
+          .set({
+            state: "failed",
+            failure_code: "provision_request_failed",
+            updated_at: new Date(),
+          })
+          .where("tenant_id", "=", identity.tenantId)
+          .where("owner_user_id", "=", identity.userId)
+          .where("id", "=", environmentId)
+          .where("state", "=", "requested")
+          .executeTakeFirst()
+          .catch(() => undefined);
+      })
+      .finally(() => this.#provisioning.delete(key));
+    this.#provisioning.set(key, task);
   }
 
   #baseQuery(identity: TenantRequestIdentity) {

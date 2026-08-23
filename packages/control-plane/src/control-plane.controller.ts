@@ -231,6 +231,7 @@ export class ControlPlaneController {
   }
 
   @Post("development-environments")
+  @HttpCode(202)
   async createDevelopmentEnvironment(
     @Req() request: FastifyRequest,
     @Headers("idempotency-key") idempotencyKeyValue: unknown,

@@ -1,5 +1,4 @@
-import type { ServerChannel, Session, Connection } from "ssh2";
-import { Server } from "ssh2";
+import ssh2, { type ServerChannel, type Session, type Connection, type Server } from "ssh2";
 import type { SshGatewayConfig } from "./config.ts";
 import { SshTicketAuthority, type SshTerminalGrant } from "./ticket-authority.ts";
 import { openToolBrokerTerminal } from "./tool-broker-terminal.ts";
@@ -16,7 +15,7 @@ export function createSshGateway(options: {
   openTerminal?: typeof openToolBrokerTerminal;
 }): Server {
   const openTerminal = options.openTerminal ?? openToolBrokerTerminal;
-  return new Server({ hostKeys: [options.config.hostKey] }, (client: Connection) => {
+  return new ssh2.Server({ hostKeys: [options.config.hostKey] }, (client: Connection) => {
     let grant: SshTerminalGrant | undefined;
     client.on("authentication", (context) => {
       if (context.method !== "password") {

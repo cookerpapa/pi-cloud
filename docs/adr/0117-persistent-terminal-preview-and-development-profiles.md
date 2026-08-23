@@ -30,8 +30,9 @@ a tenant-safe raw SSH endpoint for ordinary Sandboxes.
 - Broker-owned warm runtimes are excluded from Supervisor assignment inventory.
   Terminal-Run orphan cleanup measures its grace period from durable settlement,
   avoiding a race with normal checkpoint/release.
-- A Workspace still has one writer. New Agent Runs remain queued while the
-  terminal owns the Cube.
+- A Workspace still has one writer. New Agent Runs remain queued while a human
+  terminal owns the Cube; an idle exclusive environment can instead lend that
+  same Cube to one Run under a rotated authority.
 - Browser previews use a PiCloud-authenticated path. Control Plane verifies the
   tenant/user target, Tool Broker resolves the live handle, and the Cube
   provider injects the private Cube traffic token. Neither CubeAPI credentials,

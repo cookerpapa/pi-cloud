@@ -26,6 +26,13 @@ cursor. An older reconnect reloads `P` from PostgreSQL. This prevents Gateway
 memory from growing with old token fragments while retaining durable-before-
 visible behavior.
 
+Gateway startup seeks each Accepted-Kafka partition to a configurable recent
+window instead of scanning the broker's complete retention period. That window
+must cover the maximum Run duration plus settlement grace, so every possibly
+active prefix is replayed; older settled conversations are already canonical in
+PostgreSQL. Broker retention may remain longer for operational recovery without
+making restart time proportional to a day's token volume.
+
 ## Failure matrix
 
 | Crash boundary | Visible result | Recovery rule |

@@ -237,6 +237,9 @@ export async function createControlPlaneRuntime(
       ...(options.developmentEnvironmentService === undefined
         ? {}
         : { developmentEnvironmentService: options.developmentEnvironmentService }),
+      ...(options.sshAccessTicketService === undefined
+        ? {}
+        : { sshAccessTicketService: options.sshAccessTicketService }),
       ...(options.terminalTurnProjectionGateway === undefined
         ? {}
         : { terminalTurnProjectionGateway: options.terminalTurnProjectionGateway }),

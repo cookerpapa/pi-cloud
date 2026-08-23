@@ -76,6 +76,8 @@ export type KafkaAcceptedAgentEventConsumerOptions = KafkaAgentEventLogOptions &
       }>[],
     ): Promise<void>;
     partitionsConsumedConcurrently?: number;
+    replayWindowMs?: number;
+    clock?: () => number;
   }>;
 
 function bounded(value: string, name: string, maximum = 249): string {
@@ -716,6 +718,8 @@ export class KafkaAcceptedAgentEventConsumer {
   readonly #onEnvelope: KafkaAcceptedAgentEventConsumerOptions["onEnvelope"];
   readonly #onEnvelopeGroup: KafkaAcceptedAgentEventConsumerOptions["onEnvelopeGroup"];
   readonly #concurrency: number;
+  readonly #replayWindowMs: number;
+  readonly #clock: () => number;
   #started = false;
   #closed = false;
   #failure: unknown;
@@ -728,6 +732,15 @@ export class KafkaAcceptedAgentEventConsumer {
     this.#onEnvelope = options.onEnvelope;
     this.#onEnvelopeGroup = options.onEnvelopeGroup;
     this.#concurrency = options.partitionsConsumedConcurrently ?? 4;
+    this.#replayWindowMs = options.replayWindowMs ?? 30 * 60_000;
+    if (
+      !Number.isSafeInteger(this.#replayWindowMs) ||
+      this.#replayWindowMs < 60_000 ||
+      this.#replayWindowMs > 24 * 60 * 60_000
+    ) {
+      throw new TypeError("Kafka Gateway replay window is invalid");
+    }
+    this.#clock = options.clock ?? Date.now;
     const client = kafka(options);
     this.#consumer = client.consumer({
       "group.id": bounded(options.groupId, "groupId"),
@@ -745,11 +758,22 @@ export class KafkaAcceptedAgentEventConsumer {
     const offsets = await this.#admin.fetchTopicOffsets(this.#topic, {
       isolationLevel: IsolationLevel.READ_COMMITTED,
     });
+    const replayStarts = await this.#admin.fetchTopicOffsetsByTimestamp(
+      this.#topic,
+      this.#clock() - this.#replayWindowMs,
+      { isolationLevel: IsolationLevel.READ_COMMITTED },
+    );
     await this.#admin.disconnect();
+    const startByPartition = new Map(
+      replayStarts.map((entry) => [entry.partition, BigInt(entry.offset)] as const),
+    );
     this.#catchUpTargets = new Map(
       offsets
         .map((entry) => [entry.partition, BigInt(entry.high) - 1n] as const)
-        .filter(([, target]) => target >= 0n),
+        .filter(
+          ([partition, target]) =>
+            target >= 0n && (startByPartition.get(partition) ?? target + 1n) <= target,
+        ),
     );
     const caughtUp = new Promise<void>((resolve) => {
       this.#catchUpResolve = resolve;
@@ -757,6 +781,9 @@ export class KafkaAcceptedAgentEventConsumer {
     });
     await this.#consumer.connect();
     await this.#consumer.subscribe({ topics: [this.#topic] });
+    for (const [partition, offset] of startByPartition) {
+      this.#consumer.seek({ topic: this.#topic, partition, offset: offset.toString() });
+    }
     this.#started = true;
     const observeCatchUp = (partition: number, offset: string): void => {
       const target = this.#catchUpTargets.get(partition);

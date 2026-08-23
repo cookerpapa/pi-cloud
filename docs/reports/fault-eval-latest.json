@@ -1,97 +1,97 @@
 {
   "format": "pi-cloud.fault-eval-report.v1",
-  "generatedAt": "2026-08-21T20:37:51.107Z",
+  "generatedAt": "2026-08-23T03:15:13.523Z",
   "methodology": "deterministic_targeted_fault_injection",
   "liveChaosExperiment": false,
   "caseCount": 14,
   "successful": 14,
   "successRate": 1,
-  "p50DurationMs": 5757,
-  "p95DurationMs": 6455,
+  "p50DurationMs": 7522,
+  "p95DurationMs": 8305,
   "results": [
     {
       "id": "duplicate-command",
       "success": true,
       "invariant": "At-least-once delivery does not execute the same command twice.",
-      "durationMs": 2525
+      "durationMs": 4544
     },
     {
       "id": "stale-fencing-token",
       "success": true,
       "invariant": "A released or recovered old worker cannot reacquire an obsolete fence.",
-      "durationMs": 2230
+      "durationMs": 2955
     },
     {
       "id": "stale-kafka-event-authority",
       "success": true,
       "invariant": "A stale Worker may reach Raw Kafka but cannot publish browser-visible Accepted events.",
-      "durationMs": 6234
+      "durationMs": 8305
     },
     {
       "id": "session-mutation-redelivery",
       "success": true,
       "invariant": "At-least-once Session mutation delivery creates one canonical PostgreSQL effect.",
-      "durationMs": 4017
+      "durationMs": 5363
     },
     {
       "id": "message-stream-independence",
       "success": true,
       "invariant": "A streaming-path failure cannot roll back a complete Pi message already committed to SessionStorage.",
-      "durationMs": 3868
+      "durationMs": 5387
     },
     {
       "id": "interrupted-visible-prefix",
       "success": true,
       "invariant": "A browser-visible failed prefix remains model-visible after Worker replacement.",
-      "durationMs": 4325
+      "durationMs": 5421
     },
     {
       "id": "terminal-stream-independence",
       "success": true,
       "invariant": "A successful Run terminal commit does not reconstruct a complete message from the short-lived delta tail.",
-      "durationMs": 6310
+      "durationMs": 8199
     },
     {
       "id": "accepted-projection-ahead-of-worker-ack",
       "success": true,
       "invariant": "An Accepted projector that commits before the Worker observes its ACK cannot strand terminal Run settlement.",
-      "durationMs": 6232
+      "durationMs": 7912
     },
     {
       "id": "control-plane-process-sigkill",
       "success": true,
       "invariant": "A Control Plane process replacement does not revoke a healthy fenced Agent Loop.",
-      "durationMs": 2395
+      "durationMs": 2894
     },
     {
       "id": "control-channel-expiry-with-live-run",
       "success": true,
       "invariant": "A stale Control Channel cannot retire a Worker whose active RunAttempt still has fresh database authority.",
-      "durationMs": 5757
+      "durationMs": 7907
     },
     {
       "id": "checkpoint-corruption-and-cas",
       "success": true,
       "invariant": "Checkpoint integrity and compare-and-swap fencing survive cold recovery.",
-      "durationMs": 5920
+      "durationMs": 7905
     },
     {
       "id": "cancel-complete-race",
       "success": true,
       "invariant": "Exactly one terminal Run outcome wins a cancel/complete race.",
-      "durationMs": 6321
+      "durationMs": 7837
     },
     {
       "id": "stale-dispatch-claim",
       "success": true,
       "invariant": "A superseded dispatcher cannot start external work.",
-      "durationMs": 6455
+      "durationMs": 7998
     },
     {
       "id": "orphan-runtime-cleanup",
       "success": true,
       "invariant": "Expired ownership is reconciled only after the orphan runtime is terminated.",
-      "durationMs": 6079
+      "durationMs": 7522
     }
   ]
 }

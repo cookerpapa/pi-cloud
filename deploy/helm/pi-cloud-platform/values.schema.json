@@ -158,7 +158,13 @@
         "kafka": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["brokers", "rawEventTopic", "acceptedEventTopic", "sessionMutationTopic"],
+          "required": [
+            "brokers",
+            "rawEventTopic",
+            "acceptedEventTopic",
+            "sessionMutationTopic",
+            "gatewayReplayWindowMs"
+          ],
           "properties": {
             "brokers": {
               "type": "array",
@@ -169,7 +175,8 @@
             },
             "rawEventTopic": { "type": "string", "minLength": 1, "maxLength": 249 },
             "acceptedEventTopic": { "type": "string", "minLength": 1, "maxLength": 249 },
-            "sessionMutationTopic": { "type": "string", "minLength": 1, "maxLength": 249 }
+            "sessionMutationTopic": { "type": "string", "minLength": 1, "maxLength": 249 },
+            "gatewayReplayWindowMs": { "type": "integer", "minimum": 600000, "maximum": 86400000 }
           }
         },
         "providerProxyUrl": { "$ref": "#/$defs/httpUrl" },

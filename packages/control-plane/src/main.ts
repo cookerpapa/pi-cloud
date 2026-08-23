@@ -64,6 +64,7 @@ export async function startControlPlane(): Promise<void> {
     rawTopic: config.kafkaRawEventTopic,
     acceptedTopic: config.kafkaAcceptedEventTopic,
     sessionMutationTopic: config.kafkaSessionMutationTopic,
+    gatewayReplayWindowMs: config.kafkaGatewayReplayWindowMs,
     instanceId: controlPlaneInstanceId,
   });
   let runtime: ControlPlaneRuntime | undefined;
@@ -280,8 +281,9 @@ export async function startControlPlane(): Promise<void> {
 
 const entrypoint = process.argv[1];
 if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
-  startControlPlane().catch(() => {
-    process.stderr.write("PiCloud production control plane failed to start\n");
+  startControlPlane().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "unknown startup failure";
+    process.stderr.write(`PiCloud production control plane failed to start: ${message}\n`);
     process.exitCode = 1;
   });
 }

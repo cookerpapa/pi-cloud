@@ -23,6 +23,7 @@ export type KafkaFirstAgentEventRuntimeOptions = Readonly<{
   sessionMutationTopic: string;
   instanceId: string;
   authorityGroupId?: string;
+  gatewayReplayWindowMs?: number;
 }>;
 
 /** Owns the Kafka hot-event data plane for one Control Plane replica. */
@@ -69,9 +70,13 @@ export class KafkaFirstAgentEventRuntime {
       brokers: options.brokers,
       clientId: `${options.instanceId}-gateway`,
       topic: options.acceptedTopic,
-      // Every Gateway replica needs the complete retained suffix in its own
-      // bounded projection; sharing a group would split Sessions between replicas.
+      // Every Gateway replica needs its bounded recent suffix; sharing a group
+      // would split Sessions between replicas. Settled history reloads from
+      // canonical PostgreSQL rather than extending startup replay indefinitely.
       groupId: `pi-cloud-event-gateway-${options.instanceId}`,
+      ...(options.gatewayReplayWindowMs === undefined
+        ? {}
+        : { replayWindowMs: options.gatewayReplayWindowMs }),
       onEnvelopeGroup: async (values) => {
         for (const { envelope } of values) this.eventStore.append(envelope);
       },

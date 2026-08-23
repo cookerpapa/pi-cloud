@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -10,6 +11,10 @@ import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import WebSocket from "ws";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: repositoryRoot,
+  encoding: "utf8",
+}).trim();
 if (process.env.PI_CLOUD_LIVE_PRODUCT_SURFACE_CHECK !== "1") {
   throw new Error(
     "Set PI_CLOUD_LIVE_PRODUCT_SURFACE_CHECK=1 to acknowledge real model and Cube usage",
@@ -452,13 +457,38 @@ try {
   );
   progress("cross-tenant API isolation passed");
 
-  await api.deleteConversation(sibling.sessionId, newIdempotencyKey("delete"));
-  await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
   const archiveDeletion = await api.deleteWorkspace(
     archiveProject.workspaceId,
     newIdempotencyKey("delete"),
   );
   assert.equal(archiveDeletion.workspaceId, archiveProject.workspaceId);
+  assert.equal(archiveDeletion.detachedSessionCount, 1);
+  assert.equal((await api.getConversation(sibling.sessionId)).session.workspaceState, "missing");
+  const rebindProject = await api.createProject(`Rebound surface ${suffix}`);
+  createdWorkspaceIds.add(rebindProject.workspaceId);
+  const rebound = await api.rebindConversationWorkspace(
+    sibling.sessionId,
+    rebindProject.workspaceId,
+    newIdempotencyKey("workspace-rebind"),
+  );
+  assert.equal(rebound.workspaceState, "attached");
+  const reboundTurn = await runTurn({
+    api,
+    browser,
+    sessionId: sibling.sessionId,
+    prompt: "Do not call tools. Reply with exactly PRODUCT-SURFACE-REBIND-OK.",
+    afterSequence: 0,
+    expectTools: false,
+  });
+  assert.match(
+    reboundTurn.events
+      .filter((event) => event.type === "assistant.text.delta")
+      .map((event) => event.payload.text)
+      .join(""),
+    /PRODUCT-SURFACE-REBIND-OK/,
+  );
+  await api.deleteConversation(sibling.sessionId, newIdempotencyKey("delete"));
+  await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
   const deletion = await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"));
   assert.equal(deletion.workspaceId, project.workspaceId);
   assert(
@@ -466,11 +496,12 @@ try {
       (workspace) => workspace.workspaceId === project.workspaceId,
     ),
   );
-  progress("conversation and Workspace deletion passed");
+  progress("conversation preservation, Workspace rebind, and deletion passed");
 
   process.stdout.write(
     `${JSON.stringify({
       accepted: true,
+      piCloudRevision: testedRevision,
       checkedAt: new Date().toISOString(),
       browserCookieAuth: true,
       pureChatFirstTextMs: chat.firstTextMs,
@@ -482,6 +513,7 @@ try {
       steer: true,
       cancelAndRecover: true,
       archive: true,
+      workspaceRebind: true,
       tenantIsolation: true,
       deletion: deletion.storageState,
       finalCursor: cursor,

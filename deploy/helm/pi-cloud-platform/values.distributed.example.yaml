@@ -62,6 +62,7 @@ external:
     rawEventTopic: pi-cloud.agent-events.raw.v1
     acceptedEventTopic: pi-cloud.agent-events.accepted.v1
     sessionMutationTopic: pi-cloud.session-mutations.v1
+    gatewayReplayWindowMs: 1800000
   providerProxyUrl: https://provider-proxy.example.com:3129
 
 networkPolicy:

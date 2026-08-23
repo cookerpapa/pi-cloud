@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { Client } from "ssh2";
+import ssh2 from "ssh2";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSshGateway } from "../src/server.ts";
 
@@ -66,7 +66,7 @@ describe("SSH gateway", () => {
     const address = server.address();
     if (address === null || typeof address === "string")
       throw new Error("SSH listener unavailable");
-    const client = new Client();
+    const client = new ssh2.Client();
     const output = await new Promise<string>((resolve, reject) => {
       client.once("error", reject);
       client.once("ready", () => {

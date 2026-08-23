@@ -5,7 +5,7 @@ import { mkdir, open, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
-import { Client as SshClient } from "ssh2";
+import ssh2 from "ssh2";
 import { OfficialCubeSandboxRuntimeClient } from "../packages/tool-broker/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
@@ -125,6 +125,23 @@ async function waitForRun(runId) {
   throw new Error(`Run ${runId} did not settle`);
 }
 
+async function waitForEnvironment(environmentId, expectedState) {
+  const deadline = Date.now() + 5 * 60_000;
+  while (Date.now() < deadline) {
+    const current = (await api.listDevelopmentEnvironments()).environments.find(
+      (environment) => environment.environmentId === environmentId,
+    );
+    if (current?.state === expectedState) return current;
+    if (current?.state === "failed" || current?.state === "unknown") {
+      throw new Error(
+        `Development environment ${environmentId} ended as ${current.state}: ${current.failureCode ?? "unknown"}`,
+      );
+    }
+    await wait(250);
+  }
+  throw new Error(`Development environment ${environmentId} did not reach ${expectedState}`);
+}
+
 async function terminalCommand(path, command, marker) {
   const target = new URL(path, baseUrl);
   target.protocol = target.protocol === "https:" ? "wss:" : "ws:";
@@ -186,7 +203,7 @@ async function terminalCommand(path, command, marker) {
 }
 
 async function sshCommand(ticket, command, marker) {
-  const client = new SshClient();
+  const client = new ssh2.Client();
   return new Promise((resolvePromise, rejectPromise) => {
     const timeout = setTimeout(() => {
       client.destroy();
@@ -258,7 +275,7 @@ const development = await api.createDevelopmentEnvironment(
   "standard",
   newIdempotencyKey("environment"),
 );
-assert.equal(development.state, "running");
+await waitForEnvironment(development.environmentId, "running");
 const runtimeName = await psql(
   `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
 );
@@ -358,6 +375,7 @@ await terminalCommand(
 
 const report = {
   accepted: true,
+  piCloudRevision: await capture("git", ["rev-parse", "HEAD"]),
   checkedAt: new Date().toISOString(),
   developmentEnvironmentId: development.environmentId,
   workspaceId: project.workspaceId,

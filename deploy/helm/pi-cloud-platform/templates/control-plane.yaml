@@ -68,6 +68,7 @@ spec:
             - { name: PI_CLOUD_KAFKA_RAW_EVENT_TOPIC, value: {{ .Values.external.kafka.rawEventTopic | quote }} }
             - { name: PI_CLOUD_KAFKA_ACCEPTED_EVENT_TOPIC, value: {{ .Values.external.kafka.acceptedEventTopic | quote }} }
             - { name: PI_CLOUD_KAFKA_SESSION_MUTATION_TOPIC, value: {{ .Values.external.kafka.sessionMutationTopic | quote }} }
+            - { name: PI_CLOUD_KAFKA_GATEWAY_REPLAY_WINDOW_MS, value: {{ .Values.external.kafka.gatewayReplayWindowMs | quote }} }
             - { name: PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-enrollment-token }
             - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-management-token }
             - { name: PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE, value: /run/pi-cloud-secrets/model-credential-master-key }

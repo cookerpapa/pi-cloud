@@ -106,6 +106,7 @@ external:
     rawEventTopic: pi-cloud.agent-events.raw.v1
     acceptedEventTopic: pi-cloud.agent-events.accepted.v1
     sessionMutationTopic: pi-cloud.session-mutations.v1
+    gatewayReplayWindowMs: 1800000
   database:
     # database-url should target PgBouncer transaction pooling. The separate
     # database-notification-url Secret key must target PostgreSQL directly.

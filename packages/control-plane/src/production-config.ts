@@ -15,6 +15,7 @@ export type ProductionControlPlaneConfig = {
   kafkaRawEventTopic: string;
   kafkaAcceptedEventTopic: string;
   kafkaSessionMutationTopic: string;
+  kafkaGatewayReplayWindowMs: number;
   supervisorEnrollmentToken: string;
   supervisorManagementToken: string;
   modelCredentialMasterKey: string;
@@ -364,6 +365,13 @@ export async function loadProductionControlPlaneConfig(
       "PI_CLOUD_KAFKA_SESSION_MUTATION_TOPIC",
       249,
     ),
+    kafkaGatewayReplayWindowMs: integerValue(
+      environment,
+      "PI_CLOUD_KAFKA_GATEWAY_REPLAY_WINDOW_MS",
+      30 * 60_000,
+      10 * 60_000,
+      24 * 60 * 60_000,
+    ),
     supervisorEnrollmentToken: await secret(
       environment,
       "PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN",
@@ -442,7 +450,7 @@ export async function loadProductionControlPlaneConfig(
       maximumTenants: integerValue(
         environment,
         "PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS",
-        32,
+        1_000,
         2,
         1_000_000,
       ),

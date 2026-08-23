@@ -1,9 +1,13 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: repositoryRoot,
+  encoding: "utf8",
+}).trim();
 const argumentsList = process.argv.slice(2);
 
 function argument(name, fallback) {
@@ -88,6 +92,7 @@ const percentile = (fraction) => durations[Math.max(0, Math.ceil(durations.lengt
 const successful = results.filter((result) => result.success).length;
 const report = {
   format: "pi-cloud.fault-eval-report.v1",
+  piCloudRevision: testedRevision,
   generatedAt: new Date().toISOString(),
   methodology: "deterministic_targeted_fault_injection",
   liveChaosExperiment: false,
@@ -101,6 +106,7 @@ const report = {
 const markdown =
   `# PiCloud deterministic fault evaluation\n\n` +
   `Generated: ${report.generatedAt}\n\n` +
+  `Revision: ${report.piCloudRevision}\n\n` +
   `These are targeted, deterministic fault injections against the durable execution protocol. ` +
   `They complement the production smoke test's live container restart; they are not presented as a distributed chaos benchmark.\n\n` +
   `- Cases: ${report.caseCount}\n` +

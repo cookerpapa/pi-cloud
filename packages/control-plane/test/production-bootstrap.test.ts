@@ -270,7 +270,7 @@ describe.sequential("production bootstrap and configuration", () => {
       webSessionTtlMs: 2_592_000_000,
       publicRegistration: {
         enabled: false,
-        maximumTenants: 32,
+        maximumTenants: 1_000,
         tenantQuotas: {
           maximumProjects: 10,
           maximumSessions: 100,

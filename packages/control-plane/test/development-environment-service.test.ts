@@ -223,6 +223,7 @@ beforeAll(async () => {
     database,
     terminalToken: TOKEN,
     allowInsecureInternalHttp: true,
+    backgroundProvisioning: false,
   });
 }, 30_000);
 
@@ -239,7 +240,13 @@ describe("user-owned development environments", () => {
       workspaceId,
       profileKey: "standard",
     });
-    expect(created).toMatchObject({ workspaceId, state: "running", generation: 1 });
+    expect(created).toMatchObject({ workspaceId, generation: 1 });
+    let running = created;
+    for (let attempt = 0; attempt < 100 && running.state !== "running"; attempt += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      running = await service.get(identity, created.environmentId);
+    }
+    expect(running.state).toBe("running");
     const sshTickets = new SshAccessTicketService({
       database,
       enabled: true,

@@ -683,8 +683,13 @@ export class RunCommandExecutor {
             from development_environments as active_environment
             where active_environment.tenant_id = ${sql.ref("command.tenant_id")}
               and active_environment.workspace_id = ${sql.ref("session_row.workspace_id")}
-              and active_environment.state = 'running'
-              and active_environment.terminal_active = true
+              and active_environment.state in (
+                'requested', 'provisioning', 'running', 'paused', 'releasing', 'unknown'
+              )
+              and (
+                active_environment.state <> 'running'
+                or active_environment.terminal_active = true
+              )
           )`,
         )
         .where(

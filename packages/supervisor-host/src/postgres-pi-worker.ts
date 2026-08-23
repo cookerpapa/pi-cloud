@@ -339,12 +339,11 @@ export class PostgresPiWorker {
           where exclusive_environment.tenant_id = ${sql.ref("command.tenant_id")}
             and exclusive_environment.workspace_id = ${sql.ref("session_row.workspace_id")}
             and exclusive_environment.state in (
-              'requested',
-              'provisioning',
-              'running',
-              'paused',
-              'releasing',
-              'unknown'
+              'requested', 'provisioning', 'running', 'paused', 'releasing', 'unknown'
+            )
+            and (
+              exclusive_environment.state <> 'running'
+              or exclusive_environment.terminal_active = true
             )
         )`,
       )

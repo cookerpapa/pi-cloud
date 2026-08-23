@@ -476,7 +476,7 @@ const publicRegistrationEnabled = booleanEnvironmentValue(
 );
 const publicRegistrationMaximumTenants = integerEnvironmentValue(
   "PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS",
-  32,
+  1_000,
   2,
   1_000_000,
 );

@@ -150,7 +150,7 @@ export default function ChatApp() {
   const currentDevelopmentEnvironment = developmentEnvironments.find(
     (environment) =>
       environment.workspaceId === state.session?.workspaceId &&
-      ["requested", "provisioning", "running", "paused", "releasing", "unknown"].includes(
+      ["requested", "provisioning", "running", "paused", "releasing", "failed", "unknown"].includes(
         environment.state,
       ),
   );
@@ -354,6 +354,21 @@ export default function ChatApp() {
     refreshDevelopmentEnvironments,
     update,
   ]);
+
+  useEffect(() => {
+    if (
+      !developmentEnvironments.some((environment) =>
+        ["requested", "provisioning", "releasing", "unknown"].includes(environment.state),
+      )
+    ) {
+      return;
+    }
+    const timer = setInterval(
+      () => void refreshDevelopmentEnvironments().catch(() => undefined),
+      2_000,
+    );
+    return () => clearInterval(timer);
+  }, [developmentEnvironments, refreshDevelopmentEnvironments]);
 
   useEffect(() => {
     const sessionId = state.session?.sessionId;
@@ -861,11 +876,14 @@ export default function ChatApp() {
     }
   }
 
-  async function manageCurrentEnvironment(action: "pause" | "resume" | "release"): Promise<void> {
+  async function manageCurrentEnvironment(
+    action: "start" | "pause" | "resume" | "release",
+  ): Promise<void> {
     const environment = currentDevelopmentEnvironment;
     if (
       environment === undefined ||
       operation !== null ||
+      currentTurn !== undefined ||
       (action === "release" &&
         !window.confirm("释放这台 Cube KVM？对话和 Workspace 文件会保留，后台进程会停止。"))
     ) {
@@ -889,7 +907,7 @@ export default function ChatApp() {
 
   async function createSshTicket(): Promise<void> {
     const sessionId = state.session?.sessionId;
-    if (sessionId === undefined || operation !== null) return;
+    if (sessionId === undefined || operation !== null || currentTurn !== undefined) return;
     setOperation("managing-environment");
     update({ type: "api.error.cleared" });
     try {
@@ -1240,26 +1258,52 @@ export default function ChatApp() {
               <div className="product-environment-controls">
                 {currentDevelopmentEnvironment.state === "running" ? (
                   <>
-                    <button onClick={() => void createSshTicket()} type="button">
+                    <button
+                      disabled={currentTurn !== undefined || operation !== null}
+                      onClick={() => void createSshTicket()}
+                      type="button"
+                    >
                       SSH
                     </button>
-                    <button onClick={() => void manageCurrentEnvironment("pause")} type="button">
+                    <button
+                      disabled={currentTurn !== undefined || operation !== null}
+                      onClick={() => void manageCurrentEnvironment("pause")}
+                      type="button"
+                    >
                       暂停环境
                     </button>
                   </>
                 ) : currentDevelopmentEnvironment.state === "paused" ? (
-                  <button onClick={() => void manageCurrentEnvironment("resume")} type="button">
+                  <button
+                    disabled={currentTurn !== undefined || operation !== null}
+                    onClick={() => void manageCurrentEnvironment("resume")}
+                    type="button"
+                  >
                     恢复环境
                   </button>
+                ) : currentDevelopmentEnvironment.state === "failed" ? (
+                  <button
+                    disabled={currentTurn !== undefined || operation !== null}
+                    onClick={() => void manageCurrentEnvironment("start")}
+                    type="button"
+                  >
+                    重建环境
+                  </button>
                 ) : null}
-                <button
-                  className="product-danger-button"
-                  disabled={operation !== null}
-                  onClick={() => void manageCurrentEnvironment("release")}
-                  type="button"
-                >
-                  释放环境
-                </button>
+                {["running", "paused", "requested", "failed", "unknown"].includes(
+                  currentDevelopmentEnvironment.state,
+                ) ? (
+                  <button
+                    className="product-danger-button"
+                    disabled={currentTurn !== undefined || operation !== null}
+                    onClick={() => void manageCurrentEnvironment("release")}
+                    type="button"
+                  >
+                    释放环境
+                  </button>
+                ) : (
+                  <span className="product-preview-notice">环境正在准备，请稍候…</span>
+                )}
               </div>
             )}
           </div>
