@@ -150,6 +150,8 @@ export {
   downSshAccessTickets,
   upExclusiveVmState,
   downExclusiveVmState,
+  upExclusiveMachineWorkingDirectories,
+  downExclusiveMachineWorkingDirectories,
 } from "./migrations/index.ts";
 
 export {
