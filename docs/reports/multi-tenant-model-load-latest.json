@@ -1,6 +1,7 @@
 {
   "accepted": true,
-  "checkedAt": "2026-08-23T03:13:34.668Z",
+  "piCloudRevision": "bfa66c7dff9f2044980c9bef13f22ddcbfb27125",
+  "checkedAt": "2026-08-23T19:23:23.527Z",
   "tenants": 6,
   "runs": 12,
   "model": {
@@ -18,28 +19,28 @@
   },
   "latencyMs": {
     "acceptance": {
-      "minimum": 26,
-      "p50": 40,
-      "p95": 65,
-      "maximum": 65
+      "minimum": 25,
+      "p50": 43,
+      "p95": 84,
+      "maximum": 84
     },
     "firstText": {
-      "minimum": 1158,
-      "p50": 4434,
-      "p95": 8912,
-      "maximum": 8912
+      "minimum": 1173,
+      "p50": 3536,
+      "p95": 8926,
+      "maximum": 8926
     },
     "settled": {
-      "minimum": 3199,
-      "p50": 5213,
-      "p95": 11684,
-      "maximum": 11684
+      "minimum": 2353,
+      "p50": 4370,
+      "p95": 12179,
+      "maximum": 12179
     },
     "queueWait": {
-      "minimum": 360,
-      "p50": 3248,
-      "p95": 7837,
-      "maximum": 7837
+      "minimum": 267,
+      "p50": 2402,
+      "p95": 8201,
+      "maximum": 8201
     }
   },
   "workers": {
@@ -53,14 +54,14 @@
     "terminalCount": 12,
     "piEntryCount": 30,
     "messageCount": 24,
-    "canonicalPayloadBytes": 20965,
+    "canonicalPayloadBytes": 22269,
     "entriesPerRun": 2.5
   },
   "usage": {
     "requests": 12,
-    "inputTokens": 1014,
-    "outputTokens": 1292,
-    "cacheReadTokens": 72192,
+    "inputTokens": 864,
+    "outputTokens": 1471,
+    "cacheReadTokens": 73728,
     "cacheWriteTokens": 0
   }
 }

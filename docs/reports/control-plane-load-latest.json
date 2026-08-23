@@ -1,0 +1,119 @@
+{
+  "format": "pi-cloud.control-plane-load-report.v1",
+  "piCloudRevision": "246e4db7f177e8edd95cbc81e506308aaa118a0b",
+  "generatedAt": "2026-08-23T19:59:36.362Z",
+  "evaluationId": "c33cd223-e7f6-4439-bea8-1f8362db0c2d",
+  "methodology": "loopback_http_cold_session_admission_and_tenant_scoped_reads",
+  "activeAgentRunBenchmark": false,
+  "host": {
+    "platform": "linux",
+    "architecture": "x64",
+    "node": "v24.12.0"
+  },
+  "stages": [
+    {
+      "concurrency": 10,
+      "sessionCreation": {
+        "operation": "create_cold_session",
+        "concurrency": 10,
+        "requests": 10,
+        "successful": 10,
+        "errors": 0,
+        "elapsedMs": 274,
+        "throughputPerSecond": 36.55,
+        "p50DurationMs": 158,
+        "p95DurationMs": 270,
+        "p99DurationMs": 270,
+        "failures": []
+      },
+      "conversationRead": {
+        "operation": "read_conversation",
+        "concurrency": 10,
+        "requests": 10,
+        "successful": 10,
+        "errors": 0,
+        "elapsedMs": 45,
+        "throughputPerSecond": 221.35,
+        "p50DurationMs": 43,
+        "p95DurationMs": 45,
+        "p99DurationMs": 45,
+        "failures": []
+      }
+    },
+    {
+      "concurrency": 50,
+      "sessionCreation": {
+        "operation": "create_cold_session",
+        "concurrency": 50,
+        "requests": 50,
+        "successful": 50,
+        "errors": 0,
+        "elapsedMs": 516,
+        "throughputPerSecond": 96.86,
+        "p50DurationMs": 294,
+        "p95DurationMs": 492,
+        "p99DurationMs": 506,
+        "failures": []
+      },
+      "conversationRead": {
+        "operation": "read_conversation",
+        "concurrency": 50,
+        "requests": 50,
+        "successful": 50,
+        "errors": 0,
+        "elapsedMs": 208,
+        "throughputPerSecond": 240.26,
+        "p50DurationMs": 197,
+        "p95DurationMs": 204,
+        "p99DurationMs": 204,
+        "failures": []
+      }
+    },
+    {
+      "concurrency": 100,
+      "sessionCreation": {
+        "operation": "create_cold_session",
+        "concurrency": 100,
+        "requests": 100,
+        "successful": 100,
+        "errors": 0,
+        "elapsedMs": 1199,
+        "throughputPerSecond": 83.38,
+        "p50DurationMs": 686,
+        "p95DurationMs": 1136,
+        "p99DurationMs": 1179,
+        "failures": []
+      },
+      "conversationRead": {
+        "operation": "read_conversation",
+        "concurrency": 100,
+        "requests": 100,
+        "successful": 100,
+        "errors": 0,
+        "elapsedMs": 419,
+        "throughputPerSecond": 238.69,
+        "p50DurationMs": 393,
+        "p95DurationMs": 406,
+        "p99DurationMs": 407,
+        "failures": []
+      }
+    }
+  ],
+  "totalRequests": 320,
+  "totalErrors": 0,
+  "cleanup": {
+    "resources": 161,
+    "errors": 0
+  },
+  "prometheus": {
+    "residentMemoryBytes": {
+      "unavailable": "fetch failed"
+    },
+    "cpuSeconds": {
+      "unavailable": "fetch failed"
+    },
+    "eventLoopLagSeconds": {
+      "unavailable": "fetch failed"
+    }
+  }
+}

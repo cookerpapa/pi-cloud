@@ -49,7 +49,7 @@
       "tick": 0
     }
   },
-  "screenshotPath": "/tmp/pi-cloud-snake-preview-latest.png",
+  "screenshotCaptured": true,
   "conversationRetainedForInspection": true,
   "reusedCompletedCodingSession": true,
   "systemPromptModified": false,
