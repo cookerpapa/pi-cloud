@@ -1,9 +1,14 @@
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: repositoryRoot,
+  encoding: "utf8",
+}).trim();
 const argumentsList = process.argv.slice(2);
 
 function argument(name, fallback) {
@@ -207,6 +212,7 @@ const cleanupErrors = cleanupResults.filter((result) => !result.success).length;
 const allSummaries = stages.flatMap((stage) => [stage.sessionCreation, stage.conversationRead]);
 const report = {
   format: "pi-cloud.control-plane-load-report.v1",
+  piCloudRevision: testedRevision,
   generatedAt: new Date().toISOString(),
   evaluationId,
   methodology: "loopback_http_cold_session_admission_and_tenant_scoped_reads",
