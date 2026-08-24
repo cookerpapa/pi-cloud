@@ -204,11 +204,15 @@ async function openTerminal(sessionId, cookieHeader) {
         }
         if (frame.type === "workspace_terminal.ready") {
           ready = true;
+          const command = Buffer.from("printf 'TERMINAL-SURFACE-OK\\n'", "utf8").toString("base64");
           socket.send(
             JSON.stringify({
               workspaceTerminalProtocolVersion: 1,
               type: "workspace_terminal.input",
-              data: Buffer.from("printf 'TERMINAL-SURFACE-OK\\n'\n", "utf8").toString("base64"),
+              data: Buffer.from(
+                `printf '%s' '${command}' | base64 -d | /bin/bash\n`,
+                "utf8",
+              ).toString("base64"),
             }),
           );
           return;

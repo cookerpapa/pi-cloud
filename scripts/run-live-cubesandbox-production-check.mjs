@@ -208,6 +208,11 @@ async function psql(query) {
   ]);
 }
 
+function shellEnvelope(command) {
+  const encoded = Buffer.from(command, "utf8").toString("base64");
+  return `printf '%s' '${encoded}' | base64 -d | /bin/bash`;
+}
+
 async function terminalCommand(path, command, marker) {
   const target = new URL(path, baseUrl);
   target.protocol = target.protocol === "https:" ? "wss:" : "ws:";
@@ -246,7 +251,7 @@ async function terminalCommand(path, command, marker) {
           JSON.stringify({
             workspaceTerminalProtocolVersion: 1,
             type: "workspace_terminal.input",
-            data: Buffer.from(`${command}\n`, "utf8").toString("base64"),
+            data: Buffer.from(`${shellEnvelope(command)}\n`, "utf8").toString("base64"),
           }),
         );
       } else if (frame.type === "workspace_terminal.output") {
