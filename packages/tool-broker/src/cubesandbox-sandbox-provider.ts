@@ -892,26 +892,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     try {
       const evidence = await this.#waitForEvidence(instance);
       this.#assertEvidence(evidence, spec.policy);
-      if (exclusiveMachine) {
-        const preparedMachine = record(
-          await this.#guestJson(
-            instance,
-            { mode: "prepare_exclusive_machine" },
-            { program: "control", runAsToolUser: false, timeoutMs: 15_000 },
-          ),
-          "Cube exclusive machine preparation",
-        );
-        if (
-          preparedMachine.home !== "/home/user" ||
-          preparedMachine.legacyWorkspaceRemoved !== true
-        ) {
-          throw new ToolBrokerError(
-            "development_environment_home_invalid",
-            "Exclusive machine home directory could not be prepared",
-            false,
-          );
-        }
-      }
       const ready = parseToolWorkerOutput(
         await this.#guestJson(
           instance,
@@ -921,7 +901,7 @@ export class CubeSandboxProvider implements SandboxProvider {
               toolWorkerProtocolVersion: 1,
               type: "worker.initialize",
               activationId: spec.activationId,
-              toolRoot,
+              toolRoot: exclusiveMachine ? "/workspace" : toolRoot,
               environment: spec.environment,
               workspaceSeed: spec.workspaceSeed,
               ...(prepared.attached
@@ -958,6 +938,26 @@ export class CubeSandboxProvider implements SandboxProvider {
           "CubeSandbox environment did not match the accepted Run",
           false,
         );
+      }
+      if (exclusiveMachine) {
+        const preparedMachine = record(
+          await this.#guestJson(
+            instance,
+            { mode: "prepare_exclusive_machine" },
+            { program: "control", runAsToolUser: false, timeoutMs: 15_000 },
+          ),
+          "Cube exclusive machine preparation",
+        );
+        if (
+          preparedMachine.home !== "/home/user" ||
+          preparedMachine.legacyWorkspaceRemoved !== true
+        ) {
+          throw new ToolBrokerError(
+            "development_environment_home_invalid",
+            "Exclusive machine home directory could not be prepared",
+            false,
+          );
+        }
       }
       if (!prepared.attached) {
         await this.#workspaceVolumeGateway.initializeBaseline({

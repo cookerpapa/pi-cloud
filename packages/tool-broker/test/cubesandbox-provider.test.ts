@@ -6,7 +6,9 @@ import {
   type ToolSandboxOperationRequest,
 } from "@pi-cloud/protocol";
 import {
+  createWorkspaceSnapshot,
   decodeWorkspaceSnapshotBlob,
+  encodeWorkspaceSnapshotBlob,
   parsePersistentVolumeReference,
 } from "@pi-cloud/workspace-runtime";
 import { createHash } from "node:crypto";
@@ -443,7 +445,10 @@ describe("CubeSandbox Provider contract", () => {
       activationId: ACTIVATION_ID,
       assignment,
       environment,
-      workspaceSeed: { kind: "sample_java" },
+      workspaceSeed: {
+        kind: "snapshot",
+        snapshot: encodeWorkspaceSnapshotBlob(createWorkspaceSnapshot([])),
+      },
       policy: provider.defaultPolicy,
       lifetime: "development_environment",
       sandboxProfileKey: "standard",
