@@ -9,6 +9,7 @@ import {
 } from "@pi-cloud/protocol";
 import {
   CloudAgentRuntime,
+  PI_MODEL_RETRY_CUSTOM_TYPE,
   type CloudAgentExecutionAuthority,
   type CloudAgentRuntimeEvent,
 } from "@pi-cloud/pi-session-postgres";
@@ -357,6 +358,13 @@ export class PiCloudTurnRunner {
         const outcome = adapter.adapt(source);
         if (outcome.kind === "invalid")
           throw new PiTurnError("pi_protocol_error", outcome.reason, false);
+        if (outcome.kind === "mapped" && outcome.event.type === "model.sampling.retry.scheduled") {
+          await sessionHandle.session.appendCustomEntry(PI_MODEL_RETRY_CUSTOM_TYPE, {
+            nextSamplingAttempt: outcome.event.payload.nextSamplingAttempt,
+            maximumSamplingAttempts: outcome.event.payload.maximumSamplingAttempts,
+            delayMs: outcome.event.payload.delayMs,
+          });
+        }
         if (outcome.kind === "mapped" && isRecord(source) && source.type === "auto_retry_start") {
           samplingSteps.scheduleRetry(source.attempt as number);
         } else if (

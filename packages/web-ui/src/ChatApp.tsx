@@ -25,7 +25,8 @@ import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
 import { AdminPage } from "./AdminPage.tsx";
 import { AuthScreen } from "./AuthScreen.tsx";
 import { ConversationTreeNavigator } from "./ConversationTreeNavigator.tsx";
-import { ConversationTurn, Markdown } from "./ConversationTurn.tsx";
+import { ConversationTurn } from "./ConversationTurn.tsx";
+import { Markdown } from "./Markdown.tsx";
 import { isConversationTailVisible } from "./conversation-scroll.ts";
 import { activeTurn, createInitialSessionView, sessionViewReducer } from "./session-view.ts";
 import { streamSessionEvents } from "./sse.ts";
@@ -1776,7 +1777,6 @@ export default function ChatApp() {
                           <div className="product-user-bubble">{message.text}</div>
                         ) : (
                           <div className="product-inherited-assistant">
-                            <span className="product-avatar">A</span>
                             <div className="product-assistant-content">
                               <Markdown sessionId={selectedDelegatedSession?.sessionId}>
                                 {message.text}

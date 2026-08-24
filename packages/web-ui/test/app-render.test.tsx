@@ -4,11 +4,9 @@ import { AdminPage } from "../src/AdminPage.tsx";
 import { AuthScreen } from "../src/AuthScreen.tsx";
 import ChatApp from "../src/ChatApp.tsx";
 import { ConversationTreeNavigator } from "../src/ConversationTreeNavigator.tsx";
-import {
-  ConversationTurn,
-  ToolActivity,
-  conversationPreviewHref,
-} from "../src/ConversationTurn.tsx";
+import { ConversationTurn } from "../src/ConversationTurn.tsx";
+import { conversationPreviewHref } from "../src/Markdown.tsx";
+import { ToolActivity } from "../src/ToolActivity.tsx";
 import { PiCloudApi } from "../src/api.ts";
 import { ResourceManagementPage, resourceRefreshPending } from "../src/ResourceManagementPage.tsx";
 import type { TurnView } from "../src/session-view.ts";
@@ -433,5 +431,126 @@ describe("product chat experience", () => {
     expect(markup).toContain("后面还有 4 行");
     expect(markup).not.toContain("Successfully wrote");
     expect(markup).toContain("耗时 0.0s");
+  });
+
+  it("renders read output as source and edit input as a compact diff", () => {
+    const readMarkup = renderToStaticMarkup(
+      <ToolActivity
+        item={{
+          kind: "tool",
+          key: "tool:read-1",
+          toolCallId: "read-1",
+          toolName: "read",
+          input: { path: "/workspace/main.ts", offset: 10, limit: 20 },
+          output: "export const answer = 42;",
+          status: "completed",
+          firstSequence: 1,
+          lastSequence: 2,
+          startedAt: "2026-08-24T00:00:00.000Z",
+          completedAt: "2026-08-24T00:00:00.100Z",
+        }}
+      />,
+    );
+    expect(readMarkup).toContain("<strong>read</strong>");
+    expect(readMarkup).toContain("/workspace/main.ts");
+    expect(readMarkup).toContain("L10 +20");
+    expect(readMarkup).toContain("export const answer = 42;");
+
+    const editMarkup = renderToStaticMarkup(
+      <ToolActivity
+        item={{
+          kind: "tool",
+          key: "tool:edit-1",
+          toolCallId: "edit-1",
+          toolName: "edit",
+          input: {
+            path: "/workspace/main.ts",
+            edits: [{ oldText: "return 41;", newText: "return 42;" }],
+          },
+          output: "Successfully edited /workspace/main.ts",
+          status: "completed",
+          firstSequence: 3,
+          lastSequence: 4,
+          startedAt: "2026-08-24T00:00:00.000Z",
+          completedAt: "2026-08-24T00:00:00.100Z",
+        }}
+      />,
+    );
+    expect(editMarkup).toContain("product-diff-removed");
+    expect(editMarkup).toContain("return 41;");
+    expect(editMarkup).toContain("product-diff-added");
+    expect(editMarkup).toContain("return 42;");
+    expect(editMarkup).not.toContain("Successfully edited");
+  });
+
+  it("folds adjacent completed Tools into one stable activity row", () => {
+    const groupedTurn: TurnView = {
+      ...turn("10000000-0000-4000-8000-000000000040", "检查并修改"),
+      items: [
+        {
+          kind: "tool",
+          key: "tool:read-group",
+          toolCallId: "read-group",
+          toolName: "read",
+          input: { path: "/workspace/main.ts" },
+          output: "old",
+          status: "completed",
+          firstSequence: 1,
+          lastSequence: 2,
+          startedAt: "2026-08-24T00:00:00.000Z",
+          completedAt: "2026-08-24T00:00:00.100Z",
+        },
+        {
+          kind: "tool",
+          key: "tool:write-group",
+          toolCallId: "write-group",
+          toolName: "write",
+          input: { path: "/workspace/main.ts", content: "new" },
+          output: "Successfully wrote 3 bytes to /workspace/main.ts",
+          status: "completed",
+          firstSequence: 3,
+          lastSequence: 4,
+          startedAt: "2026-08-24T00:00:00.100Z",
+          completedAt: "2026-08-24T00:00:00.200Z",
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(<ConversationTurn turn={groupedTurn} />);
+    expect(markup).toContain("2 个步骤");
+    expect(markup).toContain("read · write");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("Successfully wrote");
+  });
+
+  it("renders durable Pi compaction and model retry lifecycle rows", () => {
+    const lifecycleTurn: TurnView = {
+      ...turn("10000000-0000-4000-8000-000000000041", "继续长上下文任务"),
+      items: [
+        {
+          kind: "compaction",
+          key: "compaction:1",
+          reason: "threshold",
+          status: "completed",
+          willRetry: true,
+          tokensBefore: 100_000,
+          estimatedTokensAfter: 24_000,
+          firstSequence: 1,
+          lastSequence: 2,
+        },
+        {
+          kind: "retry",
+          key: "retry:3",
+          nextSamplingAttempt: 2,
+          maximumSamplingAttempts: 3,
+          delayMs: 1_500,
+          sequence: 3,
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(<ConversationTurn turn={lifecycleTurn} />);
+    expect(markup).toContain("上下文已压缩");
+    expect(markup).toContain("100,000 → 24,000 tokens");
+    expect(markup).toContain("正在继续当前任务");
+    expect(markup).toContain("1.5s 后重试");
   });
 });

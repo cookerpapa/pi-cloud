@@ -5,8 +5,15 @@ import {
   type EventPublishMessage,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
-import type { CloudAgentExecutionAuthority } from "@pi-cloud/pi-session-postgres";
-import { InMemorySessionStorage, Session } from "@earendil-works/pi-agent-core";
+import {
+  PI_MODEL_RETRY_CUSTOM_TYPE,
+  type CloudAgentExecutionAuthority,
+} from "@pi-cloud/pi-session-postgres";
+import {
+  buildSessionContext,
+  InMemorySessionStorage,
+  Session,
+} from "@earendil-works/pi-agent-core";
 import { describe, expect, it } from "vitest";
 import {
   createCloudAttemptContext,
@@ -183,8 +190,18 @@ describe("PiCloudTurnRunner integration", () => {
       const prompt = entries.find(
         (entry) => entry.type === "message" && entry.message.role === "user",
       );
+      const retry = entries.find(
+        (entry) => entry.type === "custom" && entry.customType === PI_MODEL_RETRY_CUSTOM_TYPE,
+      );
       expect(baseline).toBeDefined();
       expect(prompt).toBeDefined();
+      expect(retry).toMatchObject({
+        type: "custom",
+        data: { nextSamplingAttempt: 2, maximumSamplingAttempts: 3 },
+      });
+      expect(JSON.stringify(buildSessionContext(entries).messages)).not.toContain(
+        PI_MODEL_RETRY_CUSTOM_TYPE,
+      );
       expect(prompt!.seq).toBeGreaterThan(baseline!.seq);
       expect(authorityWasActiveAtSettlement).toBe(true);
       expect(authority.closed).toBe(true);

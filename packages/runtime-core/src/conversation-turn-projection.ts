@@ -160,6 +160,54 @@ export function projectConversationTurnTranscript(
       });
       continue;
     }
+    if (event.type === "context.compaction.started") {
+      items.push({
+        kind: "compaction",
+        reason: event.payload.reason,
+        status: "running",
+        willRetry: false,
+        firstSequence: event.seq,
+      });
+      continue;
+    }
+    if (event.type === "context.compaction.completed") {
+      let index = -1;
+      for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex -= 1) {
+        const candidate = items[itemIndex]!;
+        if (candidate.kind === "compaction" && candidate.status === "running") {
+          index = itemIndex;
+          break;
+        }
+      }
+      const existing = index < 0 ? undefined : items[index];
+      const completed = {
+        kind: "compaction" as const,
+        reason: event.payload.reason,
+        status: event.payload.status,
+        willRetry: event.payload.willRetry,
+        ...(event.payload.tokensBefore === undefined
+          ? {}
+          : { tokensBefore: event.payload.tokensBefore }),
+        ...(event.payload.estimatedTokensAfter === undefined
+          ? {}
+          : { estimatedTokensAfter: event.payload.estimatedTokensAfter }),
+        firstSequence: existing?.kind === "compaction" ? existing.firstSequence : event.seq,
+        lastSequence: event.seq,
+      };
+      if (index < 0) items.push(completed);
+      else items[index] = completed;
+      continue;
+    }
+    if (event.type === "model.sampling.retry.scheduled") {
+      items.push({
+        kind: "retry",
+        nextSamplingAttempt: event.payload.nextSamplingAttempt,
+        maximumSamplingAttempts: event.payload.maximumSamplingAttempts,
+        delayMs: event.payload.delayMs,
+        sequence: event.seq,
+      });
+      continue;
+    }
     if (event.type === "turn.completed") {
       terminalSequence = event.seq;
       stopReason = event.payload.stopReason;
@@ -176,6 +224,12 @@ export function projectConversationTurnTranscript(
             lastSequence: event.seq,
             completedAt: event.occurredAt,
           };
+        } else if (item.kind === "compaction" && item.status === "running") {
+          items[index] = {
+            ...item,
+            status: "failed",
+            lastSequence: event.seq,
+          };
         }
       }
       terminalSequence = event.seq;
@@ -191,6 +245,12 @@ export function projectConversationTurnTranscript(
             status: "unknown",
             lastSequence: event.seq,
             completedAt: event.occurredAt,
+          };
+        } else if (item.kind === "compaction" && item.status === "running") {
+          items[index] = {
+            ...item,
+            status: "aborted",
+            lastSequence: event.seq,
           };
         }
       }

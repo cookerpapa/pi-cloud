@@ -23,6 +23,12 @@ The reference qualities to preserve are:
 - timestamps and session/model metadata that remain visually secondary;
 - responsive sidebar overlay behavior on narrow screens.
 
+The current implementation also follows Pi's maintained Tool/TUI semantics and
+the presentation-row pattern surveyed in
+[`research/pi-web-transcript-rendering-2026-08-24.md`](research/pi-web-transcript-rendering-2026-08-24.md).
+It does not import the retired Pi Web UI package or let a browser own an Agent
+runtime.
+
 The existing Session Tree Browser also demonstrates useful live behavior:
 independent transcript/sidebar scrolling, an anchored composer, streamed output,
 runtime state, fork navigation, and bounded/idle runtime management.
@@ -92,8 +98,14 @@ conversations.
 
 The transcript preserves event order, merges adjacent text deltas, renders
 Markdown without raw HTML or remote-image fetches, collapses tool input/output,
-and shows approval and terminal cards. The narrow layout turns the conversation
-sidebar into an overlay with an explicit backdrop.
+and shows approval and terminal cards. Stable presentation rows keep transport
+state out of React components; adjacent Tools form one expandable activity row,
+while `bash`, `read`, `write`, `edit` and unknown Tools use a renderer registry.
+Fenced Markdown and source previews share a lazy Highlight.js bundle, Edit
+renders bounded added/removed lines, and complete Pi Compaction/model-retry
+facts survive reload through native SessionStorage projection. The narrow
+layout turns the conversation sidebar into an overlay with an explicit
+backdrop.
 
 The browser uses only relative REST/SSE routes. Its fetch-based SSE client can
 set `Last-Event-ID` explicitly, parses fragmented frames, validates the shared

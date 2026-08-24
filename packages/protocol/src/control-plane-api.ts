@@ -727,6 +727,38 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
     },
     { additionalProperties: false },
   ),
+  Type.Object(
+    {
+      kind: Type.Literal("compaction"),
+      reason: Type.Union([
+        Type.Literal("manual"),
+        Type.Literal("threshold"),
+        Type.Literal("overflow"),
+      ]),
+      status: Type.Union([
+        Type.Literal("running"),
+        Type.Literal("completed"),
+        Type.Literal("aborted"),
+        Type.Literal("failed"),
+      ]),
+      willRetry: Type.Boolean(),
+      tokensBefore: Type.Optional(Type.Integer({ minimum: 0 })),
+      estimatedTokensAfter: Type.Optional(Type.Integer({ minimum: 0 })),
+      firstSequence: PositiveSafeIntegerSchema,
+      lastSequence: Type.Optional(PositiveSafeIntegerSchema),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("retry"),
+      nextSamplingAttempt: PositiveSafeIntegerSchema,
+      maximumSamplingAttempts: Type.Optional(PositiveSafeIntegerSchema),
+      delayMs: Type.Optional(Type.Integer({ minimum: 0, maximum: 300_000 })),
+      sequence: PositiveSafeIntegerSchema,
+    },
+    { additionalProperties: false },
+  ),
 ]);
 
 export const ConversationTurnTranscriptResourceSchema = Type.Object(

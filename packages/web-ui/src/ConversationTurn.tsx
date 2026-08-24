@@ -1,14 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { deriveConversationPresentationRows } from "./conversation-presentation.ts";
+import { Markdown } from "./Markdown.tsx";
 import type { TranscriptItem, TurnView } from "./session-view.ts";
-import { useI18n, type Translate } from "./i18n.tsx";
-
-type SourceHighlightModule = typeof import("./source-highlight.ts");
-type SourceHighlightResult = ReturnType<SourceHighlightModule["highlightSource"]>;
-
-let loadedSourceHighlighter: SourceHighlightModule | null = null;
-let sourceHighlighterPromise: Promise<SourceHighlightModule> | null = null;
+import { compactToolSummary, ToolActivity, type ToolTranscriptItem } from "./ToolActivity.tsx";
+import { useI18n } from "./i18n.tsx";
 
 const MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME = 1_024;
 
@@ -98,323 +93,6 @@ function useProgressiveText(
   return visible;
 }
 
-function useSourceHighlight(text: string, path: string | null): SourceHighlightResult {
-  const [ready, setReady] = useState(loadedSourceHighlighter !== null);
-  useEffect(() => {
-    if (path === null || ready) return;
-    sourceHighlighterPromise ??= import("./source-highlight.ts");
-    let active = true;
-    void sourceHighlighterPromise.then((module) => {
-      loadedSourceHighlighter = module;
-      if (active) setReady(true);
-    });
-    return () => {
-      active = false;
-    };
-  }, [path, ready]);
-  return ready && loadedSourceHighlighter !== null
-    ? loadedSourceHighlighter.highlightSource(text, path)
-    : null;
-}
-
-function safeDisplay(value: unknown, t?: Translate): string {
-  const rendered = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  if (rendered === undefined) return "";
-  return rendered.length > 12_000
-    ? `${rendered.slice(0, 12_000)}\n${t?.("turn.outputTruncated") ?? "…输出已截断"}`
-    : rendered;
-}
-
-function objectValue(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function toolOutputText(value: unknown, t: Translate): string {
-  if (typeof value === "string") return value;
-  const output = objectValue(value);
-  if (output === null || !Array.isArray(output.content)) return safeDisplay(value, t);
-  const content = output.content
-    .map((part) => {
-      const candidate = objectValue(part);
-      return candidate?.type === "text" ? stringValue(candidate.text) : null;
-    })
-    .filter((part): part is string => part !== null)
-    .join("\n");
-  return content.length > 0 ? content : safeDisplay(value, t);
-}
-
-function durationLabel(startedAt: string, completedAt: string | undefined): string | null {
-  if (completedAt === undefined) return null;
-  const milliseconds = new Date(completedAt).valueOf() - new Date(startedAt).valueOf();
-  if (!Number.isFinite(milliseconds) || milliseconds < 0) return null;
-  if (milliseconds < 60_000) return `${(milliseconds / 1_000).toFixed(1)}s`;
-  const minutes = Math.floor(milliseconds / 60_000);
-  return `${String(minutes)}m ${((milliseconds % 60_000) / 1_000).toFixed(1)}s`;
-}
-
-function ExpandableToolText({
-  text,
-  direction,
-  className,
-  sourcePath = null,
-  streaming = false,
-}: {
-  text: string;
-  direction: "head" | "tail";
-  className: string;
-  sourcePath?: string | null;
-  streaming?: boolean;
-}) {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
-  const normalized = text.replace(/\n+$/, "");
-  const lines = normalized.split("\n");
-  const maximumLines = direction === "head" ? 16 : 20;
-  const omitted = Math.max(0, lines.length - maximumLines);
-  const preview =
-    omitted === 0
-      ? normalized
-      : direction === "head"
-        ? lines.slice(0, maximumLines).join("\n")
-        : lines.slice(-maximumLines).join("\n");
-  const visible = expanded ? normalized : preview;
-  const highlighted = useSourceHighlight(visible, sourcePath);
-  return (
-    <div className="product-tool-text">
-      {omitted > 0 && !expanded && direction === "tail" ? (
-        <button type="button" onClick={() => setExpanded(true)}>
-          {t("turn.earlierLines", { count: omitted })}
-        </button>
-      ) : null}
-      <pre className={className}>
-        {highlighted === null ? (
-          <code>{visible}</code>
-        ) : (
-          <code
-            className={`hljs language-${highlighted.language}`}
-            dangerouslySetInnerHTML={{ __html: highlighted.html }}
-          />
-        )}
-        {streaming ? <span aria-hidden="true" className="product-tool-stream-cursor" /> : null}
-      </pre>
-      {omitted > 0 && direction === "head" && !expanded ? (
-        <button type="button" onClick={() => setExpanded(true)}>
-          {t("turn.moreLines", { count: omitted })}
-        </button>
-      ) : null}
-      {omitted > 0 && expanded ? (
-        <button type="button" onClick={() => setExpanded(false)}>
-          {t("turn.collapse")}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-export function conversationPreviewHref(
-  href: string | undefined,
-  sessionId: string | undefined,
-): string | undefined {
-  if (href === undefined || sessionId === undefined) return href;
-  try {
-    const target = new URL(href);
-    const port = Number(target.port || (target.protocol === "https:" ? 443 : 80));
-    if (
-      target.protocol !== "http:" ||
-      !new Set(["localhost", "127.0.0.1", "0.0.0.0"]).has(target.hostname) ||
-      !Number.isSafeInteger(port) ||
-      port < 1_024 ||
-      port > 65_535 ||
-      port === 49_984
-    ) {
-      return href;
-    }
-    return `/v1/conversations/${encodeURIComponent(sessionId)}/preview/${String(port)}${target.pathname}${target.search}${target.hash}`;
-  } catch {
-    return href;
-  }
-}
-
-export function Markdown({
-  children,
-  sessionId,
-}: {
-  children: string;
-  sessionId?: string | undefined;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="product-markdown">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ children: label, href }) => (
-            <a
-              href={conversationPreviewHref(href, sessionId)}
-              rel="noreferrer noopener"
-              target="_blank"
-            >
-              {label}
-            </a>
-          ),
-          img: ({ alt }) => (
-            <span className="product-image-placeholder">{t("turn.image", { alt: alt ?? "" })}</span>
-          ),
-        }}
-      >
-        {children}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-export function ToolActivity({ item }: { item: Extract<TranscriptItem, { kind: "tool" }> }) {
-  const { t } = useI18n();
-  const input = objectValue(item.input);
-  const command = stringValue(input?.command);
-  const path = stringValue(input?.path);
-  const content = stringValue(input?.content);
-  const output = item.output === undefined ? "" : toolOutputText(item.output, t);
-  const multilineCommand = command !== null && command.includes("\n");
-  const displayedCommand =
-    command === null
-      ? null
-      : command
-          .split("\n")
-          .map((line, index) => `${index === 0 ? "$ " : "  "}${line}`)
-          .join("\n");
-  const duration = durationLabel(item.startedAt, item.completedAt);
-  const conventionalWriteResult = /^Successfully wrote \d+ bytes to /u.test(output.trim());
-  const statusLabel =
-    item.status === "running"
-      ? t("turn.executing")
-      : item.status === "unknown"
-        ? t("turn.unknown")
-        : item.status === "failed"
-          ? t("turn.failed")
-          : t("turn.completed");
-  const icon =
-    item.status === "running"
-      ? "◌"
-      : item.status === "unknown"
-        ? "?"
-        : item.status === "failed"
-          ? "!"
-          : "✓";
-  const heading =
-    item.toolName === "bash" && command !== null && !multilineCommand ? (
-      <div className="product-tool-command">
-        <span aria-hidden="true">$</span>
-        <code>{command}</code>
-      </div>
-    ) : item.toolName === "bash" && multilineCommand ? (
-      <div className="product-tool-operation product-tool-multiline-label">
-        <strong>bash</strong>
-        <span>{t("turn.commandLines", { count: command.split("\n").length })}</span>
-      </div>
-    ) : (
-      <div className="product-tool-operation">
-        <strong>{item.toolName}</strong>
-        {path === null ? null : <code>{path}</code>}
-      </div>
-    );
-  return (
-    <section
-      aria-label={`${item.toolName} ${statusLabel}`}
-      className={`product-tool product-tool-${item.status}`}
-    >
-      <div className="product-tool-line">
-        <span className="product-tool-icon" aria-hidden="true">
-          {icon}
-        </span>
-        {heading}
-        <span className="product-tool-state">{statusLabel}</span>
-      </div>
-      <div className="product-tool-body">
-        {item.toolName === "bash" && multilineCommand && displayedCommand !== null ? (
-          <ExpandableToolText
-            className="product-tool-command-block"
-            direction="head"
-            text={displayedCommand}
-          />
-        ) : item.toolName === "write" && content !== null ? (
-          <ExpandableToolText
-            className="product-tool-source"
-            direction="head"
-            sourcePath={path}
-            streaming={false}
-            text={content}
-          />
-        ) : item.toolName !== "bash" && path === null ? (
-          <ExpandableToolText
-            className="product-tool-source"
-            direction="head"
-            text={safeDisplay(item.input, t)}
-          />
-        ) : null}
-        {output.length > 0 && !(item.toolName === "write" && conventionalWriteResult) ? (
-          <ExpandableToolText
-            className={item.toolName === "bash" ? "product-tool-terminal" : "product-tool-output"}
-            direction={item.toolName === "bash" ? "tail" : "head"}
-            text={output}
-          />
-        ) : null}
-        {duration === null ? null : (
-          <div className="product-tool-duration">{t("turn.took", { duration })}</div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function AssistantItem({
-  item,
-  sessionId,
-  onPresentationProgress,
-  processNarration,
-  streaming,
-}: {
-  item: TranscriptItem;
-  sessionId: string | undefined;
-  onPresentationProgress: (() => void) | undefined;
-  processNarration: boolean;
-  streaming: boolean;
-}) {
-  const { t } = useI18n();
-  if (item.kind === "text") {
-    return (
-      <AssistantTextItem
-        item={item}
-        sessionId={sessionId}
-        onPresentationProgress={onPresentationProgress}
-        processNarration={processNarration}
-        streaming={streaming}
-      />
-    );
-  }
-  if (item.kind === "tool") return <ToolActivity item={item} />;
-  if (item.kind === "notification") {
-    return (
-      <div className={`product-notification product-notification-${item.level}`}>
-        {item.message}
-      </div>
-    );
-  }
-  return (
-    <div className="product-notification">
-      {item.outcome === undefined
-        ? t("turn.awaitingApproval", { title: item.approval.title })
-        : t("turn.approvalHandled", { title: item.approval.title })}
-    </div>
-  );
-}
-
 function AssistantTextItem({
   item,
   sessionId,
@@ -432,6 +110,139 @@ function AssistantTextItem({
   return (
     <div className={processNarration ? "product-agent-stage" : "product-agent-answer"}>
       <Markdown sessionId={sessionId}>{visibleText}</Markdown>
+    </div>
+  );
+}
+
+function activitySummary(items: readonly ToolTranscriptItem[]): string {
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(item.toolName, (counts.get(item.toolName) ?? 0) + 1);
+  return [...counts.entries()]
+    .map(([name, count]) => (count > 1 ? `${name} ×${String(count)}` : name))
+    .join(" · ");
+}
+
+function ToolActivityGroup({ items }: { items: readonly ToolTranscriptItem[] }) {
+  const { t } = useI18n();
+  const running = items.some((item) => item.status === "running");
+  const issue = items.some((item) => item.status === "failed" || item.status === "unknown");
+  const [expanded, setExpanded] = useState(running || issue);
+  useEffect(() => {
+    if (running || issue) setExpanded(true);
+  }, [issue, running]);
+  if (items.length === 1) return <ToolActivity item={items[0]!} />;
+  const current =
+    items.reduce<ToolTranscriptItem | undefined>(
+      (candidate, item) => (item.status === "running" ? item : candidate),
+      undefined,
+    ) ?? items.at(-1)!;
+  const summary = running ? compactToolSummary(current) : activitySummary(items);
+  return (
+    <section
+      className={`product-activity-group ${issue ? "has-issue" : ""}`}
+      data-expanded={expanded}
+    >
+      <button
+        aria-expanded={expanded}
+        className="product-activity-group-toggle"
+        onClick={() => setExpanded((value) => !value)}
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          className={`product-activity-chevron ${expanded ? "expanded" : ""}`}
+        >
+          ›
+        </span>
+        <span
+          aria-hidden="true"
+          className={`product-activity-status ${running ? "running" : issue ? "issue" : ""}`}
+        >
+          {running ? "◌" : issue ? "!" : "✓"}
+        </span>
+        <strong>{t("turn.activitySteps", { count: items.length })}</strong>
+        <span title={summary}>{summary}</span>
+      </button>
+      {expanded ? (
+        <div className="product-activity-group-items">
+          {items.map((item) => (
+            <ToolActivity item={item} key={item.key} />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function LifecycleItem({
+  item,
+}: {
+  item: Extract<TranscriptItem, { kind: "compaction" } | { kind: "retry" }>;
+}) {
+  const { t } = useI18n();
+  if (item.kind === "retry") {
+    const delay =
+      item.delayMs === undefined
+        ? null
+        : item.delayMs < 1_000
+          ? `${String(item.delayMs)}ms`
+          : `${(item.delayMs / 1_000).toFixed(1)}s`;
+    return (
+      <div className="product-lifecycle product-lifecycle-retry">
+        <span aria-hidden="true">↻</span>
+        {delay === null || item.maximumSamplingAttempts === undefined
+          ? t("turn.retryAttempt", { attempt: item.nextSamplingAttempt })
+          : t("turn.retryScheduled", {
+              attempt: item.nextSamplingAttempt,
+              maximum: item.maximumSamplingAttempts,
+              delay,
+            })}
+      </div>
+    );
+  }
+  const label =
+    item.status === "running"
+      ? t("turn.compactionRunning")
+      : item.status === "completed"
+        ? t("turn.compactionCompleted")
+        : item.status === "aborted"
+          ? t("turn.compactionAborted")
+          : t("turn.compactionFailed");
+  const tokenChange =
+    item.tokensBefore === undefined || item.estimatedTokensAfter === undefined
+      ? null
+      : `${item.tokensBefore.toLocaleString()} → ${item.estimatedTokensAfter.toLocaleString()} tokens`;
+  return (
+    <div className={`product-lifecycle product-lifecycle-${item.status}`}>
+      <span aria-hidden="true">
+        {item.status === "running" ? "◌" : item.status === "completed" ? "✓" : "!"}
+      </span>
+      <span>{label}</span>
+      {tokenChange === null ? null : <code>{tokenChange}</code>}
+      {item.willRetry ? <small>{t("turn.compactionResuming")}</small> : null}
+    </div>
+  );
+}
+
+function OtherItem({
+  item,
+}: {
+  item: Exclude<TranscriptItem, { kind: "text" } | { kind: "tool" }>;
+}) {
+  const { t } = useI18n();
+  if (item.kind === "compaction" || item.kind === "retry") return <LifecycleItem item={item} />;
+  if (item.kind === "notification") {
+    return (
+      <div className={`product-notification product-notification-${item.level}`}>
+        {item.message}
+      </div>
+    );
+  }
+  return (
+    <div className="product-notification">
+      {item.outcome === undefined
+        ? t("turn.awaitingApproval", { title: item.approval.title })
+        : t("turn.approvalHandled", { title: item.approval.title })}
     </div>
   );
 }
@@ -456,10 +267,7 @@ export function ConversationTurn({
   const { t } = useI18n();
   const working =
     turn.status === "queued" || turn.status === "running" || turn.status === "cancelling";
-  const lastToolIndex = turn.items.reduce(
-    (lastIndex, item, index) => (item.kind === "tool" ? index : lastIndex),
-    -1,
-  );
+  const rows = useMemo(() => deriveConversationPresentationRows(turn.items), [turn.items]);
   return (
     <section
       className="product-turn"
@@ -470,11 +278,8 @@ export function ConversationTurn({
         <div className="product-user-bubble">{turn.prompt}</div>
       </div>
       <div className="product-message product-assistant-message">
-        <div className="product-avatar" aria-hidden="true">
-          A
-        </div>
         <div className="product-assistant-content">
-          {turn.items.length === 0 && working ? (
+          {rows.length === 0 && working ? (
             <div className="product-thinking">
               <i />
               <i />
@@ -482,16 +287,24 @@ export function ConversationTurn({
               <span>{t("turn.thinking")}</span>
             </div>
           ) : (
-            turn.items.map((item, index) => (
-              <AssistantItem
-                item={item}
-                key={item.key}
-                onPresentationProgress={onPresentationProgress}
-                processNarration={item.kind === "text" && index < lastToolIndex}
-                sessionId={sessionId}
-                streaming={working && item.kind === "text"}
-              />
-            ))
+            rows.map((row) => {
+              if (row.kind === "text") {
+                return (
+                  <AssistantTextItem
+                    item={row.item}
+                    key={row.key}
+                    onPresentationProgress={onPresentationProgress}
+                    processNarration={row.processNarration}
+                    sessionId={sessionId}
+                    streaming={working}
+                  />
+                );
+              }
+              if (row.kind === "activity") {
+                return <ToolActivityGroup items={row.items} key={row.key} />;
+              }
+              return <OtherItem item={row.item} key={row.key} />;
+            })
           )}
           {turn.failure ? (
             <div className="product-turn-error">

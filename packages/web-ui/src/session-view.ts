@@ -54,6 +54,25 @@ export type TranscriptItem =
       level: "info" | "warning" | "error";
       message: string;
       sequence: number;
+    }
+  | {
+      kind: "compaction";
+      key: string;
+      reason: "manual" | "threshold" | "overflow";
+      status: "running" | "completed" | "aborted" | "failed";
+      willRetry: boolean;
+      tokensBefore?: number;
+      estimatedTokensAfter?: number;
+      firstSequence: number;
+      lastSequence?: number;
+    }
+  | {
+      kind: "retry";
+      key: string;
+      nextSamplingAttempt: number;
+      maximumSamplingAttempts?: number;
+      delayMs?: number;
+      sequence: number;
     };
 
 export type TurnView = {
@@ -191,7 +210,13 @@ function transcriptItem(
   if (item.kind === "approval") {
     return { ...item, key: `approval:${item.approval.approvalId}` };
   }
-  return { ...item, key: `notification:${String(item.sequence)}` };
+  if (item.kind === "notification") {
+    return { ...item, key: `notification:${String(item.sequence)}` };
+  }
+  if (item.kind === "compaction") {
+    return { ...item, key: `compaction:${String(item.firstSequence)}` };
+  }
+  return { ...item, key: `retry:${String(item.sequence)}` };
 }
 
 function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewState {
@@ -334,6 +359,69 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
         ],
       };
     }
+    if (event.type === "context.compaction.started") {
+      return {
+        ...turn,
+        items: [
+          ...turn.items,
+          {
+            kind: "compaction",
+            key: `compaction:${String(event.seq)}`,
+            reason: event.payload.reason,
+            status: "running",
+            willRetry: false,
+            firstSequence: event.seq,
+          },
+        ],
+      };
+    }
+    if (event.type === "context.compaction.completed") {
+      let index = -1;
+      for (let itemIndex = turn.items.length - 1; itemIndex >= 0; itemIndex -= 1) {
+        const candidate = turn.items[itemIndex]!;
+        if (candidate.kind === "compaction" && candidate.status === "running") {
+          index = itemIndex;
+          break;
+        }
+      }
+      const existing = index < 0 ? undefined : turn.items[index];
+      const completed: TranscriptItem = {
+        kind: "compaction",
+        key: existing?.kind === "compaction" ? existing.key : `compaction:${String(event.seq)}`,
+        reason: event.payload.reason,
+        status: event.payload.status,
+        willRetry: event.payload.willRetry,
+        ...(event.payload.tokensBefore === undefined
+          ? {}
+          : { tokensBefore: event.payload.tokensBefore }),
+        ...(event.payload.estimatedTokensAfter === undefined
+          ? {}
+          : { estimatedTokensAfter: event.payload.estimatedTokensAfter }),
+        firstSequence: existing?.kind === "compaction" ? existing.firstSequence : event.seq,
+        lastSequence: event.seq,
+      };
+      if (index < 0) return { ...turn, items: [...turn.items, completed] };
+      return {
+        ...turn,
+        items: turn.items.map((item, itemIndex) => (itemIndex === index ? completed : item)),
+      };
+    }
+    if (event.type === "model.sampling.retry.scheduled") {
+      return {
+        ...turn,
+        items: [
+          ...turn.items,
+          {
+            kind: "retry",
+            key: `retry:${String(event.seq)}`,
+            nextSamplingAttempt: event.payload.nextSamplingAttempt,
+            maximumSamplingAttempts: event.payload.maximumSamplingAttempts,
+            delayMs: event.payload.delayMs,
+            sequence: event.seq,
+          },
+        ],
+      };
+    }
     if (event.type === "turn.completed") {
       return {
         ...turn,
@@ -346,11 +434,20 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
     if (event.type === "turn.failed") {
       return {
         ...turn,
-        items: turn.items.map((item): TranscriptItem =>
-          item.kind === "tool" && item.status === "running"
-            ? { ...item, status: "unknown", lastSequence: event.seq, completedAt: event.occurredAt }
-            : item,
-        ),
+        items: turn.items.map((item): TranscriptItem => {
+          if (item.kind === "tool" && item.status === "running") {
+            return {
+              ...item,
+              status: "unknown",
+              lastSequence: event.seq,
+              completedAt: event.occurredAt,
+            };
+          }
+          if (item.kind === "compaction" && item.status === "running") {
+            return { ...item, status: "failed", lastSequence: event.seq };
+          }
+          return item;
+        }),
         status: "failed",
         terminalSequence: event.seq,
         failure: event.payload,
@@ -359,11 +456,20 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
     if (event.type === "turn.cancelled") {
       return {
         ...turn,
-        items: turn.items.map((item): TranscriptItem =>
-          item.kind === "tool" && item.status === "running"
-            ? { ...item, status: "unknown", lastSequence: event.seq, completedAt: event.occurredAt }
-            : item,
-        ),
+        items: turn.items.map((item): TranscriptItem => {
+          if (item.kind === "tool" && item.status === "running") {
+            return {
+              ...item,
+              status: "unknown",
+              lastSequence: event.seq,
+              completedAt: event.occurredAt,
+            };
+          }
+          if (item.kind === "compaction" && item.status === "running") {
+            return { ...item, status: "aborted", lastSequence: event.seq };
+          }
+          return item;
+        }),
         status: "cancelled",
         terminalSequence: event.seq,
         stopReason: "cancelled",

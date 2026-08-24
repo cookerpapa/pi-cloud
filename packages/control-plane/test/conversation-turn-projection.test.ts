@@ -37,6 +37,17 @@ describe("conversation turn projection", () => {
             estimatedTokensAfter: 500,
           },
         },
+        {
+          type: "model.sampling.retry.scheduled",
+          payload: {
+            stepSequence: 1,
+            stepSha256: "a".repeat(64),
+            completedSamplingAttempt: 1,
+            nextSamplingAttempt: 2,
+            maximumSamplingAttempts: 3,
+            delayMs: 1_500,
+          },
+        },
         { type: "assistant.text.delta", payload: { text: "the tests." } },
         {
           type: "tool.started",
@@ -83,9 +94,9 @@ describe("conversation turn projection", () => {
 
     expect(projected).toMatchObject({
       schemaVersion: 1,
-      throughSequence: 12,
+      throughSequence: 13,
       startedSequence: 1,
-      terminalSequence: 12,
+      terminalSequence: 13,
       stopReason: "stop",
       failure: null,
       cancellation: null,
@@ -94,9 +105,32 @@ describe("conversation turn projection", () => {
     expect(projected.items).toEqual([
       {
         kind: "text",
-        text: "Inspecting the tests.",
+        text: "Inspecting ",
         firstSequence: 2,
-        lastSequence: 5,
+        lastSequence: 2,
+      },
+      {
+        kind: "compaction",
+        reason: "threshold",
+        status: "completed",
+        willRetry: false,
+        tokensBefore: 1_000,
+        estimatedTokensAfter: 500,
+        firstSequence: 3,
+        lastSequence: 4,
+      },
+      {
+        kind: "retry",
+        nextSamplingAttempt: 2,
+        maximumSamplingAttempts: 3,
+        delayMs: 1_500,
+        sequence: 5,
+      },
+      {
+        kind: "text",
+        text: "the tests.",
+        firstSequence: 6,
+        lastSequence: 6,
       },
       {
         kind: "tool",
@@ -105,16 +139,16 @@ describe("conversation turn projection", () => {
         input: { command: "npm test" },
         output: "all green",
         status: "completed",
-        firstSequence: 6,
-        lastSequence: 7,
+        firstSequence: 7,
+        lastSequence: 8,
         startedAt: CREATED_AT,
         completedAt: CREATED_AT,
       },
       {
         kind: "text",
         text: "Done.",
-        firstSequence: 8,
-        lastSequence: 8,
+        firstSequence: 9,
+        lastSequence: 9,
       },
       {
         kind: "approval",
@@ -125,14 +159,14 @@ describe("conversation turn projection", () => {
           message: "Create the artifact",
         },
         outcome: "approved",
-        firstSequence: 9,
-        lastSequence: 10,
+        firstSequence: 10,
+        lastSequence: 11,
       },
       {
         kind: "notification",
         level: "info",
         message: "Artifact ready",
-        sequence: 11,
+        sequence: 12,
       },
     ]);
   });

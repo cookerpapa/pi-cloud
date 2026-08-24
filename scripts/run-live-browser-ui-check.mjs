@@ -93,6 +93,7 @@ const record = (name) => {
   process.stdout.write(`[browser-ui-check] ${name}\n`);
 };
 const screenshotPath = resolve("/tmp", "pi-cloud-browser-ui-latest.png");
+const transcriptScreenshotPath = resolve("/tmp", "pi-cloud-browser-ui-transcript-latest.png");
 
 function selectorExpression(selector) {
   return `document.querySelector(${JSON.stringify(selector)})`;
@@ -216,6 +217,15 @@ try {
         180_000,
       );
       await page.waitFor('!document.querySelector(".product-stop-button")');
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-tool[data-tool-name=bash] code")].some(element=>element.textContent.includes("sleep 8"))',
+      );
+      const piStyleTranscript = await page.evaluate(
+        'document.querySelectorAll(".product-avatar").length===0 && document.querySelectorAll(".product-tool[data-tool-name=bash]").length===1',
+      );
+      assert.equal(piStyleTranscript, true, "Pi-style transcript renderer was not active");
+      record("transcript.piStyleToolRenderer");
+      await page.screenshot(transcriptScreenshotPath);
 
       await setValue(
         ".product-composer textarea",
@@ -244,6 +254,10 @@ try {
       await page.waitFor('document.querySelector(".workspace-directory")');
       await click('.workspace-directory-header button[title="刷新目录"]', "workspace.refresh");
       await clickText(".workspace-view-tabs button", "终端", "workspace.terminalTab");
+      await page.waitFor(
+        '[...document.querySelectorAll(".workspace-terminal-toolbar button")].some(element=>element.textContent.includes("连接终端"))',
+        30_000,
+      );
       await clickText(
         ".workspace-terminal-toolbar button",
         "连接终端",
@@ -261,6 +275,9 @@ try {
       await page.waitFor('!document.querySelector(".product-fork-modal")', 60_000);
       await page.waitFor(
         `document.body.innerText.includes(${JSON.stringify(`UI fork ${suffix}`)})`,
+      );
+      await page.waitFor(
+        'document.querySelector(".product-conversation-row.active .product-delete-conversation")?.disabled===false',
       );
       await click(
         ".product-conversation-row.active .product-delete-conversation",
@@ -333,6 +350,9 @@ try {
         `document.body.innerText.includes(${JSON.stringify(`UI exclusive ${suffix}`)})`,
       );
 
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-environment-controls button")].some(button=>button.textContent.includes("SSH")&&!button.disabled)',
+      );
       await clickText(".product-environment-controls button", "SSH", "ssh.open");
       await page.waitFor('document.querySelector(".product-ssh-ticket-modal")', 30_000);
       await clickText(".product-ssh-ticket-modal footer button", "复制一行命令", "ssh.copyCommand");

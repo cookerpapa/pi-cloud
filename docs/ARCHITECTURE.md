@@ -87,6 +87,10 @@ The native `pi_session_entries` compaction node is the recovery authority;
 Kafka's durable `context.compaction.*` events provide live and audit evidence.
 The obsolete `context_compactions` governance ledger has been removed rather
 than maintained as a second, eventually inconsistent source of truth.
+The browser's settled transcript reconstructs completed Compaction and model
+retry notices from native Compaction entries and a presentation-only Pi custom
+entry; it does not retain a second lifetime copy of live Kafka fragments or
+inject the retry notice into model context.
 
 The same package implements Pi's tenant-scoped `SessionRepo`; Workers open or
 create Sessions through that repository rather than through a second

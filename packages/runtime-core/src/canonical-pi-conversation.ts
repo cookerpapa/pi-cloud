@@ -1,4 +1,5 @@
 import type { Database } from "@pi-cloud/database";
+import { PI_MODEL_RETRY_CUSTOM_TYPE } from "@pi-cloud/pi-session-postgres";
 import {
   parseConversationTurnTranscriptResource,
   type ConversationTranscriptItemResource,
@@ -29,6 +30,19 @@ type DraftItem =
       status: "running" | "completed" | "failed";
       startedAt: string;
       completedAt?: string;
+    }
+  | {
+      kind: "compaction";
+      reason: "threshold";
+      status: "completed";
+      willRetry: false;
+      tokensBefore?: number;
+    }
+  | {
+      kind: "retry";
+      nextSamplingAttempt: number;
+      maximumSamplingAttempts?: number;
+      delayMs?: number;
     };
 
 function record(value: unknown): JsonRecord | undefined {
@@ -70,6 +84,38 @@ function interruptedPrefix(payload: unknown): string | undefined {
   }
   const data = record(entry.data);
   return typeof data?.text === "string" && data.text.length > 0 ? data.text : undefined;
+}
+
+function retryFact(payload: unknown): Extract<DraftItem, { kind: "retry" }> | undefined {
+  const entry = record(payload);
+  if (entry?.type !== "custom" || entry.customType !== PI_MODEL_RETRY_CUSTOM_TYPE) return undefined;
+  const data = record(entry.data);
+  if (
+    typeof data?.nextSamplingAttempt !== "number" ||
+    !Number.isSafeInteger(data.nextSamplingAttempt) ||
+    data.nextSamplingAttempt < 1
+  ) {
+    return undefined;
+  }
+  const maximumSamplingAttempts =
+    typeof data.maximumSamplingAttempts === "number" &&
+    Number.isSafeInteger(data.maximumSamplingAttempts) &&
+    data.maximumSamplingAttempts >= data.nextSamplingAttempt
+      ? data.maximumSamplingAttempts
+      : undefined;
+  const delayMs =
+    typeof data.delayMs === "number" &&
+    Number.isSafeInteger(data.delayMs) &&
+    data.delayMs >= 0 &&
+    data.delayMs <= 300_000
+      ? data.delayMs
+      : undefined;
+  return {
+    kind: "retry",
+    nextSamplingAttempt: data.nextSamplingAttempt,
+    ...(maximumSamplingAttempts === undefined ? {} : { maximumSamplingAttempts }),
+    ...(delayMs === undefined ? {} : { delayMs }),
+  };
 }
 
 function terminalMetadata(row: {
@@ -132,7 +178,27 @@ function projectPiEntries(
   const drafts: DraftItem[] = [];
   const tools = new Map<string, number>();
   for (const row of rows) {
+    const payload = record(row.payload);
     const occurredAt = timestamp(safeInteger(row.timestamp_ms, "Pi entry timestamp"));
+    if (payload?.type === "compaction") {
+      drafts.push({
+        kind: "compaction",
+        reason: "threshold",
+        status: "completed",
+        willRetry: false,
+        ...(typeof payload.tokensBefore === "number" &&
+        Number.isSafeInteger(payload.tokensBefore) &&
+        payload.tokensBefore >= 0
+          ? { tokensBefore: payload.tokensBefore }
+          : {}),
+      });
+      continue;
+    }
+    const retry = retryFact(payload);
+    if (retry !== undefined) {
+      drafts.push(retry);
+      continue;
+    }
     const message = messageFromEntry(row.payload);
     if (message?.role === "assistant") {
       if (!Array.isArray(message.content)) continue;
@@ -212,6 +278,10 @@ function projectPiEntries(
     if (item.kind === "text") {
       return { ...item, firstSequence: sequence, lastSequence: sequence };
     }
+    if (item.kind === "compaction") {
+      return { ...item, firstSequence: sequence, lastSequence: sequence };
+    }
+    if (item.kind === "retry") return { ...item, sequence };
     return {
       ...item,
       firstSequence: sequence,
@@ -271,7 +341,6 @@ export async function readCanonicalPiTurnTranscripts(
     existing.push(entry);
     entriesByTurn.set(entry.turn_id, existing);
   }
-
   const result = new Map<string, ConversationTurnTranscriptResource>();
   for (const turnId of turnIds) {
     const terminalRow = terminalByTurn.get(turnId);

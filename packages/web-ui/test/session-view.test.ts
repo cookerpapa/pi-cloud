@@ -429,6 +429,52 @@ describe("session transcript reducer", () => {
     ]);
   });
 
+  it("keeps Pi compaction and model retry events in the live transcript", () => {
+    const events: PiCloudEvent[] = [
+      envelope(1, { type: "turn.started", payload: { inputKind: "prompt" } }),
+      envelope(2, { type: "context.compaction.started", payload: { reason: "threshold" } }),
+      envelope(3, {
+        type: "context.compaction.completed",
+        payload: {
+          reason: "threshold",
+          status: "completed",
+          willRetry: true,
+          tokensBefore: 80_000,
+          estimatedTokensAfter: 20_000,
+        },
+      }),
+      envelope(4, {
+        type: "model.sampling.retry.scheduled",
+        payload: {
+          stepSequence: 1,
+          stepSha256: "a".repeat(64),
+          completedSamplingAttempt: 1,
+          nextSamplingAttempt: 2,
+          maximumSamplingAttempts: 3,
+          delayMs: 500,
+        },
+      }),
+    ];
+    const state = events.reduce(
+      (current, value) => sessionViewReducer(current, { type: "stream.event", event: value }),
+      preparedState(),
+    );
+    expect(state.turns[0]?.items).toEqual([
+      expect.objectContaining({
+        kind: "compaction",
+        key: "compaction:2",
+        status: "completed",
+        firstSequence: 2,
+        lastSequence: 3,
+      }),
+      expect.objectContaining({
+        kind: "retry",
+        key: "retry:4",
+        nextSamplingAttempt: 2,
+      }),
+    ]);
+  });
+
   it("marks cancellation intent before terminal confirmation", () => {
     let state = preparedState();
     state = sessionViewReducer(state, {

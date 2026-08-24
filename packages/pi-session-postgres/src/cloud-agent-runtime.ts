@@ -34,6 +34,8 @@ import type {
 import { isRetryableAssistantError } from "@earendil-works/pi-ai";
 import type { ExecutionAuthority } from "./execution-authority.ts";
 
+export const PI_MODEL_RETRY_CUSTOM_TYPE = "pi-cloud.model_retry";
+
 export interface CloudAgentExecutionAuthority extends ExecutionAuthority {
   readonly signal: AbortSignal;
   close(): Promise<void>;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { highlightSource, sourceLanguage } from "../src/source-highlight.ts";
+import { highlightLanguage, highlightSource, sourceLanguage } from "../src/source-highlight.ts";
 
 describe("source highlighting", () => {
   it("selects a language from the write path and produces escaped token markup", () => {
@@ -20,5 +20,14 @@ describe("source highlighting", () => {
   it("keeps unknown extensions as plain source", () => {
     expect(sourceLanguage("/workspace/LICENSE")).toBeNull();
     expect(highlightSource("plain text", "/workspace/LICENSE")).toBeNull();
+  });
+
+  it("normalizes fenced Markdown language aliases", () => {
+    expect(highlightLanguage("const answer: number = 42;", "tsx")).toMatchObject({
+      language: "typescript",
+      html: expect.stringContaining("hljs-keyword"),
+    });
+    expect(highlightLanguage("echo ready", "shell")?.language).toBe("bash");
+    expect(highlightLanguage("plain", "unknown-language")).toBeNull();
   });
 });

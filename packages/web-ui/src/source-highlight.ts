@@ -84,6 +84,20 @@ const EXTENSION_LANGUAGES: Readonly<Record<string, keyof typeof languages>> = {
   yml: "yaml",
 };
 
+const LANGUAGE_ALIASES: Readonly<Record<string, keyof typeof languages>> = {
+  ...EXTENSION_LANGUAGES,
+  "c#": "csharp",
+  "c++": "cpp",
+  html: "xml",
+  javascript: "javascript",
+  jsx: "javascript",
+  shell: "bash",
+  tsx: "typescript",
+  typescript: "typescript",
+  vue: "xml",
+  zsh: "bash",
+};
+
 export function sourceLanguage(path: string | null): keyof typeof languages | null {
   if (path === null) return null;
   const normalized = path.toLowerCase();
@@ -98,7 +112,23 @@ export function highlightSource(
   path: string | null,
 ): { language: string; html: string } | null {
   const language = sourceLanguage(path);
-  if (language === null) return null;
+  return language === null ? null : highlightKnownLanguage(text, language);
+}
+
+export function highlightLanguage(
+  text: string,
+  languageHint: string | null,
+): { language: string; html: string } | null {
+  if (languageHint === null) return null;
+  const normalized = languageHint.toLowerCase().replace(/^language-/u, "");
+  const language = LANGUAGE_ALIASES[normalized];
+  return language === undefined ? null : highlightKnownLanguage(text, language);
+}
+
+function highlightKnownLanguage(
+  text: string,
+  language: keyof typeof languages,
+): { language: string; html: string } {
   return {
     language,
     // Highlight.js escapes source text before adding its own span markup.

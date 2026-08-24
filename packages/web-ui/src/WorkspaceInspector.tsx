@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WorkspaceFileResource, WorkspaceVersionResource } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError } from "./api.ts";
-import { WorkspaceTerminal } from "./WorkspaceTerminal.tsx";
 import { useI18n, type Translate } from "./i18n.tsx";
+
+const WorkspaceTerminal = lazy(async () => {
+  const module = await import("./WorkspaceTerminal.tsx");
+  return { default: module.WorkspaceTerminal };
+});
 
 export const MAXIMUM_WORKSPACE_PREVIEW_BYTES = 512 * 1_024;
 
@@ -343,12 +347,14 @@ export function WorkspaceInspector({
         </button>
       </div>
       {view === "terminal" ? (
-        <WorkspaceTerminal
-          {...(developmentEnvironmentId === null
-            ? { sessionId }
-            : { environmentId: developmentEnvironmentId })}
-          onError={onError}
-        />
+        <Suspense fallback={<div className="workspace-empty">{t("terminal.starting")}</div>}>
+          <WorkspaceTerminal
+            {...(developmentEnvironmentId === null
+              ? { sessionId }
+              : { environmentId: developmentEnvironmentId })}
+            onError={onError}
+          />
+        </Suspense>
       ) : (
         <div className="workspace-directory-body">
           <nav className="workspace-file-tree" aria-label={t("inspector.fileTree")}>

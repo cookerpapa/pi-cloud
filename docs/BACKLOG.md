@@ -28,6 +28,10 @@ retired and remain only in Git history or explicitly superseded ADRs.
       writer handoff, Steer, Cancel/recovery, tree operations and deletion.
 - [x] Add a browser-local Chinese/English UI preference while preserving prompts,
       conversation content and Tool/model output byte-for-byte.
+- [x] Align the browser transcript with Pi Tool semantics through stable
+      presentation rows, grouped Tool activity, dedicated Bash/Read/Write/Edit
+      renderers, fenced-code highlighting and reload-stable Compaction/retry
+      lifecycle rows.
 - [x] Verify Cube destruction followed by attachment of the same persistent
       Workspace Volume to a fresh KVM.
 

@@ -12,6 +12,7 @@ export {
 } from "./postgres-execution-authority.ts";
 export {
   CloudAgentRuntime,
+  PI_MODEL_RETRY_CUSTOM_TYPE,
   type CloudAgentExecutionAuthority,
   type CloudAgentRunResult,
   type CloudAgentRuntimeEvent,
