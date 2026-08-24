@@ -86,6 +86,17 @@ function bounded(value: string, name: string, maximum = 249): string {
   return value;
 }
 
+export function replayStartOffset(timestampOffset: string, highOffset: string): string {
+  if (!/^-?[0-9]+$/u.test(timestampOffset) || !/^[0-9]+$/u.test(highOffset)) {
+    throw new TypeError("Kafka replay offset was invalid");
+  }
+  const timestamp = BigInt(timestampOffset);
+  const high = BigInt(highOffset);
+  if (timestamp === -1n) return high.toString();
+  if (timestamp < 0n) throw new TypeError("Kafka replay offset was invalid");
+  return (timestamp > high ? high : timestamp).toString();
+}
+
 function kafka(options: KafkaAgentEventLogOptions): InstanceType<typeof Kafka> {
   if (options.brokers.length < 1 || options.brokers.length > 64) {
     throw new TypeError("Kafka brokers are invalid");
@@ -749,8 +760,13 @@ export class KafkaAcceptedAgentEventConsumer {
       { isolationLevel: IsolationLevel.READ_COMMITTED },
     );
     await this.#admin.disconnect();
+    const highByPartition = new Map(offsets.map((entry) => [entry.partition, entry.high] as const));
     const startByPartition = new Map(
-      replayStarts.map((entry) => [entry.partition, BigInt(entry.offset)] as const),
+      replayStarts.map((entry) => {
+        const high = highByPartition.get(entry.partition);
+        if (high === undefined) throw new Error("Kafka replay partition metadata was incomplete");
+        return [entry.partition, BigInt(replayStartOffset(entry.offset, high))] as const;
+      }),
     );
     this.#catchUpTargets = new Map(
       offsets
