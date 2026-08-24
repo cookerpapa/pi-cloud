@@ -361,10 +361,13 @@ describe("official CubeSandbox HTTP compatibility client", () => {
         "e2b-traffic-access-token": "private-traffic-token",
         "cube-traffic-access-token": "private-traffic-token",
         "x-access-token": "envd-access-token",
-        authorization: `Basic ${Buffer.from("pi-cloud:").toString("base64")}`,
+        authorization: `Basic ${Buffer.from("root:").toString("base64")}`,
       },
     });
-    expect(start?.body).toMatchObject({ pty: { size: { rows: 24, cols: 100 } } });
+    expect(start?.body).toMatchObject({
+      process: { cmd: "/usr/bin/setpriv", args: expect.arrayContaining(["--reuid", "1000"]) },
+      pty: { size: { rows: 24, cols: 100 } },
+    });
     expect(observed.find((request) => request.path === "/process.Process/SendInput")).toMatchObject(
       {
         body: { process: { pid: 73 }, input: { pty: Buffer.from("pwd\r").toString("base64") } },

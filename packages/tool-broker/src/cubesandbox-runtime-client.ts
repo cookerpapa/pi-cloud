@@ -897,8 +897,20 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         Buffer.from(
           JSON.stringify({
             process: {
-              cmd: "/bin/bash",
-              args: ["-i", "-l"],
+              cmd: input.admin ? "/bin/bash" : "/usr/bin/setpriv",
+              args: input.admin
+                ? ["-i", "-l"]
+                : [
+                    "--reuid",
+                    "1000",
+                    "--regid",
+                    "1000",
+                    "--clear-groups",
+                    "--no-new-privs",
+                    "/bin/bash",
+                    "-i",
+                    "-l",
+                  ],
               cwd: input.admin ? "/root" : "/workspace",
               envs: { TERM: "xterm-256color", LANG: "C.UTF-8", LC_ALL: "C.UTF-8" },
             },
@@ -913,7 +925,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         "/process.Process/Start",
         {
           headers: {
-            authorization: userAuthorization(input.admin ? "root" : "pi-cloud"),
+            authorization: userAuthorization("root"),
             "content-type": CONNECT_CONTENT_TYPE,
             "connect-protocol-version": CONNECT_PROTOCOL_VERSION,
             "connect-content-encoding": "identity",

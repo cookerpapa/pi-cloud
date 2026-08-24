@@ -1121,24 +1121,7 @@ export async function prepareToolWorkspace(
 export async function initializeToolExecution(
   message: Extract<ToolWorkerInput, { type: "worker.initialize" }>,
 ): Promise<EnvironmentToolchainReport> {
-  const requestedToolRoot = resolve("/", message.toolRoot);
-  const canonicalToolRoot = await realpath(requestedToolRoot).catch(() => undefined);
-  const toolRootMetadata =
-    canonicalToolRoot === undefined
-      ? undefined
-      : await lstat(canonicalToolRoot).catch(() => undefined);
-  if (
-    canonicalToolRoot === undefined ||
-    toolRootMetadata === undefined ||
-    !toolRootMetadata.isDirectory()
-  ) {
-    throw new ToolWorkerError(
-      "tool_root_unavailable",
-      "Selected machine working directory was unavailable",
-      false,
-    );
-  }
-  TOOL_WORKSPACE_DIRECTORY = canonicalToolRoot;
+  await selectToolRoot(message.toolRoot);
   safeToolEnvironment(undefined, message.webProxy);
   const environment = await validateToolEnvironment(message.environment);
   if (message.workspaceAttach === undefined) {
@@ -1160,24 +1143,60 @@ export async function initializeToolExecution(
       },
     );
   } else {
-    if (
-      message.workspaceRestore !== undefined ||
-      message.dependencyProxy !== undefined ||
-      message.environmentStage !== undefined
-    ) {
-      throw new ToolWorkerError(
-        "workspace_attach_invalid",
-        "Preserved Tool workspace could not be attached",
-        false,
-      );
-    }
-    await validateAttachedWorkspaceRoot(
-      TOOL_WORKSPACE_DIRECTORY,
-      TOOL_WORKSPACE_DIRECTORY === "/workspace",
-    );
+    await validateAttachedInitialization(message);
     environment.recipeCommands = [...message.workspaceAttach.recipeCommands];
   }
   return environment;
+}
+
+async function selectToolRoot(toolRoot: string): Promise<void> {
+  const requestedToolRoot = resolve("/", toolRoot);
+  const canonicalToolRoot = await realpath(requestedToolRoot).catch(() => undefined);
+  const toolRootMetadata =
+    canonicalToolRoot === undefined
+      ? undefined
+      : await lstat(canonicalToolRoot).catch(() => undefined);
+  if (
+    canonicalToolRoot === undefined ||
+    toolRootMetadata === undefined ||
+    !toolRootMetadata.isDirectory()
+  ) {
+    throw new ToolWorkerError(
+      "tool_root_unavailable",
+      "Selected machine working directory was unavailable",
+      false,
+    );
+  }
+  TOOL_WORKSPACE_DIRECTORY = canonicalToolRoot;
+}
+
+function validateAttachedInitialization(
+  message: Extract<ToolWorkerInput, { type: "worker.initialize" }>,
+): Promise<void> {
+  if (
+    message.workspaceAttach === undefined ||
+    message.workspaceRestore !== undefined ||
+    message.dependencyProxy !== undefined ||
+    message.environmentStage !== undefined
+  ) {
+    throw new ToolWorkerError(
+      "workspace_attach_invalid",
+      "Preserved Tool workspace could not be attached",
+      false,
+    );
+  }
+  return validateAttachedWorkspaceRoot(
+    TOOL_WORKSPACE_DIRECTORY,
+    TOOL_WORKSPACE_DIRECTORY === "/workspace",
+  );
+}
+
+export async function attachToolExecution(
+  message: Extract<ToolWorkerInput, { type: "worker.initialize" }>,
+): Promise<void> {
+  await selectToolRoot(message.toolRoot);
+  safeToolEnvironment(undefined, message.webProxy);
+  await validateAttachedInitialization(message);
 }
 
 export async function runToolWorker(): Promise<void> {

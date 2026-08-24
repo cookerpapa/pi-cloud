@@ -7,6 +7,7 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import {
   initializeToolExecution,
+  attachToolExecution,
   executeToolOperation,
   toolOperationFailure,
   ToolWorkerError,
@@ -79,8 +80,8 @@ function envelope(value: unknown): {
 
 async function main(): Promise<ToolWorkerOutput> {
   const input = envelope(await readInput(inputPath(process.argv[2])));
-  const environment = await initializeToolExecution(input.initialization);
   if (input.operation === undefined) {
+    const environment = await initializeToolExecution(input.initialization);
     return {
       toolWorkerProtocolVersion: 1,
       type: "worker.ready",
@@ -88,6 +89,7 @@ async function main(): Promise<ToolWorkerOutput> {
       environment,
     };
   }
+  await attachToolExecution(input.initialization);
   const request = input.operation.request;
   const response = await executeToolOperation(
     request,
