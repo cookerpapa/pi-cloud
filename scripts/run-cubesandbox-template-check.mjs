@@ -248,7 +248,7 @@ try {
 
   await envdRun(
     baseUrl,
-    "printf 'PI_CLOUD_PREVIEW_OK\\n' > /workspace/preview.txt && setsid python3 -m http.server 5173 --bind 0.0.0.0 --directory /workspace </dev/null >/tmp/pi-cloud-preview.log 2>&1 & echo $! > /tmp/pi-cloud-preview.pid",
+    "printf 'PI_CLOUD_PREVIEW_OK\\n' > /workspace/preview.txt && setsid --fork python3 -m http.server 5173 --bind 0.0.0.0 --directory /workspace </dev/null >/tmp/pi-cloud-preview.log 2>&1",
   );
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
   const previewPath = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
@@ -273,7 +273,7 @@ try {
         "PI_CLOUD_PREVIEW_OK\n",
     `Guest preview failed: ${previewResult.stderr || previewResult.stdout}`,
   );
-  await envdRun(baseUrl, "/bin/kill $(cat /tmp/pi-cloud-preview.pid)");
+  await envdRun(baseUrl, "/usr/bin/pkill -f '^python3 -m http.server 5173 '");
 
   const initialization = {
     toolWorkerProtocolVersion: 1,
