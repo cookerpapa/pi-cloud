@@ -112,6 +112,11 @@ function wait(delayMs) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, delayMs));
 }
 
+function shellEnvelope(command) {
+  const encoded = Buffer.from(command, "utf8").toString("base64");
+  return `printf '%s' '${encoded}' | base64 -d | /bin/bash`;
+}
+
 async function waitForRun(runId) {
   const deadline = Date.now() + 5 * 60_000;
   while (Date.now() < deadline) {
@@ -199,7 +204,7 @@ async function terminalCommand(path, command, marker) {
           JSON.stringify({
             workspaceTerminalProtocolVersion: 1,
             type: "workspace_terminal.input",
-            data: Buffer.from(`${command}\n`, "utf8").toString("base64"),
+            data: Buffer.from(`${shellEnvelope(command)}\n`, "utf8").toString("base64"),
           }),
         );
       } else if (frame.type === "workspace_terminal.output") {
@@ -254,7 +259,7 @@ async function sshCommand(ticket, command, marker) {
           if (output.includes(marker)) resolvePromise(output);
           else rejectPromise(new Error(`SSH output omitted ${marker}: ${output.slice(-2_000)}`));
         });
-        channel.end(`${command}\nexit\n`);
+        channel.end(`${shellEnvelope(command)}\nexit\n`);
       });
     });
     client.connect({

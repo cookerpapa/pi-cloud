@@ -215,6 +215,37 @@ try {
   assert(evidence.noNewPrivileges === true, "Tool process allowed new privileges");
   assert(/^0+$/u.test(evidence.effectiveCapabilities), "Tool process retained capabilities");
 
+  const runControl = async (request) => {
+    const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
+    await writeEnvdFile(baseUrl, path, request);
+    const result = await envdRun(
+      baseUrl,
+      `/bin/chmod 0400 ${path} && /usr/local/bin/node /opt/pi-cloud/bin/envd-guest-control.mjs ${path}`,
+    );
+    assert(result.exitCode === 0, `Guest control failed: ${result.stderr || result.stdout}`);
+    return JSON.parse(result.stdout);
+  };
+  const rootDirectory = await runControl({ mode: "list_directory", path: "/" });
+  assert(
+    rootDirectory.path === "/" &&
+      rootDirectory.entries.some(
+        (entry) => entry.name === "workspace" && entry.kind === "directory",
+      ),
+    "Guest directory listing was invalid",
+  );
+  const createdDirectory = await runControl({
+    mode: "create_directory",
+    path: "/tmp",
+    name: `pi-cloud-template-${activationId}`,
+  });
+  assert(
+    createdDirectory.entries.some(
+      (entry) => entry.name === `pi-cloud-template-${activationId}` && entry.kind === "directory",
+    ),
+    "Guest directory creation was invalid",
+  );
+  await envdRun(baseUrl, `/bin/rm -rf -- /tmp/pi-cloud-template-${activationId}`);
+
   const initialization = {
     toolWorkerProtocolVersion: 1,
     type: "worker.initialize",
@@ -272,6 +303,7 @@ try {
       },
       execution: { exitCode: executed.exitCode, output: output.trim() },
       pathTraversalRejected: true,
+      directoryControl: true,
     })}\n`,
   );
 } catch (error) {
