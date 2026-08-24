@@ -382,6 +382,7 @@ export class DevelopmentEnvironmentService {
         .select([
           "state",
           "generation",
+          "project_id as projectId",
           "workspace_id as workspaceId",
           "agent_activation_id as agentActivationId",
           "terminal_active as terminalActive",
@@ -478,6 +479,48 @@ export class DevelopmentEnvironmentService {
             "Development environment generation cannot advance",
           );
         }
+        const previousEnvironment = await transaction
+          .selectFrom("environment_versions")
+          .select("version_number as versionNumber")
+          .where("tenant_id", "=", identity.tenantId)
+          .where("project_id", "=", environment.projectId)
+          .orderBy("version_number", "desc")
+          .limit(1)
+          .forUpdate()
+          .executeTakeFirst();
+        if (previousEnvironment === undefined) {
+          throw new ControlPlaneStoreError(
+            "control_plane_misconfigured",
+            "Development environment version history was unavailable",
+          );
+        }
+        await transaction
+          .updateTable("environment_versions")
+          .set({ active: false })
+          .where("tenant_id", "=", identity.tenantId)
+          .where("project_id", "=", environment.projectId)
+          .where("active", "=", true)
+          .execute();
+        await transaction
+          .insertInto("environment_versions")
+          .values({
+            id: this.#id(),
+            tenant_id: identity.tenantId,
+            project_id: environment.projectId,
+            version_number: previousEnvironment.versionNumber + 1,
+            profile_key: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
+            profile_version: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
+            image_revision: this.#environmentImageRevision,
+            spec_sha256: DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
+            recipe: sql<Record<string, unknown>>`${JSON.stringify(
+              DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+            )}::jsonb`,
+            recipe_sha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+            state: "pending",
+            active: true,
+            validated_at: null,
+          })
+          .executeTakeFirstOrThrow();
         await transaction
           .updateTable("development_environments")
           .set({

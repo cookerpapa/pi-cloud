@@ -314,12 +314,10 @@ the parent/name, and asks envd to start a bounded, root-owned one-shot filesyste
 helper. The helper exits after returning the directory result. The browser never
 sends a shell command or receives Cube authority.
 
-Guest evidence includes a bounded control-protocol version. The current Broker
-supports the current version and one immediately preceding version while an
-already-running user VM drains; protocol choice is made from attested guest
-evidence, never by retrying arbitrary request shapes. New templates always use
-the current protocol, so rolling Broker deployment does not invalidate an
-existing exclusive machine.
+Guest evidence includes a bounded control-protocol version. Broker and guest
+must match the current version exactly; an older exclusive machine is released
+and recreated from the current immutable template instead of carrying a
+compatibility execution path in the Broker.
 
 The allocation participates in tenant/Domain Sandbox quotas and the global
 Workspace single-writer rule. `agent_activation_id` and `terminal_active` are

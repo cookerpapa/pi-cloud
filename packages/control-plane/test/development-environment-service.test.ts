@@ -73,14 +73,14 @@ function provider(): SandboxProvider {
         runtimeId: spec.activationId,
         runtimeName: `development-${spec.activationId}`,
         ipAddress: "169.254.68.4",
-        workspaceRoot: "/workspace",
+        workspaceRoot: spec.toolRoot ?? "/workspace",
         assignment: spec.assignment,
         environment: spec.environment,
         environmentValidation: validation,
       };
     },
-    async rebind(handle, assignment) {
-      return { ...handle, assignment };
+    async rebind(handle, assignment, toolRoot) {
+      return { ...handle, assignment, workspaceRoot: toolRoot ?? handle.workspaceRoot };
     },
     async retainForWarm(handle, assignment) {
       return { ...handle, assignment };
@@ -389,5 +389,35 @@ describe("user-owned development environments", () => {
       }),
     ).resolves.toMatchObject({ state: "released", releasedAt: expect.any(String) });
     expect(destroys).toHaveBeenCalledOnce();
+
+    await database
+      .updateTable("development_environments")
+      .set({
+        state: "failed",
+        failure_code: "old_image",
+        owner_instance_id: "99999999-9999-4999-8999-999999999999",
+        owner_base_url: "http://127.0.0.1:4300",
+        released_at: null,
+      })
+      .where("id", "=", created.environmentId)
+      .executeTakeFirstOrThrow();
+    await expect(
+      service.action(identity, created.environmentId, "rebuild-exclusive", { action: "start" }),
+    ).resolves.toMatchObject({ state: "running", generation: 2 });
+    await expect(
+      database
+        .selectFrom("environment_versions")
+        .select(["version_number as versionNumber", "image_revision as imageRevision"])
+        .where("tenant_id", "=", identity.tenantId)
+        .where("project_id", "=", created.projectId)
+        .where("active", "=", true)
+        .execute(),
+    ).resolves.toEqual([{ versionNumber: 2, imageRevision: IMAGE_REVISION }]);
+    await expect(
+      service.action(identity, created.environmentId, "release-rebuilt-exclusive", {
+        action: "release",
+      }),
+    ).resolves.toMatchObject({ state: "released" });
+    expect(destroys).toHaveBeenCalledTimes(2);
   });
 });
