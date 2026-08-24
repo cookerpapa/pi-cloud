@@ -66,7 +66,7 @@ async function userProcesses(): Promise<ProcessIdentity[]> {
     .sort((left, right) => left.pid - right.pid);
 }
 
-async function freeze(): Promise<ProcessIdentity[]> {
+async function freeze(path: string): Promise<ProcessIdentity[]> {
   const processes = await userProcesses();
   try {
     for (const identity of processes) {
@@ -90,7 +90,7 @@ async function freeze(): Promise<ProcessIdentity[]> {
       if (Date.now() >= deadline) throw new Error("Guest processes could not be quiesced");
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
     }
-    await exec("/bin/sync", ["-f", "/workspace"], { timeout: 10_000 });
+    await exec("/bin/sync", ["-f", path], { timeout: 10_000 });
     return processes;
   } catch (error: unknown) {
     await thaw(processes).catch(() => undefined);
@@ -265,8 +265,8 @@ const request = await input();
 let result: Record<string, unknown>;
 if (request.mode === "evidence" && Object.keys(request).length === 1) {
   result = { evidence: await evidence() };
-} else if (request.mode === "freeze" && Object.keys(request).length === 1) {
-  result = { processes: await freeze() };
+} else if (request.mode === "freeze" && Object.keys(request).sort().join(",") === "mode,path") {
+  result = { processes: await freeze(absolutePath(request.path)) };
 } else if (request.mode === "thaw" && Object.keys(request).sort().join(",") === "mode,processes") {
   result = { resumed: await thaw(processList(request.processes)) };
 } else if (

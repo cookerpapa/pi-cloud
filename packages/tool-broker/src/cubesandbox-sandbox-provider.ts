@@ -1585,7 +1585,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       const raw = record(
         await this.#guestJson(
           activation.instance,
-          { mode: "freeze" },
+          { mode: "freeze", path: activation.toolRoot },
           {
             program: "control",
             runAsToolUser: false,
