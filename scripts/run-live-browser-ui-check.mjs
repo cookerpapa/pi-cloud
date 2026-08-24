@@ -318,6 +318,11 @@ try {
         "UI-created exclusive environment",
         120_000,
       );
+      assert.equal(
+        development.workspaceName,
+        `UI machine ${suffix}`,
+        "Exclusive environment did not preserve its user-supplied name",
+      );
       await page.waitFor('document.querySelector(".product-environment-card")', 120_000);
       await page.waitFor(
         '[...document.querySelectorAll(".product-environment-card button")].some(button=>button.textContent.includes("暂停"))',
@@ -409,6 +414,13 @@ try {
           ),
         "released environment",
       );
+      const repeatedRelease = await api.developmentEnvironmentAction(
+        development.environmentId,
+        "release",
+        newIdempotencyKey("environment-release-retry"),
+      );
+      assert.equal(repeatedRelease.state, "released");
+      record("resources.releaseExclusiveAgain");
       await click(".product-resource-back", "resources.finalBack");
       await page.waitFor('document.querySelector(".product-shell")');
       await click(
@@ -456,7 +468,8 @@ try {
         );
       }
       await click(".product-resource-back", "resources.cleanupBack");
-      await click('.product-account button[aria-label="退出登录"]', "account.logout");
+      await click(".product-account .product-account-menu-trigger", "account.menuOpenForLogout");
+      await clickText(".product-account-menu-panel button", "退出登录", "account.logout");
       await page.waitFor('document.querySelector(".product-auth-card")');
     },
   );
