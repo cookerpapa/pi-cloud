@@ -1,8 +1,8 @@
 {
   "accepted": true,
-  "piCloudRevision": "a2f546e77c149efce8bed4ca7c08e56e2228d6f6",
-  "checkedAt": "2026-08-23T20:09:08.400Z",
-  "account": "browser.acceptance.mt68p4wu",
+  "piCloudRevision": "6010e789560ef9afb3a5e09f938d8cd1daad6c2b",
+  "checkedAt": "2026-08-24T00:03:42.837Z",
+  "account": "browser.acceptance.mt6h2kp5",
   "clickedControls": [
     "auth.registerTab",
     "auth.loginTab",
@@ -20,6 +20,7 @@
     "composer.send",
     "composer.sendForSteer",
     "composer.steer",
+    "transcript.piStyleToolRenderer",
     "composer.sendForStop",
     "composer.stop",
     "conversation.pruneLaterTurns",
@@ -64,7 +65,7 @@
     "resources.cleanupBack",
     "account.logout"
   ],
-  "clickedControlCount": 59,
+  "clickedControlCount": 60,
   "screenshotCaptured": true,
   "cleanupCompleted": true
 }
