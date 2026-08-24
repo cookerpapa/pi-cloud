@@ -1,12 +1,13 @@
 {
   "accepted": true,
-  "piCloudRevision": "6010e789560ef9afb3a5e09f938d8cd1daad6c2b",
-  "checkedAt": "2026-08-24T00:03:42.837Z",
-  "account": "browser.acceptance.mt6h2kp5",
+  "piCloudRevision": "78d8c256d867c3d18b1a2b66f540abb56c323bf3",
+  "checkedAt": "2026-08-24T10:28:25.645Z",
+  "account": "browser.acceptance.mt73e0g1",
   "clickedControls": [
     "auth.registerTab",
     "auth.loginTab",
     "auth.login",
+    "sidebar.brand",
     "account.languageEnglish",
     "account.languageChinese",
     "sidebar.collapse",
@@ -46,7 +47,9 @@
     "conversation.newExclusive",
     "conversation.exclusiveMode",
     "conversation.directoryPicker",
-    "directory.cancel",
+    "directory.newFolder",
+    "directory.createFolder",
+    "directory.chooseCreatedFolder",
     "conversation.createExclusive",
     "ssh.open",
     "ssh.copyCommand",
@@ -65,7 +68,7 @@
     "resources.cleanupBack",
     "account.logout"
   ],
-  "clickedControlCount": 60,
+  "clickedControlCount": 63,
   "screenshotCaptured": true,
   "cleanupCompleted": true
 }
