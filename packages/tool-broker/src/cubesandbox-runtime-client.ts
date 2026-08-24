@@ -1,8 +1,12 @@
 import { Agent, buildConnector, fetch, type Dispatcher } from "undici";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
 
-export const CUBESANDBOX_TOOL_SERVICE_PORT = 49_984;
-const MAXIMUM_TERMINAL_FRAME_BYTES = 256 * 1_024;
+export const CUBESANDBOX_ENVD_PORT = 49_983;
+const CONNECT_PROTOCOL_VERSION = "1";
+const CONNECT_CONTENT_TYPE = "application/connect+json";
+const CONNECT_END_STREAM_FLAG = 0x02;
+const CONNECT_COMPRESSED_FLAG = 0x01;
+const MAXIMUM_CONNECT_ENVELOPE_BYTES = 64 * 1_024 * 1_024;
 
 /**
  * Cube evaluates explicit allow entries before deny entries. PiCloud keeps a
@@ -34,6 +38,7 @@ export type CubeSandboxInstance = Readonly<{
   domain: string;
   metadata: Readonly<Record<string, string>>;
   trafficAccessToken?: string;
+  envdAccessToken?: string;
   cpuCount?: number;
   memoryMB?: number;
 }>;
@@ -53,18 +58,19 @@ export type CubeSandboxCreateInput = Readonly<{
   lifecycle?: Readonly<{ onTimeout: "kill" | "pause"; autoResume: boolean }>;
 }>;
 
-export type CubeSandboxDataRequest = Readonly<{
-  method: "GET" | "POST";
-  path: string;
-  body?: unknown;
-  signal?: AbortSignal;
+export type CubeSandboxGuestCommandRequest = Readonly<{
+  command: string;
+  cwd: string;
+  user: string;
   timeoutMs: number;
-  maximumResponseBytes: number;
-  authority?: Readonly<{
-    handoffSecret: string;
-    fencingToken: number;
-    bindingSha256: string;
-  }>;
+  maximumOutputBytes: number;
+  signal?: AbortSignal;
+}>;
+
+export type CubeSandboxGuestCommandResult = Readonly<{
+  stdout: string;
+  stderr: string;
+  exitCode: number;
 }>;
 
 export type CubeSandboxServiceRequest = Readonly<{
@@ -75,7 +81,6 @@ export type CubeSandboxServiceRequest = Readonly<{
   body?: Uint8Array;
   maximumResponseBytes: number;
   timeoutMs: number;
-  authority: CubeSandboxHandoffAuthority;
 }>;
 
 export type CubeSandboxServiceResponse = Readonly<{
@@ -83,8 +88,6 @@ export type CubeSandboxServiceResponse = Readonly<{
   headers: Readonly<Record<string, string>>;
   body: Uint8Array;
 }>;
-
-export type CubeSandboxHandoffAuthority = NonNullable<CubeSandboxDataRequest["authority"]>;
 
 export interface CubeSandboxRuntimeClient {
   checkHealth(): Promise<void>;
@@ -95,7 +98,20 @@ export interface CubeSandboxRuntimeClient {
   connect(sandboxId: string, timeoutSeconds: number): Promise<CubeSandboxInstance>;
   list(): Promise<readonly CubeSandboxInstance[]>;
   destroy(sandboxId: string): Promise<void>;
-  request(instance: CubeSandboxInstance, input: CubeSandboxDataRequest): Promise<unknown>;
+  runCommand(
+    instance: CubeSandboxInstance,
+    input: CubeSandboxGuestCommandRequest,
+  ): Promise<CubeSandboxGuestCommandResult>;
+  writeGuestFile(instance: CubeSandboxInstance, path: string, data: Uint8Array): Promise<void>;
+  removeGuestFile(instance: CubeSandboxInstance, path: string): Promise<void>;
+  listGuestDirectory(
+    instance: CubeSandboxInstance,
+    path: string,
+  ): Promise<readonly Readonly<Record<string, unknown>>[]>;
+  createGuestDirectory(
+    instance: CubeSandboxInstance,
+    path: string,
+  ): Promise<Readonly<Record<string, unknown>>>;
   requestService?(
     instance: CubeSandboxInstance,
     input: CubeSandboxServiceRequest,
@@ -105,7 +121,6 @@ export interface CubeSandboxRuntimeClient {
     input: Readonly<{
       rows: number;
       cols: number;
-      authority: CubeSandboxHandoffAuthority;
       admin: boolean;
     }>,
   ): Promise<CubeSandboxTerminal>;
@@ -215,6 +230,15 @@ function parseInstance(value: unknown, fallbackDomain: string): CubeSandboxInsta
           ),
         }
       : {}),
+    ...(typeof candidate.envdAccessToken === "string"
+      ? {
+          envdAccessToken: bounded(
+            candidate.envdAccessToken,
+            "CubeSandbox envd access token",
+            4_096,
+          ),
+        }
+      : {}),
     ...(cpuCount === undefined ? {} : { cpuCount }),
     ...(memoryMB === undefined ? {} : { memoryMB }),
   });
@@ -291,6 +315,117 @@ function parseJson(bytes: Buffer, label: string): unknown {
   }
 }
 
+function encodeConnectEnvelope(data: Buffer, flags = 0): Buffer {
+  const header = Buffer.alloc(5);
+  header.writeUInt8(flags, 0);
+  header.writeUInt32BE(data.byteLength, 1);
+  return Buffer.concat([header, data]);
+}
+
+function userAuthorization(user: string): string {
+  if (!/^[a-z_][a-z0-9_-]{0,31}$/i.test(user)) {
+    throw new TypeError("CubeSandbox envd user was invalid");
+  }
+  return `Basic ${Buffer.from(`${user}:`, "utf8").toString("base64")}`;
+}
+
+async function* connectFrames(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<{ flags: number; payload: Buffer }> {
+  const reader = body.getReader();
+  const chunks: Buffer[] = [];
+  let buffered = 0;
+  const header = (): { flags: number; size: number } => {
+    const first = chunks[0]!;
+    if (first.byteLength >= 5) {
+      return { flags: first.readUInt8(0), size: first.readUInt32BE(1) };
+    }
+    const bytes = Buffer.allocUnsafe(5);
+    let offset = 0;
+    for (const chunk of chunks) {
+      const length = Math.min(chunk.byteLength, 5 - offset);
+      chunk.copy(bytes, offset, 0, length);
+      offset += length;
+      if (offset === 5) break;
+    }
+    return { flags: bytes.readUInt8(0), size: bytes.readUInt32BE(1) };
+  };
+  const take = (length: number): Buffer => {
+    const first = chunks[0]!;
+    buffered -= length;
+    if (first.byteLength >= length) {
+      if (first.byteLength === length) chunks.shift();
+      else chunks[0] = first.subarray(length);
+      return first.subarray(0, length);
+    }
+    const output = Buffer.allocUnsafe(length);
+    let offset = 0;
+    while (offset < length) {
+      const chunk = chunks[0]!;
+      const required = length - offset;
+      if (chunk.byteLength <= required) {
+        chunk.copy(output, offset);
+        offset += chunk.byteLength;
+        chunks.shift();
+      } else {
+        chunk.copy(output, offset, 0, required);
+        chunks[0] = chunk.subarray(required);
+        offset = length;
+      }
+    }
+    return output;
+  };
+  try {
+    for (;;) {
+      while (buffered >= 5) {
+        const { flags, size } = header();
+        if (size > MAXIMUM_CONNECT_ENVELOPE_BYTES) {
+          throw new CubeRuntimeClientError("CubeSandbox envd frame exceeded its byte limit");
+        }
+        if (buffered < size + 5) break;
+        take(5);
+        yield { flags, payload: take(size) };
+      }
+      const next = await reader.read();
+      if (next.done) break;
+      if (next.value.byteLength > 0) {
+        if (buffered + next.value.byteLength > MAXIMUM_CONNECT_ENVELOPE_BYTES + 5) {
+          throw new CubeRuntimeClientError("CubeSandbox envd stream buffer exceeded its limit");
+        }
+        chunks.push(Buffer.from(next.value));
+        buffered += next.value.byteLength;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (buffered !== 0) {
+    throw new CubeRuntimeClientError("CubeSandbox envd stream ended with a partial frame");
+  }
+}
+
+function raiseConnectEnd(payload: Buffer): void {
+  if (payload.byteLength === 0) return;
+  const value = parseJson(payload, "CubeSandbox envd end stream");
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return;
+  const error = (value as Record<string, unknown>).error;
+  if (typeof error !== "object" || error === null || Array.isArray(error)) return;
+  const details = error as Record<string, unknown>;
+  const message = typeof details.message === "string" ? details.message : "envd stream failed";
+  throw new CubeRuntimeClientError(
+    typeof details.code === "string" ? `${details.code}: ${message}` : message,
+  );
+}
+
+function exitCodeFromStatus(status: unknown): number | undefined {
+  if (typeof status !== "string") return undefined;
+  const exited = status.match(/(?:exit status|exited with code)\s+(-?\d+)/u);
+  if (exited?.[1] !== undefined) return Number(exited[1]);
+  const signal = status.match(/(?:signal|terminated by signal)\s+(\d+)/u);
+  if (signal?.[1] !== undefined) return 128 + Number(signal[1]);
+  return status === "exited" ? 0 : undefined;
+}
+
 function errorResponseDiagnostic(bytes: Buffer): string {
   try {
     const parsed = JSON.parse(bytes.toString("utf8")) as unknown;
@@ -309,54 +444,6 @@ function errorResponseDiagnostic(bytes: Buffer): string {
     // marker when the remote service did not return its documented envelope.
   }
   return "unstructured error response";
-}
-
-async function* terminalFrames(
-  body: ReadableStream<Uint8Array>,
-): AsyncGenerator<Record<string, unknown>> {
-  const reader = body.getReader();
-  let pending = Buffer.alloc(0);
-  try {
-    for (;;) {
-      let newline = pending.indexOf(0x0a);
-      while (newline >= 0) {
-        const line = pending.subarray(0, newline);
-        pending = pending.subarray(newline + 1);
-        if (line.byteLength < 2 || line.byteLength > MAXIMUM_TERMINAL_FRAME_BYTES) {
-          throw new CubeRuntimeClientError("CubeSandbox terminal frame exceeded its byte limit");
-        }
-        const value = parseJson(line, "CubeSandbox terminal frame");
-        if (typeof value !== "object" || value === null || Array.isArray(value)) {
-          throw new CubeRuntimeClientError("CubeSandbox terminal frame was invalid");
-        }
-        yield value as Record<string, unknown>;
-        newline = pending.indexOf(0x0a);
-      }
-      const next = await reader.read();
-      if (next.done) break;
-      if (next.value.byteLength > 0) {
-        if (pending.byteLength + next.value.byteLength > MAXIMUM_TERMINAL_FRAME_BYTES) {
-          throw new CubeRuntimeClientError("CubeSandbox terminal stream buffer exceeded its limit");
-        }
-        pending = Buffer.concat([pending, Buffer.from(next.value)]);
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  if (pending.byteLength !== 0) {
-    throw new CubeRuntimeClientError("CubeSandbox terminal stream ended with a partial frame");
-  }
-}
-
-function authorityHeaders(
-  authority: CubeSandboxHandoffAuthority,
-): Readonly<Record<string, string>> {
-  return {
-    "x-pi-cloud-handoff-secret": authority.handoffSecret,
-    "x-pi-cloud-fencing-token": String(authority.fencingToken),
-    "x-pi-cloud-binding-sha256": authority.bindingSha256,
-  };
 }
 
 function terminalSize(value: Readonly<{ rows: number; cols: number }>): Readonly<{
@@ -567,43 +654,170 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     await response.body?.cancel().catch(() => undefined);
   }
 
-  async request(instance: CubeSandboxInstance, input: CubeSandboxDataRequest): Promise<unknown> {
-    const token = instance.trafficAccessToken;
-    if (token === undefined) {
-      throw new CubeRuntimeClientError("CubeSandbox private-ingress token was unavailable");
+  async runCommand(
+    instance: CubeSandboxInstance,
+    input: CubeSandboxGuestCommandRequest,
+  ): Promise<CubeSandboxGuestCommandResult> {
+    if (
+      input.command.length < 1 ||
+      input.command.length > 16 * 1_024 * 1_024 ||
+      /[\u0000]/u.test(input.command) ||
+      !input.cwd.startsWith("/") ||
+      /[\u0000-\u001f\u007f]/u.test(input.cwd)
+    ) {
+      throw new TypeError("CubeSandbox envd command was invalid");
     }
-    if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/.test(input.path)) {
-      throw new TypeError("CubeSandbox data path is invalid");
-    }
-    const host = `${CUBESANDBOX_TOOL_SERVICE_PORT}-${instance.sandboxId}.${instance.domain}`;
-    const timeout = AbortSignal.timeout(positiveInteger(input.timeoutMs, 30_000, 100, 10 * 60_000));
+    const timeoutMs = positiveInteger(input.timeoutMs, 30_000, 100, 10 * 60_000);
+    const maximumOutputBytes = positiveInteger(
+      input.maximumOutputBytes,
+      8 * 1_024 * 1_024,
+      1,
+      32 * 1_024 * 1_024,
+    );
+    const payload = encodeConnectEnvelope(
+      Buffer.from(
+        JSON.stringify({
+          process: {
+            cmd: "/bin/bash",
+            args: ["--noprofile", "--norc", "-lc", input.command],
+            cwd: input.cwd,
+            envs: {},
+          },
+          stdin: false,
+        }),
+        "utf8",
+      ),
+    );
+    const timeout = AbortSignal.timeout(timeoutMs);
     const signal = input.signal === undefined ? timeout : AbortSignal.any([input.signal, timeout]);
-    const response = await fetch(`${this.#proxyScheme}://${host}${input.path}`, {
-      method: input.method,
-      headers: {
-        "e2b-traffic-access-token": token,
-        "cube-traffic-access-token": token,
-        ...(input.authority === undefined
-          ? {}
-          : {
-              "x-pi-cloud-handoff-secret": input.authority.handoffSecret,
-              "x-pi-cloud-fencing-token": String(input.authority.fencingToken),
-              "x-pi-cloud-binding-sha256": input.authority.bindingSha256,
-            }),
-        ...(input.body === undefined ? {} : { "content-type": "application/json" }),
+    const response = await this.#dataFetch(
+      instance,
+      CUBESANDBOX_ENVD_PORT,
+      "/process.Process/Start",
+      {
+        headers: {
+          authorization: userAuthorization(input.user),
+          "content-type": CONNECT_CONTENT_TYPE,
+          "connect-protocol-version": CONNECT_PROTOCOL_VERSION,
+          "connect-content-encoding": "identity",
+          "connect-timeout-ms": String(timeoutMs),
+        },
+        body: payload,
+        signal,
       },
-      ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
-      dispatcher: this.#dispatcher,
-      signal,
-    });
-    const bytes = await readBoundedResponse(response, input.maximumResponseBytes);
-    if (!response.ok) {
+    );
+    if (!response.ok || response.body === null) {
+      const bytes = await readBoundedResponse(response, 64 * 1_024);
       throw new CubeRuntimeClientError(
-        `CubeSandbox Tool service rejected the request with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
+        `CubeSandbox envd command failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
         response.status,
       );
     }
-    return parseJson(bytes, "CubeSandbox Tool service");
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let bytes = 0;
+    let exitCode: number | undefined;
+    for await (const frame of connectFrames(response.body as ReadableStream<Uint8Array>)) {
+      if ((frame.flags & CONNECT_COMPRESSED_FLAG) !== 0) {
+        throw new CubeRuntimeClientError("CubeSandbox envd returned compressed output");
+      }
+      if ((frame.flags & CONNECT_END_STREAM_FLAG) !== 0) {
+        raiseConnectEnd(frame.payload);
+        break;
+      }
+      const value = record(
+        parseJson(frame.payload, "CubeSandbox envd process event"),
+        "envd event",
+      );
+      const event = record(value.event, "envd process event");
+      const data = record(event.data ?? {}, "envd process data");
+      for (const [stream, target] of [
+        [data.stdout, stdout],
+        [data.stderr, stderr],
+      ] as const) {
+        if (stream === undefined) continue;
+        if (typeof stream !== "string") {
+          throw new CubeRuntimeClientError("CubeSandbox envd process output was invalid");
+        }
+        const chunk = Buffer.from(stream, "base64");
+        if (chunk.toString("base64") !== stream) {
+          throw new CubeRuntimeClientError("CubeSandbox envd process output was invalid");
+        }
+        bytes += chunk.byteLength;
+        if (bytes > maximumOutputBytes) {
+          throw new CubeRuntimeClientError("CubeSandbox envd process output exceeded its limit");
+        }
+        target.push(chunk);
+      }
+      if (event.end !== undefined && event.end !== null) {
+        const end = record(event.end, "envd process end");
+        const candidate = end.exitCode ?? end.exit_code ?? exitCodeFromStatus(end.status);
+        if (Number.isSafeInteger(candidate)) exitCode = candidate as number;
+        else if (typeof end.error === "string" && end.error.length > 0) {
+          throw new CubeRuntimeClientError(`CubeSandbox envd process failed: ${end.error}`);
+        }
+      }
+    }
+    if (exitCode === undefined) {
+      throw new CubeRuntimeClientError("CubeSandbox envd process ended without an exit code");
+    }
+    return {
+      stdout: Buffer.concat(stdout).toString("utf8"),
+      stderr: Buffer.concat(stderr).toString("utf8"),
+      exitCode,
+    };
+  }
+
+  async writeGuestFile(
+    instance: CubeSandboxInstance,
+    path: string,
+    data: Uint8Array,
+  ): Promise<void> {
+    const target = this.#guestPath(path);
+    const response = await this.#dataFetch(
+      instance,
+      CUBESANDBOX_ENVD_PORT,
+      `/files?path=${encodeURIComponent(target)}&username=root`,
+      {
+        headers: { "content-type": "application/octet-stream" },
+        body: Buffer.from(data),
+        signal: AbortSignal.timeout(this.#requestTimeoutMs),
+      },
+    );
+    const bytes = await readBoundedResponse(response, 64 * 1_024);
+    if (!response.ok) {
+      throw new CubeRuntimeClientError(
+        `CubeSandbox envd file write failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
+        response.status,
+      );
+    }
+  }
+
+  async removeGuestFile(instance: CubeSandboxInstance, path: string): Promise<void> {
+    await this.#filesystemRpc(instance, "Remove", { path: this.#guestPath(path) });
+  }
+
+  async listGuestDirectory(
+    instance: CubeSandboxInstance,
+    path: string,
+  ): Promise<readonly Readonly<Record<string, unknown>>[]> {
+    const result = await this.#filesystemRpc(instance, "ListDir", {
+      path: this.#guestPath(path),
+    });
+    if (!Array.isArray(result.entries)) {
+      throw new CubeRuntimeClientError("CubeSandbox envd directory response was invalid");
+    }
+    return result.entries.map((entry) => record(entry, "envd directory entry"));
+  }
+
+  async createGuestDirectory(
+    instance: CubeSandboxInstance,
+    path: string,
+  ): Promise<Readonly<Record<string, unknown>>> {
+    const result = await this.#filesystemRpc(instance, "MakeDir", {
+      path: this.#guestPath(path),
+    });
+    return record(result.entry ?? {}, "envd directory entry");
   }
 
   async requestService(
@@ -611,57 +825,35 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     input: CubeSandboxServiceRequest,
   ): Promise<CubeSandboxServiceResponse> {
     const port = positiveInteger(input.port, 3_000, 1_024, 65_535);
-    if (port === CUBESANDBOX_TOOL_SERVICE_PORT) {
-      throw new TypeError("CubeSandbox preview cannot target the trusted Tool service");
+    if (port === CUBESANDBOX_ENVD_PORT) {
+      throw new TypeError("CubeSandbox preview cannot target envd");
     }
     if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*$/.test(input.path)) {
       throw new TypeError("CubeSandbox preview path was invalid");
     }
-    const encodedBody =
-      input.body === undefined ? undefined : Buffer.from(input.body).toString("base64");
-    const value = record(
-      await this.request(instance, {
-        method: "POST",
-        path: "/v1/service-proxy",
-        body: {
-          port,
-          method: input.method,
-          path: input.path,
-          headers: input.headers,
-          ...(encodedBody === undefined ? {} : { body: encodedBody }),
-          timeoutMs: positiveInteger(input.timeoutMs, 30_000, 100, 300_000),
-          maximumResponseBytes: positiveInteger(
-            input.maximumResponseBytes,
-            16 * 1_024 * 1_024,
-            1,
-            24 * 1_024 * 1_024,
-          ),
-        },
-        authority: input.authority,
-        timeoutMs: input.timeoutMs + 1_000,
-        maximumResponseBytes: Math.ceil((input.maximumResponseBytes * 4) / 3) + 64 * 1_024,
-      }),
-      "CubeSandbox service proxy",
+    const requestHeaders: Record<string, string> = {};
+    for (const [name, value] of Object.entries(input.headers)) {
+      const lower = name.toLowerCase();
+      if (
+        !/^[a-z0-9!#$%&'*+.^_`|~-]+$/u.test(lower) ||
+        new Set(["host", "authorization", "cookie", "connection", "content-length"]).has(lower) ||
+        value.length > 8_192 ||
+        /[\u0000-\u001f\u007f]/u.test(value)
+      ) {
+        continue;
+      }
+      requestHeaders[lower] = value;
+    }
+    const response = await this.#dataFetch(instance, port, input.path, {
+      method: input.method,
+      headers: requestHeaders,
+      ...(input.body === undefined ? {} : { body: Buffer.from(input.body) }),
+      signal: AbortSignal.timeout(positiveInteger(input.timeoutMs, 30_000, 100, 300_000)),
+    });
+    const body = await readBoundedResponse(
+      response,
+      positiveInteger(input.maximumResponseBytes, 16 * 1_024 * 1_024, 1, 24 * 1_024 * 1_024),
     );
-    const status = value.status;
-    const rawHeaders = value.headers;
-    const body = value.body;
-    if (
-      !Number.isSafeInteger(status) ||
-      (status as number) < 100 ||
-      (status as number) > 599 ||
-      typeof rawHeaders !== "object" ||
-      rawHeaders === null ||
-      Array.isArray(rawHeaders) ||
-      typeof body !== "string" ||
-      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(body)
-    ) {
-      throw new CubeRuntimeClientError("CubeSandbox service proxy response was invalid");
-    }
-    const decoded = Buffer.from(body, "base64");
-    if (decoded.byteLength > input.maximumResponseBytes || decoded.toString("base64") !== body) {
-      throw new CubeRuntimeClientError("CubeSandbox service proxy body was invalid");
-    }
     const allowedResponseHeaders = new Set([
       "accept-ranges",
       "cache-control",
@@ -674,21 +866,17 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       "location",
     ]);
     const headers: Record<string, string> = {};
-    for (const [name, headerValue] of Object.entries(rawHeaders as Record<string, unknown>)) {
+    for (const [name, headerValue] of response.headers.entries()) {
       const lower = name.toLowerCase();
-      if (
-        !allowedResponseHeaders.has(lower) ||
-        typeof headerValue !== "string" ||
-        headerValue.length > 8_192
-      ) {
+      if (!allowedResponseHeaders.has(lower) || headerValue.length > 8_192) {
         continue;
       }
       headers[lower] = headerValue;
     }
     return {
-      status: status as number,
+      status: response.status,
       headers: Object.freeze(headers),
-      body: decoded,
+      body,
     };
   }
 
@@ -697,7 +885,6 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     input: Readonly<{
       rows: number;
       cols: number;
-      authority: CubeSandboxHandoffAuthority;
       admin: boolean;
     }>,
   ): Promise<CubeSandboxTerminal> {
@@ -705,39 +892,61 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.#requestTimeoutMs);
     timeout.unref();
-    let response: Awaited<ReturnType<typeof fetch>>;
     try {
-      response = await this.#dataFetch(
+      const payload = encodeConnectEnvelope(
+        Buffer.from(
+          JSON.stringify({
+            process: {
+              cmd: "/bin/bash",
+              args: ["-i", "-l"],
+              cwd: input.admin ? "/root" : "/workspace",
+              envs: { TERM: "xterm-256color", LANG: "C.UTF-8", LC_ALL: "C.UTF-8" },
+            },
+            pty: { size },
+          }),
+          "utf8",
+        ),
+      );
+      const response = await this.#dataFetch(
         instance,
-        CUBESANDBOX_TOOL_SERVICE_PORT,
-        "/v1/terminal/open",
+        CUBESANDBOX_ENVD_PORT,
+        "/process.Process/Start",
         {
           headers: {
-            "content-type": "application/json",
-            ...authorityHeaders(input.authority),
+            authorization: userAuthorization(input.admin ? "root" : "pi-cloud"),
+            "content-type": CONNECT_CONTENT_TYPE,
+            "connect-protocol-version": CONNECT_PROTOCOL_VERSION,
+            "connect-content-encoding": "identity",
           },
-          body: Buffer.from(JSON.stringify({ ...size, admin: input.admin }), "utf8"),
+          body: payload,
           signal: controller.signal,
         },
       );
       if (!response.ok || response.body === null) {
         const bytes = await readBoundedResponse(response, 64 * 1_024);
         throw new CubeRuntimeClientError(
-          `CubeSandbox PTY start failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
+          `CubeSandbox envd PTY start failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
           response.status,
         );
       }
-      const events = terminalFrames(response.body as ReadableStream<Uint8Array>);
+      const frames = connectFrames(response.body as ReadableStream<Uint8Array>);
+      const events = (async function* (): AsyncGenerator<Record<string, unknown>> {
+        for await (const frame of frames) {
+          if ((frame.flags & CONNECT_COMPRESSED_FLAG) !== 0) {
+            throw new CubeRuntimeClientError("CubeSandbox envd returned compressed PTY output");
+          }
+          if ((frame.flags & CONNECT_END_STREAM_FLAG) !== 0) {
+            raiseConnectEnd(frame.payload);
+            return;
+          }
+          const message = record(parseJson(frame.payload, "CubeSandbox envd PTY"), "envd PTY");
+          if (message.event !== undefined) yield record(message.event, "envd PTY event");
+        }
+      })();
       const first = await events.next();
-      const start = first.done ? undefined : first.value;
-      if (
-        typeof start !== "object" ||
-        start === null ||
-        start.type !== "ready" ||
-        !Number.isSafeInteger(start.pid) ||
-        (start.pid as number) < 1
-      ) {
-        throw new CubeRuntimeClientError("CubeSandbox PTY stream did not begin with a PID");
+      const start = first.done ? undefined : record(first.value.start, "envd PTY start");
+      if (start === undefined || !Number.isSafeInteger(start.pid) || (start.pid as number) < 1) {
+        throw new CubeRuntimeClientError("CubeSandbox envd PTY stream did not begin with a PID");
       }
       clearTimeout(timeout);
       const pid = start.pid as number;
@@ -751,14 +960,15 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
           consumed = true;
           try {
             for await (const event of events) {
-              if (event.type === "output" && typeof event.data === "string") {
-                const bytes = Buffer.from(event.data, "base64");
-                if (bytes.byteLength > 64 * 1_024 || bytes.toString("base64") !== event.data) {
-                  throw new CubeRuntimeClientError("CubeSandbox PTY output was invalid");
+              const data = record(event.data ?? {}, "envd PTY data");
+              if (typeof data.pty === "string") {
+                const bytes = Buffer.from(data.pty, "base64");
+                if (bytes.byteLength > 64 * 1_024 || bytes.toString("base64") !== data.pty) {
+                  throw new CubeRuntimeClientError("CubeSandbox envd PTY output was invalid");
                 }
                 yield bytes;
               }
-              if (event.type === "exit") return;
+              if (event.end !== undefined) return;
             }
           } catch (error: unknown) {
             if (!disconnected) throw error;
@@ -766,22 +976,27 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         },
       };
       const unary = async (
-        path: "/v1/terminal/input" | "/v1/terminal/resize" | "/v1/terminal/close",
+        method: "SendInput" | "Update" | "SendSignal",
         payload: unknown,
         allowAbsent = false,
       ): Promise<void> => {
-        const result = await this.#dataFetch(instance, CUBESANDBOX_TOOL_SERVICE_PORT, path, {
-          headers: {
-            "content-type": "application/json",
-            ...authorityHeaders(input.authority),
+        const result = await this.#dataFetch(
+          instance,
+          CUBESANDBOX_ENVD_PORT,
+          `/process.Process/${method}`,
+          {
+            headers: {
+              "content-type": "application/json",
+              "connect-protocol-version": CONNECT_PROTOCOL_VERSION,
+            },
+            body: Buffer.from(JSON.stringify(payload), "utf8"),
+            signal: AbortSignal.timeout(this.#requestTimeoutMs),
           },
-          body: Buffer.from(JSON.stringify(payload), "utf8"),
-          signal: AbortSignal.timeout(this.#requestTimeoutMs),
-        });
+        );
         const bytes = await readBoundedResponse(result, 64 * 1_024);
-        if (!result.ok && !(allowAbsent && result.status === 409)) {
+        if (!result.ok && !(allowAbsent && result.status === 404)) {
           throw new CubeRuntimeClientError(
-            `CubeSandbox PTY request failed with HTTP ${result.status}: ${errorResponseDiagnostic(bytes)}`,
+            `CubeSandbox envd PTY request failed with HTTP ${result.status}: ${errorResponseDiagnostic(bytes)}`,
             result.status,
           );
         }
@@ -790,10 +1005,13 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         pid,
         output,
         sendInput: (data: Uint8Array) =>
-          unary("/v1/terminal/input", { data: Buffer.from(data).toString("base64") }),
+          unary("SendInput", {
+            process: { pid },
+            input: { pty: Buffer.from(data).toString("base64") },
+          }),
         resize: (next: Readonly<{ rows: number; cols: number }>) =>
-          unary("/v1/terminal/resize", terminalSize(next)),
-        kill: () => unary("/v1/terminal/close", {}, true),
+          unary("Update", { process: { pid }, pty: { size: terminalSize(next) } }),
+        kill: () => unary("SendSignal", { process: { pid }, signal: "SIGNAL_SIGKILL" }, true),
         disconnect: () => {
           disconnected = true;
           controller.abort();
@@ -805,7 +1023,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       controller.abort();
       if (error instanceof CubeRuntimeClientError) throw error;
       throw new CubeRuntimeClientError(
-        `CubeSandbox PTY start failed: ${error instanceof Error ? error.message : "unknown error"}`,
+        `CubeSandbox envd PTY start failed: ${error instanceof Error ? error.message : "unknown error"}`,
       );
     }
   }
@@ -815,8 +1033,9 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     port: number,
     path: string,
     input: Readonly<{
-      headers: Readonly<Record<string, string>>;
-      body: Uint8Array;
+      method?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
+      headers?: Readonly<Record<string, string>>;
+      body?: Uint8Array;
       signal: AbortSignal;
     }>,
   ): Promise<Awaited<ReturnType<typeof fetch>>> {
@@ -826,13 +1045,16 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     }
     const host = `${String(port)}-${instance.sandboxId}.${instance.domain}`;
     return fetch(`${this.#proxyScheme}://${host}${path}`, {
-      method: "POST",
+      method: input.method ?? "POST",
       headers: {
         "e2b-traffic-access-token": token,
         "cube-traffic-access-token": token,
-        ...input.headers,
+        ...(port !== CUBESANDBOX_ENVD_PORT || instance.envdAccessToken === undefined
+          ? {}
+          : { "x-access-token": instance.envdAccessToken }),
+        ...(input.headers ?? {}),
       },
-      body: Buffer.from(input.body),
+      ...(input.body === undefined ? {} : { body: Buffer.from(input.body) }),
       dispatcher: this.#dispatcher,
       signal: input.signal,
     });
@@ -840,6 +1062,46 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
 
   async close(): Promise<void> {
     await this.#dispatcher.close();
+  }
+
+  #guestPath(path: string): string {
+    if (
+      path.length < 1 ||
+      path.length > 4_096 ||
+      !path.startsWith("/") ||
+      /[\u0000-\u001f\u007f]/u.test(path)
+    ) {
+      throw new TypeError("CubeSandbox guest path was invalid");
+    }
+    return path;
+  }
+
+  async #filesystemRpc(
+    instance: CubeSandboxInstance,
+    method: "ListDir" | "MakeDir" | "Remove",
+    payload: Readonly<Record<string, unknown>>,
+  ): Promise<Record<string, unknown>> {
+    const response = await this.#dataFetch(
+      instance,
+      CUBESANDBOX_ENVD_PORT,
+      `/filesystem.Filesystem/${method}`,
+      {
+        headers: {
+          "content-type": "application/json",
+          "connect-protocol-version": CONNECT_PROTOCOL_VERSION,
+        },
+        body: Buffer.from(JSON.stringify(payload), "utf8"),
+        signal: AbortSignal.timeout(this.#requestTimeoutMs),
+      },
+    );
+    const bytes = await readBoundedResponse(response, 2 * 1_024 * 1_024);
+    if (!response.ok) {
+      throw new CubeRuntimeClientError(
+        `CubeSandbox envd filesystem request failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
+        response.status,
+      );
+    }
+    return record(parseJson(bytes, "CubeSandbox envd filesystem"), "envd filesystem");
   }
 
   async #waitForState(sandboxId: string, expectedState: string): Promise<void> {

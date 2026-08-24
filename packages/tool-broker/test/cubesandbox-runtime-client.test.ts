@@ -16,14 +16,29 @@ const observed: ObservedRequest[] = [];
 let runtimeState = "running";
 let pauseReturnsTimeout = false;
 
+function connectFrame(value: unknown, flags = 0): Buffer {
+  const payload = Buffer.from(JSON.stringify(value), "utf8");
+  const header = Buffer.alloc(5);
+  header.writeUInt8(flags, 0);
+  header.writeUInt32BE(payload.byteLength, 1);
+  return Buffer.concat([header, payload]);
+}
+
 beforeAll(async () => {
   server = createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {
       const bytes = Buffer.concat(chunks);
+      const contentType = request.headers["content-type"] ?? "";
       const body =
-        bytes.byteLength === 0 ? undefined : (JSON.parse(bytes.toString("utf8")) as unknown);
+        bytes.byteLength === 0
+          ? undefined
+          : contentType.includes("application/connect+json")
+            ? (JSON.parse(bytes.subarray(5).toString("utf8")) as unknown)
+            : contentType.includes("application/octet-stream")
+              ? bytes
+              : (JSON.parse(bytes.toString("utf8")) as unknown);
       observed.push({
         method: request.method ?? "",
         path: request.url ?? "",
@@ -36,34 +51,59 @@ beforeAll(async () => {
         response.end('{"status":"ok"}');
         return;
       }
-      if (host.startsWith("49984-cube-runtime-1.")) {
-        if (request.url === "/v1/service-proxy") {
+      if (host.startsWith("49983-cube-runtime-1.")) {
+        if (request.url?.startsWith("/files?") === true) {
           response.writeHead(200, { "content-type": "application/json" });
-          response.end(
-            JSON.stringify({
-              status: 200,
-              headers: { "content-type": "text/html; charset=utf-8" },
-              body: Buffer.from("<html>private-preview-ok</html>").toString("base64"),
-            }),
-          );
+          response.end("[]");
           return;
         }
-        if (request.url === "/v1/terminal/open") {
-          response.writeHead(200, { "content-type": "application/x-ndjson" });
-          response.write(`${JSON.stringify({ type: "ready", pid: 73 })}\n`);
-          response.write(
-            `${JSON.stringify({ type: "output", data: Buffer.from("cube shell\r\n").toString("base64") })}\n`,
-          );
-          response.end(`${JSON.stringify({ type: "exit", exitCode: 0, signal: null })}\n`);
+        if (request.url === "/filesystem.Filesystem/ListDir") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ entries: [] }));
           return;
         }
-        if (request.url?.startsWith("/v1/terminal/") === true) {
+        if (request.url === "/filesystem.Filesystem/MakeDir") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ entry: { type: "FILE_TYPE_DIRECTORY" } }));
+          return;
+        }
+        if (request.url === "/filesystem.Filesystem/Remove") {
           response.writeHead(200, { "content-type": "application/json" });
           response.end("{}");
           return;
         }
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end('{"kernelRelease":"cube-guest"}');
+        if (request.url === "/process.Process/Start") {
+          response.writeHead(200, { "content-type": "application/connect+json" });
+          if (typeof body === "object" && body !== null && "pty" in body) {
+            response.write(connectFrame({ event: { start: { pid: 73 } } }));
+            response.write(
+              connectFrame({
+                event: { data: { pty: Buffer.from("cube shell\r\n").toString("base64") } },
+              }),
+            );
+            response.end(connectFrame({ event: { end: { exitCode: 0 } } }));
+          } else {
+            response.write(
+              connectFrame({
+                event: { data: { stdout: Buffer.from("envd command\n").toString("base64") } },
+              }),
+            );
+            response.end(connectFrame({ event: { end: { exitCode: 0 } } }));
+          }
+          return;
+        }
+        if (request.url?.startsWith("/process.Process/") === true) {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end("{}");
+          return;
+        }
+        response.writeHead(404);
+        response.end();
+        return;
+      }
+      if (host.startsWith("5173-cube-runtime-1.")) {
+        response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        response.end("<html>private-preview-ok</html>");
         return;
       }
       if (
@@ -94,6 +134,7 @@ beforeAll(async () => {
             domain: "cube.test",
             metadata: (body as { metadata?: unknown }).metadata,
             trafficAccessToken: "private-traffic-token",
+            envdAccessToken: "envd-access-token",
             cpuCount: 1,
             memoryMB: 768,
           }),
@@ -127,6 +168,7 @@ beforeAll(async () => {
             domain: "cube.test",
             metadata: { "picloud.managed": "true" },
             trafficAccessToken: "private-traffic-token-resumed",
+            envdAccessToken: "envd-access-token",
           }),
         );
         return;
@@ -232,6 +274,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
       volumeMounts: [{ name: volumeId, path: "/workspace" }],
     });
     expect(instance.trafficAccessToken).toBe("private-traffic-token");
+    expect(instance.envdAccessToken).toBe("envd-access-token");
     expect(observed.find((request) => request.path === "/sandboxes")).toMatchObject({
       headers: { authorization: `Bearer ${"k".repeat(48)}` },
       body: {
@@ -248,29 +291,30 @@ describe("official CubeSandbox HTTP compatibility client", () => {
       },
     });
     await expect(
-      client.request(instance, {
-        method: "GET",
-        path: "/v1/evidence",
+      client.runCommand(instance, {
+        command: "printf 'envd command\\n'",
+        cwd: "/workspace",
+        user: "root",
         timeoutMs: 1_000,
-        maximumResponseBytes: 64 * 1_024,
-        authority: {
-          handoffSecret: `pcch_${"h".repeat(43)}`,
-          fencingToken: 7,
-          bindingSha256: "a".repeat(64),
-        },
+        maximumOutputBytes: 64 * 1_024,
       }),
-    ).resolves.toEqual({ kernelRelease: "cube-guest" });
-    const dataRequest = observed.find((request) => request.path === "/v1/evidence");
+    ).resolves.toEqual({ stdout: "envd command\n", stderr: "", exitCode: 0 });
+    const dataRequest = observed.find((request) => request.path === "/process.Process/Start");
     expect(dataRequest).toMatchObject({
       headers: {
-        host: "49984-cube-runtime-1.cube.test",
+        host: "49983-cube-runtime-1.cube.test",
         "e2b-traffic-access-token": "private-traffic-token",
         "cube-traffic-access-token": "private-traffic-token",
-        "x-pi-cloud-handoff-secret": `pcch_${"h".repeat(43)}`,
-        "x-pi-cloud-fencing-token": "7",
-        "x-pi-cloud-binding-sha256": "a".repeat(64),
+        "x-access-token": "envd-access-token",
+        authorization: `Basic ${Buffer.from("root:").toString("base64")}`,
       },
     });
+    await client.writeGuestFile(instance, "/tmp/input.json", Buffer.from("{}"));
+    await expect(client.listGuestDirectory(instance, "/tmp")).resolves.toEqual([]);
+    await expect(client.createGuestDirectory(instance, "/tmp/new")).resolves.toMatchObject({
+      type: "FILE_TYPE_DIRECTORY",
+    });
+    await client.removeGuestFile(instance, "/tmp/input.json");
     await expect(
       client.requestService!(instance, {
         port: 5173,
@@ -279,35 +323,29 @@ describe("official CubeSandbox HTTP compatibility client", () => {
         headers: { accept: "text/html" },
         maximumResponseBytes: 64 * 1_024,
         timeoutMs: 1_000,
-        authority: {
-          handoffSecret: `pcch_${"h".repeat(43)}`,
-          fencingToken: 7,
-          bindingSha256: "a".repeat(64),
-        },
       }),
     ).resolves.toMatchObject({
       status: 200,
       headers: { "content-type": "text/html; charset=utf-8" },
       body: Buffer.from("<html>private-preview-ok</html>"),
     });
-    expect(observed.find((request) => request.path === "/v1/service-proxy")).toMatchObject({
+    expect(
+      observed.find((request) => request.path === "/" && request.headers.host?.startsWith("5173-")),
+    ).toMatchObject({
       headers: {
-        host: "49984-cube-runtime-1.cube.test",
+        host: "5173-cube-runtime-1.cube.test",
         "e2b-traffic-access-token": "private-traffic-token",
         "cube-traffic-access-token": "private-traffic-token",
-        "x-pi-cloud-handoff-secret": `pcch_${"h".repeat(43)}`,
       },
-      body: expect.objectContaining({ port: 5173, method: "GET", path: "/" }),
     });
+    expect(
+      observed.find((request) => request.path === "/" && request.headers.host?.startsWith("5173-"))
+        ?.headers["x-access-token"],
+    ).toBeUndefined();
     const terminal = await client.openTerminal(instance, {
       rows: 24,
       cols: 100,
       admin: false,
-      authority: {
-        handoffSecret: `pcch_${"h".repeat(43)}`,
-        fencingToken: 7,
-        bindingSha256: "a".repeat(64),
-      },
     });
     expect(terminal.pid).toBe(73);
     const output: Buffer[] = [];
@@ -316,23 +354,24 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     await terminal.sendInput(Buffer.from("pwd\r"));
     await terminal.resize({ rows: 40, cols: 120 });
     await terminal.kill();
-    const start = observed.find((request) => request.path === "/v1/terminal/open");
+    const start = observed.filter((request) => request.path === "/process.Process/Start").at(-1);
     expect(start).toMatchObject({
       headers: {
-        host: "49984-cube-runtime-1.cube.test",
+        host: "49983-cube-runtime-1.cube.test",
         "e2b-traffic-access-token": "private-traffic-token",
         "cube-traffic-access-token": "private-traffic-token",
-        "x-pi-cloud-handoff-secret": `pcch_${"h".repeat(43)}`,
-        "x-pi-cloud-fencing-token": "7",
-        "x-pi-cloud-binding-sha256": "a".repeat(64),
+        "x-access-token": "envd-access-token",
+        authorization: `Basic ${Buffer.from("pi-cloud:").toString("base64")}`,
       },
     });
-    expect(start?.body).toEqual({ rows: 24, cols: 100, admin: false });
-    expect(observed.find((request) => request.path === "/v1/terminal/input")).toMatchObject({
-      body: { data: Buffer.from("pwd\r").toString("base64") },
-    });
-    expect(observed.find((request) => request.path === "/v1/terminal/resize")).toMatchObject({
-      body: { rows: 40, cols: 120 },
+    expect(start?.body).toMatchObject({ pty: { size: { rows: 24, cols: 100 } } });
+    expect(observed.find((request) => request.path === "/process.Process/SendInput")).toMatchObject(
+      {
+        body: { process: { pid: 73 }, input: { pty: Buffer.from("pwd\r").toString("base64") } },
+      },
+    );
+    expect(observed.find((request) => request.path === "/process.Process/Update")).toMatchObject({
+      body: { process: { pid: 73 }, pty: { size: { rows: 40, cols: 120 } } },
     });
     await expect(client.read(instance.sandboxId)).resolves.toMatchObject({
       sandboxId: "cube-runtime-1",

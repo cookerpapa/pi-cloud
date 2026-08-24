@@ -41,9 +41,10 @@ authorization authority for Tool execution or platform access.
   it never destroys them.
 - PostgreSQL stores the logical environment identity, Cube runtime/snapshot
   identity, state generation and an encrypted reconnect capsule. A replacement
-  Broker may adopt a machine only after validating tenant/user ownership, Cube
-  metadata, physical runtime identity and the newer authority epoch. Adoption
-  rotates the guest handoff authority before any terminal or Agent Tool call.
+Broker may adopt a machine only after validating tenant/user ownership, Cube
+metadata, physical runtime identity and the newer authority epoch. Adoption
+acquires a fresh external Broker lease before any terminal or Agent Tool call;
+the guest carries no PiCloud ownership secret.
 - If adoption cannot be proven, PiCloud reports `recovery_required`; it never
   silently creates an empty replacement and claims the old root filesystem or
   processes survived.
@@ -57,7 +58,8 @@ authorization authority for Tool execution or platform access.
   traversal and symlink escapes are rejected.
 - The exclusive guest contains no model, PostgreSQL, Kafka, CubeAPI, Tool Broker
   or object-store credentials. Tool Broker remains the external authorization
-  and fencing boundary. An in-guest helper is transport, not authority.
+  and fencing boundary. Cube's envd is generic transport; PiCloud's one-shot Tool
+  Worker is not a persistent controller or authority.
 - Administrative/root access is an exclusive-environment policy only. Elastic
   Agent Sandboxes retain the non-root immutable tool policy. Enabling root in an
   exclusive guest must not grant another tenant's identity or a platform

@@ -15,7 +15,7 @@ import {
   CubeSandboxProvider,
   ToolBroker,
   type CubeSandboxCreateInput,
-  type CubeSandboxDataRequest,
+  type CubeSandboxGuestCommandRequest,
   type CubeSandboxInstance,
   type CubeSandboxRuntimeClient,
 } from "../src/index.ts";
@@ -120,7 +120,12 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
 
 class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   readonly creates: CubeSandboxCreateInput[] = [];
-  readonly requests: { sandboxId: string; input: CubeSandboxDataRequest }[] = [];
+  readonly requests: {
+    sandboxId: string;
+    input: CubeSandboxGuestCommandRequest;
+    guestRequest: Record<string, unknown>;
+  }[] = [];
+  readonly guestFiles = new Map<string, Uint8Array>();
   readonly destroyed: string[] = [];
   readonly instances = new Map<string, CubeSandboxInstance>();
   healthChecks = 0;
@@ -147,6 +152,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       domain: "cube.internal",
       metadata: Object.freeze({ ...input.metadata }),
       trafficAccessToken: `private-traffic-token-${String(this.creates.length)}`,
+      envdAccessToken: `envd-access-token-${String(this.creates.length)}`,
       cpuCount: 1,
       memoryMB: 768,
     };
@@ -180,106 +186,111 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     this.instances.delete(sandboxId);
   }
 
-  async request(instance: CubeSandboxInstance, input: CubeSandboxDataRequest): Promise<unknown> {
-    this.requests.push({ sandboxId: instance.sandboxId, input });
-    if (input.path === "/v1/evidence") {
-      return {
-        imageRevision: this.imageRevision,
-        kernelRelease: "6.12.0-cube.guest",
-        ipAddress: "169.254.68.4",
-        cpuCount: 1,
-        memoryBytes: 740 * 1_024 * 1_024,
-        uid: 1_000,
-        gid: 1_000,
-        hypervisorFlag: true,
-        noNewPrivileges: true,
-        effectiveCapabilities: "0000000000000000",
-        readOnlyRootFilesystem: false,
-        supervisorUid: 0,
-        supervisorGid: 0,
-      };
-    }
-    if (input.path === "/v1/initialize") {
-      const body = input.body as {
-        environment: typeof environment;
-        environmentStage?: {
-          type: "offline_restore";
-          setupCommands: typeof toolchain.recipeCommands;
-        };
-      };
-      return {
-        ...toolchain,
-        profileKey: body.environment.profileKey,
-        profileVersion: body.environment.profileVersion,
-        imageRevision: body.environment.imageRevision,
-        specSha256: body.environment.specSha256,
-        recipeSha256: body.environment.recipeSha256,
-        recipeCommands: body.environmentStage?.setupCommands ?? [],
-      };
-    }
-    if (input.path === "/v1/seal") {
-      return {
-        sealed: true,
-        fencingToken: input.authority?.fencingToken,
-        remainingToolProcesses: 0,
-      };
-    }
-    if (input.path === "/v1/rebind") {
-      const body = input.body as { fencingToken: number };
-      return { rebound: true, fencingToken: body.fencingToken, environment: toolchain };
-    }
-    if (input.path === "/v1/rekey") {
-      const body = input.body as { fencingToken: number };
-      return { rekeyed: true, fencingToken: body.fencingToken, environment: toolchain };
-    }
-    if (input.path === "/health") return {};
-    if (input.path === "/v1/checkpoint") {
-      return {
-        sealed: true,
-        fencingToken: input.authority?.fencingToken,
-        frozenToolProcesses: [],
-        files: [
-          {
-            path: "result.txt",
-            executable: false,
-            sizeBytes: 5,
-            sha256: createHash("sha256").update("cube\n").digest("hex"),
+  async writeGuestFile(
+    _instance: CubeSandboxInstance,
+    path: string,
+    data: Uint8Array,
+  ): Promise<void> {
+    this.guestFiles.set(path, Buffer.from(data));
+  }
+
+  async removeGuestFile(_instance: CubeSandboxInstance, path: string): Promise<void> {
+    this.guestFiles.delete(path);
+  }
+
+  async listGuestDirectory(): Promise<readonly Readonly<Record<string, unknown>>[]> {
+    return [];
+  }
+
+  async createGuestDirectory(
+    _instance: CubeSandboxInstance,
+    path: string,
+  ): Promise<Readonly<Record<string, unknown>>> {
+    return { name: path.split("/").at(-1) ?? "", path, type: "FILE_TYPE_DIRECTORY" };
+  }
+
+  async runCommand(
+    instance: CubeSandboxInstance,
+    input: CubeSandboxGuestCommandRequest,
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    const request = this.requestForCommand(input);
+    this.requests.push({ sandboxId: instance.sandboxId, input, guestRequest: request });
+    if (input.command.includes("envd-guest-control.ts")) {
+      if (request.mode === "evidence") {
+        return this.#result({
+          evidence: {
+            imageRevision: this.imageRevision,
+            kernelRelease: "6.12.0-cube.guest",
+            ipAddress: "169.254.68.4",
+            cpuCount: 1,
+            memoryBytes: 740 * 1_024 * 1_024,
+            uid: 1_000,
+            gid: 1_000,
+            hypervisorFlag: true,
+            noNewPrivileges: true,
+            effectiveCapabilities: "0000000000000000",
+            readOnlyRootFilesystem: false,
+            supervisorUid: 0,
+            supervisorGid: 0,
           },
-        ],
+        });
+      }
+      if (request.mode === "freeze") return this.#result({ processes: [] });
+      if (request.mode === "thaw") return this.#result({ resumed: 0 });
+    }
+    if (input.command.includes("envd-tool-exec.ts")) {
+      const initialization = (request.initialization ?? {}) as {
+        activationId: string;
+        environment: typeof environment;
+        workspaceAttach?: { recipeCommands: typeof toolchain.recipeCommands };
       };
-    }
-    if (input.path === "/v1/checkpoint/complete") {
-      return { completed: true, resumedToolProcesses: 0 };
-    }
-    if (input.path === "/v1/materialize-file") {
-      const body = input.body as { path: string };
-      const content = Buffer.from("cube\n");
-      return {
-        path: body.path,
-        content: content.toString("base64"),
-        sha256: createHash("sha256").update(content).digest("hex"),
-        executable: false,
-        sizeBytes: content.byteLength,
-      };
-    }
-    if (input.path === "/v1/cancel") return { cancelled: true };
-    if (input.path === "/v1/operation") {
-      const operation = input.body as ToolSandboxOperationRequest;
+      if (request.mode === "initialize") {
+        return this.#result({
+          toolWorkerProtocolVersion: 1,
+          type: "worker.ready",
+          activationId: initialization.activationId,
+          environment: {
+            ...toolchain,
+            profileKey: initialization.environment.profileKey,
+            profileVersion: initialization.environment.profileVersion,
+            imageRevision: initialization.environment.imageRevision,
+            specSha256: initialization.environment.specSha256,
+            recipeSha256: initialization.environment.recipeSha256,
+            recipeCommands: initialization.workspaceAttach?.recipeCommands ?? [],
+          },
+        });
+      }
+      const operation = request.operation as ToolSandboxOperationRequest;
       if (operation.operation !== "bash.exec") throw new Error("unexpected operation");
-      return {
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.operation_result",
-        activationId: operation.activationId,
-        operationId: operation.operationId,
-        operation: "bash.exec",
-        exitCode: 0,
-        outputChunks: [
-          { seq: 1, stream: "stdout", data: Buffer.from("inside cube\n").toString("base64") },
-        ],
-        outputSha256: createHash("sha256").update("inside cube\n").digest("hex"),
-      };
+      return this.#result({
+        toolWorkerProtocolVersion: 1,
+        type: "worker.operation_result",
+        response: {
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.operation_result",
+          activationId: operation.activationId,
+          operationId: operation.operationId,
+          operation: "bash.exec",
+          exitCode: 0,
+          outputChunks: [
+            { seq: 1, stream: "stdout", data: Buffer.from("inside cube\n").toString("base64") },
+          ],
+          outputSha256: createHash("sha256").update("inside cube\n").digest("hex"),
+        },
+      });
     }
-    throw new Error(`unexpected path ${input.path}`);
+    throw new Error("unexpected guest command");
+  }
+
+  #result(value: unknown): { stdout: string; stderr: string; exitCode: number } {
+    return { stdout: `${JSON.stringify(value)}\n`, stderr: "", exitCode: 0 };
+  }
+
+  requestForCommand(input: CubeSandboxGuestCommandRequest): Record<string, unknown> {
+    const path = input.command.match(/(\/tmp\/pi-cloud-envd-[0-9a-f-]{36}\.json)$/u)?.[1];
+    const bytes = path === undefined ? undefined : this.guestFiles.get(path);
+    if (bytes === undefined) throw new Error("guest request unavailable");
+    return JSON.parse(Buffer.from(bytes).toString("utf8")) as Record<string, unknown>;
   }
 
   async openTerminal(
@@ -606,7 +617,6 @@ describe("CubeSandbox Provider contract", () => {
     expect(runtime.destroyed).toEqual([]);
     expect(manager.warmCount).toBe(1);
     expect(runtime.instances.get("cube-sandbox-1")?.state).toBe("running");
-    expect(runtime.requests.some(({ input }) => input.path === "/v1/rekey")).toBe(true);
     await expect(manager.terminateAndConfirmAbsent(activeAssignments[0]!)).rejects.toMatchObject({
       code: "cubesandbox_assignment_identity_mismatch",
     });
@@ -682,7 +692,6 @@ describe("CubeSandbox Provider contract", () => {
       operationId: "10000000-0000-4000-8000-000000000033",
     });
     expect(runtime.creates).toHaveLength(1);
-    expect(runtime.requests.some(({ input }) => input.path === "/v1/rebind")).toBe(true);
     expect(runtime.instances.get("cube-sandbox-1")?.state).toBe("running");
     expect(await manager.listAssignments(nextAssignment.sandboxId)).toEqual([
       expect.objectContaining({
@@ -779,11 +788,13 @@ describe("CubeSandbox Provider contract", () => {
       }),
     );
     const initialize = runtime.requests.find(
-      ({ sandboxId, input }) => sandboxId === "cube-sandbox-2" && input.path === "/v1/initialize",
+      ({ sandboxId, guestRequest }) =>
+        sandboxId === "cube-sandbox-2" && guestRequest.mode === "initialize",
     );
-    expect(initialize?.input.authority).toMatchObject({
-      fencingToken: nextAssignment.fencingToken,
-    });
+    expect(
+      (initialize?.guestRequest.initialization as { activationId?: string } | undefined)
+        ?.activationId,
+    ).toBe(nextActivationId);
     expect(restored.assignment).toEqual(nextAssignment);
     await provider.destroy(restored);
     await provider.close();
@@ -825,10 +836,6 @@ describe("CubeSandbox Provider contract", () => {
 
     const restored = await provider.rebind(child, { ...assignment, fencingToken: 41 });
     await expect(provider.inspect(restored)).resolves.toMatchObject({ state: "running" });
-    const epochs = runtime.requests
-      .filter(({ input }) => input.path === "/v1/rebind")
-      .map(({ input }) => (input.body as { fencingToken: number }).fencingToken);
-    expect(epochs).toEqual([42, 43]);
     expect(restored.assignment.sessionId).toBe(assignment.sessionId);
     await provider.destroy(restored);
     await provider.close();
@@ -879,7 +886,6 @@ describe("CubeSandbox Provider contract", () => {
       provider.exec(forked.sourceHandle, operation(ACTIVATION_ID)),
     ).resolves.toMatchObject({ exitCode: 0 });
     expect(runtime.creates).toHaveLength(1);
-    expect(runtime.requests.filter(({ input }) => input.path === "/v1/rebind")).toHaveLength(1);
     await provider.destroy(forked.sourceHandle);
     await provider.close();
   });
@@ -1024,16 +1030,16 @@ describe("CubeSandbox Provider contract", () => {
     await upgradedProvider.close();
   });
 
-  it("destroys an uncertain VM after bounded reattachment fails", async () => {
+  it("destroys an uncertain VM without replaying a disconnected Tool command", async () => {
     const runtime = new FakeCubeRuntimeClient();
-    const originalRequest = runtime.request.bind(runtime);
+    const originalRunCommand = runtime.runCommand.bind(runtime);
     let operationRequests = 0;
-    runtime.request = async (instance, input) => {
-      if (input.path === "/v1/operation") {
+    runtime.runCommand = async (instance, input) => {
+      if (runtime.requestForCommand(input).mode === "operation") {
         operationRequests += 1;
         throw new Error("connection lost");
       }
-      return originalRequest(instance, input);
+      return originalRunCommand(instance, input);
     };
     const provider = new CubeSandboxProvider({
       templateId: "pi-cloud-tool-v1",
@@ -1052,48 +1058,9 @@ describe("CubeSandbox Provider contract", () => {
     await expect(provider.exec(handle, operation(ACTIVATION_ID))).rejects.toMatchObject({
       code: "cubesandbox_tool_result_unknown",
     });
-    expect(operationRequests).toBe(2);
+    expect(operationRequests).toBe(1);
     expect(runtime.destroyed).toEqual(["cube-sandbox-1"]);
     await expect(provider.inspect(handle)).resolves.toMatchObject({ state: "absent" });
-    await provider.close();
-  });
-
-  it("reattaches once to the same Cube operation after a transport disconnect", async () => {
-    const runtime = new FakeCubeRuntimeClient();
-    const originalRequest = runtime.request.bind(runtime);
-    const operationBodies: unknown[] = [];
-    let operationRequests = 0;
-    runtime.request = async (instance, input) => {
-      if (input.path === "/v1/operation") {
-        operationBodies.push(input.body);
-        operationRequests += 1;
-        if (operationRequests === 1) throw new Error("connection lost after dispatch");
-      }
-      return originalRequest(instance, input);
-    };
-    const provider = new CubeSandboxProvider({
-      templateId: "pi-cloud-tool-v1",
-      imageRevision: "development",
-      webProxy: WEB_PROXY,
-      runtimeClient: runtime,
-      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
-    });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
-    await expect(provider.exec(handle, operation(ACTIVATION_ID))).resolves.toMatchObject({
-      type: "tool_sandbox.operation_result",
-      operationId: "10000000-0000-4000-8000-000000000020",
-      exitCode: 0,
-    });
-    expect(operationRequests).toBe(2);
-    expect(operationBodies[1]).toEqual(operationBodies[0]);
-    expect(runtime.destroyed).toEqual([]);
-    await provider.destroy(handle);
     await provider.close();
   });
 
@@ -1147,12 +1114,16 @@ describe("CubeSandbox Provider contract", () => {
       allowInternetAccess: true,
       allowPublicTraffic: false,
     });
-    const initialize = runtime.requests.find(({ input }) => input.path === "/v1/initialize");
-    expect(initialize?.input.body).toMatchObject({
+    const initialize = runtime.requests.find(
+      ({ guestRequest }) => guestRequest.mode === "initialize",
+    );
+    const initialization = initialize?.guestRequest.initialization as
+      Record<string, unknown> | undefined;
+    expect(initialization).toMatchObject({
       webProxy: WEB_PROXY,
     });
-    expect(initialize?.input.body).not.toHaveProperty("environmentStage");
-    expect(initialize?.input.body).not.toHaveProperty("workspaceRestore");
+    expect(initialization).not.toHaveProperty("environmentStage");
+    expect(initialization).not.toHaveProperty("workspaceRestore");
     await provider.destroy(handle);
     await provider.close();
   });

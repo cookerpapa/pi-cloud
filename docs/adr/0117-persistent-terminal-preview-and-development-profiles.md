@@ -23,8 +23,8 @@ a tenant-safe raw SSH endpoint for ordinary Sandboxes.
   revoked. Closing the PTY snapshots the boundary, returns the same physical VM
   to the persistent warm pool and preserves background processes.
 - Every Agent-to-warm, warm-to-terminal and terminal-to-warm handoff advances
-  the Session fence. A sealed Tool Service `/rekey` rotates Broker authority
-  without starting a Tool Worker or killing user processes. Old Supervisor
+  the Session fence in PostgreSQL. Tool Broker changes the external owner
+  reservation without starting a Tool Worker or killing user processes. Old Supervisor
   cleanup requests therefore fail identity validation instead of deleting the
   current warm VM.
 - Broker-owned warm runtimes are excluded from Supervisor assignment inventory.
@@ -38,8 +38,8 @@ a tenant-safe raw SSH endpoint for ordinary Sandboxes.
   provider injects the private Cube traffic token. Neither CubeAPI credentials,
   Sandbox IDs nor traffic tokens reach the browser.
 - Preview supports bounded HTTP bodies and response sizes. WebSocket ingress and
-  raw TCP are separate contracts. Cube exposes only the authenticated Tool
-  Service; it proxies any unprivileged guest-local HTTP port except its own.
+  raw TCP are separate contracts. Tool Broker routes directly through CubeProxy
+  to any unprivileged guest port except envd; applications bind `0.0.0.0`.
   Fixed application-port reservations are unnecessary. The product does not
   call the Web terminal "SSH".
 - User-owned development environments select one deployment-owned profile:
@@ -53,6 +53,9 @@ a tenant-safe raw SSH endpoint for ordinary Sandboxes.
 - A fenced Agent Run may borrow the same exclusive Cube after Tool Broker
   proves there is no active human terminal. It returns the Cube to its
   user-owned authority at Run settlement instead of starting a second writer.
+- Cube's standard cube-agent/vsock/envd path is the only resident guest control
+  channel. PiCloud Tool Workers are short-lived uid-1000 processes; all durable
+  authority and fencing remain outside the VM.
 
 ## Consequences
 

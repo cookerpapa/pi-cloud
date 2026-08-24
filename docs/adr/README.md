@@ -36,11 +36,10 @@ Read the documents in this order:
    public Session backend contract.
 14. [ADR-0104](0104-human-session-tree-and-conversation-forks.md) — human tree
    navigation and conversation forks.
-15. [ADR-0106](0106-workspace-web-terminal.md) — brokered human terminal access.
-16. [ADR-0107](0107-remove-dormant-advanced-api.md) and
+15. [ADR-0107](0107-remove-dormant-advanced-api.md) and
    [ADR-0108](0108-workspace-api-matches-the-file-browser.md) — deliberately
    removed product surface.
-17. [ADR-0110](0110-pi-cloud-product-identity.md) — the clean Pi Cloud identity.
+16. [ADR-0110](0110-pi-cloud-product-identity.md) — the clean Pi Cloud identity.
 
 An ADR absent from this index is not part of the current design. Historical
 migration source may contain retired table or component names solely so a new

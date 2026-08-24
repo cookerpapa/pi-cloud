@@ -11,7 +11,8 @@ Pi Tool call
   -> trusted Tool adapter
   -> Tool Broker (Run/Attempt/lease/fence/Step validation)
   -> Cube API
-  -> credential-free Cube KVM Tool service
+  -> CubeProxy -> cube-agent/vsock/envd
+  -> credential-free one-shot Tool Worker
   -> bounded result
   -> Pi Agent Loop
 ```
@@ -27,11 +28,11 @@ activation and Cloud Step identity from trusted state. The browser, model and
 Tool arguments cannot choose a Sandbox ID, image, mount, resource limit or
 network policy.
 
-Each operation has an immutable operation ID. A reconnect may attach to the
-same in-flight operation, but conflicting reuse fails closed. A stale Attempt
-cannot start another Tool or advance Workspace state. If a side-effecting Tool
-may have run but its result cannot be proven, the outcome is `UNKNOWN`; it is
-not replayed automatically.
+Each operation has an immutable operation ID. Duplicate delivery returns the
+same in-process result while it is known; conflicting reuse fails closed. A
+transport break after dispatch is `UNKNOWN` and is never reattached or replayed,
+because envd is deliberately not a durable PiCloud operation ledger. A stale
+Attempt cannot start another Tool or advance Workspace state.
 
 The Worker never receives Cube management credentials. Cube receives no model,
 PostgreSQL, Kubernetes, Volume-gateway or Cube-control
@@ -57,22 +58,22 @@ never a conversation or Workspace durability dependency.
 
 ## Tool and terminal channels
 
-Agent file and shell Tools use the authenticated private Tool service. The Web
-Terminal uses a separate short-lived human authority through the same Tool
-Broker and guest service:
+Agent file and shell Tools use Cube's private envd data plane. The Web Terminal
+uses a separate short-lived human reservation through the same external Tool
+Broker:
 
 ```text
 authenticated browser WebSocket
   -> Control Plane
   -> Tool Broker
-  -> Cube Tool service
+  -> CubeProxy -> envd
   -> unprivileged PTY in /workspace
 ```
 
 A human terminal and an Agent Run cannot write the same Workspace at the same
 time. Standard SSH is terminated by PiCloud's trusted ticket gateway and
-translated into this PTY protocol; Cube port 22 remains private and there is no
-second `envd` command channel.
+translated into this PTY protocol; Cube port 22 remains private. Envd is the
+single generic guest agent and holds no PiCloud, model or database credential.
 
 ## Network policy
 
@@ -85,14 +86,14 @@ the guest. No tenant-controlled request may expand that list.
 
 ## Template and resource policy
 
-The deployment-owned immutable template supplies the language toolchain and
-private Tool service. Elastic Agent Tools use the fixed non-root user. An
+The deployment-owned immutable template supplies the language toolchain,
+Cube's envd and the one-shot Tool Worker code. Elastic Agent Tools use the fixed non-root user. An
 exclusive machine's authenticated human terminal/SSH channel may start as guest
 root; KVM and the absence of platform credentials are then the tenant boundary.
 Users cannot submit a template,
-kernel, device, host mount, privileged flag or network policy. Cube and the
-Tool service enforce bounded CPU, memory, process count, open files, output and
-execution time.
+kernel, device, host mount, privileged flag or network policy. Cube, Tool Broker
+and the short-lived Worker enforce bounded CPU, memory, process count, open
+files, output and execution time.
 
 Template retention deletes only superseded Pi Cloud templates after proving no
 active Sandbox references them. It does not touch tenant Workspace Volumes or

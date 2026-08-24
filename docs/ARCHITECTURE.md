@@ -191,7 +191,7 @@ Workspace modes are explicit:
 
 - `none` creates a Tool-free child and never reserves Cube capacity;
 - `shared_serialized` keeps separate Pi contexts while handing the same Cube
-  and Volume from parent to child under a rotated guest authority; the parent
+  and Volume from parent to child under a new external Broker reservation; the parent
   capability is invalid during the handoff and the parent owns the final
   shared Workspace-head commit;
 - upstream `worktree:true` maps to `isolated`: Tool Broker quiesces the parent,
@@ -208,10 +208,10 @@ owned Child task. Earlier conversation and compaction state are preserved, but
 the orchestration request itself is not copied as another executable Child
 instruction.
 
-RunAttempt fences remain the database-side effect authority. A separate
-monotonic Cube authority epoch rotates the in-guest secret across
-parent→child→parent handoffs; Session-local fence numbers are never compared as
-if they were one global sequence. Each Worker Host keeps at least one slot out
+RunAttempt fences and the Tool Broker operation ledger remain the side-effect
+authority across parent→child→parent handoffs; envd carries no Session identity
+or ownership secret. Session-local fence numbers are never compared as if they
+were one global sequence. Each Worker Host keeps at least one slot out
 of ordinary-parent admission when subagents are enabled, so parents waiting in
 the upstream workflow cannot occupy every slot needed by their children.
 
@@ -259,9 +259,10 @@ rule; a `failed` environment is rejected. Terminal readiness is not persisted
 as Agent environment-validation evidence because that evidence remains bound
 to a fenced Run/Attempt. The Control Plane sends the trusted descriptor over a
 dedicated service credential to the Tool Broker, which lazily creates a Cube
-and opens a UID 1000 PTY in `/workspace` through the authenticated Cube Tool
-Service. The image continues to exclude Cube `envd`, so the terminal cannot
-bypass PiCloud's handoff authority and fencing boundary.
+and opens a UID 1000 PTY in `/workspace` through Cube's standard envd process
+API. Cube-agent starts envd through the VM's vsock control path. The generic
+guest agent is transport only: tenant identity, writer admission, Lease/Fence
+and operation idempotency remain in PostgreSQL and the external Tool Broker.
 
 Human terminal authority is deliberately separate from an Agent Run lease and
 Tool capability. It still reserves the next monotonic Session fence in
@@ -269,11 +270,10 @@ PostgreSQL, so its Workspace checkpoint cannot be mistaken for an older Agent
 write and the next Run necessarily receives a higher fence. An active Agent
 activation blocks a terminal, and an active terminal keeps a newly accepted Run
 queued until terminal cleanup has released the writer reservation. An idle
-persistent same-Session Cube is rebound to a human-only authority and returned
-to the warm pool after PTY close; the old Agent capability remains revoked
-throughout the handoff. At each warm boundary the Tool Service performs a sealed
-`rekey`: it rotates Secret/Fence without starting a Tool Worker or killing user
-background processes. Warm runtimes are Broker-owned and excluded from expired
+persistent same-Session Cube is rebound to a human-only Broker reservation and
+returned to the warm pool after PTY close; the old Agent capability remains
+revoked throughout the handoff. No in-guest secret is an ownership authority.
+Warm runtimes are Broker-owned and excluded from expired
 Supervisor inventory, preventing a stale Run reconciler from deleting them. An
 ordinary ephemeral warm Cube is still retired before a separate terminal runtime
 starts. Input, output and resize frames are bounded; terminal transcripts are
@@ -308,10 +308,9 @@ terminal at a time.
 
 The authenticated folder chooser may create one bounded child directory in an
 idle owned machine. Control Plane binds tenant/user identity, Tool Broker rejects
-the mutation while an Agent activation or terminal owns the machine, and the
-trusted Cube Tool Service validates the parent/name before creating a UID/GID
-1000 directory. The browser never sends a shell command or receives Cube
-authority.
+the mutation while an Agent activation or terminal owns the machine, validates
+the parent/name, and calls envd's bounded Filesystem API. The browser never sends
+a shell command or receives Cube authority.
 
 The allocation participates in tenant/Domain Sandbox quotas and the global
 Workspace single-writer rule. `agent_activation_id` and `terminal_active` are
@@ -324,8 +323,9 @@ Broker validates the capsule, PostgreSQL ownership and Cube metadata before it
 adopts the same runtime. The capsule is pinned to the machine's own guest image
 revision, not the deployment's current default template. A template upgrade
 therefore affects only newly created machines; recovery still requires the
-capsule, environment evidence, Tool Service report and physical Cube metadata to
-agree on the old machine's exact revision. Elastic Cubes retain fail-closed
+capsule, environment evidence, short-lived Tool Worker report and physical Cube metadata to
+agree on the old machine's exact revision. The Tool report is produced by a
+short-lived uid-1000 worker, not a resident PiCloud daemon. Elastic Cubes retain fail-closed
 orphan cleanup.
 
 Pausing a full VM is a long Cube operation. If CubeAPI returns its standard-route
@@ -341,18 +341,17 @@ lifecycle budget so deployment overrides cannot silently restore the former
 The browser reaches a service through a same-origin PiCloud preview path. The
 Control Plane authenticates the user and resolves the conversation or owned
 development environment. Tool Broker resolves the local live handle and sends
-the request through Cube's private ingress to the trusted Tool Service on port
-49984. That service proxies only to `127.0.0.1:<requested-port>` inside the same
-microVM. Cube traffic tokens, physical Sandbox IDs and external routing details
-never leave the trusted execution plane. Responses are bounded and
-security-sensitive hop-by-hop headers are not forwarded. Applications may use
-any unprivileged HTTP port other than the trusted service port and should use
-relative asset URLs under the path-based preview endpoint. HTML responses get a
-per-response CSP nonce on inline script/style blocks.
+the request directly through CubeProxy to the requested guest port. Applications
+must bind `0.0.0.0`; envd port 49983 is never a Preview target. Cube traffic
+tokens, envd access tokens, physical Sandbox IDs and external routing details
+never leave the trusted execution plane or reach the application. Responses are
+bounded and security-sensitive hop-by-hop headers are not forwarded. Applications
+should use relative asset URLs under the path-based preview endpoint. HTML
+responses get a per-response CSP nonce on inline script/style blocks.
 
-Cube templates support only a small explicit exposed-port set, so PiCloud does
-not reserve fixed application ports. The template exposes only the authenticated
-Tool Service. Assistant `localhost` links are rewritten by the Web client to the
+Cube's private ingress resolves the requested port by Sandbox identity, so
+PiCloud does not reserve fixed application ports. The immutable template probes
+only envd. Assistant `localhost` links are rewritten by the Web client to the
 same-origin conversation Preview route. The Agent reports the guest-local port;
 it never calculates a public IP or NAT mapping.
 

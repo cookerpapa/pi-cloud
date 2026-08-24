@@ -3,6 +3,7 @@ import {
   parseEnvironmentToolchainReport,
   parseToolBrokerResponse,
   parseToolSandboxOperationResponse,
+  parseToolWorkerOutput,
   type EnvironmentValidationReport,
   type EnvironmentToolchainReport,
   type ToolBrokerMaterializeFileRequest,
@@ -13,10 +14,11 @@ import {
   type ToolSandboxCaptureResponse,
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
+  type ToolWorkerInput,
   type ToolWebProxyBootstrap,
   type DevelopmentEnvironmentProfileKey,
 } from "@pi-cloud/protocol";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { isIPv4 } from "node:net";
 import {
   createPersistentVolumeReference,
@@ -25,7 +27,6 @@ import {
   parsePersistentVolumeReference,
 } from "@pi-cloud/workspace-runtime";
 import {
-  CUBESANDBOX_TOOL_SERVICE_PORT,
   OfficialCubeSandboxRuntimeClient,
   type CubeSandboxInstance,
   type CubeSandboxRuntimeClient,
@@ -145,7 +146,6 @@ type CubeActivation = {
   seenOperationIds: Set<string>;
   seenCaptureIds: Set<string>;
   bindingSha256: string;
-  handoffSecret: string;
   authorityEpoch: number;
   state: "running" | "quiesced" | "idle" | "paused";
   volumeId: string;
@@ -187,38 +187,57 @@ function record(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function sandboxDirectoryListing(value: unknown): SandboxDirectoryListing {
-  const raw = record(value, "Cube guest directory");
-  if (typeof raw.path !== "string" || !Array.isArray(raw.entries) || raw.entries.length > 1_000) {
+function envdDirectoryListing(
+  path: string,
+  values: readonly Readonly<Record<string, unknown>>[],
+): SandboxDirectoryListing {
+  if (values.length > 1_000) {
     throw new ToolBrokerError(
       "development_environment_directory_invalid",
       "Cube guest directory response was invalid",
       false,
     );
   }
-  const entries = raw.entries.map((entry) => {
-    const candidate = record(entry, "Cube guest directory entry");
-    if (
-      typeof candidate.name !== "string" ||
-      typeof candidate.path !== "string" ||
-      !new Set(["directory", "file", "symlink", "other"]).has(String(candidate.kind)) ||
-      (candidate.sizeBytes !== undefined &&
-        (!Number.isSafeInteger(candidate.sizeBytes) || (candidate.sizeBytes as number) < 0))
-    ) {
-      throw new ToolBrokerError(
-        "development_environment_directory_invalid",
-        "Cube guest directory entry was invalid",
-        false,
-      );
-    }
-    return Object.freeze({
-      name: candidate.name,
-      path: candidate.path,
-      kind: candidate.kind as "directory" | "file" | "symlink" | "other",
-      ...(candidate.sizeBytes === undefined ? {} : { sizeBytes: candidate.sizeBytes as number }),
-    });
-  });
-  return { path: raw.path, entries: Object.freeze(entries) };
+  const kind = (value: unknown): "directory" | "file" | "symlink" | "other" => {
+    if (value === "FILE_TYPE_DIRECTORY") return "directory";
+    if (value === "FILE_TYPE_FILE") return "file";
+    if (value === "FILE_TYPE_SYMLINK") return "symlink";
+    return "other";
+  };
+  return {
+    path,
+    entries: Object.freeze(
+      values.map((entry) => {
+        if (
+          typeof entry.name !== "string" ||
+          entry.name.length < 1 ||
+          typeof entry.path !== "string" ||
+          !entry.path.startsWith("/")
+        ) {
+          throw new ToolBrokerError(
+            "development_environment_directory_invalid",
+            "Cube guest directory entry was invalid",
+            false,
+          );
+        }
+        const rawSize = entry.size;
+        const sizeBytes =
+          typeof rawSize === "number"
+            ? rawSize
+            : typeof rawSize === "string" && /^[0-9]+$/u.test(rawSize)
+              ? Number(rawSize)
+              : undefined;
+        return Object.freeze({
+          name: entry.name,
+          path: entry.path,
+          kind: kind(entry.type),
+          ...(typeof sizeBytes === "number" && Number.isSafeInteger(sizeBytes) && sizeBytes >= 0
+            ? { sizeBytes }
+            : {}),
+        });
+      }),
+    ),
+  };
 }
 
 function stringField(value: Record<string, unknown>, name: string, maximum = 256): string {
@@ -311,10 +330,6 @@ function physicalBindingSha256(
     .digest("hex");
 }
 
-function handoffSecret(): string {
-  return `pcch_${randomBytes(32).toString("base64url")}`;
-}
-
 function assignmentMetadata(
   activationId: string,
   assignment: ToolSandboxAssignment,
@@ -347,8 +362,8 @@ function assignmentMetadata(
     [METADATA.bindingSha256]: bindingSha256,
     [METADATA.imageRevision]: imageRevision,
     // Keep a fence-qualified immutable create record for inventory and orphan
-    // reconciliation. Later Run ownership lives in the Tool Broker's activation
-    // state and the guest's rotated authority, never in caller-selected labels.
+    // reconciliation. Later Run ownership lives only in PostgreSQL and the
+    // Tool Broker activation; generic envd carries no PiCloud authority.
     [`${ASSIGNMENT_METADATA_PREFIX}${String(assignment.fencingToken).padStart(16, "0")}`]:
       JSON.stringify(current),
   });
@@ -640,6 +655,82 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
   }
 
+  async #guestJson(
+    instance: CubeSandboxInstance,
+    input: unknown,
+    options: Readonly<{
+      program: "tool" | "control";
+      runAsToolUser: boolean;
+      timeoutMs: number;
+      signal?: AbortSignal;
+    }>,
+  ): Promise<unknown> {
+    const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
+    const bytes = Buffer.from(JSON.stringify(input), "utf8");
+    if (bytes.byteLength < 2 || bytes.byteLength > 16 * 1_024 * 1_024) {
+      throw new ToolBrokerError(
+        "cubesandbox_guest_request_invalid",
+        "CubeSandbox guest request exceeded its limit",
+        false,
+      );
+    }
+    await this.#client.writeGuestFile(instance, path, bytes);
+    const program =
+      options.program === "tool"
+        ? "/app/packages/tool-sandbox/src/envd-tool-exec.ts"
+        : "/app/packages/tool-sandbox/src/envd-guest-control.ts";
+    const prefix = options.runAsToolUser
+      ? "/usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs "
+      : "";
+    const prepareInput = options.runAsToolUser
+      ? `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && `
+      : `/bin/chmod 0400 ${path} && `;
+    try {
+      const result = await this.#client.runCommand(instance, {
+        command: `${prepareInput}${prefix}/usr/local/bin/node ${program} ${path}`,
+        cwd: "/",
+        user: "root",
+        timeoutMs: options.timeoutMs,
+        maximumOutputBytes: TOOL_RESPONSE_LIMIT_BYTES,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      });
+      const output = result.stdout.trim();
+      if (output.length < 2 || output.length > TOOL_RESPONSE_LIMIT_BYTES) {
+        throw new ToolBrokerError(
+          "cubesandbox_guest_response_invalid",
+          "CubeSandbox guest response was invalid",
+          false,
+        );
+      }
+      try {
+        return JSON.parse(output) as unknown;
+      } catch {
+        throw new ToolBrokerError(
+          "cubesandbox_guest_response_invalid",
+          "CubeSandbox guest response was invalid",
+          false,
+        );
+      }
+    } finally {
+      await this.#client.removeGuestFile(instance, path).catch(() => undefined);
+    }
+  }
+
+  #attachedInitialization(
+    activation: CubeActivation,
+  ): Extract<ToolWorkerInput, { type: "worker.initialize" }> {
+    return {
+      toolWorkerProtocolVersion: 1,
+      type: "worker.initialize",
+      activationId: activation.handle.activationId,
+      toolRoot: activation.toolRoot,
+      environment: activation.handle.environment,
+      workspaceSeed: { kind: "sample_java" },
+      workspaceAttach: { recipeCommands: activation.toolchain.recipeCommands },
+      webProxy: this.#webProxy,
+    };
+  }
+
   async checkHealth(): Promise<void> {
     await Promise.all([this.#client.checkHealth(), this.#workspaceVolumeGateway.checkHealth()]);
     this.#runtimeProbe ??= this.#probeRuntime();
@@ -697,7 +788,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       spec.assignment,
       spec.environment,
     );
-    const authoritySecret = handoffSecret();
     const volumeId = workspaceVolumeId(spec.assignment);
     await this.#client.ensureVolume(volumeId, "picloud-posix");
     const prepared = await this.#workspaceVolumeGateway.prepare({
@@ -731,31 +821,39 @@ export class CubeSandboxProvider implements SandboxProvider {
     try {
       const evidence = await this.#waitForEvidence(instance);
       this.#assertEvidence(evidence, spec.policy);
-      const toolchain = parseEnvironmentToolchainReport(
-        await this.#client.request(instance, {
-          method: "POST",
-          path: "/v1/initialize",
-          body: {
-            toolWorkerProtocolVersion: 1,
-            type: "worker.initialize",
-            activationId: spec.activationId,
-            toolRoot,
-            environment: spec.environment,
-            workspaceSeed: spec.workspaceSeed,
-            ...(prepared.attached
-              ? { workspaceAttach: { recipeCommands: volumeReference?.recipeCommands ?? [] } }
-              : {}),
-            webProxy: this.#webProxy,
+      const ready = parseToolWorkerOutput(
+        await this.#guestJson(
+          instance,
+          {
+            mode: "initialize",
+            initialization: {
+              toolWorkerProtocolVersion: 1,
+              type: "worker.initialize",
+              activationId: spec.activationId,
+              toolRoot,
+              environment: spec.environment,
+              workspaceSeed: spec.workspaceSeed,
+              ...(prepared.attached
+                ? { workspaceAttach: { recipeCommands: volumeReference?.recipeCommands ?? [] } }
+                : {}),
+              webProxy: this.#webProxy,
+            },
           },
-          timeoutMs: this.#readyTimeoutMs,
-          maximumResponseBytes: 1 * 1_024 * 1_024,
-          authority: {
-            handoffSecret: authoritySecret,
-            fencingToken: spec.assignment.fencingToken,
-            bindingSha256,
+          {
+            program: "tool",
+            runAsToolUser: true,
+            timeoutMs: this.#readyTimeoutMs,
           },
-        }),
+        ),
       );
+      if (ready.type !== "worker.ready" || ready.activationId !== spec.activationId) {
+        throw new ToolBrokerError(
+          "environment_preflight_mismatch",
+          "CubeSandbox environment initialization did not settle",
+          false,
+        );
+      }
+      const toolchain = parseEnvironmentToolchainReport(ready.environment);
       if (
         !isExpectedDefaultToolchain(toolchain) ||
         toolchain.profileKey !== spec.environment.profileKey ||
@@ -806,7 +904,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         seenOperationIds: new Set(),
         seenCaptureIds: new Set(),
         bindingSha256,
-        handoffSecret: authoritySecret,
         authorityEpoch: spec.assignment.fencingToken,
         state: "running",
         volumeId,
@@ -832,7 +929,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const nextSecret = handoffSecret();
     const nextAuthorityEpoch = brokerAssignment.fencingToken;
     if (
       brokerAssignment.tenantId !== handle.assignment.tenantId ||
@@ -847,62 +943,13 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    try {
-      const response = record(
-        await this.#client.request(activation.instance, {
-          method: "POST",
-          path: "/v1/rekey",
-          body: {
-            activationId: handle.activationId,
-            handoffSecret: nextSecret,
-            fencingToken: nextAuthorityEpoch,
-            bindingSha256: activation.bindingSha256,
-          },
-          timeoutMs: this.#readyTimeoutMs,
-          maximumResponseBytes: 1 * 1_024 * 1_024,
-          authority: this.#authority(activation),
-        }),
-        "CubeSandbox warm rekey",
-      );
-      if (response.rekeyed !== true || response.fencingToken !== nextAuthorityEpoch) {
-        throw new ToolBrokerError(
-          "cubesandbox_rekey_invalid",
-          "CubeSandbox warm rekey did not acknowledge the new fence",
-          false,
-        );
-      }
-      const toolchain = parseEnvironmentToolchainReport(response.environment);
-      if (
-        toolchain.profileKey !== handle.environment.profileKey ||
-        toolchain.profileVersion !== handle.environment.profileVersion ||
-        toolchain.imageRevision !== handle.environment.imageRevision ||
-        toolchain.specSha256 !== handle.environment.specSha256 ||
-        toolchain.recipeSha256 !== handle.environment.recipeSha256
-      ) {
-        throw new ToolBrokerError(
-          "cubesandbox_rekey_environment_mismatch",
-          "CubeSandbox warm environment did not match",
-          false,
-        );
-      }
-      const retained = Object.freeze({ ...handle, assignment: brokerAssignment });
-      activation.handle = retained;
-      activation.handoffSecret = nextSecret;
-      activation.authorityEpoch = nextAuthorityEpoch;
-      activation.toolchain = toolchain;
-      activation.state = "idle";
-      activation.seenOperationIds.clear();
-      activation.seenCaptureIds.clear();
-      return retained;
-    } catch {
-      await this.#client.destroy(activation.instance.sandboxId).catch(() => undefined);
-      this.#activations.delete(handle.activationId);
-      throw new ToolBrokerError(
-        "cubesandbox_rekey_failed",
-        "CubeSandbox warm authority rotation failed and requires a cold restore",
-        true,
-      );
-    }
+    const retained = Object.freeze({ ...handle, assignment: brokerAssignment });
+    activation.handle = retained;
+    activation.authorityEpoch = nextAuthorityEpoch;
+    activation.state = "idle";
+    activation.seenOperationIds.clear();
+    activation.seenCaptureIds.clear();
+    return retained;
   }
 
   async recoverWarm(
@@ -942,66 +989,14 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const nextSecret = handoffSecret();
-    const nextAuthorityEpoch = activation.authorityEpoch + 1;
-    try {
-      const response = record(
-        await this.#client.request(activation.instance, {
-          method: "POST",
-          path: "/v1/rebind",
-          body: {
-            activationId: handle.activationId,
-            handoffSecret: nextSecret,
-            fencingToken: nextAuthorityEpoch,
-            bindingSha256: activation.bindingSha256,
-            toolRoot,
-          },
-          timeoutMs: this.#readyTimeoutMs,
-          maximumResponseBytes: 1 * 1_024 * 1_024,
-          authority: this.#authority(activation),
-        }),
-        "CubeSandbox rebind",
-      );
-      if (response.rebound !== true || response.fencingToken !== nextAuthorityEpoch) {
-        throw new ToolBrokerError(
-          "cubesandbox_rebind_invalid",
-          "CubeSandbox warm rebind did not acknowledge the new fence",
-          false,
-        );
-      }
-      const toolchain = parseEnvironmentToolchainReport(response.environment);
-      if (
-        toolchain.profileKey !== handle.environment.profileKey ||
-        toolchain.profileVersion !== handle.environment.profileVersion ||
-        toolchain.imageRevision !== handle.environment.imageRevision ||
-        toolchain.specSha256 !== handle.environment.specSha256 ||
-        toolchain.recipeSha256 !== handle.environment.recipeSha256
-      ) {
-        throw new ToolBrokerError(
-          "cubesandbox_rebind_environment_mismatch",
-          "CubeSandbox preserved environment did not match",
-          false,
-        );
-      }
-      const rebound: SandboxHandle = Object.freeze({ ...handle, assignment });
-      activation.handle = rebound;
-      activation.handoffSecret = nextSecret;
-      activation.authorityEpoch = nextAuthorityEpoch;
-      activation.toolchain = toolchain;
-      activation.toolRoot = toolRoot;
-      activation.state = "running";
-      activation.seenOperationIds.clear();
-      activation.seenCaptureIds.clear();
-      return rebound;
-    } catch (error: unknown) {
-      await this.#client.destroy(activation.instance.sandboxId).catch(() => undefined);
-      this.#activations.delete(handle.activationId);
-      throw new ToolBrokerError(
-        "cubesandbox_rebind_failed",
-        "CubeSandbox warm rebind failed and requires a cold restore",
-        true,
-      );
-    }
+    const rebound: SandboxHandle = Object.freeze({ ...handle, assignment });
+    activation.handle = rebound;
+    activation.authorityEpoch = Math.max(activation.authorityEpoch + 1, assignment.fencingToken);
+    activation.toolRoot = toolRoot;
+    activation.state = "running";
+    activation.seenOperationIds.clear();
+    activation.seenCaptureIds.clear();
+    return rebound;
   }
 
   async exec(
@@ -1025,45 +1020,36 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     activation.seenOperationIds.add(request.operationId);
-    const cancel = (): void => {
-      void this.#client
-        .request(activation.instance, {
-          method: "POST",
-          path: "/v1/cancel",
-          body: {
-            activationId: handle.activationId,
-            operationId: request.operationId,
-          },
-          timeoutMs: 5_000,
-          maximumResponseBytes: 64 * 1_024,
-          authority: this.#authority(activation),
-        })
-        .catch(() => undefined);
-    };
-    signal?.addEventListener("abort", cancel, { once: true });
     try {
       const timeoutMs =
         request.operation === "bash.exec" ? request.timeoutMs + 5_000 : this.#readyTimeoutMs;
-      const attach = (): Promise<unknown> =>
-        this.#client.request(activation.instance, {
-          method: "POST",
-          path: "/v1/operation",
-          body: request,
-          ...(signal === undefined ? {} : { signal }),
-          timeoutMs,
-          maximumResponseBytes: TOOL_RESPONSE_LIMIT_BYTES,
-          authority: this.#authority(activation),
-        });
-      let result: unknown;
-      try {
-        result = await attach();
-      } catch (error: unknown) {
-        if (signal?.aborted) throw error;
-        // Reattach to the same operation ledger entry. The Cube Tool service
-        // never starts a second command for this operationId.
-        result = await attach();
+      const output = parseToolWorkerOutput(
+        await this.#guestJson(
+          activation.instance,
+          {
+            mode: "operation",
+            initialization: this.#attachedInitialization(activation),
+            operation: request,
+          },
+          {
+            program: "tool",
+            runAsToolUser: true,
+            timeoutMs,
+            ...(signal === undefined ? {} : { signal }),
+          },
+        ),
+      );
+      if (output.type === "worker.failed") {
+        throw new ToolBrokerError(output.code, output.message, output.retryable);
       }
-      return parseToolSandboxOperationResponse(result);
+      if (output.type !== "worker.operation_result") {
+        throw new ToolBrokerError(
+          "cubesandbox_protocol_error",
+          "CubeSandbox returned the wrong Tool Worker response",
+          false,
+        );
+      }
+      return parseToolSandboxOperationResponse(output.response);
     } catch (error: unknown) {
       // A disconnected remote command has an unknowable execution result.
       // Destroying the disposable VM prevents it from continuing behind a
@@ -1077,8 +1063,6 @@ export class CubeSandboxProvider implements SandboxProvider {
           : "CubeSandbox Tool command result was unknown; the VM was destroyed",
         signal?.aborted === true,
       );
-    } finally {
-      signal?.removeEventListener("abort", cancel);
     }
   }
 
@@ -1189,7 +1173,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     const terminal = await this.#client.openTerminal(activation.instance, {
       rows: size.rows,
       cols: size.cols,
-      authority: this.#authority(activation),
       admin: activation.lifetime === "development_environment",
     });
     return Object.freeze({
@@ -1225,7 +1208,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
     return this.#client.requestService(activation.instance, {
       ...request,
-      authority: this.#authority(activation),
       maximumResponseBytes: 16 * 1_024 * 1_024,
       timeoutMs: 60_000,
     });
@@ -1243,15 +1225,9 @@ export class CubeSandboxProvider implements SandboxProvider {
         true,
       );
     }
-    return sandboxDirectoryListing(
-      await this.#client.request(activation.instance, {
-        method: "POST",
-        path: "/v1/directory",
-        body: { path },
-        timeoutMs: 15_000,
-        maximumResponseBytes: 2 * 1_024 * 1_024,
-        authority: this.#authority(activation),
-      }),
+    return envdDirectoryListing(
+      path,
+      await this.#client.listGuestDirectory(activation.instance, path),
     );
   }
 
@@ -1268,15 +1244,26 @@ export class CubeSandboxProvider implements SandboxProvider {
         true,
       );
     }
-    return sandboxDirectoryListing(
-      await this.#client.request(activation.instance, {
-        method: "POST",
-        path: "/v1/directory/create",
-        body: { path, name },
-        timeoutMs: 15_000,
-        maximumResponseBytes: 2 * 1_024 * 1_024,
-        authority: this.#authority(activation),
-      }),
+    if (
+      name.length < 1 ||
+      name.length > 128 ||
+      name === "." ||
+      name === ".." ||
+      name.includes("/") ||
+      /[\u0000-\u001f\u007f]/u.test(name)
+    ) {
+      throw new ToolBrokerError(
+        "development_environment_directory_invalid",
+        "Cube guest directory name was invalid",
+        false,
+      );
+    }
+    const parent = path === "/" ? "/" : path.replace(/\/$/u, "");
+    const target = `${parent === "/" ? "" : parent}/${name}`;
+    await this.#client.createGuestDirectory(activation.instance, target);
+    return envdDirectoryListing(
+      path,
+      await this.#client.listGuestDirectory(activation.instance, path),
     );
   }
 
@@ -1355,7 +1342,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         evidence: activation.evidence,
         toolchain: activation.toolchain,
         bindingSha256: activation.bindingSha256,
-        handoffSecret: activation.handoffSecret,
         authorityEpoch: activation.authorityEpoch,
         state: activation.state,
         volumeId: activation.volumeId,
@@ -1385,8 +1371,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       raw.lifetime !== "development_environment" ||
       typeof raw.bindingSha256 !== "string" ||
       !/^[0-9a-f]{64}$/.test(raw.bindingSha256) ||
-      typeof raw.handoffSecret !== "string" ||
-      !/^pcch_[A-Za-z0-9_-]{43}$/.test(raw.handoffSecret) ||
       !Number.isSafeInteger(raw.authorityEpoch) ||
       (raw.authorityEpoch as number) < 1 ||
       typeof raw.volumeId !== "string" ||
@@ -1461,7 +1445,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       seenOperationIds: new Set(),
       seenCaptureIds: new Set(),
       bindingSha256: raw.bindingSha256,
-      handoffSecret: raw.handoffSecret,
       authorityEpoch: raw.authorityEpoch as number,
       state,
       volumeId: raw.volumeId,
@@ -1489,27 +1472,25 @@ export class CubeSandboxProvider implements SandboxProvider {
       throw new ToolBrokerError("tool_capture_replay", "Tool capture ID was already used", false);
     }
     activation.seenCaptureIds.add(requestId);
-    const recoverySecret = handoffSecret();
+    let frozenToolProcesses: readonly Readonly<{ pid: number; startTime: string }>[] = [];
     try {
       const raw = record(
-        await this.#client.request(activation.instance, {
-          method: "POST",
-          path: "/v1/checkpoint",
-          body: { recoverySecret },
-          timeoutMs: this.#readyTimeoutMs,
-          maximumResponseBytes: 32 * 1_024 * 1_024,
-          authority: this.#authority(activation),
-        }),
+        await this.#guestJson(
+          activation.instance,
+          { mode: "freeze" },
+          {
+            program: "control",
+            runAsToolUser: false,
+            timeoutMs: this.#readyTimeoutMs,
+          },
+        ),
         "CubeSandbox checkpoint preparation",
       );
-      activation.handoffSecret = recoverySecret;
       activation.state = "quiesced";
-      const frozenToolProcesses = raw.frozenToolProcesses;
+      const processes = raw.processes;
       if (
-        raw.sealed !== true ||
-        raw.fencingToken !== activation.authorityEpoch ||
-        !Array.isArray(frozenToolProcesses) ||
-        frozenToolProcesses.some((entry) => {
+        !Array.isArray(processes) ||
+        processes.some((entry) => {
           if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return true;
           const processIdentity = entry as Record<string, unknown>;
           return (
@@ -1518,8 +1499,7 @@ export class CubeSandboxProvider implements SandboxProvider {
             typeof processIdentity.startTime !== "string" ||
             !/^[0-9]+$/.test(processIdentity.startTime)
           );
-        }) ||
-        !Array.isArray(raw.files)
+        })
       ) {
         throw new ToolBrokerError(
           "cubesandbox_checkpoint_prepare_invalid",
@@ -1527,6 +1507,10 @@ export class CubeSandboxProvider implements SandboxProvider {
           false,
         );
       }
+      frozenToolProcesses = processes as readonly Readonly<{
+        pid: number;
+        startTime: string;
+      }>[];
       const volume = await this.#workspaceVolumeGateway.snapshot({
         tenantId: handle.assignment.tenantId,
         workspaceId: handle.assignment.workspaceId,
@@ -1570,20 +1554,18 @@ export class CubeSandboxProvider implements SandboxProvider {
         );
       }
       const completed = record(
-        await this.#client.request(activation.instance, {
-          method: "POST",
-          path: "/v1/checkpoint/complete",
-          body: {},
-          timeoutMs: this.#readyTimeoutMs,
-          maximumResponseBytes: 64 * 1_024,
-          authority: this.#authority(activation),
-        }),
+        await this.#guestJson(
+          activation.instance,
+          { mode: "thaw", processes: frozenToolProcesses },
+          {
+            program: "control",
+            runAsToolUser: false,
+            timeoutMs: this.#readyTimeoutMs,
+          },
+        ),
         "CubeSandbox checkpoint completion",
       );
-      if (
-        completed.completed !== true ||
-        completed.resumedToolProcesses !== frozenToolProcesses.length
-      ) {
+      if (completed.resumed !== frozenToolProcesses.length) {
         throw new ToolBrokerError(
           "cubesandbox_checkpoint_completion_invalid",
           "CubeSandbox did not resume the checkpointed process boundary",
@@ -1595,14 +1577,15 @@ export class CubeSandboxProvider implements SandboxProvider {
     } catch (error: unknown) {
       if (activation.state === "quiesced") {
         try {
-          await this.#client.request(activation.instance, {
-            method: "POST",
-            path: "/v1/checkpoint/complete",
-            body: {},
-            timeoutMs: this.#readyTimeoutMs,
-            maximumResponseBytes: 64 * 1_024,
-            authority: this.#authority(activation),
-          });
+          await this.#guestJson(
+            activation.instance,
+            { mode: "thaw", processes: frozenToolProcesses },
+            {
+              program: "control",
+              runAsToolUser: false,
+              timeoutMs: this.#readyTimeoutMs,
+            },
+          );
           activation.state = "idle";
         } catch {
           await this.#client.destroy(activation.instance.sandboxId).catch(() => undefined);
@@ -1932,14 +1915,19 @@ export class CubeSandboxProvider implements SandboxProvider {
     let lastError: unknown;
     while (Date.now() < deadline) {
       try {
-        return parseEvidence(
-          await this.#client.request(instance, {
-            method: "GET",
-            path: "/v1/evidence",
-            timeoutMs: Math.min(5_000, this.#readyTimeoutMs),
-            maximumResponseBytes: 64 * 1_024,
-          }),
+        const response = record(
+          await this.#guestJson(
+            instance,
+            { mode: "evidence" },
+            {
+              program: "control",
+              runAsToolUser: true,
+              timeoutMs: Math.min(5_000, this.#readyTimeoutMs),
+            },
+          ),
+          "CubeSandbox evidence",
         );
+        return parseEvidence(response.evidence);
       } catch (error: unknown) {
         lastError = error;
         await new Promise((resolve) => setTimeout(resolve, 250));
@@ -2011,16 +1999,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     return activation;
   }
 
-  #authority(
-    activation: CubeActivation,
-  ): NonNullable<Parameters<CubeSandboxRuntimeClient["request"]>[1]["authority"]> {
-    return {
-      handoffSecret: activation.handoffSecret,
-      fencingToken: activation.authorityEpoch,
-      bindingSha256: activation.bindingSha256,
-    };
-  }
-
   #assertHandle(handle: SandboxHandle): void {
     if (
       handle.providerApiVersion !== 1 ||
@@ -2036,5 +2014,3 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
   }
 }
-
-export { CUBESANDBOX_TOOL_SERVICE_PORT };

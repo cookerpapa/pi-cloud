@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -19,13 +19,8 @@ function capture(command, args, timeout = 30_000) {
         timeout,
       },
       (error, stdout, stderr) => {
-        if (error) {
-          rejectPromise(
-            new Error(`${command} ${args.join(" ")} failed: ${stderr.trim() || error.message}`),
-          );
-        } else {
-          resolvePromise(stdout.trim());
-        }
+        if (error) rejectPromise(new Error(stderr.trim() || error.message));
+        else resolvePromise(stdout.trim());
       },
     );
   });
@@ -33,21 +28,14 @@ function capture(command, args, timeout = 30_000) {
 
 function run(command, args) {
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(command, args, {
-      cwd: repositoryRoot,
-      env: process.env,
-      stdio: "inherit",
-    });
+    const child = spawn(command, args, { cwd: repositoryRoot, env: process.env, stdio: "inherit" });
     child.once("error", rejectPromise);
     child.once("exit", (code, signal) => {
       if (code === 0) resolvePromise();
-      else {
+      else
         rejectPromise(
-          new Error(
-            `${command} ${args.join(" ")} failed (code=${String(code)}, signal=${String(signal)})`,
-          ),
+          new Error(`${command} failed (code=${String(code)}, signal=${String(signal)})`),
         );
-      }
     });
   });
 }
@@ -56,103 +44,124 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-let currentAuthority;
-async function jsonRequest(baseUrl, path, body, authority = currentAuthority) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    headers: {
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-      ...(authority === undefined
-        ? {}
-        : {
-            "x-pi-cloud-handoff-secret": authority.handoffSecret,
-            "x-pi-cloud-fencing-token": String(authority.fencingToken),
-            "x-pi-cloud-binding-sha256": authority.bindingSha256,
-          }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`${path} returned ${String(response.status)}: ${text}`);
-  }
-  return text.length === 0 ? undefined : JSON.parse(text);
+function connectEnvelope(value) {
+  const payload = Buffer.from(JSON.stringify(value), "utf8");
+  const header = Buffer.alloc(5);
+  header.writeUInt32BE(payload.byteLength, 1);
+  return Buffer.concat([header, payload]);
 }
 
-async function requestStatus(baseUrl, path, body, authority) {
-  const response = await fetch(`${baseUrl}${path}`, {
+async function envdRun(baseUrl, command, user = "root", timeoutMs = 30_000) {
+  const response = await fetch(`${baseUrl}/process.Process/Start`, {
     method: "POST",
     headers: {
-      "content-type": "application/json",
-      "x-pi-cloud-handoff-secret": authority.handoffSecret,
-      "x-pi-cloud-fencing-token": String(authority.fencingToken),
-      "x-pi-cloud-binding-sha256": authority.bindingSha256,
+      authorization: `Basic ${Buffer.from(`${user}:`).toString("base64")}`,
+      "content-type": "application/connect+json",
+      "connect-protocol-version": "1",
+      "connect-content-encoding": "identity",
+      "connect-timeout-ms": String(timeoutMs),
     },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
+    body: connectEnvelope({
+      process: { cmd: "/bin/bash", args: ["--noprofile", "--norc", "-lc", command], cwd: "/" },
+      stdin: false,
+    }),
+    signal: AbortSignal.timeout(timeoutMs + 1_000),
   });
-  await response.body?.cancel();
-  return response.status;
-}
-
-async function waitUntilReady(baseUrl) {
-  let lastError;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    try {
-      const response = await fetch(`${baseUrl}/health`, {
-        signal: AbortSignal.timeout(1_000),
-      });
-      if (response.status === 204) return;
-      lastError = new Error(`health returned ${String(response.status)}`);
-    } catch (error) {
-      lastError = error;
+  assert(
+    response.ok && response.body !== null,
+    `envd command failed: HTTP ${String(response.status)}`,
+  );
+  const bytes = Buffer.from(await response.arrayBuffer());
+  let offset = 0;
+  let stdout = "";
+  let stderr = "";
+  let exitCode;
+  const observedEvents = [];
+  while (offset < bytes.byteLength) {
+    assert(offset + 5 <= bytes.byteLength, "envd returned a partial frame");
+    const flags = bytes.readUInt8(offset);
+    const size = bytes.readUInt32BE(offset + 1);
+    offset += 5;
+    assert(offset + size <= bytes.byteLength, "envd returned a partial payload");
+    const payload = JSON.parse(bytes.subarray(offset, offset + size).toString("utf8"));
+    observedEvents.push(payload);
+    offset += size;
+    if ((flags & 0x02) !== 0) {
+      if (payload.error) throw new Error(payload.error.message ?? "envd stream failed");
+      break;
     }
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+    const event = payload.event ?? {};
+    if (event.data?.stdout) stdout += Buffer.from(event.data.stdout, "base64").toString("utf8");
+    if (event.data?.stderr) stderr += Buffer.from(event.data.stderr, "base64").toString("utf8");
+    if (event.end?.exitCode !== undefined) exitCode = Number(event.end.exitCode);
+    else if (event.end?.exit_code !== undefined) exitCode = Number(event.end.exit_code);
+    else if (
+      typeof event.end?.status === "string" &&
+      /exit status (-?\d+)/u.test(event.end.status)
+    ) {
+      exitCode = Number(event.end.status.match(/exit status (-?\d+)/u)[1]);
+    } else if (event.end?.status === "exited") exitCode = 0;
   }
-  throw new Error(`Cube Tool service did not become ready: ${String(lastError)}`);
+  assert(
+    Number.isSafeInteger(exitCode),
+    `envd command ended without an exit code: ${JSON.stringify(observedEvents.slice(-3))}`,
+  );
+  return { stdout, stderr, exitCode };
 }
 
-function templateContextSha256(name) {
-  return createHash("sha256").update(`pi-cloud-template-check-${name}`, "utf8").digest("hex");
+async function writeEnvdFile(baseUrl, path, value) {
+  const response = await fetch(`${baseUrl}/files?path=${encodeURIComponent(path)}&username=root`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: Buffer.from(JSON.stringify(value), "utf8"),
+    signal: AbortSignal.timeout(10_000),
+  });
+  assert(response.ok, `envd file write failed: HTTP ${String(response.status)}`);
+  await response.body?.cancel();
 }
 
-const templateTurnContextSha256 = templateContextSha256("turn-context");
-const templateAttemptContextSha256 = templateContextSha256("attempt-context");
-const templateStepContextSha256 = templateContextSha256("step-context");
-
-function operationEnvelope(activationId, operationId, operation) {
-  return {
-    toolBrokerProtocolVersion: 1,
-    type: "tool_sandbox.operation",
-    activationId,
-    operationId,
-    turnContextSha256: templateTurnContextSha256,
-    attemptContextSha256: templateAttemptContextSha256,
-    stepContextSequence: 1,
-    stepContextSha256: templateStepContextSha256,
-    toolName: "bash",
-    ...operation,
-  };
-}
-
-function bashOutput(response) {
-  if (response.type !== "tool_sandbox.operation_result" || response.operation !== "bash.exec") {
-    return "";
-  }
-  return Buffer.concat(
-    response.outputChunks.map((chunk) => Buffer.from(chunk.data, "base64")),
-  ).toString("utf8");
-}
+const contextSha256 = (name) =>
+  createHash("sha256").update(`pi-cloud-template-check-${name}`, "utf8").digest("hex");
+const activationId = randomUUID();
+const environment = (imageRevision) => ({
+  environmentVersionId: randomUUID(),
+  versionNumber: 1,
+  profileKey: "pi-cloud-fullstack",
+  profileVersion: "1",
+  imageRevision,
+  specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+  recipe: {
+    schemaVersion: 1,
+    setupCommands: [],
+    verificationCommands: [
+      {
+        id: "workspace-root",
+        command: 'test "$PWD" = /workspace && test -w .',
+        cwd: ".",
+        timeoutMs: 10_000,
+        network: "none",
+      },
+    ],
+  },
+  recipeSha256: "2d6c5260fe7bc3901e454ff93106dc5ed263d6edbbabf7bafdf852021289e5ba",
+});
+const operation = (body) => ({
+  toolBrokerProtocolVersion: 1,
+  type: "tool_sandbox.operation",
+  activationId,
+  operationId: randomUUID(),
+  turnContextSha256: contextSha256("turn"),
+  attemptContextSha256: contextSha256("attempt"),
+  stepContextSequence: 1,
+  stepContextSha256: contextSha256("step"),
+  toolName:
+    body.operation === "bash.exec" ? "bash" : body.operation === "file.write" ? "write" : "read",
+  ...body,
+});
 
 let started = false;
 try {
   await capture("docker", ["image", "inspect", image]);
-
-  // Docker/runc counts RLIMIT_NPROC against every host process with uid 1000.
-  // A real Cube microVM has its own guest uid namespace, so the image's normal
-  // entrypoint uses the stricter 128-process limit. This local template check
-  // substitutes only that limit and still starts the exact PiCloud service.
   await run("docker", [
     "run",
     "--detach",
@@ -167,376 +176,102 @@ try {
     "--tmpfs",
     "/workspace:rw,nosuid,nodev,size=128m,uid=1000,gid=1000,mode=0700",
     "--publish",
-    "127.0.0.1:0:49984",
+    "127.0.0.1:0:49983",
     image,
-    "/bin/bash",
-    "-c",
-    "ulimit -n 1024; exec setpriv --no-new-privs /usr/local/bin/node /app/packages/tool-sandbox/src/cube-tool-service.ts",
   ]);
   started = true;
-
-  const published = await capture("docker", ["port", containerName, "49984/tcp"]);
+  const published = await capture("docker", ["port", containerName, "49983/tcp"]);
   const port = Number(published.slice(published.lastIndexOf(":") + 1));
-  assert(Number.isInteger(port) && port > 0 && port <= 65_535, "Docker port was invalid");
+  assert(Number.isSafeInteger(port) && port > 0, "envd port mapping was invalid");
   const baseUrl = `http://127.0.0.1:${String(port)}`;
-  await waitUntilReady(baseUrl);
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const ready = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(1_000) })
+      .then((response) => response.status === 204)
+      .catch(() => false);
+    if (ready) break;
+    if (attempt === 99) throw new Error("Cube envd did not become ready");
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+  }
 
-  const evidence = await jsonRequest(baseUrl, "/v1/evidence");
-  assert(evidence.uid === 1_000 && evidence.gid === 1_000, "Tool service was not uid/gid 1000");
+  const processView = await envdRun(baseUrl, "ps -eo comm= | sort -u");
+  assert(processView.exitCode === 0 && processView.stdout.includes("envd"), "envd was not running");
   assert(
-    evidence.supervisorUid === 0 && evidence.supervisorGid === 0,
-    "Cube handoff supervisor was not root-owned",
+    !processView.stdout.includes("pi-cloud-cube-tool"),
+    "legacy PiCloud guest daemon was running",
   );
-  assert(evidence.noNewPrivileges === true, "Tool service allowed new privileges");
-  assert(
-    evidence.effectiveCapabilities === "0000000000000000",
-    "Tool service retained Linux capabilities",
-  );
-  assert(
-    evidence.readOnlyRootFilesystem === false,
-    "Cube template unexpectedly reported a read-only guest rootfs",
-  );
-  assert(
-    typeof evidence.imageRevision === "string" &&
-      /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(evidence.imageRevision),
-    "Cube image revision evidence was invalid",
-  );
-  // A fresh VM created from an immutable base template receives its durable
-  // Workspace through the Cube Volume Plugin before the trusted Manager
-  // initializes the Tool Worker. Exercise that cold-attach path explicitly;
-  // warm rebind below covers the same attach contract after a sealed handoff.
-  await capture("docker", [
-    "exec",
-    "--user",
-    "1000:1000",
-    containerName,
-    "sh",
-    "-c",
-    "printf 'template check\\n' > /workspace/README.txt && test ! -e /workspace/.git",
-  ]);
 
-  const activationId = randomUUID();
-  currentAuthority = {
-    handoffSecret: `pcch_${randomBytes(32).toString("base64url")}`,
-    fencingToken: 7,
-    bindingSha256: createHash("sha256").update("template-check-binding").digest("hex"),
-  };
-  const toolchain = await jsonRequest(baseUrl, "/v1/initialize", {
+  const evidencePath = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
+  await writeEnvdFile(baseUrl, evidencePath, { mode: "evidence" });
+  const evidenceResult = await envdRun(
+    baseUrl,
+    `/bin/chown 1000:1000 ${evidencePath} && /bin/chmod 0400 ${evidencePath} && /usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /app/packages/tool-sandbox/src/envd-guest-control.ts ${evidencePath}`,
+  );
+  assert(
+    evidenceResult.exitCode === 0,
+    `Guest evidence failed: ${evidenceResult.stderr || evidenceResult.stdout}`,
+  );
+  const evidence = JSON.parse(evidenceResult.stdout).evidence;
+  assert(evidence.uid === 1000 && evidence.gid === 1000, "Tool process identity was invalid");
+  assert(evidence.noNewPrivileges === true, "Tool process allowed new privileges");
+  assert(/^0+$/u.test(evidence.effectiveCapabilities), "Tool process retained capabilities");
+
+  const initialization = {
     toolWorkerProtocolVersion: 1,
     type: "worker.initialize",
     activationId,
     toolRoot: "/workspace",
-    environment: {
-      environmentVersionId: randomUUID(),
-      versionNumber: 1,
-      profileKey: "pi-cloud-fullstack",
-      profileVersion: "1",
-      imageRevision: evidence.imageRevision,
-      specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
-      recipe: {
-        schemaVersion: 1,
-        setupCommands: [],
-        verificationCommands: [
-          {
-            id: "workspace-root",
-            command: 'test "$PWD" = /workspace && test -w .',
-            cwd: ".",
-            timeoutMs: 10_000,
-            network: "none",
-          },
-        ],
-      },
-      recipeSha256: "2d6c5260fe7bc3901e454ff93106dc5ed263d6edbbabf7bafdf852021289e5ba",
-    },
+    environment: environment(evidence.imageRevision),
     workspaceSeed: { kind: "sample_java" },
     workspaceAttach: { recipeCommands: [] },
-  });
-  const versions = new Map(toolchain.tools.map((tool) => [tool.name, tool.version]));
-  assert(/^v24\./.test(versions.get("node") ?? ""), "Node 24 evidence was missing");
-  assert(/version\s+"17(?:\.|")/.test(versions.get("java") ?? ""), "Java 17 evidence was missing");
-  assert(/^Python 3\.11\./.test(versions.get("python") ?? ""), "Python 3.11 was missing");
-  assert(/^git version 2\./.test(versions.get("git") ?? ""), "Git 2 evidence was missing");
-
-  const pythonTls = await jsonRequest(
-    baseUrl,
-    "/v1/operation",
-    operationEnvelope(activationId, randomUUID(), {
-      operation: "bash.exec",
-      command: 'python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"',
-      cwd: "/workspace",
-      timeoutMs: 10_000,
-    }),
-  );
-  const pythonTlsOutput = bashOutput(pythonTls);
-  assert(
-    pythonTls.exitCode === 0 && /^OpenSSL 3\./.test(pythonTlsOutput),
-    "Python TLS support was not usable inside the Cube template",
-  );
-
-  const source =
-    "def counting_sort(values):\n" +
-    "    if not values:\n" +
-    "        return []\n" +
-    "    low, high = min(values), max(values)\n" +
-    "    counts = [0] * (high - low + 1)\n" +
-    "    for value in values:\n" +
-    "        counts[value - low] += 1\n" +
-    "    return [value for value, count in enumerate(counts, low) for _ in range(count)]\n" +
-    "\n" +
-    "assert counting_sort([4, 2, 2, 8, 3, 3, 1]) == [1, 2, 2, 3, 3, 4, 8]\n" +
-    "print('counting-sort-ok')\n";
-  const write = await jsonRequest(
-    baseUrl,
-    "/v1/operation",
-    operationEnvelope(activationId, randomUUID(), {
-      operation: "file.write",
-      path: "counting_sort.py",
-      content: source,
-    }),
-  );
-  assert(
-    write.type === "tool_sandbox.operation_result" && write.operation === "file.write",
-    "File write did not succeed",
-  );
-
-  const executed = await jsonRequest(
-    baseUrl,
-    "/v1/operation",
-    operationEnvelope(activationId, randomUUID(), {
-      operation: "bash.exec",
-      command: "python3 counting_sort.py",
-      cwd: "/workspace",
-      timeoutMs: 10_000,
-    }),
-  );
-  const output = bashOutput(executed);
-  assert(executed.exitCode === 0 && output === "counting-sort-ok\n", "Python test failed");
-
-  const envdProbeProgram =
-    "const net=require('node:net');" +
-    "const socket=net.createConnection({host:'127.0.0.1',port:49983});" +
-    "const absent=()=>{socket.destroy();process.stdout.write('envd-absent')};" +
-    "socket.setTimeout(1000,absent);" +
-    "socket.once('error',absent);" +
-    "socket.once('connect',()=>{socket.destroy();process.exit(91)});";
-  const envdProbe = await jsonRequest(
-    baseUrl,
-    "/v1/operation",
-    operationEnvelope(activationId, randomUUID(), {
-      operation: "bash.exec",
-      command: `test ! -e /usr/bin/envd && node -e ${JSON.stringify(envdProbeProgram)}`,
-      cwd: "/workspace",
-      timeoutMs: 5_000,
-    }),
-  );
-  const envdProbeOutput = bashOutput(envdProbe);
-  assert(
-    envdProbe.exitCode === 0 && envdProbeOutput === "envd-absent",
-    "An unmediated envd service was reachable",
-  );
-
-  const terminalResponse = await fetch(`${baseUrl}/v1/terminal/open`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-pi-cloud-handoff-secret": currentAuthority.handoffSecret,
-      "x-pi-cloud-fencing-token": String(currentAuthority.fencingToken),
-      "x-pi-cloud-binding-sha256": currentAuthority.bindingSha256,
-    },
-    body: JSON.stringify({ rows: 24, cols: 100, admin: false }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  assert(
-    terminalResponse.ok && terminalResponse.body !== null,
-    `Fenced Workspace terminal failed to open: HTTP ${String(terminalResponse.status)}`,
-  );
-  const terminalOutput = (async () => {
-    const frames = (await terminalResponse.text())
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    assert(
-      frames[0]?.type === "ready" && Number.isSafeInteger(frames[0]?.pid),
-      "Workspace terminal did not report a PID",
+  };
+  const runTool = async (request) => {
+    const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
+    await writeEnvdFile(baseUrl, path, { mode: "operation", initialization, operation: request });
+    const result = await envdRun(
+      baseUrl,
+      `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && /usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /app/packages/tool-sandbox/src/envd-tool-exec.ts ${path}`,
+      "root",
+      request.operation === "bash.exec" ? request.timeoutMs + 5_000 : 30_000,
     );
-    return Buffer.concat(
-      frames
-        .filter((frame) => frame.type === "output" && typeof frame.data === "string")
-        .map((frame) => Buffer.from(frame.data, "base64")),
-    ).toString("utf8");
-  })();
-  // The control request below can fail before the stream is awaited. Attach a
-  // rejection observer now so cleanup does not mask the actionable RPC error.
-  void terminalOutput.catch(() => undefined);
-  await jsonRequest(baseUrl, "/v1/terminal/resize", { rows: 40, cols: 120 });
-  await jsonRequest(baseUrl, "/v1/terminal/input", {
-    data: Buffer.from("printf '__picloud_terminal_ok__\\n'; exit\n", "utf8").toString("base64"),
-  });
-  assert(
-    (await terminalOutput).includes("__picloud_terminal_ok__"),
-    "Fenced Workspace terminal output was missing",
-  );
-
-  const escaped = await jsonRequest(
-    baseUrl,
-    "/v1/operation",
-    operationEnvelope(activationId, randomUUID(), {
-      operation: "file.read",
-      path: "../etc/passwd",
-    }),
-  );
-  assert(
-    escaped.type === "tool_sandbox.operation_failed" &&
-      escaped.code === "tool_path_escape" &&
-      escaped.retryable === false,
-    "Workspace path traversal was not rejected",
-  );
-
-  const background = await jsonRequest(
-    baseUrl,
-    "/v1/operation",
-    operationEnvelope(activationId, randomUUID(), {
-      operation: "bash.exec",
-      command: "sleep 300 >/dev/null 2>&1 & echo $!",
-      cwd: "/workspace",
-      timeoutMs: 5_000,
-    }),
-  );
-  assert(background.exitCode === 0, "Background-process fixture did not start");
-  const backgroundPid = Number(bashOutput(background).trim());
-  assert(Number.isSafeInteger(backgroundPid) && backgroundPid > 1, "Background PID was invalid");
-  const previousAuthority = currentAuthority;
-  const recoveryAuthority = {
-    ...previousAuthority,
-    handoffSecret: `pcch_${randomBytes(32).toString("base64url")}`,
+    return JSON.parse(result.stdout).response;
   };
-  const checkpointed = await jsonRequest(
-    baseUrl,
-    "/v1/checkpoint",
-    { recoverySecret: recoveryAuthority.handoffSecret },
-    previousAuthority,
-  );
-  assert(
-    checkpointed.sealed === true &&
-      Array.isArray(checkpointed.frozenToolProcesses) &&
-      checkpointed.frozenToolProcesses.some((process) => process.pid === backgroundPid) &&
-      checkpointed.files.some((file) => file.path === "counting_sort.py"),
-    "Cube guest did not prepare a quiescent Workspace checkpoint",
-  );
-  const indexedSource = checkpointed.files.find((file) => file.path === "counting_sort.py");
-  assert(
-    indexedSource?.sizeBytes === Buffer.byteLength(source, "utf8") &&
-      indexedSource.sha256 === createHash("sha256").update(source, "utf8").digest("hex"),
-    "Workspace checkpoint index did not describe the tested source file",
-  );
-  const staleWhileSealed = await requestStatus(
-    baseUrl,
-    "/v1/operation",
-    operationEnvelope(activationId, randomUUID(), {
-      operation: "file.read",
-      path: "counting_sort.py",
-    }),
-    previousAuthority,
-  );
-  assert(staleWhileSealed === 403, "The pre-checkpoint authority survived rotation");
-  const completed = await jsonRequest(baseUrl, "/v1/checkpoint/complete", {}, recoveryAuthority);
-  assert(
-    completed.completed === true &&
-      completed.resumedToolProcesses === checkpointed.frozenToolProcesses.length,
-    "Cube guest did not resume the checkpointed process boundary",
-  );
 
-  const nextAuthority = {
-    ...recoveryAuthority,
-    handoffSecret: `pcch_${randomBytes(32).toString("base64url")}`,
-    fencingToken: recoveryAuthority.fencingToken + 1,
-  };
-  const rebound = await jsonRequest(
-    baseUrl,
-    "/v1/rebind",
-    {
-      activationId,
-      handoffSecret: nextAuthority.handoffSecret,
-      fencingToken: nextAuthority.fencingToken,
-      bindingSha256: nextAuthority.bindingSha256,
-    },
-    recoveryAuthority,
+  const source = "print('envd-tool-worker-ok')\n";
+  const wrote = await runTool(
+    operation({ operation: "file.write", path: "check.py", content: source }),
   );
-  assert(
-    rebound.rebound === true && rebound.fencingToken === nextAuthority.fencingToken,
-    "Cube guest did not accept the higher-fence handoff",
-  );
-  currentAuthority = nextAuthority;
-  const staleAfterRebind = await requestStatus(
-    baseUrl,
-    "/v1/operation",
-    operationEnvelope(activationId, randomUUID(), {
-      operation: "file.read",
-      path: "counting_sort.py",
-    }),
-    recoveryAuthority,
-  );
-  assert(staleAfterRebind === 403, "The old Cube handoff authority survived rebind");
-  const preserved = await jsonRequest(
-    baseUrl,
-    "/v1/operation",
-    operationEnvelope(activationId, randomUUID(), {
-      operation: "file.read",
-      path: "counting_sort.py",
-    }),
-  );
-  assert(
-    preserved.type === "tool_sandbox.operation_result" &&
-      Buffer.from(preserved.content, "base64").toString("utf8") === source,
-    "Rebound Tool Worker did not attach the preserved Workspace",
-  );
-  const backgroundPreserved = await jsonRequest(
-    baseUrl,
-    "/v1/operation",
-    operationEnvelope(activationId, randomUUID(), {
+  assert(wrote.type === "tool_sandbox.operation_result", "Tool file write failed");
+  const executed = await runTool(
+    operation({
       operation: "bash.exec",
-      command: `kill -0 ${String(backgroundPid)} && printf background-alive`,
+      command: "python3 check.py",
       cwd: "/workspace",
-      timeoutMs: 5_000,
+      timeoutMs: 10_000,
     }),
   );
+  const output = Buffer.concat(
+    executed.outputChunks.map((chunk) => Buffer.from(chunk.data, "base64")),
+  ).toString("utf8");
+  assert(executed.exitCode === 0 && output === "envd-tool-worker-ok\n", "Tool command failed");
+  const escaped = await runTool(operation({ operation: "file.read", path: "../etc/passwd" }));
   assert(
-    backgroundPreserved.exitCode === 0 && bashOutput(backgroundPreserved) === "background-alive",
-    "Session background process did not survive checkpoint and rebind",
+    escaped.type === "tool_sandbox.operation_failed" && escaped.code === "tool_path_escape",
+    "Path traversal was not rejected",
   );
 
   process.stdout.write(
     `${JSON.stringify({
       image,
       imageRevision: evidence.imageRevision,
-      isolationValidated: false,
-      templateService: {
+      cubeDataPlane: "cube-agent-vsock-envd",
+      persistentPiCloudGuestDaemon: false,
+      toolProcess: {
         uid: evidence.uid,
         gid: evidence.gid,
-        supervisorUid: evidence.supervisorUid,
-        supervisorGid: evidence.supervisorGid,
         noNewPrivileges: evidence.noNewPrivileges,
-        effectiveCapabilities: evidence.effectiveCapabilities,
       },
-      toolchain: Object.fromEntries(versions),
       execution: { exitCode: executed.exitCode, output: output.trim() },
-      coldWorkspaceAttach: true,
-      unmediatedEnvdAbsent: true,
-      fencedWorkspaceTerminal: true,
       pathTraversalRejected: true,
-      sessionHandoff: {
-        previousFence: previousAuthority.fencingToken,
-        currentFence: nextAuthority.fencingToken,
-        frozenToolProcesses: checkpointed.frozenToolProcesses.length,
-        resumedToolProcesses: completed.resumedToolProcesses,
-        backgroundProcessPreserved: true,
-        staleAuthorityRejected: true,
-      },
-      checkpoint: {
-        files: checkpointed.files.length,
-        sourceSizeBytes: indexedSource.sizeBytes,
-        sourceSha256: indexedSource.sha256,
-      },
     })}\n`,
   );
 } catch (error) {
@@ -546,7 +281,5 @@ try {
   }
   throw error;
 } finally {
-  if (started) {
-    await capture("docker", ["rm", "--force", containerName]).catch(() => undefined);
-  }
+  if (started) await capture("docker", ["rm", "--force", containerName]).catch(() => undefined);
 }

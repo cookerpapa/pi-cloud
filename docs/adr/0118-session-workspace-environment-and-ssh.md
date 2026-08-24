@@ -62,8 +62,8 @@ contract for exposing an ordinary Sandbox's port 22 directly.
   Workspace, machine specification, environment and directory choices. Releasing compute
   preserves both Session and Workspace.
 - HTTP preview remains a same-origin authenticated proxy. Applications may use
-  any unprivileged port; the trusted Tool Service reaches that port inside the
-  live Cube, while the Web client maps assistant `localhost` links to the
+  any unprivileged port except envd and bind `0.0.0.0`; Tool Broker reaches that
+  port through CubeProxy, while the Web client maps assistant `localhost` links to the
   authenticated conversation route.
 - Native OpenSSH access terminates at a trusted PiCloud SSH gateway. The user
   obtains a one-use ticket through the authenticated conversation API. An

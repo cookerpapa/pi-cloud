@@ -618,8 +618,8 @@ function specification(definition) {
     // Cube limits templates to a small explicit exposed-port set. PiCloud
     // keeps one authenticated ingress and proxies arbitrary guest HTTP ports
     // from inside the microVM instead of reserving application ports here.
-    exposedPorts: [49_984],
-    probePort: 49_984,
+    exposedPorts: [49_983],
+    probePort: 49_983,
     probePath: "/health",
     cpuMillicores: definition.cpuMillicores,
     memoryMb: definition.memoryMb,
@@ -673,9 +673,9 @@ async function registerTemplate(key, definition) {
         "--writable-layer-size",
         definition.writableLayerSize,
         "--expose-port",
-        "49984",
+        "49983",
         "--probe",
-        "49984",
+        "49983",
         "--probe-path",
         "/health",
         "--cpu",

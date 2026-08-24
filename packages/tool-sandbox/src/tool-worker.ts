@@ -14,6 +14,7 @@ import {
   type EnvironmentToolchainReport,
   type DependencyProxyBootstrap,
   type ToolWorkerEnvironmentStage,
+  type ToolWorkerInput,
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
   type ToolWebProxyBootstrap,
@@ -999,7 +1000,7 @@ async function executeBash(
   }
 }
 
-async function executeOperation(
+export async function executeToolOperation(
   request: ToolSandboxOperationRequest,
   signal: AbortSignal,
   webProxy?: ToolWebProxyBootstrap,
@@ -1060,7 +1061,7 @@ async function executeOperation(
   };
 }
 
-function failureResponse(
+export function toolOperationFailure(
   request: ToolSandboxOperationRequest,
   error: unknown,
 ): ToolSandboxOperationResponse {
@@ -1117,6 +1118,68 @@ export async function prepareToolWorkspace(
   }
 }
 
+export async function initializeToolExecution(
+  message: Extract<ToolWorkerInput, { type: "worker.initialize" }>,
+): Promise<EnvironmentToolchainReport> {
+  const requestedToolRoot = resolve("/", message.toolRoot);
+  const canonicalToolRoot = await realpath(requestedToolRoot).catch(() => undefined);
+  const toolRootMetadata =
+    canonicalToolRoot === undefined
+      ? undefined
+      : await lstat(canonicalToolRoot).catch(() => undefined);
+  if (
+    canonicalToolRoot === undefined ||
+    toolRootMetadata === undefined ||
+    !toolRootMetadata.isDirectory()
+  ) {
+    throw new ToolWorkerError(
+      "tool_root_unavailable",
+      "Selected machine working directory was unavailable",
+      false,
+    );
+  }
+  TOOL_WORKSPACE_DIRECTORY = canonicalToolRoot;
+  safeToolEnvironment(undefined, message.webProxy);
+  const environment = await validateToolEnvironment(message.environment);
+  if (message.workspaceAttach === undefined) {
+    const seed =
+      message.workspaceSeed.kind === "snapshot" ? message.workspaceSeed.snapshot : undefined;
+    await prepareToolWorkspace(seed, message.workspaceRestore);
+    const recipeWebProxy = dependencyRecipeWebProxy(message.environment, message.webProxy);
+    environment.recipeCommands = await executeEnvironmentRecipe(
+      message.environment,
+      TOOL_WORKSPACE_DIRECTORY,
+      {
+        ...(message.dependencyProxy === undefined
+          ? {}
+          : { dependencyProxy: message.dependencyProxy }),
+        ...(recipeWebProxy === undefined ? {} : { webProxy: recipeWebProxy }),
+        ...(message.environmentStage === undefined
+          ? {}
+          : { environmentStage: message.environmentStage }),
+      },
+    );
+  } else {
+    if (
+      message.workspaceRestore !== undefined ||
+      message.dependencyProxy !== undefined ||
+      message.environmentStage !== undefined
+    ) {
+      throw new ToolWorkerError(
+        "workspace_attach_invalid",
+        "Preserved Tool workspace could not be attached",
+        false,
+      );
+    }
+    await validateAttachedWorkspaceRoot(
+      TOOL_WORKSPACE_DIRECTORY,
+      TOOL_WORKSPACE_DIRECTORY === "/workspace",
+    );
+    environment.recipeCommands = [...message.workspaceAttach.recipeCommands];
+  }
+  return environment;
+}
+
 export async function runToolWorker(): Promise<void> {
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   let activationId: string | undefined;
@@ -1170,63 +1233,8 @@ export async function runToolWorker(): Promise<void> {
           );
         }
         activationId = message.activationId;
-        const requestedToolRoot = resolve("/", message.toolRoot);
-        const canonicalToolRoot = await realpath(requestedToolRoot).catch(() => undefined);
-        const toolRootMetadata =
-          canonicalToolRoot === undefined
-            ? undefined
-            : await lstat(canonicalToolRoot).catch(() => undefined);
-        if (
-          canonicalToolRoot === undefined ||
-          toolRootMetadata === undefined ||
-          !toolRootMetadata.isDirectory()
-        ) {
-          throw new ToolWorkerError(
-            "tool_root_unavailable",
-            "Selected machine working directory was unavailable",
-            false,
-          );
-        }
-        TOOL_WORKSPACE_DIRECTORY = canonicalToolRoot;
         webProxy = message.webProxy;
-        safeToolEnvironment(undefined, webProxy);
-        const environment = await validateToolEnvironment(message.environment);
-        if (message.workspaceAttach === undefined) {
-          const seed =
-            message.workspaceSeed.kind === "snapshot" ? message.workspaceSeed.snapshot : undefined;
-          await prepareToolWorkspace(seed, message.workspaceRestore);
-          const recipeWebProxy = dependencyRecipeWebProxy(message.environment, message.webProxy);
-          environment.recipeCommands = await executeEnvironmentRecipe(
-            message.environment,
-            TOOL_WORKSPACE_DIRECTORY,
-            {
-              ...(message.dependencyProxy === undefined
-                ? {}
-                : { dependencyProxy: message.dependencyProxy }),
-              ...(recipeWebProxy === undefined ? {} : { webProxy: recipeWebProxy }),
-              ...(message.environmentStage === undefined
-                ? {}
-                : { environmentStage: message.environmentStage }),
-            },
-          );
-        } else {
-          if (
-            message.workspaceRestore !== undefined ||
-            message.dependencyProxy !== undefined ||
-            message.environmentStage !== undefined
-          ) {
-            throw new ToolWorkerError(
-              "workspace_attach_invalid",
-              "Preserved Tool workspace could not be attached",
-              false,
-            );
-          }
-          await validateAttachedWorkspaceRoot(
-            TOOL_WORKSPACE_DIRECTORY,
-            TOOL_WORKSPACE_DIRECTORY === "/workspace",
-          );
-          environment.recipeCommands = [...message.workspaceAttach.recipeCommands];
-        }
+        const environment = await initializeToolExecution(message);
         initialized = true;
         await writeOutput({
           toolWorkerProtocolVersion: 1,
@@ -1267,7 +1275,7 @@ export async function runToolWorker(): Promise<void> {
         await writeOutput({
           toolWorkerProtocolVersion: 1,
           type: "worker.operation_result",
-          response: failureResponse(
+          response: toolOperationFailure(
             request,
             new ToolWorkerError("tool_operation_overlap", "Another tool operation is active", true),
           ),
@@ -1278,7 +1286,7 @@ export async function runToolWorker(): Promise<void> {
         await writeOutput({
           toolWorkerProtocolVersion: 1,
           type: "worker.operation_result",
-          response: failureResponse(
+          response: toolOperationFailure(
             request,
             new ToolWorkerError("tool_operation_replay", "Tool operation ID was already used"),
           ),
@@ -1288,8 +1296,8 @@ export async function runToolWorker(): Promise<void> {
       seenOperationIds.add(request.operationId);
       const controller = new AbortController();
       const promise = (async () => {
-        const response = await executeOperation(request, controller.signal, webProxy).catch(
-          (error: unknown) => failureResponse(request, error),
+        const response = await executeToolOperation(request, controller.signal, webProxy).catch(
+          (error: unknown) => toolOperationFailure(request, error),
         );
         // Clear the execution slot before publishing the terminal response.
         // The trusted caller is allowed to issue an immediate capture as soon

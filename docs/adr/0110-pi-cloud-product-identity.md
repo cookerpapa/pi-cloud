@@ -21,8 +21,8 @@ interview explanation unnecessarily ambiguous.
    according to the conventions of each interface.
    Opaque protocol identifiers use the `pc` namespace as well: `pck_` for API
    credentials, `pcs_` for browser Sessions, `pcw-` for Workspace Volumes,
-   `pcmg_` for model capabilities, `pcts_` for Tool capabilities, `pcch_` for
-   Cube handoff secrets and `pcpc1_` for dependency-proxy capabilities.
+   `pcmg_` for model capabilities, `pcts_` for Tool capabilities and `pcpc1_`
+   for dependency-proxy capabilities.
 3. Do not retain aliases for former package scopes, environment variables,
    schemas, topics, images, runtime paths, Volume drivers or backup headers.
 4. Treat the rename as a pre-release, clean-deployment boundary. Existing local

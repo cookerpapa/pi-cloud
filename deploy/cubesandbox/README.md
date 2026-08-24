@@ -140,15 +140,15 @@ It binds an ephemeral raw TCP relay to `127.0.0.1:5000` only while pushing the
 image, uses a temporary empty Docker client configuration because this private
 registry needs no interactive credential helper, then destroys both temporary
 resources. CubeMaster, the registry and their management ports remain private;
-this path deliberately avoids granting the PiCloud runtime or its Sandbox
-Manager broader Kubernetes RBAC.
+this path deliberately avoids granting the PiCloud runtime or its Tool Broker
+broader Kubernetes RBAC.
 
 The registration command:
 
 1. builds `deploy/cubesandbox/Dockerfile.tool` from the exact Git revision;
 2. runs the local Tool protocol compatibility gate;
 3. pushes the image to the private registry and resolves its digest;
-4. registers only port 49984 and probe `49984 /health`;
+4. registers Cube's standard envd port and probe `49983 /health`;
 5. waits for CubeMaster to report the template `READY`;
 6. records the revision, image digest, template ID and spec SHA-256 in the
    private `runtime/cubesandbox/template.json`.
@@ -162,9 +162,11 @@ changed to a bounded value from 2 through 10 with
 invalidating a successfully registered immutable template; operators should
 resolve the reported Cube control-plane error before storage pressure grows.
 
-The image contains Node 24, Java 17, Python 3.11 and Git 2. It replaces Cube's
-inherited entrypoint so root `envd` is not started; otherwise that daemon would
-create a second command/file channel outside PiCloud's Tool Broker.
+The image contains Node 24, Java 17, Python 3.11 and Git 2. It keeps Cube's
+standard `cube-agent → vsock → envd` guest contract. Tool Broker owns admission,
+Lease/Fence checks and durable operation identity outside the VM; envd starts
+only short-lived, credential-free PiCloud Tool Worker processes as uid/gid 1000.
+No PiCloud HTTP controller remains resident in the guest.
 
 ## 4. Run the real KVM gate
 
@@ -182,7 +184,7 @@ The gate creates real microVMs for isolated tenants and proves:
 - a guest kernel distinct from the host and `cubesandbox-kvm` evidence;
 - uid/gid 1000, no new privileges and zero effective capabilities;
 - no Docker socket, Kubernetes token or platform/model credential;
-- a fenced interactive PTY works while the unmediated envd channel remains absent;
+- an envd PTY works through the authenticated Cube data plane without a resident PiCloud daemon;
 - same-path canaries remain different across tenant Workspaces;
 - a stable public HTTPS endpoint is reachable;
 - CubeAPI, platform endpoints, private/link-local networks and metadata are denied;
@@ -257,12 +259,12 @@ CubeMaster, every Cubelet and the Volume Gateway. That filesystem must provide
 the replication and backup policy required by the deployment's recovery claim.
 
 Conversation state and content-verified Workspace revision metadata commit
-through PostgreSQL. For an exact Session, the root-owned Tool supervisor
-closes the old Run's Tool Worker, briefly freezes user processes while the
-trusted Volume Gateway flushes and indexes `/workspace`, resumes those exact process
-identities, and retains the running VM for the bounded warm TTL. A later
-higher-fence Run rotates the private handoff secret and starts a fresh Tool
-Worker. Failed, cancelled, timed-out or ambiguous transitions destroy the
+through PostgreSQL. For an exact Session, the external Tool Broker waits for
+the short-lived Tool Worker to exit, briefly freezes uid-1000 processes through
+envd while the trusted Volume Gateway flushes and indexes `/workspace`, resumes
+those exact process identities, and retains the running VM for the bounded warm
+TTL. A later higher-fence Run starts a fresh credential-free Tool Worker. Failed,
+cancelled, timed-out or ambiguous transitions destroy the
 guest; a later Run attaches the same persistent Volume to a fresh base-template
 guest.
 

@@ -67,7 +67,7 @@ capture committed Workspace
   -> retain exact-Session warm handle
   -> receive a later, higher-fence RunAttempt
   -> connect and observe running
-  -> authenticated rebind with a rotated handoff secret
+  -> authenticated rebind under a fresh PostgreSQL/Broker fence
   -> start a fresh uid-1000 Tool Worker
   -> accept Tool operations
 ```
@@ -129,4 +129,3 @@ Internet access. General interactive Bash networking remains unsupported.
 - `cube-lifecycle-manager/internal/sweeper/sweeper.go`
 - `docs/architecture/network.md`
 - CubeSandbox pull requests `#404`, `#553`, `#613` and `#956`
-

@@ -59,8 +59,8 @@ describe("product chat experience", () => {
     expect(conversationPreviewHref("https://example.com/app", sessionId)).toBe(
       "https://example.com/app",
     );
-    expect(conversationPreviewHref("http://localhost:49984/health", sessionId)).toBe(
-      "http://localhost:49984/health",
+    expect(conversationPreviewHref("http://localhost:49983/health", sessionId)).toBe(
+      "http://localhost:49983/health",
     );
   });
 

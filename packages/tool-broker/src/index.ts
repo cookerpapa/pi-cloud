@@ -24,15 +24,16 @@ export {
   CUBESANDBOX_PROVIDER_ID,
   CUBESANDBOX_RUNTIME_NAME,
   CUBESANDBOX_TOOL_POLICY,
-  CUBESANDBOX_TOOL_SERVICE_PORT,
   CubeSandboxProvider,
   type CubeSandboxProviderOptions,
 } from "./cubesandbox-sandbox-provider.ts";
 export {
   CUBESANDBOX_BLOCKED_EGRESS_CIDRS,
+  CUBESANDBOX_ENVD_PORT,
   OfficialCubeSandboxRuntimeClient,
   type CubeSandboxCreateInput,
-  type CubeSandboxDataRequest,
+  type CubeSandboxGuestCommandRequest,
+  type CubeSandboxGuestCommandResult,
   type CubeSandboxInstance,
   type CubeSandboxRuntimeClient,
   type CubeSandboxTerminal,

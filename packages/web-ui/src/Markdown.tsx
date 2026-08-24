@@ -18,7 +18,7 @@ export function conversationPreviewHref(
       !Number.isSafeInteger(port) ||
       port < 1_024 ||
       port > 65_535 ||
-      port === 49_984
+      port === 49_983
     ) {
       return href;
     }

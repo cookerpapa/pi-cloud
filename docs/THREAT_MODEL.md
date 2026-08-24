@@ -45,6 +45,7 @@ head.
 | terminal races an Agent writer | PostgreSQL-backed human-terminal lease and shared Workspace writer exclusion |
 | exclusive environment races an Agent writer | durable `terminal_active`/`agent_activation_id` CAS plus Tool Broker authority handoff |
 | exclusive owner has root inside its own VM | KVM is the tenant boundary; the guest contains no platform/model/database credentials and the external Tool Broker still validates every Run fence |
+| user invokes or tampers with envd inside their own VM | envd is credential-free tenant-local transport; Cube traffic/envd tokens, operation admission and every cross-resource authority remain outside the VM |
 | Broker replacement loses or swaps an exclusive VM | encrypted reconnect capsule plus PostgreSQL owner CAS and Cube physical metadata/runtime identity validation before adoption |
 | directory picker exposes another runtime | tenant/user/environment authorization at Control Plane and Tool Broker; listing is read from the selected live Cube only |
 | stale Worker mutation | transaction-scoped authority and monotonically increasing fence |
@@ -62,11 +63,12 @@ destinations. KVM isolation protects the platform and other tenants; it is not
 a data-loss-prevention system. Enterprise deployments should add explicit
 destination allowlists and audit.
 
-Workspace terminal access does not expose Cube envd or Sandbox port 22. The
-browser path uses the logged-in user's tenant role and bounded WebSocket
+Workspace terminal access does not expose Cube envd credentials or Sandbox port
+22. The browser path uses the logged-in user's tenant role and bounded WebSocket
 frames. Standard SSH terminates at a trusted gateway using a one-use,
 short-lived password whose hash is consumed atomically from PostgreSQL; it then
-bridges to the same fenced PTY. Neither path receives CubeAPI/model credentials.
+bridges to the same Broker-admitted envd PTY. Neither path receives
+CubeAPI/envd/model credentials.
 Terminal output is intentionally not a durable conversation record; Workspace
 files and platform audit metadata remain authoritative.
 

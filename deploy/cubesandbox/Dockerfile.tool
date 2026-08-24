@@ -46,13 +46,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY --from=python-runtime /usr/local /usr/local
 COPY --from=node-runtime /usr/local /usr/local
-# Cube's inherited envd channel is deliberately unused: PiCloud routes
-# every tool through its authenticated Tool Worker. Removing the dormant
-# binary also keeps its independently compiled Go dependency tree out of the
-# production attack surface and SBOM.
 RUN ln -sf /usr/local/bin/python3 /usr/bin/python3 \
-    && ln -sf /usr/local/bin/node /usr/bin/node \
-    && rm -f /usr/bin/envd
+    && ln -sf /usr/local/bin/node /usr/bin/node
 
 RUN if ! getent group 1000 >/dev/null; then groupadd --gid 1000 pi-cloud; fi \
     && if ! getent passwd 1000 >/dev/null; then \
@@ -107,13 +102,10 @@ COPY packages/workspace-runtime/src packages/workspace-runtime/src
 COPY --chown=1000:1000 \
   packages/sandbox-supervisor/test/fixtures/sample-java-repair \
   /opt/pi-cloud/sample-java-repair
-COPY deploy/cubesandbox/tool-entrypoint.sh /usr/local/bin/pi-cloud-cube-tool
-RUN chmod 0555 /usr/local/bin/pi-cloud-cube-tool
-
 ARG PI_CLOUD_VERSION=development
 ARG PI_CLOUD_REVISION=development
 LABEL org.opencontainers.image.title="PiCloud CubeSandbox tool template" \
-      org.opencontainers.image.description="Credential-free PiCloud Tool Worker for CubeSandbox KVM microVMs" \
+      org.opencontainers.image.description="Cube envd guest with credential-free on-demand PiCloud Tool Worker" \
       org.opencontainers.image.version="${PI_CLOUD_VERSION}" \
       org.opencontainers.image.revision="${PI_CLOUD_REVISION}"
 RUN printf '%s\n' "${PI_CLOUD_REVISION}" > /opt/pi-cloud/image-revision \
@@ -123,15 +115,8 @@ ENV NODE_ENV=production \
     HOME=/tmp/pi-cloud-tool-home
 
 WORKDIR /workspace
-# The base image's OCI metadata also declares 49983 and Docker has no
-# "UNEXPOSE" instruction. The Cube template registers only 49984, and the
-# compatibility gate proves that no process listens on 49983.
-EXPOSE 49984
-
-# Deliberately replace cubesandbox-base's entrypoint: the inherited script
-# starts envd, which would be a second unmediated command/file channel inside
-# the guest. The one root-owned PiCloud supervisor authenticates every
-# mutable request, starts Tool Workers and user commands as uid 1000, and
-# enforces the checkpoint/rebind boundary while the Session Cube stays running.
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/usr/local/bin/pi-cloud-cube-tool"]
+# Reuse Cube's standard guest contract. cube-agent reaches the inherited
+# entrypoint over vsock, which starts the credential-free envd data plane on
+# 49983. PiCloud has no persistent guest controller; Tool Broker launches a
+# uid-1000, no-new-privileges Tool Worker through envd only when work exists.
+EXPOSE 49983
