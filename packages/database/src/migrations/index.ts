@@ -88,6 +88,7 @@ import * as sessionExecutionProfiles from "./086_session_execution_profiles.ts";
 import * as developmentEnvironmentMachineIdentity from "./087_development_environment_machine_identity.ts";
 import * as exclusiveVmState from "./088_exclusive_vm_state.ts";
 import * as exclusiveMachineWorkingDirectories from "./089_exclusive_machine_working_directories.ts";
+import * as developmentEnvironmentRecoveryIdentity from "./090_development_environment_recovery_identity.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -181,6 +182,7 @@ export const migrationProvider: MigrationProvider = {
       "087_development_environment_machine_identity": developmentEnvironmentMachineIdentity,
       "088_exclusive_vm_state": exclusiveVmState,
       "089_exclusive_machine_working_directories": exclusiveMachineWorkingDirectories,
+      "090_development_environment_recovery_identity": developmentEnvironmentRecoveryIdentity,
     };
   },
 };
@@ -505,3 +507,7 @@ export {
   down as downExclusiveMachineWorkingDirectories,
   up as upExclusiveMachineWorkingDirectories,
 } from "./089_exclusive_machine_working_directories.ts";
+export {
+  down as downDevelopmentEnvironmentRecoveryIdentity,
+  up as upDevelopmentEnvironmentRecoveryIdentity,
+} from "./090_development_environment_recovery_identity.ts";

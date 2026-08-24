@@ -424,13 +424,15 @@ describe("CubeSandbox Provider contract", () => {
     expect(persisted.capsule).not.toContain(handle.runtimeName);
     await provider.detachPersistent(handle);
     const replacement = new CubeSandboxProvider({
-      templateId: "pi-cloud-tool-v1",
+      templateId: "pi-cloud-tool-v2",
       developmentTemplateIds: {
         starter: "tpl-starter00000000000000000",
         standard: "tpl-standard0000000000000000",
         performance: "tpl-performance00000000000000",
       },
-      imageRevision: "development",
+      // A deployment may advance its default template while a user-owned
+      // machine keeps running its original, internally-consistent guest image.
+      imageRevision: "next-development-release",
       webProxy: WEB_PROXY,
       runtimeClient: runtime,
       workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),

@@ -56,6 +56,7 @@ export function ResourceManagementPage({
   const { t } = useI18n();
   const [tab, setTab] = useState<"workspaces" | "environments">("workspaces");
   const [profileKey, setProfileKey] = useState<DevelopmentEnvironmentProfileKey>("standard");
+  const [machineName, setMachineName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const liveEnvironments = environments.filter((environment) => environment.state !== "released");
@@ -227,10 +228,29 @@ export function ResourceManagementPage({
                 onSubmit={(event) => {
                   event.preventDefault();
                   void mutate(() =>
-                    api.createDevelopmentEnvironment(profileKey, newIdempotencyKey("environment")),
+                    api
+                      .createDevelopmentEnvironment(
+                        machineName.trim(),
+                        profileKey,
+                        newIdempotencyKey("environment"),
+                      )
+                      .then((result) => {
+                        setMachineName("");
+                        return result;
+                      }),
                   );
                 }}
               >
+                <label>
+                  <span>{t("resource.machineName")}</span>
+                  <input
+                    maxLength={64}
+                    onChange={(event) => setMachineName(event.target.value)}
+                    placeholder={t("resource.machineNamePlaceholder")}
+                    required
+                    value={machineName}
+                  />
+                </label>
                 <label>
                   <span>{t("resource.cpu")}</span>
                   <select
@@ -284,7 +304,9 @@ export function ResourceManagementPage({
                 </label>
                 <button
                   className="product-primary-button"
-                  disabled={busy || selectedProfile === undefined}
+                  disabled={
+                    busy || selectedProfile === undefined || machineName.trim().length === 0
+                  }
                   type="submit"
                 >
                   {busy ? t("common.processing") : t("resource.apply")}
@@ -308,7 +330,7 @@ export function ResourceManagementPage({
                         <div className="product-resource-card-title">
                           <span className="product-resource-kind">VM</span>
                           <div>
-                            <h3>{environment.environmentId.slice(0, 8)}</h3>
+                            <h3>{environment.workspaceName}</h3>
                             <span>
                               {String(environment.cpuCount)}C ·{" "}
                               {String(environment.memoryMiB / 1024)}G ·{" "}

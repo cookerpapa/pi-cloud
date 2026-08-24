@@ -8,6 +8,7 @@ const MODEL_CAPABILITY_MARGIN_MS = 60_000;
 const WORKER_SETTLEMENT_GRACE_MS = 5 * 60_000;
 const PROCESS_SHUTDOWN_MARGIN_MS = 60_000;
 const WORKSPACE_VOLUME_GATEWAY_HTTP_MS = 11 * 60_000;
+const CUBE_LIFECYCLE_REQUEST_MS = 2 * 60_000;
 
 function integer(value, description) {
   const parsed = Number(value);
@@ -127,6 +128,17 @@ validateWorkspaceVolumeGatewayPolicy(
   },
   "Compose Workspace Volume Gateway",
 );
+const cubeOverrideText = readFileSync("deploy/cubesandbox/compose.primary.yaml", "utf8");
+assert.ok(
+  composeDefaultInteger(composeToolBroker, "PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS") >=
+    CUBE_LIFECYCLE_REQUEST_MS,
+  "Compose Cube lifecycle timeout is too short for a full-VM pause",
+);
+assert.ok(
+  composeDefaultInteger(cubeOverrideText, "PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS") >=
+    CUBE_LIFECYCLE_REQUEST_MS,
+  "Cube runtime override shortens the production lifecycle timeout",
+);
 function yaml(path) {
   const document = parseDocument(readFileSync(path, "utf8"));
   assert.equal(document.errors.length, 0, `${path} is invalid YAML`);
@@ -157,6 +169,10 @@ validateWorkspaceVolumeGatewayPolicy(
     terminationGraceMs: 720_000,
   },
   "Platform Helm Workspace Volume Gateway",
+);
+assert.ok(
+  platformValues.sandboxPlane.cube.requestTimeoutMs >= CUBE_LIFECYCLE_REQUEST_MS,
+  "Platform Helm Cube lifecycle timeout is too short for a full-VM pause",
 );
 assert.ok(
   platformValues.external.kafka.gatewayReplayWindowMs >=

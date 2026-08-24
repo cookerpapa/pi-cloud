@@ -153,7 +153,7 @@ describe("product chat experience", () => {
     expect(markup).toContain("暂无 Workspace");
     expect(markup).not.toContain("Workspace 只在“弹性执行”新建对话时创建");
     expect(markup).not.toContain("新建 Workspace");
-    expect(markup).toContain("独享环境");
+    expect(markup).toContain("云端开发机");
     expect(markup).toContain("> 对话</button>");
   });
 

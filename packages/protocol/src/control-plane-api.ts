@@ -623,7 +623,14 @@ export const DevelopmentEnvironmentActionSchema = Type.Union([
 ]);
 
 export const CreateDevelopmentEnvironmentRequestSchema = Type.Object(
-  { profileKey: DevelopmentEnvironmentProfileKeySchema },
+  {
+    name: Type.String({
+      minLength: 1,
+      maxLength: 64,
+      pattern: "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f\\u007f]+$",
+    }),
+    profileKey: DevelopmentEnvironmentProfileKeySchema,
+  },
   { additionalProperties: false },
 );
 

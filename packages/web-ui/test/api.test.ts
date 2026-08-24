@@ -51,8 +51,9 @@ describe("tenant-aware browser API", () => {
         );
       }
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      if (path === "/v1/development-environments") expect(body).toEqual({ profileKey: "standard" });
-      else expect(body).toEqual({ action: "pause" });
+      if (path === "/v1/development-environments") {
+        expect(body).toEqual({ name: "Backend machine", profileKey: "standard" });
+      } else expect(body).toEqual({ action: "pause" });
       return new Response(
         JSON.stringify({
           environmentId,
@@ -88,7 +89,7 @@ describe("tenant-aware browser API", () => {
       truncated: false,
     });
     await expect(
-      api.createDevelopmentEnvironment("standard", "environment:create"),
+      api.createDevelopmentEnvironment("Backend machine", "standard", "environment:create"),
     ).resolves.toMatchObject({ state: "running" });
     await expect(
       api.developmentEnvironmentAction(environmentId, "pause", "environment:pause"),

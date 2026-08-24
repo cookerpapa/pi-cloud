@@ -284,7 +284,7 @@ export class DevelopmentEnvironmentService {
         .values({
           id: projectId,
           tenant_id: identity.tenantId,
-          name: `exclusive-${id.slice(0, 8)}`,
+          name: request.name,
         })
         .executeTakeFirstOrThrow();
       await transaction

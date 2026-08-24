@@ -251,6 +251,7 @@ afterAll(async () => {
 describe("user-owned development environments", () => {
   it("provisions, isolates visibility, pauses, resumes and releases one Workspace KVM", async () => {
     const created = await service.create(identity, "create-exclusive", {
+      name: "Backend machine",
       profileKey: "standard",
     });
     workspaceId = created.workspaceId;
@@ -349,6 +350,7 @@ describe("user-owned development environments", () => {
     });
     await expect(
       service.create(identity, "create-exclusive", {
+        name: "Different machine",
         profileKey: "performance",
       }),
     ).rejects.toMatchObject({ code: "idempotency_conflict" });

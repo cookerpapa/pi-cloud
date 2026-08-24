@@ -152,6 +152,8 @@ export {
   downExclusiveVmState,
   upExclusiveMachineWorkingDirectories,
   downExclusiveMachineWorkingDirectories,
+  upDevelopmentEnvironmentRecoveryIdentity,
+  downDevelopmentEnvironmentRecoveryIdentity,
 } from "./migrations/index.ts";
 
 export {

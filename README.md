@@ -31,7 +31,7 @@ Browser ──REST/SSE──> Control Plane ──> PostgreSQL Run queue
                                              │
                                              ▼
                                       CubeSandbox KVM
-                                elastic Volume / exclusive VM state
+                                elastic Volume / cloud development machine state
 
 Worker events ──> Raw Kafka ──fence check──> Accepted Kafka ──> SSE
 complete Pi entries ──> Session Mutation Kafka ──> PostgreSQL
@@ -42,7 +42,7 @@ There are three durable authorities:
 - PostgreSQL owns product state, the Run queue and canonical Pi Sessions;
 - Kafka owns the bounded hot event log used for live replay;
 - a persistent Cube Volume owns elastic Workspace bytes; Cube pause state owns
-  an exclusive machine's guest root, memory and processes on its compute node.
+  a cloud development machine's guest root, memory and processes on its compute node.
 
 Any healthy Worker may run a Session's next message. RunAttempt leases and
 fencing tokens reject stale effects; no Session is permanently assigned to a
@@ -74,10 +74,10 @@ After deployment:
 
 3. Sign in again and configure the provider, model, encrypted API key and Cube
    proxy in the administrator page.
-4. Open **开发资源** to create Workspaces or an optional exclusive environment.
+4. Open **开发资源** to create Workspaces or an optional cloud development machine.
 5. Start a conversation in either mode:
    - **Elastic execution** selects/creates a Workspace and chooses a deployment-owned size;
-   - **Exclusive environment** selects a running user-owned Cube and a live
+   - **Cloud development machine** selects a running user-owned Cube and a live
      directory from its complete guest filesystem; its GNOME-style folder
      chooser can create a user-writable directory before selection.
 
@@ -89,7 +89,7 @@ Service preview is a same-origin HTTP proxy to any unprivileged HTTP port inside
 the active Cube. When the Agent reports a `localhost` application URL, the Web
 client opens it through the authenticated PiCloud gateway; Cube addresses and
 public port mappings are never exposed to the Agent. SSH is available only for
-exclusive environments, only while no Agent Run or browser terminal owns the
+cloud development machines, only while no Agent Run or browser terminal owns the
 environment, and each password can be used once.
 
 Re-running `./install.sh` reconciles the same private runtime. Generated

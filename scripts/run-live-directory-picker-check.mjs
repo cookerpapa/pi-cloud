@@ -82,6 +82,7 @@ const cookieFetch = new BrowserCookieFetch();
 const api = new PiCloudApi(cookieFetch.fetch);
 await api.registerAccount(username, "Directory Acceptance", password);
 const development = await api.createDevelopmentEnvironment(
+  `Directory machine ${suffix}`,
   "standard",
   newIdempotencyKey("environment"),
 );
@@ -136,7 +137,7 @@ try {
       await page.waitFor('document.querySelector(".product-workspace-modal")');
       await clickText(
         ".product-execution-mode-choice .product-choice-card",
-        "独享运行环境",
+        "云端开发机",
         "exclusive mode",
       );
       await setValue(".product-progressive-options > label input", `Directory UI ${suffix}`);

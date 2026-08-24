@@ -2993,13 +2993,27 @@ body.product-panel-resizing {
   outline: 0;
 }
 
+.product-resource-create input {
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid #353535;
+  border-radius: 9px;
+  background: #141414;
+  color: #ddd;
+  outline: 0;
+}
+
+.product-resource-create input:focus {
+  border-color: #7869bd;
+}
+
 .product-resource-create select:focus {
   border-color: #7869bd;
 }
 
 .product-environment-create {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr auto;
+  grid-template-columns: minmax(180px, 1.4fr) 1fr 1fr 1fr auto;
 }
 
 .product-environment-create .product-primary-button {

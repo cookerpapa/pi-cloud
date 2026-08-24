@@ -538,4 +538,70 @@ describe("PostgreSQL Tool Broker ownership", () => {
       { instance_id: "10000000-0000-4000-8000-000000000102", state: "ready" },
     ]);
   }, 15_000);
+
+  it("waits for the prior same-URL lease instead of crash-looping during replacement", async () => {
+    const pglite = await PGlite.create();
+    const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
+    await socket.start();
+    const database = createDatabase({
+      connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
+      maxConnections: 2,
+    });
+    resources.push(async () => pglite.close());
+    resources.push(async () => socket.stop());
+    resources.push(async () => database.destroy());
+    await runMigrations(database, "up");
+
+    const now = new Date();
+    const priorInstanceId = "10000000-0000-4000-8000-000000000201";
+    const replacementInstanceId = "10000000-0000-4000-8000-000000000202";
+    const ownerBaseUrl = "http://tool-broker:4300/";
+    await database
+      .insertInto("tool_broker_instances")
+      .values({
+        instance_id: priorInstanceId,
+        sandbox_domain_id: "sandbox-domain-0001",
+        owner_base_url: ownerBaseUrl,
+        state: "ready",
+        lease_expires_at: new Date(now.valueOf() + 60_000),
+        last_heartbeat_at: now,
+        updated_at: now,
+      })
+      .executeTakeFirstOrThrow();
+    await expect(
+      database
+        .selectFrom("tool_broker_instances")
+        .select(["owner_base_url", "state"])
+        .where("sandbox_domain_id", "=", "sandbox-domain-0001")
+        .where("owner_base_url", "=", ownerBaseUrl)
+        .where("state", "=", "ready")
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ owner_base_url: ownerBaseUrl, state: "ready" });
+    await database
+      .updateTable("tool_broker_instances")
+      .set({ lease_expires_at: new Date(Date.now() + 1_000) })
+      .where("instance_id", "=", priorInstanceId)
+      .executeTakeFirstOrThrow();
+
+    const replacement = new PostgresSandboxActivationStateRepository({
+      database,
+      sandboxDomainId: "sandbox-domain-0001",
+      instanceId: replacementInstanceId,
+      ownerBaseUrl,
+      leaseMs: 1_000,
+      heartbeatMs: 100,
+    });
+    resources.push(async () => replacement.close());
+    const startedAt = Date.now();
+    await expect(replacement.start()).resolves.toBeUndefined();
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(500);
+    await expect(replacement.checkHealth()).resolves.toBeUndefined();
+    await expect(
+      database
+        .selectFrom("tool_broker_instances")
+        .select(["instance_id", "state"])
+        .where("instance_id", "=", replacementInstanceId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ instance_id: replacementInstanceId, state: "ready" });
+  }, 15_000);
 });

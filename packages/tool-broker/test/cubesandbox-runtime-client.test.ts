@@ -14,6 +14,7 @@ let server: Server;
 let port: number;
 const observed: ObservedRequest[] = [];
 let runtimeState = "running";
+let pauseReturnsTimeout = false;
 
 beforeAll(async () => {
   server = createServer((request, response) => {
@@ -100,6 +101,16 @@ beforeAll(async () => {
         return;
       }
       if (request.method === "POST" && request.url === "/sandboxes/cube-runtime-1/pause") {
+        if (pauseReturnsTimeout) {
+          pauseReturnsTimeout = false;
+          runtimeState = "pausing";
+          setTimeout(() => {
+            runtimeState = "paused";
+          }, 25);
+          response.writeHead(408);
+          response.end();
+          return;
+        }
         runtimeState = "paused";
         response.writeHead(204);
         response.end();
@@ -168,7 +179,26 @@ afterAll(async () => {
 });
 
 describe("official CubeSandbox HTTP compatibility client", () => {
+  it("reconciles an HTTP 408 pause from the eventual physical state", async () => {
+    runtimeState = "running";
+    pauseReturnsTimeout = true;
+    const client = new OfficialCubeSandboxRuntimeClient({
+      apiUrl: `http://127.0.0.1:${String(port)}`,
+      apiKey: "k".repeat(48),
+      proxyNodeIp: "127.0.0.1",
+      proxyPort: port,
+      proxyScheme: "http",
+      sandboxDomain: "cube.test",
+      egressProxyIp: "10.255.255.254",
+      requestTimeoutMs: 2_000,
+    });
+    await expect(client.pause("cube-runtime-1")).resolves.toBeUndefined();
+    await expect(client.read("cube-runtime-1")).resolves.toMatchObject({ state: "paused" });
+    await client.close();
+  });
+
   it("allows public egress, denies private ranges and authenticates private ingress", async () => {
+    runtimeState = "running";
     const client = new OfficialCubeSandboxRuntimeClient({
       apiUrl: `http://127.0.0.1:${String(port)}`,
       apiKey: "k".repeat(48),

@@ -999,7 +999,7 @@ export class ControlPlaneStore {
         ) {
           throw new ControlPlaneStoreError(
             "conflict",
-            "Exclusive environment is not available to this user",
+            "Cloud development machine is not available to this user",
           );
         }
         if (
@@ -1009,13 +1009,13 @@ export class ControlPlaneStore {
         ) {
           throw new ControlPlaneStoreError(
             "conflict",
-            "Conversation profile does not match its exclusive environment",
+            "Conversation profile does not match its cloud development machine",
           );
         }
       } else if (developmentEnvironment !== undefined) {
         throw new ControlPlaneStoreError(
           "conflict",
-          "Elastic conversation cannot use a Workspace attached to an exclusive environment",
+          "Elastic conversation cannot use a Workspace attached to a cloud development machine",
         );
       } else if (workingDirectory !== "/workspace") {
         throw new ControlPlaneStoreError(
@@ -1032,7 +1032,7 @@ export class ControlPlaneStore {
       ) {
         throw new ControlPlaneStoreError(
           "control_plane_misconfigured",
-          "Exclusive environment profile is invalid",
+          "Cloud development machine profile is invalid",
         );
       }
       const sandboxProfileKey = environmentProfileKey ?? execution.sandboxProfileKey ?? "standard";

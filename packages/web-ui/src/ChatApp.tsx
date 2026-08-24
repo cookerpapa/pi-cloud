@@ -1245,7 +1245,7 @@ export default function ChatApp() {
                 {currentDevelopmentEnvironment === undefined
                   ? `/workspace · ${state.project.name} · ${t("chat.elastic")}`
                   : `${state.session?.workingDirectory ?? "/workspace"} · ${t("chat.exclusive", {
-                      id: currentDevelopmentEnvironment.environmentId.slice(0, 8),
+                      name: currentDevelopmentEnvironment.workspaceName,
                     })} · ${String(currentDevelopmentEnvironment.cpuCount)}C/${String(
                       currentDevelopmentEnvironment.memoryMiB / 1024,
                     )}G`}
@@ -1455,7 +1455,7 @@ export default function ChatApp() {
                                   value={environment.environmentId}
                                 >
                                   {t("chat.create.exclusiveOption", {
-                                    id: environment.environmentId.slice(0, 8),
+                                    name: environment.workspaceName,
                                     cpu: environment.cpuCount,
                                     memory: environment.memoryMiB / 1024,
                                     state: developmentStateLabel(environment.state, t),
@@ -1527,9 +1527,7 @@ export default function ChatApp() {
                     setWorkingDirectory(directory);
                     setDirectoryPickerOpen(false);
                   }}
-                  workspaceName={t("chat.exclusive", {
-                    id: environment.environmentId.slice(0, 8),
-                  })}
+                  workspaceName={environment.workspaceName}
                 />
               );
             })()

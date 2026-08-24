@@ -298,7 +298,7 @@ standard or performance). CPU, memory and system-disk values come from the
 registered Cube template catalog; arbitrary template IDs and resource overrides
 are never accepted from the browser.
 
-An exclusive environment is requested independently from user Workspaces. The
+The product calls this allocation a cloud development machine. It is requested independently from user Workspaces. The
 Control Plane allocates its private persistent Volume and internal project
 identity transactionally; neither is shown in the elastic Workspace inventory.
 Several conversations may select working directories from the complete guest
@@ -318,10 +318,23 @@ Workspace single-writer rule. `agent_activation_id` and `terminal_active` are
 durable admission facts. Tool Broker lazily seals and rebinds the same Cube to a
 Run's opaque authority on first Tool use, then captures and returns it to the
 environment authority. Worker scans wait while a human terminal is active. A
-A planned Broker shutdown pauses each idle exclusive Cube, stores an encrypted
+A planned Broker shutdown pauses each idle cloud development machine, stores an encrypted
 reconnect capsule in PostgreSQL and leaves the physical VM intact. A replacement
 Broker validates the capsule, PostgreSQL ownership and Cube metadata before it
-adopts the same runtime. Elastic Cubes retain fail-closed orphan cleanup.
+adopts the same runtime. The capsule is pinned to the machine's own guest image
+revision, not the deployment's current default template. A template upgrade
+therefore affects only newly created machines; recovery still requires the
+capsule, environment evidence, Tool Service report and physical Cube metadata to
+agree on the old machine's exact revision. Elastic Cubes retain fail-closed
+orphan cleanup.
+
+Pausing a full VM is a long Cube operation. If CubeAPI returns its standard-route
+HTTP 408 while CubeMaster is still snapshotting, Tool Broker treats the response
+as uncertain and polls the same physical Sandbox identity. It commits `paused`
+only after Cube reports that state; disappearance or a bounded wait expiry stays
+an error. Production and Helm timeout policies keep at least a two-minute Cube
+lifecycle budget so deployment overrides cannot silently restore the former
+30-second failure mode.
 
 ### Authenticated Sandbox service preview
 
@@ -347,7 +360,7 @@ Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented. PiCloud does not
 expose Sandbox port 22. A separate trusted SSH gateway validates a one-time
 PostgreSQL ticket and translates a standard SSH shell channel to the existing
 Tool Broker PTY protocol. Tickets are issued only for an owned, running
-exclusive environment with no active Agent or terminal. An unused ticket lasts
+cloud development machine with no active Agent or terminal. An unused ticket lasts
 24 hours by default, but the first successful authentication consumes it. The
 gateway has no CubeAPI or model credential.
 
@@ -377,7 +390,7 @@ Volume gateway. It does not copy Workspaces to Kopia or object storage. It:
 
 Stopping an elastic Cube loses its processes and memory. A new elastic Cube
 attaches the same persistent Volume, so project files and dependencies remain.
-An exclusive Cube is paused and adopted as the same machine; its rootfs, memory
+A cloud development machine is paused and adopted as the same machine; its rootfs, memory
 and process state are node-affine Cube state. A Workspace revision remains a
 reference to the elastic Volume authority, not a full-machine backup.
 
@@ -429,8 +442,8 @@ preserve a visible prefix that never reached `message_end`.
 | canonical completed conversation | PostgreSQL |
 | bounded live SSE replay | Accepted Kafka topic + rebuildable Gateway memory |
 | elastic Workspace bytes | persistent Cube Volume |
-| exclusive guest root, memory and processes | one Cube pause snapshot on its compute node |
-| encrypted exclusive reconnect capsule | PostgreSQL; key held only by Tool Broker |
+| cloud development machine guest root, memory and processes | one Cube pause snapshot on its compute node |
+| encrypted machine reconnect capsule | PostgreSQL; key held only by Tool Broker |
 | Workspace revision/reference and Git baseline | PostgreSQL + trusted Volume envelope |
 | live process tree | one Cube KVM only |
 | active in-memory `messages[]` | Pi SDK for one active Run |

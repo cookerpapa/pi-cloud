@@ -376,6 +376,7 @@ function metadataMatchesPhysicalBinding(
   activationId: string,
   assignment: ToolSandboxAssignment,
   bindingSha256: string,
+  imageRevision: string,
 ): boolean {
   const current = currentAssignmentMetadata(values);
   return (
@@ -386,7 +387,8 @@ function metadataMatchesPhysicalBinding(
     current.tenantId === assignment.tenantId &&
     current.projectId === assignment.projectId &&
     current.workspaceId === assignment.workspaceId &&
-    current.bindingSha256 === bindingSha256
+    current.bindingSha256 === bindingSha256 &&
+    current.imageRevision === imageRevision
   );
 }
 
@@ -1347,7 +1349,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       handle: activation.handle,
       capsule: this.#persistentCapsules.seal({
         version: 1,
-        imageRevision: this.#imageRevision,
+        imageRevision: activation.evidence.imageRevision,
         instance: activation.instance,
         handle: activation.handle,
         evidence: activation.evidence,
@@ -1378,7 +1380,8 @@ export class CubeSandboxProvider implements SandboxProvider {
     const toolchain = raw.toolchain as EnvironmentToolchainReport;
     if (
       raw.version !== 1 ||
-      raw.imageRevision !== this.#imageRevision ||
+      typeof raw.imageRevision !== "string" ||
+      !/^[0-9a-z._-]{1,128}$/.test(raw.imageRevision) ||
       raw.lifetime !== "development_environment" ||
       typeof raw.bindingSha256 !== "string" ||
       !/^[0-9a-f]{64}$/.test(raw.bindingSha256) ||
@@ -1396,7 +1399,13 @@ export class CubeSandboxProvider implements SandboxProvider {
       typeof instance.trafficAccessToken !== "string" ||
       instance.trafficAccessToken.length < 16 ||
       typeof handle !== "object" ||
-      handle === null
+      handle === null ||
+      typeof evidence !== "object" ||
+      evidence === null ||
+      evidence.imageRevision !== raw.imageRevision ||
+      typeof toolchain !== "object" ||
+      toolchain === null ||
+      toolchain.imageRevision !== raw.imageRevision
     ) {
       throw new ToolBrokerError(
         "persistent_capsule_invalid",
@@ -1405,6 +1414,13 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     this.#assertHandle(handle);
+    if (handle.environment.imageRevision !== raw.imageRevision) {
+      throw new ToolBrokerError(
+        "persistent_capsule_invalid",
+        "Exclusive machine recovery image identity was inconsistent",
+        false,
+      );
+    }
     if (this.#activations.has(handle.activationId)) {
       throw new ToolBrokerError(
         "persistent_capsule_replay",
@@ -1421,6 +1437,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         handle.activationId,
         handle.assignment,
         raw.bindingSha256,
+        raw.imageRevision,
       )
     ) {
       throw new ToolBrokerError(
@@ -1685,6 +1702,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         handle.activationId,
         handle.assignment,
         physicalBindingSha256(handle.activationId, handle.assignment, handle.environment),
+        handle.environment.imageRevision,
       )
     ) {
       throw new ToolBrokerError(
@@ -1715,6 +1733,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         handle.activationId,
         handle.assignment,
         physicalBindingSha256(handle.activationId, handle.assignment, handle.environment),
+        handle.environment.imageRevision,
       )
     ) {
       throw new ToolBrokerError(
@@ -1980,6 +1999,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         handle.activationId,
         handle.assignment,
         activation.bindingSha256,
+        activation.evidence.imageRevision,
       )
     ) {
       throw new ToolBrokerError(

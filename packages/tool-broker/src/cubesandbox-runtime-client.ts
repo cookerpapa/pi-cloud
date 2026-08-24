@@ -518,8 +518,17 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
 
   async pause(sandboxId: string): Promise<void> {
     const id = encodeURIComponent(bounded(sandboxId, "CubeSandbox ID", 256));
-    const response = await this.#control(`/sandboxes/${id}/pause`, { method: "POST" });
-    await response.body?.cancel().catch(() => undefined);
+    try {
+      const response = await this.#control(`/sandboxes/${id}/pause`, { method: "POST" });
+      await response.body?.cancel().catch(() => undefined);
+    } catch (error: unknown) {
+      // CubeAPI currently applies its short standard-route timeout to pause,
+      // while CubeMaster continues the full-VM snapshot after that HTTP 408.
+      // Resolve the uncertain transport outcome from physical state instead
+      // of turning a successfully paused machine into an UNKNOWN allocation.
+      if (!(error instanceof CubeRuntimeClientError) || error.statusCode !== 408) throw error;
+      await this.#waitForState(sandboxId, "paused");
+    }
   }
 
   async connect(sandboxId: string, timeoutSeconds: number): Promise<CubeSandboxInstance> {
@@ -831,6 +840,27 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
 
   async close(): Promise<void> {
     await this.#dispatcher.close();
+  }
+
+  async #waitForState(sandboxId: string, expectedState: string): Promise<void> {
+    const deadline = Date.now() + this.#requestTimeoutMs;
+    for (;;) {
+      const current = await this.read(sandboxId);
+      if (current === undefined) {
+        throw new CubeRuntimeClientError(
+          `CubeSandbox disappeared while waiting for ${expectedState}`,
+        );
+      }
+      if (current.state.toLowerCase() === expectedState) return;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        throw new CubeRuntimeClientError(
+          `CubeSandbox did not reach ${expectedState} after an uncertain lifecycle response`,
+          408,
+        );
+      }
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, Math.min(1_000, remaining)));
+    }
   }
 
   async #control(

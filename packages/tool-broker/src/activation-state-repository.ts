@@ -10,6 +10,7 @@ import type { DevelopmentEnvironmentProfileKey, SandboxPreviewTarget } from "@pi
 import { DEVELOPMENT_ENVIRONMENT_PROFILES } from "@pi-cloud/protocol";
 import type { SandboxHandle } from "./sandbox-provider.ts";
 import { sql, type Kysely, type Transaction } from "kysely";
+import { setTimeout as delay } from "node:timers/promises";
 
 export type SandboxActivationReservation = {
   activationId: string;
@@ -421,6 +422,12 @@ function validDate(clock: () => Date): Date {
   return value;
 }
 
+function timestampValue(value: unknown, name: string): number {
+  const timestamp = value instanceof Date ? value.valueOf() : Date.parse(String(value));
+  if (!Number.isFinite(timestamp)) throw new TypeError(`${name} was not a valid timestamp`);
+  return timestamp;
+}
+
 function positiveInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1 || value > 300_000) {
     throw new TypeError(`${name} must be a bounded positive integer`);
@@ -431,6 +438,14 @@ function positiveInteger(value: number, name: string): number {
 function failureCode(value: string | undefined): string | null {
   if (value === undefined) return null;
   return /^[a-z][a-z0-9_]{0,127}$/.test(value) ? value : "tool_broker_failed";
+}
+
+function readyOwnerUrlConflict(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { code?: unknown; constraint?: unknown };
+  return (
+    candidate.code === "23505" && candidate.constraint === "tool_broker_ready_owner_url_unique"
+  );
 }
 
 function developmentProfileKey(value: string): DevelopmentEnvironmentProfileKey {
@@ -473,23 +488,74 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     if (this.#heartbeat !== undefined || this.#closed) {
       throw new Error("Tool Broker state repository can only start once");
     }
-    const now = validDate(this.#clock);
-    const leaseExpiresAt = new Date(now.valueOf() + this.#leaseMs);
-    await this.#database.transaction().execute(async (transaction) => {
-      await this.#markExpiredOwnersLost(transaction, now);
-      await transaction
-        .insertInto("tool_broker_instances")
-        .values({
-          instance_id: this.#instanceId,
-          sandbox_domain_id: this.#sandboxDomainId,
-          owner_base_url: this.#ownerBaseUrl,
-          state: "ready",
-          lease_expires_at: leaseExpiresAt,
-          last_heartbeat_at: now,
-          updated_at: now,
-        })
-        .executeTakeFirstOrThrow();
-    });
+    const startupDeadline = Date.now() + this.#leaseMs * 2;
+    let leaseExpiresAt: Date | undefined;
+    while (leaseExpiresAt === undefined) {
+      const now = validDate(this.#clock);
+      const candidateLease = new Date(now.valueOf() + this.#leaseMs);
+      const currentOwner = await this.#database
+        .selectFrom("tool_broker_instances")
+        .select("lease_expires_at")
+        .where("sandbox_domain_id", "=", this.#sandboxDomainId)
+        .where("owner_base_url", "=", this.#ownerBaseUrl)
+        .where("state", "=", "ready")
+        .executeTakeFirst();
+      const currentOwnerLease =
+        currentOwner === undefined
+          ? undefined
+          : timestampValue(currentOwner.lease_expires_at, "Tool Broker owner lease");
+      if (currentOwnerLease !== undefined && currentOwnerLease > now.valueOf()) {
+        if (Date.now() >= startupDeadline) {
+          throw new SandboxActivationStateRepositoryError(
+            "ownership_lost",
+            "Tool Broker owner URL is still leased by another instance",
+          );
+        }
+        await delay(
+          Math.min(this.#heartbeatMs, Math.max(25, currentOwnerLease - now.valueOf() + 10)),
+        );
+        continue;
+      }
+      try {
+        await this.#database.transaction().execute(async (transaction) => {
+          await this.#markExpiredOwnersLost(transaction, now);
+          await transaction
+            .insertInto("tool_broker_instances")
+            .values({
+              instance_id: this.#instanceId,
+              sandbox_domain_id: this.#sandboxDomainId,
+              owner_base_url: this.#ownerBaseUrl,
+              state: "ready",
+              lease_expires_at: candidateLease,
+              last_heartbeat_at: now,
+              updated_at: now,
+            })
+            .executeTakeFirstOrThrow();
+        });
+        leaseExpiresAt = candidateLease;
+      } catch (error: unknown) {
+        if (!readyOwnerUrlConflict(error) || Date.now() >= startupDeadline) throw error;
+        const existing = await this.#database
+          .selectFrom("tool_broker_instances")
+          .select("lease_expires_at")
+          .where("sandbox_domain_id", "=", this.#sandboxDomainId)
+          .where("owner_base_url", "=", this.#ownerBaseUrl)
+          .where("state", "=", "ready")
+          .executeTakeFirst();
+        const waitMs = Math.min(
+          this.#heartbeatMs,
+          Math.max(
+            25,
+            (existing === undefined
+              ? now.valueOf()
+              : timestampValue(existing.lease_expires_at, "Tool Broker owner lease")) -
+              now.valueOf() +
+              10,
+          ),
+        );
+        await delay(waitMs);
+      }
+    }
     this.#confirmedLeaseExpiresAt = leaseExpiresAt.valueOf();
     this.#heartbeat = setInterval(
       () => void this.#renew().catch(() => undefined),
@@ -513,7 +579,10 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         "Tool Broker database ownership lease is not current",
       );
     }
-    this.#confirmedLeaseExpiresAt = row.lease_expires_at.valueOf();
+    this.#confirmedLeaseExpiresAt = timestampValue(
+      row.lease_expires_at,
+      "Tool Broker confirmed lease",
+    );
   }
 
   assertLocalOwnership(): void {
@@ -1431,8 +1500,14 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           state,
           ...(state === "running" ? {} : { terminal_active: false }),
           ...(state === "released" ? { owner_instance_id: null, owner_base_url: null } : {}),
-          runtime_id: detail.handle?.runtimeId ?? null,
-          runtime_name: detail.handle?.runtimeName ?? null,
+          ...(state === "released"
+            ? { runtime_id: null, runtime_name: null }
+            : (state === "unknown" || state === "releasing") && detail.handle === undefined
+              ? {}
+              : {
+                  runtime_id: detail.handle?.runtimeId ?? null,
+                  runtime_name: detail.handle?.runtimeName ?? null,
+                }),
           ...(state === "released"
             ? { runtime_capsule: null }
             : detail.runtimeCapsule === undefined
@@ -2395,8 +2470,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       .updateTable("development_environments")
       .set({
         state: "unknown",
-        runtime_id: null,
-        runtime_name: null,
         failure_code: "tool_broker_owner_lost",
         updated_at: now,
       })

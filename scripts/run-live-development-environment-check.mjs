@@ -292,6 +292,7 @@ const cube = new OfficialCubeSandboxRuntimeClient({
 const suffix = Date.now().toString(36);
 const previewPort = 5_173;
 const development = await api.createDevelopmentEnvironment(
+  `Recovery machine ${suffix}`,
   "standard",
   newIdempotencyKey("environment"),
 );

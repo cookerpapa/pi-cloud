@@ -10,8 +10,8 @@ describe("UI internationalization", () => {
   it("keeps both dictionaries complete and interpolates dynamic UI values", () => {
     expect(translate("zh-CN", "resource.workspaceConversations", { count: 3 })).toBe("3 个对话");
     expect(translate("en-US", "resource.workspaceConversations", { count: 3 })).toBe("3 chats");
-    expect(translate("en-US", "chat.exclusive", { id: "abc123" })).toBe(
-      "Exclusive environment abc123",
+    expect(translate("en-US", "chat.exclusive", { name: "backend-dev" })).toBe(
+      "Cloud development machine backend-dev",
     );
   });
 

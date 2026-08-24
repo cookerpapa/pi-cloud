@@ -295,7 +295,8 @@ try {
 
       await click(".product-resource-nav", "resources.open");
       await page.waitFor('document.querySelector(".product-resource-page")');
-      await clickText(".product-resource-tabs button", "独享环境", "resources.exclusiveTab");
+      await clickText(".product-resource-tabs button", "云端开发机", "resources.exclusiveTab");
+      await setValue(".product-environment-create input", `UI machine ${suffix}`);
       await click(".product-resource-create .product-primary-button", "resources.createExclusive");
       const development = await waitFor(
         async () => {
@@ -340,7 +341,7 @@ try {
       await click(".product-new-chat", "conversation.newExclusive");
       await clickText(
         ".product-execution-mode-choice .product-choice-card",
-        "独享运行环境",
+        "云端开发机",
         "conversation.exclusiveMode",
       );
       await setValue(".product-progressive-options > label input", `UI exclusive ${suffix}`);
@@ -384,7 +385,7 @@ try {
 
       await page.screenshot(screenshotPath);
       await click(".product-resource-nav", "resources.reopen");
-      await clickText(".product-resource-tabs button", "独享环境", "resources.exclusiveTabAgain");
+      await clickText(".product-resource-tabs button", "云端开发机", "resources.exclusiveTabAgain");
       await page.waitFor('document.querySelector(".product-environment-card")');
       await clickText(".product-environment-card button", "释放", "resources.releaseExclusive");
       await waitFor(

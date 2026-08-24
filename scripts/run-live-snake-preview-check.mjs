@@ -264,6 +264,7 @@ if (reusedSessionId === undefined) {
   progress("registering browser account and creating exclusive Cube");
   await api.registerAccount(username, "Snake Acceptance", password);
   development = await api.createDevelopmentEnvironment(
+    `Snake machine ${suffix}`,
     "standard",
     newIdempotencyKey("environment"),
   );
