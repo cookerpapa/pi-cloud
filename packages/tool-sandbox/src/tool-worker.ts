@@ -6,7 +6,6 @@ import {
   MAX_TOOL_OUTPUT_BYTES,
   MAX_TOOL_RANGE_FILE_BYTES,
   MAX_TOOL_READ_RANGE_BYTES,
-  parseToolWorkerInput,
   type EnvironmentRuntimeSnapshot,
   type EnvironmentRecipeCommand,
   type EnvironmentRecipeCommandResult,
@@ -18,7 +17,6 @@ import {
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
   type ToolWebProxyBootstrap,
-  type ToolWorkerOutput,
 } from "@pi-cloud/protocol";
 import { decodeWorkspaceSnapshotBlob, restoreWorkspaceSnapshot } from "@pi-cloud/workspace-runtime";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
@@ -1080,15 +1078,6 @@ export function toolOperationFailure(
   };
 }
 
-function writeOutput(output: ToolWorkerOutput): Promise<void> {
-  return new Promise<void>((resolvePromise, rejectPromise) => {
-    process.stdout.write(`${JSON.stringify(output)}\n`, (error) => {
-      if (error) rejectPromise(error);
-      else resolvePromise();
-    });
-  });
-}
-
 export async function prepareToolWorkspace(
   workspaceSeed: Parameters<typeof decodeWorkspaceSnapshotBlob>[0] | undefined,
   workspaceRestore: Parameters<typeof decodeWorkspaceSnapshotBlob>[0] | undefined,
@@ -1198,149 +1187,3 @@ export async function attachToolExecution(
   safeToolEnvironment(undefined, message.webProxy);
   await validateAttachedInitialization(message);
 }
-
-export async function runToolWorker(): Promise<void> {
-  const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
-  let activationId: string | undefined;
-  let initialized = false;
-  let webProxy: ToolWebProxyBootstrap | undefined;
-  let shuttingDown = false;
-  let active:
-    { operationId: string; controller: AbortController; promise: Promise<void> } | undefined;
-  const seenOperationIds = new Set<string>();
-  const releaseActive = (operationId: string): void => {
-    if (active?.operationId === operationId) active = undefined;
-  };
-
-  const fail = async (error: unknown, identity?: { operationId?: string }): Promise<void> => {
-    // This stream is collected only by the trusted Tool Broker. Keep the
-    // protocol response deliberately generic, but retain an operator-facing
-    // diagnostic so startup failures can be distinguished without weakening
-    // the model-visible error boundary.
-    const diagnostic = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    process.stderr.write(`[tool-worker] ${diagnostic}\n`);
-    const failure =
-      error instanceof ToolWorkerError
-        ? error
-        : new ToolWorkerError("tool_worker_failed", "Tool worker failed", true);
-    await writeOutput({
-      toolWorkerProtocolVersion: 1,
-      type: "worker.failed",
-      ...(activationId === undefined ? {} : { activationId }),
-      ...(identity?.operationId === undefined ? {} : { operationId: identity.operationId }),
-      code: failure.code,
-      message: failure.message,
-      retryable: failure.retryable,
-    });
-  };
-
-  input.on("line", (line) => {
-    void (async () => {
-      if (shuttingDown || line.trim().length === 0) return;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line) as unknown;
-      } catch {
-        throw new ToolWorkerError("tool_worker_protocol_error", "Tool worker input was invalid");
-      }
-      const message = parseToolWorkerInput(parsed);
-      if (message.type === "worker.initialize") {
-        if (initialized) {
-          throw new ToolWorkerError(
-            "tool_worker_protocol_error",
-            "Tool worker was initialized twice",
-          );
-        }
-        activationId = message.activationId;
-        webProxy = message.webProxy;
-        const environment = await initializeToolExecution(message);
-        initialized = true;
-        await writeOutput({
-          toolWorkerProtocolVersion: 1,
-          type: "worker.ready",
-          activationId,
-          environment,
-        });
-        return;
-      }
-      const messageActivationId =
-        message.type === "worker.operation" ? message.request.activationId : message.activationId;
-      if (!initialized || activationId === undefined || messageActivationId !== activationId) {
-        throw new ToolWorkerError(
-          "tool_worker_identity_mismatch",
-          "Tool worker identity did not match",
-        );
-      }
-      if (message.type === "worker.cancel") {
-        if (active?.operationId === message.operationId) active.controller.abort();
-        return;
-      }
-      if (message.type === "worker.shutdown") {
-        shuttingDown = true;
-        active?.controller.abort();
-        await active?.promise.catch(() => undefined);
-        input.close();
-        process.stdin.pause();
-        return;
-      }
-      const request = message.request;
-      if (request.activationId !== activationId) {
-        throw new ToolWorkerError(
-          "tool_worker_identity_mismatch",
-          "Tool operation identity did not match",
-        );
-      }
-      if (active !== undefined) {
-        await writeOutput({
-          toolWorkerProtocolVersion: 1,
-          type: "worker.operation_result",
-          response: toolOperationFailure(
-            request,
-            new ToolWorkerError("tool_operation_overlap", "Another tool operation is active", true),
-          ),
-        });
-        return;
-      }
-      if (seenOperationIds.has(request.operationId)) {
-        await writeOutput({
-          toolWorkerProtocolVersion: 1,
-          type: "worker.operation_result",
-          response: toolOperationFailure(
-            request,
-            new ToolWorkerError("tool_operation_replay", "Tool operation ID was already used"),
-          ),
-        });
-        return;
-      }
-      seenOperationIds.add(request.operationId);
-      const controller = new AbortController();
-      const promise = (async () => {
-        const response = await executeToolOperation(request, controller.signal, webProxy).catch(
-          (error: unknown) => toolOperationFailure(request, error),
-        );
-        // Clear the execution slot before publishing the terminal response.
-        // The trusted caller is allowed to issue an immediate capture as soon
-        // as it receives that response; publishing first creates a race where
-        // the next input observes the already-finished operation as active.
-        releaseActive(request.operationId);
-        await writeOutput({
-          toolWorkerProtocolVersion: 1,
-          type: "worker.operation_result",
-          response,
-        });
-      })().finally(() => {
-        releaseActive(request.operationId);
-      });
-      active = { operationId: request.operationId, controller, promise };
-    })().catch(async (error: unknown) => {
-      await fail(error).catch(() => undefined);
-    });
-  });
-
-  input.once("close", () => {
-    shuttingDown = true;
-    active?.controller.abort();
-  });
-}
-
-if (process.argv[1] === import.meta.filename) await runToolWorker();

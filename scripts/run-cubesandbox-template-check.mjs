@@ -204,7 +204,7 @@ try {
   await writeEnvdFile(baseUrl, evidencePath, { mode: "evidence" });
   const evidenceResult = await envdRun(
     baseUrl,
-    `/bin/chown 1000:1000 ${evidencePath} && /bin/chmod 0400 ${evidencePath} && /usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /app/packages/tool-sandbox/src/envd-guest-control.ts ${evidencePath}`,
+    `/bin/chown 1000:1000 ${evidencePath} && /bin/chmod 0400 ${evidencePath} && /usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /opt/pi-cloud/bin/envd-guest-control.mjs ${evidencePath}`,
   );
   assert(
     evidenceResult.exitCode === 0,
@@ -229,7 +229,7 @@ try {
     await writeEnvdFile(baseUrl, path, { mode: "operation", initialization, operation: request });
     const result = await envdRun(
       baseUrl,
-      `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && /usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /app/packages/tool-sandbox/src/envd-tool-exec.ts ${path}`,
+      `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && /usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /opt/pi-cloud/bin/envd-tool-exec.mjs ${path}`,
       "root",
       request.operation === "bash.exec" ? request.timeoutMs + 5_000 : 30_000,
     );

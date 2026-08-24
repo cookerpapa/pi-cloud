@@ -677,8 +677,8 @@ export class CubeSandboxProvider implements SandboxProvider {
     await this.#client.writeGuestFile(instance, path, bytes);
     const program =
       options.program === "tool"
-        ? "/app/packages/tool-sandbox/src/envd-tool-exec.ts"
-        : "/app/packages/tool-sandbox/src/envd-guest-control.ts";
+        ? "/opt/pi-cloud/bin/envd-tool-exec.mjs"
+        : "/opt/pi-cloud/bin/envd-guest-control.mjs";
     const prefix = options.runAsToolUser
       ? "/usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs "
       : "";

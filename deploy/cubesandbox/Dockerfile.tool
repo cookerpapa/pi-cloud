@@ -7,6 +7,28 @@ RUN python3 -m pip install --no-cache-dir --retries 5 --timeout 30 \
       "wheel==0.47.0"
 FROM ${NODE_BASE_IMAGE} AS node-runtime
 
+FROM ${NODE_BASE_IMAGE} AS tool-worker-builder
+WORKDIR /src
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
+COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/tool-sandbox/package.json packages/tool-sandbox/package.json
+COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
+RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
+    && sh scripts/retry-npm-command.sh install --no-save --ignore-scripts esbuild@0.28.1
+COPY packages/protocol/src packages/protocol/src
+COPY packages/tool-sandbox/src packages/tool-sandbox/src
+COPY packages/workspace-runtime/src packages/workspace-runtime/src
+RUN node node_modules/esbuild/bin/esbuild \
+      packages/tool-sandbox/src/envd-tool-exec.ts \
+      packages/tool-sandbox/src/envd-guest-control.ts \
+      --bundle \
+      --platform=node \
+      --format=esm \
+      --target=node24 \
+      --out-extension:.js=.mjs \
+      --outdir=/out
+
 FROM ${CUBE_BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -56,7 +78,9 @@ RUN if ! getent group 1000 >/dev/null; then groupadd --gid 1000 pi-cloud; fi \
     && install -d -o 1000 -g 1000 -m 0700 \
          /workspace \
          /tmp/pi-cloud-tool-home \
-         /opt/pi-cloud
+    && install -d -o 0 -g 0 -m 0755 \
+         /opt/pi-cloud \
+         /opt/pi-cloud/bin
 
 WORKDIR /app
 
@@ -93,12 +117,10 @@ RUN sh scripts/retry-npm-command.sh install --global npm@12.0.2 \
     && node -e 'if (require("/usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json").version !== "5.0.9") process.exit(1)' \
     && node -e 'if (require("/usr/local/lib/node_modules/npm/node_modules/ip-address/package.json").version !== "10.4.0") process.exit(1)' \
     && node -e 'if (require("/usr/local/lib/node_modules/npm/node_modules/tar/package.json").version !== "7.5.21") process.exit(1)' \
-    && sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
     && npm cache clean --force
 
-COPY packages/protocol/src packages/protocol/src
-COPY packages/tool-sandbox/src packages/tool-sandbox/src
-COPY packages/workspace-runtime/src packages/workspace-runtime/src
+COPY --from=tool-worker-builder /out/envd-tool-exec.mjs /opt/pi-cloud/bin/envd-tool-exec.mjs
+COPY --from=tool-worker-builder /out/envd-guest-control.mjs /opt/pi-cloud/bin/envd-guest-control.mjs
 COPY --chown=1000:1000 \
   packages/sandbox-supervisor/test/fixtures/sample-java-repair \
   /opt/pi-cloud/sample-java-repair
