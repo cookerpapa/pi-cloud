@@ -346,6 +346,10 @@ try {
       await setValue(".product-progressive-options > label input", `UI exclusive ${suffix}`);
       await click(".product-working-directory-choice button", "conversation.directoryPicker");
       await page.waitFor('document.querySelector(".product-directory-picker")');
+      await page.waitFor(
+        'document.querySelector(".product-directory-new-folder")?.disabled===false',
+        30_000,
+      );
       await click(".product-directory-new-folder", "directory.newFolder");
       await page.waitFor('document.querySelector(".product-directory-create input")');
       await setValue(".product-directory-create input", `ui-project-${suffix}`);
