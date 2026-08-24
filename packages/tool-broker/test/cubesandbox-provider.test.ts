@@ -218,6 +218,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       if (request.mode === "evidence") {
         return this.#result({
           evidence: {
+            controlProtocolVersion: 2,
             imageRevision: this.imageRevision,
             kernelRelease: "6.12.0-cube.guest",
             ipAddress: "169.254.68.4",

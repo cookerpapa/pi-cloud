@@ -124,6 +124,7 @@ type CubeAssignmentMetadata = Readonly<{
 }>;
 
 type CubeRuntimeEvidence = Readonly<{
+  controlProtocolVersion: 1 | 2;
   imageRevision: string;
   kernelRelease: string;
   cpuCount: number;
@@ -329,6 +330,17 @@ function booleanField(value: Record<string, unknown>, name: string): boolean {
 
 function parseEvidence(value: unknown): CubeRuntimeEvidence {
   const candidate = record(value, "CubeSandbox runtime evidence");
+  const controlProtocolVersion =
+    candidate.controlProtocolVersion === undefined
+      ? 1
+      : integerField(candidate, "controlProtocolVersion");
+  if (controlProtocolVersion !== 1 && controlProtocolVersion !== 2) {
+    throw new ToolBrokerError(
+      "cubesandbox_protocol_error",
+      "CubeSandbox control protocol evidence was invalid",
+      false,
+    );
+  }
   const capabilities = stringField(candidate, "effectiveCapabilities", 64).toLowerCase();
   if (!/^[0-9a-f]+$/.test(capabilities)) {
     throw new ToolBrokerError(
@@ -338,6 +350,7 @@ function parseEvidence(value: unknown): CubeRuntimeEvidence {
     );
   }
   return Object.freeze({
+    controlProtocolVersion,
     imageRevision: stringField(candidate, "imageRevision", 128),
     kernelRelease: stringField(candidate, "kernelRelease", 256),
     cpuCount: integerField(candidate, "cpuCount"),
@@ -1470,7 +1483,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     const raw = record(this.#persistentCapsules.open(capsule), "Cube persistent machine capsule");
     const instance = raw.instance as CubeSandboxInstance;
     const handle = raw.handle as SandboxHandle;
-    const evidence = raw.evidence as CubeRuntimeEvidence;
+    const evidence = parseEvidence(raw.evidence);
     const toolchain = raw.toolchain as EnvironmentToolchainReport;
     if (
       raw.version !== 1 ||
@@ -1585,7 +1598,9 @@ export class CubeSandboxProvider implements SandboxProvider {
       const raw = record(
         await this.#guestJson(
           activation.instance,
-          { mode: "freeze", path: activation.toolRoot },
+          activation.evidence.controlProtocolVersion === 1
+            ? { mode: "freeze" }
+            : { mode: "freeze", path: activation.toolRoot },
           {
             program: "control",
             runAsToolUser: false,
@@ -2051,6 +2066,7 @@ export class CubeSandboxProvider implements SandboxProvider {
 
   #assertEvidence(evidence: CubeRuntimeEvidence, policy: SandboxPolicy): void {
     if (
+      evidence.controlProtocolVersion !== 2 ||
       evidence.imageRevision !== this.#imageRevision ||
       evidence.uid !== 1_000 ||
       evidence.gid !== 1_000 ||

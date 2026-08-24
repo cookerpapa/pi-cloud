@@ -168,6 +168,7 @@ async function evidence(): Promise<Record<string, unknown>> {
     throw new Error("Guest evidence was invalid");
   }
   return {
+    controlProtocolVersion: 2,
     imageRevision: imageRevision.trim(),
     kernelRelease: kernelRelease.trim(),
     cpuCount,
