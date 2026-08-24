@@ -54,15 +54,26 @@ const StableMarkdownBody = memo(function StableMarkdownBody({
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        a: ({ children, href }) => (
-          <a
-            href={conversationPreviewHref(href, sessionId)}
-            rel="noreferrer noopener"
-            target="_blank"
-          >
-            {children}
-          </a>
-        ),
+        a: ({ children, href }) => {
+          const resolved = conversationPreviewHref(href, sessionId);
+          const previewPort =
+            resolved !== href
+              ? /\/preview\/([0-9]{4,5})(?:\/|$)/u.exec(resolved ?? "")?.[1]
+              : undefined;
+          const childText =
+            typeof children === "string"
+              ? children
+              : Array.isArray(children) && children.every((child) => typeof child === "string")
+                ? children.join("")
+                : undefined;
+          return (
+            <a href={resolved} rel="noreferrer noopener" target="_blank">
+              {previewPort !== undefined && childText === href
+                ? t("turn.openPreview", { port: previewPort })
+                : children}
+            </a>
+          );
+        },
         code: ({ className, children }) => (
           <MarkdownCode {...(className === undefined ? {} : { className })}>
             {children}

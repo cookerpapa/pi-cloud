@@ -5,7 +5,7 @@ import { AuthScreen } from "../src/AuthScreen.tsx";
 import ChatApp from "../src/ChatApp.tsx";
 import { ConversationTreeNavigator } from "../src/ConversationTreeNavigator.tsx";
 import { ConversationTurn } from "../src/ConversationTurn.tsx";
-import { conversationPreviewHref } from "../src/Markdown.tsx";
+import { conversationPreviewHref, Markdown } from "../src/Markdown.tsx";
 import { ToolActivity } from "../src/ToolActivity.tsx";
 import { PiCloudApi } from "../src/api.ts";
 import { ResourceManagementPage, resourceRefreshPending } from "../src/ResourceManagementPage.tsx";
@@ -62,6 +62,16 @@ describe("product chat experience", () => {
     expect(conversationPreviewHref("http://localhost:49983/health", sessionId)).toBe(
       "http://localhost:49983/health",
     );
+  });
+
+  it("renders a bare localhost URL as an authenticated application action", () => {
+    const sessionId = "10000000-0000-4000-8000-000000000099";
+    const markup = renderToStaticMarkup(
+      <Markdown sessionId={sessionId}>http://127.0.0.1:8000/snake.html</Markdown>,
+    );
+    expect(markup).toContain("打开应用（端口 8000）↗");
+    expect(markup).toContain(`/v1/conversations/${sessionId}/preview/8000/snake.html`);
+    expect(markup).not.toContain(">http://127.0.0.1:8000/snake.html<");
   });
 
   it("restores a durable login without rendering the old operator console", () => {
