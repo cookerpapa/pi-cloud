@@ -187,32 +187,37 @@ function record(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function envdDirectoryListing(
-  path: string,
-  values: readonly Readonly<Record<string, unknown>>[],
-): SandboxDirectoryListing {
-  if (values.length > 1_000) {
+function sandboxDirectoryListing(value: unknown): SandboxDirectoryListing {
+  const raw = record(value, "Cube guest directory");
+  if (
+    typeof raw.path !== "string" ||
+    !raw.path.startsWith("/") ||
+    /[\u0000-\u001f\u007f]/u.test(raw.path) ||
+    !Array.isArray(raw.entries) ||
+    raw.entries.length > 1_000
+  ) {
     throw new ToolBrokerError(
       "development_environment_directory_invalid",
       "Cube guest directory response was invalid",
       false,
     );
   }
-  const kind = (value: unknown): "directory" | "file" | "symlink" | "other" => {
-    if (value === "FILE_TYPE_DIRECTORY") return "directory";
-    if (value === "FILE_TYPE_FILE") return "file";
-    if (value === "FILE_TYPE_SYMLINK") return "symlink";
-    return "other";
-  };
   return {
-    path,
+    path: raw.path,
     entries: Object.freeze(
-      values.map((entry) => {
+      raw.entries.map((entry) => {
+        const candidate = record(entry, "Cube guest directory entry");
         if (
-          typeof entry.name !== "string" ||
-          entry.name.length < 1 ||
-          typeof entry.path !== "string" ||
-          !entry.path.startsWith("/")
+          typeof candidate.name !== "string" ||
+          candidate.name.length < 1 ||
+          candidate.name.includes("/") ||
+          /[\u0000-\u001f\u007f]/u.test(candidate.name) ||
+          typeof candidate.path !== "string" ||
+          !candidate.path.startsWith("/") ||
+          /[\u0000-\u001f\u007f]/u.test(candidate.path) ||
+          !new Set(["directory", "file", "symlink", "other"]).has(String(candidate.kind)) ||
+          (candidate.sizeBytes !== undefined &&
+            (!Number.isSafeInteger(candidate.sizeBytes) || (candidate.sizeBytes as number) < 0))
         ) {
           throw new ToolBrokerError(
             "development_environment_directory_invalid",
@@ -220,20 +225,13 @@ function envdDirectoryListing(
             false,
           );
         }
-        const rawSize = entry.size;
-        const sizeBytes =
-          typeof rawSize === "number"
-            ? rawSize
-            : typeof rawSize === "string" && /^[0-9]+$/u.test(rawSize)
-              ? Number(rawSize)
-              : undefined;
         return Object.freeze({
-          name: entry.name,
-          path: entry.path,
-          kind: kind(entry.type),
-          ...(typeof sizeBytes === "number" && Number.isSafeInteger(sizeBytes) && sizeBytes >= 0
-            ? { sizeBytes }
-            : {}),
+          name: candidate.name,
+          path: candidate.path,
+          kind: candidate.kind as "directory" | "file" | "symlink" | "other",
+          ...(candidate.sizeBytes === undefined
+            ? {}
+            : { sizeBytes: candidate.sizeBytes as number }),
         });
       }),
     ),
@@ -694,6 +692,13 @@ export class CubeSandboxProvider implements SandboxProvider {
         maximumOutputBytes: TOOL_RESPONSE_LIMIT_BYTES,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
+      if (result.exitCode !== 0) {
+        throw new ToolBrokerError(
+          "cubesandbox_guest_execution_failed",
+          "CubeSandbox one-shot guest helper failed",
+          false,
+        );
+      }
       const output = result.stdout.trim();
       if (output.length < 2 || output.length > TOOL_RESPONSE_LIMIT_BYTES) {
         throw new ToolBrokerError(
@@ -1225,9 +1230,12 @@ export class CubeSandboxProvider implements SandboxProvider {
         true,
       );
     }
-    return envdDirectoryListing(
-      path,
-      await this.#client.listGuestDirectory(activation.instance, path),
+    return sandboxDirectoryListing(
+      await this.#guestJson(
+        activation.instance,
+        { mode: "list_directory", path },
+        { program: "control", runAsToolUser: false, timeoutMs: 15_000 },
+      ),
     );
   }
 
@@ -1258,12 +1266,12 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const parent = path === "/" ? "/" : path.replace(/\/$/u, "");
-    const target = `${parent === "/" ? "" : parent}/${name}`;
-    await this.#client.createGuestDirectory(activation.instance, target);
-    return envdDirectoryListing(
-      path,
-      await this.#client.listGuestDirectory(activation.instance, path),
+    return sandboxDirectoryListing(
+      await this.#guestJson(
+        activation.instance,
+        { mode: "create_directory", path, name },
+        { program: "control", runAsToolUser: false, timeoutMs: 15_000 },
+      ),
     );
   }
 

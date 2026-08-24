@@ -309,8 +309,9 @@ terminal at a time.
 The authenticated folder chooser may create one bounded child directory in an
 idle owned machine. Control Plane binds tenant/user identity, Tool Broker rejects
 the mutation while an Agent activation or terminal owns the machine, validates
-the parent/name, and calls envd's bounded Filesystem API. The browser never sends
-a shell command or receives Cube authority.
+the parent/name, and asks envd to start a bounded, root-owned one-shot filesystem
+helper. The helper exits after returning the directory result. The browser never
+sends a shell command or receives Cube authority.
 
 The allocation participates in tenant/Domain Sandbox quotas and the global
 Workspace single-writer rule. `agent_activation_id` and `terminal_active` are

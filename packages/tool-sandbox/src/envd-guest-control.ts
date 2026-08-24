@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { open, readFile, readdir } from "node:fs/promises";
+import { chown, lstat, mkdir, open, readFile, readdir, realpath } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
@@ -183,6 +184,65 @@ async function evidence(): Promise<Record<string, unknown>> {
   };
 }
 
+function absolutePath(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value.length < 1 ||
+    value.length > 4_096 ||
+    !value.startsWith("/") ||
+    /[\u0000-\u001f\u007f]/u.test(value) ||
+    /(?:^|\/)\.\.?($|\/)/u.test(value)
+  ) {
+    throw new Error("Guest path was invalid");
+  }
+  return value;
+}
+
+async function listDirectory(path: string): Promise<Record<string, unknown>> {
+  const canonical = await realpath(path);
+  const directory = await lstat(canonical);
+  if (!directory.isDirectory()) throw new Error("Guest directory was unavailable");
+  const names = await readdir(canonical);
+  if (names.length > 1_000) throw new Error("Guest directory exceeded its entry limit");
+  const entries = await Promise.all(
+    names.map(async (name) => {
+      const child = resolve(canonical, name);
+      const metadata = await lstat(child);
+      const kind = metadata.isDirectory()
+        ? "directory"
+        : metadata.isFile()
+          ? "file"
+          : metadata.isSymbolicLink()
+            ? "symlink"
+            : "other";
+      return { name, path: child, kind, sizeBytes: metadata.size };
+    }),
+  );
+  entries.sort((left, right) => left.name.localeCompare(right.name));
+  return { path: canonical, entries };
+}
+
+async function createDirectory(path: string, name: unknown): Promise<Record<string, unknown>> {
+  if (
+    typeof name !== "string" ||
+    name.length < 1 ||
+    name.length > 128 ||
+    name === "." ||
+    name === ".." ||
+    name.includes("/") ||
+    /[\u0000-\u001f\u007f]/u.test(name)
+  ) {
+    throw new Error("Guest directory name was invalid");
+  }
+  const parent = await realpath(path);
+  if (!(await lstat(parent)).isDirectory())
+    throw new Error("Guest parent directory was unavailable");
+  const target = resolve(parent, name);
+  await mkdir(target, { mode: 0o700 });
+  await chown(target, TOOL_UID, TOOL_UID);
+  return listDirectory(parent);
+}
+
 const request = await input();
 let result: Record<string, unknown>;
 if (request.mode === "evidence" && Object.keys(request).length === 1) {
@@ -191,6 +251,16 @@ if (request.mode === "evidence" && Object.keys(request).length === 1) {
   result = { processes: await freeze() };
 } else if (request.mode === "thaw" && Object.keys(request).sort().join(",") === "mode,processes") {
   result = { resumed: await thaw(processList(request.processes)) };
+} else if (
+  request.mode === "list_directory" &&
+  Object.keys(request).sort().join(",") === "mode,path"
+) {
+  result = await listDirectory(absolutePath(request.path));
+} else if (
+  request.mode === "create_directory" &&
+  Object.keys(request).sort().join(",") === "mode,name,path"
+) {
+  result = await createDirectory(absolutePath(request.path), request.name);
 } else {
   throw new Error("Guest control request was invalid");
 }

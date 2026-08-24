@@ -198,24 +198,13 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     this.guestFiles.delete(path);
   }
 
-  async listGuestDirectory(): Promise<readonly Readonly<Record<string, unknown>>[]> {
-    return [];
-  }
-
-  async createGuestDirectory(
-    _instance: CubeSandboxInstance,
-    path: string,
-  ): Promise<Readonly<Record<string, unknown>>> {
-    return { name: path.split("/").at(-1) ?? "", path, type: "FILE_TYPE_DIRECTORY" };
-  }
-
   async runCommand(
     instance: CubeSandboxInstance,
     input: CubeSandboxGuestCommandRequest,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     const request = this.requestForCommand(input);
     this.requests.push({ sandboxId: instance.sandboxId, input, guestRequest: request });
-    if (input.command.includes("envd-guest-control.ts")) {
+    if (input.command.includes("envd-guest-control.mjs")) {
       if (request.mode === "evidence") {
         return this.#result({
           evidence: {
@@ -237,8 +226,34 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       }
       if (request.mode === "freeze") return this.#result({ processes: [] });
       if (request.mode === "thaw") return this.#result({ resumed: 0 });
+      if (request.mode === "list_directory") {
+        return this.#result({
+          path: request.path,
+          entries: [
+            {
+              name: "project",
+              path: `${String(request.path).replace(/\/$/u, "")}/project`,
+              kind: "directory",
+              sizeBytes: 4_096,
+            },
+          ],
+        });
+      }
+      if (request.mode === "create_directory") {
+        return this.#result({
+          path: request.path,
+          entries: [
+            {
+              name: request.name,
+              path: `${String(request.path).replace(/\/$/u, "")}/${String(request.name)}`,
+              kind: "directory",
+              sizeBytes: 4_096,
+            },
+          ],
+        });
+      }
     }
-    if (input.command.includes("envd-tool-exec.ts")) {
+    if (input.command.includes("envd-tool-exec.mjs")) {
       const initialization = (request.initialization ?? {}) as {
         activationId: string;
         environment: typeof environment;
@@ -425,6 +440,17 @@ describe("CubeSandbox Provider contract", () => {
     const terminal = await provider.openTerminal(handle, { rows: 24, cols: 100 });
     expect(runtime.terminalAdmins).toEqual([true]);
     await terminal.kill();
+    await expect(provider.listDirectory(handle, "/home/user")).resolves.toMatchObject({
+      path: "/home/user",
+      entries: [{ name: "project", path: "/home/user/project", kind: "directory" }],
+    });
+    await expect(
+      provider.createDirectory(handle, "/home/user", "new-project"),
+    ).resolves.toMatchObject({
+      path: "/home/user",
+      entries: [{ name: "new-project", path: "/home/user/new-project", kind: "directory" }],
+    });
+    expect(runtime.guestFiles.size).toBe(0);
     expect(runtime.creates[0]).toMatchObject({
       templateId: "tpl-standard0000000000000000",
       timeoutSeconds: -1,

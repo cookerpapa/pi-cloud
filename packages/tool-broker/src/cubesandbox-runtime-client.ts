@@ -104,14 +104,6 @@ export interface CubeSandboxRuntimeClient {
   ): Promise<CubeSandboxGuestCommandResult>;
   writeGuestFile(instance: CubeSandboxInstance, path: string, data: Uint8Array): Promise<void>;
   removeGuestFile(instance: CubeSandboxInstance, path: string): Promise<void>;
-  listGuestDirectory(
-    instance: CubeSandboxInstance,
-    path: string,
-  ): Promise<readonly Readonly<Record<string, unknown>>[]>;
-  createGuestDirectory(
-    instance: CubeSandboxInstance,
-    path: string,
-  ): Promise<Readonly<Record<string, unknown>>>;
   requestService?(
     instance: CubeSandboxInstance,
     input: CubeSandboxServiceRequest,
@@ -794,30 +786,23 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   }
 
   async removeGuestFile(instance: CubeSandboxInstance, path: string): Promise<void> {
-    await this.#filesystemRpc(instance, "Remove", { path: this.#guestPath(path) });
-  }
-
-  async listGuestDirectory(
-    instance: CubeSandboxInstance,
-    path: string,
-  ): Promise<readonly Readonly<Record<string, unknown>>[]> {
-    const result = await this.#filesystemRpc(instance, "ListDir", {
-      path: this.#guestPath(path),
-    });
-    if (!Array.isArray(result.entries)) {
-      throw new CubeRuntimeClientError("CubeSandbox envd directory response was invalid");
+    if (
+      !/^\/tmp\/pi-cloud-envd-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/u.test(
+        path,
+      )
+    ) {
+      throw new TypeError("CubeSandbox temporary guest path was invalid");
     }
-    return result.entries.map((entry) => record(entry, "envd directory entry"));
-  }
-
-  async createGuestDirectory(
-    instance: CubeSandboxInstance,
-    path: string,
-  ): Promise<Readonly<Record<string, unknown>>> {
-    const result = await this.#filesystemRpc(instance, "MakeDir", {
-      path: this.#guestPath(path),
+    const result = await this.runCommand(instance, {
+      command: `/bin/rm -- ${path}`,
+      cwd: "/",
+      user: "root",
+      timeoutMs: Math.min(this.#requestTimeoutMs, 10_000),
+      maximumOutputBytes: 64 * 1_024,
     });
-    return record(result.entry ?? {}, "envd directory entry");
+    if (result.exitCode !== 0) {
+      throw new CubeRuntimeClientError("CubeSandbox temporary guest file could not be removed");
+    }
   }
 
   async requestService(
@@ -1086,34 +1071,6 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       throw new TypeError("CubeSandbox guest path was invalid");
     }
     return path;
-  }
-
-  async #filesystemRpc(
-    instance: CubeSandboxInstance,
-    method: "ListDir" | "MakeDir" | "Remove",
-    payload: Readonly<Record<string, unknown>>,
-  ): Promise<Record<string, unknown>> {
-    const response = await this.#dataFetch(
-      instance,
-      CUBESANDBOX_ENVD_PORT,
-      `/filesystem.Filesystem/${method}`,
-      {
-        headers: {
-          "content-type": "application/json",
-          "connect-protocol-version": CONNECT_PROTOCOL_VERSION,
-        },
-        body: Buffer.from(JSON.stringify(payload), "utf8"),
-        signal: AbortSignal.timeout(this.#requestTimeoutMs),
-      },
-    );
-    const bytes = await readBoundedResponse(response, 2 * 1_024 * 1_024);
-    if (!response.ok) {
-      throw new CubeRuntimeClientError(
-        `CubeSandbox envd filesystem request failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
-        response.status,
-      );
-    }
-    return record(parseJson(bytes, "CubeSandbox envd filesystem"), "envd filesystem");
   }
 
   async #waitForState(sandboxId: string, expectedState: string): Promise<void> {

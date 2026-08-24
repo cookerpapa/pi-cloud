@@ -57,21 +57,6 @@ beforeAll(async () => {
           response.end("[]");
           return;
         }
-        if (request.url === "/filesystem.Filesystem/ListDir") {
-          response.writeHead(200, { "content-type": "application/json" });
-          response.end(JSON.stringify({ entries: [] }));
-          return;
-        }
-        if (request.url === "/filesystem.Filesystem/MakeDir") {
-          response.writeHead(200, { "content-type": "application/json" });
-          response.end(JSON.stringify({ entry: { type: "FILE_TYPE_DIRECTORY" } }));
-          return;
-        }
-        if (request.url === "/filesystem.Filesystem/Remove") {
-          response.writeHead(200, { "content-type": "application/json" });
-          response.end("{}");
-          return;
-        }
         if (request.url === "/process.Process/Start") {
           response.writeHead(200, { "content-type": "application/connect+json" });
           if (typeof body === "object" && body !== null && "pty" in body) {
@@ -309,12 +294,12 @@ describe("official CubeSandbox HTTP compatibility client", () => {
         authorization: `Basic ${Buffer.from("root:").toString("base64")}`,
       },
     });
-    await client.writeGuestFile(instance, "/tmp/input.json", Buffer.from("{}"));
-    await expect(client.listGuestDirectory(instance, "/tmp")).resolves.toEqual([]);
-    await expect(client.createGuestDirectory(instance, "/tmp/new")).resolves.toMatchObject({
-      type: "FILE_TYPE_DIRECTORY",
-    });
-    await client.removeGuestFile(instance, "/tmp/input.json");
+    const temporaryGuestPath = "/tmp/pi-cloud-envd-10000000-0000-4000-8000-000000000001.json";
+    await client.writeGuestFile(instance, temporaryGuestPath, Buffer.from("{}"));
+    await client.removeGuestFile(instance, temporaryGuestPath);
+    await expect(client.removeGuestFile(instance, "/tmp/untrusted.json")).rejects.toThrow(
+      "temporary guest path was invalid",
+    );
     await expect(
       client.requestService!(instance, {
         port: 5173,
