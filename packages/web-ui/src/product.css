@@ -2986,18 +2986,6 @@ body.product-panel-resizing {
   font-size: 11px;
 }
 
-.product-resource-header-actions {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-self: end;
-  gap: 18px;
-}
-
-.product-resource-header-actions .product-account-menu-trigger {
-  min-width: 146px;
-}
-
 .product-resource-summary span {
   display: flex;
   align-items: baseline;
@@ -3337,9 +3325,6 @@ body.product-panel-resizing {
   }
   .product-resource-summary {
     display: none;
-  }
-  .product-resource-header-actions .product-account-menu-trigger {
-    min-width: 0;
   }
   .product-environment-create {
     grid-template-columns: 1fr;

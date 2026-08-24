@@ -1100,12 +1100,10 @@ export default function ChatApp() {
   if (resourcePageOpen) {
     return (
       <ResourceManagementPage
-        accountLabel={identity.username ?? identity.displayName}
         api={api}
         conversations={conversations}
         environments={developmentEnvironments}
         onClose={() => setResourcePageOpen(false)}
-        onLogout={() => void logout()}
         onRefresh={async () => {
           await Promise.all([
             refreshConversations(),

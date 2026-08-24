@@ -9,7 +9,6 @@ import type {
 import { newIdempotencyKey, PiCloudApi } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
 import { selectElasticWorkspaces } from "./workspace-resources.ts";
-import { AccountMenu } from "./AccountMenu.tsx";
 
 const ACTIVE_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "cancelling"]);
 
@@ -38,22 +37,18 @@ export function resourceRefreshPending(
 }
 
 export function ResourceManagementPage({
-  accountLabel,
   api,
   conversations,
   environments,
   onClose,
-  onLogout,
   onRefresh,
   profiles,
   workspaces,
 }: {
-  accountLabel: string;
   api: PiCloudApi;
   conversations: readonly ConversationSummaryResource[];
   environments: readonly DevelopmentEnvironmentResource[];
   onClose: () => void;
-  onLogout: () => void;
   onRefresh: () => Promise<void>;
   profiles: DevelopmentEnvironmentListResource["profiles"];
   workspaces: readonly WorkspaceSummaryResource[];
@@ -108,16 +103,13 @@ export function ResourceManagementPage({
             <span aria-hidden="true">←</span> {t("common.conversation")}
           </button>
           <h1>{t("resource.title")}</h1>
-          <div className="product-resource-header-actions">
-            <div className="product-resource-summary" aria-label={t("resource.summary")}>
-              <span>
-                <strong>{String(elasticWorkspaces.length)}</strong> Workspace
-              </span>
-              <span>
-                <strong>{String(liveEnvironments.length)}</strong> {t("resource.exclusive")}
-              </span>
-            </div>
-            <AccountMenu label={accountLabel} onLogout={onLogout} />
+          <div className="product-resource-summary" aria-label={t("resource.summary")}>
+            <span>
+              <strong>{String(elasticWorkspaces.length)}</strong> Workspace
+            </span>
+            <span>
+              <strong>{String(liveEnvironments.length)}</strong> {t("resource.exclusive")}
+            </span>
           </div>
         </header>
 
