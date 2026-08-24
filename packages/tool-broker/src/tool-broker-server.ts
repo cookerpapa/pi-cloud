@@ -793,7 +793,7 @@ export class ToolBrokerServer {
               type: "workspace_terminal.ready",
               terminalId: connection.terminalId,
               pid: connection.pid,
-              workspaceRoot: "/workspace",
+              workspaceRoot: connection.workspaceRoot,
             });
             void (async () => {
               try {

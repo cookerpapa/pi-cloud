@@ -27,6 +27,7 @@ import type {
 import { parseCloudToolCapabilitySnapshot } from "@pi-cloud/protocol";
 import {
   canonicalEnvironmentRecipeJson,
+  DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
@@ -121,6 +122,7 @@ export type WorkspaceTerminalOpenInput = Readonly<{
 export type WorkspaceTerminalConnection = Readonly<{
   terminalId: string;
   pid: number;
+  workspaceRoot: string;
   output: AsyncIterable<Uint8Array>;
   sendInput(data: Uint8Array): Promise<void>;
   resize(size: SandboxTerminalSize): Promise<void>;
@@ -245,12 +247,13 @@ function handleMatches(
   activationId: string,
   assignment: ToolSandboxAssignment,
   environment: EnvironmentRuntimeSnapshot,
+  workspaceRoot: string,
 ): boolean {
   return (
     handle.providerApiVersion === 1 &&
     handle.providerId === provider.providerId &&
     handle.activationId === activationId &&
-    handle.workspaceRoot === "/workspace" &&
+    handle.workspaceRoot === workspaceRoot &&
     /^[a-z0-9][a-z0-9_.-]{0,127}$/i.test(handle.runtimeName) &&
     /^[A-Za-z0-9._:-]{1,256}$/.test(handle.runtimeId) &&
     sameAssignment(handle.assignment, assignment) &&
@@ -587,7 +590,7 @@ export class ToolBroker {
         environment: request.environment,
         workspaceSeed: request.workspaceSeed,
         policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
-        toolRoot: "/workspace",
+        toolRoot: DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
         lifetime: "development_environment",
         sandboxProfileKey: request.profileKey,
       });
@@ -598,6 +601,7 @@ export class ToolBroker {
           request.environmentId,
           assignment,
           request.environment,
+          DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
         )
       ) {
         throw new ToolBrokerError(
@@ -911,6 +915,7 @@ export class ToolBroker {
     return Object.freeze({
       terminalId: input.environmentId,
       pid: terminal.pid,
+      workspaceRoot: environment.handle.workspaceRoot,
       output: terminal.output,
       sendInput: (data: Uint8Array) => terminal.sendInput(data),
       resize: (size: SandboxTerminalSize) => terminal.resize(size),
@@ -1086,6 +1091,7 @@ export class ToolBroker {
       return Object.freeze({
         terminalId,
         pid: activeTerminal.pid,
+        workspaceRoot: handle.workspaceRoot,
         output: activeTerminal.output,
         sendInput: async (data: Uint8Array) => {
           this.#stateRepository.assertLocalOwnership();
@@ -1462,7 +1468,7 @@ export class ToolBroker {
       activationId,
       ownerBaseUrl: this.#ownerBaseUrl,
       capability,
-      workspaceRoot: "/workspace",
+      workspaceRoot: request.toolRoot,
       continuity:
         delegatedParent === undefined && inherited === undefined ? "cold_restore" : "warm_reuse",
     };
@@ -1666,7 +1672,11 @@ export class ToolBroker {
           );
         }
         if (activation.materializedForCurrentAssignment) {
-          handle = await this.#provider.rebind(handle, environment.assignment, "/workspace");
+          handle = await this.#provider.rebind(
+            handle,
+            environment.assignment,
+            DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
+          );
         }
         environment.handle = handle;
         delete environment.agentActivationId;
@@ -2062,7 +2072,7 @@ export class ToolBroker {
   async #validateDevelopmentToolRoot(handle: SandboxHandle, toolRoot: string | undefined) {
     if (this.#provider.listDirectory === undefined) return;
     try {
-      await this.#provider.listDirectory(handle, toolRoot ?? "/workspace");
+      await this.#provider.listDirectory(handle, toolRoot ?? DEFAULT_EXCLUSIVE_WORKING_DIRECTORY);
     } catch {
       throw new ToolBrokerError(
         "development_environment_working_directory_unavailable",
@@ -2137,6 +2147,7 @@ export class ToolBroker {
             activationId,
             activation.assignment,
             activation.spec.environment,
+            activation.spec.toolRoot ?? "/workspace",
           )
         ) {
           try {

@@ -308,14 +308,14 @@ const runtimeName = await psql(
 assert(runtimeName, "Development environment did not persist its Cube identity");
 await terminalCommand(
   `/v1/development-environments/${development.environmentId}/terminal`,
-  `test "$(id -u)" = 0; printf 'EXCLUSIVE_ROOTFS_OK\\n' > /etc/pi-cloud-exclusive-marker; mkdir -p /home/node/empty-project; chown -R 1000:1000 /home/node; printf 'EXCLUSIVE_FILE_OK\\n' > /workspace/exclusive.txt; printf '<!doctype html><html><head><title>PiCloud Preview</title></head><body>PI_CLOUD_PREVIEW_OK</body></html>\\n' > /workspace/index.html; setsid sh -c 'while true; do date +%s > /var/tmp/pi-cloud-exclusive-heartbeat; sleep 1; done' </dev/null >/tmp/exclusive-loop.log 2>&1 & echo $! > /var/tmp/pi-cloud-exclusive.pid; setsid python3 -m http.server ${String(previewPort)} --bind 0.0.0.0 --directory /workspace </dev/null >/tmp/preview.log 2>&1 & echo EXCLUSIVE_FIRST_OK`,
+  `test "$(id -u)" = 0; test ! -e /workspace; printf 'EXCLUSIVE_ROOTFS_OK\\n' > /etc/pi-cloud-exclusive-marker; mkdir -p /home/user/empty-project; chown -R 1000:1000 /home/user; printf 'EXCLUSIVE_FILE_OK\\n' > /home/user/exclusive.txt; printf '<!doctype html><html><head><title>PiCloud Preview</title></head><body>PI_CLOUD_PREVIEW_OK</body></html>\\n' > /home/user/index.html; setsid sh -c 'while true; do date +%s > /var/tmp/pi-cloud-exclusive-heartbeat; sleep 1; done' </dev/null >/tmp/exclusive-loop.log 2>&1 & echo $! > /var/tmp/pi-cloud-exclusive.pid; setsid python3 -m http.server ${String(previewPort)} --bind 0.0.0.0 --directory /home/user </dev/null >/tmp/preview.log 2>&1 & echo EXCLUSIVE_FIRST_OK`,
   "EXCLUSIVE_FIRST_OK",
 );
 const rootDirectory = await api.listDevelopmentEnvironmentDirectory(development.environmentId, "/");
 assert(rootDirectory.entries.some((entry) => entry.name === "etc" && entry.kind === "directory"));
 const homeDirectory = await api.listDevelopmentEnvironmentDirectory(
   development.environmentId,
-  "/home/node",
+  "/home/user",
 );
 assert(
   homeDirectory.entries.some(
@@ -334,7 +334,7 @@ assert.equal(preview.status, 200);
 assert.match(await preview.text(), /PI_CLOUD_PREVIEW_OK/);
 await terminalCommand(
   `/v1/development-environments/${development.environmentId}/terminal`,
-  'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && test "$(cat /workspace/exclusive.txt)" = EXCLUSIVE_FILE_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_RECONNECT_OK',
+  'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && test "$(cat /home/user/exclusive.txt)" = EXCLUSIVE_FILE_OK && test ! -e /workspace && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_RECONNECT_OK',
   "EXCLUSIVE_RECONNECT_OK",
 );
 
@@ -344,7 +344,7 @@ const session = await api.createSession(
   `Agent handoff into exclusive environment ${suffix}`,
   "persistent",
   "standard",
-  "/home/node/empty-project",
+  "/home/user/empty-project",
 );
 const agentRun = await api.acceptTurn(
   session.sessionId,
@@ -367,13 +367,13 @@ assert.equal(
 );
 await terminalCommand(
   `/v1/conversations/${session.sessionId}/terminal`,
-  'test "$(cat /home/node/empty-project/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_AGENT_RETURN_OK',
+  'test "$(cat /home/user/empty-project/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_AGENT_RETURN_OK',
   "EXCLUSIVE_AGENT_RETURN_OK",
 );
 const sshTicket = await api.issueSshAccessTicket(session.sessionId);
 await sshCommand(
   sshTicket,
-  'test "$(id -u)" = 0 && test "$(cat /home/node/empty-project/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && echo EXCLUSIVE_SSH_OK',
+  'test "$(id -u)" = 0 && test "$(cat /home/user/empty-project/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && echo EXCLUSIVE_SSH_OK',
   "EXCLUSIVE_SSH_OK",
 );
 
@@ -434,7 +434,7 @@ const replacementSession = await api.createSession(
   `Replacement conversation ${suffix}`,
   "persistent",
   "standard",
-  "/home/node/empty-project",
+  "/home/user/empty-project",
 );
 assert.equal(
   (await api.getConversation(replacementSession.sessionId)).session.sessionId,
@@ -471,6 +471,7 @@ const report = {
   authenticatedHttpPreviewPassed: true,
   previewPort,
   rootFilesystemPreserved: true,
+  legacyWorkspaceAbsent: true,
   brokerRestartAdoptedSameCube: recoveredAfterBrokerRestart.state === "paused",
   emptyDirectoryBrowsePassed: true,
   archivedSessionDidNotReleaseMachine: true,

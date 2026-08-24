@@ -189,6 +189,7 @@ describe("Tool Broker authenticated RPC", () => {
         return {
           terminalId,
           pid: 73,
+          workspaceRoot: "/workspace",
           output: {
             async *[Symbol.asyncIterator]() {
               yield Buffer.from("shell ready\r\n");

@@ -82,7 +82,7 @@ export const WorkspaceTerminalServerFrameSchema = Type.Union([
       type: Type.Literal("workspace_terminal.ready"),
       terminalId: UuidSchema,
       pid: Type.Integer({ minimum: 1 }),
-      workspaceRoot: Type.Literal("/workspace"),
+      workspaceRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     },
     { additionalProperties: false },
   ),

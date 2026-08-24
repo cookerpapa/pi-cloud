@@ -105,9 +105,10 @@ function providerFixture() {
     outputChunks: [{ seq: 1, stream: "stdout", data: Buffer.from("ok\n").toString("base64") }],
     outputSha256: createHash("sha256").update("ok\n").digest("hex"),
   }));
-  const rebind = vi.fn<SandboxProvider["rebind"]>(async (handle, nextAssignment) => ({
+  const rebind = vi.fn<SandboxProvider["rebind"]>(async (handle, nextAssignment, toolRoot) => ({
     ...handle,
     assignment: nextAssignment,
+    workspaceRoot: toolRoot ?? handle.workspaceRoot,
   }));
   const snapshot = vi.fn<SandboxProvider["snapshot"]>(async (handle, requestId) => {
     const bytes = Buffer.from("workspace", "utf8");
@@ -175,7 +176,7 @@ function providerFixture() {
         activationId: spec.activationId,
         runtimeId: "66666666-6666-4666-8666-666666666666",
         runtimeName: `pi-cloud-tool-${spec.activationId}`.slice(0, 63),
-        workspaceRoot: "/workspace",
+        workspaceRoot: spec.toolRoot ?? "/workspace",
         assignment: spec.assignment,
         environment: spec.environment,
         environmentValidation,
@@ -327,6 +328,7 @@ describe("provider-backed Tool Tool Broker", () => {
         workspaceSeed: { kind: "sample_java" },
       }),
     ).resolves.toMatchObject({ state: "running" });
+    expect(fixture.createSpec?.toolRoot).toBe("/home/user");
     const agent = await manager.create({ ...createRequest, retention: "persistent" });
     expect(agent.activationId).toBe(ACTIVATION_ID);
     await expect(
@@ -346,6 +348,11 @@ describe("provider-backed Tool Tool Broker", () => {
     ).resolves.toMatchObject({ retained: true });
     expect(fixture.createCount).toBe(1);
     expect(fixture.rebind).toHaveBeenCalledTimes(2);
+    expect(fixture.rebind).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "/home/user",
+    );
     expect(fixture.snapshot).toHaveBeenCalledTimes(2);
     await expect(
       manager.browseDevelopmentEnvironment({

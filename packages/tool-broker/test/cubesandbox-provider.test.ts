@@ -234,6 +234,9 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       }
       if (request.mode === "freeze") return this.#result({ processes: [] });
       if (request.mode === "thaw") return this.#result({ resumed: 0 });
+      if (request.mode === "prepare_exclusive_machine") {
+        return this.#result({ home: "/home/user", legacyWorkspaceRemoved: true });
+      }
       if (request.mode === "list_directory") {
         return this.#result({
           path: request.path,
@@ -470,7 +473,17 @@ describe("CubeSandbox Provider contract", () => {
       templateId: "tpl-standard0000000000000000",
       timeoutSeconds: -1,
       lifecycle: { onTimeout: "pause", autoResume: true },
+      volumeMounts: [
+        {
+          name: expect.stringMatching(/^pcw-[0-9a-f]{48}$/),
+          path: "/home/user",
+        },
+      ],
     });
+    expect(handle.workspaceRoot).toBe("/home/user");
+    expect(
+      runtime.requests.some((entry) => entry.guestRequest.mode === "prepare_exclusive_machine"),
+    ).toBe(true);
     await provider.pause(handle);
     const persisted = await provider.persistentCapsule(handle);
     expect(persisted.capsule).not.toContain(handle.runtimeName);

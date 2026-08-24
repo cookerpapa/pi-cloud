@@ -142,7 +142,6 @@ export function WorkspaceDirectoryPicker({
 
   const places = [
     { path: "/home/user", label: t("directory.home"), icon: "⌂" },
-    { path: "/workspace", label: "Workspace", icon: "▣" },
     { path: "/", label: t("directory.computer"), icon: "▤" },
   ] as const;
 

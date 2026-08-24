@@ -153,7 +153,7 @@ export const ToolSandboxCreateResponseSchema = Type.Object(
     activationId: UuidSchema,
     ownerBaseUrl: Type.String({ minLength: 8, maxLength: 2_048 }),
     capability: Type.String({ pattern: "^pcts_[A-Za-z0-9_-]{43}$" }),
-    workspaceRoot: Type.Literal("/workspace"),
+    workspaceRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     continuity: Type.Union([Type.Literal("cold_restore"), Type.Literal("warm_reuse")]),
   },
   { additionalProperties: false },

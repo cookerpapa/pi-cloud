@@ -170,11 +170,11 @@ describe("product chat experience", () => {
     );
     expect(markup).toContain("选择文件夹");
     expect(markup).toContain("主文件夹");
-    expect(markup).toContain("Workspace");
     expect(markup).toContain("计算机");
     expect(markup).toContain("新建文件夹");
     expect(markup).toContain("当前选择");
     expect(markup).toContain("/home");
+    expect(markup).not.toContain("Workspace");
   });
 
   it("renders Pi conversation forks in focused and whole-tree navigation", () => {

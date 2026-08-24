@@ -852,7 +852,8 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const toolRoot = spec.toolRoot ?? "/workspace";
+    const exclusiveMachine = spec.lifetime === "development_environment";
+    const toolRoot = spec.toolRoot ?? (exclusiveMachine ? "/home/user" : "/workspace");
     const bindingSha256 = physicalBindingSha256(
       spec.activationId,
       spec.assignment,
@@ -883,7 +884,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       ),
       allowInternetAccess: true,
       allowPublicTraffic: false,
-      volumeMounts: [{ name: volumeId, path: "/workspace" }],
+      volumeMounts: [{ name: volumeId, path: exclusiveMachine ? "/home/user" : "/workspace" }],
       ...(spec.lifetime === "development_environment" || spec.lifetime === "persistent_conversation"
         ? { lifecycle: { onTimeout: "pause" as const, autoResume: true } }
         : {}),
@@ -891,6 +892,26 @@ export class CubeSandboxProvider implements SandboxProvider {
     try {
       const evidence = await this.#waitForEvidence(instance);
       this.#assertEvidence(evidence, spec.policy);
+      if (exclusiveMachine) {
+        const preparedMachine = record(
+          await this.#guestJson(
+            instance,
+            { mode: "prepare_exclusive_machine" },
+            { program: "control", runAsToolUser: false, timeoutMs: 15_000 },
+          ),
+          "Cube exclusive machine preparation",
+        );
+        if (
+          preparedMachine.home !== "/home/user" ||
+          preparedMachine.legacyWorkspaceRemoved !== true
+        ) {
+          throw new ToolBrokerError(
+            "development_environment_home_invalid",
+            "Exclusive machine home directory could not be prepared",
+            false,
+          );
+        }
+      }
       const ready = parseToolWorkerOutput(
         await this.#guestJson(
           instance,
@@ -961,7 +982,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         runtimeId: runtimeUuid(instance.sandboxId),
         runtimeName: bounded(instance.sandboxId, "CubeSandbox runtime name", 128),
         ipAddress: evidence.ipAddress,
-        workspaceRoot: "/workspace",
+        workspaceRoot: toolRoot,
         assignment: spec.assignment,
         environment: spec.environment,
         environmentValidation,
@@ -1059,7 +1080,11 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const rebound: SandboxHandle = Object.freeze({ ...handle, assignment });
+    const rebound: SandboxHandle = Object.freeze({
+      ...handle,
+      assignment,
+      workspaceRoot: toolRoot,
+    });
     activation.handle = rebound;
     activation.authorityEpoch = Math.max(activation.authorityEpoch + 1, assignment.fencingToken);
     activation.toolRoot = toolRoot;
@@ -2086,7 +2111,10 @@ export class CubeSandboxProvider implements SandboxProvider {
     if (
       handle.providerApiVersion !== 1 ||
       handle.providerId !== this.providerId ||
-      handle.workspaceRoot !== "/workspace" ||
+      handle.workspaceRoot.length < 1 ||
+      handle.workspaceRoot.length > 4_096 ||
+      !handle.workspaceRoot.startsWith("/") ||
+      /[\u0000-\u001f\u007f]/u.test(handle.workspaceRoot) ||
       handle.runtimeId !== runtimeUuid(handle.runtimeName)
     ) {
       throw new ToolBrokerError(

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { chown, lstat, mkdir, open, readFile, readdir, realpath } from "node:fs/promises";
+import { chown, lstat, mkdir, open, readFile, readdir, realpath, rmdir } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
@@ -243,6 +243,24 @@ async function createDirectory(path: string, name: unknown): Promise<Record<stri
   return listDirectory(parent);
 }
 
+async function prepareExclusiveMachine(): Promise<Record<string, unknown>> {
+  await mkdir("/home/user", { recursive: true, mode: 0o700 });
+  await chown("/home/user", TOOL_UID, TOOL_UID);
+  const legacyWorkspace = await lstat("/workspace").catch((error: unknown) => {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  });
+  if (legacyWorkspace !== undefined) {
+    if (!legacyWorkspace.isDirectory() || (await readdir("/workspace")).length !== 0) {
+      throw new Error("Legacy Workspace path was not an empty directory");
+    }
+    await rmdir("/workspace");
+  }
+  return { home: "/home/user", legacyWorkspaceRemoved: true };
+}
+
 const request = await input();
 let result: Record<string, unknown>;
 if (request.mode === "evidence" && Object.keys(request).length === 1) {
@@ -261,6 +279,8 @@ if (request.mode === "evidence" && Object.keys(request).length === 1) {
   Object.keys(request).sort().join(",") === "mode,name,path"
 ) {
   result = await createDirectory(absolutePath(request.path), request.name);
+} else if (request.mode === "prepare_exclusive_machine" && Object.keys(request).length === 1) {
+  result = await prepareExclusiveMachine();
 } else {
   throw new Error("Guest control request was invalid");
 }

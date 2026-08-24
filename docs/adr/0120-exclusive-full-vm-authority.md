@@ -31,8 +31,10 @@ authorization authority for Tool execution or platform access.
   processes and guest-root changes but not Workspace bytes.
 - An exclusive environment is a complete user-owned Cube machine. Its guest
   root filesystem, user home, memory and process tree belong to the machine
-  state. `/workspace` may remain a convenient project directory, but it is not
-  the definition of machine durability.
+  state. Its private durable Volume is mounted at the ordinary Linux home
+  `/home/user`, and the elastic-only `/workspace` path is absent. The home
+  Volume preserves user files if the owner later releases the VM; it is not the
+  definition of full-machine durability.
 - A conversation attached to an exclusive environment stores a directory
   binding inside that machine. Session lifetime remains independent: archiving
   a Session neither pauses nor releases the environment.
@@ -77,5 +79,7 @@ failure are visible machine lifecycle states rather than hidden inside a Run.
 
 The previous behavior that destroyed every development environment from
 `ToolBroker.close()` is invalid. Directory selection, restart recovery and
-release acceptance must cover `/etc` or another guest-root marker in addition
-to `/workspace`, and must prove Session archival does not change machine state.
+release acceptance must cover `/etc` or another guest-root marker, prove that
+`/workspace` is absent from an exclusive VM, and prove Session archival does
+not change machine state. After explicit VM release, the preserved home Volume
+may be mounted at `/workspace` by a later elastic execution.
