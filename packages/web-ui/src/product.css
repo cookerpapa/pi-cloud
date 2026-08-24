@@ -96,13 +96,14 @@ button:disabled {
 }
 
 .product-language-select {
+  width: 112px;
   min-height: 34px;
-  padding: 6px 28px 6px 10px;
+  padding: 6px 30px 6px 12px;
   border: 1px solid #343434;
   border-radius: 8px;
   background: #1a1a1a;
   color: #b9b9b9;
-  font-size: 11px;
+  font-size: 12px;
   outline: 0;
 }
 
@@ -110,13 +111,6 @@ button:disabled {
 .product-language-select:focus {
   border-color: #525252;
   color: #eeeeee;
-}
-
-.product-language-select.compact {
-  width: 62px;
-  min-height: 30px;
-  padding-block: 4px;
-  background: transparent;
 }
 
 .product-auth-brand {
@@ -549,12 +543,130 @@ body.product-panel-resizing {
 }
 
 .product-account {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 9px;
+  display: block;
   padding: 10px 12px;
   border-top: 1px solid #292929;
+}
+
+.product-account-menu {
+  position: relative;
+  min-width: 0;
+}
+
+.product-account-menu-trigger {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 4px;
+  border-color: transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #d7d7d7;
+  text-align: left;
+}
+
+.product-account-menu-trigger:hover,
+.product-account-menu-trigger[aria-expanded="true"] {
+  border-color: transparent;
+  background: #292929;
+}
+
+.product-account-menu-trigger strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.product-account-menu-chevron {
+  color: #777;
+  font-size: 13px;
+}
+
+.product-account-menu-panel,
+.product-account-language-submenu {
+  position: absolute;
+  z-index: 80;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid #383838;
+  border-radius: 11px;
+  background: #202020;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.42);
+}
+
+.product-account-menu-panel[hidden],
+.product-account-language-submenu[hidden] {
+  display: none;
+}
+
+.product-account-menu-panel {
+  right: 0;
+  width: 214px;
+}
+
+.product-account-menu.up .product-account-menu-panel {
+  right: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+}
+
+.product-account-menu.down .product-account-menu-panel {
+  top: calc(100% + 8px);
+}
+
+.product-account-menu-panel button,
+.product-account-language-submenu button {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 10px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #d0d0d0;
+  font-size: 12px;
+  text-align: left;
+}
+
+.product-account-menu-panel button:hover,
+.product-account-menu-panel button:focus-visible,
+.product-account-language-submenu button:hover,
+.product-account-language-submenu button:focus-visible {
+  border-color: transparent;
+  background: #303030;
+  color: #fff;
+}
+
+.product-account-menu-language {
+  position: relative;
+}
+
+.product-account-language-submenu {
+  top: 0;
+  right: calc(100% + 7px);
+  width: 142px;
+}
+
+.product-account-menu.up .product-account-language-submenu {
+  right: auto;
+  bottom: 0;
+  left: calc(100% + 7px);
+}
+
+.product-account-menu-logout {
+  border-top: 1px solid #303030 !important;
+  border-radius: 0 0 8px 8px !important;
+  color: #d69a9a !important;
 }
 
 .product-account-avatar {
@@ -575,12 +687,6 @@ body.product-panel-resizing {
   white-space: nowrap;
   font-size: 12px;
   font-weight: 550;
-}
-.product-account button {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  color: #888;
 }
 
 .product-main {
@@ -2880,6 +2986,18 @@ body.product-panel-resizing {
   font-size: 11px;
 }
 
+.product-resource-header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-self: end;
+  gap: 18px;
+}
+
+.product-resource-header-actions .product-account-menu-trigger {
+  min-width: 146px;
+}
+
 .product-resource-summary span {
   display: flex;
   align-items: baseline;
@@ -3219,6 +3337,9 @@ body.product-panel-resizing {
   }
   .product-resource-summary {
     display: none;
+  }
+  .product-resource-header-actions .product-account-menu-trigger {
+    min-width: 0;
   }
   .product-environment-create {
     grid-template-columns: 1fr;

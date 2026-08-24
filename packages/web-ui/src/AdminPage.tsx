@@ -7,7 +7,8 @@ import type {
 } from "@pi-cloud/protocol";
 import { PiCloudApiError, type PiCloudApi } from "./api.ts";
 import { errorMessage } from "./ui-errors.ts";
-import { LanguageSelect, useI18n } from "./i18n.tsx";
+import { useI18n } from "./i18n.tsx";
+import { AccountMenu } from "./AccountMenu.tsx";
 
 export function AdminPage({
   api,
@@ -110,11 +111,7 @@ export function AdminPage({
           </div>
         </div>
         <div>
-          <span>{identity.displayName}</span>
-          <LanguageSelect compact />
-          <button onClick={onLogout} type="button">
-            {t("admin.logout")}
-          </button>
+          <AccountMenu label={identity.username ?? identity.displayName} onLogout={onLogout} />
         </div>
       </header>
       {error ? (

@@ -410,10 +410,12 @@ export class DevelopmentEnvironmentService {
         }
         return true;
       }
+      const alreadyReleased = request.action === "release" && environment.state === "released";
       const allowed =
         (request.action === "start" && ["requested", "failed"].includes(environment.state)) ||
         (request.action === "pause" && environment.state === "running") ||
         (request.action === "resume" && environment.state === "paused") ||
+        alreadyReleased ||
         (request.action === "release" &&
           ["requested", "running", "paused", "failed", "unknown"].includes(environment.state));
       if (!allowed) {
@@ -422,7 +424,7 @@ export class DevelopmentEnvironmentService {
           `Development environment cannot ${request.action} from ${environment.state}`,
         );
       }
-      if (request.action === "release") {
+      if (request.action === "release" && !alreadyReleased) {
         const activeRun = await transaction
           .selectFrom("runs")
           .select("id")
@@ -508,7 +510,7 @@ export class DevelopmentEnvironmentService {
           result_state: request.action === "start" ? "requested" : environment.state,
         })
         .executeTakeFirstOrThrow();
-      return false;
+      return alreadyReleased;
     });
     if (!replayed) {
       if (request.action === "start") {

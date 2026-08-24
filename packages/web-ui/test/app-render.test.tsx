@@ -131,10 +131,12 @@ describe("product chat experience", () => {
     const api = new PiCloudApi(async () => new Response(null, { status: 500 }));
     const markup = renderToStaticMarkup(
       <ResourceManagementPage
+        accountLabel="tuhao"
         api={api}
         conversations={[]}
         environments={[]}
         onClose={() => undefined}
+        onLogout={() => undefined}
         onRefresh={async () => undefined}
         profiles={[
           {

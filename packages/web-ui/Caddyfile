@@ -28,6 +28,7 @@
 
 	handle {
 		header {
+			Cache-Control "no-store"
 			Content-Security-Policy "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
 			Permissions-Policy "camera=(), geolocation=(), microphone=()"
 			Referrer-Policy "no-referrer"

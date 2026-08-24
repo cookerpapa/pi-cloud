@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PiCloudApi } from "../src/api.ts";
 import { AuthScreen } from "../src/AuthScreen.tsx";
+import { AccountMenu } from "../src/AccountMenu.tsx";
 import { ConversationTurn } from "../src/ConversationTurn.tsx";
 import { I18nProvider, translate } from "../src/i18n.tsx";
 import type { TurnView } from "../src/session-view.ts";
@@ -61,5 +62,17 @@ describe("UI internationalization", () => {
     );
     expect(conversation).toContain("用户原始消息");
     expect(conversation).toContain("模型原始回答");
+  });
+
+  it("keeps complete language labels in the unified account menu", () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider initialLanguage="zh-CN">
+        <AccountMenu label="tuhao" onLogout={() => undefined} placement="up" />
+      </I18nProvider>,
+    );
+    expect(markup).toContain("tuhao");
+    expect(markup).toContain("界面语言");
+    expect(markup).toContain(">中文<");
+    expect(markup).toContain(">English<");
   });
 });

@@ -383,5 +383,11 @@ describe("user-owned development environments", () => {
       service.action(identity, created.environmentId, "release-exclusive", { action: "release" }),
     ).resolves.toMatchObject({ state: "released", releasedAt: expect.any(String) });
     expect(destroys).toHaveBeenCalledOnce();
+    await expect(
+      service.action(identity, created.environmentId, "release-exclusive-retry", {
+        action: "release",
+      }),
+    ).resolves.toMatchObject({ state: "released", releasedAt: expect.any(String) });
+    expect(destroys).toHaveBeenCalledOnce();
   });
 });

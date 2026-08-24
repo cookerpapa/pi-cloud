@@ -200,6 +200,7 @@ const zhCN = {
   "resource.createExclusive": "新建云端开发机",
   "resource.machineName": "开发机名称",
   "resource.machineNamePlaceholder": "例如：后端开发环境",
+  "resource.machineNameRequired": "请填写开发机名称",
   "resource.cpu": "CPU",
   "resource.cores": "{count} 核",
   "resource.memory": "内存",
@@ -518,6 +519,7 @@ const enUS: Record<UiTextKey, string> = {
   "resource.createExclusive": "Create cloud development machine",
   "resource.machineName": "Machine name",
   "resource.machineNamePlaceholder": "e.g. Backend development",
+  "resource.machineNameRequired": "Enter a machine name",
   "resource.cpu": "CPU",
   "resource.cores": "{count} cores",
   "resource.memory": "Memory",
@@ -726,17 +728,17 @@ export function useI18n(): I18nValue {
   return useContext(I18nContext);
 }
 
-export function LanguageSelect({ compact = false }: { compact?: boolean }) {
+export function LanguageSelect() {
   const { language, setLanguage, t } = useI18n();
   return (
     <select
       aria-label={t("language.label")}
-      className={`product-language-select${compact ? " compact" : ""}`}
+      className="product-language-select"
       onChange={(event) => setLanguage(event.target.value as UiLanguage)}
       value={language}
     >
-      <option value="zh-CN">{compact ? "中" : t("language.zh")}</option>
-      <option value="en-US">{compact ? "EN" : t("language.en")}</option>
+      <option value="zh-CN">{t("language.zh")}</option>
+      <option value="en-US">{t("language.en")}</option>
     </select>
   );
 }

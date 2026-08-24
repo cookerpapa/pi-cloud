@@ -146,16 +146,28 @@ try {
       assert.equal(brandVisible, true, "PiCloud sidebar brand was unavailable");
       record("sidebar.brand");
 
-      await page.evaluate(
-        `(()=>{const select=document.querySelector(".product-account .product-language-select");select.value="en-US";select.dispatchEvent(new Event("change",{bubbles:true}))})()`,
+      await click(".product-account .product-account-menu-trigger", "account.menuOpen");
+      await click(
+        ".product-account .product-account-menu-language > button",
+        "account.languageMenu",
+      );
+      await clickText(
+        ".product-account .product-account-language-submenu button",
+        "English",
+        "account.languageEnglish",
       );
       await page.waitFor('document.body.innerText.includes("New chat")');
-      record("account.languageEnglish");
-      await page.evaluate(
-        `(()=>{const select=document.querySelector(".product-account .product-language-select");select.value="zh-CN";select.dispatchEvent(new Event("change",{bubbles:true}))})()`,
+      await click(".product-account .product-account-menu-trigger", "account.menuOpenAgain");
+      await click(
+        ".product-account .product-account-menu-language > button",
+        "account.languageMenuAgain",
+      );
+      await clickText(
+        ".product-account .product-account-language-submenu button",
+        "中文",
+        "account.languageChinese",
       );
       await page.waitFor('document.body.innerText.includes("新对话")');
-      record("account.languageChinese");
 
       await click(".product-sidebar > .product-panel-collapse", "sidebar.collapse");
       await click(".product-sidebar > .product-panel-collapse", "sidebar.expand");

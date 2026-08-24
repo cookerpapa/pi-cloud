@@ -23,6 +23,7 @@ import type {
 import { DEFAULT_EXCLUSIVE_WORKING_DIRECTORY } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
 import { AdminPage } from "./AdminPage.tsx";
+import { AccountMenu } from "./AccountMenu.tsx";
 import { AuthScreen } from "./AuthScreen.tsx";
 import { ConversationTreeNavigator } from "./ConversationTreeNavigator.tsx";
 import { ConversationTurn } from "./ConversationTurn.tsx";
@@ -35,7 +36,7 @@ import { WorkspaceInspector } from "./WorkspaceInspector.tsx";
 import { WorkspaceDirectoryPicker } from "./WorkspaceDirectoryPicker.tsx";
 import { ResourceManagementPage } from "./ResourceManagementPage.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";
-import { LanguageSelect, useI18n, type Translate, type UiLanguage } from "./i18n.tsx";
+import { useI18n, type Translate, type UiLanguage } from "./i18n.tsx";
 import { selectElasticWorkspaces } from "./workspace-resources.ts";
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
@@ -1099,10 +1100,12 @@ export default function ChatApp() {
   if (resourcePageOpen) {
     return (
       <ResourceManagementPage
+        accountLabel={identity.username ?? identity.displayName}
         api={api}
         conversations={conversations}
         environments={developmentEnvironments}
         onClose={() => setResourcePageOpen(false)}
+        onLogout={() => void logout()}
         onRefresh={async () => {
           await Promise.all([
             refreshConversations(),
@@ -1175,19 +1178,11 @@ export default function ChatApp() {
             )}
           </nav>
           <footer className="product-account">
-            <div className="product-account-avatar">
-              {(identity.username ?? identity.displayName).slice(0, 1).toUpperCase()}
-            </div>
-            <strong>{identity.username ?? identity.displayName}</strong>
-            <LanguageSelect compact />
-            <button
-              aria-label={t("chat.logout")}
-              onClick={() => void logout()}
-              title={t("chat.logout")}
-              type="button"
-            >
-              ↪
-            </button>
+            <AccountMenu
+              label={identity.username ?? identity.displayName}
+              onLogout={() => void logout()}
+              placement="up"
+            />
           </footer>
         </div>
         {conversationPanel.collapsed ? null : (
