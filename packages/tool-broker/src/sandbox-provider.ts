@@ -19,8 +19,8 @@ export class ToolBrokerError extends Error {
   readonly code: string;
   readonly retryable: boolean;
 
-  constructor(code: string, safeMessage: string, retryable: boolean) {
-    super(safeMessage);
+  constructor(code: string, safeMessage: string, retryable: boolean, cause?: unknown) {
+    super(safeMessage, cause === undefined ? undefined : { cause });
     this.name = "ToolBrokerError";
     this.code = code;
     this.retryable = retryable;

@@ -697,6 +697,9 @@ export class CubeSandboxProvider implements SandboxProvider {
           "cubesandbox_guest_execution_failed",
           "CubeSandbox one-shot guest helper failed",
           false,
+          new Error(
+            `Guest helper exited with code ${String(result.exitCode)}: ${result.stderr.slice(-1_024)}`,
+          ),
         );
       }
       const output = result.stdout.trim();
