@@ -288,7 +288,7 @@ export function WorkspaceDirectoryPicker({
         </div>
 
         <div className="product-directory-selection">
-          <span>{t("directory.current", { directory: selectedDirectory })}</span>
+          <span>{t("directory.current")}</span>
           <code>{selectedDirectory}</code>
         </div>
         <footer>
