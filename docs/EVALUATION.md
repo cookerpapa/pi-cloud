@@ -62,6 +62,7 @@ multi-region saturation claims.
 npm run cubesandbox:live-check
 PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
 PI_CLOUD_LIVE_WORKER_POOL_CHECK=1 npm run production:worker-pool-check
+PI_CLOUD_LIVE_DIRECTORY_PICKER_CHECK=1 npm run production:directory-picker-check
 ```
 
 The Cube gate attests real KVM guests, tenant-separated persistent Workspaces,
@@ -84,6 +85,7 @@ Current evidence:
 - [Shared Worker-pool acceptance](reports/pi-worker-pool-acceptance-latest.md)
 - [Interactive Snake Preview acceptance](reports/snake-preview-acceptance-latest.json)
 - [Browser UI control acceptance](reports/browser-ui-acceptance-latest.json)
+- [Exclusive folder chooser acceptance](reports/directory-picker-acceptance-latest.json)
 
 The Snake gate requires a real model to create and serve a multi-file browser
 game, then drives start, keyboard movement, pause and reset in headless Chrome
@@ -91,7 +93,10 @@ through the authenticated opaque-origin Preview gateway. The browser UI gate
 clicks the ordinary user-facing controls for authentication, localization,
 conversation/tree navigation, Workspace Terminal, Fork/Delete, resource
 lifecycle, directory selection and SSH. It does not mutate administrator model
-or proxy settings.
+or proxy settings. The focused folder-chooser gate avoids model variability: it
+allocates a real exclusive Cube, creates a UID/GID 1000 directory through the
+tenant-bound Tool Broker path, selects it in the GNOME-style browser, verifies
+the trusted listing API and releases the machine.
 
 ## Load and live restart acceptance
 
