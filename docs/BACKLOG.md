@@ -32,6 +32,9 @@ retired and remain only in Git history or explicitly superseded ADRs.
       presentation rows, grouped Tool activity, dedicated Bash/Read/Write/Edit
       renderers, fenced-code highlighting and reload-stable Compaction/retry
       lifecycle rows.
+- [x] Restore a PiCloud sidebar brand and replace the exclusive-machine path
+      list with a GNOME-style folder chooser whose authenticated New Folder
+      action is fenced against active Agent/terminal ownership.
 - [x] Verify Cube destruction followed by attachment of the same persistent
       Workspace Volume to a fresh KVM.
 

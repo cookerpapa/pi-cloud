@@ -35,6 +35,7 @@ import { workspaceVolumeId, type WorkspaceVolumeGateway } from "./workspace-volu
 import {
   ToolBrokerError,
   type SandboxCreateSpec,
+  type SandboxDirectoryListing,
   type SandboxEffectiveIsolation,
   type SandboxHandle,
   type SandboxInspection,
@@ -184,6 +185,40 @@ function record(value: unknown, label: string): Record<string, unknown> {
     throw new ToolBrokerError("cubesandbox_protocol_error", `${label} was invalid`, false);
   }
   return value as Record<string, unknown>;
+}
+
+function sandboxDirectoryListing(value: unknown): SandboxDirectoryListing {
+  const raw = record(value, "Cube guest directory");
+  if (typeof raw.path !== "string" || !Array.isArray(raw.entries) || raw.entries.length > 1_000) {
+    throw new ToolBrokerError(
+      "development_environment_directory_invalid",
+      "Cube guest directory response was invalid",
+      false,
+    );
+  }
+  const entries = raw.entries.map((entry) => {
+    const candidate = record(entry, "Cube guest directory entry");
+    if (
+      typeof candidate.name !== "string" ||
+      typeof candidate.path !== "string" ||
+      !new Set(["directory", "file", "symlink", "other"]).has(String(candidate.kind)) ||
+      (candidate.sizeBytes !== undefined &&
+        (!Number.isSafeInteger(candidate.sizeBytes) || (candidate.sizeBytes as number) < 0))
+    ) {
+      throw new ToolBrokerError(
+        "development_environment_directory_invalid",
+        "Cube guest directory entry was invalid",
+        false,
+      );
+    }
+    return Object.freeze({
+      name: candidate.name,
+      path: candidate.path,
+      kind: candidate.kind as "directory" | "file" | "symlink" | "other",
+      ...(candidate.sizeBytes === undefined ? {} : { sizeBytes: candidate.sizeBytes as number }),
+    });
+  });
+  return { path: raw.path, entries: Object.freeze(entries) };
 }
 
 function stringField(value: Record<string, unknown>, name: string, maximum = 256): string {
@@ -1206,7 +1241,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         true,
       );
     }
-    const raw = record(
+    return sandboxDirectoryListing(
       await this.#client.request(activation.instance, {
         method: "POST",
         path: "/v1/directory",
@@ -1215,38 +1250,32 @@ export class CubeSandboxProvider implements SandboxProvider {
         maximumResponseBytes: 2 * 1_024 * 1_024,
         authority: this.#authority(activation),
       }),
-      "Cube guest directory",
     );
-    if (typeof raw.path !== "string" || !Array.isArray(raw.entries) || raw.entries.length > 1_000) {
+  }
+
+  async createDirectory(
+    handle: SandboxHandle,
+    path: string,
+    name: string,
+  ): Promise<SandboxDirectoryListing> {
+    const activation = await this.#owned(handle);
+    if (activation.state !== "running" && activation.state !== "idle") {
       throw new ToolBrokerError(
-        "development_environment_directory_invalid",
-        "Cube guest directory response was invalid",
-        false,
+        "development_environment_directory_unavailable",
+        "Exclusive machine must be running before changing its filesystem",
+        true,
       );
     }
-    const entries = raw.entries.map((entry) => {
-      const candidate = record(entry, "Cube guest directory entry");
-      if (
-        typeof candidate.name !== "string" ||
-        typeof candidate.path !== "string" ||
-        !new Set(["directory", "file", "symlink", "other"]).has(String(candidate.kind)) ||
-        (candidate.sizeBytes !== undefined &&
-          (!Number.isSafeInteger(candidate.sizeBytes) || (candidate.sizeBytes as number) < 0))
-      ) {
-        throw new ToolBrokerError(
-          "development_environment_directory_invalid",
-          "Cube guest directory entry was invalid",
-          false,
-        );
-      }
-      return Object.freeze({
-        name: candidate.name,
-        path: candidate.path,
-        kind: candidate.kind as "directory" | "file" | "symlink" | "other",
-        ...(candidate.sizeBytes === undefined ? {} : { sizeBytes: candidate.sizeBytes as number }),
-      });
-    });
-    return { path: raw.path, entries: Object.freeze(entries) };
+    return sandboxDirectoryListing(
+      await this.#client.request(activation.instance, {
+        method: "POST",
+        path: "/v1/directory/create",
+        body: { path, name },
+        timeoutMs: 15_000,
+        maximumResponseBytes: 2 * 1_024 * 1_024,
+        authority: this.#authority(activation),
+      }),
+    );
   }
 
   async pause(handle: SandboxHandle): Promise<void> {

@@ -287,6 +287,12 @@ export interface SandboxProvider {
   detachPersistent?(handle: SandboxHandle): Promise<void>;
   /** Browse the tenant-owned guest filesystem without a Session checkpoint. */
   listDirectory?(handle: SandboxHandle, path: string): Promise<SandboxDirectoryListing>;
+  /** Create one user-owned directory and return its parent listing. */
+  createDirectory?(
+    handle: SandboxHandle,
+    path: string,
+    name: string,
+  ): Promise<SandboxDirectoryListing>;
   snapshot(handle: SandboxHandle, requestId: string): Promise<ToolSandboxCaptureResponse>;
   forkWorkspace?(
     handle: SandboxHandle,

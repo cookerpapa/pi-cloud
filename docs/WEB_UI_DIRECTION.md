@@ -96,6 +96,13 @@ associated conversations. The exclusive-environment tab lists machine
 resources, their CPU/memory/disk specification, Cube guest IP and associated
 conversations.
 
+The expanded conversation sidebar carries a compact PiCloud `π` brand rather
+than the retired AgentDock-style avatar. Exclusive-conversation directory
+selection uses a GNOME-style folder chooser with Places, breadcrumbs, file
+metadata rows, single-selection/double-open behavior and a first-class New
+Folder action. Files remain visible for orientation but only directories can be
+selected.
+
 The transcript preserves event order, merges adjacent text deltas, renders
 Markdown without raw HTML or remote-image fetches, collapses tool input/output,
 and shows approval and terminal cards. Stable presentation rows keep transport

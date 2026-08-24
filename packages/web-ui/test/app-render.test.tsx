@@ -168,8 +168,11 @@ describe("product chat experience", () => {
         workspaceName="exclusive-devbox"
       />,
     );
-    expect(markup).toContain("选择机器工作目录");
-    expect(markup).toContain("🖥️ /");
+    expect(markup).toContain("选择文件夹");
+    expect(markup).toContain("主文件夹");
+    expect(markup).toContain("Workspace");
+    expect(markup).toContain("计算机");
+    expect(markup).toContain("新建文件夹");
     expect(markup).toContain("当前选择：/home");
   });
 

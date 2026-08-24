@@ -6,6 +6,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
   DevelopmentEnvironmentProtocolError,
+  parseCreateDevelopmentEnvironmentDirectoryRequest,
   parseDevelopmentEnvironmentBrokerRequest,
   parseDevelopmentEnvironmentTerminalOpenRequest,
   parseDevelopmentEnvironmentBrokerResponse,
@@ -74,5 +75,29 @@ describe("development environment Broker protocol", () => {
         ],
       }),
     ).toMatchObject({ path: "/home/node", entries: [{ kind: "directory" }, { kind: "file" }] });
+  });
+
+  it("accepts one bounded child-directory mutation and rejects traversal names", () => {
+    expect(
+      parseCreateDevelopmentEnvironmentDirectoryRequest({
+        path: "/home/user",
+        name: "new-project",
+      }),
+    ).toEqual({ path: "/home/user", name: "new-project" });
+    expect(() =>
+      parseCreateDevelopmentEnvironmentDirectoryRequest({ path: "/home/user", name: ".." }),
+    ).toThrow(DevelopmentEnvironmentProtocolError);
+    expect(() =>
+      parseDevelopmentEnvironmentBrokerRequest({
+        developmentEnvironmentProtocolVersion: 1,
+        type: "development_environment.create_directory",
+        requestId: "30000000-0000-4000-8000-000000000011",
+        environmentId: "30000000-0000-4000-8000-000000000012",
+        tenantId: "30000000-0000-4000-8000-000000000013",
+        userId: "30000000-0000-4000-8000-000000000014",
+        path: "/home/user",
+        name: "../escape",
+      }),
+    ).toThrow(DevelopmentEnvironmentProtocolError);
   });
 });

@@ -26,6 +26,7 @@ import {
   parseCreateConversationForkRequest,
   parseCreateConversationPruneRequest,
   parseCreateDevelopmentEnvironmentRequest,
+  parseCreateDevelopmentEnvironmentDirectoryRequest,
   parseDevelopmentEnvironmentActionRequest,
   parseRebindConversationWorkspaceRequest,
   parseConversationTreeView,
@@ -259,6 +260,20 @@ export class ControlPlaneController {
       this.tenantRequestContext.resolve(request),
       parseUuidPathParameter(environmentIdValue, "environmentId"),
       pathValue,
+    );
+  }
+
+  @Post("development-environments/:environmentId/directory")
+  @HttpCode(200)
+  async createDevelopmentEnvironmentDirectory(
+    @Req() request: FastifyRequest,
+    @Param("environmentId") environmentIdValue: unknown,
+    @Body() body: unknown,
+  ): Promise<DevelopmentEnvironmentDirectoryResource> {
+    return this.developmentEnvironments.createDirectory(
+      this.tenantRequestContext.requireMutation(request),
+      parseUuidPathParameter(environmentIdValue, "environmentId"),
+      parseCreateDevelopmentEnvironmentDirectoryRequest(body),
     );
   }
 

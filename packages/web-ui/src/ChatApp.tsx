@@ -1147,6 +1147,10 @@ export default function ChatApp() {
         ) : null}
         <div className="product-panel-content product-sidebar-content">
           <div className="product-sidebar-actions">
+            <div className="product-sidebar-brand" aria-label="PiCloud">
+              <span aria-hidden="true">π</span>
+              <strong>PiCloud</strong>
+            </div>
             <button
               className="product-new-chat"
               onClick={() => beginNewConversation()}

@@ -376,6 +376,25 @@ export class PiCloudApi {
     );
   }
 
+  async createDevelopmentEnvironmentDirectory(
+    environmentId: string,
+    path: string,
+    name: string,
+  ): Promise<DevelopmentEnvironmentDirectoryResource> {
+    return parseDevelopmentEnvironmentDirectoryResource(
+      await request(
+        this.#fetch,
+        `/v1/development-environments/${encodeURIComponent(environmentId)}/directory`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ path, name }),
+        },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
   async deleteConversation(
     sessionId: string,
     idempotencyKey: string,

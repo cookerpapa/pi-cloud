@@ -78,7 +78,8 @@ After deployment:
 5. Start a conversation in either mode:
    - **Elastic execution** selects/creates a Workspace and chooses a deployment-owned size;
    - **Exclusive environment** selects a running user-owned Cube and a live
-     directory from its complete guest filesystem.
+     directory from its complete guest filesystem; its GNOME-style folder
+     chooser can create a user-writable directory before selection.
 
 The language selector is available on the sign-in page and beside the current
 username. It is a browser-local presentation preference: switching it does not

@@ -70,6 +70,34 @@ export const DevelopmentEnvironmentDirectoryRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const GuestDirectoryNameSchema = Type.String({
+  minLength: 1,
+  maxLength: 255,
+  pattern: "^(?!\\.{1,2}$)(?!\\s)(?!.*\\s$)[^/\\u0000-\\u001f\\u007f]+$",
+});
+
+export const CreateDevelopmentEnvironmentDirectoryRequestSchema = Type.Object(
+  {
+    path: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
+    name: GuestDirectoryNameSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const DevelopmentEnvironmentCreateDirectoryRequestSchema = Type.Object(
+  {
+    developmentEnvironmentProtocolVersion: Type.Literal(1),
+    type: Type.Literal("development_environment.create_directory"),
+    requestId: UuidSchema,
+    environmentId: UuidSchema,
+    tenantId: UuidSchema,
+    userId: UuidSchema,
+    path: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
+    name: GuestDirectoryNameSchema,
+  },
+  { additionalProperties: false },
+);
+
 export const DevelopmentEnvironmentDirectoryEntrySchema = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 255 }),
@@ -98,6 +126,7 @@ export const DevelopmentEnvironmentBrokerRequestSchema = Type.Union([
   DevelopmentEnvironmentProvisionRequestSchema,
   DevelopmentEnvironmentLifecycleRequestSchema,
   DevelopmentEnvironmentDirectoryRequestSchema,
+  DevelopmentEnvironmentCreateDirectoryRequestSchema,
 ]);
 
 export const DevelopmentEnvironmentBrokerResponseSchema = Type.Union([
@@ -155,8 +184,17 @@ export type DevelopmentEnvironmentLifecycleRequest = Static<
 export type DevelopmentEnvironmentDirectoryRequest = Static<
   typeof DevelopmentEnvironmentDirectoryRequestSchema
 >;
+export type CreateDevelopmentEnvironmentDirectoryRequest = Static<
+  typeof CreateDevelopmentEnvironmentDirectoryRequestSchema
+>;
+export type DevelopmentEnvironmentCreateDirectoryRequest = Static<
+  typeof DevelopmentEnvironmentCreateDirectoryRequestSchema
+>;
 export type DevelopmentEnvironmentDirectoryResource = Static<
   typeof DevelopmentEnvironmentDirectoryResourceSchema
+>;
+export type DevelopmentEnvironmentDirectoryEntry = Static<
+  typeof DevelopmentEnvironmentDirectoryEntrySchema
 >;
 export type DevelopmentEnvironmentBrokerRequest = Static<
   typeof DevelopmentEnvironmentBrokerRequestSchema
@@ -229,5 +267,15 @@ export function parseDevelopmentEnvironmentDirectoryResource(
     DevelopmentEnvironmentDirectoryResourceSchema,
     value,
     "development environment directory",
+  );
+}
+
+export function parseCreateDevelopmentEnvironmentDirectoryRequest(
+  value: unknown,
+): CreateDevelopmentEnvironmentDirectoryRequest {
+  return parse(
+    CreateDevelopmentEnvironmentDirectoryRequestSchema,
+    value,
+    "create development environment directory request",
   );
 }

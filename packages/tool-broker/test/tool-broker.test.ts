@@ -157,6 +157,12 @@ function providerFixture() {
       entries: [],
     }),
   );
+  const createDirectory = vi.fn<NonNullable<SandboxProvider["createDirectory"]>>(
+    async (_handle, path, name) => ({
+      path,
+      entries: [{ name, path: `${path === "/" ? "" : path}/${name}`, kind: "directory" }],
+    }),
+  );
   const provider: SandboxProvider = {
     providerId: "cubesandbox",
     async checkHealth() {},
@@ -200,6 +206,7 @@ function providerFixture() {
     },
     previewHttp,
     listDirectory,
+    createDirectory,
     pause,
     resume,
     snapshot,
@@ -260,6 +267,7 @@ function providerFixture() {
     resume,
     previewHttp,
     listDirectory,
+    createDirectory,
     get createSpec() {
       return createSpec;
     },
@@ -339,6 +347,26 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.createCount).toBe(1);
     expect(fixture.rebind).toHaveBeenCalledTimes(2);
     expect(fixture.snapshot).toHaveBeenCalledTimes(2);
+    await expect(
+      manager.browseDevelopmentEnvironment({
+        developmentEnvironmentProtocolVersion: 1,
+        type: "development_environment.create_directory",
+        requestId: "21111111-1111-4111-8111-111111111121",
+        environmentId: ACTIVATION_ID,
+        tenantId: assignment.tenantId,
+        userId: "77777777-7777-4777-8777-777777777777",
+        path: "/home/user",
+        name: "new-project",
+      }),
+    ).resolves.toMatchObject({
+      type: "development_environment.directory",
+      entries: [{ name: "new-project", kind: "directory" }],
+    });
+    expect(fixture.createDirectory).toHaveBeenCalledWith(
+      expect.anything(),
+      "/home/user",
+      "new-project",
+    );
     const secondAssignment = {
       ...assignment,
       turnId: "21111111-1111-4111-8111-111111111114",
@@ -353,6 +381,18 @@ describe("provider-backed Tool Tool Broker", () => {
       assignment: secondAssignment,
       retention: "persistent",
     });
+    await expect(
+      manager.browseDevelopmentEnvironment({
+        developmentEnvironmentProtocolVersion: 1,
+        type: "development_environment.create_directory",
+        requestId: "21111111-1111-4111-8111-111111111122",
+        environmentId: ACTIVATION_ID,
+        tenantId: assignment.tenantId,
+        userId: "77777777-7777-4777-8777-777777777777",
+        path: "/home/user",
+        name: "blocked",
+      }),
+    ).rejects.toMatchObject({ code: "development_environment_directory_busy" });
     await manager.execute(secondAgent.capability, {
       ...operation("21111111-1111-4111-8111-111111111118"),
       activationId: secondAgent.activationId,

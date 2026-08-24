@@ -306,6 +306,13 @@ filesystem. The directory is a Session binding, not another Volume. Machine
 single-writer admission still permits only one active Agent Run or human
 terminal at a time.
 
+The authenticated folder chooser may create one bounded child directory in an
+idle owned machine. Control Plane binds tenant/user identity, Tool Broker rejects
+the mutation while an Agent activation or terminal owns the machine, and the
+trusted Cube Tool Service validates the parent/name before creating a UID/GID
+1000 directory. The browser never sends a shell command or receives Cube
+authority.
+
 The allocation participates in tenant/Domain Sandbox quotas and the global
 Workspace single-writer rule. `agent_activation_id` and `terminal_active` are
 durable admission facts. Tool Broker lazily seals and rebinds the same Cube to a

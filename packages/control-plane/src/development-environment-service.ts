@@ -10,6 +10,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
   parseDevelopmentEnvironmentBrokerResponse,
   parseEnvironmentRuntimeSnapshot,
+  type CreateDevelopmentEnvironmentDirectoryRequest,
   type CreateDevelopmentEnvironmentRequest,
   type DevelopmentEnvironmentActionRequest,
   type DevelopmentEnvironmentBrokerRequest,
@@ -36,6 +37,17 @@ export type DevelopmentEnvironmentServiceOptions = Readonly<{
 
 function requestHash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function assertGuestDirectoryPath(path: string): void {
+  if (
+    path.length < 1 ||
+    path.length > 4_096 ||
+    !path.startsWith("/") ||
+    /[\u0000-\u001f\u007f]/.test(path)
+  ) {
+    throw new ControlPlaneStoreError("invalid_request", "Machine directory path is invalid");
+  }
 }
 
 function profile(key: string) {
@@ -153,14 +165,7 @@ export class DevelopmentEnvironmentService {
     environmentId: string,
     path: string,
   ): Promise<DevelopmentEnvironmentDirectoryResource> {
-    if (
-      path.length < 1 ||
-      path.length > 4_096 ||
-      !path.startsWith("/") ||
-      /[\u0000-\u001f\u007f]/.test(path)
-    ) {
-      throw new ControlPlaneStoreError("invalid_request", "Machine directory path is invalid");
-    }
+    assertGuestDirectoryPath(path);
     const environment = await this.get(identity, environmentId);
     if (environment.state !== "running") {
       throw new ControlPlaneStoreError(
@@ -177,6 +182,39 @@ export class DevelopmentEnvironmentService {
       tenantId: identity.tenantId,
       userId: identity.userId,
       path,
+    });
+    if (result.type !== "development_environment.directory") {
+      throw new ControlPlaneStoreError(
+        "control_plane_misconfigured",
+        "Tool Broker returned the wrong machine directory response",
+      );
+    }
+    return { environmentId, path: result.path, entries: result.entries };
+  }
+
+  async createDirectory(
+    identity: TenantRequestIdentity,
+    environmentId: string,
+    request: CreateDevelopmentEnvironmentDirectoryRequest,
+  ): Promise<DevelopmentEnvironmentDirectoryResource> {
+    assertGuestDirectoryPath(request.path);
+    const environment = await this.get(identity, environmentId);
+    if (environment.state !== "running") {
+      throw new ControlPlaneStoreError(
+        "conflict",
+        "Exclusive machine must be running before changing its filesystem",
+      );
+    }
+    const descriptor = await this.#descriptor(identity, environmentId);
+    const result = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.create_directory",
+      requestId: this.#id(),
+      environmentId,
+      tenantId: identity.tenantId,
+      userId: identity.userId,
+      path: request.path,
+      name: request.name,
     });
     if (result.type !== "development_environment.directory") {
       throw new ControlPlaneStoreError(

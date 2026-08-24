@@ -760,15 +760,22 @@ export class ToolBroker {
   }
 
   async browseDevelopmentEnvironment(
-    request: Extract<
-      DevelopmentEnvironmentBrokerRequest,
-      { type: "development_environment.directory" }
-    >,
+    request:
+      | Extract<DevelopmentEnvironmentBrokerRequest, { type: "development_environment.directory" }>
+      | Extract<
+          DevelopmentEnvironmentBrokerRequest,
+          { type: "development_environment.create_directory" }
+        >,
   ): Promise<DevelopmentEnvironmentBrokerResponse> {
-    if (this.#provider.listDirectory === undefined) {
+    if (
+      (request.type === "development_environment.directory" &&
+        this.#provider.listDirectory === undefined) ||
+      (request.type === "development_environment.create_directory" &&
+        this.#provider.createDirectory === undefined)
+    ) {
       throw new ToolBrokerError(
         "development_environment_directory_unsupported",
-        "Sandbox Provider cannot browse an exclusive machine filesystem",
+        "Sandbox Provider cannot manage an exclusive machine filesystem",
         false,
       );
     }
@@ -802,7 +809,20 @@ export class ToolBroker {
         false,
       );
     }
-    const directory = await this.#provider.listDirectory(environment.handle, request.path);
+    if (
+      request.type === "development_environment.create_directory" &&
+      (environment.agentActivationId !== undefined || environment.terminal !== undefined)
+    ) {
+      throw new ToolBrokerError(
+        "development_environment_directory_busy",
+        "Wait for the active Agent Run or terminal before creating a directory",
+        true,
+      );
+    }
+    const directory =
+      request.type === "development_environment.create_directory"
+        ? await this.#provider.createDirectory!(environment.handle, request.path, request.name)
+        : await this.#provider.listDirectory!(environment.handle, request.path);
     return {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.directory",

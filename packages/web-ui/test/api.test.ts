@@ -95,6 +95,30 @@ describe("tenant-aware browser API", () => {
     ).resolves.toMatchObject({ state: "paused" });
   });
 
+  it("creates one directory through the exclusive-environment filesystem API", async () => {
+    const environmentId = "10000000-0000-4000-8000-000000000021";
+    const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
+      expect(String(input)).toBe(`/v1/development-environments/${environmentId}/directory`);
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body))).toEqual({ path: "/home/user", name: "project" });
+      return new Response(
+        JSON.stringify({
+          environmentId,
+          path: "/home/user",
+          entries: [{ name: "project", path: "/home/user/project", kind: "directory" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    await expect(
+      new PiCloudApi(fetchImplementation).createDevelopmentEnvironmentDirectory(
+        environmentId,
+        "/home/user",
+        "project",
+      ),
+    ).resolves.toMatchObject({ entries: [{ name: "project", kind: "directory" }] });
+  });
+
   it("uses same-origin cookie sessions for product registration, login, and logout", async () => {
     const identity = {
       tenantId: "10000000-0000-4000-8000-000000000002",

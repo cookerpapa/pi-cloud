@@ -120,6 +120,12 @@ function provider(): SandboxProvider {
         ],
       };
     },
+    async createDirectory(_handle, path, name) {
+      return {
+        path,
+        entries: [{ name, path: `${path === "/" ? "" : path}/${name}`, kind: "directory" }],
+      };
+    },
     pause: pauses,
     resume: resumes,
     async snapshot() {
@@ -269,6 +275,15 @@ describe("user-owned development environments", () => {
     ).resolves.toMatchObject({
       path: "/home",
       entries: [{ name: "empty-project", kind: "directory" }, { kind: "file" }],
+    });
+    await expect(
+      service.createDirectory(identity, created.environmentId, {
+        path: "/home",
+        name: "new-project",
+      }),
+    ).resolves.toMatchObject({
+      path: "/home",
+      entries: [{ name: "new-project", kind: "directory" }],
     });
     await expect(service.directory(otherIdentity, created.environmentId, "/home")).rejects.toThrow(
       /not found/u,

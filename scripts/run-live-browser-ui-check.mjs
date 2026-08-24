@@ -94,6 +94,7 @@ const record = (name) => {
 };
 const screenshotPath = resolve("/tmp", "pi-cloud-browser-ui-latest.png");
 const transcriptScreenshotPath = resolve("/tmp", "pi-cloud-browser-ui-transcript-latest.png");
+const directoryScreenshotPath = resolve("/tmp", "pi-cloud-directory-picker-latest.png");
 
 function selectorExpression(selector) {
   return `document.querySelector(${JSON.stringify(selector)})`;
@@ -139,6 +140,11 @@ try {
       await setValue('input[type="password"]', password);
       await click('.product-auth-card button[type="submit"]', "auth.login");
       await page.waitFor('document.querySelector(".product-shell")', 30_000);
+      const brandVisible = await page.evaluate(
+        'document.querySelector(".product-sidebar-brand")?.textContent.includes("πPiCloud")===true',
+      );
+      assert.equal(brandVisible, true, "PiCloud sidebar brand was unavailable");
+      record("sidebar.brand");
 
       await page.evaluate(
         `(()=>{const select=document.querySelector(".product-account .product-language-select");select.value="en-US";select.dispatchEvent(new Event("change",{bubbles:true}))})()`,
@@ -340,7 +346,20 @@ try {
       await setValue(".product-progressive-options > label input", `UI exclusive ${suffix}`);
       await click(".product-working-directory-choice button", "conversation.directoryPicker");
       await page.waitFor('document.querySelector(".product-directory-picker")');
-      await click(".product-directory-picker footer button:first-child", "directory.cancel");
+      await click(".product-directory-new-folder", "directory.newFolder");
+      await page.waitFor('document.querySelector(".product-directory-create input")');
+      await setValue(".product-directory-create input", `ui-project-${suffix}`);
+      await click(".product-directory-create .product-primary-button", "directory.createFolder");
+      await page.waitFor(
+        `[...document.querySelectorAll(".product-directory-entry[aria-selected=true] strong")].some(element=>element.textContent.includes(${JSON.stringify(`ui-project-${suffix}`)}))`,
+        30_000,
+      );
+      await page.screenshot(directoryScreenshotPath);
+      await click(
+        ".product-directory-picker > footer .product-primary-button",
+        "directory.chooseCreatedFolder",
+      );
+      await page.waitFor('!document.querySelector(".product-directory-picker")');
       await click(
         ".product-workspace-modal footer .product-primary-button",
         "conversation.createExclusive",

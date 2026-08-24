@@ -19,7 +19,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { networkInterfaces } from "node:os";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { chown, lstat, mkdir, readFile, readdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -303,6 +303,31 @@ function guestDirectoryPath(value: unknown): string {
   return resolve("/", path);
 }
 
+function guestDirectoryCreation(value: unknown): Readonly<{ path: string; name: string }> {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== 2
+  ) {
+    throw new CubeToolServiceError(400, "Guest directory creation request was invalid");
+  }
+  const input = value as Record<string, unknown>;
+  const path = guestDirectoryPath({ path: input.path });
+  if (
+    typeof input.name !== "string" ||
+    input.name.length < 1 ||
+    input.name.length > 255 ||
+    input.name !== input.name.trim() ||
+    input.name === "." ||
+    input.name === ".." ||
+    /[\u0000-\u001f\u007f/]/.test(input.name)
+  ) {
+    throw new CubeToolServiceError(400, "Guest directory name was invalid");
+  }
+  return { path, name: input.name };
+}
+
 async function listGuestDirectory(path: string): Promise<
   Readonly<{
     path: string;
@@ -350,6 +375,37 @@ async function listGuestDirectory(path: string): Promise<
       }),
   );
   return { path: canonical, entries: Object.freeze(entries) };
+}
+
+async function createGuestDirectory(input: Readonly<{ path: string; name: string }>) {
+  const canonicalParent = await realpath(input.path).catch(() => {
+    throw new CubeToolServiceError(404, "Guest parent directory was not found");
+  });
+  const parentMetadata = await lstat(canonicalParent).catch(() => undefined);
+  if (parentMetadata === undefined || !parentMetadata.isDirectory()) {
+    throw new CubeToolServiceError(400, "Guest parent path was not a directory");
+  }
+  const childPath = resolve(canonicalParent, input.name);
+  let created = false;
+  try {
+    await mkdir(childPath, { mode: 0o755 });
+    created = true;
+  } catch (error: unknown) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    if (code !== "EEXIST") {
+      if (code === "EACCES" || code === "EROFS") {
+        throw new CubeToolServiceError(403, "Guest parent directory is not writable");
+      }
+      throw error;
+    }
+    const existing = await lstat(childPath).catch(() => undefined);
+    if (existing === undefined || !existing.isDirectory() || existing.isSymbolicLink()) {
+      throw new CubeToolServiceError(409, "Guest directory name is already in use");
+    }
+  }
+  if (created && process.getuid?.() === 0) await chown(childPath, TOOL_UID, TOOL_GID);
+  return listGuestDirectory(canonicalParent);
 }
 
 type LocalServiceProxyRequest = Readonly<{
@@ -1211,6 +1267,19 @@ const server = createServer((request, response) => {
         response,
         200,
         await listGuestDirectory(guestDirectoryPath(await readJson(request))),
+      );
+      return;
+    }
+    if (url.pathname === "/v1/directory/create") {
+      requireAuthority(request);
+      const current = readyBridge();
+      if (activeTerminal !== undefined || current.busy) {
+        throw new CubeToolServiceError(409, "Guest filesystem is currently in use");
+      }
+      sendJson(
+        response,
+        200,
+        await createGuestDirectory(guestDirectoryCreation(await readJson(request))),
       );
       return;
     }

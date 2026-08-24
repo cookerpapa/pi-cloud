@@ -366,7 +366,38 @@ body.product-panel-resizing {
 .product-sidebar-actions {
   display: grid;
   gap: 5px;
-  padding: 22px 10px 12px;
+  padding: 14px 10px 12px;
+}
+
+.product-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  margin: 0 2px 8px;
+  padding: 3px 5px;
+}
+
+.product-sidebar-brand > span {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid #514875;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #7664d1, #514494);
+  box-shadow: 0 5px 14px rgb(55 43 111 / 24%);
+  color: #fff;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.product-sidebar-brand strong {
+  color: #e7e7e7;
+  font-size: 13px;
+  font-weight: 580;
+  letter-spacing: -0.01em;
 }
 
 .product-sidebar-actions button,
@@ -2378,9 +2409,7 @@ body.product-panel-resizing {
   }
 }
 
-.product-working-directory-choice,
-.product-directory-address,
-.product-directory-selection {
+.product-working-directory-choice {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2397,69 +2426,405 @@ body.product-panel-resizing {
 }
 
 .product-directory-picker {
-  width: min(760px, calc(100vw - 28px));
-}
-.product-directory-address {
-  justify-content: flex-start;
-  overflow-x: auto;
-}
-.product-directory-address button {
-  border: 0;
-  padding: 5px 7px;
-  background: transparent;
-}
-.product-directory-toolbar {
   display: flex;
+  width: min(920px, calc(100vw - 28px));
+  max-height: min(760px, calc(100dvh - 32px));
+  overflow: hidden;
+  flex-direction: column;
+  border: 1px solid #454545;
+  border-radius: 12px;
+  background: #242424;
+  box-shadow: 0 28px 90px rgb(0 0 0 / 52%);
+}
+
+.product-directory-titlebar {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 11px 8px 17px;
+  border-bottom: 1px solid #3b3b3b;
+  background: linear-gradient(#343434, #2d2d2d);
+}
+
+.product-directory-titlebar > div {
+  display: flex;
+  min-width: 0;
   align-items: center;
   gap: 10px;
-  padding: 7px 10px;
-  border: 1px solid #343434;
-  border-radius: 8px;
-  background: #1c1c1c;
 }
-.product-directory-toolbar code {
+
+.product-directory-titlebar svg,
+.product-directory-entry svg,
+.product-directory-create svg {
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+  fill: #d39b45;
+  stroke: #f0bd65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.2;
+}
+
+.product-directory-titlebar h2 {
+  margin: 0;
+  color: #f1f1f1;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.product-directory-titlebar small {
+  display: block;
   overflow: hidden;
-  color: #bdbdbd;
+  max-width: 560px;
+  margin-top: 2px;
+  color: #929292;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.product-directory-titlebar > button {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #424242;
+  color: #ddd;
+  font-size: 18px;
+}
+
+.product-directory-titlebar > button:hover {
+  background: #575757;
+}
+
+.product-directory-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border-bottom: 1px solid #373737;
+  background: #292929;
+}
+
+.product-directory-toolbar > button {
+  min-height: 32px;
+  padding: 5px 10px;
+  border-color: #494949;
+  background: #353535;
+  color: #ddd;
+  font-size: 11px;
+}
+
+.product-directory-toolbar > button:first-child {
+  width: 34px;
+  padding: 0;
+  font-size: 16px;
+}
+
+.product-directory-address {
+  display: flex;
+  min-width: 0;
+  min-height: 34px;
+  align-items: center;
+  overflow-x: auto;
+  padding: 2px 5px;
+  border: 1px solid #484848;
+  border-radius: 7px;
+  background: #202020;
+  scrollbar-width: none;
+}
+
+.product-directory-address button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: #c9c9c9;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.product-directory-address button:hover {
+  background: #363636;
+}
+
+.product-directory-address button span {
+  color: #6f6f6f;
+  font-size: 15px;
+}
+
+.product-directory-new-folder span {
+  margin-right: 4px;
+  color: #d5ae65;
+  font-size: 15px;
+}
+
+.product-directory-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #3b3b3b;
+  background: #2c2c2c;
+}
+
+.product-directory-create input {
+  min-width: 0;
+  min-height: 34px;
+  flex: 1 1 auto;
+  padding: 6px 9px;
+  border: 1px solid #535353;
+  border-radius: 7px;
+  background: #1f1f1f;
+  color: #eee;
+  outline: 0;
+}
+
+.product-directory-create input:focus {
+  border-color: #8a78d6;
+  box-shadow: 0 0 0 2px rgb(118 100 209 / 18%);
+}
+
+.product-directory-create button {
+  min-height: 33px;
+  padding: 5px 11px;
+}
+
+.product-directory-explorer {
+  display: grid;
+  min-height: 390px;
+  grid-template-columns: 176px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.product-directory-places {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 15px 9px;
+  border-right: 1px solid #383838;
+  background: #292929;
+}
+
+.product-directory-places > strong {
+  padding: 0 9px 8px;
+  color: #858585;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.product-directory-places button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 0;
+  background: transparent;
+  color: #cecece;
+  font-size: 11px;
+  text-align: left;
+}
+
+.product-directory-places button:hover,
+.product-directory-places button.active {
+  background: #3a3a3a;
+}
+
+.product-directory-place-icon {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  color: #c7a25c;
+  font-size: 14px;
+}
+
+.product-directory-main {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: #202020;
+}
+
+.product-directory-columns,
+.product-directory-entry {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 94px 110px;
+  align-items: center;
+}
+
+.product-directory-columns {
+  min-height: 34px;
+  padding: 0 12px;
+  border-bottom: 1px solid #383838;
+  background: #292929;
+  color: #858585;
+  font-size: 10px;
+}
+
+.product-directory-columns span + span {
+  padding-left: 12px;
+  border-left: 1px solid #3c3c3c;
+}
+
 .product-directory-browser {
-  min-height: 280px;
-  max-height: 48vh;
+  min-height: 340px;
   overflow: auto;
   display: grid;
   align-content: start;
-  gap: 5px;
-  padding: 10px;
-  border: 1px solid #3d3d3d;
-  border-radius: 9px;
-  background: #181818;
+  padding: 6px;
+  background: #202020;
+  scrollbar-color: #4d4d4d transparent;
+  scrollbar-width: thin;
 }
-.product-directory-browser > button {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+
+.product-directory-entry {
+  width: 100%;
+  min-height: 38px;
+  padding: 4px 7px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #c8c8c8;
+  font-size: 10px;
+  text-align: left;
+}
+
+.product-directory-entry:hover {
+  background: #303030;
+}
+
+.product-directory-entry.selected {
+  background: #554a7b;
+  color: #fff;
+}
+
+.product-directory-entry[aria-disabled="true"] {
+  cursor: default;
+  color: #929292;
+}
+
+.product-directory-entry[aria-disabled="true"]:hover {
+  background: #292929;
+}
+
+.product-directory-entry-name {
+  display: flex;
+  min-width: 0;
   align-items: center;
   gap: 9px;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border-color: transparent;
 }
-.product-directory-browser > button:hover {
-  background: #242424;
+
+.product-directory-entry-name strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.product-directory-browser > button:disabled {
-  cursor: default;
-  color: #898989;
-  opacity: 0.82;
+
+.product-directory-entry > span:nth-child(2),
+.product-directory-entry > span:nth-child(3) {
+  padding-left: 12px;
+  color: #878787;
 }
-.product-directory-browser > button:disabled:hover {
-  background: transparent;
+
+.product-directory-entry.selected > span:nth-child(2),
+.product-directory-entry.selected > span:nth-child(3) {
+  color: #d8d2ee;
 }
+
+.product-directory-entry-file svg,
+.product-directory-entry-symlink svg,
+.product-directory-entry-other svg {
+  fill: #dedede;
+  stroke: #a4a4a4;
+}
+
+.product-directory-loading,
+.product-directory-browser > .product-form-error {
+  margin: 14px;
+}
+
 .product-empty-directory {
+  padding: 42px 22px;
   color: #a3a3a3;
-  padding: 22px;
   text-align: center;
+}
+
+.product-directory-selection {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-top: 1px solid #383838;
+  background: #292929;
+  color: #8f8f8f;
+  font-size: 10px;
+}
+
+.product-directory-selection code {
+  overflow: hidden;
+  color: #d6d6d6;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-directory-picker > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid #3c3c3c;
+  background: #303030;
+}
+
+.product-directory-picker > footer button {
+  min-width: 82px;
+  min-height: 34px;
+}
+
+@media (max-width: 680px) {
+  .product-directory-toolbar {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .product-directory-new-folder {
+    grid-column: 1 / -1;
+  }
+  .product-directory-explorer {
+    grid-template-columns: 1fr;
+  }
+  .product-directory-places {
+    display: flex;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid #383838;
+  }
+  .product-directory-places > strong {
+    display: none;
+  }
+  .product-directory-columns,
+  .product-directory-entry {
+    grid-template-columns: minmax(180px, 1fr) 76px;
+  }
+  .product-directory-columns span:last-child,
+  .product-directory-entry > span:last-child {
+    display: none;
+  }
 }
 
 .product-resource-page {
