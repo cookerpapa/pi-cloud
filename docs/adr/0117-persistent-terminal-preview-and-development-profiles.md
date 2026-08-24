@@ -12,9 +12,11 @@ terminal-only VM. That preserved the single-writer rule but violated the user
 meaning of a persistent sandbox: background processes and `$HOME` disappeared
 merely because the owner opened a terminal.
 
-CubeProxy already routes HTTP services by Sandbox ID and port and issues a
-per-Sandbox traffic token when public traffic is disabled. Cube does not expose
-a tenant-safe raw SSH endpoint for ordinary Sandboxes.
+CubeProxy issues a per-Sandbox traffic token when public traffic is disabled,
+but cross-node routing requires each application port to be declared in the
+immutable template. Reserving every possible development port is neither
+supported nor operationally sound. Cube does not expose a tenant-safe raw SSH
+endpoint for ordinary Sandboxes.
 
 ## Decision
 
@@ -34,14 +36,14 @@ a tenant-safe raw SSH endpoint for ordinary Sandboxes.
   terminal owns the Cube; an idle exclusive environment can instead lend that
   same Cube to one Run under a rotated authority.
 - Browser previews use a PiCloud-authenticated path. Control Plane verifies the
-  tenant/user target, Tool Broker resolves the live handle, and the Cube
-  provider injects the private Cube traffic token. Neither CubeAPI credentials,
-  Sandbox IDs nor traffic tokens reach the browser.
+  tenant/user target and Tool Broker resolves the live handle. The Cube provider
+  uses the sole private envd ingress to launch an unprivileged one-shot HTTP
+  helper, which reaches the guest-local application and exits. Neither CubeAPI
+  credentials, Sandbox IDs nor traffic tokens reach the browser or helper.
 - Preview supports bounded HTTP bodies and response sizes. WebSocket ingress and
-  raw TCP are separate contracts. Tool Broker routes directly through CubeProxy
-  to any unprivileged guest port except envd; applications bind `0.0.0.0`.
-  Fixed application-port reservations are unnecessary. The product does not
-  call the Web terminal "SSH".
+  raw TCP are separate contracts. Any unprivileged guest port except envd is
+  reachable without a fixed template reservation; applications bind localhost
+  or `0.0.0.0`. The product does not call the Web terminal "SSH".
 - User-owned development environments select one deployment-owned profile:
   starter (1 vCPU/2 GiB/8 GiB), standard (2 vCPU/4 GiB/16 GiB), or performance
   (4 vCPU/8 GiB/32 GiB). Each profile maps to an immutable Cube template built

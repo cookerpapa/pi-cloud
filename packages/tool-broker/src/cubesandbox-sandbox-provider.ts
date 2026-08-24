@@ -51,6 +51,7 @@ import { CubePersistentCapsuleCodec } from "./cube-persistent-capsule.ts";
 
 const READY_TIMEOUT_MS = 60_000;
 const TOOL_RESPONSE_LIMIT_BYTES = 8 * 1_024 * 1_024;
+const PREVIEW_RESPONSE_LIMIT_BYTES = 24 * 1_024 * 1_024;
 const INTERNAL_STEP_CONTEXT_SHA256 = "0".repeat(64);
 
 export const CUBESANDBOX_PROVIDER_ID = "cubesandbox";
@@ -236,6 +237,53 @@ function sandboxDirectoryListing(value: unknown): SandboxDirectoryListing {
       }),
     ),
   };
+}
+
+function sandboxPreviewResponse(
+  value: unknown,
+): import("./sandbox-provider.ts").SandboxPreviewHttpResponse {
+  const raw = record(value, "Cube guest preview response");
+  if (
+    !Number.isSafeInteger(raw.status) ||
+    (raw.status as number) < 100 ||
+    (raw.status as number) > 599 ||
+    typeof raw.body !== "string" ||
+    raw.body.length > PREVIEW_RESPONSE_LIMIT_BYTES ||
+    typeof raw.headers !== "object" ||
+    raw.headers === null ||
+    Array.isArray(raw.headers)
+  ) {
+    throw new ToolBrokerError(
+      "sandbox_preview_response_invalid",
+      "Cube guest preview response was invalid",
+      false,
+    );
+  }
+  const headers: Record<string, string> = {};
+  for (const [name, headerValue] of Object.entries(raw.headers)) {
+    if (
+      !/^[a-z0-9!#$%&'*+.^_`|~-]+$/u.test(name) ||
+      typeof headerValue !== "string" ||
+      headerValue.length > 8_192 ||
+      /[\u0000-\u001f\u007f]/u.test(headerValue)
+    ) {
+      throw new ToolBrokerError(
+        "sandbox_preview_response_invalid",
+        "Cube guest preview response was invalid",
+        false,
+      );
+    }
+    headers[name] = headerValue;
+  }
+  const body = Buffer.from(raw.body, "base64");
+  if (body.byteLength > 16 * 1_024 * 1_024) {
+    throw new ToolBrokerError(
+      "sandbox_preview_response_invalid",
+      "Cube guest preview response exceeded its limit",
+      false,
+    );
+  }
+  return { status: raw.status as number, headers: Object.freeze(headers), body };
 }
 
 function stringField(value: Record<string, unknown>, name: string, maximum = 256): string {
@@ -657,9 +705,10 @@ export class CubeSandboxProvider implements SandboxProvider {
     instance: CubeSandboxInstance,
     input: unknown,
     options: Readonly<{
-      program: "tool" | "control";
+      program: "tool" | "control" | "preview";
       runAsToolUser: boolean;
       timeoutMs: number;
+      maximumOutputBytes?: number;
       signal?: AbortSignal;
     }>,
   ): Promise<unknown> {
@@ -673,10 +722,23 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     await this.#client.writeGuestFile(instance, path, bytes);
-    const program =
-      options.program === "tool"
-        ? "/opt/pi-cloud/bin/envd-tool-exec.mjs"
-        : "/opt/pi-cloud/bin/envd-guest-control.mjs";
+    const program = {
+      tool: "/opt/pi-cloud/bin/envd-tool-exec.mjs",
+      control: "/opt/pi-cloud/bin/envd-guest-control.mjs",
+      preview: "/opt/pi-cloud/bin/envd-preview-proxy.mjs",
+    }[options.program];
+    const maximumOutputBytes = options.maximumOutputBytes ?? TOOL_RESPONSE_LIMIT_BYTES;
+    if (
+      !Number.isSafeInteger(maximumOutputBytes) ||
+      maximumOutputBytes < 1 ||
+      maximumOutputBytes > PREVIEW_RESPONSE_LIMIT_BYTES
+    ) {
+      throw new ToolBrokerError(
+        "cubesandbox_guest_request_invalid",
+        "CubeSandbox guest response limit was invalid",
+        false,
+      );
+    }
     const prefix = options.runAsToolUser
       ? "/usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs "
       : "";
@@ -689,7 +751,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         cwd: "/",
         user: "root",
         timeoutMs: options.timeoutMs,
-        maximumOutputBytes: TOOL_RESPONSE_LIMIT_BYTES,
+        maximumOutputBytes,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
       if (result.exitCode !== 0) {
@@ -703,7 +765,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         );
       }
       const output = result.stdout.trim();
-      if (output.length < 2 || output.length > TOOL_RESPONSE_LIMIT_BYTES) {
+      if (output.length < 2 || output.length > maximumOutputBytes) {
         throw new ToolBrokerError(
           "cubesandbox_guest_response_invalid",
           "CubeSandbox guest response was invalid",
@@ -1207,18 +1269,28 @@ export class CubeSandboxProvider implements SandboxProvider {
         true,
       );
     }
-    if (this.#client.requestService === undefined) {
-      throw new ToolBrokerError(
-        "sandbox_preview_unsupported",
-        "CubeSandbox client does not support service preview",
-        false,
-      );
-    }
-    return this.#client.requestService(activation.instance, {
-      ...request,
-      maximumResponseBytes: 16 * 1_024 * 1_024,
-      timeoutMs: 60_000,
-    });
+    return sandboxPreviewResponse(
+      await this.#guestJson(
+        activation.instance,
+        {
+          mode: "preview_http",
+          request: {
+            ...request,
+            ...(request.body === undefined
+              ? {}
+              : { body: Buffer.from(request.body).toString("base64") }),
+            maximumResponseBytes: 16 * 1_024 * 1_024,
+            timeoutMs: 60_000,
+          },
+        },
+        {
+          program: "preview",
+          runAsToolUser: true,
+          timeoutMs: 65_000,
+          maximumOutputBytes: PREVIEW_RESPONSE_LIMIT_BYTES,
+        },
+      ),
+    );
   }
 
   async listDirectory(

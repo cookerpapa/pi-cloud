@@ -204,6 +204,14 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     const request = this.requestForCommand(input);
     this.requests.push({ sandboxId: instance.sandboxId, input, guestRequest: request });
+    if (input.command.includes("envd-preview-proxy.mjs")) {
+      if (request.mode !== "preview_http") throw new Error("unexpected preview request");
+      return this.#result({
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+        body: Buffer.from("<html>private-preview-ok</html>").toString("base64"),
+      });
+    }
     if (input.command.includes("envd-guest-control.mjs")) {
       if (request.mode === "evidence") {
         return this.#result({
@@ -449,6 +457,13 @@ describe("CubeSandbox Provider contract", () => {
     ).resolves.toMatchObject({
       path: "/home/user",
       entries: [{ name: "new-project", path: "/home/user/new-project", kind: "directory" }],
+    });
+    await expect(
+      provider.previewHttp(handle, { port: 5_173, method: "GET", path: "/", headers: {} }),
+    ).resolves.toMatchObject({
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+      body: Buffer.from("<html>private-preview-ok</html>"),
     });
     expect(runtime.guestFiles.size).toBe(0);
     expect(runtime.creates[0]).toMatchObject({

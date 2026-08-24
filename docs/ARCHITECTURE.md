@@ -341,20 +341,22 @@ lifecycle budget so deployment overrides cannot silently restore the former
 
 The browser reaches a service through a same-origin PiCloud preview path. The
 Control Plane authenticates the user and resolves the conversation or owned
-development environment. Tool Broker resolves the local live handle and sends
-the request directly through CubeProxy to the requested guest port. Applications
-must bind `0.0.0.0`; envd port 49983 is never a Preview target. Cube traffic
+development environment. Tool Broker resolves the local live handle and uses
+Cube's authenticated envd ingress to launch an unprivileged, bounded one-shot
+HTTP helper. That helper reaches the requested localhost application port and
+exits after returning the response. Applications must bind `0.0.0.0` or
+localhost; envd port 49983 is never a Preview target. Cube traffic
 tokens, envd access tokens, physical Sandbox IDs and external routing details
 never leave the trusted execution plane or reach the application. Responses are
 bounded and security-sensitive hop-by-hop headers are not forwarded. Applications
 should use relative asset URLs under the path-based preview endpoint. HTML
 responses get a per-response CSP nonce on inline script/style blocks.
 
-Cube's private ingress resolves the requested port by Sandbox identity, so
-PiCloud does not reserve fixed application ports. The immutable template probes
-only envd. Assistant `localhost` links are rewritten by the Web client to the
-same-origin conversation Preview route. The Agent reports the guest-local port;
-it never calculates a public IP or NAT mapping.
+The immutable template exposes and probes only envd, so PiCloud does not reserve
+fixed application ports or depend on Cube host-port mappings. Assistant
+`localhost` links are rewritten by the Web client to the same-origin
+conversation Preview route. The Agent reports the guest-local port; it never
+calculates a public IP or NAT mapping.
 
 Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented. PiCloud does not
 expose Sandbox port 22. A separate trusted SSH gateway validates a one-time

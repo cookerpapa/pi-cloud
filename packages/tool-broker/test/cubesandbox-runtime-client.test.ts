@@ -86,11 +86,6 @@ beforeAll(async () => {
         response.end();
         return;
       }
-      if (host.startsWith("5173-cube-runtime-1.")) {
-        response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        response.end("<html>private-preview-ok</html>");
-        return;
-      }
       if (
         request.method === "GET" &&
         request.url === "/volumes/pcw-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -300,33 +295,6 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     await expect(client.removeGuestFile(instance, "/tmp/untrusted.json")).rejects.toThrow(
       "temporary guest path was invalid",
     );
-    await expect(
-      client.requestService!(instance, {
-        port: 5173,
-        method: "GET",
-        path: "/",
-        headers: { accept: "text/html" },
-        maximumResponseBytes: 64 * 1_024,
-        timeoutMs: 1_000,
-      }),
-    ).resolves.toMatchObject({
-      status: 200,
-      headers: { "content-type": "text/html; charset=utf-8" },
-      body: Buffer.from("<html>private-preview-ok</html>"),
-    });
-    expect(
-      observed.find((request) => request.path === "/" && request.headers.host?.startsWith("5173-")),
-    ).toMatchObject({
-      headers: {
-        host: "5173-cube-runtime-1.cube.test",
-        "e2b-traffic-access-token": "private-traffic-token",
-        "cube-traffic-access-token": "private-traffic-token",
-      },
-    });
-    expect(
-      observed.find((request) => request.path === "/" && request.headers.host?.startsWith("5173-"))
-        ?.headers["x-access-token"],
-    ).toBeUndefined();
     const terminal = await client.openTerminal(instance, {
       rows: 24,
       cols: 100,

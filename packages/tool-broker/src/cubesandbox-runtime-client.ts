@@ -73,22 +73,6 @@ export type CubeSandboxGuestCommandResult = Readonly<{
   exitCode: number;
 }>;
 
-export type CubeSandboxServiceRequest = Readonly<{
-  port: number;
-  method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
-  path: string;
-  headers: Readonly<Record<string, string>>;
-  body?: Uint8Array;
-  maximumResponseBytes: number;
-  timeoutMs: number;
-}>;
-
-export type CubeSandboxServiceResponse = Readonly<{
-  status: number;
-  headers: Readonly<Record<string, string>>;
-  body: Uint8Array;
-}>;
-
 export interface CubeSandboxRuntimeClient {
   checkHealth(): Promise<void>;
   ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume>;
@@ -104,10 +88,6 @@ export interface CubeSandboxRuntimeClient {
   ): Promise<CubeSandboxGuestCommandResult>;
   writeGuestFile(instance: CubeSandboxInstance, path: string, data: Uint8Array): Promise<void>;
   removeGuestFile(instance: CubeSandboxInstance, path: string): Promise<void>;
-  requestService?(
-    instance: CubeSandboxInstance,
-    input: CubeSandboxServiceRequest,
-  ): Promise<CubeSandboxServiceResponse>;
   openTerminal(
     instance: CubeSandboxInstance,
     input: Readonly<{
@@ -803,66 +783,6 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (result.exitCode !== 0) {
       throw new CubeRuntimeClientError("CubeSandbox temporary guest file could not be removed");
     }
-  }
-
-  async requestService(
-    instance: CubeSandboxInstance,
-    input: CubeSandboxServiceRequest,
-  ): Promise<CubeSandboxServiceResponse> {
-    const port = positiveInteger(input.port, 3_000, 1_024, 65_535);
-    if (port === CUBESANDBOX_ENVD_PORT) {
-      throw new TypeError("CubeSandbox preview cannot target envd");
-    }
-    if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*$/.test(input.path)) {
-      throw new TypeError("CubeSandbox preview path was invalid");
-    }
-    const requestHeaders: Record<string, string> = {};
-    for (const [name, value] of Object.entries(input.headers)) {
-      const lower = name.toLowerCase();
-      if (
-        !/^[a-z0-9!#$%&'*+.^_`|~-]+$/u.test(lower) ||
-        new Set(["host", "authorization", "cookie", "connection", "content-length"]).has(lower) ||
-        value.length > 8_192 ||
-        /[\u0000-\u001f\u007f]/u.test(value)
-      ) {
-        continue;
-      }
-      requestHeaders[lower] = value;
-    }
-    const response = await this.#dataFetch(instance, port, input.path, {
-      method: input.method,
-      headers: requestHeaders,
-      ...(input.body === undefined ? {} : { body: Buffer.from(input.body) }),
-      signal: AbortSignal.timeout(positiveInteger(input.timeoutMs, 30_000, 100, 300_000)),
-    });
-    const body = await readBoundedResponse(
-      response,
-      positiveInteger(input.maximumResponseBytes, 16 * 1_024 * 1_024, 1, 24 * 1_024 * 1_024),
-    );
-    const allowedResponseHeaders = new Set([
-      "accept-ranges",
-      "cache-control",
-      "content-encoding",
-      "content-language",
-      "content-range",
-      "content-type",
-      "etag",
-      "last-modified",
-      "location",
-    ]);
-    const headers: Record<string, string> = {};
-    for (const [name, headerValue] of response.headers.entries()) {
-      const lower = name.toLowerCase();
-      if (!allowedResponseHeaders.has(lower) || headerValue.length > 8_192) {
-        continue;
-      }
-      headers[lower] = headerValue;
-    }
-    return {
-      status: response.status,
-      headers: Object.freeze(headers),
-      body,
-    };
   }
 
   async openTerminal(
