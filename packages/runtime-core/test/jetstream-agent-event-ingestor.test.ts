@@ -1,4 +1,5 @@
 import {
+  createExecutionGrant,
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
   type EventPublishMessage,
@@ -21,11 +22,7 @@ function publication(index: number): EventPublishMessage {
     sentAt: "2026-08-25T00:00:00.000Z",
     type: "event.publish",
     payload: {
-      commandId: id(index, 2),
-      runId: id(index, 3),
-      attemptId: id(index, 4),
-      leaseId: id(index, 5),
-      fencingToken: 1,
+      executionGrant: createExecutionGrant(id(index, 5), id(index, 4), 1),
       event: {
         schemaVersion: 1,
         eventId: id(index, 6),
@@ -50,9 +47,9 @@ describe("JetStreamAgentEventIngestor", () => {
     const commitAcceptedMany = vi.fn(
       async (input: readonly EventPublishMessage[], durableCommit: AgentEventDurableCommit) => {
         const accepted = input.map((message) => ({
-          schemaVersion: 1 as const,
+          schemaVersion: 2 as const,
           tenantId: id(999, 1),
-          publications: [message],
+          events: [message.payload.event],
         }));
         await durableCommit(accepted);
         return { accepted, duplicates: [], rejected: [] };
@@ -86,7 +83,9 @@ describe("JetStreamAgentEventIngestor", () => {
       },
       publisher: { appendGroup, checkHealth: async () => undefined },
     });
-    await expect(ingestor.ingest(message)).rejects.toMatchObject({ code: "stale_fence" });
+    await expect(ingestor.ingest(message)).rejects.toMatchObject({
+      code: "stale_execution_grant",
+    });
     expect(appendGroup).not.toHaveBeenCalled();
     await ingestor.close();
   });
@@ -102,8 +101,7 @@ describe("HttpAgentEventIngestor", () => {
       type: "event.ack",
       payload: {
         sessionId: message.payload.event.sessionId,
-        leaseId: message.payload.leaseId,
-        fencingToken: message.payload.fencingToken,
+        executionGrant: message.payload.executionGrant,
         acknowledgedThroughSeq: message.payload.event.seq,
       },
     });

@@ -1,6 +1,8 @@
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+  createExecutionGrant,
+  parseExecutionGrant,
   type ToolSandboxAssignment,
   type ToolSandboxCreateRequest,
   type ToolSandboxOperationRequest,
@@ -152,9 +154,7 @@ function assignment(testRun: string, index: number): ToolSandboxAssignment {
     commandId: `cube-live-${testRun}-command-${String(index)}`,
     sessionId: `cube-live-${testRun}-session-${String(index)}`,
     turnId: `cube-live-${testRun}-turn-${String(index)}`,
-    attemptId: randomUUID(),
-    leaseId: randomUUID(),
-    fencingToken: index,
+    executionGrant: createExecutionGrant(randomUUID(), randomUUID(), index),
   };
 }
 
@@ -585,7 +585,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           providerId: "cubesandbox",
           tenantId: firstAssignment.tenantId,
           workspaceId: firstAssignment.workspaceId,
-          fencingToken: firstAssignment.fencingToken,
+          executionGeneration: parseExecutionGrant(firstAssignment.executionGrant).generation,
         });
         expect(checkpoint?.files.length).toBeGreaterThan(512);
         expect(checkpoint?.files.find((file) => file.path === "tenant-canary")).toMatchObject({
@@ -608,9 +608,11 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           sandboxId: randomUUID(),
           commandId: `cube-live-${testRun}-command-restored`,
           turnId: `cube-live-${testRun}-turn-restored`,
-          attemptId: randomUUID(),
-          leaseId: randomUUID(),
-          fencingToken: firstAssignment.fencingToken + 10,
+          executionGrant: createExecutionGrant(
+            randomUUID(),
+            randomUUID(),
+            parseExecutionGrant(firstAssignment.executionGrant).generation + 10,
+          ),
         };
         activeFirstAssignment = restoredFirstAssignment;
         first = await manager.create({
@@ -694,9 +696,11 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           sandboxId: randomUUID(),
           commandId: `cube-live-${testRun}-command-rebound`,
           turnId: `cube-live-${testRun}-turn-rebound`,
-          attemptId: randomUUID(),
-          leaseId: randomUUID(),
-          fencingToken: secondAssignment.fencingToken + 10,
+          executionGrant: createExecutionGrant(
+            randomUUID(),
+            randomUUID(),
+            parseExecutionGrant(secondAssignment.executionGrant).generation + 10,
+          ),
         };
         activeSecondAssignment = reboundAssignment;
         second = await manager.create({
@@ -728,7 +732,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         const secondRuntimeAfter = (await manager.listAssignments(reboundAssignment.sandboxId))[0];
         expect(secondRuntimeAfter?.containerId).toBe(secondRuntimeBefore?.containerId);
         expect(secondRuntimeAfter?.containerName).toBe(secondRuntimeBefore?.containerName);
-        expect(secondRuntimeAfter?.fencingToken).toBe(reboundAssignment.fencingToken);
+        expect(secondRuntimeAfter?.executionGrant).toBe(reboundAssignment.executionGrant);
 
         const controller = new AbortController();
         const cancelled = manager.execute(

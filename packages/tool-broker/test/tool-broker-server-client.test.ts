@@ -5,6 +5,7 @@ import type {
   ToolSandboxOperationRequest,
 } from "@pi-cloud/protocol";
 import {
+  createExecutionGrant,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
@@ -46,9 +47,11 @@ const assignment: ToolSandboxAssignment = {
   commandId: "command-manager-test",
   sessionId: "session-manager-test",
   turnId: "turn-manager-test",
-  attemptId: "10000000-0000-4000-8000-000000000003",
-  leaseId: "10000000-0000-4000-8000-000000000003",
-  fencingToken: 4,
+  executionGrant: createExecutionGrant(
+    "10000000-0000-4000-8000-000000000003",
+    "10000000-0000-4000-8000-000000000003",
+    4,
+  ),
 };
 const runtimeAssignment: SupervisorRuntimeAssignment = {
   containerId: "10000000-0000-4000-8000-000000000020",
@@ -60,8 +63,7 @@ const runtimeAssignment: SupervisorRuntimeAssignment = {
   workspaceId: assignment.workspaceId,
   sessionId: assignment.sessionId,
   turnId: assignment.turnId,
-  leaseId: assignment.leaseId,
-  fencingToken: assignment.fencingToken,
+  executionGrant: assignment.executionGrant,
 };
 
 const servers: ToolBrokerServer[] = [];
@@ -473,9 +475,11 @@ describe("Tool Broker authenticated RPC", () => {
       commandId: "delegated-command",
       sessionId: "delegated-session",
       turnId: "delegated-turn",
-      attemptId: "20000000-0000-4000-8000-000000000083",
-      leaseId: "20000000-0000-4000-8000-000000000084",
-      fencingToken: assignment.fencingToken + 1,
+      executionGrant: createExecutionGrant(
+        "20000000-0000-4000-8000-000000000084",
+        "20000000-0000-4000-8000-000000000083",
+        5,
+      ),
     };
     const parent = await client.create(parentRequest);
     const child = await client.create({

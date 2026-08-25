@@ -17,8 +17,8 @@ import {
 import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
 import type {
-  TurnExecutionAcknowledgement,
-  TurnExecutionLeaseManager,
+  TurnExecutionAuthority,
+  TurnExecutionGrant,
   TurnExecutionRequest,
 } from "./run-command-executor.ts";
 import { transitionCurrentRunAttempt } from "./run-attempt-state.ts";
@@ -43,7 +43,7 @@ export type TurnCancellationRequest = {
 };
 
 export type TurnCancellationLifecycle = {
-  started(acknowledgement: TurnExecutionAcknowledgement): Promise<void>;
+  started(grant: TurnExecutionGrant): Promise<void>;
 };
 
 export type TurnCancellationResult = {
@@ -119,7 +119,7 @@ export type RunCancellationExecutionResult =
 export type RunCancellationExecutorOptions = {
   database: Kysely<Database>;
   backend: TurnCancellationBackend;
-  leaseManager: TurnExecutionLeaseManager;
+  executionAuthority: TurnExecutionAuthority;
   clock?: () => Date;
   claimLeaseMs?: number;
   retryDelayMs?: number;
@@ -181,7 +181,7 @@ function parseCancellationPayload(value: Record<string, unknown>): {
   if (
     reason !== "user_request" &&
     reason !== "timeout" &&
-    reason !== "lease_revoked" &&
+    reason !== "execution_grant_revoked" &&
     reason !== "shutdown"
   ) {
     throw new RunCancellationExecutorInvariantError("Cancellation command reason is invalid");
@@ -212,7 +212,7 @@ function expectOne(changedRows: bigint, description: string): void {
 export class RunCancellationExecutor {
   readonly #database: Kysely<Database>;
   readonly #backend: TurnCancellationBackend;
-  readonly #leaseManager: TurnExecutionLeaseManager;
+  readonly #executionAuthority: TurnExecutionAuthority;
   readonly #clock: () => Date;
   readonly #claimLeaseMs: number;
   readonly #retryDelayMs: number;
@@ -223,7 +223,7 @@ export class RunCancellationExecutor {
   constructor(options: RunCancellationExecutorOptions) {
     this.#database = options.database;
     this.#backend = options.backend;
-    this.#leaseManager = options.leaseManager;
+    this.#executionAuthority = options.executionAuthority;
     this.#clock = options.clock ?? (() => new Date());
     this.#claimLeaseMs = positiveInteger(
       options.claimLeaseMs ?? DEFAULT_CLAIM_LEASE_MS,
@@ -258,15 +258,14 @@ export class RunCancellationExecutor {
     if (claim === undefined) return { status: "idle" };
 
     let started = false;
-    let acknowledgement: TurnExecutionAcknowledgement | undefined;
+    let acknowledgement: TurnExecutionGrant | undefined;
     let startedPromise: Promise<void> | undefined;
     let startFailure: unknown;
     const lifecycle: TurnCancellationLifecycle = {
       started: (candidate) => {
         if (
           startedPromise !== undefined &&
-          (candidate.leaseId !== acknowledgement?.leaseId ||
-            candidate.fencingToken !== acknowledgement.fencingToken)
+          candidate.executionGrant !== acknowledgement?.executionGrant
         ) {
           return Promise.reject(
             new RunCancellationExecutorInvariantError(
@@ -548,7 +547,7 @@ export class RunCancellationExecutor {
 
   async #markStarted(
     claim: ClaimedCancellation,
-    acknowledgement: TurnExecutionAcknowledgement,
+    acknowledgement: TurnExecutionGrant,
   ): Promise<void> {
     const now = safeDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
@@ -583,7 +582,7 @@ export class RunCancellationExecutor {
           false,
         );
       }
-      await this.#leaseManager.assertCurrent(
+      await this.#executionAuthority.assertCurrent(
         transaction,
         claim.request.target,
         acknowledgement,
@@ -653,7 +652,7 @@ export class RunCancellationExecutor {
 
   async #complete(
     claim: ClaimedCancellation,
-    acknowledgement: TurnExecutionAcknowledgement,
+    acknowledgement: TurnExecutionGrant,
     result: TurnCancellationResult,
   ): Promise<void> {
     const now = safeDate(this.#clock);
@@ -691,7 +690,7 @@ export class RunCancellationExecutor {
         );
       }
 
-      await this.#leaseManager.assertCurrent(
+      await this.#executionAuthority.assertCurrent(
         transaction,
         claim.request.target,
         acknowledgement,
@@ -795,15 +794,13 @@ export class RunCancellationExecutor {
         turnId: claim.request.target.turnId,
         commandId: claim.request.target.commandId,
         agentId: "root",
-        leaseId: acknowledgement.leaseId,
-        fencingToken: acknowledgement.fencingToken,
         body: terminalBody,
         now,
         eventId: terminalEventId,
         ...(preparedProjection === undefined ? {} : { preparedProjection }),
       });
 
-      await this.#leaseManager.releaseCurrent(
+      await this.#executionAuthority.releaseCurrent(
         transaction,
         claim.request.target,
         acknowledgement,

@@ -377,7 +377,7 @@ describe.sequential("versioned Workspace service", () => {
       workspaceId: IDS.workspace,
       sourceSessionId: IDS.session,
       bindingSha256: "a".repeat(64),
-      fencingToken: 3,
+      executionGeneration: 3,
       imageRevision: "development",
       environmentSpecSha256: "b".repeat(64),
       gitBaselineCommit: "c".repeat(40),

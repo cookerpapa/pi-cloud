@@ -4,6 +4,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
   type ExecuteTurnCommandMessage,
   modelSamplingHeaders,
+  parseExecutionGrant,
   type ToolSandboxAssignment,
   type ToolSandboxCaptureResponse,
   type ToolSandboxCreateRequest,
@@ -130,9 +131,7 @@ function assignment(
     commandId: command.payload.commandId,
     sessionId: command.payload.sessionId,
     turnId: command.payload.turnId,
-    attemptId: command.payload.attemptId,
-    leaseId: command.payload.leaseId,
-    fencingToken: command.payload.fencingToken,
+    executionGrant: command.payload.executionGrant,
   };
 }
 
@@ -230,7 +229,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : { parent: command.payload.traceContext }),
         attributes: {
           "pi_cloud.run.id": command.payload.runId,
-          "pi_cloud.attempt.id": command.payload.attemptId,
+          "pi_cloud.execution.id": parseExecutionGrant(command.payload.executionGrant).executionId,
           "pi_cloud.session.id": command.payload.sessionId,
         },
         run: () => this.#run(command, publishEvent, signal, slot.resolve),
@@ -623,7 +622,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 this.#checkpointStore!.saveToolOutput!(command, output),
             }),
         sandboxContinuity: {
-          activationId: activeSandbox?.activationId ?? command.payload.attemptId,
+          activationId:
+            activeSandbox?.activationId ??
+            parseExecutionGrant(command.payload.executionGrant).executionId,
           continuity: activeSandbox?.continuity ?? "cold_restore",
           environmentSha256: cloudTurn.environmentSha256,
           workspaceBindingSha256: cloudTurn.workspaceBindingSha256,

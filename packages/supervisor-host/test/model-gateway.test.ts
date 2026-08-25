@@ -9,9 +9,11 @@ import {
 } from "@pi-cloud/control-plane";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import {
+  createExecutionGrant,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   modelSamplingHeaders,
+  parseExecutionGrant,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
@@ -239,10 +241,8 @@ beforeAll(async () => {
       sessionId: IDS.session,
       runId,
       turnId: IDS.turn,
-      attemptId,
       agentId: "root",
-      leaseId: IDS.lease,
-      fencingToken: 1,
+      executionGrant: createExecutionGrant(IDS.lease, attemptId, 1),
       nextEventSeq: 1,
       input: { kind: "prompt", text: "Repair it" },
       sandboxRetention: "ephemeral",
@@ -478,7 +478,7 @@ describe.sequential("tenant model gateway", () => {
           "state",
         ])
         .where("run_id", "=", command.payload.runId)
-        .where("attempt_id", "=", command.payload.attemptId)
+        .where("attempt_id", "=", parseExecutionGrant(command.payload.executionGrant).executionId)
         .where("step_context_sequence", "=", stepSequence)
         .orderBy("sampling_attempt", "asc")
         .execute(),

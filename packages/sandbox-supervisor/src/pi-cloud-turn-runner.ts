@@ -195,7 +195,7 @@ function cancellationSignal(value: unknown): PiCancellationSignal {
     value.kind !== "pi-cloud.turn-cancellation" ||
     (value.reason !== "user_request" &&
       value.reason !== "timeout" &&
-      value.reason !== "lease_revoked" &&
+      value.reason !== "execution_grant_revoked" &&
       value.reason !== "shutdown") ||
     !Number.isSafeInteger(value.gracePeriodMs) ||
     (value.gracePeriodMs as number) < 0
@@ -339,11 +339,7 @@ export class PiCloudTurnRunner {
           sentAt: validDate(this.#clock).toISOString(),
           type: "event.publish",
           payload: {
-            leaseId: command.payload.leaseId,
-            fencingToken: command.payload.fencingToken,
-            commandId: command.payload.commandId,
-            runId: command.payload.runId,
-            attemptId: command.payload.attemptId,
+            executionGrant: command.payload.executionGrant,
             event,
           },
         });

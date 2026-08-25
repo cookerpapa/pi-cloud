@@ -328,8 +328,6 @@ describe("control-plane public API schemas", () => {
             claimOwnerId: "control-plane-1",
             claimExpiresAt: "2026-07-19T00:01:00.000Z",
             sandboxId: "50000000-0000-4000-8000-000000000012",
-            leaseId: "50000000-0000-4000-8000-000000000013",
-            fencingToken: 1,
             claimedAt: createdAt,
             provisioningAt: createdAt,
             runningAt: createdAt,

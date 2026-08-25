@@ -22,9 +22,9 @@ no model credential.
 ### Tenant and stale-Worker isolation
 
 Every product read/write includes tenant ownership. Tool and Session mutation
-boundaries additionally validate current Run, Attempt, claim lease and fencing
-token. A paused or partitioned old Worker cannot resume useful effects after a
-new Attempt takes ownership.
+boundaries additionally validate the current, unexpired opaque ExecutionGrant.
+A paused or partitioned old Worker cannot resume useful effects after the
+authority replaces or revokes its grant.
 
 ### Durable authorities
 

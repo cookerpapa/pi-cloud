@@ -12,7 +12,7 @@ describe("trusted project instruction extraction", () => {
       workspaceId: "workspace-project-instructions-test",
       sourceSessionId: "session-project-instructions-test",
       bindingSha256: "a".repeat(64),
-      fencingToken: 1,
+      executionGeneration: 1,
       imageRevision: "test",
       environmentSpecSha256: "b".repeat(64),
       gitBaselineCommit: "d".repeat(40),

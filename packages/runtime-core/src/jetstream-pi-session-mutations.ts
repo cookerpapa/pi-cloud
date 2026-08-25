@@ -1,4 +1,5 @@
 import type { Database } from "@pi-cloud/database";
+import { parseExecutionGrant } from "@pi-cloud/protocol";
 import {
   PostgresPiSessionStorage,
   PostgresRunExecutionAuthority,
@@ -26,9 +27,7 @@ export type JetStreamPiSessionMutationScope = Readonly<{
   sessionId: string;
   turnId: string;
   runId: string;
-  attemptId: string;
-  claimOwnerId: string;
-  fencingToken: number;
+  executionGrant: string;
 }>;
 
 export type JetStreamPiSessionMutationEnvelope = Readonly<{
@@ -117,14 +116,10 @@ export function parseJetStreamPiSessionMutationEnvelope(
   const text = typeof value === "string" ? value : Buffer.from(value).toString("utf8");
   const candidate = object(JSON.parse(text) as unknown, "Pi Session mutation envelope");
   const scope = object(candidate.scope, "Pi Session mutation scope");
-  const fencingToken = Number(scope.fencingToken);
+  const executionGrant = string(scope.executionGrant, "ExecutionGrant", 256);
+  parseExecutionGrant(executionGrant);
   const occurredAt = string(candidate.occurredAt, "Pi Session mutation timestamp", 64);
-  if (
-    candidate.schemaVersion !== 1 ||
-    !Number.isSafeInteger(fencingToken) ||
-    fencingToken < 1 ||
-    Number.isNaN(new Date(occurredAt).valueOf())
-  ) {
+  if (candidate.schemaVersion !== 1 || Number.isNaN(new Date(occurredAt).valueOf())) {
     throw new TypeError("Pi Session mutation envelope is invalid");
   }
   return {
@@ -135,9 +130,7 @@ export function parseJetStreamPiSessionMutationEnvelope(
       sessionId: string(scope.sessionId, "Session ID", 512),
       turnId: uuid(scope.turnId, "Turn ID"),
       runId: uuid(scope.runId, "Run ID"),
-      attemptId: uuid(scope.attemptId, "RunAttempt ID"),
-      claimOwnerId: string(scope.claimOwnerId, "claim owner", 256),
-      fencingToken,
+      executionGrant,
     },
     operation: parseOperation(candidate.operation),
     occurredAt,
@@ -290,9 +283,8 @@ export class JetStreamPiSessionMutationProjector {
       tenantId: envelope.scope.tenantId,
       sessionId: envelope.scope.sessionId,
       runId: envelope.scope.runId,
-      attemptId: envelope.scope.attemptId,
-      claimOwnerId: envelope.scope.claimOwnerId,
-      fencingToken: envelope.scope.fencingToken,
+      turnId: envelope.scope.turnId,
+      executionGrant: envelope.scope.executionGrant,
     });
     const storage = new PostgresPiSessionStorage({
       database: this.#database,
@@ -329,7 +321,7 @@ export class JetStreamPiSessionMutationProjector {
         tenant_id: envelope.scope.tenantId,
         session_id: envelope.scope.sessionId,
         run_id: envelope.scope.runId,
-        attempt_id: envelope.scope.attemptId,
+        attempt_id: parseExecutionGrant(envelope.scope.executionGrant).executionId,
         state,
         result: result as Record<string, unknown> | null,
         error_code: error?.code ?? null,

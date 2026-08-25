@@ -1,5 +1,6 @@
 import type { Database } from "@pi-cloud/database";
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
+import { parseExecutionGrant } from "@pi-cloud/protocol";
 import type {
   RunAttemptExecutionPhase,
   RunAttemptPhaseObserver,
@@ -38,15 +39,15 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
     phase: RunAttemptExecutionPhase,
   ): Promise<void> {
     const now = validDate(this.#clock);
+    const execution = parseExecutionGrant(command.payload.executionGrant);
     await this.#database.transaction().execute(async (transaction) => {
       await transitionCurrentRunAttempt(
         transaction,
         {
           tenantId: command.payload.tenantId,
           runId: command.payload.runId,
-          attemptId: command.payload.attemptId,
-          leaseId: command.payload.leaseId,
-          fencingToken: command.payload.fencingToken,
+          attemptId: execution.executionId,
+          executionGrant: command.payload.executionGrant,
         },
         {
           runState: phase,
@@ -62,15 +63,15 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
 
   async checkpointCommitted(command: ExecuteTurnCommandMessage, revision: string): Promise<void> {
     const now = validDate(this.#clock);
+    const execution = parseExecutionGrant(command.payload.executionGrant);
     await this.#database.transaction().execute(async (transaction) => {
       await transitionCurrentRunAttempt(
         transaction,
         {
           tenantId: command.payload.tenantId,
           runId: command.payload.runId,
-          attemptId: command.payload.attemptId,
-          leaseId: command.payload.leaseId,
-          fencingToken: command.payload.fencingToken,
+          attemptId: execution.executionId,
+          executionGrant: command.payload.executionGrant,
         },
         {
           runState: "checkpointing",

@@ -607,7 +607,7 @@ export class ReplicatedToolBrokerClient {
     );
     const unique = new Map<string, SupervisorRuntimeAssignment>();
     for (const assignment of assignments.flat()) {
-      unique.set(`${assignment.containerId}\0${assignment.fencingToken}`, assignment);
+      unique.set(`${assignment.containerId}\0${assignment.executionGrant}`, assignment);
     }
     return [...unique.values()];
   }
@@ -664,9 +664,7 @@ export class ReplicatedToolBrokerClient {
       assignment.tenantId,
       assignment.workspaceId,
       assignment.sessionId,
-      assignment.attemptId,
-      assignment.leaseId,
-      String(assignment.fencingToken),
+      assignment.executionGrant,
     ].join("\0");
   }
 

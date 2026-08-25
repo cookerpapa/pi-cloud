@@ -33,7 +33,7 @@ Browser ──REST/SSE──> Control Plane ──> PostgreSQL Run queue
                                       CubeSandbox KVM
                                 elastic Volume / cloud development machine state
 
-Worker events ──> batched Run/Fence check ──> JetStream R=3 ──> committed SSE fanout
+Worker events ──> batched ExecutionGrant check ──> JetStream R=3 ──> committed SSE fanout
 complete Pi entries ──> Session Mutation JetStream ──> PostgreSQL
 ```
 
@@ -44,8 +44,9 @@ There are three durable authorities:
 - a persistent Cube Volume owns elastic Workspace bytes; Cube pause state owns
   a cloud development machine's guest root, memory and processes on its compute node.
 
-Any healthy Worker may run a Session's next message. RunAttempt leases and
-fencing tokens reject stale effects; no Session is permanently assigned to a
+Any healthy Worker may run a Session's next message. PostgreSQL atomically
+issues one opaque, never-reused `ExecutionGrant`; every effect boundary rejects
+an expired or replaced grant, so no Session is permanently assigned to a
 process. See [Architecture](docs/ARCHITECTURE.md),
 [Run lifecycle](docs/RUN_LIFECYCLE.md) and
 [stream durability](docs/STREAM_DURABILITY.md) for the detailed contracts.

@@ -69,9 +69,7 @@ export type CloudAttemptContext = Readonly<{
   identity: Readonly<{
     commandId: string;
     idempotencyKey: string;
-    attemptId: string;
-    leaseId: string;
-    fencingToken: number;
+    executionGrantSha256: string;
     supervisorId: string;
     bootId: string;
     sandboxId: string;
@@ -189,7 +187,7 @@ export function createCloudTurnContext(
   });
 }
 
-/** Captures the current Worker/lease/fence ownership beneath one Turn. */
+/** Captures the current Worker and opaque execution authority beneath one Turn. */
 export function createCloudAttemptContext(input: {
   command: ExecuteTurnCommandMessage;
   runtimeIdentity: SandboxRuntimeIdentity;
@@ -202,9 +200,7 @@ export function createCloudAttemptContext(input: {
     identity: {
       commandId: payload.commandId,
       idempotencyKey: payload.idempotencyKey,
-      attemptId: payload.attemptId,
-      leaseId: payload.leaseId,
-      fencingToken: payload.fencingToken,
+      executionGrantSha256: sha256(payload.executionGrant),
       supervisorId: input.runtimeIdentity.supervisorId,
       bootId: input.runtimeIdentity.bootId,
       sandboxId: input.runtimeIdentity.sandboxId,

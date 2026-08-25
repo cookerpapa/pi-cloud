@@ -16,10 +16,10 @@ import { createHash } from "node:crypto";
 import type { Kysely, Transaction } from "kysely";
 import type { SandboxRetirementResult } from "./assignment-reconciler.ts";
 import {
-  SessionLeaseCoordinator,
-  SessionLeaseCoordinatorError,
+  ExecutionGrantCoordinator,
+  ExecutionGrantCoordinatorError,
   type SupervisorConnectionGuard,
-} from "@pi-cloud/runtime-core/session-lease-coordinator";
+} from "@pi-cloud/runtime-core/execution-grant-coordinator";
 
 const DEFAULT_SUPERVISOR_VERSION = "0.1.0";
 const DEFAULT_PI_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
@@ -619,7 +619,7 @@ export class SupervisorConnectionManager {
         payload: {
           acknowledgedMessageId: parsed.messageId,
           connectionId: parsed.payload.connectionId,
-          leaseRenewals: [],
+          executionGrantRenewals: [],
         },
       });
       if (acknowledgement.type !== "supervisor.heartbeat.ack") {
@@ -631,11 +631,14 @@ export class SupervisorConnectionManager {
       }
       return acknowledgement;
     }
-    const coordinator = await this.leaseCoordinator(parsed.payload.connectionId, authority);
+    const coordinator = await this.executionGrantCoordinator(
+      parsed.payload.connectionId,
+      authority,
+    );
     try {
       return await coordinator.renewFromHeartbeat(parsed);
     } catch (error: unknown) {
-      if (error instanceof SessionLeaseCoordinatorError) {
+      if (error instanceof ExecutionGrantCoordinatorError) {
         throw new SupervisorConnectionManagerError(
           error.code,
           "Supervisor heartbeat was rejected",
@@ -653,22 +656,22 @@ export class SupervisorConnectionManager {
     await this.#currentConnection(connectionId, authority);
   }
 
-  async leaseCoordinator(
+  async executionGrantCoordinator(
     connectionId: string,
     authority: SupervisorTransportAuthority,
-  ): Promise<SessionLeaseCoordinator> {
+  ): Promise<ExecutionGrantCoordinator> {
     const connection = await this.#currentConnection(connectionId, authority);
     const guard: SupervisorConnectionGuard = {
       controlPlaneInstanceId: this.#controlPlaneInstanceId,
       transportId: authority.transportId,
       heartbeatTimeoutMs: connection.heartbeat_timeout_ms,
     };
-    return new SessionLeaseCoordinator({
+    return new ExecutionGrantCoordinator({
       database: this.#database,
       sandboxId: authority.sandboxId,
       clock: this.#clock,
       idGenerator: this.#idGenerator,
-      leaseDurationMs: this.#leaseDurationMs,
+      grantDurationMs: this.#leaseDurationMs,
       heartbeatConnectionId: connectionId,
       connectionGuard: guard,
     });

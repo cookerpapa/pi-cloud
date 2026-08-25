@@ -5,6 +5,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
+  createExecutionGrant,
   parseToolBrokerRequest,
   parseToolBrokerResponse,
   parseToolSandboxOperationRequest,
@@ -34,9 +35,11 @@ const assignment = {
   commandId: "command-tool-protocol",
   sessionId: "session-tool-protocol",
   turnId: "turn-tool-protocol",
-  attemptId: "10000000-0000-4000-8000-000000000003",
-  leaseId: "10000000-0000-4000-8000-000000000003",
-  fencingToken: 9,
+  executionGrant: createExecutionGrant(
+    "10000000-0000-4000-8000-000000000003",
+    "10000000-0000-4000-8000-000000000003",
+    9,
+  ),
 } as const;
 
 describe("Tool Sandbox protocol", () => {

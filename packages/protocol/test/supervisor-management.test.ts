@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PiCloudInternalProtocolError,
+  createExecutionGrant,
   parseSupervisorBootProvisionRequest,
   parseSupervisorManagementRequest,
   parseSupervisorManagementResponse,
@@ -61,8 +62,7 @@ describe("Supervisor internal management protocol", () => {
       workspaceId: IDS.request,
       sessionId: IDS.request,
       turnId: IDS.boot,
-      leaseId: IDS.lease,
-      fencingToken: 7,
+      executionGrant: createExecutionGrant(IDS.lease, IDS.credential, 7),
     };
     expect(
       parseSupervisorManagementRequest({

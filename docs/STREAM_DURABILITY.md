@@ -5,7 +5,7 @@ state. The following symbols make the boundary explicit:
 
 - `R` — a Worker produced a sequenced raw event;
 - `J` — R=3 JetStream durably acknowledged that event inside a batched,
-  transaction-scoped authority/Fence boundary;
+  transaction-scoped ExecutionGrant authority boundary;
 - `V` — an authenticated SSE client observed the event;
 - `P` — Pi SessionStorage committed the complete message or Tool result in
   PostgreSQL;

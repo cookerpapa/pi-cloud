@@ -154,6 +154,8 @@ export {
   downExclusiveMachineWorkingDirectories,
   upDevelopmentEnvironmentRecoveryIdentity,
   downDevelopmentEnvironmentRecoveryIdentity,
+  upExecutionGrants,
+  downExecutionGrants,
 } from "./migrations/index.ts";
 
 export {

@@ -6,6 +6,7 @@ import type {
   SteerTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import {
+  createExecutionGrant,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
@@ -32,8 +33,8 @@ const IDS = {
 function command(
   overrides: {
     commandId?: string;
-    leaseId?: string;
-    fencingToken?: number;
+    grantId?: string;
+    generation?: number;
     sessionId?: string;
   } = {},
 ): ExecuteTurnCommandMessage {
@@ -51,10 +52,12 @@ function command(
       sessionId: overrides.sessionId ?? "session-1",
       runId: "40000000-0000-4000-8000-000000000001",
       turnId: "turn-1",
-      attemptId: "50000000-0000-4000-8000-000000000001",
       agentId: "root",
-      leaseId: overrides.leaseId ?? IDS.lease,
-      fencingToken: overrides.fencingToken ?? 1,
+      executionGrant: createExecutionGrant(
+        overrides.grantId ?? IDS.lease,
+        "50000000-0000-4000-8000-000000000001",
+        overrides.generation ?? 1,
+      ),
       nextEventSeq: 1,
       input: { kind: "prompt", text: "hello" },
       sandboxRetention: "ephemeral",
@@ -99,10 +102,8 @@ function cancellation(target: ExecuteTurnCommandMessage = command()): CancelTurn
       sessionId: target.payload.sessionId,
       runId: target.payload.runId,
       turnId: target.payload.turnId,
-      attemptId: target.payload.attemptId,
       agentId: target.payload.agentId,
-      leaseId: target.payload.leaseId,
-      fencingToken: target.payload.fencingToken,
+      executionGrant: target.payload.executionGrant,
       reason: "user_request",
       gracePeriodMs: 50,
     },
@@ -125,10 +126,8 @@ function steer(target: ExecuteTurnCommandMessage = command()): SteerTurnCommandM
       sessionId: target.payload.sessionId,
       runId: target.payload.runId,
       turnId: target.payload.turnId,
-      attemptId: target.payload.attemptId,
       agentId: target.payload.agentId,
-      leaseId: target.payload.leaseId,
-      fencingToken: target.payload.fencingToken,
+      executionGrant: target.payload.executionGrant,
       text: "Inspect the boundary condition first.",
     },
   };
@@ -153,7 +152,7 @@ describe("AgentRunSupervisor", () => {
     const supervisor = new AgentRunSupervisor({ runner });
     const prepared = supervisor.prepare(command(), rejectUnexpectedEvent);
 
-    expect(prepared.ack.payload).toMatchObject({ status: "accepted", fencingToken: 1 });
+    expect(prepared.ack.payload).toMatchObject({ status: "accepted" });
     expect(runner.calls).toHaveLength(0);
     expect(supervisor.activeSessionCount).toBe(1);
 
@@ -189,19 +188,19 @@ describe("AgentRunSupervisor", () => {
     });
   });
 
-  it("retains the high-water fence after a pre-start release", () => {
+  it("retains the high-water generation after a pre-start release", () => {
     const runner = new RecordingRunner();
     const supervisor = new AgentRunSupervisor({ runner });
     const current = supervisor.prepare(
-      command({ leaseId: IDS.lease2, fencingToken: 2 }),
+      command({ grantId: IDS.lease2, generation: 2 }),
       rejectUnexpectedEvent,
     );
     current.releaseBeforeStart();
 
-    const stale = supervisor.prepare(command({ fencingToken: 1 }), rejectUnexpectedEvent);
+    const stale = supervisor.prepare(command({ generation: 1 }), rejectUnexpectedEvent);
     expect(stale.ack.payload).toMatchObject({
       status: "rejected",
-      code: "stale_fence",
+      code: "stale_execution_grant",
       retryable: false,
     });
     expect(runner.calls).toHaveLength(0);
@@ -214,7 +213,7 @@ describe("AgentRunSupervisor", () => {
     const overflow = supervisor.prepare(
       command({
         commandId: IDS.command2,
-        leaseId: IDS.lease2,
+        grantId: IDS.lease2,
         sessionId: "session-2",
       }),
       rejectUnexpectedEvent,
@@ -227,7 +226,7 @@ describe("AgentRunSupervisor", () => {
     });
   });
 
-  it("rejects runner events with a mismatched fence", async () => {
+  it("rejects runner events with a mismatched ExecutionGrant", async () => {
     const badRunner: SupervisorTurnRunner = {
       async run(value, publishEvent) {
         const event = {
@@ -236,11 +235,11 @@ describe("AgentRunSupervisor", () => {
           sentAt: "2026-07-18T08:00:00.000Z",
           type: "event.publish",
           payload: {
-            leaseId: value.payload.leaseId,
-            fencingToken: value.payload.fencingToken + 1,
-            commandId: value.payload.commandId,
-            runId: value.payload.runId,
-            attemptId: value.payload.attemptId,
+            executionGrant: createExecutionGrant(
+              IDS.lease2,
+              "50000000-0000-4000-8000-000000000001",
+              2,
+            ),
             event: {
               schemaVersion: 1,
               eventId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -273,11 +272,7 @@ describe("AgentRunSupervisor", () => {
           sentAt: "2026-07-18T08:00:00.000Z",
           type: "event.publish",
           payload: {
-            leaseId: value.payload.leaseId,
-            fencingToken: value.payload.fencingToken,
-            commandId: value.payload.commandId,
-            runId: value.payload.runId,
-            attemptId: value.payload.attemptId,
+            executionGrant: value.payload.executionGrant,
             event: {
               schemaVersion: 1,
               eventId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -302,8 +297,7 @@ describe("AgentRunSupervisor", () => {
       type: "event.ack",
       payload: {
         sessionId: message.payload.event.sessionId,
-        leaseId: message.payload.leaseId,
-        fencingToken: message.payload.fencingToken,
+        executionGrant: message.payload.executionGrant,
         acknowledgedThroughSeq: 2,
       },
     }));
@@ -389,7 +383,7 @@ describe("AgentRunSupervisor", () => {
           signal.addEventListener(
             "abort",
             () => {
-              const reason = signal.reason as { reason: "lease_revoked" };
+              const reason = signal.reason as { reason: "execution_grant_revoked" };
               reject(new PiTurnCancelledError(reason.reason, false));
             },
             { once: true },
@@ -412,8 +406,7 @@ describe("AgentRunSupervisor", () => {
         sessionId: "session-1",
         turnId: "turn-1",
         state: "running",
-        leaseId: IDS.lease,
-        fencingToken: 1,
+        executionGrant: command().payload.executionGrant,
         lastProducedSeq: 0,
         lastAcknowledgedSeq: 0,
       },
@@ -427,11 +420,10 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
-          leaseRenewals: [
+          executionGrantRenewals: [
             {
               sessionId: "session-1",
-              leaseId: IDS.lease,
-              fencingToken: 1,
+              executionGrant: command().payload.executionGrant,
               validUntil: "2026-07-18T08:01:00.000Z",
             },
           ],
@@ -443,8 +435,8 @@ describe("AgentRunSupervisor", () => {
       revokedSessionIds: [],
     });
 
-    prepared.revokeLease();
-    await expect(execution).rejects.toMatchObject({ reason: "lease_revoked" });
+    prepared.revokeGrant();
+    await expect(execution).rejects.toMatchObject({ reason: "execution_grant_revoked" });
     expect(supervisor.activeSessionCount).toBe(0);
   });
 
@@ -455,7 +447,7 @@ describe("AgentRunSupervisor", () => {
           signal.addEventListener(
             "abort",
             () => {
-              const reason = signal.reason as { reason: "lease_revoked" };
+              const reason = signal.reason as { reason: "execution_grant_revoked" };
               reject(new PiTurnCancelledError(reason.reason, false));
             },
             { once: true },
@@ -472,8 +464,8 @@ describe("AgentRunSupervisor", () => {
     const second = supervisor.prepare(
       command({
         commandId: IDS.command2,
-        leaseId: IDS.lease2,
-        fencingToken: 2,
+        grantId: IDS.lease2,
+        generation: 2,
         sessionId: "session-2",
       }),
       rejectUnexpectedEvent,
@@ -499,10 +491,9 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
-          leaseRenewals: heartbeat.payload.sessions.map((value) => ({
+          executionGrantRenewals: heartbeat.payload.sessions.map((value) => ({
             sessionId: value.sessionId,
-            leaseId: value.leaseId,
-            fencingToken: value.fencingToken,
+            executionGrant: value.executionGrant,
             validUntil: "2026-07-18T08:01:00.000Z",
           })),
         },
@@ -513,8 +504,8 @@ describe("AgentRunSupervisor", () => {
       revokedSessionIds: [],
     });
 
-    first.revokeLease();
-    second.revokeLease();
+    first.revokeGrant();
+    second.revokeGrant();
     await Promise.all(executions.map((execution) => expect(execution).rejects.toBeDefined()));
     expect(supervisor.activeSessionCount).toBe(0);
   });
@@ -528,7 +519,7 @@ describe("AgentRunSupervisor", () => {
           signal.addEventListener(
             "abort",
             () => {
-              const reason = signal.reason as { reason: "lease_revoked" };
+              const reason = signal.reason as { reason: "execution_grant_revoked" };
               reject(new PiTurnCancelledError(reason.reason, false));
             },
             { once: true },
@@ -555,7 +546,7 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
-          leaseRenewals: [],
+          executionGrantRenewals: [],
         },
       }),
     ).toEqual({
@@ -563,8 +554,11 @@ describe("AgentRunSupervisor", () => {
       revokedAssignments: 1,
       revokedSessionIds: ["session-1"],
     });
-    expect(observedSignal?.reason).toMatchObject({ reason: "lease_revoked", gracePeriodMs: 0 });
-    await expect(execution).rejects.toMatchObject({ reason: "lease_revoked" });
+    expect(observedSignal?.reason).toMatchObject({
+      reason: "execution_grant_revoked",
+      gracePeriodMs: 0,
+    });
+    await expect(execution).rejects.toMatchObject({ reason: "execution_grant_revoked" });
     expect(supervisor.activeSessionCount).toBe(0);
   });
 
@@ -585,10 +579,10 @@ describe("AgentRunSupervisor", () => {
     const execution = prepared.run();
     void execution.catch(() => undefined);
 
-    prepared.revokeLease();
+    prepared.revokeGrant();
     releaseRunner?.();
     await expect(execution).rejects.toMatchObject({
-      code: "lease_revocation_not_confirmed",
+      code: "execution_grant_revocation_not_confirmed",
     });
     expect(supervisor.activeSessionCount).toBe(0);
   });
@@ -609,7 +603,7 @@ describe("AgentRunSupervisor", () => {
           }
           abortObserved = true;
           await teardownGate;
-          throw new PiTurnCancelledError("lease_revoked", false);
+          throw new PiTurnCancelledError("execution_grant_revoked", false);
         },
       },
     });
@@ -632,7 +626,7 @@ describe("AgentRunSupervisor", () => {
 
     finishTeardown?.();
     await settlement;
-    await expect(execution).rejects.toMatchObject({ reason: "lease_revoked" });
+    await expect(execution).rejects.toMatchObject({ reason: "execution_grant_revoked" });
     expect(settled).toBe(true);
     expect(supervisor.activeSessionCount).toBe(0);
   });

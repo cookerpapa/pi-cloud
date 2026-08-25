@@ -52,8 +52,8 @@ result is `UNKNOWN`.
 ## Events and terminal commit
 
 Pi text fragments are coalesced for 100 ms or 4 KiB. Concurrent Workers submit
-their short-lived Run/Attempt/Lease/Fence capability to Event Ingest; it checks
-up to 256 authorities in one set query and publishes valid Session Subjects to
+their opaque ExecutionGrant to Event Ingest; it checks up to 256 grants in one
+set query and publishes valid Session Subjects to
 R=3 JetStream in parallel. Tool arguments and Tool results enter this stream
 only as complete Items. Each event's PubAck is the visibility boundary.
 

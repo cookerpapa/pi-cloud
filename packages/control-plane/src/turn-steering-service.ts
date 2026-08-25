@@ -194,9 +194,12 @@ export class TurnSteeringService {
       }
       const code =
         error instanceof TurnSteerBackendError &&
-        ["invalid_state", "stale_fence", "stale_attempt", "steer_target_unavailable"].includes(
-          error.code,
-        )
+        [
+          "invalid_state",
+          "stale_execution_grant",
+          "stale_attempt",
+          "steer_target_unavailable",
+        ].includes(error.code)
           ? "conflict"
           : "steer_transport_unavailable";
       await this.#markFailed(stored.commandId, error).catch(() => undefined);
@@ -337,7 +340,7 @@ export class TurnSteeringService {
           .onRef("attempt.run_id", "=", "run.id")
           .onRef("attempt.id", "=", "run.current_attempt_id"),
       )
-      .innerJoin("session_leases as lease", "lease.session_id", "session_row.id")
+      .innerJoin("execution_grants as lease", "lease.session_id", "session_row.id")
       .select([
         "turn.state as turnState",
         "session_row.state as sessionState",

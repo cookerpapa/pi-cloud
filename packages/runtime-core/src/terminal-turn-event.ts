@@ -20,8 +20,6 @@ export type CommitTerminalTurnEventInput = {
   turnId: string;
   commandId: string;
   agentId: string;
-  leaseId: string;
-  fencingToken: number;
   body: TerminalEventBody;
   now: Date;
   eventId: string;
@@ -156,24 +154,9 @@ export async function commitTerminalTurnEvent(
       aggregate_id: input.eventId,
       topic: SESSION_TERMINAL_EVENT_OUTBOX_TOPIC,
       payload: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         tenantId: input.tenantId,
-        publications: [
-          {
-            protocolVersion: 1,
-            messageId: input.eventId,
-            sentAt: input.now.toISOString(),
-            type: "event.publish",
-            payload: {
-              leaseId: input.leaseId,
-              fencingToken: input.fencingToken,
-              commandId: input.commandId,
-              runId: execution.runId,
-              attemptId: execution.attemptId,
-              event,
-            },
-          },
-        ],
+        events: [event],
       },
       attempts: 0,
       available_at: input.now,

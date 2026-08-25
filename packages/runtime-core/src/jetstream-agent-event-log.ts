@@ -46,7 +46,9 @@ const MAXIMUM_QUEUED_EVENTS = 65_536;
 type LiveSubscription = ReturnType<PiCloudJetStream["connection"]["subscribe"]>;
 
 function encodeEnvelope(envelope: AcceptedAgentEventEnvelope): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(envelope));
+  return new TextEncoder().encode(
+    JSON.stringify({ schemaVersion: 2, tenantId: envelope.tenantId, events: envelope.events }),
+  );
 }
 
 function acknowledgement(message: EventPublishMessage): EventAckMessage {
@@ -57,8 +59,7 @@ function acknowledgement(message: EventPublishMessage): EventAckMessage {
     type: "event.ack",
     payload: {
       sessionId: message.payload.event.sessionId,
-      leaseId: message.payload.leaseId,
-      fencingToken: message.payload.fencingToken,
+      executionGrant: message.payload.executionGrant,
       acknowledgedThroughSeq: message.payload.event.seq,
     },
   });
@@ -74,12 +75,12 @@ export class JetStreamAcceptedAgentEventPublisher {
   }
 
   async append(envelope: AcceptedAgentEventEnvelope): Promise<void> {
-    const message = envelope.publications[0]!;
+    const event = envelope.events[0]!;
     await this.#runtime.client.publish(
-      agentEventSubject(message.payload.event.sessionId),
+      agentEventSubject(event.sessionId),
       encodeEnvelope(envelope),
       {
-        msgID: message.payload.event.eventId,
+        msgID: event.eventId,
         expect: { streamName: AGENT_EVENT_STREAM_NAME },
         timeout: 10_000,
       },
@@ -112,9 +113,9 @@ type PendingIngest = {
 
 /**
  * Batches only the authority decision, never unacknowledged durability. Every
- * caller resolves after its own event has a JetStream PubAck and the Attempt
+ * caller resolves after its own event has a JetStream PubAck and the grant
  * watermark is advanced. This removes per-delta PostgreSQL round trips without
- * weakening stale-Worker fencing.
+ * weakening stale-Worker exclusion.
  */
 export class JetStreamAgentEventIngestor implements DurableEventIngestor {
   readonly #authority: AgentEventAuthorityPort;
@@ -216,17 +217,22 @@ export class JetStreamAgentEventIngestor implements DurableEventIngestor {
           (accepted) => this.#publisher.appendGroup(accepted),
         );
         const acceptedByMessage = new Map(
-          authority.accepted.map((envelope) => [envelope.publications[0]!, envelope]),
+          authority.accepted.flatMap((envelope) =>
+            envelope.events.map((event) => [event.eventId, envelope] as const),
+          ),
         );
         const duplicates = new Set(authority.duplicates);
         for (const entry of batch) {
-          if (acceptedByMessage.has(entry.message) || duplicates.has(entry.message)) {
+          if (
+            acceptedByMessage.has(entry.message.payload.event.eventId) ||
+            duplicates.has(entry.message)
+          ) {
             entry.resolve(acknowledgement(entry.message));
           } else {
             entry.reject(
               new DurableEventStoreError(
-                "stale_fence",
-                "Agent event was rejected by current RunAttempt authority",
+                "stale_execution_grant",
+                "Agent event was rejected by current ExecutionGrant authority",
               ),
             );
           }
@@ -274,8 +280,8 @@ export class HttpAgentEventIngestor implements DurableEventIngestor {
         });
         if (response.status === 409) {
           throw new DurableEventStoreError(
-            "stale_fence",
-            "Agent event was rejected by current RunAttempt authority",
+            "stale_execution_grant",
+            "Agent event was rejected by current ExecutionGrant authority",
           );
         }
         if (response.ok) {
@@ -287,7 +293,8 @@ export class HttpAgentEventIngestor implements DurableEventIngestor {
         }
         if (response.status < 500) break;
       } catch (error: unknown) {
-        if (error instanceof DurableEventStoreError && error.code === "stale_fence") throw error;
+        if (error instanceof DurableEventStoreError && error.code === "stale_execution_grant")
+          throw error;
       }
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
@@ -444,7 +451,7 @@ export class JetStreamLiveEventStore implements DurableEventLog {
     try {
       for await (const message of messages) {
         const envelope = parseAcceptedAgentEventEnvelope(message.data);
-        for (const publication of envelope.publications) events.push(publication.payload.event);
+        for (const event of envelope.events) events.push(event);
       }
     } finally {
       await messages.close().catch(() => undefined);
@@ -456,8 +463,7 @@ export class JetStreamLiveEventStore implements DurableEventLog {
   async #consume(subscription: LiveSubscription): Promise<void> {
     for await (const message of subscription) {
       const envelope = parseAcceptedAgentEventEnvelope(message.data);
-      for (const publication of envelope.publications) {
-        const event = publication.payload.event;
+      for (const event of envelope.events) {
         const expectedToken = sessionSubjectToken(event.sessionId);
         if (!message.subject.endsWith(`.${expectedToken}`)) {
           throw new Error("JetStream live event subject identity is invalid");

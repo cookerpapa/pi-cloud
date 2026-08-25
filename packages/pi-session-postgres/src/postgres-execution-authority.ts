@@ -1,4 +1,5 @@
 import type { Database } from "@pi-cloud/database";
+import { parseExecutionGrant } from "@pi-cloud/protocol";
 import { SessionError } from "@earendil-works/pi-agent-core";
 import type { Kysely, Transaction } from "kysely";
 import type { ActiveExecutionAuthority } from "./execution-authority.ts";
@@ -8,9 +9,8 @@ export type PostgresRunExecutionAuthorityOptions = {
   tenantId: string;
   sessionId: string;
   runId: string;
-  attemptId: string;
-  claimOwnerId: string;
-  fencingToken: number;
+  turnId: string;
+  executionGrant: string;
   clock?: () => Date;
   pollIntervalMs?: number;
 };
@@ -28,9 +28,8 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
   readonly #tenantId: string;
   readonly #sessionId: string;
   readonly #runId: string;
-  readonly #attemptId: string;
-  readonly #claimOwnerId: string;
-  readonly #fencingToken: string;
+  readonly #turnId: string;
+  readonly #executionGrant: ReturnType<typeof parseExecutionGrant>;
   readonly #clock: () => Date;
   readonly #pollIntervalMs: number;
   readonly #abort = new AbortController();
@@ -38,16 +37,12 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
   #closed = false;
 
   constructor(options: PostgresRunExecutionAuthorityOptions) {
-    if (!Number.isSafeInteger(options.fencingToken) || options.fencingToken < 1) {
-      throw new TypeError("fencingToken must be a positive safe integer");
-    }
     this.#database = options.database;
     this.#tenantId = options.tenantId;
     this.#sessionId = options.sessionId;
     this.#runId = options.runId;
-    this.#attemptId = options.attemptId;
-    this.#claimOwnerId = options.claimOwnerId;
-    this.#fencingToken = String(options.fencingToken);
+    this.#turnId = options.turnId;
+    this.#executionGrant = parseExecutionGrant(options.executionGrant);
     this.#clock = options.clock ?? (() => new Date());
     this.#pollIntervalMs = positiveInteger(options.pollIntervalMs ?? 1_000, "pollIntervalMs");
   }
@@ -67,44 +62,21 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
     }
     const authority = database ?? this.#database;
     const row = await authority
-      .selectFrom("runs as run")
-      .innerJoin("run_attempts as attempt", (join) =>
-        join
-          .onRef("attempt.run_id", "=", "run.id")
-          .onRef("attempt.id", "=", "run.current_attempt_id"),
-      )
-      .select("attempt.id")
-      .where("run.tenant_id", "=", this.#tenantId)
-      .where("run.session_id", "=", this.#sessionId)
-      .where("run.id", "=", this.#runId)
-      .where("attempt.id", "=", this.#attemptId)
-      .where("attempt.claim_owner_id", "=", this.#claimOwnerId)
-      .where("attempt.claim_expires_at", ">", this.#clock())
-      .where("attempt.fencing_token", "=", this.#fencingToken)
-      // Cancellation revokes Tool authority first, then the active Pi runtime
-      // must persist its bounded interruption/unknown-effect facts before the
-      // Attempt becomes terminal. The same Attempt/Fence remains the only
-      // Session writer throughout cancel_requested.
-      .where("attempt.state", "in", [
-        "provisioning",
-        "restoring",
-        "running",
-        "checkpointing",
-        "cancel_requested",
-      ])
-      .where("run.state", "in", [
-        "claimed",
-        "provisioning",
-        "restoring",
-        "running",
-        "checkpointing",
-        "cancel_requested",
-      ])
+      .selectFrom("execution_grants")
+      .select("grant_id")
+      .where("grant_id", "=", this.#executionGrant.grantId)
+      .where("execution_id", "=", this.#executionGrant.executionId)
+      .where("generation", "=", String(this.#executionGrant.generation))
+      .where("tenant_id", "=", this.#tenantId)
+      .where("session_id", "=", this.#sessionId)
+      .where("run_id", "=", this.#runId)
+      .where("turn_id", "=", this.#turnId)
+      .where("valid_until", ">", this.#clock())
       .executeTakeFirst();
     if (row === undefined) {
       const error = new SessionError(
         "storage",
-        "Pi Session mutation was rejected by stale execution authority",
+        "Pi Session mutation was rejected by a stale ExecutionGrant",
       );
       this.#abort.abort(error);
       throw error;

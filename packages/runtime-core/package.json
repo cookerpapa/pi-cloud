@@ -26,7 +26,7 @@
     "./run-command-executor": "./src/run-command-executor.ts",
     "./session-event-hub": "./src/session-event-hub.ts",
     "./session-event-stream": "./src/session-event-stream.ts",
-    "./session-lease-coordinator": "./src/session-lease-coordinator.ts",
+    "./execution-grant-coordinator": "./src/execution-grant-coordinator.ts",
     "./structured-test-command": "./src/structured-test-command.ts",
     "./terminal-turn-event": "./src/terminal-turn-event.ts",
     "./terminal-turn-projection": "./src/terminal-turn-projection.ts"

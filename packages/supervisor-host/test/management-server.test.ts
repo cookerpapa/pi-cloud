@@ -2,7 +2,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseControlToSupervisorMessage, type SteerTurnCommandMessage } from "@pi-cloud/protocol";
+import {
+  createExecutionGrant,
+  parseControlToSupervisorMessage,
+  type SteerTurnCommandMessage,
+} from "@pi-cloud/protocol";
 
 import {
   HttpSandboxAssignmentInventory,
@@ -30,8 +34,11 @@ const ASSIGNMENT = {
   workspaceId: "10000000-0000-4000-8000-000000000008",
   sessionId: "10000000-0000-4000-8000-000000000004",
   turnId: "10000000-0000-4000-8000-000000000005",
-  leaseId: "10000000-0000-4000-8000-000000000006",
-  fencingToken: 3,
+  executionGrant: createExecutionGrant(
+    "10000000-0000-4000-8000-000000000006",
+    "10000000-0000-4000-8000-000000000007",
+    3,
+  ),
 };
 const PROTOCOL_ASSIGNMENT = {
   containerId: ASSIGNMENT.runtimeId,
@@ -43,8 +50,7 @@ const PROTOCOL_ASSIGNMENT = {
   workspaceId: ASSIGNMENT.workspaceId,
   sessionId: ASSIGNMENT.sessionId,
   turnId: ASSIGNMENT.turnId,
-  leaseId: ASSIGNMENT.leaseId,
-  fencingToken: ASSIGNMENT.fencingToken,
+  executionGrant: ASSIGNMENT.executionGrant,
 };
 
 const roots: string[] = [];
@@ -224,10 +230,8 @@ describe("trusted Supervisor management boundary", () => {
         sessionId: ASSIGNMENT.sessionId,
         runId: "10000000-0000-4000-8000-000000000013",
         turnId: ASSIGNMENT.turnId,
-        attemptId: "10000000-0000-4000-8000-000000000014",
         agentId: "root",
-        leaseId: ASSIGNMENT.leaseId,
-        fencingToken: ASSIGNMENT.fencingToken,
+        executionGrant: ASSIGNMENT.executionGrant,
         text: "Inspect the current failure before continuing.",
       },
     });

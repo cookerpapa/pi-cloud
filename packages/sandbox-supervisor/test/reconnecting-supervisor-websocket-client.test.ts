@@ -1,4 +1,5 @@
 import {
+  createExecutionGrant,
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
   type SupervisorRegisteredMessage,
@@ -227,7 +228,7 @@ describe("ReconnectingSupervisorWebSocketClient", () => {
     expect(revocations).toBe(1);
   });
 
-  it("keeps PostgreSQL Run leases out of Worker Control Channel heartbeats", async () => {
+  it("carries only the opaque ExecutionGrant on Worker heartbeats", async () => {
     const source: ReconnectingSupervisorControlRuntime = {
       ...runtime(),
       createHeartbeat(identity, acceptingAssignments = false) {
@@ -245,8 +246,11 @@ describe("ReconnectingSupervisorWebSocketClient", () => {
                 sessionId: globalThis.crypto.randomUUID(),
                 turnId: globalThis.crypto.randomUUID(),
                 state: "running",
-                leaseId: globalThis.crypto.randomUUID(),
-                fencingToken: 7,
+                executionGrant: createExecutionGrant(
+                  globalThis.crypto.randomUUID(),
+                  globalThis.crypto.randomUUID(),
+                  7,
+                ),
                 lastProducedSeq: 2,
                 lastAcknowledgedSeq: 1,
               },

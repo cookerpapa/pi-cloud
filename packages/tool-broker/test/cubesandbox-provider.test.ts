@@ -1,5 +1,7 @@
 import {
   canonicalEnvironmentRecipeJson,
+  createExecutionGrant,
+  parseExecutionGrant,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   type ToolSandboxAssignment,
@@ -37,9 +39,11 @@ const assignment: ToolSandboxAssignment = {
   commandId: "command-cube-test",
   sessionId: "session-cube-test",
   turnId: "turn-cube-test",
-  attemptId: "10000000-0000-4000-8000-000000000003",
-  leaseId: "10000000-0000-4000-8000-000000000004",
-  fencingToken: 7,
+  executionGrant: createExecutionGrant(
+    "10000000-0000-4000-8000-000000000004",
+    "10000000-0000-4000-8000-000000000003",
+    7,
+  ),
 };
 
 const environment = {
@@ -566,7 +570,7 @@ describe("CubeSandbox Provider contract", () => {
       expect.objectContaining({
         containerName: "cube-sandbox-1",
         supervisorId: assignment.supervisorId,
-        fencingToken: assignment.fencingToken,
+        executionGrant: assignment.executionGrant,
       }),
     ]);
     const captured = await manager.capture(
@@ -595,7 +599,7 @@ describe("CubeSandbox Provider contract", () => {
       tenantId: assignment.tenantId,
       workspaceId: assignment.workspaceId,
       sourceSessionId: assignment.sessionId,
-      fencingToken: assignment.fencingToken,
+      executionGeneration: parseExecutionGrant(assignment.executionGrant).generation,
       imageRevision: environment.imageRevision,
       environmentSpecSha256: environment.specSha256,
       gitBaselineCommit: "b".repeat(40),
@@ -686,9 +690,11 @@ describe("CubeSandbox Provider contract", () => {
       ...assignment,
       commandId: "command-cube-test-idle",
       turnId: "turn-cube-test-idle",
-      attemptId: "10000000-0000-4000-8000-000000000028",
-      leaseId: "10000000-0000-4000-8000-000000000029",
-      fencingToken: 9,
+      executionGrant: createExecutionGrant(
+        "10000000-0000-4000-8000-000000000029",
+        "10000000-0000-4000-8000-000000000028",
+        9,
+      ),
     };
     const idle = await manager.create({
       toolBrokerProtocolVersion: 1,
@@ -726,9 +732,11 @@ describe("CubeSandbox Provider contract", () => {
       sandboxId: "20000000-0000-4000-8000-000000000031",
       commandId: "command-cube-test-2",
       turnId: "turn-cube-test-2",
-      attemptId: "10000000-0000-4000-8000-000000000030",
-      leaseId: "10000000-0000-4000-8000-000000000031",
-      fencingToken: 11,
+      executionGrant: createExecutionGrant(
+        "10000000-0000-4000-8000-000000000031",
+        "10000000-0000-4000-8000-000000000030",
+        11,
+      ),
     };
     const next = await manager.create({
       toolBrokerProtocolVersion: 1,
@@ -756,7 +764,7 @@ describe("CubeSandbox Provider contract", () => {
     expect(await manager.listAssignments(nextAssignment.sandboxId)).toEqual([
       expect.objectContaining({
         commandId: nextAssignment.commandId,
-        fencingToken: nextAssignment.fencingToken,
+        executionGrant: nextAssignment.executionGrant,
       }),
     ]);
     const destroyed = await manager.release({
@@ -806,12 +814,14 @@ describe("CubeSandbox Provider contract", () => {
       sandboxId: "20000000-0000-4000-8000-000000000043",
       commandId: "command-cube-restore",
       turnId: "turn-cube-restore",
-      attemptId: "20000000-0000-4000-8000-000000000044",
-      leaseId: "20000000-0000-4000-8000-000000000045",
       // Fencing tokens are monotonic within a Session. Another Session in the
       // same Workspace has an independent fence sequence and may legitimately
       // begin at the same value as the checkpoint's source Session.
-      fencingToken: assignment.fencingToken,
+      executionGrant: createExecutionGrant(
+        "20000000-0000-4000-8000-000000000045",
+        "20000000-0000-4000-8000-000000000044",
+        parseExecutionGrant(assignment.executionGrant).generation,
+      ),
     };
     const restored = await provider.create({
       activationId: nextActivationId,
@@ -836,7 +846,7 @@ describe("CubeSandbox Provider contract", () => {
     expect(
       Object.entries(runtime.creates[1]!.metadata).some(
         ([key, value]) =>
-          key.startsWith("picloud.assignment.v1.") && value.includes(nextActivationId),
+          key.startsWith("picloud.assignment.v2.") && value.includes(nextActivationId),
       ),
     ).toBe(true);
     await expect(provider.inspect(restored)).resolves.toMatchObject({ state: "running" });
@@ -871,7 +881,14 @@ describe("CubeSandbox Provider contract", () => {
     });
     const parent = await provider.create({
       activationId: ACTIVATION_ID,
-      assignment: { ...assignment, fencingToken: 41 },
+      assignment: {
+        ...assignment,
+        executionGrant: createExecutionGrant(
+          "20000000-0000-4000-8000-000000000050",
+          parseExecutionGrant(assignment.executionGrant).executionId,
+          41,
+        ),
+      },
       environment,
       workspaceSeed: { kind: "sample_java" },
       policy: provider.defaultPolicy,
@@ -883,9 +900,11 @@ describe("CubeSandbox Provider contract", () => {
       sessionId: "session-cube-subagent",
       commandId: "command-cube-subagent",
       turnId: "turn-cube-subagent",
-      attemptId: "20000000-0000-4000-8000-000000000052",
-      leaseId: "20000000-0000-4000-8000-000000000053",
-      fencingToken: 1,
+      executionGrant: createExecutionGrant(
+        "20000000-0000-4000-8000-000000000053",
+        "20000000-0000-4000-8000-000000000052",
+        1,
+      ),
     };
     const child = await provider.rebind(parent, childAssignment);
     await expect(provider.exec(child, operation(ACTIVATION_ID))).resolves.toMatchObject({
@@ -894,7 +913,14 @@ describe("CubeSandbox Provider contract", () => {
     });
     await provider.snapshot(child, "10000000-0000-4000-8000-000000000054");
 
-    const restored = await provider.rebind(child, { ...assignment, fencingToken: 41 });
+    const restored = await provider.rebind(child, {
+      ...assignment,
+      executionGrant: createExecutionGrant(
+        "20000000-0000-4000-8000-000000000050",
+        parseExecutionGrant(assignment.executionGrant).executionId,
+        41,
+      ),
+    });
     await expect(provider.inspect(restored)).resolves.toMatchObject({ state: "running" });
     expect(restored.assignment.sessionId).toBe(assignment.sessionId);
     await provider.destroy(restored);
@@ -1010,7 +1036,11 @@ describe("CubeSandbox Provider contract", () => {
         assignment: {
           ...assignment,
           tenantId: "another-tenant",
-          fencingToken: assignment.fencingToken + 1,
+          executionGrant: createExecutionGrant(
+            "20000000-0000-4000-8000-000000000060",
+            parseExecutionGrant(assignment.executionGrant).executionId,
+            parseExecutionGrant(assignment.executionGrant).generation + 1,
+          ),
         },
         environment,
         workspaceSeed: { kind: "sample_java" },
@@ -1069,7 +1099,11 @@ describe("CubeSandbox Provider contract", () => {
     });
     const upgradedAssignment = {
       ...assignment,
-      fencingToken: assignment.fencingToken + 1,
+      executionGrant: createExecutionGrant(
+        "20000000-0000-4000-8000-000000000061",
+        parseExecutionGrant(assignment.executionGrant).executionId,
+        parseExecutionGrant(assignment.executionGrant).generation + 1,
+      ),
     };
     const upgradedHandle = await upgradedProvider.create({
       activationId: "20000000-0000-4000-8000-000000000050",

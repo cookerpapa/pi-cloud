@@ -17,6 +17,7 @@ import {
 } from "./environment.ts";
 import { CloudToolCapabilitySnapshotSchema, CloudToolNameSchema } from "./tool-capabilities.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
+import { ExecutionGrantSchema } from "./execution-grant.ts";
 
 export const MAX_TOOL_COMMAND_BYTES = 64 * 1_024;
 export const MAX_TOOL_FILE_BYTES = 512 * 1_024;
@@ -118,9 +119,7 @@ export const ToolSandboxAssignmentSchema = Type.Object(
     commandId: OpaqueIdSchema,
     sessionId: OpaqueIdSchema,
     turnId: OpaqueIdSchema,
-    attemptId: UuidSchema,
-    leaseId: UuidSchema,
-    fencingToken: PositiveSafeIntegerSchema,
+    executionGrant: ExecutionGrantSchema,
   },
   { additionalProperties: false },
 );

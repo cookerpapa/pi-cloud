@@ -5,6 +5,8 @@ import type {
   ToolSandboxOperationRequest,
 } from "@pi-cloud/protocol";
 import {
+  createExecutionGrant,
+  parseExecutionGrant,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
@@ -39,9 +41,11 @@ const assignment: ToolSandboxAssignment = {
   commandId: "command-provider-test",
   sessionId: "session-provider-test",
   turnId: "turn-provider-test",
-  attemptId: "10000000-0000-4000-8000-000000000003",
-  leaseId: "10000000-0000-4000-8000-000000000003",
-  fencingToken: 5,
+  executionGrant: createExecutionGrant(
+    "10000000-0000-4000-8000-000000000003",
+    "10000000-0000-4000-8000-000000000003",
+    5,
+  ),
 };
 const environment = {
   environmentVersionId: "10000000-0000-4000-8000-000000000004",
@@ -378,9 +382,11 @@ describe("provider-backed Tool Tool Broker", () => {
       ...assignment,
       turnId: "21111111-1111-4111-8111-111111111114",
       commandId: "second-development-environment-run",
-      attemptId: "21111111-1111-4111-8111-111111111115",
-      leaseId: "21111111-1111-4111-8111-111111111116",
-      fencingToken: 3,
+      executionGrant: createExecutionGrant(
+        "21111111-1111-4111-8111-111111111116",
+        "21111111-1111-4111-8111-111111111115",
+        3,
+      ),
     };
     const secondAgent = await manager.create({
       ...createRequest,
@@ -557,24 +563,41 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("hands an idle persistent Cube to the human terminal without replacing its process world", async () => {
     class PersistentTerminalRepository extends InMemorySandboxActivationStateRepository {
-      override async reserveTerminal() {
+      override async reserveTerminal(input: { terminalId: string }) {
+        const execution = parseExecutionGrant(assignment.executionGrant);
         return {
           status: "reserved" as const,
-          fencingToken: assignment.fencingToken + 2,
+          executionGrant: createExecutionGrant(
+            input.terminalId,
+            execution.executionId,
+            execution.generation + 2,
+          ),
           retiredActivation: {
             activationId: ACTIVATION_ID,
             workspaceRevision: "1".repeat(64),
             retention: "persistent" as const,
-            assignment: { ...assignment, fencingToken: assignment.fencingToken + 1 },
+            assignment: {
+              ...assignment,
+              executionGrant: createExecutionGrant(
+                "30000000-0000-4000-8000-000000000001",
+                parseExecutionGrant(assignment.executionGrant).executionId,
+                parseExecutionGrant(assignment.executionGrant).generation + 1,
+              ),
+            },
           },
         };
       }
 
-      override async advanceWarmFence(
+      override async advanceWarmGrant(
         _activationId: string,
         currentAssignment: ToolSandboxAssignment,
       ) {
-        return currentAssignment.fencingToken + 1;
+        const current = parseExecutionGrant(currentAssignment.executionGrant);
+        return createExecutionGrant(
+          "30000000-0000-4000-8000-000000000002",
+          current.executionId,
+          current.generation + 1,
+        );
       }
     }
     const fixture = providerFixture();
@@ -622,7 +645,14 @@ describe("provider-backed Tool Tool Broker", () => {
     const next = await manager.create({
       ...createRequest,
       requestId: "31000000-0000-4000-8000-000000000003",
-      assignment: { ...assignment, fencingToken: 9 },
+      assignment: {
+        ...assignment,
+        executionGrant: createExecutionGrant(
+          "30000000-0000-4000-8000-000000000003",
+          parseExecutionGrant(assignment.executionGrant).executionId,
+          9,
+        ),
+      },
       workspaceRevision: "1".repeat(64),
     });
     expect(next.continuity).toBe("warm_reuse");
@@ -632,7 +662,14 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: next.activationId,
     });
     expect(fixture.rebind).toHaveBeenCalledTimes(2);
-    await manager.stop(next.activationId, { ...assignment, fencingToken: 9 });
+    await manager.stop(next.activationId, {
+      ...assignment,
+      executionGrant: createExecutionGrant(
+        "30000000-0000-4000-8000-000000000003",
+        parseExecutionGrant(assignment.executionGrant).executionId,
+        9,
+      ),
+    });
     await manager.close();
   });
 
@@ -781,7 +818,7 @@ describe("provider-backed Tool Tool Broker", () => {
         tenantId: assignment.tenantId,
         sessionId: assignment.sessionId,
         turnId: assignment.turnId,
-        attemptId: assignment.attemptId,
+        executionGrant: assignment.executionGrant,
       },
       policy: { network: { mode: "deny_all" } },
     });
@@ -813,7 +850,12 @@ describe("provider-backed Tool Tool Broker", () => {
 
     await expect(manager.inspect(ACTIVATION_ID, assignment)).resolves.toMatchObject({
       state: "running",
-      handle: { assignment: { tenantId: assignment.tenantId, attemptId: assignment.attemptId } },
+      handle: {
+        assignment: {
+          tenantId: assignment.tenantId,
+          executionGrant: assignment.executionGrant,
+        },
+      },
     });
     await manager.stop(ACTIVATION_ID, assignment);
     expect(fixture.stopped).toBe(true);
@@ -861,9 +903,11 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: "workspace-provider-test-second",
       sessionId: "session-provider-test-second",
       turnId: "turn-provider-test-second",
-      attemptId: "20000000-0000-4000-8000-000000000003",
-      leaseId: "20000000-0000-4000-8000-000000000003",
-      fencingToken: 6,
+      executionGrant: createExecutionGrant(
+        "20000000-0000-4000-8000-000000000003",
+        "20000000-0000-4000-8000-000000000003",
+        6,
+      ),
     };
     const first = await manager.create(createRequest);
     const second = await manager.create({
@@ -943,9 +987,11 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: "workspace-provider-test-aborted",
       sessionId: "session-provider-test-aborted",
       turnId: "turn-provider-test-aborted",
-      attemptId: "30000000-0000-4000-8000-000000000003",
-      leaseId: "30000000-0000-4000-8000-000000000003",
-      fencingToken: 7,
+      executionGrant: createExecutionGrant(
+        "30000000-0000-4000-8000-000000000003",
+        "30000000-0000-4000-8000-000000000003",
+        7,
+      ),
     };
     const first = await manager.create(createRequest);
     const second = await manager.create({
@@ -1000,9 +1046,11 @@ describe("provider-backed Tool Tool Broker", () => {
       sandboxId: "20000000-0000-4000-8000-000000000021",
       commandId: "command-provider-test-next",
       turnId: "turn-provider-test-next",
-      attemptId: "10000000-0000-4000-8000-000000000020",
-      leaseId: "10000000-0000-4000-8000-000000000020",
-      fencingToken: 6,
+      executionGrant: createExecutionGrant(
+        "10000000-0000-4000-8000-000000000020",
+        "10000000-0000-4000-8000-000000000020",
+        6,
+      ),
     };
     const second = await manager.create({
       ...createRequest,
@@ -1042,9 +1090,11 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-subagent",
       commandId: "command-provider-test-subagent",
       turnId: "turn-provider-test-subagent",
-      attemptId: "73300000-0000-4000-8000-000000000002",
-      leaseId: "73300000-0000-4000-8000-000000000002",
-      fencingToken: 8,
+      executionGrant: createExecutionGrant(
+        "73300000-0000-4000-8000-000000000002",
+        "73300000-0000-4000-8000-000000000002",
+        8,
+      ),
     };
     const child = await manager.create({
       ...createRequest,
@@ -1145,9 +1195,11 @@ describe("provider-backed Tool Tool Broker", () => {
       ...assignment,
       commandId: "command-provider-test-persistent-next",
       turnId: "turn-provider-test-persistent-next",
-      attemptId: "71000000-0000-4000-8000-000000000003",
-      leaseId: "71000000-0000-4000-8000-000000000003",
-      fencingToken: 6,
+      executionGrant: createExecutionGrant(
+        "71000000-0000-4000-8000-000000000003",
+        "71000000-0000-4000-8000-000000000003",
+        6,
+      ),
     };
     const second = await manager.create({
       ...createRequest,
@@ -1223,9 +1275,11 @@ describe("provider-backed Tool Tool Broker", () => {
           sessionId: "session-provider-test-sibling",
           commandId: "command-provider-test-sibling",
           turnId: "turn-provider-test-sibling",
-          attemptId: "73000000-0000-4000-8000-000000000004",
-          leaseId: "73000000-0000-4000-8000-000000000004",
-          fencingToken: 6,
+          executionGrant: createExecutionGrant(
+            "73000000-0000-4000-8000-000000000004",
+            "73000000-0000-4000-8000-000000000004",
+            6,
+          ),
         },
         workspaceRevision: "1".repeat(64),
       }),
@@ -1271,9 +1325,11 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-conversation-child",
       commandId: "command-provider-test-conversation-child",
       turnId: "turn-provider-test-conversation-child",
-      attemptId: "73500000-0000-4000-8000-000000000003",
-      leaseId: "73500000-0000-4000-8000-000000000003",
-      fencingToken: 6,
+      executionGrant: createExecutionGrant(
+        "73500000-0000-4000-8000-000000000003",
+        "73500000-0000-4000-8000-000000000003",
+        6,
+      ),
     };
     const second = await manager.create({
       ...createRequest,
@@ -1331,9 +1387,11 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-conversation-child",
       commandId: "command-provider-test-conversation-child",
       turnId: "turn-provider-test-conversation-child",
-      attemptId: "73600000-0000-4000-8000-000000000003",
-      leaseId: "73600000-0000-4000-8000-000000000003",
-      fencingToken: 6,
+      executionGrant: createExecutionGrant(
+        "73600000-0000-4000-8000-000000000003",
+        "73600000-0000-4000-8000-000000000003",
+        6,
+      ),
     };
     const second = await manager.create({
       ...createRequest,
@@ -1386,9 +1444,11 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-ordinary",
       commandId: "command-provider-test-ordinary",
       turnId: "turn-provider-test-ordinary",
-      attemptId: "74000000-0000-4000-8000-000000000003",
-      leaseId: "74000000-0000-4000-8000-000000000003",
-      fencingToken: 6,
+      executionGrant: createExecutionGrant(
+        "74000000-0000-4000-8000-000000000003",
+        "74000000-0000-4000-8000-000000000003",
+        6,
+      ),
     };
     const ordinary = await manager.create({
       ...createRequest,
@@ -1416,9 +1476,11 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-new-demand",
       commandId: "command-provider-test-new-demand",
       turnId: "turn-provider-test-new-demand",
-      attemptId: "74000000-0000-4000-8000-000000000007",
-      leaseId: "74000000-0000-4000-8000-000000000007",
-      fencingToken: 7,
+      executionGrant: createExecutionGrant(
+        "74000000-0000-4000-8000-000000000007",
+        "74000000-0000-4000-8000-000000000007",
+        7,
+      ),
     };
     const demand = await manager.create({
       ...createRequest,
@@ -1435,9 +1497,11 @@ describe("provider-backed Tool Tool Broker", () => {
       ...assignment,
       commandId: "command-provider-test-persistent-after-pressure",
       turnId: "turn-provider-test-persistent-after-pressure",
-      attemptId: "74000000-0000-4000-8000-000000000010",
-      leaseId: "74000000-0000-4000-8000-000000000010",
-      fencingToken: 8,
+      executionGrant: createExecutionGrant(
+        "74000000-0000-4000-8000-000000000010",
+        "74000000-0000-4000-8000-000000000010",
+        8,
+      ),
     };
     const persistentAgain = await manager.create({
       ...createRequest,
@@ -1476,9 +1540,11 @@ describe("provider-backed Tool Tool Broker", () => {
       commandId: "command-provider-test-sibling-session",
       sessionId: "session-provider-test-sibling",
       turnId: "turn-provider-test-sibling",
-      attemptId: "60000000-0000-4000-8000-000000000014",
-      leaseId: "60000000-0000-4000-8000-000000000014",
-      fencingToken: 6,
+      executionGrant: createExecutionGrant(
+        "60000000-0000-4000-8000-000000000014",
+        "60000000-0000-4000-8000-000000000014",
+        6,
+      ),
     };
     const second = await manager.create({
       ...createRequest,
@@ -1529,9 +1595,11 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: "workspace-provider-test-capacity-eviction",
       sessionId: "session-provider-test-capacity-eviction",
       turnId: "turn-provider-test-capacity-eviction",
-      attemptId: "50000000-0000-4000-8000-000000000014",
-      leaseId: "50000000-0000-4000-8000-000000000014",
-      fencingToken: 6,
+      executionGrant: createExecutionGrant(
+        "50000000-0000-4000-8000-000000000014",
+        "50000000-0000-4000-8000-000000000014",
+        6,
+      ),
     };
     const second = await manager.create({
       ...createRequest,
@@ -1555,6 +1623,11 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("keeps a fenced warm runtime until termination names its current Broker authority", async () => {
     const fixture = providerFixture();
+    let brokerGrant: string | undefined;
+    fixture.provider.retainForWarm = async (handle, brokerAssignment) => {
+      brokerGrant = brokerAssignment.executionGrant;
+      return { ...handle, assignment: brokerAssignment };
+    };
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
@@ -1574,6 +1647,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     expect(manager.admittedCount).toBe(1);
     expect(manager.warmCount).toBe(1);
+    expect(brokerGrant).toBeDefined();
 
     const advancedInventoryAssignment: SupervisorRuntimeAssignment = {
       containerId: "66666666-6666-4666-8666-666666666666",
@@ -1585,8 +1659,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: assignment.workspaceId,
       sessionId: assignment.sessionId,
       turnId: "turn-provider-test-advanced",
-      leaseId: "40000000-0000-4000-8000-000000000014",
-      fencingToken: assignment.fencingToken + 1,
+      executionGrant: brokerGrant!,
     };
     await manager.terminateAndConfirmAbsent(advancedInventoryAssignment);
 
@@ -1597,8 +1670,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...advancedInventoryAssignment,
       commandId: assignment.commandId,
       turnId: assignment.turnId,
-      leaseId: assignment.leaseId,
-      fencingToken: assignment.fencingToken + 1,
+      executionGrant: brokerGrant!,
     });
 
     expect(manager.admittedCount).toBe(0);
@@ -1618,8 +1690,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: assignment.workspaceId,
       sessionId: assignment.sessionId,
       turnId: assignment.turnId,
-      leaseId: assignment.leaseId,
-      fencingToken: assignment.fencingToken,
+      executionGrant: assignment.executionGrant,
     };
     fixture.provider.listAssignments = async () => [runtimeAssignment];
     const manager = new ToolBroker({

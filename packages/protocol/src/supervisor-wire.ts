@@ -18,6 +18,7 @@ import {
 import { EnvironmentRuntimeSnapshotSchema } from "./environment.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
 import { CloudToolCapabilitySnapshotSchema } from "./tool-capabilities.ts";
+import { ExecutionGrantSchema } from "./execution-grant.ts";
 
 export const TWO_PHASE_COMMAND_CAPABILITY = "command.two_phase.v1";
 export const PI_STEER_CAPABILITY = "pi.steer.v1";
@@ -26,11 +27,6 @@ const WireEnvelopeProperties = {
   protocolVersion: Type.Literal(1),
   messageId: UuidSchema,
   sentAt: UtcTimestampSchema,
-};
-
-const LeaseProperties = {
-  leaseId: UuidSchema,
-  fencingToken: PositiveSafeIntegerSchema,
 };
 
 const CommandIdentityProperties = {
@@ -42,9 +38,8 @@ const CommandIdentityProperties = {
   sessionId: OpaqueIdSchema,
   runId: UuidSchema,
   turnId: OpaqueIdSchema,
-  attemptId: UuidSchema,
   agentId: OpaqueIdSchema,
-  ...LeaseProperties,
+  executionGrant: ExecutionGrantSchema,
 };
 
 const RuntimeVersionSchema = Type.String({
@@ -275,7 +270,7 @@ const CommandAckIdentityProperties = {
   commandId: UuidSchema,
   sessionId: OpaqueIdSchema,
   turnId: OpaqueIdSchema,
-  ...LeaseProperties,
+  executionGrant: ExecutionGrantSchema,
 };
 
 const AcceptedCommandAckPayloadSchema = Type.Object(
@@ -291,7 +286,7 @@ const RejectedCommandAckPayloadSchema = Type.Object(
     ...CommandAckIdentityProperties,
     status: Type.Literal("rejected"),
     code: Type.Union([
-      Type.Literal("stale_fence"),
+      Type.Literal("stale_execution_grant"),
       Type.Literal("invalid_state"),
       Type.Literal("capacity"),
       Type.Literal("invalid_command"),
@@ -426,10 +421,7 @@ export const EventPublishMessageSchema = Type.Object(
     type: Type.Literal("event.publish"),
     payload: Type.Object(
       {
-        ...LeaseProperties,
-        commandId: Type.Optional(UuidSchema),
-        runId: UuidSchema,
-        attemptId: UuidSchema,
+        executionGrant: ExecutionGrantSchema,
         event: PiCloudEventSchema,
       },
       { additionalProperties: false },
@@ -445,7 +437,7 @@ export const EventAckMessageSchema = Type.Object(
     payload: Type.Object(
       {
         sessionId: OpaqueIdSchema,
-        ...LeaseProperties,
+        executionGrant: ExecutionGrantSchema,
         acknowledgedThroughSeq: PositiveSafeIntegerSchema,
       },
       { additionalProperties: false },
@@ -461,9 +453,9 @@ export const EventRejectedMessageSchema = Type.Object(
     payload: Type.Object(
       {
         sessionId: OpaqueIdSchema,
-        ...LeaseProperties,
+        executionGrant: ExecutionGrantSchema,
         rejectedSeq: PositiveSafeIntegerSchema,
-        code: Type.Literal("stale_fence"),
+        code: Type.Literal("stale_execution_grant"),
         retryable: Type.Literal(false),
       },
       { additionalProperties: false },
@@ -477,7 +469,7 @@ const HeartbeatSessionSchema = Type.Object(
     sessionId: OpaqueIdSchema,
     turnId: Type.Union([OpaqueIdSchema, Type.Null()]),
     state: SessionStateSchema,
-    ...LeaseProperties,
+    executionGrant: ExecutionGrantSchema,
     lastProducedSeq: NonNegativeSafeIntegerSchema,
     lastAcknowledgedSeq: NonNegativeSafeIntegerSchema,
   },
@@ -503,10 +495,10 @@ export const SupervisorHeartbeatMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const LeaseRenewalSchema = Type.Object(
+const ExecutionGrantRenewalSchema = Type.Object(
   {
     sessionId: OpaqueIdSchema,
-    ...LeaseProperties,
+    executionGrant: ExecutionGrantSchema,
     validUntil: UtcTimestampSchema,
   },
   { additionalProperties: false },
@@ -520,7 +512,7 @@ export const SupervisorHeartbeatAckMessageSchema = Type.Object(
       {
         acknowledgedMessageId: UuidSchema,
         connectionId: UuidSchema,
-        leaseRenewals: Type.Array(LeaseRenewalSchema, { maxItems: 1_000 }),
+        executionGrantRenewals: Type.Array(ExecutionGrantRenewalSchema, { maxItems: 1_000 }),
       },
       { additionalProperties: false },
     ),
@@ -665,7 +657,10 @@ export function parseControlToSupervisorMessage(value: unknown): ControlToSuperv
   }
 
   if (message.type === "supervisor.heartbeat.ack") {
-    assertUniqueSessionIds(message.payload.leaseRenewals, "supervisor.heartbeat.ack leaseRenewals");
+    assertUniqueSessionIds(
+      message.payload.executionGrantRenewals,
+      "supervisor.heartbeat.ack executionGrantRenewals",
+    );
   }
 
   return message;

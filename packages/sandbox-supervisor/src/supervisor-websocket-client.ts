@@ -174,16 +174,14 @@ function sameCommandIdentity(
     commandId: string;
     sessionId: string;
     turnId: string;
-    leaseId: string;
-    fencingToken: number;
+    executionGrant: string;
   },
 ): boolean {
   return (
     value.commandId === command.payload.commandId &&
     value.sessionId === command.payload.sessionId &&
     value.turnId === command.payload.turnId &&
-    value.leaseId === command.payload.leaseId &&
-    value.fencingToken === command.payload.fencingToken
+    value.executionGrant === command.payload.executionGrant
   );
 }
 
@@ -711,8 +709,7 @@ export class SupervisorWebSocketClient {
       commandId: entry.command.payload.commandId,
       sessionId: entry.command.payload.sessionId,
       turnId: entry.command.payload.turnId,
-      leaseId: entry.command.payload.leaseId,
-      fencingToken: entry.command.payload.fencingToken,
+      executionGrant: entry.command.payload.executionGrant,
       commitMessageId: commit.messageId,
       commandKind: entry.kind,
     };

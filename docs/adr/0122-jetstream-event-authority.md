@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted on 2026-08-25. This replaces ADR-0116 and ADR-0119.
+Superseded by [ADR-0124](0124-opaque-execution-grant-sequencer.md) on
+2026-08-25. The JetStream choice remains current; its externally propagated
+Run/Attempt/Lease/Fence tuple does not.
 
 ## Context
 

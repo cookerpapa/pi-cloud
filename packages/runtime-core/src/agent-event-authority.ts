@@ -1,12 +1,23 @@
 import type { Database } from "@pi-cloud/database";
-import { parseSupervisorToControlMessage, type EventPublishMessage } from "@pi-cloud/protocol";
+import {
+  parseExecutionGrant,
+  parsePiCloudEvent,
+  type EventPublishMessage,
+  type PiCloudEvent,
+} from "@pi-cloud/protocol";
 import type { Kysely, Transaction } from "kysely";
 import { sql } from "kysely";
 
 export type AcceptedAgentEventEnvelope = Readonly<{
-  schemaVersion: 1;
+  schemaVersion: 2;
   tenantId: string;
-  publications: readonly EventPublishMessage[];
+  events: readonly PiCloudEvent[];
+  /** Transient commit identity. Publishers must not serialize this capability metadata. */
+  authority?: Readonly<{
+    grantId: string;
+    executionId: string;
+    generation: number;
+  }>;
 }>;
 
 export type AgentEventAuthorityResult = Readonly<{
@@ -19,14 +30,6 @@ export type AgentEventDurableCommit = (
   envelopes: readonly AcceptedAgentEventEnvelope[],
 ) => Promise<void>;
 
-function publication(value: unknown): EventPublishMessage {
-  const parsed = parseSupervisorToControlMessage(value);
-  if (parsed.type !== "event.publish") {
-    throw new TypeError("Agent event envelope contains a non-publication");
-  }
-  return parsed;
-}
-
 export function parseAcceptedAgentEventEnvelope(
   value: Uint8Array | Buffer | string,
 ): AcceptedAgentEventEnvelope {
@@ -37,83 +40,48 @@ export function parseAcceptedAgentEventEnvelope(
   }
   const envelope = candidate as Record<string, unknown>;
   if (
-    envelope.schemaVersion !== 1 ||
+    envelope.schemaVersion !== 2 ||
     typeof envelope.tenantId !== "string" ||
     envelope.tenantId.length < 1 ||
     envelope.tenantId.length > 256 ||
-    !Array.isArray(envelope.publications) ||
-    envelope.publications.length < 1 ||
-    envelope.publications.length > 128
+    !Array.isArray(envelope.events) ||
+    envelope.events.length < 1 ||
+    envelope.events.length > 128
   ) {
     throw new TypeError("Accepted Agent event envelope is invalid");
   }
-  const publications = envelope.publications.map(publication);
-  const sessionId = publications[0]!.payload.event.sessionId;
-  if (publications.some((message) => message.payload.event.sessionId !== sessionId)) {
+  const events = envelope.events.map(parsePiCloudEvent);
+  const sessionId = events[0]!.sessionId;
+  if (events.some((event) => event.sessionId !== sessionId)) {
     throw new TypeError("Accepted Agent event envelope mixes Sessions");
   }
-  return { schemaVersion: 1, tenantId: envelope.tenantId, publications };
+  return { schemaVersion: 2, tenantId: envelope.tenantId, events };
 }
 
-type AuthorityRow = Readonly<{
+type ExecutionGrantAuthorityRow = Readonly<{
+  grantId: string;
+  executionId: string;
+  generation: string;
   tenantId: string;
+  projectId: string;
+  workspaceId: string;
   runId: string;
-  currentAttemptId: string | null;
-  runState: string;
-  attemptState: string;
-  claimExpiresAt: Date;
-  attemptLeaseId: string;
-  attemptFence: string;
-  lastEventSequence: string;
-  commandState: string;
-  commandId: string;
   sessionId: string;
-  sessionState: string;
-  sessionFence: string;
   turnId: string;
-  turnState: string;
-  leaseId: string;
-  leaseFence: string;
-  leaseValidUntil: Date;
+  commandId: string;
+  validUntil: Date;
+  lastEventSeq: string;
 }>;
 
-function identityMatches(row: AuthorityRow, message: EventPublishMessage): boolean {
-  const identity = message.payload;
-  const event = identity.event;
+function identityMatches(row: ExecutionGrantAuthorityRow, message: EventPublishMessage): boolean {
+  const identity = parseExecutionGrant(message.payload.executionGrant);
+  const event = message.payload.event;
   return (
-    row.runId === identity.runId &&
-    row.currentAttemptId === identity.attemptId &&
-    row.attemptLeaseId === identity.leaseId &&
-    row.leaseId === identity.leaseId &&
-    Number(row.attemptFence) === identity.fencingToken &&
-    Number(row.sessionFence) === identity.fencingToken &&
-    Number(row.leaseFence) === identity.fencingToken &&
-    row.commandId === identity.commandId &&
+    row.grantId === identity.grantId &&
+    row.executionId === identity.executionId &&
+    Number(row.generation) === identity.generation &&
     row.sessionId === event.sessionId &&
     row.turnId === event.turnId
-  );
-}
-
-const ACTIVE_RUN_STATES = new Set([
-  "provisioning",
-  "restoring",
-  "running",
-  "checkpointing",
-  "cancel_requested",
-]);
-const ACTIVE_ATTEMPT_STATES = ACTIVE_RUN_STATES;
-const ACTIVE_SESSION_STATES = new Set(["running", "waiting_approval", "cancelling"]);
-const ACTIVE_TURN_STATES = ACTIVE_SESSION_STATES;
-
-function rowIsCurrent(row: AuthorityRow, now: Date): boolean {
-  return (
-    ACTIVE_RUN_STATES.has(row.runState) &&
-    ACTIVE_ATTEMPT_STATES.has(row.attemptState) &&
-    row.commandState === "acknowledged" &&
-    ACTIVE_SESSION_STATES.has(row.sessionState) &&
-    ACTIVE_TURN_STATES.has(row.turnState) &&
-    new Date(row.claimExpiresAt).valueOf() > now.valueOf() &&
-    new Date(row.leaseValidUntil).valueOf() > now.valueOf()
   );
 }
 
@@ -155,90 +123,73 @@ export class PostgresAgentEventAuthority {
     if (!(now instanceof Date) || Number.isNaN(now.valueOf())) {
       throw new TypeError("Agent event authority clock returned an invalid Date");
     }
-    const runIds = [...new Set(messages.map((message) => message.payload.runId))];
+    const grantIds = [
+      ...new Set(
+        messages.map((message) => parseExecutionGrant(message.payload.executionGrant).grantId),
+      ),
+    ];
     let query = database
-      .selectFrom("runs as run")
-      .innerJoin("run_attempts as attempt", (join) =>
-        join
-          .onRef("attempt.tenant_id", "=", "run.tenant_id")
-          .onRef("attempt.run_id", "=", "run.id")
-          .onRef("attempt.id", "=", "run.current_attempt_id"),
-      )
-      .innerJoin("commands as command", (join) =>
-        join
-          .onRef("command.tenant_id", "=", "run.tenant_id")
-          .onRef("command.id", "=", "run.command_id"),
-      )
-      .innerJoin("sessions as session_row", (join) =>
-        join
-          .onRef("session_row.tenant_id", "=", "run.tenant_id")
-          .onRef("session_row.id", "=", "run.session_id"),
-      )
-      .innerJoin("turns as turn", (join) =>
-        join.onRef("turn.tenant_id", "=", "run.tenant_id").onRef("turn.id", "=", "run.turn_id"),
-      )
-      .innerJoin("session_leases as lease", (join) =>
-        join
-          .onRef("lease.session_id", "=", "run.session_id")
-          .onRef("lease.lease_id", "=", "attempt.lease_id"),
-      )
+      .selectFrom("execution_grants as grant")
       .select([
-        "run.tenant_id as tenantId",
-        "run.id as runId",
-        "run.current_attempt_id as currentAttemptId",
-        "run.state as runState",
-        "attempt.state as attemptState",
-        "attempt.claim_expires_at as claimExpiresAt",
-        "attempt.lease_id as attemptLeaseId",
-        "attempt.fencing_token as attemptFence",
-        "attempt.last_event_seq as lastEventSequence",
-        "command.state as commandState",
-        "command.id as commandId",
-        "session_row.id as sessionId",
-        "session_row.state as sessionState",
-        "session_row.last_fencing_token as sessionFence",
-        "turn.id as turnId",
-        "turn.state as turnState",
-        "lease.lease_id as leaseId",
-        "lease.fencing_token as leaseFence",
-        "lease.valid_until as leaseValidUntil",
+        "grant.grant_id as grantId",
+        "grant.execution_id as executionId",
+        "grant.generation as generation",
+        "grant.tenant_id as tenantId",
+        "grant.project_id as projectId",
+        "grant.workspace_id as workspaceId",
+        "grant.run_id as runId",
+        "grant.session_id as sessionId",
+        "grant.turn_id as turnId",
+        "grant.command_id as commandId",
+        "grant.valid_until as validUntil",
+        "grant.last_event_seq as lastEventSeq",
       ])
-      .where("run.id", "in", runIds)
-      .orderBy("run.id", "asc");
+      .where("grant.grant_id", "in", grantIds)
+      .orderBy("grant.grant_id", "asc");
     if (lockAuthority) {
-      query = query.forUpdate(["run", "attempt", "command", "session_row", "turn", "lease"]);
+      query = query.forUpdate("grant");
     }
     const rows = await query.execute();
-    const rowByRun = new Map(rows.map((row) => [row.runId, row as AuthorityRow]));
+    const rowByGrant = new Map(rows.map((row) => [row.grantId, row as ExecutionGrantAuthorityRow]));
     const accepted: AcceptedAgentEventEnvelope[] = [];
     const duplicates: EventPublishMessage[] = [];
     const rejected: EventPublishMessage[] = [];
-    const expectedByRun = new Map<string, number>();
+    const expectedByGrant = new Map<string, number>();
     const seenEventIds = new Set<string>();
     for (const message of messages) {
-      const row = rowByRun.get(message.payload.runId);
+      const grantIdentity = parseExecutionGrant(message.payload.executionGrant);
+      const row = rowByGrant.get(grantIdentity.grantId);
       if (row === undefined || !identityMatches(row, message)) {
         rejected.push(message);
         continue;
       }
       const event = message.payload.event;
-      const persistedThrough = Number(row.lastEventSequence);
+      const persistedThrough = Number(row.lastEventSeq);
       if (event.seq <= persistedThrough || seenEventIds.has(event.eventId)) {
         duplicates.push(message);
         continue;
       }
-      if (!rowIsCurrent(row, now)) {
+      if (new Date(row.validUntil).valueOf() <= now.valueOf()) {
         rejected.push(message);
         continue;
       }
-      const expected = expectedByRun.get(row.runId) ?? persistedThrough;
+      const expected = expectedByGrant.get(row.grantId) ?? persistedThrough;
       if (event.seq !== expected + 1) {
         rejected.push(message);
         continue;
       }
-      expectedByRun.set(row.runId, event.seq);
+      expectedByGrant.set(row.grantId, event.seq);
       seenEventIds.add(event.eventId);
-      accepted.push({ schemaVersion: 1, tenantId: row.tenantId, publications: [message] });
+      accepted.push({
+        schemaVersion: 2,
+        tenantId: row.tenantId,
+        events: [event],
+        authority: {
+          grantId: grantIdentity.grantId,
+          executionId: grantIdentity.executionId,
+          generation: grantIdentity.generation,
+        },
+      });
     }
     return { accepted, duplicates, rejected };
   }
@@ -252,59 +203,50 @@ export class PostgresAgentEventAuthority {
     envelopes: readonly AcceptedAgentEventEnvelope[],
   ): Promise<void> {
     if (envelopes.length === 0) return;
-    const byAttempt = new Map<
+    const byGrant = new Map<
       string,
       {
-        tenantId: string;
-        runId: string;
-        attemptId: string;
-        leaseId: string;
-        fence: number;
+        grantId: string;
+        executionId: string;
+        generation: number;
         sequence: number;
       }
     >();
     for (const envelope of envelopes) {
-      const message = envelope.publications[0]!;
-      const identity = message.payload;
-      const key = `${envelope.tenantId}\0${identity.attemptId}`;
-      const current = byAttempt.get(key);
-      if (current === undefined || identity.event.seq > current.sequence) {
-        byAttempt.set(key, {
-          tenantId: envelope.tenantId,
-          runId: identity.runId,
-          attemptId: identity.attemptId,
-          leaseId: identity.leaseId,
-          fence: identity.fencingToken,
-          sequence: identity.event.seq,
+      const event = envelope.events[0]!;
+      const identity = envelope.authority;
+      if (identity === undefined) throw new Error("Accepted Agent event authority is missing");
+      const current = byGrant.get(identity.grantId);
+      if (current === undefined || event.seq > current.sequence) {
+        byGrant.set(identity.grantId, {
+          grantId: identity.grantId,
+          executionId: identity.executionId,
+          generation: identity.generation,
+          sequence: event.seq,
         });
       }
     }
-    const values = [...byAttempt.values()];
+    const values = [...byGrant.values()];
     const result = await sql<{ id: string }>`
       with accepted as (
         select * from jsonb_to_recordset(${JSON.stringify(values)}::jsonb) as item(
-          "tenantId" uuid,
-          "runId" uuid,
-          "attemptId" uuid,
-          "leaseId" uuid,
-          fence bigint,
+          "grantId" uuid,
+          "executionId" uuid,
+          generation bigint,
           sequence bigint
         )
       )
-      update run_attempts as attempt
-      set last_event_seq = greatest(attempt.last_event_seq, accepted.sequence),
-          updated_at = ${this.#clock()}
+      update execution_grants as authority
+      set last_event_seq = greatest(authority.last_event_seq, accepted.sequence)
       from accepted
-      where attempt.tenant_id = accepted."tenantId"
-        and attempt.run_id = accepted."runId"
-        and attempt.id = accepted."attemptId"
-        and attempt.lease_id = accepted."leaseId"
-        and attempt.fencing_token = accepted.fence
-        and attempt.state in ('provisioning', 'restoring', 'running', 'checkpointing', 'cancel_requested')
-      returning attempt.id
+      where authority.grant_id = accepted."grantId"
+        and authority.execution_id = accepted."executionId"
+        and authority.generation = accepted.generation
+        and authority.valid_until > ${this.#clock()}
+      returning authority.grant_id as id
     `.execute(database);
     if (result.rows.length !== values.length) {
-      throw new Error("Accepted Agent event batch lost RunAttempt authority");
+      throw new Error("Accepted Agent event batch lost ExecutionGrant authority");
     }
   }
 }

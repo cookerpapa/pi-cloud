@@ -1,11 +1,7 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
-import {
-  OpaqueIdSchema,
-  PositiveSafeIntegerSchema,
-  UtcTimestampSchema,
-  UuidSchema,
-} from "./protocol-primitives.ts";
+import { OpaqueIdSchema, UtcTimestampSchema, UuidSchema } from "./protocol-primitives.ts";
+import { ExecutionGrantSchema } from "./execution-grant.ts";
 import { SteerTurnCommandMessageSchema } from "./supervisor-wire.ts";
 
 const Sha256Schema = Type.String({ pattern: "^[0-9a-f]{64}$" });
@@ -62,8 +58,7 @@ export const SupervisorRuntimeAssignmentSchema = Type.Object(
     workspaceId: OpaqueIdSchema,
     sessionId: OpaqueIdSchema,
     turnId: OpaqueIdSchema,
-    leaseId: UuidSchema,
-    fencingToken: PositiveSafeIntegerSchema,
+    executionGrant: ExecutionGrantSchema,
   },
   { additionalProperties: false },
 );

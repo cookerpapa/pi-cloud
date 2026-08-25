@@ -2214,15 +2214,6 @@ export class ControlPlaneStore {
           claimOwnerId: attempt.claim_owner_id,
           claimExpiresAt: isoTimestamp(attempt.claim_expires_at),
           ...(attempt.sandbox_id === null ? {} : { sandboxId: attempt.sandbox_id }),
-          ...(attempt.lease_id === null ? {} : { leaseId: attempt.lease_id }),
-          ...(attempt.fencing_token === null
-            ? {}
-            : {
-                fencingToken: positiveSafeInteger(
-                  attempt.fencing_token,
-                  "Run attempt fencing token",
-                ),
-              }),
           ...(attempt.checkpoint_revision === null
             ? {}
             : { checkpointRevision: attempt.checkpoint_revision }),

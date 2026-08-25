@@ -141,8 +141,8 @@ export interface ToolBrokerActivationTable {
   session_id: string;
   turn_id: string;
   attempt_id: string;
-  lease_id: string;
-  fencing_token: Int8;
+  execution_grant_id: string;
+  execution_generation: Int8;
   capability_sha256: string;
   turn_context_sha256: string;
   attempt_context_sha256: string;
@@ -177,7 +177,7 @@ export interface WorkspaceTerminalSessionTable {
   project_id: string;
   workspace_id: string;
   session_id: string;
-  fencing_token: Int8;
+  generation: Int8;
   runtime_id: string | null;
   runtime_name: string | null;
   state: WorkspaceTerminalState;
@@ -497,7 +497,7 @@ export interface SessionTable {
   workspace_snapshot_key: string | null;
   next_event_seq: GeneratedInt8;
   next_mailbox_position: GeneratedInt8;
-  last_fencing_token: GeneratedInt8;
+  last_execution_generation: GeneratedInt8;
   row_version: GeneratedInt8;
   current_workspace_version_id: GeneratedNullable<string>;
   forked_from_session_id: GeneratedNullable<string>;
@@ -641,8 +641,8 @@ export interface RunAttemptTable {
   claim_owner_id: string;
   claim_expires_at: Timestamp;
   sandbox_id: string | null;
-  lease_id: string | null;
-  fencing_token: NullableInt8;
+  execution_grant_id: string | null;
+  execution_generation: NullableInt8;
   checkpoint_revision: string | null;
   failure_code: string | null;
   failure_message: string | null;
@@ -702,11 +702,19 @@ export interface SandboxTable {
   terminated_at: NullableTimestamp;
 }
 
-export interface SessionLeaseTable {
+export interface ExecutionGrantTable {
   session_id: string;
-  lease_id: string;
+  grant_id: string;
   sandbox_id: string;
-  fencing_token: Int8;
+  generation: Int8;
+  tenant_id: string;
+  project_id: string;
+  workspace_id: string;
+  run_id: string;
+  turn_id: string;
+  command_id: string;
+  execution_id: string;
+  last_event_seq: GeneratedInt8;
   valid_until: Timestamp;
   acquired_at: GeneratedTimestamp;
   renewed_at: GeneratedTimestamp;
@@ -1214,7 +1222,7 @@ export interface Database {
   supervisor_boot_credentials: SupervisorBootCredentialTable;
   supervisor_hosts: SupervisorHostTable;
   sandbox_retirements: SandboxRetirementTable;
-  session_leases: SessionLeaseTable;
+  execution_grants: ExecutionGrantTable;
   commands: CommandTable;
   approvals: ApprovalTable;
   conversation_fork_operations: ConversationForkOperationTable;

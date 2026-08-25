@@ -1024,8 +1024,6 @@ export const RunAttemptResourceSchema = Type.Object(
     claimOwnerId: Type.String({ minLength: 1, maxLength: 256 }),
     claimExpiresAt: UtcTimestampSchema,
     sandboxId: Type.Optional(UuidSchema),
-    leaseId: Type.Optional(UuidSchema),
-    fencingToken: Type.Optional(PositiveSafeIntegerSchema),
     checkpointRevision: Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })),
     failure: Type.Optional(RunFailureResourceSchema),
     claimedAt: UtcTimestampSchema,

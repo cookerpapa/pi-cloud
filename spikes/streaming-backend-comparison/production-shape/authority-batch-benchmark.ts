@@ -1,5 +1,9 @@
 import { createDatabase } from "@pi-cloud/database";
-import { parseSupervisorToControlMessage, type EventPublishMessage } from "@pi-cloud/protocol";
+import {
+  createExecutionGrant,
+  parseSupervisorToControlMessage,
+  type EventPublishMessage,
+} from "@pi-cloud/protocol";
 import {
   JetStreamAcceptedAgentEventPublisher,
   JetStreamAgentEventIngestor,
@@ -36,7 +40,7 @@ type AuthoritySeed = Readonly<{
   commandId: string;
   runId: string;
   attemptId: string;
-  leaseId: string;
+  grantId: string;
   sessionId: string;
   turnId: string;
 }>;
@@ -47,7 +51,7 @@ function seed(index: number): AuthoritySeed {
     commandId: id(index, 2),
     runId: id(index, 3),
     attemptId: id(index, 4),
-    leaseId: id(index, 5),
+    grantId: id(index, 5),
     sessionId: id(index, 6),
     turnId: id(index, 7),
   };
@@ -60,11 +64,7 @@ function publication(row: AuthoritySeed, round: number): EventPublishMessage {
     sentAt: "2026-08-25T00:00:00.000Z",
     type: "event.publish",
     payload: {
-      commandId: row.commandId,
-      runId: row.runId,
-      attemptId: row.attemptId,
-      leaseId: row.leaseId,
-      fencingToken: 1,
+      executionGrant: createExecutionGrant(row.grantId, row.attemptId, 1),
       event: {
         schemaVersion: 1,
         eventId: id(Number(row.runId.slice(0, 8)), 200 + round),
@@ -84,41 +84,23 @@ function publication(row: AuthoritySeed, round: number): EventPublishMessage {
 
 async function initialize(database: ReturnType<typeof createDatabase>): Promise<void> {
   await sql`
-    drop table if exists session_leases, turns, sessions, commands, run_attempts, runs cascade;
-    create table runs (
+    drop table if exists execution_grants cascade;
+    create table execution_grants (
+      grant_id uuid primary key,
+      execution_id uuid unique not null,
+      generation bigint not null,
       tenant_id uuid not null,
-      id uuid primary key,
-      current_attempt_id uuid,
-      state text not null,
-      command_id uuid not null,
-      session_id uuid not null,
-      turn_id uuid not null
-    );
-    create table run_attempts (
-      tenant_id uuid not null,
+      project_id uuid not null,
+      workspace_id uuid not null,
       run_id uuid not null,
-      id uuid primary key,
-      state text not null,
-      claim_expires_at timestamptz not null,
-      lease_id uuid not null,
-      fencing_token bigint not null,
-      last_event_seq bigint not null default 0,
-      updated_at timestamptz not null default now()
-    );
-    create table commands (tenant_id uuid not null, id uuid primary key, state text not null);
-    create table sessions (
-      tenant_id uuid not null,
-      id uuid primary key,
-      state text not null,
-      last_fencing_token bigint not null
-    );
-    create table turns (tenant_id uuid not null, id uuid primary key, state text not null);
-    create table session_leases (
-      session_id uuid not null,
-      lease_id uuid not null,
-      fencing_token bigint not null,
+      session_id uuid unique not null,
+      turn_id uuid not null,
+      command_id uuid not null,
+      sandbox_id uuid not null,
       valid_until timestamptz not null,
-      primary key (session_id, lease_id)
+      last_event_seq bigint not null default 0,
+      acquired_at timestamptz not null default now(),
+      renewed_at timestamptz not null default now()
     );
   `.execute(database);
 }
@@ -133,66 +115,17 @@ async function seedAuthority(
       with input as (
         select * from jsonb_to_recordset(${values}::jsonb) as item(
           "tenantId" uuid, "commandId" uuid, "runId" uuid, "attemptId" uuid,
-          "leaseId" uuid, "sessionId" uuid, "turnId" uuid
+          "grantId" uuid, "sessionId" uuid, "turnId" uuid
         )
       )
-      insert into runs(tenant_id, id, current_attempt_id, state, command_id, session_id, turn_id)
-      select "tenantId", "runId", "attemptId", 'running', "commandId", "sessionId", "turnId"
-      from input;
-    `.execute(database);
-    await sql`
-      with input as (
-        select * from jsonb_to_recordset(${values}::jsonb) as item(
-          "tenantId" uuid, "commandId" uuid, "runId" uuid, "attemptId" uuid,
-          "leaseId" uuid, "sessionId" uuid, "turnId" uuid
-        )
+      insert into execution_grants(
+        grant_id, execution_id, generation, tenant_id, project_id, workspace_id,
+        run_id, session_id, turn_id, command_id, sandbox_id, valid_until, last_event_seq
       )
-      insert into run_attempts(
-        tenant_id, run_id, id, state, claim_expires_at, lease_id, fencing_token, last_event_seq
-      )
-      select "tenantId", "runId", "attemptId", 'running', now() + interval '1 hour',
-             "leaseId", 1, 0
-      from input;
-    `.execute(database);
-    await sql`
-      with input as (
-        select * from jsonb_to_recordset(${values}::jsonb) as item(
-          "tenantId" uuid, "commandId" uuid, "runId" uuid, "attemptId" uuid,
-          "leaseId" uuid, "sessionId" uuid, "turnId" uuid
-        )
-      )
-      insert into commands(tenant_id, id, state)
-      select "tenantId", "commandId", 'acknowledged' from input;
-    `.execute(database);
-    await sql`
-      with input as (
-        select * from jsonb_to_recordset(${values}::jsonb) as item(
-          "tenantId" uuid, "commandId" uuid, "runId" uuid, "attemptId" uuid,
-          "leaseId" uuid, "sessionId" uuid, "turnId" uuid
-        )
-      )
-      insert into sessions(tenant_id, id, state, last_fencing_token)
-      select "tenantId", "sessionId", 'running', 1 from input;
-    `.execute(database);
-    await sql`
-      with input as (
-        select * from jsonb_to_recordset(${values}::jsonb) as item(
-          "tenantId" uuid, "commandId" uuid, "runId" uuid, "attemptId" uuid,
-          "leaseId" uuid, "sessionId" uuid, "turnId" uuid
-        )
-      )
-      insert into turns(tenant_id, id, state)
-      select "tenantId", "turnId", 'running' from input;
-    `.execute(database);
-    await sql`
-      with input as (
-        select * from jsonb_to_recordset(${values}::jsonb) as item(
-          "tenantId" uuid, "commandId" uuid, "runId" uuid, "attemptId" uuid,
-          "leaseId" uuid, "sessionId" uuid, "turnId" uuid
-        )
-      )
-      insert into session_leases(session_id, lease_id, fencing_token, valid_until)
-      select "sessionId", "leaseId", 1, now() + interval '1 hour' from input;
+      select "grantId", "attemptId", 1, "tenantId", "tenantId", "tenantId",
+             "runId", "sessionId", "turnId", "commandId", "tenantId",
+             now() + interval '1 hour', 0
+        from input;
     `.execute(database);
   }
 }
@@ -253,7 +186,7 @@ try {
   );
   const baselineElapsedMs = performance.now() - baselineStartedAt;
 
-  await sql`update run_attempts set last_event_seq = 0`.execute(database);
+  await sql`update execution_grants set last_event_seq = 0`.execute(database);
   let batchedAuthorityTransactions = 0;
   const batchedAuthority = new PostgresAgentEventAuthority({ database });
   const ingestor = new JetStreamAgentEventIngestor({

@@ -11,7 +11,7 @@ import { type Kysely, sql } from "kysely";
 import {
   AssignmentReconciler,
   ControlPlaneStore,
-  SessionLeaseCoordinatorError,
+  ExecutionGrantCoordinatorError,
   SupervisorConnectionManager,
   SupervisorConnectionManagerError,
   SupervisorOwnerBoundaryError,
@@ -110,8 +110,7 @@ function heartbeat(options: {
   sessions?: readonly {
     sessionId: string;
     turnId: string;
-    leaseId: string;
-    fencingToken: number;
+    executionGrant: string;
     lastProducedSeq?: number;
     lastAcknowledgedSeq?: number;
   }[];
@@ -131,8 +130,7 @@ function heartbeat(options: {
         sessionId: session.sessionId,
         turnId: session.turnId,
         state: "running" as const,
-        leaseId: session.leaseId,
-        fencingToken: session.fencingToken,
+        executionGrant: session.executionGrant,
         lastProducedSeq: session.lastProducedSeq ?? 0,
         lastAcknowledgedSeq: session.lastAcknowledgedSeq ?? 0,
       })),
@@ -267,8 +265,8 @@ async function createAcceptedTurn(): Promise<{
         claim_owner_id: "supervisor-connection-test",
         claim_expires_at: new Date("2026-08-01T00:00:00.000Z"),
         sandbox_id: null,
-        lease_id: null,
-        fencing_token: null,
+        execution_grant_id: null,
+        execution_generation: null,
         checkpoint_revision: null,
         failure_code: null,
         failure_message: null,
@@ -562,7 +560,7 @@ describe.sequential("durable supervisor registration and health management", () 
       transportAuthority,
     );
 
-    expect(acknowledgement.payload.leaseRenewals).toEqual([]);
+    expect(acknowledgement.payload.executionGrantRenewals).toEqual([]);
     const after = await database
       .selectFrom("supervisor_connections")
       .select(["accepting_assignments", "expires_at"])
@@ -626,14 +624,14 @@ describe.sequential("durable supervisor registration and health management", () 
       transportAuthority,
     );
     const accepted = await createAcceptedTurn();
-    const coordinator = await connectionManager.leaseCoordinator(
+    const coordinator = await connectionManager.executionGrantCoordinator(
       registered.payload.connectionId,
       transportAuthority,
     );
     const lease = await coordinator.acquire(accepted.request);
     await markAssignmentAcknowledged({ ...accepted, now });
     const before = await database
-      .selectFrom("session_leases")
+      .selectFrom("execution_grants")
       .select("valid_until")
       .where("session_id", "=", accepted.sessionId)
       .executeTakeFirstOrThrow();
@@ -649,16 +647,15 @@ describe.sequential("durable supervisor registration and health management", () 
           {
             sessionId: accepted.sessionId,
             turnId: accepted.turnId,
-            leaseId: lease.leaseId,
-            fencingToken: lease.fencingToken,
+            executionGrant: lease.executionGrant,
           },
         ],
       }),
       transportAuthority,
     );
-    expect(acknowledgement.payload.leaseRenewals).toHaveLength(1);
+    expect(acknowledgement.payload.executionGrantRenewals).toHaveLength(1);
     const after = await database
-      .selectFrom("session_leases")
+      .selectFrom("execution_grants")
       .select("valid_until")
       .where("session_id", "=", accepted.sessionId)
       .executeTakeFirstOrThrow();
@@ -675,7 +672,7 @@ describe.sequential("durable supervisor registration and health management", () 
 
     const follower = await createAcceptedTurn();
     await expect(coordinator.acquire(follower.request)).rejects.toEqual(
-      expect.objectContaining<Partial<SessionLeaseCoordinatorError>>({
+      expect.objectContaining<Partial<ExecutionGrantCoordinatorError>>({
         code: "connection_not_accepting",
         retryable: true,
       }),
@@ -705,7 +702,7 @@ describe.sequential("durable supervisor registration and health management", () 
       transportAuthority,
     );
     const accepted = await createAcceptedTurn();
-    const coordinator = await connectionManager.leaseCoordinator(
+    const coordinator = await connectionManager.executionGrantCoordinator(
       registered.payload.connectionId,
       transportAuthority,
     );
@@ -718,7 +715,7 @@ describe.sequential("durable supervisor registration and health management", () 
     expect(stopped).toEqual([]);
     expect(
       await database
-        .selectFrom("session_leases")
+        .selectFrom("execution_grants")
         .select("session_id")
         .where("session_id", "=", accepted.sessionId)
         .executeTakeFirst(),
@@ -744,7 +741,7 @@ describe.sequential("durable supervisor registration and health management", () 
     expect(stopped).toHaveLength(1);
     expect(
       await database
-        .selectFrom("session_leases")
+        .selectFrom("execution_grants")
         .select("session_id")
         .where("session_id", "=", accepted.sessionId)
         .executeTakeFirst(),
@@ -775,7 +772,7 @@ describe.sequential("durable supervisor registration and health management", () 
       firstAuthority,
     );
     const accepted = await createAcceptedTurn();
-    const coordinator = await connectionManager.leaseCoordinator(
+    const coordinator = await connectionManager.executionGrantCoordinator(
       firstRegistration.payload.connectionId,
       firstAuthority,
     );
@@ -887,7 +884,7 @@ describe.sequential("durable supervisor registration and health management", () 
     ).toEqual({ state: "blocked", last_error: "owner_identity_mismatch" });
   });
 
-  it("settles a fenced active Run when the dead Worker has no management endpoint", async () => {
+  it("settles a revoked active Run when the dead Worker has no management endpoint", async () => {
     let now = testTime(5);
     let stopAttempts = 0;
     const transportAuthority = authority();
@@ -910,7 +907,7 @@ describe.sequential("durable supervisor registration and health management", () 
       transportAuthority,
     );
     const accepted = await createAcceptedTurn();
-    const coordinator = await connectionManager.leaseCoordinator(
+    const coordinator = await connectionManager.executionGrantCoordinator(
       registered.payload.connectionId,
       transportAuthority,
     );

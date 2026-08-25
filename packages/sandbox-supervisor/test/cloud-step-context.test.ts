@@ -1,6 +1,7 @@
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+  createExecutionGrant,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import { describe, expect, it } from "vitest";
@@ -24,10 +25,12 @@ const command: ExecuteTurnCommandMessage = {
     sessionId: "session-step",
     runId: "10000000-0000-4000-8000-000000000003",
     turnId: "turn-step",
-    attemptId: "10000000-0000-4000-8000-000000000004",
     agentId: "root",
-    leaseId: "10000000-0000-4000-8000-000000000005",
-    fencingToken: 9,
+    executionGrant: createExecutionGrant(
+      "10000000-0000-4000-8000-000000000005",
+      "10000000-0000-4000-8000-000000000004",
+      9,
+    ),
     nextEventSeq: 1,
     input: { kind: "prompt", text: "test" },
     sandboxRetention: "ephemeral",
@@ -80,9 +83,11 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
         ...command.payload,
         commandId: "20000000-0000-4000-8000-000000000002",
         idempotencyKey: "frozen-step-retry",
-        attemptId: "20000000-0000-4000-8000-000000000004",
-        leaseId: "20000000-0000-4000-8000-000000000005",
-        fencingToken: 10,
+        executionGrant: createExecutionGrant(
+          "20000000-0000-4000-8000-000000000005",
+          "20000000-0000-4000-8000-000000000004",
+          10,
+        ),
       },
     };
     const retriedTurn = createCloudTurnContext(retryCommand, "c".repeat(64));

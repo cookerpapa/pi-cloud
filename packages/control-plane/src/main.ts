@@ -9,7 +9,7 @@ import {
   RoutedHttpSandboxAssignmentInventory,
   RoutedHttpSupervisorOwnerBoundary,
 } from "./http-supervisor-management.ts";
-import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
+import { ExecutionGrantCoordinator } from "@pi-cloud/runtime-core/execution-grant-coordinator";
 import { PostgresCheckpointObjectStore } from "@pi-cloud/runtime-core/postgres-checkpoint-object-store";
 import { JetStreamEventRuntime } from "@pi-cloud/runtime-core/jetstream-event-runtime";
 import {
@@ -141,7 +141,7 @@ export async function startControlPlane(): Promise<void> {
           bootId: identity.boot_id,
           sandboxId,
         }),
-        leaseCoordinator: new SessionLeaseCoordinator({ database, sandboxId }),
+        grantCoordinator: new ExecutionGrantCoordinator({ database, sandboxId }),
       });
     };
     const snapshotMaterializer = new ReplicatedToolBrokerClient({

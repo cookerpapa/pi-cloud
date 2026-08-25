@@ -44,9 +44,9 @@ export class AgentEventIngestGateway {
           typeof error === "object" &&
           error !== null &&
           "code" in error &&
-          error.code === "stale_fence"
+          error.code === "stale_execution_grant"
         ) {
-          await reply.code(409).send({ error: "stale_fence" });
+          await reply.code(409).send({ error: "stale_execution_grant" });
           return;
         }
         request.log.warn({ err: error }, "Agent event ingest failed");

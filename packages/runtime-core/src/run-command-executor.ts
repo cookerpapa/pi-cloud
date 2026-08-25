@@ -70,13 +70,12 @@ export type TurnExecutionRequest = {
   traceContext?: TraceContext;
 };
 
-export type TurnExecutionAcknowledgement = {
-  leaseId: string;
-  fencingToken: number;
+export type TurnExecutionGrant = {
+  executionGrant: string;
 };
 
 export type TurnExecutionLifecycle = {
-  started(acknowledgement?: TurnExecutionAcknowledgement): Promise<void>;
+  started(grant?: TurnExecutionGrant): Promise<void>;
 };
 
 export type TurnExecutionResult = {
@@ -92,23 +91,23 @@ export interface TurnExecutionBackend {
   ): Promise<TurnExecutionResult>;
 }
 
-export interface TurnExecutionLeaseManager {
+export interface TurnExecutionAuthority {
   assertCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionAcknowledgement,
+    grant: TurnExecutionGrant,
     now: Date,
   ): Promise<void>;
   assertCurrentOrExpired?(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionAcknowledgement,
+    grant: TurnExecutionGrant,
     now: Date,
   ): Promise<void>;
   releaseCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionAcknowledgement,
+    grant: TurnExecutionGrant,
     now: Date,
   ): Promise<void>;
 }
@@ -215,7 +214,7 @@ export type RunCommandExecutorOptions = {
   maxAttempts?: number;
   claimOwnerId?: string;
   idGenerator?: () => string;
-  leaseManager?: TurnExecutionLeaseManager;
+  executionAuthority?: TurnExecutionAuthority;
   metrics?: PiCloudMetrics;
   terminalTurnProjectionSource?: TerminalTurnProjectionSource;
 };
@@ -337,7 +336,7 @@ export class RunCommandExecutor {
   readonly #maxAttempts: number;
   readonly #claimOwnerId: string;
   readonly #idGenerator: () => string;
-  readonly #leaseManager: TurnExecutionLeaseManager | undefined;
+  readonly #executionAuthority: TurnExecutionAuthority | undefined;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #terminalTurnProjectionSource: TerminalTurnProjectionSource | undefined;
 
@@ -359,7 +358,7 @@ export class RunCommandExecutor {
       throw new TypeError("claimOwnerId is invalid");
     }
     this.#idGenerator = options.idGenerator ?? randomUUID;
-    this.#leaseManager = options.leaseManager;
+    this.#executionAuthority = options.executionAuthority;
     this.#metrics = options.metrics;
     this.#terminalTurnProjectionSource = options.terminalTurnProjectionSource;
   }
@@ -398,12 +397,12 @@ export class RunCommandExecutor {
         },
         run: async () => {
           let started = false;
-          let acknowledgement: TurnExecutionAcknowledgement | undefined;
+          let acknowledgement: TurnExecutionGrant | undefined;
           let startedPromise: Promise<void> | undefined;
           let startFailure: unknown;
           const lifecycle: TurnExecutionLifecycle = {
             started: (candidate) => {
-              if (this.#leaseManager !== undefined && candidate === undefined) {
+              if (this.#executionAuthority !== undefined && candidate === undefined) {
                 return Promise.reject(
                   new RunCommandExecutorInvariantError(
                     "A fenced execution acknowledgement is required by the configured lease manager",
@@ -412,8 +411,7 @@ export class RunCommandExecutor {
               }
               if (
                 startedPromise !== undefined &&
-                (candidate?.leaseId !== acknowledgement?.leaseId ||
-                  candidate?.fencingToken !== acknowledgement?.fencingToken)
+                candidate?.executionGrant !== acknowledgement?.executionGrant
               ) {
                 return Promise.reject(
                   new RunCommandExecutorInvariantError(
@@ -928,8 +926,8 @@ export class RunCommandExecutor {
           claim_owner_id: this.#claimOwnerId,
           claim_expires_at: leaseUntil,
           sandbox_id: null,
-          lease_id: null,
-          fencing_token: null,
+          execution_grant_id: null,
+          execution_generation: null,
           checkpoint_revision: null,
           failure_code: null,
           failure_message: null,
@@ -1106,7 +1104,7 @@ export class RunCommandExecutor {
 
   async #markStarted(
     claim: ClaimedTurn,
-    acknowledgement: TurnExecutionAcknowledgement | undefined,
+    acknowledgement: TurnExecutionGrant | undefined,
   ): Promise<void> {
     const now = safeDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
@@ -1121,8 +1119,13 @@ export class RunCommandExecutor {
           "An unpublished outbox record is required before command acknowledgement",
         );
       }
-      if (this.#leaseManager !== undefined && acknowledgement !== undefined) {
-        await this.#leaseManager.assertCurrent(transaction, claim.request, acknowledgement, now);
+      if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
+        await this.#executionAuthority.assertCurrent(
+          transaction,
+          claim.request,
+          acknowledgement,
+          now,
+        );
       }
       await transitionCurrentRunAttempt(
         transaction,
@@ -1206,7 +1209,7 @@ export class RunCommandExecutor {
   async #complete(
     claim: ClaimedTurn,
     result: TurnExecutionResult,
-    acknowledgement: TurnExecutionAcknowledgement | undefined,
+    acknowledgement: TurnExecutionGrant | undefined,
   ): Promise<void> {
     const now = safeDate(this.#clock);
     const terminalEventId = this.#idGenerator();
@@ -1230,8 +1233,13 @@ export class RunCommandExecutor {
         );
       }
 
-      if (this.#leaseManager !== undefined && acknowledgement !== undefined) {
-        await this.#leaseManager.assertCurrent(transaction, claim.request, acknowledgement, now);
+      if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
+        await this.#executionAuthority.assertCurrent(
+          transaction,
+          claim.request,
+          acknowledgement,
+          now,
+        );
       }
       await this.#storeEventBoundary(
         transaction,
@@ -1318,14 +1326,17 @@ export class RunCommandExecutor {
         turnId: claim.request.turnId,
         commandId: claim.request.commandId,
         agentId: "root",
-        leaseId: acknowledgement?.leaseId ?? terminalEventId,
-        fencingToken: acknowledgement?.fencingToken ?? claim.request.attemptNumber,
         body: terminalBody,
         now,
         eventId: terminalEventId,
       });
-      if (this.#leaseManager !== undefined && acknowledgement !== undefined) {
-        await this.#leaseManager.releaseCurrent(transaction, claim.request, acknowledgement, now);
+      if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
+        await this.#executionAuthority.releaseCurrent(
+          transaction,
+          claim.request,
+          acknowledgement,
+          now,
+        );
       }
     });
   }
@@ -1334,7 +1345,7 @@ export class RunCommandExecutor {
     claim: ClaimedTurn,
     started: boolean,
     failure: ExecutionFailure,
-    acknowledgement: TurnExecutionAcknowledgement | undefined,
+    acknowledgement: TurnExecutionGrant | undefined,
   ): Promise<RunCommandExecutionResult> {
     const now = safeDate(this.#clock);
     const shouldRetry = !started && failure.retryable && claim.attempt < this.#maxAttempts;
@@ -1476,16 +1487,21 @@ export class RunCommandExecutor {
         );
       }
 
-      if (started && this.#leaseManager !== undefined && acknowledgement !== undefined) {
-        if (this.#leaseManager.assertCurrentOrExpired !== undefined) {
-          await this.#leaseManager.assertCurrentOrExpired(
+      if (started && this.#executionAuthority !== undefined && acknowledgement !== undefined) {
+        if (this.#executionAuthority.assertCurrentOrExpired !== undefined) {
+          await this.#executionAuthority.assertCurrentOrExpired(
             transaction,
             claim.request,
             acknowledgement,
             now,
           );
         } else {
-          await this.#leaseManager.assertCurrent(transaction, claim.request, acknowledgement, now);
+          await this.#executionAuthority.assertCurrent(
+            transaction,
+            claim.request,
+            acknowledgement,
+            now,
+          );
         }
       }
       await this.#storeEventBoundary(
@@ -1582,8 +1598,6 @@ export class RunCommandExecutor {
         turnId: claim.request.turnId,
         commandId: claim.request.commandId,
         agentId: "root",
-        leaseId: acknowledgement?.leaseId ?? terminalEventId,
-        fencingToken: acknowledgement?.fencingToken ?? claim.request.attemptNumber,
         body: terminalBody,
         now,
         eventId: terminalEventId,
@@ -1612,8 +1626,13 @@ export class RunCommandExecutor {
           .where("state", "=", rows.sessionState)
           .executeTakeFirst();
         expectOne(sessionUpdate.numUpdatedRows, "settling a failed session");
-        if (this.#leaseManager !== undefined && acknowledgement !== undefined) {
-          await this.#leaseManager.releaseCurrent(transaction, claim.request, acknowledgement, now);
+        if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
+          await this.#executionAuthority.releaseCurrent(
+            transaction,
+            claim.request,
+            acknowledgement,
+            now,
+          );
         }
       }
 

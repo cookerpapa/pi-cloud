@@ -11,14 +11,12 @@ export type CloudAgentExecutionScope = Readonly<{
   sessionId: string;
   turnId: string;
   runId: string;
-  attemptId: string;
 }>;
 
 export type OpenPostgresDurableAgentSessionOptions = Readonly<{
   database: Kysely<Database>;
   scope: CloudAgentExecutionScope;
-  claimOwnerId: string;
-  fencingToken: number;
+  executionGrant: string;
   pollIntervalMs?: number;
   clock?: () => Date;
   entryPayloadCache?: PostgresPiSessionEntryPayloadCache;
@@ -50,9 +48,8 @@ export async function openPostgresDurableAgentSession(
     tenantId: options.scope.tenantId,
     sessionId: options.scope.sessionId,
     runId: options.scope.runId,
-    attemptId: options.scope.attemptId,
-    claimOwnerId: options.claimOwnerId,
-    fencingToken: options.fencingToken,
+    turnId: options.scope.turnId,
+    executionGrant: options.executionGrant,
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });

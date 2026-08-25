@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
+import { request as httpRequest } from "node:http";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -133,11 +134,44 @@ const baseUrl = new URL(
 const token = (
   await readPrivate(resolve(runtimeDirectory, "secrets/api-token"), 4_096, "Production API token")
 ).trim();
-const fetchFromProduction = (input, init = {}) =>
-  fetch(new URL(String(input), baseUrl), {
+const fetchFromProduction = async (input, init = {}) => {
+  const request = new URL(String(input), baseUrl);
+  const response = await fetch(request, {
     ...init,
+    redirect: "manual",
     signal: init.signal ?? AbortSignal.timeout(300_000),
   });
+  const location = response.headers.get("location");
+  if (response.status < 300 || response.status >= 400 || location === null) return response;
+  const target = new URL(location, request);
+  if (!target.hostname.endsWith(".preview.localhost")) return response;
+  return new Promise((resolvePromise, rejectPromise) => {
+    const request = httpRequest(
+      {
+        hostname: connectHost,
+        port: target.port,
+        path: `${target.pathname}${target.search}`,
+        method: init.method ?? "GET",
+        headers: { ...Object.fromEntries(new Headers(init.headers)), host: target.host },
+        signal: init.signal ?? AbortSignal.timeout(300_000),
+      },
+      (incoming) => {
+        const chunks = [];
+        incoming.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+        incoming.once("end", () => {
+          resolvePromise(
+            new Response(Buffer.concat(chunks), {
+              status: incoming.statusCode ?? 500,
+              headers: incoming.headers,
+            }),
+          );
+        });
+      },
+    );
+    request.once("error", rejectPromise);
+    request.end();
+  });
+};
 const bootstrapApi = new PiCloudApi(fetchFromProduction, token);
 let api = bootstrapApi;
 let tenantId = bootstrapTenantId;
@@ -363,15 +397,15 @@ function wait(delayMs, signal) {
 function currentCubeAssignment(metadata) {
   const records = [];
   for (const [key, raw] of Object.entries(metadata)) {
-    if (!key.startsWith("picloud.assignment.v1.")) continue;
+    if (!key.startsWith("picloud.assignment.v2.")) continue;
     try {
       const parsed = JSON.parse(raw);
       if (
-        Number.isSafeInteger(parsed?.fencingToken) &&
-        parsed.fencingToken > 0 &&
+        Number.isSafeInteger(parsed?.generation) &&
+        parsed.generation > 0 &&
         typeof parsed.sessionId === "string" &&
         typeof parsed.activationId === "string" &&
-        typeof parsed.attemptId === "string" &&
+        typeof parsed.executionId === "string" &&
         typeof parsed.turnId === "string"
       ) {
         records.push(parsed);
@@ -380,21 +414,29 @@ function currentCubeAssignment(metadata) {
       throw new Error("Cube assignment inventory contained malformed managed metadata");
     }
   }
-  records.sort((left, right) => right.fencingToken - left.fencingToken);
-  if (records[0]?.fencingToken === records[1]?.fencingToken) {
-    throw new Error("Cube assignment inventory contained an ambiguous highest fence");
+  const generation = Number(metadata["picloud.execution_generation"]);
+  const current = records.filter(
+    (record) =>
+      record.grantId === metadata["picloud.execution_grant_id"] &&
+      record.executionId === metadata["picloud.execution_id"] &&
+      record.generation === generation,
+  );
+  if (current.length !== 1) {
+    throw new Error("Cube assignment inventory contained ambiguous current authority");
   }
-  return records[0];
+  return current[0];
 }
 
 function managedForSession(instances, sessionId) {
   return instances.filter((instance) => {
-    const assignment = currentCubeAssignment(instance.metadata);
-    return (
-      instance.metadata["picloud.managed"] === "true" &&
-      instance.metadata["picloud.provider"] === "cubesandbox" &&
-      assignment?.sessionId === sessionId
-    );
+    if (
+      instance.metadata["picloud.managed"] !== "true" ||
+      instance.metadata["picloud.provider"] !== "cubesandbox" ||
+      instance.metadata["picloud.session_id"] !== sessionId
+    ) {
+      return false;
+    }
+    return currentCubeAssignment(instance.metadata)?.sessionId === sessionId;
   });
 }
 
@@ -412,7 +454,7 @@ function observeCubeSession(sessionId) {
             observed.set(activationId, {
               activationId,
               sandboxId: instance.sandboxId,
-              attemptId: assignment.attemptId,
+              attemptId: assignment.executionId,
               turnId: assignment.turnId,
               state: instance.state,
             });
@@ -605,8 +647,8 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
               'workspaceId', workspace_id,
               'sessionId', session_id,
               'turnId', turn_id,
-              'leaseId', lease_id,
-              'fencingToken', fencing_token
+              'executionGrant', 'pceg1_' || replace(execution_grant_id::text, '-', '') ||
+                '_' || replace(attempt_id::text, '-', '') || '_' || execution_generation::text
             )::text
        from tool_broker_activations
       where sandbox_id = ${sqlLiteral(logicalSandboxId)}

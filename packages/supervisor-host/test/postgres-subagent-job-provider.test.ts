@@ -5,7 +5,7 @@ import {
   createPrivateTenant,
 } from "@pi-cloud/control-plane";
 import { PostgresPiSessionRepository } from "@pi-cloud/pi-session-postgres";
-import { TURN_COMMAND_OUTBOX_TOPIC } from "@pi-cloud/protocol";
+import { createExecutionGrant, TURN_COMMAND_OUTBOX_TOPIC } from "@pi-cloud/protocol";
 import { RunCommandExecutor } from "@pi-cloud/runtime-core/run-command-executor";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -25,6 +25,11 @@ let parentAttemptId: string;
 let parentSandboxId: string;
 
 const FENCE = 7;
+const PARENT_GRANT_ID = "90000000-0000-4000-8000-000000000001";
+
+function parentExecutionGrant(): string {
+  return createExecutionGrant(PARENT_GRANT_ID, parentAttemptId, FENCE);
+}
 
 function assistant(text: string): AssistantMessage {
   return {
@@ -49,9 +54,10 @@ function assistant(text: string): AssistantMessage {
 async function activateChildRun(
   childSessionId: string,
   childRunId: string,
-  fencingToken: number,
+  generation: number,
 ): Promise<string> {
   const attemptId = crypto.randomUUID();
+  const grantId = crypto.randomUUID();
   const run = await database
     .selectFrom("runs")
     .select(["turn_id", "command_id"])
@@ -70,8 +76,8 @@ async function activateChildRun(
         claim_owner_id: "recursive-test-worker",
         claim_expires_at: new Date(Date.now() + 60_000),
         sandbox_id: parentSandboxId,
-        lease_id: crypto.randomUUID(),
-        fencing_token: fencingToken,
+        execution_grant_id: grantId,
+        execution_generation: generation,
         running_at: new Date(),
       })
       .executeTakeFirstOrThrow();
@@ -111,7 +117,7 @@ async function activateChildRun(
       .where("child_run_id", "=", childRunId)
       .executeTakeFirstOrThrow();
   });
-  return attemptId;
+  return createExecutionGrant(grantId, attemptId, generation);
 }
 
 beforeAll(async () => {
@@ -195,8 +201,8 @@ beforeAll(async () => {
       claim_owner_id: "test-worker",
       claim_expires_at: new Date(Date.now() + 60_000),
       sandbox_id: parentSandboxId,
-      lease_id: crypto.randomUUID(),
-      fencing_token: FENCE,
+      execution_grant_id: PARENT_GRANT_ID,
+      execution_generation: FENCE,
       checkpoint_revision: null,
       failure_code: null,
       failure_message: null,
@@ -257,8 +263,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentAttemptId,
-      parentFencingToken: FENCE,
+      parentExecutionGrant: parentExecutionGrant(),
       parentToolCallId: "subagent-tool-none",
       workflowRunId: "workflow-none",
       stepIndex: 0,
@@ -336,8 +341,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentAttemptId,
-      parentFencingToken: FENCE,
+      parentExecutionGrant: parentExecutionGrant(),
       parentToolCallId: "subagent-tool-shared",
       workflowRunId: "workflow-shared",
       stepIndex: 1,
@@ -442,8 +446,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentAttemptId,
-      parentFencingToken: FENCE,
+      parentExecutionGrant: parentExecutionGrant(),
       parentToolCallId: "subagent-tool-isolated",
       workflowRunId: "workflow-isolated",
       stepIndex: 2,
@@ -464,9 +467,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           commandId: parent.command_id,
           sessionId: parentSessionId,
           turnId: parent.turn_id,
-          attemptId: parentAttemptId,
-          leaseId: crypto.randomUUID(),
-          fencingToken: FENCE,
+          executionGrant: parentExecutionGrant(),
         },
       },
     });
@@ -509,8 +510,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentAttemptId,
-      parentFencingToken: FENCE,
+      parentExecutionGrant: parentExecutionGrant(),
       parentToolCallId: "subagent-tool-cancel",
       workflowRunId: "workflow-cancel",
       stepIndex: 3,
@@ -546,8 +546,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentAttemptId,
-      parentFencingToken: FENCE,
+      parentExecutionGrant: parentExecutionGrant(),
       parentToolCallId: "subagent-tool-supervisor",
       workflowRunId: "workflow-supervisor",
       stepIndex: 4,
@@ -610,8 +609,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentAttemptId,
-      parentFencingToken: FENCE,
+      parentExecutionGrant: parentExecutionGrant(),
       parentToolCallId: "recursive-level-one",
       workflowRunId: "recursive-root-workflow",
       stepIndex: 0,
@@ -620,7 +618,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       contextMode: "fork",
       workspaceMode: "none",
     });
-    const childAttemptId = await activateChildRun(child.childSessionId, child.childRunId, 11);
+    const childExecutionGrant = await activateChildRun(child.childSessionId, child.childRunId, 11);
     await expect(provider.treeContext(tenantId, child.childRunId)).resolves.toMatchObject({
       executionId: child.executionId,
       rootSessionId: parentSessionId,
@@ -639,8 +637,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         tenantId,
         parentSessionId: child.childSessionId,
         parentRunId: child.childRunId,
-        parentAttemptId: childAttemptId,
-        parentFencingToken: 11,
+        parentExecutionGrant: childExecutionGrant,
         parentToolCallId: "recursive-no-tenant-lane",
         workflowRunId: "recursive-no-tenant-lane",
         stepIndex: 0,
@@ -660,8 +657,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId: child.childSessionId,
       parentRunId: child.childRunId,
-      parentAttemptId: childAttemptId,
-      parentFencingToken: 11,
+      parentExecutionGrant: childExecutionGrant,
       parentToolCallId: "recursive-level-two",
       workflowRunId: "recursive-child-workflow",
       stepIndex: 0,
@@ -757,7 +753,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       canSpawnChildren: false,
     });
 
-    const grandchildAttemptId = await activateChildRun(
+    const grandchildExecutionGrant = await activateChildRun(
       grandchild.childSessionId,
       grandchild.childRunId,
       12,
@@ -767,8 +763,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         tenantId,
         parentSessionId: grandchild.childSessionId,
         parentRunId: grandchild.childRunId,
-        parentAttemptId: grandchildAttemptId,
-        parentFencingToken: 12,
+        parentExecutionGrant: grandchildExecutionGrant,
         parentToolCallId: "recursive-level-three",
         workflowRunId: "recursive-grandchild-workflow",
         stepIndex: 0,
@@ -798,8 +793,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         tenantId,
         parentSessionId,
         parentRunId,
-        parentAttemptId,
-        parentFencingToken: FENCE + 1,
+        parentExecutionGrant: createExecutionGrant(PARENT_GRANT_ID, parentAttemptId, FENCE + 1),
         parentToolCallId: "stale-tool",
         workflowRunId: "stale-workflow",
         stepIndex: 0,

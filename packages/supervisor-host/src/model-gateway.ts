@@ -8,6 +8,7 @@ import {
   MODEL_STEP_SEQUENCE_HEADER,
   MODEL_STEP_SHA256_HEADER,
   parseModelSamplingIdentity,
+  parseExecutionGrant,
   type ExecuteTurnCommandMessage,
   type ModelSamplingIdentity,
 } from "@pi-cloud/protocol";
@@ -564,7 +565,7 @@ export class TenantModelGateway {
       sessionId: command.payload.sessionId,
       turnId: command.payload.turnId,
       runId: command.payload.runId,
-      attemptId: command.payload.attemptId,
+      attemptId: parseExecutionGrant(command.payload.executionGrant).executionId,
       modelProfileId: model.profileId,
       provider: "deepseek",
       modelId: model.modelId,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createExecutionGrant } from "@pi-cloud/protocol";
 import { parseJetStreamPiSessionMutationEnvelope } from "../src/jetstream-pi-session-mutations.ts";
 import {
   agentEventSubject,
@@ -11,9 +12,11 @@ const scope = {
   sessionId: "session-projection-barrier",
   turnId: "10000000-0000-4000-8000-000000000002",
   runId: "10000000-0000-4000-8000-000000000003",
-  attemptId: "10000000-0000-4000-8000-000000000004",
-  claimOwnerId: "postgres:worker:boot",
-  fencingToken: 7,
+  executionGrant: createExecutionGrant(
+    "10000000-0000-4000-8000-000000000006",
+    "10000000-0000-4000-8000-000000000004",
+    7,
+  ),
 } as const;
 
 describe("JetStream Pi Session mutation protocol", () => {

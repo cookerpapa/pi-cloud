@@ -24,7 +24,7 @@ import type {
   SandboxPreviewRequest,
   SandboxPreviewResponse,
 } from "@pi-cloud/protocol";
-import { parseCloudToolCapabilitySnapshot } from "@pi-cloud/protocol";
+import { createExecutionGrant, parseCloudToolCapabilitySnapshot } from "@pi-cloud/protocol";
 import {
   canonicalEnvironmentRecipeJson,
   DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
@@ -235,9 +235,7 @@ function sameAssignment(left: ToolSandboxAssignment, right: ToolSandboxAssignmen
     left.commandId === right.commandId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
-    left.attemptId === right.attemptId &&
-    left.leaseId === right.leaseId &&
-    left.fencingToken === right.fencingToken
+    left.executionGrant === right.executionGrant
   );
 }
 
@@ -289,15 +287,14 @@ function sameSupervisorAssignment(
     left.commandId === right.commandId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
-    left.leaseId === right.leaseId &&
-    left.fencingToken === right.fencingToken
+    left.executionGrant === right.executionGrant
   );
 }
 
 function terminalAssignment(
   terminalId: string,
   input: Pick<WorkspaceTerminalOpenInput, "tenantId" | "projectId" | "workspaceId" | "sessionId">,
-  fencingToken: number,
+  executionGrant: string,
 ): ToolSandboxAssignment {
   return {
     tenantId: input.tenantId,
@@ -309,9 +306,7 @@ function terminalAssignment(
     commandId: terminalId,
     sessionId: input.sessionId,
     turnId: terminalId,
-    attemptId: terminalId,
-    leaseId: terminalId,
-    fencingToken,
+    executionGrant,
   };
 }
 
@@ -331,9 +326,11 @@ function developmentEnvironmentAssignment(
     commandId: input.environmentId,
     sessionId: input.environmentId,
     turnId: input.environmentId,
-    attemptId: input.environmentId,
-    leaseId: input.environmentId,
-    fencingToken: input.generation,
+    executionGrant: createExecutionGrant(
+      input.environmentId,
+      input.environmentId,
+      input.generation,
+    ),
   };
 }
 
@@ -995,7 +992,7 @@ export class ToolBroker {
         true,
       );
     }
-    const assignment = terminalAssignment(terminalId, input, reservation.fencingToken);
+    const assignment = terminalAssignment(terminalId, input, reservation.executionGrant);
     let admitted = false;
     let handle: SandboxHandle | undefined;
     let terminal: SandboxTerminalSession | undefined;
@@ -1718,13 +1715,13 @@ export class ToolBroker {
     const retainRequested = request.disposition !== "destroy";
     if (retainRequested && handle !== undefined && this.#provider.supportsWarmRebind !== false) {
       try {
-        const brokerFence = await this.#stateRepository.advanceWarmFence(
+        const brokerGrant = await this.#stateRepository.advanceWarmGrant(
           request.activationId,
           request.assignment,
         );
         handle = await this.#provider.retainForWarm(handle, {
           ...handle.assignment,
-          fencingToken: brokerFence,
+          executionGrant: brokerGrant,
         });
       } catch (error: unknown) {
         await this.#provider.stop(handle).catch(() => undefined);
@@ -1866,7 +1863,7 @@ export class ToolBroker {
     for (const assignment of [...providerAssignments, ...durableAssignments].filter(
       (candidate) => !retainedRuntimeIds.has(candidate.containerId),
     )) {
-      assignments.set(`${assignment.containerId}\0${assignment.fencingToken}`, assignment);
+      assignments.set(`${assignment.containerId}\0${assignment.executionGrant}`, assignment);
     }
     return [...assignments.values()];
   }
@@ -2289,7 +2286,11 @@ export class ToolBroker {
   async #reapOrphanedTerminals(): Promise<void> {
     const orphaned = await this.#stateRepository.claimOrphanedTerminals(16);
     for (const terminal of orphaned) {
-      const assignment = terminalAssignment(terminal.terminalId, terminal, terminal.fencingToken);
+      const assignment = terminalAssignment(
+        terminal.terminalId,
+        terminal,
+        createExecutionGrant(terminal.terminalId, terminal.terminalId, terminal.generation),
+      );
       try {
         await this.#provider.destroyActivation(terminal.terminalId, assignment);
         await this.#stateRepository.setTerminalState(terminal.terminalId, "released");
@@ -2345,13 +2346,13 @@ export class ToolBroker {
         const retained = terminal.retainedWarm;
         try {
           await this.#provider.snapshot(terminal.handle, terminalId);
-          const brokerFence = await this.#stateRepository.advanceWarmFence(
+          const brokerGrant = await this.#stateRepository.advanceWarmGrant(
             retained.activationId,
             terminal.handle.assignment,
           );
           const brokerAssignment = {
             ...terminal.handle.assignment,
-            fencingToken: brokerFence,
+            executionGrant: brokerGrant,
           };
           const handle = await this.#provider.retainForWarm(terminal.handle, brokerAssignment);
           this.#warm.set(retained.key, {

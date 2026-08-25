@@ -5,7 +5,12 @@ import type {
   ToolBrokerOperationState,
   WorkspaceTerminalState,
 } from "@pi-cloud/database";
-import type { SupervisorRuntimeAssignment, ToolSandboxAssignment } from "@pi-cloud/protocol";
+import {
+  createExecutionGrant,
+  parseExecutionGrant,
+  type SupervisorRuntimeAssignment,
+  type ToolSandboxAssignment,
+} from "@pi-cloud/protocol";
 import type { DevelopmentEnvironmentProfileKey, SandboxPreviewTarget } from "@pi-cloud/protocol";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES } from "@pi-cloud/protocol";
 import type { SandboxHandle } from "./sandbox-provider.ts";
@@ -21,6 +26,10 @@ export type SandboxActivationReservation = {
   environmentSha256: string;
   workspaceRevision?: string;
 };
+
+function executionIdentity(assignment: ToolSandboxAssignment | SupervisorRuntimeAssignment) {
+  return parseExecutionGrant(assignment.executionGrant);
+}
 
 export type SandboxActivationReservationResult =
   | { status: "reserved" }
@@ -49,7 +58,7 @@ export type WorkspaceTerminalReservation = Readonly<{
 export type WorkspaceTerminalReservationResult =
   | {
       status: "reserved";
-      fencingToken: number;
+      executionGrant: string;
       retiredActivation?: SandboxOrphanedActivation;
     }
   | { status: "redirect"; ownerBaseUrl: string }
@@ -58,7 +67,7 @@ export type WorkspaceTerminalReservationResult =
   | { status: "capacity" };
 
 export type OrphanedWorkspaceTerminal = WorkspaceTerminalReservation &
-  Readonly<{ fencingToken: number }>;
+  Readonly<{ generation: number }>;
 
 export type DevelopmentEnvironmentReservation = Readonly<{
   environmentId: string;
@@ -116,7 +125,7 @@ export interface SandboxActivationStateRepository {
   reserveDevelopmentEnvironment(
     input: DevelopmentEnvironmentReservation,
   ): Promise<DevelopmentEnvironmentReservationResult>;
-  advanceWarmFence(activationId: string, assignment: ToolSandboxAssignment): Promise<number>;
+  advanceWarmGrant(activationId: string, assignment: ToolSandboxAssignment): Promise<string>;
   developmentEnvironmentOwner(
     tenantId: string,
     userId: string,
@@ -251,7 +260,7 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
     ) {
       return { status: "busy" };
     }
-    const fencingToken =
+    const generation =
       Math.max(
         0,
         ...[...this.#activations.values()]
@@ -260,10 +269,20 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
               activation.assignment.tenantId === input.tenantId &&
               activation.assignment.workspaceId === input.workspaceId,
           )
-          .map((activation) => activation.assignment.fencingToken),
+          .map((activation) => executionIdentity(activation.assignment).generation),
       ) + 1;
-    this.#terminals.set(input.terminalId, { ...input, fencingToken });
-    return { status: "reserved", fencingToken };
+    const currentActivation = [...this.#activations.values()].find(
+      (activation) =>
+        activation.assignment.tenantId === input.tenantId &&
+        activation.assignment.workspaceId === input.workspaceId,
+    );
+    const executionId =
+      currentActivation === undefined
+        ? input.terminalId
+        : executionIdentity(currentActivation.assignment).executionId;
+    const executionGrant = createExecutionGrant(input.terminalId, executionId, generation);
+    this.#terminals.set(input.terminalId, { ...input, generation });
+    return { status: "reserved", executionGrant };
   }
   async reserveDevelopmentEnvironment(
     input: DevelopmentEnvironmentReservation,
@@ -293,23 +312,32 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
     });
     return { status: "reserved" };
   }
-  async advanceWarmFence(activationId: string, assignment: ToolSandboxAssignment): Promise<number> {
+  async advanceWarmGrant(activationId: string, assignment: ToolSandboxAssignment): Promise<string> {
     const activation = this.#activations.get(activationId);
+    const execution = executionIdentity(assignment);
     if (
       activation === undefined ||
-      activation.assignment.fencingToken !== assignment.fencingToken
+      activation.assignment.executionGrant !== assignment.executionGrant
     ) {
       throw new SandboxActivationStateRepositoryError(
         "ownership_lost",
         "Warm Sandbox authority is no longer current",
       );
     }
-    const fencingToken = assignment.fencingToken + 1;
+    const generation = execution.generation + 1;
+    const executionGrant = createExecutionGrant(
+      globalThis.crypto.randomUUID(),
+      execution.executionId,
+      generation,
+    );
     this.#activations.set(activationId, {
       ...activation,
-      assignment: { ...assignment, fencingToken },
+      assignment: {
+        ...assignment,
+        executionGrant,
+      },
     });
-    return fencingToken;
+    return executionGrant;
   }
   async developmentEnvironmentOwner(
     _tenantId: string,
@@ -597,6 +625,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
 
   async reserve(input: SandboxActivationReservation): Promise<SandboxActivationReservationResult> {
     const now = validDate(this.#clock);
+    const execution = executionIdentity(input.assignment);
     return this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
       const workspace = await transaction
@@ -660,6 +689,37 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           return { status: "busy" };
         }
         borrowedDevelopmentEnvironmentId = liveDevelopmentEnvironment.id;
+      }
+      const authority = await transaction
+        .selectFrom("execution_grants")
+        .select([
+          "tenant_id",
+          "project_id",
+          "workspace_id",
+          "session_id",
+          "turn_id",
+          "command_id",
+          "sandbox_id",
+        ])
+        .where("grant_id", "=", execution.grantId)
+        .where("execution_id", "=", execution.executionId)
+        .where("generation", "=", String(execution.generation))
+        .where("valid_until", ">", now)
+        .executeTakeFirst();
+      if (
+        authority === undefined ||
+        authority.tenant_id !== input.assignment.tenantId ||
+        authority.project_id !== input.assignment.projectId ||
+        authority.workspace_id !== input.assignment.workspaceId ||
+        authority.session_id !== input.assignment.sessionId ||
+        authority.turn_id !== input.assignment.turnId ||
+        authority.command_id !== input.assignment.commandId ||
+        authority.sandbox_id !== input.assignment.sandboxId
+      ) {
+        throw new SandboxActivationStateRepositoryError(
+          "ownership_lost",
+          "Tool Sandbox create used a stale ExecutionGrant",
+        );
       }
       const existing = await transaction
         .selectFrom("tool_broker_activations")
@@ -733,9 +793,9 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
             command_id: input.assignment.commandId,
             session_id: input.assignment.sessionId,
             turn_id: input.assignment.turnId,
-            attempt_id: input.assignment.attemptId,
-            lease_id: input.assignment.leaseId,
-            fencing_token: input.assignment.fencingToken,
+            attempt_id: execution.executionId,
+            execution_grant_id: execution.grantId,
+            execution_generation: execution.generation,
             capability_sha256: input.capabilitySha256,
             turn_context_sha256: input.turnContextSha256,
             attempt_context_sha256: input.attemptContextSha256,
@@ -867,9 +927,9 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         command_id: input.assignment.commandId,
         session_id: input.assignment.sessionId,
         turn_id: input.assignment.turnId,
-        attempt_id: input.assignment.attemptId,
-        lease_id: input.assignment.leaseId,
-        fencing_token: input.assignment.fencingToken,
+        attempt_id: execution.executionId,
+        execution_grant_id: execution.grantId,
+        execution_generation: execution.generation,
         capability_sha256: input.capabilitySha256,
         turn_context_sha256: input.turnContextSha256,
         attempt_context_sha256: input.attemptContextSha256,
@@ -915,9 +975,9 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
             command_id: input.assignment.commandId,
             session_id: input.assignment.sessionId,
             turn_id: input.assignment.turnId,
-            attempt_id: input.assignment.attemptId,
-            lease_id: input.assignment.leaseId,
-            fencing_token: input.assignment.fencingToken,
+            attempt_id: execution.executionId,
+            execution_grant_id: execution.grantId,
+            execution_generation: execution.generation,
             capability_sha256: input.capabilitySha256,
             turn_context_sha256: input.turnContextSha256,
             attempt_context_sha256: input.attemptContextSha256,
@@ -968,7 +1028,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       }
       const session = await transaction
         .selectFrom("sessions")
-        .select(["id", "last_fencing_token", "sandbox_retention_policy"])
+        .select(["id", "last_execution_generation", "sandbox_retention_policy"])
         .where("tenant_id", "=", input.tenantId)
         .where("id", "=", input.sessionId)
         .where("workspace_id", "=", input.workspaceId)
@@ -998,8 +1058,8 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "session_id",
           "turn_id",
           "attempt_id",
-          "lease_id",
-          "fencing_token",
+          "execution_grant_id",
+          "execution_generation",
           "workspace_revision",
         ])
         .where("tenant_id", "=", input.tenantId)
@@ -1140,11 +1200,11 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         return { status: "capacity" };
       }
       const currentFence = Math.max(
-        Number(session.last_fencing_token),
-        activation === undefined ? 0 : Number(activation.fencing_token),
+        Number(session.last_execution_generation),
+        activation === undefined ? 0 : Number(activation.execution_generation),
       );
-      const fencingToken = currentFence + 1;
-      if (!Number.isSafeInteger(fencingToken) || fencingToken < 1) {
+      const generation = currentFence + 1;
+      if (!Number.isSafeInteger(generation) || generation < 1) {
         throw new SandboxActivationStateRepositoryError(
           "state_conflict",
           "Workspace terminal fencing token is exhausted",
@@ -1153,13 +1213,13 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       const sessionFence = await transaction
         .updateTable("sessions")
         .set({
-          last_fencing_token: fencingToken,
+          last_execution_generation: generation,
           row_version: sql<string>`${sql.ref("row_version")} + 1`,
           updated_at: now,
         })
         .where("tenant_id", "=", input.tenantId)
         .where("id", "=", input.sessionId)
-        .where("last_fencing_token", "=", session.last_fencing_token)
+        .where("last_execution_generation", "=", session.last_execution_generation)
         .executeTakeFirst();
       if (sessionFence.numUpdatedRows !== 1n) {
         throw new SandboxActivationStateRepositoryError(
@@ -1179,7 +1239,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           project_id: input.projectId,
           workspace_id: input.workspaceId,
           session_id: input.sessionId,
-          fencing_token: fencingToken,
+          generation,
           runtime_id: null,
           runtime_name: null,
           state: "reserved",
@@ -1189,17 +1249,27 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           updated_at: now,
         })
         .executeTakeFirstOrThrow();
-      if (activation === undefined) return { status: "reserved", fencingToken };
+      const executionGrant = createExecutionGrant(
+        input.terminalId,
+        activation?.attempt_id ?? input.terminalId,
+        generation,
+      );
+      if (activation === undefined) return { status: "reserved", executionGrant };
       await transaction
         .updateTable("tool_broker_activations")
-        .set({ state: "cleaning", fencing_token: fencingToken, updated_at: now })
+        .set({
+          state: "cleaning",
+          execution_grant_id: input.terminalId,
+          execution_generation: generation,
+          updated_at: now,
+        })
         .where("activation_id", "=", activation.activation_id)
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "=", "warm")
         .executeTakeFirstOrThrow();
       return {
         status: "reserved",
-        fencingToken,
+        executionGrant,
         retiredActivation: {
           activationId: activation.activation_id,
           retention: session.sandbox_retention_policy,
@@ -1216,9 +1286,11 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
             commandId: activation.command_id,
             sessionId: activation.session_id,
             turnId: activation.turn_id,
-            attemptId: activation.attempt_id,
-            leaseId: activation.lease_id,
-            fencingToken: Number(activation.fencing_token),
+            executionGrant: createExecutionGrant(
+              activation.execution_grant_id,
+              activation.attempt_id,
+              Number(activation.execution_generation),
+            ),
           },
         },
       };
@@ -1348,20 +1420,22 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     });
   }
 
-  async advanceWarmFence(activationId: string, assignment: ToolSandboxAssignment): Promise<number> {
+  async advanceWarmGrant(activationId: string, assignment: ToolSandboxAssignment): Promise<string> {
     const now = validDate(this.#clock);
+    const currentExecution = executionIdentity(assignment);
     return this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
       const activation = await transaction
         .selectFrom("tool_broker_activations")
-        .select(["session_id", "fencing_token", "state"])
+        .select(["session_id", "attempt_id", "execution_grant_id", "execution_generation", "state"])
         .where("activation_id", "=", activationId)
         .where("owner_instance_id", "=", this.#instanceId)
         .where("tenant_id", "=", assignment.tenantId)
         .where("project_id", "=", assignment.projectId)
         .where("workspace_id", "=", assignment.workspaceId)
         .where("session_id", "=", assignment.sessionId)
-        .where("fencing_token", "=", String(assignment.fencingToken))
+        .where("execution_grant_id", "=", currentExecution.grantId)
+        .where("execution_generation", "=", String(currentExecution.generation))
         .where("state", "in", ["reserved", "materializing", "active", "cleaning"])
         .forUpdate()
         .executeTakeFirst();
@@ -1373,7 +1447,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       }
       const session = await transaction
         .selectFrom("sessions")
-        .select("last_fencing_token")
+        .select("last_execution_generation")
         .where("tenant_id", "=", assignment.tenantId)
         .where("id", "=", activation.session_id)
         .forUpdate()
@@ -1384,31 +1458,37 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "Warm Sandbox Session was unavailable",
         );
       }
-      const fencingToken =
-        Math.max(Number(session.last_fencing_token), Number(activation.fencing_token)) + 1;
-      if (!Number.isSafeInteger(fencingToken)) {
+      const generation =
+        Math.max(
+          Number(session.last_execution_generation),
+          Number(activation.execution_generation),
+        ) + 1;
+      if (!Number.isSafeInteger(generation)) {
         throw new SandboxActivationStateRepositoryError(
           "state_conflict",
           "Warm Sandbox fencing token is exhausted",
         );
       }
+      const grantId = globalThis.crypto.randomUUID();
+      const executionGrant = createExecutionGrant(grantId, activation.attempt_id, generation);
       const sessionUpdate = await transaction
         .updateTable("sessions")
         .set({
-          last_fencing_token: fencingToken,
+          last_execution_generation: generation,
           row_version: sql<string>`${sql.ref("row_version")} + 1`,
           updated_at: now,
         })
         .where("tenant_id", "=", assignment.tenantId)
         .where("id", "=", activation.session_id)
-        .where("last_fencing_token", "=", session.last_fencing_token)
+        .where("last_execution_generation", "=", session.last_execution_generation)
         .executeTakeFirst();
       const activationUpdate = await transaction
         .updateTable("tool_broker_activations")
-        .set({ fencing_token: fencingToken, updated_at: now })
+        .set({ execution_grant_id: grantId, execution_generation: generation, updated_at: now })
         .where("activation_id", "=", activationId)
         .where("owner_instance_id", "=", this.#instanceId)
-        .where("fencing_token", "=", activation.fencing_token)
+        .where("execution_grant_id", "=", activation.execution_grant_id)
+        .where("execution_generation", "=", activation.execution_generation)
         .where("state", "=", activation.state)
         .executeTakeFirst();
       if (sessionUpdate.numUpdatedRows !== 1n || activationUpdate.numUpdatedRows !== 1n) {
@@ -1417,7 +1497,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "Warm Sandbox fence could not advance",
         );
       }
-      return fencingToken;
+      return executionGrant;
     });
   }
 
@@ -1775,7 +1855,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "project_id",
           "workspace_id",
           "session_id",
-          "fencing_token",
+          "generation",
         ])
         .where("sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("state", "=", "unknown")
@@ -1806,7 +1886,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         projectId: row.project_id,
         workspaceId: row.workspace_id,
         sessionId: row.session_id,
-        fencingToken: Number(row.fencing_token),
+        generation: Number(row.generation),
       }));
     });
   }
@@ -1928,11 +2008,22 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     return this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
       const activation = await transaction
-        .selectFrom("tool_broker_activations")
-        .select("activation_id")
-        .where("activation_id", "=", activationId)
-        .where("owner_instance_id", "=", this.#instanceId)
-        .where("state", "in", ["reserved", "materializing", "active"])
+        .selectFrom("tool_broker_activations as activation")
+        .innerJoin("execution_grants as authority", (join) =>
+          join
+            .onRef("authority.grant_id", "=", "activation.execution_grant_id")
+            .onRef("authority.execution_id", "=", "activation.attempt_id")
+            .onRef("authority.generation", "=", "activation.execution_generation")
+            .onRef("authority.tenant_id", "=", "activation.tenant_id")
+            .onRef("authority.project_id", "=", "activation.project_id")
+            .onRef("authority.workspace_id", "=", "activation.workspace_id")
+            .onRef("authority.sandbox_id", "=", "activation.sandbox_id"),
+        )
+        .select("activation.activation_id")
+        .where("activation.activation_id", "=", activationId)
+        .where("activation.owner_instance_id", "=", this.#instanceId)
+        .where("activation.state", "in", ["reserved", "materializing", "active"])
+        .where("authority.valid_until", ">", now)
         .forUpdate()
         .executeTakeFirst();
       if (activation === undefined) {
@@ -2006,8 +2097,8 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "session_id",
           "turn_id",
           "attempt_id",
-          "lease_id",
-          "fencing_token",
+          "execution_grant_id",
+          "execution_generation",
         ])
         .where("sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("state", "=", "unknown")
@@ -2041,9 +2132,11 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           commandId: row.command_id,
           sessionId: row.session_id,
           turnId: row.turn_id,
-          attemptId: row.attempt_id,
-          leaseId: row.lease_id,
-          fencingToken: Number(row.fencing_token),
+          executionGrant: createExecutionGrant(
+            row.execution_grant_id,
+            row.attempt_id,
+            Number(row.execution_generation),
+          ),
         },
       }));
     });
@@ -2095,8 +2188,8 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "activation.session_id",
           "activation.turn_id",
           "activation.attempt_id",
-          "activation.lease_id",
-          "activation.fencing_token",
+          "activation.execution_grant_id",
+          "activation.execution_generation",
         ])
         .where("activation.sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("activation.state", "in", ["reserved", "materializing", "active"])
@@ -2171,9 +2264,11 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           commandId: row.command_id,
           sessionId: row.session_id,
           turnId: row.turn_id,
-          attemptId: row.attempt_id,
-          leaseId: row.lease_id,
-          fencingToken: Number(row.fencing_token),
+          executionGrant: createExecutionGrant(
+            row.execution_grant_id,
+            row.attempt_id,
+            Number(row.execution_generation),
+          ),
         },
       }));
     });
@@ -2212,8 +2307,9 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         "workspace_id",
         "session_id",
         "turn_id",
-        "lease_id",
-        "fencing_token",
+        "attempt_id",
+        "execution_grant_id",
+        "execution_generation",
       ])
       .where("sandbox_domain_id", "=", this.#sandboxDomainId)
       .where("sandbox_id", "=", sandboxId)
@@ -2234,13 +2330,17 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       workspaceId: row.workspace_id,
       sessionId: row.session_id,
       turnId: row.turn_id,
-      leaseId: row.lease_id,
-      fencingToken: Number(row.fencing_token),
+      executionGrant: createExecutionGrant(
+        row.execution_grant_id,
+        row.attempt_id,
+        Number(row.execution_generation),
+      ),
     }));
   }
 
   async releaseRuntimeAssignment(assignment: SupervisorRuntimeAssignment): Promise<void> {
     const now = validDate(this.#clock);
+    const execution = executionIdentity(assignment);
     await this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
       await transaction
@@ -2254,8 +2354,8 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .where("workspace_id", "=", assignment.workspaceId)
         .where("session_id", "=", assignment.sessionId)
         .where("turn_id", "=", assignment.turnId)
-        .where("lease_id", "=", assignment.leaseId)
-        .where("fencing_token", "=", String(assignment.fencingToken))
+        .where("execution_grant_id", "=", execution.grantId)
+        .where("execution_generation", "=", String(execution.generation))
         .where("state", "in", ["reserved", "materializing", "active", "warm", "cleaning"])
         .execute();
       await transaction

@@ -83,7 +83,7 @@ describe("Tool Broker ownership migration", () => {
     expect(definition.rows[0]?.indexdef).toContain("workspace_id");
   });
 
-  it("allows a persistent activation to outlive its authorizing Run lease", async () => {
+  it("allows a persistent activation to outlive its authorizing ExecutionGrant", async () => {
     const constraint = await pglite.query<{ conname: string }>(`
       select conname
         from pg_constraint
@@ -97,7 +97,7 @@ describe("Tool Broker ownership migration", () => {
         from information_schema.columns
        where table_schema = 'public'
          and table_name = 'tool_broker_activations'
-         and column_name = 'lease_id'
+         and column_name = 'execution_grant_id'
     `);
     expect(column.rows).toEqual([{ is_nullable: "NO" }]);
   });

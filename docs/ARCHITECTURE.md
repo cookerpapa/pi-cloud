@@ -27,7 +27,7 @@ The current Worker invariant is deliberately precise:
   when its reserved Child slot is free; this is an opportunistic race, never a
   queued or persisted affinity decision;
 - the Worker/Supervisor identity on a live RunAttempt is ephemeral execution
-  ownership used for heartbeat, cancellation and fencing, not affinity;
+  ownership represented externally by one opaque `ExecutionGrant`, not affinity;
 - later Turns restore their bounded Pi context from PostgreSQL and therefore
   do not depend on the previous Worker remaining alive or warm.
 
@@ -97,7 +97,7 @@ create Sessions through that repository rather than through a second
 PiCloud-only lifecycle. Pi's pinned, unmodified backend conformance suite
 defines the baseline CRUD, fork, query, ledger and ordering semantics. Opaque
 Pi identifiers are stored as `text`; PiCloud product UUIDs are one valid
-subset. Tenant isolation and execution-authority fencing are additional cloud
+subset. Tenant isolation and exact `ExecutionGrant` validation are additional cloud
 contracts layered around the official port.
 
 Forked Pi entries use copy-on-write references. PostgreSQL stores the selected
@@ -261,11 +261,11 @@ to a fenced Run/Attempt. The Control Plane sends the trusted descriptor over a
 dedicated service credential to the Tool Broker, which lazily creates a Cube
 and opens a UID 1000 PTY in `/workspace` through Cube's standard envd process
 API. Cube-agent starts envd through the VM's vsock control path. The generic
-guest agent is transport only: tenant identity, writer admission, Lease/Fence
+guest agent is transport only: tenant identity, writer admission, ExecutionGrant
 and operation idempotency remain in PostgreSQL and the external Tool Broker.
 
-Human terminal authority is deliberately separate from an Agent Run lease and
-Tool capability. It still reserves the next monotonic Session fence in
+Human terminal authority is deliberately separate from an Agent ExecutionGrant and
+Tool capability. It still reserves the next monotonic Session generation in
 PostgreSQL, so its Workspace checkpoint cannot be mistaken for an older Agent
 write and the next Run necessarily receives a higher fence. An active Agent
 activation blocks a terminal, and an active terminal keeps a newly accepted Run
@@ -416,11 +416,11 @@ Tool-call JSON and partial Tool stdout. It publishes only coalesced Assistant
 text, complete Tool start/result Items and low-frequency lifecycle boundaries.
 
 Workers combine adjacent text for 100 ms or 4 KiB, then submit the existing
-short-lived Run/Attempt/Lease/Fence capability to the internal Event Ingest.
+current opaque ExecutionGrant to the internal Event Ingest.
 The Ingest groups concurrent Workers for at most two milliseconds and validates
 up to 256 authorities with one PostgreSQL set query. Valid publications enter
 the R=3 file-backed JetStream in parallel; each Worker ACK waits for its own
-PubAck and one set update advances all accepted Attempt watermarks.
+PubAck and one set update advances all accepted grant watermarks.
 
 JetStream committed RePublish sends stored messages to one Core NATS wildcard
 subscription in every Gateway replica. The Gateway holds only its actual HTTP
@@ -487,7 +487,7 @@ claimed as durable.
   barriered next Run;
 - cancellation revokes authority before process termination;
 - during `cancel_requested`, Tool authority is revoked while the current
-  Attempt/Fence retains narrowly bounded Pi Session write authority to commit
+  ExecutionGrant retains narrowly bounded Pi Session write authority to commit
   interruption and unknown-effect facts; terminal cancellation then closes it;
 - visible live events are durable before SSE; successful terminal messages are
   Pi-native and canonical before completion;

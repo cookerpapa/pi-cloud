@@ -50,7 +50,7 @@ export type WorkspaceVolumeGatewayInitializeBaselineInput = WorkspaceVolumeGatew
 export type WorkspaceVolumeGatewaySnapshotInput = WorkspaceVolumeGatewayIdentity &
   Readonly<{
     activationId: string;
-    fencingToken: number;
+    executionGeneration: number;
     bindingSha256: string;
   }>;
 

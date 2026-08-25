@@ -185,19 +185,19 @@ export {
   type RunCommandExecutionResult,
   type RunCommandExecutorOptions,
   type TurnExecutionBackend,
-  type TurnExecutionAcknowledgement,
-  type TurnExecutionLeaseManager,
+  type TurnExecutionAuthority,
+  type TurnExecutionGrant,
   type TurnExecutionLifecycle,
   type TurnExecutionRequest,
   type TurnExecutionResult,
 } from "@pi-cloud/runtime-core/run-command-executor";
 export {
-  SessionLeaseCoordinator,
-  SessionLeaseCoordinatorError,
-  type SessionLeaseCoordinatorOptions,
+  ExecutionGrantCoordinator,
+  ExecutionGrantCoordinatorError,
+  type ExecutionGrantCoordinatorOptions,
   type SupervisorConnectionGuard,
   type SupervisorHeartbeatIdentity,
-} from "@pi-cloud/runtime-core/session-lease-coordinator";
+} from "@pi-cloud/runtime-core/execution-grant-coordinator";
 export {
   SupervisorConnectionManager,
   SupervisorConnectionManagerError,

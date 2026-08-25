@@ -1,4 +1,12 @@
 export {
+  ExecutionGrantSchema,
+  createExecutionGrant,
+  parseExecutionGrant,
+  type ExecutionGrant,
+  type ExecutionGrantIdentity,
+} from "./execution-grant.ts";
+
+export {
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
   SANDBOX_PREVIEW_MINIMUM_PORT,
   SANDBOX_PREVIEW_MAXIMUM_PORT,

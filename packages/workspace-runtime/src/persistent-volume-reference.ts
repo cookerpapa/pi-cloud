@@ -27,7 +27,7 @@ export type PersistentVolumeReference = Readonly<{
   workspaceId: string;
   sourceSessionId: string;
   bindingSha256: string;
-  fencingToken: number;
+  executionGeneration: number;
   imageRevision: string;
   environmentSpecSha256: string;
   gitBaselineCommit: string;
@@ -116,7 +116,7 @@ export function parsePersistentVolumeReference(
       "activationId",
       "bindingSha256",
       "environmentSpecSha256",
-      "fencingToken",
+      "executionGeneration",
       "files",
       "format",
       "gitBaselineCommit",
@@ -148,8 +148,8 @@ export function parsePersistentVolumeReference(
       !OPAQUE_ID_PATTERN.test(value.sourceSessionId) ||
       typeof value.bindingSha256 !== "string" ||
       !SHA256_PATTERN.test(value.bindingSha256) ||
-      !Number.isSafeInteger(value.fencingToken) ||
-      (value.fencingToken as number) < 1 ||
+      !Number.isSafeInteger(value.executionGeneration) ||
+      (value.executionGeneration as number) < 1 ||
       typeof value.imageRevision !== "string" ||
       typeof value.environmentSpecSha256 !== "string" ||
       !SHA256_PATTERN.test(value.environmentSpecSha256) ||

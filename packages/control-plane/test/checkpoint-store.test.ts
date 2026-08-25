@@ -9,6 +9,7 @@ import type {
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+  createExecutionGrant,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -91,10 +92,12 @@ function command(turn: 1 | 2): ExecuteTurnCommandMessage {
       sessionId: IDS.session,
       runId: turn === 1 ? IDS.run1 : IDS.run2,
       turnId: turn === 1 ? IDS.turn1 : IDS.turn2,
-      attemptId: turn === 1 ? IDS.attempt1 : IDS.attempt2,
       agentId: "root",
-      leaseId: turn === 1 ? IDS.lease1 : IDS.lease2,
-      fencingToken: turn,
+      executionGrant: createExecutionGrant(
+        turn === 1 ? IDS.lease1 : IDS.lease2,
+        turn === 1 ? IDS.attempt1 : IDS.attempt2,
+        turn,
+      ),
       nextEventSeq: turn,
       input: { kind: "prompt", text: `turn ${String(turn)}` },
       sandboxRetention: "ephemeral",
@@ -207,7 +210,7 @@ async function seed(targetDatabase: Kysely<Database> = database): Promise<void> 
       workspace_snapshot_key: null,
       next_event_seq: 1,
       next_mailbox_position: 3,
-      last_fencing_token: 1,
+      last_execution_generation: 1,
       row_version: 1,
     })
     .execute();
@@ -320,12 +323,20 @@ async function seed(targetDatabase: Kysely<Database> = database): Promise<void> 
     })
     .execute();
   await targetDatabase
-    .insertInto("session_leases")
+    .insertInto("execution_grants")
     .values({
       session_id: IDS.session,
-      lease_id: IDS.lease1,
+      grant_id: IDS.lease1,
       sandbox_id: IDS.sandbox,
-      fencing_token: 1,
+      generation: 1,
+      tenant_id: IDS.tenant,
+      project_id: IDS.project,
+      workspace_id: IDS.workspace,
+      run_id: IDS.run1,
+      turn_id: IDS.turn1,
+      command_id: IDS.command1,
+      execution_id: IDS.attempt1,
+      last_event_seq: 0,
       valid_until: new Date(Date.now() + 60_000),
     })
     .execute();
@@ -341,8 +352,8 @@ async function seed(targetDatabase: Kysely<Database> = database): Promise<void> 
       claim_owner_id: "checkpoint-test",
       claim_expires_at: new Date(Date.now() + 60_000),
       sandbox_id: IDS.sandbox,
-      lease_id: IDS.lease1,
-      fencing_token: 1,
+      execution_grant_id: IDS.lease1,
+      execution_generation: 1,
       checkpoint_revision: null,
       failure_code: null,
       failure_message: null,
@@ -408,7 +419,7 @@ afterAll(async () => {
 });
 
 describe.sequential("PostgreSQL settled checkpoint store", () => {
-  it("commits artifacts under a lease, cold-loads them, and rejects stale or corrupt state", async () => {
+  it("commits artifacts under an ExecutionGrant, cold-loads them, and rejects stale or corrupt state", async () => {
     let artifactSequence = 0;
     const store = new PostgresSandboxCheckpointStore({
       database,
@@ -447,7 +458,7 @@ describe.sequential("PostgreSQL settled checkpoint store", () => {
 
     await database.transaction().execute(async (transaction) => {
       await transaction
-        .deleteFrom("session_leases")
+        .deleteFrom("execution_grants")
         .where("session_id", "=", IDS.session)
         .execute();
       await transaction
@@ -467,16 +478,24 @@ describe.sequential("PostgreSQL settled checkpoint store", () => {
         .execute();
       await transaction
         .updateTable("sessions")
-        .set({ state: "running", last_fencing_token: 2 })
+        .set({ state: "running", last_execution_generation: 2 })
         .where("id", "=", IDS.session)
         .execute();
       await transaction
-        .insertInto("session_leases")
+        .insertInto("execution_grants")
         .values({
           session_id: IDS.session,
-          lease_id: IDS.lease2,
+          grant_id: IDS.lease2,
           sandbox_id: IDS.sandbox,
-          fencing_token: 2,
+          generation: 2,
+          tenant_id: IDS.tenant,
+          project_id: IDS.project,
+          workspace_id: IDS.workspace,
+          run_id: IDS.run2,
+          turn_id: IDS.turn2,
+          command_id: IDS.command2,
+          execution_id: IDS.attempt2,
+          last_event_seq: 1,
           valid_until: new Date(Date.now() + 60_000),
         })
         .execute();
@@ -492,8 +511,8 @@ describe.sequential("PostgreSQL settled checkpoint store", () => {
           claim_owner_id: "checkpoint-test",
           claim_expires_at: new Date(Date.now() + 60_000),
           sandbox_id: IDS.sandbox,
-          lease_id: IDS.lease2,
-          fencing_token: 2,
+          execution_grant_id: IDS.lease2,
+          execution_generation: 2,
           checkpoint_revision: null,
           failure_code: null,
           failure_message: null,
@@ -578,7 +597,7 @@ describe.sequential("PostgreSQL settled checkpoint store", () => {
       clock: () => new Date(Date.now() + 120_000),
     });
     await expect(expiredStore.load(command(2))).rejects.toMatchObject({
-      code: "stale_checkpoint_fence",
+      code: "stale_execution_grant",
     });
   }, 30_000);
 });

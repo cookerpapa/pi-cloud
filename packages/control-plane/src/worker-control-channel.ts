@@ -107,16 +107,14 @@ function sameCommandIdentity(
     commandId: string;
     sessionId: string;
     turnId: string;
-    leaseId: string;
-    fencingToken: number;
+    executionGrant: string;
   },
 ): boolean {
   return (
     value.commandId === command.payload.commandId &&
     value.sessionId === command.payload.sessionId &&
     value.turnId === command.payload.turnId &&
-    value.leaseId === command.payload.leaseId &&
-    value.fencingToken === command.payload.fencingToken
+    value.executionGrant === command.payload.executionGrant
   );
 }
 

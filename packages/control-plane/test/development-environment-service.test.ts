@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
+import { createExecutionGrant } from "@pi-cloud/protocol";
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
@@ -330,9 +331,11 @@ describe("user-owned development environments", () => {
           commandId: "command",
           sessionId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
           turnId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-          attemptId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
-          leaseId: "11111111-1111-4111-8111-111111111111",
-          fencingToken: 1,
+          executionGrant: createExecutionGrant(
+            "11111111-1111-4111-8111-111111111111",
+            "ffffffff-ffff-4fff-8fff-ffffffffffff",
+            1,
+          ),
         },
         capabilitySha256: "a".repeat(64),
         turnContextSha256: "b".repeat(64),

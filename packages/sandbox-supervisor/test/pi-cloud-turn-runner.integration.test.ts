@@ -2,6 +2,7 @@ import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+  createExecutionGrant,
   type EventPublishMessage,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
@@ -37,10 +38,12 @@ const command: ExecuteTurnCommandMessage = {
     sessionId: "session-1",
     runId: "44444444-4444-4444-8444-444444444444",
     turnId: "turn-1",
-    attemptId: "55555555-5555-4555-8555-555555555555",
     agentId: "root",
-    leaseId: "33333333-3333-4333-8333-333333333333",
-    fencingToken: 7,
+    executionGrant: createExecutionGrant(
+      "33333333-3333-4333-8333-333333333333",
+      "55555555-5555-4555-8555-555555555555",
+      7,
+    ),
     nextEventSeq: 1,
     input: { kind: "prompt", text: "请返回确定性的测试响应。" },
     sandboxRetention: "ephemeral",

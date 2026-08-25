@@ -14,7 +14,7 @@ export type DurableEventStoreErrorCode =
   | "invalid_event"
   | "event_conflict"
   | "sequence_gap"
-  | "stale_fence"
+  | "stale_execution_grant"
   | "cursor_ahead"
   | "cursor_expired"
   | "event_store_invariant";
@@ -87,8 +87,7 @@ export class DurableEventStore implements DurableEventLog {
       type: "event.ack",
       payload: {
         sessionId: publication.payload.event.sessionId,
-        leaseId: publication.payload.leaseId,
-        fencingToken: publication.payload.fencingToken,
+        executionGrant: publication.payload.executionGrant,
         acknowledgedThroughSeq: publication.payload.event.seq,
       },
     });
