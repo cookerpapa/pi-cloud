@@ -32,7 +32,8 @@ function markdown(report) {
     `- Gateway replay after loss: ${report.gatewayRecovery.ordered ? "passed" : "failed"}\n` +
     `- Projector commit-before-ACK redelivery: ${report.projectorRecovery.idempotent ? "idempotent" : "failed"}\n` +
     `- Stream leader loss delivery: ${report.leaderRecovery.delivered ? "passed" : "failed"} (${report.leaderRecovery.publishAndDeliveryMs} ms)\n` +
-    `- SSE delivery: ${report.sseScale.deliveredConnections}/${report.sseScale.targetConnections}\n\n` +
+    `- SSE first-connection delivery: ${report.sseScale.deliveredConnections}/${report.sseScale.targetConnections}\n` +
+    `- SSE effective delivery after reconnect: ${report.sseScale.effectiveDeliveredConnections}/${report.sseScale.targetConnections}\n\n` +
     `| SSE connections | Connect p95 | Gateway RSS | JetStream consumers | Host free memory |\n` +
     `| ---: | ---: | ---: | ---: | ---: |\n${stages}\n`
   );

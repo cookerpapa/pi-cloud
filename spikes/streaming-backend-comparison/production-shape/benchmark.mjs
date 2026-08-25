@@ -470,6 +470,9 @@ try {
       return value.activeConnections === target ? value : undefined;
     });
     const account = await runtime.manager.getAccountInfo();
+    process.stdout.write(
+      `stage: SSE ${String(target)} ready, Gateway RSS ${String(Number((health.rssBytes / 1024 ** 2).toFixed(2)))} MiB\n`,
+    );
     stages.push({
       connections: target,
       connectLatencyMs: latency(opened.map((connection) => connection.connectedMs)),
@@ -482,15 +485,40 @@ try {
   const loadPublishAcks = await mapConcurrent(loadRows, 100, (row) =>
     publish(createEvent({ ...row, seq: 1 })),
   );
-  const loadDeliveries = await mapConcurrent(connections, 100, (connection) =>
-    readSseEvents(connection, 1, 30_000),
-  );
+  const loadDeliveries = await mapConcurrent(connections, 100, async (connection, index) => {
+    try {
+      return { delivered: true, index, events: await readSseEvents(connection, 1, 30_000) };
+    } catch (error) {
+      return {
+        delivered: false,
+        index,
+        failure: error instanceof Error ? error.message : "unknown_failure",
+      };
+    }
+  });
+  const missedDeliveries = loadDeliveries.filter((result) => !result.delivered);
+  const reconnectResults = await mapConcurrent(missedDeliveries, 16, async (missed) => {
+    const original = connections[missed.index];
+    await closeSse(original);
+    const replacement = await openSse(loadRows[missed.index].sessionId);
+    try {
+      const events = await readSseEvents(replacement, 1, 20_000);
+      return { recovered: events[0]?.event.seq === 1, index: missed.index };
+    } finally {
+      await closeSse(replacement);
+    }
+  });
   const deliveryElapsedMs = performance.now() - deliveryStartedAt;
   report.sseScale = {
     targetConnections,
     stages,
     publishLatencyMs: latency(loadPublishAcks.map((ack) => ack.durationMs)),
-    deliveredConnections: loadDeliveries.filter((events) => events.length === 1).length,
+    deliveredConnections: loadDeliveries.filter((result) => result.delivered).length,
+    missedConnections: missedDeliveries.map((result) => loadRows[result.index].sessionId),
+    recoveredAfterReconnect: reconnectResults.filter((result) => result.recovered).length,
+    effectiveDeliveredConnections:
+      loadDeliveries.filter((result) => result.delivered).length +
+      reconnectResults.filter((result) => result.recovered).length,
     publishAndDeliverElapsedMs: Number(deliveryElapsedMs.toFixed(3)),
     eventsPerSecond: Number(((targetConnections * 1_000) / deliveryElapsedMs).toFixed(2)),
   };
