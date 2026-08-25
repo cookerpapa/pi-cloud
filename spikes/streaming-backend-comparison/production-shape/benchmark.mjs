@@ -347,7 +347,7 @@ try {
     createEvent({ sessionId: "baseline", attemptId: "attempt-a", fence: 1, seq: 6 }),
     409,
   );
-  report.authorityFence = {
+  report.authorityGrant = {
     stalePublishRejected: stale.error === "stale_attempt_authority",
   };
 

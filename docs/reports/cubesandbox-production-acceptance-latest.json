@@ -1,15 +1,15 @@
 {
   "accepted": true,
-  "piCloudRevision": "1a4ca5c8bba4d202fd086c5975b5e77d0320ab99",
-  "checkedAt": "2026-08-24T13:45:44.734Z",
+  "piCloudRevision": "f2027a786dd7818c796586146260563a286ce738",
+  "checkedAt": "2026-08-25T08:22:55.519Z",
   "upstream": "TencentCloud/CubeSandbox@v0.6.0",
   "model": {
     "provider": "deepseek",
     "modelId": "deepseek-v4-flash"
   },
   "pureChat": {
-    "firstTextMs": 4180,
-    "settledMs": 4550,
+    "firstTextMs": 1436,
+    "settledMs": 1733,
     "toolCalls": 0,
     "cubeActivations": 0,
     "usage": {
@@ -22,31 +22,31 @@
     }
   },
   "firstCoding": {
-    "firstTextMs": 9200,
-    "settledMs": 10528,
+    "firstTextMs": 1496,
+    "settledMs": 8809,
     "toolCalls": 2,
     "cubeActivations": 1,
-    "workspaceFileBytes": 2124,
+    "workspaceFileBytes": 1275,
     "usage": {
       "requests": 3,
-      "inputTokens": 565,
-      "outputTokens": 912,
-      "cacheReadTokens": 20096,
+      "inputTokens": 578,
+      "outputTokens": 657,
+      "cacheReadTokens": 19584,
       "cacheWriteTokens": 0,
       "costMicrousd": 0
     }
   },
   "followUpCoding": {
-    "firstTextMs": 6611,
-    "settledMs": 7948,
+    "firstTextMs": 1102,
+    "settledMs": 7177,
     "toolCalls": 3,
     "cubeActivations": 1,
-    "workspaceFileBytes": 2425,
+    "workspaceFileBytes": 1360,
     "usage": {
       "requests": 4,
-      "inputTokens": 1645,
-      "outputTokens": 474,
-      "cacheReadTokens": 31872,
+      "inputTokens": 1334,
+      "outputTokens": 458,
+      "cacheReadTokens": 30208,
       "cacheWriteTokens": 0,
       "costMicrousd": 0
     }
@@ -60,10 +60,10 @@
     "authenticatedHttpPreviewPassed": true,
     "workspaceRestored": true,
     "workspaceVersions": 2,
-    "finalWorkspaceFileBytes": 2425
+    "finalWorkspaceFileBytes": 1360
   },
   "workspaceIsolation": {
-    "volumeId": "pcw-28d590d7eb3bac7dd790adae18c0359297e8347259d204a1",
+    "volumeId": "pcw-1e07ec5a2ca3b627735368824bfeaf78ec4120977379b08f",
     "trustedMetadataSibling": true,
     "userWorkspaceGitEntryAbsent": true
   },
@@ -73,30 +73,30 @@
   },
   "largeWorkspace": {
     "source": "deterministic 1024-file local fixture",
-    "firstRunId": "2ddc0d3b-b6ca-457a-a8e9-7aecfc36d63b",
-    "followUpRunId": "d9ad26cb-0341-4d57-9124-3f5c0fbd9ee0",
+    "firstRunId": "887eb85b-41cc-4eff-8849-9d20619d04c3",
+    "followUpRunId": "b37fccbf-3323-46ec-9a89-025e40e6d4f2",
     "firstFileCount": 1025,
     "restoredFileCount": 1026,
-    "volumeReferenceBytes": 153683,
+    "volumeReferenceBytes": 147461,
     "sourceSandboxDestroyed": true,
     "persistentVolumeRetained": true,
-    "volumeId": "pcw-d63935a1abf989d47b4333ff6b6fa0ebe9065e9549478df5",
+    "volumeId": "pcw-bacda04beda8254b19fb70572e9d0cc8575ffb2f297b021b",
     "restoredFromPersistentVolume": true,
     "freshCubeMicroVm": true,
-    "higherFenceActivation": true,
+    "higherGenerationActivation": true,
     "firstUsage": {
       "requests": 3,
-      "inputTokens": 248,
-      "outputTokens": 587,
-      "cacheReadTokens": 19328,
+      "inputTokens": 348,
+      "outputTokens": 460,
+      "cacheReadTokens": 19072,
       "cacheWriteTokens": 0,
       "costMicrousd": 0
     },
     "followUpUsage": {
       "requests": 2,
-      "inputTokens": 318,
-      "outputTokens": 308,
-      "cacheReadTokens": 14208,
+      "inputTokens": 310,
+      "outputTokens": 204,
+      "cacheReadTokens": 13824,
       "cacheWriteTokens": 0,
       "costMicrousd": 0
     }
@@ -104,17 +104,17 @@
   "canonicalConversation": {
     "terminalCount": 3,
     "piEntryCount": 19,
-    "canonicalPayloadBytes": 19335,
-    "replayAfterSequence": 50
+    "canonicalPayloadBytes": 17131,
+    "replayAfterSequence": 51
   },
   "eventPlane": {
-    "authority": "Kafka Accepted topic",
+    "authority": "JetStream R=3",
     "postgresHotEventTableAbsent": true,
     "projectedSessionMutations": 49,
-    "kafkaEndOffsets": {
-      "raw": 16432,
-      "accepted": 16868,
-      "sessionMutations": 7731
+    "jetStream": {
+      "agentEvents": 1429,
+      "sessionMutations": 875,
+      "sessionMutationAckPending": 0
     }
   },
   "scheduler": {
@@ -124,9 +124,9 @@
   },
   "totalUsage": {
     "requests": 13,
-    "inputTokens": 2801,
-    "outputTokens": 2286,
-    "cacheReadTokens": 91648,
+    "inputTokens": 2595,
+    "outputTokens": 1784,
+    "cacheReadTokens": 88832,
     "cacheWriteTokens": 0
   },
   "cleanup": {

@@ -31,7 +31,7 @@ function markdown(report) {
     `Revision: \`${report.revision}\`\n\n` +
     `- Stream: R=${report.stream.replicas}, ${report.stream.storage}\n` +
     `- Baseline ordered/durable projection: ${report.baseline.ordered ? "passed" : "failed"}\n` +
-    `- Stale fence rejected: ${report.authorityFence.stalePublishRejected ? "yes" : "no"}\n` +
+    `- Stale ExecutionGrant rejected: ${report.authorityGrant.stalePublishRejected ? "yes" : "no"}\n` +
     `- Gateway replay after loss: ${report.gatewayRecovery.ordered ? "passed" : "failed"}\n` +
     `- Projector commit-before-ACK redelivery: ${report.projectorRecovery.idempotent ? "idempotent" : "failed"}\n` +
     `- Stream leader loss delivery: ${report.leaderRecovery.delivered ? "passed" : "failed"} (${report.leaderRecovery.publishAndDeliveryMs} ms)\n` +

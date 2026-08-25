@@ -1,122 +1,122 @@
 {
   "format": "pi-cloud.fault-eval-report.v1",
-  "piCloudRevision": "87d5f00d4b57d6ff4ae53d471c768a4ae561cf4d",
-  "generatedAt": "2026-08-25T05:10:06.232Z",
+  "piCloudRevision": "f2027a786dd7818c796586146260563a286ce738",
+  "generatedAt": "2026-08-25T08:22:03.441Z",
   "methodology": "deterministic_targeted_fault_injection",
   "liveChaosExperiment": false,
   "caseCount": 18,
   "successful": 18,
   "successRate": 1,
-  "p50DurationMs": 8662,
-  "p95DurationMs": 9569,
+  "p50DurationMs": 8301,
+  "p95DurationMs": 9282,
   "results": [
     {
       "id": "duplicate-command",
       "success": true,
       "invariant": "At-least-once delivery does not execute the same command twice.",
-      "durationMs": 4380
+      "durationMs": 3424
     },
     {
-      "id": "stale-fencing-token",
+      "id": "stale-execution-grant",
       "success": true,
-      "invariant": "A released or recovered old worker cannot reacquire an obsolete fence.",
-      "durationMs": 3854
+      "invariant": "A released or recovered old Worker cannot reuse an obsolete ExecutionGrant.",
+      "durationMs": 3859
     },
     {
       "id": "stale-jetstream-event-authority",
       "success": true,
-      "invariant": "A stale Worker cannot cross the transaction-scoped authority/Fence boundary into browser-visible JetStream events.",
-      "durationMs": 9286
+      "invariant": "A stale Worker cannot cross the transaction-scoped ExecutionGrant boundary into browser-visible JetStream events.",
+      "durationMs": 8536
     },
     {
       "id": "session-mutation-redelivery",
       "success": true,
       "invariant": "At-least-once Session mutation delivery creates one canonical PostgreSQL effect.",
-      "durationMs": 6061
+      "durationMs": 6177
     },
     {
       "id": "session-projection-barrier-before-read",
       "success": true,
-      "invariant": "A replacement Worker crosses the Session-keyed projection barrier and rechecks its fence before reading PostgreSQL.",
-      "durationMs": 1329
+      "invariant": "A replacement Worker crosses the Session-keyed projection barrier and rechecks its ExecutionGrant before reading PostgreSQL.",
+      "durationMs": 1644
     },
     {
       "id": "message-stream-independence",
       "success": true,
       "invariant": "A streaming-path failure cannot roll back a complete Pi message already committed to SessionStorage.",
-      "durationMs": 6756
+      "durationMs": 6262
     },
     {
       "id": "interrupted-visible-prefix",
       "success": true,
       "invariant": "A browser-visible failed prefix remains model-visible after Worker replacement.",
-      "durationMs": 6407
+      "durationMs": 6466
     },
     {
       "id": "terminal-stream-independence",
       "success": true,
       "invariant": "A successful Run terminal commit does not reconstruct a complete message from the short-lived delta tail.",
-      "durationMs": 9080
+      "durationMs": 8924
     },
     {
       "id": "accepted-projection-ahead-of-worker-ack",
       "success": true,
       "invariant": "A JetStream event watermark already ahead of the Worker ACK cannot strand terminal Run settlement.",
-      "durationMs": 9569
+      "durationMs": 8832
     },
     {
       "id": "control-plane-process-sigkill",
       "success": true,
-      "invariant": "A Control Plane process replacement does not revoke a healthy fenced Agent Loop.",
-      "durationMs": 3557
+      "invariant": "A Control Plane process replacement does not revoke a healthy Agent Loop's ExecutionGrant.",
+      "durationMs": 3894
     },
     {
       "id": "control-channel-expiry-with-live-run",
       "success": true,
       "invariant": "A stale Control Channel cannot retire a Worker whose active RunAttempt still has fresh database authority.",
-      "durationMs": 8903
+      "durationMs": 8301
     },
     {
       "id": "dead-worker-management-unavailable",
       "success": true,
-      "invariant": "After connection and lease expiry, a dead management endpoint cannot strand the interrupted Run or Session.",
-      "durationMs": 9335
+      "invariant": "After connection and ExecutionGrant expiry, a dead management endpoint cannot strand the interrupted Run or Session.",
+      "durationMs": 8544
     },
     {
       "id": "assignment-loss-releases-model-reservation",
       "success": true,
       "invariant": "Worker loss settles its model reservation so the replacement Run does not wait for quota TTL.",
-      "durationMs": 9095
+      "durationMs": 8596
     },
     {
       "id": "terminal-tool-activation-before-next-writer",
       "success": true,
-      "invariant": "A replacement writer can synchronously claim and retire the failed Run's fenced Tool activation.",
-      "durationMs": 7914
+      "invariant": "A replacement writer can retire a failed activation, while a revoked ExecutionGrant cannot start another Tool operation.",
+      "durationMs": 7339
     },
     {
       "id": "checkpoint-corruption-and-cas",
       "success": true,
-      "invariant": "Checkpoint integrity and compare-and-swap fencing survive cold recovery.",
-      "durationMs": 8728
+      "invariant": "Checkpoint integrity and compare-and-swap generation checks survive cold recovery.",
+      "durationMs": 8442
     },
     {
       "id": "cancel-complete-race",
       "success": true,
       "invariant": "Exactly one terminal Run outcome wins a cancel/complete race.",
-      "durationMs": 8996
+      "durationMs": 9238
     },
     {
       "id": "stale-dispatch-claim",
       "success": true,
       "invariant": "A superseded dispatcher cannot start external work.",
-      "durationMs": 9384
+      "durationMs": 9282
     },
     {
       "id": "orphan-runtime-cleanup",
       "success": true,
       "invariant": "Expired ownership is reconciled only after the orphan runtime is terminated.",
-      "durationMs": 8662
+      "durationMs": 8439
     }
   ]
 }
