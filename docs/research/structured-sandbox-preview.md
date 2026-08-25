@@ -39,14 +39,17 @@ Bash completes inside Cube
   -> Cube Provider runs a fixed credential-free probe over its management channel
   -> probe reads /proc/net/tcp{,6}
   -> bounded HTTP readiness probes
-  -> structured listeningPorts/httpServices Tool result
   -> Tool Broker persists runtime + target + port
-  -> Control Plane returns tenant-scoped service resources
-  -> Web renders Open application links
+  -> model calls trusted preview(port)
+  -> Worker verifies that port in PostgreSQL
+  -> structured Tool result carries the authenticated conversation route
+  -> Web renders Open application inline with the Tool call
   -> Preview Gateway signs and proxies the selected target
 ```
 
-The model sees neither the service registry identity nor routing credentials.
-It reports the verified port only. The registry is replaceable runtime state:
+The model sees neither Cube identity nor routing credentials. It selects only a
+verified port through `preview`; the returned route is same-origin and still
+requires the user's PiCloud authentication before the Preview Gateway issues a
+short-lived target capability. The registry is replaceable runtime state:
 changing physical runtime or observing a closed listener ends the old service,
 while a repeated observation upserts the same runtime-port identity.

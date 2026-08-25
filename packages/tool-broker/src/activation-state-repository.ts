@@ -955,7 +955,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       } as const;
       const retiredActivation = await transaction
         .selectFrom("tool_broker_activations")
-        .select(["owner_instance_id", "tenant_id", "project_id", "workspace_id", "state"])
+        .select(["tenant_id", "project_id", "workspace_id", "state"])
         .where("activation_id", "=", input.activationId)
         .forUpdate()
         .executeTakeFirst();
@@ -967,7 +967,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       } else {
         if (
           borrowedDevelopmentEnvironmentId === undefined ||
-          retiredActivation.owner_instance_id !== this.#instanceId ||
           retiredActivation.tenant_id !== input.assignment.tenantId ||
           retiredActivation.project_id !== input.assignment.projectId ||
           retiredActivation.workspace_id !== input.assignment.workspaceId ||
@@ -981,6 +980,8 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         await transaction
           .updateTable("tool_broker_activations")
           .set({
+            owner_instance_id: this.#instanceId,
+            owner_base_url: this.#ownerBaseUrl,
             supervisor_id: input.assignment.supervisorId,
             boot_id: input.assignment.bootId,
             sandbox_id: input.assignment.sandboxId,

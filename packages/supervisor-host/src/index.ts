@@ -56,6 +56,7 @@ export {
   createCloudSubagentSupervisorTool,
   type CloudSupervisorRequest,
 } from "./postgres-subagent-supervisor-channel.ts";
+export { createCloudPreviewTool } from "./postgres-preview-tool.ts";
 
 export {
   PostgresWorkspaceSeedResolver,

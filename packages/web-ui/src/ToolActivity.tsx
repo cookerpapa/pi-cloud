@@ -10,6 +10,7 @@ type JsonRecord = Record<string, unknown>;
 type ToolRenderContext = {
   item: ToolTranscriptItem;
   input: JsonRecord | null;
+  rawOutput: unknown;
   output: string;
   command: string | null;
   path: string | null;
@@ -298,6 +299,37 @@ const editRenderer: ToolRenderer = {
   },
 };
 
+const previewRenderer: ToolRenderer = {
+  heading(context) {
+    const port = context.input?.port;
+    return pathHeading(
+      "preview",
+      typeof port === "number" && Number.isInteger(port) ? `:${String(port)}` : null,
+    );
+  },
+  body(context, t) {
+    const output = objectValue(context.rawOutput);
+    const details = objectValue(output?.details);
+    const previewPath = stringValue(details?.previewPath);
+    const port = details?.port;
+    if (previewPath === null || typeof port !== "number" || !Number.isInteger(port)) {
+      return context.output.length === 0 ? null : (
+        <ExpandableToolText
+          className="product-tool-output"
+          direction="head"
+          text={context.output}
+        />
+      );
+    }
+    return (
+      <a className="product-preview-tool-link" href={previewPath} rel="noreferrer" target="_blank">
+        <span aria-hidden="true">↗</span>
+        {t("turn.previewOpen", { port })}
+      </a>
+    );
+  },
+};
+
 const defaultRenderer: ToolRenderer = {
   heading(context) {
     return pathHeading(context.item.toolName, context.path);
@@ -328,6 +360,7 @@ const TOOL_RENDERERS: Readonly<Record<string, ToolRenderer>> = {
   bash: bashRenderer,
   edit: editRenderer,
   read: readRenderer,
+  preview: previewRenderer,
   write: writeRenderer,
 };
 
@@ -336,6 +369,7 @@ function renderContext(item: ToolTranscriptItem, t: Translate): ToolRenderContex
   return {
     item,
     input,
+    rawOutput: item.output,
     output: item.output === undefined ? "" : toolOutputText(item.output, t),
     command: stringValue(input?.command),
     path: stringValue(input?.path),

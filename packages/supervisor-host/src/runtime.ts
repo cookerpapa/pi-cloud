@@ -63,6 +63,7 @@ import {
 } from "./postgres-pi-worker.ts";
 import { SupervisorProvisioningClient } from "./provisioning-client.ts";
 import { GatewayGitHubWorkspaceImporter, PostgresWorkspaceSeedResolver } from "./workspace-seed.ts";
+import { createCloudPreviewTool } from "./postgres-preview-tool.ts";
 
 export type PiWorkerRuntimeState =
   "idle" | "starting" | "ready" | "draining" | "stopped" | "failed";
@@ -485,6 +486,11 @@ export class PiWorkerRuntime {
             }),
           }),
         createOrchestrationTools: async (command, orchestrationContext) => {
+          const previewTool = createCloudPreviewTool({
+            database: this.#database,
+            tenantId: command.payload.tenantId,
+            sessionId: command.payload.sessionId,
+          });
           const session = await this.#database
             .selectFrom("sessions")
             .select("session_kind")
@@ -511,7 +517,11 @@ export class PiWorkerRuntime {
             parentSessionId: command.payload.sessionId,
           });
           if (treeContext !== undefined && !treeContext.canSpawnChildren) {
-            return [...(contactTool === undefined ? [] : [contactTool]), supervisorTool];
+            return [
+              previewTool,
+              ...(contactTool === undefined ? [] : [contactTool]),
+              supervisorTool,
+            ];
           }
           const delegationTool = await createPiSubagentsCloudTool({
             context: {
@@ -618,6 +628,7 @@ export class PiWorkerRuntime {
             },
           });
           return [
+            previewTool,
             ...(contactTool === undefined ? [] : [contactTool]),
             delegationTool,
             supervisorTool,

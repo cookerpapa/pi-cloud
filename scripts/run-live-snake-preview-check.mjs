@@ -127,7 +127,7 @@ async function runCodingTurn(api, browser, sessionId) {
     "Expose window.__snakeTestState() returning an object with headX, headY, score, running and tick.",
     "Serve the directory on 0.0.0.0:4173 and keep the server running after this task finishes.",
     "Use tools to inspect the files, run JavaScript syntax checks, start the server and fetch the page locally.",
-    "In the final response include http://localhost:4173/ only after all checks pass.",
+    "After all checks pass, call the preview Tool for port 4173. Do not print a localhost or guessed public URL.",
   ].join(" ");
   const startedAt = performance.now();
   const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("turn"), "off");
@@ -166,6 +166,10 @@ async function runCodingTurn(api, browser, sessionId) {
     const run = await waitForRun(api, accepted.runId);
     const toolStarts = events.filter((event) => event.type === "tool.started").length;
     assert(toolStarts >= 3, "Snake coding Run did not exercise the Tool path");
+    const previewToolUsed = events.some(
+      (event) => event.type === "tool.started" && event.payload.toolName === "preview",
+    );
+    assert(previewToolUsed, "Snake coding Run did not publish its service through Preview Tool");
     return {
       accepted,
       cursor,
@@ -174,6 +178,7 @@ async function runCodingTurn(api, browser, sessionId) {
       firstTextMs: firstTextAt === undefined ? null : Math.round(firstTextAt - startedAt),
       settledMs: Math.round(performance.now() - startedAt),
       toolStarts,
+      previewToolUsed,
     };
   } finally {
     clearTimeout(timer);
@@ -357,7 +362,8 @@ progress("headless browser start, movement, pause and reset passed");
 
 const conversation = await api.getConversation(session.sessionId);
 const serializedConversation = JSON.stringify(conversation);
-assert(serializedConversation.includes("http://localhost:4173/"));
+assert(serializedConversation.includes('"toolName":"preview"'));
+assert(!serializedConversation.includes("http://localhost:4173/"));
 if (reusedSessionId === undefined) {
   await api.developmentEnvironmentAction(
     development.environmentId,
@@ -377,6 +383,7 @@ const report = {
   developmentEnvironmentId: development.environmentId,
   runId: coding.accepted.runId,
   toolCalls: coding.toolStarts,
+  previewToolUsed: coding.previewToolUsed,
   firstTextMs: coding.firstTextMs,
   settledMs: coding.settledMs,
   hostPreviewStatus: 200,

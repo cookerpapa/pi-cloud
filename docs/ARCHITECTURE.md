@@ -366,10 +366,13 @@ credential-free listener probe inside the VM. The probe reads the VM's
 listening-socket table and checks bounded unprivileged candidates as HTTP; it
 does not change the Agent Tool response contract or depend on the guest's PiCloud
 image revision. Tool Broker persists that evidence against the physical runtime
-and conversation/development-environment target. The Web client reads this
-registry and renders Preview links without parsing or trusting assistant text.
-Historical assistant `localhost` links remain a presentation fallback; the
-Agent never calculates a public IP, signed URL or NAT mapping.
+and conversation/development-environment target. A trusted `preview` Tool
+resolves a model-selected verified port into an authenticated conversation
+route, and its structured Tool result renders the application link inline in
+the transcript. There is no persistent top-bar application hint and no need to
+parse or trust assistant text. Historical assistant `localhost` links remain a
+presentation fallback; the Agent never calculates a public IP, signed URL or
+NAT mapping.
 
 Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented. PiCloud does not
 expose Sandbox port 22. A separate trusted SSH gateway validates a one-time

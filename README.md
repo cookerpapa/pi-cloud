@@ -89,7 +89,9 @@ modify Session context, system prompts, user messages or Agent output.
 Service preview uses structured listener discovery rather than assistant-text
 parsing. Cube Provider identifies live HTTP ports through the trusted guest
 management channel, Tool Broker records them, and the Web client renders
-authenticated application links. The
+an authenticated application link when the Agent calls the trusted `preview`
+Tool. The link appears with that Tool result rather than as a permanent top-bar
+hint. The
 main origin issues a short-lived target capability and redirects to an isolated
 `*.preview.localhost` origin, so application storage and scripts work without
 receiving PiCloud cookies. Production DNS/TLS must cover

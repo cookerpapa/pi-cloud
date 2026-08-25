@@ -627,6 +627,7 @@ const environment = [
   `PI_CLOUD_APPLICATION_GID=${String(application.gid)}`,
   "PI_CLOUD_TENANT_SLUG=pi-cloud",
   `PI_CLOUD_TENANT_ID=${identities.tenantId}`,
+  `PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID=${identities.tenantId}`,
   `PI_CLOUD_USER_ID=${identities.userId}`,
   `PI_CLOUD_API_CREDENTIAL_ID=${identities.apiCredentialId}`,
   `PI_CLOUD_CREDENTIAL_BINDING_ID=${identities.credentialBindingId}`,

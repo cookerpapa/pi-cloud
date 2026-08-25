@@ -17,7 +17,6 @@ import type {
   DevelopmentEnvironmentProfileKey,
   DevelopmentEnvironmentResource,
   SshAccessTicketResource,
-  SandboxHttpServiceResource,
   TenantIdentityResource,
   WorkspaceSummaryResource,
 } from "@pi-cloud/protocol";
@@ -93,32 +92,6 @@ function developmentStateLabel(
   return t(`resource.state.${state}` as const);
 }
 
-export function HttpServiceLinks({
-  services,
-}: {
-  services: readonly SandboxHttpServiceResource[];
-}) {
-  const { t } = useI18n();
-  if (services.length === 0) return null;
-  return (
-    <div className="product-http-services" aria-label={t("chat.services.label")}>
-      {services.map((service) => (
-        <a
-          href={service.previewPath}
-          key={service.serviceId}
-          rel="noreferrer"
-          target="_blank"
-          title={t("chat.services.open", { port: service.port })}
-        >
-          <span className="product-service-status" aria-hidden="true" />
-          {t("chat.services.port", { port: service.port })}
-          <span aria-hidden="true">↗</span>
-        </a>
-      ))}
-    </div>
-  );
-}
-
 export default function ChatApp() {
   const { language, t } = useI18n();
   const api = useMemo(() => new PiCloudApi(), []);
@@ -168,7 +141,6 @@ export default function ChatApp() {
   );
   const [rebindWorkspaceName, setRebindWorkspaceName] = useState("");
   const [sshTicket, setSshTicket] = useState<SshAccessTicketResource | null>(null);
-  const [httpServices, setHttpServices] = useState<readonly SandboxHttpServiceResource[]>([]);
   const [followingConversationTail, setFollowingConversationTail] = useState(true);
   const [newConversationTitle, setNewConversationTitle] = useState("");
   const [workspaceChoice, setWorkspaceChoice] = useState<"existing" | "new">("new");
@@ -197,16 +169,6 @@ export default function ChatApp() {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const followingConversationTailRef = useRef(true);
   const currentTurn = activeTurn(state);
-  const settledToolCount = useMemo(
-    () =>
-      state.turns.reduce(
-        (count, turn) =>
-          count +
-          turn.items.filter((item) => item.kind === "tool" && item.status !== "running").length,
-        0,
-      ),
-    [state.turns],
-  );
   const currentDevelopmentEnvironment = developmentEnvironments.find(
     (environment) =>
       state.session?.sandboxRetention === "persistent" &&
@@ -618,26 +580,6 @@ export default function ChatApp() {
     setPendingTreeJump(null);
   }, [pendingTreeJump, state.session?.sessionId, state.turns.length]);
 
-  useEffect(() => {
-    const sessionId = state.session?.sessionId;
-    if (sessionId === undefined || selectedDelegatedSession !== null) {
-      setHttpServices([]);
-      return;
-    }
-    let cancelled = false;
-    void api
-      .listConversationServices(sessionId)
-      .then((resource) => {
-        if (!cancelled) setHttpServices(resource.services);
-      })
-      .catch(() => {
-        if (!cancelled) setHttpServices([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api, selectedDelegatedSession, settledToolCount, state.session?.sessionId]);
-
   function resetConversation(): void {
     lastSequenceRef.current = 0;
     setState(createInitialSessionView());
@@ -646,7 +588,6 @@ export default function ChatApp() {
     setSidebarOpen(false);
     setConversationTree(null);
     setSelectedDelegatedSession(null);
-    setHttpServices([]);
     setPendingTreeJump(null);
     followConversationTail(true);
   }
@@ -1345,7 +1286,6 @@ export default function ChatApp() {
                 </button>
               </div>
             )}
-            <HttpServiceLinks services={httpServices} />
           </div>
           <div className="product-topbar-actions">
             {state.connection.phase === "failed" ? (
