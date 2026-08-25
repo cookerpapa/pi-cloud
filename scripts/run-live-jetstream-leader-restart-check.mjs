@@ -65,11 +65,11 @@ function compose(args, timeoutMs = 180_000) {
   });
 }
 
-async function agentEventLeader() {
+async function agentEventStream(service = "nats-1") {
   const output = await compose([
     "exec",
     "-T",
-    "nats-1",
+    service,
     "wget",
     "-q",
     "-O",
@@ -77,7 +77,13 @@ async function agentEventLeader() {
     "http://127.0.0.1:8222/jsz?streams=true",
   ]);
   const details = JSON.parse(output).account_details?.[0]?.stream_detail ?? [];
-  const leader = details.find((stream) => stream.name === "PI_CLOUD_AGENT_EVENTS")?.cluster?.leader;
+  const stream = details.find((candidate) => candidate.name === "PI_CLOUD_AGENT_EVENTS");
+  if (stream === undefined) throw new Error("Agent event Stream is unavailable");
+  return stream;
+}
+
+async function agentEventLeader() {
+  const leader = (await agentEventStream()).cluster?.leader;
   if (!/^nats-[123]$/u.test(leader ?? "")) throw new Error("Agent event Stream Leader is invalid");
   return leader;
 }
@@ -96,7 +102,22 @@ async function replaceLeader() {
   if (replacement === undefined || replacement === previous) {
     throw new Error("JetStream did not elect a replacement Leader");
   }
-  return { previous, replacement };
+  const recovered = await (async () => {
+    while (Date.now() < deadline) {
+      const stream = await agentEventStream(replacement).catch(() => undefined);
+      const replicas = stream?.cluster?.replicas ?? [];
+      if (
+        stream?.cluster?.leader === replacement &&
+        replicas.length === 2 &&
+        replicas.every((replica) => replica.current)
+      ) {
+        return replicas;
+      }
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+    }
+    throw new Error("JetStream did not restore all R=3 Agent-event replicas");
+  })();
+  return { previous, replacement, recoveredReplicas: recovered.length };
 }
 
 async function waitForCompletedRun(api, runId) {
@@ -197,6 +218,7 @@ try {
     modelId: model.modelId,
     previousLeader: leaders.previous,
     replacementLeader: leaders.replacement,
+    recoveredReplicas: leaders.recoveredReplicas,
     runId: accepted.runId,
     firstTextSequence,
     terminalSequence: terminal.seq,
@@ -212,7 +234,7 @@ try {
   );
   await writeFile(
     resolve(reportDirectory, "jetstream-leader-restart-acceptance-latest.md"),
-    `# JetStream Leader restart acceptance\n\n- Leader: ${report.previousLeader} → ${report.replacementLeader}\n- First/terminal sequence: ${String(report.firstTextSequence)} / ${String(report.terminalSequence)}\n- SSE reconnects: ${String(report.sseReconnects)}\n- Run Attempts: ${String(report.attemptCount)}\n- Elapsed: ${String(report.elapsedMs)} ms\n`,
+    `# JetStream Leader restart acceptance\n\n- Leader: ${report.previousLeader} → ${report.replacementLeader}\n- Restored followers: ${String(report.recoveredReplicas)}/2\n- First/terminal sequence: ${String(report.firstTextSequence)} / ${String(report.terminalSequence)}\n- SSE reconnects: ${String(report.sseReconnects)}\n- Run Attempts: ${String(report.attemptCount)}\n- Elapsed: ${String(report.elapsedMs)} ms\n`,
   );
   process.stdout.write(`${JSON.stringify(report)}\n`);
 } finally {
