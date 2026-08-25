@@ -1,13 +1,10 @@
 {
   "accepted": true,
-  "piCloudRevision": "bfa66c7dff9f2044980c9bef13f22ddcbfb27125",
-  "checkedAt": "2026-08-23T19:23:23.527Z",
+  "piCloudRevision": "f22e1344f5e30a0f275effb7827316a06fde2774",
+  "checkedAt": "2026-08-25T09:47:52.185Z",
   "tenants": 6,
   "runs": 12,
-  "model": {
-    "provider": "deepseek",
-    "modelId": "deepseek-v4-flash"
-  },
+  "model": { "provider": "deepseek", "modelId": "deepseek-v4-flash" },
   "correctness": {
     "completedRuns": 12,
     "failedRuns": 0,
@@ -18,50 +15,27 @@
     "maximumAttemptCount": 1
   },
   "latencyMs": {
-    "acceptance": {
-      "minimum": 25,
-      "p50": 43,
-      "p95": 84,
-      "maximum": 84
-    },
-    "firstText": {
-      "minimum": 1173,
-      "p50": 3536,
-      "p95": 8926,
-      "maximum": 8926
-    },
-    "settled": {
-      "minimum": 2353,
-      "p50": 4370,
-      "p95": 12179,
-      "maximum": 12179
-    },
-    "queueWait": {
-      "minimum": 267,
-      "p50": 2402,
-      "p95": 8201,
-      "maximum": 8201
-    }
+    "acceptance": { "minimum": 34, "p50": 44, "p95": 121, "maximum": 121 },
+    "firstText": { "minimum": 886, "p50": 3912, "p95": 8176, "maximum": 8176 },
+    "settled": { "minimum": 2648, "p50": 4585, "p95": 11139, "maximum": 11139 },
+    "queueWait": { "minimum": 379, "p50": 3230, "p95": 7710, "maximum": 7710 }
   },
   "workers": {
     "distinct": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
-    "assignments": {
-      "pi-cloud-worker-1": 6,
-      "pi-cloud-worker-2": 6
-    }
+    "assignments": { "pi-cloud-worker-1": 6, "pi-cloud-worker-2": 6 }
   },
   "streaming": {
     "terminalCount": 12,
     "piEntryCount": 30,
     "messageCount": 24,
-    "canonicalPayloadBytes": 22269,
+    "canonicalPayloadBytes": 21815,
     "entriesPerRun": 2.5
   },
   "usage": {
     "requests": 12,
-    "inputTokens": 864,
-    "outputTokens": 1471,
-    "cacheReadTokens": 73728,
+    "inputTokens": 11916,
+    "outputTokens": 1400,
+    "cacheReadTokens": 53760,
     "cacheWriteTokens": 0
   }
 }

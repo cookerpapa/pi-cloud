@@ -61,10 +61,17 @@ export async function commitTerminalTurnEvent(
         .onRef("attempt.run_id", "=", "run.id")
         .onRef("attempt.id", "=", "run.current_attempt_id"),
     )
+    .leftJoin("execution_grants as authority", (join) =>
+      join
+        .onRef("authority.execution_id", "=", "attempt.id")
+        .onRef("authority.run_id", "=", "run.id"),
+    )
     .select([
       "run.id as runId",
       "attempt.id as attemptId",
-      "attempt.last_event_seq as lastEventSeq",
+      sql<string>`coalesce(${sql.ref("authority.last_event_seq")}, ${sql.ref(
+        "attempt.last_event_seq",
+      )})`.as("lastEventSeq"),
     ])
     .where("run.tenant_id", "=", input.tenantId)
     .where("run.session_id", "=", input.sessionId)

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { mkdir, open, writeFile } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -55,7 +56,40 @@ const baseUrl = new URL(
 const token = (
   await readPrivate(resolve(runtimeDirectory, "secrets/api-token"), 4_096, "Production API token")
 ).trim();
-const fetchFromProduction = (input, init) => fetch(new URL(String(input), baseUrl), init);
+const fetchFromProduction = async (input, init = {}) => {
+  const request = new URL(String(input), baseUrl);
+  const response = await fetch(request, { ...init, redirect: "manual" });
+  const location = response.headers.get("location");
+  if (response.status < 300 || response.status >= 400 || location === null) return response;
+  const target = new URL(location, request);
+  if (!target.hostname.endsWith(".preview.localhost")) return response;
+  return new Promise((resolvePromise, rejectPromise) => {
+    const forwarded = httpRequest(
+      {
+        hostname: connectHost,
+        port: target.port,
+        path: `${target.pathname}${target.search}`,
+        method: init.method ?? "GET",
+        headers: { ...Object.fromEntries(new Headers(init.headers)), host: target.host },
+        signal: init.signal,
+      },
+      (incoming) => {
+        const chunks = [];
+        incoming.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+        incoming.once("end", () =>
+          resolvePromise(
+            new Response(Buffer.concat(chunks), {
+              status: incoming.statusCode ?? 500,
+              headers: incoming.headers,
+            }),
+          ),
+        );
+      },
+    );
+    forwarded.once("error", rejectPromise);
+    forwarded.end();
+  });
+};
 const api = new PiCloudApi(fetchFromProduction, token);
 
 const databaseUrl = new URL(
@@ -323,11 +357,8 @@ assert(
   ),
 );
 await wait(2_000);
-const preview = await fetch(
-  new URL(
-    `/v1/development-environments/${development.environmentId}/preview/${String(previewPort)}/`,
-    baseUrl,
-  ),
+const preview = await fetchFromProduction(
+  `/v1/development-environments/${development.environmentId}/preview/${String(previewPort)}/`,
   { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
 );
 assert.equal(preview.status, 200);

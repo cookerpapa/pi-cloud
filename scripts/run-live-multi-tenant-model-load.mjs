@@ -227,6 +227,13 @@ async function registerTenant(index, suffix) {
     project.workspaceId,
     `Multi-tenant model load ${suffix}`,
   );
+  await psql(
+    `update sessions
+        set tool_capabilities = '[]'::jsonb,
+            updated_at = now()
+      where tenant_id = ${sqlLiteral(body.tenantId)}
+        and id = ${sqlLiteral(session.sessionId)}`,
+  );
   return {
     tenantSlug,
     tenantId: body.tenantId,

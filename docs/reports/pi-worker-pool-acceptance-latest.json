@@ -1,6 +1,6 @@
 {
   "accepted": true,
-  "checkedAt": "2026-08-23T19:26:53.188Z",
+  "checkedAt": "2026-08-25T10:09:48.438Z",
   "model": { "provider": "deepseek", "modelId": "deepseek-v4-flash" },
   "workerDeployment": "compose",
   "workers": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
@@ -10,35 +10,35 @@
     "differentWorker": true,
     "postgresSessionRestored": true,
     "markerRecovered": true,
-    "firstSettledMs": 1773,
-    "followUpSettledMs": 1979,
+    "firstSettledMs": 4079,
+    "followUpSettledMs": 3787,
     "candidateRuns": 1
   },
   "activeCrashRecovery": {
     "killedWorker": "pi-cloud-worker-1",
     "terminalState": "failed",
     "firstVisibleSequence": 3,
-    "terminalSequence": 10,
+    "terminalSequence": 9,
     "acceptedPrefixProjected": true,
     "sessionProjectionBarriers": 1,
-    "replacementRunId": "d0657775-0b4d-40da-b780-f47a359725f7"
+    "replacementRunId": "88459b97-3a8c-426f-b929-dfe2acd769f9"
   },
   "concurrency": {
     "runs": 4,
     "workerIds": [
+      "pi-cloud-worker-2",
       "pi-cloud-worker-1",
-      "pi-cloud-worker-2",
-      "pi-cloud-worker-2",
-      "pi-cloud-worker-1"
+      "pi-cloud-worker-1",
+      "pi-cloud-worker-2"
     ],
     "distinctWorkers": 2,
     "observedWorkerIds": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
-    "settledMs": [6350, 10255, 5992, 10605]
+    "settledMs": [5064, 6649, 10404, 8646]
   },
   "totalUsage": {
     "requests": 7,
-    "inputTokens": 467,
-    "outputTokens": 1228,
+    "inputTokens": 469,
+    "outputTokens": 1115,
     "cacheReadTokens": 43008,
     "cacheWriteTokens": 0
   }

@@ -1359,7 +1359,10 @@ export class RunCommandExecutor {
       },
     } as const;
     let preparedProjection: PreparedTerminalTurnProjection | undefined;
-    if (!shouldRetry) {
+    const initialEventSeq = Number(claim.request.nextEventSeq) - 1;
+    const hasVisibleTurnPrefix =
+      failure.lastEventSeq !== undefined && failure.lastEventSeq > initialEventSeq;
+    if (!shouldRetry && started && hasVisibleTurnPrefix) {
       try {
         preparedProjection = await this.#terminalTurnProjectionSource?.prepare({
           tenantId: claim.request.tenantId,

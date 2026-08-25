@@ -1,8 +1,8 @@
 {
   "format": "pi-cloud.control-plane-load-report.v1",
-  "piCloudRevision": "246e4db7f177e8edd95cbc81e506308aaa118a0b",
-  "generatedAt": "2026-08-23T19:59:36.362Z",
-  "evaluationId": "c33cd223-e7f6-4439-bea8-1f8362db0c2d",
+  "piCloudRevision": "f22e1344f5e30a0f275effb7827316a06fde2774",
+  "generatedAt": "2026-08-25T09:46:21.563Z",
+  "evaluationId": "4beb2a4d-71cf-4a2b-ad81-143f13833dc8",
   "methodology": "loopback_http_cold_session_admission_and_tenant_scoped_reads",
   "activeAgentRunBenchmark": false,
   "host": {
@@ -19,11 +19,11 @@
         "requests": 10,
         "successful": 10,
         "errors": 0,
-        "elapsedMs": 274,
-        "throughputPerSecond": 36.55,
-        "p50DurationMs": 158,
-        "p95DurationMs": 270,
-        "p99DurationMs": 270,
+        "elapsedMs": 303,
+        "throughputPerSecond": 32.95,
+        "p50DurationMs": 181,
+        "p95DurationMs": 301,
+        "p99DurationMs": 301,
         "failures": []
       },
       "conversationRead": {
@@ -32,11 +32,11 @@
         "requests": 10,
         "successful": 10,
         "errors": 0,
-        "elapsedMs": 45,
-        "throughputPerSecond": 221.35,
-        "p50DurationMs": 43,
-        "p95DurationMs": 45,
-        "p99DurationMs": 45,
+        "elapsedMs": 110,
+        "throughputPerSecond": 90.77,
+        "p50DurationMs": 106,
+        "p95DurationMs": 109,
+        "p99DurationMs": 109,
         "failures": []
       }
     },
@@ -48,11 +48,11 @@
         "requests": 50,
         "successful": 50,
         "errors": 0,
-        "elapsedMs": 516,
-        "throughputPerSecond": 96.86,
-        "p50DurationMs": 294,
-        "p95DurationMs": 492,
-        "p99DurationMs": 506,
+        "elapsedMs": 708,
+        "throughputPerSecond": 70.65,
+        "p50DurationMs": 467,
+        "p95DurationMs": 681,
+        "p99DurationMs": 702,
         "failures": []
       },
       "conversationRead": {
@@ -61,11 +61,11 @@
         "requests": 50,
         "successful": 50,
         "errors": 0,
-        "elapsedMs": 208,
-        "throughputPerSecond": 240.26,
-        "p50DurationMs": 197,
-        "p95DurationMs": 204,
-        "p99DurationMs": 204,
+        "elapsedMs": 304,
+        "throughputPerSecond": 164.23,
+        "p50DurationMs": 285,
+        "p95DurationMs": 297,
+        "p99DurationMs": 298,
         "failures": []
       }
     },
@@ -77,11 +77,11 @@
         "requests": 100,
         "successful": 100,
         "errors": 0,
-        "elapsedMs": 1199,
-        "throughputPerSecond": 83.38,
-        "p50DurationMs": 686,
-        "p95DurationMs": 1136,
-        "p99DurationMs": 1179,
+        "elapsedMs": 1114,
+        "throughputPerSecond": 89.79,
+        "p50DurationMs": 626,
+        "p95DurationMs": 1038,
+        "p99DurationMs": 1088,
         "failures": []
       },
       "conversationRead": {
@@ -90,11 +90,11 @@
         "requests": 100,
         "successful": 100,
         "errors": 0,
-        "elapsedMs": 419,
-        "throughputPerSecond": 238.69,
-        "p50DurationMs": 393,
-        "p95DurationMs": 406,
-        "p99DurationMs": 407,
+        "elapsedMs": 749,
+        "throughputPerSecond": 133.6,
+        "p50DurationMs": 706,
+        "p95DurationMs": 726,
+        "p99DurationMs": 728,
         "failures": []
       }
     }

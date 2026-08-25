@@ -538,7 +538,12 @@ export class JetStreamTerminalTurnProjectionSource implements TerminalTurnProjec
     const boundary = await this.#database
       .selectFrom("runs as run")
       .innerJoin("run_attempts as attempt", "attempt.id", "run.current_attempt_id")
-      .select("attempt.last_event_seq as lastEventSequence")
+      .innerJoin("execution_grants as authority", (join) =>
+        join
+          .onRef("authority.execution_id", "=", "attempt.id")
+          .onRef("authority.run_id", "=", "run.id"),
+      )
+      .select("authority.last_event_seq as lastEventSequence")
       .where("run.tenant_id", "=", input.tenantId)
       .where("run.session_id", "=", input.sessionId)
       .where("run.turn_id", "=", input.turnId)

@@ -939,6 +939,32 @@ describe.sequential("durable supervisor registration and health management", () 
     ).resolves.toEqual({ state: "failed", failure_code: "assignment_lost" });
   });
 
+  it("settles after owner-stop wins the race with the follow-up inventory request", async () => {
+    let now = testTime(5);
+    let inventoryAttempts = 0;
+    const transportAuthority = authority();
+    const connectionManager = manager({
+      clock: () => new Date(now),
+      ownerBoundary: {
+        async stopAndConfirm() {},
+      },
+      beforeInventory() {
+        inventoryAttempts += 1;
+        throw new Error("Injected management endpoint shutdown race");
+      },
+    });
+    await provisionSandbox(transportAuthority);
+    await connectionManager.register(registration(transportAuthority), transportAuthority);
+    now = new Date(now.valueOf() + 30_001);
+    await connectionManager.expireConnections();
+
+    await expect(connectionManager.processNextRetirement()).resolves.toMatchObject({
+      kind: "retired",
+      attempt: 1,
+    });
+    expect(inventoryAttempts).toBe(1);
+  });
+
   it("lets another control-plane instance reclaim an abandoned retirement claim", async () => {
     let now = testTime(6);
     let releaseFirstOwner!: () => void;

@@ -662,19 +662,24 @@ export class RunCancellationExecutor {
       payload: { reason: result.reason, forced: result.forced },
     } as const;
     let preparedProjection: PreparedTerminalTurnProjection | undefined;
-    try {
-      preparedProjection = await this.#terminalTurnProjectionSource?.prepare({
-        tenantId: claim.request.target.tenantId,
-        sessionId: claim.request.target.sessionId,
-        turnId: claim.request.target.turnId,
-        commandId: claim.request.target.commandId,
-        agentId: "root",
-        body: terminalBody,
-        eventId: terminalEventId,
-        occurredAt: now.toISOString(),
-      });
-    } catch {
-      // Stream-prefix recovery is best effort for cancellation.
+    const initialEventSeq = Number(claim.request.target.nextEventSeq) - 1;
+    const hasVisibleTurnPrefix =
+      result.lastEventSeq !== undefined && result.lastEventSeq > initialEventSeq;
+    if (hasVisibleTurnPrefix) {
+      try {
+        preparedProjection = await this.#terminalTurnProjectionSource?.prepare({
+          tenantId: claim.request.target.tenantId,
+          sessionId: claim.request.target.sessionId,
+          turnId: claim.request.target.turnId,
+          commandId: claim.request.target.commandId,
+          agentId: "root",
+          body: terminalBody,
+          eventId: terminalEventId,
+          occurredAt: now.toISOString(),
+        });
+      } catch {
+        // Stream-prefix recovery is best effort for cancellation.
+      }
     }
     await this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);

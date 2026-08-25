@@ -746,23 +746,28 @@ export class SupervisorConnectionManager {
     try {
       const retirer = this.#assignmentRetirerFactory(claim.identity);
       let reconciliation: SandboxRetirementResult;
+      let ownerStopConfirmed = false;
       try {
         await this.#ownerBoundary.stopAndConfirm(claim.identity);
+        ownerStopConfirmed = true;
         await this.#renewRetirementClaim(claim, validDate(this.#clock));
         reconciliation = await retirer.retireSandbox();
       } catch (error: unknown) {
         const normalized = safeErrorCode(error);
         if (
           retirer.retireFencedSandbox === undefined ||
-          (normalized.code !== "supervisor_management_unavailable" &&
-            normalized.code !== "boot_generation_unknown")
+          (!ownerStopConfirmed &&
+            normalized.code !== "supervisor_management_unavailable" &&
+            normalized.code !== "boot_generation_unknown") ||
+          (ownerStopConfirmed && !normalized.retryable)
         ) {
           throw error;
         }
-        // The connection, Sandbox row and RunAttempt lease were fenced before
-        // retirement became eligible. A partitioned old process can no longer
-        // publish JetStream events, mutate SessionStorage or enter Tool Broker.
-        // Management unavailability must not strand the durable Session.
+        // The connection, Sandbox row and execution grant were fenced before
+        // retirement became eligible. Once owner-stop also confirms, that
+        // Worker intentionally exits, so a following inventory request can
+        // race with its management endpoint disappearing. Either proof is
+        // sufficient to settle durable state without stranding the Session.
         await this.#renewRetirementClaim(claim, validDate(this.#clock));
         reconciliation = await retirer.retireFencedSandbox();
       }
