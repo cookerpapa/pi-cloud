@@ -1,7 +1,7 @@
 {
   "format": "pi-cloud.jetstream-production-shape.v1",
-  "generatedAt": "2026-08-25T04:21:53.977Z",
-  "revision": "d785354481fd8245d34320c18919fa83be9d3f07",
+  "generatedAt": "2026-08-25T05:03:56.384Z",
+  "revision": "87d5f00d4b57d6ff4ae53d471c768a4ae561cf4d",
   "host": {
     "platform": "linux",
     "architecture": "x64",
@@ -22,10 +22,10 @@
     "canonicalContent": "complete baseline answer",
     "fragmentRowsInPostgres": 0,
     "publishLatencyMs": {
-      "p50": 5.497,
-      "p95": 29.843,
-      "p99": 29.843,
-      "maximum": 29.843
+      "p50": 7.258,
+      "p95": 35.194,
+      "p99": 35.194,
+      "maximum": 35.194
     }
   },
   "authorityFence": {
@@ -43,7 +43,7 @@
   "leaderRecovery": {
     "killedLeader": "n3",
     "replacementLeader": "n2",
-    "publishAndDeliveryMs": 3299.879,
+    "publishAndDeliveryMs": 2299.603,
     "ingestAttempts": 1,
     "delivered": true,
     "existingConnectionRecovered": true,
@@ -56,67 +56,67 @@
       {
         "connections": 250,
         "connectLatencyMs": {
-          "p50": 78.924,
-          "p95": 277.782,
-          "p99": 292.614,
-          "maximum": 303.289
+          "p50": 81.283,
+          "p95": 339.209,
+          "p99": 418.184,
+          "maximum": 429.2
         },
-        "gatewayRssMiB": 77.47,
+        "gatewayRssMiB": 79.29,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 6.88
+        "hostFreeMemoryGiB": 6.94
       },
       {
         "connections": 500,
         "connectLatencyMs": {
-          "p50": 49.316,
-          "p95": 85.664,
-          "p99": 90.908,
-          "maximum": 91.061
+          "p50": 73.347,
+          "p95": 115.118,
+          "p99": 117.604,
+          "maximum": 118.152
         },
-        "gatewayRssMiB": 82.22,
+        "gatewayRssMiB": 80.54,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 6.84
+        "hostFreeMemoryGiB": 6.95
       },
       {
         "connections": 1000,
         "connectLatencyMs": {
-          "p50": 50.205,
-          "p95": 88.616,
-          "p99": 92.923,
-          "maximum": 95.704
+          "p50": 60.455,
+          "p95": 85.348,
+          "p99": 90.526,
+          "maximum": 92.475
         },
-        "gatewayRssMiB": 92.95,
+        "gatewayRssMiB": 92.29,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 6.83
+        "hostFreeMemoryGiB": 6.91
       },
       {
         "connections": 2000,
         "connectLatencyMs": {
-          "p50": 53.431,
-          "p95": 73.35,
-          "p99": 77.206,
-          "maximum": 79.238
+          "p50": 64.771,
+          "p95": 79.385,
+          "p99": 82.685,
+          "maximum": 92.455
         },
-        "gatewayRssMiB": 115.45,
+        "gatewayRssMiB": 112.61,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 6.76
+        "hostFreeMemoryGiB": 6.83
       }
     ],
     "publishLatencyMs": {
-      "p50": 98.881,
-      "p95": 215.852,
-      "p99": 338.24,
-      "maximum": 459.001
+      "p50": 139.255,
+      "p95": 255.316,
+      "p99": 373.616,
+      "maximum": 513.242
     },
     "deliveredConnections": 2000,
     "missedConnections": [],
     "recoveredAfterReconnect": 0,
     "effectiveDeliveredConnections": 2000,
-    "publishElapsedMs": 2274.436,
+    "publishElapsedMs": 3028.307,
     "gatewayDeliveredAtPublishComplete": 2003,
-    "browserReadElapsedMs": 101.532,
-    "publishAndDeliverElapsedMs": 2378.395,
-    "eventsPerSecond": 840.9,
+    "browserReadElapsedMs": 58.101,
+    "publishAndDeliverElapsedMs": 3090.584,
+    "eventsPerSecond": 647.13,
     "consumersAfterClose": 1
   },
   "authorityBatchThroughput": {
@@ -125,20 +125,20 @@
     "pubAck": "synchronous-per-event-r3",
     "baseline": {
       "events": 2048,
-      "elapsedMs": 19890.837,
-      "eventsPerSecond": 102.96,
-      "validationQueries": 2048,
-      "confirmationQueries": 2048
+      "elapsedMs": 21620.807,
+      "eventsPerSecond": 94.72,
+      "authorityTransactions": 2048,
+      "authorityStatements": 4096
     },
     "batched": {
       "events": 8192,
-      "elapsedMs": 6024.887,
-      "eventsPerSecond": 1359.69,
-      "validationQueries": 32,
-      "confirmationQueries": 32,
+      "elapsedMs": 5936.357,
+      "eventsPerSecond": 1379.97,
+      "authorityTransactions": 32,
+      "authorityStatements": 64,
       "batches": 32,
       "maximumBatchSize": 256
     },
-    "speedup": 13.21
+    "speedup": 14.57
   }
 }

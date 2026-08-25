@@ -1,49 +1,49 @@
 {
   "accepted": true,
-  "piCloudRevision": "d785354481fd8245d34320c18919fa83be9d3f07",
-  "checkedAt": "2026-08-25T05:01:13.408Z",
-  "account": "snake.acceptance.mt873fiv",
-  "sessionId": "db423c1b-257a-47e3-8bc6-37faa0aa764e",
-  "workspaceId": "41ee4030-2dca-443f-ac2f-87ba9a53a77e",
-  "developmentEnvironmentId": "af17c7ed-6d2f-4c4d-8b2b-bbffdddbb792",
-  "runId": "035fb7c4-ccdf-4079-b7ec-28d4907e5550",
-  "toolCalls": 25,
-  "firstTextMs": 1599,
-  "settledMs": 117489,
+  "piCloudRevision": "87d5f00d4b57d6ff4ae53d471c768a4ae561cf4d",
+  "checkedAt": "2026-08-25T05:07:24.764Z",
+  "account": "snake.acceptance.mt87c4kf",
+  "sessionId": "0d3cd872-f15c-4a66-bb2a-bbca3de7c2cb",
+  "workspaceId": "135265f9-aa35-4e7d-9da1-e94fd943ff4e",
+  "developmentEnvironmentId": "9348388c-bb13-48a9-8e58-0c55b03490cb",
+  "runId": "000ceadf-c61e-4f67-9ef8-c4d9f6baba96",
+  "toolCalls": 20,
+  "firstTextMs": 1318,
+  "settledMs": 83877,
   "hostPreviewStatus": 200,
-  "previewOrigin": "http://p-88251999afe354bb211dbf26.preview.localhost:8080",
-  "previewRoute": "/v1/conversations/db423c1b-257a-47e3-8bc6-37faa0aa764e/preview/4173",
+  "previewOrigin": "http://p-8ecb12909ec7af5447fb482a.preview.localhost:8080",
+  "previewRoute": "/v1/conversations/0d3cd872-f15c-4a66-bb2a-bbca3de7c2cb/preview/4173",
   "browserInteraction": {
     "before": {
-      "headX": 10,
+      "headX": 9,
       "headY": 10,
       "score": 0,
       "running": false,
       "tick": 0
     },
     "after": {
-      "headX": 10,
-      "headY": 14,
+      "headX": 9,
+      "headY": 15,
       "score": 0,
       "running": true,
-      "tick": 4
+      "tick": 5
     },
     "paused": {
-      "headX": 10,
-      "headY": 14,
+      "headX": 9,
+      "headY": 15,
       "score": 0,
-      "running": false,
-      "tick": 4
+      "running": true,
+      "tick": 5
     },
     "pausedAfterWait": {
-      "headX": 10,
-      "headY": 14,
+      "headX": 9,
+      "headY": 15,
       "score": 0,
-      "running": false,
-      "tick": 4
+      "running": true,
+      "tick": 5
     },
     "reset": {
-      "headX": 10,
+      "headX": 9,
       "headY": 10,
       "score": 0,
       "running": false,

@@ -76,8 +76,8 @@ Arbitrary Tool effects remain non-replayable and may settle as `UNKNOWN`.
 The production-shaped spike sustained 2,000 authenticated SSE connections with
 one steady JetStream Consumer and 2,000/2,000 Session deliveries. On the named
 single-host topology, transaction-scoped authority batching reduced 8,192
-events to 32 authority transactions and reached about 1,377 events/s, versus
-about 97 events/s for the same per-event boundary. Gateway, Projector and
+events to 32 authority transactions and reached about 1,380 events/s, versus
+about 95 events/s for the same per-event boundary. Gateway, Projector and
 Stream Leader loss recovered without duplicate canonical messages. The report is
 [`jetstream-production-shape-latest.md`](../reports/jetstream-production-shape-latest.md).
 
