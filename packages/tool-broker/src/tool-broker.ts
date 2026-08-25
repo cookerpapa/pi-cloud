@@ -649,6 +649,45 @@ export class ToolBroker {
       throw new ToolBrokerOwnerRedirectError(ownership.ownerBaseUrl);
     }
     const environment = this.#developmentEnvironments.get(request.environmentId);
+    if (ownership.status === "owned" && environment === undefined && request.action === "release") {
+      if (ownership.agentActive || ownership.terminalActive) {
+        throw new ToolBrokerError(
+          "development_environment_agent_active",
+          "Wait for the active Agent Run or terminal before releasing the development environment",
+          true,
+        );
+      }
+      await this.#stateRepository.setDevelopmentEnvironmentState(
+        request.environmentId,
+        "releasing",
+      );
+      const assignment = developmentEnvironmentAssignment({
+        environmentId: ownership.reservation.environmentId,
+        tenantId: ownership.reservation.tenantId,
+        projectId: ownership.reservation.projectId,
+        workspaceId: ownership.reservation.workspaceId,
+        generation: ownership.reservation.generation,
+      });
+      try {
+        await this.#provider.destroyActivation(request.environmentId, assignment);
+      } catch (error: unknown) {
+        await this.#stateRepository
+          .setDevelopmentEnvironmentState(request.environmentId, "unknown", {
+            failureCode: operationFailureCode(error),
+          })
+          .catch(() => undefined);
+        throw error;
+      }
+      this.#releaseAdmission(request.environmentId);
+      await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "released");
+      return {
+        developmentEnvironmentProtocolVersion: 1,
+        type: "development_environment.state",
+        requestId: request.requestId,
+        environmentId: request.environmentId,
+        state: "released",
+      };
+    }
     if (ownership.status !== "owned" || environment === undefined) {
       throw new ToolBrokerError(
         "development_environment_unavailable",

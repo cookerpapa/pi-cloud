@@ -88,7 +88,13 @@ export type DevelopmentEnvironmentReservationResult =
   | { status: "capacity" };
 
 export type DevelopmentEnvironmentOwnerResult =
-  | { status: "owned"; state: DevelopmentEnvironmentState }
+  | {
+      status: "owned";
+      state: DevelopmentEnvironmentState;
+      reservation: DevelopmentEnvironmentReservation;
+      agentActive: boolean;
+      terminalActive: boolean;
+    }
   | { status: "redirect"; ownerBaseUrl: string }
   | { status: "unavailable" };
 
@@ -347,7 +353,13 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
     const environment = this.#developmentEnvironments.get(environmentId);
     return environment === undefined
       ? { status: "unavailable" }
-      : { status: "owned", state: environment.state };
+      : {
+          status: "owned",
+          state: environment.state,
+          reservation: environment.reservation,
+          agentActive: false,
+          terminalActive: false,
+        };
   }
   async sandboxPreviewOwner(
     _tenantId: string,
@@ -1510,7 +1522,21 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     const now = validDate(this.#clock);
     const row = await this.#database
       .selectFrom("development_environments")
-      .select(["owner_instance_id", "owner_base_url", "state"])
+      .select([
+        "id",
+        "tenant_id",
+        "owner_user_id",
+        "project_id",
+        "workspace_id",
+        "environment_version_id",
+        "generation",
+        "profile_key",
+        "owner_instance_id",
+        "owner_base_url",
+        "state",
+        "agent_activation_id",
+        "terminal_active",
+      ])
       .where("tenant_id", "=", tenantId)
       .where("owner_user_id", "=", userId)
       .where("id", "=", environmentId)
@@ -1533,7 +1559,23 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         ? { status: "unavailable" }
         : { status: "redirect", ownerBaseUrl: owner.owner_base_url };
     }
-    return { status: "owned", state: row.state };
+    if (row.environment_version_id === null) return { status: "unavailable" };
+    return {
+      status: "owned",
+      state: row.state,
+      reservation: {
+        environmentId: row.id,
+        tenantId: row.tenant_id,
+        userId: row.owner_user_id,
+        projectId: row.project_id,
+        workspaceId: row.workspace_id,
+        environmentVersionId: row.environment_version_id,
+        generation: Number(row.generation),
+        profileKey: developmentProfileKey(row.profile_key),
+      },
+      agentActive: row.agent_activation_id !== null,
+      terminalActive: row.terminal_active,
+    };
   }
 
   async sandboxPreviewOwner(
@@ -1766,6 +1808,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .where("environment.terminal_active", "=", false)
         .where((expression) =>
           expression.or([
+            expression("environment.owner_instance_id", "=", this.#instanceId),
             expression("owner.instance_id", "is", null),
             expression("owner.state", "!=", "ready"),
             expression("owner.lease_expires_at", "<=", now),

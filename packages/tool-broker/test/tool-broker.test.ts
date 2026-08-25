@@ -471,6 +471,44 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
+  it("releases a database-owned development environment after its in-memory handle is lost", async () => {
+    const fixture = providerFixture();
+    const destroyActivation = vi.fn(async () => undefined);
+    fixture.provider.destroyActivation = destroyActivation;
+    const stateRepository = new InMemorySandboxActivationStateRepository();
+    const environmentId = "21111111-1111-4111-8111-111111111121";
+    await stateRepository.reserveDevelopmentEnvironment({
+      environmentId,
+      tenantId: assignment.tenantId,
+      userId: "user-provider-test",
+      projectId: assignment.projectId,
+      workspaceId: assignment.workspaceId,
+      environmentVersionId: environment.environmentVersionId,
+      generation: 3,
+      profileKey: "standard",
+    });
+    const manager = new ToolBroker({
+      provider: fixture.provider,
+      stateRepository,
+      idGenerator: () => ACTIVATION_ID,
+      capabilityGenerator: () => CAPABILITY,
+    });
+
+    await expect(
+      manager.developmentEnvironmentLifecycle({
+        developmentEnvironmentProtocolVersion: 1,
+        type: "development_environment.lifecycle",
+        requestId: "21111111-1111-4111-8111-111111111122",
+        environmentId,
+        tenantId: assignment.tenantId,
+        userId: "user-provider-test",
+        action: "release",
+      }),
+    ).resolves.toMatchObject({ state: "released" });
+    expect(destroyActivation).toHaveBeenCalledOnce();
+    await manager.close();
+  });
+
   it("rejects a missing exclusive working directory without destroying the user's machine", async () => {
     const fixture = providerFixture();
     const manager = new ToolBroker({

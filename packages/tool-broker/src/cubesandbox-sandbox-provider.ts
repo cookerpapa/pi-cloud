@@ -484,15 +484,14 @@ function metadataMatchesOrphanIdentity(
   activationId: string,
   assignment: ToolSandboxAssignment,
 ): boolean {
-  const current = currentAssignmentMetadata(values);
   return (
     values[METADATA.managed] === "true" &&
     values[METADATA.provider] === CUBESANDBOX_PROVIDER_ID &&
     values[METADATA.workload] === "tool-sandbox" &&
-    current?.activationId === activationId &&
-    current.tenantId === assignment.tenantId &&
-    current.projectId === assignment.projectId &&
-    current.workspaceId === assignment.workspaceId
+    values[METADATA.activationId] === activationId &&
+    values[METADATA.tenantId] === assignment.tenantId &&
+    values[METADATA.projectId] === assignment.projectId &&
+    values[METADATA.workspaceId] === assignment.workspaceId
   );
 }
 
