@@ -682,6 +682,26 @@ export const DevelopmentEnvironmentListResourceSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const SandboxHttpServiceResourceSchema = Type.Object(
+  {
+    serviceId: UuidSchema,
+    port: Type.Integer({ minimum: 1_024, maximum: 65_535 }),
+    protocol: Type.Literal("http"),
+    previewPath: Type.String({ minLength: 1, maxLength: 8_192, pattern: "^/" }),
+    firstSeenAt: UtcTimestampSchema,
+    lastSeenAt: UtcTimestampSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const SandboxHttpServiceListResourceSchema = Type.Object(
+  {
+    services: Type.Array(SandboxHttpServiceResourceSchema, { maxItems: 64 }),
+    truncated: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
 export const ConversationTranscriptItemResourceSchema = Type.Union([
   Type.Object(
     {
@@ -1264,6 +1284,8 @@ export type DevelopmentEnvironmentResource = Static<typeof DevelopmentEnvironmen
 export type DevelopmentEnvironmentListResource = Static<
   typeof DevelopmentEnvironmentListResourceSchema
 >;
+export type SandboxHttpServiceResource = Static<typeof SandboxHttpServiceResourceSchema>;
+export type SandboxHttpServiceListResource = Static<typeof SandboxHttpServiceListResourceSchema>;
 export type ConversationTurnState = Static<typeof ConversationTurnStateSchema>;
 export type ConversationSummaryResource = Static<typeof ConversationSummaryResourceSchema>;
 export type DelegatedSessionContextMode = Static<typeof DelegatedSessionContextModeSchema>;
@@ -1727,6 +1749,16 @@ export function parseDevelopmentEnvironmentListResource(
     DevelopmentEnvironmentListResourceSchema,
     value,
     "development environment list resource",
+  );
+}
+
+export function parseSandboxHttpServiceListResource(
+  value: unknown,
+): SandboxHttpServiceListResource {
+  return parseSchema(
+    SandboxHttpServiceListResourceSchema,
+    value,
+    "Sandbox HTTP service list resource",
   );
 }
 

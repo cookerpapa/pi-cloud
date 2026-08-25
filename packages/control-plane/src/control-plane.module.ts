@@ -32,6 +32,7 @@ import type { TurnSteerBackend } from "./turn-steer.ts";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
+import { SandboxHttpServiceService } from "./sandbox-http-service-service.ts";
 import {
   EmptyLiveTurnSnapshotSource,
   type LiveTurnSnapshotSource,
@@ -207,6 +208,10 @@ export class ControlPlaneModule {
           useValue:
             options.sshAccessTicketService ??
             new SshAccessTicketService({ database: options.database, enabled: false }),
+        },
+        {
+          provide: SandboxHttpServiceService,
+          useValue: new SandboxHttpServiceService({ database: options.database }),
         },
         {
           provide: WorkspaceVersionService,

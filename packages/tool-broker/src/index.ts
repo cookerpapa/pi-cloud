@@ -47,6 +47,7 @@ export {
   type SandboxEffectiveIsolation,
   type SandboxHandle,
   type SandboxInspection,
+  type SandboxHttpServiceDiscovery,
   type SandboxNetworkPolicy,
   type SandboxPolicy,
   type SandboxProvider,
@@ -91,3 +92,9 @@ export {
   WorkspaceVolumeDeletionReaper,
   type WorkspaceVolumeDeletionReaperOptions,
 } from "./workspace-volume-deletion-reaper.ts";
+export {
+  PostgresSandboxHttpServiceRegistry,
+  type SandboxHttpServiceObservation,
+  type SandboxHttpServiceRegistry,
+  type SandboxHttpServiceTarget,
+} from "./sandbox-http-service-registry.ts";

@@ -90,6 +90,7 @@ import * as exclusiveVmState from "./088_exclusive_vm_state.ts";
 import * as exclusiveMachineWorkingDirectories from "./089_exclusive_machine_working_directories.ts";
 import * as developmentEnvironmentRecoveryIdentity from "./090_development_environment_recovery_identity.ts";
 import * as executionGrants from "./091_execution_grants.ts";
+import * as sandboxHttpServices from "./092_sandbox_http_services.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -185,6 +186,7 @@ export const migrationProvider: MigrationProvider = {
       "089_exclusive_machine_working_directories": exclusiveMachineWorkingDirectories,
       "090_development_environment_recovery_identity": developmentEnvironmentRecoveryIdentity,
       "091_execution_grants": executionGrants,
+      "092_sandbox_http_services": sandboxHttpServices,
     };
   },
 };
@@ -514,3 +516,7 @@ export {
   up as upDevelopmentEnvironmentRecoveryIdentity,
 } from "./090_development_environment_recovery_identity.ts";
 export { down as downExecutionGrants, up as upExecutionGrants } from "./091_execution_grants.ts";
+export {
+  down as downSandboxHttpServices,
+  up as upSandboxHttpServices,
+} from "./092_sandbox_http_services.ts";

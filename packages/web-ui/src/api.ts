@@ -31,6 +31,7 @@ import {
   parseWorkspaceVersionResource,
   parseConversationWorkspaceBindingResource,
   parseSshAccessTicketResource,
+  parseSandboxHttpServiceListResource,
   type ConversationDetailResource,
   type AuthSessionResource,
   type ConversationListResource,
@@ -67,6 +68,7 @@ import {
   type WorkspaceVersionResource,
   type ConversationWorkspaceBindingResource,
   type SshAccessTicketResource,
+  type SandboxHttpServiceListResource,
 } from "@pi-cloud/protocol";
 
 export class PiCloudApiError extends Error {
@@ -327,6 +329,30 @@ export class PiCloudApi {
       await request(
         this.#fetch,
         "/v1/development-environments",
+        { method: "GET" },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async listConversationServices(sessionId: string): Promise<SandboxHttpServiceListResource> {
+    return parseSandboxHttpServiceListResource(
+      await request(
+        this.#fetch,
+        `/v1/conversations/${encodeURIComponent(sessionId)}/services`,
+        { method: "GET" },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async listDevelopmentEnvironmentServices(
+    environmentId: string,
+  ): Promise<SandboxHttpServiceListResource> {
+    return parseSandboxHttpServiceListResource(
+      await request(
+        this.#fetch,
+        `/v1/development-environments/${encodeURIComponent(environmentId)}/services`,
         { method: "GET" },
         this.#authorizationToken,
       ),

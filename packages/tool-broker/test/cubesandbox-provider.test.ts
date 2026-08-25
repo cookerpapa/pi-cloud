@@ -208,6 +208,21 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     instance: CubeSandboxInstance,
     input: CubeSandboxGuestCommandRequest,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    if (input.command.includes("eval(Buffer.from('") && input.command.includes("base64")) {
+      this.requests.push({
+        sandboxId: instance.sandboxId,
+        input,
+        guestRequest: { mode: "service_discovery" },
+      });
+      return {
+        stdout: JSON.stringify({
+          listeningPorts: [3_000],
+          httpServices: [{ port: 3_000, protocol: "http" }],
+        }),
+        stderr: "",
+        exitCode: 0,
+      };
+    }
     const request = this.requestForCommand(input);
     this.requests.push({ sandboxId: instance.sandboxId, input, guestRequest: request });
     if (input.command.includes("envd-preview-proxy.mjs")) {
@@ -477,6 +492,10 @@ describe("CubeSandbox Provider contract", () => {
       status: 200,
       headers: { "content-type": "text/html; charset=utf-8" },
       body: Buffer.from("<html>private-preview-ok</html>"),
+    });
+    await expect(provider.discoverHttpServices(handle)).resolves.toEqual({
+      listeningPorts: [3_000],
+      httpServices: [{ port: 3_000, protocol: "http" }],
     });
     expect(runtime.guestFiles.size).toBe(0);
     expect(runtime.creates[0]).toMatchObject({

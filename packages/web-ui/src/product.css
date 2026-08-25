@@ -876,6 +876,44 @@ body.product-panel-resizing {
   gap: 6px;
 }
 
+.product-http-services {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.product-http-services a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid rgba(95, 201, 154, 0.2);
+  border-radius: 999px;
+  background: rgba(95, 201, 154, 0.08);
+  color: #b8e7d2;
+  font-size: 11px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.product-http-services a:hover {
+  border-color: rgba(95, 201, 154, 0.42);
+  background: rgba(95, 201, 154, 0.14);
+}
+
+.product-topbar-title .product-http-services span::before {
+  display: none;
+}
+
+.product-topbar-title .product-http-services .product-service-status {
+  width: 6px;
+  height: 6px;
+  margin: 0;
+  border-radius: 50%;
+  background: #5fc99a;
+}
+
 .product-ssh-ticket-modal code {
   display: block;
   overflow-wrap: anywhere;

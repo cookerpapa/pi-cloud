@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AdminPage } from "../src/AdminPage.tsx";
 import { AuthScreen } from "../src/AuthScreen.tsx";
-import ChatApp from "../src/ChatApp.tsx";
+import ChatApp, { HttpServiceLinks } from "../src/ChatApp.tsx";
 import { ConversationTreeNavigator } from "../src/ConversationTreeNavigator.tsx";
 import { ConversationTurn } from "../src/ConversationTurn.tsx";
 import { conversationPreviewHref, Markdown } from "../src/Markdown.tsx";
@@ -72,6 +72,28 @@ describe("product chat experience", () => {
     expect(markup).toContain("打开应用（端口 8000）↗");
     expect(markup).toContain(`/v1/conversations/${sessionId}/preview/8000/snake.html`);
     expect(markup).not.toContain(">http://127.0.0.1:8000/snake.html<");
+  });
+
+  it("renders a structured discovered service without assistant URL text", () => {
+    const markup = renderToStaticMarkup(
+      <HttpServiceLinks
+        services={[
+          {
+            serviceId: "10000000-0000-4000-8000-000000000098",
+            port: 3_000,
+            protocol: "http",
+            previewPath: "/v1/conversations/10000000-0000-4000-8000-000000000099/preview/3000/",
+            firstSeenAt: "2026-08-25T00:00:00.000Z",
+            lastSeenAt: "2026-08-25T00:01:00.000Z",
+          },
+        ]}
+      />,
+    );
+    expect(markup).toContain("应用 :3000");
+    expect(markup).toContain(
+      "/v1/conversations/10000000-0000-4000-8000-000000000099/preview/3000/",
+    );
+    expect(markup).not.toContain("127.0.0.1");
   });
 
   it("restores a durable login without rendering the old operator console", () => {

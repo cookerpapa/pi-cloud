@@ -22,6 +22,8 @@ export {
   type RunTable,
   type SandboxRetirementReason,
   type SandboxRetirementState,
+  type SandboxHttpServiceState,
+  type SandboxHttpServiceTargetKind,
   type SessionKind,
   type PiSessionEntryRefTable,
   type PiSessionVisibleEntryTable,
@@ -156,6 +158,8 @@ export {
   downDevelopmentEnvironmentRecoveryIdentity,
   upExecutionGrants,
   downExecutionGrants,
+  upSandboxHttpServices,
+  downSandboxHttpServices,
 } from "./migrations/index.ts";
 
 export {

@@ -117,6 +117,11 @@ export type SandboxWorkspaceForkResult = Readonly<{
   targetRevision: string;
 }>;
 
+export type SandboxHttpServiceDiscovery = Readonly<{
+  listeningPorts: readonly number[];
+  httpServices: readonly Readonly<{ port: number; protocol: "http" }>[];
+}>;
+
 export type PersistentSandboxCapsule = Readonly<{
   handle: SandboxHandle;
   capsule: string;
@@ -258,6 +263,10 @@ export interface SandboxProvider {
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse>;
+  discoverHttpServices?(
+    handle: SandboxHandle,
+    signal?: AbortSignal,
+  ): Promise<SandboxHttpServiceDiscovery>;
   readFile(
     handle: SandboxHandle,
     input: SandboxReadFileInput,

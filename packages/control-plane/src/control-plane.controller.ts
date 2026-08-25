@@ -67,6 +67,7 @@ import {
   type DevelopmentEnvironmentDirectoryResource,
   type LiveTurnSnapshotResource,
   type SshAccessTicketResource,
+  type SandboxHttpServiceListResource,
 } from "@pi-cloud/protocol";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ControlPlaneStoreFactory } from "./control-plane-store-factory.ts";
@@ -83,6 +84,7 @@ import { DevelopmentEnvironmentService } from "./development-environment-service
 import type { LiveTurnSnapshotSource } from "@pi-cloud/runtime-core/live-turn-snapshot";
 import { LIVE_TURN_SNAPSHOT_SOURCE } from "./event-runtime-token.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
+import { SandboxHttpServiceService } from "./sandbox-http-service-service.ts";
 
 @Controller("v1")
 export class ControlPlaneController {
@@ -110,6 +112,8 @@ export class ControlPlaneController {
     private readonly developmentEnvironments: DevelopmentEnvironmentService,
     @Inject(SshAccessTicketService)
     private readonly sshAccessTickets: SshAccessTicketService,
+    @Inject(SandboxHttpServiceService)
+    private readonly sandboxHttpServices: SandboxHttpServiceService,
   ) {}
 
   @Post("auth/register")
@@ -260,6 +264,28 @@ export class ControlPlaneController {
       this.tenantRequestContext.resolve(request),
       parseUuidPathParameter(environmentIdValue, "environmentId"),
       pathValue,
+    );
+  }
+
+  @Get("development-environments/:environmentId/services")
+  async developmentEnvironmentServices(
+    @Req() request: FastifyRequest,
+    @Param("environmentId") environmentIdValue: unknown,
+  ): Promise<SandboxHttpServiceListResource> {
+    return this.sandboxHttpServices.forDevelopmentEnvironment(
+      this.tenantRequestContext.resolve(request),
+      parseUuidPathParameter(environmentIdValue, "environmentId"),
+    );
+  }
+
+  @Get("conversations/:sessionId/services")
+  async conversationServices(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionIdValue: unknown,
+  ): Promise<SandboxHttpServiceListResource> {
+    return this.sandboxHttpServices.forConversation(
+      this.tenantRequestContext.resolve(request),
+      parseUuidPathParameter(sessionIdValue, "sessionId"),
     );
   }
 

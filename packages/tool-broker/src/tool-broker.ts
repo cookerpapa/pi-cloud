@@ -48,6 +48,10 @@ import {
   type SandboxActivationStateRepository,
   type DevelopmentEnvironmentReservation,
 } from "./activation-state-repository.ts";
+import type {
+  SandboxHttpServiceRegistry,
+  SandboxHttpServiceTarget,
+} from "./sandbox-http-service-registry.ts";
 
 export type ToolBrokerOptions = {
   provider: SandboxProvider;
@@ -60,6 +64,7 @@ export type ToolBrokerOptions = {
   maximumWarmActivations?: number;
   clock?: () => number;
   imageRevision?: string;
+  serviceRegistry?: SandboxHttpServiceRegistry;
 };
 
 export class ToolBrokerOwnerRedirectError extends Error {
@@ -338,6 +343,7 @@ export class ToolBroker {
   readonly #provider: SandboxProvider;
   readonly #ownerBaseUrl: string;
   readonly #stateRepository: SandboxActivationStateRepository;
+  readonly #serviceRegistry: SandboxHttpServiceRegistry | undefined;
   readonly #idGenerator: () => string;
   readonly #capabilityGenerator: () => string;
   readonly #maximumActiveSandboxes: number;
@@ -362,6 +368,7 @@ export class ToolBroker {
     this.#ownerBaseUrl = new URL(options.ownerBaseUrl ?? "http://tool-broker.invalid").toString();
     this.#stateRepository =
       options.stateRepository ?? new InMemorySandboxActivationStateRepository();
+    this.#serviceRegistry = options.serviceRegistry;
     this.#idGenerator = options.idGenerator ?? randomUUID;
     this.#capabilityGenerator =
       options.capabilityGenerator ?? (() => `pcts_${randomBytes(32).toString("base64url")}`);
@@ -1601,6 +1608,22 @@ export class ToolBroker {
         }
         const handle = await this.#materialize(request.activationId, activation, signal);
         const response = await this.#provider.exec(handle, request, signal);
+        if (
+          request.operation === "bash.exec" &&
+          this.#provider.discoverHttpServices !== undefined
+        ) {
+          const discovery = await this.#provider
+            .discoverHttpServices(handle, signal)
+            .catch(() => undefined);
+          if (discovery !== undefined) {
+            await this.#observeHttpServices(
+              activation,
+              handle,
+              request.operationId,
+              discovery,
+            ).catch(() => undefined);
+          }
+        }
         await this.#stateRepository.settleOperation(request.operationId, "succeeded");
         return response;
       } catch (error: unknown) {
@@ -1740,7 +1763,10 @@ export class ToolBroker {
           retained: true,
         };
       } catch (error: unknown) {
-        if (handle !== undefined) await this.#provider.stop(handle).catch(() => undefined);
+        if (handle !== undefined) {
+          await this.#provider.stop(handle).catch(() => undefined);
+          await this.#endHttpServices(activation, handle).catch(() => undefined);
+        }
         delete environment.agentActivationId;
         this.#developmentEnvironments.delete(environment.reservation.environmentId);
         this.#activations.delete(request.activationId);
@@ -1815,6 +1841,7 @@ export class ToolBroker {
       await this.#enforceWarmLimit();
     } else if (handle !== undefined) {
       await this.#provider.stop(handle);
+      await this.#endHttpServices(activation, handle).catch(() => undefined);
       this.#releaseAdmission(handle.activationId);
       await this.#stateRepository.setActivationState(request.activationId, "released");
     } else {
@@ -1858,7 +1885,10 @@ export class ToolBroker {
         activation.materializing === undefined
           ? activation.handle
           : await activation.materializing.catch(() => undefined);
-      if (handle !== undefined) await this.#provider.stop(handle).catch(() => undefined);
+      if (handle !== undefined) {
+        await this.#provider.stop(handle).catch(() => undefined);
+        await this.#endHttpServices(activation, handle).catch(() => undefined);
+      }
       this.#activations.delete(activationId);
       if (environment !== undefined) {
         delete environment.agentActivationId;
@@ -1888,11 +1918,57 @@ export class ToolBroker {
     }
     if (handle !== undefined) {
       await this.#provider.stop(handle);
+      await this.#endHttpServices(activation, handle).catch(() => undefined);
       this.#releaseAdmission(handle.activationId);
     } else {
       this.#releaseAdmission(activationId);
     }
     await this.#stateRepository.setActivationState(activationId, "released");
+  }
+
+  #httpServiceTarget(activation: ManagedActivation): SandboxHttpServiceTarget {
+    return activation.developmentEnvironmentId === undefined
+      ? this.#conversationHttpServiceTarget(activation.assignment)
+      : {
+          kind: "development_environment",
+          targetId: activation.developmentEnvironmentId,
+          tenantId: activation.assignment.tenantId,
+          workspaceId: activation.assignment.workspaceId,
+          sessionId: activation.assignment.sessionId,
+          developmentEnvironmentId: activation.developmentEnvironmentId,
+        };
+  }
+
+  #conversationHttpServiceTarget(
+    assignment: ToolSandboxAssignment,
+  ): Extract<SandboxHttpServiceTarget, { kind: "conversation" }> {
+    return {
+      kind: "conversation",
+      targetId: assignment.sessionId,
+      tenantId: assignment.tenantId,
+      workspaceId: assignment.workspaceId,
+      sessionId: assignment.sessionId,
+    };
+  }
+
+  async #observeHttpServices(
+    activation: ManagedActivation,
+    handle: SandboxHandle,
+    operationId: string,
+    discovery: import("./sandbox-provider.ts").SandboxHttpServiceDiscovery,
+  ): Promise<void> {
+    await this.#serviceRegistry?.observe({
+      target: this.#httpServiceTarget(activation),
+      runtimeId: handle.runtimeId,
+      activationId: activation.spec.activationId,
+      operationId,
+      listeningPorts: discovery.listeningPorts,
+      httpServices: discovery.httpServices,
+    });
+  }
+
+  async #endHttpServices(activation: ManagedActivation, handle: SandboxHandle): Promise<void> {
+    await this.#serviceRegistry?.end(this.#httpServiceTarget(activation), handle.runtimeId);
   }
 
   async listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]> {
@@ -2505,6 +2581,9 @@ export class ToolBroker {
   async #discardWarm(key: string, warm: WarmActivation): Promise<void> {
     if (this.#warm.get(key) === warm) this.#warm.delete(key);
     await this.#provider.stop(warm.handle);
+    await this.#serviceRegistry
+      ?.end(this.#conversationHttpServiceTarget(warm.handle.assignment), warm.handle.runtimeId)
+      .catch(() => undefined);
     this.#releaseAdmission(warm.handle.activationId);
     await this.#stateRepository.setActivationState(warm.handle.activationId, "released");
   }

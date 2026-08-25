@@ -41,6 +41,7 @@ import {
   type SandboxDirectoryListing,
   type SandboxEffectiveIsolation,
   type SandboxHandle,
+  type SandboxHttpServiceDiscovery,
   type SandboxInspection,
   type SandboxPolicy,
   type SandboxProvider,
@@ -55,6 +56,38 @@ const READY_TIMEOUT_MS = 60_000;
 const TOOL_RESPONSE_LIMIT_BYTES = 8 * 1_024 * 1_024;
 const PREVIEW_RESPONSE_LIMIT_BYTES = 24 * 1_024 * 1_024;
 const INTERNAL_STEP_CONTEXT_SHA256 = "0".repeat(64);
+const HTTP_SERVICE_DISCOVERY_SCRIPT = Buffer.from(
+  String.raw`
+const fs = require("node:fs");
+const http = require("node:http");
+const reserved = new Set([49983, 49984, 50005]);
+const ports = new Set();
+for (const path of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+  let table = "";
+  try { table = fs.readFileSync(path, "utf8"); } catch {}
+  for (const line of table.split("\n").slice(1)) {
+    const fields = line.trim().split(/\s+/);
+    if (fields.length < 4 || fields[3] !== "0A") continue;
+    const encoded = fields[1]?.split(":").at(-1);
+    const port = encoded === undefined ? NaN : Number.parseInt(encoded, 16);
+    if (Number.isInteger(port) && port >= 1024 && port <= 65535 && !reserved.has(port)) ports.add(port);
+  }
+}
+const listeningPorts = [...ports].sort((a, b) => a - b).slice(0, 128);
+const probe = (port) => new Promise((resolve) => {
+  let settled = false;
+  const finish = (reachable) => { if (!settled) { settled = true; resolve({ port, reachable }); } };
+  const request = http.request({ hostname: "127.0.0.1", port, method: "HEAD", path: "/", headers: { host: "127.0.0.1:" + port, connection: "close" } }, (response) => { response.resume(); finish(true); });
+  request.setTimeout(750, () => { request.destroy(); finish(false); });
+  request.once("error", () => finish(false));
+  request.end();
+});
+Promise.all(listeningPorts.slice(0, 32).map(probe)).then((probes) => {
+  process.stdout.write(JSON.stringify({ listeningPorts, httpServices: probes.filter((item) => item.reachable).map((item) => ({ port: item.port, protocol: "http" })) }));
+});
+`,
+  "utf8",
+).toString("base64");
 
 export const CUBESANDBOX_PROVIDER_ID = "cubesandbox";
 export const CUBESANDBOX_RUNTIME_NAME = "cubesandbox-kvm";
@@ -1351,6 +1384,87 @@ export class CubeSandboxProvider implements SandboxProvider {
         },
       ),
     );
+  }
+
+  async discoverHttpServices(
+    handle: SandboxHandle,
+    signal?: AbortSignal,
+  ): Promise<SandboxHttpServiceDiscovery> {
+    const activation = await this.#owned(handle);
+    if (activation.state !== "running" && activation.state !== "idle") {
+      throw new ToolBrokerError(
+        "sandbox_service_discovery_unavailable",
+        "Sandbox HTTP service discovery was unavailable",
+        true,
+      );
+    }
+    const result = await this.#client.runCommand(activation.instance, {
+      command:
+        `/usr/local/bin/node -e ` +
+        `"eval(Buffer.from('${HTTP_SERVICE_DISCOVERY_SCRIPT}','base64').toString('utf8'))"`,
+      cwd: "/",
+      user: "root",
+      timeoutMs: 5_000,
+      maximumOutputBytes: 32 * 1_024,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    if (result.exitCode !== 0 || result.stderr.length > 0) {
+      throw new ToolBrokerError(
+        "sandbox_service_discovery_failed",
+        "Sandbox HTTP service discovery failed",
+        true,
+      );
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(result.stdout);
+    } catch {
+      throw new ToolBrokerError(
+        "sandbox_service_discovery_invalid",
+        "Sandbox HTTP service discovery returned invalid evidence",
+        false,
+      );
+    }
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new ToolBrokerError(
+        "sandbox_service_discovery_invalid",
+        "Sandbox HTTP service discovery returned invalid evidence",
+        false,
+      );
+    }
+    const candidate = value as Record<string, unknown>;
+    const listeningPorts = candidate.listeningPorts;
+    const httpServices = candidate.httpServices;
+    if (
+      !Array.isArray(listeningPorts) ||
+      listeningPorts.length > 128 ||
+      listeningPorts.some(
+        (port) => !Number.isInteger(port) || Number(port) < 1_024 || Number(port) > 65_535,
+      ) ||
+      new Set(listeningPorts).size !== listeningPorts.length ||
+      !Array.isArray(httpServices) ||
+      httpServices.length > 32 ||
+      httpServices.some(
+        (service) =>
+          typeof service !== "object" ||
+          service === null ||
+          Array.isArray(service) ||
+          !Number.isInteger((service as Record<string, unknown>).port) ||
+          Number((service as Record<string, unknown>).port) < 1_024 ||
+          Number((service as Record<string, unknown>).port) > 65_535 ||
+          (service as Record<string, unknown>).protocol !== "http",
+      )
+    ) {
+      throw new ToolBrokerError(
+        "sandbox_service_discovery_invalid",
+        "Sandbox HTTP service discovery returned invalid evidence",
+        false,
+      );
+    }
+    return {
+      listeningPorts: listeningPorts as number[],
+      httpServices: httpServices as Array<{ port: number; protocol: "http" }>,
+    };
   }
 
   async listDirectory(

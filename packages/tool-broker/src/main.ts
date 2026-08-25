@@ -7,6 +7,7 @@ import { ToolBroker } from "./tool-broker.ts";
 import { HttpWorkspaceVolumeGateway } from "./workspace-volume-gateway.ts";
 import { PostgresSandboxActivationStateRepository } from "./activation-state-repository.ts";
 import { randomUUID } from "node:crypto";
+import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
 
 const config = await loadToolBrokerConfig();
 const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
@@ -59,6 +60,7 @@ const broker = new ToolBroker({
   maximumActiveSandboxes: config.maximumActiveSandboxes,
   warmTtlMs: config.warmTtlMs,
   maximumWarmActivations: config.maximumWarmActivations,
+  serviceRegistry: new PostgresSandboxHttpServiceRegistry({ database }),
 });
 const server = new ToolBrokerServer({
   host: config.host,

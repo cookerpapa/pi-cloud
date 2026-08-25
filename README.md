@@ -86,13 +86,15 @@ The language selector is available on the sign-in page and beside the current
 username. It is a browser-local presentation preference: switching it does not
 modify Session context, system prompts, user messages or Agent output.
 
-Service preview is an authenticated HTTP proxy to any unprivileged HTTP port
-inside the active Cube. The main origin issues a short-lived target capability
-and redirects to an isolated `*.preview.localhost` origin, so application
-storage and scripts work without receiving PiCloud cookies. Production DNS/TLS
-must cover `*.preview.<application-host>`. When the Agent reports a `localhost`
-URL, the Web client opens it through this gateway; Cube addresses and public
-port mappings are never exposed to the Agent. SSH is available only for
+Service preview uses structured listener discovery rather than assistant-text
+parsing. Cube Provider identifies live HTTP ports through the trusted guest
+management channel, Tool Broker records them, and the Web client renders
+authenticated application links. The
+main origin issues a short-lived target capability and redirects to an isolated
+`*.preview.localhost` origin, so application storage and scripts work without
+receiving PiCloud cookies. Production DNS/TLS must cover
+`*.preview.<application-host>`; Cube addresses and public port mappings are
+never exposed to the Agent. SSH is available only for
 cloud development machines, only while no Agent Run or browser terminal owns the
 environment, and each password can be used once.
 

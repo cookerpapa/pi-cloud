@@ -167,6 +167,28 @@ export interface ToolBrokerOperationTable {
   settled_at: NullableTimestamp;
 }
 
+export type SandboxHttpServiceTargetKind = "conversation" | "development_environment";
+export type SandboxHttpServiceState = "active" | "ended";
+
+export interface SandboxHttpServiceTable {
+  id: string;
+  tenant_id: string;
+  target_kind: SandboxHttpServiceTargetKind;
+  target_id: string;
+  workspace_id: string;
+  session_id: string | null;
+  development_environment_id: string | null;
+  runtime_id: string;
+  activation_id: string;
+  last_operation_id: string;
+  port: number;
+  protocol: "http";
+  state: SandboxHttpServiceState;
+  first_seen_at: GeneratedTimestamp;
+  last_seen_at: GeneratedTimestamp;
+  ended_at: NullableTimestamp;
+}
+
 export interface WorkspaceTerminalSessionTable {
   terminal_id: string;
   sandbox_domain_id: string;
@@ -1184,6 +1206,7 @@ export interface Database {
   tool_broker_instances: ToolBrokerInstanceTable;
   tool_broker_activations: ToolBrokerActivationTable;
   tool_broker_operations: ToolBrokerOperationTable;
+  sandbox_http_services: SandboxHttpServiceTable;
   workspace_terminal_sessions: WorkspaceTerminalSessionTable;
   development_environments: DevelopmentEnvironmentTable;
   development_environment_operations: DevelopmentEnvironmentOperationTable;

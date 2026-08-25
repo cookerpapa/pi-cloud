@@ -120,6 +120,33 @@ describe("tenant-aware browser API", () => {
     ).resolves.toMatchObject({ entries: [{ name: "project", kind: "directory" }] });
   });
 
+  it("loads structured Preview services without parsing assistant text", async () => {
+    const sessionId = "10000000-0000-4000-8000-000000000031";
+    const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
+      expect(String(input)).toBe(`/v1/conversations/${sessionId}/services`);
+      expect(init?.method).toBe("GET");
+      return new Response(
+        JSON.stringify({
+          services: [
+            {
+              serviceId: "10000000-0000-4000-8000-000000000032",
+              port: 3_000,
+              protocol: "http",
+              previewPath: `/v1/conversations/${sessionId}/preview/3000/`,
+              firstSeenAt: "2026-08-25T00:00:00.000Z",
+              lastSeenAt: "2026-08-25T00:01:00.000Z",
+            },
+          ],
+          truncated: false,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    await expect(
+      new PiCloudApi(fetchImplementation).listConversationServices(sessionId),
+    ).resolves.toMatchObject({ services: [{ port: 3_000, protocol: "http" }] });
+  });
+
   it("uses same-origin cookie sessions for product registration, login, and logout", async () => {
     const identity = {
       tenantId: "10000000-0000-4000-8000-000000000002",

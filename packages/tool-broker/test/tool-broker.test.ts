@@ -109,6 +109,9 @@ function providerFixture() {
     outputChunks: [{ seq: 1, stream: "stdout", data: Buffer.from("ok\n").toString("base64") }],
     outputSha256: createHash("sha256").update("ok\n").digest("hex"),
   }));
+  const discoverHttpServices = vi.fn<NonNullable<SandboxProvider["discoverHttpServices"]>>(
+    async () => ({ listeningPorts: [], httpServices: [] }),
+  );
   const rebind = vi.fn<SandboxProvider["rebind"]>(async (handle, nextAssignment, toolRoot) => ({
     ...handle,
     assignment: nextAssignment,
@@ -187,6 +190,7 @@ function providerFixture() {
       };
     },
     rebind,
+    discoverHttpServices,
     async retainForWarm(handle, brokerAssignment) {
       return { ...handle, assignment: brokerAssignment };
     },
@@ -263,6 +267,7 @@ function providerFixture() {
     provider,
     exec,
     rebind,
+    discoverHttpServices,
     snapshot,
     forkWorkspace,
     materializeFile,
@@ -909,6 +914,35 @@ describe("provider-backed Tool Tool Broker", () => {
     await expect(
       manager.execute(CAPABILITY, operation("10000000-0000-4000-8000-000000000014")),
     ).rejects.toMatchObject({ code: "invalid_tool_capability" });
+  });
+
+  it("records structured HTTP listeners without exposing Preview routing to the model", async () => {
+    const fixture = providerFixture();
+    fixture.discoverHttpServices.mockResolvedValueOnce({
+      listeningPorts: [3_000],
+      httpServices: [{ port: 3_000, protocol: "http" }],
+    });
+    const observe = vi.fn(async () => undefined);
+    const manager = new ToolBroker({
+      provider: fixture.provider,
+      idGenerator: () => ACTIVATION_ID,
+      capabilityGenerator: () => CAPABILITY,
+      serviceRegistry: { observe, async end() {} },
+    });
+    const created = await manager.create(createRequest);
+    await manager.execute(created.capability, operation("10000000-0000-4000-8000-000000000031"));
+    expect(observe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: expect.objectContaining({
+          kind: "conversation",
+          targetId: assignment.sessionId,
+        }),
+        listeningPorts: [3_000],
+        httpServices: [{ port: 3_000, protocol: "http" }],
+      }),
+    );
+    await manager.stop(created.activationId, assignment);
+    await manager.close();
   });
 
   it("enforces the Run Tool snapshot independently of model visibility", async () => {
