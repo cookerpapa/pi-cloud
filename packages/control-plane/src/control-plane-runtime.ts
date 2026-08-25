@@ -237,6 +237,9 @@ export async function createControlPlaneRuntime(
       ...(options.agentEventIngestGateway === undefined
         ? {}
         : { agentEventIngestGateway: options.agentEventIngestGateway }),
+      ...(options.piSessionMutationIngestGateway === undefined
+        ? {}
+        : { piSessionMutationIngestGateway: options.piSessionMutationIngestGateway }),
       eventRuntime: {
         ...(options.eventRuntime ?? {}),
         eventHub,

@@ -32,6 +32,7 @@ import { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gatewa
 import { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import { AgentEventIngestGateway } from "./agent-event-ingest-gateway.ts";
+import { PiSessionMutationIngestGateway } from "./pi-session-mutation-ingest-gateway.ts";
 import { OperationalMetricsSampler } from "./operational-metrics-sampler.ts";
 
 async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Promise<void> {
@@ -181,6 +182,10 @@ export async function startControlPlane(): Promise<void> {
       ingestor: activeAgentEvents.ingestor,
       serviceToken: config.workerEventIngestToken,
     });
+    const piSessionMutationIngestGateway = new PiSessionMutationIngestGateway({
+      ingestor: activeAgentEvents.sessionMutationIngestor,
+      serviceToken: config.workerEventIngestToken,
+    });
     const httpGateway = new ProductionHttpGateway({
       authenticator: new PostgresTenantApiAuthenticator({ database }),
       publicRegistrationEnabled: config.publicRegistration.enabled,
@@ -238,6 +243,7 @@ export async function startControlPlane(): Promise<void> {
       supervisorProvisioningGateway: provisioningGateway,
       terminalTurnProjectionGateway,
       agentEventIngestGateway,
+      piSessionMutationIngestGateway,
       turnSteerBackendFactory: resolveSteerBackend,
       productionHttpGateway: httpGateway,
       publicRegistration: registrationConfiguration,

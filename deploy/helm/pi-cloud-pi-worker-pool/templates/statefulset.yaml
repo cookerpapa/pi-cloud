@@ -133,8 +133,6 @@ spec:
               value: /run/pi-cloud-secrets/database-url
             - name: DATABASE_NOTIFICATION_URL_FILE
               value: /run/pi-cloud-secrets/database-notification-url
-            - name: PI_CLOUD_JETSTREAM_SERVERS
-              value: {{ join "," .Values.services.jetStreamServers | quote }}
             - name: PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE
               value: /run/pi-cloud-secrets/worker-event-ingest-token
             - name: PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP

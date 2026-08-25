@@ -33,8 +33,10 @@ Browser ──REST/SSE──> Control Plane ──> PostgreSQL Run queue
                                       CubeSandbox KVM
                                 elastic Volume / cloud development machine state
 
-Worker events ──> batched ExecutionGrant check ──> JetStream R=3 ──> committed SSE fanout
-complete Pi entries ──> Session Mutation JetStream ──> PostgreSQL
+Worker events ─────────┐
+complete Pi entries ───┴─> batched PostgreSQL ExecutionGrant check
+                              ├─> JetStream R=3 ─> committed SSE fanout
+                              └─> Session Mutation JetStream ─> PostgreSQL
 ```
 
 There are three durable authorities:

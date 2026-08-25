@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-08-25. This supersedes the externally propagated
+Accepted on 2026-08-25 and refined by ADR-0125. This supersedes the externally propagated
 Attempt/Lease/Fencing tuple in ADR-0111 and ADR-0122; RunAttempt remains a
 durable execution-history record, not a capability.
 
@@ -65,8 +65,8 @@ Every protected boundary performs one of these checks:
 - Event Ingest locks matching `execution_grants` rows once per microbatch,
   validates Session/Turn and sequence, waits for R=3 PubAck, then advances the
   grant watermark before committing.
-- PostgreSQL SessionStorage checks the current grant in the same transaction
-  as each Pi mutation.
+- Pi Session mutations cross a batched current-grant check before their
+  accepted JetStream PubAck; the downstream Projector does not recheck expiry.
 - Tool Broker resolves the grant to canonical assignment facts before creating
   or rebinding Cube; its per-activation capability remains the narrow Tool
   operation authority.

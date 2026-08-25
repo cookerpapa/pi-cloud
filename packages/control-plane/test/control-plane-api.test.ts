@@ -40,6 +40,10 @@ import {
 } from "../src/index.ts";
 import { dispatchNextTestCommand } from "./dispatch-next-test-command.ts";
 import { PostgresAgentEventAuthority } from "@pi-cloud/runtime-core/agent-event-authority";
+import {
+  PostgresPiSessionMutationAuthority,
+  type PiSessionMutationRequest,
+} from "@pi-cloud/runtime-core/jetstream-pi-session-mutations";
 
 const IDS = {
   tenant: "00000000-0000-4000-8000-000000000001",
@@ -534,7 +538,7 @@ describe.sequential("single-user durable turn intake API", () => {
     expect(piSession).toEqual({ next_seq: "1", lane: "main", leaf_id: null });
   });
 
-  it("rejects a JetStream event batch after its ExecutionGrant is revoked", async () => {
+  it("rejects Agent events and Pi Session mutations after their ExecutionGrant is revoked", async () => {
     const assigned = await createAssignedTurn({
       sandboxId: "50000000-0000-4000-8000-000000000019",
       sandboxBootId: "60000000-0000-4000-8000-000000000019",
@@ -570,6 +574,27 @@ describe.sequential("single-user durable turn intake API", () => {
       accepted: [{ tenantId: IDS.tenant }],
       rejected: [],
     });
+    const mutation: PiSessionMutationRequest = {
+      schemaVersion: 1,
+      mutationId: globalThis.crypto.randomUUID(),
+      scope: {
+        tenantId: IDS.tenant,
+        sessionId: assigned.assignedSession.sessionId,
+        turnId: assigned.accepted.turnId,
+        runId: assigned.accepted.runId,
+        executionGrant: assigned.runtime.executionGrant,
+      },
+      operation: { kind: "projection_barrier" },
+      occurredAt: now,
+    };
+    const mutationAuthority = new PostgresPiSessionMutationAuthority({ database });
+    const acceptedMutations: unknown[] = [];
+    await expect(
+      mutationAuthority.commitAcceptedMany([mutation], async (accepted) => {
+        acceptedMutations.push(...accepted);
+      }),
+    ).resolves.toMatchObject({ accepted: [{ mutationId: mutation.mutationId }], rejected: [] });
+    expect(JSON.stringify(acceptedMutations)).not.toContain("executionGrant");
     await database
       .deleteFrom("execution_grants")
       .where("session_id", "=", assigned.assignedSession.sessionId)
@@ -578,6 +603,9 @@ describe.sequential("single-user durable turn intake API", () => {
       accepted: [],
       rejected: [publication],
     });
+    await expect(
+      mutationAuthority.commitAcceptedMany([mutation], async () => undefined),
+    ).resolves.toMatchObject({ accepted: [], rejected: [mutation] });
   });
 
   it("persists a public GitHub exact commit as pending source metadata", async () => {

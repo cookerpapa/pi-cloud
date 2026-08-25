@@ -10,6 +10,8 @@ import {
   JetStreamTerminalTurnProjectionSource,
 } from "./jetstream-agent-event-log.ts";
 import {
+  JetStreamAcceptedPiSessionMutationPublisher,
+  JetStreamPiSessionMutationIngestor,
   JetStreamPiSessionMutationProjector,
   PI_SESSION_MUTATION_PROJECTOR_CONSUMER,
 } from "./jetstream-pi-session-mutations.ts";
@@ -57,6 +59,7 @@ export class JetStreamEventRuntime {
   readonly eventStore: JetStreamLiveEventStore;
   readonly liveTurnSnapshotSource: JetStreamLiveTurnSnapshotSource;
   readonly terminalTurnProjectionSource: JetStreamTerminalTurnProjectionSource;
+  readonly sessionMutationIngestor: JetStreamPiSessionMutationIngestor;
   readonly #runtime;
   readonly #ingestor: JetStreamAgentEventIngestor;
   readonly #sessionProjector: JetStreamPiSessionMutationProjector;
@@ -92,6 +95,10 @@ export class JetStreamEventRuntime {
     this.#sessionProjector = new JetStreamPiSessionMutationProjector({
       database: options.database,
       runtime: this.#runtime,
+    });
+    this.sessionMutationIngestor = new JetStreamPiSessionMutationIngestor({
+      database: options.database,
+      publisher: new JetStreamAcceptedPiSessionMutationPublisher(this.#runtime),
     });
     this.#terminalRelay = new JetStreamTerminalEventOutboxRelay({
       database: options.database,
@@ -159,7 +166,7 @@ export class JetStreamEventRuntime {
     this.eventStore.checkHealth();
     this.#sessionProjector.checkHealth();
     this.#terminalRelay.checkHealth();
-    await this.#ingestor.checkHealth();
+    await Promise.all([this.#ingestor.checkHealth(), this.sessionMutationIngestor.checkHealth()]);
   }
 
   async close(): Promise<void> {
@@ -168,6 +175,7 @@ export class JetStreamEventRuntime {
       return;
     }
     this.#started = false;
+    await this.sessionMutationIngestor.close().catch(() => undefined);
     await this.#terminalRelay.close().catch(() => undefined);
     await this.#sessionProjector.close().catch(() => undefined);
     await this.eventStore.close().catch(() => undefined);

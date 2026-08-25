@@ -630,11 +630,15 @@ describe.sequential("durable supervisor registration and health management", () 
     );
     const lease = await coordinator.acquire(accepted.request);
     await markAssignmentAcknowledged({ ...accepted, now });
+    const second = await createAcceptedTurn();
+    const secondLease = await coordinator.acquire(second.request);
+    await markAssignmentAcknowledged({ ...second, now });
     const before = await database
       .selectFrom("execution_grants")
-      .select("valid_until")
-      .where("session_id", "=", accepted.sessionId)
-      .executeTakeFirstOrThrow();
+      .select(["session_id", "valid_until"])
+      .where("session_id", "in", [accepted.sessionId, second.sessionId])
+      .orderBy("session_id", "asc")
+      .execute();
 
     now = new Date(now.valueOf() + 10_000);
     const acknowledgement = await connectionManager.heartbeat(
@@ -649,19 +653,30 @@ describe.sequential("durable supervisor registration and health management", () 
             turnId: accepted.turnId,
             executionGrant: lease.executionGrant,
           },
+          {
+            sessionId: second.sessionId,
+            turnId: second.turnId,
+            executionGrant: secondLease.executionGrant,
+          },
         ],
       }),
       transportAuthority,
     );
-    expect(acknowledgement.payload.executionGrantRenewals).toHaveLength(1);
+    expect(acknowledgement.payload.executionGrantRenewals).toHaveLength(2);
     const after = await database
       .selectFrom("execution_grants")
-      .select("valid_until")
-      .where("session_id", "=", accepted.sessionId)
-      .executeTakeFirstOrThrow();
-    expect(new Date(after.valid_until).valueOf()).toBeGreaterThan(
-      new Date(before.valid_until).valueOf(),
-    );
+      .select(["session_id", "valid_until"])
+      .where("session_id", "in", [accepted.sessionId, second.sessionId])
+      .orderBy("session_id", "asc")
+      .execute();
+    expect(after).toHaveLength(2);
+    for (const current of after) {
+      const prior = before.find((row) => row.session_id === current.session_id);
+      expect(prior).toBeDefined();
+      expect(new Date(current.valid_until).valueOf()).toBeGreaterThan(
+        new Date(prior!.valid_until).valueOf(),
+      );
+    }
     expect(
       await database
         .selectFrom("supervisor_connections")

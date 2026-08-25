@@ -480,7 +480,6 @@ services:
       HTTPS_PROXY: http://provider-egress-relay:3129
       NO_PROXY: 127.0.0.1,localhost,control-plane,tool-broker,github-gateway,jaeger,postgres,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2
       DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
-      PI_CLOUD_JETSTREAM_SERVERS: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
       PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: /run/pi-cloud-secrets/worker-event-ingest-token
       PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true"
       PI_CLOUD_CONTROL_PLANE_URL: http://control-plane:3000
@@ -563,7 +562,6 @@ services:
       github-control: {}
       observability: {}
       api: {}
-      event-log: {}
     healthcheck:
       test:
         [
@@ -605,7 +603,6 @@ services:
       github-control: {}
       observability: {}
       api: {}
-      event-log: {}
 
   supervisor-volume-bootstrap:
     profiles: [compose-pi-workers]

@@ -46,7 +46,6 @@ async function validEnvironment(root: string): Promise<Record<string, string>> {
     PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
     PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY: "/workspace",
     PI_CLOUD_BOOT_STATE_DIRECTORY: "/var/lib/pi-cloud/boot",
-    PI_CLOUD_JETSTREAM_SERVERS: "nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222",
     PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: await secret(
       root,
       "worker-event-ingest",
@@ -97,7 +96,6 @@ describe("Supervisor host production configuration", () => {
       PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
       PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY: "/workspace",
       PI_CLOUD_BOOT_STATE_DIRECTORY: "/var/lib/pi-cloud/boot",
-      PI_CLOUD_JETSTREAM_SERVERS: "nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222",
       PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: await secret(
         root,
         "worker-event-ingest",
@@ -199,7 +197,6 @@ describe("Supervisor host production configuration", () => {
         PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
         PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY: "/workspace",
         PI_CLOUD_BOOT_STATE_DIRECTORY: "/var/lib/pi-cloud/boot",
-        PI_CLOUD_JETSTREAM_SERVERS: "nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222",
         PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: await secret(
           root,
           "worker-event-ingest",

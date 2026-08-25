@@ -33,7 +33,7 @@ Ingress -> Web / Control Plane
               persistent Workspace storage
 
 Worker events -> batched fenced authority -> JetStream -> committed RePublish -> SSE
-Complete Pi entries -> Session Mutation JetStream -> PostgreSQL SessionStorage
+Complete Pi entries -> authenticated/fenced Ingest -> Session Mutation JetStream -> PostgreSQL SessionStorage
 ```
 
 There are no execution Cells or Worker-affinity queues. A Workspace binds to a

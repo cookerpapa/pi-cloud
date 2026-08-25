@@ -17,12 +17,12 @@
       "invariant": "A released or recovered old Worker cannot reuse an obsolete ExecutionGrant."
     },
     {
-      "id": "stale-jetstream-event-authority",
+      "id": "stale-accepted-log-authority",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/control-plane-api.test.ts",
-      "test": "rejects a JetStream event batch after its ExecutionGrant is revoked",
+      "test": "rejects Agent events and Pi Session mutations after their ExecutionGrant is revoked",
       "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "A stale Worker cannot cross the transaction-scoped ExecutionGrant boundary into browser-visible JetStream events."
+      "invariant": "A stale Worker cannot cross the PostgreSQL ExecutionGrant boundary into either accepted JetStream log."
     },
     {
       "id": "session-mutation-redelivery",

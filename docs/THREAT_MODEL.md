@@ -48,7 +48,7 @@ head.
 | user invokes or tampers with envd inside their own VM | envd is credential-free tenant-local transport; Cube traffic/envd tokens, operation admission and every cross-resource authority remain outside the VM |
 | Broker replacement loses or swaps an exclusive VM | encrypted reconnect capsule plus PostgreSQL owner CAS and Cube physical metadata/runtime identity validation before adoption |
 | directory picker exposes another runtime | tenant/user/environment authorization at Control Plane and Tool Broker; listing is read from the selected live Cube only |
-| stale Worker mutation | transaction-scoped authority and monotonically increasing fence |
+| stale Worker mutation | PostgreSQL authority before accepted JetStream PubAck and monotonically increasing fence |
 | duplicate queue delivery | idempotent command plus transactional RunAttempt claim |
 | ambiguous shell result | `UNKNOWN`; no automatic replay |
 | SSRF/data exfiltration to internal network | private access denied except deployment-owned direct CIDRs; public HTTP uses governed egress proxy |

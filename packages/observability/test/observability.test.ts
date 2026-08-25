@@ -47,7 +47,7 @@ describe("PiCloud observability primitives", () => {
     metrics.turnAdmissionDuration.labels("accepted").observe(0.012);
     metrics.tenantAdmissionLockWait.observe(0.003);
     metrics.jetStreamConsumerPending.set(
-      { stream: "PI_CLOUD_SESSION_MUTATIONS", consumer: "PI_CLOUD_SESSION_PROJECTOR" },
+      { stream: "PI_CLOUD_SESSION_MUTATIONS_V2", consumer: "PI_CLOUD_SESSION_PROJECTOR" },
       2,
     );
     const endpoint = await startMetricsEndpoint({
@@ -72,7 +72,7 @@ describe("PiCloud observability primitives", () => {
         'pi_cloud_tenant_admission_lock_wait_seconds_count{service="test-service"} 1',
       );
       expect(body).toContain(
-        'pi_cloud_jetstream_consumer_pending{stream="PI_CLOUD_SESSION_MUTATIONS",consumer="PI_CLOUD_SESSION_PROJECTOR",service="test-service"} 2',
+        'pi_cloud_jetstream_consumer_pending{stream="PI_CLOUD_SESSION_MUTATIONS_V2",consumer="PI_CLOUD_SESSION_PROJECTOR",service="test-service"} 2',
       );
       expect(body).not.toContain("tenant_id");
     } finally {

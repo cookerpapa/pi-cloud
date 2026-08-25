@@ -82,6 +82,9 @@ retired and remain only in Git history or explicitly superseded ADRs.
       Session-keyed mutation projection barrier before cross-Worker reads.
 - [x] Keep broker durability independent from a browser-only progressive
       text reveal so larger acknowledged chunks do not flash into the transcript.
+- [x] Make both JetStream paths logs of PostgreSQL-Authority-accepted facts,
+      remove Worker NATS access and renew one Worker heartbeat with set-oriented
+      Grant/Run-execution updates.
 - [x] Compare Kafka, Valkey Streams and NATS JetStream under one Session-keyed
       workload, then remove Kafka after the R=3 candidate proved the same
       authority/fence boundary with less custom Gateway state.

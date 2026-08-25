@@ -20,7 +20,6 @@ export type SupervisorHostConfig = {
   modelCredentialMasterKey: string;
   databaseUrl: string;
   databaseNotificationUrl: string;
-  jetStreamServers: readonly string[];
   workerEventIngestToken: string;
   managementHost: string;
   managementPort: number;
@@ -165,22 +164,6 @@ function internalServiceBaseUrls(value: string, allowInsecure: boolean, name: st
     throw new TypeError(`${name} must contain unique URLs`);
   }
   return parsed;
-}
-
-function boundedList(value: string, name: string, maximumItems = 64): string[] {
-  const values = value.split(",");
-  if (
-    values.length < 1 ||
-    values.length > maximumItems ||
-    values.some((entry) => entry.trim() !== entry || entry.length < 1)
-  ) {
-    throw new TypeError(`${name} must contain bounded comma-separated values without whitespace`);
-  }
-  const normalized = values.map((entry) => bounded(entry, name, 512));
-  if (new Set(normalized).size !== normalized.length) {
-    throw new TypeError(`${name} must contain unique values`);
-  }
-  return normalized;
 }
 
 async function readSecretFile(path: string, name: string): Promise<string> {
@@ -385,10 +368,6 @@ export async function loadSupervisorHostConfig(
     ),
     databaseUrl,
     databaseNotificationUrl,
-    jetStreamServers: boundedList(
-      required(environment, "PI_CLOUD_JETSTREAM_SERVERS"),
-      "PI_CLOUD_JETSTREAM_SERVERS",
-    ),
     workerEventIngestToken: await secret(
       environment,
       "PI_CLOUD_WORKER_EVENT_INGEST_TOKEN",

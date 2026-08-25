@@ -30,7 +30,8 @@
 - [x] Remove MinIO/S3 checkpoint runtime and Kopia Workspace copies.
 - [x] Make PostgreSQL SessionStorage the production Pi conversation authority.
 - [x] Attach the same Workspace Volume across Cube activations and conversations.
-- [x] Enforce Pi Session mutations under transaction-scoped execution authority.
+- [x] Enforce Pi Session mutations at a batched PostgreSQL Authority boundary
+      before their accepted JetStream PubAck.
 - [x] Replace the full Harness experiment with a thin runtime composed from
       Pi Agent, SessionStorage and compaction primitives.
 - [x] Remove lifetime JSONL download/restore from the production Worker path.

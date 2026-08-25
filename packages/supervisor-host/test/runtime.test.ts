@@ -198,7 +198,6 @@ describe("PiWorkerRuntime", () => {
       modelCredentialMasterKey: Buffer.alloc(32, 7).toString("base64url"),
       databaseUrl: connectionString,
       databaseNotificationUrl: connectionString,
-      jetStreamServers: ["nats://nats-1:4222"],
       workerEventIngestToken: `event-ingest-${"i".repeat(48)}`,
       managementHost: "127.0.0.1",
       managementPort: 0,

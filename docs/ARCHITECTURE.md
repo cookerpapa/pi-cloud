@@ -80,8 +80,12 @@ execute every definition.
 Pi 0.84's official `SessionStorage` interface is implemented by
 `@pi-cloud/pi-session-postgres`. It stores Pi entries, lanes, records, labels
 and the append log in PostgreSQL, and bounds an active branch at Pi compaction.
-Every mutation checks an opaque `ExecutionAuthority` inside the same database
-transaction as the write.
+Active-Run mutations first cross the same PostgreSQL `ExecutionGrant` authority
+as browser-visible events, then enter an accepted Session-keyed JetStream log.
+The Projector applies those accepted facts idempotently without rechecking a
+lease that may legitimately expire after PubAck. Direct administrative
+repository mutations remain transactionally authorized at their PostgreSQL
+effect boundary.
 
 The native `pi_session_entries` compaction node is the recovery authority;
 JetStream's durable `context.compaction.*` events provide live and audit evidence.
@@ -453,11 +457,14 @@ Tool-call JSON and partial Tool stdout. It publishes only coalesced Assistant
 text, complete Tool start/result Items and low-frequency lifecycle boundaries.
 
 Workers combine adjacent text for 100 ms or 4 KiB, then submit the existing
-current opaque ExecutionGrant to the internal Event Ingest.
-The Ingest groups concurrent Workers for at most two milliseconds and validates
-up to 256 authorities with one PostgreSQL set query. Valid publications enter
-the R=3 file-backed JetStream in parallel; each Worker ACK waits for its own
-PubAck and one set update advances all accepted grant watermarks.
+current opaque ExecutionGrant to the internal Event Ingest. Complete Pi
+Session mutations use a second endpoint with the same service authentication
+and PostgreSQL authority. Workers have no NATS credentials or network route.
+Each Ingest groups concurrent Workers for at most two milliseconds and
+validates up to 256 authorities with one PostgreSQL set query. Valid
+publications enter their R=3 file-backed JetStream in parallel; each Worker ACK
+waits for its own PubAck. Agent-event acceptance also advances all accepted
+grant watermarks with one set update.
 
 JetStream committed RePublish sends stored messages to one Core NATS wildcard
 subscription in every Gateway replica. The Gateway holds only its actual HTTP
@@ -466,12 +473,14 @@ connection queues, not a Session replay cache. Browsers retain the logical
 temporary exact-Subject consumer; a cursor replaced by canonical PostgreSQL
 state receives HTTP 410 and reloads the complete conversation.
 
-Pi SessionStorage mutations use a separate Session-keyed JetStream Stream. A
-PostgreSQL projector applies complete entries, records and compaction facts
-idempotently. Before opening a Session, every Run appends a keyed recovery
-barrier and waits for its projection; all older Session mutations have then
-been applied or fenced before the Worker reads PostgreSQL. Each semantic Pi
-write also waits for its own mutation result before the Agent Loop advances.
+Pi SessionStorage mutations use a separate accepted, Session-keyed JetStream
+Stream. Accepted envelopes contain immutable Run execution identity for result
+correlation but no ExecutionGrant. A PostgreSQL projector applies complete
+entries, records and compaction facts idempotently. Before opening a Session,
+every Run appends a keyed recovery barrier and waits for its projection; all
+older accepted Session mutations have then been applied before the Worker
+reads PostgreSQL. Each semantic Pi write also waits for its own mutation result
+before the Agent Loop advances.
 PostgreSQL therefore stores semantic Pi state, not token fragments. Terminal
 Run state and a one-row event outbox commit in the same PostgreSQL transaction.
 Abnormal interruption recovery reads only the retained Session Subject needed to

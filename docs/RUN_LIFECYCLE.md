@@ -58,9 +58,11 @@ set query and publishes valid Session Subjects to
 R=3 JetStream in parallel. Tool arguments and Tool results enter this stream
 only as complete Items. Each event's PubAck is the visibility boundary.
 
-Pi `message_end` publishes a complete Session mutation. The PostgreSQL
-projector applies it idempotently and the Worker waits at a read-your-writes
-barrier before the next model Step. On successful settlement, the Worker
+Pi `message_end` submits a complete Session mutation to authenticated Ingest.
+Ingest validates its current PostgreSQL ExecutionGrant before JetStream PubAck
+and removes the Grant from the accepted envelope. The PostgreSQL projector
+then applies the accepted fact idempotently without a second lease query, and
+the Worker waits at a read-your-writes barrier before the next model Step. On successful settlement, the Worker
 prepares the bounded Workspace Volume revision. The terminal transaction
 validates the current Attempt/fence, advances the Workspace revision if
 applicable, writes a terminal event Outbox record and settles the Run. JetStream
@@ -90,7 +92,7 @@ capacity.
 
 ```text
 Run queue              at-least-once wakeup + transactional claim
-Pi Session mutation    JetStream + idempotent fenced PostgreSQL projection
+Pi Session mutation    fenced Ingest + JetStream + idempotent PostgreSQL projection
 Tool start              no blind retry; UNKNOWN if ambiguous
 Workspace revision      fence + expected revision
 terminal Run commit     idempotent current-Attempt transaction

@@ -6,8 +6,10 @@ latency hint; PostgreSQL remains the queue and Run/Attempt authority.
 
 Workers never execute model-generated code. `read/write/edit/bash` cross the
 Tool Broker and execute in CubeSandbox. A Worker PVC contains only its boot
-ledger; Pi SessionStorage and the bounded browser-visible event tail are both
-durable PostgreSQL state.
+ledger. Pi SessionStorage is durable PostgreSQL state. Workers publish both
+browser-visible events and complete Session mutations through authenticated
+Control Plane Ingest endpoints; they have no direct JetStream credentials or
+network requirement.
 
 ## Required Secret
 
@@ -20,6 +22,7 @@ kubectl -n pi-cloud-workers create secret generic pi-cloud-pi-worker-secrets \
   --from-file=supervisor-enrollment-token=/private/supervisor-enrollment-token \
   --from-file=supervisor-management-token=/private/supervisor-management-token \
   --from-file=tool-broker-token=/private/tool-broker-token \
+  --from-file=worker-event-ingest-token=/private/worker-event-ingest-token \
   --from-file=model-credential-master-key=/private/model-credential-master-key \
   --from-file=metrics-token=/private/metrics-token
 ```

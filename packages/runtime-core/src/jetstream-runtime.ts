@@ -15,8 +15,8 @@ import { createHash } from "node:crypto";
 export const AGENT_EVENT_STREAM_NAME = "PI_CLOUD_AGENT_EVENTS";
 export const AGENT_EVENT_SUBJECT_PREFIX = "pi.events";
 export const AGENT_LIVE_SUBJECT_PREFIX = "pi.live";
-export const PI_SESSION_MUTATION_STREAM_NAME = "PI_CLOUD_SESSION_MUTATIONS";
-export const PI_SESSION_MUTATION_SUBJECT_PREFIX = "pi.session-mutations";
+export const PI_SESSION_MUTATION_STREAM_NAME = "PI_CLOUD_SESSION_MUTATIONS_V2";
+export const PI_SESSION_MUTATION_SUBJECT_PREFIX = "pi.session-mutations-v2";
 
 export type JetStreamRuntimeOptions = Readonly<{
   servers: readonly string[];

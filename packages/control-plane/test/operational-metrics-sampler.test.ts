@@ -48,7 +48,7 @@ describe("operational metrics sampler", () => {
       ],
       consumers: [
         {
-          stream: "PI_CLOUD_SESSION_MUTATIONS",
+          stream: "PI_CLOUD_SESSION_MUTATIONS_V2",
           name: "PI_CLOUD_SESSION_PROJECTOR",
           pending: 3,
         },
@@ -76,7 +76,7 @@ describe("operational metrics sampler", () => {
       'pi_cloud_jetstream_messages{stream="PI_CLOUD_AGENT_EVENTS",service="control-plane-test"} 41',
     );
     expect(output).toContain(
-      'pi_cloud_jetstream_consumer_pending{stream="PI_CLOUD_SESSION_MUTATIONS",consumer="PI_CLOUD_SESSION_PROJECTOR",service="control-plane-test"} 3',
+      'pi_cloud_jetstream_consumer_pending{stream="PI_CLOUD_SESSION_MUTATIONS_V2",consumer="PI_CLOUD_SESSION_PROJECTOR",service="control-plane-test"} 3',
     );
     expect(output).toMatch(
       /pi_cloud_operational_sample_timestamp_seconds\{source="postgresql",service="control-plane-test"\} \d+/u,

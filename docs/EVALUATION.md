@@ -38,7 +38,7 @@ The production stream is:
 
 ```text
 Pi text coalescer -> batched authority/Fence transaction -> R=3 JetStream -> resumable SSE
-Pi complete message -> Session Mutation JetStream -> PostgreSQL SessionStorage
+Pi complete message -> fenced Ingest -> Session Mutation JetStream -> PostgreSQL SessionStorage
 ```
 
 JetStream R=3 PubAck precedes visibility. JetStream retains a bounded

@@ -240,43 +240,68 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
             .executeTakeFirstOrThrow();
         }
 
-        const renewals: SupervisorHeartbeatAckMessage["payload"]["executionGrantRenewals"] = [];
+        const observations: Array<{
+          observation: (typeof heartbeat.payload.sessions)[number];
+          identity: ReturnType<typeof parseExecutionGrant>;
+        }> = [];
+        const seenGrantIds = new Set<string>();
         for (const observation of heartbeat.payload.sessions) {
           if (observation.turnId === null || !ACTIVE_SESSION_STATES.has(observation.state)) {
             continue;
           }
-          let grantIdentity;
+          let identity;
           try {
-            grantIdentity = parseExecutionGrant(observation.executionGrant);
+            identity = parseExecutionGrant(observation.executionGrant);
           } catch {
             continue;
           }
-          const grant = await transaction
-            .selectFrom("execution_grants as grant")
-            .innerJoin("run_attempts as execution", "execution.id", "grant.execution_id")
-            .select([
-              "grant.grant_id as grantId",
-              "grant.generation as generation",
-              "grant.valid_until as validUntil",
-              "grant.turn_id as turnId",
-              "grant.execution_id as executionId",
-              "execution.state as executionState",
-              "execution.execution_grant_id as boundGrantId",
-              "execution.execution_generation as boundGeneration",
-            ])
-            .where("grant.session_id", "=", observation.sessionId)
-            .where("grant.grant_id", "=", grantIdentity.grantId)
-            .where("grant.generation", "=", String(grantIdentity.generation))
-            .where("grant.sandbox_id", "=", this.#sandboxId)
-            .forUpdate(["grant", "execution"])
-            .executeTakeFirst();
+          if (seenGrantIds.has(identity.grantId)) continue;
+          seenGrantIds.add(identity.grantId);
+          observations.push({ observation, identity });
+        }
+
+        const grants =
+          observations.length === 0
+            ? []
+            : await transaction
+                .selectFrom("execution_grants as grant")
+                .innerJoin("run_attempts as execution", "execution.id", "grant.execution_id")
+                .select([
+                  "grant.grant_id as grantId",
+                  "grant.generation as generation",
+                  "grant.valid_until as validUntil",
+                  "grant.turn_id as turnId",
+                  "grant.execution_id as executionId",
+                  "grant.session_id as sessionId",
+                  "execution.state as executionState",
+                  "execution.execution_grant_id as boundGrantId",
+                  "execution.execution_generation as boundGeneration",
+                ])
+                .where(
+                  "grant.grant_id",
+                  "in",
+                  observations.map(({ identity }) => identity.grantId),
+                )
+                .where("grant.sandbox_id", "=", this.#sandboxId)
+                .orderBy("grant.grant_id", "asc")
+                .forUpdate(["grant", "execution"])
+                .execute();
+        const grantById = new Map(grants.map((grant) => [grant.grantId, grant]));
+        const accepted: Array<{
+          observation: (typeof heartbeat.payload.sessions)[number];
+          identity: ReturnType<typeof parseExecutionGrant>;
+          lastAcknowledgedSeq: number;
+        }> = [];
+        for (const { observation, identity } of observations) {
+          const grant = grantById.get(identity.grantId);
           if (grant === undefined) continue;
           const generation = safeInteger(grant.generation, "ExecutionGrant generation");
           if (
-            grant.executionId !== grantIdentity.executionId ||
+            grant.executionId !== identity.executionId ||
+            grant.sessionId !== observation.sessionId ||
             grant.turnId !== observation.turnId ||
-            generation !== grantIdentity.generation ||
-            grant.boundGrantId !== grantIdentity.grantId ||
+            generation !== identity.generation ||
+            grant.boundGrantId !== identity.grantId ||
             safeInteger(grant.boundGeneration ?? -1, "bound ExecutionGrant generation") !==
               generation ||
             new Date(grant.validUntil).valueOf() <= now.valueOf() ||
@@ -287,39 +312,78 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
           ) {
             continue;
           }
-
-          const updated = await transaction
-            .updateTable("execution_grants")
-            .set({ valid_until: validUntil, renewed_at: now })
-            .where("session_id", "=", observation.sessionId)
-            .where("grant_id", "=", grantIdentity.grantId)
-            .where("generation", "=", String(generation))
-            .where("valid_until", ">", now)
-            .executeTakeFirst();
-          if (updated.numUpdatedRows !== 1n) continue;
-          const attemptHeartbeat = await transaction
-            .updateTable("run_attempts")
-            .set({
-              claim_expires_at: validUntil,
-              last_heartbeat_at: now,
-              // JetStream projection may advance the durable event boundary between
-              // heartbeat capture and this transaction. A slightly older Worker
-              // acknowledgement is valid evidence of liveness, but must never
-              // move the canonical boundary backwards.
-              last_event_seq: sql<string>`greatest(${sql.ref("last_event_seq")}, ${observation.lastAcknowledgedSeq})`,
-              updated_at: now,
-            })
-            .where("id", "=", grant.executionId)
-            .where("execution_grant_id", "=", grantIdentity.grantId)
-            .where("execution_generation", "=", String(generation))
-            .executeTakeFirst();
-          expectOne(attemptHeartbeat.numUpdatedRows, "renewing a run attempt heartbeat");
-          renewals.push({
+          accepted.push({
+            observation,
+            identity,
+            lastAcknowledgedSeq: observation.lastAcknowledgedSeq,
+          });
+        }
+        if (accepted.length > 0) {
+          const values = accepted.map(({ observation, identity, lastAcknowledgedSeq }) => ({
+            grantId: identity.grantId,
+            executionId: identity.executionId,
+            generation: identity.generation,
+            sessionId: observation.sessionId,
+            lastAcknowledgedSeq,
+          }));
+          const renewedGrants = await sql<{ id: string }>`
+            with renewal as (
+              select * from jsonb_to_recordset(${JSON.stringify(values)}::jsonb) as item(
+                "grantId" uuid,
+                "executionId" uuid,
+                generation bigint,
+                "sessionId" uuid,
+                "lastAcknowledgedSeq" bigint
+              )
+            )
+            update execution_grants as authority
+               set valid_until = ${validUntil}, renewed_at = ${now}
+              from renewal
+             where authority.grant_id = renewal."grantId"
+               and authority.execution_id = renewal."executionId"
+               and authority.generation = renewal.generation
+               and authority.session_id = renewal."sessionId"
+               and authority.valid_until > ${now}
+            returning authority.grant_id as id
+          `.execute(transaction);
+          const renewedAttempts = await sql<{ id: string }>`
+            with renewal as (
+              select * from jsonb_to_recordset(${JSON.stringify(values)}::jsonb) as item(
+                "grantId" uuid,
+                "executionId" uuid,
+                generation bigint,
+                "sessionId" uuid,
+                "lastAcknowledgedSeq" bigint
+              )
+            )
+            update run_attempts as execution
+               set claim_expires_at = ${validUntil},
+                   last_heartbeat_at = ${now},
+                   last_event_seq = greatest(execution.last_event_seq, renewal."lastAcknowledgedSeq"),
+                   updated_at = ${now}
+              from renewal
+             where execution.id = renewal."executionId"
+               and execution.execution_grant_id = renewal."grantId"
+               and execution.execution_generation = renewal.generation
+            returning execution.id
+          `.execute(transaction);
+          if (
+            renewedGrants.rows.length !== accepted.length ||
+            renewedAttempts.rows.length !== accepted.length
+          ) {
+            throw new ExecutionGrantCoordinatorError(
+              "execution_grant_invariant",
+              "Set-oriented ExecutionGrant renewal lost a current execution",
+              false,
+            );
+          }
+        }
+        const renewals: SupervisorHeartbeatAckMessage["payload"]["executionGrantRenewals"] =
+          accepted.map(({ observation }) => ({
             sessionId: observation.sessionId,
             executionGrant: observation.executionGrant,
             validUntil: validUntil.toISOString(),
-          });
-        }
+          }));
         await transaction
           .updateTable("sandboxes")
           .set({ updated_at: now })

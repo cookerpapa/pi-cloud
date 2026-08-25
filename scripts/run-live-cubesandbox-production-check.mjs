@@ -343,7 +343,7 @@ async function jetStreamState() {
   const account = JSON.parse(output).account_details?.[0];
   const streams = new Map((account?.stream_detail ?? []).map((stream) => [stream.name, stream]));
   const events = streams.get("PI_CLOUD_AGENT_EVENTS");
-  const mutations = streams.get("PI_CLOUD_SESSION_MUTATIONS");
+  const mutations = streams.get("PI_CLOUD_SESSION_MUTATIONS_V2");
   if (events === undefined || mutations === undefined) {
     throw new Error("JetStream production streams are unavailable");
   }

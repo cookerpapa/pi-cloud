@@ -7,17 +7,19 @@ state. The following symbols make the boundary explicit:
 - `J` — R=3 JetStream durably acknowledged that event inside a batched,
   transaction-scoped ExecutionGrant authority boundary;
 - `V` — an authenticated SSE client observed the event;
+- `M` — authority-accepted Session Mutation received an R=3 JetStream PubAck;
 - `P` — Pi SessionStorage committed the complete message or Tool result in
   PostgreSQL;
 - `T` — PostgreSQL atomically committed the terminal Run state and terminal
   event outbox row.
 - `B` — the Session-keyed mutation projection barrier committed after all
-  earlier mutation records reached an applied-or-fenced outcome.
+  earlier authority-accepted mutation records were applied.
 
 The maintained invariants are:
 
 ```text
 V implies J
+M implies the mutation's ExecutionGrant was current at acceptance
 T(success) implies P
 next model Step starts only after the required P projection barrier
 replacement Worker reads SessionStorage only after B and a fresh fence check
@@ -55,8 +57,8 @@ conversations are already canonical in PostgreSQL.
 | Worker loss during an arbitrary Tool | outcome may be unknown | revoke the fence, record `UNKNOWN`, never auto-run the Tool again |
 | Worker process is unreachable after its lease expires | management stop cannot be confirmed over the dead endpoint | durable fence blocks every later effect; settle the Run and outstanding model reservations, return the Session to idle and retire the logical owner without adopting its process |
 | Cube loss | process/memory world is gone | persistent Volume keeps files; the next model sees a minimal Sandbox-reset fact |
-| PostgreSQL projection lag | live JetStream may continue | the same Session cannot cross its projection barrier into a stale next Step |
-| Worker replacement with mutation records in flight | old records precede the keyed barrier | wait for `B`, recheck the new fence, then read PostgreSQL |
+| PostgreSQL projection lag | accepted JetStream facts may continue | the same Session cannot cross its projection barrier into a stale next Step |
+| Worker replacement with mutation records in flight | old accepted records precede the new Grant's keyed barrier | wait for `B`, recheck the new fence, then read PostgreSQL |
 
 The automated contracts cover accepted-order validation, duplicate delivery,
 terminal folding, expired cursor reload, terminal outbox idempotence, Pi

@@ -193,10 +193,6 @@ pi-workers:
     githubGateway: { enabled: false, url: http://github-gateway:4400 }
     providerProxyUrl: https://provider-proxy.example.com:3129
     otlpTracesEndpoint: ""
-    jetStreamServers:
-      - nats://nats-0.nats.svc.cluster.local:4222
-      - nats://nats-1.nats.svc.cluster.local:4222
-      - nats://nats-2.nats.svc.cluster.local:4222
   database:
     existingSecret: pi-cloud-platform-secrets
     urlKey: database-url
@@ -234,7 +230,7 @@ pi-workers:
   networkPolicy:
     enabled: true
     trustedNamespaceLabel: { key: pi-cloud.io/trusted-plane, value: "true" }
-    trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432, 9092]
+    trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432]
     externalEgressCidrs: []
   disruptionBudget: { minAvailable: 1 }
   placement: { nodeSelector: {}, tolerations: [] }

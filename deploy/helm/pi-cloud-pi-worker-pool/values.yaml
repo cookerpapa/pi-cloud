@@ -42,10 +42,6 @@ services:
     url: http://github-gateway.pi-cloud-system.svc.cluster.local:4400
   providerProxyUrl: http://provider-egress-relay.pi-cloud-system.svc.cluster.local:3129
   otlpTracesEndpoint: ""
-  jetStreamServers:
-    - nats://nats-0.nats.svc.cluster.local:4222
-    - nats://nats-1.nats.svc.cluster.local:4222
-    - nats://nats-2.nats.svc.cluster.local:4222
 
 database:
   existingSecret: pi-cloud-pi-worker-secrets
@@ -99,7 +95,7 @@ networkPolicy:
   trustedNamespaceLabel:
     key: pi-cloud.io/trusted-plane
     value: "true"
-  trustedTcpPorts: [443, 3000, 3129, 4300, 4400, 4318, 5432, 9092]
+  trustedTcpPorts: [443, 3000, 3129, 4300, 4400, 4318, 5432]
   externalEgressCidrs: []
 
 disruptionBudget:

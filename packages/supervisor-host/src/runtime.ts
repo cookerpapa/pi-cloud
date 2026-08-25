@@ -6,11 +6,7 @@ import {
 } from "@pi-cloud/runtime-core/checkpoint-runtime";
 import type { DurableEventIngestor } from "@pi-cloud/runtime-core/durable-event-store";
 import { HttpAgentEventIngestor } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
-import { JetStreamPiSessionMutationProducer } from "@pi-cloud/runtime-core/jetstream-pi-session-mutations";
-import {
-  connectPiCloudJetStream,
-  type PiCloudJetStream,
-} from "@pi-cloud/runtime-core/jetstream-runtime";
+import { HttpPiSessionMutationProducer } from "@pi-cloud/runtime-core/jetstream-pi-session-mutations";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
 import { HttpTerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
 import {
@@ -82,10 +78,7 @@ export type PiWorkerRuntimeOptions = {
     checkHealth?(): Promise<void>;
     close?(): Promise<void>;
   };
-  sessionMutationProducer?: Pick<
-    JetStreamPiSessionMutationProducer,
-    "scoped" | "checkHealth" | "close"
-  >;
+  sessionMutationProducer?: Pick<HttpPiSessionMutationProducer, "scoped" | "checkHealth" | "close">;
 };
 
 export type SupervisorRunWorker = {
@@ -192,10 +185,9 @@ export class PiWorkerRuntime {
   readonly #eventIngestor:
     (DurableEventIngestor & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
   readonly #configuredSessionMutationProducer:
-    Pick<JetStreamPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<HttpPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
   #sessionMutationProducer:
-    Pick<JetStreamPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
-  #jetStreamRuntime: PiCloudJetStream | undefined;
+    Pick<HttpPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
   #ownsSessionMutationProducer = false;
   readonly #ownerStoppedPromise: Promise<void>;
   readonly #resolveOwnerStopped: () => void;
@@ -434,12 +426,11 @@ export class PiWorkerRuntime {
       const runWorkerIdentity = `postgres:${identity.supervisorId}:${identity.bootId}`;
       const sessionMutationProducer =
         this.#configuredSessionMutationProducer ??
-        new JetStreamPiSessionMutationProducer({
+        new HttpPiSessionMutationProducer({
           database: this.#database,
-          runtime: (this.#jetStreamRuntime = await connectPiCloudJetStream({
-            servers: this.#config.jetStreamServers,
-            clientName: `${this.#config.supervisorId}-session-mutations`,
-          })),
+          baseUrl: this.#config.controlPlaneBaseUrl,
+          serviceToken: this.#config.workerEventIngestToken,
+          allowInsecureHttp: this.#config.allowInsecureInternalHttp,
         });
       this.#ownsSessionMutationProducer = this.#configuredSessionMutationProducer === undefined;
       await sessionMutationProducer.checkHealth();
@@ -787,7 +778,6 @@ export class PiWorkerRuntime {
     if (this.#ownsSessionMutationProducer) {
       await this.#sessionMutationProducer?.close().catch(() => undefined);
     }
-    await this.#jetStreamRuntime?.connection.close().catch(() => undefined);
     this.#objectStore.destroy();
     if (this.#ownsDatabase) await this.#database.destroy();
     if (this.#state !== "failed") this.#state = "stopped";

@@ -83,7 +83,8 @@ execution path and failure semantics.
 - Pi SessionStorage and the browser stream are independent projections. A
   Session-keyed projection barrier completes before a replacement Worker reads
   PostgreSQL; it does not wait for Gateway consumers.
-  `message_end` publishes a complete Pi message to the Session mutation topic;
+  `message_end` submits a complete Pi message through PostgreSQL-authorized
+  Ingest to the accepted Session mutation topic;
   the PostgreSQL projector applies it before the next model Step. Pi's ordered
   log stores stable identifiers and hydrates canonical entries/records on read.
 - The browser sees only the contiguous prefix durably accepted by JetStream

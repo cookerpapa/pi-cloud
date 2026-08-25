@@ -19,6 +19,7 @@ if (process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK !== "1") {
     "Set PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 to acknowledge a real model call and controlled Control Plane SIGKILL",
   );
 }
+const writeReport = process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_REPORT !== "0";
 
 async function readPrivate(path, maximumBytes, label) {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -209,28 +210,30 @@ try {
     attemptCount: run.attempts.length,
     elapsedMs: Math.round(performance.now() - startedAt),
   };
-  const reportDirectory = resolve(repositoryRoot, "docs/reports");
-  await mkdir(reportDirectory, { recursive: true });
-  await writeFile(
-    resolve(reportDirectory, "control-plane-restart-acceptance-latest.json"),
-    `${JSON.stringify(report, null, 2)}\n`,
-  );
-  await writeFile(
-    resolve(reportDirectory, "control-plane-restart-acceptance-latest.md"),
-    [
-      "# Control Plane restart acceptance",
-      "",
-      `- Checked at: ${report.checkedAt}`,
-      `- Provider/model: ${report.provider} / ${report.modelId}`,
-      `- First visible / terminal sequence: ${String(report.firstTextSequence)} / ${String(report.terminalSequence)}`,
-      `- SSE reconnects: ${String(report.sseReconnects)}`,
-      `- Run Attempts: ${String(report.attemptCount)}`,
-      `- Elapsed: ${String(report.elapsedMs)} ms`,
-      "",
-      "The Control Plane container received SIGKILL after the first JetStream-acknowledged assistant delta. The trusted Worker continued the fenced Run while JetStream retained the hot stream and PostgreSQL retained canonical Pi state. The replacement Gateway replayed the bounded Session subject, SSE reconnected, and the Run completed with one Attempt.",
-      "",
-    ].join("\n"),
-  );
+  if (writeReport) {
+    const reportDirectory = resolve(repositoryRoot, "docs/reports");
+    await mkdir(reportDirectory, { recursive: true });
+    await writeFile(
+      resolve(reportDirectory, "control-plane-restart-acceptance-latest.json"),
+      `${JSON.stringify(report, null, 2)}\n`,
+    );
+    await writeFile(
+      resolve(reportDirectory, "control-plane-restart-acceptance-latest.md"),
+      [
+        "# Control Plane restart acceptance",
+        "",
+        `- Checked at: ${report.checkedAt}`,
+        `- Provider/model: ${report.provider} / ${report.modelId}`,
+        `- First visible / terminal sequence: ${String(report.firstTextSequence)} / ${String(report.terminalSequence)}`,
+        `- SSE reconnects: ${String(report.sseReconnects)}`,
+        `- Run Attempts: ${String(report.attemptCount)}`,
+        `- Elapsed: ${String(report.elapsedMs)} ms`,
+        "",
+        "The Control Plane container received SIGKILL after the first JetStream-acknowledged assistant delta. The trusted Worker continued the fenced Run while JetStream retained the hot stream and PostgreSQL retained canonical Pi state. The replacement Gateway replayed the bounded Session subject, SSE reconnected, and the Run completed with one Attempt.",
+        "",
+      ].join("\n"),
+    );
+  }
   process.stdout.write(`${JSON.stringify(report)}\n`);
 } finally {
   clearTimeout(deadline);
