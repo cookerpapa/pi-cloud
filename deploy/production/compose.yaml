@@ -901,11 +901,12 @@ services:
     command:
       - |
         owner=${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}
-        chown -R "$${owner}" /prometheus /grafana /jaeger
-        chmod 0700 /prometheus /grafana /jaeger
+        chown -R "$${owner}" /prometheus /alertmanager /grafana /jaeger
+        chmod 0700 /prometheus /alertmanager /grafana /jaeger
     user: "0:0"
     volumes:
       - prometheus-data:/prometheus
+      - alertmanager-data:/alertmanager
       - grafana-data:/grafana
       - jaeger-data:/jaeger
     network_mode: none
@@ -942,6 +943,10 @@ services:
         target: /etc/prometheus/prometheus.yml
         read_only: true
       - type: bind
+        source: ../observability/alerts
+        target: /etc/prometheus/rules
+        read_only: true
+      - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/metrics-token
         target: /run/pi-cloud-secrets/metrics-token
         read_only: true
@@ -953,6 +958,37 @@ services:
     pids_limit: 128
     mem_limit: 384m
     cpus: 0.75
+    stop_grace_period: 30s
+    logging: *bounded-logging
+
+  alertmanager:
+    profiles: [observability]
+    image: prom/alertmanager@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+    restart: unless-stopped
+    depends_on:
+      observability-volume-bootstrap:
+        condition: service_completed_successfully
+    user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=http://127.0.0.1:${PI_CLOUD_ALERTMANAGER_PORT:-9093}
+    volumes:
+      - alertmanager-data:/alertmanager
+      - type: bind
+        source: ../observability/alertmanager.yml
+        target: /etc/alertmanager/alertmanager.yml
+        read_only: true
+    networks: [observability]
+    read_only: true
+    init: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.25
     stop_grace_period: 30s
     logging: *bounded-logging
 
@@ -993,6 +1029,8 @@ services:
       observability-volume-bootstrap:
         condition: service_completed_successfully
       prometheus:
+        condition: service_started
+      alertmanager:
         condition: service_started
       jaeger:
         condition: service_started
@@ -1037,6 +1075,8 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+      alertmanager:
+        condition: service_started
       jaeger:
         condition: service_started
       grafana:
@@ -1052,6 +1092,7 @@ services:
         read_only: true
     ports:
       - 127.0.0.1:${PI_CLOUD_PROMETHEUS_PORT:-9090}:9090
+      - 127.0.0.1:${PI_CLOUD_ALERTMANAGER_PORT:-9093}:9093
       - 127.0.0.1:${PI_CLOUD_JAEGER_PORT:-16686}:16686
       - 127.0.0.1:${PI_CLOUD_GRAFANA_PORT:-3001}:3001
     networks:
@@ -1114,6 +1155,7 @@ volumes:
   supervisor-boot: {}
   supervisor-1-boot: {}
   prometheus-data: {}
+  alertmanager-data: {}
   grafana-data: {}
   jaeger-data: {}
   provider-relay: {}

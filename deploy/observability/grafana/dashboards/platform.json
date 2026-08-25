@@ -11,7 +11,12 @@
       "title": "Active runs",
       "id": 1,
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
-      "targets": [{ "expr": "sum(pi_cloud_active_runs)", "refId": "A" }]
+      "targets": [
+        {
+          "expr": "sum(pi_cloud_active_runs{service=\"pi-cloud-trusted-runner\"})",
+          "refId": "A"
+        }
+      ]
     },
     {
       "type": "stat",
@@ -134,7 +139,7 @@
     },
     {
       "type": "stat",
-      "title": "Assigned / session-warm sandboxes",
+      "title": "Materialized Cube sandboxes",
       "id": 11,
       "gridPos": { "h": 5, "w": 12, "x": 0, "y": 29 },
       "targets": [
@@ -222,6 +227,124 @@
           "refId": "B"
         }
       ]
+    },
+    {
+      "type": "stat",
+      "title": "Metrics targets healthy",
+      "id": 17,
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 47 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(up{job=~\"pi-cloud-.+\"}) / clamp_min(count(up{job=~\"pi-cloud-.+\"}), 1)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Firing alerts",
+      "id": 18,
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 47 },
+      "targets": [{ "expr": "sum(ALERTS{alertstate=\"firing\"}) or vector(0)", "refId": "A" }]
+    },
+    {
+      "type": "stat",
+      "title": "Session projection pending",
+      "id": 19,
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 47 },
+      "targets": [
+        {
+          "expr": "max(pi_cloud_jetstream_consumer_pending{consumer=\"PI_CLOUD_SESSION_PROJECTOR\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Storage cleanup pending",
+      "id": 20,
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 47 },
+      "targets": [
+        {
+          "expr": "max(pi_cloud_workspace_storage_purge_pending)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "JetStream retained data",
+      "id": 21,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "max by (stream) (pi_cloud_jetstream_bytes)",
+          "legendFormat": "{{stream}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Process resident memory",
+      "id": 22,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (service) (process_resident_memory_bytes)",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Durability backlogs",
+      "id": 23,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 60 },
+      "targets": [
+        {
+          "expr": "max(pi_cloud_queued_runs)",
+          "legendFormat": "ready Runs",
+          "refId": "A"
+        },
+        {
+          "expr": "max(pi_cloud_terminal_event_outbox_pending)",
+          "legendFormat": "terminal events",
+          "refId": "B"
+        },
+        {
+          "expr": "max(pi_cloud_jetstream_consumer_pending{consumer=\"PI_CLOUD_SESSION_PROJECTOR\"})",
+          "legendFormat": "Session mutations",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Sandbox admission active / limit / waiting",
+      "id": 24,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 60 },
+      "targets": [
+        {
+          "expr": "sum(pi_cloud_sandbox_admission_active)",
+          "legendFormat": "active",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(pi_cloud_sandbox_admission_limit)",
+          "legendFormat": "limit",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(pi_cloud_sandbox_admission_waiting)",
+          "legendFormat": "waiting",
+          "refId": "C"
+        }
+      ]
     }
   ],
   "refresh": "10s",
@@ -232,5 +355,5 @@
   "timezone": "browser",
   "title": "PiCloud Platform",
   "uid": "pi-cloud-platform",
-  "version": 1
+  "version": 2
 }

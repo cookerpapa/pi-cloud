@@ -141,4 +141,8 @@ export function validateProductionRuntimeEnvironment(environment) {
   bounded(environment, "PI_CLOUD_SSH_ADVERTISED_HOST", "127.0.0.1", /^[A-Za-z0-9:._-]+$/u, 253);
   integer(environment, "PI_CLOUD_SSH_ADVERTISED_PORT", 2_222, 1, 65_535);
   integer(environment, "PI_CLOUD_SSH_TICKET_TTL_MS", 86_400_000, 60_000, 86_400_000);
+  integer(environment, "PI_CLOUD_PROMETHEUS_PORT", 9_090, 1, 65_535);
+  integer(environment, "PI_CLOUD_ALERTMANAGER_PORT", 9_093, 1, 65_535);
+  integer(environment, "PI_CLOUD_GRAFANA_PORT", 3_001, 1, 65_535);
+  integer(environment, "PI_CLOUD_JAEGER_PORT", 16_686, 1, 65_535);
 }

@@ -32,6 +32,7 @@ import { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gatewa
 import { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import { AgentEventIngestGateway } from "./agent-event-ingest-gateway.ts";
+import { OperationalMetricsSampler } from "./operational-metrics-sampler.ts";
 
 async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Promise<void> {
   const profile = await database
@@ -62,6 +63,7 @@ export async function startControlPlane(): Promise<void> {
   let agentEvents: JetStreamEventRuntime | undefined;
   let runtime: ControlPlaneRuntime | undefined;
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
+  let operationalMetrics: OperationalMetricsSampler | undefined;
   let closing = false;
   try {
     agentEvents = await JetStreamEventRuntime.create({
@@ -77,6 +79,19 @@ export async function startControlPlane(): Promise<void> {
     const activeAgentEvents = agentEvents;
     await verifyBootstrap(database);
     await activeAgentEvents.start();
+    operationalMetrics = new OperationalMetricsSampler({
+      database,
+      events: activeAgentEvents,
+      metrics: observability.metrics,
+      onError: (source) =>
+        operationalLog({
+          service: "pi-cloud-control-plane",
+          level: "warn",
+          event: "observability.sample_failed",
+          attributes: { source },
+        }),
+    });
+    await operationalMetrics.start();
     const modelCredentialVault = new TenantModelCredentialVault(config.modelCredentialMasterKey);
     const platformInitialModel = await resolvePlatformInitialModel(
       database,
@@ -274,6 +289,7 @@ export async function startControlPlane(): Promise<void> {
       closing = true;
       await runtime?.close();
       await developmentEnvironmentService?.close();
+      await operationalMetrics?.close();
       await activeAgentEvents.close();
       objectStore.destroy();
       await database.destroy();
@@ -290,6 +306,7 @@ export async function startControlPlane(): Promise<void> {
     closing = true;
     await runtime?.close().catch(() => undefined);
     await developmentEnvironmentService?.close().catch(() => undefined);
+    await operationalMetrics?.close().catch(() => undefined);
     await agentEvents?.close().catch(() => undefined);
     objectStore.destroy();
     await database.destroy();

@@ -11,6 +11,10 @@
   reverse_proxy jaeger:16686
 }
 
+:9093 {
+  reverse_proxy alertmanager:9093
+}
+
 :3001 {
   reverse_proxy grafana:3000
 }

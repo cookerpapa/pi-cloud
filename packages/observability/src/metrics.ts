@@ -22,6 +22,14 @@ export class PiCloudMetrics {
   readonly tenantAdmissionLockWait: Histogram;
   readonly activeRuns: Gauge;
   readonly queuedRuns: Gauge;
+  readonly terminalEventOutboxPending: Gauge;
+  readonly workspaceStoragePurgePending: Gauge;
+  readonly jetStreamMessages: Gauge<"stream">;
+  readonly jetStreamBytes: Gauge<"stream">;
+  readonly jetStreamConsumerPending: Gauge<"stream" | "consumer">;
+  readonly jetStreamUnavailableReplicas: Gauge<"stream">;
+  readonly operationalSampleTimestamp: Gauge<"source">;
+  readonly operationalSampleFailures: Counter<"source">;
   readonly sandboxActive: Gauge<"provider">;
   readonly sandboxAdmissionActive: Gauge<"provider">;
   readonly sandboxAdmissionLimit: Gauge<"provider">;
@@ -148,7 +156,53 @@ export class PiCloudMetrics {
     });
     this.queuedRuns = new Gauge({
       name: "pi_cloud_queued_runs",
-      help: "Queued Runs visible to this process",
+      help: "Durable Runs waiting in the shared PostgreSQL queue",
+      registers: [this.registry],
+    });
+    this.terminalEventOutboxPending = new Gauge({
+      name: "pi_cloud_terminal_event_outbox_pending",
+      help: "Settled terminal events waiting to be published to JetStream",
+      registers: [this.registry],
+    });
+    this.workspaceStoragePurgePending = new Gauge({
+      name: "pi_cloud_workspace_storage_purge_pending",
+      help: "Deleted Workspaces whose storage cleanup has not completed",
+      registers: [this.registry],
+    });
+    this.jetStreamMessages = new Gauge({
+      name: "pi_cloud_jetstream_messages",
+      help: "Messages retained by a PiCloud JetStream stream",
+      labelNames: ["stream"],
+      registers: [this.registry],
+    });
+    this.jetStreamBytes = new Gauge({
+      name: "pi_cloud_jetstream_bytes",
+      help: "Bytes retained by a PiCloud JetStream stream",
+      labelNames: ["stream"],
+      registers: [this.registry],
+    });
+    this.jetStreamConsumerPending = new Gauge({
+      name: "pi_cloud_jetstream_consumer_pending",
+      help: "Unconsumed or unacknowledged messages for a durable PiCloud JetStream consumer",
+      labelNames: ["stream", "consumer"],
+      registers: [this.registry],
+    });
+    this.jetStreamUnavailableReplicas = new Gauge({
+      name: "pi_cloud_jetstream_unavailable_replicas",
+      help: "Offline or out-of-date replicas for a PiCloud JetStream stream",
+      labelNames: ["stream"],
+      registers: [this.registry],
+    });
+    this.operationalSampleTimestamp = new Gauge({
+      name: "pi_cloud_operational_sample_timestamp_seconds",
+      help: "Unix timestamp of the last successful operational metrics sample",
+      labelNames: ["source"],
+      registers: [this.registry],
+    });
+    this.operationalSampleFailures = new Counter({
+      name: "pi_cloud_operational_sample_failures_total",
+      help: "Operational metrics samples that failed",
+      labelNames: ["source"],
       registers: [this.registry],
     });
     this.sandboxActive = new Gauge({

@@ -1,0 +1,119 @@
+groups:
+  - name: pi-cloud-availability
+    rules:
+      - alert: PiCloudMetricsTargetDown
+        expr: up{job=~"pi-cloud-.+"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PiCloud metrics target is unavailable"
+          description: "Prometheus cannot scrape {{ $labels.job }} at {{ $labels.instance }}."
+
+      - alert: PiCloudOperationalSamplerStale
+        expr: time() - max by (source) (pi_cloud_operational_sample_timestamp_seconds) > 60
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PiCloud operational state sampling is stale"
+          description: "The {{ $labels.source }} operational sample has not succeeded for more than one minute."
+
+      - alert: PiCloudOperationalSamplerMissing
+        expr: |
+          absent(pi_cloud_operational_sample_timestamp_seconds{source="postgresql"})
+          or absent(pi_cloud_operational_sample_timestamp_seconds{source="jetstream"})
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PiCloud operational state sampling has no successful sample"
+          description: "The Control Plane has not published both PostgreSQL and JetStream authority samples."
+
+      - alert: PiCloudJetStreamReplicaUnavailable
+        expr: max by (stream) (pi_cloud_jetstream_unavailable_replicas) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A PiCloud JetStream replica is unavailable"
+          description: "Stream {{ $labels.stream }} has an offline or out-of-date replica."
+
+  - name: pi-cloud-backlog
+    rules:
+      - alert: PiCloudRunQueueBacklog
+        expr: max(pi_cloud_queued_runs) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PiCloud Run queue is persistently backed up"
+          description: "More than 20 ready Runs have waited in the shared queue for five minutes."
+
+      - alert: PiCloudQueueWaitHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(pi_cloud_queue_wait_seconds_bucket[10m]))) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PiCloud p95 queue wait is high"
+          description: "The ten-minute p95 durable queue wait exceeds 30 seconds."
+
+      - alert: PiCloudSessionProjectionBacklog
+        expr: max(pi_cloud_jetstream_consumer_pending{consumer="PI_CLOUD_SESSION_PROJECTOR"}) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pi Session projection is falling behind"
+          description: "More than 100 complete Pi Session mutations remain unprojected for five minutes."
+
+      - alert: PiCloudTerminalEventBacklog
+        expr: max(pi_cloud_terminal_event_outbox_pending) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Terminal Run events are waiting for JetStream"
+          description: "Settled terminal events have remained unpublished for five minutes."
+
+      - alert: PiCloudWorkspacePurgeBacklog
+        expr: max(pi_cloud_workspace_storage_purge_pending) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deleted Workspace storage has not been purged"
+          description: "At least one deleted Workspace still owns storage after 15 minutes."
+
+  - name: pi-cloud-capacity
+    rules:
+      - alert: PiCloudSandboxAdmissionWaiting
+        expr: max(pi_cloud_sandbox_admission_waiting) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tool Sandbox requests are waiting for capacity"
+          description: "Cube admission has remained saturated for five minutes."
+
+      - alert: PiCloudVolumeGatewaySaturated
+        expr: max(pi_cloud_workspace_volume_gateway_waiting) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Workspace Volume Gateway is saturated"
+          description: "Workspace storage operations have waited for local admission for five minutes."
+
+      - alert: PiCloudRunFailureRateHigh
+        expr: |
+          sum(increase(pi_cloud_runs_total{outcome=~"failed|dispatcher_error"}[15m]))
+            / clamp_min(sum(increase(pi_cloud_runs_total[15m])), 1) > 0.20
+          and sum(increase(pi_cloud_runs_total[15m])) >= 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PiCloud Run failure rate is high"
+          description: "More than 20% of at least five Runs failed during the last 15 minutes."

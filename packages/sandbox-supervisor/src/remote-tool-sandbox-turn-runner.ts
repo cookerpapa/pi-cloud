@@ -215,10 +215,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     void ready.catch(() => undefined);
     const slot = { ready, resolve: resolveRunner, reject: rejectRunner };
     this.#activePiRunners.set(command.payload.commandId, slot);
-    this.#metrics?.activeRuns.inc();
-    const startedAt = performance.now();
     try {
-      const result = await withSpan({
+      return await withSpan({
         serviceName: "pi-cloud-trusted-runner",
         name: "run.execute",
         ...(command.payload.traceContext === undefined
@@ -231,17 +229,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         },
         run: () => this.#run(command, publishEvent, signal, slot.resolve),
       });
-      this.#metrics?.runDuration.observe(
-        { outcome: "completed" },
-        (performance.now() - startedAt) / 1_000,
-      );
-      return result;
-    } catch (error: unknown) {
-      this.#metrics?.runDuration.observe(
-        { outcome: signal.aborted ? "cancelled" : "failed" },
-        (performance.now() - startedAt) / 1_000,
-      );
-      throw error;
     } finally {
       if (this.#activePiRunners.get(command.payload.commandId) === slot) {
         this.#activePiRunners.delete(command.payload.commandId);
@@ -253,7 +240,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           false,
         ),
       );
-      this.#metrics?.activeRuns.dec();
     }
   }
 

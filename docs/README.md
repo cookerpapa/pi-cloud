@@ -12,7 +12,8 @@ Use documentation in this order:
    execution boundary.
 4. [`CONFIGURATION.md`](CONFIGURATION.md),
    [`PRODUCTION_DEPLOYMENT.md`](PRODUCTION_DEPLOYMENT.md) and
-   [`DISTRIBUTED_DEPLOYMENT.md`](DISTRIBUTED_DEPLOYMENT.md) — operations.
+   [`DISTRIBUTED_DEPLOYMENT.md`](DISTRIBUTED_DEPLOYMENT.md) — operations;
+   [`OBSERVABILITY.md`](OBSERVABILITY.md) — metrics, alerts, traces and logs.
 5. [`adr/README.md`](adr/README.md) — current decisions only.
 
 `reports/` contains evidence tied to a named revision and topology. `research/`

@@ -22,6 +22,8 @@ import {
   type PiCloudJetStream,
 } from "./jetstream-runtime.ts";
 
+export const PI_SESSION_MUTATION_PROJECTOR_CONSUMER = "PI_CLOUD_SESSION_PROJECTOR";
+
 export type JetStreamPiSessionMutationScope = Readonly<{
   tenantId: string;
   sessionId: string;
@@ -220,7 +222,7 @@ export class JetStreamPiSessionMutationProjector {
   }
 
   async start(): Promise<void> {
-    const durableName = "PI_CLOUD_SESSION_PROJECTOR";
+    const durableName = PI_SESSION_MUTATION_PROJECTOR_CONSUMER;
     try {
       await this.#runtime.manager.consumers.info(PI_SESSION_MUTATION_STREAM_NAME, durableName);
     } catch {

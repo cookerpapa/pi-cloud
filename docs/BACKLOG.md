@@ -104,6 +104,10 @@ retired and remain only in Git history or explicitly superseded ADRs.
 
 ## Security and operations
 
+- [x] Add a minimal Prometheus/Grafana/Alertmanager monitoring profile with
+      authority backlog, JetStream health, Cube/Volume capacity and actionable
+      alert rules; retain direct OTLP-to-Jaeger tracing without adding a second
+      telemetry pipeline.
 - [x] Add deployment-owned direct RFC1918 CIDRs for company-network debugging.
 - [ ] Add per-tenant egress policy and a searchable network audit trail.
 - [ ] Add administrator-owned MCP connections and Session Tool grants on top

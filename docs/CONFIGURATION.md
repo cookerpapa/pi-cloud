@@ -125,6 +125,10 @@ does not expose Sandbox ports to the private network.
 | `PI_CLOUD_SSH_ADVERTISED_PORT` | `2222` | port shown to users |
 | `PI_CLOUD_SSH_TICKET_TTL_MS` | `86400000` | maximum wait before an unused one-use password expires |
 | `PI_CLOUD_PRODUCTION_PROFILES` | empty | comma-separated `observability` and/or `github` |
+| `PI_CLOUD_PROMETHEUS_PORT` | `9090` | loopback Prometheus UI when observability is enabled |
+| `PI_CLOUD_ALERTMANAGER_PORT` | `9093` | loopback Alertmanager UI when observability is enabled |
+| `PI_CLOUD_GRAFANA_PORT` | `3001` | loopback Grafana UI when observability is enabled |
+| `PI_CLOUD_JAEGER_PORT` | `16686` | loopback Jaeger UI when observability is enabled |
 
 LAN/public SSH requires host firewall, stable host-key trust and explicit bind
 and advertised addresses. `127.0.0.1` never changes automatically: set the bind

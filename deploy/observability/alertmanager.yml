@@ -1,0 +1,16 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: operator-ui
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+# The one-host profile deliberately has no deployment-owned external receiver.
+# Alerts remain visible and can be silenced in Alertmanager and Grafana. An
+# operator may replace this receiver with the email/chat/on-call integration
+# used by their organization without changing application code.
+receivers:
+  - name: operator-ui
