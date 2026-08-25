@@ -8,14 +8,17 @@ trusted Worker simulator
         │ HTTP, current Attempt/Fence
         ▼
 stateless Event Ingest ──PubAck──> NATS JetStream R=3 / file storage
-                                      ├── filtered ordered consumer ──> SSE Gateway
+                                      ├── committed Republish/Core NATS ──> SSE Gateway
+                                      ├── temporary filtered replay on reconnect
                                       └── durable explicit-ACK consumer ──> PostgreSQL
 ```
 
 The PostgreSQL projector persists only complete Assistant messages and Turn
 terminal records. Text deltas remain in the bounded JetStream hot log. The
 ingest boundary validates current Session/Attempt/Fence state before an event
-can enter the browser-visible Stream.
+can enter the browser-visible Stream. A single Core NATS subscription fans
+already-committed live messages into authenticated SSE connections; idle
+connections do not create permanent JetStream Consumers.
 
 The acceptance kills the SSE Gateway, kills the projector after its database
 commit but before broker ACK, kills the current Stream Leader, and then opens

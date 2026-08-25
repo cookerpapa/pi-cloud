@@ -275,6 +275,7 @@ try {
     max_age: 60 * 60 * 1_000_000_000,
     max_msgs_per_subject: 8_192,
     duplicate_window: 10 * 60 * 1_000_000_000,
+    republish: { src: `${SUBJECT_PREFIX}.>`, dest: "pc.live.>" },
   });
   const initialStream = await waitFor(async () => {
     const info = await runtime.manager.streams.info(STREAM_NAME);
@@ -485,6 +486,9 @@ try {
   const loadPublishAcks = await mapConcurrent(loadRows, 100, (row) =>
     publish(createEvent({ ...row, seq: 1 })),
   );
+  const publishElapsedMs = performance.now() - deliveryStartedAt;
+  const healthAfterPublish = await gatewayHealth();
+  const readStartedAt = performance.now();
   const loadDeliveries = await mapConcurrent(connections, 100, async (connection, index) => {
     try {
       return { delivered: true, index, events: await readSseEvents(connection, 1, 30_000) };
@@ -496,6 +500,7 @@ try {
       };
     }
   });
+  const readElapsedMs = performance.now() - readStartedAt;
   const missedDeliveries = loadDeliveries.filter((result) => !result.delivered);
   const reconnectResults = await mapConcurrent(missedDeliveries, 16, async (missed) => {
     const original = connections[missed.index];
@@ -519,6 +524,9 @@ try {
     effectiveDeliveredConnections:
       loadDeliveries.filter((result) => result.delivered).length +
       reconnectResults.filter((result) => result.recovered).length,
+    publishElapsedMs: Number(publishElapsedMs.toFixed(3)),
+    gatewayDeliveredAtPublishComplete: healthAfterPublish.deliveredEvents,
+    browserReadElapsedMs: Number(readElapsedMs.toFixed(3)),
     publishAndDeliverElapsedMs: Number(deliveryElapsedMs.toFixed(3)),
     eventsPerSecond: Number(((targetConnections * 1_000) / deliveryElapsedMs).toFixed(2)),
   };

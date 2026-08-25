@@ -34,6 +34,7 @@ function markdown(report) {
     `- Stream leader loss delivery: ${report.leaderRecovery.delivered ? "passed" : "failed"} (${report.leaderRecovery.publishAndDeliveryMs} ms)\n` +
     `- SSE first-connection delivery: ${report.sseScale.deliveredConnections}/${report.sseScale.targetConnections}\n` +
     `- SSE effective delivery after reconnect: ${report.sseScale.effectiveDeliveredConnections}/${report.sseScale.targetConnections}\n\n` +
+    `- Publish phase: ${report.sseScale.publishElapsedMs} ms; browser read phase: ${report.sseScale.browserReadElapsedMs} ms\n\n` +
     `| SSE connections | Connect p95 | Gateway RSS | JetStream consumers | Host free memory |\n` +
     `| ---: | ---: | ---: | ---: | ---: |\n${stages}\n`
   );
