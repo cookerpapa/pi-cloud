@@ -1,15 +1,16 @@
 {
   "accepted": true,
-  "piCloudRevision": "87d5f00d4b57d6ff4ae53d471c768a4ae561cf4d",
-  "checkedAt": "2026-08-25T05:05:25.076Z",
+  "piCloudRevision": "7dc0d08277092d1dbf5aec6aff3e566887edfad7",
+  "checkedAt": "2026-08-25T05:12:17.414Z",
   "provider": "deepseek",
   "modelId": "deepseek-v4-flash",
-  "previousLeader": "nats-2",
-  "replacementLeader": "nats-3",
-  "runId": "17b4cad0-5a9b-4fb4-94c0-2ac67a5cab1e",
+  "previousLeader": "nats-3",
+  "replacementLeader": "nats-1",
+  "recoveredReplicas": 2,
+  "runId": "0170bdf0-17d4-474d-91e1-e2b0f4830da7",
   "firstTextSequence": 3,
-  "terminalSequence": 76,
+  "terminalSequence": 92,
   "sseReconnects": 0,
   "attemptCount": 1,
-  "elapsedMs": 10264
+  "elapsedMs": 13309
 }
