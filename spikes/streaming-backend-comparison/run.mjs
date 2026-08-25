@@ -48,7 +48,7 @@ compose(["down", "--volumes", "--remove-orphans"], { quiet: true });
 try {
   compose(["up", "--detach", "--wait"]);
   const report = await new Promise((resolve, reject) => {
-    let received = false;
+    let result;
     const child = fork(benchmark, [], {
       cwd: repositoryRoot,
       env: process.env,
@@ -56,16 +56,17 @@ try {
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     });
     child.once("message", (value) => {
-      received = true;
-      resolve(value);
+      result = value;
     });
     child.once("error", reject);
     child.once("exit", (code, signal) => {
-      if (code !== 0 || !received) {
+      if (code !== 0 || result === undefined) {
         reject(
           new Error(`Streaming benchmark failed (code=${String(code)}, signal=${String(signal)})`),
         );
+        return;
       }
+      resolve(result);
     });
   });
   await mkdir(reportDirectory, { recursive: true });

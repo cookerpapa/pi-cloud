@@ -54,6 +54,7 @@
     "eval:postgres-session-projection": "tsx scripts/run-postgres-session-projection-benchmark.ts",
     "eval:kafka-events": "node scripts/run-kafka-first-event-acceptance.mjs",
     "eval:streaming-backends": "node spikes/streaming-backend-comparison/run.mjs",
+    "eval:jetstream-production-shape": "node spikes/streaming-backend-comparison/production-shape/run.mjs",
     "production:init": "node scripts/init-production.mjs",
     "production:config": "node scripts/production-compose.mjs config --quiet",
     "production:config:observability": "PI_CLOUD_PRODUCTION_PROFILES=observability node scripts/production-compose.mjs config --quiet",

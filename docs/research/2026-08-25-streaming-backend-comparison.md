@@ -99,9 +99,12 @@ connection test is still required.
 ## Current conclusion
 
 JetStream is the leading candidate for a second, production-shaped spike—not a
-production decision yet. The next experiment must use three NATS nodes with an
-R=3 file Stream, a real authenticated SSE Gateway, PostgreSQL canonical
-projection and forced leader/projector/Gateway loss.
+production decision yet. That follow-up is implemented under
+`spikes/streaming-backend-comparison/production-shape/`: three NATS nodes with
+an R=3 file Stream, an authenticated SSE Gateway, PostgreSQL canonical
+projection and forced Leader/Projector/Gateway loss. It also creates up to
+2,000 sustained Session-filtered SSE connections. Its measurements are kept
+separate from the transport-only table above.
 
 The current Kafka raw-to-accepted boundary cannot simply disappear. It prevents
 a stale RunAttempt from making events visible. A JetStream cutover must either

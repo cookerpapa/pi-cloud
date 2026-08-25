@@ -9,6 +9,7 @@
     "@confluentinc/kafka-javascript": "1.10.0",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
+    "pg": "8.23.0",
     "redis": "6.2.1"
   }
 }
