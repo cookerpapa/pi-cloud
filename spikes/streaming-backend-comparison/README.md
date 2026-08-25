@@ -22,6 +22,6 @@ npm run eval:streaming-backends
 The command creates isolated, pinned single-node brokers and writes its report
 to `docs/reports/streaming-backend-comparison-latest.{json,md}`. Single-node
 results are comparative development evidence, not an HA or enterprise-capacity
-claim. Kafka and JetStream use file-backed logs; Valkey uses AOF with
-`appendfsync everysec`. Their acknowledgement contracts are reported rather
-than treated as identical.
+claim. Kafka and JetStream use file-backed logs; Valkey is measured with both
+`appendfsync everysec` and `appendfsync always`. Their acknowledgement
+contracts are reported rather than treated as identical.

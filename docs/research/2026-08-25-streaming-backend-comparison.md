@@ -49,8 +49,10 @@ The isolated spike under `spikes/streaming-backend-comparison/` uses pinned
 single-node brokers, identical payloads, Session counts and event counts. It
 records publish acknowledgement latency, full projection drain, focused replay
 scan amplification, ordering, restart recovery and implementation-state
-requirements. Results must name the tested revision and host; they cannot be
-used as replicated-failover claims.
+requirements. Valkey is measured under both AOF `everysec` and `always`, since
+an ordinary `XADD` acknowledgement under `everysec` does not prove the entry
+was fsynced before browser visibility. Results must name the tested revision
+and host; they cannot be used as replicated-failover claims.
 
 No production decision is made by this note. Adoption requires measured
 benefit large enough to delete the existing raw/accepted projection machinery,

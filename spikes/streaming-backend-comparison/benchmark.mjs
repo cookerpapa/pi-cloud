@@ -136,7 +136,8 @@ async function runBackend(adapter, service) {
 
 const adapters = [
   [new KafkaAdapter(runId), "kafka"],
-  [new ValkeyAdapter(runId, sessionIds), "valkey"],
+  [new ValkeyAdapter(`${runId}ve`, sessionIds, "everysec"), "valkey"],
+  [new ValkeyAdapter(`${runId}va`, sessionIds, "always"), "valkey"],
   [new NatsAdapter(runId), "nats"],
 ];
 const results = [];
@@ -170,7 +171,7 @@ const report = {
   results,
   interpretationGuardrails: [
     "Absolute throughput is not comparable to a replicated multi-node production topology.",
-    "Valkey XADD acknowledgement under AOF everysec is weaker than a confirmed fsync.",
+    "Valkey AOF everysec can acknowledge before fsync; AOF always measures the stronger local-disk contract.",
     "Kafka focused replay scans interleaved partition records because Kafka has no per-key subscription.",
     "JetStream ordered consumers are ephemeral broker resources and their per-connection cost still needs a long-connection load test.",
     "Authority/fence validation and PostgreSQL semantic projection are intentionally outside this transport-only spike.",

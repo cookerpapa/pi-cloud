@@ -22,8 +22,18 @@ export class ValkeyAdapter {
   #client;
   #projectorClient;
   #projectorStop = false;
+  #appendFsync;
 
-  constructor(runId, sessions) {
+  constructor(runId, sessions, appendFsync = "everysec") {
+    if (appendFsync !== "everysec" && appendFsync !== "always") {
+      throw new TypeError("Valkey appendfsync mode is invalid");
+    }
+    this.name = `valkey-aof-${appendFsync}`;
+    this.acknowledgement =
+      appendFsync === "always"
+        ? "XADD reply with AOF appendfsync always, single primary in this experiment"
+        : "XADD reply with AOF appendfsync everysec, single primary in this experiment";
+    this.#appendFsync = appendFsync;
     this.#runId = runId;
     this.#sessions = sessions;
     this.#client = createClient({ url: "redis://127.0.0.1:16380" });
@@ -34,6 +44,7 @@ export class ValkeyAdapter {
 
   async setup() {
     await Promise.all([this.#client.connect(), this.#projectorClient.connect()]);
+    await this.#client.sendCommand(["CONFIG", "SET", "appendfsync", this.#appendFsync]);
     for (const sessionId of this.#sessions) {
       await this.#client.sendCommand([
         "XGROUP",
