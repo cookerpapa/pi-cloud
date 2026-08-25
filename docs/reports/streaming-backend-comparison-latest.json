@@ -1,0 +1,251 @@
+{
+  "format": "pi-cloud.streaming-backend-comparison.v1",
+  "generatedAt": "2026-08-25T01:58:46.132Z",
+  "revision": "5d84c5ae9738b06b91abefc222d2874766294e1a",
+  "topology": {
+    "scope": "isolated single-host single-node brokers",
+    "host": {
+      "platform": "linux",
+      "architecture": "x64",
+      "node": "v24.12.0",
+      "logicalCpuCount": 32,
+      "totalMemoryGiB": 15.46
+    },
+    "kafka": "pinned production Apache Kafka image; 16 partitions; replication factor 1",
+    "valkey": "Valkey 9.1.1; AOF everysec; no replica",
+    "nats": "NATS 2.14.5; JetStream file storage; one replica"
+  },
+  "workload": {
+    "sessionCount": 64,
+    "eventsPerSession": 32,
+    "payloadBytes": 256,
+    "idleReaders": 256,
+    "logicalEvents": 2048
+  },
+  "focusSessionId": "session-0032",
+  "results": [
+    {
+      "backend": "kafka",
+      "acknowledgementContract": "acks=all, idempotent producer, single broker in this experiment",
+      "gatewayState": "Session-indexed replay projection or partition scan",
+      "publish": {
+        "elapsedMs": 2492.012,
+        "eventsPerSecond": 821.83,
+        "acknowledgementLatencyMs": {
+          "p50": 54.063,
+          "p95": 225.169,
+          "p99": 515.596,
+          "maximum": 1100.014
+        }
+      },
+      "globalProjection": {
+        "elapsedMs": 2494.204,
+        "eventsPerSecond": 821.1,
+        "deliveryLatencyMs": {
+          "p50": 64.556,
+          "p95": 503.573,
+          "p99": 519.85,
+          "maximum": 1104.794
+        },
+        "events": 2048,
+        "scannedRecords": 2048,
+        "orderViolations": []
+      },
+      "focusedReplay": {
+        "elapsedMs": 260.143,
+        "deliveredEvents": 32,
+        "scannedRecords": 1522,
+        "scanAmplification": 47.56,
+        "orderViolations": []
+      },
+      "idleGatewayReaders": {
+        "readers": 256,
+        "setupElapsedMs": 0,
+        "brokerResources": 1,
+        "resourceUnit": "shared partition consumer",
+        "gatewayOwnedSessionStates": 256,
+        "note": "Kafka cannot filter by Session key; one shared consumer requires an in-process Session projection."
+      },
+      "duplicatePublication": {
+        "firstReportedDuplicate": false,
+        "secondReportedDuplicate": false
+      },
+      "processKillRecovery": {
+        "restartElapsedMs": 22808.32,
+        "recoveredEvents": 33,
+        "acknowledgedSentinelRecovered": true,
+        "scope": "broker process SIGKILL with persistent volume; not host power loss"
+      }
+    },
+    {
+      "backend": "valkey-aof-everysec",
+      "acknowledgementContract": "XADD reply with AOF appendfsync everysec, single primary in this experiment",
+      "gatewayState": "Direct per-Session XREAD; projector must discover dynamic Stream keys",
+      "publish": {
+        "elapsedMs": 64.796,
+        "eventsPerSecond": 31606.65,
+        "acknowledgementLatencyMs": {
+          "p50": 1.833,
+          "p95": 3.405,
+          "p99": 3.616,
+          "maximum": 3.805
+        }
+      },
+      "globalProjection": {
+        "elapsedMs": 184.944,
+        "eventsPerSecond": 11073.61,
+        "deliveryLatencyMs": {
+          "p50": 110.841,
+          "p95": 153.653,
+          "p99": 167.18,
+          "maximum": 176.941
+        },
+        "events": 2048,
+        "scannedRecords": 2048,
+        "orderViolations": []
+      },
+      "focusedReplay": {
+        "elapsedMs": 1.379,
+        "deliveredEvents": 32,
+        "scannedRecords": 32,
+        "scanAmplification": 1,
+        "orderViolations": []
+      },
+      "idleGatewayReaders": {
+        "readers": 256,
+        "setupElapsedMs": 487.782,
+        "brokerResources": 256,
+        "resourceUnit": "blocking client connections",
+        "gatewayOwnedSessionStates": 0,
+        "brokerMemoryDeltaBytes": 4513088,
+        "note": "The direct one-Stream-per-Session path consumes one blocking connection per ungrouped reader."
+      },
+      "duplicatePublication": {
+        "firstReportedDuplicate": false,
+        "secondReportedDuplicate": true
+      },
+      "processKillRecovery": {
+        "restartElapsedMs": 5134.081,
+        "recoveredEvents": 33,
+        "acknowledgedSentinelRecovered": true,
+        "scope": "broker process SIGKILL with persistent volume; not host power loss"
+      }
+    },
+    {
+      "backend": "valkey-aof-always",
+      "acknowledgementContract": "XADD reply with AOF appendfsync always, single primary in this experiment",
+      "gatewayState": "Direct per-Session XREAD; projector must discover dynamic Stream keys",
+      "publish": {
+        "elapsedMs": 467.689,
+        "eventsPerSecond": 4378.98,
+        "acknowledgementLatencyMs": {
+          "p50": 13.192,
+          "p95": 18.832,
+          "p99": 28.319,
+          "maximum": 28.51
+        }
+      },
+      "globalProjection": {
+        "elapsedMs": 1334.873,
+        "eventsPerSecond": 1534.23,
+        "deliveryLatencyMs": {
+          "p50": 778.034,
+          "p95": 1146.504,
+          "p99": 1245.288,
+          "maximum": 1306.041
+        },
+        "events": 2048,
+        "scannedRecords": 2048,
+        "orderViolations": []
+      },
+      "focusedReplay": {
+        "elapsedMs": 1.87,
+        "deliveredEvents": 32,
+        "scannedRecords": 32,
+        "scanAmplification": 1,
+        "orderViolations": []
+      },
+      "idleGatewayReaders": {
+        "readers": 256,
+        "setupElapsedMs": 422.492,
+        "brokerResources": 256,
+        "resourceUnit": "blocking client connections",
+        "gatewayOwnedSessionStates": 0,
+        "brokerMemoryDeltaBytes": 4513096,
+        "note": "The direct one-Stream-per-Session path consumes one blocking connection per ungrouped reader."
+      },
+      "duplicatePublication": {
+        "firstReportedDuplicate": false,
+        "secondReportedDuplicate": true
+      },
+      "processKillRecovery": {
+        "restartElapsedMs": 5297.485,
+        "recoveredEvents": 33,
+        "acknowledgedSentinelRecovered": true,
+        "scope": "broker process SIGKILL with persistent volume; not host power loss"
+      }
+    },
+    {
+      "backend": "nats-jetstream",
+      "acknowledgementContract": "JetStream PubAck, file storage, R=1 in this experiment",
+      "gatewayState": "Filtered ordered consumer per active Session; no replay projection",
+      "publish": {
+        "elapsedMs": 131.069,
+        "eventsPerSecond": 15625.37,
+        "acknowledgementLatencyMs": {
+          "p50": 3.569,
+          "p95": 6.787,
+          "p99": 8.62,
+          "maximum": 8.744
+        }
+      },
+      "globalProjection": {
+        "elapsedMs": 131.808,
+        "eventsPerSecond": 15537.71,
+        "deliveryLatencyMs": {
+          "p50": 4.141,
+          "p95": 8.51,
+          "p99": 9.63,
+          "maximum": 12.335
+        },
+        "events": 2048,
+        "scannedRecords": 2048,
+        "orderViolations": []
+      },
+      "focusedReplay": {
+        "elapsedMs": 5.901,
+        "deliveredEvents": 32,
+        "scannedRecords": 32,
+        "scanAmplification": 1,
+        "orderViolations": []
+      },
+      "idleGatewayReaders": {
+        "readers": 256,
+        "setupElapsedMs": 71.392,
+        "brokerResources": 256,
+        "resourceUnit": "ephemeral filtered consumers",
+        "gatewayOwnedSessionStates": 0,
+        "brokerMemoryDeltaBytes": 0,
+        "brokerStorageDeltaBytes": 0,
+        "note": "JetStream owns each filtered replay cursor; a high connection count creates broker consumer metadata."
+      },
+      "duplicatePublication": {
+        "firstReportedDuplicate": false,
+        "secondReportedDuplicate": true
+      },
+      "processKillRecovery": {
+        "restartElapsedMs": 5872.206,
+        "recoveredEvents": 33,
+        "acknowledgedSentinelRecovered": true,
+        "scope": "broker process SIGKILL with persistent volume; not host power loss"
+      }
+    }
+  ],
+  "interpretationGuardrails": [
+    "Absolute throughput is not comparable to a replicated multi-node production topology.",
+    "Valkey AOF everysec can acknowledge before fsync; AOF always measures the stronger local-disk contract.",
+    "Kafka focused replay scans interleaved partition records because Kafka has no per-key subscription.",
+    "JetStream ordered consumers are ephemeral broker resources and their per-connection cost still needs a long-connection load test.",
+    "Authority/fence validation and PostgreSQL semantic projection are intentionally outside this transport-only spike."
+  ]
+}

@@ -57,3 +57,59 @@ and host; they cannot be used as replicated-failover claims.
 No production decision is made by this note. Adoption requires measured
 benefit large enough to delete the existing raw/accepted projection machinery,
 plus a separate ADR covering authority validation, migration and rollback.
+
+## Single-node result
+
+Revision `5d84c5ae9738b06b91abefc222d2874766294e1a` ran 64 Sessions with 32
+events each (2,048 logical events), a 256-byte target payload and 256 idle
+per-Session Gateway readers on the same 32-logical-CPU, 15.46-GiB WSL2 host.
+Every backend preserved Session order and recovered the acknowledged sentinel
+after its broker process was killed with `SIGKILL` and restarted on the same
+persistent Volume. This was not a host-power-loss or replicated-failover test.
+
+| Backend | Acked publish | Ack p95 | Projection p95 | Focused replay scan |
+| --- | ---: | ---: | ---: | ---: |
+| Kafka | 821.83/s | 225.17 ms | 503.57 ms | 47.56x |
+| Valkey AOF everysec | 31,606.65/s | 3.41 ms | 153.65 ms | 1x |
+| Valkey AOF always | 4,378.98/s | 18.83 ms | 1,146.50 ms | 1x |
+| NATS JetStream | 15,625.37/s | 6.79 ms | 8.51 ms | 1x |
+
+The absolute Kafka result includes a new single-node topic and is lower than a
+separate warm production-topic acceptance run; it must not be used as a Kafka
+capacity claim. The 47.56x focused-read amplification is the more useful
+structural observation: Kafka can order a Session key within one partition but
+cannot ask the broker to return only that key, which is why the current Gateway
+builds a per-Session projection.
+
+Valkey provided the fastest direct Session read. Its simple path used one
+Stream key and one blocking connection per reader: 256 readers added 256
+connections, about 4.5 MiB of broker memory and roughly 488 ms of setup time.
+The same key-per-Session design makes a horizontally sharded global projector
+less natural. Under the stronger local `appendfsync always` setting, publish
+throughput fell by about 86% from the `everysec` result, and the benchmark's
+multi-Stream projector became the slowest projection path.
+
+JetStream was the best semantic fit in this experiment. One file-backed Stream
+accepted all Session Subjects; a global ordered consumer projected every event,
+while an exact Subject filter replayed 32 focused events after scanning exactly
+32. Creating 256 ephemeral filtered consumers took about 71 ms. Account-level
+memory counters did not expose their metadata cost, so a sustained 2,000+
+connection test is still required.
+
+## Current conclusion
+
+JetStream is the leading candidate for a second, production-shaped spike—not a
+production decision yet. The next experiment must use three NATS nodes with an
+R=3 file Stream, a real authenticated SSE Gateway, PostgreSQL canonical
+projection and forced leader/projector/Gateway loss.
+
+The current Kafka raw-to-accepted boundary cannot simply disappear. It prevents
+a stale RunAttempt from making events visible. A JetStream cutover must either
+retain a stateless authority-validating ingest boundary before the sole durable
+Stream or prove an equivalent attempt-scoped publish capability and revocation
+contract. Only then can PiCloud compare the resulting code and operational
+surface with the corrected Kafka projection.
+
+The generated measurements are in
+[`streaming-backend-comparison-latest.md`](../reports/streaming-backend-comparison-latest.md)
+and its JSON companion.

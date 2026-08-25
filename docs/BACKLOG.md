@@ -82,6 +82,10 @@ retired and remain only in Git history or explicitly superseded ADRs.
       Session-keyed mutation projection barrier before cross-Worker reads.
 - [x] Keep Kafka batch durability independent from a browser-only progressive
       text reveal so larger acknowledged chunks do not flash into the transcript.
+- [x] Compare Kafka, Valkey Streams and NATS JetStream under one Session-keyed
+      transport workload, focused replay, process kill and idle-reader fanout;
+      retain Kafka until a replicated production-shaped candidate proves the
+      same authority/fence boundary with less custom Gateway state.
 - [x] Let a durably fenced, expired Worker settle its interrupted Run even when
       its dead management endpoint cannot confirm a physical stop.
 
