@@ -113,6 +113,64 @@ Stream or prove an equivalent attempt-scoped publish capability and revocation
 contract. Only then can PiCloud compare the resulting code and operational
 surface with the corrected Kafka projection.
 
+## Production-shape result
+
+Revision `5dd15883ae5b96c63b9df9453574daa43044db2e` ran a three-node NATS
+cluster with an R=3 file Stream, a PostgreSQL-backed authority-validating Event
+Ingest, a durable explicit-ACK PostgreSQL Projector and an authenticated HTTP
+SSE Gateway.
+
+The first design assigned one filtered ordered JetStream Consumer to every SSE
+connection. It reached 2,000 connections at about 158.5 MiB Gateway RSS, but
+created 2,001 broker Consumers and needed about 29.3 seconds to publish and
+deliver one event to every Session. A preceding run also left one of 2,000
+connections waiting until its cursor was replayed. This model was rejected.
+
+The corrected design uses JetStream `RePublish`: after a successful Stream
+write, NATS republishes the committed event onto a separate Core NATS subject.
+Every Gateway replica needs only one wildcard subscription and routes those
+messages to its local authenticated SSE connections. A temporary filtered
+ordered Consumer exists only while a reconnecting browser catches up from its
+durable Stream sequence. NATS documents RePublish specifically for high-scale
+live delivery where a dedicated Consumer per subscriber is too expensive:
+<https://docs.nats.io/nats-concepts/jetstream/streams#republish>.
+
+Under that shape:
+
+- 2,000/2,000 sustained SSE connections received their Session event;
+- the only steady JetStream Consumer was the PostgreSQL Projector;
+- Gateway RSS was 78.48 MiB at 250 connections and 117.54 MiB at 2,000;
+- 2,000 publishes completed in 2,624.2 ms and buffered browser reads completed
+  in another 85.37 ms, or 737.42 end-to-end events/s for this synchronous
+  authority-query plus R=3 PubAck workload;
+- the p95 time to establish the final 1,000 connections was 75.14 ms;
+- killing the Stream Leader elected a replacement, preserved the existing SSE
+  delivery and restored all replicas; publish plus delivery took 4,307.67 ms
+  during that forced election;
+- killing the Gateway preserved two missing events and replayed them in order
+  from the browser cursor;
+- killing the Projector after PostgreSQL commit but before broker ACK caused
+  redelivery and still produced exactly one canonical message row;
+- an event carrying the superseded Attempt/Fence was rejected before entering
+  the browser-visible Stream;
+- PostgreSQL stored the complete Assistant message and terminal record, not
+  the three preceding text fragments.
+
+This validates the event topology, not a production cutover. The measured
+737.42 events/s burst is bounded primarily by one PostgreSQL authority query
+and one synchronous R=3 PubAck per event. A 2,000-active-Agent target can
+produce substantially more than that if each model emits several coalesced
+updates per second. The next gate is therefore Session/Attempt-scoped batch
+validation and asynchronous bounded PubAck collection, followed by multiple
+subject-sharded Streams if one Stream Leader remains the write bottleneck.
+TLS, NATS accounts/permissions, multi-Gateway fanout, retention expiry,
+canonical-cursor reload and Kubernetes failure-domain placement also remain
+production work.
+
+The full result is in
+[`jetstream-production-shape-latest.md`](../reports/jetstream-production-shape-latest.md)
+and its JSON companion.
+
 The generated measurements are in
 [`streaming-backend-comparison-latest.md`](../reports/streaming-backend-comparison-latest.md)
 and its JSON companion.

@@ -86,6 +86,11 @@ retired and remain only in Git history or explicitly superseded ADRs.
       transport workload, focused replay, process kill and idle-reader fanout;
       retain Kafka until a replicated production-shaped candidate proves the
       same authority/fence boundary with less custom Gateway state.
+- [x] Validate a three-node R=3 JetStream candidate with committed RePublish,
+      one Core NATS subscription per Gateway, temporary reconnect replay,
+      PostgreSQL semantic projection, stale-Fence rejection and 2,000 sustained
+      SSE connections; keep it outside production until batched authority and
+      PubAck throughput meet the active-Agent event-rate target.
 - [x] Let a durably fenced, expired Worker settle its interrupted Run even when
       its dead management endpoint cannot confirm a physical stop.
 
