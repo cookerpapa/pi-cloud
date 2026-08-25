@@ -595,7 +595,7 @@ async function optionalMetadata(path) {
   }
 }
 
-function persistentWorkspacePath(tenant, workspaceId, sessionId) {
+function workspaceVolumePath(tenant, workspaceId, sessionId) {
   const volumeId = workspaceVolumeId({ tenantId: tenant, workspaceId, sessionId });
   const volumeRoot = resolve(runtimeDirectory, "state/cube-shared/volume");
   const volumePath = resolve(volumeRoot, `picloud-posix-${volumeId}`);
@@ -604,7 +604,7 @@ function persistentWorkspacePath(tenant, workspaceId, sessionId) {
 }
 
 async function trustedGitPlacementEvidence(tenant, workspaceId, sessionId) {
-  const { volumeId, volumePath, workspacePath } = persistentWorkspacePath(
+  const { volumeId, volumePath, workspacePath } = workspaceVolumePath(
     tenant,
     workspaceId,
     sessionId,
@@ -900,9 +900,9 @@ const session = await api.createSession(
   project.projectId,
   project.workspaceId,
   `Cube production acceptance ${suffix}`,
-  "persistent",
+  "elastic",
 );
-assert.equal(session.sandboxRetention, "persistent");
+assert.equal(session.executionMode, "elastic");
 let largeSession;
 
 try {
@@ -943,11 +943,7 @@ try {
   const firstVersions = await api.listWorkspaceVersions(session.sessionId);
   assert(firstVersions.currentVersionId !== undefined, "First coding Run did not commit Workspace");
   const firstVersionId = firstVersions.currentVersionId;
-  const { workspacePath } = persistentWorkspacePath(
-    tenantId,
-    session.workspaceId,
-    session.sessionId,
-  );
+  const { workspacePath } = workspaceVolumePath(tenantId, session.workspaceId, session.sessionId);
   const firstSource = await readFile(resolve(workspacePath, "counting_sort.py"), "utf8");
   assert(
     firstSource.includes("def counting_sort") && /negative/u.test(firstSource.toLowerCase()),
@@ -992,7 +988,7 @@ try {
     firstCoding.cursor,
     true,
   );
-  progress("follow-up coding Run reused the persistent Cube KVM");
+  progress("follow-up coding Run reused the bounded-warm Cube KVM");
   assert.equal(followUp.activations.length, 1, "Follow-up Run did not use exactly one Cube VM");
   assert.equal(
     followUp.activations[0].activationId,
@@ -1089,7 +1085,7 @@ try {
     largeProject.projectId,
     largeProject.workspaceId,
     `Cube large-workspace acceptance ${suffix}`,
-    "ephemeral",
+    "elastic",
   );
   const largeFirst = await runTurn(
     largeSession.sessionId,
@@ -1187,7 +1183,7 @@ try {
     multiRound: {
       sameCubeMicroVm: true,
       runningSessionReuse: true,
-      persistentSandboxPolicy: session.sandboxRetention === "persistent",
+      elasticSandboxPolicy: session.executionMode === "elastic",
       ownerTerminalReusedCube: true,
       backgroundProcessSurvived: true,
       authenticatedHttpPreviewPassed: true,
@@ -1241,15 +1237,15 @@ try {
     cleanup: {
       retainedRunningSessionMicroVmCount: 1,
       foreignSessionMicroVmCount: 0,
-      persistentArchiveReaped: false,
+      warmArchiveReaped: false,
       explicitWarmEvictionVerified: false,
     },
   };
   assert(usage.requests >= 3 && usage.inputTokens > 0 && usage.outputTokens > 0);
-  await api.deleteConversation(session.sessionId, newIdempotencyKey("archive-persistent"));
+  await api.deleteConversation(session.sessionId, newIdempotencyKey("archive-warm"));
   await waitForNoCubeSession(session.sessionId);
-  report.cleanup.persistentArchiveReaped = true;
-  progress("persistent Session archive reaped its Cube KVM");
+  report.cleanup.warmArchiveReaped = true;
+  progress("Session archive reaped its bounded-warm Cube KVM");
   await terminateWarmCubeSession(largeFollowUp.accepted.runId, largeSession.sessionId);
   await waitForNoCubeSession(largeSession.sessionId);
   report.cleanup.explicitWarmEvictionVerified = true;
@@ -1276,7 +1272,7 @@ try {
         `- Follow-up first text / settled: ${String(report.followUpCoding.firstTextMs)} ms / ${String(report.followUpCoding.settledMs)} ms`,
         `- Coding Tool calls: ${String(report.firstCoding.toolCalls)} + ${String(report.followUpCoding.toolCalls)}`,
         `- Same running Session Cube KVM guest reused: ${String(report.multiRound.sameCubeMicroVm)}`,
-        `- Persistent Sandbox policy / archive cleanup: ${String(report.multiRound.persistentSandboxPolicy)} / ${String(report.cleanup.persistentArchiveReaped)}`,
+        `- Elastic Sandbox policy / warm archive cleanup: ${String(report.multiRound.elasticSandboxPolicy)} / ${String(report.cleanup.warmArchiveReaped)}`,
         `- Workspace restored across Runs: ${String(report.multiRound.workspaceRestored)}`,
         `- Trusted Git metadata sibling / user .git absent: ${String(report.workspaceIsolation.trustedMetadataSibling)} / ${String(report.workspaceIsolation.userWorkspaceGitEntryAbsent)}`,
         `- Large Workspace files / Volume reference: ${String(report.largeWorkspace.firstFileCount)} / ${String(report.largeWorkspace.volumeReferenceBytes)} bytes`,
@@ -1289,7 +1285,7 @@ try {
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,
         `- Explicit warm eviction / remaining Cube microVMs: ${String(report.cleanup.explicitWarmEvictionVerified)} / ${String(report.cleanup.retainedRunningSessionMicroVmCount + report.cleanup.foreignSessionMicroVmCount)}`,
         "",
-        "A real-model chat Run completed without touching Cube. A persistent conversation propagated its retention policy through the complete product path, and two coding Runs reused one running Session-bound Cube KVM guest with rotated Tool authority and higher-fence rebind. Archiving that conversation caused the retained Cube to be reaped. Platform Git metadata was verified in the trusted Volume envelope while the user Workspace contained no platform-created .git entry. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a higher-fence activation. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
+        "A real-model chat Run completed without touching Cube. Two elastic coding Runs reused one bounded-warm Session Cube with rotated Tool authority and higher-fence rebind; archiving the conversation reaped that Cube. Platform Git metadata was verified in the trusted Volume envelope while the user Workspace contained no platform-created .git entry. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a higher-fence activation. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
         "",
       ].join("\n"),
       "utf8",

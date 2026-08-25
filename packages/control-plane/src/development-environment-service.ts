@@ -25,13 +25,14 @@ import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
 const MAXIMUM_ENVIRONMENTS = 100;
 const MAXIMUM_REDIRECTS = 3;
+const ABANDONED_REQUEST_AGE_MS = 5 * 60_000;
+const REQUEST_RECONCILE_INTERVAL_MS = 30_000;
 
 export type DevelopmentEnvironmentServiceOptions = Readonly<{
   database: Kysely<Database>;
   terminalToken: string;
   allowInsecureInternalHttp: boolean;
   idGenerator?: () => string;
-  backgroundProvisioning?: boolean;
   environmentImageRevision?: string;
 }>;
 
@@ -110,9 +111,9 @@ export class DevelopmentEnvironmentService {
   readonly #terminalToken: string;
   readonly #allowInsecureInternalHttp: boolean;
   readonly #id: () => string;
-  readonly #backgroundProvisioning: boolean;
   readonly #environmentImageRevision: string;
-  readonly #provisioning = new Map<string, Promise<void>>();
+  #reconcileTimer: NodeJS.Timeout | undefined;
+  #reconciling: Promise<number> | undefined;
 
   constructor(options: DevelopmentEnvironmentServiceOptions) {
     if (!/^[A-Za-z0-9._~+/=-]{32,4096}$/.test(options.terminalToken)) {
@@ -122,21 +123,114 @@ export class DevelopmentEnvironmentService {
     this.#terminalToken = options.terminalToken;
     this.#allowInsecureInternalHttp = options.allowInsecureInternalHttp;
     this.#id = options.idGenerator ?? randomUUID;
-    this.#backgroundProvisioning = options.backgroundProvisioning ?? true;
     this.#environmentImageRevision = options.environmentImageRevision ?? "development";
+  }
+
+  start(): void {
+    if (this.#reconcileTimer !== undefined) return;
+    void this.reconcileLifecycle().catch((error: unknown) => {
+      process.stderr.write(
+        `Development environment reconciliation failed: ${error instanceof Error ? error.message : "unknown error"}\n`,
+      );
+    });
+    this.#reconcileTimer = setInterval(() => {
+      void this.reconcileLifecycle().catch((error: unknown) => {
+        process.stderr.write(
+          `Development environment reconciliation failed: ${error instanceof Error ? error.message : "unknown error"}\n`,
+        );
+      });
+    }, REQUEST_RECONCILE_INTERVAL_MS);
+    this.#reconcileTimer.unref();
+  }
+
+  async close(): Promise<void> {
+    if (this.#reconcileTimer !== undefined) clearInterval(this.#reconcileTimer);
+    this.#reconcileTimer = undefined;
+    await this.#reconciling;
+  }
+
+  async reconcileLifecycle(
+    cutoff = new Date(Date.now() - ABANDONED_REQUEST_AGE_MS),
+    limit = 16,
+  ): Promise<number> {
+    if (!(cutoff instanceof Date) || Number.isNaN(cutoff.valueOf())) {
+      throw new TypeError("Development environment reconciliation cutoff is invalid");
+    }
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 256) {
+      throw new TypeError("Development environment reconciliation limit is invalid");
+    }
+    if (this.#reconciling !== undefined) return this.#reconciling;
+    const running = this.#reconcileLifecycle(cutoff, limit).finally(() => {
+      if (this.#reconciling === running) this.#reconciling = undefined;
+    });
+    this.#reconciling = running;
+    return running;
+  }
+
+  async #reconcileLifecycle(cutoff: Date, limit: number): Promise<number> {
+    const abandoned = await this.#database
+      .selectFrom("development_environments")
+      .select(["id", "tenant_id as tenantId", "owner_user_id as userId"])
+      .where("state", "=", "requested")
+      .where("updated_at", "<", cutoff)
+      .orderBy("updated_at", "asc")
+      .orderBy("id", "asc")
+      .limit(limit)
+      .execute();
+    let retired = 0;
+    for (const environment of abandoned) {
+      const retiredAt = new Date();
+      const update = await this.#database
+        .updateTable("development_environments")
+        .set({
+          state: "released",
+          failure_code: "provision_request_abandoned",
+          released_at: retiredAt,
+          updated_at: retiredAt,
+        })
+        .where("tenant_id", "=", environment.tenantId)
+        .where("owner_user_id", "=", environment.userId)
+        .where("id", "=", environment.id)
+        .where("state", "=", "requested")
+        .where("updated_at", "<", cutoff)
+        .executeTakeFirst();
+      if (update.numUpdatedRows !== 1n) continue;
+      await this.#retireReleasedMachineWorkspace(environment, environment.id);
+      retired += 1;
+    }
+    const incompleteReleases = await this.#database
+      .selectFrom("development_environments as environment")
+      .innerJoin("workspaces as workspace", (join) =>
+        join
+          .onRef("workspace.tenant_id", "=", "environment.tenant_id")
+          .onRef("workspace.id", "=", "environment.workspace_id"),
+      )
+      .select([
+        "environment.id",
+        "environment.tenant_id as tenantId",
+        "environment.owner_user_id as userId",
+      ])
+      .where("environment.state", "=", "released")
+      .where("workspace.workspace_kind", "=", "development_environment")
+      .where("workspace.deleted_at", "is", null)
+      .orderBy("environment.released_at", "asc")
+      .orderBy("environment.id", "asc")
+      .limit(limit)
+      .execute();
+    for (const environment of incompleteReleases) {
+      await this.#retireReleasedMachineWorkspace(environment, environment.id);
+      retired += 1;
+    }
+    return retired;
   }
 
   async list(identity: TenantRequestIdentity): Promise<DevelopmentEnvironmentListResource> {
     const rows = await this.#baseQuery(identity)
+      .where("development.state", "!=", "released")
       .orderBy("development.updated_at", "desc")
       .orderBy("development.id", "desc")
       .limit(MAXIMUM_ENVIRONMENTS + 1)
       .execute();
-    for (const row of rows) {
-      if (row.state === "requested" && this.#backgroundProvisioning) {
-        this.#scheduleProvision(identity, row.id);
-      }
-    }
     return {
       environments: rows.slice(0, MAXIMUM_ENVIRONMENTS).map(resource),
       profiles: DEVELOPMENT_ENVIRONMENT_PROFILES.map((candidate) => ({
@@ -253,6 +347,37 @@ export class DevelopmentEnvironmentService {
       const workspaceId = this.#id();
       const environmentVersionId = this.#id();
       const selectedProfile = profile(request.profileKey);
+      const policy = await transaction
+        .selectFrom("tenant_runtime_policies")
+        .select("maximum_projects")
+        .where("tenant_id", "=", identity.tenantId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (policy === undefined) {
+        throw new ControlPlaneStoreError(
+          "control_plane_misconfigured",
+          "Tenant project capacity policy is unavailable",
+        );
+      }
+      const projectCountRow = await transaction
+        .selectFrom("projects")
+        .select(({ fn }) => fn.countAll<string>().as("count"))
+        .where("tenant_id", "=", identity.tenantId)
+        .where("deleted_at", "is", null)
+        .executeTakeFirstOrThrow();
+      const projectCount = Number(projectCountRow.count);
+      if (!Number.isSafeInteger(projectCount) || projectCount < 0) {
+        throw new ControlPlaneStoreError(
+          "control_plane_misconfigured",
+          "Tenant project count is invalid",
+        );
+      }
+      if (projectCount >= policy.maximum_projects) {
+        throw new ControlPlaneStoreError(
+          "tenant_quota_exceeded",
+          "Tenant project quota has been reached",
+        );
+      }
       const domain = await transaction
         .selectFrom("sandbox_domains")
         .select(["id", "assigned_workspaces", "maximum_active_sandboxes"])
@@ -295,6 +420,7 @@ export class DevelopmentEnvironmentService {
           project_id: projectId,
           sandbox_domain_id: domain.id,
           object_snapshot_key: null,
+          workspace_kind: "development_environment",
         })
         .executeTakeFirstOrThrow();
       await transaction
@@ -364,8 +490,14 @@ export class DevelopmentEnvironmentService {
         .executeTakeFirstOrThrow();
       return id;
     });
-    if (this.#backgroundProvisioning) this.#scheduleProvision(identity, environmentId);
-    else await this.#provision(identity, environmentId);
+    try {
+      await this.#provision(identity, environmentId);
+    } catch (error: unknown) {
+      await this.#rejectUnprovisionedEnvironment(identity, environmentId, error).catch(
+        () => undefined,
+      );
+      throw error;
+    }
     return this.get(identity, environmentId);
   }
 
@@ -381,8 +513,6 @@ export class DevelopmentEnvironmentService {
         .selectFrom("development_environments")
         .select([
           "state",
-          "generation",
-          "project_id as projectId",
           "workspace_id as workspaceId",
           "agent_activation_id as agentActivationId",
           "terminal_active as terminalActive",
@@ -413,7 +543,6 @@ export class DevelopmentEnvironmentService {
       }
       const alreadyReleased = request.action === "release" && environment.state === "released";
       const allowed =
-        (request.action === "start" && ["requested", "failed"].includes(environment.state)) ||
         (request.action === "pause" && environment.state === "running") ||
         (request.action === "resume" && environment.state === "paused") ||
         alreadyReleased ||
@@ -445,101 +574,6 @@ export class DevelopmentEnvironmentService {
           );
         }
       }
-      if (request.action === "start") {
-        await transaction
-          .selectFrom("workspaces")
-          .select("id")
-          .where("tenant_id", "=", identity.tenantId)
-          .where("id", "=", environment.workspaceId)
-          .forUpdate()
-          .executeTakeFirstOrThrow();
-        const activeRun = await transaction
-          .selectFrom("runs")
-          .select("id")
-          .where("tenant_id", "=", identity.tenantId)
-          .where("workspace_id", "=", environment.workspaceId)
-          .where("state", "in", ["claimed", "running", "cancel_requested"])
-          .limit(1)
-          .executeTakeFirst();
-        if (activeRun !== undefined) {
-          throw new ControlPlaneStoreError(
-            "conflict",
-            "Wait for the active Agent Run before starting the exclusive environment",
-          );
-        }
-      }
-      if (request.action === "start" && environment.state === "failed") {
-        const currentGeneration = Number(environment.generation);
-        if (
-          !Number.isSafeInteger(currentGeneration) ||
-          currentGeneration >= Number.MAX_SAFE_INTEGER
-        ) {
-          throw new ControlPlaneStoreError(
-            "control_plane_misconfigured",
-            "Development environment generation cannot advance",
-          );
-        }
-        const previousEnvironment = await transaction
-          .selectFrom("environment_versions")
-          .select("version_number as versionNumber")
-          .where("tenant_id", "=", identity.tenantId)
-          .where("project_id", "=", environment.projectId)
-          .orderBy("version_number", "desc")
-          .limit(1)
-          .forUpdate()
-          .executeTakeFirst();
-        if (previousEnvironment === undefined) {
-          throw new ControlPlaneStoreError(
-            "control_plane_misconfigured",
-            "Development environment version history was unavailable",
-          );
-        }
-        await transaction
-          .updateTable("environment_versions")
-          .set({ active: false })
-          .where("tenant_id", "=", identity.tenantId)
-          .where("project_id", "=", environment.projectId)
-          .where("active", "=", true)
-          .execute();
-        await transaction
-          .insertInto("environment_versions")
-          .values({
-            id: this.#id(),
-            tenant_id: identity.tenantId,
-            project_id: environment.projectId,
-            version_number: previousEnvironment.versionNumber + 1,
-            profile_key: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
-            profile_version: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
-            image_revision: this.#environmentImageRevision,
-            spec_sha256: DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
-            recipe: sql<Record<string, unknown>>`${JSON.stringify(
-              DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
-            )}::jsonb`,
-            recipe_sha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-            state: "pending",
-            active: true,
-            validated_at: null,
-          })
-          .executeTakeFirstOrThrow();
-        await transaction
-          .updateTable("development_environments")
-          .set({
-            state: "requested",
-            owner_instance_id: null,
-            owner_base_url: null,
-            environment_version_id: null,
-            runtime_id: null,
-            runtime_name: null,
-            runtime_capsule: null,
-            generation: String(currentGeneration + 1),
-            failure_code: null,
-            released_at: null,
-            updated_at: new Date(),
-          })
-          .where("tenant_id", "=", identity.tenantId)
-          .where("id", "=", environmentId)
-          .executeTakeFirstOrThrow();
-      }
       await transaction
         .insertInto("development_environment_operations")
         .values({
@@ -550,16 +584,13 @@ export class DevelopmentEnvironmentService {
           idempotency_key: idempotencyKey,
           action: request.action,
           request_sha256: fingerprint,
-          result_state: request.action === "start" ? "requested" : environment.state,
+          result_state: environment.state,
         })
         .executeTakeFirstOrThrow();
       return alreadyReleased;
     });
     if (!replayed) {
-      if (request.action === "start") {
-        if (this.#backgroundProvisioning) this.#scheduleProvision(identity, environmentId);
-        else await this.#provision(identity, environmentId);
-      } else if (request.action === "release") {
+      if (request.action === "release") {
         const current = await this.get(identity, environmentId);
         if (current.state === "requested" || current.state === "failed") {
           await this.#database
@@ -593,9 +624,6 @@ export class DevelopmentEnvironmentService {
         .where("idempotency_key", "=", idempotencyKey)
         .executeTakeFirstOrThrow();
     }
-    if (request.action === "start" && this.#backgroundProvisioning) {
-      this.#scheduleProvision(identity, environmentId);
-    }
     if (request.action === "release") {
       await this.#retireReleasedMachineWorkspace(identity, environmentId);
     }
@@ -603,7 +631,7 @@ export class DevelopmentEnvironmentService {
   }
 
   async #retireReleasedMachineWorkspace(
-    identity: TenantRequestIdentity,
+    identity: Readonly<{ tenantId: string; userId: string }>,
     environmentId: string,
   ): Promise<void> {
     await this.#database.transaction().execute(async (transaction) => {
@@ -623,11 +651,17 @@ export class DevelopmentEnvironmentService {
       }
       const workspace = await transaction
         .selectFrom("workspaces")
-        .select("deleted_at")
+        .select(["workspace_kind", "deleted_at"])
         .where("tenant_id", "=", identity.tenantId)
         .where("id", "=", environment.workspace_id)
         .forUpdate()
         .executeTakeFirstOrThrow();
+      if (workspace.workspace_kind !== "development_environment") {
+        throw new ControlPlaneStoreError(
+          "control_plane_misconfigured",
+          "Development environment storage identity is invalid",
+        );
+      }
       if (workspace.deleted_at !== null) return;
 
       const activeTurn = await transaction
@@ -722,31 +756,40 @@ export class DevelopmentEnvironmentService {
     });
   }
 
-  #scheduleProvision(identity: TenantRequestIdentity, environmentId: string): void {
-    const key = `${identity.tenantId}\0${environmentId}`;
-    if (this.#provisioning.has(key)) return;
-    const task = this.#provision(identity, environmentId)
-      .catch(async () => {
-        // Tool Broker owns provisioning/running failure transitions once it
-        // claims the row. This fallback covers a request that failed before a
-        // Broker could claim it, while avoiding a race with a slow successful
-        // Cube creation.
-        await this.#database
-          .updateTable("development_environments")
-          .set({
-            state: "failed",
-            failure_code: "provision_request_failed",
-            updated_at: new Date(),
-          })
-          .where("tenant_id", "=", identity.tenantId)
-          .where("owner_user_id", "=", identity.userId)
-          .where("id", "=", environmentId)
-          .where("state", "=", "requested")
-          .executeTakeFirst()
-          .catch(() => undefined);
+  async #rejectUnprovisionedEnvironment(
+    identity: TenantRequestIdentity,
+    environmentId: string,
+    error: unknown,
+  ): Promise<void> {
+    const rejectedAt = new Date();
+    const failureCode =
+      error instanceof ControlPlaneStoreError ? error.code : "provision_request_failed";
+    const released = await this.#database
+      .updateTable("development_environments")
+      .set({
+        state: "released",
+        owner_instance_id: null,
+        owner_base_url: null,
+        environment_version_id: null,
+        runtime_id: null,
+        runtime_name: null,
+        runtime_capsule: null,
+        failure_code: failureCode,
+        released_at: rejectedAt,
+        updated_at: rejectedAt,
       })
-      .finally(() => this.#provisioning.delete(key));
-    this.#provisioning.set(key, task);
+      .where("tenant_id", "=", identity.tenantId)
+      .where("owner_user_id", "=", identity.userId)
+      .where("id", "=", environmentId)
+      .where("state", "in", ["requested", "failed"])
+      .where("runtime_id", "is", null)
+      .where("runtime_name", "is", null)
+      .where("agent_activation_id", "is", null)
+      .where("terminal_active", "=", false)
+      .executeTakeFirst();
+    if (released.numUpdatedRows === 1n) {
+      await this.#retireReleasedMachineWorkspace(identity, environmentId);
+    }
   }
 
   #baseQuery(identity: TenantRequestIdentity) {
@@ -857,6 +900,7 @@ export class DevelopmentEnvironmentService {
       .where("development.tenant_id", "=", identity.tenantId)
       .where("development.owner_user_id", "=", identity.userId)
       .where("development.id", "=", environmentId)
+      .where("workspace.workspace_kind", "=", "development_environment")
       .where("workspace.deleted_at", "is", null)
       .where("domain.state", "=", "active")
       .executeTakeFirst();
@@ -926,10 +970,15 @@ export class DevelopmentEnvironmentService {
           typeof safeError?.message === "string" && safeError.message.length <= 1_024
             ? safeError.message
             : "Development environment operation was rejected by Tool Broker";
-        throw new ControlPlaneStoreError(
-          response.status === 409 ? "conflict" : "control_plane_misconfigured",
-          message,
-        );
+        const code =
+          safeError?.code === "tenant_sandbox_capacity_exhausted" ||
+          safeError?.code === "sandbox_domain_capacity_exhausted" ||
+          safeError?.code === "sandbox_compute_capacity_exhausted"
+            ? "capacity_exhausted"
+            : response.status === 409
+              ? "conflict"
+              : "control_plane_misconfigured";
+        throw new ControlPlaneStoreError(code, message);
       }
       const parsed = parseDevelopmentEnvironmentBrokerResponse(body);
       if (parsed.type === "development_environment.owner_redirect") {

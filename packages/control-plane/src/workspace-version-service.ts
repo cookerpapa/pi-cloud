@@ -305,7 +305,7 @@ export class WorkspaceVersionService {
           .select([
             "state",
             "workspace_id",
-            "sandbox_retention_policy",
+            "execution_mode",
             "archived_at",
             "current_workspace_version_id",
             "conversation_parent_session_id",
@@ -410,26 +410,6 @@ export class WorkspaceVersionService {
             .where("deleted_at", "is", null)
             .forUpdate()
             .executeTakeFirstOrThrow();
-          const liveWorkspaceSessions = await transaction
-            .selectFrom("sessions")
-            .select(["id", "sandbox_retention_policy"])
-            .where("tenant_id", "=", tenantId)
-            .where("workspace_id", "=", session.workspace_id)
-            .where("archived_at", "is", null)
-            .where("id", "!=", sessionId)
-            .execute();
-          if (
-            (session.sandbox_retention_policy === "persistent" &&
-              liveWorkspaceSessions.length > 0) ||
-            liveWorkspaceSessions.some(
-              (existing) => existing.sandbox_retention_policy === "persistent",
-            )
-          ) {
-            throw new WorkspaceVersionError(
-              "conflict",
-              "A persistent Sandbox conversation requires an otherwise unused Workspace",
-            );
-          }
         }
         await transaction
           .updateTable("sessions")

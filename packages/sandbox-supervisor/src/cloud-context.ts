@@ -43,7 +43,7 @@ export type CloudTurnContext = Readonly<{
   }>;
   workspace: Readonly<{ baseRevision: string | null; workingDirectory: string }>;
   sandbox: Readonly<{
-    retention: ExecuteTurnCommandMessage["payload"]["sandboxRetention"];
+    executionMode: ExecuteTurnCommandMessage["payload"]["executionMode"];
     profileKey: ExecuteTurnCommandMessage["payload"]["sandboxProfileKey"];
   }>;
   tools: Readonly<{
@@ -164,7 +164,7 @@ export function createCloudTurnContext(
       workingDirectory: payload.workingDirectory,
     },
     sandbox: {
-      retention: payload.sandboxRetention,
+      executionMode: payload.executionMode,
       profileKey: payload.sandboxProfileKey,
     },
     tools: {

@@ -97,7 +97,7 @@ function command(tenantId: string = IDS.tenant): ExecuteTurnCommandMessage {
       executionGrant: createExecutionGrant(IDS.lease, "70000000-0000-4000-8000-000000000001", 1),
       nextEventSeq: 1,
       input: { kind: "prompt", text: "Inspect the imported repository" },
-      sandboxRetention: "ephemeral",
+      executionMode: "elastic",
       sandboxProfileKey: "standard",
       workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],

@@ -93,7 +93,7 @@ export class SshAccessTicketService {
       .where("session_row.tenant_id", "=", identity.tenantId)
       .where("session_row.id", "=", sessionId)
       .where("session_row.archived_at", "is", null)
-      .where("session_row.sandbox_retention_policy", "=", "persistent")
+      .where("session_row.execution_mode", "=", "development_environment")
       .where("workspace.deleted_at", "is", null)
       .where("development.owner_user_id", "=", identity.userId)
       .where("development.state", "=", "running")

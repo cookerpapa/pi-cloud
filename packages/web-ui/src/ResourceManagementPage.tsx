@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   ConversationSummaryResource,
   DevelopmentEnvironmentListResource,
@@ -6,9 +6,8 @@ import type {
   DevelopmentEnvironmentResource,
   WorkspaceSummaryResource,
 } from "@pi-cloud/protocol";
-import { newIdempotencyKey, PiCloudApi } from "./api.ts";
+import { newIdempotencyKey, PiCloudApi, PiCloudApiError } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
-import { selectElasticWorkspaces } from "./workspace-resources.ts";
 
 const ACTIVE_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "cancelling"]);
 
@@ -59,11 +58,8 @@ export function ResourceManagementPage({
   const [machineName, setMachineName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const liveEnvironments = environments.filter((environment) => environment.state !== "released");
-  const elasticWorkspaces = useMemo(
-    () => selectElasticWorkspaces(workspaces, environments),
-    [environments, workspaces],
-  );
+  const liveEnvironments = environments;
+  const elasticWorkspaces = workspaces;
   const selectedProfile = profiles.find((candidate) => candidate.key === profileKey) ?? profiles[0];
 
   useEffect(() => {
@@ -89,7 +85,15 @@ export function ResourceManagementPage({
       await action();
       await onRefresh();
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : t("resource.operationFailed"));
+      setError(
+        reason instanceof PiCloudApiError && reason.code === "capacity_exhausted"
+          ? t("resource.capacityUnavailable")
+          : reason instanceof PiCloudApiError && reason.code === "tenant_quota_exceeded"
+            ? t("resource.quotaExceeded")
+            : reason instanceof Error
+              ? reason.message
+              : t("resource.operationFailed"),
+      );
     } finally {
       setBusy(false);
     }
@@ -401,23 +405,6 @@ export function ResourceManagementPage({
                             type="button"
                           >
                             {t("resource.resume")}
-                          </button>
-                        ) : null}
-                        {environment.state === "failed" ? (
-                          <button
-                            disabled={busy}
-                            onClick={() =>
-                              void mutate(() =>
-                                api.developmentEnvironmentAction(
-                                  environment.environmentId,
-                                  "start",
-                                  newIdempotencyKey("environment"),
-                                ),
-                              )
-                            }
-                            type="button"
-                          >
-                            {t("resource.rebuild")}
                           </button>
                         ) : null}
                         <button

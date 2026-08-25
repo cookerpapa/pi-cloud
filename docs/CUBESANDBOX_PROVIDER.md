@@ -50,11 +50,13 @@ Workspace and records a bounded file/hash/Git revision. PostgreSQL advances the
 Workspace revision with compare-and-swap. This operation does not create a
 second archive of all Workspace bytes.
 
-A Cube activation may remain warm according to the Session retention policy.
+A disposable Cube activation may remain warm for one deployment-bounded TTL.
 Its processes, sockets and PTYs survive only while that exact activation
 survives. After destruction or failure, a new KVM reattaches the same Volume and
 recovers files, not RAM or process state. Warm retention is an optimization,
-never a conversation or Workspace durability dependency.
+never a conversation or Workspace durability dependency. User-owned development
+machines use the separate pause/resume/release lifecycle and never enter the
+elastic warm pool.
 
 ## Tool and terminal channels
 

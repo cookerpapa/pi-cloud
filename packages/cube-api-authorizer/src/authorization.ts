@@ -43,7 +43,7 @@ export function isAllowedCubeApiOperation(path: string, method: string): boolean
     return true;
   }
   if (
-    normalizedMethod === "GET" &&
+    (normalizedMethod === "GET" || normalizedMethod === "DELETE") &&
     WORKSPACE_VOLUME_ITEM_PATH.test(parsed.pathname) &&
     parsed.search === ""
   ) {

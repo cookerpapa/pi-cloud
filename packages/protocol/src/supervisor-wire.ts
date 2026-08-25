@@ -10,7 +10,7 @@ import {
   NonNegativeSafeIntegerSchema,
   OpaqueIdSchema,
   PositiveSafeIntegerSchema,
-  SandboxRetentionPolicySchema,
+  ExecutionModeSchema,
   TraceContextSchema,
   UtcTimestampSchema,
   UuidSchema,
@@ -197,7 +197,7 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
         ...CommandIdentityProperties,
         nextEventSeq: PositiveSafeIntegerSchema,
         input: Type.Union([PromptInputSchema, ContinueInputSchema]),
-        sandboxRetention: SandboxRetentionPolicySchema,
+        executionMode: ExecutionModeSchema,
         sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
         workingDirectory: Type.String({
           minLength: 1,

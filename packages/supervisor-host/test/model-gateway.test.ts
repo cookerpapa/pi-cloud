@@ -245,7 +245,7 @@ beforeAll(async () => {
       executionGrant: createExecutionGrant(IDS.lease, attemptId, 1),
       nextEventSeq: 1,
       input: { kind: "prompt", text: "Repair it" },
-      sandboxRetention: "ephemeral",
+      executionMode: "elastic",
       sandboxProfileKey: "standard",
       workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],

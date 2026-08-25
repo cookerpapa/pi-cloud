@@ -46,7 +46,7 @@ const command: ExecuteTurnCommandMessage = {
     ),
     nextEventSeq: 1,
     input: { kind: "prompt", text: "请返回确定性的测试响应。" },
-    sandboxRetention: "ephemeral",
+    executionMode: "elastic",
     sandboxProfileKey: "standard",
     workingDirectory: "/workspace",
     toolCapabilities: ["read", "write", "edit", "bash"],

@@ -94,7 +94,7 @@ export type SandboxCreateSpec = Readonly<{
   workspaceRestore?: SandboxCheckpointBlob;
   policy: SandboxPolicy;
   toolRoot?: string;
-  lifetime?: "persistent_conversation" | "development_environment";
+  lifetime?: "development_environment";
   sandboxProfileKey?: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
 }>;
 
@@ -243,16 +243,6 @@ export interface SandboxProvider {
     handle: SandboxHandle,
     brokerAssignment: ToolSandboxAssignment,
   ): Promise<SandboxHandle>;
-  /**
-   * Recover a Provider-local idle handle when the Broker's warm index was lost
-   * but the same trusted Provider process still owns the physical runtime.
-   * Implementations must return undefined unless activation and full prior
-   * assignment identity match exactly.
-   */
-  recoverWarm?(
-    activationId: string,
-    assignment: ToolSandboxAssignment,
-  ): Promise<SandboxHandle | undefined>;
   rebind(
     handle: SandboxHandle,
     assignment: ToolSandboxAssignment,

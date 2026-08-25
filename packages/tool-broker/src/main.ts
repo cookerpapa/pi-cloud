@@ -8,6 +8,7 @@ import { HttpWorkspaceVolumeGateway } from "./workspace-volume-gateway.ts";
 import { PostgresSandboxActivationStateRepository } from "./activation-state-repository.ts";
 import { randomUUID } from "node:crypto";
 import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
+import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
 
 const config = await loadToolBrokerConfig();
 const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
@@ -25,6 +26,11 @@ const observability = await startServiceObservability({
   defaultMetricsPort: 9466,
 });
 const cube = config.cubeSandbox;
+const workspaceVolumeGateway = new HttpWorkspaceVolumeGateway({
+  baseUrl: cube.workspaceVolumeGatewayUrl,
+  serviceToken: cube.workspaceVolumeGatewayToken,
+  requestTimeoutMs: cube.workspaceVolumeGatewayRequestTimeoutMs,
+});
 const provider = new CubeSandboxProvider({
   templateId: cube.templateId,
   developmentTemplateIds: cube.developmentTemplateIds,
@@ -46,11 +52,15 @@ const provider = new CubeSandboxProvider({
     port: cube.egressProxyPort,
     directPrivateCidrs: [...cube.directPrivateCidrs],
   },
-  workspaceVolumeGateway: new HttpWorkspaceVolumeGateway({
-    baseUrl: cube.workspaceVolumeGatewayUrl,
-    serviceToken: cube.workspaceVolumeGatewayToken,
-    requestTimeoutMs: cube.workspaceVolumeGatewayRequestTimeoutMs,
-  }),
+  workspaceVolumeGateway,
+});
+const deletionReaper = new WorkspaceVolumeDeletionReaper({
+  database,
+  sandboxDomainId: config.sandboxDomainId,
+  gateway: workspaceVolumeGateway,
+  deleteVolumeMetadata: (volumeId) => provider.deleteWorkspaceVolume(volumeId),
+  intervalMs: config.workspaceDeletionReaperIntervalMs,
+  batchSize: config.workspaceDeletionReaperBatchSize,
 });
 const broker = new ToolBroker({
   provider,
@@ -76,12 +86,14 @@ const server = new ToolBrokerServer({
 
 await broker.recoverPersistentDevelopmentEnvironments();
 await server.listen();
+deletionReaper.start();
 process.stdout.write("PiCloud Tool Broker ready\n");
 
 let closing: Promise<void> | undefined;
 const close = (): Promise<void> => {
-  closing ??= server
+  closing ??= deletionReaper
     .close()
+    .then(() => server.close())
     .finally(() => database.destroy())
     .finally(() => observability.close());
   return closing;

@@ -216,10 +216,7 @@ export class ToolBrokerClient {
   async release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition:
-      | { kind: "keep_warm"; workspaceRevision: string }
-      | { kind: "keep_persistent"; workspaceRevision: string }
-      | { kind: "destroy" },
+    disposition: { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
   ): Promise<ToolSandboxReleaseResponse> {
     const requestId = this.#idGenerator();
     const response = await this.#service(
@@ -558,10 +555,7 @@ export class ReplicatedToolBrokerClient {
   async release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition:
-      | { kind: "keep_warm"; workspaceRevision: string }
-      | { kind: "keep_persistent"; workspaceRevision: string }
-      | { kind: "destroy" },
+    disposition: { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
   ): Promise<ToolSandboxReleaseResponse> {
     try {
       return await this.#ownedClient(activationId).release(activationId, assignment, disposition);

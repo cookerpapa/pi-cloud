@@ -16,7 +16,7 @@ import {
   type SandboxHandle,
   type SandboxProvider,
 } from "@pi-cloud/tool-broker";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { DevelopmentEnvironmentService } from "../src/development-environment-service.ts";
@@ -237,7 +237,6 @@ beforeAll(async () => {
     database,
     terminalToken: TOKEN,
     allowInsecureInternalHttp: true,
-    backgroundProvisioning: false,
     environmentImageRevision: IMAGE_REVISION,
   });
 }, 30_000);
@@ -261,7 +260,8 @@ describe("user-owned development environments", () => {
         created.projectId,
         created.workspaceId,
         "exclusive conversation",
-        "persistent",
+        "development_environment",
+        { ownerUserId: identity.userId, workingDirectory: "/home/user" },
       )
     ).sessionId;
     expect(created).toMatchObject({ generation: 1 });
@@ -273,6 +273,64 @@ describe("user-owned development environments", () => {
     expect(running.state).toBe("running");
     expect(running.ipAddress).toBe("169.254.68.4");
     await expect(store.listWorkspaces()).resolves.toEqual({ workspaces: [], truncated: false });
+    await database
+      .updateTable("tenant_runtime_policies")
+      .set({ maximum_active_sandboxes: 1 })
+      .where("tenant_id", "=", identity.tenantId)
+      .executeTakeFirstOrThrow();
+    await expect(
+      service.create(identity, "capacity-rejected-machine", {
+        name: "No capacity machine",
+        profileKey: "starter",
+      }),
+    ).rejects.toMatchObject({ code: "capacity_exhausted" });
+    await expect(
+      database
+        .selectFrom("development_environments as environment")
+        .innerJoin("workspaces as workspace", (join) =>
+          join
+            .onRef("workspace.tenant_id", "=", "environment.tenant_id")
+            .onRef("workspace.id", "=", "environment.workspace_id"),
+        )
+        .select([
+          "environment.state",
+          "environment.failure_code as failureCode",
+          "workspace.workspace_kind as workspaceKind",
+          "workspace.deleted_at as deletedAt",
+        ])
+        .where("environment.tenant_id", "=", identity.tenantId)
+        .where("environment.idempotency_key", "=", "capacity-rejected-machine")
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({
+      state: "released",
+      failureCode: "capacity_exhausted",
+      workspaceKind: "development_environment",
+      deletedAt: expect.any(Date),
+    });
+    await database
+      .updateTable("tenant_runtime_policies")
+      .set({ maximum_active_sandboxes: 4, maximum_projects: 1 })
+      .where("tenant_id", "=", identity.tenantId)
+      .executeTakeFirstOrThrow();
+    await expect(
+      service.create(identity, "project-quota-rejected-machine", {
+        name: "No project quota machine",
+        profileKey: "starter",
+      }),
+    ).rejects.toMatchObject({ code: "tenant_quota_exceeded" });
+    await expect(
+      database
+        .selectFrom("development_environments")
+        .select(({ fn }) => fn.countAll<string>().as("count"))
+        .where("tenant_id", "=", identity.tenantId)
+        .where("idempotency_key", "=", "project-quota-rejected-machine")
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ count: "0" });
+    await database
+      .updateTable("tenant_runtime_policies")
+      .set({ maximum_projects: 4 })
+      .where("tenant_id", "=", identity.tenantId)
+      .executeTakeFirstOrThrow();
     await expect(
       service.directory(identity, created.environmentId, "/home"),
     ).resolves.toMatchObject({
@@ -412,6 +470,7 @@ describe("user-owned development environments", () => {
       }),
     ).resolves.toMatchObject({ state: "released", releasedAt: expect.any(String) });
     expect(destroys).toHaveBeenCalledOnce();
+    await expect(service.list(identity)).resolves.toMatchObject({ environments: [] });
     await expect(
       database
         .selectFrom("workspace_delete_operations")
@@ -420,5 +479,77 @@ describe("user-owned development environments", () => {
         .where("workspace_id", "=", workspaceId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({ count: "1" });
+  });
+
+  it("retires an abandoned pre-provision request without creating a Cube", async () => {
+    const projectId = "77777777-7777-4777-8777-777777777701";
+    const abandonedWorkspaceId = "77777777-7777-4777-8777-777777777702";
+    const environmentId = "77777777-7777-4777-8777-777777777703";
+    await database
+      .insertInto("projects")
+      .values({ id: projectId, tenant_id: identity.tenantId, name: "Abandoned machine" })
+      .executeTakeFirstOrThrow();
+    await database
+      .insertInto("workspaces")
+      .values({
+        id: abandonedWorkspaceId,
+        tenant_id: identity.tenantId,
+        project_id: projectId,
+        sandbox_domain_id: DOMAIN_ID,
+        object_snapshot_key: null,
+        workspace_kind: "development_environment",
+      })
+      .executeTakeFirstOrThrow();
+    await database
+      .updateTable("sandbox_domains")
+      .set({ assigned_workspaces: sql<string>`${sql.ref("assigned_workspaces")} + 1` })
+      .where("id", "=", DOMAIN_ID)
+      .executeTakeFirstOrThrow();
+    await database
+      .insertInto("development_environments")
+      .values({
+        id: environmentId,
+        tenant_id: identity.tenantId,
+        owner_user_id: identity.userId,
+        project_id: projectId,
+        workspace_id: abandonedWorkspaceId,
+        sandbox_domain_id: DOMAIN_ID,
+        environment_version_id: null,
+        owner_instance_id: null,
+        owner_base_url: null,
+        runtime_id: null,
+        runtime_name: null,
+        state: "requested",
+        failure_code: null,
+        idempotency_key: "abandoned-machine",
+        request_sha256: "a".repeat(64),
+        profile_key: "starter",
+        cpu_count: 1,
+        memory_mib: 2_048,
+        system_disk_gib: 8,
+      })
+      .executeTakeFirstOrThrow();
+
+    await expect(service.reconcileLifecycle(new Date(Date.now() + 1_000))).resolves.toBe(1);
+    await expect(
+      database
+        .selectFrom("development_environments as environment")
+        .innerJoin("workspaces as workspace", (join) =>
+          join
+            .onRef("workspace.tenant_id", "=", "environment.tenant_id")
+            .onRef("workspace.id", "=", "environment.workspace_id"),
+        )
+        .select([
+          "environment.state",
+          "environment.failure_code as failureCode",
+          "workspace.deleted_at as deletedAt",
+        ])
+        .where("environment.id", "=", environmentId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({
+      state: "released",
+      failureCode: "provision_request_abandoned",
+      deletedAt: expect.any(Date),
+    });
   });
 });

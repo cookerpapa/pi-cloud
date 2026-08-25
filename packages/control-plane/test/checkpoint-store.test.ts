@@ -100,7 +100,7 @@ function command(turn: 1 | 2): ExecuteTurnCommandMessage {
       ),
       nextEventSeq: turn,
       input: { kind: "prompt", text: `turn ${String(turn)}` },
-      sandboxRetention: "ephemeral",
+      executionMode: "elastic",
       sandboxProfileKey: "standard",
       workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],

@@ -43,7 +43,6 @@ export type SandboxOrphanedActivation = Readonly<{
   activationId: string;
   assignment: ToolSandboxAssignment;
   workspaceRevision?: string;
-  retention?: "ephemeral" | "persistent";
 }>;
 
 export type WorkspaceTerminalReservation = Readonly<{
@@ -107,7 +106,7 @@ export type RecoverableDevelopmentEnvironment = Readonly<{
 export type SandboxPreviewOwnerResult =
   { status: "owned" } | { status: "redirect"; ownerBaseUrl: string } | { status: "unavailable" };
 
-export type PersistentConversationHandoff = Readonly<{
+export type SandboxSessionHandoff = Readonly<{
   tenantId: string;
   workspaceId: string;
   currentSessionId: string;
@@ -159,8 +158,7 @@ export interface SandboxActivationStateRepository {
     detail?: { handle?: SandboxHandle; failureCode?: string },
   ): Promise<void>;
   claimOrphanedTerminals(limit: number): Promise<readonly OrphanedWorkspaceTerminal[]>;
-  allowsDelegatedSandboxHandoff(input: PersistentConversationHandoff): Promise<boolean>;
-  allowsPersistentConversationHandoff(input: PersistentConversationHandoff): Promise<boolean>;
+  allowsDelegatedSandboxHandoff(input: SandboxSessionHandoff): Promise<boolean>;
   setActivationState(
     activationId: string,
     state: ToolBrokerActivationState,
@@ -403,9 +401,6 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
   }
   async claimOrphanedTerminals(): Promise<readonly OrphanedWorkspaceTerminal[]> {
     return [];
-  }
-  async allowsPersistentConversationHandoff(): Promise<boolean> {
-    return false;
   }
   async allowsDelegatedSandboxHandoff(): Promise<boolean> {
     return false;
@@ -1041,7 +1036,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       }
       const session = await transaction
         .selectFrom("sessions")
-        .select(["id", "last_execution_generation", "sandbox_retention_policy"])
+        .select(["id", "last_execution_generation"])
         .where("tenant_id", "=", input.tenantId)
         .where("id", "=", input.sessionId)
         .where("workspace_id", "=", input.workspaceId)
@@ -1285,7 +1280,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         executionGrant,
         retiredActivation: {
           activationId: activation.activation_id,
-          retention: session.sandbox_retention_policy,
           ...(activation.workspace_revision === null
             ? {}
             : { workspaceRevision: activation.workspace_revision }),
@@ -1348,7 +1342,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       }
       const workspace = await transaction
         .selectFrom("workspaces")
-        .select(["project_id", "sandbox_domain_id", "deleted_at"])
+        .select(["project_id", "sandbox_domain_id", "workspace_kind", "deleted_at"])
         .where("tenant_id", "=", input.tenantId)
         .where("id", "=", input.workspaceId)
         .forUpdate()
@@ -1356,6 +1350,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       if (
         workspace === undefined ||
         workspace.deleted_at !== null ||
+        workspace.workspace_kind !== "development_environment" ||
         workspace.project_id !== input.projectId ||
         workspace.sandbox_domain_id !== this.#sandboxDomainId
       ) {
@@ -1935,59 +1930,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     });
   }
 
-  async allowsPersistentConversationHandoff(
-    input: PersistentConversationHandoff,
-  ): Promise<boolean> {
-    if (input.currentSessionId === input.nextSessionId) return false;
-    if (await this.allowsDelegatedSandboxHandoff(input)) return true;
-    const result = await sql<{
-      start_session_id: string;
-      root_session_id: string;
-    }>`
-      with recursive lineage as (
-        select
-          sessions.id as start_session_id,
-          sessions.id as session_id,
-          sessions.conversation_parent_session_id as parent_session_id,
-          array[sessions.id]::uuid[] as path,
-          0 as depth
-        from sessions
-        where sessions.tenant_id = ${input.tenantId}
-          and sessions.workspace_id = ${input.workspaceId}
-          and sessions.archived_at is null
-          and sessions.id in (${input.currentSessionId}, ${input.nextSessionId})
-
-        union all
-
-        select
-          lineage.start_session_id,
-          parent.id as session_id,
-          parent.conversation_parent_session_id as parent_session_id,
-          lineage.path || parent.id,
-          lineage.depth + 1
-        from lineage
-        join sessions as parent
-          on parent.tenant_id = ${input.tenantId}
-         and parent.workspace_id = ${input.workspaceId}
-         and parent.id = lineage.parent_session_id
-         and parent.archived_at is null
-        where lineage.parent_session_id is not null
-          and lineage.depth < 100
-          and not (parent.id = any(lineage.path))
-      )
-      select
-        start_session_id,
-        session_id as root_session_id
-      from lineage
-      where parent_session_id is null
-    `.execute(this.#database);
-    if (result.rows.length !== 2) return false;
-    const roots = new Map(result.rows.map((row) => [row.start_session_id, row.root_session_id]));
-    const currentRoot = roots.get(input.currentSessionId);
-    return currentRoot !== undefined && currentRoot === roots.get(input.nextSessionId);
-  }
-
-  async allowsDelegatedSandboxHandoff(input: PersistentConversationHandoff): Promise<boolean> {
+  async allowsDelegatedSandboxHandoff(input: SandboxSessionHandoff): Promise<boolean> {
     if (input.currentSessionId === input.nextSessionId) return false;
     const delegated = await this.#database
       .selectFrom("subagent_executions")

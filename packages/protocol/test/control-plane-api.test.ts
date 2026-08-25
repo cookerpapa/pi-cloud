@@ -58,6 +58,7 @@ describe("control-plane public API schemas", () => {
     expect(parseDevelopmentEnvironmentActionRequest({ action: "pause" })).toEqual({
       action: "pause",
     });
+    expect(() => parseDevelopmentEnvironmentActionRequest({ action: "start" })).toThrow();
     expect(
       parseDevelopmentEnvironmentListResource({
         environments: [
@@ -147,7 +148,7 @@ describe("control-plane public API schemas", () => {
         workspaceId: "20000000-0000-4000-8000-000000000001",
         workspaceState: "attached",
         state: "cold",
-        sandboxRetention: "persistent",
+        executionMode: "development_environment",
         sandboxProfileKey: "standard",
         workingDirectory: "/workspace",
         modelProfileId: "40000000-0000-4000-8000-000000000001",
@@ -214,7 +215,7 @@ describe("control-plane public API schemas", () => {
             workspaceName: "Java repair demo",
             workspaceState: "attached",
             state: "idle",
-            sandboxRetention: "ephemeral",
+            executionMode: "elastic",
             sandboxProfileKey: "standard",
             workingDirectory: "/workspace",
             turnCount: 1,
@@ -249,7 +250,7 @@ describe("control-plane public API schemas", () => {
           workspaceId: "20000000-0000-4000-8000-000000000001",
           workspaceState: "attached",
           state: "running",
-          sandboxRetention: "persistent",
+          executionMode: "development_environment",
           sandboxProfileKey: "performance",
           workingDirectory: "/workspace/app",
           modelProfileId: "40000000-0000-4000-8000-000000000001",
@@ -575,7 +576,7 @@ describe("control-plane public API schemas", () => {
     expect(parseCreateSessionRequest({ workspaceId: UUID, title: "  Fix checkout  " })).toEqual({
       workspaceId: UUID,
       title: "Fix checkout",
-      sandboxRetention: "ephemeral",
+      executionMode: "elastic",
     });
     expect(parseUuidPathParameter(UUID, "sessionId")).toBe(UUID);
     expect(() => parseUuidPathParameter("session-1", "sessionId")).toThrow(

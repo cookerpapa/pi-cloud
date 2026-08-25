@@ -76,6 +76,7 @@ export type CubeSandboxGuestCommandResult = Readonly<{
 export interface CubeSandboxRuntimeClient {
   checkHealth(): Promise<void>;
   ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume>;
+  deleteVolume(volumeId: string): Promise<void>;
   create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance>;
   read(sandboxId: string): Promise<CubeSandboxInstance | undefined>;
   pause(sandboxId: string): Promise<void>;
@@ -120,7 +121,7 @@ export type OfficialCubeSandboxRuntimeClientOptions = Readonly<{
   requestTimeoutMs?: number;
 }>;
 
-class CubeRuntimeClientError extends Error {
+export class CubeRuntimeClientError extends Error {
   readonly statusCode: number | undefined;
 
   constructor(message: string, statusCode?: number) {
@@ -513,6 +514,19 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         parseJson(await readBoundedResponse(raced, 64 * 1_024), "CubeSandbox volume inspect"),
       );
     }
+  }
+
+  async deleteVolume(volumeId: string): Promise<void> {
+    const id = bounded(volumeId, "CubeSandbox volume ID", 128);
+    if (!/^pcw-[0-9a-f]{48}$/.test(id)) {
+      throw new CubeRuntimeClientError("CubeSandbox volume deletion request was invalid");
+    }
+    const response = await this.#control(
+      `/volumes/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+      true,
+    );
+    await response.body?.cancel().catch(() => undefined);
   }
 
   async create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance> {

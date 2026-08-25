@@ -77,9 +77,9 @@ export type SandboxProfileKey = "starter" | "standard" | "performance";
 export type EnvironmentValidationStatus = "validated" | "failed";
 export type EnvironmentOperationKind = "create" | "activate" | "rollback" | "validate";
 export type SandboxDomainState = "active" | "draining" | "disabled";
-export type SandboxRetentionPolicy = "ephemeral" | "persistent";
+export type ExecutionMode = "elastic" | "development_environment";
 export type SessionKind = "conversation" | "subagent";
-export type WorkspaceKind = "user" | "subagent_isolated";
+export type WorkspaceKind = "user" | "development_environment" | "subagent_isolated";
 export type SubagentContextMode = "fresh" | "fork";
 export type SubagentWorkspaceMode = "none" | "shared_serialized" | "isolated";
 export type SubagentExecutionState =
@@ -113,7 +113,7 @@ export type DevelopmentEnvironmentState =
   | "released"
   | "failed"
   | "unknown";
-export type DevelopmentEnvironmentAction = "start" | "pause" | "resume" | "release";
+export type DevelopmentEnvironmentAction = "pause" | "resume" | "release";
 
 export interface ToolBrokerInstanceTable {
   instance_id: string;
@@ -511,7 +511,7 @@ export interface SessionTable {
   development_environment_id: GeneratedNullable<string>;
   desired_model_profile_id: string;
   state: SessionState;
-  sandbox_retention_policy: Generated<SandboxRetentionPolicy>;
+  execution_mode: Generated<ExecutionMode>;
   working_directory: Generated<string>;
   sandbox_profile_key: Generated<SandboxProfileKey>;
   session_kind: Generated<SessionKind>;

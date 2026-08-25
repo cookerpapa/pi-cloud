@@ -35,6 +35,10 @@ authorization authority for Tool execution or platform access.
   `/home/user`, and the elastic-only `/workspace` path is absent. The home
   Volume belongs to the machine and is deleted when the owner releases it; it
   never becomes an elastic Workspace.
+- Its internal storage row uses `workspace_kind=development_environment`.
+  Creation returns only after the selected Cube template is running; a rejected
+  admission is tombstoned and collected rather than exposed as a failed
+  Workspace. Full-VM failure has no compatibility rebuild path.
 - A conversation attached to an exclusive environment stores a directory
   binding inside that machine. Session lifetime remains independent: archiving
   a Session neither pauses nor releases the environment.

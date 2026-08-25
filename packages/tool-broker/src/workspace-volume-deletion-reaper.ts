@@ -7,7 +7,9 @@ import {
 
 export type WorkspaceVolumeDeletionReaperOptions = Readonly<{
   database: Kysely<Database>;
+  sandboxDomainId: string;
   gateway: WorkspaceVolumeGateway;
+  deleteVolumeMetadata: (volumeId: string) => Promise<void>;
   intervalMs?: number;
   batchSize?: number;
   clock?: () => Date;
@@ -31,7 +33,9 @@ const LIVE_ACTIVATION_STATES = [
 /** Removes POSIX Workspace data only after every Cube activation has retired. */
 export class WorkspaceVolumeDeletionReaper {
   readonly #database: Kysely<Database>;
+  readonly #sandboxDomainId: string;
   readonly #gateway: WorkspaceVolumeGateway;
+  readonly #deleteVolumeMetadata: (volumeId: string) => Promise<void>;
   readonly #intervalMs: number;
   readonly #batchSize: number;
   readonly #clock: () => Date;
@@ -55,7 +59,9 @@ export class WorkspaceVolumeDeletionReaper {
       throw new TypeError("Workspace deletion reaper batch size was invalid");
     }
     this.#database = options.database;
+    this.#sandboxDomainId = options.sandboxDomainId;
     this.#gateway = options.gateway;
+    this.#deleteVolumeMetadata = options.deleteVolumeMetadata;
     this.#intervalMs = options.intervalMs ?? 30_000;
     this.#batchSize = options.batchSize ?? 16;
     this.#clock = options.clock ?? (() => new Date());
@@ -97,6 +103,7 @@ export class WorkspaceVolumeDeletionReaper {
         workspace.id as "workspaceId"
       from workspaces as workspace
       where workspace.deleted_at is not null
+        and workspace.sandbox_domain_id = ${this.#sandboxDomainId}
         and workspace.storage_purged_at is null
         and not exists (
           select 1
@@ -105,22 +112,32 @@ export class WorkspaceVolumeDeletionReaper {
             and activation.workspace_id = workspace.id
             and activation.state in (${sql.join(LIVE_ACTIVATION_STATES)})
         )
+        and not exists (
+          select 1
+          from workspace_terminal_sessions as terminal
+          where terminal.tenant_id = workspace.tenant_id
+            and terminal.workspace_id = workspace.id
+            and terminal.state in ('reserved', 'materializing', 'active', 'cleaning', 'unknown')
+        )
       order by workspace.deleted_at asc, workspace.id asc
       limit ${this.#batchSize}
     `.execute(this.#database);
     let purged = 0;
     for (const workspace of pending.rows) {
+      const volumeId = workspaceVolumeId(workspace);
       await this.#gateway.delete({
         tenantId: workspace.tenantId,
         workspaceId: workspace.workspaceId,
-        volumeId: workspaceVolumeId(workspace),
+        volumeId,
       });
+      await this.#deleteVolumeMetadata(volumeId);
       const purgedAt = this.#clock();
       const updated = await this.#database
         .updateTable("workspaces")
         .set({ storage_purged_at: purgedAt, updated_at: purgedAt })
         .where("tenant_id", "=", workspace.tenantId)
         .where("id", "=", workspace.workspaceId)
+        .where("sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("deleted_at", "is not", null)
         .where("storage_purged_at", "is", null)
         .where(
@@ -130,6 +147,15 @@ export class WorkspaceVolumeDeletionReaper {
             where activation.tenant_id = ${workspace.tenantId}
               and activation.workspace_id = ${workspace.workspaceId}
               and activation.state in (${sql.join(LIVE_ACTIVATION_STATES)})
+          )`,
+        )
+        .where(
+          sql<boolean>`not exists (
+            select 1
+            from workspace_terminal_sessions as terminal
+            where terminal.tenant_id = ${workspace.tenantId}
+              and terminal.workspace_id = ${workspace.workspaceId}
+              and terminal.state in ('reserved', 'materializing', 'active', 'cleaning', 'unknown')
           )`,
         )
         .executeTakeFirst();

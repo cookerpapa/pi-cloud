@@ -74,9 +74,11 @@ export function mappedError(error: unknown): ErrorResponse {
           ? 404
           : error.code === "tenant_quota_exceeded"
             ? 429
-            : error.code === "conflict" || error.code === "idempotency_conflict"
-              ? 409
-              : 503;
+            : error.code === "capacity_exhausted"
+              ? 503
+              : error.code === "conflict" || error.code === "idempotency_conflict"
+                ? 409
+                : 503;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof TurnSteeringError) {

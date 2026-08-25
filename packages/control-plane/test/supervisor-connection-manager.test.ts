@@ -246,7 +246,7 @@ async function createAcceptedTurn(): Promise<{
     project.projectId,
     project.workspaceId,
     "New conversation",
-    "ephemeral",
+    "elastic",
   );
   const accepted = await store.acceptTurn(session.sessionId, `turn-${uuid()}`, {
     prompt: "keep this assignment alive",
@@ -333,7 +333,7 @@ async function createAcceptedTurn(): Promise<{
       idempotencyKey: `execute-${accepted.commandId}`,
       nextEventSeq: "1",
       input: { kind: "prompt", prompt: "keep this assignment alive" },
-      sandboxRetention: "ephemeral",
+      executionMode: "elastic",
       sandboxProfileKey: "standard",
       workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],

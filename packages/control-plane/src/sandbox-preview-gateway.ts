@@ -422,7 +422,7 @@ export class SandboxPreviewGateway {
       .where("session_row.tenant_id", "=", tenantId)
       .where("session_row.id", "=", target.sessionId)
       .where("session_row.archived_at", "is", null)
-      .where("session_row.sandbox_retention_policy", "=", "persistent")
+      .where("session_row.execution_mode", "=", "development_environment")
       .where("development.owner_user_id", "=", userId)
       .where("development.state", "=", "running")
       .orderBy("development.updated_at", "desc")

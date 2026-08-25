@@ -213,11 +213,12 @@ const zhCN = {
   "resource.workingDirectory": "工作目录",
   "resource.pause": "暂停",
   "resource.resume": "恢复",
-  "resource.rebuild": "重建",
   "resource.releaseConfirm":
     "释放这台云端开发机？整台机器及其文件将被删除；对话会保留，继续时需要重新选择 Workspace。",
   "resource.release": "释放",
   "resource.operationFailed": "资源操作失败",
+  "resource.capacityUnavailable": "当前没有足够的沙箱资源，请稍后重试或选择更小的规格。",
+  "resource.quotaExceeded": "当前账户的资源配额已用尽。",
   "resource.state.creating": "创建中",
   "resource.state.running": "运行中",
   "resource.state.paused": "已暂停",
@@ -537,11 +538,13 @@ const enUS: Record<UiTextKey, string> = {
   "resource.workingDirectory": "Working directory",
   "resource.pause": "Pause",
   "resource.resume": "Resume",
-  "resource.rebuild": "Rebuild",
   "resource.releaseConfirm":
     "Release this cloud development machine? The machine and all of its files will be deleted. Chats remain and must choose another Workspace before continuing.",
   "resource.release": "Release",
   "resource.operationFailed": "Resource operation failed",
+  "resource.capacityUnavailable":
+    "Sandbox capacity is currently unavailable. Try again later or choose a smaller profile.",
+  "resource.quotaExceeded": "This account has reached its resource quota.",
   "resource.state.creating": "Creating",
   "resource.state.running": "Running",
   "resource.state.paused": "Paused",

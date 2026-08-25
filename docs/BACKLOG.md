@@ -146,6 +146,10 @@ retired and remain only in Git history or explicitly superseded ADRs.
       creation and expose deployment-owned profiles to elastic Runs.
 - [x] Allocate exclusive environments without asking for an elastic Workspace,
       expose CPU/memory/disk selectors and record the Cube guest IP.
+- [x] Give machine storage an explicit non-elastic Workspace kind, synchronously
+      admit real Cube capacity and roll back rejected allocations.
+- [x] Delete both POSIX bytes and Cube Volume metadata only after Agent and
+      terminal writers have retired.
 - [ ] Add a bounded WebSocket preview tunnel for HMR and application sockets.
 
 ## Product expansion rule

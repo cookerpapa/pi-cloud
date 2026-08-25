@@ -3,7 +3,7 @@ import { Value } from "typebox/value";
 import {
   NonNegativeSafeIntegerSchema,
   PositiveSafeIntegerSchema,
-  SandboxRetentionPolicySchema,
+  ExecutionModeSchema,
   UtcTimestampSchema,
   UuidSchema,
 } from "./protocol-primitives.ts";
@@ -391,7 +391,7 @@ export const CreateSessionRequestSchema = Type.Object(
   {
     workspaceId: UuidSchema,
     title: Type.String({ minLength: 1, maxLength: 256 }),
-    sandboxRetention: Type.Optional(SandboxRetentionPolicySchema),
+    executionMode: Type.Optional(ExecutionModeSchema),
     sandboxProfileKey: Type.Optional(DevelopmentEnvironmentProfileKeySchema),
     workingDirectory: Type.Optional(
       Type.String({
@@ -418,7 +418,7 @@ export const SessionResourceSchema = Type.Object(
     developmentEnvironmentId: Type.Optional(UuidSchema),
     workspaceState: ConversationWorkspaceStateSchema,
     state: Type.Literal("cold"),
-    sandboxRetention: SandboxRetentionPolicySchema,
+    executionMode: ExecutionModeSchema,
     sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
     workingDirectory: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     modelProfileId: UuidSchema,
@@ -448,7 +448,7 @@ export const ConversationSummaryResourceSchema = Type.Object(
     workspaceName: Type.String({ minLength: 1, maxLength: 256 }),
     workspaceState: ConversationWorkspaceStateSchema,
     state: SessionStateSchema,
-    sandboxRetention: SandboxRetentionPolicySchema,
+    executionMode: ExecutionModeSchema,
     sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
     workingDirectory: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     turnCount: NonNegativeSafeIntegerSchema,
@@ -525,7 +525,7 @@ export const ConversationSessionResourceSchema = Type.Object(
     developmentEnvironmentId: Type.Optional(UuidSchema),
     workspaceState: ConversationWorkspaceStateSchema,
     state: SessionStateSchema,
-    sandboxRetention: SandboxRetentionPolicySchema,
+    executionMode: ExecutionModeSchema,
     sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
     workingDirectory: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     modelProfileId: UuidSchema,
@@ -616,7 +616,6 @@ export const DevelopmentEnvironmentStateSchema = Type.Union([
 ]);
 
 export const DevelopmentEnvironmentActionSchema = Type.Union([
-  Type.Literal("start"),
   Type.Literal("pause"),
   Type.Literal("resume"),
   Type.Literal("release"),
@@ -1255,7 +1254,7 @@ export type WorkspaceSourceSetEntrySnapshot = Static<typeof WorkspaceSourceSetEn
 export type WorkspaceSourceSetSnapshot = Static<typeof WorkspaceSourceSetSnapshotSchema>;
 export type CreateProjectRequest = Static<typeof CreateProjectRequestSchema>;
 export type ProjectResource = Static<typeof ProjectResourceSchema>;
-export type { SandboxRetentionPolicy } from "./protocol-primitives.ts";
+export type { ExecutionMode } from "./protocol-primitives.ts";
 export type CreateSessionRequest = Static<typeof CreateSessionRequestSchema>;
 export type SessionResource = Static<typeof SessionResourceSchema>;
 export type WorkspaceSummaryResource = Static<typeof WorkspaceSummaryResourceSchema>;
@@ -1633,7 +1632,7 @@ export function parseTenantRegistrationResource(value: unknown): TenantRegistrat
 
 export function parseCreateSessionRequest(
   value: unknown,
-): CreateSessionRequest & { sandboxRetention: Static<typeof SandboxRetentionPolicySchema> } {
+): CreateSessionRequest & { executionMode: Static<typeof ExecutionModeSchema> } {
   const request = parseSchema(CreateSessionRequestSchema, value, "create-session request");
   const title = request.title.trim();
   if (
@@ -1645,7 +1644,7 @@ export function parseCreateSessionRequest(
       "Conversation title must contain 1-256 safe UTF-8 bytes",
     );
   }
-  return { ...request, title, sandboxRetention: request.sandboxRetention ?? "ephemeral" };
+  return { ...request, title, executionMode: request.executionMode ?? "elastic" };
 }
 
 export function parseAcceptTurnRequest(value: unknown): AcceptTurnRequest {

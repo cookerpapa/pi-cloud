@@ -60,7 +60,7 @@ function command(
       ),
       nextEventSeq: 1,
       input: { kind: "prompt", text: "hello" },
-      sandboxRetention: "ephemeral",
+      executionMode: "elastic",
       sandboxProfileKey: "standard",
       workingDirectory: "/workspace",
       toolCapabilities: ["read", "write", "edit", "bash"],

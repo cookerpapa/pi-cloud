@@ -88,10 +88,7 @@ export interface ToolBrokerBoundary {
   release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition:
-      | { kind: "keep_warm"; workspaceRevision: string }
-      | { kind: "keep_persistent"; workspaceRevision: string }
-      | { kind: "destroy" },
+    disposition: { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
   ): Promise<{ retained: boolean }>;
   stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
   operationUrlFor(activationId: string): string;
@@ -387,7 +384,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     let fakeModel: FakeModelServer | undefined;
     let capturedPatch: WorkspacePatch | undefined;
     let retainedWorkspaceRevision: string | undefined;
-    let materializedSandboxCheckpoint = false;
     let completedSuccessfully = false;
     let stopPromise: Promise<void> | undefined;
     const stopSandbox = (): Promise<void> => {
@@ -425,7 +421,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         turnContextSha256: cloudTurn.sha256,
         attemptContextSha256: cloudAttempt.sha256,
         allowedTools: cloudTurn.context.tools.names,
-        retention: command.payload.sandboxRetention,
+        executionMode: command.payload.executionMode,
         sandboxProfileKey: command.payload.sandboxProfileKey,
         toolRoot: command.payload.workingDirectory,
         environment: command.payload.environment,
@@ -542,7 +538,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           );
           return;
         }
-        materializedSandboxCheckpoint = true;
         if (this.#runAttemptPhaseObserver !== undefined) {
           try {
             await this.#runAttemptPhaseObserver.transition(command, "checkpointing");
@@ -835,27 +830,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           retainedWorkspaceRevision === undefined
             ? ({ kind: "destroy" } as const)
             : ({
-                kind:
-                  command.payload.sandboxRetention === "persistent"
-                    ? "keep_persistent"
-                    : "keep_warm",
+                kind: "keep_warm",
                 workspaceRevision: retainedWorkspaceRevision,
               } as const);
         await this.#broker
           .release(activation.activationId, toolAssignment, disposition)
-          .then((released) => {
-            if (
-              disposition.kind === "keep_persistent" &&
-              materializedSandboxCheckpoint &&
-              !released.retained
-            ) {
-              throw new PiTurnError(
-                "persistent_sandbox_retention_failed",
-                "Persistent Sandbox process state could not be retained",
-                true,
-              );
-            }
-          })
           .catch((error: unknown) => {
             cleanupError = error;
           });

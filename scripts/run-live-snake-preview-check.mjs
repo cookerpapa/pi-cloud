@@ -319,7 +319,7 @@ if (reusedSessionId === undefined) {
     development.projectId,
     development.workspaceId,
     `Snake preview acceptance ${suffix}`,
-    "persistent",
+    "development_environment",
     "standard",
     DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
   );

@@ -52,7 +52,7 @@ export type TurnExecutionRequest = {
     kind: "prompt";
     prompt: string;
   };
-  sandboxRetention: import("@pi-cloud/protocol").SandboxRetentionPolicy;
+  executionMode: import("@pi-cloud/protocol").ExecutionMode;
   sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
   workingDirectory: string;
   toolCapabilities: CloudToolCapabilitySnapshot;
@@ -621,7 +621,7 @@ export class RunCommandExecutor {
           "session_row.id as sessionId",
           "session_row.state as sessionState",
           "session_row.session_kind as sessionKind",
-          "session_row.sandbox_retention_policy as sandboxRetention",
+          "session_row.execution_mode as executionMode",
           "session_row.project_id as projectId",
           "session_row.workspace_id as workspaceId",
           "session_row.next_event_seq as nextEventSeq",
@@ -1040,7 +1040,7 @@ export class RunCommandExecutor {
           idempotencyKey: row.idempotencyKey,
           nextEventSeq: row.nextEventSeq,
           input: { kind: "prompt", prompt: row.inputText },
-          sandboxRetention: row.sandboxRetention,
+          executionMode: row.executionMode,
           sandboxProfileKey: row.sandboxProfileKey,
           workingDirectory: row.workingDirectory,
           toolCapabilities,

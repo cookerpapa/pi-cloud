@@ -268,7 +268,7 @@ try {
     project.projectId,
     project.workspaceId,
     `Product surface ${suffix}`,
-    "ephemeral",
+    "elastic",
     "starter",
   );
   createdSessionIds.add(session.sessionId);
@@ -430,7 +430,7 @@ try {
     archiveProject.projectId,
     archiveProject.workspaceId,
     `Archive surface ${suffix}`,
-    "ephemeral",
+    "elastic",
   );
   createdSessionIds.add(sibling.sessionId);
   const siblingBaseline = await runTurn({

@@ -83,7 +83,7 @@ async function createQueuedTurns(
     project.projectId,
     project.workspaceId,
     "New conversation",
-    "ephemeral",
+    "elastic",
   );
   const turns = [];
   for (let index = 1; index <= count; index += 1) {
@@ -264,13 +264,13 @@ describe.sequential("global tenant scheduling", () => {
       project.projectId,
       project.workspaceId,
       "One",
-      "ephemeral",
+      "elastic",
     );
     const secondSession = await store.createSession(
       project.projectId,
       project.workspaceId,
       "Two",
-      "ephemeral",
+      "elastic",
     );
     await store.acceptTurn(firstSession.sessionId, "shared-one", { prompt: "first" });
     await store.acceptTurn(secondSession.sessionId, "shared-two", { prompt: "second" });

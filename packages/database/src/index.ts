@@ -160,6 +160,8 @@ export {
   downExecutionGrants,
   upSandboxHttpServices,
   downSandboxHttpServices,
+  upMachineOwnedWorkspaces,
+  downMachineOwnedWorkspaces,
 } from "./migrations/index.ts";
 
 export {

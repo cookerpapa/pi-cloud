@@ -276,16 +276,23 @@ returned to the warm pool after PTY close; the old Agent capability remains
 revoked throughout the handoff. No in-guest secret is an ownership authority.
 Warm runtimes are Broker-owned and excluded from expired
 Supervisor inventory, preventing a stale Run reconciler from deleting them. An
-ordinary ephemeral warm Cube is still retired before a separate terminal runtime
+ordinary elastic warm Cube is still retired before a separate terminal runtime
 starts. Input, output and resize frames are bounded; terminal transcripts are
 not persisted.
 
 ### User-owned development environments
 
 `DevelopmentEnvironment` is a PostgreSQL product allocation keyed by tenant,
-owner user and Workspace. Public REST and WebSocket handlers always derive the
+owner user and an internal `development_environment` Workspace. This storage
+kind is rejected by elastic Session and Workspace APIs. Public REST and WebSocket handlers always derive the
 owner from authenticated request identity; responses contain no Cube runtime
 ID, traffic token or Broker credential. Tool Broker is the only CubeAPI client.
+
+Creation synchronously checks tenant project quota, tenant/Domain active-Sandbox
+capacity and the real Cube scheduling result. The API returns `201` only after
+the requested profile is running; capacity exhaustion returns a structured
+retryable error and the rejected machine allocation is retired. A reconciler
+removes a `requested` row abandoned by a Control Plane crash before provisioning.
 
 Provisioning eagerly creates one Cube KVM with the deployment-owned template,
 resource policy and network boundary. Its private persistent file Volume is
@@ -319,15 +326,15 @@ sends a shell command or receives Cube authority.
 
 Guest evidence includes a bounded control-protocol version. Broker and guest
 must match the current version exactly; an older exclusive machine is released
-and recreated from the current immutable template instead of carrying a
-compatibility execution path in the Broker.
+instead of carrying a compatibility execution path or silently rebuilding a
+different machine. Users create a new machine explicitly after release.
 
 The allocation participates in tenant/Domain Sandbox quotas and the global
 Workspace single-writer rule. `agent_activation_id` and `terminal_active` are
 durable admission facts. Tool Broker lazily seals and rebinds the same Cube to a
 Run's opaque authority on first Tool use, then captures and returns it to the
 environment authority. Worker scans wait while a human terminal is active. A
-A planned Broker shutdown pauses each idle cloud development machine, stores an encrypted
+planned Broker shutdown pauses each idle cloud development machine, stores an encrypted
 reconnect capsule in PostgreSQL and leaves the physical VM intact. A replacement
 Broker validates the capsule, PostgreSQL ownership and Cube metadata before it
 adopts the same runtime. The capsule is pinned to the machine's own guest image
@@ -386,6 +393,12 @@ gateway has no CubeAPI or model credential.
 
 ### Independent resource lifetimes
 
+A Session freezes `executionMode=elastic|development_environment`. The first
+requires a `user` Workspace and gets a disposable/bounded-warm Cube on demand;
+the second requires a live owned development machine and borrows that exact
+Cube. The removed `ephemeral/persistent` retention protocol has no runtime
+compatibility path.
+
 A Session's Pi entries and tree remain in PostgreSQL when its Workspace is
 soft-deleted. The Session reports `workspaceState=missing`, accepts no new Turn
 and can be rebound idempotently to another live tenant Workspace. Historical
@@ -397,16 +410,27 @@ selected, instead of waiting for the user to submit a Turn that must fail.
 
 ### Persistent Workspace Volume gateway
 
-The service historically named Workspace Volume Gateway is now a narrow trusted
-Volume gateway. It does not copy Workspaces to Kopia or object storage. It:
+Workspace Volume Gateway is a narrow trusted POSIX data service. It does not
+copy Workspaces to Kopia or object storage. It:
 
 - prepares and verifies the stable tenant/Workspace Volume identity;
 - initializes an empty/imported Workspace once;
-- purges a deleted Workspace only after every live Cube activation has retired;
+- deletes Workspace file bytes only when asked by the Tool Broker deletion coordinator;
 - captures a bounded file/hash index and external Git patch;
 - reads selected current files for the UI without following symlink escapes;
 - serializes operations with a process lock and PostgreSQL advisory lock;
 - creates revision-bound internal Volume copies for isolated Subagent lanes.
+
+The deletion coordinator runs in Tool Broker because only that service holds
+CubeAPI authority. It waits for both Agent activations and human terminals,
+deletes the POSIX directory through the narrow gateway, deletes the deterministic
+Cube Volume record, and only then commits `storage_purged_at`. Repeated cleanup
+is idempotent; no empty Cube Volume metadata is retained.
+
+Creating an elastic Workspace reserves its tenant/project identity but not CPU
+or memory. Compute admission occurs on the first Tool-using Run, so an idle
+Workspace consumes storage only. A cloud development machine differs: its
+selected CPU/memory/system-disk template is synchronously admitted at creation.
 
 Stopping an elastic Cube loses its processes and memory. A new elastic Cube
 attaches the same persistent Volume, so project files and dependencies remain.

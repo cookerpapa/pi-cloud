@@ -23,7 +23,7 @@ import type {
   EnvironmentRuntimeSnapshot,
   RunListResource,
   RunResource,
-  SandboxRetentionPolicy,
+  ExecutionMode,
   SessionResource,
   WorkspaceSourceResource,
   WorkspaceSourceSetSnapshot,
@@ -65,6 +65,7 @@ export type ControlPlaneStoreErrorCode =
   | "conflict"
   | "idempotency_conflict"
   | "tenant_quota_exceeded"
+  | "capacity_exhausted"
   | "control_plane_misconfigured";
 
 export class ControlPlaneStoreError extends Error {
@@ -897,7 +898,7 @@ export class ControlPlaneStore {
     projectId: string,
     workspaceId: string,
     title: string,
-    sandboxRetention: SandboxRetentionPolicy,
+    executionMode: ExecutionMode,
     execution: Readonly<{
       sandboxProfileKey?: DevelopmentEnvironmentProfileKey;
       workingDirectory?: string;
@@ -934,6 +935,7 @@ export class ControlPlaneStore {
         .select([
           "workspace.id",
           "workspace.project_id",
+          "workspace.workspace_kind as workspaceKind",
           "workspace.current_workspace_version_id as currentVersionId",
           "workspace_artifact.object_key as workspaceSnapshotKey",
           "workspace_checkpoint.object_key as durableWorkspaceSnapshotKey",
@@ -941,12 +943,22 @@ export class ControlPlaneStore {
         .where("workspace.tenant_id", "=", this.#tenantId)
         .where("workspace.project_id", "=", projectId)
         .where("workspace.id", "=", workspaceId)
-        .where("workspace.workspace_kind", "=", "user")
+        .where("workspace.workspace_kind", "in", ["user", "development_environment"])
         .where("workspace.deleted_at", "is", null)
         .forUpdate("workspace")
         .executeTakeFirst();
       if (!workspace) {
         throw new ControlPlaneStoreError("not_found", "Project workspace was not found");
+      }
+      if (
+        (executionMode === "elastic" && workspace.workspaceKind !== "user") ||
+        (executionMode === "development_environment" &&
+          workspace.workspaceKind !== "development_environment")
+      ) {
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Conversation execution mode does not match the selected storage resource",
+        );
       }
       if (workspace.currentVersionId !== null && workspace.durableWorkspaceSnapshotKey === null) {
         throw new ControlPlaneStoreError("not_found", "Project workspace was not found");
@@ -965,23 +977,6 @@ export class ControlPlaneStore {
         );
       }
 
-      const liveWorkspaceSessions = await transaction
-        .selectFrom("sessions")
-        .select(["id", "sandbox_retention_policy"])
-        .where("tenant_id", "=", this.#tenantId)
-        .where("workspace_id", "=", workspace.id)
-        .where("archived_at", "is", null)
-        .execute();
-      const incompatibleSession = liveWorkspaceSessions.some(
-        (existing) => existing.sandbox_retention_policy !== sandboxRetention,
-      );
-      if (incompatibleSession) {
-        throw new ControlPlaneStoreError(
-          "conflict",
-          "Elastic and exclusive conversations cannot share one Workspace",
-        );
-      }
-
       const developmentEnvironment = await transaction
         .selectFrom("development_environments")
         .select(["id", "owner_user_id", "profile_key", "state"])
@@ -990,12 +985,16 @@ export class ControlPlaneStore {
         .where("state", "!=", "released")
         .orderBy("updated_at", "desc")
         .executeTakeFirst();
-      if (sandboxRetention === "persistent") {
+      if (executionMode === "development_environment") {
+        if (developmentEnvironment === undefined || execution.ownerUserId === undefined) {
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Cloud development machine is not available",
+          );
+        }
         if (
-          execution.ownerUserId !== undefined &&
-          developmentEnvironment !== undefined &&
-          (developmentEnvironment.owner_user_id !== execution.ownerUserId ||
-            !["running", "paused"].includes(developmentEnvironment.state))
+          developmentEnvironment.owner_user_id !== execution.ownerUserId ||
+          !["running", "paused"].includes(developmentEnvironment.state)
         ) {
           throw new ControlPlaneStoreError(
             "conflict",
@@ -1003,7 +1002,6 @@ export class ControlPlaneStore {
           );
         }
         if (
-          developmentEnvironment !== undefined &&
           execution.sandboxProfileKey !== undefined &&
           developmentEnvironment.profile_key !== execution.sandboxProfileKey
         ) {
@@ -1049,7 +1047,7 @@ export class ControlPlaneStore {
           development_environment_id: developmentEnvironment?.id ?? null,
           desired_model_profile_id: policy.defaultModelProfileId,
           state: "cold",
-          sandbox_retention_policy: sandboxRetention,
+          execution_mode: executionMode,
           sandbox_profile_key: sandboxProfileKey,
           working_directory: workingDirectory,
           workspace_snapshot_key: workspace.workspaceSnapshotKey,
@@ -1062,7 +1060,7 @@ export class ControlPlaneStore {
           "workspace_id",
           "development_environment_id",
           "state",
-          "sandbox_retention_policy",
+          "execution_mode",
           "sandbox_profile_key",
           "working_directory",
           "created_at",
@@ -1093,7 +1091,7 @@ export class ControlPlaneStore {
           : { developmentEnvironmentId: session.development_environment_id }),
         workspaceState: "attached",
         state: "cold",
-        sandboxRetention: session.sandbox_retention_policy,
+        executionMode: session.execution_mode,
         sandboxProfileKey: session.sandbox_profile_key,
         workingDirectory: session.working_directory,
         modelProfileId: policy.defaultModelProfileId,
@@ -1147,14 +1145,6 @@ export class ControlPlaneStore {
       .where("workspace.tenant_id", "=", this.#tenantId)
       .where("workspace.workspace_kind", "=", "user")
       .where("workspace.deleted_at", "is", null)
-      .where(
-        sql<boolean>`not exists (
-          select 1
-          from development_environments as environment
-          where environment.tenant_id = workspace.tenant_id
-            and environment.workspace_id = workspace.id
-        )`,
-      )
       .where((expression) =>
         expression.or([
           expression("workspace.current_workspace_version_id", "is", null),
@@ -1256,6 +1246,21 @@ export class ControlPlaneStore {
             throw new ControlPlaneStoreError(
               "conflict",
               "Wait for every conversation Run to settle before deleting the Workspace",
+            );
+          }
+
+          const activeTerminal = await transaction
+            .selectFrom("workspace_terminal_sessions")
+            .select("terminal_id")
+            .where("tenant_id", "=", this.#tenantId)
+            .where("workspace_id", "=", workspaceId)
+            .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
+            .limit(1)
+            .executeTakeFirst();
+          if (activeTerminal !== undefined) {
+            throw new ControlPlaneStoreError(
+              "conflict",
+              "Close the active Workspace terminal before deleting the Workspace",
             );
           }
 
@@ -1544,7 +1549,7 @@ export class ControlPlaneStore {
         .where("tenant_id", "=", this.#tenantId)
         .where("workspace_id", "=", workspaceId)
         .where("archived_at", "is", null)
-        .where("sandbox_retention_policy", "=", "persistent")
+        .where("execution_mode", "=", "development_environment")
         .limit(1)
         .executeTakeFirst();
       if (conflictingPersistentSession !== undefined) {
@@ -1562,7 +1567,7 @@ export class ControlPlaneStore {
           workspace_id: target.id,
           current_workspace_version_id: target.currentVersionId,
           workspace_snapshot_key: null,
-          sandbox_retention_policy: "ephemeral",
+          execution_mode: "elastic",
           development_environment_id: null,
           working_directory: "/workspace",
           row_version: sql<string>`${sql.ref("row_version")} + 1`,
@@ -1624,7 +1629,7 @@ export class ControlPlaneStore {
         "session_row.workspace_id as workspaceId",
         "session_row.development_environment_id as developmentEnvironmentId",
         "session_row.state as state",
-        "session_row.sandbox_retention_policy as sandboxRetention",
+        "session_row.execution_mode as executionMode",
         "session_row.sandbox_profile_key as sandboxProfileKey",
         "session_row.working_directory as workingDirectory",
         "session_row.created_at as createdAt",
@@ -1645,7 +1650,7 @@ export class ControlPlaneStore {
         "session_row.workspace_id",
         "session_row.development_environment_id",
         "session_row.state",
-        "session_row.sandbox_retention_policy",
+        "session_row.execution_mode",
         "session_row.sandbox_profile_key",
         "session_row.working_directory",
         "session_row.created_at",
@@ -1677,7 +1682,7 @@ export class ControlPlaneStore {
         workspaceName: row.workspaceName,
         workspaceState: row.workspaceDeletedAt === null ? "attached" : "missing",
         state: row.state,
-        sandboxRetention: row.sandboxRetention,
+        executionMode: row.executionMode,
         sandboxProfileKey: row.sandboxProfileKey,
         workingDirectory: row.workingDirectory,
         turnCount: nonNegativeSafeInteger(row.turnCount, "Conversation turn count"),
@@ -1723,7 +1728,7 @@ export class ControlPlaneStore {
         "session_row.development_environment_id as developmentEnvironmentId",
         "session_row.desired_model_profile_id as modelProfileId",
         "session_row.state as sessionState",
-        "session_row.sandbox_retention_policy as sandboxRetention",
+        "session_row.execution_mode as executionMode",
         "session_row.sandbox_profile_key as sandboxProfileKey",
         "session_row.working_directory as workingDirectory",
         "session_row.created_at as sessionCreatedAt",
@@ -1903,7 +1908,7 @@ export class ControlPlaneStore {
           : { developmentEnvironmentId: conversation.developmentEnvironmentId }),
         workspaceState: conversation.workspaceDeletedAt === null ? "attached" : "missing",
         state: conversation.sessionState,
-        sandboxRetention: conversation.sandboxRetention,
+        executionMode: conversation.executionMode,
         sandboxProfileKey: conversation.sandboxProfileKey,
         workingDirectory: conversation.workingDirectory,
         modelProfileId: conversation.modelProfileId,

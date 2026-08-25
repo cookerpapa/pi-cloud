@@ -242,12 +242,12 @@ export {
   NonNegativeSafeIntegerSchema,
   OpaqueIdSchema,
   PositiveSafeIntegerSchema,
-  SandboxRetentionPolicySchema,
+  ExecutionModeSchema,
   TraceContextSchema,
   UtcTimestampSchema,
   UuidSchema,
   type TraceContext,
-  type SandboxRetentionPolicy,
+  type ExecutionMode,
 } from "./protocol-primitives.ts";
 
 export {

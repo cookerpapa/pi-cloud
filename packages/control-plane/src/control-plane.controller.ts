@@ -238,7 +238,7 @@ export class ControlPlaneController {
   }
 
   @Post("development-environments")
-  @HttpCode(202)
+  @HttpCode(201)
   async createDevelopmentEnvironment(
     @Req() request: FastifyRequest,
     @Headers("idempotency-key") idempotencyKeyValue: unknown,
@@ -536,7 +536,7 @@ export class ControlPlaneController {
     const identity = this.tenantRequestContext.requireMutation(httpRequest);
     return this.controlPlaneStores
       .forIdentity(identity)
-      .createSession(projectId, request.workspaceId, request.title, request.sandboxRetention, {
+      .createSession(projectId, request.workspaceId, request.title, request.executionMode, {
         ownerUserId: identity.userId,
         ...(request.sandboxProfileKey === undefined
           ? {}

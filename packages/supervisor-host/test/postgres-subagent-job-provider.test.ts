@@ -162,7 +162,7 @@ beforeAll(async () => {
     project.projectId,
     project.workspaceId,
     "Parent",
-    "persistent",
+    "elastic",
   );
   parentSessionId = parentSession.sessionId;
   const accepted = await store.acceptTurn(parentSessionId, "parent-turn", {
@@ -284,7 +284,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       .innerJoin("runs as child_run", "child_run.id", "execution.child_run_id")
       .select([
         "child.session_kind as sessionKind",
-        "child.sandbox_retention_policy as sandboxRetention",
+        "child.execution_mode as executionMode",
         "child.tool_capabilities as sessionTools",
         "child_run.tool_capability_snapshot as runTools",
         "child_run.command_id as commandId",
@@ -293,7 +293,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       .executeTakeFirstOrThrow();
     expect(persisted).toEqual({
       sessionKind: "subagent",
-      sandboxRetention: "ephemeral",
+      executionMode: "elastic",
       sessionTools: [],
       runTools: [],
       commandId: persisted.commandId,

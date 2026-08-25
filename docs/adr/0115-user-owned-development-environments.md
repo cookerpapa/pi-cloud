@@ -31,7 +31,9 @@ user-owned development-environment lifecycle.
   keeps Agent Runs queued. Otherwise Tool Broker may seal the current boundary,
   rotate authority to one fenced Agent Run and return the same Cube after
   settlement. No second Cube writes the Volume.
-- Support explicit `start`, `pause`, `resume` and `release` operations. Pause
+- Support explicit `pause`, `resume` and `release` operations. Creation is a
+  synchronous admission operation: tenant project quota, active-Sandbox limits
+  and Cube scheduling must succeed before the API returns. Pause
   uses Cube's memory/filesystem snapshot lifecycle; resume reconnects the same
   Sandbox identity. Release destroys the VM and its machine-owned Volume while
   preserving independently stored conversations.
@@ -46,6 +48,9 @@ user-owned development-environment lifecycle.
 - Environment templates, resource limits, networking and UID remain
   deployment-owned. Users choose a machine profile, not an arbitrary image,
   PodSpec or privileged runtime policy.
+- Machine storage has the explicit `development_environment` Workspace kind.
+  It is never returned by elastic Workspace APIs. There is no rebuild action:
+  ambiguous or failed full-VM state must be released, then replaced explicitly.
 
 ## Consequences
 

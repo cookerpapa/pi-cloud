@@ -87,7 +87,7 @@ const createRequest: ToolSandboxCreateRequest = {
   turnContextSha256: TURN_CONTEXT_SHA256,
   attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
   allowedTools: ["read", "write", "edit", "bash"],
-  retention: "ephemeral",
+  executionMode: "elastic",
   environment,
   workspaceSeed: { kind: "sample_java" },
 };
@@ -338,7 +338,10 @@ describe("provider-backed Tool Tool Broker", () => {
       }),
     ).resolves.toMatchObject({ state: "running" });
     expect(fixture.createSpec?.toolRoot).toBe("/home/user");
-    const agent = await manager.create({ ...createRequest, retention: "persistent" });
+    const agent = await manager.create({
+      ...createRequest,
+      executionMode: "development_environment",
+    });
     expect(agent.activationId).toBe(ACTIVATION_ID);
     expect(agent).toMatchObject({
       continuity: "warm_reuse",
@@ -401,7 +404,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...createRequest,
       requestId: "21111111-1111-4111-8111-111111111117",
       assignment: secondAssignment,
-      retention: "persistent",
+      executionMode: "development_environment",
     });
     expect(secondAgent).toMatchObject({
       continuity: "warm_reuse",
@@ -554,7 +557,7 @@ describe("provider-backed Tool Tool Broker", () => {
       manager.create({
         ...createRequest,
         toolRoot: "/missing",
-        retention: "persistent",
+        executionMode: "development_environment",
       }),
     ).rejects.toMatchObject({
       code: "development_environment_working_directory_unavailable",
@@ -612,7 +615,21 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
-  it("hands an idle persistent Cube to the human terminal without replacing its process world", async () => {
+  it("rejects the removed Session-persistent elastic Sandbox mode", async () => {
+    const fixture = providerFixture();
+    const manager = new ToolBroker({
+      provider: fixture.provider,
+      idGenerator: () => ACTIVATION_ID,
+      capabilityGenerator: () => CAPABILITY,
+    });
+    await expect(
+      manager.create({ ...createRequest, executionMode: "development_environment" }),
+    ).rejects.toMatchObject({ code: "elastic_execution_mode_mismatch", retryable: false });
+    expect(fixture.createCount).toBe(0);
+    await manager.close();
+  });
+
+  it("hands an idle warm Cube to the human terminal without replacing its process world", async () => {
     class PersistentTerminalRepository extends InMemorySandboxActivationStateRepository {
       override async reserveTerminal(input: { terminalId: string }) {
         const execution = parseExecutionGrant(assignment.executionGrant);
@@ -626,7 +643,6 @@ describe("provider-backed Tool Tool Broker", () => {
           retiredActivation: {
             activationId: ACTIVATION_ID,
             workspaceRevision: "1".repeat(64),
-            retention: "persistent" as const,
             assignment: {
               ...assignment,
               executionGrant: createExecutionGrant(
@@ -669,7 +685,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "31000000-0000-4000-8000-000000000002",
       activationId: created.activationId,
       assignment,
-      disposition: "keep_persistent",
+      disposition: "keep_warm",
       workspaceRevision: "1".repeat(64),
     });
 
@@ -724,12 +740,12 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
-  it("reports a lost persistent handoff so the Runner can apply its materialization boundary", async () => {
+  it("reports a lost warm handoff so the Runner can apply its materialization boundary", async () => {
     const fixture = providerFixture();
     fixture.provider.retainForWarm = async () => {
       throw new ToolBrokerError(
         "cubesandbox_handoff_state_invalid",
-        "Persistent process world was not ready for handoff",
+        "Warm process world was not ready for handoff",
         false,
       );
     };
@@ -747,7 +763,7 @@ describe("provider-backed Tool Tool Broker", () => {
         requestId: "32000000-0000-4000-8000-000000000002",
         activationId: created.activationId,
         assignment,
-        disposition: "keep_persistent",
+        disposition: "keep_warm",
         workspaceRevision: "1".repeat(64),
       }),
     ).resolves.toMatchObject({ retained: false });
@@ -770,7 +786,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "32000000-0000-4000-8000-000000000002",
       activationId: created.activationId,
       assignment,
-      disposition: "keep_persistent",
+      disposition: "keep_warm",
       workspaceRevision: "1".repeat(64),
     });
 
@@ -804,7 +820,7 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
-  it("rejects a new activation when the tenant holds its persistent Sandbox quota", async () => {
+  it("rejects a new activation when the tenant holds its active Sandbox quota", async () => {
     class TenantCapacityRepository extends InMemorySandboxActivationStateRepository {
       override async reserve() {
         return { status: "tenant_capacity" as const };
@@ -1244,7 +1260,7 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.stop(parent.activationId, assignment);
   });
 
-  it("keeps a persistent runtime across the idle TTL and reuses it for the same Session", async () => {
+  it("expires every elastic warm runtime at the deployment TTL", async () => {
     const fixture = providerFixture();
     let now = 1_000;
     const manager = new ToolBroker({
@@ -1262,34 +1278,14 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "71000000-0000-4000-8000-000000000002",
       activationId: first.activationId,
       assignment,
-      disposition: "keep_persistent",
+      disposition: "keep_warm",
       workspaceRevision: "e".repeat(64),
     });
 
     now += 60_000;
     await manager.reapWarm();
-    expect(manager.warmCount).toBe(1);
-    expect(fixture.stopped).toBe(false);
-
-    const nextAssignment: ToolSandboxAssignment = {
-      ...assignment,
-      commandId: "command-provider-test-persistent-next",
-      turnId: "turn-provider-test-persistent-next",
-      executionGrant: createExecutionGrant(
-        "71000000-0000-4000-8000-000000000003",
-        "71000000-0000-4000-8000-000000000003",
-        6,
-      ),
-    };
-    const second = await manager.create({
-      ...createRequest,
-      requestId: "71000000-0000-4000-8000-000000000004",
-      assignment: nextAssignment,
-      workspaceRevision: "e".repeat(64),
-    });
-    expect(second.continuity).toBe("warm_reuse");
-    expect(second.activationId).toBe(first.activationId);
-    await manager.stop(second.activationId, nextAssignment);
+    expect(manager.warmCount).toBe(0);
+    expect(fixture.stopped).toBe(true);
   });
 
   it("reaps a retained runtime after its conversation is archived", async () => {
@@ -1316,7 +1312,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "72000000-0000-4000-8000-000000000002",
       activationId: created.activationId,
       assignment,
-      disposition: "keep_persistent",
+      disposition: "keep_warm",
       workspaceRevision: "f".repeat(64),
     });
 
@@ -1325,46 +1321,6 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(manager.warmCount).toBe(0);
     expect(manager.admittedCount).toBe(0);
     expect(fixture.stopped).toBe(true);
-  });
-
-  it("does not let another Session displace a persistent process world", async () => {
-    const fixture = providerFixture();
-    const manager = new ToolBroker({
-      provider: fixture.provider,
-      idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
-    });
-    const first = await manager.create(createRequest);
-    await manager.execute(first.capability, operation("73000000-0000-4000-8000-000000000001"));
-    await manager.release({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.release",
-      requestId: "73000000-0000-4000-8000-000000000002",
-      activationId: first.activationId,
-      assignment,
-      disposition: "keep_persistent",
-      workspaceRevision: "1".repeat(64),
-    });
-
-    await expect(
-      manager.create({
-        ...createRequest,
-        requestId: "73000000-0000-4000-8000-000000000003",
-        assignment: {
-          ...assignment,
-          sessionId: "session-provider-test-sibling",
-          commandId: "command-provider-test-sibling",
-          turnId: "turn-provider-test-sibling",
-          executionGrant: createExecutionGrant(
-            "73000000-0000-4000-8000-000000000004",
-            "73000000-0000-4000-8000-000000000004",
-            6,
-          ),
-        },
-        workspaceRevision: "1".repeat(64),
-      }),
-    ).rejects.toMatchObject({ code: "tool_sandbox_workspace_pinned", retryable: false });
-    expect(fixture.stopped).toBe(false);
   });
 
   it("releases the durable reservation before moving an ordinary warm Workspace", async () => {
@@ -1425,73 +1381,13 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.stop(second.activationId, nextAssignment);
   });
 
-  it("moves a persistent Workspace only between related conversation branches", async () => {
-    class ConversationTreeStateRepository extends InMemorySandboxActivationStateRepository {
-      readonly released: string[] = [];
-
-      override async allowsPersistentConversationHandoff(): Promise<boolean> {
-        return true;
-      }
-
-      override async setActivationState(
-        activationId: string,
-        state: Parameters<InMemorySandboxActivationStateRepository["setActivationState"]>[1],
-      ): Promise<void> {
-        if (state === "released") this.released.push(activationId);
-      }
-    }
-    const fixture = providerFixture();
-    const stateRepository = new ConversationTreeStateRepository();
-    const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const capabilities = [CAPABILITY, SECOND_CAPABILITY];
-    const manager = new ToolBroker({
-      provider: fixture.provider,
-      stateRepository,
-      idGenerator: () => activationIds.shift()!,
-      capabilityGenerator: () => capabilities.shift()!,
-    });
-    const first = await manager.create(createRequest);
-    await manager.execute(first.capability, operation("73600000-0000-4000-8000-000000000001"));
-    await manager.release({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.release",
-      requestId: "73600000-0000-4000-8000-000000000002",
-      activationId: first.activationId,
-      assignment,
-      disposition: "keep_persistent",
-      workspaceRevision: "1".repeat(64),
-    });
-
-    const nextAssignment = {
-      ...assignment,
-      sessionId: "session-provider-test-conversation-child",
-      commandId: "command-provider-test-conversation-child",
-      turnId: "turn-provider-test-conversation-child",
-      executionGrant: createExecutionGrant(
-        "73600000-0000-4000-8000-000000000003",
-        "73600000-0000-4000-8000-000000000003",
-        6,
-      ),
-    };
-    const second = await manager.create({
-      ...createRequest,
-      requestId: "73600000-0000-4000-8000-000000000004",
-      assignment: nextAssignment,
-      workspaceRevision: "1".repeat(64),
-    });
-
-    expect(fixture.stopped).toBe(true);
-    expect(stateRepository.released).toContain(first.activationId);
-    expect(second.activationId).toBe(SECOND_ACTIVATION_ID);
-    await manager.stop(second.activationId, nextAssignment);
-  });
-
-  it("evicts ordinary warm capacity before a persistent process world", async () => {
+  it("bounds every warm process world with one shared LRU limit", async () => {
     const fixture = providerFixture();
     const activationIds = [
       ACTIVATION_ID,
       SECOND_ACTIVATION_ID,
       "30000000-0000-4000-8000-000000000030",
+      "30000000-0000-4000-8000-000000000031",
     ];
     const capabilities = [
       CAPABILITY,
@@ -1514,7 +1410,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "74000000-0000-4000-8000-000000000002",
       activationId: persistent.activationId,
       assignment,
-      disposition: "keep_persistent",
+      disposition: "keep_warm",
       workspaceRevision: "2".repeat(64),
     });
 
@@ -1548,7 +1444,7 @@ describe("provider-backed Tool Tool Broker", () => {
       disposition: "keep_warm",
       workspaceRevision: "3".repeat(64),
     });
-    expect(manager.warmCount).toBe(2);
+    expect(manager.warmCount).toBe(1);
 
     const demandAssignment: ToolSandboxAssignment = {
       ...ordinaryAssignment,
@@ -1589,7 +1485,7 @@ describe("provider-backed Tool Tool Broker", () => {
       assignment: persistentNextAssignment,
       workspaceRevision: "2".repeat(64),
     });
-    expect(persistentAgain.continuity).toBe("warm_reuse");
+    expect(persistentAgain.continuity).toBe("cold_restore");
     await manager.stop(persistentAgain.activationId, persistentNextAssignment);
     await manager.stop(demand.activationId, demandAssignment);
   });
@@ -1786,7 +1682,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "41000000-0000-4000-8000-000000000002",
       activationId: created.activationId,
       assignment,
-      disposition: "keep_persistent",
+      disposition: "keep_warm",
       workspaceRevision: "b".repeat(64),
     });
 

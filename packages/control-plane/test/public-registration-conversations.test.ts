@@ -470,7 +470,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     });
   });
 
-  it("persists execution profiles, allows several exclusive conversations, and prevents elastic mixing", async () => {
+  it("rejects exclusive mode on elastic storage and preserves a Session across Workspace deletion", async () => {
     const projectResponse = await http.inject({
       method: "POST",
       url: "/v1/projects",
@@ -487,74 +487,10 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       payload: {
         workspaceId: project.workspaceId,
         title: "Long-running development environment",
-        sandboxRetention: "persistent",
+        executionMode: "development_environment",
       },
     });
-    expect(persistentResponse.statusCode).toBe(201);
-    const persistent = persistentResponse.json<SessionResource>();
-    expect(persistent.sandboxRetention).toBe("persistent");
-
-    const detail = await http.inject({
-      method: "GET",
-      url: `/v1/conversations/${persistent.sessionId}`,
-      headers: authorization(alpha.apiToken),
-    });
-    expect(detail.statusCode).toBe(200);
-    expect(detail.json<ConversationDetailResource>().session.sandboxRetention).toBe("persistent");
-
-    const siblingResponse = await http.inject({
-      method: "POST",
-      url: `/v1/projects/${project.projectId}/sessions`,
-      headers: authorization(alpha.apiToken),
-      payload: {
-        workspaceId: project.workspaceId,
-        title: "Second directory in the same environment",
-        sandboxRetention: "persistent",
-        sandboxProfileKey: "performance",
-        workingDirectory: "/workspace/frontend",
-      },
-    });
-    expect(siblingResponse.statusCode).toBe(201);
-    const sibling = siblingResponse.json<SessionResource>();
-    expect(sibling).toMatchObject({
-      sandboxRetention: "persistent",
-      sandboxProfileKey: "performance",
-      workingDirectory: "/workspace/frontend",
-    });
-
-    const conflicting = await http.inject({
-      method: "POST",
-      url: `/v1/projects/${project.projectId}/sessions`,
-      headers: authorization(alpha.apiToken),
-      payload: {
-        workspaceId: project.workspaceId,
-        title: "Conflicting conversation",
-        sandboxRetention: "ephemeral",
-      },
-    });
-    expect(conflicting.statusCode).toBe(409);
-
-    const archived = await http.inject({
-      method: "DELETE",
-      url: `/v1/conversations/${persistent.sessionId}`,
-      headers: {
-        ...authorization(alpha.apiToken),
-        "idempotency-key": "archive-persistent-devbox",
-      },
-    });
-    expect(archived.statusCode).toBe(200);
-    expect(
-      (
-        await http.inject({
-          method: "DELETE",
-          url: `/v1/conversations/${sibling.sessionId}`,
-          headers: {
-            ...authorization(alpha.apiToken),
-            "idempotency-key": "archive-persistent-devbox-sibling",
-          },
-        })
-      ).statusCode,
-    ).toBe(200);
+    expect(persistentResponse.statusCode).toBe(409);
 
     const replacement = await http.inject({
       method: "POST",
@@ -563,17 +499,51 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       payload: {
         workspaceId: project.workspaceId,
         title: "Replacement conversation",
-        sandboxRetention: "ephemeral",
+        executionMode: "elastic",
       },
     });
     expect(replacement.statusCode).toBe(201);
     const replacementSession = replacement.json<SessionResource>();
-    expect(replacementSession.sandboxRetention).toBe("ephemeral");
+    expect(replacementSession.executionMode).toBe("elastic");
 
     const deletionHeaders = {
       ...authorization(alpha.apiToken),
       "idempotency-key": "delete-live-persistent-workspace",
     };
+    await pglite.exec("alter table workspace_terminal_sessions disable trigger all");
+    await database
+      .insertInto("workspace_terminal_sessions")
+      .values({
+        terminal_id: "90000000-0000-4000-8000-000000000001",
+        sandbox_domain_id: "sandbox-domain-0001",
+        owner_instance_id: "90000000-0000-4000-8000-000000000002",
+        owner_base_url: "http://terminal-owner.invalid",
+        tenant_id: alpha.tenantId,
+        user_id: alpha.userId,
+        project_id: project.projectId,
+        workspace_id: project.workspaceId,
+        session_id: replacementSession.sessionId,
+        generation: 1,
+        runtime_id: "workspace-terminal-runtime",
+        runtime_name: "workspace-terminal-runtime",
+        state: "active",
+        lease_expires_at: new Date(Date.now() + 60_000),
+        last_heartbeat_at: new Date(),
+        failure_code: null,
+      })
+      .executeTakeFirstOrThrow();
+    await pglite.exec("alter table workspace_terminal_sessions enable trigger all");
+    const blockedByTerminal = await http.inject({
+      method: "DELETE",
+      url: `/v1/workspaces/${project.workspaceId}`,
+      headers: deletionHeaders,
+    });
+    expect(blockedByTerminal.statusCode).toBe(409);
+    await database
+      .updateTable("workspace_terminal_sessions")
+      .set({ state: "released" })
+      .where("terminal_id", "=", "90000000-0000-4000-8000-000000000001")
+      .executeTakeFirstOrThrow();
     const deletedWorkspace = await http.inject({
       method: "DELETE",
       url: `/v1/workspaces/${project.workspaceId}`,

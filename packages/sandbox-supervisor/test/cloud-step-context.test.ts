@@ -33,7 +33,7 @@ const command: ExecuteTurnCommandMessage = {
     ),
     nextEventSeq: 1,
     input: { kind: "prompt", text: "test" },
-    sandboxRetention: "ephemeral",
+    executionMode: "elastic",
     sandboxProfileKey: "standard",
     workingDirectory: "/workspace",
     toolCapabilities: ["read", "write", "edit", "bash"],
@@ -72,7 +72,7 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
     const changedRetention = createCloudTurnContext(
       {
         ...command,
-        payload: { ...command.payload, sandboxRetention: "persistent" },
+        payload: { ...command.payload, executionMode: "development_environment" },
       },
       "c".repeat(64),
     );

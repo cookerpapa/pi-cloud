@@ -392,7 +392,7 @@ const session = await api.createSession(
   development.projectId,
   development.workspaceId,
   `Agent handoff into exclusive environment ${suffix}`,
-  "persistent",
+  "development_environment",
   "standard",
   "/home/user/empty-project",
 );
@@ -510,7 +510,7 @@ const replacementSession = await api.createSession(
   development.projectId,
   development.workspaceId,
   `Replacement conversation ${suffix}`,
-  "persistent",
+  "development_environment",
   "standard",
   "/home/user/empty-project",
 );

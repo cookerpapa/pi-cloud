@@ -148,6 +148,8 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     return { volumeId, name: volumeId };
   }
 
+  async deleteVolume(_volumeId: string): Promise<void> {}
+
   async create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance> {
     this.creates.push(input);
     const sandboxId = `cube-sandbox-${String(this.creates.length)}`;
@@ -568,7 +570,7 @@ describe("CubeSandbox Provider contract", () => {
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
-      retention: "ephemeral",
+      executionMode: "elastic",
       environment,
       workspaceSeed: { kind: "sample_java" },
     });
@@ -725,7 +727,7 @@ describe("CubeSandbox Provider contract", () => {
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
-      retention: "ephemeral",
+      executionMode: "elastic",
       environment,
       workspaceSeed: { kind: "sample_java" },
       workspaceRevision: "a".repeat(64),
@@ -767,7 +769,7 @@ describe("CubeSandbox Provider contract", () => {
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
-      retention: "ephemeral",
+      executionMode: "elastic",
       environment,
       workspaceSeed: { kind: "sample_java" },
       workspaceRevision: "a".repeat(64),

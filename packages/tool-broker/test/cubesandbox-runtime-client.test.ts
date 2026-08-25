@@ -94,6 +94,14 @@ beforeAll(async () => {
         response.end();
         return;
       }
+      if (
+        request.method === "DELETE" &&
+        request.url === "/volumes/pcw-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ) {
+        response.writeHead(204);
+        response.end();
+        return;
+      }
       if (request.method === "POST" && request.url === "/volumes") {
         response.writeHead(201, { "content-type": "application/json" });
         response.end(
@@ -245,6 +253,12 @@ describe("official CubeSandbox HTTP compatibility client", () => {
       headers: { authorization: `Bearer ${"k".repeat(48)}` },
       body: { name: volumeId, driver: "picloud-posix" },
     });
+    await expect(client.deleteVolume(volumeId)).resolves.toBeUndefined();
+    expect(
+      observed.find(
+        (request) => request.method === "DELETE" && request.path === `/volumes/${volumeId}`,
+      ),
+    ).toBeDefined();
     const instance = await client.create({
       templateId: "pi-cloud-tool-v1",
       timeoutSeconds: 900,

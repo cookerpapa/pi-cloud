@@ -172,7 +172,7 @@ function createRequest(
     turnContextSha256: STEP_CONTEXT_SHA256,
     attemptContextSha256: STEP_CONTEXT_SHA256,
     allowedTools: ["read", "write", "edit", "bash"],
-    retention: "ephemeral",
+    executionMode: "elastic",
     environment: {
       environmentVersionId: randomUUID(),
       versionNumber: 1,
@@ -674,7 +674,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
             requestId: randomUUID(),
             activationId: second.activationId,
             assignment: secondAssignment,
-            disposition: "keep_persistent",
+            disposition: "keep_warm",
             workspaceRevision: warmRevision,
           }),
         ).resolves.toMatchObject({ retained: true });

@@ -19,6 +19,8 @@ export type ToolBrokerConfig = {
   maximumActiveSandboxes: number;
   warmTtlMs: number;
   maximumWarmActivations: number;
+  workspaceDeletionReaperIntervalMs: number;
+  workspaceDeletionReaperBatchSize: number;
   cubeSandbox: {
     apiUrl: string;
     apiKey: string;
@@ -265,6 +267,18 @@ export async function loadToolBrokerConfig(
       24 * 60 * 60_000,
     ),
     maximumWarmActivations: integer(environment.PI_CLOUD_MAXIMUM_WARM_SANDBOXES, 4, 1, 1_000),
+    workspaceDeletionReaperIntervalMs: integer(
+      environment.PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS,
+      30_000,
+      1_000,
+      3_600_000,
+    ),
+    workspaceDeletionReaperBatchSize: integer(
+      environment.PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE,
+      16,
+      1,
+      256,
+    ),
     cubeSandbox: {
       apiUrl: bounded(
         required(environment, "PI_CLOUD_CUBESANDBOX_API_URL"),

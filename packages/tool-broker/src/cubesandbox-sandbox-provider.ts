@@ -29,6 +29,7 @@ import {
   parsePersistentVolumeReference,
 } from "@pi-cloud/workspace-runtime";
 import {
+  CubeRuntimeClientError,
   OfficialCubeSandboxRuntimeClient,
   type CubeSandboxInstance,
   type CubeSandboxRuntimeClient,
@@ -190,7 +191,7 @@ type CubeActivation = {
   authorityEpoch: number;
   state: "running" | "quiesced" | "idle" | "paused";
   volumeId: string;
-  lifetime: "agent_turn" | "persistent_conversation" | "development_environment";
+  lifetime: "agent_turn" | "development_environment";
   toolRoot: string;
 };
 
@@ -877,6 +878,10 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
   }
 
+  async deleteWorkspaceVolume(volumeId: string): Promise<void> {
+    await this.#client.deleteVolume(volumeId);
+  }
+
   async create(spec: SandboxCreateSpec): Promise<SandboxHandle> {
     if (this.#activations.has(spec.activationId)) {
       throw new ToolBrokerError(
@@ -932,28 +937,44 @@ export class CubeSandboxProvider implements SandboxProvider {
       sessionId: spec.assignment.sessionId,
       volumeId,
     });
-    const instance = await this.#client.create({
-      templateId:
-        spec.sandboxProfileKey !== undefined
-          ? this.#developmentTemplateIds.get(spec.sandboxProfileKey)!
-          : this.#templateId,
-      timeoutSeconds:
-        spec.lifetime === "development_environment" || spec.lifetime === "persistent_conversation"
-          ? -1
-          : Math.ceil(spec.policy.resources.turnWallClockTimeoutMs / 1_000),
-      metadata: assignmentMetadata(
-        spec.activationId,
-        spec.assignment,
-        this.#imageRevision,
-        bindingSha256,
-      ),
-      allowInternetAccess: true,
-      allowPublicTraffic: false,
-      volumeMounts: [{ name: volumeId, path: exclusiveMachine ? "/home/user" : "/workspace" }],
-      ...(spec.lifetime === "development_environment" || spec.lifetime === "persistent_conversation"
-        ? { lifecycle: { onTimeout: "pause" as const, autoResume: true } }
-        : {}),
-    });
+    let instance: CubeSandboxInstance;
+    try {
+      instance = await this.#client.create({
+        templateId:
+          spec.sandboxProfileKey !== undefined
+            ? this.#developmentTemplateIds.get(spec.sandboxProfileKey)!
+            : this.#templateId,
+        timeoutSeconds:
+          spec.lifetime === "development_environment"
+            ? -1
+            : Math.ceil(spec.policy.resources.turnWallClockTimeoutMs / 1_000),
+        metadata: assignmentMetadata(
+          spec.activationId,
+          spec.assignment,
+          this.#imageRevision,
+          bindingSha256,
+        ),
+        allowInternetAccess: true,
+        allowPublicTraffic: false,
+        volumeMounts: [{ name: volumeId, path: exclusiveMachine ? "/home/user" : "/workspace" }],
+        ...(spec.lifetime === "development_environment"
+          ? { lifecycle: { onTimeout: "pause" as const, autoResume: true } }
+          : {}),
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof CubeRuntimeClientError &&
+        (error.statusCode === 409 || error.statusCode === 429)
+      ) {
+        throw new ToolBrokerError(
+          "sandbox_compute_capacity_exhausted",
+          "Selected Cube profile has no available compute capacity",
+          true,
+          error,
+        );
+      }
+      throw error;
+    }
     try {
       const evidence = await this.#waitForEvidence(instance);
       this.#assertEvidence(evidence, spec.policy);
@@ -1106,21 +1127,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     activation.seenOperationIds.clear();
     activation.seenCaptureIds.clear();
     return retained;
-  }
-
-  async recoverWarm(
-    activationId: string,
-    assignment: ToolSandboxAssignment,
-  ): Promise<SandboxHandle | undefined> {
-    const activation = this.#activations.get(activationId);
-    if (
-      activation === undefined ||
-      activation.state !== "idle" ||
-      !sameAssignment(activation.handle.assignment, assignment)
-    ) {
-      return undefined;
-    }
-    return activation.handle;
   }
 
   async rebind(

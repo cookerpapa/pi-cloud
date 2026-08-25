@@ -381,7 +381,7 @@ describe("Tool Broker authenticated RPC", () => {
         turnContextSha256: STEP_CONTEXT_SHA256,
         attemptContextSha256: STEP_CONTEXT_SHA256,
         allowedTools: ["read", "write", "edit", "bash"],
-        retention: "ephemeral",
+        executionMode: "elastic",
         environment: {
           environmentVersionId: "10000000-0000-4000-8000-000000000013",
           versionNumber: 1,
@@ -460,7 +460,7 @@ describe("Tool Broker authenticated RPC", () => {
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
-      retention: "ephemeral",
+      executionMode: "elastic",
       environment: {
         environmentVersionId: "10000000-0000-4000-8000-000000000013",
         versionNumber: 1,
@@ -548,7 +548,7 @@ describe("Tool Broker authenticated RPC", () => {
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
-      retention: "ephemeral",
+      executionMode: "elastic",
       environment: {
         environmentVersionId: "10000000-0000-4000-8000-000000000013",
         versionNumber: 1,
@@ -593,7 +593,7 @@ describe("Tool Broker authenticated RPC", () => {
       turnContextSha256: STEP_CONTEXT_SHA256,
       attemptContextSha256: STEP_CONTEXT_SHA256,
       allowedTools: ["read", "write", "edit", "bash"],
-      retention: "ephemeral",
+      executionMode: "elastic",
       environment: {
         environmentVersionId: "10000000-0000-4000-8000-000000000013",
         versionNumber: 1,

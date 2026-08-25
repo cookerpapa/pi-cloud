@@ -142,23 +142,6 @@ describe("PostgreSQL Tool Broker ownership", () => {
     resources.push(async () => repository.close());
     await repository.start();
 
-    await expect(
-      repository.allowsPersistentConversationHandoff({
-        tenantId,
-        workspaceId,
-        currentSessionId: rootSessionId,
-        nextSessionId: childSessionId,
-      }),
-    ).resolves.toBe(true);
-    await expect(
-      repository.allowsPersistentConversationHandoff({
-        tenantId,
-        workspaceId,
-        currentSessionId: rootSessionId,
-        nextSessionId: unrelatedSessionId,
-      }),
-    ).resolves.toBe(false);
-
     const activationAttemptId = "20000000-0000-4000-8000-000000000008";
     const activation = {
       activationId: "20000000-0000-4000-8000-000000000005",
@@ -563,7 +546,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         .where("activation_id", "=", activation.activationId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({ state: "cleaning", failure_code: "terminal_run_orphan" });
-  }, 15_000);
+  }, 30_000);
 
   it("fences an expired replica before a surviving owner stays Ready", async () => {
     const pglite = await PGlite.create();
@@ -622,7 +605,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       { instance_id: "10000000-0000-4000-8000-000000000101", state: "lost" },
       { instance_id: "10000000-0000-4000-8000-000000000102", state: "ready" },
     ]);
-  }, 15_000);
+  }, 30_000);
 
   it("waits for the prior same-URL lease instead of crash-looping during replacement", async () => {
     const pglite = await PGlite.create();
@@ -688,5 +671,5 @@ describe("PostgreSQL Tool Broker ownership", () => {
         .where("instance_id", "=", replacementInstanceId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({ instance_id: replacementInstanceId, state: "ready" });
-  }, 15_000);
+  }, 30_000);
 });

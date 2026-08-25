@@ -4,7 +4,7 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { lstat, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   PersistentVolumeWorkspaceVolumeGateway,
   WorkspaceVolumeDeletionReaper,
@@ -129,7 +129,13 @@ describe("WorkspaceVolumeDeletionReaper", () => {
         .execute();
       await pglite.exec("alter table tool_broker_activations enable trigger all");
 
-      const reaper = new WorkspaceVolumeDeletionReaper({ database, gateway });
+      const deleteVolumeMetadata = vi.fn(async (_volumeId: string) => undefined);
+      const reaper = new WorkspaceVolumeDeletionReaper({
+        database,
+        sandboxDomainId: "sandbox-domain-delete",
+        gateway,
+        deleteVolumeMetadata,
+      });
       await expect(reaper.runOnce()).resolves.toBe(0);
       await expect(lstat(volumeRoot)).resolves.toMatchObject({});
       await database
@@ -137,8 +143,40 @@ describe("WorkspaceVolumeDeletionReaper", () => {
         .set({ state: "released" })
         .where("activation_id", "=", IDS.activation)
         .execute();
+      await pglite.exec("alter table workspace_terminal_sessions disable trigger all");
+      await database
+        .insertInto("workspace_terminal_sessions")
+        .values({
+          terminal_id: "e0000000-0000-4000-8000-000000000001",
+          sandbox_domain_id: "sandbox-domain-delete",
+          owner_instance_id: IDS.broker,
+          owner_base_url: "http://broker-delete.invalid",
+          tenant_id: IDS.tenant,
+          user_id: "f0000000-0000-4000-8000-000000000001",
+          project_id: IDS.project,
+          workspace_id: IDS.workspace,
+          session_id: IDS.session,
+          generation: 1,
+          runtime_id: "terminal-runtime",
+          runtime_name: "terminal-runtime",
+          state: "active",
+          lease_expires_at: new Date(Date.now() + 60_000),
+          last_heartbeat_at: new Date(),
+          failure_code: null,
+        })
+        .execute();
+      await pglite.exec("alter table workspace_terminal_sessions enable trigger all");
+      await expect(reaper.runOnce()).resolves.toBe(0);
+      await expect(lstat(volumeRoot)).resolves.toMatchObject({});
+      expect(deleteVolumeMetadata).not.toHaveBeenCalled();
+      await database
+        .updateTable("workspace_terminal_sessions")
+        .set({ state: "released" })
+        .where("terminal_id", "=", "e0000000-0000-4000-8000-000000000001")
+        .execute();
       await expect(reaper.runOnce()).resolves.toBe(1);
       await expect(lstat(volumeRoot)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(deleteVolumeMetadata).toHaveBeenCalledWith(volumeId);
       await expect(
         database
           .selectFrom("workspaces")

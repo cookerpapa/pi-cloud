@@ -768,7 +768,7 @@ const session = await api.createSession(
   project.projectId,
   project.workspaceId,
   `Long-context algorithm lab ${suffix}`,
-  "persistent",
+  "elastic",
 );
 
 const rounds = [];
@@ -888,7 +888,7 @@ try {
   assert.equal(
     crossWorkerEvidence.runtimeId,
     postCompactionEvidence.runtimeId,
-    "Cross-Worker continuation did not rebind the same persistent Cube runtime",
+    "Cross-Worker continuation did not rebind the same bounded-warm Cube runtime",
   );
   progress(
     `cross-Worker compacted recovery succeeded: ${postCompactionEvidence.supervisorId} -> ${crossWorkerEvidence.supervisorId}`,
@@ -1032,13 +1032,13 @@ try {
         `- Post-compaction recall first-response/settled: ${String(report.postCompaction.recall.firstResponseMs)} / ${String(report.postCompaction.recall.settledMs)} ms`,
         `- Post-compaction coding first-response/settled: ${String(report.postCompaction.coding.firstResponseMs)} / ${String(report.postCompaction.coding.settledMs)} ms`,
         `- Cross-Worker recovery: ${report.postCompaction.crossWorker.from} -> ${report.postCompaction.crossWorker.to}`,
-        `- Same persistent Cube runtime rebound: ${String(report.postCompaction.crossWorker.sameCubeRuntimeRebound)}`,
+        `- Same bounded-warm Cube runtime rebound: ${String(report.postCompaction.crossWorker.sameCubeRuntimeRebound)}`,
         `- Real model attempts/completed/recovered failures: ${String(report.totalUsage.modelAttempts)} / ${String(report.totalUsage.modelRequests)} / ${String(report.totalUsage.recoveredRequestFailures)}`,
         `- Real input/output/cache-read/cache-write tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)} / ${String(report.totalUsage.cacheWriteTokens)}`,
         `- Final Pi SessionStorage bytes/entries: ${String(report.postCompaction.crossWorker.sessionBytes)} / ${String(report.postCompaction.crossWorker.sessionEntries)}`,
         `- Final active context bytes/entries: ${String(report.postCompaction.crossWorker.activeContextBytes)} / ${String(report.postCompaction.crossWorker.activeContextEntries)}`,
         "",
-        "The workload used real multi-round Python coding tasks, remote Tool calls, deterministic tests and a persistent CubeSandbox KVM. Pi completed native threshold/overflow compaction, retained an early conversation invariant, continued coding after compaction, and restored the compacted native Session on a different Worker while rebinding the same persistent Cube runtime.",
+        "The workload used real multi-round Python coding tasks, remote Tool calls, deterministic tests and a bounded-warm CubeSandbox KVM over a persistent Workspace Volume. Pi completed native threshold/overflow compaction, retained an early conversation invariant, continued coding after compaction, and restored the compacted native Session on a different Worker while rebinding the same warm Cube runtime.",
         "",
       ].join("\n"),
       "utf8",

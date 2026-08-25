@@ -61,6 +61,7 @@ export async function startControlPlane(): Promise<void> {
   const controlPlaneInstanceId = randomUUID();
   let agentEvents: JetStreamEventRuntime | undefined;
   let runtime: ControlPlaneRuntime | undefined;
+  let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let closing = false;
   try {
     agentEvents = await JetStreamEventRuntime.create({
@@ -190,12 +191,13 @@ export async function startControlPlane(): Promise<void> {
       publicOriginBaseUrl: config.previewPublicOriginBaseUrl,
       allowInsecureInternalHttp: config.allowInsecureInternalHttp,
     });
-    const developmentEnvironmentService = new DevelopmentEnvironmentService({
+    developmentEnvironmentService = new DevelopmentEnvironmentService({
       database,
       terminalToken: config.workspaceTerminalToken,
       allowInsecureInternalHttp: config.allowInsecureInternalHttp,
       environmentImageRevision: config.environmentImageRevision,
     });
+    developmentEnvironmentService.start();
     const sshAccessTicketService = new SshAccessTicketService({
       database,
       enabled: config.sshGatewayEnabled,
@@ -271,6 +273,7 @@ export async function startControlPlane(): Promise<void> {
       if (closing) return;
       closing = true;
       await runtime?.close();
+      await developmentEnvironmentService?.close();
       await activeAgentEvents.close();
       objectStore.destroy();
       await database.destroy();
@@ -286,6 +289,7 @@ export async function startControlPlane(): Promise<void> {
   } catch (error: unknown) {
     closing = true;
     await runtime?.close().catch(() => undefined);
+    await developmentEnvironmentService?.close().catch(() => undefined);
     await agentEvents?.close().catch(() => undefined);
     objectStore.destroy();
     await database.destroy();

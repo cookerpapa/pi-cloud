@@ -286,7 +286,7 @@ const session = await api.createSession(
   project.projectId,
   project.workspaceId,
   `Subagent production acceptance ${suffix}`,
-  "ephemeral",
+  "elastic",
 );
 
 const none = await runTurn(

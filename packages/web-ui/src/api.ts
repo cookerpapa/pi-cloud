@@ -50,7 +50,7 @@ import {
   type LogoutResource,
   type RunListResource,
   type RunResource,
-  type SandboxRetentionPolicy,
+  type ExecutionMode,
   type SessionResource,
   type TenantIdentityResource,
   type TenantRegistrationResource,
@@ -635,7 +635,7 @@ export class PiCloudApi {
     projectId: string,
     workspaceId: string,
     title: string,
-    sandboxRetention: SandboxRetentionPolicy,
+    executionMode: ExecutionMode,
     sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey = "standard",
     workingDirectory = "/workspace",
   ): Promise<SessionResource> {
@@ -646,7 +646,7 @@ export class PiCloudApi {
         jsonRequest({
           workspaceId,
           title,
-          sandboxRetention,
+          executionMode,
           sandboxProfileKey,
           workingDirectory,
         }),

@@ -6,7 +6,7 @@ import { AgentWorkspaceSeedSchema, SandboxCheckpointBlobSchema } from "./agent-r
 import {
   OpaqueIdSchema,
   PositiveSafeIntegerSchema,
-  SandboxRetentionPolicySchema,
+  ExecutionModeSchema,
   UuidSchema,
 } from "./protocol-primitives.ts";
 import {
@@ -133,7 +133,7 @@ export const ToolSandboxCreateRequestSchema = Type.Object(
     turnContextSha256: Sha256Schema,
     attemptContextSha256: Sha256Schema,
     allowedTools: CloudToolCapabilitySnapshotSchema,
-    retention: SandboxRetentionPolicySchema,
+    executionMode: ExecutionModeSchema,
     sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
     toolRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     environment: EnvironmentRuntimeSnapshotSchema,
@@ -246,18 +246,6 @@ export const ToolSandboxReleaseRequestSchema = Type.Union([
       activationId: UuidSchema,
       assignment: ToolSandboxAssignmentSchema,
       disposition: Type.Literal("keep_warm"),
-      workspaceRevision: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.release"),
-      requestId: UuidSchema,
-      activationId: UuidSchema,
-      assignment: ToolSandboxAssignmentSchema,
-      disposition: Type.Literal("keep_persistent"),
       workspaceRevision: Type.String({ pattern: "^[0-9a-f]{64}$" }),
     },
     { additionalProperties: false },

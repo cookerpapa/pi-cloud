@@ -103,8 +103,7 @@ type WarmActivation = {
   handle: SandboxHandle;
   workspaceRevision: string;
   environment: EnvironmentRuntimeSnapshot;
-  retention: "ephemeral" | "persistent";
-  expiresAt: number | null;
+  expiresAt: number;
   lastUsedAt: number;
 };
 
@@ -1047,39 +1046,17 @@ export class ToolBroker {
       if (reservation.retiredActivation !== undefined) {
         const retired = reservation.retiredActivation;
         const retiredKey = workspaceKey(retired.assignment);
-        let warm = this.#warm.get(retiredKey);
-        if (
-          warm === undefined &&
-          retired.retention === "persistent" &&
-          retired.workspaceRevision !== undefined &&
-          this.#provider.recoverWarm !== undefined
-        ) {
-          const recovered = await this.#provider.recoverWarm(
-            retired.activationId,
-            retired.assignment,
-          );
-          if (recovered !== undefined) {
-            warm = {
-              handle: recovered,
-              workspaceRevision: retired.workspaceRevision,
-              environment: recovered.environment,
-              retention: "persistent",
-              lastUsedAt: this.#now(),
-              expiresAt: null,
-            };
-          }
-        }
+        const warm = this.#warm.get(retiredKey);
         const warmEntry = warm === undefined ? undefined : ([retiredKey, warm] as const);
         if (warmEntry !== undefined && warmEntry[1].handle.activationId !== retired.activationId) {
           throw new ToolBrokerError(
-            "persistent_sandbox_identity_mismatch",
-            "Persistent Sandbox memory and durable ownership did not match",
+            "warm_sandbox_identity_mismatch",
+            "Warm Sandbox memory and durable ownership did not match",
             false,
           );
         }
         if (
           warmEntry !== undefined &&
-          warmEntry[1].retention === "persistent" &&
           warmEntry[1].handle.assignment.sessionId === input.sessionId
         ) {
           this.#warm.delete(warmEntry[0]);
@@ -1194,7 +1171,7 @@ export class ToolBroker {
     } else {
       const sessionId = request.target.sessionId;
       // A running Agent still owns the Workspace writer. Preview admission is
-      // delayed until the persistent Cube is warm (or explicitly handed to a
+      // delayed until the bounded-warm Cube is idle (or explicitly handed to a
       // human terminal) so an application request cannot race Agent Tools.
       handle = [...this.#warm.values()].find(
         (candidate) => candidate.handle.assignment.sessionId === sessionId,
@@ -1309,26 +1286,6 @@ export class ToolBroker {
       });
     }
     if (
-      inherited?.retention === "persistent" &&
-      inherited.handle.assignment.sessionId !== request.assignment.sessionId
-    ) {
-      const persistentHandoffAllowed =
-        crossSessionHandoffAllowed ||
-        (await this.#stateRepository.allowsPersistentConversationHandoff({
-          tenantId: request.assignment.tenantId,
-          workspaceId: request.assignment.workspaceId,
-          currentSessionId: inherited.handle.assignment.sessionId,
-          nextSessionId: request.assignment.sessionId,
-        }));
-      if (!persistentHandoffAllowed) {
-        throw new ToolBrokerError(
-          "tool_sandbox_workspace_pinned",
-          "Workspace is pinned to another persistent Sandbox conversation",
-          false,
-        );
-      }
-    }
-    if (
       inherited !== undefined &&
       ((!crossSessionHandoffAllowed &&
         inherited.handle.assignment.sessionId !== request.assignment.sessionId) ||
@@ -1346,10 +1303,20 @@ export class ToolBroker {
         environment.reservation.tenantId === request.assignment.tenantId &&
         environment.reservation.workspaceId === request.assignment.workspaceId,
     );
-    if (developmentEnvironment !== undefined && request.retention !== "persistent") {
+    if (
+      developmentEnvironment !== undefined &&
+      request.executionMode !== "development_environment"
+    ) {
       throw new ToolBrokerError(
-        "development_environment_requires_exclusive_session",
-        "Workspace is attached to an exclusive development environment",
+        "development_environment_execution_mode_mismatch",
+        "Machine-owned Workspace requires development-environment execution mode",
+        false,
+      );
+    }
+    if (developmentEnvironment === undefined && request.executionMode !== "elastic") {
+      throw new ToolBrokerError(
+        "elastic_execution_mode_mismatch",
+        "Elastic Workspace requires elastic execution mode",
         false,
       );
     }
@@ -1405,9 +1372,6 @@ export class ToolBroker {
       policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
       toolRoot: request.toolRoot,
       sandboxProfileKey: request.sandboxProfileKey,
-      ...(request.retention === "persistent"
-        ? { lifetime: "persistent_conversation" as const }
-        : {}),
     } as const;
     const reservationInput: SandboxActivationReservation = {
       activationId,
@@ -1829,9 +1793,8 @@ export class ToolBroker {
         handle,
         workspaceRevision: request.workspaceRevision,
         environment: activation.spec.environment,
-        retention: request.disposition === "keep_persistent" ? "persistent" : "ephemeral",
         lastUsedAt: now,
-        expiresAt: request.disposition === "keep_persistent" ? null : now + this.#warmTtlMs,
+        expiresAt: now + this.#warmTtlMs,
       });
       retained = true;
       await this.#stateRepository.setActivationState(request.activationId, "warm", {
@@ -2132,9 +2095,7 @@ export class ToolBroker {
 
   async reapWarm(): Promise<void> {
     const now = this.#now();
-    const expired = [...this.#warm.entries()].filter(
-      ([, warm]) => warm.expiresAt !== null && warm.expiresAt <= now,
-    );
+    const expired = [...this.#warm.entries()].filter(([, warm]) => warm.expiresAt <= now);
     for (const [key, warm] of expired) {
       if (this.#warm.get(key) !== warm) continue;
       await this.#discardWarm(key, warm);
@@ -2353,13 +2314,10 @@ export class ToolBroker {
   }
 
   async #enforceWarmLimit(): Promise<void> {
-    while (
-      [...this.#warm.values()].filter((warm) => warm.retention === "ephemeral").length >
-      this.#maximumWarmActivations
-    ) {
-      const oldest = [...this.#warm.entries()]
-        .filter(([, warm]) => warm.retention === "ephemeral")
-        .sort((left, right) => left[1].lastUsedAt - right[1].lastUsedAt)[0];
+    while (this.#warm.size > this.#maximumWarmActivations) {
+      const oldest = [...this.#warm.entries()].sort(
+        (left, right) => left[1].lastUsedAt - right[1].lastUsedAt,
+      )[0];
       if (oldest === undefined) return;
       await this.#discardWarm(oldest[0], oldest[1]);
     }
@@ -2479,9 +2437,8 @@ export class ToolBroker {
             handle,
             workspaceRevision: retained.workspaceRevision,
             environment: retained.environment,
-            retention: "persistent",
             lastUsedAt: this.#now(),
-            expiresAt: null,
+            expiresAt: this.#now() + this.#warmTtlMs,
           });
           await this.#stateRepository.setActivationState(retained.activationId, "warm", {
             handle,
@@ -2533,9 +2490,9 @@ export class ToolBroker {
       );
     }
     while (this.#admitted.size >= this.#maximumActiveSandboxes) {
-      const oldest = [...this.#warm.entries()]
-        .filter(([, warm]) => warm.retention === "ephemeral")
-        .sort((left, right) => left[1].lastUsedAt - right[1].lastUsedAt)[0];
+      const oldest = [...this.#warm.entries()].sort(
+        (left, right) => left[1].lastUsedAt - right[1].lastUsedAt,
+      )[0];
       if (oldest === undefined) break;
       if (this.#warm.get(oldest[0]) !== oldest[1]) continue;
       await this.#discardWarm(oldest[0], oldest[1]);

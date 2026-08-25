@@ -163,7 +163,7 @@ for (const concurrency of [10, 50, 100]) {
         body: JSON.stringify({
           workspaceId: project.workspaceId,
           title: `Load eval ${String(concurrency)}-${String(index + 1)}`,
-          sandboxRetention: "ephemeral",
+          executionMode: "elastic",
           sandboxProfileKey: "standard",
           workingDirectory: "/workspace",
         }),

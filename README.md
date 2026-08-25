@@ -83,6 +83,11 @@ After deployment:
      directory from its complete guest filesystem; its GNOME-style folder
      chooser can create a user-writable directory before selection.
 
+An elastic Workspace is durable storage, not reserved compute: Cube capacity is
+admitted when a Tool-using Run starts. Creating a cloud development machine is
+synchronous and succeeds only after tenant quota, Sandbox capacity and the
+selected Cube profile have all been admitted.
+
 Releasing a cloud development machine deletes that machine and all of its files.
 Its conversations remain readable and must be rebound to another Workspace
 before they can run again.

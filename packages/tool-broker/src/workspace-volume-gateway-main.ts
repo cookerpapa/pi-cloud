@@ -8,7 +8,6 @@ import {
 import { createDatabase } from "@pi-cloud/database";
 import { startServiceObservability } from "@pi-cloud/observability";
 import { PostgresWorkspaceVolumeGatewayLock } from "./postgres-workspace-volume-gateway-lock.ts";
-import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -76,31 +75,18 @@ const server = new WorkspaceVolumeGatewayServer({
   ),
   metrics: observability.metrics,
 });
-const deletionReaper = new WorkspaceVolumeDeletionReaper({
-  database,
-  gateway,
-  intervalMs: integer("PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS", 30_000, 1_000, 3_600_000),
-  batchSize: integer("PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE", 16, 1, 256),
-});
 try {
   await server.listen();
-  deletionReaper.start();
 } catch (error: unknown) {
-  await Promise.allSettled([
-    deletionReaper.close(),
-    server.close(),
-    observability.close(),
-    database.destroy(),
-  ]);
+  await Promise.allSettled([server.close(), observability.close(), database.destroy()]);
   throw error;
 }
 process.stdout.write("PiCloud Workspace Volume Gateway ready\n");
 
 let closing: Promise<void> | undefined;
 const closeService = (): Promise<void> =>
-  (closing ??= deletionReaper
+  (closing ??= server
     .close()
-    .then(() => server.close())
     .finally(() => Promise.allSettled([observability.close(), database.destroy()]))
     .then(() => undefined));
 process.once("SIGTERM", () => void closeService());

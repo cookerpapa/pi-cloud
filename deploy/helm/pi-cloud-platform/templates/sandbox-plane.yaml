@@ -101,6 +101,8 @@ spec:
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL, value: http://workspace-volume-gateway:4500 }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-volume-gateway-token }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS, value: {{ .Values.sandboxPlane.volumeGatewayRequestTimeoutMs | quote }} }
+            - { name: PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS, value: {{ .Values.sandboxPlane.workspaceDeletionReaperIntervalMs | quote }} }
+            - { name: PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE, value: {{ .Values.sandboxPlane.workspaceDeletionReaperBatchSize | quote }} }
             - { name: PI_CLOUD_IMAGE_REVISION, value: {{ .Values.global.imageRevision | quote }} }
             - { name: PI_CLOUD_CUBESANDBOX_API_URL, value: {{ .Values.sandboxPlane.cube.apiUrl | quote }} }
             - { name: PI_CLOUD_CUBESANDBOX_API_KEY_FILE, value: /run/pi-cloud-secrets/cubesandbox-api-key }
@@ -198,8 +200,6 @@ spec:
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS, value: {{ .Values.sandboxPlane.volumeGatewayMaximumConcurrentOperations | quote }} }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_QUEUED_OPERATIONS, value: {{ .Values.sandboxPlane.volumeGatewayMaximumQueuedOperations | quote }} }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_QUEUE_WAIT_TIMEOUT_MS, value: {{ .Values.sandboxPlane.volumeGatewayQueueWaitTimeoutMs | quote }} }
-            - { name: PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS, value: {{ .Values.sandboxPlane.workspaceDeletionReaperIntervalMs | quote }} }
-            - { name: PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE, value: {{ .Values.sandboxPlane.workspaceDeletionReaperBatchSize | quote }} }
             - { name: PI_CLOUD_WORKSPACE_POSIX_ROOT, value: /data/workspaces }
             - { name: PI_CLOUD_METRICS_HOST, value: 0.0.0.0 }
             - { name: PI_CLOUD_METRICS_PORT, value: "9469" }

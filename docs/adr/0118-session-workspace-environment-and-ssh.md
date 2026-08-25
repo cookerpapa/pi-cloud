@@ -27,7 +27,8 @@ contract for exposing an ordinary Sandbox's port 22 directly.
 - A Session owns Pi conversation history and tree relations. It survives
   Workspace deletion and execution-environment release.
 - A Workspace owns durable project bytes. Deleting it soft-deletes the Volume
-  authority only after active writers settle. Referencing Sessions remain
+  authority only after active Agent and terminal writers settle; Tool Broker
+  then removes both POSIX bytes and Cube Volume metadata. Referencing Sessions remain
   readable with `workspaceState=missing` and can be rebound to another live
   Workspace through an idempotent operation.
 - The Agent Harness treats the Workspace binding as execution World State,

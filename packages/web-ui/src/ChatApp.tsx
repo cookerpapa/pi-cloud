@@ -16,6 +16,7 @@ import type {
   DevelopmentEnvironmentListResource,
   DevelopmentEnvironmentProfileKey,
   DevelopmentEnvironmentResource,
+  ExecutionMode,
   SshAccessTicketResource,
   TenantIdentityResource,
   WorkspaceSummaryResource,
@@ -37,7 +38,6 @@ import { WorkspaceDirectoryPicker } from "./WorkspaceDirectoryPicker.tsx";
 import { ResourceManagementPage } from "./ResourceManagementPage.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";
 import { useI18n, type Translate, type UiLanguage } from "./i18n.tsx";
-import { selectElasticWorkspaces } from "./workspace-resources.ts";
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
 
@@ -146,7 +146,7 @@ export default function ChatApp() {
   const [workspaceChoice, setWorkspaceChoice] = useState<"existing" | "new">("new");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [executionMode, setExecutionMode] = useState<"elastic" | "exclusive" | null>(null);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode | null>(null);
   const [selectedDevelopmentEnvironmentId, setSelectedDevelopmentEnvironmentId] = useState("");
   const [developmentProfileKey, setDevelopmentProfileKey] =
     useState<DevelopmentEnvironmentProfileKey>("standard");
@@ -171,10 +171,9 @@ export default function ChatApp() {
   const currentTurn = activeTurn(state);
   const currentDevelopmentEnvironment = developmentEnvironments.find(
     (environment) =>
-      state.session?.sandboxRetention === "persistent" &&
-      (state.session.developmentEnvironmentId === undefined
-        ? environment.workspaceId === state.session.workspaceId
-        : environment.environmentId === state.session.developmentEnvironmentId) &&
+      state.session?.executionMode === "development_environment" &&
+      state.session.developmentEnvironmentId !== undefined &&
+      environment.environmentId === state.session.developmentEnvironmentId &&
       ["requested", "provisioning", "running", "paused", "releasing", "failed", "unknown"].includes(
         environment.state,
       ),
@@ -182,7 +181,7 @@ export default function ChatApp() {
   const selectableDevelopmentEnvironments = developmentEnvironments.filter((environment) =>
     ["running", "paused"].includes(environment.state),
   );
-  const elasticWorkspaces = selectElasticWorkspaces(workspaces, developmentEnvironments);
+  const elasticWorkspaces = workspaces;
   const conversationPanel = useResizablePanel({
     storageKey: "pi-cloud:conversation-list",
     initialWidth: 260,
@@ -746,21 +745,21 @@ export default function ChatApp() {
       let workspaceId: string;
       if (executionMode === null) return;
       const freshDevelopmentEnvironments =
-        executionMode === "exclusive"
+        executionMode === "development_environment"
           ? (await api.listDevelopmentEnvironments()).environments
           : developmentEnvironments;
-      if (executionMode === "exclusive") {
+      if (executionMode === "development_environment") {
         setDevelopmentEnvironments(freshDevelopmentEnvironments);
       }
       const existingEnvironment =
-        executionMode === "exclusive"
+        executionMode === "development_environment"
           ? freshDevelopmentEnvironments.find(
               (environment) =>
                 environment.environmentId === selectedDevelopmentEnvironmentId &&
                 ["running", "paused"].includes(environment.state),
             )
           : undefined;
-      if (executionMode === "exclusive" && existingEnvironment === undefined) {
+      if (executionMode === "development_environment" && existingEnvironment === undefined) {
         update({ type: "api.error", message: t("chat.selectExclusiveError") });
         return;
       }
@@ -796,9 +795,9 @@ export default function ChatApp() {
         projectId,
         workspaceId,
         title,
-        executionMode === "exclusive" ? "persistent" : "ephemeral",
+        executionMode,
         sandboxProfileKey,
-        executionMode === "exclusive" ? workingDirectory : "/workspace",
+        executionMode === "development_environment" ? workingDirectory : "/workspace",
       );
       const loaded = await loadConversation(session.sessionId);
       lastSequenceRef.current = loaded.replayAfterSequence;
@@ -1273,7 +1272,7 @@ export default function ChatApp() {
                       : t("chat.connecting")}
               </span>
             ) : null}
-            {state.session?.sandboxRetention !== "persistent" ||
+            {state.session?.executionMode !== "development_environment" ||
             currentDevelopmentEnvironment?.state !== "running" ? null : (
               <div className="product-environment-controls">
                 <button
@@ -1345,9 +1344,9 @@ export default function ChatApp() {
                 </label>
                 <label className="product-choice-card">
                   <input
-                    checked={executionMode === "exclusive"}
+                    checked={executionMode === "development_environment"}
                     onChange={() => {
-                      setExecutionMode("exclusive");
+                      setExecutionMode("development_environment");
                       setWorkingDirectory(DEFAULT_EXCLUSIVE_WORKING_DIRECTORY);
                     }}
                     type="radio"
@@ -1511,7 +1510,8 @@ export default function ChatApp() {
                   disabled={
                     operation !== null ||
                     executionMode === null ||
-                    (executionMode === "exclusive" && selectedDevelopmentEnvironmentId === "") ||
+                    (executionMode === "development_environment" &&
+                      selectedDevelopmentEnvironmentId === "") ||
                     (executionMode === "elastic" &&
                       workspaceChoice === "new" &&
                       newWorkspaceName.trim() === "")

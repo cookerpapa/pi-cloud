@@ -244,7 +244,7 @@ describe("tenant-aware browser API", () => {
       expect(JSON.parse(String(init?.body))).toEqual({
         workspaceId: "30000000-0000-4000-8000-000000000001",
         title: "Persistent development environment",
-        sandboxRetention: "persistent",
+        executionMode: "development_environment",
         sandboxProfileKey: "standard",
         workingDirectory: "/workspace",
       });
@@ -256,7 +256,7 @@ describe("tenant-aware browser API", () => {
           workspaceId: "30000000-0000-4000-8000-000000000001",
           workspaceState: "attached",
           state: "cold",
-          sandboxRetention: "persistent",
+          executionMode: "development_environment",
           sandboxProfileKey: "standard",
           workingDirectory: "/workspace",
           modelProfileId: "50000000-0000-4000-8000-000000000001",
@@ -271,9 +271,9 @@ describe("tenant-aware browser API", () => {
         "20000000-0000-4000-8000-000000000001",
         "30000000-0000-4000-8000-000000000001",
         "Persistent development environment",
-        "persistent",
+        "development_environment",
       ),
-    ).resolves.toMatchObject({ sandboxRetention: "persistent" });
+    ).resolves.toMatchObject({ executionMode: "development_environment" });
   });
 
   it("deletes a Workspace with an idempotency key", async () => {
@@ -473,7 +473,7 @@ describe("tenant-aware browser API", () => {
                     workspaceName: "Alpha repair",
                     workspaceState: "attached",
                     state: "idle",
-                    sandboxRetention: "ephemeral",
+                    executionMode: "elastic",
                     sandboxProfileKey: "standard",
                     workingDirectory: "/workspace",
                     turnCount: 1,
@@ -518,7 +518,7 @@ describe("tenant-aware browser API", () => {
                   workspaceState: "attached",
                   title: "Repair checkout",
                   state: "idle",
-                  sandboxRetention: "ephemeral",
+                  executionMode: "elastic",
                   sandboxProfileKey: "standard",
                   workingDirectory: "/workspace",
                   modelProfileId: "50000000-0000-4000-8000-000000000001",
@@ -622,7 +622,7 @@ describe("tenant-aware browser API", () => {
             workspaceId: "40000000-0000-4000-8000-000000000001",
             workspaceState: "attached",
             state: "cold",
-            sandboxRetention: "ephemeral",
+            executionMode: "elastic",
             sandboxProfileKey: "standard",
             workingDirectory: "/workspace",
             modelProfileId: "50000000-0000-4000-8000-000000000001",

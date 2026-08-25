@@ -49,7 +49,7 @@ const session: SessionResource = {
   workspaceId: project.workspaceId,
   workspaceState: "attached",
   state: "cold",
-  sandboxRetention: "ephemeral",
+  executionMode: "elastic",
   sandboxProfileKey: "standard",
   workingDirectory: "/workspace",
   modelProfileId: "50000000-0000-4000-8000-000000000001",

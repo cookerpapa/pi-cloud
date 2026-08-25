@@ -306,7 +306,7 @@ describe.sequential("versioned Workspace service", () => {
       IDS.project,
       IDS.workspace,
       "Second conversation",
-      "ephemeral",
+      "elastic",
     );
     const persisted = await database
       .selectFrom("sessions")
@@ -335,7 +335,7 @@ describe.sequential("versioned Workspace service", () => {
       IDS.project,
       IDS.workspace,
       "Checkpoint availability",
-      "ephemeral",
+      "elastic",
     );
     const bytes = objects.get("checkpoints/workspace-2")!;
     await database
@@ -345,7 +345,7 @@ describe.sequential("versioned Workspace service", () => {
 
     await expect(store.listWorkspaces()).resolves.toEqual({ workspaces: [], truncated: false });
     await expect(
-      store.createSession(IDS.project, IDS.workspace, "Unavailable Workspace", "ephemeral"),
+      store.createSession(IDS.project, IDS.workspace, "Unavailable Workspace", "elastic"),
     ).rejects.toMatchObject({ code: "not_found" });
     await expect(
       store.acceptTurn(conversation.sessionId, "missing-workspace-checkpoint", {

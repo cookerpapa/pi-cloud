@@ -10,7 +10,7 @@
 - R=3 JetStream resumable SSE with PostgreSQL canonical terminal Turns;
 - CubeSandbox KVM-only Tool execution;
 - persistent Cube Volumes as Workspace byte authority;
-- lazy/warm/persistent Cube lifecycle and model-visible reset semantics;
+- lazy/bounded-warm elastic Cubes plus explicit user-owned development machines;
 - Kubernetes/KEDA deployment with PostgreSQL backlog scaling;
 - one-host installer, configuration UI and real Cube/model acceptance.
 - human Pi Session tree navigation and transactional conversation forks.
