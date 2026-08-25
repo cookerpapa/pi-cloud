@@ -113,19 +113,31 @@ async function seedSessions(pool, rows) {
 
 async function publish(value, expectedStatus = 202) {
   const startedAt = performance.now();
-  const response = await fetch("http://127.0.0.1:18092/events", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${INGEST_TOKEN}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(value),
-  });
-  const result = await response.json();
-  if (response.status !== expectedStatus) {
-    throw new Error(`Event ingest returned ${String(response.status)}: ${JSON.stringify(result)}`);
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const response = await fetch("http://127.0.0.1:18092/events", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${INGEST_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(value),
+    });
+    const result = await response.json();
+    if (response.status === expectedStatus) {
+      return {
+        ...result,
+        attempts: attempt,
+        durationMs: performance.now() - startedAt,
+      };
+    }
+    if (response.status !== 503 || expectedStatus !== 202 || attempt === 5) {
+      throw new Error(
+        `Event ingest returned ${String(response.status)}: ${JSON.stringify(result)}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
   }
-  return { ...result, durationMs: performance.now() - startedAt };
+  throw new Error("Event ingest retry loop ended unexpectedly");
 }
 
 async function mapConcurrent(values, concurrency, operation) {
@@ -404,7 +416,7 @@ try {
   if (leaderService === undefined) throw new Error("JetStream leader identity is unavailable");
   compose("kill", "--signal", "SIGKILL", leaderService);
   const leaderPublishStartedAt = performance.now();
-  await publish(
+  const leaderPublish = await publish(
     createEvent({ sessionId: "leader-loss", attemptId: "attempt-l", fence: 1, seq: 1 }),
   );
   let existingConnectionRecovered = true;
@@ -428,6 +440,7 @@ try {
     killedLeader: leaderBefore,
     replacementLeader: recoveredStream.cluster?.leader,
     publishAndDeliveryMs: Number(leaderFailoverMs.toFixed(3)),
+    ingestAttempts: leaderPublish.attempts,
     delivered: leaderReceived[0]?.event.seq === 1,
     existingConnectionRecovered,
     browserReconnectRecovered: leaderReceived[0]?.event.seq === 1,
