@@ -1147,6 +1147,14 @@ export class ControlPlaneStore {
       .where("workspace.tenant_id", "=", this.#tenantId)
       .where("workspace.workspace_kind", "=", "user")
       .where("workspace.deleted_at", "is", null)
+      .where(
+        sql<boolean>`not exists (
+          select 1
+          from development_environments as environment
+          where environment.tenant_id = workspace.tenant_id
+            and environment.workspace_id = workspace.id
+        )`,
+      )
       .where((expression) =>
         expression.or([
           expression("workspace.current_workspace_version_id", "is", null),

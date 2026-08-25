@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { selectElasticWorkspaces } from "../src/workspace-resources.ts";
 
 describe("Workspace resource classification", () => {
-  it("returns a released exclusive Workspace to the elastic pool", () => {
+  it("never returns an exclusive machine Volume to the elastic Workspace pool", () => {
     const workspace = {
       workspaceId: "10000000-0000-4000-8000-000000000001",
       projectId: "10000000-0000-4000-8000-000000000002",
@@ -33,6 +33,6 @@ describe("Workspace resource classification", () => {
         [workspace],
         [{ ...environment, state: "released", releasedAt: "2026-08-24T00:10:00.000Z" }],
       ),
-    ).toEqual([workspace]);
+    ).toEqual([]);
   });
 });

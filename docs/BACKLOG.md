@@ -129,8 +129,8 @@ retired and remain only in Git history or explicitly superseded ADRs.
 
 - [x] Bind each exclusive environment to one tenant user and Workspace.
 - [x] Keep Cube credentials and cluster inventory behind Tool Broker.
-- [x] Support create, persistent PTY, pause, resume and release while preserving
-      Workspace Volume bytes.
+- [x] Support create, persistent PTY, pause and resume; release destroys the
+      machine-owned Volume while retaining independently stored conversations.
 - [x] Share one user-owned Cube across several directory-bound conversations
       while preserving Workspace single-writer admission.
 - [x] Add private-token HTTP service preview and deployment-owned development

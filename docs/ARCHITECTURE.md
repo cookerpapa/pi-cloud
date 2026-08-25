@@ -293,7 +293,9 @@ mounted at `/home/user`; the elastic-only `/workspace` path is removed during
 machine initialization. The Cube timeout is disabled for this explicit
 allocation. A terminal opens inside the existing KVM, and disconnect kills only
 the PTY. Pause snapshots VM memory/filesystem; resume reconnects the same Cube
-identity; release destroys it without deleting the home Volume bytes.
+identity. Release destroys the Cube and tombstones its machine-owned Workspace;
+the Volume reaper deletes the complete home Volume after every activation has
+retired.
 
 The user selects one deployment-owned immutable template profile (starter,
 standard or performance). CPU, memory and system-disk values come from the
@@ -301,9 +303,9 @@ registered Cube template catalog; arbitrary template IDs and resource overrides
 are never accepted from the browser.
 
 The product calls this allocation a cloud development machine. It is requested
-independently from user Workspaces. The Control Plane allocates its private home
-Volume and internal project identity transactionally; neither is shown in the
-elastic Workspace inventory while the VM exists. Several conversations may
+independently from elastic Workspaces. The Control Plane allocates its private
+machine Volume and internal project identity transactionally; neither ever
+enters the elastic Workspace inventory. Several conversations may
 select working directories from the complete guest filesystem. The directory is
 a Session binding, not another Volume. Machine single-writer admission still
 permits only one active Agent Run or human terminal at a time.
@@ -410,8 +412,9 @@ Stopping an elastic Cube loses its processes and memory. A new elastic Cube
 attaches the same persistent Volume, so project files and dependencies remain.
 A cloud development machine is paused and adopted as the same machine; its
 rootfs, memory and process state are node-affine Cube state. Its `/home/user`
-Volume provides file continuity after explicit VM release, while a Workspace
-revision remains a Volume reference rather than a full-machine backup.
+Volume belongs to that machine and is deleted on explicit release. Conversation
+history remains independent and reports a missing Workspace until the user
+rebinds it.
 
 Source browsing materializes bounded files directly through the trusted Volume
 gateway. It neither creates a Cube nor consumes Cube admission capacity; the

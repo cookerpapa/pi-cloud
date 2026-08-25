@@ -182,6 +182,24 @@ async function waitForEnvironment(environmentId, expectedState) {
   throw new Error(`Development environment ${environmentId} did not reach ${expectedState}`);
 }
 
+async function waitForWorkspacePurge(workspaceId) {
+  const deadline = Date.now() + 2 * 60_000;
+  while (Date.now() < deadline) {
+    const state = await psql(
+      `select case
+          when deleted_at is null then 'attached'
+          when storage_purged_at is null then 'pending'
+          else 'purged'
+        end
+       from workspaces
+       where id = ${sqlLiteral(workspaceId)}`,
+    );
+    if (state === "purged") return;
+    await wait(250);
+  }
+  throw new Error(`Development machine Workspace ${workspaceId} was not purged`);
+}
+
 async function waitForToolBrokerReady() {
   const deadline = Date.now() + 2 * 60_000;
   while (Date.now() < deadline) {
@@ -508,11 +526,17 @@ const released = await api.developmentEnvironmentAction(
 );
 assert.equal(released.state, "released");
 assert.equal(await cube.read(runtimeName), undefined);
-await terminalCommand(
-  `/v1/conversations/${replacementSession.sessionId}/terminal`,
-  'test "$(cat /workspace/exclusive.txt)" = EXCLUSIVE_FILE_OK && echo EXCLUSIVE_VOLUME_OK',
-  "EXCLUSIVE_VOLUME_OK",
+assert(
+  !(await api.listWorkspaces()).workspaces.some(
+    (workspace) => workspace.workspaceId === development.workspaceId,
+  ),
+  "Released machine Volume leaked into the elastic Workspace inventory",
 );
+assert.equal(
+  (await api.getConversation(replacementSession.sessionId)).session.workspaceState,
+  "missing",
+);
+await waitForWorkspacePurge(development.workspaceId);
 
 const report = {
   accepted: true,
@@ -528,7 +552,9 @@ const report = {
   processSurvivedPauseResume: true,
   agentRunBorrowedAndReturnedSameCube: true,
   consecutiveAgentRunsPreservedPhysicalContinuity: true,
-  workspaceVolumeSurvivedRelease: true,
+  machineVolumeDeletedOnRelease: true,
+  conversationSurvivedRelease: true,
+  releasedWorkspaceRequiresRebind: true,
   authenticatedHttpPreviewPassed: true,
   structuredServiceDiscoveryPassed: true,
   previewPort,

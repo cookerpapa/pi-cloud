@@ -1,6 +1,6 @@
 # ADR-0115: User-owned exclusive development environments
 
-Status: accepted
+Status: accepted; amended on 2026-08-25
 
 ## Context
 
@@ -19,7 +19,8 @@ user-owned development-environment lifecycle.
 ## Decision
 
 - Add a PiCloud `DevelopmentEnvironment` resource owned by
-  `(tenant_id, owner_user_id)` and bound to exactly one user Workspace.
+  `(tenant_id, owner_user_id)` with one private machine Volume represented by
+  an internal Workspace identity.
 - PostgreSQL owns the product allocation, idempotency and user visibility.
   Cube owns the live process/memory state; the persistent Workspace Volume
   remains the sole file-byte authority.
@@ -32,20 +33,19 @@ user-owned development-environment lifecycle.
   settlement. No second Cube writes the Volume.
 - Support explicit `start`, `pause`, `resume` and `release` operations. Pause
   uses Cube's memory/filesystem snapshot lifecycle; resume reconnects the same
-  Sandbox identity. Release destroys the VM but preserves the Workspace
-  Volume.
+  Sandbox identity. Release destroys the VM and its machine-owned Volume while
+  preserving independently stored conversations.
 - The environment terminal opens a PTY inside the existing KVM. Disconnecting
   kills only that PTY; it does not release the environment.
 - One Workspace has at most one live development environment. Tenant and
   Sandbox-Domain capacity accounting includes these environments.
-- Tool Broker ownership remains leased. If the owning Broker disappears,
-  another Broker fences the stale owner, destroys any ambiguous runtime and
-  marks the environment `failed`. The user may start it again on a fresh Cube;
-  files survive but PiCloud does not claim process-state recovery across a
-  Tool Broker failure.
+- Tool Broker ownership remains leased. A replacement Broker may adopt the same
+  machine only after its encrypted reconnect capsule, PostgreSQL ownership and
+  physical Cube metadata agree; ambiguous state fails closed rather than
+  silently creating a replacement and claiming process continuity.
 - Environment templates, resource limits, networking and UID remain
-  deployment-owned. Users choose a Workspace, not an arbitrary image, PodSpec
-  or privileged runtime policy.
+  deployment-owned. Users choose a machine profile, not an arbitrary image,
+  PodSpec or privileged runtime policy.
 
 ## Consequences
 

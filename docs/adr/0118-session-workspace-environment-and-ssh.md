@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-08-23.
+Accepted on 2026-08-23; amended on 2026-08-25.
 
 ## Context
 
@@ -60,13 +60,13 @@ contract for exposing an ordinary Sandbox's port 22 directly.
 - Workspace creation/deletion and environment create/pause/resume/release live
   on a dedicated user resource page. The new-conversation dialog only selects
   elastic versus exclusive execution and progressively discloses the relevant
-  Workspace, machine specification, environment and directory choices. Releasing compute
-  preserves both Session and Workspace.
-- HTTP preview remains a same-origin authenticated proxy. Applications may use
-  any unprivileged port except envd and bind localhost or `0.0.0.0`; Tool Broker
-  reaches that port through an unprivileged one-shot helper launched over envd,
-  while the Web client maps assistant `localhost` links to the authenticated
-  conversation route.
+  Workspace, machine specification, environment and directory choices. Releasing
+  an exclusive machine deletes its machine-owned Volume but preserves the
+  Session, which becomes readable with `workspaceState=missing` until rebound.
+- HTTP preview remains an authenticated proxy. Applications may use any
+  unprivileged port except envd and bind localhost or `0.0.0.0`; Tool Broker
+  verifies the listener, and the trusted `preview` Tool returns the authenticated
+  conversation route without exposing Cube routing authority to the model.
 - Native OpenSSH access terminates at a trusted PiCloud SSH gateway. The user
   obtains a one-use ticket through the authenticated conversation API. An
   unused ticket expires after 24 hours by default; the gateway consumes it on

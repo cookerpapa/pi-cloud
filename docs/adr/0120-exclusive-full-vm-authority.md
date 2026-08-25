@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-08-23.
+Accepted on 2026-08-23; amended on 2026-08-25.
 
 ## Context
 
@@ -33,8 +33,8 @@ authorization authority for Tool execution or platform access.
   root filesystem, user home, memory and process tree belong to the machine
   state. Its private durable Volume is mounted at the ordinary Linux home
   `/home/user`, and the elastic-only `/workspace` path is absent. The home
-  Volume preserves user files if the owner later releases the VM; it is not the
-  definition of full-machine durability.
+  Volume belongs to the machine and is deleted when the owner releases it; it
+  never becomes an elastic Workspace.
 - A conversation attached to an exclusive environment stores a directory
   binding inside that machine. Session lifetime remains independent: archiving
   a Session neither pauses nor releases the environment.
@@ -81,5 +81,6 @@ The previous behavior that destroyed every development environment from
 `ToolBroker.close()` is invalid. Directory selection, restart recovery and
 release acceptance must cover `/etc` or another guest-root marker, prove that
 `/workspace` is absent from an exclusive VM, and prove Session archival does
-not change machine state. After explicit VM release, the preserved home Volume
-may be mounted at `/workspace` by a later elastic execution.
+not change machine state. Explicit VM release tombstones the machine-owned
+Workspace and schedules its complete home Volume for deletion. Conversation
+history remains available and must be rebound before it can execute again.

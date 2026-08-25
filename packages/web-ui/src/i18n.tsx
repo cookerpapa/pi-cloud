@@ -214,7 +214,8 @@ const zhCN = {
   "resource.pause": "暂停",
   "resource.resume": "恢复",
   "resource.rebuild": "重建",
-  "resource.releaseConfirm": "释放这台云端开发机？对话会保留。",
+  "resource.releaseConfirm":
+    "释放这台云端开发机？整台机器及其文件将被删除；对话会保留，继续时需要重新选择 Workspace。",
   "resource.release": "释放",
   "resource.operationFailed": "资源操作失败",
   "resource.state.creating": "创建中",
@@ -537,7 +538,8 @@ const enUS: Record<UiTextKey, string> = {
   "resource.pause": "Pause",
   "resource.resume": "Resume",
   "resource.rebuild": "Rebuild",
-  "resource.releaseConfirm": "Release this cloud development machine? Chats will remain.",
+  "resource.releaseConfirm":
+    "Release this cloud development machine? The machine and all of its files will be deleted. Chats remain and must choose another Workspace before continuing.",
   "resource.release": "Release",
   "resource.operationFailed": "Resource operation failed",
   "resource.state.creating": "Creating",

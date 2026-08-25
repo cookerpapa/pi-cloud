@@ -42,7 +42,8 @@ There are three durable authorities:
 - PostgreSQL owns product state, the Run queue and canonical Pi Sessions;
 - JetStream owns the bounded hot event log used for live replay;
 - a persistent Cube Volume owns elastic Workspace bytes; Cube pause state owns
-  a cloud development machine's guest root, memory and processes on its compute node.
+  a cloud development machine's guest root, memory and processes on its compute node;
+  releasing that machine deletes its private Volume but never its conversations.
 
 Any healthy Worker may run a Session's next message. PostgreSQL atomically
 issues one opaque, never-reused `ExecutionGrant`; every effect boundary rejects
@@ -81,6 +82,10 @@ After deployment:
    - **Cloud development machine** selects a running user-owned Cube and a live
      directory from its complete guest filesystem; its GNOME-style folder
      chooser can create a user-writable directory before selection.
+
+Releasing a cloud development machine deletes that machine and all of its files.
+Its conversations remain readable and must be rebound to another Workspace
+before they can run again.
 
 The language selector is available on the sign-in page and beside the current
 username. It is a browser-local presentation preference: switching it does not

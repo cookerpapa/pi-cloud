@@ -272,6 +272,7 @@ describe("user-owned development environments", () => {
     }
     expect(running.state).toBe("running");
     expect(running.ipAddress).toBe("169.254.68.4");
+    await expect(store.listWorkspaces()).resolves.toEqual({ workspaces: [], truncated: false });
     await expect(
       service.directory(identity, created.environmentId, "/home"),
     ).resolves.toMatchObject({
@@ -387,40 +388,37 @@ describe("user-owned development environments", () => {
     ).resolves.toMatchObject({ state: "released", releasedAt: expect.any(String) });
     expect(destroys).toHaveBeenCalledOnce();
     await expect(
+      database
+        .selectFrom("workspaces")
+        .select(["deleted_at as deletedAt", "storage_purged_at as storagePurgedAt"])
+        .where("id", "=", workspaceId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ deletedAt: expect.any(Date), storagePurgedAt: null });
+    await expect(store.listWorkspaces()).resolves.toEqual({ workspaces: [], truncated: false });
+    await expect(store.getConversation(sessionId)).resolves.toMatchObject({
+      session: { workspaceId, workspaceState: "missing" },
+    });
+    await expect(
+      database
+        .selectFrom("workspace_delete_operations")
+        .select(["detached_session_count as detachedSessionCount"])
+        .where("tenant_id", "=", identity.tenantId)
+        .where("workspace_id", "=", workspaceId)
+        .execute(),
+    ).resolves.toEqual([{ detachedSessionCount: 1 }]);
+    await expect(
       service.action(identity, created.environmentId, "release-exclusive-retry", {
         action: "release",
       }),
     ).resolves.toMatchObject({ state: "released", releasedAt: expect.any(String) });
     expect(destroys).toHaveBeenCalledOnce();
-
-    await database
-      .updateTable("development_environments")
-      .set({
-        state: "failed",
-        failure_code: "old_image",
-        owner_instance_id: "99999999-9999-4999-8999-999999999999",
-        owner_base_url: "http://127.0.0.1:4300",
-        released_at: null,
-      })
-      .where("id", "=", created.environmentId)
-      .executeTakeFirstOrThrow();
-    await expect(
-      service.action(identity, created.environmentId, "rebuild-exclusive", { action: "start" }),
-    ).resolves.toMatchObject({ state: "running", generation: 2 });
     await expect(
       database
-        .selectFrom("environment_versions")
-        .select(["version_number as versionNumber", "image_revision as imageRevision"])
+        .selectFrom("workspace_delete_operations")
+        .select(({ fn }) => fn.countAll<string>().as("count"))
         .where("tenant_id", "=", identity.tenantId)
-        .where("project_id", "=", created.projectId)
-        .where("active", "=", true)
-        .execute(),
-    ).resolves.toEqual([{ versionNumber: 2, imageRevision: IMAGE_REVISION }]);
-    await expect(
-      service.action(identity, created.environmentId, "release-rebuilt-exclusive", {
-        action: "release",
-      }),
-    ).resolves.toMatchObject({ state: "released" });
-    expect(destroys).toHaveBeenCalledTimes(2);
+        .where("workspace_id", "=", workspaceId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ count: "1" });
   });
 });

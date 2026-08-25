@@ -596,7 +596,130 @@ export class DevelopmentEnvironmentService {
     if (request.action === "start" && this.#backgroundProvisioning) {
       this.#scheduleProvision(identity, environmentId);
     }
+    if (request.action === "release") {
+      await this.#retireReleasedMachineWorkspace(identity, environmentId);
+    }
     return this.get(identity, environmentId);
+  }
+
+  async #retireReleasedMachineWorkspace(
+    identity: TenantRequestIdentity,
+    environmentId: string,
+  ): Promise<void> {
+    await this.#database.transaction().execute(async (transaction) => {
+      const environment = await transaction
+        .selectFrom("development_environments")
+        .select(["state", "project_id", "workspace_id", "sandbox_domain_id"])
+        .where("tenant_id", "=", identity.tenantId)
+        .where("owner_user_id", "=", identity.userId)
+        .where("id", "=", environmentId)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      if (environment.state !== "released") {
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Development environment must be released before deleting its machine storage",
+        );
+      }
+      const workspace = await transaction
+        .selectFrom("workspaces")
+        .select("deleted_at")
+        .where("tenant_id", "=", identity.tenantId)
+        .where("id", "=", environment.workspace_id)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      if (workspace.deleted_at !== null) return;
+
+      const activeTurn = await transaction
+        .selectFrom("turns as turn")
+        .innerJoin("sessions as session_row", (join) =>
+          join
+            .onRef("session_row.tenant_id", "=", "turn.tenant_id")
+            .onRef("session_row.id", "=", "turn.session_id"),
+        )
+        .select("turn.id")
+        .where("turn.tenant_id", "=", identity.tenantId)
+        .where("session_row.workspace_id", "=", environment.workspace_id)
+        .where("turn.state", "in", [
+          "queued",
+          "dispatching",
+          "running",
+          "waiting_approval",
+          "cancelling",
+        ])
+        .limit(1)
+        .executeTakeFirst();
+      if (activeTurn !== undefined) {
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Wait for every conversation Run to settle before deleting the development machine",
+        );
+      }
+      const detached = await transaction
+        .selectFrom("sessions")
+        .select(({ fn }) => fn.countAll<string>().as("count"))
+        .where("tenant_id", "=", identity.tenantId)
+        .where("workspace_id", "=", environment.workspace_id)
+        .where("session_kind", "=", "conversation")
+        .where("archived_at", "is", null)
+        .executeTakeFirstOrThrow();
+      const detachedSessionCount = Number(detached.count);
+      if (!Number.isSafeInteger(detachedSessionCount) || detachedSessionCount < 0) {
+        throw new ControlPlaneStoreError(
+          "control_plane_misconfigured",
+          "Development environment conversation count is invalid",
+        );
+      }
+
+      const deletedAt = new Date();
+      await transaction
+        .updateTable("workspaces")
+        .set({
+          deleted_at: deletedAt,
+          updated_at: deletedAt,
+          row_version: sql<string>`${sql.ref("row_version")} + 1`,
+        })
+        .where("tenant_id", "=", identity.tenantId)
+        .where("id", "=", environment.workspace_id)
+        .where("deleted_at", "is", null)
+        .executeTakeFirstOrThrow();
+      await transaction
+        .updateTable("sandbox_domains")
+        .set({
+          assigned_workspaces: sql<string>`greatest(${sql.ref("assigned_workspaces")} - 1, 0)`,
+          updated_at: deletedAt,
+        })
+        .where("id", "=", environment.sandbox_domain_id)
+        .executeTakeFirstOrThrow();
+      const remainingWorkspace = await transaction
+        .selectFrom("workspaces")
+        .select("id")
+        .where("tenant_id", "=", identity.tenantId)
+        .where("project_id", "=", environment.project_id)
+        .where("deleted_at", "is", null)
+        .limit(1)
+        .executeTakeFirst();
+      if (remainingWorkspace === undefined) {
+        await transaction
+          .updateTable("projects")
+          .set({ deleted_at: deletedAt, updated_at: deletedAt })
+          .where("tenant_id", "=", identity.tenantId)
+          .where("id", "=", environment.project_id)
+          .where("deleted_at", "is", null)
+          .executeTakeFirst();
+      }
+      await transaction
+        .insertInto("workspace_delete_operations")
+        .values({
+          operation_id: this.#id(),
+          tenant_id: identity.tenantId,
+          workspace_id: environment.workspace_id,
+          idempotency_key: `development-environment:${environmentId}:release`,
+          deleted_at: deletedAt,
+          detached_session_count: detachedSessionCount,
+        })
+        .executeTakeFirstOrThrow();
+    });
   }
 
   #scheduleProvision(identity: TenantRequestIdentity, environmentId: string): void {
