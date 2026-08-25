@@ -1,8 +1,8 @@
 {
   "accepted": true,
-  "piCloudRevision": "f22e1344f5e30a0f275effb7827316a06fde2774",
-  "checkedAt": "2026-08-25T09:24:53.557Z",
-  "account": "browser.acceptance.mt8gk2m4",
+  "piCloudRevision": "66adc32eb766388e89e8bc6c2a4d36ea9ae7f3e0",
+  "checkedAt": "2026-08-25T16:29:26.255Z",
+  "account": "browser.acceptance.mt8vq8nm",
   "clickedControls": [
     "auth.registerTab",
     "auth.loginTab",
@@ -68,13 +68,12 @@
     "conversation.openElasticForDelete",
     "conversation.deleteElastic",
     "resources.cleanupOpen",
-    "resources.deleteWorkspace2",
     "resources.deleteWorkspace1",
     "resources.cleanupBack",
     "account.menuOpenForLogout",
     "account.logout"
   ],
-  "clickedControlCount": 69,
+  "clickedControlCount": 68,
   "screenshotCaptured": true,
   "cleanupCompleted": true
 }

@@ -7,7 +7,10 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import ssh2 from "ssh2";
-import { OfficialCubeSandboxRuntimeClient } from "../packages/tool-broker/src/index.ts";
+import {
+  OfficialCubeSandboxRuntimeClient,
+  workspaceVolumeId,
+} from "../packages/tool-broker/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -537,6 +540,12 @@ assert.equal(
   "missing",
 );
 await waitForWorkspacePurge(development.workspaceId);
+const deletedVolume = await fetch(
+  `http://${cluster.api.host}:${String(cluster.api.port)}/volumes/${workspaceVolumeId({ tenantId: bootstrapTenantId, workspaceId: development.workspaceId })}`,
+  { headers: { authorization: `Bearer ${cubeApiKey}` }, signal: AbortSignal.timeout(30_000) },
+);
+await deletedVolume.body?.cancel();
+assert.equal(deletedVolume.status, 404, "Released machine retained Cube Volume metadata");
 
 const report = {
   accepted: true,
@@ -553,6 +562,7 @@ const report = {
   agentRunBorrowedAndReturnedSameCube: true,
   consecutiveAgentRunsPreservedPhysicalContinuity: true,
   machineVolumeDeletedOnRelease: true,
+  cubeVolumeMetadataDeleted: true,
   conversationSurvivedRelease: true,
   releasedWorkspaceRequiresRebind: true,
   authenticatedHttpPreviewPassed: true,

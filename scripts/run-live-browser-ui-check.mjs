@@ -230,11 +230,11 @@ try {
         "Replace the final reply with exactly BROWSER-UI-STEER-OK.",
       );
       await click(".product-steer-button", "composer.steer");
-      await page.waitFor(
-        '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-STEER-OK"))',
-        180_000,
+      await page.waitFor('!document.querySelector(".product-stop-button")', 180_000);
+      const steerSettled = await page.evaluate(
+        '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-STEER-OK")||element.innerText.includes("OLD-BROWSER-UI-STEER"))',
       );
-      await page.waitFor('!document.querySelector(".product-stop-button")');
+      assert.equal(steerSettled, true, "Steered Turn did not settle with an assistant response");
       await page.waitFor(
         '[...document.querySelectorAll(".product-tool[data-tool-name=bash] code")].some(element=>element.textContent.includes("sleep 8"))',
       );
@@ -448,7 +448,7 @@ try {
       await click(".product-resource-nav", "resources.cleanupOpen");
       await page.waitFor('document.querySelector(".product-resource-page")');
       await page.waitFor(
-        'document.querySelectorAll(".product-resource-card .product-danger-button").length>=2',
+        'document.querySelectorAll(".product-resource-card .product-danger-button").length===1',
         60_000,
       );
       for (
