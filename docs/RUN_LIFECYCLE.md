@@ -33,7 +33,8 @@ message. Pi may perform multiple model sampling steps. Pure chat never contacts
 Cube.
 
 Before that prompt is appended, the Worker compares the current execution
-World State with the newest persisted baseline. A new Cube around the same
+World State with the newest persisted baseline. A renewed Tool lease on the same
+physical Cube keeps the same continuity identity. A new Cube around the same
 Workspace produces `sandbox_reset`; a different stable Workspace binding
 produces `workspace_changed`. Both are hidden Pi custom facts, never browser
 messages or modifications to the user's text. Repeated context hooks on the

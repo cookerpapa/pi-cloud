@@ -97,6 +97,7 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         capability: CAPABILITY,
         workspaceRoot: "/workspace",
         continuity: "cold_restore",
+        continuityId: ACTIVATION_ID,
       };
     },
     async capture() {
@@ -348,6 +349,7 @@ describe("Tool Broker authenticated RPC", () => {
             capability: CAPABILITY,
             workspaceRoot: "/workspace",
             continuity: "cold_restore",
+            continuityId: activationIds[replica]!,
           };
         },
       };
@@ -436,6 +438,7 @@ describe("Tool Broker authenticated RPC", () => {
             capability: CAPABILITY,
             workspaceRoot: "/workspace",
             continuity: "warm_reuse",
+            continuityId: ACTIVATION_ID,
           };
         },
       },

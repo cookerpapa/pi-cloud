@@ -117,12 +117,13 @@ model-context authority.
 
 The Harness captures a credential-free execution World State before the user
 prompt reaches the provider. The stable Workspace binding is hashed separately
-from both the Workspace content revision and Cube continuity. Recreating Cube
-for the same Volume emits `sandbox_reset`; rebinding the Session to a different
-Workspace emits one hidden `workspace_changed` fact and suppresses the
-conflicting file-preservation claim. Selected Harness facts are carried in the
-native Compaction retained tail, so a later Worker sees one current fact rather
-than losing it or replaying internal identifiers.
+from both the Workspace content revision and physical Cube continuity. Releasing
+and renewing a Tool lease against the same physical runtime is not a reset.
+Recreating Cube for the same Volume emits `sandbox_reset`; rebinding the Session
+to a different Workspace emits one hidden `workspace_changed` fact and
+suppresses the conflicting file-preservation claim. Selected Harness facts are
+carried in the native Compaction retained tail, so a later Worker sees one
+current fact rather than losing it or replaying internal identifiers.
 
 Human tree navigation is a bounded projection of the same parent-linked Pi
 entries. Forking a settled final response creates a child product/Pi Session

@@ -1506,7 +1506,12 @@ export class ToolBroker {
       capability,
       workspaceRoot: request.toolRoot,
       continuity:
-        delegatedParent === undefined && inherited === undefined ? "cold_restore" : "warm_reuse",
+        developmentEnvironment === undefined &&
+        delegatedParent === undefined &&
+        inherited === undefined
+          ? "cold_restore"
+          : "warm_reuse",
+      continuityId: developmentEnvironment?.handle.runtimeId ?? activationId,
     };
   }
 

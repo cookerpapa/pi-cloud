@@ -114,7 +114,7 @@ describe("PiCloudTurnRunner integration", () => {
       }),
       openSession: async () => ({ session, authority }),
       sandboxContinuity: {
-        activationId: "88888888-8888-4888-8888-888888888888",
+        continuityId: "88888888-8888-4888-8888-888888888888",
         continuity: "cold_restore",
         environmentSha256: turn.environmentSha256,
         workspaceBindingSha256: turn.workspaceBindingSha256,

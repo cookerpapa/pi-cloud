@@ -46,7 +46,8 @@ const environment = Object.fromEntries(
 );
 const bindAddress = environment.PI_CLOUD_HTTP_BIND_ADDRESS;
 const port = environment.PI_CLOUD_HTTP_PORT;
-if (bindAddress === undefined || port === undefined) {
+const bootstrapTenantId = environment.PI_CLOUD_TENANT_ID;
+if (bindAddress === undefined || port === undefined || bootstrapTenantId === undefined) {
   throw new Error("Production HTTP endpoint configuration is missing");
 }
 const connectHost = bindAddress === "0.0.0.0" || bindAddress === "::" ? "127.0.0.1" : bindAddress;
@@ -342,7 +343,7 @@ const runtimeName = await psql(
 assert(runtimeName, "Development environment did not persist its Cube identity");
 await terminalCommand(
   `/v1/development-environments/${development.environmentId}/terminal`,
-  `test "$(id -u)" = 0; test ! -e /workspace; printf 'EXCLUSIVE_ROOTFS_OK\\n' > /etc/pi-cloud-exclusive-marker; mkdir -p /home/user/empty-project; chown -R 1000:1000 /home/user; printf 'EXCLUSIVE_FILE_OK\\n' > /home/user/exclusive.txt; printf '<!doctype html><html><head><title>PiCloud Preview</title></head><body>PI_CLOUD_PREVIEW_OK</body></html>\\n' > /home/user/index.html; setsid sh -c 'while true; do date +%s > /var/tmp/pi-cloud-exclusive-heartbeat; sleep 1; done' </dev/null >/tmp/exclusive-loop.log 2>&1 & echo $! > /var/tmp/pi-cloud-exclusive.pid; setsid python3 -m http.server ${String(previewPort)} --bind 0.0.0.0 --directory /home/user </dev/null >/tmp/preview.log 2>&1 & echo EXCLUSIVE_FIRST_OK`,
+  `test "$(id -u)" = 0; test ! -e /workspace; printf 'EXCLUSIVE_ROOTFS_OK\\n' > /etc/pi-cloud-exclusive-marker; mkdir -p /home/user/empty-project/src; printf 'public final class Calculator { public static int add(int left, int right) { return left - right; } }\\n' > /home/user/empty-project/src/Calculator.java; printf '#!/usr/bin/env bash\\nset -eu\\ngrep -F "return left + right;" src/Calculator.java\\n' > /home/user/empty-project/test.sh; chmod 0755 /home/user/empty-project/test.sh; chown -R 1000:1000 /home/user; printf 'EXCLUSIVE_FILE_OK\\n' > /home/user/exclusive.txt; printf '<!doctype html><html><head><title>PiCloud Preview</title></head><body>PI_CLOUD_PREVIEW_OK</body></html>\\n' > /home/user/index.html; setsid sh -c 'while true; do date +%s > /var/tmp/pi-cloud-exclusive-heartbeat; sleep 1; done' </dev/null >/tmp/exclusive-loop.log 2>&1 & echo $! > /var/tmp/pi-cloud-exclusive.pid; setsid python3 -m http.server ${String(previewPort)} --bind 0.0.0.0 --directory /home/user </dev/null >/tmp/preview.log 2>&1 & echo EXCLUSIVE_FIRST_OK`,
   "EXCLUSIVE_FIRST_OK",
 );
 const rootDirectory = await api.listDevelopmentEnvironmentDirectory(development.environmentId, "/");
@@ -379,11 +380,29 @@ const session = await api.createSession(
 );
 const agentRun = await api.acceptTurn(
   session.sessionId,
-  "Use bash to write EXCLUSIVE_AGENT_HANDOFF_OK into agent-handoff.txt in the current working directory, read it back, and report the verified marker.",
+  "Fix the pre-seeded Calculator implementation and run its test script.",
   newIdempotencyKey("turn"),
   "off",
 );
 await waitForRun(agentRun.runId);
+const continuityRun = await api.acceptTurn(
+  session.sessionId,
+  "Verify the repaired Calculator again without changing it.",
+  newIdempotencyKey("turn"),
+  "off",
+);
+await waitForRun(continuityRun.runId);
+assert.equal(
+  await psql(
+    `select count(*)
+       from pi_session_entries
+      where tenant_id = ${sqlLiteral(bootstrapTenantId)}
+        and session_id = ${sqlLiteral(session.sessionId)}
+        and custom_type = 'pi-cloud.sandbox_reset'`,
+  ),
+  "0",
+  "A renewed Agent Tool lease incorrectly reported a physical Sandbox reset",
+);
 assert.equal(
   await psql(
     `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
@@ -398,13 +417,13 @@ assert.equal(
 );
 await terminalCommand(
   `/v1/conversations/${session.sessionId}/terminal`,
-  'test "$(cat /home/user/empty-project/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_AGENT_RETURN_OK',
+  'grep -F "return left + right;" /home/user/empty-project/src/Calculator.java >/dev/null && (cd /home/user/empty-project && bash ./test.sh) && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_AGENT_RETURN_OK',
   "EXCLUSIVE_AGENT_RETURN_OK",
 );
 const sshTicket = await api.issueSshAccessTicket(session.sessionId);
 await sshCommand(
   sshTicket,
-  'test "$(id -u)" = 0 && test "$(cat /home/user/empty-project/agent-handoff.txt)" = EXCLUSIVE_AGENT_HANDOFF_OK && echo EXCLUSIVE_SSH_OK',
+  'test "$(id -u)" = 0 && grep -F "return left + right;" /home/user/empty-project/src/Calculator.java >/dev/null && echo EXCLUSIVE_SSH_OK',
   "EXCLUSIVE_SSH_OK",
 );
 
@@ -498,6 +517,7 @@ const report = {
   processSurvivedTerminalReconnect: true,
   processSurvivedPauseResume: true,
   agentRunBorrowedAndReturnedSameCube: true,
+  consecutiveAgentRunsPreservedPhysicalContinuity: true,
   workspaceVolumeSurvivedRelease: true,
   authenticatedHttpPreviewPassed: true,
   previewPort,

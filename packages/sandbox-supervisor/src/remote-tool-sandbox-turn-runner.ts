@@ -622,8 +622,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 this.#checkpointStore!.saveToolOutput!(command, output),
             }),
         sandboxContinuity: {
-          activationId:
-            activeSandbox?.activationId ??
+          continuityId:
+            activeSandbox?.continuityId ??
             parseExecutionGrant(command.payload.executionGrant).executionId,
           continuity: activeSandbox?.continuity ?? "cold_restore",
           environmentSha256: cloudTurn.environmentSha256,

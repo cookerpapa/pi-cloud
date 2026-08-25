@@ -335,6 +335,10 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.createSpec?.toolRoot).toBe("/home/user");
     const agent = await manager.create({ ...createRequest, retention: "persistent" });
     expect(agent.activationId).toBe(ACTIVATION_ID);
+    expect(agent).toMatchObject({
+      continuity: "warm_reuse",
+      continuityId: "66666666-6666-4666-8666-666666666666",
+    });
     await expect(
       manager.execute(agent.capability, operation("21111111-1111-4111-8111-111111111111")),
     ).resolves.toMatchObject({ exitCode: 0 });
@@ -393,6 +397,10 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "21111111-1111-4111-8111-111111111117",
       assignment: secondAssignment,
       retention: "persistent",
+    });
+    expect(secondAgent).toMatchObject({
+      continuity: "warm_reuse",
+      continuityId: "66666666-6666-4666-8666-666666666666",
     });
     await expect(
       manager.browseDevelopmentEnvironment({

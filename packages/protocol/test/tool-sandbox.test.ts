@@ -72,6 +72,7 @@ describe("Tool Sandbox protocol", () => {
       capability: `pcts_${"x".repeat(43)}`,
       workspaceRoot: "/workspace",
       continuity: "cold_restore",
+      continuityId: "10000000-0000-4000-8000-000000000005",
     } as const;
     expect(parseToolBrokerResponse(response)).toMatchObject({
       type: "tool_sandbox.reserved",

@@ -37,7 +37,8 @@ contract for exposing an ordinary Sandbox's port 22 directly.
   to the current Tool environment and that `/workspace` now represents another
   binding; tenant, Workspace, Run and Activation identifiers never enter model
   context.
-- Recreating Cube around the same persistent Workspace emits `sandbox_reset`
+- Renewing an Agent Tool lease on the same physical Cube does not emit a reset.
+  Recreating Cube around the same persistent Workspace emits `sandbox_reset`
   and preserves the file-continuity claim. Rebinding to another Workspace
   emits `workspace_changed` instead, so the Harness never claims that the old
   files survived. The persisted binding fingerprint, not a path or content

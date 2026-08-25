@@ -28,14 +28,14 @@ const FIRST_WORKSPACE_SHA256 = "e".repeat(64);
 const SECOND_WORKSPACE_SHA256 = "f".repeat(64);
 
 function continuity(
-  activationId: string,
+  continuityId: string,
   kind: "cold_restore" | "warm_reuse",
   environmentSha256 = ENVIRONMENT_SHA256,
   toolPolicySha256 = TOOL_POLICY_SHA256,
   workspaceBindingSha256 = FIRST_WORKSPACE_SHA256,
 ) {
   return {
-    activationId,
+    continuityId,
     continuity: kind,
     environmentSha256,
     workspaceBindingSha256,
@@ -255,5 +255,28 @@ describe("Pi per-Step runtime world-state harness", () => {
     );
     expect(context).toContain("<workspace_changed>");
     expect(context).not.toContain(SECOND_WORKSPACE_SHA256);
+  });
+
+  it("does not report a reset when a new Tool lease reuses the same physical runtime", async () => {
+    const session = new Session(
+      new InMemorySessionStorage({ id: "persistent-runtime-session", createdAt: Date.now() }),
+    );
+    const first = await PiSessionWorldStateController.create(
+      session,
+      continuity(FIRST_ACTIVATION, "warm_reuse"),
+    );
+    await first.capture();
+    await first.recordActive();
+
+    const nextRun = await PiSessionWorldStateController.create(
+      session,
+      continuity(FIRST_ACTIVATION, "warm_reuse"),
+    );
+    expect((await nextRun.capture()).modelMessages).toHaveLength(0);
+    expect(
+      (await session.findEntriesOnBranch()).filter(
+        (entry) => entry.type === "custom" && entry.customType === PI_SANDBOX_RESET_CUSTOM_TYPE,
+      ),
+    ).toHaveLength(0);
   });
 });

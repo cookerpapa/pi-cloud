@@ -50,7 +50,7 @@ export type PiRuntimeWorldState = Readonly<{
 }>;
 
 export type PiSandboxContinuity = Readonly<{
-  activationId: string;
+  continuityId: string;
   continuity: "cold_restore" | "warm_reuse";
   environmentSha256: string;
   workspaceBindingSha256: string;
@@ -211,7 +211,7 @@ export class PiStepWorldStateController {
       schemaVersion: 3,
       sandbox: {
         status: this.#status,
-        continuityId: this.#status === "inactive" ? null : this.#continuity.activationId,
+        continuityId: this.#status === "inactive" ? null : this.#continuity.continuityId,
       },
       environmentSha256: this.#continuity.environmentSha256,
       workspaceBindingSha256: this.#continuity.workspaceBindingSha256,
@@ -384,7 +384,7 @@ export class PiSessionWorldStateController {
       schemaVersion: 3,
       sandbox: {
         status: this.#status,
-        continuityId: this.#status === "inactive" ? null : this.#continuity.activationId,
+        continuityId: this.#status === "inactive" ? null : this.#continuity.continuityId,
       },
       environmentSha256: this.#continuity.environmentSha256,
       workspaceBindingSha256: this.#continuity.workspaceBindingSha256,
