@@ -104,7 +104,7 @@ export class HttpTerminalTurnProjectionSource implements TerminalTurnProjectionS
   }
 }
 
-/** Development fallback; production injects the Accepted Kafka projection. */
+/** Development fallback; production injects the accepted JetStream projection. */
 export class UnavailableTerminalTurnProjectionSource implements TerminalTurnProjectionSource {
   async prepare(_input: PrepareTerminalTurnProjectionInput): Promise<never> {
     throw new Error("No accepted live prefix is available in development composition");

@@ -11,11 +11,11 @@ export type ProductionControlPlaneEnvironment = Readonly<Record<string, string |
 export type ProductionControlPlaneConfig = {
   databaseUrl: string;
   databaseNotificationUrl: string;
-  kafkaBrokers: readonly string[];
-  kafkaRawEventTopic: string;
-  kafkaAcceptedEventTopic: string;
-  kafkaSessionMutationTopic: string;
-  kafkaGatewayReplayWindowMs: number;
+  jetStreamServers: readonly string[];
+  jetStreamReplicas: number;
+  agentEventRetentionMs: number;
+  maximumEventsPerSession: number;
+  workerEventIngestToken: string;
   supervisorEnrollmentToken: string;
   supervisorManagementToken: string;
   modelCredentialMasterKey: string;
@@ -23,6 +23,7 @@ export type ProductionControlPlaneConfig = {
   toolBrokerBaseUrls: readonly string[];
   sandboxMaterializerToken: string;
   workspaceTerminalToken: string;
+  previewPublicOriginBaseUrl: string;
   sshGatewayEnabled: boolean;
   sshAdvertisedHost: string;
   sshAdvertisedPort: number;
@@ -347,31 +348,29 @@ export async function loadProductionControlPlaneConfig(
   return {
     databaseUrl,
     databaseNotificationUrl,
-    kafkaBrokers: boundedList(
-      required(environment, "PI_CLOUD_KAFKA_BROKERS"),
-      "PI_CLOUD_KAFKA_BROKERS",
+    jetStreamServers: boundedList(
+      required(environment, "PI_CLOUD_JETSTREAM_SERVERS"),
+      "PI_CLOUD_JETSTREAM_SERVERS",
     ),
-    kafkaRawEventTopic: bounded(
-      environment.PI_CLOUD_KAFKA_RAW_EVENT_TOPIC ?? "pi-cloud.agent-events.raw.v1",
-      "PI_CLOUD_KAFKA_RAW_EVENT_TOPIC",
-      249,
-    ),
-    kafkaAcceptedEventTopic: bounded(
-      environment.PI_CLOUD_KAFKA_ACCEPTED_EVENT_TOPIC ?? "pi-cloud.agent-events.accepted.v1",
-      "PI_CLOUD_KAFKA_ACCEPTED_EVENT_TOPIC",
-      249,
-    ),
-    kafkaSessionMutationTopic: bounded(
-      environment.PI_CLOUD_KAFKA_SESSION_MUTATION_TOPIC ?? "pi-cloud.session-mutations.v1",
-      "PI_CLOUD_KAFKA_SESSION_MUTATION_TOPIC",
-      249,
-    ),
-    kafkaGatewayReplayWindowMs: integerValue(
+    jetStreamReplicas: integerValue(environment, "PI_CLOUD_JETSTREAM_REPLICAS", 3, 1, 5),
+    agentEventRetentionMs: integerValue(
       environment,
-      "PI_CLOUD_KAFKA_GATEWAY_REPLAY_WINDOW_MS",
-      30 * 60_000,
-      10 * 60_000,
+      "PI_CLOUD_AGENT_EVENT_RETENTION_MS",
       24 * 60 * 60_000,
+      60 * 60_000,
+      7 * 24 * 60 * 60_000,
+    ),
+    maximumEventsPerSession: integerValue(
+      environment,
+      "PI_CLOUD_MAXIMUM_HOT_EVENTS_PER_SESSION",
+      8_192,
+      512,
+      1_000_000,
+    ),
+    workerEventIngestToken: await secret(
+      environment,
+      "PI_CLOUD_WORKER_EVENT_INGEST_TOKEN",
+      allowInlineSecrets,
     ),
     supervisorEnrollmentToken: await secret(
       environment,
@@ -406,6 +405,10 @@ export async function loadProductionControlPlaneConfig(
       environment,
       "PI_CLOUD_WORKSPACE_TERMINAL_TOKEN",
       allowInlineSecrets,
+    ),
+    previewPublicOriginBaseUrl: managementUrl(
+      required(environment, "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL"),
+      true,
     ),
     sshGatewayEnabled: booleanValue(environment, "PI_CLOUD_SSH_GATEWAY_ENABLED"),
     sshAdvertisedHost: bounded(

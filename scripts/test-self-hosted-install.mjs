@@ -63,7 +63,7 @@ assert.throws(
   () =>
     validateProductionRuntimeEnvironment({
       PI_CLOUD_AGENT_EVENT_RETENTION_MS: "3600000",
-      PI_CLOUD_KAFKA_GATEWAY_REPLAY_WINDOW_MS: "7200000",
+      PI_CLOUD_AGENT_EVENT_RETENTION_MS: "7200000",
     }),
   /retention must cover/u,
 );

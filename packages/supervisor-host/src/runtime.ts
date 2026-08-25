@@ -5,11 +5,12 @@ import {
   TtlCheckpointObjectStore,
 } from "@pi-cloud/runtime-core/checkpoint-runtime";
 import type { DurableEventIngestor } from "@pi-cloud/runtime-core/durable-event-store";
+import { HttpAgentEventIngestor } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
+import { JetStreamPiSessionMutationProducer } from "@pi-cloud/runtime-core/jetstream-pi-session-mutations";
 import {
-  KafkaAgentEventProducer,
-  PostgresAcceptedEventBarrier,
-} from "@pi-cloud/runtime-core/kafka-agent-event-log";
-import { KafkaPiSessionMutationProducer } from "@pi-cloud/runtime-core/kafka-pi-session-mutations";
+  connectPiCloudJetStream,
+  type PiCloudJetStream,
+} from "@pi-cloud/runtime-core/jetstream-runtime";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
 import { HttpTerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
 import {
@@ -81,7 +82,7 @@ export type PiWorkerRuntimeOptions = {
     close?(): Promise<void>;
   };
   sessionMutationProducer?: Pick<
-    KafkaPiSessionMutationProducer,
+    JetStreamPiSessionMutationProducer,
     "scoped" | "checkHealth" | "close"
   >;
 };
@@ -189,11 +190,11 @@ export class PiWorkerRuntime {
   readonly #runWorkerFactory: (options: PostgresPiWorkerOptions) => SupervisorRunWorker;
   readonly #eventIngestor:
     (DurableEventIngestor & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
-  #ownedEventProducer: KafkaAgentEventProducer | undefined;
   readonly #configuredSessionMutationProducer:
-    Pick<KafkaPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<JetStreamPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
   #sessionMutationProducer:
-    Pick<KafkaPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<JetStreamPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
+  #jetStreamRuntime: PiCloudJetStream | undefined;
   #ownsSessionMutationProducer = false;
   readonly #ownerStoppedPromise: Promise<void>;
   readonly #resolveOwnerStopped: () => void;
@@ -432,11 +433,12 @@ export class PiWorkerRuntime {
       const runWorkerIdentity = `postgres:${identity.supervisorId}:${identity.bootId}`;
       const sessionMutationProducer =
         this.#configuredSessionMutationProducer ??
-        new KafkaPiSessionMutationProducer({
+        new JetStreamPiSessionMutationProducer({
           database: this.#database,
-          brokers: this.#config.kafkaBrokers,
-          clientId: `${this.#config.supervisorId}-session-mutations`,
-          topic: this.#config.kafkaSessionMutationTopic,
+          runtime: (this.#jetStreamRuntime = await connectPiCloudJetStream({
+            servers: this.#config.jetStreamServers,
+            clientName: `${this.#config.supervisorId}-session-mutations`,
+          })),
         });
       this.#ownsSessionMutationProducer = this.#configuredSessionMutationProducer === undefined;
       await sessionMutationProducer.checkHealth();
@@ -654,18 +656,16 @@ export class PiWorkerRuntime {
       client.setAcceptingAssignments(false);
       this.#client = client;
       await client.start();
-      const eventProducer =
+      const ownedEventIngestor =
         this.#eventIngestor === undefined
-          ? new KafkaAgentEventProducer({
-              brokers: this.#config.kafkaBrokers,
-              clientId: `${this.#config.supervisorId}-agent-events`,
-              topic: this.#config.kafkaRawEventTopic,
-              acceptedBarrier: new PostgresAcceptedEventBarrier({ database: this.#database }),
+          ? new HttpAgentEventIngestor({
+              baseUrl: this.#config.controlPlaneBaseUrl,
+              serviceToken: this.#config.workerEventIngestToken,
+              allowInsecureHttp: this.#config.allowInsecureInternalHttp,
             })
           : undefined;
-      const eventIngestor = this.#eventIngestor ?? eventProducer!;
-      this.#ownedEventProducer = eventProducer;
-      if (eventProducer !== undefined) await eventProducer.checkHealth();
+      const eventIngestor = this.#eventIngestor ?? ownedEventIngestor!;
+      if (ownedEventIngestor !== undefined) await ownedEventIngestor.checkHealth();
       else await this.#eventIngestor?.checkHealth?.();
       const terminalTurnProjectionSource = new HttpTerminalTurnProjectionSource({
         baseUrl: this.#config.controlPlaneBaseUrl,
@@ -698,7 +698,7 @@ export class PiWorkerRuntime {
         canClaimRuns: () => this.#state === "ready" && client?.state === "connected",
         admitRunClaims: async () => {
           try {
-            if (eventProducer !== undefined) await eventProducer.checkHealth();
+            if (ownedEventIngestor !== undefined) await ownedEventIngestor.checkHealth();
             else await this.#eventIngestor?.checkHealth?.();
             await sessionMutationProducer.checkHealth();
             await this.#toolBroker.checkHealth();
@@ -778,10 +778,10 @@ export class PiWorkerRuntime {
     await this.#client?.stop().catch(() => undefined);
     await this.#managementServer?.close().catch(() => undefined);
     await this.#modelGateway?.close().catch(() => undefined);
-    await this.#ownedEventProducer?.close().catch(() => undefined);
     if (this.#ownsSessionMutationProducer) {
       await this.#sessionMutationProducer?.close().catch(() => undefined);
     }
+    await this.#jetStreamRuntime?.connection.close().catch(() => undefined);
     this.#objectStore.destroy();
     if (this.#ownsDatabase) await this.#database.destroy();
     if (this.#state !== "failed") this.#state = "stopped";

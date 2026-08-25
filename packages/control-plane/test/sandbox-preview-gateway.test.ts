@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   issuePreviewAccessToken,
+  previewOriginHostname,
   previewSecurityHeaders,
   rewritePreviewHtml,
   verifyPreviewAccessToken,
@@ -22,16 +23,28 @@ describe("SandboxPreviewGateway HTML policy", () => {
     expect(rewritten).toContain('<script src="game.js"></script>');
   });
 
-  it("allows authenticated subresources to load inside the opaque sandbox origin", () => {
+  it("allows same-origin application APIs only on a separate Preview origin", () => {
     const headers = previewSecurityHeaders("nonce-value");
     expect(headers["content-security-policy"]).toContain("sandbox allow-scripts");
-    expect(headers["content-security-policy"]).not.toContain("allow-same-origin");
-    expect(headers["cross-origin-resource-policy"]).toBe("cross-origin");
+    expect(headers["content-security-policy"]).toContain("allow-same-origin");
+    expect(headers["cross-origin-resource-policy"]).toBe("same-origin");
     expect(headers["referrer-policy"]).toBe("no-referrer");
     expect(headers["x-content-type-options"]).toBe("nosniff");
   });
 
-  it("scopes opaque-origin subresource authority to one user, target, port and expiry", () => {
+  it("derives a stable isolated hostname per target and application port", () => {
+    const secret = "preview-secret-value-with-at-least-32-bytes";
+    const target = {
+      kind: "conversation" as const,
+      sessionId: "10000000-0000-4000-8000-000000000001",
+    };
+    const first = previewOriginHostname(secret, "preview.localhost", target, 8_000);
+    expect(first).toMatch(/^p-[0-9a-f]{24}\.preview\.localhost$/u);
+    expect(previewOriginHostname(secret, "preview.localhost", target, 8_000)).toBe(first);
+    expect(previewOriginHostname(secret, "preview.localhost", target, 3_000)).not.toBe(first);
+  });
+
+  it("scopes isolated-origin subresource authority to one user, target, port and expiry", () => {
     const secret = "preview-secret-value-with-at-least-32-bytes";
     const now = Date.parse("2026-08-24T00:00:00.000Z");
     const target = {

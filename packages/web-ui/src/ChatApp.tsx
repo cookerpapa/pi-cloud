@@ -497,12 +497,19 @@ export default function ChatApp() {
         ) {
           setInspectorRefreshSignal((value) => value + 1);
           if (state.session !== null) {
-            const detail = await api.getConversation(state.session.sessionId).catch(() => null);
-            if (!cancelled && detail !== null) {
+            const loaded = await loadConversation(state.session.sessionId).catch(() => null);
+            if (!cancelled && loaded !== null) {
+              lastSequenceRef.current = loaded.replayAfterSequence;
+              update({
+                type: "conversation.loaded",
+                conversation: loaded.conversation,
+                ...(loaded.liveSnapshot === undefined ? {} : { liveSnapshot: loaded.liveSnapshot }),
+              });
               update({
                 type: "project.environment.refreshed",
-                environment: detail.project.environment,
+                environment: loaded.conversation.project.environment,
               });
+              setReconnectGeneration((value) => value + 1);
             }
           }
           await refreshConversations().catch(() => undefined);
@@ -518,7 +525,15 @@ export default function ChatApp() {
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [api, authPhase, currentTurn?.runId, refreshConversations, state.session, update]);
+  }, [
+    api,
+    authPhase,
+    currentTurn?.runId,
+    loadConversation,
+    refreshConversations,
+    state.session,
+    update,
+  ]);
 
   useEffect(() => {
     if (authPhase !== "authenticated" || currentTurn === undefined) return;
@@ -1249,7 +1264,13 @@ export default function ChatApp() {
             ) : null}
             {state.session ? (
               <span className={state.connection.phase === "live" ? "online" : ""}>
-                {state.connection.phase === "live" ? t("chat.connected") : t("chat.connecting")}
+                {state.connection.phase === "live"
+                  ? t("chat.connected")
+                  : state.connection.phase === "reconnecting"
+                    ? t("chat.reconnecting")
+                    : state.connection.phase === "failed"
+                      ? t("chat.connectionFailed")
+                      : t("chat.connecting")}
               </span>
             ) : null}
             {state.session?.sandboxRetention !== "persistent" ||

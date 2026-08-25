@@ -147,7 +147,7 @@ describe.sequential("PostgresPiSessionStorage", () => {
     await expect(storage.getName()).resolves.toBe("durable session");
   });
 
-  it("routes active Worker mutations through the Kafka projection port", async () => {
+  it("routes active Worker mutations through the durable projection port", async () => {
     const operations: unknown[] = [];
     const storage = new PostgresPiSessionStorage({
       database,

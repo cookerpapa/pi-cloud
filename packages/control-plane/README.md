@@ -47,7 +47,7 @@ durable side effects.
 ## State
 
 PostgreSQL is authoritative for business state, complete Pi Session records,
-Run history and settled conversation projections. Accepted Kafka owns the
+Run history and settled conversation projections. JetStream owns the
 bounded live-event tail; persistent Cube Volumes own Workspace bytes.
 
 Conversation titles are independent from Workspace names. A Workspace may be

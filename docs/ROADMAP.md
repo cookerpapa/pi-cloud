@@ -7,7 +7,7 @@
 - one shared, horizontally scalable PostgreSQL-backed Pi Worker queue;
 - official Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with
   compaction-bounded reads and upstream backend conformance;
-- Kafka-first resumable SSE with PostgreSQL canonical terminal Turns;
+- R=3 JetStream resumable SSE with PostgreSQL canonical terminal Turns;
 - CubeSandbox KVM-only Tool execution;
 - persistent Cube Volumes as Workspace byte authority;
 - lazy/warm/persistent Cube lifecycle and model-visible reset semantics;
@@ -20,8 +20,8 @@
   full-VM rootfs/process persistence, restart adoption, root terminals, fenced
   Agent handoff and one-time SSH access;
 - Session/Workspace lifetime independence with missing-Workspace rebinding;
-- terminal-boundary folding for the Kafka-backed Gateway replay projection.
-- Kafka-native Worker batching and Session-keyed PostgreSQL projection barriers.
+- committed RePublish with one Core NATS subscription per Gateway and no replay cache;
+- batched Run capability validation and Session-keyed PostgreSQL projection barriers.
 
 ## Current release gate
 
@@ -48,7 +48,7 @@
   multi-node cluster;
 - validate Tool Broker and persistent Volume gateway replacement under load;
 - publish PostgreSQL queue latency and Worker slot-density measurements;
-- validate Kafka ingest/replay and PostgreSQL semantic projection at target load;
+- validate JetStream ingest/replay and PostgreSQL semantic projection at target load;
 - define Workspace snapshot/backup policy separately from normal Run commits;
 
 Every performance or availability claim must name the tested revision,

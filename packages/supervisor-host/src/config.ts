@@ -20,9 +20,8 @@ export type SupervisorHostConfig = {
   modelCredentialMasterKey: string;
   databaseUrl: string;
   databaseNotificationUrl: string;
-  kafkaBrokers: readonly string[];
-  kafkaRawEventTopic: string;
-  kafkaSessionMutationTopic: string;
+  jetStreamServers: readonly string[];
+  workerEventIngestToken: string;
   managementHost: string;
   managementPort: number;
   managementAdvertisedBaseUrl: string;
@@ -386,19 +385,14 @@ export async function loadSupervisorHostConfig(
     ),
     databaseUrl,
     databaseNotificationUrl,
-    kafkaBrokers: boundedList(
-      required(environment, "PI_CLOUD_KAFKA_BROKERS"),
-      "PI_CLOUD_KAFKA_BROKERS",
+    jetStreamServers: boundedList(
+      required(environment, "PI_CLOUD_JETSTREAM_SERVERS"),
+      "PI_CLOUD_JETSTREAM_SERVERS",
     ),
-    kafkaRawEventTopic: bounded(
-      environment.PI_CLOUD_KAFKA_RAW_EVENT_TOPIC ?? "pi-cloud.agent-events.raw.v1",
-      "PI_CLOUD_KAFKA_RAW_EVENT_TOPIC",
-      249,
-    ),
-    kafkaSessionMutationTopic: bounded(
-      environment.PI_CLOUD_KAFKA_SESSION_MUTATION_TOPIC ?? "pi-cloud.session-mutations.v1",
-      "PI_CLOUD_KAFKA_SESSION_MUTATION_TOPIC",
-      249,
+    workerEventIngestToken: await secret(
+      environment,
+      "PI_CLOUD_WORKER_EVENT_INGEST_TOKEN",
+      allowInlineSecrets,
     ),
     managementHost: bounded(
       environment.PI_CLOUD_SUPERVISOR_MANAGEMENT_HOST ?? "127.0.0.1",

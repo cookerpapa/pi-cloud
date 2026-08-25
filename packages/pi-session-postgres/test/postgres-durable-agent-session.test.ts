@@ -24,7 +24,7 @@ describe("durable Agent Session recovery barrier", () => {
     expect(order).toEqual(["projection-barrier", "authority-recheck"]);
   });
 
-  it("still checks authority when the direct PostgreSQL adapter has no Kafka publisher", async () => {
+  it("still checks authority when the direct PostgreSQL adapter has no event publisher", async () => {
     let checks = 0;
     await synchronizePiSessionProjectionBeforeRead(undefined, {
       async assertCurrent() {

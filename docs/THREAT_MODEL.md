@@ -28,7 +28,7 @@ new Attempt takes ownership.
 
 ### Durable authorities
 
-PostgreSQL owns Runs and canonical Pi Sessions; Accepted Kafka owns the bounded
+PostgreSQL owns Runs and canonical Pi Sessions; R=3 JetStream owns the bounded
 live-event tail; the persistent Cube Volume owns Workspace bytes. Worker and
 Gateway caches are rebuildable. There is no competing workflow or checkpoint
 head.
@@ -54,7 +54,7 @@ head.
 | SSRF/data exfiltration to internal network | private access denied except deployment-owned direct CIDRs; public HTTP uses governed egress proxy |
 | path/symlink escape | rooted/O_NOFOLLOW trusted Volume operations |
 | infinite output/process/resource use | byte, timeout, PID, CPU, memory and disk limits |
-| browser observes non-durable output | Accepted Kafka broker ACK before SSE; complete Pi entries remain PostgreSQL canonical state |
+| browser observes non-durable output | JetStream PubAck before committed RePublish/SSE; complete Pi entries remain PostgreSQL canonical state |
 | Cube loss | process world reset marker plus same persistent Workspace Volume |
 | secret leakage in events | bounded schemas and redaction; credentials never enter model context |
 

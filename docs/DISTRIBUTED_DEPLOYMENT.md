@@ -7,7 +7,7 @@ external durable authorities.
 ## External requirements
 
 - PostgreSQL HA plus optional PgBouncer;
-- Kafka HA with replication factor at least 3, `acks=all`,
+- NATS JetStream with an R=3 file-backed Stream,
   `min.insync.replicas>=2`, topic ACLs and bounded time/byte retention;
 - one direct PostgreSQL connection for migrations, `LISTEN/NOTIFY` and KEDA;
 - ReadWriteMany persistent Workspace storage visible to Cube Volume Plugin and
@@ -32,8 +32,8 @@ Ingress -> Web / Control Plane
                          │
               persistent Workspace storage
 
-Worker events -> Raw Kafka -> fenced authority -> Accepted Kafka -> SSE
-Complete Pi entries -> Session Mutation Kafka -> PostgreSQL SessionStorage
+Worker events -> batched fenced authority -> JetStream -> committed RePublish -> SSE
+Complete Pi entries -> Session Mutation JetStream -> PostgreSQL SessionStorage
 ```
 
 There are no execution Cells or Worker-affinity queues. A Workspace binds to a
@@ -63,7 +63,7 @@ Git revisions and Cube template IDs, run strict Helm/schema validation, and
 check the coupled Turn/lease/replay budgets before creating the namespace.
 
 The platform Secret must contain database URLs, API/bootstrap credentials,
-Cube/Tool credentials, Kafka credentials/CA material and metrics tokens.
+Cube/Tool credentials, NATS account/TLS material and metrics tokens.
 No S3 or Temporal credential is required.
 
 ## Scaling
@@ -87,7 +87,7 @@ Before claiming high availability, test on the actual storage/network stack:
 
 - Worker and node loss during model and Tool calls;
 - PostgreSQL/PgBouncer failover and notification reconnect;
-- Kafka Accepted-event retention, consumer lag and SSE reconnect;
+- JetStream retention, Projector lag and SSE reconnect;
 - Tool Broker/Volume gateway owner loss;
 - Cube compute-node drain and persistent Volume reattachment;
 - KEDA and node-autoscaler scale-up/down under real backlog.

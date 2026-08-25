@@ -51,11 +51,13 @@ export function createPool(max = 20) {
 
 export async function connectJetStream(name) {
   const connection = await connect({ servers: NATS_SERVERS, name, maxReconnectAttempts: -1 });
-  return {
-    connection,
-    jetstream: jetstream(connection),
-    manager: await jetstreamManager(connection),
-  };
+  try {
+    const manager = await waitFor(() => jetstreamManager(connection), 30_000, 250);
+    return { connection, jetstream: jetstream(connection), manager };
+  } catch (error) {
+    await connection.close().catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function initializeDatabase(pool) {

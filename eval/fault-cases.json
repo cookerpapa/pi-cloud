@@ -17,12 +17,12 @@
       "invariant": "A released or recovered old worker cannot reacquire an obsolete fence."
     },
     {
-      "id": "stale-kafka-event-authority",
+      "id": "stale-jetstream-event-authority",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/control-plane-api.test.ts",
-      "test": "rejects a raw Kafka event after its RunAttempt fence is superseded",
+      "test": "rejects a JetStream event batch after its RunAttempt fence is superseded",
       "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "A stale Worker may reach Raw Kafka but cannot publish browser-visible Accepted events."
+      "invariant": "A stale Worker cannot cross the transaction-scoped authority/Fence boundary into browser-visible JetStream events."
     },
     {
       "id": "session-mutation-redelivery",
@@ -67,9 +67,9 @@
       "id": "accepted-projection-ahead-of-worker-ack",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/control-plane-api.test.ts",
-      "test": "accepts an already-ahead Kafka projection boundary during Run settlement",
+      "test": "accepts an already-ahead JetStream projection boundary during Run settlement",
       "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "An Accepted projector that commits before the Worker observes its ACK cannot strand terminal Run settlement."
+      "invariant": "A JetStream event watermark already ahead of the Worker ACK cannot strand terminal Run settlement."
     },
     {
       "id": "control-plane-process-sigkill",

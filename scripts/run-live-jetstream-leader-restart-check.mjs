@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
 import { constants } from "node:fs";
 import { mkdir, open, writeFile } from "node:fs/promises";
@@ -14,9 +13,9 @@ const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).trim();
-if (process.env.PI_CLOUD_LIVE_KAFKA_RESTART_CHECK !== "1") {
+if (process.env.PI_CLOUD_LIVE_JETSTREAM_RESTART_CHECK !== "1") {
   throw new Error(
-    "Set PI_CLOUD_LIVE_KAFKA_RESTART_CHECK=1 to acknowledge a real model call and controlled Kafka broker restart",
+    "Set PI_CLOUD_LIVE_JETSTREAM_RESTART_CHECK=1 to acknowledge a real model call and controlled JetStream Leader loss",
   );
 }
 
@@ -39,53 +38,65 @@ const runtimeDirectory = resolve(
 );
 const environment = Object.fromEntries(
   (await readPrivate(resolve(runtimeDirectory, ".env"), 64 * 1_024, "Production environment"))
-    .split(/\r?\n/)
-    .filter((line) => line.length > 0)
+    .split(/\r?\n/u)
+    .filter(Boolean)
     .map((line) => {
       const separator = line.indexOf("=");
-      if (separator < 1) throw new Error("Production environment file is invalid");
       return [line.slice(0, separator), line.slice(separator + 1)];
     }),
 );
-const bindAddress = environment.PI_CLOUD_HTTP_BIND_ADDRESS;
-const port = environment.PI_CLOUD_HTTP_PORT;
-if (bindAddress === undefined || port === undefined) {
-  throw new Error("Production HTTP endpoint configuration is missing");
-}
-const connectHost = bindAddress === "0.0.0.0" || bindAddress === "::" ? "127.0.0.1" : bindAddress;
-const baseUrl = new URL(
-  `http://${connectHost.includes(":") ? `[${connectHost}]` : connectHost}:${port}`,
-);
+const host = ["0.0.0.0", "::"].includes(environment.PI_CLOUD_HTTP_BIND_ADDRESS)
+  ? "127.0.0.1"
+  : environment.PI_CLOUD_HTTP_BIND_ADDRESS;
+const baseUrl = new URL(`http://${host}:${environment.PI_CLOUD_HTTP_PORT}`);
 const fetchFromProduction = (input, init) => fetch(new URL(String(input), baseUrl), init);
 
-function executeCompose(args, timeoutMs = 180_000) {
+function compose(args, timeoutMs = 180_000) {
   return new Promise((resolvePromise, rejectPromise) => {
     execFile(
       process.execPath,
       ["scripts/production-compose.mjs", ...args],
-      {
-        cwd: repositoryRoot,
-        env: process.env,
-        encoding: "utf8",
-        maxBuffer: 2 * 1_024 * 1_024,
-        timeout: timeoutMs,
-      },
+      { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 4 * 1_024 * 1_024, timeout: timeoutMs },
       (error, stdout, stderr) => {
-        if (error) {
-          rejectPromise(
-            new Error(`Kafka broker restart failed: ${stderr.trim() || error.message}`),
-          );
-        } else {
-          resolvePromise(stdout.trim());
-        }
+        if (error) rejectPromise(new Error(stderr.trim() || error.message));
+        else resolvePromise(stdout.trim());
       },
     );
   });
 }
 
-async function restartKafka() {
-  await executeCompose(["restart", "kafka"]);
-  await executeCompose(["up", "--detach", "--wait", "kafka", "kafka-bootstrap"]);
+async function agentEventLeader() {
+  const output = await compose([
+    "exec",
+    "-T",
+    "nats-1",
+    "wget",
+    "-q",
+    "-O",
+    "-",
+    "http://127.0.0.1:8222/jsz?streams=true",
+  ]);
+  const details = JSON.parse(output).account_details?.[0]?.stream_detail ?? [];
+  const leader = details.find((stream) => stream.name === "PI_CLOUD_AGENT_EVENTS")?.cluster?.leader;
+  if (!/^nats-[123]$/u.test(leader ?? "")) throw new Error("Agent event Stream Leader is invalid");
+  return leader;
+}
+
+async function replaceLeader() {
+  const previous = await agentEventLeader();
+  await compose(["kill", "--signal", "SIGKILL", previous]);
+  await compose(["up", "--detach", "--wait", previous]);
+  const deadline = Date.now() + 60_000;
+  let replacement;
+  while (Date.now() < deadline) {
+    replacement = await agentEventLeader().catch(() => undefined);
+    if (replacement !== undefined && replacement !== previous) break;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+  }
+  if (replacement === undefined || replacement === previous) {
+    throw new Error("JetStream did not elect a replacement Leader");
+  }
+  return { previous, replacement };
 }
 
 async function waitForCompletedRun(api, runId) {
@@ -102,56 +113,46 @@ async function waitForCompletedRun(api, runId) {
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
   }
-  throw new Error("Run did not settle after Kafka broker restart");
+  throw new Error("Run did not settle after JetStream Leader loss");
 }
 
-const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`;
-const marker = `KAFKA-BROKER-RESTART-${suffix.toUpperCase()}`;
+const suffix = Date.now().toString(36);
+const marker = `JETSTREAM-LEADER-${suffix.toUpperCase()}`;
 const registrationResponse = await fetch(new URL("/v1/registrations", baseUrl), {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
-    tenantSlug: `kafka-restart-${suffix}`,
-    displayName: "Kafka broker restart acceptance",
+    tenantSlug: `jetstream-leader-${suffix}`,
+    displayName: "JetStream Leader acceptance",
   }),
 });
 const registration = await registrationResponse.json();
-if (
-  registrationResponse.status !== 201 ||
-  typeof registration.apiToken !== "string" ||
-  typeof registration.tenantId !== "string"
-) {
+if (registrationResponse.status !== 201 || typeof registration.apiToken !== "string") {
   throw new Error(`Registration failed with HTTP ${String(registrationResponse.status)}`);
 }
-
 const api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 const model = await api.getModelConfiguration();
-assert.equal(model.mode, "real", "Production restart check requires a real model");
-const project = await api.createProject(`Kafka broker restart ${suffix}`);
+assert.equal(model.mode, "real");
+const project = await api.createProject(`JetStream Leader ${suffix}`);
 const session = await api.createSession(
   project.projectId,
   project.workspaceId,
-  "Kafka broker restart continuity",
+  "Leader continuity",
 );
-const startedAt = performance.now();
 const accepted = await api.acceptTurn(
   session.sessionId,
   [
     "Do not call tools.",
     `Start with this exact marker: ${marker}.`,
     "Then write forty numbered Chinese sentences about durable cloud agent execution.",
-    "Each sentence must contain at least fifteen Chinese characters so the response remains streaming while infrastructure restarts.",
   ].join(" "),
-  newIdempotencyKey("kafka-restart"),
+  newIdempotencyKey("jetstream-leader"),
   "off",
 );
-
+const startedAt = performance.now();
 const controller = new AbortController();
-const deadline = setTimeout(
-  () => controller.abort(new Error("Kafka broker restart acceptance timed out")),
-  10 * 60_000,
-);
-let restart;
+const deadline = setTimeout(() => controller.abort(), 10 * 60_000);
+let replacement;
 let firstTextSequence;
 let terminal;
 let reconnects = 0;
@@ -171,38 +172,32 @@ try {
       if (event.turnId !== accepted.turnId) return;
       if (event.type === "assistant.text.delta") {
         text.push(event.payload.text);
-        if (restart === undefined) {
+        if (replacement === undefined) {
           firstTextSequence = event.seq;
-          restart = restartKafka();
+          replacement = replaceLeader();
         }
       }
-      if (
-        event.type === "turn.completed" ||
-        event.type === "turn.failed" ||
-        event.type === "turn.cancelled"
-      ) {
+      if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type)) {
         terminal = event;
         controller.abort();
       }
     },
   });
-  assert(restart, "The model did not stream before Kafka broker restart");
-  await restart;
-  assert(terminal, "The durable SSE stream did not publish a terminal event");
-  assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
-  assert(firstTextSequence && firstTextSequence < cursor, "SSE did not advance after restart");
-  assert(text.join("").includes(marker), "Replayed output omitted the expected marker");
+  const leaders = await replacement;
+  assert.equal(terminal?.type, "turn.completed", JSON.stringify(terminal?.payload));
+  assert(firstTextSequence < cursor);
+  assert(text.join("").includes(marker));
   const run = await waitForCompletedRun(api, accepted.runId);
-  assert.equal(run.attempts.length, 1, "Kafka broker restart created another Run Attempt");
-
+  assert.equal(run.attempts.length, 1);
   const report = {
     accepted: true,
     piCloudRevision: testedRevision,
     checkedAt: new Date().toISOString(),
     provider: model.provider,
     modelId: model.modelId,
+    previousLeader: leaders.previous,
+    replacementLeader: leaders.replacement,
     runId: accepted.runId,
-    turnId: accepted.turnId,
     firstTextSequence,
     terminalSequence: terminal.seq,
     sseReconnects: reconnects,
@@ -212,28 +207,16 @@ try {
   const reportDirectory = resolve(repositoryRoot, "docs/reports");
   await mkdir(reportDirectory, { recursive: true });
   await writeFile(
-    resolve(reportDirectory, "kafka-restart-acceptance-latest.json"),
+    resolve(reportDirectory, "jetstream-leader-restart-acceptance-latest.json"),
     `${JSON.stringify(report, null, 2)}\n`,
   );
   await writeFile(
-    resolve(reportDirectory, "kafka-restart-acceptance-latest.md"),
-    [
-      "# Kafka broker restart acceptance",
-      "",
-      `- Checked at: ${report.checkedAt}`,
-      `- Provider/model: ${report.provider} / ${report.modelId}`,
-      `- First visible / terminal sequence: ${String(report.firstTextSequence)} / ${String(report.terminalSequence)}`,
-      `- SSE reconnects: ${String(report.sseReconnects)}`,
-      `- Run Attempts: ${String(report.attemptCount)}`,
-      `- Elapsed: ${String(report.elapsedMs)} ms`,
-      "",
-      "The Kafka broker restarted after the first Accepted assistant delta. The Worker paused at the durable projection barrier, then resumed after the broker and consumers recovered. SSE preserved one ordered stream and the Run completed with one Attempt.",
-      "",
-    ].join("\n"),
+    resolve(reportDirectory, "jetstream-leader-restart-acceptance-latest.md"),
+    `# JetStream Leader restart acceptance\n\n- Leader: ${report.previousLeader} → ${report.replacementLeader}\n- First/terminal sequence: ${String(report.firstTextSequence)} / ${String(report.terminalSequence)}\n- SSE reconnects: ${String(report.sseReconnects)}\n- Run Attempts: ${String(report.attemptCount)}\n- Elapsed: ${String(report.elapsedMs)} ms\n`,
   );
   process.stdout.write(`${JSON.stringify(report)}\n`);
 } finally {
   clearTimeout(deadline);
   controller.abort();
-  await restart?.catch(() => undefined);
+  await replacement?.catch(() => undefined);
 }

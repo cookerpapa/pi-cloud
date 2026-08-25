@@ -325,7 +325,7 @@ export class SessionLeaseCoordinator implements TurnExecutionLeaseManager {
           .set({
             claim_expires_at: validUntil,
             last_heartbeat_at: now,
-            // Kafka projection may advance the durable event boundary between
+            // JetStream projection may advance the durable event boundary between
             // heartbeat capture and this transaction. A slightly older Worker
             // acknowledgement is valid evidence of liveness, but must never
             // move the canonical boundary backwards.

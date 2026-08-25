@@ -97,7 +97,7 @@ describe("ProductionHttpGateway", () => {
     }
   });
 
-  it("delegates only a structurally valid opaque Preview capability path to its gateway", async () => {
+  it("delegates only a structurally valid isolated Preview capability path to its gateway", async () => {
     const token = `pcpa_${"a".repeat(32)}.${"b".repeat(43)}`;
     const previewPath =
       `/v1/conversations/10000000-0000-4000-8000-000000000001/preview/4173/` +

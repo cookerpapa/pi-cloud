@@ -7,7 +7,7 @@ PiCloud owns durable admission, multi-tenancy, Worker execution authority,
 remote Tool routing, Workspace lifetime, streaming and recovery.
 
 CubeSandbox KVM is the only untrusted execution runtime. PostgreSQL is the only
-business/Run-state authority, Kafka is the bounded hot event log, and there is
+business/Run-state authority, JetStream is the bounded hot event log, and there is
 no second workflow scheduler.
 
 ## Source-of-truth and terminology guardrail
@@ -84,12 +84,12 @@ Every mutation checks an opaque `ExecutionAuthority` inside the same database
 transaction as the write.
 
 The native `pi_session_entries` compaction node is the recovery authority;
-Kafka's durable `context.compaction.*` events provide live and audit evidence.
+JetStream's durable `context.compaction.*` events provide live and audit evidence.
 The obsolete `context_compactions` governance ledger has been removed rather
 than maintained as a second, eventually inconsistent source of truth.
 The browser's settled transcript reconstructs completed Compaction and model
 retry notices from native Compaction entries and a presentation-only Pi custom
-entry; it does not retain a second lifetime copy of live Kafka fragments or
+entry; it does not retain a second lifetime copy of live JetStream fragments or
 inject the retry notice into model context.
 
 The same package implements Pi's tenant-scoped `SessionRepo`; Workers open or
@@ -415,28 +415,29 @@ events. The public adapter intentionally ignores thinking fragments, streamed
 Tool-call JSON and partial Tool stdout. It publishes only coalesced Assistant
 text, complete Tool start/result Items and low-frequency lifecycle boundaries.
 
-Workers combine adjacent text for 100 ms or 4 KiB, then publish directly to a
-native idempotent Kafka producer whose accumulator batches by partition. There
-is no second application group-commit scheduler. Raw records are keyed by Session. An
-authority consumer checks Run, Attempt, lease and fence in PostgreSQL before it
-publishes to the Accepted topic. Only an Accepted broker ACK advances the
-Worker boundary and makes bytes eligible for SSE.
+Workers combine adjacent text for 100 ms or 4 KiB, then submit the existing
+short-lived Run/Attempt/Lease/Fence capability to the internal Event Ingest.
+The Ingest groups concurrent Workers for at most two milliseconds and validates
+up to 256 authorities with one PostgreSQL set query. Valid publications enter
+the R=3 file-backed JetStream in parallel; each Worker ACK waits for its own
+PubAck and one set update advances all accepted Attempt watermarks.
 
-Each Control Plane replica rebuilds a bounded in-memory Session replay view
-from retained Accepted Kafka records before becoming ready, then tails that
-topic. Browsers keep the same `Last-Event-ID` SSE contract and never receive
-Kafka credentials. Kafka time/byte retention removes old deltas; a cursor older
-than the retained window reloads canonical PostgreSQL conversation state.
+JetStream committed RePublish sends stored messages to one Core NATS wildcard
+subscription in every Gateway replica. The Gateway holds only its actual HTTP
+connection queues, not a Session replay cache. Browsers retain the logical
+`Last-Event-ID` contract and never receive NATS credentials. A reconnect uses a
+temporary exact-Subject consumer; a cursor replaced by canonical PostgreSQL
+state receives HTTP 410 and reloads the complete conversation.
 
-Pi SessionStorage mutations use a separate Session-keyed Kafka topic. A
+Pi SessionStorage mutations use a separate Session-keyed JetStream Stream. A
 PostgreSQL projector applies complete entries, records and compaction facts
 idempotently. Before opening a Session, every Run appends a keyed recovery
 barrier and waits for its projection; all older Session mutations have then
 been applied or fenced before the Worker reads PostgreSQL. Each semantic Pi
 write also waits for its own mutation result before the Agent Loop advances.
 PostgreSQL therefore stores semantic Pi state, not token fragments. Terminal
-Run state and a one-row Kafka outbox commit in the same PostgreSQL transaction.
-Abnormal interruption recovery reads only the retained Accepted tail needed to
+Run state and a one-row event outbox commit in the same PostgreSQL transaction.
+Abnormal interruption recovery reads only the retained Session Subject needed to
 preserve a visible prefix that never reached `message_end`.
 
 ## State ownership
@@ -449,7 +450,7 @@ preserve a visible prefix that never reached `message_end`.
 | Session Tool grants and immutable Run capability snapshots | PostgreSQL |
 | conversation parent/fork graph | PostgreSQL |
 | canonical completed conversation | PostgreSQL |
-| bounded live SSE replay | Accepted Kafka topic + rebuildable Gateway memory |
+| bounded live SSE replay | R=3 JetStream Session Subjects |
 | elastic Workspace bytes | persistent Cube Volume |
 | cloud development machine guest root, memory and processes | one Cube pause snapshot on its compute node |
 | encrypted machine reconnect capsule | PostgreSQL; key held only by Tool Broker |

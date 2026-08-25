@@ -657,7 +657,7 @@ export class AgentRunSupervisor {
           } catch (error: unknown) {
             throw new AgentRunSupervisorError(
               "invalid_event_delivery",
-              "Supervisor event publisher did not cross the accepted Kafka durability boundary",
+              "Supervisor event publisher did not cross the JetStream durability boundary",
               { cause: error },
             );
           }

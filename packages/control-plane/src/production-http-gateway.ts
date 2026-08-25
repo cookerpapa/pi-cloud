@@ -42,9 +42,9 @@ export class ProductionHttpGateway {
     fastify.addHook("onRequest", async (request, reply) => {
       const path = request.raw.url?.split("?", 1)[0] ?? "";
       if (!path.startsWith("/v1/") && path !== "/v1") return;
-      // Opaque-origin Preview subresources carry a target-scoped path
-      // authority that is verified by SandboxPreviewGateway. No other API
-      // route bypasses browser/API credential authentication.
+      // Isolated Preview-Origin subresources carry a target-scoped path
+      // authority verified by SandboxPreviewGateway. No other API route
+      // bypasses browser/API credential authentication.
       if (isPreviewAccessPath(path)) return;
       if (request.method === "GET" && path === CUBE_EGRESS_CONFIGURATION_INTERNAL_PATH) {
         return;

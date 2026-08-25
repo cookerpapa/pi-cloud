@@ -11,7 +11,7 @@ const valid = {
   ),
   external: {
     providerProxyUrl: "https://provider.internal:3129",
-    kafka: { brokers: ["kafka.internal:9092"], gatewayReplayWindowMs: 1_800_000 },
+    jetstream: { servers: ["nats://nats.internal:4222"], eventRetentionMs: 86_400_000 },
   },
   controlPlane: { publicRegistration: { maximumConcurrentTurns: 4 } },
   sandboxPlane: {

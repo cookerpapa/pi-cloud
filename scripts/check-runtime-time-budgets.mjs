@@ -89,9 +89,9 @@ validateWorkerPolicy(
   "Compose Pi Worker",
 );
 assert.ok(
-  composeDefaultInteger(composeText, "PI_CLOUD_KAFKA_GATEWAY_REPLAY_WINDOW_MS") >=
+  composeDefaultInteger(composeText, "PI_CLOUD_AGENT_EVENT_RETENTION_MS") >=
     composeInteger("PI_CLOUD_PI_TURN_TIMEOUT_MS") + WORKER_SETTLEMENT_GRACE_MS,
-  "Compose Kafka Gateway replay window can omit a still-recoverable Run",
+  "Compose JetStream retention can omit a still-recoverable Run",
 );
 
 const composeDataMover = composeText.slice(
@@ -175,9 +175,9 @@ assert.ok(
   "Platform Helm Cube lifecycle timeout is too short for a full-VM pause",
 );
 assert.ok(
-  platformValues.external.kafka.gatewayReplayWindowMs >=
+  platformValues.external.jetstream.eventRetentionMs >=
     platformValues["pi-workers"].runtime.timeouts.turnMs + WORKER_SETTLEMENT_GRACE_MS,
-  "Platform Kafka Gateway replay window can omit a still-recoverable Run",
+  "Platform JetStream retention can omit a still-recoverable Run",
 );
 
 process.stdout.write("runtime_time_budget_check_passed\n");

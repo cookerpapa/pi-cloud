@@ -99,11 +99,20 @@ spec:
   {{- end }}
   {{- if .Values.web.ingress.tlsSecretName }}
   tls:
-    - hosts: [{{ .Values.web.ingress.host | quote }}]
+    - hosts:
+        - {{ .Values.web.ingress.host | quote }}
+        - {{ printf "*.preview.%s" .Values.web.ingress.host | quote }}
       secretName: {{ .Values.web.ingress.tlsSecretName }}
   {{- end }}
   rules:
     - host: {{ .Values.web.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: {{ $name }}-web, port: { number: 8080 } }
+    - host: {{ printf "*.preview.%s" .Values.web.ingress.host | quote }}
       http:
         paths:
           - path: /

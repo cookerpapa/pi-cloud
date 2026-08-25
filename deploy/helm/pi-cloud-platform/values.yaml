@@ -102,12 +102,14 @@ web:
     limits: { cpu: 500m, memory: 256Mi }
 
 external:
-  kafka:
-    brokers: [kafka.kafka.svc.cluster.local:9092]
-    rawEventTopic: pi-cloud.agent-events.raw.v1
-    acceptedEventTopic: pi-cloud.agent-events.accepted.v1
-    sessionMutationTopic: pi-cloud.session-mutations.v1
-    gatewayReplayWindowMs: 1800000
+  jetstream:
+    servers:
+      - nats://nats-0.nats.svc.cluster.local:4222
+      - nats://nats-1.nats.svc.cluster.local:4222
+      - nats://nats-2.nats.svc.cluster.local:4222
+    replicas: 3
+    eventRetentionMs: 86400000
+    maximumEventsPerSession: 8192
   database:
     # database-url should target PgBouncer transaction pooling. The separate
     # database-notification-url Secret key must target PostgreSQL directly.
@@ -122,7 +124,7 @@ networkPolicy:
   trustedNamespaceLabel:
     key: pi-cloud.io/trusted-plane
     value: "true"
-  trustedTcpPorts: [443, 3000, 3129, 4100, 4300, 4318, 5432, 9464, 9465, 9466]
+  trustedTcpPorts: [443, 3000, 3129, 4100, 4222, 4300, 4318, 5432, 9464, 9465, 9466]
   # Add explicit CIDRs for PostgreSQL/PgBouncer, provider proxy,
   # Cube API and OTLP endpoints. Never use 0.0.0.0/0 here.
   externalEgressCidrs: []
@@ -191,9 +193,10 @@ pi-workers:
     githubGateway: { enabled: false, url: http://github-gateway:4400 }
     providerProxyUrl: https://provider-proxy.example.com:3129
     otlpTracesEndpoint: ""
-    kafkaBrokers: [kafka.kafka.svc.cluster.local:9092]
-    kafkaRawEventTopic: pi-cloud.agent-events.raw.v1
-    kafkaSessionMutationTopic: pi-cloud.session-mutations.v1
+    jetStreamServers:
+      - nats://nats-0.nats.svc.cluster.local:4222
+      - nats://nats-1.nats.svc.cluster.local:4222
+      - nats://nats-2.nats.svc.cluster.local:4222
   database:
     existingSecret: pi-cloud-platform-secrets
     urlKey: database-url
@@ -202,6 +205,7 @@ pi-workers:
     supervisorEnrollmentTokenKey: supervisor-enrollment-token
     supervisorManagementTokenKey: supervisor-management-token
     toolBrokerTokenKey: tool-broker-token
+    workerEventIngestTokenKey: worker-event-ingest-token
     modelCredentialMasterKeyKey: model-credential-master-key
     githubGatewayTokenKey: github-gateway-token
     metricsTokenKey: metrics-token

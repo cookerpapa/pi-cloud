@@ -27,7 +27,8 @@ execution path and failure semantics.
   Pi's native SessionStorage records.
 - One persistent Cube Volume is the byte authority for a Workspace. PostgreSQL
   stores bounded revision, file-index and trusted Git-baseline metadata.
-- Kafka is the bounded hot Agent-event authority described by ADR-0116. It is
+- R=3 NATS JetStream is the bounded hot Agent-event authority described by
+  ADR-0122. It is
   neither a second conversation transcript nor a Run scheduler.
 - A live process tree exists only inside one Cube KVM. Process memory, sockets,
   PTYs and background processes are not durable after that Cube is destroyed.
@@ -73,9 +74,10 @@ execution path and failure semantics.
 
 ### Event and recovery semantics
 
-- Adjacent text fragments are coalesced once; the native Kafka producer
-  accumulates concurrent Session writes by partition. No application
-  group-commit queue precedes Kafka. Provider Tool-call JSON,
+- Adjacent text fragments are coalesced once. The Event Ingest service groups
+  concurrent Session publications for one transaction-scoped Run/Fence check,
+  holds the affected authority rows through parallel R=3 PubAcks and advances
+  their Attempt watermarks in the same transaction. Provider Tool-call JSON,
   thinking deltas and partial Tool output are not public events. There is no
   Worker disk WAL.
 - Pi SessionStorage and the browser stream are independent projections. A
@@ -84,8 +86,10 @@ execution path and failure semantics.
   `message_end` publishes a complete Pi message to the Session mutation topic;
   the PostgreSQL projector applies it before the next model Step. Pi's ordered
   log stores stable identifiers and hydrates canonical entries/records on read.
-- The browser sees only the contiguous prefix accepted by the fenced Kafka
-  projector. Failed or cancelled visible text is settled into a
+- The browser sees only the contiguous prefix durably accepted by JetStream
+  after the fenced authority transaction. Committed RePublish feeds one Core
+  NATS subscription per Gateway; reconnect uses a temporary exact-Session
+  consumer. Failed or cancelled visible text is settled into a
   bounded hidden Pi entry, so Worker replacement preserves both UI history and
   subsequent model context.
 - Settlement stores the terminal event and metadata in PostgreSQL. Live events
@@ -115,7 +119,7 @@ execution path and failure semantics.
   source tree.
 - A lost Worker or Cube can preserve committed conversation and Workspace files,
   but not an in-memory process world.
-- Streaming durability uses a bounded retained Kafka log; PostgreSQL stores
+- Streaming durability uses a bounded retained JetStream log; PostgreSQL stores
   complete semantic Pi entries rather than provider-token rows.
 - Removing the local WAL deliberately weakens "model generated" durability,
   but not "user observed" durability: unacknowledged bytes are invisible.

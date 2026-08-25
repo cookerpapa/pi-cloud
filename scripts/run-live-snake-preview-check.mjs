@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { request as httpRequest } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -185,9 +186,44 @@ async function waitForPreview(browser, sessionId) {
   const deadline = Date.now() + 90_000;
   let lastStatus = 0;
   while (Date.now() < deadline) {
-    const response = await browser.fetch(path, { headers: { accept: "text/html" } });
-    lastStatus = response.status;
-    if (response.ok) return { path, html: await response.text() };
+    const bootstrap = await browser.fetch(path, {
+      redirect: "manual",
+      headers: { accept: "text/html" },
+    });
+    lastStatus = bootstrap.status;
+    const location = bootstrap.headers.get("location");
+    if (bootstrap.status === 307 && location !== null) {
+      const publicUrl = new URL(location, baseUrl);
+      const loopbackUrl = new URL(publicUrl);
+      loopbackUrl.hostname = connectHost;
+      const response = await new Promise((resolvePromise, rejectPromise) => {
+        const request = httpRequest(
+          {
+            hostname: loopbackUrl.hostname,
+            port: loopbackUrl.port,
+            path: `${loopbackUrl.pathname}${loopbackUrl.search}`,
+            headers: { accept: "text/html", host: publicUrl.host },
+          },
+          (incoming) => {
+            const chunks = [];
+            incoming.on("data", (chunk) => chunks.push(chunk));
+            incoming.once("end", () =>
+              resolvePromise({
+                status: incoming.statusCode ?? 0,
+                html: Buffer.concat(chunks).toString("utf8"),
+              }),
+            );
+          },
+        );
+        request.once("error", rejectPromise);
+        request.setTimeout(30_000, () => request.destroy(new Error("Preview request timed out")));
+        request.end();
+      });
+      lastStatus = response.status;
+      if (response.status >= 200 && response.status < 300) {
+        return { path: publicUrl.toString(), html: response.html };
+      }
+    }
     await wait(500);
   }
   throw new Error(`Snake preview did not become reachable; last HTTP status ${String(lastStatus)}`);
@@ -195,7 +231,12 @@ async function waitForPreview(browser, sessionId) {
 
 async function exerciseGame({ username, password, previewPath, screenshotPath }) {
   return withChromePage(
-    { profilePrefix: "pi-cloud-snake-chrome-", width: 1_280, height: 900 },
+    {
+      profilePrefix: "pi-cloud-snake-chrome-",
+      width: 1_280,
+      height: 900,
+      additionalArguments: ["--host-resolver-rules=MAP *.preview.localhost 127.0.0.1"],
+    },
     async (page) => {
       await page.navigate(baseUrl.toString(), 800);
       const login = await page.evaluate(
@@ -317,6 +358,15 @@ progress("headless browser start, movement, pause and reset passed");
 const conversation = await api.getConversation(session.sessionId);
 const serializedConversation = JSON.stringify(conversation);
 assert(serializedConversation.includes("http://localhost:4173/"));
+if (reusedSessionId === undefined) {
+  await api.developmentEnvironmentAction(
+    development.environmentId,
+    "release",
+    newIdempotencyKey("release-environment"),
+  );
+  progress("released the acceptance-only development environment");
+}
+const previewUrl = new URL(preview.path);
 const report = {
   accepted: true,
   piCloudRevision: testedRevision,
@@ -330,10 +380,12 @@ const report = {
   firstTextMs: coding.firstTextMs,
   settledMs: coding.settledMs,
   hostPreviewStatus: 200,
-  previewPath: preview.path,
+  previewOrigin: previewUrl.origin,
+  previewRoute: `/v1/conversations/${session.sessionId}/preview/4173`,
   browserInteraction: interaction,
   screenshotCaptured: true,
   conversationRetainedForInspection: true,
+  developmentEnvironmentReleased: reusedSessionId === undefined,
   reusedCompletedCodingSession: reusedSessionId !== undefined,
   systemPromptModified: false,
   modelOutputTranslated: false,

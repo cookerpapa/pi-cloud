@@ -268,7 +268,8 @@ try {
     project.projectId,
     project.workspaceId,
     `Product surface ${suffix}`,
-    "persistent",
+    "ephemeral",
+    "starter",
   );
   createdSessionIds.add(session.sessionId);
   assert(

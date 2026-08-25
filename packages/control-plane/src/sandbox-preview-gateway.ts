@@ -33,6 +33,7 @@ const PREVIEW_ACCESS_PATH_PATTERN = new RegExp(
 export type SandboxPreviewGatewayOptions = Readonly<{
   database: Kysely<Database>;
   previewToken: string;
+  publicOriginBaseUrl: string;
   allowInsecureInternalHttp: boolean;
 }>;
 
@@ -83,6 +84,36 @@ function publicPrefix(target: SandboxPreviewTarget, port: number): string {
   return target.kind === "conversation"
     ? `/v1/conversations/${encodeURIComponent(target.sessionId)}/preview/${String(port)}`
     : `/v1/development-environments/${encodeURIComponent(target.environmentId)}/preview/${String(port)}`;
+}
+
+function publicOriginBaseUrl(value: string): URL {
+  const parsed = new URL(value);
+  if (
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    (parsed.pathname !== "/" && parsed.pathname !== "") ||
+    parsed.hostname.length < 1
+  ) {
+    throw new TypeError("Preview public origin base URL is invalid");
+  }
+  return parsed;
+}
+
+export function previewOriginHostname(
+  secret: string,
+  baseHostname: string,
+  target: SandboxPreviewTarget,
+  port: number,
+): string {
+  const targetId = target.kind === "conversation" ? target.sessionId : target.environmentId;
+  const label = createHmac("sha256", secret)
+    .update(`${target.kind}\0${targetId}\0${String(port)}`, "utf8")
+    .digest("hex")
+    .slice(0, 24);
+  return `p-${label}.${baseHostname}`;
 }
 
 type PreviewAccessClaims = Readonly<{
@@ -200,14 +231,10 @@ export function rewritePreviewHtml(body: Buffer, prefix: string, nonce: string):
 export function previewSecurityHeaders(nonce: string): Readonly<Record<string, string>> {
   return Object.freeze({
     "content-security-policy":
-      "sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads; " +
+      "sandbox allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads; " +
       `default-src 'self' data: blob:; script-src 'self' 'nonce-${nonce}' blob:; ` +
       `style-src 'self' 'nonce-${nonce}' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'`,
-    // CSP sandbox deliberately gives the application document an opaque
-    // origin. Its authenticated CSS/JS therefore cannot satisfy `same-origin`
-    // CORP even though their public URLs share the PiCloud host. Cross-site
-    // callers still receive 401 because browser auth cookies are SameSite.
-    "cross-origin-resource-policy": "cross-origin",
+    "cross-origin-resource-policy": "same-origin",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
   });
@@ -217,6 +244,7 @@ export class SandboxPreviewGateway {
   readonly #database: Kysely<Database>;
   readonly #previewToken: string;
   readonly #allowInsecureInternalHttp: boolean;
+  readonly #publicOriginBaseUrl: URL;
   #installed = false;
 
   constructor(options: SandboxPreviewGatewayOptions) {
@@ -225,6 +253,7 @@ export class SandboxPreviewGateway {
     }
     this.#database = options.database;
     this.#previewToken = options.previewToken;
+    this.#publicOriginBaseUrl = publicOriginBaseUrl(options.publicOriginBaseUrl);
     this.#allowInsecureInternalHttp = options.allowInsecureInternalHttp;
   }
 
@@ -281,6 +310,16 @@ export class SandboxPreviewGateway {
         userId = access.userId;
         accessToken = accessRoute.token;
         suffix = accessRoute.upstreamSuffix;
+        const expectedHostname = previewOriginHostname(
+          this.#previewToken,
+          this.#publicOriginBaseUrl.hostname,
+          target,
+          port,
+        );
+        if (request.hostname.toLowerCase() !== expectedHostname.toLowerCase()) {
+          await reply.code(421).send({ error: "preview_origin_mismatch" });
+          return;
+        }
       } else {
         if (browserIdentity === undefined) {
           await reply.code(401).send({ error: "authentication_required" });
@@ -295,6 +334,20 @@ export class SandboxPreviewGateway {
           port,
         });
         suffix = rawSuffix;
+        const prefix = publicPrefix(target, port);
+        const accessPrefix = `${prefix}/${PREVIEW_ACCESS_SEGMENT}/${accessToken}`;
+        const redirect = new URL(this.#publicOriginBaseUrl);
+        redirect.hostname = previewOriginHostname(
+          this.#previewToken,
+          this.#publicOriginBaseUrl.hostname,
+          target,
+          port,
+        );
+        const search = new URL(request.raw.url ?? "/", "http://pi-cloud.local").search;
+        redirect.pathname = `${accessPrefix}/${suffix}`;
+        redirect.search = search;
+        await reply.code(307).header("cache-control", "no-store").redirect(redirect.toString());
+        return;
       }
       const forwardedTarget =
         target.kind === "conversation"

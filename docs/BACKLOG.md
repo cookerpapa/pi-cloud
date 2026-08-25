@@ -1,6 +1,6 @@
 # Backlog
 
-This backlog covers the current PostgreSQL + Kafka + Pi SDK + Cube persistent-Volume
+This backlog covers the current PostgreSQL + JetStream + Pi SDK + Cube persistent-Volume
 architecture. Temporal, Cells, MinIO/Kopia and alternate Sandbox runtimes are
 retired and remain only in Git history or explicitly superseded ADRs.
 
@@ -68,9 +68,9 @@ retired and remain only in Git history or explicitly superseded ADRs.
       the cluster WebUI or Cube credentials to tenants.
 - [ ] Add branch rename controls to the tree UI.
 - [ ] Expand orphan reconciliation for Cube activations and persistent Volumes.
-- [x] Publish Kafka hot-event and PostgreSQL complete-message projection evidence.
-- [x] Fold settled Accepted-Kafka tails at the terminal cursor so Gateway
-      restart memory is bounded by active/hot Sessions rather than history.
+- [x] Publish hot-event and PostgreSQL complete-message projection evidence.
+- [x] Remove the settled-tail Gateway replay cache; committed RePublish keeps
+      Gateway memory bounded by actual SSE connections.
 - [x] Preserve conversations when their Workspace is deleted and require an
       explicit rebind before later Turns.
 - [x] Distinguish a Session Workspace rebind from same-Workspace Cube recovery
@@ -78,19 +78,18 @@ retired and remain only in Git history or explicitly superseded ADRs.
 - [x] Remove the unreachable Tool Worker portable-capture route; current Cube
       settlement uses only the provider checkpoint and persistent-Volume
       revision path.
-- [x] Remove the redundant pre-Kafka group-commit scheduler and require a
+- [x] Remove the redundant pre-broker group-commit scheduler and require a
       Session-keyed mutation projection barrier before cross-Worker reads.
-- [x] Keep Kafka batch durability independent from a browser-only progressive
+- [x] Keep broker durability independent from a browser-only progressive
       text reveal so larger acknowledged chunks do not flash into the transcript.
 - [x] Compare Kafka, Valkey Streams and NATS JetStream under one Session-keyed
-      transport workload, focused replay, process kill and idle-reader fanout;
-      retain Kafka until a replicated production-shaped candidate proves the
-      same authority/fence boundary with less custom Gateway state.
+      workload, then remove Kafka after the R=3 candidate proved the same
+      authority/fence boundary with less custom Gateway state.
 - [x] Validate a three-node R=3 JetStream candidate with committed RePublish,
       one Core NATS subscription per Gateway, temporary reconnect replay,
       PostgreSQL semantic projection, stale-Fence rejection and 2,000 sustained
-      SSE connections; keep it outside production until batched authority and
-      PubAck throughput meet the active-Agent event-rate target.
+      SSE connections, then promote it with batched authority validation and
+      committed live fanout.
 - [x] Let a durably fenced, expired Worker settle its interrupted Run even when
       its dead management endpoint cannot confirm a physical stop.
 

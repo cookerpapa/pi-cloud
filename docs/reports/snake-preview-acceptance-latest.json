@@ -1,17 +1,18 @@
 {
   "accepted": true,
-  "piCloudRevision": "9bb555679b8ce0443328d62be3d1f548afdfe091",
-  "checkedAt": "2026-08-23T19:00:28.401Z",
-  "account": "snake.acceptance.mt65aqj1",
-  "sessionId": "c7fef80b-330d-4341-a477-b8007bd26dcf",
-  "workspaceId": "2d2935be-3dae-49a6-bd9f-e2134061876d",
-  "developmentEnvironmentId": "f25f53dc-85f4-465a-8d9b-8edd4722d5ac",
-  "runId": "dcc4e326-b5b3-45ab-b805-b80155d945dd",
-  "toolCalls": 9,
-  "firstTextMs": null,
-  "settledMs": null,
+  "piCloudRevision": "d785354481fd8245d34320c18919fa83be9d3f07",
+  "checkedAt": "2026-08-25T05:01:13.408Z",
+  "account": "snake.acceptance.mt873fiv",
+  "sessionId": "db423c1b-257a-47e3-8bc6-37faa0aa764e",
+  "workspaceId": "41ee4030-2dca-443f-ac2f-87ba9a53a77e",
+  "developmentEnvironmentId": "af17c7ed-6d2f-4c4d-8b2b-bbffdddbb792",
+  "runId": "035fb7c4-ccdf-4079-b7ec-28d4907e5550",
+  "toolCalls": 25,
+  "firstTextMs": 1599,
+  "settledMs": 117489,
   "hostPreviewStatus": 200,
-  "previewPath": "/v1/conversations/c7fef80b-330d-4341-a477-b8007bd26dcf/preview/4173/",
+  "previewOrigin": "http://p-88251999afe354bb211dbf26.preview.localhost:8080",
+  "previewRoute": "/v1/conversations/db423c1b-257a-47e3-8bc6-37faa0aa764e/preview/4173",
   "browserInteraction": {
     "before": {
       "headX": 10,
@@ -31,14 +32,14 @@
       "headX": 10,
       "headY": 14,
       "score": 0,
-      "running": true,
+      "running": false,
       "tick": 4
     },
     "pausedAfterWait": {
       "headX": 10,
       "headY": 14,
       "score": 0,
-      "running": true,
+      "running": false,
       "tick": 4
     },
     "reset": {
@@ -51,7 +52,8 @@
   },
   "screenshotCaptured": true,
   "conversationRetainedForInspection": true,
-  "reusedCompletedCodingSession": true,
+  "developmentEnvironmentReleased": true,
+  "reusedCompletedCodingSession": false,
   "systemPromptModified": false,
   "modelOutputTranslated": false
 }

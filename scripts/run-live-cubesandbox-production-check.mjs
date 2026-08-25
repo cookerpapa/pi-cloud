@@ -294,22 +294,30 @@ async function waitForPreview(path, marker) {
   );
 }
 
-async function kafkaEndOffset(topic) {
+async function jetStreamState() {
   const output = await capture(process.execPath, [
     "scripts/production-compose.mjs",
     "exec",
     "-T",
-    "kafka",
-    "/opt/kafka/bin/kafka-get-offsets.sh",
-    "--bootstrap-server",
-    "kafka:9092",
-    "--topic",
-    topic,
+    "nats-1",
+    "wget",
+    "-q",
+    "-O",
+    "-",
+    "http://127.0.0.1:8222/jsz?streams=true&consumers=true",
   ]);
-  return output
-    .split(/\r?\n/u)
-    .filter(Boolean)
-    .reduce((total, line) => total + Number(line.split(":").at(-1) ?? 0), 0);
+  const account = JSON.parse(output).account_details?.[0];
+  const streams = new Map((account?.stream_detail ?? []).map((stream) => [stream.name, stream]));
+  const events = streams.get("PI_CLOUD_AGENT_EVENTS");
+  const mutations = streams.get("PI_CLOUD_SESSION_MUTATIONS");
+  if (events === undefined || mutations === undefined) {
+    throw new Error("JetStream production streams are unavailable");
+  }
+  return {
+    agentEvents: Number(events.state?.messages ?? 0),
+    sessionMutations: Number(mutations.state?.messages ?? 0),
+    sessionMutationAckPending: Number(mutations.consumer_detail?.[0]?.num_ack_pending ?? -1),
+  };
 }
 
 async function runUsageEvidence(runId) {
@@ -1014,12 +1022,9 @@ try {
     .map(Number);
   assert.equal(postgresHotEventTableAbsent, 1);
   assert(projectedSessionMutations > 0);
-  const kafkaOffsets = {
-    raw: await kafkaEndOffset("pi-cloud.agent-events.raw.v1"),
-    accepted: await kafkaEndOffset("pi-cloud.agent-events.accepted.v1"),
-    sessionMutations: await kafkaEndOffset("pi-cloud.session-mutations.v1"),
-  };
-  assert(kafkaOffsets.raw > 0 && kafkaOffsets.accepted > 0 && kafkaOffsets.sessionMutations > 0);
+  const jetStream = await jetStreamState();
+  assert(jetStream.agentEvents > 0 && jetStream.sessionMutations > 0);
+  assert.equal(jetStream.sessionMutationAckPending, 0);
 
   const foreignApi = bootstrapApi;
   const foreignProject = await foreignApi.createProject(`Foreign Cube project ${suffix}`);
@@ -1180,10 +1185,10 @@ try {
       replayAfterSequence: conversation.replayAfterSequence,
     },
     eventPlane: {
-      authority: "Kafka Accepted topic",
+      authority: "JetStream R=3",
       postgresHotEventTableAbsent: true,
       projectedSessionMutations,
-      kafkaEndOffsets: kafkaOffsets,
+      jetStream,
     },
     scheduler: {
       authority: "PostgreSQL",
@@ -1236,7 +1241,7 @@ try {
         `- Large Workspace fresh-VM cold restore: ${String(report.largeWorkspace.freshCubeMicroVm)}`,
         `- Real input/output/cache-read tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)}`,
         `- Canonical conversation: ${String(report.canonicalConversation.terminalCount)} terminal Turns / ${String(report.canonicalConversation.piEntryCount)} Pi entries / ${String(report.canonicalConversation.canonicalPayloadBytes)} bytes`,
-        `- Kafka Raw / Accepted / Session Mutation end offsets: ${String(report.eventPlane.kafkaEndOffsets.raw)} / ${String(report.eventPlane.kafkaEndOffsets.accepted)} / ${String(report.eventPlane.kafkaEndOffsets.sessionMutations)}`,
+        `- JetStream Agent events / Session mutations / pending mutation ACKs: ${String(report.eventPlane.jetStream.agentEvents)} / ${String(report.eventPlane.jetStream.sessionMutations)} / ${String(report.eventPlane.jetStream.sessionMutationAckPending)}`,
         `- PostgreSQL hot-event table absent / projected Session mutations: ${String(report.eventPlane.postgresHotEventTableAbsent)} / ${String(report.eventPlane.projectedSessionMutations)}`,
         `- Scheduler / Worker pool: ${report.scheduler.authority} / ${report.scheduler.workerPool}`,
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,

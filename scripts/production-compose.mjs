@@ -81,6 +81,7 @@ const applicationSecretNames = [
   "metrics-token",
   "model-credential-master-key",
   "tool-broker-token",
+  "worker-event-ingest-token",
   "sandbox-materializer-token",
   "workspace-terminal-token",
   "cube-persistent-state-key",

@@ -90,9 +90,9 @@ combinations.
 
 | Variable | Default | Meaning |
 | --- | ---: | --- |
-| `PI_CLOUD_KAFKA_GATEWAY_REPLAY_WINDOW_MS` | `1800000` | startup replay window (30 minutes) |
-| `PI_CLOUD_AGENT_EVENT_RETENTION_MS` | `86400000` | Kafka hot-event retention (24 hours) |
-| `PI_CLOUD_AGENT_EVENT_RETENTION_BYTES_PER_PARTITION` | `268435456` | hot-event bytes per partition (256 MiB) |
+| `PI_CLOUD_AGENT_EVENT_RETENTION_MS` | `86400000` | JetStream hot-event retention (24 hours) |
+| `PI_CLOUD_MAXIMUM_HOT_EVENTS_PER_SESSION` | `8192` | bounded retained events per Session Subject |
+| `PI_CLOUD_PREVIEW_ORIGIN_BASE_URL` | `http://preview.localhost:8080` | isolated application Preview base domain |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS` | `2` | trusted Volume operations in flight |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_QUEUED_OPERATIONS` | `32` | bounded Volume wait queue |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_QUEUE_WAIT_TIMEOUT_MS` | `30000` | maximum queue wait |
@@ -102,9 +102,10 @@ combinations.
 | `PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS` | empty | up to eight comma-separated RFC1918 `/24`–`/32` CIDRs that Cube guests may reach directly |
 | `PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS` | `120000` | Cube lifecycle/control request timeout |
 
-Kafka retention must cover the Gateway replay window. The replay window must
-cover a maximum Turn plus settlement grace. Volume queue wait must be shorter
-than its request timeout.
+JetStream retention must cover a maximum Turn plus settlement grace. A cursor
+already replaced by canonical PostgreSQL state receives HTTP 410 and reloads
+the complete conversation. Volume queue wait must be shorter than its request
+timeout.
 
 Direct private CIDRs are frozen when a Cube is created. Commands receive the
 same CIDRs and their exact IP members in `NO_PROXY`, so older HTTP(S) clients
@@ -155,7 +156,7 @@ Changing these requires editing the deployment policy and running
 The distributed chart uses `values.yaml` for non-secret topology and a named
 Kubernetes Secret for credentials. Important value groups are:
 
-- `external.database`, `external.kafka` and `external.providerProxyUrl`;
+- `external.database`, `external.jetstream` and `external.providerProxyUrl`;
 - `sandboxPlane` for Cube, Workspace storage and Broker/Volume capacity;
 - `pi-workers.workerPool`, `autoscaling`, `runtime` and `lifecycle`;
 - `networkPolicy.externalEgressCidrs`;
@@ -180,5 +181,6 @@ validates cross-service concurrency, lease, retention and timeout relations.
 ## Secrets
 
 Keep database URLs, model encryption key, Worker enrollment/management tokens,
-Tool Broker token, Cube API key, SSH host key and Kafka TLS/SASL material in the
+Tool Broker token, Worker Event Ingest token, Cube API key, SSH host key and
+NATS account/TLS material in the
 generated private files or Kubernetes Secrets. Cube receives none of them.

@@ -130,6 +130,23 @@ async function ensureToolBrokerToken(runtimeDirectory) {
   return true;
 }
 
+async function ensureWorkerEventIngestToken(runtimeDirectory) {
+  const path = resolve(runtimeDirectory, "secrets/worker-event-ingest-token");
+  try {
+    const existing = (await readPrivateFile(path)).trim();
+    if (!/^[A-Za-z0-9_-]{64}$/.test(existing)) {
+      throw new Error("Production Worker event ingest token is invalid");
+    }
+    return false;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  await writePrivateFile(path, `${randomSecret()}\n`);
+  const application = applicationIdentity();
+  if (application.changeOwnership) await chown(path, application.uid, application.gid);
+  return true;
+}
+
 async function ensureSandboxMaterializerToken(runtimeDirectory) {
   const path = resolve(runtimeDirectory, "secrets/sandbox-materializer-token");
   try {
@@ -421,6 +438,7 @@ if (await validateExisting(runtimeDirectory)) {
   const modelCredentialMasterKeyCreated = await ensureModelCredentialMasterKey(runtimeDirectory);
   const cubePersistentStateKeyCreated = await ensureCubePersistentStateKey(runtimeDirectory);
   const toolBrokerTokenCreated = await ensureToolBrokerToken(runtimeDirectory);
+  const workerEventIngestTokenCreated = await ensureWorkerEventIngestToken(runtimeDirectory);
   const sandboxMaterializerTokenCreated = await ensureSandboxMaterializerToken(runtimeDirectory);
   const workspaceTerminalTokenCreated = await ensureWorkspaceTerminalToken(runtimeDirectory);
   const sshHostKeyCreated = await ensureSshHostKey(runtimeDirectory);
@@ -437,6 +455,7 @@ if (await validateExisting(runtimeDirectory)) {
       modelCredentialMasterKeyCreated,
       cubePersistentStateKeyCreated,
       toolBrokerTokenCreated,
+      workerEventIngestTokenCreated,
       sandboxMaterializerTokenCreated,
       workspaceTerminalTokenCreated,
       sshHostKeyCreated,
@@ -559,6 +578,10 @@ await writePrivateFile(
 );
 await writePrivateFile(resolve(secretsDirectory, "tool-broker-token"), `${randomSecret()}\n`);
 await writePrivateFile(
+  resolve(secretsDirectory, "worker-event-ingest-token"),
+  `${randomSecret()}\n`,
+);
+await writePrivateFile(
   resolve(secretsDirectory, "sandbox-materializer-token"),
   `${randomSecret()}\n`,
 );
@@ -618,6 +641,7 @@ const environment = [
   "PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT=3",
   "PI_CLOUD_WEB_SESSION_COOKIE_SECURE=false",
   "PI_CLOUD_WEB_SESSION_TTL_MS=2592000000",
+  "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL=http://preview.localhost:8080",
   `PI_CLOUD_PUBLIC_REGISTRATION_ENABLED=${publicRegistrationEnabled}`,
   `PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS=${publicRegistrationMaximumTenants}`,
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS=${publicTenantMaximumProjects}`,
@@ -625,9 +649,8 @@ const environment = [
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS=${publicTenantMaximumUnsettledTurns}`,
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS=${publicTenantMaximumConcurrentTurns}`,
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_ACTIVE_SANDBOXES=${publicTenantMaximumActiveSandboxes}`,
-  "PI_CLOUD_KAFKA_GATEWAY_REPLAY_WINDOW_MS=1800000",
   "PI_CLOUD_AGENT_EVENT_RETENTION_MS=86400000",
-  "PI_CLOUD_AGENT_EVENT_RETENTION_BYTES_PER_PARTITION=268435456",
+  "PI_CLOUD_MAXIMUM_HOT_EVENTS_PER_SESSION=8192",
   "PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS=15000",
   "PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS=5000",
   "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES=2",

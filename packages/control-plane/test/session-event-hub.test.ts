@@ -25,28 +25,25 @@ describe("SessionEventHub", () => {
 
     const pending = first.next();
     hub.publish("tenant-1", event);
-    await expect(pending).resolves.toEqual({ throughSequence: 1 });
-    await expect(second.next()).resolves.toEqual({ throughSequence: 1 });
+    await expect(pending).resolves.toEqual({ throughSequence: 1, event });
+    await expect(second.next()).resolves.toEqual({ throughSequence: 1, event });
     first.close();
     second.close();
   });
 
-  it("coalesces high-water hints, isolates sessions, and supports reconnect resync", async () => {
+  it("preserves live events, isolates sessions, and supports reconnect resync", async () => {
     const hub = new SessionEventHub();
     const first = hub.subscribe("tenant-1", "session-1");
     const other = hub.subscribe("tenant-1", "session-2");
     const foreign = hub.subscribe("tenant-2", "session-1");
     const factory = fixture();
-    hub.publish(
-      "tenant-1",
-      factory.next({ type: "assistant.text.delta", payload: { text: "one" } }),
-    );
-    hub.publish(
-      "tenant-1",
-      factory.next({ type: "assistant.text.delta", payload: { text: "two" } }),
-    );
+    const firstEvent = factory.next({ type: "assistant.text.delta", payload: { text: "one" } });
+    const secondEvent = factory.next({ type: "assistant.text.delta", payload: { text: "two" } });
+    hub.publish("tenant-1", firstEvent);
+    hub.publish("tenant-1", secondEvent);
 
-    await expect(first.next()).resolves.toEqual({ throughSequence: 2 });
+    await expect(first.next()).resolves.toEqual({ throughSequence: 1, event: firstEvent });
+    await expect(first.next()).resolves.toEqual({ throughSequence: 2, event: secondEvent });
     expect(other.closed).toBe(false);
     expect(foreign.closed).toBe(false);
     hub.resyncAll();

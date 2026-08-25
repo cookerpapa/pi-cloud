@@ -2,6 +2,7 @@ import type { PiCloudEvent } from "@pi-cloud/protocol";
 
 export type SessionEventWake = {
   throughSequence: number | null;
+  event?: PiCloudEvent;
 };
 
 type PendingRead = {
@@ -12,7 +13,7 @@ export class SessionEventSubscription {
   readonly #tenantId: string;
   readonly #sessionId: string;
   readonly #onClose: (subscription: SessionEventSubscription) => void;
-  #queuedWake: SessionEventWake | undefined;
+  #queuedWakes: SessionEventWake[] = [];
   #pendingRead: PendingRead | undefined;
   #closed = false;
 
@@ -46,6 +47,14 @@ export class SessionEventSubscription {
     this.#push({ throughSequence });
   }
 
+  notifyEvent(event: PiCloudEvent): void {
+    if (this.#closed) return;
+    if (event.sessionId !== this.#sessionId) {
+      throw new TypeError("Session event wake belongs to a different Session");
+    }
+    this.#push({ throughSequence: event.seq, event });
+  }
+
   resync(): void {
     if (this.#closed) return;
     this.#push({ throughSequence: null });
@@ -58,25 +67,21 @@ export class SessionEventSubscription {
       pending.resolve(wake);
       return;
     }
-    if (this.#queuedWake === undefined) {
-      this.#queuedWake = wake;
+    if (wake.throughSequence === null) {
+      this.#queuedWakes = [{ throughSequence: null }];
       return;
     }
-    if (this.#queuedWake.throughSequence === null || wake.throughSequence === null) {
-      this.#queuedWake = { throughSequence: null };
+    if (this.#queuedWakes.some((queued) => queued.throughSequence === null)) return;
+    if (this.#queuedWakes.length >= 1_024) {
+      this.#queuedWakes = [{ throughSequence: null }];
       return;
     }
-    this.#queuedWake = {
-      throughSequence: Math.max(this.#queuedWake.throughSequence, wake.throughSequence),
-    };
+    this.#queuedWakes.push(wake);
   }
 
   next(): Promise<SessionEventWake | undefined> {
-    if (this.#queuedWake !== undefined) {
-      const wake = this.#queuedWake;
-      this.#queuedWake = undefined;
-      return Promise.resolve(wake);
-    }
+    const wake = this.#queuedWakes.shift();
+    if (wake !== undefined) return Promise.resolve(wake);
     if (this.#closed) return Promise.resolve(undefined);
     if (this.#pendingRead !== undefined) {
       throw new Error("Only one pending session-event read is allowed");
@@ -89,7 +94,7 @@ export class SessionEventSubscription {
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
-    this.#queuedWake = undefined;
+    this.#queuedWakes = [];
     const pending = this.#pendingRead;
     this.#pendingRead = undefined;
     pending?.resolve(undefined);
@@ -115,7 +120,9 @@ export class SessionEventHub {
   }
 
   publish(tenantId: string, event: PiCloudEvent): void {
-    this.notifyThrough(tenantId, event.sessionId, event.seq);
+    const current = this.#subscriptions.get(this.#key(tenantId, event.sessionId));
+    if (current === undefined) return;
+    for (const subscription of [...current]) subscription.notifyEvent(event);
   }
 
   notifyThrough(tenantId: string, sessionId: string, throughSequence: number): void {

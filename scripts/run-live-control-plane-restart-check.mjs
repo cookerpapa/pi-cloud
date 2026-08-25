@@ -227,7 +227,7 @@ try {
       `- Run Attempts: ${String(report.attemptCount)}`,
       `- Elapsed: ${String(report.elapsedMs)} ms`,
       "",
-      "The Control Plane container received SIGKILL after the first Accepted-Kafka assistant delta. The trusted Worker continued the fenced Run while Kafka retained the hot stream and PostgreSQL retained canonical Pi state. The replacement Gateway rebuilt only its bounded recent replay window, SSE reconnected, and the Run completed with one Attempt.",
+      "The Control Plane container received SIGKILL after the first JetStream-acknowledged assistant delta. The trusted Worker continued the fenced Run while JetStream retained the hot stream and PostgreSQL retained canonical Pi state. The replacement Gateway replayed the bounded Session subject, SSE reconnected, and the Run completed with one Attempt.",
       "",
     ].join("\n"),
   );

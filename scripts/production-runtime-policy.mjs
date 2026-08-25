@@ -1,5 +1,4 @@
 const MINIMUM_EVENT_RETENTION_MS = 60 * 60_000;
-const MINIMUM_EVENT_RETENTION_BYTES = 64 * 1_024 * 1_024;
 const PI_TURN_TIMEOUT_MS = 10 * 60_000;
 const SETTLEMENT_GRACE_MS = 5 * 60_000;
 
@@ -99,13 +98,6 @@ export function validateProductionRuntimeEnvironment(environment) {
     throw new Error("Workspace Volume queue wait must be shorter than its request timeout");
   }
 
-  const gatewayReplayWindowMs = integer(
-    environment,
-    "PI_CLOUD_KAFKA_GATEWAY_REPLAY_WINDOW_MS",
-    1_800_000,
-    60_000,
-    7 * 24 * 60 * 60_000,
-  );
   const eventRetentionMs = integer(
     environment,
     "PI_CLOUD_AGENT_EVENT_RETENTION_MS",
@@ -113,18 +105,10 @@ export function validateProductionRuntimeEnvironment(environment) {
     MINIMUM_EVENT_RETENTION_MS,
     30 * 24 * 60 * 60_000,
   );
-  integer(
-    environment,
-    "PI_CLOUD_AGENT_EVENT_RETENTION_BYTES_PER_PARTITION",
-    268_435_456,
-    MINIMUM_EVENT_RETENTION_BYTES,
-    64 * 1_024 * 1_024 * 1_024,
-  );
-  if (gatewayReplayWindowMs < PI_TURN_TIMEOUT_MS + SETTLEMENT_GRACE_MS) {
-    throw new Error("Kafka Gateway replay window cannot omit a still-recoverable Run");
-  }
-  if (eventRetentionMs < gatewayReplayWindowMs) {
-    throw new Error("Kafka event retention must cover the Gateway replay window");
+  integer(environment, "PI_CLOUD_MAXIMUM_HOT_EVENTS_PER_SESSION", 8_192, 512, 1_000_000);
+  integer(environment, "PI_CLOUD_JETSTREAM_REPLICAS", 3, 1, 5);
+  if (eventRetentionMs < PI_TURN_TIMEOUT_MS + SETTLEMENT_GRACE_MS) {
+    throw new Error("JetStream event retention cannot omit a still-recoverable Run");
   }
 
   const ownershipLeaseMs = integer(

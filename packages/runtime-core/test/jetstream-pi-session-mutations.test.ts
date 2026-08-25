@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseKafkaPiSessionMutationEnvelope } from "../src/kafka-pi-session-mutations.ts";
+import { parseJetStreamPiSessionMutationEnvelope } from "../src/jetstream-pi-session-mutations.ts";
+import {
+  agentEventSubject,
+  agentLiveSubject,
+  piSessionMutationSubject,
+} from "../src/jetstream-runtime.ts";
 
 const scope = {
   tenantId: "10000000-0000-4000-8000-000000000001",
@@ -11,9 +16,9 @@ const scope = {
   fencingToken: 7,
 } as const;
 
-describe("Kafka Pi Session mutation protocol", () => {
+describe("JetStream Pi Session mutation protocol", () => {
   it("accepts a Session-keyed projection barrier without inventing a Pi entry", () => {
-    const barrier = parseKafkaPiSessionMutationEnvelope(
+    const barrier = parseJetStreamPiSessionMutationEnvelope(
       Buffer.from(
         JSON.stringify({
           schemaVersion: 1,
@@ -24,14 +29,13 @@ describe("Kafka Pi Session mutation protocol", () => {
         }),
       ),
     );
-
     expect(barrier.scope).toEqual(scope);
     expect(barrier.operation).toEqual({ kind: "projection_barrier" });
   });
 
   it("rejects an unscoped barrier", () => {
     expect(() =>
-      parseKafkaPiSessionMutationEnvelope(
+      parseJetStreamPiSessionMutationEnvelope(
         Buffer.from(
           JSON.stringify({
             schemaVersion: 1,
@@ -43,5 +47,15 @@ describe("Kafka Pi Session mutation protocol", () => {
         ),
       ),
     ).toThrow("Session ID is invalid");
+  });
+
+  it("maps one opaque Session consistently without exposing it as a NATS token", () => {
+    const event = agentEventSubject(scope.sessionId);
+    const live = agentLiveSubject(scope.sessionId);
+    const mutation = piSessionMutationSubject(scope.sessionId);
+    expect(event).toMatch(/^pi\.events\.[0-9a-f]{64}$/u);
+    expect(live.slice("pi.live.".length)).toBe(event.slice("pi.events.".length));
+    expect(mutation.slice("pi.session-mutations.".length)).toBe(event.slice("pi.events.".length));
+    expect(event).not.toContain(scope.sessionId);
   });
 });

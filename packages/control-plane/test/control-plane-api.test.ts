@@ -39,7 +39,7 @@ import {
   createControlPlaneApplication,
 } from "../src/index.ts";
 import { dispatchNextTestCommand } from "./dispatch-next-test-command.ts";
-import { PostgresAgentEventAuthority } from "@pi-cloud/runtime-core/kafka-agent-event-log";
+import { PostgresAgentEventAuthority } from "@pi-cloud/runtime-core/agent-event-authority";
 
 const IDS = {
   tenant: "00000000-0000-4000-8000-000000000001",
@@ -527,11 +527,11 @@ describe.sequential("single-user durable turn intake API", () => {
     expect(piSession).toEqual({ next_seq: "1", lane: "main", leaf_id: null });
   });
 
-  it("rejects a raw Kafka event after its RunAttempt fence is superseded", async () => {
+  it("rejects a JetStream event batch after its RunAttempt fence is superseded", async () => {
     const assigned = await createAssignedTurn({
       sandboxId: "50000000-0000-4000-8000-000000000019",
       sandboxBootId: "60000000-0000-4000-8000-000000000019",
-      supervisorId: "kafka-authority-supervisor",
+      supervisorId: "event-authority-supervisor",
       phase: "acknowledged",
       expired: false,
     });
@@ -561,17 +561,19 @@ describe.sequential("single-user durable turn intake API", () => {
       },
     };
     const authority = new PostgresAgentEventAuthority({ database });
-    await expect(
-      authority.validate({ schemaVersion: 1, publications: [publication] }),
-    ).resolves.toMatchObject({ tenantId: IDS.tenant });
+    await expect(authority.validateMany([publication])).resolves.toMatchObject({
+      accepted: [{ tenantId: IDS.tenant }],
+      rejected: [],
+    });
     await database
       .updateTable("run_attempts")
       .set({ state: "superseded", settled_at: new Date() })
       .where("id", "=", assigned.attemptId)
       .executeTakeFirstOrThrow();
-    await expect(
-      authority.validate({ schemaVersion: 1, publications: [publication] }),
-    ).resolves.toBeUndefined();
+    await expect(authority.validateMany([publication])).resolves.toMatchObject({
+      accepted: [],
+      rejected: [publication],
+    });
   });
 
   it("persists a public GitHub exact commit as pending source metadata", async () => {
@@ -2640,7 +2642,7 @@ describe.sequential("single-user durable turn intake API", () => {
     });
   });
 
-  it("accepts an already-ahead Kafka projection boundary during Run settlement", async () => {
+  it("accepts an already-ahead JetStream projection boundary during Run settlement", async () => {
     const accepted = await acceptTurn(
       "accepted-projection-ahead",
       "settle after the accepted projector advances first",

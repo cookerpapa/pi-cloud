@@ -758,7 +758,7 @@ export class SupervisorConnectionManager {
         }
         // The connection, Sandbox row and RunAttempt lease were fenced before
         // retirement became eligible. A partitioned old process can no longer
-        // publish Accepted events, mutate SessionStorage or enter Tool Broker.
+        // publish JetStream events, mutate SessionStorage or enter Tool Broker.
         // Management unavailability must not strand the durable Session.
         await this.#renewRetirementClaim(claim, validDate(this.#clock));
         reconciliation = await retirer.retireFencedSandbox();

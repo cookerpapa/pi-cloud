@@ -133,12 +133,10 @@ spec:
               value: /run/pi-cloud-secrets/database-url
             - name: DATABASE_NOTIFICATION_URL_FILE
               value: /run/pi-cloud-secrets/database-notification-url
-            - name: PI_CLOUD_KAFKA_BROKERS
-              value: {{ join "," .Values.services.kafkaBrokers | quote }}
-            - name: PI_CLOUD_KAFKA_RAW_EVENT_TOPIC
-              value: {{ .Values.services.kafkaRawEventTopic | quote }}
-            - name: PI_CLOUD_KAFKA_SESSION_MUTATION_TOPIC
-              value: {{ .Values.services.kafkaSessionMutationTopic | quote }}
+            - name: PI_CLOUD_JETSTREAM_SERVERS
+              value: {{ join "," .Values.services.jetStreamServers | quote }}
+            - name: PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE
+              value: /run/pi-cloud-secrets/worker-event-ingest-token
             - name: PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP
               value: {{ .Values.runtime.allowInsecureInternalHttp | quote }}
             - name: PI_CLOUD_CONTROL_PLANE_URL
@@ -283,6 +281,10 @@ spec:
               subPath: tool-broker-token
               readOnly: true
             - name: secrets
+              mountPath: /run/pi-cloud-secrets/worker-event-ingest-token
+              subPath: worker-event-ingest-token
+              readOnly: true
+            - name: secrets
               mountPath: /run/pi-cloud-secrets/model-credential-master-key
               subPath: model-credential-master-key
               readOnly: true
@@ -320,6 +322,8 @@ spec:
                 path: supervisor-management-token
               - key: {{ .Values.credentials.toolBrokerTokenKey }}
                 path: tool-broker-token
+              - key: {{ .Values.credentials.workerEventIngestTokenKey }}
+                path: worker-event-ingest-token
               - key: {{ .Values.credentials.modelCredentialMasterKeyKey }}
                 path: model-credential-master-key
               {{- if .Values.services.githubGateway.enabled }}

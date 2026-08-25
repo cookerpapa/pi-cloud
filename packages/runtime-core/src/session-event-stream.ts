@@ -133,6 +133,15 @@ export class OpenSessionEventStream {
         }
         if (item.wake === undefined) return;
         pendingWake = this.#subscription.next();
+        if (item.wake.event !== undefined) {
+          const event = item.wake.event;
+          if (event.seq <= lastSentSequence) continue;
+          if (event.seq === lastSentSequence + 1) {
+            if (!(await writeChunk(response, eventFrame(event)))) return;
+            lastSentSequence = event.seq;
+            continue;
+          }
+        }
         if (item.wake.throughSequence !== null && item.wake.throughSequence <= lastSentSequence) {
           continue;
         }

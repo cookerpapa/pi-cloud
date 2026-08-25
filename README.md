@@ -12,7 +12,7 @@ shell operations run in CubeSandbox KVM microVMs.
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
 - elastic Sandboxes or user-owned full-VM Cube environments with root SSH/terminal access;
-- resumable SSE whose visible bytes were acknowledged by Kafka first;
+- resumable SSE whose visible bytes were acknowledged by R=3 JetStream first;
 - horizontally replaceable Pi Workers and Kubernetes/KEDA deployment support.
 
 PiCloud targets private or controlled enterprise deployments. It is not a
@@ -33,14 +33,14 @@ Browser ──REST/SSE──> Control Plane ──> PostgreSQL Run queue
                                       CubeSandbox KVM
                                 elastic Volume / cloud development machine state
 
-Worker events ──> Raw Kafka ──fence check──> Accepted Kafka ──> SSE
-complete Pi entries ──> Session Mutation Kafka ──> PostgreSQL
+Worker events ──> batched Run/Fence check ──> JetStream R=3 ──> committed SSE fanout
+complete Pi entries ──> Session Mutation JetStream ──> PostgreSQL
 ```
 
 There are three durable authorities:
 
 - PostgreSQL owns product state, the Run queue and canonical Pi Sessions;
-- Kafka owns the bounded hot event log used for live replay;
+- JetStream owns the bounded hot event log used for live replay;
 - a persistent Cube Volume owns elastic Workspace bytes; Cube pause state owns
   a cloud development machine's guest root, memory and processes on its compute node.
 
@@ -85,10 +85,13 @@ The language selector is available on the sign-in page and beside the current
 username. It is a browser-local presentation preference: switching it does not
 modify Session context, system prompts, user messages or Agent output.
 
-Service preview is a same-origin HTTP proxy to any unprivileged HTTP port inside
-the active Cube. When the Agent reports a `localhost` application URL, the Web
-client opens it through the authenticated PiCloud gateway; Cube addresses and
-public port mappings are never exposed to the Agent. SSH is available only for
+Service preview is an authenticated HTTP proxy to any unprivileged HTTP port
+inside the active Cube. The main origin issues a short-lived target capability
+and redirects to an isolated `*.preview.localhost` origin, so application
+storage and scripts work without receiving PiCloud cookies. Production DNS/TLS
+must cover `*.preview.<application-host>`. When the Agent reports a `localhost`
+URL, the Web client opens it through this gateway; Cube addresses and public
+port mappings are never exposed to the Agent. SSH is available only for
 cloud development machines, only while no Agent Run or browser terminal owns the
 environment, and each password can be used once.
 
@@ -113,7 +116,7 @@ registration quotas, retention, SSH or Sandbox capacity.
 
 ## Distributed Kubernetes deployment
 
-The Helm chart expects external PostgreSQL/PgBouncer, Kafka, ReadWriteMany
+The Helm chart expects external PostgreSQL/PgBouncer, NATS JetStream, ReadWriteMany
 Workspace storage and Cube control/compute authorities. Copy and replace every
 example endpoint, image, UUID and CIDR before preflight:
 

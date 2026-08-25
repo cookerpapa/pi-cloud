@@ -3,7 +3,7 @@ import { nextProgressiveTextIndex } from "../src/ConversationTurn.tsx";
 
 describe("progressive durable text presentation", () => {
   it("reveals a durable batch across several bounded animation frames", () => {
-    const text = "这是一段已经由 Kafka 确认、但需要在浏览器中平滑展示的中文文本。".repeat(80);
+    const text = "这是一段已经由 JetStream 确认、但需要在浏览器中平滑展示的中文文本。".repeat(80);
     let index = 0;
     const frames: number[] = [];
     while (index < text.length) {

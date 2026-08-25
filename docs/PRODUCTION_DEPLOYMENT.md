@@ -40,7 +40,7 @@ consumed by the first successful login. No Cube credential is exposed.
 
 ## Services
 
-The default topology includes PostgreSQL, Kafka, Control Plane, two trusted Pi
+The default topology includes PostgreSQL, a three-node NATS JetStream cluster, Control Plane, two trusted Pi
 Workers, Tool Broker, persistent Workspace Volume
 gateway, Cube integration, provider proxy and Web. Observability and GitHub
 experiments are optional profiles. The trusted SSH gateway is enabled by

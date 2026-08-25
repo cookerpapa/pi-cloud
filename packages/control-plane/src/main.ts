@@ -11,7 +11,7 @@ import {
 } from "./http-supervisor-management.ts";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { PostgresCheckpointObjectStore } from "@pi-cloud/runtime-core/postgres-checkpoint-object-store";
-import { KafkaFirstAgentEventRuntime } from "@pi-cloud/runtime-core/kafka-first-event-runtime";
+import { JetStreamEventRuntime } from "@pi-cloud/runtime-core/jetstream-event-runtime";
 import {
   PostgresSupervisorCredentialAuthorizer,
   SupervisorBootProvisioner,
@@ -31,6 +31,7 @@ import { DevelopmentEnvironmentService } from "./development-environment-service
 import { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gateway.ts";
 import { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
+import { AgentEventIngestGateway } from "./agent-event-ingest-gateway.ts";
 
 async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Promise<void> {
   const profile = await database
@@ -58,20 +59,23 @@ export async function startControlPlane(): Promise<void> {
   const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
   const objectStore = new PostgresCheckpointObjectStore(database);
   const controlPlaneInstanceId = randomUUID();
-  const kafkaEvents = new KafkaFirstAgentEventRuntime({
-    database,
-    brokers: config.kafkaBrokers,
-    rawTopic: config.kafkaRawEventTopic,
-    acceptedTopic: config.kafkaAcceptedEventTopic,
-    sessionMutationTopic: config.kafkaSessionMutationTopic,
-    gatewayReplayWindowMs: config.kafkaGatewayReplayWindowMs,
-    instanceId: controlPlaneInstanceId,
-  });
+  let agentEvents: JetStreamEventRuntime | undefined;
   let runtime: ControlPlaneRuntime | undefined;
   let closing = false;
   try {
+    agentEvents = await JetStreamEventRuntime.create({
+      database,
+      servers: config.jetStreamServers,
+      instanceId: controlPlaneInstanceId,
+      authority: {
+        replicas: config.jetStreamReplicas,
+        eventRetentionMs: config.agentEventRetentionMs,
+        maximumEventsPerSession: config.maximumEventsPerSession,
+      },
+    });
+    const activeAgentEvents = agentEvents;
     await verifyBootstrap(database);
-    await kafkaEvents.start();
+    await activeAgentEvents.start();
     const modelCredentialVault = new TenantModelCredentialVault(config.modelCredentialMasterKey);
     const platformInitialModel = await resolvePlatformInitialModel(
       database,
@@ -154,8 +158,12 @@ export async function startControlPlane(): Promise<void> {
     });
     const provisioningGateway = new SupervisorProvisioningGateway({ provisioner });
     const terminalTurnProjectionGateway = new TerminalTurnProjectionGateway({
-      source: kafkaEvents.terminalTurnProjectionSource,
+      source: activeAgentEvents.terminalTurnProjectionSource,
       authorize: (authorization) => provisioner.authorize(authorization),
+    });
+    const agentEventIngestGateway = new AgentEventIngestGateway({
+      ingestor: activeAgentEvents.ingestor,
+      serviceToken: config.workerEventIngestToken,
     });
     const httpGateway = new ProductionHttpGateway({
       authenticator: new PostgresTenantApiAuthenticator({ database }),
@@ -163,8 +171,11 @@ export async function startControlPlane(): Promise<void> {
       webSessionAuthenticator: webAuthentication,
       readiness: async () => {
         if (runtime?.state !== "running") return false;
-        kafkaEvents.checkHealth();
-        await Promise.all([sql`select 1`.execute(database), snapshotMaterializer.checkHealth()]);
+        await Promise.all([
+          activeAgentEvents.checkHealth(),
+          sql`select 1`.execute(database),
+          snapshotMaterializer.checkHealth(),
+        ]);
         return true;
       },
     });
@@ -176,6 +187,7 @@ export async function startControlPlane(): Promise<void> {
     const sandboxPreviewGateway = new SandboxPreviewGateway({
       database,
       previewToken: config.workspaceTerminalToken,
+      publicOriginBaseUrl: config.previewPublicOriginBaseUrl,
       allowInsecureInternalHttp: config.allowInsecureInternalHttp,
     });
     const developmentEnvironmentService = new DevelopmentEnvironmentService({
@@ -195,10 +207,10 @@ export async function startControlPlane(): Promise<void> {
       database,
       controlPlaneInstanceId,
       eventRuntime: {
-        eventHub: kafkaEvents.eventHub,
-        eventStore: kafkaEvents.eventStore,
-        liveTurnSnapshotSource: kafkaEvents.liveTurnSnapshotSource,
-        terminalTurnProjectionSource: kafkaEvents.terminalTurnProjectionSource,
+        eventHub: activeAgentEvents.eventHub,
+        eventStore: activeAgentEvents.eventStore,
+        liveTurnSnapshotSource: activeAgentEvents.liveTurnSnapshotSource,
+        terminalTurnProjectionSource: activeAgentEvents.terminalTurnProjectionSource,
       },
       developmentEnvironmentService,
       sshAccessTicketService,
@@ -208,6 +220,7 @@ export async function startControlPlane(): Promise<void> {
         new RoutedHttpSandboxAssignmentInventory(resolveManagementClient, identity),
       supervisorProvisioningGateway: provisioningGateway,
       terminalTurnProjectionGateway,
+      agentEventIngestGateway,
       turnSteerBackendFactory: resolveSteerBackend,
       productionHttpGateway: httpGateway,
       publicRegistration: registrationConfiguration,
@@ -258,7 +271,7 @@ export async function startControlPlane(): Promise<void> {
       if (closing) return;
       closing = true;
       await runtime?.close();
-      await kafkaEvents.close();
+      await activeAgentEvents.close();
       objectStore.destroy();
       await database.destroy();
       await observability.close();
@@ -273,7 +286,7 @@ export async function startControlPlane(): Promise<void> {
   } catch (error: unknown) {
     closing = true;
     await runtime?.close().catch(() => undefined);
-    await kafkaEvents.close().catch(() => undefined);
+    await agentEvents?.close().catch(() => undefined);
     objectStore.destroy();
     await database.destroy();
     await observability.close().catch(() => undefined);

@@ -92,7 +92,12 @@ async function stopChrome(chrome, profile) {
 }
 
 export async function withChromePage(
-  { profilePrefix = "pi-cloud-chrome-", width = 1_280, height = 900 } = {},
+  {
+    profilePrefix = "pi-cloud-chrome-",
+    width = 1_280,
+    height = 900,
+    additionalArguments = [],
+  } = {},
   operation,
 ) {
   const profile = await mkdtemp(resolve(tmpdir(), profilePrefix));
@@ -105,6 +110,7 @@ export async function withChromePage(
       "--disable-gpu",
       `--remote-debugging-port=${String(debuggingPort)}`,
       `--user-data-dir=${profile}`,
+      ...additionalArguments,
       "about:blank",
     ],
     { stdio: "ignore" },

@@ -30,9 +30,11 @@ export function validateDistributedDeploymentValues(values) {
   deploymentString(values["pi-workers"]?.image?.repository, "pi-workers.image.repository");
   deploymentString(values["pi-workers"]?.image?.tag, "pi-workers.image.tag");
   deploymentString(values.external?.providerProxyUrl, "external.providerProxyUrl");
-  const brokers = values.external?.kafka?.brokers;
-  if (!Array.isArray(brokers) || brokers.length < 1) throw new Error("Kafka brokers are required");
-  for (const broker of brokers) deploymentString(broker, "Kafka broker");
+  const servers = values.external?.jetstream?.servers;
+  if (!Array.isArray(servers) || servers.length < 1) {
+    throw new Error("JetStream servers are required");
+  }
+  for (const server of servers) deploymentString(server, "JetStream server");
   deploymentString(values.sandboxPlane?.cube?.apiUrl, "sandboxPlane.cube.apiUrl");
   const templateId = deploymentString(
     values.sandboxPlane?.cube?.templateId,
@@ -71,12 +73,12 @@ export function validateDistributedDeploymentValues(values) {
   if (terminationMs < turnMs + toolBrokerRequestMs + 6 * 60_000) {
     throw new Error("Pi Worker termination grace is shorter than the Run drain budget");
   }
-  const replayMs = integer(
-    values.external?.kafka?.gatewayReplayWindowMs,
-    "Kafka Gateway replay window",
+  const retentionMs = integer(
+    values.external?.jetstream?.eventRetentionMs,
+    "JetStream event retention",
   );
-  if (replayMs < turnMs + 5 * 60_000) {
-    throw new Error("Kafka Gateway replay window can omit a recoverable Run");
+  if (retentionMs < turnMs + 5 * 60_000) {
+    throw new Error("JetStream retention can omit a recoverable Run");
   }
   integer(
     values.controlPlane?.publicRegistration?.maximumConcurrentTurns,

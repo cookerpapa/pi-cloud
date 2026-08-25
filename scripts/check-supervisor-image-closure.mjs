@@ -63,17 +63,9 @@ assert(
   !dockerfile.includes("/app/packages/sandbox-supervisor/node_modules"),
   "Supervisor image must not assume npm creates a sandbox-supervisor node_modules directory",
 );
-assert(
-  dockerfile.includes("retry-npm-command.sh rebuild @confluentinc/kafka-javascript"),
-  "Supervisor image must build the pinned Kafka native binding",
-);
 const controlPlaneDockerfile = await readFile(
   resolve(packagesDirectory, "control-plane", "Dockerfile"),
   "utf8",
-);
-assert(
-  controlPlaneDockerfile.includes("retry-npm-command.sh rebuild @confluentinc/kafka-javascript"),
-  "Control Plane image must build the pinned Kafka native binding",
 );
 assert(
   controlPlaneDockerfile.includes(

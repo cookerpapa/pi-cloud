@@ -2,7 +2,7 @@
 
 Pi Cloud separates deterministic protocol checks, live infrastructure
 acceptance and model-quality experiments. A checked-in report is current only
-when its workload exercises the PostgreSQL queue/SessionStorage, Kafka event
+when its workload exercises the PostgreSQL queue/SessionStorage, JetStream event
 path, persistent Cube Volume and CubeSandbox KVM runtime described in the
 current architecture ADR.
 
@@ -30,26 +30,26 @@ prefix still survives Worker replacement.
 ## Live-event durability
 
 ```bash
-npm run eval:kafka-events
+npm run eval:jetstream-production-shape
 npm run eval:postgres-session-projection
 ```
 
 The production stream is:
 
 ```text
-Pi text coalescer -> Raw Kafka -> fenced Accepted Kafka -> resumable SSE
-Pi complete message -> Session Mutation Kafka -> PostgreSQL SessionStorage
+Pi text coalescer -> batched authority/Fence transaction -> R=3 JetStream -> resumable SSE
+Pi complete message -> Session Mutation JetStream -> PostgreSQL SessionStorage
 ```
 
-Accepted Kafka acknowledgement precedes visibility. Kafka retains a bounded
+JetStream R=3 PubAck precedes visibility. JetStream retains a bounded
 hot tail of coalesced Assistant text and complete Tool/lifecycle Items;
 PostgreSQL stores Pi-native complete messages once. The two checks separately
-measure Kafka ordering/throughput and PostgreSQL complete-message projection
+measure JetStream ordering/throughput and PostgreSQL complete-message projection
 latency/WAL, so token fragments never masquerade as canonical database state.
 
 Current evidence:
 
-- [Kafka-first event capacity](reports/kafka-first-event-acceptance-latest.md)
+- [JetStream production shape](reports/jetstream-production-shape-latest.md)
 - [PostgreSQL Session projection](reports/postgres-session-projection-latest.md)
 - [Pi SDK stream shape](reports/pi-sdk-stream-shape-latest.md)
 
@@ -89,7 +89,7 @@ Current evidence:
 
 The Snake gate requires a real model to create and serve a multi-file browser
 game, then drives start, keyboard movement, pause and reset in headless Chrome
-through the authenticated opaque-origin Preview gateway. The browser UI gate
+through the authenticated isolated Preview Origin. The browser UI gate
 clicks the ordinary user-facing controls for authentication, localization,
 conversation/tree navigation, Workspace Terminal, Fork/Delete, resource
 lifecycle, directory selection and SSH. It does not mutate administrator model
@@ -104,7 +104,7 @@ the trusted listing API and releases the machine.
 npm run eval:load
 PI_CLOUD_LIVE_MULTI_TENANT_LOAD=1 npm run production:multi-tenant-model-load
 PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 npm run production:control-plane-restart-check
-PI_CLOUD_LIVE_KAFKA_RESTART_CHECK=1 npm run production:kafka-restart-check
+PI_CLOUD_LIVE_JETSTREAM_RESTART_CHECK=1 npm run production:jetstream-restart-check
 PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-environment-check
 ```
 
@@ -112,14 +112,14 @@ PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-env
 does not claim equivalent active model/Cube concurrency. The multi-tenant gate
 uses real simultaneous model Runs across the shared Worker pool. Restart gates
 kill or replace one named process only after a visible stream boundary, then
-verify ordered completion/recovery from PostgreSQL and Kafka.
+verify ordered completion/recovery from PostgreSQL and JetStream.
 
 Current evidence:
 
 - [Control Plane load](reports/control-plane-load-latest.md)
 - [Multi-tenant real-model load](reports/multi-tenant-model-load-latest.md)
 - [Control Plane restart](reports/control-plane-restart-acceptance-latest.md)
-- [Kafka restart](reports/kafka-restart-acceptance-latest.md)
+- [JetStream Leader restart](reports/jetstream-leader-restart-acceptance-latest.md)
 - [Exclusive development environment recovery](reports/development-environment-acceptance-latest.json)
 
 ## Long-context compaction

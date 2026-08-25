@@ -6,7 +6,7 @@ the conversation product:
 ```text
 Web → Control Plane → PostgreSQL queue → Pi Worker → Tool Broker → Cube
                     ↘ PostgreSQL Session storage
-Worker → Raw/Accepted Kafka → resumable SSE
+Worker → batched authority check → R=3 JetStream → resumable SSE
 ```
 
 The Control Plane exposes authentication, model/proxy settings, projects,

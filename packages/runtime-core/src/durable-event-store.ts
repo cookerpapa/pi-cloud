@@ -63,7 +63,7 @@ export type DurableEventStoreOptions = Readonly<{
 
 /**
  * Deterministic process-local event log for unit/development composition. The
- * maintained production path injects KafkaLiveEventStore and never constructs
+ * maintained production path injects JetStreamLiveEventStore and never constructs
  * this class.
  */
 export class DurableEventStore implements DurableEventLog {

@@ -12,14 +12,16 @@ import {
   type NewRecord,
   type ProvisionedEntry,
 } from "@earendil-works/pi-agent-core";
-import { KafkaJS } from "@confluentinc/kafka-javascript";
+import { AckPolicy, DeliverPolicy, type ConsumerMessages } from "@nats-io/jetstream";
 import type { Kysely } from "kysely";
+import {
+  PI_SESSION_MUTATION_STREAM_NAME,
+  PI_SESSION_MUTATION_SUBJECT_PREFIX,
+  piSessionMutationSubject,
+  type PiCloudJetStream,
+} from "./jetstream-runtime.ts";
 
-const { CompressionTypes, Kafka, logLevel } = KafkaJS;
-type Producer = ReturnType<InstanceType<typeof Kafka>["producer"]>;
-type Consumer = ReturnType<InstanceType<typeof Kafka>["consumer"]>;
-
-export type KafkaPiSessionMutationScope = Readonly<{
+export type JetStreamPiSessionMutationScope = Readonly<{
   tenantId: string;
   sessionId: string;
   turnId: string;
@@ -29,35 +31,13 @@ export type KafkaPiSessionMutationScope = Readonly<{
   fencingToken: number;
 }>;
 
-export type KafkaPiSessionMutationEnvelope = Readonly<{
+export type JetStreamPiSessionMutationEnvelope = Readonly<{
   schemaVersion: 1;
   mutationId: string;
-  scope: KafkaPiSessionMutationScope;
+  scope: JetStreamPiSessionMutationScope;
   operation: PiSessionMutationOperation;
   occurredAt: string;
 }>;
-
-export type KafkaPiSessionMutationOptions = Readonly<{
-  database: Kysely<Database>;
-  brokers: readonly string[];
-  clientId: string;
-  topic: string;
-}>;
-
-function bounded(value: string, name: string, maximum = 249): string {
-  if (value.length < 1 || value.length > maximum || /[\u0000-\u001f\u007f]/u.test(value)) {
-    throw new TypeError(`${name} is invalid`);
-  }
-  return value;
-}
-
-function kafka(options: KafkaPiSessionMutationOptions): InstanceType<typeof Kafka> {
-  return new Kafka({
-    "bootstrap.servers": options.brokers.map((value) => bounded(value, "broker", 512)).join(","),
-    "client.id": bounded(options.clientId, "clientId"),
-    log_level: 0,
-  });
-}
 
 function object(value: unknown, description: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -131,11 +111,11 @@ function parseOperation(value: unknown): PiSessionMutationOperation {
   }
 }
 
-export function parseKafkaPiSessionMutationEnvelope(
-  value: Buffer | string | null,
-): KafkaPiSessionMutationEnvelope {
-  if (value === null) throw new TypeError("Pi Session mutation envelope is empty");
-  const candidate = object(JSON.parse(value.toString()) as unknown, "Pi Session mutation envelope");
+export function parseJetStreamPiSessionMutationEnvelope(
+  value: Uint8Array | Buffer | string,
+): JetStreamPiSessionMutationEnvelope {
+  const text = typeof value === "string" ? value : Buffer.from(value).toString("utf8");
+  const candidate = object(JSON.parse(text) as unknown, "Pi Session mutation envelope");
   const scope = object(candidate.scope, "Pi Session mutation scope");
   const fencingToken = Number(scope.fencingToken);
   const occurredAt = string(candidate.occurredAt, "Pi Session mutation timestamp", 64);
@@ -164,31 +144,17 @@ export function parseKafkaPiSessionMutationEnvelope(
   };
 }
 
-/** Shared Worker producer; each active Run receives a cheap scoped publisher. */
-export class KafkaPiSessionMutationProducer {
+export class JetStreamPiSessionMutationProducer {
   readonly #database: Kysely<Database>;
-  readonly #topic: string;
-  readonly #producer: Producer;
-  #connected: Promise<void> | undefined;
+  readonly #runtime: PiCloudJetStream;
   #closed = false;
 
-  constructor(options: KafkaPiSessionMutationOptions) {
+  constructor(options: { database: Kysely<Database>; runtime: PiCloudJetStream }) {
     this.#database = options.database;
-    this.#topic = bounded(options.topic, "topic");
-    this.#producer = kafka(options).producer({
-      "allow.auto.create.topics": false,
-      "enable.idempotence": true,
-      "max.in.flight.requests.per.connection": 5,
-      "request.timeout.ms": 10_000,
-      "delivery.timeout.ms": 30_000,
-      "linger.ms": 5,
-      acks: -1,
-      "compression.codec": CompressionTypes.LZ4,
-    });
-    this.#producer.logger().setLogLevel(logLevel.NOTHING);
+    this.#runtime = options.runtime;
   }
 
-  scoped(scope: KafkaPiSessionMutationScope): PiSessionMutationPublisher {
+  scoped(scope: JetStreamPiSessionMutationScope): PiSessionMutationPublisher {
     return {
       mutate: (operation) => this.#mutate(scope, operation),
       synchronize: async () => {
@@ -198,33 +164,33 @@ export class KafkaPiSessionMutationProducer {
   }
 
   async checkHealth(): Promise<void> {
-    await this.#connect();
+    if (this.#closed) throw new Error("Pi Session mutation producer is closed");
+    await this.#runtime.manager.streams.info(PI_SESSION_MUTATION_STREAM_NAME);
   }
 
   async close(): Promise<void> {
-    if (this.#closed) return;
     this.#closed = true;
-    if (this.#connected !== undefined) {
-      await this.#connected;
-      await this.#producer.disconnect();
-    }
   }
 
-  async #mutate(scope: KafkaPiSessionMutationScope, operation: PiSessionMutationOperation) {
-    if (this.#closed) throw new Error("Kafka Pi Session mutation producer is closed");
+  async #mutate(scope: JetStreamPiSessionMutationScope, operation: PiSessionMutationOperation) {
+    if (this.#closed) throw new Error("Pi Session mutation producer is closed");
     const mutationId = globalThis.crypto.randomUUID();
-    const envelope: KafkaPiSessionMutationEnvelope = {
+    const envelope: JetStreamPiSessionMutationEnvelope = {
       schemaVersion: 1,
       mutationId,
       scope,
       operation,
       occurredAt: new Date().toISOString(),
     };
-    await this.#connect();
-    await this.#producer.send({
-      topic: this.#topic,
-      messages: [{ key: scope.sessionId, value: JSON.stringify(envelope) }],
-    });
+    await this.#runtime.client.publish(
+      piSessionMutationSubject(scope.sessionId),
+      new TextEncoder().encode(JSON.stringify(envelope)),
+      {
+        msgID: mutationId,
+        expect: { streamName: PI_SESSION_MUTATION_STREAM_NAME },
+        timeout: 10_000,
+      },
+    );
     const deadline = Date.now() + 120_000;
     while (true) {
       const result = await this.#database
@@ -245,65 +211,66 @@ export class KafkaPiSessionMutationProducer {
       await new Promise<void>((resolve) => setTimeout(resolve, 10));
     }
   }
-
-  #connect(): Promise<void> {
-    this.#connected ??= this.#producer.connect();
-    return this.#connected;
-  }
 }
 
-export class KafkaPiSessionMutationProjector {
+export class JetStreamPiSessionMutationProjector {
   readonly #database: Kysely<Database>;
-  readonly #topic: string;
-  readonly #consumer: Consumer;
+  readonly #runtime: PiCloudJetStream;
+  #messages: ConsumerMessages | undefined;
   #run: Promise<void> | undefined;
   #failure: unknown;
   #projectedSinceCleanup = 0;
 
-  constructor(options: KafkaPiSessionMutationOptions & { groupId: string }) {
+  constructor(options: { database: Kysely<Database>; runtime: PiCloudJetStream }) {
     this.#database = options.database;
-    this.#topic = bounded(options.topic, "topic");
-    this.#consumer = kafka(options).consumer({
-      "group.id": bounded(options.groupId, "groupId"),
-      "allow.auto.create.topics": false,
-      "auto.offset.reset": "earliest",
-      "enable.auto.commit": false,
-    });
-    this.#consumer.logger().setLogLevel(logLevel.NOTHING);
+    this.#runtime = options.runtime;
   }
 
   async start(): Promise<void> {
-    await this.#consumer.connect();
-    await this.#consumer.subscribe({ topics: [this.#topic] });
-    this.#run = this.#consumer
-      .run({
-        partitionsConsumedConcurrently: 4,
-        eachMessage: async ({ topic, partition, message }) => {
-          await this.#project(parseKafkaPiSessionMutationEnvelope(message.value));
-          await this.#consumer.commitOffsets([
-            { topic, partition, offset: (BigInt(message.offset) + 1n).toString() },
-          ]);
-        },
-      })
-      .catch((error: unknown) => {
-        this.#failure = error;
+    const durableName = "PI_CLOUD_SESSION_PROJECTOR";
+    try {
+      await this.#runtime.manager.consumers.info(PI_SESSION_MUTATION_STREAM_NAME, durableName);
+    } catch {
+      await this.#runtime.manager.consumers.add(PI_SESSION_MUTATION_STREAM_NAME, {
+        durable_name: durableName,
+        ack_policy: AckPolicy.Explicit,
+        ack_wait: 60 * 1_000_000_000,
+        deliver_policy: DeliverPolicy.All,
+        filter_subject: `${PI_SESSION_MUTATION_SUBJECT_PREFIX}.>`,
+        max_ack_pending: 20_000,
       });
+    }
+    const consumer = await this.#runtime.client.consumers.get(
+      PI_SESSION_MUTATION_STREAM_NAME,
+      durableName,
+    );
+    this.#messages = await consumer.consume();
+    this.#run = this.#consume(this.#messages).catch((error: unknown) => {
+      this.#failure = error;
+    });
   }
 
   checkHealth(): void {
     if (this.#run === undefined || this.#failure !== undefined) {
-      throw new Error("Kafka Pi Session mutation projector is not healthy");
+      throw new Error("Pi Session mutation projector is unhealthy");
     }
   }
 
   async close(): Promise<void> {
-    if (this.#run === undefined) return;
-    await this.#consumer.disconnect();
+    await this.#messages?.close().catch(() => undefined);
     await this.#run;
+    this.#messages = undefined;
     this.#run = undefined;
   }
 
-  async #project(envelope: KafkaPiSessionMutationEnvelope): Promise<void> {
+  async #consume(messages: ConsumerMessages): Promise<void> {
+    for await (const message of messages) {
+      await this.#project(parseJetStreamPiSessionMutationEnvelope(message.data));
+      message.ack();
+    }
+  }
+
+  async #project(envelope: JetStreamPiSessionMutationEnvelope): Promise<void> {
     this.#projectedSinceCleanup += 1;
     if (this.#projectedSinceCleanup >= 256) {
       this.#projectedSinceCleanup = 0;
@@ -340,43 +307,37 @@ export class KafkaPiSessionMutationProjector {
         envelope.operation.kind === "projection_barrier"
           ? await authority.assertCurrent().then(() => ({ kind: "projection_barrier" as const }))
           : await applyOperation(storage, envelope.operation);
-      await this.#database
-        .insertInto("pi_session_mutation_results")
-        .values({
-          mutation_id: envelope.mutationId,
-          tenant_id: envelope.scope.tenantId,
-          session_id: envelope.scope.sessionId,
-          run_id: envelope.scope.runId,
-          attempt_id: envelope.scope.attemptId,
-          state: "completed",
-          result: (result ?? null) as Record<string, unknown> | null,
-          error_code: null,
-          error_message: null,
-          expires_at: new Date(Date.now() + 60 * 60_000),
-        })
-        .onConflict((conflict) => conflict.column("mutation_id").doNothing())
-        .executeTakeFirst();
+      await this.#recordResult(envelope, "completed", result ?? null);
     } catch (error: unknown) {
       if (!(error instanceof SessionError)) throw error;
-      await this.#database
-        .insertInto("pi_session_mutation_results")
-        .values({
-          mutation_id: envelope.mutationId,
-          tenant_id: envelope.scope.tenantId,
-          session_id: envelope.scope.sessionId,
-          run_id: envelope.scope.runId,
-          attempt_id: envelope.scope.attemptId,
-          state: "failed",
-          result: null,
-          error_code: error.code,
-          error_message: error.message,
-          expires_at: new Date(Date.now() + 60 * 60_000),
-        })
-        .onConflict((conflict) => conflict.column("mutation_id").doNothing())
-        .executeTakeFirst();
+      await this.#recordResult(envelope, "failed", null, error);
     } finally {
       await authority.close();
     }
+  }
+
+  async #recordResult(
+    envelope: JetStreamPiSessionMutationEnvelope,
+    state: "completed" | "failed",
+    result: Record<string, unknown> | Entry | LaneRecord | null,
+    error?: SessionError,
+  ): Promise<void> {
+    await this.#database
+      .insertInto("pi_session_mutation_results")
+      .values({
+        mutation_id: envelope.mutationId,
+        tenant_id: envelope.scope.tenantId,
+        session_id: envelope.scope.sessionId,
+        run_id: envelope.scope.runId,
+        attempt_id: envelope.scope.attemptId,
+        state,
+        result: result as Record<string, unknown> | null,
+        error_code: error?.code ?? null,
+        error_message: error?.message ?? null,
+        expires_at: new Date(Date.now() + 60 * 60_000),
+      })
+      .onConflict((conflict) => conflict.column("mutation_id").doNothing())
+      .executeTakeFirst();
   }
 }
 

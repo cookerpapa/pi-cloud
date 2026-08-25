@@ -130,6 +130,7 @@ describe.sequential("remote control-plane runtime composition", () => {
     const sandboxPreviewGateway = new SandboxPreviewGateway({
       database,
       previewToken: `preview-${"p".repeat(48)}`,
+      publicOriginBaseUrl: "http://preview.localhost:8080",
       allowInsecureInternalHttp: true,
     });
     const runtime = await createControlPlaneRuntime({

@@ -42,9 +42,10 @@ services:
     url: http://github-gateway.pi-cloud-system.svc.cluster.local:4400
   providerProxyUrl: http://provider-egress-relay.pi-cloud-system.svc.cluster.local:3129
   otlpTracesEndpoint: ""
-  kafkaBrokers: [kafka.kafka.svc.cluster.local:9092]
-  kafkaRawEventTopic: pi-cloud.agent-events.raw.v1
-  kafkaSessionMutationTopic: pi-cloud.session-mutations.v1
+  jetStreamServers:
+    - nats://nats-0.nats.svc.cluster.local:4222
+    - nats://nats-1.nats.svc.cluster.local:4222
+    - nats://nats-2.nats.svc.cluster.local:4222
 
 database:
   existingSecret: pi-cloud-pi-worker-secrets
@@ -55,6 +56,7 @@ credentials:
   supervisorEnrollmentTokenKey: supervisor-enrollment-token
   supervisorManagementTokenKey: supervisor-management-token
   toolBrokerTokenKey: tool-broker-token
+  workerEventIngestTokenKey: worker-event-ingest-token
   modelCredentialMasterKeyKey: model-credential-master-key
   githubGatewayTokenKey: github-gateway-token
   metricsTokenKey: metrics-token

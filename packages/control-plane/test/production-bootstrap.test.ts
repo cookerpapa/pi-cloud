@@ -247,7 +247,14 @@ describe.sequential("production bootstrap and configuration", () => {
       PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES:
         "http://{supervisorId}:4100,http://{supervisorId}.cell-0002:4100",
       PI_CLOUD_IMAGE_REVISION: "sha-0123456789abcdef",
-      PI_CLOUD_KAFKA_BROKERS: "kafka-1:9092,kafka-2:9092",
+      PI_CLOUD_JETSTREAM_SERVERS: "nats://nats-1:4222,nats://nats-2:4222",
+      PI_CLOUD_JETSTREAM_REPLICAS: "1",
+      PI_CLOUD_PREVIEW_ORIGIN_BASE_URL: "http://preview.localhost:8080",
+      PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: await secret(
+        root,
+        "worker-event-ingest",
+        `event-ingest-${"i".repeat(48)}`,
+      ),
       PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true",
       HOST: "0.0.0.0",
     };
@@ -255,7 +262,8 @@ describe.sequential("production bootstrap and configuration", () => {
     expect(runtime).toMatchObject({
       databaseUrl: "postgresql://db.invalid/picloud",
       databaseNotificationUrl: "postgresql://postgres-direct.invalid/picloud",
-      kafkaBrokers: ["kafka-1:9092", "kafka-2:9092"],
+      jetStreamServers: ["nats://nats-1:4222", "nats://nats-2:4222"],
+      jetStreamReplicas: 1,
       supervisorIdPrefix: "pi-worker-",
       supervisorManagementBaseUrlTemplates: [
         "http://{supervisorId}:4100",
