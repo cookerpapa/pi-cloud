@@ -127,6 +127,17 @@ export class KafkaAdapter {
     return result;
   }
 
+  async measureIdleReaders(count) {
+    return {
+      readers: count,
+      setupElapsedMs: 0,
+      brokerResources: 1,
+      resourceUnit: "shared partition consumer",
+      gatewayOwnedSessionStates: count,
+      note: "Kafka cannot filter by Session key; one shared consumer requires an in-process Session projection.",
+    };
+  }
+
   async close({ removeData = false } = {}) {
     for (const consumer of this.#consumers) await consumer.disconnect().catch(() => undefined);
     this.#consumers.clear();

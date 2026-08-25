@@ -22,10 +22,17 @@ export function configuration() {
     64,
     16_384,
   );
+  const idleReaders = boundedInteger(
+    process.env.PI_CLOUD_STREAM_BENCH_IDLE_READERS ?? "256",
+    "idle readers",
+    1,
+    2_048,
+  );
   return {
     sessionCount,
     eventsPerSession,
     payloadBytes,
+    idleReaders,
     logicalEvents: sessionCount * eventsPerSession,
   };
 }

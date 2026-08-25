@@ -31,6 +31,13 @@ function markdown(report) {
     `| --- | ---: | ---: | ---: | ---: | ---: |\n${rows}\n\n` +
     `## Gateway state\n\n` +
     report.results.map((result) => `- **${result.backend}:** ${result.gatewayState}`).join("\n") +
+    `\n\n## ${report.workload.idleReaders} idle Gateway readers\n\n` +
+    report.results
+      .map(
+        (result) =>
+          `- **${result.backend}:** ${result.idleGatewayReaders.brokerResources} ${result.idleGatewayReaders.resourceUnit}; setup ${result.idleGatewayReaders.setupElapsedMs} ms. ${result.idleGatewayReaders.note}`,
+      )
+      .join("\n") +
     `\n\n## Guardrails\n\n` +
     report.interpretationGuardrails.map((item) => `- ${item}`).join("\n") +
     `\n`

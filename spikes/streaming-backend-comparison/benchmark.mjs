@@ -76,6 +76,7 @@ async function runBackend(adapter, service) {
   const focused = await adapter.replaySession(focusSessionId, workload.eventsPerSession, "focused");
   const replayElapsedMs = performance.now() - replayStartedAt;
   const focusedOrderViolations = verifyOrder(focused.sequences, workload.eventsPerSession);
+  const idleReaders = await adapter.measureIdleReaders(workload.idleReaders);
 
   const duplicateValue = event("dedup-session", 1, workload.payloadBytes);
   const firstDuplicateWrite = await adapter.publish(duplicateValue);
@@ -119,6 +120,7 @@ async function runBackend(adapter, service) {
       ),
       orderViolations: focusedOrderViolations,
     },
+    idleGatewayReaders: idleReaders,
     duplicatePublication: {
       firstReportedDuplicate: firstDuplicateWrite.duplicate,
       secondReportedDuplicate: secondDuplicateWrite.duplicate,

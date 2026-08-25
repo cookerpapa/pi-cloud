@@ -13,6 +13,20 @@ function fields(entry) {
   throw new Error("Valkey Stream entry omitted its event field");
 }
 
+function infoNumber(value, name) {
+  const line = value.split("\n").find((candidate) => candidate.startsWith(`${name}:`));
+  if (line === undefined) throw new Error(`Valkey INFO omitted ${name}`);
+  const parsed = Number(line.slice(name.length + 1).trim());
+  if (!Number.isFinite(parsed)) throw new Error(`Valkey INFO ${name} is invalid`);
+  return parsed;
+}
+
+async function boundedBatches(values, size, operation) {
+  for (let offset = 0; offset < values.length; offset += size) {
+    await Promise.all(values.slice(offset, offset + size).map(operation));
+  }
+}
+
 export class ValkeyAdapter {
   name = "valkey";
   acknowledgement = "XADD reply, AOF everysec, single primary in this experiment";
@@ -139,6 +153,60 @@ export class ValkeyAdapter {
       );
     }
     return { sequences, deliveryLatenciesMs, scannedRecords: response.length };
+  }
+
+  async measureIdleReaders(count) {
+    const beforeClients = infoNumber(
+      await this.#client.sendCommand(["INFO", "clients"]),
+      "connected_clients",
+    );
+    const beforeMemory = infoNumber(
+      await this.#client.sendCommand(["INFO", "memory"]),
+      "used_memory",
+    );
+    const readers = Array.from({ length: count }, (_, index) => ({
+      client: createClient({ url: "redis://127.0.0.1:16380" }),
+      sessionId: `idle-${String(index).padStart(5, "0")}`,
+      pending: undefined,
+    }));
+    const startedAt = performance.now();
+    await boundedBatches(readers, 32, async (reader) => {
+      reader.client.on("error", () => undefined);
+      await reader.client.connect();
+      reader.pending = reader.client
+        .sendCommand([
+          "XREAD",
+          "BLOCK",
+          "30000",
+          "STREAMS",
+          streamKey(this.#runId, reader.sessionId),
+          "$",
+        ])
+        .catch(() => undefined);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const setupElapsedMs = performance.now() - startedAt;
+    const afterClients = infoNumber(
+      await this.#client.sendCommand(["INFO", "clients"]),
+      "connected_clients",
+    );
+    const afterMemory = infoNumber(
+      await this.#client.sendCommand(["INFO", "memory"]),
+      "used_memory",
+    );
+    await boundedBatches(readers, 32, async (reader) => {
+      if (reader.client.isOpen) await reader.client.disconnect().catch(() => undefined);
+      await reader.pending;
+    });
+    return {
+      readers: count,
+      setupElapsedMs: Number(setupElapsedMs.toFixed(3)),
+      brokerResources: afterClients - beforeClients,
+      resourceUnit: "blocking client connections",
+      gatewayOwnedSessionStates: 0,
+      brokerMemoryDeltaBytes: afterMemory - beforeMemory,
+      note: "The direct one-Stream-per-Session path consumes one blocking connection per ungrouped reader.",
+    };
   }
 
   async reconnect() {

@@ -11,6 +11,7 @@ backend and measures:
 - replay of one Session among concurrent background Sessions;
 - per-Session ordering and duplicate detection;
 - replay after a broker process restart;
+- 256 simultaneous idle per-Session Gateway readers;
 - the state a browser Gateway must maintain.
 
 Run from the repository root:

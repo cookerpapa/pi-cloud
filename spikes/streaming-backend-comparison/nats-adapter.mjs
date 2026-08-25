@@ -110,6 +110,41 @@ export class NatsAdapter {
     return result;
   }
 
+  async measureIdleReaders(count) {
+    const before = await this.#manager.getAccountInfo();
+    const readers = [];
+    const startedAt = performance.now();
+    for (let offset = 0; offset < count; offset += 32) {
+      readers.push(
+        ...(await Promise.all(
+          Array.from({ length: Math.min(32, count - offset) }, async (_, index) =>
+            this.#js.consumers.get(this.#stream, {
+              name_prefix: `i${String(offset + index)}`,
+              filter_subjects: this.subject(`idle-${String(offset + index).padStart(5, "0")}`),
+              deliver_policy: DeliverPolicy.New,
+              inactive_threshold: 30_000,
+            }),
+          ),
+        )),
+      );
+    }
+    const setupElapsedMs = performance.now() - startedAt;
+    const after = await this.#manager.getAccountInfo();
+    for (let offset = 0; offset < readers.length; offset += 32) {
+      await Promise.all(readers.slice(offset, offset + 32).map((reader) => reader.delete()));
+    }
+    return {
+      readers: count,
+      setupElapsedMs: Number(setupElapsedMs.toFixed(3)),
+      brokerResources: after.consumers - before.consumers,
+      resourceUnit: "ephemeral filtered consumers",
+      gatewayOwnedSessionStates: 0,
+      brokerMemoryDeltaBytes: after.memory - before.memory,
+      brokerStorageDeltaBytes: after.storage - before.storage,
+      note: "JetStream owns each filtered replay cursor; a high connection count creates broker consumer metadata.",
+    };
+  }
+
   async reconnect() {
     await this.#connection.close().catch(() => undefined);
     await this.#connect();
