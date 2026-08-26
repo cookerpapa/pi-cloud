@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
@@ -95,6 +95,9 @@ const record = (name) => {
 const screenshotPath = resolve("/tmp", "pi-cloud-browser-ui-latest.png");
 const transcriptScreenshotPath = resolve("/tmp", "pi-cloud-browser-ui-transcript-latest.png");
 const directoryScreenshotPath = resolve("/tmp", "pi-cloud-directory-picker-latest.png");
+const downloadDirectory = resolve("/tmp", "pi-cloud-browser-download-latest");
+await rm(downloadDirectory, { recursive: true, force: true });
+await mkdir(downloadDirectory, { recursive: true });
 
 function selectorExpression(selector) {
   return `document.querySelector(${JSON.stringify(selector)})`;
@@ -217,6 +220,33 @@ try {
         "completed browser-submitted Run",
         180_000,
       );
+      await click(
+        ".product-turn:last-child .product-user-message .product-message-copy",
+        "transcript.copyUserMessage",
+      );
+      await page.waitFor(
+        'document.querySelector(".product-turn:last-child .product-user-message .product-message-copy")?.dataset.copied==="true"',
+      );
+      await click(
+        ".product-turn:last-child .product-answer-actions .product-message-copy",
+        "transcript.copyAssistantMessage",
+      );
+      await page.waitFor(
+        'document.querySelector(".product-turn:last-child .product-answer-actions .product-message-copy")?.dataset.copied==="true"',
+      );
+      await page.send("Browser.setDownloadBehavior", {
+        behavior: "allow",
+        downloadPath: downloadDirectory,
+      });
+      await click(".product-download-conversation", "conversation.download");
+      const downloaded = await waitFor(
+        async () => (await readdir(downloadDirectory)).find((name) => name.endsWith(".md")),
+        "canonical conversation download",
+      );
+      const exportedMarkdown = await readFile(resolve(downloadDirectory, downloaded), "utf8");
+      assert.match(exportedMarkdown, /pi-cloud\.session-export\.v1/u);
+      assert.match(exportedMarkdown, /BROWSER-UI-CHAT-OK/u);
+      assert.doesNotMatch(exportedMarkdown, /assistant\.text\.delta/u);
 
       await setValue(
         ".product-composer textarea",
@@ -498,6 +528,7 @@ for (const workspace of (await api.listWorkspaces()).workspaces) {
     .deleteWorkspace(workspace.workspaceId, newIdempotencyKey("delete"))
     .catch(() => undefined);
 }
+await rm(downloadDirectory, { recursive: true, force: true });
 
 if (acceptanceError !== undefined) throw acceptanceError;
 
