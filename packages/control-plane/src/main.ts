@@ -76,6 +76,8 @@ export async function startControlPlane(): Promise<void> {
         eventRetentionMs: config.agentEventRetentionMs,
         maximumEventsPerSession: config.maximumEventsPerSession,
       },
+      eventWriterLeaseMs: config.eventWriterLeaseMs,
+      eventWriterMaximumActive: config.eventWriterMaximumActive,
     });
     const activeAgentEvents = agentEvents;
     await verifyBootstrap(database);
@@ -179,7 +181,7 @@ export async function startControlPlane(): Promise<void> {
       authorize: (authorization) => provisioner.authorize(authorization),
     });
     const agentEventIngestGateway = new AgentEventIngestGateway({
-      ingestor: activeAgentEvents.ingestor,
+      writers: activeAgentEvents.agentEventWriters,
       serviceToken: config.workerEventIngestToken,
     });
     const piSessionMutationIngestGateway = new PiSessionMutationIngestGateway({

@@ -28,7 +28,11 @@ import {
   type TurnExecutionRequest,
   type TurnExecutionResult,
 } from "./run-command-executor.ts";
-import { DurableEventStoreError, type DurableEventIngestor } from "./durable-event-store.ts";
+import {
+  DurableEventStoreError,
+  type DurableEventIngestor,
+  type DurableEventWriter,
+} from "./durable-event-store.ts";
 import {
   ExecutionGrantCoordinator,
   ExecutionGrantCoordinatorError,
@@ -48,6 +52,8 @@ export type AgentRunExecutionBackendOptions = {
 type TrackedGrantExecution = {
   prepared: ReturnType<AgentRunSupervisor["prepare"]>;
   execution: Promise<TurnExecutionResult>;
+  writer: DurableEventWriter;
+  writerClosing?: Promise<void>;
   failure?: TurnExecutionBackendError;
 };
 
@@ -258,11 +264,19 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     lifecycle: TurnExecutionLifecycle,
   ): Promise<TurnExecutionResult> {
     let acknowledgement: { executionGrant: string } | undefined;
+    let eventWriter: DurableEventWriter | undefined;
     let prepared: ReturnType<AgentRunSupervisor["prepare"]> | undefined;
+    let tracked: TrackedGrantExecution | undefined;
     let durableStarted = false;
 
     try {
       acknowledgement = await this.#grantCoordinator.acquire(request);
+      eventWriter = await this.#eventIngestor.open({
+        executionGrant: acknowledgement.executionGrant,
+        sessionId: request.sessionId,
+        turnId: request.turnId,
+        nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
+      });
       const parsed = parseControlToSupervisorMessage({
         protocolVersion: 1,
         messageId: this.#idGenerator(),
@@ -331,7 +345,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           );
         }
         const last = publications.at(-1)!;
-        const eventAck = validateEventAck(last, await this.#eventIngestor.ingest(eventMessage));
+        const eventAck = validateEventAck(last, await eventWriter!.ingest(eventMessage));
         for (const publication of publications) await this.#onEvent?.(publication);
         return eventAck;
       });
@@ -347,7 +361,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       await lifecycle.started(acknowledgement);
       durableStarted = true;
       const execution = prepared.run();
-      const tracked = this.#registerGrantExecution(request.sessionId, prepared, execution);
+      tracked = this.#registerGrantExecution(request.sessionId, prepared, execution, eventWriter);
       try {
         let result: TurnExecutionResult;
         try {
@@ -359,11 +373,19 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         if (tracked.failure !== undefined) throw tracked.failure;
         return result;
       } finally {
-        await this.#unregisterGrantExecution(request.sessionId, tracked);
+        try {
+          await this.#closeTrackedWriter(tracked);
+        } finally {
+          await this.#unregisterGrantExecution(request.sessionId, tracked);
+        }
       }
     } catch (error: unknown) {
       if (!durableStarted) {
         prepared?.releaseBeforeStart();
+        if (eventWriter !== undefined) {
+          await eventWriter.close().catch(() => undefined);
+          eventWriter = undefined;
+        }
         if (acknowledgement !== undefined) {
           await this.#grantCoordinator.releaseAcquired(request, acknowledgement).catch(() => {
             // Preserve the original delivery error. The durable grant expires and
@@ -381,6 +403,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         }
       }
       throw normalized;
+    } finally {
+      if (eventWriter !== undefined && tracked === undefined) await eventWriter.close();
     }
   }
 
@@ -430,7 +454,10 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       }
 
       await lifecycle.started(acknowledgement);
-      return await prepared.run();
+      const result = await prepared.run();
+      const tracked = this.#trackedGrantExecutions.get(request.target.sessionId);
+      if (tracked !== undefined) await this.#closeTrackedWriter(tracked);
+      return result;
     } catch (error: unknown) {
       throw normalizeCancellationError(error);
     }
@@ -440,8 +467,9 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     sessionId: string,
     prepared: ReturnType<AgentRunSupervisor["prepare"]>,
     execution: Promise<TurnExecutionResult>,
+    writer: DurableEventWriter,
   ): TrackedGrantExecution {
-    const tracked: TrackedGrantExecution = { prepared, execution };
+    const tracked: TrackedGrantExecution = { prepared, execution, writer };
     if (this.#trackedGrantExecutions.has(sessionId)) {
       tracked.failure = new TurnExecutionBackendError(
         "execution_grant_monitor_invariant",
@@ -460,6 +488,11 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       this.#startHeartbeatTask();
     }
     return tracked;
+  }
+
+  #closeTrackedWriter(tracked: TrackedGrantExecution): Promise<void> {
+    tracked.writerClosing ??= tracked.writer.close();
+    return tracked.writerClosing;
   }
 
   async #unregisterGrantExecution(

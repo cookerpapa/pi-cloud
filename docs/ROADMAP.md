@@ -22,6 +22,8 @@
 - Session/Workspace lifetime independence with missing-Workspace rebinding;
 - committed RePublish with one Core NATS subscription per Gateway and no replay cache;
 - batched Run capability validation and Session-keyed PostgreSQL projection barriers.
+- short-leased per-ExecutionGrant EventWriterChannels with no Agent-event
+  application batching delay and one R=3 PubAck per visible event.
 
 ## Current release gate
 

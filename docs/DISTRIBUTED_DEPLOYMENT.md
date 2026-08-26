@@ -32,7 +32,7 @@ Ingress -> Web / Control Plane
                          │
               persistent Workspace storage
 
-Worker events -> batched fenced authority -> JetStream -> committed RePublish -> SSE
+Worker events -> per-Grant EventWriterChannel -> JetStream -> committed RePublish -> SSE
 Complete Pi entries -> authenticated/fenced Ingest -> Session Mutation JetStream -> PostgreSQL SessionStorage
 ```
 

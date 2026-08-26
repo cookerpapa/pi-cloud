@@ -53,6 +53,14 @@ describe("operational metrics sampler", () => {
           pending: 3,
         },
       ],
+      eventWriters: {
+        openedWriters: 12,
+        activeWriters: 7,
+        publishedEvents: 410,
+        renewalCycles: 3,
+        renewalFailures: 0,
+        maximumActiveWriters: 128,
+      },
     };
     const sampler = new OperationalMetricsSampler({
       database,
@@ -78,6 +86,8 @@ describe("operational metrics sampler", () => {
     expect(output).toContain(
       'pi_cloud_jetstream_consumer_pending{stream="PI_CLOUD_SESSION_MUTATIONS_V2",consumer="PI_CLOUD_SESSION_PROJECTOR",service="control-plane-test"} 3',
     );
+    expect(output).toContain('pi_cloud_event_writers_active{service="control-plane-test"} 7');
+    expect(output).toContain('pi_cloud_event_writers_limit{service="control-plane-test"} 128');
     expect(output).toMatch(
       /pi_cloud_operational_sample_timestamp_seconds\{source="postgresql",service="control-plane-test"\} \d+/u,
     );

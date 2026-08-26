@@ -62,9 +62,10 @@ load those resources; they are not accepted as authority.
 
 Every protected boundary performs one of these checks:
 
-- Event Ingest locks matching `execution_grants` rows once per microbatch,
-  validates Session/Turn and sequence, waits for R=3 PubAck, then advances the
-  grant watermark before committing.
+- Agent Event Ingest opens and renews one short writer lease on the matching
+  `execution_grants` row; the channel validates Session/Turn and sequence, and
+  each event waits for its own R=3 PubAck. Channel renewal/close advances the
+  grant watermark.
 - Pi Session mutations cross a batched current-grant check before their
   accepted JetStream PubAck; the downstream Projector does not recheck expiry.
 - Tool Broker resolves the grant to canonical assignment facts before creating

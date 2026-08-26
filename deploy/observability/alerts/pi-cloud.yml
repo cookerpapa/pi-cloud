@@ -88,6 +88,15 @@ groups:
 
   - name: pi-cloud-capacity
     rules:
+      - alert: PiCloudEventWriterCapacityHigh
+        expr: max(pi_cloud_event_writers_active) / clamp_min(max(pi_cloud_event_writers_limit), 1) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent event writer capacity is nearly exhausted"
+          description: "More than 90% of the configured EventWriterChannel capacity is active."
+
       - alert: PiCloudSandboxAdmissionWaiting
         expr: max(pi_cloud_sandbox_admission_waiting) > 0
         for: 5m

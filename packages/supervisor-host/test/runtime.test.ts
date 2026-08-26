@@ -247,7 +247,7 @@ describe("PiWorkerRuntime", () => {
         toolBroker: runtimeToolBroker,
         runWorkerFactory,
         eventIngestor: {
-          async ingest() {
+          async open() {
             throw new Error("unused");
           },
           async checkHealth() {},
@@ -275,7 +275,7 @@ describe("PiWorkerRuntime", () => {
         toolBroker: runtimeToolBroker,
         runWorkerFactory,
         eventIngestor: {
-          async ingest() {
+          async open() {
             throw new Error("unused");
           },
           async checkHealth() {},

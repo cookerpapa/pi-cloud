@@ -5,7 +5,7 @@ import {
   TtlCheckpointObjectStore,
 } from "@pi-cloud/runtime-core/checkpoint-runtime";
 import type { DurableEventIngestor } from "@pi-cloud/runtime-core/durable-event-store";
-import { HttpAgentEventIngestor } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
+import { WebSocketAgentEventIngestor } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
 import { HttpPiSessionMutationProducer } from "@pi-cloud/runtime-core/jetstream-pi-session-mutations";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
 import { HttpTerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
@@ -655,7 +655,7 @@ export class PiWorkerRuntime {
       await client.start();
       const ownedEventIngestor =
         this.#eventIngestor === undefined
-          ? new HttpAgentEventIngestor({
+          ? new WebSocketAgentEventIngestor({
               baseUrl: this.#config.controlPlaneBaseUrl,
               serviceToken: this.#config.workerEventIngestToken,
               allowInsecureHttp: this.#config.allowInsecureInternalHttp,

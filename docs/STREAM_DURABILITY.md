@@ -4,8 +4,8 @@ PiCloud separates short-lived presentation fragments from semantic conversation
 state. The following symbols make the boundary explicit:
 
 - `R` — a Worker produced a sequenced raw event;
-- `J` — R=3 JetStream durably acknowledged that event inside a batched,
-  transaction-scoped ExecutionGrant authority boundary;
+- `J` — R=3 JetStream durably acknowledged that event through the current
+  short-leased ExecutionGrant writer channel;
 - `V` — an authenticated SSE client observed the event;
 - `M` — authority-accepted Session Mutation received an R=3 JetStream PubAck;
 - `P` — Pi SessionStorage committed the complete message or Tool result in

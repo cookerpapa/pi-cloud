@@ -46,9 +46,13 @@
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
     "kysely": "0.29.4",
-    "pg": "8.22.0"
+    "pg": "8.22.0",
+    "ws": "8.21.1"
   },
   "devDependencies": {
-    "@types/pg": "8.20.0"
+    "@electric-sql/pglite": "0.5.4",
+    "@electric-sql/pglite-socket": "0.2.7",
+    "@types/pg": "8.20.0",
+    "@types/ws": "8.18.1"
   }
 }

@@ -52,11 +52,13 @@ result is `UNKNOWN`.
 
 ## Events and terminal commit
 
-Pi text fragments are coalesced for 100 ms or 4 KiB. Concurrent Workers submit
-their opaque ExecutionGrant to Event Ingest; it checks up to 256 grants in one
-set query and publishes valid Session Subjects to
-R=3 JetStream in parallel. Tool arguments and Tool results enter this stream
-only as complete Items. Each event's PubAck is the visibility boundary.
+The Worker opens one short-leased EventWriterChannel for its opaque
+ExecutionGrant before Pi starts. Assistant text deltas cross that channel
+without an intentional batching delay; one Grant remains ordered while
+different Grants publish concurrently. Tool arguments and Tool results enter
+the same stream only as complete Items. Each event's R=3 PubAck is the
+visibility boundary. Channel close advances the PostgreSQL watermark before
+terminal settlement can release the Grant.
 
 Pi `message_end` submits a complete Session mutation to authenticated Ingest.
 Ingest validates its current PostgreSQL ExecutionGrant before JetStream PubAck

@@ -36,11 +36,24 @@ export type EventReplayWindow = {
   highWaterMark: number;
 };
 
-export interface DurableEventIngestor {
+export type DurableEventWriterOpenRequest = Readonly<{
+  executionGrant: string;
+  sessionId: string;
+  turnId: string;
+  nextEventSeq: number;
+}>;
+
+export interface DurableEventWriter {
+  readonly acknowledgedThroughSeq: number;
   ingest(value: unknown): Promise<EventAckMessage>;
+  close(): Promise<void>;
 }
 
-export interface DurableEventLog extends DurableEventIngestor {
+export interface DurableEventIngestor {
+  open(request: DurableEventWriterOpenRequest): Promise<DurableEventWriter>;
+}
+
+export interface DurableEventLog {
   openReplayWindow(
     tenantId: string,
     sessionId: string,
@@ -66,7 +79,7 @@ export type DurableEventStoreOptions = Readonly<{
  * maintained production path injects JetStreamLiveEventStore and never constructs
  * this class.
  */
-export class DurableEventStore implements DurableEventLog {
+export class DurableEventStore implements DurableEventLog, DurableEventIngestor {
   readonly #events = new Map<string, PiCloudEvent[]>();
   readonly #database: Kysely<Database> | undefined;
 
@@ -74,25 +87,47 @@ export class DurableEventStore implements DurableEventLog {
     this.#database = options.database;
   }
 
-  async ingest(value: unknown): Promise<EventAckMessage> {
-    const publication = parseSupervisorToControlMessage(value);
-    if (publication.type !== "event.publish") {
-      throw new DurableEventStoreError("invalid_event", "Expected an event publication");
-    }
-    this.#append(publication.payload.event);
-    const acknowledgement = parseControlToSupervisorMessage({
-      protocolVersion: 1,
-      messageId: globalThis.crypto.randomUUID(),
-      sentAt: new Date().toISOString(),
-      type: "event.ack",
-      payload: {
-        sessionId: publication.payload.event.sessionId,
-        executionGrant: publication.payload.executionGrant,
-        acknowledgedThroughSeq: publication.payload.event.seq,
+  async open(request: DurableEventWriterOpenRequest): Promise<DurableEventWriter> {
+    let acknowledgedThroughSeq = request.nextEventSeq - 1;
+    let closed = false;
+    return {
+      get acknowledgedThroughSeq() {
+        return acknowledgedThroughSeq;
       },
-    });
-    if (acknowledgement.type !== "event.ack") throw new Error("Invalid event ACK");
-    return acknowledgement;
+      ingest: async (value) => {
+        if (closed) throw new DurableEventStoreError("invalid_event", "Event writer is closed");
+        const publication = parseSupervisorToControlMessage(value);
+        if (
+          publication.type !== "event.publish" ||
+          publication.payload.executionGrant !== request.executionGrant ||
+          publication.payload.event.sessionId !== request.sessionId ||
+          publication.payload.event.turnId !== request.turnId
+        ) {
+          throw new DurableEventStoreError(
+            "invalid_event",
+            "Event does not match its writer scope",
+          );
+        }
+        this.#append(publication.payload.event);
+        acknowledgedThroughSeq = publication.payload.event.seq;
+        const acknowledgement = parseControlToSupervisorMessage({
+          protocolVersion: 1,
+          messageId: globalThis.crypto.randomUUID(),
+          sentAt: new Date().toISOString(),
+          type: "event.ack",
+          payload: {
+            sessionId: publication.payload.event.sessionId,
+            executionGrant: publication.payload.executionGrant,
+            acknowledgedThroughSeq,
+          },
+        });
+        if (acknowledgement.type !== "event.ack") throw new Error("Invalid event ACK");
+        return acknowledgement;
+      },
+      close: async () => {
+        closed = true;
+      },
+    };
   }
 
   async openReplayWindow(

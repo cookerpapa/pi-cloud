@@ -372,7 +372,7 @@ export class AssignmentReconciler {
           false,
         );
       }
-      await this.#deleteGrant(transaction, candidate);
+      await this.#deleteGrant(transaction, candidate, now);
       return "released";
     }
 
@@ -503,7 +503,7 @@ export class AssignmentReconciler {
         .where("id", "=", executeOutbox.id)
         .where("published_at", "is", null)
         .executeTakeFirstOrThrow();
-      await this.#deleteGrant(transaction, candidate);
+      await this.#deleteGrant(transaction, candidate, now);
       return "requeued";
     }
 
@@ -652,13 +652,14 @@ export class AssignmentReconciler {
       eventId: terminalEventId,
       ...(preparedProjection === undefined ? {} : { preparedProjection }),
     });
-    await this.#deleteGrant(transaction, candidate);
+    await this.#deleteGrant(transaction, candidate, now);
     return "settled";
   }
 
   async #deleteGrant(
     transaction: Transaction<Database>,
     assignment: DurableAssignment,
+    now: Date,
   ): Promise<void> {
     const execution = parseExecutionGrant(assignment.executionGrant);
     const deleted = await transaction
@@ -667,6 +668,12 @@ export class AssignmentReconciler {
       .where("grant_id", "=", execution.grantId)
       .where("sandbox_id", "=", this.#sandboxId)
       .where("generation", "=", String(execution.generation))
+      .where((expression) =>
+        expression.or([
+          expression("event_writer_valid_until", "is", null),
+          expression("event_writer_valid_until", "<=", now),
+        ]),
+      )
       .executeTakeFirst();
     if (deleted.numDeletedRows !== 1n) {
       throw new AssignmentReconcilerError(

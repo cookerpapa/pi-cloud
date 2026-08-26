@@ -850,6 +850,26 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
     generation: string | number | bigint,
     now: Date,
   ): Promise<void> {
+    const writer = await transaction
+      .selectFrom("execution_grants")
+      .select(["event_writer_connection_id", "event_writer_valid_until"])
+      .where("session_id", "=", sessionId)
+      .where("grant_id", "=", grantId)
+      .where("generation", "=", String(generation))
+      .forUpdate()
+      .executeTakeFirst();
+    if (
+      writer?.event_writer_connection_id !== null &&
+      writer?.event_writer_connection_id !== undefined &&
+      writer.event_writer_valid_until !== null &&
+      new Date(writer.event_writer_valid_until).valueOf() > now.valueOf()
+    ) {
+      throw new ExecutionGrantCoordinatorError(
+        "event_writer_active",
+        "ExecutionGrant still has an active Agent event writer",
+        true,
+      );
+    }
     const sandbox = await transaction
       .selectFrom("sandboxes")
       .select(["state", "active_sessions"])

@@ -167,7 +167,14 @@
         "jetstream": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["servers", "replicas", "eventRetentionMs", "maximumEventsPerSession"],
+          "required": [
+            "servers",
+            "replicas",
+            "eventRetentionMs",
+            "maximumEventsPerSession",
+            "eventWriterLeaseMs",
+            "maximumActiveWritersPerGateway"
+          ],
           "properties": {
             "servers": {
               "type": "array",
@@ -178,7 +185,9 @@
             },
             "replicas": { "type": "integer", "minimum": 1, "maximum": 5 },
             "eventRetentionMs": { "type": "integer", "minimum": 3600000, "maximum": 604800000 },
-            "maximumEventsPerSession": { "type": "integer", "minimum": 512, "maximum": 1000000 }
+            "maximumEventsPerSession": { "type": "integer", "minimum": 512, "maximum": 1000000 },
+            "eventWriterLeaseMs": { "type": "integer", "minimum": 3000, "maximum": 30000 },
+            "maximumActiveWritersPerGateway": { "type": "integer", "minimum": 1, "maximum": 10000 }
           }
         },
         "providerProxyUrl": { "$ref": "#/$defs/httpUrl" },

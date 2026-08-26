@@ -28,6 +28,9 @@ export class PiCloudMetrics {
   readonly jetStreamBytes: Gauge<"stream">;
   readonly jetStreamConsumerPending: Gauge<"stream" | "consumer">;
   readonly jetStreamUnavailableReplicas: Gauge<"stream">;
+  readonly eventWritersActive: Gauge;
+  readonly eventWritersLimit: Gauge;
+  readonly eventWriterRenewalFailures: Gauge;
   readonly operationalSampleTimestamp: Gauge<"source">;
   readonly operationalSampleFailures: Counter<"source">;
   readonly sandboxActive: Gauge<"provider">;
@@ -191,6 +194,21 @@ export class PiCloudMetrics {
       name: "pi_cloud_jetstream_unavailable_replicas",
       help: "Offline or out-of-date replicas for a PiCloud JetStream stream",
       labelNames: ["stream"],
+      registers: [this.registry],
+    });
+    this.eventWritersActive = new Gauge({
+      name: "pi_cloud_event_writers_active",
+      help: "Active Agent EventWriterChannels in this Control Plane replica",
+      registers: [this.registry],
+    });
+    this.eventWritersLimit = new Gauge({
+      name: "pi_cloud_event_writers_limit",
+      help: "Maximum Agent EventWriterChannels admitted by this Control Plane replica",
+      registers: [this.registry],
+    });
+    this.eventWriterRenewalFailures = new Gauge({
+      name: "pi_cloud_event_writer_renewal_failures",
+      help: "Agent EventWriterChannel renewal failures observed by this process",
       registers: [this.registry],
     });
     this.operationalSampleTimestamp = new Gauge({

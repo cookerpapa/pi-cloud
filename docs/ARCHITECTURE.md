@@ -453,18 +453,24 @@ browser.
 
 Pi exposes separate Assistant-message, Tool-execution and Agent lifecycle
 events. The public adapter intentionally ignores thinking fragments, streamed
-Tool-call JSON and partial Tool stdout. It publishes only coalesced Assistant
-text, complete Tool start/result Items and low-frequency lifecycle boundaries.
+Tool-call JSON and partial Tool stdout. It publishes Assistant text deltas,
+complete Tool start/result Items and low-frequency lifecycle boundaries.
 
-Workers combine adjacent text for 100 ms or 4 KiB, then submit the existing
-current opaque ExecutionGrant to the internal Event Ingest. Complete Pi
-Session mutations use a second endpoint with the same service authentication
-and PostgreSQL authority. Workers have no NATS credentials or network route.
-Each Ingest groups concurrent Workers for at most two milliseconds and
-validates up to 256 authorities with one PostgreSQL set query. Valid
-publications enter their R=3 file-backed JetStream in parallel; each Worker ACK
-waits for its own PubAck. Agent-event acceptance also advances all accepted
-grant watermarks with one set update.
+After PostgreSQL issues the current opaque ExecutionGrant, the Worker opens one
+service-authenticated EventWriterChannel bound to that Grant, Session and Turn.
+The Gateway records a short writer lease on the same Grant row. Events then
+cross the long-lived WebSocket immediately and independently; each ACK waits
+for that event's R=3 JetStream PubAck. Different Grants publish concurrently,
+while one Grant keeps one ordered event in flight. Writer ownership and its
+watermark renew set-wise outside the event hot path. Normal settlement closes
+the channel before releasing the Grant; crash recovery waits for its short
+lease rather than admitting overlapping generations. Workers have no NATS
+credentials or network route.
+
+Complete Pi Session mutations use a second authenticated endpoint. These
+low-frequency semantic writes retain a batched PostgreSQL ExecutionGrant check
+and their own projection barrier; they are not part of the browser-text
+transport.
 
 JetStream committed RePublish sends stored messages to one Core NATS wildcard
 subscription in every Gateway replica. The Gateway holds only its actual HTTP

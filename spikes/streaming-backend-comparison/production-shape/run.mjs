@@ -6,9 +6,6 @@ const directory = fileURLToPath(new URL(".", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const composeFile = fileURLToPath(new URL("compose.yaml", import.meta.url));
 const benchmark = fileURLToPath(new URL("benchmark.mjs", import.meta.url));
-const authorityBatchBenchmark = fileURLToPath(
-  new URL("authority-batch-benchmark.ts", import.meta.url),
-);
 const workerIngestChannelBenchmark = fileURLToPath(
   new URL("worker-ingest-channel-benchmark.ts", import.meta.url),
 );
@@ -31,7 +28,7 @@ function markdown(report) {
   const workerChannelCases = report.workerIngestChannel.cases
     .map(
       (entry) =>
-        `| ${entry.name} | ${entry.events} | ${entry.concurrency} | ${entry.payloadBytes} B | ${entry.eventsPerSecond} | ${entry.acknowledgementLatencyMs.p50} ms | ${entry.acknowledgementLatencyMs.p95} ms | ${entry.eventsPerAuthorityTransaction} |`,
+        `| ${entry.name} | ${entry.events} | ${entry.writerChannels} | ${entry.concurrency} | ${entry.payloadBytes} B | ${entry.eventsPerSecond} | ${entry.acknowledgementLatencyMs.p50} ms | ${entry.acknowledgementLatencyMs.p95} ms |`,
     )
     .join("\n");
   return (
@@ -44,9 +41,7 @@ function markdown(report) {
     `- Gateway replay after loss: ${report.gatewayRecovery.ordered ? "passed" : "failed"}\n` +
     `- Projector commit-before-ACK redelivery: ${report.projectorRecovery.idempotent ? "idempotent" : "failed"}\n` +
     `- Stream leader loss delivery: ${report.leaderRecovery.delivered ? "passed" : "failed"} (${report.leaderRecovery.publishAndDeliveryMs} ms)\n` +
-    `- Authority batching: ${report.authorityBatchThroughput.baseline.eventsPerSecond} → ${report.authorityBatchThroughput.batched.eventsPerSecond} events/s (${report.authorityBatchThroughput.speedup}x)\n` +
-    `- PostgreSQL authority statements: ${report.authorityBatchThroughput.baseline.authorityStatements} for ${report.authorityBatchThroughput.baseline.events} events → ${report.authorityBatchThroughput.batched.authorityStatements} for ${report.authorityBatchThroughput.batched.events} events\n` +
-    `- Exact Worker HTTP → PostgreSQL authority → JetStream R=3 sustained throughput: ${report.workerIngestChannel.cases.find((entry) => entry.name === "sustained-32k").eventsPerSecond} events/s\n` +
+    `- Exact Worker EventWriterChannel → JetStream R=3 sustained throughput: ${report.workerIngestChannel.cases.find((entry) => entry.name === "sustained-32k").eventsPerSecond} events/s\n` +
     `- Exact-channel Leader loss: ${report.workerIngestChannel.leaderRecovery.delivered ? "passed" : "failed"} (${report.workerIngestChannel.leaderRecovery.case.events} events)\n` +
     `- SSE first-connection delivery: ${report.sseScale.deliveredConnections}/${report.sseScale.targetConnections}\n` +
     `- SSE effective delivery after reconnect: ${report.sseScale.effectiveDeliveredConnections}/${report.sseScale.targetConnections}\n\n` +
@@ -54,8 +49,8 @@ function markdown(report) {
     `| SSE connections | Connect p95 | Gateway RSS | JetStream consumers | Host free memory |\n` +
     `| ---: | ---: | ---: | ---: | ---: |\n${stages}\n` +
     `\n## Exact Worker ingest channel\n\n` +
-    `The measured boundary is the production Worker HTTP client through the Fastify ingest Gateway, PostgreSQL ExecutionGrant batch authority, and synchronous JetStream R=3 file-storage PubAck. LLM, Cube, SSE delivery, and the SessionStorage projector are excluded.\n\n` +
-    `| Case | Events | HTTP concurrency | Text payload | Events/s | ACK p50 | ACK p95 | Events/authority transaction |\n` +
+    `The measured boundary is the production Worker EventWriterChannel through the Fastify WebSocket Gateway and synchronous JetStream R=3 file-storage PubAck. PostgreSQL admits and renews the channel rather than every event. LLM, Cube, SSE delivery, and the SessionStorage projector are excluded.\n\n` +
+    `| Case | Events | Writer channels | Active concurrency | Text payload | Events/s | ACK p50 | ACK p95 |\n` +
     `| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n${workerChannelCases}\n\n` +
     `Leader loss changed ${report.workerIngestChannel.leaderRecovery.killedLeader} to ${report.workerIngestChannel.leaderRecovery.replacementLeader}; all ${report.workerIngestChannel.leaderRecovery.case.events} events crossed the durability boundary. ACK p99 during failover was ${report.workerIngestChannel.leaderRecovery.case.acknowledgementLatencyMs.p99} ms.\n`
   );
@@ -112,10 +107,6 @@ try {
       resolve(result);
     });
   });
-  report.authorityBatchThroughput = await runTypeScriptBenchmark(
-    authorityBatchBenchmark,
-    "JetStream authority-batch benchmark",
-  );
   report.workerIngestChannel = await runTypeScriptBenchmark(
     workerIngestChannelBenchmark,
     "JetStream Worker-ingest-channel benchmark",

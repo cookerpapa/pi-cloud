@@ -37,12 +37,12 @@ npm run eval:postgres-session-projection
 The production stream is:
 
 ```text
-Pi text coalescer -> batched authority/Fence transaction -> R=3 JetStream -> resumable SSE
+Pi event -> short-leased EventWriterChannel -> per-event R=3 JetStream PubAck -> resumable SSE
 Pi complete message -> fenced Ingest -> Session Mutation JetStream -> PostgreSQL SessionStorage
 ```
 
 JetStream R=3 PubAck precedes visibility. JetStream retains a bounded
-hot tail of coalesced Assistant text and complete Tool/lifecycle Items;
+hot tail of Assistant text deltas and complete Tool/lifecycle Items;
 PostgreSQL stores Pi-native complete messages once. The two checks separately
 measure JetStream ordering/throughput and PostgreSQL complete-message projection
 latency/WAL, so token fragments never masquerade as canonical database state.

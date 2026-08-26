@@ -9,7 +9,11 @@ import type {
   ProjectResource,
   SessionResource,
 } from "@pi-cloud/protocol";
-import { createExecutionGrant, parseControlToSupervisorMessage } from "@pi-cloud/protocol";
+import {
+  createExecutionGrant,
+  parseControlToSupervisorMessage,
+  parseSupervisorToControlMessage,
+} from "@pi-cloud/protocol";
 import {
   AgentRunSupervisor,
   PiTurnCancelledError,
@@ -39,7 +43,7 @@ import {
   createControlPlaneApplication,
 } from "../src/index.ts";
 import { dispatchNextTestCommand } from "./dispatch-next-test-command.ts";
-import { PostgresAgentEventAuthority } from "@pi-cloud/runtime-core/agent-event-authority";
+import { PostgresAgentEventWriterAuthority } from "@pi-cloud/runtime-core/agent-event-authority";
 import {
   PostgresPiSessionMutationAuthority,
   type PiSessionMutationRequest,
@@ -567,12 +571,27 @@ describe.sequential("single-user durable turn intake API", () => {
         },
       },
     };
-    const authority = new PostgresAgentEventAuthority({ database });
-    await expect(
-      authority.commitAcceptedMany([publication], async () => undefined),
-    ).resolves.toMatchObject({
-      accepted: [{ tenantId: IDS.tenant }],
-      rejected: [],
+    const authority = new PostgresAgentEventWriterAuthority({ database });
+    const open = parseSupervisorToControlMessage({
+      protocolVersion: 1,
+      messageId: globalThis.crypto.randomUUID(),
+      sentAt: now,
+      type: "event.writer.open",
+      payload: {
+        executionGrant: assigned.runtime.executionGrant,
+        sessionId: assigned.assignedSession.sessionId,
+        turnId: assigned.accepted.turnId,
+        nextEventSeq: 1,
+      },
+    });
+    if (open.type !== "event.writer.open") throw new Error("Invalid EventWriter fixture");
+    const writerScope = await authority.open(open, {
+      connectionId: "70000000-0000-4000-8000-000000000019",
+      instanceId: "80000000-0000-4000-8000-000000000019",
+    });
+    expect(writerScope).toMatchObject({
+      tenantId: IDS.tenant,
+      acknowledgedThroughSeq: 0,
     });
     const mutation: PiSessionMutationRequest = {
       schemaVersion: 1,
@@ -595,17 +614,77 @@ describe.sequential("single-user durable turn intake API", () => {
       }),
     ).resolves.toMatchObject({ accepted: [{ mutationId: mutation.mutationId }], rejected: [] });
     expect(JSON.stringify(acceptedMutations)).not.toContain("executionGrant");
+    await authority.close(writerScope, publication.payload.event.seq);
     await database
       .deleteFrom("execution_grants")
       .where("session_id", "=", assigned.assignedSession.sessionId)
       .executeTakeFirstOrThrow();
-    await expect(authority.validateMany([publication])).resolves.toMatchObject({
-      accepted: [],
-      rejected: [publication],
-    });
+    await expect(
+      authority.open(open, {
+        connectionId: "70000000-0000-4000-8000-000000000020",
+        instanceId: "80000000-0000-4000-8000-000000000019",
+      }),
+    ).rejects.toMatchObject({ code: "stale_execution_grant" });
     await expect(
       mutationAuthority.commitAcceptedMany([mutation], async () => undefined),
     ).resolves.toMatchObject({ accepted: [], rejected: [mutation] });
+  });
+
+  it("does not release an ExecutionGrant while its EventWriterChannel is active", async () => {
+    const assigned = await createAssignedTurn({
+      sandboxId: "50000000-0000-4000-8000-000000000021",
+      sandboxBootId: "60000000-0000-4000-8000-000000000021",
+      supervisorId: "event-writer-release-supervisor",
+      phase: "acknowledged",
+      expired: false,
+    });
+    const authority = new PostgresAgentEventWriterAuthority({ database });
+    const open = parseSupervisorToControlMessage({
+      protocolVersion: 1,
+      messageId: globalThis.crypto.randomUUID(),
+      sentAt: new Date().toISOString(),
+      type: "event.writer.open",
+      payload: {
+        executionGrant: assigned.runtime.executionGrant,
+        sessionId: assigned.assignedSession.sessionId,
+        turnId: assigned.accepted.turnId,
+        nextEventSeq: 1,
+      },
+    });
+    if (open.type !== "event.writer.open") throw new Error("Invalid EventWriter fixture");
+    const writer = await authority.open(open, {
+      connectionId: "70000000-0000-4000-8000-000000000021",
+      instanceId: "80000000-0000-4000-8000-000000000021",
+    });
+    const coordinator = new ExecutionGrantCoordinator({
+      database,
+      sandboxId: assigned.runtime.sandboxId,
+    });
+    const request = {
+      tenantId: IDS.tenant,
+      projectId: assigned.assignedSession.projectId,
+      workspaceId: assigned.assignedSession.workspaceId,
+      sessionId: assigned.assignedSession.sessionId,
+      runId: assigned.accepted.runId,
+      turnId: assigned.accepted.turnId,
+      commandId: assigned.accepted.commandId,
+      attemptId: assigned.attemptId,
+    } as Parameters<ExecutionGrantCoordinator["releaseAcquired"]>[0];
+    const grant = { executionGrant: assigned.runtime.executionGrant };
+
+    await expect(coordinator.releaseAcquired(request, grant)).rejects.toMatchObject({
+      code: "event_writer_active",
+      retryable: true,
+    });
+    await authority.close(writer, 0);
+    await expect(coordinator.releaseAcquired(request, grant)).resolves.toBeUndefined();
+    await expect(
+      database
+        .selectFrom("execution_grants")
+        .select("grant_id")
+        .where("session_id", "=", assigned.assignedSession.sessionId)
+        .executeTakeFirst(),
+    ).resolves.toBeUndefined();
   });
 
   it("persists a public GitHub exact commit as pending source metadata", async () => {

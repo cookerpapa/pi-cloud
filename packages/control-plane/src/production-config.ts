@@ -15,6 +15,8 @@ export type ProductionControlPlaneConfig = {
   jetStreamReplicas: number;
   agentEventRetentionMs: number;
   maximumEventsPerSession: number;
+  eventWriterLeaseMs: number;
+  eventWriterMaximumActive: number;
   workerEventIngestToken: string;
   supervisorEnrollmentToken: string;
   supervisorManagementToken: string;
@@ -366,6 +368,20 @@ export async function loadProductionControlPlaneConfig(
       8_192,
       512,
       1_000_000,
+    ),
+    eventWriterLeaseMs: integerValue(
+      environment,
+      "PI_CLOUD_EVENT_WRITER_LEASE_MS",
+      9_000,
+      3_000,
+      30_000,
+    ),
+    eventWriterMaximumActive: integerValue(
+      environment,
+      "PI_CLOUD_EVENT_WRITER_MAXIMUM_ACTIVE",
+      128,
+      1,
+      10_000,
     ),
     workerEventIngestToken: await secret(
       environment,

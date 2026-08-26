@@ -2,33 +2,302 @@ import type { Database } from "@pi-cloud/database";
 import {
   parseExecutionGrant,
   parsePiCloudEvent,
-  type EventPublishMessage,
+  type EventWriterOpenMessage,
   type PiCloudEvent,
 } from "@pi-cloud/protocol";
-import type { Kysely, Transaction } from "kysely";
+import type { Kysely } from "kysely";
 import { sql } from "kysely";
 
 export type AcceptedAgentEventEnvelope = Readonly<{
   schemaVersion: 2;
   tenantId: string;
   events: readonly PiCloudEvent[];
-  /** Transient commit identity. Publishers must not serialize this capability metadata. */
-  authority?: Readonly<{
-    grantId: string;
-    executionId: string;
-    generation: number;
-  }>;
 }>;
 
-export type AgentEventAuthorityResult = Readonly<{
-  accepted: readonly AcceptedAgentEventEnvelope[];
-  duplicates: readonly EventPublishMessage[];
-  rejected: readonly EventPublishMessage[];
+const DEFAULT_EVENT_WRITER_LEASE_MS = 9_000;
+
+export type AgentEventDurableTail = Readonly<{
+  eventId: string;
+  seq: number;
 }>;
 
-export type AgentEventDurableCommit = (
-  envelopes: readonly AcceptedAgentEventEnvelope[],
-) => Promise<void>;
+export type AgentEventWriterAuthorityScope = Readonly<{
+  connectionId: string;
+  instanceId: string;
+  executionGrant: string;
+  grantId: string;
+  executionId: string;
+  generation: number;
+  tenantId: string;
+  sessionId: string;
+  turnId: string;
+  acknowledgedThroughSeq: number;
+  acknowledgedEventId?: string;
+  leaseDurationMs: number;
+}>;
+
+export class AgentEventWriterAuthorityError extends Error {
+  readonly code: "stale_execution_grant" | "event_writer_conflict" | "event_writer_invariant";
+  readonly retryable: boolean;
+
+  constructor(
+    code: AgentEventWriterAuthorityError["code"],
+    safeMessage: string,
+    retryable: boolean,
+  ) {
+    super(safeMessage);
+    this.name = "AgentEventWriterAuthorityError";
+    this.code = code;
+    this.retryable = retryable;
+  }
+}
+
+function positiveInteger(value: number, name: string): number {
+  if (!Number.isSafeInteger(value) || value < 1) throw new TypeError(`${name} is invalid`);
+  return value;
+}
+
+function validClockDate(clock: () => Date): Date {
+  const value = clock();
+  if (!(value instanceof Date) || Number.isNaN(value.valueOf())) {
+    throw new TypeError("Agent event writer clock returned an invalid Date");
+  }
+  return value;
+}
+
+function boundedSequence(value: string | number | bigint, name: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new AgentEventWriterAuthorityError(
+      "event_writer_invariant",
+      `${name} is outside the supported sequence range`,
+      false,
+    );
+  }
+  return parsed;
+}
+
+function writerLeaseExpiry(now: Date, grantExpiry: Date, durationMs: number): Date {
+  const value = new Date(Math.min(now.valueOf() + durationMs, grantExpiry.valueOf()));
+  if (value.valueOf() <= now.valueOf()) {
+    throw new AgentEventWriterAuthorityError(
+      "stale_execution_grant",
+      "ExecutionGrant expired before the Agent event writer could be renewed",
+      false,
+    );
+  }
+  return value;
+}
+
+export class PostgresAgentEventWriterAuthority {
+  readonly #database: Kysely<Database>;
+  readonly #clock: () => Date;
+  readonly #leaseDurationMs: number;
+
+  constructor(options: {
+    database: Kysely<Database>;
+    clock?: () => Date;
+    leaseDurationMs?: number;
+  }) {
+    this.#database = options.database;
+    this.#clock = options.clock ?? (() => new Date());
+    this.#leaseDurationMs = positiveInteger(
+      options.leaseDurationMs ?? DEFAULT_EVENT_WRITER_LEASE_MS,
+      "leaseDurationMs",
+    );
+  }
+
+  async open(
+    message: EventWriterOpenMessage,
+    identity: Readonly<{ connectionId: string; instanceId: string }>,
+    durableTail?: AgentEventDurableTail,
+  ): Promise<AgentEventWriterAuthorityScope> {
+    const now = validClockDate(this.#clock);
+    const grantIdentity = parseExecutionGrant(message.payload.executionGrant);
+    return this.#database.transaction().execute(async (transaction) => {
+      const row = await transaction
+        .selectFrom("execution_grants")
+        .selectAll()
+        .where("grant_id", "=", grantIdentity.grantId)
+        .forUpdate()
+        .executeTakeFirst();
+      const grantExpiry = row === undefined ? now : new Date(row.valid_until);
+      if (
+        row === undefined ||
+        row.execution_id !== grantIdentity.executionId ||
+        Number(row.generation) !== grantIdentity.generation ||
+        row.session_id !== message.payload.sessionId ||
+        row.turn_id !== message.payload.turnId ||
+        grantExpiry.valueOf() <= now.valueOf()
+      ) {
+        throw new AgentEventWriterAuthorityError(
+          "stale_execution_grant",
+          "Agent event writer rejected a stale ExecutionGrant",
+          false,
+        );
+      }
+      if (
+        row.event_writer_connection_id !== null &&
+        row.event_writer_valid_until !== null &&
+        new Date(row.event_writer_valid_until).valueOf() > now.valueOf()
+      ) {
+        throw new AgentEventWriterAuthorityError(
+          "event_writer_conflict",
+          "ExecutionGrant already has an active Agent event writer",
+          true,
+        );
+      }
+      const persistedThrough = boundedSequence(row.last_event_seq, "Grant event watermark");
+      const durableThrough = Math.max(persistedThrough, durableTail?.seq ?? 0);
+      if (message.payload.nextEventSeq > durableThrough + 1) {
+        throw new AgentEventWriterAuthorityError(
+          "event_writer_invariant",
+          "Agent event writer opened with a sequence gap",
+          false,
+        );
+      }
+      const validUntil = writerLeaseExpiry(now, grantExpiry, this.#leaseDurationMs);
+      const updated = await transaction
+        .updateTable("execution_grants")
+        .set({
+          event_writer_connection_id: identity.connectionId,
+          event_writer_instance_id: identity.instanceId,
+          event_writer_valid_until: validUntil,
+          last_event_seq: String(durableThrough),
+        })
+        .where("grant_id", "=", grantIdentity.grantId)
+        .where("execution_id", "=", grantIdentity.executionId)
+        .where("generation", "=", String(grantIdentity.generation))
+        .executeTakeFirst();
+      if (updated.numUpdatedRows !== 1n) {
+        throw new AgentEventWriterAuthorityError(
+          "event_writer_invariant",
+          "Agent event writer ownership changed while opening",
+          false,
+        );
+      }
+      return {
+        connectionId: identity.connectionId,
+        instanceId: identity.instanceId,
+        executionGrant: message.payload.executionGrant,
+        grantId: grantIdentity.grantId,
+        executionId: grantIdentity.executionId,
+        generation: grantIdentity.generation,
+        tenantId: row.tenant_id,
+        sessionId: row.session_id,
+        turnId: row.turn_id,
+        acknowledgedThroughSeq: durableThrough,
+        ...(durableTail?.seq === durableThrough
+          ? { acknowledgedEventId: durableTail.eventId }
+          : {}),
+        leaseDurationMs: validUntil.valueOf() - now.valueOf(),
+      };
+    });
+  }
+
+  async renewMany(
+    writers: readonly Readonly<{
+      scope: AgentEventWriterAuthorityScope;
+      acknowledgedThroughSeq: number;
+    }>[],
+  ): Promise<ReadonlyMap<string, number>> {
+    if (writers.length < 1 || writers.length > 1_000) {
+      throw new TypeError("Agent event writer renewal set is invalid");
+    }
+    const now = validClockDate(this.#clock);
+    const requestedUntil = new Date(now.valueOf() + this.#leaseDurationMs);
+    const requested = writers.map(({ scope, acknowledgedThroughSeq }) => ({
+      grantId: scope.grantId,
+      executionId: scope.executionId,
+      generation: scope.generation,
+      sessionId: scope.sessionId,
+      turnId: scope.turnId,
+      connectionId: scope.connectionId,
+      instanceId: scope.instanceId,
+      sequence: positiveInteger(acknowledgedThroughSeq + 1, "acknowledgedThroughSeq") - 1,
+    }));
+    if (new Set(requested.map((writer) => writer.connectionId)).size !== requested.length) {
+      throw new TypeError("Agent event writer renewal set contains duplicate connections");
+    }
+    const renewed = await sql<{ connectionId: string; validUntil: Date }>`
+      with requested as (
+        select * from jsonb_to_recordset(${JSON.stringify(requested)}::jsonb) as item(
+          "grantId" uuid,
+          "executionId" uuid,
+          generation bigint,
+          "sessionId" uuid,
+          "turnId" uuid,
+          "connectionId" uuid,
+          "instanceId" uuid,
+          sequence bigint
+        )
+      )
+      update execution_grants as authority
+         set event_writer_valid_until = least(authority.valid_until, ${requestedUntil}),
+             last_event_seq = greatest(authority.last_event_seq, requested.sequence)
+        from requested
+       where authority.grant_id = requested."grantId"
+         and authority.execution_id = requested."executionId"
+         and authority.generation = requested.generation
+         and authority.session_id = requested."sessionId"
+         and authority.turn_id = requested."turnId"
+         and authority.event_writer_connection_id = requested."connectionId"
+         and authority.event_writer_instance_id = requested."instanceId"
+         and authority.event_writer_valid_until > ${now}
+         and authority.valid_until > ${now}
+      returning authority.event_writer_connection_id as "connectionId",
+                authority.event_writer_valid_until as "validUntil"
+    `.execute(this.#database);
+    return new Map(
+      renewed.rows.map((row) => [
+        row.connectionId,
+        new Date(row.validUntil).valueOf() - now.valueOf(),
+      ]),
+    );
+  }
+
+  async close(
+    scope: AgentEventWriterAuthorityScope,
+    acknowledgedThroughSeq: number,
+  ): Promise<void> {
+    const sequence = positiveInteger(acknowledgedThroughSeq + 1, "acknowledgedThroughSeq") - 1;
+    const updated = await this.#database
+      .updateTable("execution_grants")
+      .set({
+        event_writer_connection_id: null,
+        event_writer_instance_id: null,
+        event_writer_valid_until: null,
+        last_event_seq: sql<string>`greatest(last_event_seq, ${sequence})`,
+      })
+      .where("grant_id", "=", scope.grantId)
+      .where("execution_id", "=", scope.executionId)
+      .where("generation", "=", String(scope.generation))
+      .where("event_writer_connection_id", "=", scope.connectionId)
+      .where("event_writer_instance_id", "=", scope.instanceId)
+      .executeTakeFirst();
+    if (updated.numUpdatedRows !== 1n) {
+      const current = await this.#database
+        .selectFrom("execution_grants")
+        .select(["event_writer_connection_id", "last_event_seq"])
+        .where("grant_id", "=", scope.grantId)
+        .where("execution_id", "=", scope.executionId)
+        .where("generation", "=", String(scope.generation))
+        .executeTakeFirst();
+      if (
+        current !== undefined &&
+        current.event_writer_connection_id === null &&
+        boundedSequence(current.last_event_seq, "Grant event watermark") >= sequence
+      ) {
+        return;
+      }
+      throw new AgentEventWriterAuthorityError(
+        "stale_execution_grant",
+        "Agent event writer could not close stale ownership",
+        false,
+      );
+    }
+  }
+}
 
 export function parseAcceptedAgentEventEnvelope(
   value: Uint8Array | Buffer | string,
@@ -56,197 +325,4 @@ export function parseAcceptedAgentEventEnvelope(
     throw new TypeError("Accepted Agent event envelope mixes Sessions");
   }
   return { schemaVersion: 2, tenantId: envelope.tenantId, events };
-}
-
-type ExecutionGrantAuthorityRow = Readonly<{
-  grantId: string;
-  executionId: string;
-  generation: string;
-  tenantId: string;
-  projectId: string;
-  workspaceId: string;
-  runId: string;
-  sessionId: string;
-  turnId: string;
-  commandId: string;
-  validUntil: Date;
-  lastEventSeq: string;
-}>;
-
-function identityMatches(row: ExecutionGrantAuthorityRow, message: EventPublishMessage): boolean {
-  const identity = parseExecutionGrant(message.payload.executionGrant);
-  const event = message.payload.event;
-  return (
-    row.grantId === identity.grantId &&
-    row.executionId === identity.executionId &&
-    Number(row.generation) === identity.generation &&
-    row.sessionId === event.sessionId &&
-    row.turnId === event.turnId
-  );
-}
-
-export class PostgresAgentEventAuthority {
-  readonly #database: Kysely<Database>;
-  readonly #clock: () => Date;
-
-  constructor(options: { database: Kysely<Database>; clock?: () => Date }) {
-    this.#database = options.database;
-    this.#clock = options.clock ?? (() => new Date());
-  }
-
-  async validateMany(messages: readonly EventPublishMessage[]): Promise<AgentEventAuthorityResult> {
-    return this.#validateMany(this.#database, messages, false);
-  }
-
-  async commitAcceptedMany(
-    messages: readonly EventPublishMessage[],
-    durableCommit: AgentEventDurableCommit,
-  ): Promise<AgentEventAuthorityResult> {
-    return this.#database.transaction().execute(async (transaction) => {
-      const result = await this.#validateMany(transaction, messages, true);
-      if (result.accepted.length === 0) return result;
-      await durableCommit(result.accepted);
-      await this.#confirmAcceptedMany(transaction, result.accepted);
-      return result;
-    });
-  }
-
-  async #validateMany(
-    database: Kysely<Database> | Transaction<Database>,
-    messages: readonly EventPublishMessage[],
-    lockAuthority: boolean,
-  ): Promise<AgentEventAuthorityResult> {
-    if (messages.length < 1 || messages.length > 256) {
-      throw new TypeError("Agent event authority batch is invalid");
-    }
-    const now = this.#clock();
-    if (!(now instanceof Date) || Number.isNaN(now.valueOf())) {
-      throw new TypeError("Agent event authority clock returned an invalid Date");
-    }
-    const grantIds = [
-      ...new Set(
-        messages.map((message) => parseExecutionGrant(message.payload.executionGrant).grantId),
-      ),
-    ];
-    let query = database
-      .selectFrom("execution_grants as grant")
-      .select([
-        "grant.grant_id as grantId",
-        "grant.execution_id as executionId",
-        "grant.generation as generation",
-        "grant.tenant_id as tenantId",
-        "grant.project_id as projectId",
-        "grant.workspace_id as workspaceId",
-        "grant.run_id as runId",
-        "grant.session_id as sessionId",
-        "grant.turn_id as turnId",
-        "grant.command_id as commandId",
-        "grant.valid_until as validUntil",
-        "grant.last_event_seq as lastEventSeq",
-      ])
-      .where("grant.grant_id", "in", grantIds)
-      .orderBy("grant.grant_id", "asc");
-    if (lockAuthority) {
-      query = query.forUpdate("grant");
-    }
-    const rows = await query.execute();
-    const rowByGrant = new Map(rows.map((row) => [row.grantId, row as ExecutionGrantAuthorityRow]));
-    const accepted: AcceptedAgentEventEnvelope[] = [];
-    const duplicates: EventPublishMessage[] = [];
-    const rejected: EventPublishMessage[] = [];
-    const expectedByGrant = new Map<string, number>();
-    const seenEventIds = new Set<string>();
-    for (const message of messages) {
-      const grantIdentity = parseExecutionGrant(message.payload.executionGrant);
-      const row = rowByGrant.get(grantIdentity.grantId);
-      if (row === undefined || !identityMatches(row, message)) {
-        rejected.push(message);
-        continue;
-      }
-      const event = message.payload.event;
-      const persistedThrough = Number(row.lastEventSeq);
-      if (event.seq <= persistedThrough || seenEventIds.has(event.eventId)) {
-        duplicates.push(message);
-        continue;
-      }
-      if (new Date(row.validUntil).valueOf() <= now.valueOf()) {
-        rejected.push(message);
-        continue;
-      }
-      const expected = expectedByGrant.get(row.grantId) ?? persistedThrough;
-      if (event.seq !== expected + 1) {
-        rejected.push(message);
-        continue;
-      }
-      expectedByGrant.set(row.grantId, event.seq);
-      seenEventIds.add(event.eventId);
-      accepted.push({
-        schemaVersion: 2,
-        tenantId: row.tenantId,
-        events: [event],
-        authority: {
-          grantId: grantIdentity.grantId,
-          executionId: grantIdentity.executionId,
-          generation: grantIdentity.generation,
-        },
-      });
-    }
-    return { accepted, duplicates, rejected };
-  }
-
-  async confirmAcceptedMany(envelopes: readonly AcceptedAgentEventEnvelope[]): Promise<void> {
-    await this.#confirmAcceptedMany(this.#database, envelopes);
-  }
-
-  async #confirmAcceptedMany(
-    database: Kysely<Database> | Transaction<Database>,
-    envelopes: readonly AcceptedAgentEventEnvelope[],
-  ): Promise<void> {
-    if (envelopes.length === 0) return;
-    const byGrant = new Map<
-      string,
-      {
-        grantId: string;
-        executionId: string;
-        generation: number;
-        sequence: number;
-      }
-    >();
-    for (const envelope of envelopes) {
-      const event = envelope.events[0]!;
-      const identity = envelope.authority;
-      if (identity === undefined) throw new Error("Accepted Agent event authority is missing");
-      const current = byGrant.get(identity.grantId);
-      if (current === undefined || event.seq > current.sequence) {
-        byGrant.set(identity.grantId, {
-          grantId: identity.grantId,
-          executionId: identity.executionId,
-          generation: identity.generation,
-          sequence: event.seq,
-        });
-      }
-    }
-    const values = [...byGrant.values()];
-    const result = await sql<{ id: string }>`
-      with accepted as (
-        select * from jsonb_to_recordset(${JSON.stringify(values)}::jsonb) as item(
-          "grantId" uuid,
-          "executionId" uuid,
-          generation bigint,
-          sequence bigint
-        )
-      )
-      update execution_grants as authority
-      set last_event_seq = greatest(authority.last_event_seq, accepted.sequence)
-      from accepted
-      where authority.grant_id = accepted."grantId"
-        and authority.execution_id = accepted."executionId"
-        and authority.generation = accepted.generation
-        and authority.valid_until > ${this.#clock()}
-      returning authority.grant_id as id
-    `.execute(database);
-    if (result.rows.length !== values.length) {
-      throw new Error("Accepted Agent event batch lost ExecutionGrant authority");
-    }
-  }
 }

@@ -22,7 +22,9 @@ no model credential.
 ### Tenant and stale-Worker isolation
 
 Every product read/write includes tenant ownership. Tool and Session mutation
-boundaries additionally validate the current, unexpired opaque ExecutionGrant.
+boundaries validate the current, unexpired opaque ExecutionGrant. Browser event
+writers acquire and renew a shorter PostgreSQL ownership lease under that same
+Grant before JetStream accepts their events.
 A paused or partitioned old Worker cannot resume useful effects after the
 authority replaces or revokes its grant.
 

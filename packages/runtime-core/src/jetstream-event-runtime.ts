@@ -3,7 +3,7 @@ import type { StreamInfo } from "@nats-io/jetstream";
 import type { Kysely } from "kysely";
 import {
   JetStreamAcceptedAgentEventPublisher,
-  JetStreamAgentEventIngestor,
+  JetStreamAgentEventWriterService,
   JetStreamLiveEventStore,
   JetStreamLiveTurnSnapshotSource,
   JetStreamTerminalEventOutboxRelay,
@@ -29,6 +29,8 @@ export type JetStreamEventRuntimeOptions = Readonly<{
   servers: readonly string[];
   instanceId: string;
   authority: JetStreamAuthorityConfiguration;
+  eventWriterLeaseMs?: number;
+  eventWriterMaximumActive?: number;
 }>;
 
 export type JetStreamOperationalSnapshot = Readonly<{
@@ -43,6 +45,7 @@ export type JetStreamOperationalSnapshot = Readonly<{
     name: string;
     pending: number;
   }>[];
+  eventWriters: ReturnType<JetStreamAgentEventWriterService["statistics"]>;
 }>;
 
 function unavailableReplicas(info: StreamInfo): number {
@@ -60,8 +63,8 @@ export class JetStreamEventRuntime {
   readonly liveTurnSnapshotSource: JetStreamLiveTurnSnapshotSource;
   readonly terminalTurnProjectionSource: JetStreamTerminalTurnProjectionSource;
   readonly sessionMutationIngestor: JetStreamPiSessionMutationIngestor;
+  readonly agentEventWriters: JetStreamAgentEventWriterService;
   readonly #runtime;
-  readonly #ingestor: JetStreamAgentEventIngestor;
   readonly #sessionProjector: JetStreamPiSessionMutationProjector;
   readonly #terminalRelay: JetStreamTerminalEventOutboxRelay;
   readonly #authorityConfiguration: JetStreamAuthorityConfiguration;
@@ -71,13 +74,23 @@ export class JetStreamEventRuntime {
     database: Kysely<Database>;
     runtime: Awaited<ReturnType<typeof connectPiCloudJetStream>>;
     authority: JetStreamAuthorityConfiguration;
+    instanceId: string;
+    eventWriterLeaseMs?: number;
+    eventWriterMaximumActive?: number;
   }) {
     this.#runtime = options.runtime;
     this.#authorityConfiguration = options.authority;
     const publisher = new JetStreamAcceptedAgentEventPublisher(this.#runtime);
-    this.#ingestor = new JetStreamAgentEventIngestor({
+    this.agentEventWriters = new JetStreamAgentEventWriterService({
       database: options.database,
       publisher,
+      instanceId: options.instanceId,
+      ...(options.eventWriterLeaseMs === undefined
+        ? {}
+        : { leaseDurationMs: options.eventWriterLeaseMs }),
+      ...(options.eventWriterMaximumActive === undefined
+        ? {}
+        : { maximumActiveWriters: options.eventWriterMaximumActive }),
     });
     this.eventStore = new JetStreamLiveEventStore({
       database: options.database,
@@ -115,11 +128,14 @@ export class JetStreamEventRuntime {
       database: options.database,
       runtime,
       authority: options.authority,
+      instanceId: options.instanceId,
+      ...(options.eventWriterLeaseMs === undefined
+        ? {}
+        : { eventWriterLeaseMs: options.eventWriterLeaseMs }),
+      ...(options.eventWriterMaximumActive === undefined
+        ? {}
+        : { eventWriterMaximumActive: options.eventWriterMaximumActive }),
     });
-  }
-
-  get ingestor(): JetStreamAgentEventIngestor {
-    return this.#ingestor;
   }
 
   private streamInfo(name: string) {
@@ -149,6 +165,7 @@ export class JetStreamEventRuntime {
           pending: sessionProjector.num_pending + sessionProjector.num_ack_pending,
         },
       ],
+      eventWriters: this.agentEventWriters.statistics(),
     };
   }
 
@@ -166,7 +183,10 @@ export class JetStreamEventRuntime {
     this.eventStore.checkHealth();
     this.#sessionProjector.checkHealth();
     this.#terminalRelay.checkHealth();
-    await Promise.all([this.#ingestor.checkHealth(), this.sessionMutationIngestor.checkHealth()]);
+    await Promise.all([
+      this.agentEventWriters.checkHealth(),
+      this.sessionMutationIngestor.checkHealth(),
+    ]);
   }
 
   async close(): Promise<void> {
@@ -179,7 +199,7 @@ export class JetStreamEventRuntime {
     await this.#terminalRelay.close().catch(() => undefined);
     await this.#sessionProjector.close().catch(() => undefined);
     await this.eventStore.close().catch(() => undefined);
-    await this.#ingestor.close().catch(() => undefined);
+    await this.agentEventWriters.close().catch(() => undefined);
     this.eventHub.onApplicationShutdown();
     await this.#runtime.connection.close().catch(() => undefined);
   }

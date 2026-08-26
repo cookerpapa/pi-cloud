@@ -142,5 +142,8 @@ export class OperationalMetricsSampler {
         consumer.pending,
       );
     }
+    this.#metrics.eventWritersActive.set(snapshot.eventWriters.activeWriters);
+    this.#metrics.eventWritersLimit.set(snapshot.eventWriters.maximumActiveWriters);
+    this.#metrics.eventWriterRenewalFailures.set(snapshot.eventWriters.renewalFailures);
   }
 }

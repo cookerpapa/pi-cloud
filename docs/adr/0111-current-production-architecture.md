@@ -74,12 +74,12 @@ execution path and failure semantics.
 
 ### Event and recovery semantics
 
-- Adjacent text fragments are coalesced once. The Event Ingest service groups
-  concurrent Session publications for one transaction-scoped Run/Fence check,
-  holds the affected authority rows through parallel R=3 PubAcks and advances
-  their Attempt watermarks in the same transaction. Provider Tool-call JSON,
-  thinking deltas and partial Tool output are not public events. There is no
-  Worker disk WAL.
+- Each active ExecutionGrant owns one short PostgreSQL-leased
+  EventWriterChannel. Assistant text events cross its long-lived WebSocket
+  without an intentional application batch and receive one R=3 PubAck each.
+  Independent Grants publish concurrently; one Grant is ordered. Provider
+  Tool-call JSON, thinking deltas and partial Tool output are not public events.
+  There is no Worker disk WAL.
 - Pi SessionStorage and the browser stream are independent projections. A
   Session-keyed projection barrier completes before a replacement Worker reads
   PostgreSQL; it does not wait for Gateway consumers.

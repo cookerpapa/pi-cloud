@@ -1,16 +1,16 @@
-import { AgentEventIngestGateway } from "../../../packages/control-plane/src/agent-event-ingest-gateway.ts";
+import fastifyWebsocket from "@fastify/websocket";
 import { createDatabase } from "@pi-cloud/database";
 import {
   createExecutionGrant,
   parseSupervisorToControlMessage,
   type EventPublishMessage,
 } from "@pi-cloud/protocol";
+import { AgentEventIngestGateway } from "../../../packages/control-plane/src/agent-event-ingest-gateway.ts";
 import {
-  HttpAgentEventIngestor,
   JetStreamAcceptedAgentEventPublisher,
-  JetStreamAgentEventIngestor,
+  JetStreamAgentEventWriterService,
+  WebSocketAgentEventIngestor,
 } from "../../../packages/runtime-core/src/jetstream-agent-event-log.ts";
-import { PostgresAgentEventAuthority } from "../../../packages/runtime-core/src/agent-event-authority.ts";
 import {
   AGENT_EVENT_STREAM_NAME,
   PI_SESSION_MUTATION_STREAM_NAME,
@@ -66,6 +66,10 @@ function seed(index: number): AuthoritySeed {
   };
 }
 
+function grant(row: AuthoritySeed): string {
+  return createExecutionGrant(row.grantId, row.attemptId, 1);
+}
+
 function publication(
   row: AuthoritySeed,
   sequence: number,
@@ -77,7 +81,7 @@ function publication(
     sentAt: "2026-08-26T00:00:00.000Z",
     type: "event.publish",
     payload: {
-      executionGrant: createExecutionGrant(row.grantId, row.attemptId, 1),
+      executionGrant: grant(row),
       event: {
         schemaVersion: 1,
         eventId: uuid(Number.parseInt(row.runId.slice(0, 8), 16), 10_000 + sequence),
@@ -134,6 +138,9 @@ async function initialize(database: ReturnType<typeof createDatabase>): Promise<
       sandbox_id uuid not null,
       valid_until timestamptz not null,
       last_event_seq bigint not null default 0,
+      event_writer_connection_id uuid,
+      event_writer_instance_id uuid,
+      event_writer_valid_until timestamptz,
       acquired_at timestamptz not null default now(),
       renewed_at timestamptz not null default now()
     );
@@ -191,8 +198,6 @@ const runtime = await connectPiCloudJetStream({
   clientName: "pi-cloud-worker-ingest-channel-benchmark",
 });
 const fastify = Fastify({ logger: false, bodyLimit: 64 * 1_024 });
-let authorityTransactions = 0;
-let activeAuthorityBatchSizes: number[] | undefined;
 let nextSeedIndex = 100_000;
 let killedLeaderService: string | undefined;
 
@@ -210,25 +215,21 @@ try {
     throw new Error("Worker ingest benchmark requires an R=3 file-backed Stream");
   }
 
-  const authority = new PostgresAgentEventAuthority({ database });
-  const publisher = new JetStreamAcceptedAgentEventPublisher(runtime);
-  const ingestor = new JetStreamAgentEventIngestor({
-    authority: {
-      commitAcceptedMany: async (messages, durableCommit) => {
-        authorityTransactions += 1;
-        activeAuthorityBatchSizes?.push(messages.length);
-        return authority.commitAcceptedMany(messages, durableCommit);
-      },
-    },
-    publisher,
+  const service = new JetStreamAgentEventWriterService({
+    database,
+    publisher: new JetStreamAcceptedAgentEventPublisher(runtime),
+    instanceId: uuid(90_000, 1),
+    leaseDurationMs: 30_000,
+    maximumActiveWriters: 128,
   });
-  new AgentEventIngestGateway({ ingestor, serviceToken }).install(fastify);
+  await fastify.register(fastifyWebsocket, { options: { perMessageDeflate: false } });
+  new AgentEventIngestGateway({ writers: service, serviceToken }).install(fastify);
   await fastify.listen({ host: "127.0.0.1", port: 0 });
   const address = fastify.server.address();
   if (address === null || typeof address === "string") {
-    throw new Error("Worker ingest HTTP Gateway did not bind a TCP port");
+    throw new Error("Worker ingest WebSocket Gateway did not bind a TCP port");
   }
-  const worker = new HttpAgentEventIngestor({
+  const worker = new WebSocketAgentEventIngestor({
     baseUrl: `http://127.0.0.1:${String(address.port)}`,
     serviceToken,
     allowInsecureHttp: true,
@@ -239,122 +240,132 @@ try {
     const rows = Array.from({ length: configuration.sessions }, () => seed(nextSeedIndex++));
     await seedAuthority(database, rows);
     const first = publication(rows[0]!, 1, configuration.payloadBytes);
-    const averageRequestBytes = Buffer.byteLength(JSON.stringify(first), "utf8");
-    const beforeTransactions = authorityTransactions;
-    const authorityBatchSizes: number[] = [];
-    activeAuthorityBatchSizes = authorityBatchSizes;
+    const averageFrameBytes = Buffer.byteLength(JSON.stringify(first), "utf8");
     const startedAt = performance.now();
-    const perSessionLatency = await mapConcurrent(rows, configuration.concurrency, async (row) => {
-      const values: number[] = [];
-      for (let sequence = 1; sequence <= configuration.eventsPerSession; sequence += 1) {
-        const eventStartedAt = performance.now();
-        const acknowledgement = await worker.ingest(
-          publication(row, sequence, configuration.payloadBytes),
-        );
-        if (acknowledgement.payload.acknowledgedThroughSeq !== sequence) {
-          throw new Error("Worker ingest ACK did not match the published sequence");
+    const sessionResults = await mapConcurrent(rows, configuration.concurrency, async (row) => {
+      const openStartedAt = performance.now();
+      const writer = await worker.open({
+        executionGrant: grant(row),
+        sessionId: row.sessionId,
+        turnId: row.turnId,
+        nextEventSeq: 1,
+      });
+      const openMs = performance.now() - openStartedAt;
+      const eventLatencies: number[] = [];
+      try {
+        for (let sequence = 1; sequence <= configuration.eventsPerSession; sequence += 1) {
+          const eventStartedAt = performance.now();
+          const acknowledgement = await writer.ingest(
+            publication(row, sequence, configuration.payloadBytes),
+          );
+          if (acknowledgement.payload.acknowledgedThroughSeq !== sequence) {
+            throw new Error("Worker writer ACK did not match the published sequence");
+          }
+          eventLatencies.push(performance.now() - eventStartedAt);
         }
-        values.push(performance.now() - eventStartedAt);
+      } finally {
+        await writer.close();
       }
-      return values;
+      return { openMs, eventLatencies };
     });
     const elapsedMs = performance.now() - startedAt;
-    activeAuthorityBatchSizes = undefined;
-    const eventLatencies = perSessionLatency.flat();
+    const eventLatencies = sessionResults.flatMap((result) => result.eventLatencies);
     const events = configuration.sessions * configuration.eventsPerSession;
-    const transactions = authorityTransactions - beforeTransactions;
     return {
       ...configuration,
       events,
-      averageRequestBytes,
-      totalRequestMiB: Number(((averageRequestBytes * events) / 1_024 ** 2).toFixed(3)),
+      averageFrameBytes,
+      totalFrameMiB: Number(((averageFrameBytes * events) / 1_024 ** 2).toFixed(3)),
       elapsedMs: Number(elapsedMs.toFixed(3)),
       eventsPerSecond: Number(((events * 1_000) / elapsedMs).toFixed(2)),
-      requestMiBPerSecond: Number(
-        ((averageRequestBytes * events * 1_000) / elapsedMs / 1_024 ** 2).toFixed(2),
+      frameMiBPerSecond: Number(
+        ((averageFrameBytes * events * 1_000) / elapsedMs / 1_024 ** 2).toFixed(2),
       ),
+      writerOpenLatencyMs: latency(sessionResults.map((result) => result.openMs)),
       acknowledgementLatencyMs: latency(eventLatencies),
-      authorityTransactions: transactions,
-      authorityStatements: transactions * 2,
-      eventsPerAuthorityTransaction: Number((events / transactions).toFixed(2)),
-      batches: authorityBatchSizes.length,
-      maximumBatchSize: Math.max(...authorityBatchSizes),
+      writerChannels: configuration.sessions,
+      intentionalBatchDelayMs: 0,
     };
   };
 
-  process.stdout.write("stage: warm current Worker ingest channel\n");
-  await runCase({
-    name: "warmup",
-    sessions: 512,
-    eventsPerSession: 1,
-    concurrency: 64,
-    payloadBytes: 1_024,
-  });
-
-  const cases: Awaited<ReturnType<typeof runCase>>[] = [];
-  for (const configuration of [
-    {
-      name: "concurrency-1",
-      sessions: 2_048,
-      eventsPerSession: 1,
-      concurrency: 1,
-      payloadBytes: 1_024,
-    },
-    {
-      name: "concurrency-16",
-      sessions: 8_192,
-      eventsPerSession: 1,
+  const leaderOnly = process.env.PI_CLOUD_WRITER_BENCHMARK_LEADER_ONLY === "1";
+  if (!leaderOnly) {
+    process.stdout.write("stage: warm current EventWriterChannel\n");
+    await runCase({
+      name: "warmup",
+      sessions: 16,
+      eventsPerSession: 32,
       concurrency: 16,
       payloadBytes: 1_024,
-    },
-    {
-      name: "concurrency-64",
-      sessions: 8_192,
-      eventsPerSession: 1,
-      concurrency: 64,
-      payloadBytes: 1_024,
-    },
-    {
-      name: "concurrency-128",
-      sessions: 8_192,
-      eventsPerSession: 1,
-      concurrency: 128,
-      payloadBytes: 1_024,
-    },
-    {
-      name: "payload-256b",
-      sessions: 8_192,
-      eventsPerSession: 1,
-      concurrency: 64,
-      payloadBytes: 256,
-    },
-    {
-      name: "payload-4kib",
-      sessions: 8_192,
-      eventsPerSession: 1,
-      concurrency: 64,
-      payloadBytes: 4_096,
-    },
-    {
-      name: "256-active-sessions",
-      sessions: 256,
-      eventsPerSession: 32,
-      concurrency: 64,
-      payloadBytes: 1_024,
-    },
-    {
-      name: "sustained-32k",
-      sessions: 32_768,
-      eventsPerSession: 1,
-      concurrency: 128,
-      payloadBytes: 1_024,
-    },
-  ] satisfies BenchmarkCase[]) {
+    });
+  }
+
+  const cases: Awaited<ReturnType<typeof runCase>>[] = [];
+  for (const configuration of leaderOnly
+    ? []
+    : ([
+        {
+          name: "concurrency-1",
+          sessions: 1,
+          eventsPerSession: 8_192,
+          concurrency: 1,
+          payloadBytes: 1_024,
+        },
+        {
+          name: "concurrency-16",
+          sessions: 16,
+          eventsPerSession: 512,
+          concurrency: 16,
+          payloadBytes: 1_024,
+        },
+        {
+          name: "concurrency-64",
+          sessions: 64,
+          eventsPerSession: 128,
+          concurrency: 64,
+          payloadBytes: 1_024,
+        },
+        {
+          name: "concurrency-128",
+          sessions: 128,
+          eventsPerSession: 64,
+          concurrency: 128,
+          payloadBytes: 1_024,
+        },
+        {
+          name: "payload-256b",
+          sessions: 64,
+          eventsPerSession: 128,
+          concurrency: 64,
+          payloadBytes: 256,
+        },
+        {
+          name: "payload-4kib",
+          sessions: 64,
+          eventsPerSession: 128,
+          concurrency: 64,
+          payloadBytes: 4_096,
+        },
+        {
+          name: "256-sessions-128-active",
+          sessions: 256,
+          eventsPerSession: 32,
+          concurrency: 128,
+          payloadBytes: 1_024,
+        },
+        {
+          name: "sustained-32k",
+          sessions: 256,
+          eventsPerSession: 128,
+          concurrency: 128,
+          payloadBytes: 1_024,
+        },
+      ] satisfies BenchmarkCase[])) {
     process.stdout.write(`stage: ${configuration.name}\n`);
     cases.push(await runCase(configuration));
   }
 
-  process.stdout.write("stage: Stream Leader loss through current Worker HTTP client\n");
+  process.stdout.write("stage: Stream Leader loss through current EventWriterChannel\n");
   const leaderBefore = (await runtime.manager.streams.info(AGENT_EVENT_STREAM_NAME)).cluster
     ?.leader;
   const leaderService =
@@ -367,8 +378,8 @@ try {
   const failoverStartedAt = performance.now();
   const failoverCase = await runCase({
     name: "leader-loss",
-    sessions: 2_048,
-    eventsPerSession: 1,
+    sessions: 64,
+    eventsPerSession: 32,
     concurrency: 64,
     payloadBytes: 1_024,
   });
@@ -378,7 +389,7 @@ try {
   killedLeaderService = undefined;
 
   const report = {
-    format: "pi-cloud.worker-http-to-jetstream-r3-benchmark.v1",
+    format: "pi-cloud.worker-websocket-to-jetstream-r3-benchmark.v2",
     generatedAt: new Date().toISOString(),
     revision: execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: repositoryRoot,
@@ -392,11 +403,11 @@ try {
       totalMemoryGiB: Number((totalmem() / 1_024 ** 3).toFixed(2)),
     },
     channel: {
-      workerClient: "HttpAgentEventIngestor",
-      gateway: "AgentEventIngestGateway/Fastify",
-      authority: "PostgreSQL execution_grants SELECT FOR UPDATE + watermark UPDATE",
-      batching: "maximum 256 events or 2 ms",
-      durabilityBoundary: "JetStream file storage R=3 synchronous PubAck",
+      workerClient: "WebSocketAgentEventIngestor",
+      gateway: "AgentEventIngestGateway/Fastify WebSocket",
+      authority: "one short PostgreSQL writer lease per ExecutionGrant",
+      batching: "none; one ordered event in flight per Grant",
+      durabilityBoundary: "one JetStream file-storage R=3 PubAck per event",
       excluded: ["LLM", "Cube", "SSE", "SessionStorage projector"],
     },
     stream: {
@@ -405,6 +416,7 @@ try {
       maximumEventsPerSession: stream.config.max_msgs_per_subject,
     },
     cases,
+    service: service.statistics(),
     leaderRecovery: {
       killedLeader: leaderBefore,
       replacementLeader,
@@ -415,7 +427,7 @@ try {
   };
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   process.send?.(report);
-  await ingestor.close();
+  await worker.close();
 } finally {
   if (killedLeaderService !== undefined) {
     compose(["up", "--detach", "--wait", killedLeaderService]);

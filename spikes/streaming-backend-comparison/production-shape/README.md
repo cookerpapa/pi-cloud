@@ -26,12 +26,12 @@ commit but before broker ACK, kills the current Stream Leader, and then opens
 credentials and ports are loopback-only.
 
 The same command also runs an exact write-channel benchmark using the production
-`HttpAgentEventIngestor`, Fastify `AgentEventIngestGateway`, PostgreSQL
-ExecutionGrant authority, and synchronous JetStream R=3 PubAck. It varies HTTP
-concurrency, event size, and Session locality, includes a 32K-event sustained
-stage, and repeats the path while the current Stream Leader is killed. LLM,
-Cube, SSE delivery, and SessionStorage projection are deliberately outside this
-throughput boundary.
+`WebSocketAgentEventIngestor`, Fastify `AgentEventIngestGateway`, one short
+PostgreSQL writer lease per ExecutionGrant, and synchronous per-event JetStream
+R=3 PubAck. It varies active channel concurrency, event size, and Session
+locality, includes a 32K-event sustained stage, and repeats the path while the
+current Stream Leader is killed. LLM, Cube, SSE delivery, and SessionStorage
+projection are deliberately outside this throughput boundary.
 
 Run from the repository root:
 
