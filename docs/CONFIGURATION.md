@@ -94,7 +94,7 @@ combinations.
 | `PI_CLOUD_KAFKA_PARTITIONS` | `32` | Session-keyed AcceptedFact partitions |
 | `PI_CLOUD_KAFKA_REPLICAS` | `3` | Kafka Topic replication factor |
 
-The one-host deployment assigns each combined KRaft Broker/Controller 2 CPU,
+The one-host deployment assigns each combined KRaft Broker/Controller 4 CPU,
 2 GiB of container memory and an explicit 1 GiB JVM heap. The remaining memory
 is required for native allocations and Linux page cache; the container limit
 must never be lower than `-Xmx`.
