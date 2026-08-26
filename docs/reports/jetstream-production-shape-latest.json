@@ -1,7 +1,7 @@
 {
   "format": "pi-cloud.jetstream-production-shape.v1",
-  "generatedAt": "2026-08-26T01:30:23.266Z",
-  "revision": "59c6e4a4a3c24868cf31e7f8edc22aab30f0c73d",
+  "generatedAt": "2026-08-26T04:09:43.507Z",
+  "revision": "66a8f528977208c1572f154bf70830a040d66068",
   "host": {
     "platform": "linux",
     "architecture": "x64",
@@ -22,10 +22,10 @@
     "canonicalContent": "complete baseline answer",
     "fragmentRowsInPostgres": 0,
     "publishLatencyMs": {
-      "p50": 6.413,
-      "p95": 28.814,
-      "p99": 28.814,
-      "maximum": 28.814
+      "p50": 6.638,
+      "p95": 37.695,
+      "p99": 37.695,
+      "maximum": 37.695
     }
   },
   "authorityGrant": {
@@ -42,8 +42,8 @@
   },
   "leaderRecovery": {
     "killedLeader": "n3",
-    "replacementLeader": "n1",
-    "publishAndDeliveryMs": 5812.164,
+    "replacementLeader": "n2",
+    "publishAndDeliveryMs": 4797.832,
     "ingestAttempts": 1,
     "delivered": true,
     "existingConnectionRecovered": true,
@@ -56,95 +56,73 @@
       {
         "connections": 250,
         "connectLatencyMs": {
-          "p50": 103.346,
-          "p95": 255.739,
-          "p99": 320.045,
-          "maximum": 340.851
+          "p50": 77.769,
+          "p95": 342.174,
+          "p99": 357.451,
+          "maximum": 360.968
         },
-        "gatewayRssMiB": 76.1,
+        "gatewayRssMiB": 75.41,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 6.63
+        "hostFreeMemoryGiB": 7.3
       },
       {
         "connections": 500,
         "connectLatencyMs": {
-          "p50": 55.101,
-          "p95": 117.322,
-          "p99": 119.98,
-          "maximum": 120.118
+          "p50": 55.24,
+          "p95": 107.68,
+          "p99": 109.137,
+          "maximum": 109.446
         },
-        "gatewayRssMiB": 78.1,
+        "gatewayRssMiB": 78.91,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 6.59
+        "hostFreeMemoryGiB": 7.28
       },
       {
         "connections": 1000,
         "connectLatencyMs": {
-          "p50": 53.288,
-          "p95": 94.72,
-          "p99": 111.847,
-          "maximum": 115.355
+          "p50": 54.923,
+          "p95": 82.754,
+          "p99": 90.252,
+          "maximum": 93.107
         },
-        "gatewayRssMiB": 94.85,
+        "gatewayRssMiB": 90.66,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 6.56
+        "hostFreeMemoryGiB": 7.24
       },
       {
         "connections": 2000,
         "connectLatencyMs": {
-          "p50": 73.36,
-          "p95": 113.27,
-          "p99": 119.288,
-          "maximum": 144.575
+          "p50": 51.326,
+          "p95": 65.472,
+          "p99": 75.181,
+          "maximum": 85.257
         },
-        "gatewayRssMiB": 118.52,
+        "gatewayRssMiB": 113.16,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 6.45
+        "hostFreeMemoryGiB": 7.17
       }
     ],
     "publishLatencyMs": {
-      "p50": 120.755,
-      "p95": 243.124,
-      "p99": 391.116,
-      "maximum": 495.795
+      "p50": 93.784,
+      "p95": 212.447,
+      "p99": 298.289,
+      "maximum": 348.155
     },
     "deliveredConnections": 2000,
     "missedConnections": [],
     "recoveredAfterReconnect": 0,
     "effectiveDeliveredConnections": 2000,
-    "publishElapsedMs": 2712.907,
+    "publishElapsedMs": 2098.616,
     "gatewayDeliveredAtPublishComplete": 2003,
-    "browserReadElapsedMs": 48.032,
-    "publishAndDeliverElapsedMs": 2762.876,
-    "eventsPerSecond": 723.88,
+    "browserReadElapsedMs": 43.272,
+    "publishAndDeliverElapsedMs": 2143.958,
+    "eventsPerSecond": 932.85,
     "consumersAfterClose": 1
   },
-  "authorityBatchThroughput": {
-    "format": "pi-cloud.jetstream-authority-batch-throughput.v1",
-    "streamReplicas": 3,
-    "pubAck": "synchronous-per-event-r3",
-    "baseline": {
-      "events": 2048,
-      "elapsedMs": 8417.447,
-      "eventsPerSecond": 243.3,
-      "authorityTransactions": 2048,
-      "authorityStatements": 4096
-    },
-    "batched": {
-      "events": 8192,
-      "elapsedMs": 5921.043,
-      "eventsPerSecond": 1383.54,
-      "authorityTransactions": 32,
-      "authorityStatements": 64,
-      "batches": 32,
-      "maximumBatchSize": 256
-    },
-    "speedup": 5.69
-  },
   "workerIngestChannel": {
-    "format": "pi-cloud.worker-http-to-jetstream-r3-benchmark.v1",
-    "generatedAt": "2026-08-26T01:35:01.907Z",
-    "revision": "59c6e4a4a3c24868cf31e7f8edc22aab30f0c73d",
+    "format": "pi-cloud.worker-websocket-to-jetstream-r3-benchmark.v2",
+    "generatedAt": "2026-08-26T04:14:00.547Z",
+    "revision": "66a8f528977208c1572f154bf70830a040d66068",
     "host": {
       "platform": "linux",
       "architecture": "x64",
@@ -153,11 +131,11 @@
       "totalMemoryGiB": 15.46
     },
     "channel": {
-      "workerClient": "HttpAgentEventIngestor",
-      "gateway": "AgentEventIngestGateway/Fastify",
-      "authority": "PostgreSQL execution_grants SELECT FOR UPDATE + watermark UPDATE",
-      "batching": "maximum 256 events or 2 ms",
-      "durabilityBoundary": "JetStream file storage R=3 synchronous PubAck",
+      "workerClient": "WebSocketAgentEventIngestor",
+      "gateway": "AgentEventIngestGateway/Fastify WebSocket",
+      "authority": "one short PostgreSQL writer lease per ExecutionGrant",
+      "batching": "none; one ordered event in flight per Grant",
+      "durabilityBoundary": "one JetStream file-storage R=3 PubAck per event",
       "excluded": ["LLM", "Cube", "SSE", "SessionStorage projector"]
     },
     "stream": {
@@ -168,225 +146,260 @@
     "cases": [
       {
         "name": "concurrency-1",
-        "sessions": 2048,
-        "eventsPerSession": 1,
+        "sessions": 1,
+        "eventsPerSession": 8192,
         "concurrency": 1,
         "payloadBytes": 1024,
-        "events": 2048,
-        "averageRequestBytes": 1553,
-        "totalRequestMiB": 3.033,
-        "elapsedMs": 29209.206,
-        "eventsPerSecond": 70.11,
-        "requestMiBPerSecond": 0.1,
-        "acknowledgementLatencyMs": {
-          "p50": 13.961,
-          "p95": 17.259,
-          "p99": 19.126,
-          "maximum": 24.119
+        "events": 8192,
+        "averageFrameBytes": 1553,
+        "totalFrameMiB": 12.133,
+        "elapsedMs": 36023.855,
+        "eventsPerSecond": 227.4,
+        "frameMiBPerSecond": 0.34,
+        "writerOpenLatencyMs": {
+          "p50": 14.009,
+          "p95": 14.009,
+          "p99": 14.009,
+          "maximum": 14.009
         },
-        "authorityTransactions": 2048,
-        "authorityStatements": 4096,
-        "eventsPerAuthorityTransaction": 1,
-        "batches": 2048,
-        "maximumBatchSize": 1
+        "acknowledgementLatencyMs": {
+          "p50": 4.291,
+          "p95": 5.594,
+          "p99": 6.417,
+          "maximum": 11.065
+        },
+        "writerChannels": 1,
+        "intentionalBatchDelayMs": 0
       },
       {
         "name": "concurrency-16",
-        "sessions": 8192,
-        "eventsPerSession": 1,
+        "sessions": 16,
+        "eventsPerSession": 512,
         "concurrency": 16,
         "payloadBytes": 1024,
         "events": 8192,
-        "averageRequestBytes": 1553,
-        "totalRequestMiB": 12.133,
-        "elapsedMs": 23414.899,
-        "eventsPerSecond": 349.86,
-        "requestMiBPerSecond": 0.52,
-        "acknowledgementLatencyMs": {
-          "p50": 44.772,
-          "p95": 59.353,
-          "p99": 67.767,
-          "maximum": 81.264
+        "averageFrameBytes": 1553,
+        "totalFrameMiB": 12.133,
+        "elapsedMs": 18085.793,
+        "eventsPerSecond": 452.95,
+        "frameMiBPerSecond": 0.67,
+        "writerOpenLatencyMs": {
+          "p50": 106.786,
+          "p95": 131.746,
+          "p99": 131.746,
+          "maximum": 131.746
         },
-        "authorityTransactions": 1022,
-        "authorityStatements": 2044,
-        "eventsPerAuthorityTransaction": 8.02,
-        "batches": 1022,
-        "maximumBatchSize": 16
+        "acknowledgementLatencyMs": {
+          "p50": 33.236,
+          "p95": 49.464,
+          "p99": 63.759,
+          "maximum": 103.028
+        },
+        "writerChannels": 16,
+        "intentionalBatchDelayMs": 0
       },
       {
         "name": "concurrency-64",
-        "sessions": 8192,
-        "eventsPerSession": 1,
+        "sessions": 64,
+        "eventsPerSession": 128,
         "concurrency": 64,
         "payloadBytes": 1024,
         "events": 8192,
-        "averageRequestBytes": 1553,
-        "totalRequestMiB": 12.133,
-        "elapsedMs": 15624.372,
-        "eventsPerSecond": 524.31,
-        "requestMiBPerSecond": 0.78,
-        "acknowledgementLatencyMs": {
-          "p50": 117.473,
-          "p95": 162.661,
-          "p99": 187.698,
-          "maximum": 199.946
+        "averageFrameBytes": 1553,
+        "totalFrameMiB": 12.133,
+        "elapsedMs": 16962.866,
+        "eventsPerSecond": 482.94,
+        "frameMiBPerSecond": 0.72,
+        "writerOpenLatencyMs": {
+          "p50": 508.708,
+          "p95": 1436.343,
+          "p99": 1536.316,
+          "maximum": 1536.316
         },
-        "authorityTransactions": 256,
-        "authorityStatements": 512,
-        "eventsPerAuthorityTransaction": 32,
-        "batches": 256,
-        "maximumBatchSize": 64
+        "acknowledgementLatencyMs": {
+          "p50": 124.212,
+          "p95": 168.001,
+          "p99": 197.532,
+          "maximum": 273.981
+        },
+        "writerChannels": 64,
+        "intentionalBatchDelayMs": 0
       },
       {
         "name": "concurrency-128",
-        "sessions": 8192,
-        "eventsPerSession": 1,
+        "sessions": 128,
+        "eventsPerSession": 64,
         "concurrency": 128,
         "payloadBytes": 1024,
         "events": 8192,
-        "averageRequestBytes": 1553,
-        "totalRequestMiB": 12.133,
-        "elapsedMs": 16212.916,
-        "eventsPerSecond": 505.28,
-        "requestMiBPerSecond": 0.75,
-        "acknowledgementLatencyMs": {
-          "p50": 244.857,
-          "p95": 362.083,
-          "p99": 395.52,
-          "maximum": 479.066
+        "averageFrameBytes": 1553,
+        "totalFrameMiB": 12.133,
+        "elapsedMs": 17491.38,
+        "eventsPerSecond": 468.34,
+        "frameMiBPerSecond": 0.69,
+        "writerOpenLatencyMs": {
+          "p50": 1347.8,
+          "p95": 5474.01,
+          "p99": 5889.958,
+          "maximum": 5992.883
         },
-        "authorityTransactions": 129,
-        "authorityStatements": 258,
-        "eventsPerAuthorityTransaction": 63.5,
-        "batches": 129,
-        "maximumBatchSize": 128
+        "acknowledgementLatencyMs": {
+          "p50": 230.381,
+          "p95": 339.544,
+          "p99": 423.821,
+          "maximum": 517.219
+        },
+        "writerChannels": 128,
+        "intentionalBatchDelayMs": 0
       },
       {
         "name": "payload-256b",
-        "sessions": 8192,
-        "eventsPerSession": 1,
+        "sessions": 64,
+        "eventsPerSession": 128,
         "concurrency": 64,
         "payloadBytes": 256,
         "events": 8192,
-        "averageRequestBytes": 785,
-        "totalRequestMiB": 6.133,
-        "elapsedMs": 15511.289,
-        "eventsPerSecond": 528.13,
-        "requestMiBPerSecond": 0.4,
-        "acknowledgementLatencyMs": {
-          "p50": 117.574,
-          "p95": 165.738,
-          "p99": 192.401,
-          "maximum": 234.352
+        "averageFrameBytes": 785,
+        "totalFrameMiB": 6.133,
+        "elapsedMs": 16817.644,
+        "eventsPerSecond": 487.11,
+        "frameMiBPerSecond": 0.36,
+        "writerOpenLatencyMs": {
+          "p50": 326.625,
+          "p95": 1302.985,
+          "p99": 1410.872,
+          "maximum": 1410.872
         },
-        "authorityTransactions": 254,
-        "authorityStatements": 508,
-        "eventsPerAuthorityTransaction": 32.25,
-        "batches": 254,
-        "maximumBatchSize": 64
+        "acknowledgementLatencyMs": {
+          "p50": 121.054,
+          "p95": 171.802,
+          "p99": 199.269,
+          "maximum": 265.654
+        },
+        "writerChannels": 64,
+        "intentionalBatchDelayMs": 0
       },
       {
         "name": "payload-4kib",
-        "sessions": 8192,
-        "eventsPerSession": 1,
+        "sessions": 64,
+        "eventsPerSession": 128,
         "concurrency": 64,
         "payloadBytes": 4096,
         "events": 8192,
-        "averageRequestBytes": 4625,
-        "totalRequestMiB": 36.133,
-        "elapsedMs": 19369.334,
-        "eventsPerSecond": 422.94,
-        "requestMiBPerSecond": 1.87,
-        "acknowledgementLatencyMs": {
-          "p50": 144.086,
-          "p95": 228.659,
-          "p99": 268.305,
-          "maximum": 300.088
+        "averageFrameBytes": 4625,
+        "totalFrameMiB": 36.133,
+        "elapsedMs": 18256.579,
+        "eventsPerSecond": 448.71,
+        "frameMiBPerSecond": 1.98,
+        "writerOpenLatencyMs": {
+          "p50": 429.637,
+          "p95": 1436.096,
+          "p99": 1625.113,
+          "maximum": 1625.113
         },
-        "authorityTransactions": 248,
-        "authorityStatements": 496,
-        "eventsPerAuthorityTransaction": 33.03,
-        "batches": 248,
-        "maximumBatchSize": 64
+        "acknowledgementLatencyMs": {
+          "p50": 132.673,
+          "p95": 187.361,
+          "p99": 211.099,
+          "maximum": 301.581
+        },
+        "writerChannels": 64,
+        "intentionalBatchDelayMs": 0
       },
       {
-        "name": "256-active-sessions",
+        "name": "256-sessions-128-active",
         "sessions": 256,
         "eventsPerSession": 32,
-        "concurrency": 64,
+        "concurrency": 128,
         "payloadBytes": 1024,
         "events": 8192,
-        "averageRequestBytes": 1553,
-        "totalRequestMiB": 12.133,
-        "elapsedMs": 15790.702,
-        "eventsPerSecond": 518.79,
-        "requestMiBPerSecond": 0.77,
-        "acknowledgementLatencyMs": {
-          "p50": 120.962,
-          "p95": 158.608,
-          "p99": 180.458,
-          "maximum": 192.883
+        "averageFrameBytes": 1553,
+        "totalFrameMiB": 12.133,
+        "elapsedMs": 18104.572,
+        "eventsPerSecond": 452.48,
+        "frameMiBPerSecond": 0.67,
+        "writerOpenLatencyMs": {
+          "p50": 1845.068,
+          "p95": 4631.407,
+          "p99": 5262.541,
+          "maximum": 5456.753
         },
-        "authorityTransactions": 254,
-        "authorityStatements": 508,
-        "eventsPerAuthorityTransaction": 32.25,
-        "batches": 254,
-        "maximumBatchSize": 64
+        "acknowledgementLatencyMs": {
+          "p50": 200.537,
+          "p95": 267.855,
+          "p99": 307.291,
+          "maximum": 389.119
+        },
+        "writerChannels": 256,
+        "intentionalBatchDelayMs": 0
       },
       {
         "name": "sustained-32k",
-        "sessions": 32768,
-        "eventsPerSession": 1,
+        "sessions": 256,
+        "eventsPerSession": 128,
         "concurrency": 128,
         "payloadBytes": 1024,
         "events": 32768,
-        "averageRequestBytes": 1553,
-        "totalRequestMiB": 48.531,
-        "elapsedMs": 56607.957,
-        "eventsPerSecond": 578.86,
-        "requestMiBPerSecond": 0.86,
-        "acknowledgementLatencyMs": {
-          "p50": 214.23,
-          "p95": 286.724,
-          "p99": 321.543,
-          "maximum": 367.891
+        "averageFrameBytes": 1553,
+        "totalFrameMiB": 48.531,
+        "elapsedMs": 67484.384,
+        "eventsPerSecond": 485.56,
+        "frameMiBPerSecond": 0.72,
+        "writerOpenLatencyMs": {
+          "p50": 1885.714,
+          "p95": 4670.073,
+          "p99": 5567.502,
+          "maximum": 5771.307
         },
-        "authorityTransactions": 507,
-        "authorityStatements": 1014,
-        "eventsPerAuthorityTransaction": 64.63,
-        "batches": 507,
-        "maximumBatchSize": 128
+        "acknowledgementLatencyMs": {
+          "p50": 238.407,
+          "p95": 325.377,
+          "p99": 379.42,
+          "maximum": 580.917
+        },
+        "writerChannels": 256,
+        "intentionalBatchDelayMs": 0
       }
     ],
+    "service": {
+      "openedWriters": 929,
+      "activeWriters": 0,
+      "publishedEvents": 92672,
+      "renewalCycles": 32,
+      "renewalFailures": 0,
+      "maximumActiveWriters": 128
+    },
     "leaderRecovery": {
       "killedLeader": "n1",
-      "replacementLeader": "n3",
-      "elapsedMs": 31813.982,
+      "replacementLeader": "n2",
+      "elapsedMs": 16683.673,
       "delivered": true,
       "case": {
         "name": "leader-loss",
-        "sessions": 2048,
-        "eventsPerSession": 1,
+        "sessions": 64,
+        "eventsPerSession": 32,
         "concurrency": 64,
         "payloadBytes": 1024,
         "events": 2048,
-        "averageRequestBytes": 1553,
-        "totalRequestMiB": 3.033,
-        "elapsedMs": 24222.889,
-        "eventsPerSecond": 84.55,
-        "requestMiBPerSecond": 0.13,
-        "acknowledgementLatencyMs": {
-          "p50": 114.027,
-          "p95": 339.583,
-          "p99": 20399.695,
-          "maximum": 20440.759
+        "averageFrameBytes": 1553,
+        "totalFrameMiB": 3.033,
+        "elapsedMs": 9209.086,
+        "eventsPerSecond": 222.39,
+        "frameMiBPerSecond": 0.33,
+        "writerOpenLatencyMs": {
+          "p50": 5512.067,
+          "p95": 6336.897,
+          "p99": 6441.153,
+          "maximum": 6441.153
         },
-        "authorityTransactions": 68,
-        "authorityStatements": 136,
-        "eventsPerAuthorityTransaction": 30.12,
-        "batches": 68,
-        "maximumBatchSize": 64
+        "acknowledgementLatencyMs": {
+          "p50": 100.863,
+          "p95": 135.859,
+          "p99": 151.647,
+          "maximum": 172.73
+        },
+        "writerChannels": 64,
+        "intentionalBatchDelayMs": 0
       }
     }
   }
