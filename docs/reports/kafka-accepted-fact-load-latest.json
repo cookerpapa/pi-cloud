@@ -1,6 +1,6 @@
 {
   "format": "pi-cloud.kafka-accepted-fact-load.v1",
-  "generatedAt": "2026-08-26T09:58:52.815Z",
+  "generatedAt": "2026-08-26T10:25:51.895Z",
   "host": {
     "logicalCpuCount": 32,
     "totalMemoryGiB": 15.46,
@@ -20,12 +20,12 @@
       "eventsPerSession": 4096,
       "concurrency": 1,
       "events": 4096,
-      "elapsedMs": 32716.363,
-      "eventsPerSecond": 125.2,
+      "elapsedMs": 23083.25,
+      "eventsPerSecond": 177.44,
       "acknowledgementLatencyMs": {
-        "p50": 3.769,
-        "p95": 46.956,
-        "p99": 65.273
+        "p50": 3.468,
+        "p95": 4.79,
+        "p99": 53.111
       }
     },
     {
@@ -34,12 +34,12 @@
       "eventsPerSession": 256,
       "concurrency": 16,
       "events": 4096,
-      "elapsedMs": 4577.676,
-      "eventsPerSecond": 894.78,
+      "elapsedMs": 2513.707,
+      "eventsPerSecond": 1629.47,
       "acknowledgementLatencyMs": {
-        "p50": 5.655,
-        "p95": 77.257,
-        "p99": 80.064
+        "p50": 4.829,
+        "p95": 54.743,
+        "p99": 72.641
       }
     },
     {
@@ -48,12 +48,12 @@
       "eventsPerSession": 64,
       "concurrency": 64,
       "events": 4096,
-      "elapsedMs": 1881.502,
-      "eventsPerSecond": 2176.98,
+      "elapsedMs": 3924.594,
+      "eventsPerSecond": 1043.67,
       "acknowledgementLatencyMs": {
-        "p50": 8.172,
-        "p95": 84.639,
-        "p99": 225.448
+        "p50": 55.904,
+        "p95": 100.536,
+        "p99": 299.367
       }
     },
     {
@@ -62,14 +62,14 @@
       "eventsPerSession": 32,
       "concurrency": 128,
       "events": 4096,
-      "elapsedMs": 685.735,
-      "eventsPerSecond": 5973.16,
+      "elapsedMs": 859.629,
+      "eventsPerSecond": 4764.84,
       "acknowledgementLatencyMs": {
-        "p50": 5.392,
-        "p95": 75.093,
-        "p99": 103.296
+        "p50": 5.454,
+        "p95": 92.965,
+        "p99": 104.083
       }
     }
   ],
-  "revision": "c832d92a6f357641f80a6243ddfb3dca7144cfa0"
+  "revision": "67d2da5edf7613be3df1a908971196fb2b850a3e"
 }
