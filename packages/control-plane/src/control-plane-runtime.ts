@@ -8,10 +8,8 @@ import {
   type ControlPlaneApplicationOptions,
 } from "./application.ts";
 import { AssignmentReconciler } from "./assignment-reconciler.ts";
-import {
-  DurableEventStore,
-  type DurableEventLog,
-} from "@pi-cloud/runtime-core/durable-event-store";
+import { DurableEventStore } from "@pi-cloud/runtime-core/durable-event-store";
+import type { LiveSessionTailSource } from "@pi-cloud/runtime-core/session-event-stream";
 import {
   SupervisorMaintenanceRuntime,
   type SupervisorMaintenanceRuntimeOptions,
@@ -73,7 +71,7 @@ export type ControlPlaneRuntimeState = "ready" | "running" | "closing" | "closed
 export class ControlPlaneRuntime {
   readonly application: NestFastifyApplication;
   readonly eventHub: SessionEventHub;
-  readonly eventStore: DurableEventLog;
+  readonly eventStore: LiveSessionTailSource;
   readonly controlChannelRouter: WorkerControlChannelRouter;
   readonly connectionManager: SupervisorConnectionManager;
   readonly gateway: SupervisorWebSocketGateway;
@@ -84,7 +82,7 @@ export class ControlPlaneRuntime {
   constructor(options: {
     application: NestFastifyApplication;
     eventHub: SessionEventHub;
-    eventStore: DurableEventLog;
+    eventStore: LiveSessionTailSource;
     controlChannelRouter: WorkerControlChannelRouter;
     connectionManager: SupervisorConnectionManager;
     gateway: SupervisorWebSocketGateway;

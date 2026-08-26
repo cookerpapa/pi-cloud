@@ -31,7 +31,6 @@ import {
   parseRebindConversationWorkspaceRequest,
   parseConversationTreeView,
   parseIdempotencyKey,
-  parseLastEventIdHeader,
   parseReplaceModelConfigurationRequest,
   parseReplaceCubeProxyConfigurationRequest,
   parseUuidPathParameter,
@@ -65,7 +64,6 @@ import {
   type DevelopmentEnvironmentListResource,
   type DevelopmentEnvironmentResource,
   type DevelopmentEnvironmentDirectoryResource,
-  type LiveTurnSnapshotResource,
   type SshAccessTicketResource,
   type SandboxHttpServiceListResource,
 } from "@pi-cloud/protocol";
@@ -81,8 +79,6 @@ import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { TurnSteeringService } from "./turn-steering-service.ts";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
-import type { LiveTurnSnapshotSource } from "@pi-cloud/runtime-core/live-turn-snapshot";
-import { LIVE_TURN_SNAPSHOT_SOURCE } from "./event-runtime-token.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import { SandboxHttpServiceService } from "./sandbox-http-service-service.ts";
 
@@ -94,8 +90,6 @@ export class ControlPlaneController {
     private readonly publicTenantRegistration: PublicTenantRegistrationService,
     @Inject(TenantRequestContext) private readonly tenantRequestContext: TenantRequestContext,
     @Inject(SessionEventStream) private readonly sessionEventStream: SessionEventStream,
-    @Inject(LIVE_TURN_SNAPSHOT_SOURCE)
-    private readonly liveTurnSnapshots: LiveTurnSnapshotSource,
     @Inject(TenantModelConfigurationService)
     private readonly tenantModelConfiguration: TenantModelConfigurationService,
     @Inject(WorkspaceVersionService)
@@ -604,13 +598,22 @@ export class ControlPlaneController {
   async streamSessionEvents(
     @Req() request: FastifyRequest,
     @Param("sessionId") sessionIdValue: unknown,
-    @Headers("last-event-id") lastEventIdValue: unknown,
     @Res() reply: FastifyReply,
   ): Promise<void> {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
-    const afterSequence = parseLastEventIdHeader(lastEventIdValue);
     const identity = this.tenantRequestContext.resolve(request);
-    const stream = await this.sessionEventStream.open(identity.tenantId, sessionId, afterSequence);
+    const store = this.controlPlaneStores.forIdentity(identity);
+    const stream = await this.sessionEventStream.open({
+      tenantId: identity.tenantId,
+      sessionId,
+      loadCanonical: async () => {
+        const [conversation, canonicalThroughSequence] = await Promise.all([
+          store.getConversation(sessionId),
+          store.conversationEventBoundary(sessionId),
+        ]);
+        return { conversation, canonicalThroughSequence };
+      },
+    });
 
     reply.hijack();
     reply.raw.writeHead(200, {
@@ -624,20 +627,10 @@ export class ControlPlaneController {
       await stream.pipe(reply.raw);
     } catch {
       // The SSE status and headers are already committed. Closing forces the
-      // browser to reconnect with its last successfully received event ID.
+      // browser to reconnect and receive a replacement Session snapshot.
       reply.raw.destroy();
     } finally {
       if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.end();
     }
-  }
-
-  @Get("sessions/:sessionId/live-turn-snapshot")
-  async getLiveTurnSnapshot(
-    @Req() request: FastifyRequest,
-    @Param("sessionId") sessionIdValue: unknown,
-  ): Promise<LiveTurnSnapshotResource> {
-    const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
-    const identity = this.tenantRequestContext.resolve(request);
-    return this.liveTurnSnapshots.read(identity.tenantId, sessionId);
   }
 }

@@ -2,10 +2,7 @@ import { Module, type DynamicModule } from "@nestjs/common";
 import { ControlPlaneController } from "./control-plane.controller.ts";
 import type { ControlPlaneStoreOptions } from "./control-plane-store.ts";
 import { ControlPlaneStoreFactory } from "./control-plane-store-factory.ts";
-import {
-  DurableEventStore,
-  type DurableEventLog,
-} from "@pi-cloud/runtime-core/durable-event-store";
+import { DurableEventStore } from "@pi-cloud/runtime-core/durable-event-store";
 import {
   PublicTenantRegistrationService,
   type PublicTenantRegistrationConfiguration,
@@ -13,6 +10,7 @@ import {
 import { SessionEventHub } from "@pi-cloud/runtime-core/session-event-hub";
 import {
   SessionEventStream,
+  type LiveSessionTailSource,
   type SessionEventStreamOptions,
 } from "@pi-cloud/runtime-core/session-event-stream";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
@@ -33,13 +31,7 @@ import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import { SandboxHttpServiceService } from "./sandbox-http-service-service.ts";
-import {
-  EmptyLiveTurnSnapshotSource,
-  type LiveTurnSnapshotSource,
-} from "@pi-cloud/runtime-core/live-turn-snapshot";
 import type { TerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
-
-import { LIVE_TURN_SNAPSHOT_SOURCE } from "./event-runtime-token.ts";
 
 export type ControlPlaneModuleOptions = Omit<
   ControlPlaneStoreOptions,
@@ -64,8 +56,7 @@ export type ControlPlaneModuleOptions = Omit<
 
 export type ControlPlaneEventRuntime = {
   eventHub: SessionEventHub;
-  eventStore: DurableEventLog;
-  liveTurnSnapshotSource?: LiveTurnSnapshotSource;
+  eventStore: LiveSessionTailSource;
   terminalTurnProjectionSource?: TerminalTurnProjectionSource;
 };
 
@@ -220,22 +211,11 @@ export class ControlPlaneModule {
         { provide: SessionEventHub, useValue: eventHub },
         { provide: DurableEventStore, useValue: eventStore },
         {
-          provide: LIVE_TURN_SNAPSHOT_SOURCE,
-          useValue:
-            options.eventRuntime?.liveTurnSnapshotSource ?? new EmptyLiveTurnSnapshotSource(),
-        },
-        {
           provide: SessionEventStream,
           useValue: new SessionEventStream(eventStore, eventHub, options.sessionEventStreamOptions),
         },
       ],
-      exports: [
-        DurableEventStore,
-        SessionEventHub,
-        SessionEventStream,
-        LIVE_TURN_SNAPSHOT_SOURCE,
-        WorkspaceVersionService,
-      ],
+      exports: [DurableEventStore, SessionEventHub, SessionEventStream, WorkspaceVersionService],
     };
   }
 }

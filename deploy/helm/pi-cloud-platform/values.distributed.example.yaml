@@ -55,14 +55,14 @@ web:
     tlsSecretName: pi-cloud-web-tls
 
 external:
-  jetstream:
-    servers:
-      - nats://nats-0.nats.example.internal:4222
-      - nats://nats-1.nats.example.internal:4222
-      - nats://nats-2.nats.example.internal:4222
+  kafka:
+    brokers:
+      - kafka-0.kafka.example.internal:9092
+      - kafka-1.kafka.example.internal:9092
+      - kafka-2.kafka.example.internal:9092
     replicas: 3
-    eventRetentionMs: 86400000
-    maximumEventsPerSession: 8192
+    partitions: 32
+    acceptedFactRetentionMs: 7200000
     factChannelLeaseMs: 9000
     maximumActiveFactChannelsPerGateway: 128
   providerProxyUrl: https://provider-proxy.example.com:3129

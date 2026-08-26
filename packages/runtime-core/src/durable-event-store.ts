@@ -77,7 +77,7 @@ export type DurableEventStoreOptions = Readonly<{
 
 /**
  * Deterministic process-local event log for unit/development composition. The
- * maintained production path injects JetStreamLiveEventStore and never constructs
+ * maintained production path injects KafkaLiveSessionTail and never constructs
  * this class.
  */
 export class DurableEventStore implements DurableEventLog, FactChannelFactory {
@@ -86,6 +86,25 @@ export class DurableEventStore implements DurableEventLog, FactChannelFactory {
 
   constructor(options: DurableEventStoreOptions = {}) {
     this.#database = options.database;
+  }
+
+  snapshot(_tenantId: string, sessionId: string) {
+    const events = this.#events.get(sessionId) ?? [];
+    const canonicalThroughSequence =
+      [...events]
+        .reverse()
+        .find(
+          (event) =>
+            event.type === "turn.completed" ||
+            event.type === "turn.failed" ||
+            event.type === "turn.cancelled",
+        )?.seq ?? 0;
+    const liveEvents = events.filter((event) => event.seq > canonicalThroughSequence);
+    return {
+      canonicalThroughSequence,
+      highWaterMark: liveEvents.at(-1)?.seq ?? canonicalThroughSequence,
+      events: liveEvents,
+    };
   }
 
   async open(request: FactChannelOpenRequest): Promise<FactChannel> {

@@ -1,9 +1,15 @@
-import type { PiCloudEvent } from "@pi-cloud/protocol";
+import {
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+  type PiCloudEvent,
+  type SessionViewSnapshotResource,
+} from "@pi-cloud/protocol";
 import { describe, expect, it } from "vitest";
 import { SseFrameParser, streamSessionEvents, type SessionStreamStatus } from "../src/sse.ts";
 
 const SESSION_ID = "10000000-0000-4000-8000-000000000001";
 const TURN_ID = "20000000-0000-4000-8000-000000000001";
+const CREATED_AT = "2026-07-19T00:00:00.000Z";
 
 function event(sequence: number, text: string): PiCloudEvent {
   return {
@@ -13,14 +19,61 @@ function event(sequence: number, text: string): PiCloudEvent {
     turnId: TURN_ID,
     agentId: "root",
     seq: sequence,
-    occurredAt: "2026-07-19T00:00:00.000Z",
+    occurredAt: CREATED_AT,
     type: "assistant.text.delta",
     payload: { text },
   };
 }
 
-function frame(value: PiCloudEvent, id = String(value.seq)): string {
-  return `id: ${id}\nevent: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`;
+function snapshot(liveEvents: PiCloudEvent[] = []): SessionViewSnapshotResource {
+  return {
+    schemaVersion: 1,
+    conversation: {
+      project: {
+        projectId: "40000000-0000-4000-8000-000000000001",
+        workspaceId: "50000000-0000-4000-8000-000000000001",
+        name: "SSE test",
+        createdAt: CREATED_AT,
+        source: { kind: "empty", status: "ready" },
+        environment: {
+          environmentVersionId: "60000000-0000-4000-8000-000000000001",
+          versionNumber: 1,
+          profileKey: "pi-cloud-fullstack",
+          profileVersion: "1",
+          imageRevision: "test",
+          specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+          recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+          recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+          state: "pending",
+          active: true,
+          createdAt: CREATED_AT,
+        },
+      },
+      session: {
+        sessionId: SESSION_ID,
+        title: "SSE test",
+        projectId: "40000000-0000-4000-8000-000000000001",
+        workspaceId: "50000000-0000-4000-8000-000000000001",
+        workspaceState: "attached",
+        state: "running",
+        executionMode: "elastic",
+        sandboxProfileKey: "standard",
+        workingDirectory: "/workspace",
+        modelProfileId: "70000000-0000-4000-8000-000000000001",
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+        lastActiveAt: CREATED_AT,
+      },
+      inheritedMessages: [],
+      turns: [],
+      historyTruncated: false,
+    },
+    liveEvents,
+  };
+}
+
+function frame(name: string, value: unknown): string {
+  return `event: ${name}\ndata: ${JSON.stringify(value)}\n\n`;
 }
 
 function eventStream(body: string): Response {
@@ -38,114 +91,78 @@ function eventStream(body: string): Response {
   );
 }
 
-describe("SSE session client", () => {
+describe("cursor-free SSE Session client", () => {
   it("parses fragmented CRLF frames, comments, and multiline data", () => {
     const parser = new SseFrameParser();
     expect(parser.push(": heartbeat\r\n\r")).toEqual([]);
-    expect(parser.push("\nid: 7\r\nevent: note\r\ndata: first\r\ndata: second\r\n\r\n")).toEqual([
-      { id: "7", event: "note", data: "first\nsecond" },
+    expect(parser.push("\nevent: note\r\ndata: first\r\ndata: second\r\n\r\n")).toEqual([
+      { event: "note", data: "first\nsecond" },
     ]);
   });
 
-  it("reconnects from the durable cursor and ignores replay duplicates", async () => {
+  it("reconnects with a replacement snapshot and never sends a browser cursor", async () => {
     const controller = new AbortController();
-    const first = event(1, "first");
-    const second = event(2, "second");
-    const cursors: string[] = [];
-    const authorizations: string[] = [];
+    const headers: Headers[] = [];
+    const snapshots: SessionViewSnapshotResource[] = [];
     const delivered: number[] = [];
     const statuses: SessionStreamStatus[] = [];
     let call = 0;
     const fetchImplementation: typeof fetch = async (_input, init) => {
-      cursors.push(new Headers(init?.headers).get("last-event-id") ?? "missing");
-      authorizations.push(new Headers(init?.headers).get("authorization") ?? "missing");
+      headers.push(new Headers(init?.headers));
       call += 1;
       return call === 1
-        ? eventStream(frame(first))
-        : eventStream(`${frame(first)}${frame(second)}`);
+        ? eventStream(`${frame("session.snapshot", snapshot([event(1, "first")]))}`)
+        : eventStream(
+            `${frame("session.snapshot", snapshot([event(1, "first")]))}${frame(
+              "assistant.text.delta",
+              event(2, "second"),
+            )}`,
+          );
     };
 
-    const lastSequence = await streamSessionEvents({
+    await streamSessionEvents({
       sessionId: SESSION_ID,
-      afterSequence: 0,
       signal: controller.signal,
       retryDelayMs: 0,
       authorizationToken: `api-${"a".repeat(48)}`,
       fetchImplementation,
+      onSnapshot(value) {
+        snapshots.push(value);
+      },
       onEvent(value) {
         delivered.push(value.seq);
-        if (value.seq === 2) controller.abort();
+        controller.abort();
       },
       onStatus(status) {
         statuses.push(status);
       },
     });
 
-    expect(lastSequence).toBe(2);
-    expect(cursors).toEqual(["0", "1"]);
-    expect(authorizations).toEqual([
-      `Bearer api-${"a".repeat(48)}`,
-      `Bearer api-${"a".repeat(48)}`,
-    ]);
-    expect(delivered).toEqual([1, 2]);
+    expect(headers).toHaveLength(2);
+    expect(headers.every((value) => !value.has("last-event-id"))).toBe(true);
+    expect(snapshots).toHaveLength(2);
+    expect(delivered).toEqual([2]);
     expect(statuses.map((status) => status.phase)).toContain("reconnecting");
   });
 
-  it("stops on a non-retryable frame identity violation", async () => {
+  it("rejects a live event that arrives before the replacement snapshot", async () => {
     const statuses: SessionStreamStatus[] = [];
-    let calls = 0;
-    const lastSequence = await streamSessionEvents({
-      sessionId: SESSION_ID,
-      afterSequence: 0,
-      signal: new AbortController().signal,
-      retryDelayMs: 0,
-      fetchImplementation: async () => {
-        calls += 1;
-        return eventStream(frame(event(1, "bad"), "9"));
-      },
-      onEvent() {
-        throw new Error("invalid frame must not be delivered");
-      },
-      onStatus(status) {
-        statuses.push(status);
-      },
-    });
-    expect(lastSequence).toBe(0);
-    expect(calls).toBe(1);
-    expect(statuses.at(-1)).toMatchObject({
-      phase: "failed",
-      message: "SSE frame identity does not match its event",
-    });
-  });
-
-  it("reloads the semantic conversation when the retained SSE cursor expires", async () => {
-    const controller = new AbortController();
-    const cursors: string[] = [];
-    let calls = 0;
-    let reloads = 0;
-    const lastSequence = await streamSessionEvents({
-      sessionId: SESSION_ID,
-      afterSequence: 3,
-      signal: controller.signal,
-      retryDelayMs: 0,
-      fetchImplementation: async (_input, init) => {
-        cursors.push(new Headers(init?.headers).get("last-event-id") ?? "missing");
-        calls += 1;
-        if (calls === 1) return new Response("expired", { status: 410 });
-        controller.abort();
-        return eventStream("");
-      },
-      onCursorExpired: async () => {
-        reloads += 1;
-        return 27;
-      },
-      onEvent() {
-        throw new Error("no event should be delivered");
-      },
-      onStatus() {},
-    });
-    expect(lastSequence).toBe(27);
-    expect(reloads).toBe(1);
-    expect(cursors).toEqual(["3", "27"]);
+    await expect(
+      streamSessionEvents({
+        sessionId: SESSION_ID,
+        signal: new AbortController().signal,
+        retryDelayMs: 0,
+        fetchImplementation: async () =>
+          eventStream(frame("assistant.text.delta", event(1, "bad"))),
+        onSnapshot() {},
+        onEvent() {
+          throw new Error("invalid frame must not be delivered");
+        },
+        onStatus(status) {
+          statuses.push(status);
+        },
+      }),
+    ).rejects.toThrow("before its Session snapshot");
+    expect(statuses.at(-1)).toMatchObject({ phase: "failed" });
   });
 });

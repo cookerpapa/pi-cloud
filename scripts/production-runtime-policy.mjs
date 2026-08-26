@@ -100,17 +100,17 @@ export function validateProductionRuntimeEnvironment(environment) {
 
   const eventRetentionMs = integer(
     environment,
-    "PI_CLOUD_AGENT_EVENT_RETENTION_MS",
-    86_400_000,
+    "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS",
+    7_200_000,
     MINIMUM_EVENT_RETENTION_MS,
     30 * 24 * 60 * 60_000,
   );
-  integer(environment, "PI_CLOUD_MAXIMUM_HOT_EVENTS_PER_SESSION", 8_192, 512, 1_000_000);
   integer(environment, "PI_CLOUD_FACT_CHANNEL_LEASE_MS", 9_000, 3_000, 30_000);
   integer(environment, "PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE", 128, 1, 10_000);
-  integer(environment, "PI_CLOUD_JETSTREAM_REPLICAS", 3, 1, 5);
+  integer(environment, "PI_CLOUD_KAFKA_PARTITIONS", 32, 1, 1_024);
+  integer(environment, "PI_CLOUD_KAFKA_REPLICAS", 3, 1, 5);
   if (eventRetentionMs < PI_TURN_TIMEOUT_MS + SETTLEMENT_GRACE_MS) {
-    throw new Error("JetStream event retention cannot omit a still-recoverable Run");
+    throw new Error("Kafka AcceptedFact retention cannot omit a still-recoverable Run");
   }
 
   const ownershipLeaseMs = integer(

@@ -144,14 +144,12 @@ describe("session transcript reducer", () => {
         },
       ],
       historyTruncated: true,
-      replayAfterSequence: 10,
     };
     let state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
       conversation,
     });
     expect(state).toMatchObject({
-      lastSequence: 10,
       sessionState: "running",
       historyTruncated: true,
       turns: [{ prompt: "Historical private prompt", mailboxPosition: 8, status: "running" }],
@@ -160,7 +158,6 @@ describe("session transcript reducer", () => {
       type: "stream.event",
       event: envelope(11, { type: "assistant.text.delta", payload: { text: "continued" } }),
     });
-    expect(state.lastSequence).toBe(11);
     expect(state.turns[0]?.items).toEqual([
       expect.objectContaining({ kind: "text", text: "continued" }),
     ]);
@@ -188,39 +185,15 @@ describe("session transcript reducer", () => {
         },
       ],
       historyTruncated: false,
-      replayAfterSequence: 6,
     };
     let state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
       conversation,
-      liveSnapshot: {
-        sessionId: SESSION_ID,
-        replayAfterSequence: 9,
-        turn: {
-          turnId: TURN_ID,
-          transcript: {
-            schemaVersion: 1,
-            throughSequence: 9,
-            items: [
-              {
-                kind: "text",
-                text: "Already durable.",
-                firstSequence: 7,
-                lastSequence: 9,
-              },
-            ],
-            startedSequence: null,
-            terminalSequence: null,
-            stopReason: null,
-            failure: null,
-            cancellation: null,
-            workspacePatch: null,
-          },
-        },
-      },
+      liveEvents: [
+        envelope(9, { type: "assistant.text.delta", payload: { text: "Already durable." } }),
+      ],
     });
     expect(state).toMatchObject({
-      lastSequence: 9,
       turns: [
         {
           status: "running",
@@ -256,32 +229,19 @@ describe("session transcript reducer", () => {
         },
         turns: [],
         historyTruncated: false,
-        replayAfterSequence: 6,
       },
-      liveSnapshot: {
-        sessionId: SESSION_ID,
-        replayAfterSequence: 8,
-        turn: {
+      liveEvents: [
+        {
+          ...envelope(8, {
+            type: "assistant.text.delta",
+            payload: { text: "Cross-request race" },
+          }),
           turnId: liveTurnId,
-          transcript: {
-            schemaVersion: 1,
-            throughSequence: 8,
-            items: [
-              { kind: "text", text: "Cross-request race", firstSequence: 7, lastSequence: 8 },
-            ],
-            startedSequence: null,
-            terminalSequence: null,
-            stopReason: null,
-            failure: null,
-            cancellation: null,
-            workspacePatch: null,
-          },
         },
-      },
+      ],
     });
 
     expect(state).toMatchObject({
-      lastSequence: 8,
       turns: [{ turnId: liveTurnId, status: "running", items: [{ text: "Cross-request race" }] }],
     });
   });
@@ -338,14 +298,12 @@ describe("session transcript reducer", () => {
         },
       ],
       historyTruncated: false,
-      replayAfterSequence: 6,
     };
     const state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
       conversation,
     });
 
-    expect(state.lastSequence).toBe(6);
     expect(state.turns[0]).toMatchObject({
       status: "completed",
       startedSequence: 1,
@@ -388,7 +346,6 @@ describe("session transcript reducer", () => {
       preparedState(),
     );
 
-    expect(state.lastSequence).toBe(6);
     expect(state.sessionState).toBe("idle");
     expect(state.turns[0]).toMatchObject({
       status: "completed",
@@ -412,9 +369,6 @@ describe("session transcript reducer", () => {
         completedAt: CREATED_AT,
       }),
     ]);
-    expect(
-      sessionViewReducer(state, { type: "stream.event", event: events[5] as PiCloudEvent }),
-    ).toBe(state);
   });
 
   it("marks an in-flight Tool unknown when its Run fails", () => {
@@ -531,14 +485,12 @@ describe("session transcript reducer", () => {
     });
   });
 
-  it("refuses to render a sequence gap", () => {
+  it("renders Gateway-ordered events without keeping a browser cursor", () => {
     const state = sessionViewReducer(preparedState(), {
       type: "stream.event",
       event: envelope(2, { type: "assistant.text.delta", payload: { text: "gap" } }),
     });
-    expect(state.lastSequence).toBe(0);
-    expect(state.connection).toMatchObject({ phase: "failed" });
-    expect(state.apiError).toMatch(/non-contiguous/);
+    expect(state.turns[0]?.items).toEqual([expect.objectContaining({ kind: "text", text: "gap" })]);
   });
 
   it("ignores a late callback from a previously selected session", () => {

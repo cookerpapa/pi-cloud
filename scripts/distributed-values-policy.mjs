@@ -30,11 +30,11 @@ export function validateDistributedDeploymentValues(values) {
   deploymentString(values["pi-workers"]?.image?.repository, "pi-workers.image.repository");
   deploymentString(values["pi-workers"]?.image?.tag, "pi-workers.image.tag");
   deploymentString(values.external?.providerProxyUrl, "external.providerProxyUrl");
-  const servers = values.external?.jetstream?.servers;
+  const servers = values.external?.kafka?.brokers;
   if (!Array.isArray(servers) || servers.length < 1) {
-    throw new Error("JetStream servers are required");
+    throw new Error("Kafka brokers are required");
   }
-  for (const server of servers) deploymentString(server, "JetStream server");
+  for (const server of servers) deploymentString(server, "Kafka broker");
   deploymentString(values.sandboxPlane?.cube?.apiUrl, "sandboxPlane.cube.apiUrl");
   const templateId = deploymentString(
     values.sandboxPlane?.cube?.templateId,
@@ -74,11 +74,11 @@ export function validateDistributedDeploymentValues(values) {
     throw new Error("Pi Worker termination grace is shorter than the Run drain budget");
   }
   const retentionMs = integer(
-    values.external?.jetstream?.eventRetentionMs,
-    "JetStream event retention",
+    values.external?.kafka?.acceptedFactRetentionMs,
+    "Kafka AcceptedFact retention",
   );
   if (retentionMs < turnMs + 5 * 60_000) {
-    throw new Error("JetStream retention can omit a recoverable Run");
+    throw new Error("Kafka retention can omit a recoverable Run");
   }
   integer(
     values.controlPlane?.publicRegistration?.maximumConcurrentTurns,

@@ -745,6 +745,16 @@ export interface ExecutionGrantTable {
   renewed_at: GeneratedTimestamp;
 }
 
+export interface SessionKafkaHeadTable {
+  tenant_id: string;
+  session_id: string;
+  topic: string;
+  kafka_partition: number;
+  kafka_offset: Int8;
+  canonical_event_seq: Int8;
+  updated_at: GeneratedTimestamp;
+}
+
 export interface SupervisorConnectionTable {
   connection_id: string;
   transport_id: string;
@@ -1249,6 +1259,7 @@ export interface Database {
   supervisor_hosts: SupervisorHostTable;
   sandbox_retirements: SandboxRetirementTable;
   execution_grants: ExecutionGrantTable;
+  session_kafka_heads: SessionKafkaHeadTable;
   commands: CommandTable;
   approvals: ApprovalTable;
   conversation_fork_operations: ConversationForkOperationTable;

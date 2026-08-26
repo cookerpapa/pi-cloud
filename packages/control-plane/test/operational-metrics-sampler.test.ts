@@ -2,7 +2,6 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { PiCloudMetrics } from "@pi-cloud/observability";
-import type { JetStreamOperationalSnapshot } from "@pi-cloud/runtime-core/jetstream-event-runtime";
 import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { OperationalMetricsSampler } from "../src/operational-metrics-sampler.ts";
@@ -34,25 +33,10 @@ afterAll(async () => {
 });
 
 describe("operational metrics sampler", () => {
-  it("publishes authoritative PostgreSQL backlog and JetStream health gauges", async () => {
+  it("publishes authoritative PostgreSQL backlog and Kafka Gateway gauges", async () => {
     const metrics = new PiCloudMetrics("control-plane-test");
     const errors: unknown[] = [];
-    const snapshot: JetStreamOperationalSnapshot = {
-      streams: [
-        {
-          name: "PI_CLOUD_AGENT_EVENTS",
-          messages: 41,
-          bytes: 8_192,
-          unavailableReplicas: 0,
-        },
-      ],
-      consumers: [
-        {
-          stream: "PI_CLOUD_SESSION_MUTATIONS_V2",
-          name: "PI_CLOUD_SESSION_PROJECTOR",
-          pending: 3,
-        },
-      ],
+    const snapshot = {
       factChannels: {
         openedChannels: 12,
         activeChannels: 7,
@@ -61,10 +45,18 @@ describe("operational metrics sampler", () => {
         renewalFailures: 0,
         maximumActiveChannels: 128,
       },
+      liveTail: {
+        activeSessionTails: 2,
+        cachedEvents: 9,
+        cachedBytes: 8_192,
+        acceptedEvents: 410,
+        duplicateEvents: 1,
+        evictedEvents: 400,
+      },
     };
     const sampler = new OperationalMetricsSampler({
       database,
-      events: { operationalSnapshot: async () => snapshot },
+      events: { statistics: () => snapshot },
       metrics,
       onError: (_source, error) => errors.push(error),
     });
@@ -80,12 +72,6 @@ describe("operational metrics sampler", () => {
     expect(output).toContain(
       'pi_cloud_workspace_storage_purge_pending{service="control-plane-test"} 0',
     );
-    expect(output).toContain(
-      'pi_cloud_jetstream_messages{stream="PI_CLOUD_AGENT_EVENTS",service="control-plane-test"} 41',
-    );
-    expect(output).toContain(
-      'pi_cloud_jetstream_consumer_pending{stream="PI_CLOUD_SESSION_MUTATIONS_V2",consumer="PI_CLOUD_SESSION_PROJECTOR",service="control-plane-test"} 3',
-    );
     expect(output).toContain('pi_cloud_fact_channels_active{service="control-plane-test"} 7');
     expect(output).toContain('pi_cloud_fact_channels_limit{service="control-plane-test"} 128');
     expect(output).toMatch(
@@ -98,7 +84,7 @@ describe("operational metrics sampler", () => {
     const sampler = new OperationalMetricsSampler({
       database,
       events: {
-        operationalSnapshot: async () => {
+        statistics: () => {
           throw new Error("unavailable");
         },
       },
@@ -107,7 +93,7 @@ describe("operational metrics sampler", () => {
 
     await sampler.sample();
     expect(await metrics.registry.metrics()).toContain(
-      'pi_cloud_operational_sample_failures_total{source="jetstream",service="control-plane-failure-test"} 1',
+      'pi_cloud_operational_sample_failures_total{source="kafka",service="control-plane-failure-test"} 1',
     );
   });
 });

@@ -11,10 +11,10 @@ export type ProductionControlPlaneEnvironment = Readonly<Record<string, string |
 export type ProductionControlPlaneConfig = {
   databaseUrl: string;
   databaseNotificationUrl: string;
-  jetStreamServers: readonly string[];
-  jetStreamReplicas: number;
-  agentEventRetentionMs: number;
-  maximumEventsPerSession: number;
+  kafkaBrokers: readonly string[];
+  kafkaPartitions: number;
+  kafkaReplicas: number;
+  acceptedFactRetentionMs: number;
   factChannelLeaseMs: number;
   factChannelMaximumActive: number;
   workerEventIngestToken: string;
@@ -350,24 +350,18 @@ export async function loadProductionControlPlaneConfig(
   return {
     databaseUrl,
     databaseNotificationUrl,
-    jetStreamServers: boundedList(
-      required(environment, "PI_CLOUD_JETSTREAM_SERVERS"),
-      "PI_CLOUD_JETSTREAM_SERVERS",
+    kafkaBrokers: boundedList(
+      required(environment, "PI_CLOUD_KAFKA_BROKERS"),
+      "PI_CLOUD_KAFKA_BROKERS",
     ),
-    jetStreamReplicas: integerValue(environment, "PI_CLOUD_JETSTREAM_REPLICAS", 3, 1, 5),
-    agentEventRetentionMs: integerValue(
+    kafkaPartitions: integerValue(environment, "PI_CLOUD_KAFKA_PARTITIONS", 32, 1, 1_024),
+    kafkaReplicas: integerValue(environment, "PI_CLOUD_KAFKA_REPLICAS", 3, 1, 5),
+    acceptedFactRetentionMs: integerValue(
       environment,
-      "PI_CLOUD_AGENT_EVENT_RETENTION_MS",
-      24 * 60 * 60_000,
+      "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS",
+      2 * 60 * 60_000,
       60 * 60_000,
       7 * 24 * 60 * 60_000,
-    ),
-    maximumEventsPerSession: integerValue(
-      environment,
-      "PI_CLOUD_MAXIMUM_HOT_EVENTS_PER_SESSION",
-      8_192,
-      512,
-      1_000_000,
     ),
     factChannelLeaseMs: integerValue(
       environment,

@@ -1859,19 +1859,7 @@ export class ControlPlaneStore {
       };
     });
 
-    const currentTerminalTranscripts = includedRows
-      .filter((row) => row.originSessionId === sessionId)
-      .flatMap((row) => {
-        const transcript = transcriptByTurnId.get(row.turnId);
-        return transcript === undefined ? [] : [transcript];
-      });
-    const canonicalEventSequence =
-      nonNegativeSafeInteger(conversation.nextEventSequence, "Conversation next event sequence") -
-      1;
-    const replayAfterSequence = Math.max(
-      canonicalEventSequence,
-      ...currentTerminalTranscripts.map((transcript) => transcript.throughSequence),
-    );
+    nonNegativeSafeInteger(conversation.nextEventSequence, "Conversation next event sequence");
     const environment = await this.#loadActiveProjectEnvironment(conversation.projectId);
     const inheritedMessages =
       conversation.sessionKind === "subagent"
@@ -1922,8 +1910,21 @@ export class ControlPlaneStore {
       inheritedMessages,
       turns,
       historyTruncated,
-      replayAfterSequence,
     };
+  }
+
+  async conversationEventBoundary(sessionId: string): Promise<number> {
+    const row = await this.#database
+      .selectFrom("sessions")
+      .select("next_event_seq as nextEventSequence")
+      .where("tenant_id", "=", this.#tenantId)
+      .where("id", "=", sessionId)
+      .where("archived_at", "is", null)
+      .executeTakeFirst();
+    if (row === undefined) {
+      throw new ControlPlaneStoreError("not_found", "Conversation was not found");
+    }
+    return nonNegativeSafeInteger(row.nextEventSequence, "Conversation next event sequence") - 1;
   }
 
   async #delegatedInheritedMessages(

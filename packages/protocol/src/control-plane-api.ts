@@ -9,6 +9,7 @@ import {
 } from "./protocol-primitives.ts";
 import {
   ApprovalRequestPayloadSchema,
+  PiCloudEventSchema,
   SessionStateSchema,
   TurnCancellationReasonSchema,
   WorkspacePatchSchema,
@@ -855,7 +856,15 @@ export const ConversationDetailResourceSchema = Type.Object(
     ),
     turns: Type.Array(ConversationTurnResourceSchema, { maxItems: 200 }),
     historyTruncated: Type.Boolean(),
-    replayAfterSequence: NonNegativeSafeIntegerSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const SessionViewSnapshotResourceSchema = Type.Object(
+  {
+    schemaVersion: Type.Literal(1),
+    conversation: ConversationDetailResourceSchema,
+    liveEvents: Type.Array(PiCloudEventSchema, { maxItems: 100_000 }),
   },
   { additionalProperties: false },
 );
@@ -941,24 +950,6 @@ export const ConversationPruneResourceSchema = Type.Object(
     archivedSessionCount: NonNegativeSafeIntegerSchema,
     replayed: Type.Boolean(),
     createdAt: UtcTimestampSchema,
-  },
-  { additionalProperties: false },
-);
-
-export const LiveTurnSnapshotResourceSchema = Type.Object(
-  {
-    sessionId: UuidSchema,
-    replayAfterSequence: NonNegativeSafeIntegerSchema,
-    turn: Type.Union([
-      Type.Object(
-        {
-          turnId: UuidSchema,
-          transcript: ConversationTurnTranscriptResourceSchema,
-        },
-        { additionalProperties: false },
-      ),
-      Type.Null(),
-    ]),
   },
   { additionalProperties: false },
 );
@@ -1301,6 +1292,7 @@ export type ConversationTurnTranscriptResource = Static<
 >;
 export type ConversationTurnResource = Static<typeof ConversationTurnResourceSchema>;
 export type ConversationDetailResource = Static<typeof ConversationDetailResourceSchema>;
+export type SessionViewSnapshotResource = Static<typeof SessionViewSnapshotResourceSchema>;
 export type ConversationTreeView = Static<typeof ConversationTreeViewSchema>;
 export type ConversationTreeEntryResource = Static<typeof ConversationTreeEntryResourceSchema>;
 export type ConversationTreeBranchResource = Static<typeof ConversationTreeBranchResourceSchema>;
@@ -1309,7 +1301,6 @@ export type CreateConversationForkRequest = Static<typeof CreateConversationFork
 export type ConversationForkResource = Static<typeof ConversationForkResourceSchema>;
 export type CreateConversationPruneRequest = Static<typeof CreateConversationPruneRequestSchema>;
 export type ConversationPruneResource = Static<typeof ConversationPruneResourceSchema>;
-export type LiveTurnSnapshotResource = Static<typeof LiveTurnSnapshotResourceSchema>;
 export type AcceptTurnRequest = Static<typeof AcceptTurnRequestSchema>;
 export type AcceptedTurnResource = Static<typeof AcceptedTurnResourceSchema>;
 export type RunState = Static<typeof RunStateSchema>;
@@ -1811,8 +1802,8 @@ export function parseConversationPruneResource(value: unknown): ConversationPrun
   return parseSchema(ConversationPruneResourceSchema, value, "conversation prune resource");
 }
 
-export function parseLiveTurnSnapshotResource(value: unknown): LiveTurnSnapshotResource {
-  return parseSchema(LiveTurnSnapshotResourceSchema, value, "live Turn snapshot resource");
+export function parseSessionViewSnapshotResource(value: unknown): SessionViewSnapshotResource {
+  return parseSchema(SessionViewSnapshotResourceSchema, value, "Session view snapshot resource");
 }
 
 export function parseConversationTurnTranscriptResource(
@@ -1891,20 +1882,4 @@ export function parseUuidPathParameter(value: unknown, name: string): string {
 export function parsePositiveIntegerPathParameter(value: unknown, name: string): number {
   const normalized = typeof value === "string" && /^[1-9]\d*$/.test(value) ? Number(value) : value;
   return parseSchema(PositiveSafeIntegerSchema, normalized, `${name} path parameter`);
-}
-
-export function parseLastEventIdHeader(value: unknown): number {
-  if (value === undefined) return 0;
-  if (typeof value !== "string" || !/^(?:0|[1-9]\d*)$/.test(value)) {
-    throw new ControlPlaneApiValidationError(
-      "Last-Event-ID must be a canonical non-negative integer",
-    );
-  }
-  const sequence = Number(value);
-  if (!Number.isSafeInteger(sequence)) {
-    throw new ControlPlaneApiValidationError(
-      "Last-Event-ID is outside the supported integer range",
-    );
-  }
-  return sequence;
 }

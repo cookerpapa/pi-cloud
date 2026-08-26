@@ -1,10 +1,7 @@
 import type { Database } from "@pi-cloud/database";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC, TURN_COMMAND_OUTBOX_TOPIC } from "@pi-cloud/protocol";
-import type {
-  JetStreamEventRuntime,
-  JetStreamOperationalSnapshot,
-} from "@pi-cloud/runtime-core/jetstream-event-runtime";
+import type { KafkaEventRuntime } from "@pi-cloud/runtime-core/kafka-event-runtime";
 import { sql, type Kysely } from "kysely";
 
 const DEFAULT_SAMPLE_INTERVAL_MS = 10_000;
@@ -19,19 +16,19 @@ function count(value: string | number | bigint): number {
 
 export class OperationalMetricsSampler {
   readonly #database: Kysely<Database>;
-  readonly #events: Pick<JetStreamEventRuntime, "operationalSnapshot">;
+  readonly #events: Pick<KafkaEventRuntime, "statistics">;
   readonly #metrics: PiCloudMetrics;
   readonly #sampleIntervalMs: number;
-  readonly #onError: ((source: "postgresql" | "jetstream", error: unknown) => void) | undefined;
+  readonly #onError: ((source: "postgresql" | "kafka", error: unknown) => void) | undefined;
   #timer: NodeJS.Timeout | undefined;
   #sampling: Promise<void> | undefined;
 
   constructor(options: {
     database: Kysely<Database>;
-    events: Pick<JetStreamEventRuntime, "operationalSnapshot">;
+    events: Pick<KafkaEventRuntime, "statistics">;
     metrics: PiCloudMetrics;
     sampleIntervalMs?: number;
-    onError?: (source: "postgresql" | "jetstream", error: unknown) => void;
+    onError?: (source: "postgresql" | "kafka", error: unknown) => void;
   }) {
     this.#database = options.database;
     this.#events = options.events;
@@ -61,7 +58,7 @@ export class OperationalMetricsSampler {
 
   sample(): Promise<void> {
     if (this.#sampling !== undefined) return this.#sampling;
-    const sampling = Promise.all([this.#sampleDatabase(), this.#sampleJetStream()]).then(
+    const sampling = Promise.all([this.#sampleDatabase(), this.#sampleKafka()]).then(
       () => undefined,
     );
     this.#sampling = sampling.finally(() => {
@@ -119,31 +116,16 @@ export class OperationalMetricsSampler {
     }
   }
 
-  async #sampleJetStream(): Promise<void> {
+  async #sampleKafka(): Promise<void> {
     try {
-      this.#applyJetStreamSnapshot(await this.#events.operationalSnapshot());
-      this.#metrics.operationalSampleTimestamp.set({ source: "jetstream" }, Date.now() / 1_000);
+      const snapshot = this.#events.statistics();
+      this.#metrics.factChannelsActive.set(snapshot.factChannels.activeChannels);
+      this.#metrics.factChannelsLimit.set(snapshot.factChannels.maximumActiveChannels);
+      this.#metrics.factChannelRenewalFailures.set(snapshot.factChannels.renewalFailures);
+      this.#metrics.operationalSampleTimestamp.set({ source: "kafka" }, Date.now() / 1_000);
     } catch (error: unknown) {
-      this.#metrics.operationalSampleFailures.inc({ source: "jetstream" });
-      this.#onError?.("jetstream", error);
+      this.#metrics.operationalSampleFailures.inc({ source: "kafka" });
+      this.#onError?.("kafka", error);
     }
-  }
-
-  #applyJetStreamSnapshot(snapshot: JetStreamOperationalSnapshot): void {
-    for (const stream of snapshot.streams) {
-      const labels = { stream: stream.name };
-      this.#metrics.jetStreamMessages.set(labels, stream.messages);
-      this.#metrics.jetStreamBytes.set(labels, stream.bytes);
-      this.#metrics.jetStreamUnavailableReplicas.set(labels, stream.unavailableReplicas);
-    }
-    for (const consumer of snapshot.consumers) {
-      this.#metrics.jetStreamConsumerPending.set(
-        { stream: consumer.stream, consumer: consumer.name },
-        consumer.pending,
-      );
-    }
-    this.#metrics.factChannelsActive.set(snapshot.factChannels.activeChannels);
-    this.#metrics.factChannelsLimit.set(snapshot.factChannels.maximumActiveChannels);
-    this.#metrics.factChannelRenewalFailures.set(snapshot.factChannels.renewalFailures);
   }
 }

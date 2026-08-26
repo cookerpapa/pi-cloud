@@ -3,7 +3,6 @@ import type {
   PiCloudEvent,
   ConversationDetailResource,
   ConversationSessionResource,
-  LiveTurnSnapshotResource,
   ProjectResource,
   ProjectEnvironmentResource,
   RunResource,
@@ -109,7 +108,6 @@ export type SessionViewState = {
   project: ProjectResource | null;
   session: SessionResource | ConversationSessionResource | null;
   sessionState: SessionViewStatus;
-  lastSequence: number;
   inheritedMessages: ConversationDetailResource["inheritedMessages"];
   turns: readonly TurnView[];
   historyTruncated: boolean;
@@ -122,7 +120,7 @@ export type SessionViewAction =
   | {
       type: "conversation.loaded";
       conversation: ConversationDetailResource;
-      liveSnapshot?: LiveTurnSnapshotResource;
+      liveEvents?: readonly PiCloudEvent[];
     }
   | { type: "project.environment.refreshed"; environment: ProjectEnvironmentResource }
   | { type: "turn.accepted"; accepted: AcceptedTurnResource; prompt: string }
@@ -141,7 +139,6 @@ export function createInitialSessionView(): SessionViewState {
     project: null,
     session: null,
     sessionState: "none",
-    lastSequence: 0,
     inheritedMessages: [],
     turns: [],
     historyTruncated: false,
@@ -228,27 +225,12 @@ function transcriptItem(
 
 function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewState {
   if (state.session !== null && event.sessionId !== state.session.sessionId) return state;
-  if (event.seq <= state.lastSequence) return state;
-  if (event.seq !== state.lastSequence + 1) {
-    return {
-      ...state,
-      connection: {
-        phase: "failed",
-        attempt: state.connection.attempt,
-        message: `Event sequence jumped from ${String(state.lastSequence)} to ${String(event.seq)}`,
-        retryInMs: null,
-      },
-      apiError: "The browser rejected a non-contiguous event stream.",
-    };
-  }
-
-  const sequenced = { ...state, lastSequence: event.seq };
   if (event.type === "session.state.changed") {
-    return { ...sequenced, sessionState: event.payload.to };
+    return { ...state, sessionState: event.payload.to };
   }
-  if (event.turnId === null) return sequenced;
+  if (event.turnId === null) return state;
 
-  const turns = updateTurn(sequenced.turns, event.turnId, (turn) => {
+  const turns = updateTurn(state.turns, event.turnId, (turn) => {
     if (event.type === "turn.started") {
       return {
         ...turn,
@@ -491,13 +473,13 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
     event.type === "turn.failed" ||
     event.type === "turn.cancelled";
   return {
-    ...sequenced,
+    ...state,
     turns,
     sessionState: terminal
       ? "idle"
       : event.type === "turn.started"
         ? "running"
-        : sequenced.sessionState,
+        : state.sessionState,
   };
 }
 
@@ -520,7 +502,6 @@ export function sessionViewReducer(
       project: action.conversation.project,
       session: action.conversation.session,
       sessionState: action.conversation.session.state,
-      lastSequence: action.conversation.replayAfterSequence,
       inheritedMessages: action.conversation.inheritedMessages,
       turns: action.conversation.turns.map((turn): TurnView => ({
         ...(turn.transcript === undefined
@@ -566,42 +547,15 @@ export function sessionViewReducer(
       historyTruncated: action.conversation.historyTruncated,
       connection: { phase: "offline", attempt: 0, message: "Opening durable event stream" },
     };
-    const snapshot = action.liveSnapshot;
-    if (
-      snapshot?.turn === null ||
-      snapshot === undefined ||
-      snapshot.sessionId !== action.conversation.session.sessionId ||
-      snapshot.replayAfterSequence < loaded.lastSequence
-    ) {
-      return loaded;
-    }
-    const transcript = snapshot.turn.transcript;
+    const withLiveEvents = (action.liveEvents ?? []).reduce(applyEvent, loaded);
     return {
-      ...loaded,
-      lastSequence: snapshot.replayAfterSequence,
-      // Another tab can submit a Turn between the canonical conversation read
-      // and this snapshot read. Preserve the live prefix even when that Turn
-      // was not present in the earlier response.
-      turns: updateTurn(loaded.turns, snapshot.turn.turnId, (turn): TurnView => {
-        return {
-          ...turn,
-          items: transcript.items.map((item) => transcriptItem(item, true)),
-          startedSequence: transcript.startedSequence,
-          terminalSequence: transcript.terminalSequence,
-          stopReason: transcript.stopReason,
-          failure: transcript.failure,
-          cancellation: transcript.cancellation,
-          workspacePatch: transcript.workspacePatch,
-          status:
-            transcript.failure !== null
-              ? "failed"
-              : transcript.cancellation !== null
-                ? "cancelled"
-                : transcript.terminalSequence !== null
-                  ? "completed"
-                  : "running",
-        };
-      }),
+      ...withLiveEvents,
+      turns: withLiveEvents.turns.map((turn) => ({
+        ...turn,
+        items: turn.items.map((item) =>
+          item.kind === "text" ? { ...item, recoveredTextLength: item.text.length } : item,
+        ),
+      })),
     };
   }
   if (action.type === "project.environment.refreshed") {

@@ -102,14 +102,14 @@ web:
     limits: { cpu: 500m, memory: 256Mi }
 
 external:
-  jetstream:
-    servers:
-      - nats://nats-0.nats.svc.cluster.local:4222
-      - nats://nats-1.nats.svc.cluster.local:4222
-      - nats://nats-2.nats.svc.cluster.local:4222
+  kafka:
+    brokers:
+      - kafka-0.kafka.svc.cluster.local:9092
+      - kafka-1.kafka.svc.cluster.local:9092
+      - kafka-2.kafka.svc.cluster.local:9092
     replicas: 3
-    eventRetentionMs: 86400000
-    maximumEventsPerSession: 8192
+    partitions: 32
+    acceptedFactRetentionMs: 7200000
     factChannelLeaseMs: 9000
     maximumActiveFactChannelsPerGateway: 128
   database:

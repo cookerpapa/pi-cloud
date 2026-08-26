@@ -9,7 +9,6 @@ import {
   parseConversationTreeResource,
   parseConversationForkResource,
   parseConversationPruneResource,
-  parseLiveTurnSnapshotResource,
   parseControlPlaneApiError,
   parseModelConfigurationResource,
   parseCubeProxyConfigurationResource,
@@ -39,7 +38,6 @@ import {
   type ConversationTreeView,
   type ConversationForkResource,
   type ConversationPruneResource,
-  type LiveTurnSnapshotResource,
   type AcceptedTurnCancellationResource,
   type AcceptedTurnResource,
   type TurnSteerResource,
@@ -518,17 +516,6 @@ export class PiCloudApi {
         this.#fetch,
         `/v1/conversations/${encodeURIComponent(sessionId)}/prunes`,
         jsonRequest({ turnId, entryId }, idempotencyKey),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async getLiveTurnSnapshot(sessionId: string): Promise<LiveTurnSnapshotResource> {
-    return parseLiveTurnSnapshotResource(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/live-turn-snapshot`,
-        { method: "GET" },
         this.#authorizationToken,
       ),
     );

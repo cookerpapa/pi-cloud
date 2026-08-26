@@ -32,10 +32,10 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE: /run/pi-cloud-secrets/supervisor-management-token
   PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE: /run/pi-cloud-secrets/model-credential-master-key
   PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE: /run/pi-cloud-secrets/cube-egress-config-token
-  PI_CLOUD_JETSTREAM_SERVERS: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
-  PI_CLOUD_JETSTREAM_REPLICAS: "3"
-  PI_CLOUD_AGENT_EVENT_RETENTION_MS: ${PI_CLOUD_AGENT_EVENT_RETENTION_MS:-86400000}
-  PI_CLOUD_MAXIMUM_HOT_EVENTS_PER_SESSION: ${PI_CLOUD_MAXIMUM_HOT_EVENTS_PER_SESSION:-8192}
+  PI_CLOUD_KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+  PI_CLOUD_KAFKA_PARTITIONS: ${PI_CLOUD_KAFKA_PARTITIONS:-32}
+  PI_CLOUD_KAFKA_REPLICAS: "3"
+  PI_CLOUD_ACCEPTED_FACT_RETENTION_MS: ${PI_CLOUD_ACCEPTED_FACT_RETENTION_MS:-7200000}
   PI_CLOUD_FACT_CHANNEL_LEASE_MS: ${PI_CLOUD_FACT_CHANNEL_LEASE_MS:-9000}
   PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE: ${PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE:-128}
   PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: /run/pi-cloud-secrets/worker-event-ingest-token
@@ -165,60 +165,79 @@ services:
       - no-new-privileges:true
     logging: *bounded-logging
 
-  nats-1:
-    image: nats@sha256:d4ac35882ac65aff236cd65b9d3fa4d24332c681e1a85f94eedccd3cdd65b1da
+  kafka-1:
+    image: apache/kafka@sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75
     restart: unless-stopped
-    command: [--config, /etc/nats/nats.conf]
+    environment: &kafka-environment
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "32"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "3"
+      KAFKA_MIN_INSYNC_REPLICAS: "2"
+      KAFKA_NUM_PARTITIONS: "32"
+      KAFKA_LOG_RETENTION_MS: ${PI_CLOUD_ACCEPTED_FACT_RETENTION_MS:-7200000}
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_NODE_ID: "1"
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:9092
     volumes:
-      - nats-1-data:/data
-      - ./nats-1.conf:/etc/nats/nats.conf:ro
+      - kafka-1-data:/var/lib/kafka/data
     networks: [event-log]
     healthcheck:
-      test:
-        [CMD-SHELL, "wget -q -O - http://127.0.0.1:8222/healthz?js-enabled-only=true | grep -q ok"]
-      interval: 3s
-      timeout: 2s
-      retries: 30
-      start_period: 5s
-    mem_limit: 384m
+      test: [CMD-SHELL, "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 45
+      start_period: 20s
+    mem_limit: 768m
     cpus: 1.0
     logging: *bounded-logging
 
-  nats-2:
-    image: nats@sha256:d4ac35882ac65aff236cd65b9d3fa4d24332c681e1a85f94eedccd3cdd65b1da
+  kafka-2:
+    image: apache/kafka@sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75
     restart: unless-stopped
-    command: [--config, /etc/nats/nats.conf]
+    environment:
+      <<: *kafka-environment
+      KAFKA_NODE_ID: "2"
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:9092
     volumes:
-      - nats-2-data:/data
-      - ./nats-2.conf:/etc/nats/nats.conf:ro
+      - kafka-2-data:/var/lib/kafka/data
     networks: [event-log]
     healthcheck:
-      test:
-        [CMD-SHELL, "wget -q -O - http://127.0.0.1:8222/healthz?js-enabled-only=true | grep -q ok"]
-      interval: 3s
-      timeout: 2s
-      retries: 30
-      start_period: 5s
-    mem_limit: 384m
+      test: [CMD-SHELL, "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 45
+      start_period: 20s
+    mem_limit: 768m
     cpus: 1.0
     logging: *bounded-logging
 
-  nats-3:
-    image: nats@sha256:d4ac35882ac65aff236cd65b9d3fa4d24332c681e1a85f94eedccd3cdd65b1da
+  kafka-3:
+    image: apache/kafka@sha256:3f7b939115cd4872e9cee9369d80bd69712fde55f9902f46d793f64848dedc75
     restart: unless-stopped
-    command: [--config, /etc/nats/nats.conf]
+    environment:
+      <<: *kafka-environment
+      KAFKA_NODE_ID: "3"
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:9092
     volumes:
-      - nats-3-data:/data
-      - ./nats-3.conf:/etc/nats/nats.conf:ro
+      - kafka-3-data:/var/lib/kafka/data
     networks: [event-log]
     healthcheck:
-      test:
-        [CMD-SHELL, "wget -q -O - http://127.0.0.1:8222/healthz?js-enabled-only=true | grep -q ok"]
-      interval: 3s
-      timeout: 2s
-      retries: 30
-      start_period: 5s
-    mem_limit: 384m
+      test: [CMD-SHELL, "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 45
+      start_period: 20s
+    mem_limit: 768m
     cpus: 1.0
     logging: *bounded-logging
 
@@ -258,11 +277,11 @@ services:
     depends_on:
       database-bootstrap:
         condition: service_completed_successfully
-      nats-1:
+      kafka-1:
         condition: service_healthy
-      nats-2:
+      kafka-2:
         condition: service_healthy
-      nats-3:
+      kafka-3:
         condition: service_healthy
     environment: *control-plane-runtime-environment
     user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
@@ -1148,9 +1167,9 @@ networks:
 
 volumes:
   postgres-data: {}
-  nats-1-data: {}
-  nats-2-data: {}
-  nats-3-data: {}
+  kafka-1-data: {}
+  kafka-2-data: {}
+  kafka-3-data: {}
   supervisor-boot: {}
   supervisor-1-boot: {}
   prometheus-data: {}

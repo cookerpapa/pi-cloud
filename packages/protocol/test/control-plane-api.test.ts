@@ -21,8 +21,6 @@ import {
   parseDevelopmentEnvironmentListResource,
   parseCreateTurnCancellationRequest,
   parseIdempotencyKey,
-  parseLastEventIdHeader,
-  parseLiveTurnSnapshotResource,
   parseModelConfigurationResource,
   parseProjectResource,
   parseReplaceModelConfigurationRequest,
@@ -91,36 +89,6 @@ describe("control-plane public API schemas", () => {
       }),
     ).toMatchObject({ environments: [{ state: "running" }] });
     expect(() => parseDevelopmentEnvironmentActionRequest({ action: "reimage" })).toThrow();
-  });
-
-  it("validates an active Turn catch-up snapshot", () => {
-    expect(
-      parseLiveTurnSnapshotResource({
-        sessionId: "30000000-0000-4000-8000-000000000001",
-        replayAfterSequence: 2,
-        turn: {
-          turnId: "50000000-0000-4000-8000-000000000001",
-          transcript: {
-            schemaVersion: 1,
-            throughSequence: 2,
-            items: [
-              {
-                kind: "text",
-                text: "still running",
-                firstSequence: 1,
-                lastSequence: 2,
-              },
-            ],
-            startedSequence: null,
-            terminalSequence: null,
-            stopReason: null,
-            failure: null,
-            cancellation: null,
-            workspacePatch: null,
-          },
-        },
-      }),
-    ).toMatchObject({ replayAfterSequence: 2, turn: { transcript: { throughSequence: 2 } } });
   });
 
   it("validates public resources before a browser consumes them", () => {
@@ -289,7 +257,6 @@ describe("control-plane public API schemas", () => {
           },
         ],
         historyTruncated: false,
-        replayAfterSequence: 0,
       }),
     ).toMatchObject({
       turns: [
@@ -656,18 +623,6 @@ describe("control-plane public API schemas", () => {
     );
     expect(() => parseCreateTurnCancellationRequest({ reason: "shutdown" })).toThrow(
       ControlPlaneApiValidationError,
-    );
-  });
-
-  it("parses canonical resumable SSE cursors", () => {
-    expect(parseLastEventIdHeader(undefined)).toBe(0);
-    expect(parseLastEventIdHeader("0")).toBe(0);
-    expect(parseLastEventIdHeader("42")).toBe(42);
-    for (const invalid of ["", "01", "-1", "+1", " 1", ["1", "2"], 1]) {
-      expect(() => parseLastEventIdHeader(invalid)).toThrow(ControlPlaneApiValidationError);
-    }
-    expect(() => parseLastEventIdHeader(String(Number.MAX_SAFE_INTEGER + 1))).toThrow(
-      "outside the supported integer range",
     );
   });
 });

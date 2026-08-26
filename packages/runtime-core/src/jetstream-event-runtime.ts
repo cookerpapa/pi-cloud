@@ -5,7 +5,6 @@ import {
   JetStreamAcceptedAgentEventPublisher,
   FactChannelService,
   JetStreamLiveEventStore,
-  JetStreamLiveTurnSnapshotSource,
   JetStreamTerminalEventOutboxRelay,
   JetStreamTerminalTurnProjectionSource,
 } from "./jetstream-agent-event-log.ts";
@@ -61,7 +60,6 @@ function unavailableReplicas(info: StreamInfo): number {
 export class JetStreamEventRuntime {
   readonly eventHub = new SessionEventHub();
   readonly eventStore: JetStreamLiveEventStore;
-  readonly liveTurnSnapshotSource: JetStreamLiveTurnSnapshotSource;
   readonly terminalTurnProjectionSource: JetStreamTerminalTurnProjectionSource;
   readonly factChannels: FactChannelService;
   readonly #runtime;
@@ -102,10 +100,6 @@ export class JetStreamEventRuntime {
       database: options.database,
       runtime: this.#runtime,
       eventHub: this.eventHub,
-    });
-    this.liveTurnSnapshotSource = new JetStreamLiveTurnSnapshotSource({
-      database: options.database,
-      events: this.eventStore,
     });
     this.terminalTurnProjectionSource = new JetStreamTerminalTurnProjectionSource({
       database: options.database,

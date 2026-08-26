@@ -11,7 +11,7 @@ import {
 } from "./http-supervisor-management.ts";
 import { ExecutionGrantCoordinator } from "@pi-cloud/runtime-core/execution-grant-coordinator";
 import { PostgresCheckpointObjectStore } from "@pi-cloud/runtime-core/postgres-checkpoint-object-store";
-import { JetStreamEventRuntime } from "@pi-cloud/runtime-core/jetstream-event-runtime";
+import { KafkaEventRuntime } from "@pi-cloud/runtime-core/kafka-event-runtime";
 import {
   PostgresSupervisorCredentialAuthorizer,
   SupervisorBootProvisioner,
@@ -60,21 +60,19 @@ export async function startControlPlane(): Promise<void> {
   const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
   const objectStore = new PostgresCheckpointObjectStore(database);
   const controlPlaneInstanceId = randomUUID();
-  let agentEvents: JetStreamEventRuntime | undefined;
+  let agentEvents: KafkaEventRuntime | undefined;
   let runtime: ControlPlaneRuntime | undefined;
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let closing = false;
   try {
-    agentEvents = await JetStreamEventRuntime.create({
+    agentEvents = new KafkaEventRuntime({
       database,
-      servers: config.jetStreamServers,
+      brokers: config.kafkaBrokers,
       instanceId: controlPlaneInstanceId,
-      authority: {
-        replicas: config.jetStreamReplicas,
-        eventRetentionMs: config.agentEventRetentionMs,
-        maximumEventsPerSession: config.maximumEventsPerSession,
-      },
+      partitions: config.kafkaPartitions,
+      replicas: config.kafkaReplicas,
+      retentionMs: config.acceptedFactRetentionMs,
       factChannelLeaseMs: config.factChannelLeaseMs,
       factChannelMaximumActive: config.factChannelMaximumActive,
     });
@@ -228,7 +226,6 @@ export async function startControlPlane(): Promise<void> {
       eventRuntime: {
         eventHub: activeAgentEvents.eventHub,
         eventStore: activeAgentEvents.eventStore,
-        liveTurnSnapshotSource: activeAgentEvents.liveTurnSnapshotSource,
         terminalTurnProjectionSource: activeAgentEvents.terminalTurnProjectionSource,
       },
       developmentEnvironmentService,

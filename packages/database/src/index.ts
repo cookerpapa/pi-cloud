@@ -166,6 +166,8 @@ export {
   downAgentEventWriterChannels,
   upFactChannels,
   downFactChannels,
+  upSessionKafkaHeads,
+  downSessionKafkaHeads,
 } from "./migrations/index.ts";
 
 export {

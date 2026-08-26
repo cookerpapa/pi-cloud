@@ -70,6 +70,19 @@ export type AcceptedAgentEventFact = Readonly<{
   occurredAt: string;
 }>;
 
+export type AcceptedTerminalEventFact = Readonly<{
+  kind: "terminal_event";
+  factId: string;
+  scope: Readonly<{
+    tenantId: string;
+    sessionId: string;
+    runId: string;
+    turnId: string;
+  }>;
+  event: PiCloudEvent;
+  occurredAt: string;
+}>;
+
 export type AcceptedPiSessionMutationFact = Readonly<{
   kind: "pi_session_mutation";
   factId: string;
@@ -78,7 +91,8 @@ export type AcceptedPiSessionMutationFact = Readonly<{
   occurredAt: string;
 }>;
 
-export type AcceptedFact = AcceptedAgentEventFact | AcceptedPiSessionMutationFact;
+export type AcceptedFact =
+  AcceptedAgentEventFact | AcceptedTerminalEventFact | AcceptedPiSessionMutationFact;
 
 export type AcceptedFactReceipt = Readonly<{
   factId: string;

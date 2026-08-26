@@ -2,13 +2,11 @@ import type { Database } from "@pi-cloud/database";
 import {
   SESSION_TERMINAL_EVENT_OUTBOX_TOPIC,
   parseControlToSupervisorMessage,
-  parseLiveTurnSnapshotResource,
   parsePiCloudEvent,
   parseSupervisorToControlMessage,
   type EventAckMessage,
   type EventPublishMessage,
   type FactChannelOpenMessage,
-  type LiveTurnSnapshotResource,
   type PiCloudEvent,
 } from "@pi-cloud/protocol";
 import { DeliverPolicy } from "@nats-io/jetstream";
@@ -35,7 +33,6 @@ import {
   sessionSubjectToken,
   type PiCloudJetStream,
 } from "./jetstream-runtime.ts";
-import type { LiveTurnSnapshotSource } from "./live-turn-snapshot.ts";
 import type { SessionEventHub } from "./session-event-hub.ts";
 import WebSocket, { type RawData } from "ws";
 import {
@@ -1236,47 +1233,6 @@ export class JetStreamLiveEventStore implements DurableEventLog {
         this.#eventHub.resyncAll();
       }
     }
-  }
-}
-
-export class JetStreamLiveTurnSnapshotSource implements LiveTurnSnapshotSource {
-  readonly #database: Kysely<Database>;
-  readonly #events: JetStreamLiveEventStore;
-
-  constructor(options: { database: Kysely<Database>; events: JetStreamLiveEventStore }) {
-    this.#database = options.database;
-    this.#events = options.events;
-  }
-
-  async read(tenantId: string, sessionId: string): Promise<LiveTurnSnapshotResource> {
-    const activeTurn = await this.#database
-      .selectFrom("turns")
-      .select("id")
-      .where("tenant_id", "=", tenantId)
-      .where("session_id", "=", sessionId)
-      .where("state", "not in", ["completed", "failed", "cancelled"])
-      .orderBy("created_at", "desc")
-      .executeTakeFirst();
-    const replay = await this.#events.openReplayWindow(tenantId, sessionId, 0).catch(() => ({
-      events: [],
-      highWaterMark: 0,
-    }));
-    if (activeTurn === undefined) {
-      return parseLiveTurnSnapshotResource({
-        sessionId,
-        replayAfterSequence: replay.highWaterMark,
-        turn: null,
-      });
-    }
-    const events = await this.#events.readTurn(tenantId, sessionId, activeTurn.id);
-    return parseLiveTurnSnapshotResource({
-      sessionId,
-      replayAfterSequence: events.at(-1)?.seq ?? replay.highWaterMark,
-      turn:
-        events.length === 0
-          ? null
-          : { turnId: activeTurn.id, transcript: projectConversationTurnTranscript(events) },
-    });
   }
 }
 

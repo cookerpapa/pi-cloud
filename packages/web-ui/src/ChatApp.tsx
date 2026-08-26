@@ -163,7 +163,6 @@ export default function ChatApp() {
     entryId: string;
   } | null>(null);
   const [forkTitle, setForkTitle] = useState("");
-  const lastSequenceRef = useRef(0);
   const chatScrollerRef = useRef<HTMLElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -306,13 +305,7 @@ export default function ChatApp() {
 
   const loadConversation = useCallback(
     async (sessionId: string) => {
-      const conversation = await api.getConversation(sessionId);
-      const liveSnapshot = await api.getLiveTurnSnapshot(sessionId).catch(() => undefined);
-      const replayAfterSequence =
-        liveSnapshot?.turn === null || liveSnapshot === undefined
-          ? conversation.replayAfterSequence
-          : liveSnapshot.replayAfterSequence;
-      return { conversation, liveSnapshot, replayAfterSequence };
+      return { conversation: await api.getConversation(sessionId) };
     },
     [api],
   );
@@ -427,10 +420,15 @@ export default function ChatApp() {
     const controller = new AbortController();
     void streamSessionEvents({
       sessionId,
-      afterSequence: lastSequenceRef.current,
       signal: controller.signal,
+      onSnapshot(snapshot) {
+        update({
+          type: "conversation.loaded",
+          conversation: snapshot.conversation,
+          liveEvents: snapshot.liveEvents,
+        });
+      },
       onEvent(event) {
-        lastSequenceRef.current = event.seq;
         update({ type: "stream.event", event });
         if (
           event.type === "turn.completed" ||
@@ -445,16 +443,6 @@ export default function ChatApp() {
       onStatus(status) {
         update({ type: "stream.status", status });
       },
-      async onCursorExpired() {
-        const loaded = await loadConversation(sessionId);
-        lastSequenceRef.current = loaded.replayAfterSequence;
-        update({
-          type: "conversation.loaded",
-          conversation: loaded.conversation,
-          ...(loaded.liveSnapshot === undefined ? {} : { liveSnapshot: loaded.liveSnapshot }),
-        });
-        return loaded.replayAfterSequence;
-      },
     }).catch(() => {
       if (!controller.signal.aborted) {
         update({ type: "api.error", message: t("chat.streamDisconnected") });
@@ -464,7 +452,6 @@ export default function ChatApp() {
   }, [
     api,
     authPhase,
-    loadConversation,
     reconnectGeneration,
     refreshConversations,
     refreshConversationTree,
@@ -498,11 +485,9 @@ export default function ChatApp() {
           if (state.session !== null) {
             const loaded = await loadConversation(state.session.sessionId).catch(() => null);
             if (!cancelled && loaded !== null) {
-              lastSequenceRef.current = loaded.replayAfterSequence;
               update({
                 type: "conversation.loaded",
                 conversation: loaded.conversation,
-                ...(loaded.liveSnapshot === undefined ? {} : { liveSnapshot: loaded.liveSnapshot }),
               });
               update({
                 type: "project.environment.refreshed",
@@ -567,7 +552,7 @@ export default function ChatApp() {
       scroller.scrollTo({ top: scroller.scrollHeight, behavior: "auto" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [state.lastSequence, state.turns.length]);
+  }, [state.turns]);
 
   useEffect(() => {
     if (pendingTreeJump === null) return;
@@ -580,7 +565,6 @@ export default function ChatApp() {
   }, [pendingTreeJump, state.session?.sessionId, state.turns.length]);
 
   function resetConversation(): void {
-    lastSequenceRef.current = 0;
     setState(createInitialSessionView());
     setPrompt("");
     setInspectorOpen(false);
@@ -616,11 +600,9 @@ export default function ChatApp() {
     update({ type: "api.error.cleared" });
     try {
       const loaded = await loadConversation(sessionId);
-      lastSequenceRef.current = loaded.replayAfterSequence;
       update({
         type: "conversation.loaded",
         conversation: loaded.conversation,
-        ...(loaded.liveSnapshot === undefined ? {} : { liveSnapshot: loaded.liveSnapshot }),
       });
       if (loaded.conversation.session.workspaceState === "missing") {
         setSelectedWorkspaceId(elasticWorkspaces[0]?.workspaceId ?? "");
@@ -701,11 +683,9 @@ export default function ChatApp() {
         newIdempotencyKey("prune"),
       );
       const loaded = await loadConversation(target.sourceSessionId);
-      lastSequenceRef.current = loaded.replayAfterSequence;
       update({
         type: "conversation.loaded",
         conversation: loaded.conversation,
-        ...(loaded.liveSnapshot === undefined ? {} : { liveSnapshot: loaded.liveSnapshot }),
       });
       await Promise.all([
         refreshConversations(),
@@ -800,11 +780,9 @@ export default function ChatApp() {
         executionMode === "development_environment" ? workingDirectory : "/workspace",
       );
       const loaded = await loadConversation(session.sessionId);
-      lastSequenceRef.current = loaded.replayAfterSequence;
       update({
         type: "conversation.loaded",
         conversation: loaded.conversation,
-        ...(loaded.liveSnapshot === undefined ? {} : { liveSnapshot: loaded.liveSnapshot }),
       });
       setWorkspacePanelOpen(false);
       await Promise.all([
@@ -900,11 +878,9 @@ export default function ChatApp() {
         newIdempotencyKey("workspace-rebind"),
       );
       const loaded = await loadConversation(sessionId);
-      lastSequenceRef.current = loaded.replayAfterSequence;
       update({
         type: "conversation.loaded",
         conversation: loaded.conversation,
-        ...(loaded.liveSnapshot === undefined ? {} : { liveSnapshot: loaded.liveSnapshot }),
       });
       setWorkspaceRebindOpen(false);
       setRebindWorkspaceName("");

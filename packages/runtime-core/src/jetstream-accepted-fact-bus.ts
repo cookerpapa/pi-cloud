@@ -13,7 +13,7 @@ export class JetStreamAcceptedFactBus implements AcceptedFactBus {
   }
 
   async append(fact: AcceptedFact): Promise<AcceptedFactReceipt> {
-    if (fact.kind === "agent_event") {
+    if (fact.kind === "agent_event" || fact.kind === "terminal_event") {
       await this.#events.append({
         schemaVersion: 2,
         tenantId: fact.scope.tenantId,

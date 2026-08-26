@@ -1,41 +1,33 @@
-import type { PiCloudEvent } from "@pi-cloud/protocol";
+import type {
+  ConversationDetailResource,
+  PiCloudEvent,
+  SessionViewSnapshotResource,
+} from "@pi-cloud/protocol";
 import type { ServerResponse } from "node:http";
-import {
-  DurableEventStoreError,
-  type DurableEventLog,
-  type EventReplayWindow,
-} from "./durable-event-store.ts";
-import {
-  SessionEventHub,
-  type SessionEventSubscription,
-  type SessionEventWake,
-} from "./session-event-hub.ts";
+import type { LiveSessionTailSnapshot } from "./kafka-live-session-tail.ts";
+import { SessionEventHub, type SessionEventSubscription } from "./session-event-hub.ts";
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
-const DEFAULT_REPLAY_PAGE_SIZE = 500;
 
-export type SessionEventStreamOptions = {
+export type SessionEventStreamOptions = Readonly<{
   heartbeatIntervalMs?: number;
-  replayPageSize?: number;
-};
+}>;
 
-type StreamItem = { kind: "wake"; wake: SessionEventWake | undefined } | { kind: "heartbeat" };
+export interface LiveSessionTailSource {
+  snapshot(tenantId: string, sessionId: string): LiveSessionTailSnapshot;
+}
 
-type ReplayWriteResult = {
-  lastSentSequence: number;
-  eventsWritten: number;
-  writable: boolean;
-};
+export type CanonicalSessionView = Readonly<{
+  conversation: ConversationDetailResource;
+  canonicalThroughSequence: number;
+}>;
 
-function positiveInteger(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new TypeError(`${name} must be a positive safe integer`);
-  }
-  return value;
+function snapshotFrame(snapshot: SessionViewSnapshotResource): string {
+  return `event: session.snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`;
 }
 
 function eventFrame(event: PiCloudEvent): string {
-  return `id: ${event.seq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
 async function writeChunk(response: ServerResponse, chunk: string): Promise<boolean> {
@@ -58,216 +50,108 @@ async function writeChunk(response: ServerResponse, chunk: string): Promise<bool
 }
 
 async function nextWithHeartbeat(
-  pendingWake: Promise<SessionEventWake | undefined>,
+  subscription: SessionEventSubscription,
   heartbeatIntervalMs: number,
-): Promise<StreamItem> {
+) {
   let timer: NodeJS.Timeout | undefined;
-  const heartbeat = new Promise<StreamItem>((resolve) => {
-    timer = setTimeout(() => resolve({ kind: "heartbeat" }), heartbeatIntervalMs);
+  const heartbeat = new Promise<"heartbeat">((resolve) => {
+    timer = setTimeout(() => resolve("heartbeat"), heartbeatIntervalMs);
     timer.unref();
   });
-  const result = await Promise.race<StreamItem>([
-    pendingWake.then((wake) => ({ kind: "wake", wake })),
-    heartbeat,
-  ]);
-  if (result.kind === "wake" && timer !== undefined) clearTimeout(timer);
+  const result = await Promise.race([subscription.next(), heartbeat]);
+  if (result !== "heartbeat" && timer !== undefined) clearTimeout(timer);
   return result;
 }
 
 export class OpenSessionEventStream {
-  readonly #store: DurableEventLog;
   readonly #subscription: SessionEventSubscription;
-  readonly #tenantId: string;
-  readonly #sessionId: string;
+  readonly #snapshot: SessionViewSnapshotResource;
   readonly #highWaterMark: number;
-  readonly #initialEvents: readonly PiCloudEvent[];
-  readonly #afterSequence: number;
   readonly #heartbeatIntervalMs: number;
-  readonly #replayPageSize: number;
 
   constructor(options: {
-    store: DurableEventLog;
     subscription: SessionEventSubscription;
-    tenantId: string;
-    sessionId: string;
+    snapshot: SessionViewSnapshotResource;
     highWaterMark: number;
-    initialEvents: readonly PiCloudEvent[];
-    afterSequence: number;
     heartbeatIntervalMs: number;
-    replayPageSize: number;
   }) {
-    this.#store = options.store;
     this.#subscription = options.subscription;
-    this.#tenantId = options.tenantId;
-    this.#sessionId = options.sessionId;
+    this.#snapshot = options.snapshot;
     this.#highWaterMark = options.highWaterMark;
-    this.#initialEvents = options.initialEvents;
-    this.#afterSequence = options.afterSequence;
     this.#heartbeatIntervalMs = options.heartbeatIntervalMs;
-    this.#replayPageSize = options.replayPageSize;
   }
 
   async pipe(response: ServerResponse): Promise<void> {
-    let lastSentSequence = this.#afterSequence;
+    let lastSentSequence = this.#highWaterMark;
     const close = (): void => this.#subscription.close();
     response.once("close", close);
     try {
-      const initial = await this.#writeReplayWindow(response, lastSentSequence, {
-        highWaterMark: this.#highWaterMark,
-        events: this.#initialEvents,
-      });
-      if (!initial.writable) return;
-      lastSentSequence = initial.lastSentSequence;
-
-      let pendingWake = this.#subscription.next();
+      if (!(await writeChunk(response, snapshotFrame(this.#snapshot)))) return;
       while (!response.destroyed && !response.writableEnded) {
-        const item = await nextWithHeartbeat(pendingWake, this.#heartbeatIntervalMs);
-        if (item.kind === "heartbeat") {
-          const recovered = await this.#readAndWriteCurrentSuffix(response, lastSentSequence, null);
-          if (!recovered.writable) return;
-          lastSentSequence = recovered.lastSentSequence;
-          if (recovered.eventsWritten === 0) {
-            if (!(await writeChunk(response, ": keepalive\n\n"))) return;
-          }
+        const item = await nextWithHeartbeat(this.#subscription, this.#heartbeatIntervalMs);
+        if (item === "heartbeat") {
+          if (!(await writeChunk(response, ": keepalive\n\n"))) return;
           continue;
         }
-        if (item.wake === undefined) return;
-        pendingWake = this.#subscription.next();
-        if (item.wake.event !== undefined) {
-          const event = item.wake.event;
-          if (event.seq <= lastSentSequence) continue;
-          if (event.seq === lastSentSequence + 1) {
-            if (!(await writeChunk(response, eventFrame(event)))) return;
-            lastSentSequence = event.seq;
-            continue;
-          }
-        }
-        if (item.wake.throughSequence !== null && item.wake.throughSequence <= lastSentSequence) {
-          continue;
-        }
-        const delivered = await this.#readAndWriteCurrentSuffix(
-          response,
-          lastSentSequence,
-          item.wake.throughSequence,
-        );
-        if (!delivered.writable) return;
-        lastSentSequence = delivered.lastSentSequence;
+        if (item === undefined) return;
+        // Queue overflow deliberately asks the browser to reconnect and receive
+        // one replacement snapshot instead of pinning shared Gateway memory.
+        if (item.throughSequence === null || item.event === undefined) return;
+        const event = item.event;
+        if (event.seq <= lastSentSequence) continue;
+        if (event.seq !== lastSentSequence + 1) return;
+        if (!(await writeChunk(response, eventFrame(event)))) return;
+        lastSentSequence = event.seq;
       }
     } finally {
       response.off("close", close);
       this.#subscription.close();
     }
   }
-
-  async #readAndWriteCurrentSuffix(
-    response: ServerResponse,
-    lastSentSequence: number,
-    minimumThroughSequence: number | null,
-  ): Promise<ReplayWriteResult> {
-    const replay = await this.#store.openReplayWindow(
-      this.#tenantId,
-      this.#sessionId,
-      lastSentSequence,
-      this.#replayPageSize,
-    );
-    if (minimumThroughSequence !== null && replay.highWaterMark < minimumThroughSequence) {
-      throw new DurableEventStoreError(
-        "event_store_invariant",
-        "Session event notification is ahead of the durable event stream",
-      );
-    }
-    return this.#writeReplayWindow(response, lastSentSequence, replay);
-  }
-
-  async #writeReplayWindow(
-    response: ServerResponse,
-    startingSequence: number,
-    replay: EventReplayWindow,
-  ): Promise<ReplayWriteResult> {
-    let lastSentSequence = startingSequence;
-    let eventsWritten = 0;
-    let page = replay.events;
-    while (lastSentSequence < replay.highWaterMark) {
-      if (page.length === 0) {
-        throw new DurableEventStoreError(
-          "event_store_invariant",
-          "Durable event replay contains a sequence gap",
-        );
-      }
-      for (const event of page) {
-        if (event.seq <= lastSentSequence) continue;
-        if (event.seq !== lastSentSequence + 1) {
-          throw new DurableEventStoreError(
-            "event_store_invariant",
-            "Durable event replay contains a sequence gap",
-          );
-        }
-        if (!(await writeChunk(response, eventFrame(event)))) {
-          return { lastSentSequence, eventsWritten, writable: false };
-        }
-        lastSentSequence = event.seq;
-        eventsWritten += 1;
-      }
-      if (lastSentSequence >= replay.highWaterMark) break;
-      page = await this.#store.readReplayPage(
-        this.#tenantId,
-        this.#sessionId,
-        lastSentSequence,
-        replay.highWaterMark,
-        this.#replayPageSize,
-      );
-    }
-    return { lastSentSequence, eventsWritten, writable: true };
-  }
 }
 
 export class SessionEventStream {
-  readonly #store: DurableEventLog;
+  readonly #tails: LiveSessionTailSource;
   readonly #hub: SessionEventHub;
   readonly #heartbeatIntervalMs: number;
-  readonly #replayPageSize: number;
 
   constructor(
-    store: DurableEventLog,
+    tails: LiveSessionTailSource,
     hub: SessionEventHub,
     options: SessionEventStreamOptions = {},
   ) {
-    this.#store = store;
+    this.#tails = tails;
     this.#hub = hub;
-    this.#heartbeatIntervalMs = positiveInteger(
-      options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS,
-      "heartbeatIntervalMs",
-    );
-    this.#replayPageSize = positiveInteger(
-      options.replayPageSize ?? DEFAULT_REPLAY_PAGE_SIZE,
-      "replayPageSize",
-    );
+    this.#heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+    if (!Number.isSafeInteger(this.#heartbeatIntervalMs) || this.#heartbeatIntervalMs < 1) {
+      throw new TypeError("heartbeatIntervalMs must be a positive safe integer");
+    }
   }
 
-  async open(
-    tenantId: string,
-    sessionId: string,
-    afterSequence: number,
-  ): Promise<OpenSessionEventStream> {
-    const subscription = this.#hub.subscribe(tenantId, sessionId);
+  async open(options: {
+    tenantId: string;
+    sessionId: string;
+    loadCanonical(): Promise<CanonicalSessionView>;
+  }): Promise<OpenSessionEventStream> {
+    const subscription = this.#hub.subscribe(options.tenantId, options.sessionId);
     try {
-      const replay = await this.#store.openReplayWindow(
-        tenantId,
-        sessionId,
-        afterSequence,
-        this.#replayPageSize,
-      );
-      return new OpenSessionEventStream({
-        store: this.#store,
-        subscription,
-        tenantId,
-        sessionId,
-        highWaterMark: replay.highWaterMark,
-        initialEvents: replay.events,
-        afterSequence,
-        heartbeatIntervalMs: this.#heartbeatIntervalMs,
-        replayPageSize: this.#replayPageSize,
-      });
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const canonical = await options.loadCanonical();
+        const tail = this.#tails.snapshot(options.tenantId, options.sessionId);
+        if (tail.canonicalThroughSequence > canonical.canonicalThroughSequence) continue;
+        const liveEvents = tail.events.filter(
+          (event) => event.seq > canonical.canonicalThroughSequence,
+        );
+        return new OpenSessionEventStream({
+          subscription,
+          snapshot: { schemaVersion: 1, conversation: canonical.conversation, liveEvents },
+          highWaterMark:
+            liveEvents.at(-1)?.seq ??
+            Math.max(canonical.canonicalThroughSequence, tail.canonicalThroughSequence),
+          heartbeatIntervalMs: this.#heartbeatIntervalMs,
+        });
+      }
+      throw new Error("Canonical Session view did not catch up with its committed Kafka tail");
     } catch (error: unknown) {
       subscription.close();
       throw error;
