@@ -2,7 +2,7 @@
 
 This package owns the typed PostgreSQL schema, Kysely client and ordered
 migrations. PostgreSQL stores product/control state and canonical Pi Session
-records; it does not own the JetStream hot event log or Workspace file bytes.
+records; it does not own the Kafka AcceptedFact log or Workspace file bytes.
 
 The current schema enforces tenant-consistent foreign keys, idempotent command
 intake, Session ordering, Run/Attempt leases and fences, Pi SessionStorage,

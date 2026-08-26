@@ -2,7 +2,7 @@ import {
   ACCEPTED_FACT_INGEST_PATH,
   FACT_CHANNEL_PATH,
   type AcceptedFactChannelSession,
-} from "@pi-cloud/runtime-core/jetstream-agent-event-log";
+} from "@pi-cloud/runtime-core/accepted-fact-channel";
 import {
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,

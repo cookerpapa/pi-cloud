@@ -146,12 +146,7 @@ export async function createControlPlaneRuntime(
   options: ControlPlaneRuntimeOptions,
 ): Promise<ControlPlaneRuntime> {
   const eventHub = options.eventRuntime?.eventHub ?? new SessionEventHub();
-  const eventStore =
-    options.eventRuntime?.eventStore ??
-    new DurableEventStore({
-      eventHub,
-      database: options.database,
-    });
+  const eventStore = options.eventRuntime?.eventStore ?? new DurableEventStore();
   const terminalTurnProjectionSource =
     options.eventRuntime?.terminalTurnProjectionSource ??
     new UnavailableTerminalTurnProjectionSource();

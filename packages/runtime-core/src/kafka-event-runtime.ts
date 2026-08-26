@@ -2,7 +2,7 @@ import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { AcceptedFactTerminalOutboxRelay } from "./accepted-fact-terminal-outbox-relay.ts";
 import { PostgresExecutionGrantAuthorityGate } from "./execution-grant-authority-gate.ts";
-import { FactChannelService } from "./jetstream-agent-event-log.ts";
+import { FactChannelService } from "./accepted-fact-channel.ts";
 import {
   ACCEPTED_FACT_TOPIC,
   KafkaAcceptedFactBus,

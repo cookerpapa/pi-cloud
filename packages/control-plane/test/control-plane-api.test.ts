@@ -2751,7 +2751,7 @@ describe.sequential("single-user durable turn intake API", () => {
     });
   });
 
-  it("accepts an already-ahead JetStream projection boundary during Run settlement", async () => {
+  it("accepts an already-ahead Kafka projection boundary during Run settlement", async () => {
     const accepted = await acceptTurn(
       "accepted-projection-ahead",
       "settle after the accepted projector advances first",

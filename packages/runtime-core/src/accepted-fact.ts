@@ -1,39 +1,5 @@
 import type { PiSessionMutationOperation } from "@pi-cloud/pi-session-postgres";
-import { parsePiCloudEvent, type EventPublishMessage, type PiCloudEvent } from "@pi-cloud/protocol";
-
-export type AcceptedAgentEventEnvelope = Readonly<{
-  schemaVersion: 2;
-  tenantId: string;
-  events: readonly PiCloudEvent[];
-}>;
-
-export function parseAcceptedAgentEventEnvelope(
-  value: Uint8Array | Buffer | string,
-): AcceptedAgentEventEnvelope {
-  const text = typeof value === "string" ? value : Buffer.from(value).toString("utf8");
-  const candidate = JSON.parse(text) as unknown;
-  if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) {
-    throw new TypeError("Accepted Agent event envelope is invalid");
-  }
-  const envelope = candidate as Record<string, unknown>;
-  if (
-    envelope.schemaVersion !== 2 ||
-    typeof envelope.tenantId !== "string" ||
-    envelope.tenantId.length < 1 ||
-    envelope.tenantId.length > 256 ||
-    !Array.isArray(envelope.events) ||
-    envelope.events.length < 1 ||
-    envelope.events.length > 128
-  ) {
-    throw new TypeError("Accepted Agent event envelope is invalid");
-  }
-  const events = envelope.events.map(parsePiCloudEvent);
-  const sessionId = events[0]!.sessionId;
-  if (events.some((event) => event.sessionId !== sessionId)) {
-    throw new TypeError("Accepted Agent event envelope mixes Sessions");
-  }
-  return { schemaVersion: 2, tenantId: envelope.tenantId, events };
-}
+import type { EventPublishMessage, PiCloudEvent } from "@pi-cloud/protocol";
 
 export type CandidatePiSessionMutationFact = Readonly<{
   schemaVersion: 1;

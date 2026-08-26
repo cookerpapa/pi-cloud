@@ -292,7 +292,6 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         },
       ],
       historyTruncated: false,
-      replayAfterSequence: 0,
     });
 
     const foreignDetail = await http.inject({

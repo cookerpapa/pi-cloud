@@ -7,7 +7,7 @@ import {
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
-import { WebSocketAcceptedFactIngestor } from "../src/jetstream-agent-event-log.ts";
+import { WebSocketAcceptedFactIngestor } from "../src/accepted-fact-channel.ts";
 import type { PiSessionMutationPublishFrame } from "../src/accepted-fact.ts";
 
 type WorkerFactFrame =

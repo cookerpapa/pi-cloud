@@ -12,7 +12,7 @@ const IDS = {
 } as const;
 
 describe("TerminalTurnProjectionGateway", () => {
-  it("returns the trusted JetStream prefix to an authenticated Worker", async () => {
+  it("returns the trusted Kafka prefix to an authenticated Worker", async () => {
     const fastify = Fastify({ logger: false });
     const token = `projection-${"p".repeat(48)}`;
     new TerminalTurnProjectionGateway({

@@ -133,8 +133,6 @@ export {
   DurableEventStoreError,
   type FactChannelFactory,
   type DurableEventStoreErrorCode,
-  type DurableEventStoreOptions,
-  type EventReplayWindow,
 } from "@pi-cloud/runtime-core/durable-event-store";
 export { projectConversationTurnTranscript } from "@pi-cloud/runtime-core/conversation-turn-projection";
 export {

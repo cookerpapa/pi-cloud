@@ -185,7 +185,11 @@
             },
             "replicas": { "type": "integer", "minimum": 1, "maximum": 5 },
             "partitions": { "type": "integer", "minimum": 1, "maximum": 1024 },
-            "acceptedFactRetentionMs": { "type": "integer", "minimum": 3600000, "maximum": 604800000 },
+            "acceptedFactRetentionMs": {
+              "type": "integer",
+              "minimum": 3600000,
+              "maximum": 604800000
+            },
             "factChannelLeaseMs": { "type": "integer", "minimum": 3000, "maximum": 30000 },
             "maximumActiveFactChannelsPerGateway": {
               "type": "integer",

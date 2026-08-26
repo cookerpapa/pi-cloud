@@ -5,8 +5,8 @@ import {
   TtlCheckpointObjectStore,
 } from "@pi-cloud/runtime-core/checkpoint-runtime";
 import type { FactChannelFactory } from "@pi-cloud/runtime-core/durable-event-store";
-import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
-import { FactChannelPiSessionMutationProducer } from "@pi-cloud/runtime-core/jetstream-pi-session-mutations";
+import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/accepted-fact-channel";
+import { FactChannelPiSessionMutationProducer } from "@pi-cloud/runtime-core/fact-channel-pi-session-mutation-producer";
 import type { ActiveFactChannelResolver } from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
 import { HttpTerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";

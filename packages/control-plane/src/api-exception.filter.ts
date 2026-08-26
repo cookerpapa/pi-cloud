@@ -105,13 +105,11 @@ export function mappedError(error: unknown): ErrorResponse {
     const status =
       error.code === "not_found"
         ? 404
-        : error.code === "cursor_expired"
-          ? 410
-          : error.code === "cursor_ahead" || error.code === "event_conflict"
-            ? 409
-            : error.code === "event_store_invariant"
-              ? 503
-              : 400;
+        : error.code === "event_conflict"
+          ? 409
+          : error.code === "event_store_invariant"
+            ? 503
+            : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof HttpException) {

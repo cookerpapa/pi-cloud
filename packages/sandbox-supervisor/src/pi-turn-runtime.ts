@@ -29,7 +29,7 @@ export type PiToolOutputArtifact = {
 export type PiTurnResult = {
   stopReason: string;
   workspacePatch?: WorkspacePatch;
-  /** Highest Agent event durably acknowledged by the JetStream event authority. */
+  /** Highest Agent event durably acknowledged by the Kafka AcceptedFact authority. */
   lastEventSeq?: number;
 };
 

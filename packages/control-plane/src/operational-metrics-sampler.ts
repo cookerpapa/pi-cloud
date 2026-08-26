@@ -122,6 +122,9 @@ export class OperationalMetricsSampler {
       this.#metrics.factChannelsActive.set(snapshot.factChannels.activeChannels);
       this.#metrics.factChannelsLimit.set(snapshot.factChannels.maximumActiveChannels);
       this.#metrics.factChannelRenewalFailures.set(snapshot.factChannels.renewalFailures);
+      this.#metrics.kafkaLiveTailSessions.set(snapshot.liveTail.activeSessionTails);
+      this.#metrics.kafkaLiveTailEvents.set(snapshot.liveTail.cachedEvents);
+      this.#metrics.kafkaLiveTailBytes.set(snapshot.liveTail.cachedBytes);
       this.#metrics.operationalSampleTimestamp.set({ source: "kafka" }, Date.now() / 1_000);
     } catch (error: unknown) {
       this.#metrics.operationalSampleFailures.inc({ source: "kafka" });

@@ -192,7 +192,11 @@ services:
       - kafka-1-data:/var/lib/kafka/data
     networks: [event-log]
     healthcheck:
-      test: [CMD-SHELL, "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1"]
+      test:
+        [
+          CMD-SHELL,
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1",
+        ]
       interval: 5s
       timeout: 5s
       retries: 45
@@ -212,7 +216,11 @@ services:
       - kafka-2-data:/var/lib/kafka/data
     networks: [event-log]
     healthcheck:
-      test: [CMD-SHELL, "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1"]
+      test:
+        [
+          CMD-SHELL,
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1",
+        ]
       interval: 5s
       timeout: 5s
       retries: 45
@@ -232,7 +240,11 @@ services:
       - kafka-3-data:/var/lib/kafka/data
     networks: [event-log]
     healthcheck:
-      test: [CMD-SHELL, "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1"]
+      test:
+        [
+          CMD-SHELL,
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1",
+        ]
       interval: 5s
       timeout: 5s
       retries: 45

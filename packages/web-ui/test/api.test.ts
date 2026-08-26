@@ -529,7 +529,6 @@ describe("tenant-aware browser API", () => {
                 inheritedMessages: [],
                 turns: [],
                 historyTruncated: false,
-                replayAfterSequence: 0,
               },
         ),
         { status: 200, headers: { "content-type": "application/json" } },

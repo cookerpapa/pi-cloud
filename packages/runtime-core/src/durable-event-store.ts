@@ -4,10 +4,7 @@ import {
   type EventAckMessage,
   type PiCloudEvent,
 } from "@pi-cloud/protocol";
-import type { Database } from "@pi-cloud/database";
-import type { Kysely } from "kysely";
 import { isDeepStrictEqual } from "node:util";
-import type { SessionEventHub } from "./session-event-hub.ts";
 import type { PiSessionMutationFactChannel } from "./accepted-fact.ts";
 
 export type DurableEventStoreErrorCode =
@@ -16,8 +13,6 @@ export type DurableEventStoreErrorCode =
   | "event_conflict"
   | "sequence_gap"
   | "stale_execution_grant"
-  | "cursor_ahead"
-  | "cursor_expired"
   | "event_store_invariant";
 
 export class DurableEventStoreError extends Error {
@@ -31,11 +26,6 @@ export class DurableEventStoreError extends Error {
     this.retryable = retryable;
   }
 }
-
-export type EventReplayWindow = {
-  events: readonly PiCloudEvent[];
-  highWaterMark: number;
-};
 
 export type FactChannelOpenRequest = Readonly<{
   executionGrant: string;
@@ -54,39 +44,13 @@ export interface FactChannelFactory {
   open(request: FactChannelOpenRequest): Promise<FactChannel>;
 }
 
-export interface DurableEventLog {
-  openReplayWindow(
-    tenantId: string,
-    sessionId: string,
-    afterSequence: number,
-    limit?: number,
-  ): Promise<EventReplayWindow>;
-  readReplayPage(
-    tenantId: string,
-    sessionId: string,
-    afterSequence: number,
-    throughSequence: number,
-    limit?: number,
-  ): Promise<readonly PiCloudEvent[]>;
-}
-
-export type DurableEventStoreOptions = Readonly<{
-  eventHub?: SessionEventHub;
-  database?: Kysely<Database>;
-}>;
-
 /**
  * Deterministic process-local event log for unit/development composition. The
  * maintained production path injects KafkaLiveSessionTail and never constructs
  * this class.
  */
-export class DurableEventStore implements DurableEventLog, FactChannelFactory {
+export class DurableEventStore implements FactChannelFactory {
   readonly #events = new Map<string, PiCloudEvent[]>();
-  readonly #database: Kysely<Database> | undefined;
-
-  constructor(options: DurableEventStoreOptions = {}) {
-    this.#database = options.database;
-  }
 
   snapshot(_tenantId: string, sessionId: string) {
     const events = this.#events.get(sessionId) ?? [];
@@ -156,37 +120,6 @@ export class DurableEventStore implements DurableEventLog, FactChannelFactory {
     };
   }
 
-  async openReplayWindow(
-    tenantId: string,
-    sessionId: string,
-    afterSequence: number,
-    limit = 500,
-  ): Promise<EventReplayWindow> {
-    await this.#assertSession(tenantId, sessionId);
-    const events = this.#events.get(sessionId) ?? [];
-    const highWaterMark = events.at(-1)?.seq ?? 0;
-    if (afterSequence > highWaterMark) {
-      throw new DurableEventStoreError("cursor_ahead", "Replay cursor is ahead of the event log");
-    }
-    return {
-      events: events.filter((event) => event.seq > afterSequence).slice(0, limit),
-      highWaterMark,
-    };
-  }
-
-  async readReplayPage(
-    tenantId: string,
-    sessionId: string,
-    afterSequence: number,
-    throughSequence: number,
-    limit = 500,
-  ): Promise<readonly PiCloudEvent[]> {
-    await this.#assertSession(tenantId, sessionId);
-    return (this.#events.get(sessionId) ?? [])
-      .filter((event) => event.seq > afterSequence && event.seq <= throughSequence)
-      .slice(0, limit);
-  }
-
   #append(event: PiCloudEvent): void {
     const events = this.#events.get(event.sessionId) ?? [];
     const existing = events.find((candidate) => candidate.seq === event.seq);
@@ -200,18 +133,5 @@ export class DurableEventStore implements DurableEventLog, FactChannelFactory {
     }
     events.push(event);
     this.#events.set(event.sessionId, events);
-  }
-
-  async #assertSession(tenantId: string, sessionId: string): Promise<void> {
-    if (this.#database === undefined) return;
-    const session = await this.#database
-      .selectFrom("sessions")
-      .select("id")
-      .where("tenant_id", "=", tenantId)
-      .where("id", "=", sessionId)
-      .where("archived_at", "is", null)
-      .executeTakeFirst();
-    if (session === undefined)
-      throw new DurableEventStoreError("not_found", "Session was not found");
   }
 }

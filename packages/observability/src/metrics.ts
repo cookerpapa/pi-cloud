@@ -24,10 +24,9 @@ export class PiCloudMetrics {
   readonly queuedRuns: Gauge;
   readonly terminalEventOutboxPending: Gauge;
   readonly workspaceStoragePurgePending: Gauge;
-  readonly jetStreamMessages: Gauge<"stream">;
-  readonly jetStreamBytes: Gauge<"stream">;
-  readonly jetStreamConsumerPending: Gauge<"stream" | "consumer">;
-  readonly jetStreamUnavailableReplicas: Gauge<"stream">;
+  readonly kafkaLiveTailSessions: Gauge;
+  readonly kafkaLiveTailEvents: Gauge;
+  readonly kafkaLiveTailBytes: Gauge;
   readonly factChannelsActive: Gauge;
   readonly factChannelsLimit: Gauge;
   readonly factChannelRenewalFailures: Gauge;
@@ -164,7 +163,7 @@ export class PiCloudMetrics {
     });
     this.terminalEventOutboxPending = new Gauge({
       name: "pi_cloud_terminal_event_outbox_pending",
-      help: "Settled terminal events waiting to be published to JetStream",
+      help: "Settled terminal events waiting to be published to Kafka",
       registers: [this.registry],
     });
     this.workspaceStoragePurgePending = new Gauge({
@@ -172,28 +171,19 @@ export class PiCloudMetrics {
       help: "Deleted Workspaces whose storage cleanup has not completed",
       registers: [this.registry],
     });
-    this.jetStreamMessages = new Gauge({
-      name: "pi_cloud_jetstream_messages",
-      help: "Messages retained by a PiCloud JetStream stream",
-      labelNames: ["stream"],
+    this.kafkaLiveTailSessions = new Gauge({
+      name: "pi_cloud_kafka_live_tail_sessions",
+      help: "Session tails currently cached by this Gateway replica",
       registers: [this.registry],
     });
-    this.jetStreamBytes = new Gauge({
-      name: "pi_cloud_jetstream_bytes",
-      help: "Bytes retained by a PiCloud JetStream stream",
-      labelNames: ["stream"],
+    this.kafkaLiveTailEvents = new Gauge({
+      name: "pi_cloud_kafka_live_tail_events",
+      help: "Incomplete accepted events cached by this Gateway replica",
       registers: [this.registry],
     });
-    this.jetStreamConsumerPending = new Gauge({
-      name: "pi_cloud_jetstream_consumer_pending",
-      help: "Unconsumed or unacknowledged messages for a durable PiCloud JetStream consumer",
-      labelNames: ["stream", "consumer"],
-      registers: [this.registry],
-    });
-    this.jetStreamUnavailableReplicas = new Gauge({
-      name: "pi_cloud_jetstream_unavailable_replicas",
-      help: "Offline or out-of-date replicas for a PiCloud JetStream stream",
-      labelNames: ["stream"],
+    this.kafkaLiveTailBytes = new Gauge({
+      name: "pi_cloud_kafka_live_tail_bytes",
+      help: "Approximate bytes held by incomplete Gateway Session tails",
       registers: [this.registry],
     });
     this.factChannelsActive = new Gauge({

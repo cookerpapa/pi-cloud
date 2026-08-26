@@ -340,7 +340,7 @@ describe("product chat experience", () => {
   });
 
   it("renders an active Snapshot prefix immediately instead of replaying it from empty", () => {
-    const recovered = "这是刷新前已经由 JetStream 持久化的完整文本前缀。";
+    const recovered = "这是刷新前已经由 Kafka 持久化的完整文本前缀。";
     const markup = renderToStaticMarkup(
       <ConversationTurn
         turn={{

@@ -4,7 +4,7 @@ import {
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
 } from "@pi-cloud/protocol";
-import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
+import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/accepted-fact-channel";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {

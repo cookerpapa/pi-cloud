@@ -64,12 +64,7 @@ export type ControlPlaneEventRuntime = {
 export class ControlPlaneModule {
   static register(options: ControlPlaneModuleOptions): DynamicModule {
     const eventHub = options.eventRuntime?.eventHub ?? new SessionEventHub();
-    const eventStore =
-      options.eventRuntime?.eventStore ??
-      new DurableEventStore({
-        eventHub,
-        database: options.database,
-      });
+    const eventStore = options.eventRuntime?.eventStore ?? new DurableEventStore();
     const workspaceVersions = new WorkspaceVersionService({
       database: options.database,
       ...(options.artifactReader === undefined ? {} : { artifactReader: options.artifactReader }),

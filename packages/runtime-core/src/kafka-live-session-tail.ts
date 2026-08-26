@@ -1,4 +1,5 @@
 import type { PiCloudEvent } from "@pi-cloud/protocol";
+import type { AcceptedFact } from "./accepted-fact.ts";
 import { KafkaAcceptedFactConsumer } from "./kafka-accepted-fact-consumer.ts";
 import { SessionEventHub } from "./session-event-hub.ts";
 
@@ -45,8 +46,7 @@ export class KafkaLiveSessionTail {
       topic: options.topic,
       mode: "earliest",
       handler: async ({ fact }) => {
-        if (fact.kind !== "agent_event" && fact.kind !== "terminal_event") return;
-        this.#accept(fact.scope.tenantId, fact.event);
+        this.project(fact);
       },
     });
   }
@@ -90,6 +90,11 @@ export class KafkaLiveSessionTail {
 
   readTurn(tenantId: string, sessionId: string, turnId: string): readonly PiCloudEvent[] {
     return this.snapshot(tenantId, sessionId).events.filter((event) => event.turnId === turnId);
+  }
+
+  project(fact: AcceptedFact): void {
+    if (fact.kind !== "agent_event" && fact.kind !== "terminal_event") return;
+    this.#accept(fact.scope.tenantId, fact.event);
   }
 
   statistics() {
