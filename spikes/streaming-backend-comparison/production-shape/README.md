@@ -25,6 +25,14 @@ commit but before broker ACK, kills the current Stream Leader, and then opens
 250/500/1,000/2,000 sustained Session-filtered SSE connections. Experimental
 credentials and ports are loopback-only.
 
+The same command also runs an exact write-channel benchmark using the production
+`HttpAgentEventIngestor`, Fastify `AgentEventIngestGateway`, PostgreSQL
+ExecutionGrant authority, and synchronous JetStream R=3 PubAck. It varies HTTP
+concurrency, event size, and Session locality, includes a 32K-event sustained
+stage, and repeats the path while the current Stream Leader is killed. LLM,
+Cube, SSE delivery, and SessionStorage projection are deliberately outside this
+throughput boundary.
+
 Run from the repository root:
 
 ```bash
