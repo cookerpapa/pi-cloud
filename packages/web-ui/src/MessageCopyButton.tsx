@@ -2,8 +2,13 @@ import { useEffect, useRef, useState } from "react";
 
 export async function copyMessageText(text: string): Promise<void> {
   if (navigator.clipboard?.writeText !== undefined) {
-    await navigator.clipboard.writeText(text);
-    return;
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Self-hosted HTTP origins and headless browsers may expose Clipboard
+      // without granting write permission; retain a user-gesture fallback.
+    }
   }
   const textarea = document.createElement("textarea");
   textarea.value = text;
