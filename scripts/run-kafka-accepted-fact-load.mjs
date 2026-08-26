@@ -63,6 +63,7 @@ await writeFile(
     `- Kafka: ${String(report.kafka.brokers)} brokers / ${String(report.kafka.partitions)} partitions / RF ${String(report.kafka.replicas)} / acks=${report.kafka.acknowledgements}`,
     `- Application microbatch: ${String(report.applicationMicrobatch)}`,
     `- Producer delivery report: ${String(report.producerDeliveryReportMode)}`,
+    `- Producer lanes: ${String(report.producerLanes)}`,
     "",
     "| Case | Events | Events/s | ACK p50 | ACK p95 | ACK p99 |",
     "| --- | ---: | ---: | ---: | ---: | ---: |",

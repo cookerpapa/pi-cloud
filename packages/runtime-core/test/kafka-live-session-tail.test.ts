@@ -1,4 +1,5 @@
 import type { AcceptedFact, AcceptedTerminalEventFact } from "../src/accepted-fact.ts";
+import { kafkaProducerLane } from "../src/kafka-accepted-fact.ts";
 import { KafkaLiveSessionTail } from "../src/kafka-live-session-tail.ts";
 import { describe, expect, it } from "vitest";
 
@@ -55,6 +56,14 @@ function terminal(): AcceptedTerminalEventFact {
 }
 
 describe("Kafka Gateway live Session tail", () => {
+  it("pins one Session to one bounded producer lane", () => {
+    const lane = kafkaProducerLane(SESSION_ID, 4);
+    expect(lane).toBe(kafkaProducerLane(SESSION_ID, 4));
+    expect(lane).toBeGreaterThanOrEqual(0);
+    expect(lane).toBeLessThan(4);
+    expect(() => kafkaProducerLane(SESSION_ID, 0)).toThrow(/invalid/u);
+  });
+
   it("deduplicates, snapshots immutably and unloads only after terminal canonical state", async () => {
     const tail = new KafkaLiveSessionTail({
       brokers: ["127.0.0.1:1"],
