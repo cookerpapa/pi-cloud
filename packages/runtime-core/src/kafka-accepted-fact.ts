@@ -61,6 +61,7 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
       reject(error: Error): void;
     }
   >();
+  readonly #pendingOrder: string[] = [];
 
   constructor(configuration: KafkaAcceptedFactConfiguration) {
     const bootstrapBrokers = brokers(configuration.brokers);
@@ -83,23 +84,38 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
       batchSize: 128,
       batchTime: 2,
       highWaterMark: 1_024,
-      reportMode: ProducerStreamReportModes.MESSAGE,
+      reportMode: ProducerStreamReportModes.BATCH,
     });
     this.#stream.on(
       "delivery-report" as never,
-      ((report: { message: { metadata?: unknown } }) => {
-        const factId = (report.message.metadata as { factId?: unknown } | undefined)?.factId;
-        if (typeof factId !== "string") return;
-        const pending = this.#pending.get(factId);
-        if (pending === undefined) return;
-        this.#pending.delete(factId);
-        pending.resolve({ factId, durable: true });
+      ((report: { count?: unknown }) => {
+        if (
+          !Number.isSafeInteger(report.count) ||
+          (report.count as number) < 1 ||
+          (report.count as number) > this.#pendingOrder.length
+        ) {
+          const error = new Error("Kafka delivery batch did not match pending AcceptedFacts");
+          this.#streamFailure = error;
+          for (const pending of this.#pending.values()) pending.reject(error);
+          this.#pending.clear();
+          this.#pendingOrder.length = 0;
+          this.#stream.destroy(error);
+          return;
+        }
+        const factIds = this.#pendingOrder.splice(0, report.count as number);
+        for (const factId of factIds) {
+          const pending = this.#pending.get(factId);
+          if (pending === undefined) continue;
+          this.#pending.delete(factId);
+          pending.resolve({ factId, durable: true });
+        }
       }) as never,
     );
     this.#stream.on("error", (error) => {
       this.#streamFailure = error;
       for (const pending of this.#pending.values()) pending.reject(error);
       this.#pending.clear();
+      this.#pendingOrder.length = 0;
     });
     this.#admin = new Admin({
       clientId: `${configuration.clientId}-accepted-fact-admin`,
@@ -146,12 +162,12 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
       resolve: resolveReceipt,
       reject: rejectReceipt,
     });
+    this.#pendingOrder.push(fact.factId);
     this.#stream.write({
       topic: this.#topic,
       key: fact.scope.sessionId,
       value: JSON.stringify(fact),
       headers: { "pi-cloud-fact-id": fact.factId },
-      metadata: { factId: fact.factId },
     });
     return promise;
   }
