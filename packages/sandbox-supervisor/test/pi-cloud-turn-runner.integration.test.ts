@@ -176,6 +176,19 @@ describe("PiCloudTurnRunner integration", () => {
       expect(result.stopReason).toBe("stop");
       expect(events.map((event) => event.payload.event.type)).toContain("turn.started");
       expect(events.map((event) => event.payload.event.type)).toContain("assistant.text.delta");
+      const textEvents = events.filter(
+        (event) => event.payload.event.type === "assistant.text.delta",
+      );
+      expect(textEvents).toHaveLength(2);
+      expect(
+        textEvents
+          .map((event) =>
+            event.payload.event.type === "assistant.text.delta"
+              ? event.payload.event.payload.text
+              : "",
+          )
+          .join(""),
+      ).toBe("PiCloud fake stream OK.");
       expect(events.map((event) => event.payload.event.type)).toContain("model.sampling.completed");
       expect(events.map((event) => event.payload.event.type)).toContain(
         "model.sampling.retry.scheduled",

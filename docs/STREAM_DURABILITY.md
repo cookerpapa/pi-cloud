@@ -25,6 +25,13 @@ keyed by opaque Session ID, so one Session remains in one Kafka partition.
 PostgreSQL stores complete Pi-native semantic state once. Gateway replicas consume
 Kafka into rebuildable memory containing incomplete active Turns only.
 
+The first Assistant text delta in a contiguous block is published immediately.
+Subsequent adjacent deltas with the same content index are coalesced for at most
+25ms or 4,096 characters before they cross the Authority Gate. Tool, model,
+compaction and terminal boundaries flush the pending text first. Each resulting
+fragment still requires Kafka `acks=all` before Gateway can expose it; aggregation
+changes record granularity, not the visible-durability invariant.
+
 ## Cursor-free browser handoff
 
 The browser opens one SSE request without `Last-Event-ID` or a query watermark.

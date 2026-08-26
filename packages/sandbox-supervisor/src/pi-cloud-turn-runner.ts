@@ -75,6 +75,8 @@ export type PiCloudTurnRunnerOptions = Readonly<{
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_TURN_TIMEOUT_MS = 30_000;
 const MAXIMUM_PENDING_PUBLIC_EVENTS = 512;
+const TEXT_DELTA_AGGREGATION_MS = 25;
+const MAXIMUM_AGGREGATED_TEXT_CHARACTERS = 4_096;
 const BASE_SYSTEM_PROMPT = [
   "You are a coding agent working in a remote, isolated project workspace.",
   "Use the provided read, write, edit, and bash tools to inspect and change the project.",
@@ -219,6 +221,18 @@ function streamedTextDelta(value: unknown): { delta: string; contentIndex?: numb
       ? { contentIndex: streamEvent.contentIndex as number }
       : {}),
   };
+}
+
+function withStreamedTextDelta(
+  value: CloudAgentRuntimeEvent,
+  delta: string,
+): CloudAgentRuntimeEvent {
+  const source = value as unknown as JsonRecord;
+  const streamEvent = source.assistantMessageEvent as JsonRecord;
+  return {
+    ...source,
+    assistantMessageEvent: { ...streamEvent, delta },
+  } as unknown as CloudAgentRuntimeEvent;
 }
 
 export class PiCloudTurnRunner {
@@ -407,6 +421,49 @@ export class PiCloudTurnRunner {
             pendingPublicEvents -= 1;
           });
       };
+      let textBlockActive = false;
+      let pendingText:
+        { event: CloudAgentRuntimeEvent; delta: string; contentIndex?: number } | undefined;
+      let textFlushTimer: NodeJS.Timeout | undefined;
+      const flushPendingText = (): void => {
+        if (textFlushTimer !== undefined) clearTimeout(textFlushTimer);
+        textFlushTimer = undefined;
+        if (pendingText === undefined) return;
+        const buffered = pendingText;
+        pendingText = undefined;
+        enqueue(withStreamedTextDelta(buffered.event, buffered.delta));
+      };
+      const scheduleTextFlush = (): void => {
+        if (textFlushTimer !== undefined) return;
+        textFlushTimer = setTimeout(flushPendingText, TEXT_DELTA_AGGREGATION_MS);
+        textFlushTimer.unref();
+      };
+      const bufferText = (
+        event: CloudAgentRuntimeEvent,
+        delta: { delta: string; contentIndex?: number },
+      ): void => {
+        if (!textBlockActive) {
+          textBlockActive = true;
+          enqueue(event);
+          return;
+        }
+        if (
+          pendingText !== undefined &&
+          pendingText.contentIndex === delta.contentIndex &&
+          pendingText.delta.length + delta.delta.length <= MAXIMUM_AGGREGATED_TEXT_CHARACTERS
+        ) {
+          pendingText.delta += delta.delta;
+        } else {
+          flushPendingText();
+          pendingText = {
+            event,
+            delta: delta.delta,
+            ...(delta.contentIndex === undefined ? {} : { contentIndex: delta.contentIndex }),
+          };
+        }
+        if (pendingText.delta.length >= MAXIMUM_AGGREGATED_TEXT_CHARACTERS) flushPendingText();
+        else scheduleTextFlush();
+      };
       const tools = this.#options.createAgentTools({
         session: sessionHandle.session,
         toolOutputDirectory,
@@ -476,15 +533,18 @@ export class PiCloudTurnRunner {
         compactionRetainedCustomTypes: Object.keys(PI_WORLD_STATE_ENTRY_PROJECTORS),
         onEvent: async (event) => {
           this.#options.observeEvent?.(event);
-          enqueue(event);
-          // Semantic boundaries must be durable before Pi advances. Text deltas
-          // remain asynchronous, but the next non-delta boundary drains every
-          // preceding per-event PubAck in order.
-          if (
-            streamedTextDelta(event) === undefined ||
-            pendingPublicEvents >= MAXIMUM_PENDING_PUBLIC_EVENTS
-          ) {
+          const textDelta = streamedTextDelta(event);
+          if (textDelta === undefined) {
+            flushPendingText();
+            textBlockActive = false;
+            enqueue(event);
             await eventChain;
+          } else {
+            bufferText(event, textDelta);
+            if (pendingPublicEvents >= MAXIMUM_PENDING_PUBLIC_EVENTS) {
+              flushPendingText();
+              await eventChain;
+            }
           }
           if (fatalError !== undefined) throw fatalError;
         },
@@ -524,6 +584,7 @@ export class PiCloudTurnRunner {
 
       try {
         const result = await runtime.run(command.payload.input.text);
+        flushPendingText();
         await eventChain;
         if (fatalError !== undefined) throw fatalError;
         if (result.kind === "completed") {
@@ -555,6 +616,7 @@ export class PiCloudTurnRunner {
       } finally {
         clearTimeout(timer);
         combined.removeEventListener("abort", abort);
+        flushPendingText();
         await eventChain.catch(() => undefined);
         this.#activeRuntime = undefined;
         for (const waiter of this.#steerWaiters)
