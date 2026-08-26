@@ -122,9 +122,16 @@ export class KafkaAcceptedFactConsumer {
   }
 
   async captureEndOffsets(): Promise<readonly bigint[]> {
-    const offsets = (await this.#consumer.listOffsets({ topics: [this.#topic] })).get(this.#topic);
-    if (offsets === undefined) throw new Error("Kafka AcceptedFact Topic offsets are unavailable");
-    return offsets;
+    const starts = (
+      await this.#consumer.listOffsets({ topics: [this.#topic], timestamp: -2n })
+    ).get(this.#topic);
+    if (starts === undefined) {
+      throw new Error("Kafka AcceptedFact Topic start offsets are unavailable");
+    }
+    starts.forEach((offset, partition) => this.#processedOffsets.set(partition, offset));
+    const ends = (await this.#consumer.listOffsets({ topics: [this.#topic] })).get(this.#topic);
+    if (ends === undefined) throw new Error("Kafka AcceptedFact Topic end offsets are unavailable");
+    return ends;
   }
 
   async waitUntilInitialReplay(offsets: readonly bigint[], timeoutMs = 120_000): Promise<void> {
