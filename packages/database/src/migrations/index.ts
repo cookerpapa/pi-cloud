@@ -92,6 +92,7 @@ import * as developmentEnvironmentRecoveryIdentity from "./090_development_envir
 import * as executionGrants from "./091_execution_grants.ts";
 import * as sandboxHttpServices from "./092_sandbox_http_services.ts";
 import * as machineOwnedWorkspaces from "./093_machine_owned_workspaces.ts";
+import * as agentEventWriterChannels from "./094_agent_event_writer_channels.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -189,6 +190,7 @@ export const migrationProvider: MigrationProvider = {
       "091_execution_grants": executionGrants,
       "092_sandbox_http_services": sandboxHttpServices,
       "093_machine_owned_workspaces": machineOwnedWorkspaces,
+      "094_agent_event_writer_channels": agentEventWriterChannels,
     };
   },
 };
@@ -526,3 +528,7 @@ export {
   down as downMachineOwnedWorkspaces,
   up as upMachineOwnedWorkspaces,
 } from "./093_machine_owned_workspaces.ts";
+export {
+  down as downAgentEventWriterChannels,
+  up as upAgentEventWriterChannels,
+} from "./094_agent_event_writer_channels.ts";

@@ -162,6 +162,8 @@ export {
   downSandboxHttpServices,
   upMachineOwnedWorkspaces,
   downMachineOwnedWorkspaces,
+  upAgentEventWriterChannels,
+  downAgentEventWriterChannels,
 } from "./migrations/index.ts";
 
 export {
