@@ -337,7 +337,7 @@ try {
       await clickText(".workspace-view-tabs button", "文件", "workspace.filesTab");
       await click('.workspace-directory-header button[title="关闭"]', "workspace.close");
 
-      await click(".product-answer-actions button:first-child", "conversation.forkOpen");
+      await clickText(".product-answer-actions button", "从此对话开始", "conversation.forkOpen");
       await page.waitFor('document.querySelector(".product-fork-modal")');
       await setValue(".product-fork-modal input", `UI fork ${suffix}`);
       await click(".product-fork-modal .product-primary-button", "conversation.forkCreate");
