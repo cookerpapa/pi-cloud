@@ -96,9 +96,9 @@ try {
     { name: "concurrency-256", sessions: 256, eventsPerSession: 16, concurrency: 256 },
     { name: "concurrency-512", sessions: 512, eventsPerSession: 8, concurrency: 512 },
     { name: "concurrency-1024", sessions: 1_024, eventsPerSession: 4, concurrency: 1_024 },
-    { name: "sustained-256", sessions: 256, eventsPerSession: 256, concurrency: 256 },
-    { name: "sustained-512", sessions: 512, eventsPerSession: 128, concurrency: 512 },
-    { name: "sustained-1024", sessions: 1_024, eventsPerSession: 64, concurrency: 1_024 },
+    { name: "sustained-256", sessions: 256, eventsPerSession: 1_024, concurrency: 256 },
+    { name: "sustained-512", sessions: 512, eventsPerSession: 512, concurrency: 512 },
+    { name: "sustained-1024", sessions: 1_024, eventsPerSession: 256, concurrency: 1_024 },
   ]) {
     const seeds = Array.from({ length: configuration.sessions }, sessionSeed);
     const latencies = [];
