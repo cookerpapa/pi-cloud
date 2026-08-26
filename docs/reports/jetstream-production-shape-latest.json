@@ -1,7 +1,7 @@
 {
   "format": "pi-cloud.jetstream-production-shape.v1",
-  "generatedAt": "2026-08-25T08:23:42.302Z",
-  "revision": "f2027a786dd7818c796586146260563a286ce738",
+  "generatedAt": "2026-08-26T01:30:23.266Z",
+  "revision": "59c6e4a4a3c24868cf31e7f8edc22aab30f0c73d",
   "host": {
     "platform": "linux",
     "architecture": "x64",
@@ -22,10 +22,10 @@
     "canonicalContent": "complete baseline answer",
     "fragmentRowsInPostgres": 0,
     "publishLatencyMs": {
-      "p50": 6.694,
-      "p95": 39.433,
-      "p99": 39.433,
-      "maximum": 39.433
+      "p50": 6.413,
+      "p95": 28.814,
+      "p99": 28.814,
+      "maximum": 28.814
     }
   },
   "authorityGrant": {
@@ -42,11 +42,11 @@
   },
   "leaderRecovery": {
     "killedLeader": "n3",
-    "replacementLeader": "n2",
-    "publishAndDeliveryMs": 4817.375,
+    "replacementLeader": "n1",
+    "publishAndDeliveryMs": 5812.164,
     "ingestAttempts": 1,
     "delivered": true,
-    "existingConnectionRecovered": false,
+    "existingConnectionRecovered": true,
     "browserReconnectRecovered": true,
     "replicasCurrentAfterRestart": true
   },
@@ -56,67 +56,67 @@
       {
         "connections": 250,
         "connectLatencyMs": {
-          "p50": 77.012,
-          "p95": 302.516,
-          "p99": 330.928,
-          "maximum": 333.123
+          "p50": 103.346,
+          "p95": 255.739,
+          "p99": 320.045,
+          "maximum": 340.851
         },
-        "gatewayRssMiB": 76.3,
+        "gatewayRssMiB": 76.1,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 7.02
+        "hostFreeMemoryGiB": 6.63
       },
       {
         "connections": 500,
         "connectLatencyMs": {
-          "p50": 56.611,
-          "p95": 106.213,
-          "p99": 106.99,
-          "maximum": 107.623
+          "p50": 55.101,
+          "p95": 117.322,
+          "p99": 119.98,
+          "maximum": 120.118
         },
-        "gatewayRssMiB": 78.41,
+        "gatewayRssMiB": 78.1,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 7
+        "hostFreeMemoryGiB": 6.59
       },
       {
         "connections": 1000,
         "connectLatencyMs": {
-          "p50": 52.654,
-          "p95": 93.065,
-          "p99": 100.028,
-          "maximum": 103.116
+          "p50": 53.288,
+          "p95": 94.72,
+          "p99": 111.847,
+          "maximum": 115.355
         },
-        "gatewayRssMiB": 93.25,
+        "gatewayRssMiB": 94.85,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 6.96
+        "hostFreeMemoryGiB": 6.56
       },
       {
         "connections": 2000,
         "connectLatencyMs": {
-          "p50": 53.456,
-          "p95": 69.528,
-          "p99": 74.227,
-          "maximum": 78.103
+          "p50": 73.36,
+          "p95": 113.27,
+          "p99": 119.288,
+          "maximum": 144.575
         },
-        "gatewayRssMiB": 113.75,
+        "gatewayRssMiB": 118.52,
         "jetStreamConsumers": 1,
-        "hostFreeMemoryGiB": 6.87
+        "hostFreeMemoryGiB": 6.45
       }
     ],
     "publishLatencyMs": {
-      "p50": 114.393,
-      "p95": 255.721,
-      "p99": 359.098,
-      "maximum": 485.86
+      "p50": 120.755,
+      "p95": 243.124,
+      "p99": 391.116,
+      "maximum": 495.795
     },
     "deliveredConnections": 2000,
     "missedConnections": [],
     "recoveredAfterReconnect": 0,
     "effectiveDeliveredConnections": 2000,
-    "publishElapsedMs": 2589.348,
+    "publishElapsedMs": 2712.907,
     "gatewayDeliveredAtPublishComplete": 2003,
-    "browserReadElapsedMs": 56.3,
-    "publishAndDeliverElapsedMs": 2647.859,
-    "eventsPerSecond": 755.33,
+    "browserReadElapsedMs": 48.032,
+    "publishAndDeliverElapsedMs": 2762.876,
+    "eventsPerSecond": 723.88,
     "consumersAfterClose": 1
   },
   "authorityBatchThroughput": {
@@ -125,20 +125,269 @@
     "pubAck": "synchronous-per-event-r3",
     "baseline": {
       "events": 2048,
-      "elapsedMs": 8463.159,
-      "eventsPerSecond": 241.99,
+      "elapsedMs": 8417.447,
+      "eventsPerSecond": 243.3,
       "authorityTransactions": 2048,
       "authorityStatements": 4096
     },
     "batched": {
       "events": 8192,
-      "elapsedMs": 5408.992,
-      "eventsPerSecond": 1514.52,
+      "elapsedMs": 5921.043,
+      "eventsPerSecond": 1383.54,
       "authorityTransactions": 32,
       "authorityStatements": 64,
       "batches": 32,
       "maximumBatchSize": 256
     },
-    "speedup": 6.26
+    "speedup": 5.69
+  },
+  "workerIngestChannel": {
+    "format": "pi-cloud.worker-http-to-jetstream-r3-benchmark.v1",
+    "generatedAt": "2026-08-26T01:35:01.907Z",
+    "revision": "59c6e4a4a3c24868cf31e7f8edc22aab30f0c73d",
+    "host": {
+      "platform": "linux",
+      "architecture": "x64",
+      "node": "v24.12.0",
+      "logicalCpuCount": 32,
+      "totalMemoryGiB": 15.46
+    },
+    "channel": {
+      "workerClient": "HttpAgentEventIngestor",
+      "gateway": "AgentEventIngestGateway/Fastify",
+      "authority": "PostgreSQL execution_grants SELECT FOR UPDATE + watermark UPDATE",
+      "batching": "maximum 256 events or 2 ms",
+      "durabilityBoundary": "JetStream file storage R=3 synchronous PubAck",
+      "excluded": ["LLM", "Cube", "SSE", "SessionStorage projector"]
+    },
+    "stream": {
+      "replicas": 3,
+      "storage": "file",
+      "maximumEventsPerSession": 8192
+    },
+    "cases": [
+      {
+        "name": "concurrency-1",
+        "sessions": 2048,
+        "eventsPerSession": 1,
+        "concurrency": 1,
+        "payloadBytes": 1024,
+        "events": 2048,
+        "averageRequestBytes": 1553,
+        "totalRequestMiB": 3.033,
+        "elapsedMs": 29209.206,
+        "eventsPerSecond": 70.11,
+        "requestMiBPerSecond": 0.1,
+        "acknowledgementLatencyMs": {
+          "p50": 13.961,
+          "p95": 17.259,
+          "p99": 19.126,
+          "maximum": 24.119
+        },
+        "authorityTransactions": 2048,
+        "authorityStatements": 4096,
+        "eventsPerAuthorityTransaction": 1,
+        "batches": 2048,
+        "maximumBatchSize": 1
+      },
+      {
+        "name": "concurrency-16",
+        "sessions": 8192,
+        "eventsPerSession": 1,
+        "concurrency": 16,
+        "payloadBytes": 1024,
+        "events": 8192,
+        "averageRequestBytes": 1553,
+        "totalRequestMiB": 12.133,
+        "elapsedMs": 23414.899,
+        "eventsPerSecond": 349.86,
+        "requestMiBPerSecond": 0.52,
+        "acknowledgementLatencyMs": {
+          "p50": 44.772,
+          "p95": 59.353,
+          "p99": 67.767,
+          "maximum": 81.264
+        },
+        "authorityTransactions": 1022,
+        "authorityStatements": 2044,
+        "eventsPerAuthorityTransaction": 8.02,
+        "batches": 1022,
+        "maximumBatchSize": 16
+      },
+      {
+        "name": "concurrency-64",
+        "sessions": 8192,
+        "eventsPerSession": 1,
+        "concurrency": 64,
+        "payloadBytes": 1024,
+        "events": 8192,
+        "averageRequestBytes": 1553,
+        "totalRequestMiB": 12.133,
+        "elapsedMs": 15624.372,
+        "eventsPerSecond": 524.31,
+        "requestMiBPerSecond": 0.78,
+        "acknowledgementLatencyMs": {
+          "p50": 117.473,
+          "p95": 162.661,
+          "p99": 187.698,
+          "maximum": 199.946
+        },
+        "authorityTransactions": 256,
+        "authorityStatements": 512,
+        "eventsPerAuthorityTransaction": 32,
+        "batches": 256,
+        "maximumBatchSize": 64
+      },
+      {
+        "name": "concurrency-128",
+        "sessions": 8192,
+        "eventsPerSession": 1,
+        "concurrency": 128,
+        "payloadBytes": 1024,
+        "events": 8192,
+        "averageRequestBytes": 1553,
+        "totalRequestMiB": 12.133,
+        "elapsedMs": 16212.916,
+        "eventsPerSecond": 505.28,
+        "requestMiBPerSecond": 0.75,
+        "acknowledgementLatencyMs": {
+          "p50": 244.857,
+          "p95": 362.083,
+          "p99": 395.52,
+          "maximum": 479.066
+        },
+        "authorityTransactions": 129,
+        "authorityStatements": 258,
+        "eventsPerAuthorityTransaction": 63.5,
+        "batches": 129,
+        "maximumBatchSize": 128
+      },
+      {
+        "name": "payload-256b",
+        "sessions": 8192,
+        "eventsPerSession": 1,
+        "concurrency": 64,
+        "payloadBytes": 256,
+        "events": 8192,
+        "averageRequestBytes": 785,
+        "totalRequestMiB": 6.133,
+        "elapsedMs": 15511.289,
+        "eventsPerSecond": 528.13,
+        "requestMiBPerSecond": 0.4,
+        "acknowledgementLatencyMs": {
+          "p50": 117.574,
+          "p95": 165.738,
+          "p99": 192.401,
+          "maximum": 234.352
+        },
+        "authorityTransactions": 254,
+        "authorityStatements": 508,
+        "eventsPerAuthorityTransaction": 32.25,
+        "batches": 254,
+        "maximumBatchSize": 64
+      },
+      {
+        "name": "payload-4kib",
+        "sessions": 8192,
+        "eventsPerSession": 1,
+        "concurrency": 64,
+        "payloadBytes": 4096,
+        "events": 8192,
+        "averageRequestBytes": 4625,
+        "totalRequestMiB": 36.133,
+        "elapsedMs": 19369.334,
+        "eventsPerSecond": 422.94,
+        "requestMiBPerSecond": 1.87,
+        "acknowledgementLatencyMs": {
+          "p50": 144.086,
+          "p95": 228.659,
+          "p99": 268.305,
+          "maximum": 300.088
+        },
+        "authorityTransactions": 248,
+        "authorityStatements": 496,
+        "eventsPerAuthorityTransaction": 33.03,
+        "batches": 248,
+        "maximumBatchSize": 64
+      },
+      {
+        "name": "256-active-sessions",
+        "sessions": 256,
+        "eventsPerSession": 32,
+        "concurrency": 64,
+        "payloadBytes": 1024,
+        "events": 8192,
+        "averageRequestBytes": 1553,
+        "totalRequestMiB": 12.133,
+        "elapsedMs": 15790.702,
+        "eventsPerSecond": 518.79,
+        "requestMiBPerSecond": 0.77,
+        "acknowledgementLatencyMs": {
+          "p50": 120.962,
+          "p95": 158.608,
+          "p99": 180.458,
+          "maximum": 192.883
+        },
+        "authorityTransactions": 254,
+        "authorityStatements": 508,
+        "eventsPerAuthorityTransaction": 32.25,
+        "batches": 254,
+        "maximumBatchSize": 64
+      },
+      {
+        "name": "sustained-32k",
+        "sessions": 32768,
+        "eventsPerSession": 1,
+        "concurrency": 128,
+        "payloadBytes": 1024,
+        "events": 32768,
+        "averageRequestBytes": 1553,
+        "totalRequestMiB": 48.531,
+        "elapsedMs": 56607.957,
+        "eventsPerSecond": 578.86,
+        "requestMiBPerSecond": 0.86,
+        "acknowledgementLatencyMs": {
+          "p50": 214.23,
+          "p95": 286.724,
+          "p99": 321.543,
+          "maximum": 367.891
+        },
+        "authorityTransactions": 507,
+        "authorityStatements": 1014,
+        "eventsPerAuthorityTransaction": 64.63,
+        "batches": 507,
+        "maximumBatchSize": 128
+      }
+    ],
+    "leaderRecovery": {
+      "killedLeader": "n1",
+      "replacementLeader": "n3",
+      "elapsedMs": 31813.982,
+      "delivered": true,
+      "case": {
+        "name": "leader-loss",
+        "sessions": 2048,
+        "eventsPerSession": 1,
+        "concurrency": 64,
+        "payloadBytes": 1024,
+        "events": 2048,
+        "averageRequestBytes": 1553,
+        "totalRequestMiB": 3.033,
+        "elapsedMs": 24222.889,
+        "eventsPerSecond": 84.55,
+        "requestMiBPerSecond": 0.13,
+        "acknowledgementLatencyMs": {
+          "p50": 114.027,
+          "p95": 339.583,
+          "p99": 20399.695,
+          "maximum": 20440.759
+        },
+        "authorityTransactions": 68,
+        "authorityStatements": 136,
+        "eventsPerAuthorityTransaction": 30.12,
+        "batches": 68,
+        "maximumBatchSize": 64
+      }
+    }
   }
 }
