@@ -90,8 +90,9 @@ combinations.
 
 | Variable | Default | Meaning |
 | --- | ---: | --- |
-| `PI_CLOUD_AGENT_EVENT_RETENTION_MS` | `86400000` | JetStream hot-event retention (24 hours) |
-| `PI_CLOUD_MAXIMUM_HOT_EVENTS_PER_SESSION` | `8192` | bounded retained events per Session Subject |
+| `PI_CLOUD_ACCEPTED_FACT_RETENTION_MS` | `7200000` | Kafka AcceptedFact retention (2 hours) |
+| `PI_CLOUD_KAFKA_PARTITIONS` | `32` | Session-keyed AcceptedFact partitions |
+| `PI_CLOUD_KAFKA_REPLICAS` | `3` | Kafka Topic replication factor |
 | `PI_CLOUD_FACT_CHANNEL_LEASE_MS` | `9000` | short PostgreSQL ownership lease for one active accepted-Fact channel |
 | `PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE` | `128` | bounded active FactChannels per Control Plane replica |
 | `PI_CLOUD_PREVIEW_ORIGIN_BASE_URL` | `http://preview.localhost:8080` | isolated application Preview base domain |
@@ -104,10 +105,10 @@ combinations.
 | `PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS` | empty | up to eight comma-separated RFC1918 `/24`–`/32` CIDRs that Cube guests may reach directly |
 | `PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS` | `120000` | Cube lifecycle/control request timeout |
 
-JetStream retention must cover a maximum Turn plus settlement grace. A cursor
-already replaced by canonical PostgreSQL state receives HTTP 410 and reloads
-the complete conversation. Volume queue wait must be shorter than its request
-timeout.
+Kafka retention must cover a maximum Turn plus settlement grace. Browser
+reconnect always receives a replacement PostgreSQL + Gateway-tail snapshot;
+there is no public cursor or HTTP 410 replay path. Volume queue wait must be
+shorter than its request timeout.
 
 Direct private CIDRs are frozen when a Cube is created. Commands receive the
 same CIDRs and their exact IP members in `NO_PROXY`, so older HTTP(S) clients
@@ -162,7 +163,7 @@ Changing these requires editing the deployment policy and running
 The distributed chart uses `values.yaml` for non-secret topology and a named
 Kubernetes Secret for credentials. Important value groups are:
 
-- `external.database`, `external.jetstream` and `external.providerProxyUrl`;
+- `external.database`, `external.kafka` and `external.providerProxyUrl`;
 - `sandboxPlane` for Cube, Workspace storage and Broker/Volume capacity;
 - `pi-workers.workerPool`, `autoscaling`, `runtime` and `lifecycle`;
 - `networkPolicy.externalEgressCidrs`;
@@ -188,5 +189,5 @@ validates cross-service concurrency, lease, retention and timeout relations.
 
 Keep database URLs, model encryption key, Worker enrollment/management tokens,
 Tool Broker token, Worker Event Ingest token, Cube API key, SSH host key and
-NATS account/TLS material in the
+Kafka TLS/SASL material in the
 generated private files or Kubernetes Secrets. Cube receives none of them.

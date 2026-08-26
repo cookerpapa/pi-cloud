@@ -139,27 +139,31 @@ async function runCodingTurn(api, browser, sessionId) {
   const events = [];
   let terminal;
   let firstTextAt;
+  const observeEvent = (event) => {
+    if (event.turnId !== accepted.turnId) return;
+    if (events.some((candidate) => candidate.eventId === event.eventId)) return;
+    events.push(event);
+    if (event.type === "assistant.text.delta") firstTextAt ??= performance.now();
+    if (
+      event.type === "turn.completed" ||
+      event.type === "turn.failed" ||
+      event.type === "turn.cancelled"
+    ) {
+      terminal = event;
+      controller.abort();
+    }
+  };
   try {
-    const cursor = await streamSessionEvents({
+    await streamSessionEvents({
       sessionId,
-      afterSequence: 0,
       signal: controller.signal,
       fetchImplementation: browser.fetch,
       retryDelayMs: 100,
       onStatus() {},
-      onEvent(event) {
-        if (event.turnId !== accepted.turnId) return;
-        events.push(event);
-        if (event.type === "assistant.text.delta") firstTextAt ??= performance.now();
-        if (
-          event.type === "turn.completed" ||
-          event.type === "turn.failed" ||
-          event.type === "turn.cancelled"
-        ) {
-          terminal = event;
-          controller.abort();
-        }
+      onSnapshot(snapshot) {
+        for (const event of snapshot.liveEvents) observeEvent(event);
       },
+      onEvent: observeEvent,
     });
     assert(terminal, "Snake coding Run did not publish a terminal event");
     assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
@@ -172,7 +176,7 @@ async function runCodingTurn(api, browser, sessionId) {
     assert(previewToolUsed, "Snake coding Run did not publish its service through Preview Tool");
     return {
       accepted,
-      cursor,
+      throughSequence: Math.max(0, ...events.map((event) => event.seq)),
       events,
       run,
       firstTextMs: firstTextAt === undefined ? null : Math.round(firstTextAt - startedAt),

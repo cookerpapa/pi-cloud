@@ -7,8 +7,8 @@ PiCloud owns durable admission, multi-tenancy, Worker execution authority,
 remote Tool routing, Workspace lifetime, streaming and recovery.
 
 CubeSandbox KVM is the only untrusted execution runtime. PostgreSQL is the only
-business/Run-state authority, JetStream is the bounded hot event log, and there is
-no second workflow scheduler.
+business/Run-state authority, Kafka is the bounded AcceptedFact log, and there
+is no second workflow scheduler.
 
 ## Source-of-truth and terminology guardrail
 
@@ -37,7 +37,7 @@ The current Worker invariant is deliberately precise:
 
 The Web product provides authentication, resizable conversation/tree panels,
 focused or whole-tree navigation, conversation forks, recursive subtree
-deletion, settled-message tail pruning, named Workspaces, resumable output,
+deletion, settled-message tail pruning, named Workspaces, snapshot-first output,
 file browsing, user-owned full-VM development environments, authenticated service
 previews, one-time SSH access, Workspace rebinding and administrator settings. The Control Plane
 commits each idempotent message and its Run command in one PostgreSQL
@@ -81,19 +81,19 @@ Pi 0.84's official `SessionStorage` interface is implemented by
 `@pi-cloud/pi-session-postgres`. It stores Pi entries, lanes, records, labels
 and the append log in PostgreSQL, and bounds an active branch at Pi compaction.
 Active-Run mutations first cross the same PostgreSQL `ExecutionGrant` authority
-as browser-visible events, then enter an accepted Session-keyed JetStream log.
+as browser-visible events, then enter one accepted Session-keyed Kafka topic.
 The Projector applies those accepted facts idempotently without rechecking a
 lease that may legitimately expire after PubAck. Direct administrative
 repository mutations remain transactionally authorized at their PostgreSQL
 effect boundary.
 
 The native `pi_session_entries` compaction node is the recovery authority;
-JetStream's durable `context.compaction.*` events provide live and audit evidence.
+Kafka's durable `context.compaction.*` facts provide live and audit evidence.
 The obsolete `context_compactions` governance ledger has been removed rather
 than maintained as a second, eventually inconsistent source of truth.
 The browser's settled transcript reconstructs completed Compaction and model
 retry notices from native Compaction entries and a presentation-only Pi custom
-entry; it does not retain a second lifetime copy of live JetStream fragments or
+entry; it does not retain a second lifetime copy of live Kafka fragments or
 inject the retry notice into model context.
 
 The same package implements Pi's tenant-scoped `SessionRepo`; Workers open or
@@ -462,15 +462,14 @@ The Gateway records a short channel lease on the same Grant row. Both Agent
 events and complete Pi Session mutations cross that long-lived WebSocket. A
 single PostgreSQL Authority Gate binds canonical scope and removes the Grant;
 the resulting AcceptedFact is appended through a broker-neutral bus. The
-current JetStream adapter uses stable Fact IDs for duplicate suppression and
-separate Session-keyed Streams for live events and Session projection. Each ACK
-waits for R=3 PubAck. Different Grants publish concurrently, while one channel
+Kafka adapter keys every Fact by Session ID and uses `acks=all`. Different
+Grants publish concurrently, while one channel
 keeps one Fact in flight. Channel ownership renews set-wise outside the Fact hot
 path. After PubAck, a separate progress store checkpoints the acknowledged
 Agent-event sequence set-wise and flushes it on normal channel close; this is a
 terminal-stream boundary, not an admission decision. Normal settlement closes
 the channel before releasing the Grant; crash recovery waits for its short
-lease rather than admitting overlapping generations. Workers have no NATS
+lease rather than admitting overlapping generations. Workers have no Kafka
 credentials or network route.
 
 There is no second mutation endpoint or mutation-specific authority. The Gate
@@ -479,24 +478,23 @@ for a projector. Those responsibilities start after acceptance. Pi still waits
 for its mutation result/projection barrier when the next Agent operation
 causally depends on canonical Session state.
 
-JetStream committed RePublish sends stored messages to one Core NATS wildcard
-subscription in every Gateway replica. The Gateway holds only its actual HTTP
-connection queues, not a Session replay cache. Browsers retain the logical
-`Last-Event-ID` contract and never receive NATS credentials. A reconnect uses a
-temporary exact-Subject consumer; a cursor replaced by canonical PostgreSQL
-state receives HTTP 410 and reloads the complete conversation.
+Each Gateway consumes the Kafka topic into a rebuildable in-memory tail holding
+incomplete active Turns only. The public SSE request carries no cursor. Its first
+frame replaces the browser view with PostgreSQL canonical messages plus an
+immutable snapshot of that tail; later frames contain new events. Terminal Facts
+are sent to existing subscribers and then unload the covered shared tail. Slow
+connections have bounded queues and reconnect for another snapshot.
 
-Pi SessionStorage mutations use a separate accepted, Session-keyed JetStream
-Stream. Accepted envelopes contain immutable Run execution identity for result
-correlation but no ExecutionGrant. A PostgreSQL projector applies complete
-entries, records and compaction facts idempotently. Before opening a Session,
+Accepted Pi Session mutations contain immutable Run execution identity for
+result correlation but no ExecutionGrant. A shared Kafka consumer group applies
+complete entries, records and compaction facts idempotently to PostgreSQL. Before opening a Session,
 every Run appends a keyed recovery barrier and waits for its projection; all
 older accepted Session mutations have then been applied before the Worker
 reads PostgreSQL. Each semantic Pi write also waits for its own mutation result
 before the Agent Loop advances.
 PostgreSQL therefore stores semantic Pi state, not token fragments. Terminal
 Run state and a one-row event outbox commit in the same PostgreSQL transaction.
-Abnormal interruption recovery reads only the retained Session Subject needed to
+Abnormal interruption recovery reads only the retained Kafka Session tail needed to
 preserve a visible prefix that never reached `message_end`.
 
 ## State ownership
@@ -509,7 +507,8 @@ preserve a visible prefix that never reached `message_end`.
 | Session Tool grants and immutable Run capability snapshots | PostgreSQL |
 | conversation parent/fork graph | PostgreSQL |
 | canonical completed conversation | PostgreSQL |
-| bounded live SSE replay | R=3 JetStream Session Subjects |
+| bounded accepted live facts | Kafka topic keyed by Session ID |
+| incomplete browser view | rebuildable Gateway memory |
 | elastic Workspace bytes | persistent Cube Volume |
 | cloud development machine guest root, memory and processes | one Cube pause snapshot on its compute node |
 | encrypted machine reconnect capsule | PostgreSQL; key held only by Tool Broker |

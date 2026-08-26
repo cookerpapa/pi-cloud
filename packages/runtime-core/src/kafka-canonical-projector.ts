@@ -48,8 +48,9 @@ export class KafkaCanonicalProjector {
     });
   }
 
-  start(): Promise<void> {
-    return this.#consumer.start();
+  async start(): Promise<void> {
+    await this.#consumer.start();
+    await this.#consumer.waitUntilCaughtUp();
   }
 
   checkHealth(): void {

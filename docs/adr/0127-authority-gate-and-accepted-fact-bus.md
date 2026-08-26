@@ -44,13 +44,13 @@ It does not query or control a broker, assign broker cursors, sequence facts,
 deduplicate facts, replay history or wait for a downstream projection.
 
 The `AcceptedFactBus` port owns durable append and returns a broker-neutral
-receipt. Its current JetStream adapter maps Agent-event and Pi-Session-mutation
-facts to their maintained Session-keyed Streams. Stable Fact IDs, physical log
+receipt. Its current Kafka adapter maps both Fact kinds to one Session-keyed
+Topic. Stable Fact IDs, physical log
 ordering, duplicate suppression, retention and replay are bus/downstream
 concerns. Consumers never call the Authority Gate or receive a bearer Grant.
 
 Agent events have one additional downstream progress projection. It records
-the highest R=3-acknowledged logical event sequence in PostgreSQL in set-wise
+the highest Kafka-acknowledged logical event sequence in PostgreSQL in set-wise
 renewal checkpoints and flushes on normal FactChannel close. Terminal event
 allocation needs that durable boundary after a Worker crash, but the progress
 store cannot authorize, reject, order or deduplicate a CandidateFact. Terminal
@@ -91,10 +91,10 @@ defense policy requires separate product evidence.
 ## Consequences
 
 The Worker has one FactChannel instead of separate Event and Session-mutation
-ingress clients. The Gate depends on PostgreSQL Authority only. JetStream is
-selected behind the `AcceptedFactBus` adapter and can be compared or replaced
+ingress clients. The Gate depends on PostgreSQL Authority only. Kafka is
+selected behind the `AcceptedFactBus` adapter and can be replaced
 without changing Gate semantics.
 
-Two physical JetStream Streams may remain because live replay and Pi mutation
-projection have different consumers. That is an adapter decision hidden from
-the Worker and Gate, not two acceptance boundaries.
+One Kafka Topic feeds independent canonical and Gateway live-tail consumer
+groups. That is an adapter decision hidden from the Worker and Gate, not two
+acceptance boundaries.

@@ -255,7 +255,7 @@
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 47 },
       "targets": [
         {
-          "expr": "max(pi_cloud_jetstream_consumer_pending{consumer=\"PI_CLOUD_SESSION_PROJECTOR\"})",
+          "expr": "max(pi_cloud_kafka_live_tail_events)",
           "refId": "A"
         }
       ]
@@ -274,13 +274,13 @@
     },
     {
       "type": "timeseries",
-      "title": "JetStream retained data",
+      "title": "Kafka Gateway live tails",
       "id": 21,
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
       "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
       "targets": [
         {
-          "expr": "max by (stream) (pi_cloud_jetstream_bytes)",
+          "expr": "max(pi_cloud_kafka_live_tail_bytes)",
           "legendFormat": "{{stream}}",
           "refId": "A"
         }
@@ -317,7 +317,7 @@
           "refId": "B"
         },
         {
-          "expr": "max(pi_cloud_jetstream_consumer_pending{consumer=\"PI_CLOUD_SESSION_PROJECTOR\"})",
+          "expr": "max(pi_cloud_kafka_live_tail_events)",
           "legendFormat": "Session mutations",
           "refId": "C"
         }

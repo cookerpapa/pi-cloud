@@ -66,6 +66,18 @@ export class KafkaAcceptedFactConsumer {
     }
   }
 
+  async waitUntilCaughtUp(timeoutMs = 120_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      this.checkHealth();
+      const lag = await this.#consumer.getLag({ topics: [this.#topic] });
+      const pending = [...lag.values()].flat().reduce((total, value) => total + value, 0n);
+      if (pending === 0n) return;
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error("Kafka AcceptedFact consumer did not catch up before readiness deadline");
+  }
+
   async close(): Promise<void> {
     await this.#stream?.close().catch(() => undefined);
     await this.#run;

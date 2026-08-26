@@ -1,176 +1,31 @@
-# Backlog
+# Maintained backlog
 
-This backlog covers the current PostgreSQL + JetStream + Pi SDK + Cube persistent-Volume
-architecture. Temporal, Cells, MinIO/Kopia and alternate Sandbox runtimes are
-retired and remain only in Git history or explicitly superseded ADRs.
-
-## Release verification
-
-- [x] Rename the maintained product and deployment contract to Pi Cloud without
-      retaining mixed pre-release runtime identifiers.
-- [x] Make the maintained architecture documents explicitly distinguish
-      ephemeral RunAttempt ownership from the removed Worker-affinity design,
-      and label migrations/discussion logs as historical evidence.
-- [x] Make README a concise product/deployment entry, validate local links and
-      documented npm commands in CI, and align package-level authority docs.
-- [x] Centralize one-host operator settings in the generated private `.env`,
-      validate cross-service retention/lease/queue relations, and provide an
-      idempotent registered-account administrator command.
-- [x] Run strict Helm/value-policy checks before distributed preflight mutates
-      a cluster, including placeholder and coupled-budget rejection.
-- [x] Keep formatting, typecheck, unit/integration, build, Helm and security
-      gates green.
-- [ ] Run a clean self-hosted install after every deployment contract change.
-- [x] Re-run real-model pure-chat and multi-round coding acceptance after Pi or
-      provider changes.
-- [x] Exercise the cookie-authenticated browser API surface end to end,
-      including Workspace source reads under full Cube capacity, Terminal→Run
-      writer handoff, Steer, Cancel/recovery, tree operations and deletion.
-- [x] Add a browser-local Chinese/English UI preference while preserving prompts,
-      conversation content and Tool/model output byte-for-byte.
-- [x] Align the browser transcript with Pi Tool semantics through stable
-      presentation rows, grouped Tool activity, dedicated Bash/Read/Write/Edit
-      renderers, fenced-code highlighting and reload-stable Compaction/retry
-      lifecycle rows.
-- [x] Restore a PiCloud sidebar brand and replace the exclusive-machine path
-      list with a GNOME-style folder chooser whose authenticated New Folder
-      action is fenced against active Agent/terminal ownership.
-- [x] Verify Cube destruction followed by attachment of the same persistent
-      Workspace Volume to a fresh KVM.
+This backlog applies only to the current PostgreSQL + Kafka + Pi SDK + Cube
+Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
-- [ ] Add process-level tests for two Workers racing the same ready command and
-      prove one current Attempt/fence produces effects.
-- [ ] Prove lost `NOTIFY`, duplicate wakeup and Worker restart do not lose or
-      duplicate a Run.
-- [x] Stop an unhealthy/disconnected Worker from claiming new PostgreSQL work,
-      and keep Runs queued while a human Terminal owns the Workspace writer.
-- [ ] Exercise PostgreSQL/PgBouncer failover while direct notification
-      connections reconnect.
-- [x] Validate transaction-scoped SessionStorage authority through deterministic
-      Pi Agent Run, Tool, compaction and interrupted-effect recovery contracts.
-- [x] Run Pi 0.84.1's published Session backend conformance suite unchanged
-      against the tenant-scoped PostgreSQL `SessionRepo` and retain separate
-      authority/isolation contracts.
-- [x] Ensure a secondary terminal-projection outage cannot strand a failed Run;
-      commit a minimal failure boundary and let later Turns start after it.
-- [x] Re-run the production PostgreSQL-native Pi runtime through real model,
-      Cube Tool, Workspace settlement and cross-Worker recovery.
-- [x] Add bounded human Session-tree projection, inherited transcript reads and
-      transactional/idempotent conversation forks.
-- [x] Allow a new Workspace terminal to consume its active `pending`
-      deployment environment while continuing to reject `failed` versions;
-      keep formal validation evidence bound to a fenced Agent Run/Attempt.
-- [x] Add recursive conversation-subtree deletion and settled-message tail
-      pruning without rewriting Pi's immutable entry history.
-- [x] Add user-owned exclusive Cube development environments without exposing
-      the cluster WebUI or Cube credentials to tenants.
-- [ ] Add branch rename controls to the tree UI.
-- [ ] Expand orphan reconciliation for Cube activations and persistent Volumes.
-- [x] Publish hot-event and PostgreSQL complete-message projection evidence.
-- [x] Remove the settled-tail Gateway replay cache; committed RePublish keeps
-      Gateway memory bounded by actual SSE connections.
-- [x] Preserve conversations when their Workspace is deleted and require an
-      explicit rebind before later Turns.
-- [x] Distinguish a Session Workspace rebind from same-Workspace Cube recovery
-      with one compactable, model-visible World State fact.
-- [x] Remove the unreachable Tool Worker portable-capture route; current Cube
-      settlement uses only the provider checkpoint and persistent-Volume
-      revision path.
-- [x] Remove the redundant pre-broker group-commit scheduler and require a
-      Session-keyed mutation projection barrier before cross-Worker reads.
-- [x] Keep broker durability independent from a browser-only progressive
-      text reveal so larger acknowledged chunks do not flash into the transcript.
-- [x] Treat the active JetStream Snapshot as an immediately visible refresh
-      baseline while progressively revealing only later SSE text.
-- [x] Make both JetStream paths logs of PostgreSQL-Authority-accepted facts,
-      remove Worker NATS access and renew one Worker heartbeat with set-oriented
-      Grant/Run-execution updates.
-- [x] Compare Kafka, Valkey Streams and NATS JetStream under one Session-keyed
-      workload, then remove Kafka after the R=3 candidate proved the same
-      authority/fence boundary with less custom Gateway state.
-- [x] Validate a three-node R=3 JetStream candidate with committed RePublish,
-      one Core NATS subscription per Gateway, temporary reconnect replay,
-      PostgreSQL semantic projection, stale-Fence rejection and 2,000 sustained
-      SSE connections, then promote it with batched authority validation and
-      committed live fanout.
-- [x] Let a durably fenced, expired Worker settle its interrupted Run even when
-      its dead management endpoint cannot confirm a physical stop.
-- [x] Replace the global Agent-event Authority microbatch with one short-lived
-      PostgreSQL-owned FactChannel per ExecutionGrant; preserve per-Grant
-      order, immediate R=3 PubAck and crash-safe writer handoff without an
-      application batching delay.
-- [x] Unify browser events and complete Pi Session mutations on one FactChannel,
-      split the PostgreSQL ExecutionGrant Gate from a broker-neutral
-      AcceptedFactBus, and leave ordering/deduplication to the bus/projectors.
+- [ ] Kill one Kafka broker during concurrent Agent streams and verify
+      `acks=all`, consumer recovery and snapshot replacement.
+- [ ] Kill the canonical projector after PostgreSQL commit but before Kafka
+      offset commit; verify idempotent redelivery.
+- [ ] Kill/restart a Gateway after visible partial output; verify a new browser
+      request receives PostgreSQL canonical messages plus the rebuilt Kafka tail.
+- [ ] Validate PostgreSQL/PgBouncer failover and Cube compute-node drain on a
+      physical multi-node deployment.
 
-## Distributed deployment
+## Capacity
 
-- [ ] Validate HPA/KEDA and node autoscaling on at least three physical nodes.
-- [ ] Validate shared PostgreSQL queue fairness at target tenant concurrency.
-- [ ] Validate RWX storage behavior, quotas and failure recovery for the chosen
-      production CSI/Volume backend.
-- [ ] Record Tool Broker, persistent Volume gateway and Cube compute-node drain
-      evidence.
+- [ ] Measure AcceptedFact producer p50/p95/p99 with 1/16/64/128 active Sessions.
+- [ ] Measure Gateway live-tail bytes per active Turn and 2,000/10,000 SSE
+      connections.
+- [ ] Measure canonical projector lag and PostgreSQL WAL for complete Pi entries.
+- [ ] Validate KEDA Worker scaling and Kafka partition count against the target
+      enterprise workload.
 
-## Security and operations
+## Operations
 
-- [x] Add a minimal Prometheus/Grafana/Alertmanager monitoring profile with
-      authority backlog, JetStream health, Cube/Volume capacity and actionable
-      alert rules; retain direct OTLP-to-Jaeger tracing without adding a second
-      telemetry pipeline.
-- [x] Add deployment-owned direct RFC1918 CIDRs for company-network debugging.
-- [ ] Add per-tenant egress policy and a searchable network audit trail.
-- [ ] Add administrator-owned MCP connections and Session Tool grants on top
-      of the Run capability snapshot; never load tenant code in the Pi Host.
-- [ ] Add tenant/session hard deletion and PostgreSQL/Volume retention.
-- [ ] Add backup/restore coverage for PostgreSQL and Workspace storage as two
-      explicit authorities.
-- [ ] Define a separate trust policy before enabling user Pi extensions.
-
-## Multi-agent execution
-
-- [x] Map the maintained `pi-subagents` contract to Child Sessions/Runs rather
-      than local Pi subprocesses, with one deployment-bounded recursive tree.
-- [x] Support Tool-free, `shared_serialized` and isolated Workspace modes
-      without equating conversation forks with file forks.
-- [x] Implement a trusted persistent-Volume branch for parallel isolated
-      mutating children and return their settled patch to the parent.
-- [x] Project fresh and fork-context Child Sessions as typed, read-only nodes in
-      the conversation list and tree while preserving their distinct execution
-      relation.
-
-## Development environments
-
-- [x] Bind each exclusive environment to one tenant user and Workspace.
-- [x] Keep Cube credentials and cluster inventory behind Tool Broker.
-- [x] Support create, persistent PTY, pause and resume; release destroys the
-      machine-owned Volume while retaining independently stored conversations.
-- [x] Share one user-owned Cube across several directory-bound conversations
-      while preserving Workspace single-writer admission.
-- [x] Add private-token HTTP service preview and deployment-owned development
-      environment size profiles.
-- [x] Hand an exclusive Cube between human Terminal and Agent Run under durable
-      single-writer admission instead of allocating a second VM.
-- [x] Add one-use SSH tickets and a trusted SSH-to-Tool-Broker PTY gateway.
-- [x] Preserve an exclusive Cube across Tool Broker replacement with an
-      encrypted reconnect capsule and Cube pause instead of destroy.
-- [x] Browse the live exclusive guest filesystem from `/`, including empty
-      directories, without depending on a reference Session checkpoint.
-- [x] Separate Workspace/environment management from progressive conversation
-      creation and expose deployment-owned profiles to elastic Runs.
-- [x] Allocate exclusive environments without asking for an elastic Workspace,
-      expose CPU/memory/disk selectors and record the Cube guest IP.
-- [x] Give machine storage an explicit non-elastic Workspace kind, synchronously
-      admit real Cube capacity and roll back rejected allocations.
-- [x] Delete both POSIX bytes and Cube Volume metadata only after Agent and
-      terminal writers have retired.
-- [ ] Add a bounded WebSocket preview tunnel for HMR and application sockets.
-
-## Product expansion rule
-
-Candidate races, Run rewind, Review Bundles and advanced governance were removed
-from the current product because they had no user workflow or measured benefit.
-A future expansion requires an end-to-end product decision, public contract and
-acceptance suite instead of a dormant backend module.
+- [ ] Run the one-host installer on a clean machine.
+- [ ] Add deployment-specific Kafka TLS/SASL/ACL examples.
+- [ ] Validate backup/restore and retention changes with active Runs.
+- [ ] Replace placeholder Alertmanager delivery with the operator's on-call system.

@@ -56,7 +56,7 @@ const productionCompose = await readFile(
   "utf8",
 );
 assert.match(productionCompose, /PI_CLOUD_JETSTREAM_REPLICAS: "3"/u);
-assert.match(productionCompose, /nats:\/\/nats-1:4222,nats:\/\/nats-2:4222,nats:\/\/nats-3:4222/u);
+assert.match(productionCompose, /kafka-1:9092,kafka-2:9092,kafka-3:9092/u);
 assert.doesNotMatch(productionCompose, /event-gateway|valkey|kafka/u);
 validateProductionRuntimeEnvironment({});
 assert.throws(

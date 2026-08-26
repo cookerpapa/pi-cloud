@@ -62,7 +62,7 @@ the guest carries no PiCloud ownership secret.
   directories and ordinary files, including empty directories, and never uses a
   historical Session as its source. Paths are canonicalized in the guest;
   traversal and symlink escapes are rejected.
-- The exclusive guest contains no model, PostgreSQL, JetStream, CubeAPI, Tool Broker
+- The exclusive guest contains no model, PostgreSQL, Kafka, CubeAPI, Tool Broker
   or object-store credentials. Tool Broker remains the external authorization
   and fencing boundary. Cube's envd is generic transport; PiCloud's one-shot Tool
   Worker is not a persistent controller or authority.

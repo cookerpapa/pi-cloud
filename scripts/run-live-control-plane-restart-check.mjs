@@ -157,10 +157,27 @@ let firstTextSequence;
 let terminal;
 let reconnects = 0;
 const text = [];
+const observeEvent = (event) => {
+  if (event.turnId !== accepted.turnId) return;
+  if (event.type === "assistant.text.delta") {
+    text.push(event.payload.text);
+    if (replacement === undefined) {
+      firstTextSequence = event.seq;
+      replacement = replaceControlPlane();
+    }
+  }
+  if (
+    event.type === "turn.completed" ||
+    event.type === "turn.failed" ||
+    event.type === "turn.cancelled"
+  ) {
+    terminal = event;
+    controller.abort();
+  }
+};
 try {
-  const cursor = await streamSessionEvents({
+  await streamSessionEvents({
     sessionId: session.sessionId,
-    afterSequence: 0,
     signal: controller.signal,
     authorizationToken: registration.apiToken,
     fetchImplementation: fetchFromProduction,
@@ -168,30 +185,19 @@ try {
     onStatus(status) {
       if (status.phase === "reconnecting") reconnects += 1;
     },
-    onEvent(event) {
-      if (event.turnId !== accepted.turnId) return;
-      if (event.type === "assistant.text.delta") {
-        text.push(event.payload.text);
-        if (replacement === undefined) {
-          firstTextSequence = event.seq;
-          replacement = replaceControlPlane();
-        }
-      }
-      if (
-        event.type === "turn.completed" ||
-        event.type === "turn.failed" ||
-        event.type === "turn.cancelled"
-      ) {
-        terminal = event;
-        controller.abort();
-      }
+    onSnapshot(snapshot) {
+      for (const event of snapshot.liveEvents) observeEvent(event);
     },
+    onEvent: observeEvent,
   });
   assert(replacement, "The model did not stream before Control Plane replacement");
   await replacement;
   assert(terminal, "The durable SSE stream did not publish a terminal event");
   assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
-  assert(firstTextSequence && firstTextSequence < cursor, "SSE did not advance after replacement");
+  assert(
+    firstTextSequence && firstTextSequence < terminal.seq,
+    "SSE did not advance after replacement",
+  );
   assert(text.join("").includes(marker), "Replayed output omitted the expected marker");
   const run = await waitForCompletedRun(api, accepted.runId);
   assert.equal(run.attempts.length, 1, "Control Plane replacement created another Run Attempt");
@@ -229,7 +235,7 @@ try {
         `- Run Attempts: ${String(report.attemptCount)}`,
         `- Elapsed: ${String(report.elapsedMs)} ms`,
         "",
-        "The Control Plane container received SIGKILL after the first JetStream-acknowledged assistant delta. The trusted Worker continued the fenced Run while JetStream retained the hot stream and PostgreSQL retained canonical Pi state. The replacement Gateway replayed the bounded Session subject, SSE reconnected, and the Run completed with one Attempt.",
+        "The Control Plane container received SIGKILL after the first Kafka-acknowledged assistant delta. The trusted Worker continued the fenced Run while Kafka retained the AcceptedFact stream and PostgreSQL retained canonical Pi state. The replacement Gateway rebuilt the Session snapshot, SSE reconnected, and the Run completed with one Attempt.",
         "",
       ].join("\n"),
     );

@@ -328,29 +328,29 @@ async function waitForPreview(path, marker) {
   );
 }
 
-async function jetStreamState() {
-  const output = await capture(process.execPath, [
+async function kafkaState() {
+  const offsets = await capture(process.execPath, [
     "scripts/production-compose.mjs",
     "exec",
     "-T",
-    "nats-1",
-    "wget",
-    "-q",
-    "-O",
-    "-",
-    "http://127.0.0.1:8222/jsz?streams=true&consumers=true",
+    "kafka-1",
+    "/opt/kafka/bin/kafka-get-offsets.sh",
+    "--bootstrap-server",
+    "kafka-1:9092",
+    "--topic",
+    "pi-cloud.accepted-facts.v1",
+    "--time",
+    "-1",
   ]);
-  const account = JSON.parse(output).account_details?.[0];
-  const streams = new Map((account?.stream_detail ?? []).map((stream) => [stream.name, stream]));
-  const events = streams.get("PI_CLOUD_AGENT_EVENTS");
-  const mutations = streams.get("PI_CLOUD_SESSION_MUTATIONS_V2");
-  if (events === undefined || mutations === undefined) {
-    throw new Error("JetStream production streams are unavailable");
-  }
+  const acceptedFacts = offsets
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .reduce((total, line) => total + Number(line.split(":").at(-1) ?? 0), 0);
+  const canonicalHeads = Number(await psql("select count(*) from session_kafka_heads"));
   return {
-    agentEvents: Number(events.state?.messages ?? 0),
-    sessionMutations: Number(mutations.state?.messages ?? 0),
-    sessionMutationAckPending: Number(mutations.consumer_detail?.[0]?.num_ack_pending ?? -1),
+    acceptedFacts,
+    canonicalHeads,
   };
 }
 
@@ -749,7 +749,7 @@ async function waitForDurableRunCompletion(runId) {
   throw new Error("Agent settled, but the durable Run did not commit within its deadline");
 }
 
-async function runTurn(sessionId, prompt, afterSequence, expectTools) {
+async function runTurn(sessionId, prompt, expectTools) {
   const observer = observeCubeSession(sessionId);
   const submittedAt = performance.now();
   const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("turn"), "off");
@@ -781,28 +781,18 @@ async function runTurn(sessionId, prompt, afterSequence, expectTools) {
     }
   })();
   try {
-    const cursor = await streamSessionEvents({
+    await streamSessionEvents({
       sessionId,
-      afterSequence,
       signal: controller.signal,
       authorizationToken,
       fetchImplementation: fetchFromProduction,
       retryDelayMs: 100,
       onStatus() {},
+      onSnapshot(snapshot) {
+        for (const event of snapshot.liveEvents) observeEvent(event);
+      },
       onEvent(event) {
-        events.push(event);
-        if (event.turnId === accepted.turnId && event.type === "assistant.text.delta") {
-          firstTextAt ??= performance.now();
-        }
-        if (
-          event.turnId === accepted.turnId &&
-          (event.type === "turn.completed" ||
-            event.type === "turn.failed" ||
-            event.type === "turn.cancelled")
-        ) {
-          terminal = event;
-          controller.abort();
-        }
+        observeEvent(event);
       },
     });
     await monitor;
@@ -839,7 +829,7 @@ async function runTurn(sessionId, prompt, afterSequence, expectTools) {
     const activations = await observer.stop();
     return {
       accepted,
-      cursor,
+      throughSequence: Math.max(0, ...events.map((event) => event.seq)),
       events,
       terminal,
       toolCalls,
@@ -852,6 +842,23 @@ async function runTurn(sessionId, prompt, afterSequence, expectTools) {
     controller.abort();
     await monitor;
     await observer.stop().catch(() => undefined);
+  }
+
+  function observeEvent(event) {
+    if (events.some((candidate) => candidate.eventId === event.eventId)) return;
+    events.push(event);
+    if (event.turnId === accepted.turnId && event.type === "assistant.text.delta") {
+      firstTextAt ??= performance.now();
+    }
+    if (
+      event.turnId === accepted.turnId &&
+      (event.type === "turn.completed" ||
+        event.type === "turn.failed" ||
+        event.type === "turn.cancelled")
+    ) {
+      terminal = event;
+      controller.abort();
+    }
   }
 }
 
@@ -911,7 +918,6 @@ try {
   const chat = await runTurn(
     session.sessionId,
     "Do not call any tool. Reply with exactly this text and nothing else: cube-chat-ok",
-    0,
     false,
   );
   progress("pure chat completed without a Cube activation");
@@ -929,7 +935,6 @@ try {
       "Do not initialize or create a Git repository or any .git entry.",
       "Do not only describe the code.",
     ].join(" "),
-    chat.cursor,
     true,
   );
   progress("first coding Run completed in a real Cube KVM");
@@ -985,7 +990,6 @@ try {
       "Run python3 counting_sort.py again and make all tests pass.",
       "Use tools and modify the existing file; do not recreate an unrelated implementation.",
     ].join(" "),
-    firstCoding.cursor,
     true,
   );
   progress("follow-up coding Run reused the bounded-warm Cube KVM");
@@ -1032,7 +1036,6 @@ try {
   const conversation = await api.getConversation(session.sessionId);
   assert.equal(conversation.turns.length, 3);
   assert(conversation.turns.every((turn) => turn.transcript !== undefined));
-  assert.equal(conversation.replayAfterSequence, followUp.cursor);
 
   const canonicalEvidence = await psql(
     `select count(distinct terminal.turn_id) || '|' || count(entry.id) || '|' ||
@@ -1048,7 +1051,7 @@ try {
   assert.equal(terminalCount, 3);
   assert(piEntryCount > terminalCount);
   assert(canonicalPayloadBytes > 0);
-  assert(terminalThroughSequence <= conversation.replayAfterSequence);
+  assert(terminalThroughSequence <= followUp.throughSequence);
   const eventPlaneEvidence = await psql(
     `select (to_regclass('public.session_events') is null)::int || '|' ||
             count(*)
@@ -1060,9 +1063,8 @@ try {
     .map(Number);
   assert.equal(postgresHotEventTableAbsent, 1);
   assert(projectedSessionMutations > 0);
-  const jetStream = await jetStreamState();
-  assert(jetStream.agentEvents > 0 && jetStream.sessionMutations > 0);
-  assert.equal(jetStream.sessionMutationAckPending, 0);
+  const kafka = await kafkaState();
+  assert(kafka.acceptedFacts > 0 && kafka.canonicalHeads > 0);
 
   const foreignApi = bootstrapApi;
   const foreignProject = await foreignApi.createProject(`Foreign Cube project ${suffix}`);
@@ -1096,7 +1098,6 @@ try {
       "Write checkpoint-marker.txt in the workspace root containing exactly LARGE-CHECKPOINT-OK.",
       "Do not use the network, do not start a background process, and report the measured file count.",
     ].join(" "),
-    0,
     true,
   );
   progress("large Workspace Run completed and committed its persistent Volume revision");
@@ -1122,7 +1123,6 @@ try {
       "In that one command: read checkpoint-marker.txt and require it to equal LARGE-CHECKPOINT-OK; count regular files under the existing large-fixture directory and require the count to equal 1024; verify two numbered files contain their own numbers; write restore-proof.txt containing the marker and measured count; then read restore-proof.txt back.",
       "After that Tool result, do not call another Tool and reply exactly RESTORE-VERIFIED.",
     ].join(" "),
-    largeFirst.cursor,
     true,
   );
   progress("large persistent Workspace Volume attached to a fresh Cube KVM");
@@ -1220,13 +1220,13 @@ try {
       terminalCount,
       piEntryCount,
       canonicalPayloadBytes,
-      replayAfterSequence: conversation.replayAfterSequence,
+      terminalThroughSequence,
     },
     eventPlane: {
-      authority: "JetStream R=3",
+      authority: "Kafka acks=all",
       postgresHotEventTableAbsent: true,
       projectedSessionMutations,
-      jetStream,
+      kafka,
     },
     scheduler: {
       authority: "PostgreSQL",
@@ -1279,7 +1279,7 @@ try {
         `- Large Workspace fresh-VM cold restore: ${String(report.largeWorkspace.freshCubeMicroVm)}`,
         `- Real input/output/cache-read tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)}`,
         `- Canonical conversation: ${String(report.canonicalConversation.terminalCount)} terminal Turns / ${String(report.canonicalConversation.piEntryCount)} Pi entries / ${String(report.canonicalConversation.canonicalPayloadBytes)} bytes`,
-        `- JetStream Agent events / Session mutations / pending mutation ACKs: ${String(report.eventPlane.jetStream.agentEvents)} / ${String(report.eventPlane.jetStream.sessionMutations)} / ${String(report.eventPlane.jetStream.sessionMutationAckPending)}`,
+        `- Kafka AcceptedFacts / canonical Session heads: ${String(report.eventPlane.kafka.acceptedFacts)} / ${String(report.eventPlane.kafka.canonicalHeads)}`,
         `- PostgreSQL hot-event table absent / projected Session mutations: ${String(report.eventPlane.postgresHotEventTableAbsent)} / ${String(report.eventPlane.projectedSessionMutations)}`,
         `- Scheduler / Worker pool: ${report.scheduler.authority} / ${report.scheduler.workerPool}`,
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,

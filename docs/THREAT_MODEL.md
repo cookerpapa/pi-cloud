@@ -24,14 +24,14 @@ no model credential.
 Every product read/write includes tenant ownership. Tool and Session mutation
 boundaries validate the current, unexpired opaque ExecutionGrant. Browser event
 writers acquire and renew a shorter PostgreSQL ownership lease under that same
-Grant before JetStream accepts their events.
+Grant before Kafka accepts their Facts.
 A paused or partitioned old Worker cannot resume useful effects after the
 authority replaces or revokes its grant.
 
 ### Durable authorities
 
-PostgreSQL owns Runs and canonical Pi Sessions; R=3 JetStream owns the bounded
-live-event tail; the persistent Cube Volume owns Workspace bytes. Worker and
+PostgreSQL owns Runs and canonical Pi Sessions; Kafka owns the bounded
+AcceptedFact log; the persistent Cube Volume owns Workspace bytes. Worker and
 Gateway caches are rebuildable. There is no competing workflow or checkpoint
 head.
 
@@ -50,13 +50,13 @@ head.
 | user invokes or tampers with envd inside their own VM | envd is credential-free tenant-local transport; Cube traffic/envd tokens, operation admission and every cross-resource authority remain outside the VM |
 | Broker replacement loses or swaps an exclusive VM | encrypted reconnect capsule plus PostgreSQL owner CAS and Cube physical metadata/runtime identity validation before adoption |
 | directory picker exposes another runtime | tenant/user/environment authorization at Control Plane and Tool Broker; listing is read from the selected live Cube only |
-| stale Worker mutation | PostgreSQL authority before accepted JetStream PubAck and monotonically increasing fence |
+| stale Worker mutation | PostgreSQL authority before Kafka `acks=all` and monotonically increasing execution authority |
 | duplicate queue delivery | idempotent command plus transactional RunAttempt claim |
 | ambiguous shell result | `UNKNOWN`; no automatic replay |
 | SSRF/data exfiltration to internal network | private access denied except deployment-owned direct CIDRs; public HTTP uses governed egress proxy |
 | path/symlink escape | rooted/O_NOFOLLOW trusted Volume operations |
 | infinite output/process/resource use | byte, timeout, PID, CPU, memory and disk limits |
-| browser observes non-durable output | JetStream PubAck before committed RePublish/SSE; complete Pi entries remain PostgreSQL canonical state |
+| browser observes non-durable output | Kafka `acks=all` before Gateway SSE; complete Pi entries remain PostgreSQL canonical state |
 | Cube loss | process world reset marker plus same persistent Workspace Volume |
 | secret leakage in events | bounded schemas and redaction; credentials never enter model context |
 

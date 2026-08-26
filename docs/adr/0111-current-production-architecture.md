@@ -27,8 +27,7 @@ execution path and failure semantics.
   Pi's native SessionStorage records.
 - One persistent Cube Volume is the byte authority for a Workspace. PostgreSQL
   stores bounded revision, file-index and trusted Git-baseline metadata.
-- R=3 NATS JetStream is the bounded hot Agent-event authority described by
-  ADR-0122. It is
+- Kafka is the bounded AcceptedFact authority refined by ADR-0128. It is
   neither a second conversation transcript nor a Run scheduler.
 - A live process tree exists only inside one Cube KVM. Process memory, sockets,
   PTYs and background processes are not durable after that Cube is destroyed.
@@ -88,10 +87,10 @@ execution path and failure semantics.
   Authority Gate to the accepted Session mutation topic;
   the PostgreSQL projector applies it before the next model Step. Pi's ordered
   log stores stable identifiers and hydrates canonical entries/records on read.
-- The browser sees only the contiguous prefix durably accepted by JetStream
-  after the fenced authority transaction. Committed RePublish feeds one Core
-  NATS subscription per Gateway; reconnect uses a temporary exact-Session
-  consumer. Failed or cancelled visible text is settled into a
+- The browser sees only Facts durably accepted by Kafka after the authority
+  decision. Gateway reconstructs incomplete Session tails in memory; reconnect
+  receives a cursor-free PostgreSQL + live-tail replacement snapshot. Failed or
+  cancelled visible text is settled into a
   bounded hidden Pi entry, so Worker replacement preserves both UI history and
   subsequent model context.
 - Settlement stores the terminal event and metadata in PostgreSQL. Live events
@@ -121,7 +120,7 @@ execution path and failure semantics.
   source tree.
 - A lost Worker or Cube can preserve committed conversation and Workspace files,
   but not an in-memory process world.
-- Streaming durability uses a bounded retained JetStream log; PostgreSQL stores
+- Streaming durability uses a bounded retained Kafka log; PostgreSQL stores
   complete semantic Pi entries rather than provider-token rows.
 - Removing the local WAL deliberately weakens "model generated" durability,
   but not "user observed" durability: unacknowledged bytes are invisible.

@@ -113,7 +113,6 @@ async function runTurn({
   browser,
   sessionId,
   prompt,
-  afterSequence,
   expectTools,
   expectedTerminal = "turn.completed",
   onToolStarted,
@@ -125,30 +124,34 @@ async function runTurn({
   let terminal;
   let firstTextAt;
   let intervention;
+  const observeEvent = (event) => {
+    if (events.some((candidate) => candidate.eventId === event.eventId)) return;
+    events.push(event);
+    if (event.turnId !== accepted.turnId) return;
+    if (event.type === "assistant.text.delta") firstTextAt ??= performance.now();
+    if (event.type === "tool.started" && intervention === undefined && onToolStarted) {
+      intervention = Promise.resolve(onToolStarted(accepted));
+    }
+    if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type)) {
+      terminal = event;
+      controller.abort();
+    }
+  };
   const timer = setTimeout(
     () => controller.abort(new Error("Product surface turn timed out")),
     180_000,
   );
   try {
-    const cursor = await streamSessionEvents({
+    await streamSessionEvents({
       sessionId,
-      afterSequence,
       signal: controller.signal,
       fetchImplementation: browser.fetch,
       retryDelayMs: 100,
       onStatus() {},
-      onEvent(event) {
-        events.push(event);
-        if (event.turnId !== accepted.turnId) return;
-        if (event.type === "assistant.text.delta") firstTextAt ??= performance.now();
-        if (event.type === "tool.started" && intervention === undefined && onToolStarted) {
-          intervention = Promise.resolve(onToolStarted(accepted));
-        }
-        if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type)) {
-          terminal = event;
-          controller.abort();
-        }
+      onSnapshot(snapshot) {
+        for (const event of snapshot.liveEvents) observeEvent(event);
       },
+      onEvent: observeEvent,
     });
     await intervention;
     assert(terminal, "Turn did not publish a terminal event");
@@ -161,7 +164,6 @@ async function runTurn({
     await waitForRun(api, accepted.runId, [expectedRunState]);
     return {
       accepted,
-      cursor,
       events,
       firstTextMs: firstTextAt === undefined ? undefined : Math.round(firstTextAt - submittedAt),
       settledMs: Math.round(performance.now() - submittedAt),
@@ -284,16 +286,13 @@ try {
   );
   progress("workspace and conversation creation passed");
 
-  let cursor = 0;
   const chat = await runTurn({
     api,
     browser,
     sessionId: session.sessionId,
     prompt: "Do not call tools. Reply with exactly PRODUCT-SURFACE-CHAT-OK.",
-    afterSequence: cursor,
     expectTools: false,
   });
-  cursor = chat.cursor;
   const fullTree = await api.getConversationTree(session.sessionId, "full");
   const focusTree = await api.getConversationTree(session.sessionId, "focus");
   assert.equal(fullTree.currentSessionId, session.sessionId);
@@ -330,10 +329,8 @@ try {
     browser,
     sessionId: session.sessionId,
     prompt: "Do not call tools. Reply with exactly PRODUCT-SURFACE-LATER-OK.",
-    afterSequence: cursor,
     expectTools: false,
   });
-  cursor = later.cursor;
   const prune = await api.pruneConversation(
     session.sessionId,
     chat.accepted.turnId,
@@ -353,10 +350,8 @@ try {
       "Create surface_check.py containing a function add(a, b) and executable assertions for positive, negative and zero values.",
       "Run python3 surface_check.py and make it print exactly PRODUCT-SURFACE-CODE-OK.",
     ].join(" "),
-    afterSequence: cursor,
     expectTools: true,
   });
-  cursor = coding.cursor;
   const versions = await api.listWorkspaceVersions(session.sessionId);
   assert(versions.currentVersionId);
   const version = await api.getWorkspaceVersion(versions.currentVersionId);
@@ -379,7 +374,6 @@ try {
     sessionId: session.sessionId,
     prompt:
       "Use bash exactly once to run sleep 8. After it finishes, reply exactly OLD-STEER-TEXT.",
-    afterSequence: cursor,
     expectTools: true,
     onToolStarted: async (accepted) => {
       const result = await api.steerTurn(
@@ -391,7 +385,6 @@ try {
       steerAccepted = result.state === "delivered";
     },
   });
-  cursor = steered.cursor;
   assert.equal(steerAccepted, true);
   const afterSteer = await api.getConversation(session.sessionId);
   assert(JSON.stringify(afterSteer).includes("PRODUCT-SURFACE-STEER-OK"));
@@ -403,7 +396,6 @@ try {
     browser,
     sessionId: session.sessionId,
     prompt: "Use bash exactly once to run sleep 60, then report completion.",
-    afterSequence: cursor,
     expectTools: true,
     expectedTerminal: "turn.cancelled",
     onToolStarted: async (accepted) => {
@@ -411,17 +403,14 @@ try {
       cancelAccepted = true;
     },
   });
-  cursor = cancelled.cursor;
   assert.equal(cancelAccepted, true);
   const recovery = await runTurn({
     api,
     browser,
     sessionId: session.sessionId,
     prompt: "Do not call tools. Reply with exactly PRODUCT-SURFACE-RECOVERY-OK.",
-    afterSequence: cursor,
     expectTools: false,
   });
-  cursor = recovery.cursor;
   progress("cancellation and next-Turn interruption recovery passed");
 
   const archiveProject = await api.createProject(`Archive surface ${suffix}`);
@@ -438,7 +427,6 @@ try {
     browser,
     sessionId: sibling.sessionId,
     prompt: "Do not call tools. Reply with exactly PRODUCT-SURFACE-PRE-REBIND-OK.",
-    afterSequence: 0,
     expectTools: false,
   });
   await api.archiveSession(sibling.sessionId, true, newIdempotencyKey("archive"));
@@ -491,7 +479,6 @@ try {
     sessionId: sibling.sessionId,
     prompt:
       "Do not call tools. If the hidden Harness context says this Session is attached to a different workspace, reply exactly PRODUCT-SURFACE-WORKSPACE-CHANGE-SEEN. Otherwise reply exactly PRODUCT-SURFACE-WORKSPACE-CHANGE-MISSING.",
-    afterSequence: siblingBaseline.cursor,
     expectTools: false,
   });
   assert.match(
@@ -530,7 +517,6 @@ try {
       workspaceRebind: true,
       tenantIsolation: true,
       deletion: deletion.storageState,
-      finalCursor: cursor,
     })}\n`,
   );
 } finally {

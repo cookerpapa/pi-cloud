@@ -114,10 +114,10 @@ facts survive reload through native SessionStorage projection. The narrow
 layout turns the conversation sidebar into an overlay with an explicit
 backdrop.
 
-The browser uses only relative REST/SSE routes. Its fetch-based SSE client can
-set `Last-Event-ID` explicitly, parses fragmented frames, validates the shared
-`PiCloudEvent` contract and frame identity, refuses sequence gaps, ignores
-duplicates, and reconnects with bounded backoff. Public REST resources are also
+The browser uses only relative REST/SSE routes. Its fetch-based SSE client sends
+no cursor. Every connection first receives a validated replacement Session
+snapshot and then validated `PiCloudEvent` frames; reconnect uses bounded
+backoff and replaces the view instead of replaying characters. Public REST resources are also
 validated before they enter React state. No raw Pi object, credential reference,
 provider token, or API body is logged.
 

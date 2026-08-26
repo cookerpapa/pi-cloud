@@ -8,7 +8,7 @@ Workers never execute model-generated code. `read/write/edit/bash` cross the
 Tool Broker and execute in CubeSandbox. A Worker PVC contains only its boot
 ledger. Pi SessionStorage is durable PostgreSQL state. Workers publish both
 browser-visible events and complete Session mutations through authenticated
-Control Plane Ingest endpoints; they have no direct JetStream credentials or
+Control Plane Ingest endpoints; they have no direct Kafka credentials or
 network requirement.
 
 ## Required Secret

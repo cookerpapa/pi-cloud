@@ -51,10 +51,11 @@ export class KafkaLiveSessionTail {
     });
   }
 
-  start(): Promise<void> {
+  async start(): Promise<void> {
     this.#sweepTimer = setInterval(() => this.#sweep(), 60_000);
     this.#sweepTimer.unref();
-    return this.#consumer.start();
+    await this.#consumer.start();
+    await this.#consumer.waitUntilCaughtUp();
   }
 
   checkHealth(): void {

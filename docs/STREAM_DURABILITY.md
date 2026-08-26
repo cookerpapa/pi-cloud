@@ -1,76 +1,67 @@
 # Streaming durability and crash matrix
 
-PiCloud separates short-lived presentation fragments from semantic conversation
-state. The following symbols make the boundary explicit:
+PiCloud separates incomplete presentation fragments from canonical conversation
+state:
 
-- `R` — a Worker produced a sequenced raw event;
-- `J` — R=3 JetStream durably acknowledged that event after the current
-  short-leased FactChannel passed the PostgreSQL Authority Gate;
-- `V` — an authenticated SSE client observed the event;
-- `M` — authority-accepted Session Mutation received an R=3 JetStream PubAck;
-- `P` — Pi SessionStorage committed the complete message or Tool result in
-  PostgreSQL;
-- `T` — PostgreSQL atomically committed the terminal Run state and terminal
-  event outbox row.
-- `B` — the Session-keyed mutation projection barrier committed after all
-  earlier authority-accepted mutation records were applied.
+- `K` — Kafka acknowledged an AcceptedFact with `acks=all`;
+- `V` — a browser observed that Fact through Gateway SSE;
+- `P` — the canonical projector committed a complete Pi mutation in PostgreSQL;
+- `T` — PostgreSQL committed terminal Run state and its terminal outbox Fact;
+- `S` — Gateway sent a replacement snapshot containing PostgreSQL canonical
+  messages plus the current incomplete Kafka tail.
 
 The maintained invariants are:
 
 ```text
-V implies J
-M implies the mutation crossed the same current ExecutionGrant Gate; duplicate
-identities are suppressed downstream by the bus
+V implies K
 T(success) implies P
-next model Step starts only after the required P projection barrier
-replacement Worker reads SessionStorage only after B and a fresh fence check
-arbitrary Tool effects are never inferred from R, J or V
+the next model Step waits for its required P projection barrier
+S contains no browser-supplied cursor
+arbitrary Tool effects are never inferred from K, V or an interrupted text prefix
 ```
 
-`J` is a bounded hot replay fact, not a lifetime transcript. JetStream retains
-the Session Subject while PostgreSQL owns settled semantic messages. An older
-reconnect reloads `P` from PostgreSQL. Gateway memory therefore follows active
-HTTP connections rather than historical token fragments.
+Kafka is a bounded recovery log, not the lifetime transcript. AcceptedFacts are
+keyed by opaque Session ID, so one Session remains in one Kafka partition.
+PostgreSQL stores complete Pi-native semantic state once. Gateway replicas consume
+Kafka into rebuildable memory containing incomplete active Turns only.
 
-The highest R=3-acknowledged Agent-event sequence is checkpointed separately
-from the Authority Gate. Active channels update it set-wise with lease renewal;
-normal close flushes it. It exists only so crash/terminal settlement can append
-after the durable visible prefix. It is not consulted when accepting a Fact.
+## Cursor-free browser handoff
 
-JetStream durability and browser presentation are deliberately decoupled. On a
-fresh live delivery, React first accepts the complete `J`-acknowledged text
-block into its in-memory target, then reveals the new suffix over bounded
-animation frames. A hard refresh loads canonical PostgreSQL Turns plus one
-JetStream live-Turn Snapshot; the already recovered text prefix is the initial
-visible baseline and is never animated from empty again. SSE starts at the
-Snapshot sequence and only later events animate. The animation is neither
-another event log nor another acknowledgement. Hidden tabs and reduced-motion
-clients skip it, and manual scrolling stops automatic tail following while the
-local reveal continues.
+The browser opens one SSE request without `Last-Event-ID` or a query watermark.
+Gateway subscribes the connection and takes an immutable Session-tail snapshot
+before performing network writes. Its first frame replaces the browser view:
 
-Gateway startup installs one committed-RePublish Core NATS subscription. It
-does not scan retained history. Reconnect creates a temporary exact-Subject
-consumer bounded by per-Session message count and retention; older settled
-conversations are already canonical in PostgreSQL.
+```text
+event: session.snapshot
+data: PostgreSQL conversation + materialized incomplete live events
+```
+
+Subsequent frames carry new accepted events. On refresh or disconnect the browser
+opens the same endpoint and replaces its view from another snapshot. Recovered
+text is rendered immediately; only later deltas use progressive reveal.
+
+Terminal Facts are created by the PostgreSQL settlement transaction and reach
+Kafka through the terminal outbox. Gateway publishes that terminal event to
+already-open subscribers, then advances the canonical boundary and removes the
+covered tail by pointer replacement. Existing responses retain their immutable
+snapshot references; slow clients have bounded queues and reconnect instead of
+pinning shared memory.
 
 ## Failure matrix
 
 | Crash boundary | Visible result | Recovery rule |
 | --- | --- | --- |
-| before `J` | fragment was never shown | producer may retry with the same event identity |
-| after `J`, before `V` | fragment may be unseen | SSE replays the exact JetStream Session Subject |
-| after `V`, before complete `P` | visible prefix survives in JetStream | interruption projection stores the bounded visible prefix and abort fact in Pi context |
-| complete `P`, before `T` | complete Pi message exists, Run not terminal | stable mutation IDs make projection replay idempotent; terminal settlement retries under the current fence |
-| after `T`, before terminal SSE | canonical result is complete | terminal outbox relay republishes; reconnect can reload PostgreSQL |
-| Gateway process loss | no canonical loss | reconnect reads the retained Session Subject; no process cache is authoritative |
-| Worker loss during an arbitrary Tool | outcome may be unknown | revoke the fence, record `UNKNOWN`, never auto-run the Tool again |
-| Worker process is unreachable after its lease expires | management stop cannot be confirmed over the dead endpoint | durable fence blocks every later effect; settle the Run and outstanding model reservations, return the Session to idle and retire the logical owner without adopting its process |
-| Cube loss | process/memory world is gone | persistent Volume keeps files; the next model sees a minimal Sandbox-reset fact |
-| PostgreSQL projection lag | accepted JetStream facts may continue | the same Session cannot cross its projection barrier into a stale next Step |
-| Worker replacement with mutation records in flight | old accepted records precede the new Grant's keyed barrier | wait for `B`, recheck the new fence, then read PostgreSQL |
+| before `K` | Fact was never shown | producer may retry the same stable Fact ID |
+| after `K`, before `V` | Fact may be unseen | Gateway consumer resumes from Kafka; reconnect receives a replacement snapshot |
+| after `V`, before complete `P` | visible prefix remains in Kafka | interruption projection records the bounded prefix and abort fact in Pi context |
+| complete `P`, before `T` | complete Pi message exists, Run is not terminal | stable mutation ID makes projection redelivery idempotent; terminal settlement retries under current authority |
+| after `T`, before terminal Kafka append | canonical result is complete | PostgreSQL terminal outbox retries the same terminal Fact |
+| canonical projector loss | Kafka group offset does not advance | replacement consumer reapplies idempotently and commits the offset |
+| Gateway loss | no canonical loss | replacement Gateway rebuilds its soft tail from Kafka and PostgreSQL |
+| browser loss | no server-side acknowledgement is needed | reconnect receives `S`; no browser cursor survives |
+| Worker loss during arbitrary Tool work | outcome may be unknown | revoke authority, record `UNKNOWN`, never auto-run the Tool again |
+| Cube loss | process/memory state is gone | persistent Workspace Volume keeps files; the next model sees a minimal reset fact |
 
-The automated contracts cover accepted-order validation, duplicate delivery,
-terminal folding, expired cursor reload, terminal outbox idempotence, Pi
-mutation projection, interrupted visible-prefix recovery and stale-fence
-rejection. Production acceptance additionally replaces a JetStream Leader, Control Plane,
-Workers and Cube at these boundaries.
+Kafka retention must exceed maximum Turn time plus settlement/recovery grace.
+PostgreSQL Session heads record the terminal Kafka partition/offset for audit and
+bounded recovery; those coordinates are internal and never enter the browser API.

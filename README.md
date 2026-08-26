@@ -12,7 +12,7 @@ shell operations run in CubeSandbox KVM microVMs.
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
 - elastic Sandboxes or user-owned full-VM Cube environments with root SSH/terminal access;
-- resumable SSE whose visible bytes were acknowledged by R=3 JetStream first;
+- snapshot-first SSE whose visible bytes were acknowledged by Kafka first;
 - horizontally replaceable Pi Workers and Kubernetes/KEDA deployment support.
 
 PiCloud targets private or controlled enterprise deployments. It is not a
@@ -37,15 +37,19 @@ Worker CandidateFacts ──> per-Grant FactChannel ──> PostgreSQL Authority
                                                        │ grant-free AcceptedFacts
                                                        ▼
                                                 AcceptedFactBus
-                                              JetStream R=3 adapter
-                                                ├─> committed SSE
-                                                └─> Pi Session projector ──> PostgreSQL
+                                                Kafka acks=all
+                                             ┌─────────┴─────────┐
+                                             ▼                   ▼
+                                  Gateway live-tail cache   Pi Session projector
+                                             │                   │
+                                      snapshot-first SSE      PostgreSQL
 ```
 
 There are three durable authorities:
 
 - PostgreSQL owns product state, the Run queue and canonical Pi Sessions;
-- JetStream owns the bounded hot event log used for live replay;
+- Kafka owns the bounded AcceptedFact log; Gateway memory holds only rebuildable
+  incomplete Session tails;
 - a persistent Cube Volume owns elastic Workspace bytes; Cube pause state owns
   a cloud development machine's guest root, memory and processes on its compute node;
   releasing that machine deletes its private Volume but never its conversations.
@@ -137,7 +141,7 @@ registration quotas, retention, SSH or Sandbox capacity.
 
 ## Distributed Kubernetes deployment
 
-The Helm chart expects external PostgreSQL/PgBouncer, NATS JetStream, ReadWriteMany
+The Helm chart expects external PostgreSQL/PgBouncer, Kafka, ReadWriteMany
 Workspace storage and Cube control/compute authorities. Copy and replace every
 example endpoint, image, UUID and CIDR before preflight:
 

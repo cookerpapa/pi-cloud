@@ -242,7 +242,6 @@ async function registerTenant(index, suffix) {
     model,
     session,
     marker: `TENANT-${String(index + 1)}-${suffix.toUpperCase()}`,
-    cursor: 0,
   };
 }
 
@@ -283,33 +282,34 @@ async function runTurn(lane, prompt, round) {
   let firstTextMs;
   let terminal;
   let toolEvents = 0;
+  const observeEvent = (event) => {
+    if (event.turnId !== accepted.turnId) return;
+    if (event.type === "assistant.text.delta") {
+      if (firstTextMs === undefined) firstTextMs = Math.round(performance.now() - submittedAt);
+      text.push(event.payload.text);
+    }
+    if (event.type.startsWith("tool.")) toolEvents += 1;
+    if (
+      event.type === "turn.completed" ||
+      event.type === "turn.failed" ||
+      event.type === "turn.cancelled"
+    ) {
+      terminal = event;
+      controller.abort();
+    }
+  };
   try {
-    const cursor = await streamSessionEvents({
+    await streamSessionEvents({
       sessionId: lane.session.sessionId,
-      afterSequence: lane.cursor,
       signal: controller.signal,
       authorizationToken: lane.token,
       fetchImplementation: fetchFromProduction,
       retryDelayMs: 100,
       onStatus() {},
-      onEvent(event) {
-        if (event.turnId !== accepted.turnId) return;
-        if (event.type === "assistant.text.delta") {
-          if (firstTextMs === undefined) {
-            firstTextMs = Math.round(performance.now() - submittedAt);
-          }
-          text.push(event.payload.text);
-        }
-        if (event.type.startsWith("tool.")) toolEvents += 1;
-        if (
-          event.type === "turn.completed" ||
-          event.type === "turn.failed" ||
-          event.type === "turn.cancelled"
-        ) {
-          terminal = event;
-          controller.abort();
-        }
+      onSnapshot(snapshot) {
+        for (const event of snapshot.liveEvents) observeEvent(event);
       },
+      onEvent: observeEvent,
     });
     assert(terminal, "Turn did not publish a terminal event");
     assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
@@ -319,7 +319,6 @@ async function runTurn(lane, prompt, round) {
     assert(usage.inputTokens > 0);
     assert(usage.outputTokens > 0);
     assert.equal(toolEvents, 0, "Pure-chat load unexpectedly invoked a Tool");
-    lane.cursor = cursor;
     return {
       tenantId: lane.tenantId,
       tenantSlug: lane.tenantSlug,

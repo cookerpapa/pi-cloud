@@ -67,7 +67,7 @@ Every protected boundary performs one of these checks:
   each event waits for its own R=3 PubAck. Channel renewal/close advances the
   grant watermark.
 - Pi Session mutations cross a batched current-grant check before their
-  accepted JetStream PubAck; the downstream Projector does not recheck expiry.
+  accepted Kafka acknowledgement; the downstream Projector does not recheck expiry.
 - Tool Broker resolves the grant to canonical assignment facts before creating
   or rebinding Cube; its per-activation capability remains the narrow Tool
   operation authority.
@@ -93,7 +93,7 @@ An Ed25519 self-contained token is deliberately not used in this cutover.
 Offline signature validation cannot provide immediate revocation without a
 second current-generation projection or waiting for token expiry. The exact
 PostgreSQL comparison preserves immediate takeover semantics. A future
-measured need may project current grants into JetStream, but PostgreSQL remains
+measured need may project current grants into Kafka, but PostgreSQL remains
 the sole issuer and a new Worker may not start before that projection barrier.
 
 ## Failure semantics
@@ -103,7 +103,7 @@ the sole issuer and a new Worker may not start before that projection barrier.
   a higher internal generation; old events and Tool requests are rejected.
 - Heartbeat loss: the current grant expires and can be invalidated by the next
   acquisition/reconciler.
-- Event Ingest crash after JetStream commit: stable event ID retry is
+- Event Ingest crash after Kafka commit: stable event ID retry is
   deduplicated; the same grant may advance its watermark idempotently.
 - Arbitrary Tool already started: revoking the grant does not undo the process;
   Broker terminates/quarantines the old activation or records `UNKNOWN` before
@@ -119,4 +119,4 @@ cutover.
 
 Consul, etcd, ZooKeeper and Kubernetes Lease are not added. They provide useful
 lease/sequencer primitives but cannot atomically protect PostgreSQL,
-JetStream, Cube and Workspace effects without the same recipient-side checks.
+Kafka, Cube and Workspace effects without the same recipient-side checks.

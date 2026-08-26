@@ -411,7 +411,7 @@ async function runEvidence(runId) {
   };
 }
 
-async function runTurn(sessionId, prompt, afterSequence, expectedTools) {
+async function runTurn(sessionId, prompt, expectedTools) {
   const submittedAt = performance.now();
   const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("turn"), "off");
   const controller = new AbortController();
@@ -424,34 +424,38 @@ async function runTurn(sessionId, prompt, afterSequence, expectedTools) {
   let firstTextAt;
   let firstResponseAt;
   let terminal;
+  const observeEvent = (event) => {
+    if (event.turnId !== accepted.turnId) return;
+    if (events.some((candidate) => candidate.eventId === event.eventId)) return;
+    events.push(event);
+    if (event.type === "assistant.text.delta" || event.type === "tool.started") {
+      firstResponseAt ??= performance.now();
+    }
+    if (event.type === "assistant.text.delta") {
+      firstTextAt ??= performance.now();
+      text.push(event.payload.text);
+    }
+    if (
+      event.type === "turn.completed" ||
+      event.type === "turn.failed" ||
+      event.type === "turn.cancelled"
+    ) {
+      terminal = event;
+      controller.abort();
+    }
+  };
   try {
-    const cursor = await streamSessionEvents({
+    await streamSessionEvents({
       sessionId,
-      afterSequence,
       signal: controller.signal,
       authorizationToken,
       fetchImplementation: fetchFromProduction,
       retryDelayMs: 100,
       onStatus() {},
-      onEvent(event) {
-        if (event.turnId !== accepted.turnId) return;
-        events.push(event);
-        if (event.type === "assistant.text.delta" || event.type === "tool.started") {
-          firstResponseAt ??= performance.now();
-        }
-        if (event.type === "assistant.text.delta") {
-          firstTextAt ??= performance.now();
-          text.push(event.payload.text);
-        }
-        if (
-          event.type === "turn.completed" ||
-          event.type === "turn.failed" ||
-          event.type === "turn.cancelled"
-        ) {
-          terminal = event;
-          controller.abort();
-        }
+      onSnapshot(snapshot) {
+        for (const event of snapshot.liveEvents) observeEvent(event);
       },
+      onEvent: observeEvent,
     });
     assert(terminal, "Turn did not publish a terminal event");
     assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
@@ -490,7 +494,6 @@ async function runTurn(sessionId, prompt, afterSequence, expectedTools) {
     }
     return {
       ...accepted,
-      cursor,
       text: text.join(""),
       toolCalls,
       firstResponseMs: Math.round(firstResponseAt - submittedAt),
@@ -772,7 +775,6 @@ const session = await api.createSession(
 );
 
 const rounds = [];
-let cursor = 0;
 let completedCompaction;
 let stoppedWorkerService;
 let cleanupCompleted = false;
@@ -783,8 +785,7 @@ try {
   );
   const selectedTasks = algorithmTasks.slice(0, maximumCodingTurns);
   for (const [index, task] of selectedTasks.entries()) {
-    const turn = await runTurn(session.sessionId, codingPrompt(task, index, marker), cursor, true);
-    cursor = turn.cursor;
+    const turn = await runTurn(session.sessionId, codingPrompt(task, index, marker), true);
     const [usage, evidence] = await Promise.all([usageForRun(turn.runId), runEvidence(turn.runId)]);
     const round = {
       round: index + 1,
@@ -828,10 +829,8 @@ try {
   const recall = await runTurn(
     session.sessionId,
     "Do not call any tool. What exact project invariant marker did I give you in the first coding round? Reply with that marker only.",
-    cursor,
     false,
   );
-  cursor = recall.cursor;
   const recallUsage = await usageForRun(recall.runId);
   const recallEvidence = await runEvidence(recall.runId);
   assert(
@@ -852,10 +851,8 @@ try {
       "Read the relevant existing modules rather than guessing their APIs, run the new tests, and fix integration mistakes.",
       "Do not initialize Git. End with a concise test result.",
     ].join(" "),
-    cursor,
     true,
   );
-  cursor = postCompaction.cursor;
   const postCompactionUsage = await usageForRun(postCompaction.runId);
   const postCompactionEvidence = await runEvidence(postCompaction.runId);
   progress(
@@ -878,10 +875,8 @@ try {
       `Also assert that the persisted project invariant is exactly ${marker}.`,
       "Run the directly affected tests and report the exact commands/results concisely. Do not create Git metadata.",
     ].join(" "),
-    cursor,
     true,
   );
-  cursor = crossWorker.cursor;
   const crossWorkerUsage = await usageForRun(crossWorker.runId);
   const crossWorkerEvidence = await runEvidence(crossWorker.runId);
   assert.notEqual(crossWorkerEvidence.supervisorId, postCompactionEvidence.supervisorId);

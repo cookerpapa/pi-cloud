@@ -205,7 +205,7 @@ async function waitForTerminalRun(runId) {
   throw new Error(`Run ${runId} did not reach a terminal state`);
 }
 
-async function runTurn(sessionId, prompt, afterSequence = 0) {
+async function runTurn(sessionId, prompt) {
   const submittedAt = performance.now();
   const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("pool"), "off");
   const controller = new AbortController();
@@ -215,27 +215,30 @@ async function runTurn(sessionId, prompt, afterSequence = 0) {
   );
   const text = [];
   let terminal;
+  const observeEvent = (event) => {
+    if (event.turnId !== accepted.turnId) return;
+    if (event.type === "assistant.text.delta") text.push(event.payload.text);
+    if (
+      event.type === "turn.completed" ||
+      event.type === "turn.failed" ||
+      event.type === "turn.cancelled"
+    ) {
+      terminal = event;
+      controller.abort();
+    }
+  };
   try {
-    const cursor = await streamSessionEvents({
+    await streamSessionEvents({
       sessionId,
-      afterSequence,
       signal: controller.signal,
       authorizationToken: token,
       fetchImplementation: fetchFromProduction,
       retryDelayMs: 100,
       onStatus() {},
-      onEvent(event) {
-        if (event.turnId !== accepted.turnId) return;
-        if (event.type === "assistant.text.delta") text.push(event.payload.text);
-        if (
-          event.type === "turn.completed" ||
-          event.type === "turn.failed" ||
-          event.type === "turn.cancelled"
-        ) {
-          terminal = event;
-          controller.abort();
-        }
+      onSnapshot(snapshot) {
+        for (const event of snapshot.liveEvents) observeEvent(event);
       },
+      onEvent: observeEvent,
     });
     assert(terminal, "Turn did not publish a terminal event");
     assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
@@ -246,7 +249,6 @@ async function runTurn(sessionId, prompt, afterSequence = 0) {
     assert(usage.outputTokens > 0);
     return {
       ...accepted,
-      cursor,
       text: text.join(""),
       usage,
       settledMs: Math.round(performance.now() - submittedAt),
@@ -372,36 +374,39 @@ async function crashStreamingTurn(sessionId) {
   let terminal;
   let firstVisibleSequence;
   const visibleText = [];
+  const observeEvent = (event) => {
+    if (event.turnId !== accepted.turnId) return;
+    if (event.type === "assistant.text.delta") {
+      visibleText.push(event.payload.text);
+      if (crash === undefined) {
+        firstVisibleSequence = event.seq;
+        crash = runEvidence(accepted.runId).then(async (evidence) => ({
+          evidence,
+          stopped: await killWorker(evidence.supervisorId),
+        }));
+      }
+    }
+    if (
+      event.type === "turn.completed" ||
+      event.type === "turn.failed" ||
+      event.type === "turn.cancelled"
+    ) {
+      terminal = event;
+      controller.abort();
+    }
+  };
   try {
-    const cursor = await streamSessionEvents({
+    await streamSessionEvents({
       sessionId,
-      afterSequence: 0,
       signal: controller.signal,
       authorizationToken: token,
       fetchImplementation: fetchFromProduction,
       retryDelayMs: 100,
       onStatus() {},
-      onEvent(event) {
-        if (event.turnId !== accepted.turnId) return;
-        if (event.type === "assistant.text.delta") {
-          visibleText.push(event.payload.text);
-          if (crash === undefined) {
-            firstVisibleSequence = event.seq;
-            crash = runEvidence(accepted.runId).then(async (evidence) => ({
-              evidence,
-              stopped: await killWorker(evidence.supervisorId),
-            }));
-          }
-        }
-        if (
-          event.type === "turn.completed" ||
-          event.type === "turn.failed" ||
-          event.type === "turn.cancelled"
-        ) {
-          terminal = event;
-          controller.abort();
-        }
+      onSnapshot(snapshot) {
+        for (const event of snapshot.liveEvents) observeEvent(event);
       },
+      onEvent: observeEvent,
     });
     assert(crash, "The Worker crash workload did not produce an Accepted text event");
     const killed = await crash;
@@ -417,7 +422,6 @@ async function crashStreamingTurn(sessionId) {
     );
     return {
       ...accepted,
-      cursor,
       marker,
       terminal,
       firstVisibleSequence,
@@ -512,7 +516,6 @@ try {
   const followUp = await runTurn(
     session.sessionId,
     "What exact marker did I ask you to remember in my previous message? Do not call tools. Reply with only that marker.",
-    first.cursor,
   );
   const followUpEvidence = await runEvidence(followUp.runId);
   assert.notEqual(followUpEvidence.supervisorId, firstEvidence.supervisorId);
@@ -532,7 +535,6 @@ try {
   const recovered = await runTurn(
     crashSession.sessionId,
     "The previous Run was interrupted. Do not call tools. Reply exactly RECOVERY-BARRIER-OK.",
-    crashed.cursor,
   );
   assert(recovered.text.includes("RECOVERY-BARRIER-OK"));
   const barrierCount = Number(

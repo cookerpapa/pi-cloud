@@ -2,7 +2,7 @@
 
 Pi Cloud separates deterministic protocol checks, live infrastructure
 acceptance and model-quality experiments. A checked-in report is current only
-when its workload exercises the PostgreSQL queue/SessionStorage, JetStream event
+when its workload exercises the PostgreSQL queue/SessionStorage, Kafka AcceptedFact
 path, persistent Cube Volume and CubeSandbox KVM runtime described in the
 current architecture ADR.
 
@@ -30,8 +30,8 @@ prefix still survives Worker replacement.
 ## Live-event durability
 
 ```bash
-npm run eval:jetstream-production-shape
 npm run eval:postgres-session-projection
+PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
 ```
 
 The production stream is:
@@ -39,19 +39,18 @@ The production stream is:
 ```text
 Pi event ─┐
           ├-> short-leased FactChannel -> Authority Gate -> AcceptedFactBus
-Pi entry ─┘                                      ├-> live JetStream -> resumable SSE
-                                                 └-> mutation JetStream -> PostgreSQL SessionStorage
+Pi entry ─┘                                      ├-> Gateway live tail -> snapshot-first SSE
+                                                 └-> Kafka consumer group -> PostgreSQL SessionStorage
 ```
 
-JetStream R=3 PubAck precedes visibility. JetStream retains a bounded
-hot tail of Assistant text deltas and complete Tool/lifecycle Items;
+Kafka `acks=all` precedes visibility. Kafka retains a bounded
+log of Assistant text deltas, complete Tool/lifecycle Items and Pi mutations;
 PostgreSQL stores Pi-native complete messages once. The two checks separately
-measure JetStream ordering/throughput and PostgreSQL complete-message projection
+measure Kafka/Gateway ordering and PostgreSQL complete-message projection
 latency/WAL, so token fragments never masquerade as canonical database state.
 
 Current evidence:
 
-- [JetStream production shape](reports/jetstream-production-shape-latest.md)
 - [PostgreSQL Session projection](reports/postgres-session-projection-latest.md)
 - [Pi SDK stream shape](reports/pi-sdk-stream-shape-latest.md)
 
@@ -106,7 +105,6 @@ the trusted listing API and releases the machine.
 npm run eval:load
 PI_CLOUD_LIVE_MULTI_TENANT_LOAD=1 npm run production:multi-tenant-model-load
 PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 npm run production:control-plane-restart-check
-PI_CLOUD_LIVE_JETSTREAM_RESTART_CHECK=1 npm run production:jetstream-restart-check
 PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-environment-check
 ```
 
@@ -114,14 +112,13 @@ PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-env
 does not claim equivalent active model/Cube concurrency. The multi-tenant gate
 uses real simultaneous model Runs across the shared Worker pool. Restart gates
 kill or replace one named process only after a visible stream boundary, then
-verify ordered completion/recovery from PostgreSQL and JetStream.
+verify ordered completion/recovery from PostgreSQL and Kafka-backed snapshots.
 
 Current evidence:
 
 - [Control Plane load](reports/control-plane-load-latest.md)
 - [Multi-tenant real-model load](reports/multi-tenant-model-load-latest.md)
 - [Control Plane restart](reports/control-plane-restart-acceptance-latest.md)
-- [JetStream Leader restart](reports/jetstream-leader-restart-acceptance-latest.md)
 - [Exclusive development environment recovery](reports/development-environment-acceptance-latest.json)
 
 ## Long-context compaction

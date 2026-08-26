@@ -22,22 +22,13 @@ groups:
       - alert: PiCloudOperationalSamplerMissing
         expr: |
           absent(pi_cloud_operational_sample_timestamp_seconds{source="postgresql"})
-          or absent(pi_cloud_operational_sample_timestamp_seconds{source="jetstream"})
+          or absent(pi_cloud_operational_sample_timestamp_seconds{source="kafka"})
         for: 2m
         labels:
           severity: critical
         annotations:
           summary: "PiCloud operational state sampling has no successful sample"
-          description: "The Control Plane has not published both PostgreSQL and JetStream authority samples."
-
-      - alert: PiCloudJetStreamReplicaUnavailable
-        expr: max by (stream) (pi_cloud_jetstream_unavailable_replicas) > 0
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "A PiCloud JetStream replica is unavailable"
-          description: "Stream {{ $labels.stream }} has an offline or out-of-date replica."
+          description: "The Control Plane has not published both PostgreSQL and Kafka/Gateway samples."
 
   - name: pi-cloud-backlog
     rules:
@@ -59,14 +50,14 @@ groups:
           summary: "PiCloud p95 queue wait is high"
           description: "The ten-minute p95 durable queue wait exceeds 30 seconds."
 
-      - alert: PiCloudSessionProjectionBacklog
-        expr: max(pi_cloud_jetstream_consumer_pending{consumer="PI_CLOUD_SESSION_PROJECTOR"}) > 100
+      - alert: PiCloudGatewayLiveTailHigh
+        expr: max(pi_cloud_kafka_live_tail_bytes) > 268435456
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Pi Session projection is falling behind"
-          description: "More than 100 complete Pi Session mutations remain unprojected for five minutes."
+          summary: "Gateway incomplete Session tail memory is high"
+          description: "A Gateway replica has retained more than 256 MiB of incomplete Session tails."
 
       - alert: PiCloudTerminalEventBacklog
         expr: max(pi_cloud_terminal_event_outbox_pending) > 0
@@ -74,7 +65,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Terminal Run events are waiting for JetStream"
+          summary: "Terminal Run events are waiting for Kafka"
           description: "Settled terminal events have remained unpublished for five minutes."
 
       - alert: PiCloudWorkspacePurgeBacklog

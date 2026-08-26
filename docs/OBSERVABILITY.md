@@ -41,11 +41,11 @@ user-visible Run:
 - provider/model latency, tokens and optional cost observations;
 - Tool failures and Cube lifecycle/admission capacity;
 - Workspace Volume Gateway queue, latency, rejection and cleanup backlog;
-- JetStream retained bytes, R=3 replica health and Pi Session projection lag;
+- Kafka consumer health and Gateway incomplete-tail sessions/events/bytes;
 - FactChannel active/limit utilization and channel-lease renewal failures;
-- settled terminal events still waiting to reach JetStream.
+- settled terminal events still waiting to reach Kafka.
 
-The Control Plane samples PostgreSQL and JetStream every ten seconds. These
+The Control Plane samples PostgreSQL and Kafka/Gateway state every ten seconds. These
 samples are global gauges, so dashboards and alerts use `max`, not `sum`, when
 several Control Plane replicas report the same authority state. A failed
 sample does not take the product down; the last-success timestamp becomes
@@ -67,7 +67,7 @@ shared PostgreSQL Run queue rather than inferred from a local Worker.
 ## Alert policy
 
 Version-controlled Prometheus rules under `deploy/observability/alerts/`
-detect unavailable targets/JetStream replicas, stale authority sampling,
+detect unavailable targets, stale Kafka/Gateway sampling,
 persistent Run/session/event backlogs, Cube/Volume saturation, storage cleanup
 backlog and elevated Run failures. Thresholds are conservative starting
 values for the one-host profile; change them only with measured workload data.
@@ -115,5 +115,5 @@ curl -fsS http://127.0.0.1:16686/api/services
 ```
 
 In Prometheus, check **Status -> Targets** and **Alerts**. The normal idle
-baseline has all application targets up, zero unavailable JetStream replicas,
+baseline has all application targets up, bounded Gateway live-tail memory,
 zero persistent projection/terminal/cleanup backlog, and no firing alert.

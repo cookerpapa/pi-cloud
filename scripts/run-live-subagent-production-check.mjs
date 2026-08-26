@@ -168,7 +168,7 @@ async function waitForRun(runId) {
   throw new Error(`Run ${runId} did not settle`);
 }
 
-async function runTurn(sessionId, prompt, afterSequence) {
+async function runTurn(sessionId, prompt) {
   const accepted = await api.acceptTurn(
     sessionId,
     prompt,
@@ -179,27 +179,30 @@ async function runTurn(sessionId, prompt, afterSequence) {
   const timer = setTimeout(() => controller.abort(), 10 * 60_000);
   const text = [];
   let terminal;
+  const observeEvent = (event) => {
+    if (event.turnId !== accepted.turnId) return;
+    if (event.type === "assistant.text.delta") text.push(event.payload.text);
+    if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type)) {
+      terminal = event;
+      controller.abort();
+    }
+  };
   try {
-    const cursor = await streamSessionEvents({
+    await streamSessionEvents({
       sessionId,
-      afterSequence,
       signal: controller.signal,
       authorizationToken: token,
       fetchImplementation: fetchFromProduction,
       retryDelayMs: 100,
       onStatus() {},
-      onEvent(event) {
-        if (event.turnId !== accepted.turnId) return;
-        if (event.type === "assistant.text.delta") text.push(event.payload.text);
-        if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type)) {
-          terminal = event;
-          controller.abort();
-        }
+      onSnapshot(snapshot) {
+        for (const event of snapshot.liveEvents) observeEvent(event);
       },
+      onEvent: observeEvent,
     });
     assert.equal(terminal?.type, "turn.completed", JSON.stringify(terminal?.payload));
     await waitForRun(accepted.runId);
-    return { accepted, cursor, text: text.join("") };
+    return { accepted, text: text.join("") };
   } finally {
     clearTimeout(timer);
     controller.abort();
@@ -296,7 +299,6 @@ const none = await runTurn(
     'Use this exact workflowScript: return runs.run("none", {agent:"oracle", task:"Reply exactly SUBAGENT-NONE-OK"})',
     "After it finishes, reply with SUBAGENT-NONE-OK.",
   ].join(" "),
-  0,
 );
 const noneEvidence = await executionEvidence(none.accepted.runId);
 assert.equal(noneEvidence.workspaceMode, "none");
@@ -310,7 +312,6 @@ const shared = await runTurn(
     'Use this exact workflowScript: return runs.run("shared", {agent:"worker", task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK"})',
     "After it finishes, reply with SHARED-CHILD-OK.",
   ].join(" "),
-  none.cursor,
 );
 const sharedEvidence = await executionEvidence(shared.accepted.runId);
 assert.equal(sharedEvidence.workspaceMode, "shared_serialized");
@@ -325,7 +326,6 @@ const isolated = await runTurn(
     'Use this exact workflowScript: return runs.run("isolated", {agent:"worker", task:"Use bash to create /workspace/isolated-child-only.txt containing ISOLATED-CHILD-OK, read it back, and reply exactly ISOLATED-CHILD-OK"})',
     "Do not create isolated-child-only.txt yourself. After the child finishes, reply with ISOLATED-CHILD-OK.",
   ].join(" "),
-  shared.cursor,
 );
 const isolatedEvidence = await executionEvidence(isolated.accepted.runId);
 assert.equal(isolatedEvidence.workspaceMode, "isolated");
@@ -347,7 +347,6 @@ const recursive = await runTurn(
     `Call the subagent Tool exactly once with this exact workflowScript: return runs.run("recursive-parent", {agent:"worker", task:${JSON.stringify(nestedTask)}})`,
     "After it finishes, reply exactly SUBAGENT-RECURSIVE-OK.",
   ].join(" "),
-  isolated.cursor,
 );
 const recursiveEvidence = await recursiveTreeEvidence(recursive.accepted.runId);
 assert.equal(recursiveEvidence.length, 2, JSON.stringify(recursiveEvidence));

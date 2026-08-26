@@ -56,9 +56,9 @@ The Worker opens one short-leased FactChannel for its opaque
 ExecutionGrant before Pi starts. Assistant text deltas cross that channel
 without an intentional batching delay; one Grant remains ordered while
 different Grants publish concurrently. Tool arguments and Tool results enter
-the same stream only as complete Items. Each event's R=3 PubAck is the
+the same stream only as complete Items. Each event's Kafka `acks=all` receipt is the
 visibility boundary. Event ordering and duplicate handling belong to the
-JetStream/downstream adapter rather than the Authority Gate. Channel close
+Kafka/downstream adapter rather than the Authority Gate. Channel close
 flushes the post-PubAck event progress and releases short channel ownership
 before terminal settlement releases the Grant. Terminal sequence allocation
 uses the maximum of Attempt progress and the separately projected channel
@@ -66,13 +66,13 @@ progress, so a lagging projection cannot move the Session stream backwards.
 
 Pi `message_end` submits a complete Session mutation through that same
 FactChannel. The unified PostgreSQL Gate validates current writer authority once
-and removes the Grant before the AcceptedFactBus performs JetStream PubAck. The
+and removes the Grant before the AcceptedFactBus performs Kafka append. The
 PostgreSQL projector then applies the accepted fact idempotently without another
 authority query, and the Worker waits at a read-your-writes barrier before the
 next model Step. On successful settlement, the Worker
 prepares the bounded Workspace Volume revision. The terminal transaction
 validates the current Attempt/fence, advances the Workspace revision if
-applicable, writes a terminal event Outbox record and settles the Run. JetStream
+applicable, writes a terminal event Outbox record and settles the Run. Kafka
 retention eventually removes hot fragments while canonical Pi
 messages remain in PostgreSQL.
 
@@ -81,7 +81,7 @@ messages remain in PostgreSQL.
 Cancellation revokes authority before trying to interrupt model/Tool work.
 Expired or superseded Workers cannot mutate Pi SessionStorage, execute another
 Tool or commit terminal state. A caught interruption writes Pi's minimal
-abort/reset boundary. A hard Worker loss is reconciled from the retained JetStream
+abort/reset boundary. A hard Worker loss is reconciled from the retained Kafka
 prefix plus a factual interruption marker; no Tool result is invented. A
 normal failure/cancellation also fetches that trusted prefix from the Control
 Plane instead of trusting a possibly-behind Worker-local buffer.
@@ -99,10 +99,10 @@ capacity.
 
 ```text
 Run queue              at-least-once wakeup + transactional claim
-Pi Session mutation    fenced Ingest + JetStream + idempotent PostgreSQL projection
+Pi Session mutation    Authority Gate + Kafka + idempotent PostgreSQL projection
 Tool start              no blind retry; UNKNOWN if ambiguous
 Workspace revision      fence + expected revision
 terminal Run commit     idempotent current-Attempt transaction
 Cube create/delete      idempotent reconcile
-live event batch        batched capability check + R=3 JetStream/event-id dedupe
+live AcceptedFact       Authority Gate + Kafka acks=all + Gateway fact-id/sequence projection
 ```
