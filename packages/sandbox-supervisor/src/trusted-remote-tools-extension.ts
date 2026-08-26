@@ -784,6 +784,7 @@ function registerTrustedRemoteTools(
   if (allowedTools.has("bash")) {
     pi.registerTool({
       ...bashTool,
+      description: `${bashTool.description}\n\nFor a long-running service, detach it and redirect stdin, stdout, and stderr (for example: nohup command </dev/null >server.log 2>&1 &). Verify the service in a separate bash call.`,
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();

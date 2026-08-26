@@ -87,6 +87,9 @@ describe("trusted remote tools extension governance", () => {
       "write",
     ]);
     expect(runtime.tools.every((tool) => tool.executionMode === "sequential")).toBe(true);
+    expect(runtime.tools.find((tool) => tool.name === "bash")?.description).toContain(
+      "nohup command </dev/null >server.log 2>&1 &",
+    );
     await expect(runtime.systemPrompt("Base prompt")).resolves.toContain(
       "Keep the durable Harness boundary explicit.",
     );

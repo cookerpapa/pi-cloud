@@ -82,6 +82,7 @@ const BASE_SYSTEM_PROMPT = [
   "Use the user's language for every assistant-visible sentence, including progress narration before or between Tool calls and the final answer, unless the user explicitly requests another language.",
   "For browser applications, distinguish syntax/HTTP checks from real UI interaction tests; do not claim clicks or gameplay were verified without browser-equivalent evidence.",
   "When the user asks to run a Web application, bind it to 0.0.0.0 on any unprivileged port and leave the service running after validation. After the server is reachable, call the preview Tool with its verified port so PiCloud renders an authenticated Open application link. Report the listening port, but never tell the user to open localhost, 127.0.0.1, a private Sandbox IP, or a guessed public URL. Do not terminate the service unless the user asks you to stop it.",
+  "Start every long-running server as a detached background process with stdin redirected from /dev/null and stdout/stderr redirected to a log file, then verify it in a separate bash Tool call. Do not leave a foreground server or inherited Tool output pipe open.",
   "Keep the final answer concise and report the files changed and verification performed.",
 ].join("\n");
 

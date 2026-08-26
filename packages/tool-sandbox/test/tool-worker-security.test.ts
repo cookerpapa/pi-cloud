@@ -6,6 +6,7 @@ import {
   type EnvironmentRecipe,
   type EnvironmentRuntimeSnapshot,
 } from "@pi-cloud/protocol";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   access,
@@ -29,6 +30,7 @@ import {
   safeToolEnvironment,
   ToolWorkerError,
   validateAttachedWorkspaceRoot,
+  waitForShellProcess,
   validateToolEnvironment,
   writeWorkspaceFile,
 } from "../src/tool-worker.ts";
@@ -400,6 +402,28 @@ describe("credential-free Tool Sandbox worker", () => {
       await expect(access(resolve(workspace, "background.txt"))).rejects.toMatchObject({
         code: "ENOENT",
       });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("settles a Bash Tool after its shell exits while a quiet background process continues", async () => {
+    const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-bash-background-"));
+    try {
+      const child = spawn(
+        "/bin/bash",
+        ["--noprofile", "--norc", "-lc", "(sleep 1; printf alive > background.txt) &"],
+        {
+          cwd: workspace,
+          detached: process.platform !== "win32",
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      const startedAt = Date.now();
+      await expect(waitForShellProcess(child)).resolves.toBe(0);
+      expect(Date.now() - startedAt).toBeLessThan(750);
+      await delay(1_100);
+      await expect(readFile(resolve(workspace, "background.txt"), "utf8")).resolves.toBe("alive");
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

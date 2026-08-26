@@ -43,6 +43,7 @@ import { setTimeout as delay } from "node:timers/promises";
 let TOOL_WORKSPACE_DIRECTORY = "/workspace";
 const SAMPLE_JAVA_FIXTURE = "/opt/pi-cloud/sample-java-repair";
 const TOOL_IMAGE_REVISION_FILE = "/opt/pi-cloud/image-revision";
+const SHELL_EXIT_STDIO_GRACE_MS = 100;
 
 export class ToolWorkerError extends Error {
   readonly code: string;
@@ -919,6 +920,82 @@ function terminateProcessGroup(child: ChildProcess, signal: NodeJS.Signals): voi
   child.kill(signal);
 }
 
+/**
+ * Wait for the foreground shell, not every descendant that inherited its pipes.
+ * A quiet background service may keep stdout/stderr open after Bash exits; the
+ * short idle grace preserves trailing foreground output without turning that
+ * service into a permanently running Tool call.
+ */
+export function waitForShellProcess(child: ChildProcess): Promise<number | null> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    let settled = false;
+    let exited = false;
+    let exitCode: number | null = null;
+    let idleTimer: NodeJS.Timeout | undefined;
+    let stdoutEnded = child.stdout === null;
+    let stderrEnded = child.stderr === null;
+
+    const cleanup = (): void => {
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      child.removeListener("error", onError);
+      child.removeListener("exit", onExit);
+      child.removeListener("close", onClose);
+      child.stdout?.removeListener("end", onStdoutEnd);
+      child.stderr?.removeListener("end", onStderrEnd);
+      child.stdout?.removeListener("data", onData);
+      child.stderr?.removeListener("data", onData);
+    };
+    const finalize = (code: number | null): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      resolvePromise(code);
+    };
+    const maybeFinalize = (): void => {
+      if (exited && stdoutEnded && stderrEnded) finalize(exitCode);
+    };
+    const armIdleTimer = (): void => {
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => finalize(exitCode), SHELL_EXIT_STDIO_GRACE_MS);
+      idleTimer.unref();
+    };
+    const onData = (): void => {
+      if (exited && !settled) armIdleTimer();
+    };
+    const onStdoutEnd = (): void => {
+      stdoutEnded = true;
+      maybeFinalize();
+    };
+    const onStderrEnd = (): void => {
+      stderrEnded = true;
+      maybeFinalize();
+    };
+    const onError = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      rejectPromise(error);
+    };
+    const onExit = (code: number | null): void => {
+      exited = true;
+      exitCode = code;
+      maybeFinalize();
+      if (!settled) armIdleTimer();
+    };
+    const onClose = (code: number | null): void => finalize(code);
+
+    child.stdout?.once("end", onStdoutEnd);
+    child.stderr?.once("end", onStderrEnd);
+    child.stdout?.on("data", onData);
+    child.stderr?.on("data", onData);
+    child.once("error", onError);
+    child.once("exit", onExit);
+    child.once("close", onClose);
+  });
+}
+
 async function executeBash(
   request: Extract<ToolSandboxOperationRequest, { operation: "bash.exec" }>,
   signal: AbortSignal,
@@ -963,13 +1040,8 @@ async function executeBash(
   const abort = (): void => terminateProcessGroup(child, "SIGTERM");
   signal.addEventListener("abort", abort, { once: true });
   try {
-    const result = await new Promise<{ code: number | null }>((resolvePromise, rejectPromise) => {
-      child.once("error", () => {
-        rejectPromise(
-          new ToolWorkerError("tool_process_failed", "Tool process could not start", true),
-        );
-      });
-      child.once("close", (code) => resolvePromise({ code }));
+    const code = await waitForShellProcess(child).catch(() => {
+      throw new ToolWorkerError("tool_process_failed", "Tool process could not start", true);
     });
     if (overflow) {
       throw new ToolWorkerError("tool_output_limit", "Tool output exceeded its byte limit");
@@ -984,7 +1056,7 @@ async function executeBash(
       activationId: request.activationId,
       operationId: request.operationId,
       operation: "bash.exec",
-      exitCode: result.code,
+      exitCode: code,
       outputChunks: outputChunks.map((chunk, index) => ({
         seq: index + 1,
         stream: chunk.stream,
