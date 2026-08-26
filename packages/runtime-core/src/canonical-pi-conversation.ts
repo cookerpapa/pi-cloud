@@ -168,7 +168,11 @@ function terminalMetadata(row: {
 }
 
 function outputValue(message: JsonRecord): unknown {
-  return Array.isArray(message.content) ? message.content : undefined;
+  const content = Array.isArray(message.content) ? message.content : [];
+  return {
+    content,
+    ...(message.details === undefined ? {} : { details: message.details }),
+  };
 }
 
 function projectPiEntries(

@@ -58,6 +58,44 @@ function database(): Kysely<Database> {
           },
         },
       },
+      {
+        turn_id: TURN_ID,
+        seq: "7",
+        timestamp_ms: "1787529600250",
+        payload: {
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: "preview-call",
+                name: "preview",
+                arguments: { port: 4_173 },
+              },
+            ],
+          },
+        },
+      },
+      {
+        turn_id: TURN_ID,
+        seq: "8",
+        timestamp_ms: "1787529600300",
+        payload: {
+          type: "message",
+          message: {
+            role: "toolResult",
+            toolCallId: "preview-call",
+            toolName: "preview",
+            isError: false,
+            content: [{ type: "text", text: "PiCloud published the service." }],
+            details: {
+              port: 4_173,
+              previewPath: `/v1/conversations/${TURN_ID}/preview/4173/`,
+            },
+          },
+        },
+      },
     ],
     session_terminal_events: [
       {
@@ -110,6 +148,19 @@ describe("canonical Pi conversation", () => {
         delayMs: 1_500,
       },
       { kind: "text", text: "After maintenance." },
+      {
+        kind: "tool",
+        toolCallId: "preview-call",
+        toolName: "preview",
+        status: "completed",
+        output: {
+          content: [{ type: "text", text: "PiCloud published the service." }],
+          details: {
+            port: 4_173,
+            previewPath: `/v1/conversations/${TURN_ID}/preview/4173/`,
+          },
+        },
+      },
     ]);
   });
 });
