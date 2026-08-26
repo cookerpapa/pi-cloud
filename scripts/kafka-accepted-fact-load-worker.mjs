@@ -128,6 +128,7 @@ try {
       },
       kafka: { brokers: 3, partitions: 32, replicas: 3, acknowledgements: "all" },
       applicationMicrobatch: false,
+      producerDeliveryReportMode: "batch",
       cases,
     })}\n`,
   );
