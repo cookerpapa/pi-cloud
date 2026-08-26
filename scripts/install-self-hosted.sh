@@ -172,8 +172,8 @@ run_read_only_checks() {
     check_fail "read/write KVM access is required"
   local memory disk_kib disk_percent
   memory="$(memory_kib)"; disk_kib="$(available_disk_kib)"; disk_percent="$(available_disk_percent)"
-  ((memory >= 7500000)) && check_pass "memory is at least 8 GB" ||
-    check_fail "at least 8 GB RAM is required (found $((memory / 1024 / 1024)) GiB)"
+  ((memory >= 15000000)) && check_pass "memory is at least 16 GB" ||
+    check_fail "at least 16 GB RAM is required (found $((memory / 1024 / 1024)) GiB)"
   if ((disk_kib >= 40 * 1024 * 1024 && disk_percent >= 15)); then
     check_pass "disk has at least 40 GiB and 15% free"
   else
@@ -231,7 +231,7 @@ current_phase="host validation"
   fail "commit or discard PiCloud changes before deployment"
 systemd_usable || fail "systemd must be enabled and running"
 [[ -c /dev/kvm && -r /dev/kvm && -w /dev/kvm ]] || fail "/dev/kvm must be readable and writable"
-(( $(memory_kib) >= 7500000 )) || fail "CubeSandbox requires at least 8 GB RAM"
+(( $(memory_kib) >= 15000000 )) || fail "CubeSandbox requires at least 16 GB RAM"
 (( $(available_disk_kib) >= 40 * 1024 * 1024 )) || fail "installation requires 40 GiB free disk"
 (( $(available_disk_percent) >= 15 )) || fail "installation requires at least 15% free disk"
 [[ -r /etc/os-release ]] || fail "/etc/os-release is required"

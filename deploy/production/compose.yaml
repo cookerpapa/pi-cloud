@@ -179,6 +179,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
       KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "32"
       KAFKA_OFFSETS_RETENTION_MINUTES: "120"
+      KAFKA_HEAP_OPTS: -Xms1g -Xmx1g
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
       KAFKA_DEFAULT_REPLICATION_FACTOR: "3"
@@ -202,8 +203,8 @@ services:
       timeout: 5s
       retries: 45
       start_period: 20s
-    mem_limit: 768m
-    cpus: 1.0
+    mem_limit: 2g
+    cpus: 2.0
     logging: *bounded-logging
 
   kafka-2:
@@ -226,8 +227,8 @@ services:
       timeout: 5s
       retries: 45
       start_period: 20s
-    mem_limit: 768m
-    cpus: 1.0
+    mem_limit: 2g
+    cpus: 2.0
     logging: *bounded-logging
 
   kafka-3:
@@ -250,8 +251,8 @@ services:
       timeout: 5s
       retries: 45
       start_period: 20s
-    mem_limit: 768m
-    cpus: 1.0
+    mem_limit: 2g
+    cpus: 2.0
     logging: *bounded-logging
 
   database-bootstrap:

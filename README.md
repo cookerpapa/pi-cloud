@@ -64,7 +64,7 @@ process. See [Architecture](docs/ARCHITECTURE.md),
 ## One-host quick start
 
 Requirements: a clean Git checkout on x86_64 Debian/Ubuntu or WSL2 with
-systemd, writable `/dev/kvm`, at least 8 GiB RAM and 40 GiB free disk.
+systemd, writable `/dev/kvm`, at least 16 GiB RAM and 40 GiB free disk.
 
 ```bash
 ./install.sh --check-only

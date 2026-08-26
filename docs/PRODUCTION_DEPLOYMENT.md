@@ -1,7 +1,7 @@
 # One-host production deployment
 
 The supported one-host profile requires a clean Git checkout on x86_64
-Debian/Ubuntu or WSL2 with systemd, writable `/dev/kvm`, at least 8 GiB RAM and
+Debian/Ubuntu or WSL2 with systemd, writable `/dev/kvm`, at least 16 GiB RAM and
 40 GiB free disk.
 
 ```bash
