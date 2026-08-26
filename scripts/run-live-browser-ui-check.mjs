@@ -116,6 +116,14 @@ try {
         record(name);
       }
 
+      async function clickLast(selector, name) {
+        const clickedElement = await page.evaluate(
+          `(()=>{const elements=[...document.querySelectorAll(${JSON.stringify(selector)})];const element=elements.at(-1);if(!element)return false;element.click();return true})()`,
+        );
+        assert.equal(clickedElement, true, `${name} button was unavailable`);
+        record(name);
+      }
+
       async function clickText(selector, text, name) {
         const clickedElement = await page.evaluate(
           `(()=>{const element=[...document.querySelectorAll(${JSON.stringify(selector)})].find(candidate=>candidate.textContent.includes(${JSON.stringify(text)}));if(!element)return false;element.click();return true})()`,
@@ -220,19 +228,19 @@ try {
         "completed browser-submitted Run",
         180_000,
       );
-      await click(
-        ".product-turn:last-child .product-user-message .product-message-copy",
+      await clickLast(
+        ".product-turn .product-user-message .product-message-copy",
         "transcript.copyUserMessage",
       );
       await page.waitFor(
-        'document.querySelector(".product-turn:last-child .product-user-message .product-message-copy")?.dataset.copied==="true"',
+        '[...document.querySelectorAll(".product-turn .product-user-message .product-message-copy")].at(-1)?.dataset.copied==="true"',
       );
-      await click(
-        ".product-turn:last-child .product-answer-actions .product-message-copy",
+      await clickLast(
+        ".product-turn .product-answer-actions .product-message-copy",
         "transcript.copyAssistantMessage",
       );
       await page.waitFor(
-        'document.querySelector(".product-turn:last-child .product-answer-actions .product-message-copy")?.dataset.copied==="true"',
+        '[...document.querySelectorAll(".product-turn .product-answer-actions .product-message-copy")].at(-1)?.dataset.copied==="true"',
       );
       await page.send("Browser.setDownloadBehavior", {
         behavior: "allow",
