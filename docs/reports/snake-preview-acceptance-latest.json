@@ -1,59 +1,54 @@
 {
   "accepted": true,
-  "piCloudRevision": "50ea7153dc3614c006ff6757e0053dba28e1632c",
-  "checkedAt": "2026-08-25T13:26:17.386Z",
-  "account": "snake.acceptance.mt8p6buh",
-  "sessionId": "fe522f11-8638-49b8-a7eb-817b61fc76e8",
-  "workspaceId": "bcdbe072-2e70-4197-bc2a-88d4d64d16e2",
-  "developmentEnvironmentId": "d54ee81a-1ca3-49d4-bbde-bae3cc0723bc",
-  "runId": "a5263dc9-fff9-4a13-8665-a6daacaff7a5",
-  "toolCalls": 11,
+  "piCloudRevision": "1593e939e7a70d19ad189a6dca13b88d7fb64642",
+  "checkedAt": "2026-08-26T12:50:14.187Z",
+  "account": "snake.acceptance.mta3b906",
+  "sessionId": "6d25388b-7a0e-4310-a22c-db79272d0b3f",
+  "workspaceId": "410ab647-1c8c-45f2-a499-abd991e7d58e",
+  "developmentEnvironmentId": "1294d20b-7443-4076-bfa8-b707ccf06d0a",
+  "runId": "49d81e38-a2d6-4ee0-9d09-34201b74a7bd",
+  "toolCalls": 18,
   "previewToolUsed": true,
-  "firstTextMs": 3822,
-  "settledMs": 57101,
+  "firstTextMs": 8371,
+  "settledMs": 82231,
   "hostPreviewStatus": 200,
-  "previewOrigin": "http://p-32c1922e3012ec00abd64786.preview.localhost:8080",
-  "previewRoute": "/v1/conversations/fe522f11-8638-49b8-a7eb-817b61fc76e8/preview/4173",
+  "previewOrigin": "http://p-8518b87a2fff01f65d67a0ad.preview.localhost:8080",
+  "previewRoute": "/v1/conversations/6d25388b-7a0e-4310-a22c-db79272d0b3f/preview/4173",
   "browserInteraction": {
     "before": {
-      "headX": 9,
+      "headX": 10,
       "headY": 10,
       "score": 0,
       "running": false,
-      "tick": 0,
-      "gameOver": false
+      "tick": 0
     },
     "after": {
-      "headX": 9,
+      "headX": 10,
       "headY": 15,
       "score": 0,
       "running": true,
-      "tick": 5,
-      "gameOver": false
+      "tick": 5
     },
     "paused": {
-      "headX": 9,
+      "headX": 10,
       "headY": 15,
       "score": 0,
-      "running": false,
-      "tick": 5,
-      "gameOver": false
+      "running": true,
+      "tick": 5
     },
     "pausedAfterWait": {
-      "headX": 9,
+      "headX": 10,
       "headY": 15,
       "score": 0,
-      "running": false,
-      "tick": 5,
-      "gameOver": false
+      "running": true,
+      "tick": 5
     },
     "reset": {
-      "headX": 9,
+      "headX": 10,
       "headY": 10,
       "score": 0,
       "running": false,
-      "tick": 0,
-      "gameOver": false
+      "tick": 0
     }
   },
   "screenshotCaptured": true,
