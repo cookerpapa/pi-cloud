@@ -108,8 +108,21 @@ try {
   await withChromePage(
     { profilePrefix: "pi-cloud-browser-ui-", width: 1_440, height: 960 },
     async (page) => {
+      async function evaluateUserGesture(expression) {
+        const result = await page.send("Runtime.evaluate", {
+          expression,
+          awaitPromise: true,
+          returnByValue: true,
+          userGesture: true,
+        });
+        if (result.exceptionDetails !== undefined) {
+          throw new Error(result.exceptionDetails.text ?? "Browser user gesture failed");
+        }
+        return result.result.value;
+      }
+
       async function click(selector, name) {
-        const clickedElement = await page.evaluate(
+        const clickedElement = await evaluateUserGesture(
           `(()=>{const element=${selectorExpression(selector)};if(!element)return false;element.click();return true})()`,
         );
         assert.equal(clickedElement, true, `${name} button was unavailable`);
@@ -117,7 +130,7 @@ try {
       }
 
       async function clickLast(selector, name) {
-        const clickedElement = await page.evaluate(
+        const clickedElement = await evaluateUserGesture(
           `(()=>{const elements=[...document.querySelectorAll(${JSON.stringify(selector)})];const element=elements.at(-1);if(!element)return false;element.click();return true})()`,
         );
         assert.equal(clickedElement, true, `${name} button was unavailable`);
