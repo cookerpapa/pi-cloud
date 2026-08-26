@@ -1,5 +1,5 @@
 import { MAX_WORKSPACE_PATCH_BYTES, type WorkspacePatch } from "@pi-cloud/protocol";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -46,6 +46,60 @@ function executeGit(
         else resolvePromise(stdout);
       },
     );
+  });
+}
+
+function executeGitBounded(
+  workspace: ExternalGitWorkspace,
+  args: readonly string[],
+  environment: NodeJS.ProcessEnv,
+  maximumBytes: number,
+): Promise<{ value: string; truncated: boolean }> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn("git", [...args], {
+      cwd: workspace.workTree,
+      env: gitEnvironment(workspace, environment),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let truncated = false;
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      const remaining = maximumBytes - stdoutBytes;
+      if (remaining > 0) {
+        const accepted = chunk.subarray(0, remaining);
+        stdout.push(accepted);
+        stdoutBytes += accepted.byteLength;
+      }
+      if (chunk.byteLength > remaining) {
+        truncated = true;
+        child.kill("SIGTERM");
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      const remaining = MAXIMUM_GIT_OUTPUT_BYTES - stderrBytes;
+      if (remaining <= 0) return;
+      const accepted = chunk.subarray(0, remaining);
+      stderr.push(accepted);
+      stderrBytes += accepted.byteLength;
+    });
+    child.once("error", rejectPromise);
+    child.once("close", (code) => {
+      const output = boundedUtf8(Buffer.concat(stdout, stdoutBytes).toString("utf8"), maximumBytes);
+      if (truncated) {
+        resolvePromise({ value: output.value, truncated: true });
+        return;
+      }
+      if (code === 0) {
+        resolvePromise(output);
+        return;
+      }
+      const detail = Buffer.concat(stderr, stderrBytes).toString("utf8").trim();
+      rejectPromise(new Error(detail || `git ${args[0] ?? "command"} failed with code ${code}`));
+    });
   });
 }
 
@@ -135,15 +189,15 @@ export async function collectExternalGitWorkspacePatch(
   for (const paths of pathspecChunks(untracked)) {
     await executeGit(workspace, ["add", "--intent-to-add", "--", ...paths], environment);
   }
-  const diff = await executeGit(
+  const diff = await executeGitBounded(
     workspace,
     ["diff", "--no-ext-diff", "--binary", "--src-prefix=a/", "--dst-prefix=b/", "--", "."],
     environment,
+    MAX_WORKSPACE_PATCH_BYTES,
   );
-  const bounded = boundedUtf8(diff, MAX_WORKSPACE_PATCH_BYTES);
   return {
     format: "unified_diff",
-    patch: bounded.value,
-    truncated: bounded.truncated,
+    patch: diff.value,
+    truncated: diff.truncated,
   };
 }

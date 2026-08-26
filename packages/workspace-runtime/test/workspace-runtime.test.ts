@@ -108,6 +108,20 @@ describe("shared workspace runtime", () => {
     expect(await externalGit(root, gitDirectory, ["diff", "--cached"])).toBe("");
   });
 
+  it("bounds a multi-megabyte patch without failing Workspace settlement", async () => {
+    const root = await temporaryDirectory("pi-cloud-workspace-runtime-large-patch-");
+    const metadata = await temporaryDirectory("pi-cloud-workspace-runtime-large-metadata-");
+    const workspace = { workTree: root, gitDirectory: resolve(metadata, "git") };
+    await initializeExternalGitWorkspaceBaseline(workspace);
+    await writeFile(resolve(root, "large.txt"), "large-workspace-payload\n".repeat(250_000));
+
+    const patch = await collectExternalGitWorkspacePatch(workspace);
+
+    expect(patch.truncated).toBe(true);
+    expect(Buffer.byteLength(patch.patch, "utf8")).toBeLessThanOrEqual(64 * 1_024);
+    expect(patch.patch).toContain("diff --git a/large.txt b/large.txt");
+  });
+
   it("merges exact repository snapshots beneath disjoint normalized roots", () => {
     const merged = mergeWorkspaceSnapshots([
       {
