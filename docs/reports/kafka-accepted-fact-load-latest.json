@@ -1,6 +1,6 @@
 {
   "format": "pi-cloud.kafka-accepted-fact-load.v1",
-  "generatedAt": "2026-08-26T10:25:51.895Z",
+  "generatedAt": "2026-08-26T14:27:09.340Z",
   "host": {
     "logicalCpuCount": 32,
     "totalMemoryGiB": 15.46,
@@ -20,12 +20,12 @@
       "eventsPerSession": 4096,
       "concurrency": 1,
       "events": 4096,
-      "elapsedMs": 23083.25,
-      "eventsPerSecond": 177.44,
+      "elapsedMs": 36431.356,
+      "eventsPerSecond": 112.43,
       "acknowledgementLatencyMs": {
-        "p50": 3.468,
-        "p95": 4.79,
-        "p99": 53.111
+        "p50": 4.111,
+        "p95": 51.155,
+        "p99": 69.878
       }
     },
     {
@@ -34,12 +34,12 @@
       "eventsPerSession": 256,
       "concurrency": 16,
       "events": 4096,
-      "elapsedMs": 2513.707,
-      "eventsPerSecond": 1629.47,
+      "elapsedMs": 5660.795,
+      "eventsPerSecond": 723.57,
       "acknowledgementLatencyMs": {
-        "p50": 4.829,
-        "p95": 54.743,
-        "p99": 72.641
+        "p50": 5.789,
+        "p95": 78.43,
+        "p99": 85.21
       }
     },
     {
@@ -48,12 +48,12 @@
       "eventsPerSession": 64,
       "concurrency": 64,
       "events": 4096,
-      "elapsedMs": 3924.594,
-      "eventsPerSecond": 1043.67,
+      "elapsedMs": 1616.373,
+      "eventsPerSecond": 2534.07,
       "acknowledgementLatencyMs": {
-        "p50": 55.904,
-        "p95": 100.536,
-        "p99": 299.367
+        "p50": 7.427,
+        "p95": 75.434,
+        "p99": 329.482
       }
     },
     {
@@ -62,14 +62,14 @@
       "eventsPerSession": 32,
       "concurrency": 128,
       "events": 4096,
-      "elapsedMs": 859.629,
-      "eventsPerSecond": 4764.84,
+      "elapsedMs": 688.62,
+      "eventsPerSecond": 5948.12,
       "acknowledgementLatencyMs": {
-        "p50": 5.454,
-        "p95": 92.965,
-        "p99": 104.083
+        "p50": 5.411,
+        "p95": 80.599,
+        "p99": 112.09
       }
     }
   ],
-  "revision": "67d2da5edf7613be3df1a908971196fb2b850a3e"
+  "revision": "357c4f80fd22eb2bada91a0c023d2af473140895"
 }
