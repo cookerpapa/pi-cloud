@@ -1,0 +1,74 @@
+{
+  "format": "pi-cloud.kafka-accepted-fact-load.v1",
+  "generatedAt": "2026-08-26T09:38:22.798Z",
+  "host": {
+    "logicalCpuCount": 32,
+    "totalMemoryGiB": 15.46,
+    "node": "v24.18.0"
+  },
+  "kafka": {
+    "brokers": 3,
+    "partitions": 32,
+    "replicas": 3,
+    "acknowledgements": "all"
+  },
+  "applicationMicrobatch": false,
+  "cases": [
+    {
+      "name": "concurrency-1",
+      "sessions": 1,
+      "eventsPerSession": 4096,
+      "concurrency": 1,
+      "events": 4096,
+      "elapsedMs": 27729.781,
+      "eventsPerSecond": 147.71,
+      "acknowledgementLatencyMs": {
+        "p50": 3.565,
+        "p95": 28.007,
+        "p99": 63.678
+      }
+    },
+    {
+      "name": "concurrency-16",
+      "sessions": 16,
+      "eventsPerSession": 256,
+      "concurrency": 16,
+      "events": 4096,
+      "elapsedMs": 5205.535,
+      "eventsPerSecond": 786.85,
+      "acknowledgementLatencyMs": {
+        "p50": 5.22,
+        "p95": 72.432,
+        "p99": 98.531
+      }
+    },
+    {
+      "name": "concurrency-64",
+      "sessions": 64,
+      "eventsPerSession": 64,
+      "concurrency": 64,
+      "events": 4096,
+      "elapsedMs": 1331.475,
+      "eventsPerSecond": 3076.29,
+      "acknowledgementLatencyMs": {
+        "p50": 6.105,
+        "p95": 77.909,
+        "p99": 210.928
+      }
+    },
+    {
+      "name": "concurrency-128",
+      "sessions": 128,
+      "eventsPerSession": 32,
+      "concurrency": 128,
+      "events": 4096,
+      "elapsedMs": 764.864,
+      "eventsPerSecond": 5355.2,
+      "acknowledgementLatencyMs": {
+        "p50": 5.477,
+        "p95": 81.216,
+        "p99": 89.626
+      }
+    }
+  ]
+}

@@ -88,18 +88,21 @@ export class KafkaEventRuntime {
 
   async start(): Promise<void> {
     if (this.#started) throw new Error("Kafka event runtime can only start once");
-    await this.#bus.start();
-    await this.eventStore.start();
-    await this.#canonical.start();
-    this.#terminalRelay.start();
     this.#started = true;
+    try {
+      await this.#bus.start();
+      await this.eventStore.start();
+      await this.#canonical.start();
+      this.#terminalRelay.start();
+    } catch (error: unknown) {
+      await this.close();
+      throw error;
+    }
   }
 
   async checkHealth(): Promise<void> {
     if (!this.#started) throw new Error("Kafka event runtime is not running");
     await this.#bus.checkHealth();
-    this.eventStore.checkHealth();
-    this.#canonical.checkHealth();
     this.#terminalRelay.checkHealth();
     await this.factChannels.checkHealth();
   }
@@ -112,10 +115,6 @@ export class KafkaEventRuntime {
   }
 
   async close(): Promise<void> {
-    if (!this.#started) {
-      await this.#bus.close();
-      return;
-    }
     this.#started = false;
     await this.#terminalRelay.close().catch(() => undefined);
     await this.#canonical.close().catch(() => undefined);

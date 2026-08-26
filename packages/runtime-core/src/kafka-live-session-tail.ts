@@ -45,6 +45,7 @@ export class KafkaLiveSessionTail {
       groupId: `pi-cloud-live-tail-${options.instanceId}`,
       topic: options.topic,
       mode: "earliest",
+      commitMessages: false,
       handler: async ({ fact }) => {
         this.project(fact);
       },
@@ -54,8 +55,9 @@ export class KafkaLiveSessionTail {
   async start(): Promise<void> {
     this.#sweepTimer = setInterval(() => this.#sweep(), 60_000);
     this.#sweepTimer.unref();
+    const endOffsets = await this.#consumer.captureEndOffsets();
     await this.#consumer.start();
-    await this.#consumer.waitUntilCaughtUp();
+    await this.#consumer.waitUntilInitialReplay(endOffsets);
   }
 
   checkHealth(): void {

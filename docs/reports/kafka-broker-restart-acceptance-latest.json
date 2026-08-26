@@ -1,0 +1,15 @@
+{
+  "accepted": true,
+  "piCloudRevision": "bdcdbfa61bbc2f48510054fa5470f615e0fe4b8c",
+  "checkedAt": "2026-08-26T09:33:19.280Z",
+  "provider": "deepseek",
+  "modelId": "deepseek-v4-flash",
+  "runId": "3d2810e5-c380-4376-925f-189e1f518ce2",
+  "turnId": "8437eb68-0924-46db-9b07-5ea50a3ec61e",
+  "firstTextSequence": 3,
+  "terminalSequence": 678,
+  "sseReconnects": 2,
+  "attemptCount": 1,
+  "faultMode": "kafka-broker",
+  "elapsedMs": 33177
+}

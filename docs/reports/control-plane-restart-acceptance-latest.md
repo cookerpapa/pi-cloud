@@ -1,10 +1,10 @@
 # Control Plane restart acceptance
 
-- Checked at: 2026-08-25T10:10:14.050Z
+- Checked at: 2026-08-26T09:31:46.445Z
 - Provider/model: deepseek / deepseek-v4-flash
-- First visible / terminal sequence: 3 / 89
-- SSE reconnects: 10
+- First visible / terminal sequence: 3 / 739
+- SSE reconnects: 18
 - Run Attempts: 1
-- Elapsed: 15443 ms
+- Elapsed: 28726 ms
 
-The Control Plane container received SIGKILL after the first JetStream-acknowledged assistant delta. The trusted Worker continued the fenced Run while JetStream retained the hot stream and PostgreSQL retained canonical Pi state. The replacement Gateway replayed the bounded Session subject, SSE reconnected, and the Run completed with one Attempt.
+The Control Plane container received SIGKILL after the first Kafka-acknowledged assistant delta. The trusted Worker continued the fenced Run while Kafka retained the AcceptedFact stream and PostgreSQL retained canonical Pi state. The replacement Gateway rebuilt the Session snapshot, SSE reconnected, and the Run completed with one Attempt.

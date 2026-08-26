@@ -14,12 +14,17 @@ const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).trim();
-if (process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK !== "1") {
+const faultMode =
+  process.env.PI_CLOUD_LIVE_KAFKA_BROKER_RESTART_CHECK === "1" ? "kafka-broker" : "control-plane";
+if (process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK !== "1" && faultMode !== "kafka-broker") {
   throw new Error(
     "Set PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_CHECK=1 to acknowledge a real model call and controlled Control Plane SIGKILL",
   );
 }
-const writeReport = process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_REPORT !== "0";
+const writeReport =
+  (faultMode === "kafka-broker"
+    ? process.env.PI_CLOUD_LIVE_KAFKA_BROKER_RESTART_REPORT
+    : process.env.PI_CLOUD_LIVE_CONTROL_PLANE_RESTART_REPORT) !== "0";
 
 async function readPrivate(path, maximumBytes, label) {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -74,7 +79,7 @@ function executeCompose(args, timeoutMs = 180_000) {
       (error, stdout, stderr) => {
         if (error) {
           rejectPromise(
-            new Error(`Control Plane replacement failed: ${stderr.trim() || error.message}`),
+            new Error(`Infrastructure replacement failed: ${stderr.trim() || error.message}`),
           );
         } else {
           resolvePromise(stdout.trim());
@@ -85,6 +90,12 @@ function executeCompose(args, timeoutMs = 180_000) {
 }
 
 async function replaceControlPlane() {
+  if (faultMode === "kafka-broker") {
+    await executeCompose(["kill", "--signal", "SIGKILL", "kafka-1"]);
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_000));
+    await executeCompose(["up", "--detach", "--wait", "kafka-1"]);
+    return;
+  }
   await executeCompose(["kill", "--signal", "SIGKILL", "control-plane"]);
   await executeCompose(["up", "--detach", "--wait", "control-plane"]);
 }
@@ -155,6 +166,7 @@ const deadline = setTimeout(
 let replacement;
 let firstTextSequence;
 let terminal;
+let snapshotTerminalSequence;
 let reconnects = 0;
 const text = [];
 const observeEvent = (event) => {
@@ -187,15 +199,32 @@ try {
     },
     onSnapshot(snapshot) {
       for (const event of snapshot.liveEvents) observeEvent(event);
+      const recovered = snapshot.conversation.turns.find(
+        (turn) => turn.turnId === accepted.turnId && turn.state === "completed",
+      );
+      if (recovered?.transcript !== undefined) {
+        snapshotTerminalSequence = recovered.transcript.terminalSequence ?? undefined;
+        text.splice(
+          0,
+          text.length,
+          ...recovered.transcript.items
+            .filter((item) => item.kind === "text")
+            .map((item) => item.text),
+        );
+        controller.abort();
+      }
     },
     onEvent: observeEvent,
   });
   assert(replacement, "The model did not stream before Control Plane replacement");
   await replacement;
-  assert(terminal, "The durable SSE stream did not publish a terminal event");
-  assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
   assert(
-    firstTextSequence && firstTextSequence < terminal.seq,
+    terminal?.type === "turn.completed" || snapshotTerminalSequence !== undefined,
+    "The replacement Gateway exposed neither a live terminal nor its canonical snapshot",
+  );
+  const terminalSequence = terminal?.seq ?? snapshotTerminalSequence;
+  assert(
+    firstTextSequence && terminalSequence && firstTextSequence < terminalSequence,
     "SSE did not advance after replacement",
   );
   assert(text.join("").includes(marker), "Replayed output omitted the expected marker");
@@ -211,22 +240,33 @@ try {
     runId: accepted.runId,
     turnId: accepted.turnId,
     firstTextSequence,
-    terminalSequence: terminal.seq,
+    terminalSequence,
     sseReconnects: reconnects,
     attemptCount: run.attempts.length,
+    faultMode,
     elapsedMs: Math.round(performance.now() - startedAt),
   };
   if (writeReport) {
     const reportDirectory = resolve(repositoryRoot, "docs/reports");
     await mkdir(reportDirectory, { recursive: true });
     await writeFile(
-      resolve(reportDirectory, "control-plane-restart-acceptance-latest.json"),
+      resolve(
+        reportDirectory,
+        faultMode === "kafka-broker"
+          ? "kafka-broker-restart-acceptance-latest.json"
+          : "control-plane-restart-acceptance-latest.json",
+      ),
       `${JSON.stringify(report, null, 2)}\n`,
     );
     await writeFile(
-      resolve(reportDirectory, "control-plane-restart-acceptance-latest.md"),
+      resolve(
+        reportDirectory,
+        faultMode === "kafka-broker"
+          ? "kafka-broker-restart-acceptance-latest.md"
+          : "control-plane-restart-acceptance-latest.md",
+      ),
       [
-        "# Control Plane restart acceptance",
+        `# ${faultMode === "kafka-broker" ? "Kafka broker" : "Control Plane"} restart acceptance`,
         "",
         `- Checked at: ${report.checkedAt}`,
         `- Provider/model: ${report.provider} / ${report.modelId}`,
@@ -235,7 +275,9 @@ try {
         `- Run Attempts: ${String(report.attemptCount)}`,
         `- Elapsed: ${String(report.elapsedMs)} ms`,
         "",
-        "The Control Plane container received SIGKILL after the first Kafka-acknowledged assistant delta. The trusted Worker continued the fenced Run while Kafka retained the AcceptedFact stream and PostgreSQL retained canonical Pi state. The replacement Gateway rebuilt the Session snapshot, SSE reconnected, and the Run completed with one Attempt.",
+        faultMode === "kafka-broker"
+          ? "One Kafka broker received SIGKILL after the first acknowledged assistant delta. The remaining ISR preserved AcceptedFact durability, clients recovered, the broker rejoined, and the Run completed with one Attempt."
+          : "The Control Plane container received SIGKILL after the first Kafka-acknowledged assistant delta. The trusted Worker continued the fenced Run while Kafka retained the AcceptedFact stream and PostgreSQL retained canonical Pi state. The replacement Gateway rebuilt the Session snapshot, SSE reconnected, and the Run completed with one Attempt.",
         "",
       ].join("\n"),
     );

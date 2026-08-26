@@ -23,18 +23,28 @@ export class KafkaCanonicalProjector {
       groupId: "pi-cloud-canonical-projector-v1",
       topic: options.topic,
       mode: "committed",
+      commitEvery: 64,
       handler: async (record) => {
         if (record.fact.kind === "pi_session_mutation") {
+          const session = await this.#database
+            .selectFrom("sessions")
+            .select("id")
+            .where("tenant_id", "=", record.fact.scope.tenantId)
+            .where("id", "=", record.fact.scope.sessionId)
+            .executeTakeFirst();
+          if (session === undefined) return;
           await this.#mutations.project(record.fact);
         } else if (record.fact.kind === "terminal_event") {
           await sql`
             insert into session_kafka_heads(
               tenant_id, session_id, topic, kafka_partition, kafka_offset,
               canonical_event_seq, updated_at
-            ) values (
+            ) select
               ${record.fact.scope.tenantId}, ${record.fact.scope.sessionId}, ${record.topic},
               ${record.partition}, ${record.offset}, ${record.fact.event.seq}, now()
-            )
+              from sessions
+             where tenant_id = ${record.fact.scope.tenantId}
+               and id = ${record.fact.scope.sessionId}
             on conflict (tenant_id, session_id) do update
               set topic = excluded.topic,
                   kafka_partition = excluded.kafka_partition,
@@ -50,7 +60,6 @@ export class KafkaCanonicalProjector {
 
   async start(): Promise<void> {
     await this.#consumer.start();
-    await this.#consumer.waitUntilCaughtUp();
   }
 
   checkHealth(): void {

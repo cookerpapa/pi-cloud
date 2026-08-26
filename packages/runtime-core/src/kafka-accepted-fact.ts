@@ -1,4 +1,11 @@
-import { Admin, ProduceAcks, Producer, stringSerializers } from "@platformatic/kafka";
+import {
+  Admin,
+  ProduceAcks,
+  Producer,
+  ProducerStreamReportModes,
+  stringSerializers,
+  type ProducerStream,
+} from "@platformatic/kafka";
 import { parsePiCloudEvent } from "@pi-cloud/protocol";
 import type { AcceptedFact, AcceptedFactBus, AcceptedFactReceipt } from "./accepted-fact.ts";
 
@@ -39,11 +46,21 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
 export class KafkaAcceptedFactBus implements AcceptedFactBus {
   readonly #topic: string;
   readonly #producer: Producer<string, string, string, string>;
+  readonly #stream: ProducerStream<string, string, string, string>;
   readonly #admin: Admin;
   readonly #partitions: number;
   readonly #replicas: number;
   readonly #retentionMs: number;
   #started = false;
+  #streamFailure: Error | undefined;
+  readonly #pending = new Map<
+    string,
+    {
+      promise: Promise<AcceptedFactReceipt>;
+      resolve(receipt: AcceptedFactReceipt): void;
+      reject(error: Error): void;
+    }
+  >();
 
   constructor(configuration: KafkaAcceptedFactConfiguration) {
     const bootstrapBrokers = brokers(configuration.brokers);
@@ -58,6 +75,31 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
       idempotent: true,
       acks: ProduceAcks.ALL,
       autocreateTopics: false,
+    });
+    this.#stream = this.#producer.asStream({
+      acks: ProduceAcks.ALL,
+      idempotent: true,
+      autocreateTopics: false,
+      batchSize: 128,
+      batchTime: 2,
+      highWaterMark: 1_024,
+      reportMode: ProducerStreamReportModes.MESSAGE,
+    });
+    this.#stream.on(
+      "delivery-report" as never,
+      ((report: { message: { metadata?: unknown } }) => {
+        const factId = (report.message.metadata as { factId?: unknown } | undefined)?.factId;
+        if (typeof factId !== "string") return;
+        const pending = this.#pending.get(factId);
+        if (pending === undefined) return;
+        this.#pending.delete(factId);
+        pending.resolve({ factId, durable: true });
+      }) as never,
+    );
+    this.#stream.on("error", (error) => {
+      this.#streamFailure = error;
+      for (const pending of this.#pending.values()) pending.reject(error);
+      this.#pending.clear();
     });
     this.#admin = new Admin({
       clientId: `${configuration.clientId}-accepted-fact-admin`,
@@ -90,24 +132,36 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
 
   async append(fact: AcceptedFact): Promise<AcceptedFactReceipt> {
     if (!this.#started) throw new Error("Kafka AcceptedFactBus is not running");
-    await this.#producer.send({
-      acks: ProduceAcks.ALL,
-      idempotent: true,
-      autocreateTopics: false,
-      messages: [
-        {
-          topic: this.#topic,
-          key: fact.scope.sessionId,
-          value: JSON.stringify(fact),
-          headers: { "pi-cloud-fact-id": fact.factId },
-        },
-      ],
+    if (this.#streamFailure !== undefined) throw this.#streamFailure;
+    const existing = this.#pending.get(fact.factId);
+    if (existing !== undefined) return existing.promise;
+    let resolveReceipt!: (receipt: AcceptedFactReceipt) => void;
+    let rejectReceipt!: (error: Error) => void;
+    const promise = new Promise<AcceptedFactReceipt>((resolve, reject) => {
+      resolveReceipt = resolve;
+      rejectReceipt = reject;
     });
-    return { factId: fact.factId, durable: true };
+    this.#pending.set(fact.factId, {
+      promise,
+      resolve: resolveReceipt,
+      reject: rejectReceipt,
+    });
+    this.#stream.write({
+      topic: this.#topic,
+      key: fact.scope.sessionId,
+      value: JSON.stringify(fact),
+      headers: { "pi-cloud-fact-id": fact.factId },
+      metadata: { factId: fact.factId },
+    });
+    return promise;
   }
 
   async checkHealth(): Promise<void> {
-    if (!this.#started || !(await this.#admin.listTopics()).includes(this.#topic)) {
+    if (
+      !this.#started ||
+      this.#streamFailure !== undefined ||
+      !(await this.#admin.listTopics()).includes(this.#topic)
+    ) {
       throw new Error("Kafka AcceptedFactBus is unhealthy");
     }
   }
@@ -115,6 +169,7 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
   async close(): Promise<void> {
     if (!this.#started) return;
     this.#started = false;
+    await this.#stream.close().catch(() => undefined);
     await Promise.allSettled([this.#producer.close(), this.#admin.close()]);
   }
 }

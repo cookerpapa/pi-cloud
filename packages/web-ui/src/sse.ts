@@ -206,9 +206,11 @@ export async function streamSessionEvents(options: StreamSessionEventsOptions): 
         result = await consumeResponse(response, options);
       } catch (error: unknown) {
         if (error instanceof SessionStreamError) throw error;
+        const message =
+          error instanceof Error ? error.message : "SSE stream violated the Session protocol";
         throw new SessionStreamError(
-          error instanceof Error ? error.message : "SSE stream violated the Session protocol",
-          false,
+          message,
+          error instanceof TypeError && /(?:terminated|fetch|network|socket)/iu.test(message),
         );
       }
       serverRetryMs = result.retryMs ?? serverRetryMs;

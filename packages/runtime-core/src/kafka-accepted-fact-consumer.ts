@@ -15,13 +15,22 @@ export type KafkaAcceptedFactRecord = Readonly<{
 }>;
 
 export class KafkaAcceptedFactConsumer {
-  readonly #consumer: Consumer<string, string, string, string>;
+  #consumer: Consumer<string, string, string, string>;
+  readonly #configuration: Readonly<{
+    brokers: readonly string[];
+    clientId: string;
+    groupId: string;
+  }>;
   readonly #topic: string;
   readonly #handler: (record: KafkaAcceptedFactRecord) => Promise<void>;
   readonly #mode: "committed" | "earliest";
+  readonly #commitMessages: boolean;
+  readonly #commitEvery: number;
   #stream: MessagesStream<string, string, string, string> | undefined;
   #run: Promise<void> | undefined;
   #failure: unknown;
+  #closing = false;
+  readonly #processedOffsets = new Map<number, bigint>();
 
   constructor(options: {
     brokers: readonly string[];
@@ -29,24 +38,48 @@ export class KafkaAcceptedFactConsumer {
     groupId: string;
     topic: string;
     mode: "committed" | "earliest";
+    commitMessages?: boolean;
+    commitEvery?: number;
     handler(record: KafkaAcceptedFactRecord): Promise<void>;
   }) {
     this.#topic = options.topic;
     this.#handler = options.handler;
     this.#mode = options.mode;
-    this.#consumer = new Consumer({
+    this.#commitMessages = options.commitMessages ?? true;
+    this.#commitEvery = options.commitEvery ?? 1;
+    if (!Number.isSafeInteger(this.#commitEvery) || this.#commitEvery < 1) {
+      throw new TypeError("Kafka consumer commitEvery is invalid");
+    }
+    this.#configuration = {
+      brokers: options.brokers,
       clientId: options.clientId,
       groupId: options.groupId,
-      bootstrapBrokers: [...options.brokers],
+    };
+    this.#consumer = this.#createConsumer();
+  }
+
+  #createConsumer(): Consumer<string, string, string, string> {
+    return new Consumer({
+      clientId: this.#configuration.clientId,
+      groupId: this.#configuration.groupId,
+      bootstrapBrokers: [...this.#configuration.brokers],
       deserializers: stringDeserializers,
       autocommit: false,
       maxWaitTime: 100,
       highWaterMark: 256,
+      groupProtocol: "classic",
+      sessionTimeout: 10_000,
+      heartbeatInterval: 1_000,
+      rebalanceTimeout: 30_000,
     });
   }
 
   async start(): Promise<void> {
     if (this.#run !== undefined) throw new Error("Kafka AcceptedFact consumer can only start once");
+    this.#run = this.#runForever();
+  }
+
+  async #openAndConsume(): Promise<void> {
     this.#stream = await this.#consumer.consume({
       topics: [this.#topic],
       mode: this.#mode,
@@ -54,10 +87,32 @@ export class KafkaAcceptedFactConsumer {
       autocommit: false,
       maxWaitTime: 100,
       highWaterMark: 256,
+      groupProtocol: "classic",
+      sessionTimeout: 10_000,
+      heartbeatInterval: 1_000,
+      rebalanceTimeout: 30_000,
     });
-    this.#run = this.#consume(this.#stream).catch((error: unknown) => {
-      this.#failure = error;
-    });
+    this.#failure = undefined;
+    await this.#consume(this.#stream);
+  }
+
+  async #runForever(): Promise<void> {
+    let delayMs = 100;
+    while (!this.#closing) {
+      try {
+        await this.#openAndConsume();
+        if (!this.#closing) throw new Error("Kafka AcceptedFact consumer ended unexpectedly");
+      } catch (error: unknown) {
+        if (this.#closing) return;
+        this.#failure = error;
+        await this.#stream?.close().catch(() => undefined);
+        await this.#consumer.close().catch(() => undefined);
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+        delayMs = Math.min(5_000, delayMs * 2);
+        this.#stream = undefined;
+        this.#consumer = this.#createConsumer();
+      }
+    }
   }
 
   checkHealth(): void {
@@ -66,30 +121,55 @@ export class KafkaAcceptedFactConsumer {
     }
   }
 
-  async waitUntilCaughtUp(timeoutMs = 120_000): Promise<void> {
+  async captureEndOffsets(): Promise<readonly bigint[]> {
+    const offsets = (await this.#consumer.listOffsets({ topics: [this.#topic] })).get(this.#topic);
+    if (offsets === undefined) throw new Error("Kafka AcceptedFact Topic offsets are unavailable");
+    return offsets;
+  }
+
+  async waitUntilInitialReplay(offsets: readonly bigint[], timeoutMs = 120_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      this.checkHealth();
-      const lag = await this.#consumer.getLag({ topics: [this.#topic] });
-      const pending = [...lag.values()].flat().reduce((total, value) => total + value, 0n);
-      if (pending === 0n) return;
-      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      if (
+        offsets.every(
+          (target, partition) =>
+            target === 0n || (this.#processedOffsets.get(partition) ?? 0n) >= target,
+        )
+      ) {
+        return;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error("Kafka AcceptedFact consumer did not catch up before readiness deadline");
+    throw new Error("Kafka Gateway live-tail replay did not reach its startup boundary");
   }
 
   async close(): Promise<void> {
+    this.#closing = true;
     await this.#stream?.close().catch(() => undefined);
-    await this.#run;
     await this.#consumer.close().catch(() => undefined);
+    await this.#run;
     this.#stream = undefined;
     this.#run = undefined;
   }
 
   async #consume(stream: MessagesStream<string, string, string, string>): Promise<void> {
+    let uncommitted = 0;
     for await (const message of stream) {
-      await this.#handle(message);
-      await message.commit();
+      let delayMs = 50;
+      while (!this.#closing) {
+        try {
+          await this.#handle(message);
+          this.#processedOffsets.set(message.partition, message.offset + 1n);
+          if (this.#commitMessages && ++uncommitted >= this.#commitEvery) {
+            await message.commit();
+            uncommitted = 0;
+          }
+          break;
+        } catch {
+          await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+          delayMs = Math.min(1_000, delayMs * 2);
+        }
+      }
     }
   }
 
