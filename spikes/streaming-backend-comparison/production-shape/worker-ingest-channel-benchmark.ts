@@ -140,9 +140,9 @@ async function initialize(database: ReturnType<typeof createDatabase>): Promise<
       sandbox_id uuid not null,
       valid_until timestamptz not null,
       last_event_seq bigint not null default 0,
-      event_writer_connection_id uuid,
-      event_writer_instance_id uuid,
-      event_writer_valid_until timestamptz,
+      fact_channel_connection_id uuid,
+      fact_channel_instance_id uuid,
+      fact_channel_valid_until timestamptz,
       acquired_at timestamptz not null default now(),
       renewed_at timestamptz not null default now()
     );
@@ -223,10 +223,10 @@ try {
     progress: new PostgresAcceptedFactProgressStore(database),
     instanceId: uuid(90_000, 1),
     leaseDurationMs: 30_000,
-    maximumActiveWriters: 128,
+    maximumActiveChannels: 128,
   });
   await fastify.register(fastifyWebsocket, { options: { perMessageDeflate: false } });
-  new AcceptedFactIngestGateway({ writers: service, serviceToken }).install(fastify);
+  new AcceptedFactIngestGateway({ channels: service, serviceToken }).install(fastify);
   await fastify.listen({ host: "127.0.0.1", port: 0 });
   const address = fastify.server.address();
   if (address === null || typeof address === "string") {
@@ -247,7 +247,7 @@ try {
     const startedAt = performance.now();
     const sessionResults = await mapConcurrent(rows, configuration.concurrency, async (row) => {
       const openStartedAt = performance.now();
-      const writer = await worker.open({
+      const channel = await worker.open({
         executionGrant: grant(row),
         sessionId: row.sessionId,
         turnId: row.turnId,
@@ -258,16 +258,16 @@ try {
       try {
         for (let sequence = 1; sequence <= configuration.eventsPerSession; sequence += 1) {
           const eventStartedAt = performance.now();
-          const acknowledgement = await writer.ingest(
+          const acknowledgement = await channel.ingest(
             publication(row, sequence, configuration.payloadBytes),
           );
           if (acknowledgement.payload.acknowledgedThroughSeq !== sequence) {
-            throw new Error("Worker writer ACK did not match the published sequence");
+            throw new Error("FactChannel ACK did not match the published sequence");
           }
           eventLatencies.push(performance.now() - eventStartedAt);
         }
       } finally {
-        await writer.close();
+        await channel.close();
       }
       return { openMs, eventLatencies };
     });
@@ -284,16 +284,16 @@ try {
       frameMiBPerSecond: Number(
         ((averageFrameBytes * events * 1_000) / elapsedMs / 1_024 ** 2).toFixed(2),
       ),
-      writerOpenLatencyMs: latency(sessionResults.map((result) => result.openMs)),
+      channelOpenLatencyMs: latency(sessionResults.map((result) => result.openMs)),
       acknowledgementLatencyMs: latency(eventLatencies),
-      writerChannels: configuration.sessions,
+      factChannels: configuration.sessions,
       intentionalBatchDelayMs: 0,
     };
   };
 
   const leaderOnly = process.env.PI_CLOUD_WRITER_BENCHMARK_LEADER_ONLY === "1";
   if (!leaderOnly) {
-    process.stdout.write("stage: warm current EventWriterChannel\n");
+    process.stdout.write("stage: warm current FactChannel\n");
     await runCase({
       name: "warmup",
       sessions: 16,
@@ -368,7 +368,7 @@ try {
     cases.push(await runCase(configuration));
   }
 
-  process.stdout.write("stage: Stream Leader loss through current EventWriterChannel\n");
+  process.stdout.write("stage: Stream Leader loss through current FactChannel\n");
   const leaderBefore = (await runtime.manager.streams.info(AGENT_EVENT_STREAM_NAME)).cluster
     ?.leader;
   const leaderService =
@@ -408,7 +408,7 @@ try {
     channel: {
       workerClient: "WebSocketAcceptedFactIngestor",
       gateway: "AcceptedFactIngestGateway/Fastify WebSocket",
-      authority: "one short PostgreSQL writer lease per ExecutionGrant",
+      authority: "one short PostgreSQL FactChannel lease per ExecutionGrant",
       batching: "none; one ordered event in flight per Grant",
       durabilityBoundary: "one JetStream file-storage R=3 PubAck per event",
       excluded: ["LLM", "Cube", "SSE", "SessionStorage projector"],

@@ -466,7 +466,9 @@ current JetStream adapter uses stable Fact IDs for duplicate suppression and
 separate Session-keyed Streams for live events and Session projection. Each ACK
 waits for R=3 PubAck. Different Grants publish concurrently, while one channel
 keeps one Fact in flight. Channel ownership renews set-wise outside the Fact hot
-path. Normal settlement closes
+path. After PubAck, a separate progress store checkpoints the acknowledged
+Agent-event sequence set-wise and flushes it on normal channel close; this is a
+terminal-stream boundary, not an admission decision. Normal settlement closes
 the channel before releasing the Grant; crash recovery waits for its short
 lease rather than admitting overlapping generations. Workers have no NATS
 credentials or network route.

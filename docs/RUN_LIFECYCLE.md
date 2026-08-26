@@ -59,7 +59,10 @@ different Grants publish concurrently. Tool arguments and Tool results enter
 the same stream only as complete Items. Each event's R=3 PubAck is the
 visibility boundary. Event ordering and duplicate handling belong to the
 JetStream/downstream adapter rather than the Authority Gate. Channel close
-releases short channel ownership before terminal settlement releases the Grant.
+flushes the post-PubAck event progress and releases short channel ownership
+before terminal settlement releases the Grant. Terminal sequence allocation
+uses the maximum of Attempt progress and the separately projected channel
+progress, so a lagging projection cannot move the Session stream backwards.
 
 Pi `message_end` submits a complete Session mutation through that same
 FactChannel. The unified PostgreSQL Gate validates current writer authority once

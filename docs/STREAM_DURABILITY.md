@@ -32,6 +32,11 @@ the Session Subject while PostgreSQL owns settled semantic messages. An older
 reconnect reloads `P` from PostgreSQL. Gateway memory therefore follows active
 HTTP connections rather than historical token fragments.
 
+The highest R=3-acknowledged Agent-event sequence is checkpointed separately
+from the Authority Gate. Active channels update it set-wise with lease renewal;
+normal close flushes it. It exists only so crash/terminal settlement can append
+after the durable visible prefix. It is not consulted when accepting a Fact.
+
 JetStream durability and browser presentation are deliberately decoupled. On a
 fresh live delivery, React first accepts the complete `J`-acknowledged text
 block into its in-memory target, then reveals the new suffix over bounded

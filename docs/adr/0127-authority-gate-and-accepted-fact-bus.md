@@ -49,6 +49,13 @@ facts to their maintained Session-keyed Streams. Stable Fact IDs, physical log
 ordering, duplicate suppression, retention and replay are bus/downstream
 concerns. Consumers never call the Authority Gate or receive a bearer Grant.
 
+Agent events have one additional downstream progress projection. It records
+the highest R=3-acknowledged logical event sequence in PostgreSQL in set-wise
+renewal checkpoints and flushes on normal FactChannel close. Terminal event
+allocation needs that durable boundary after a Worker crash, but the progress
+store cannot authorize, reject, order or deduplicate a CandidateFact. Terminal
+allocation takes the maximum of Attempt and channel progress.
+
 The Ingest Orchestrator composes the two ports:
 
 ```text
