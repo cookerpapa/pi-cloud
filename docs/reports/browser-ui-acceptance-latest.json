@@ -1,8 +1,8 @@
 {
   "accepted": true,
-  "piCloudRevision": "67d2da5edf7613be3df1a908971196fb2b850a3e",
-  "checkedAt": "2026-08-26T10:33:26.884Z",
-  "account": "browser.acceptance.mt9yfws4",
+  "piCloudRevision": "10807f5ef94a0fddc74508d0472a3f96121ecac8",
+  "checkedAt": "2026-08-26T14:24:45.426Z",
+  "account": "browser.acceptance.mta6pe33",
   "clickedControls": [
     "auth.registerTab",
     "auth.loginTab",
@@ -23,6 +23,9 @@
     "conversation.performanceProfile",
     "conversation.create",
     "composer.send",
+    "transcript.copyUserMessage",
+    "transcript.copyAssistantMessage",
+    "conversation.download",
     "composer.sendForSteer",
     "composer.steer",
     "transcript.piStyleToolRenderer",
@@ -73,7 +76,7 @@
     "account.menuOpenForLogout",
     "account.logout"
   ],
-  "clickedControlCount": 68,
+  "clickedControlCount": 71,
   "screenshotCaptured": true,
   "cleanupCompleted": true
 }
