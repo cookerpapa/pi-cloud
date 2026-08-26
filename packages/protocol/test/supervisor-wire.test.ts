@@ -296,6 +296,52 @@ describe("supervisor/control-plane wire protocol", () => {
     ).toThrow(PiCloudWireProtocolError);
   });
 
+  it("opens and closes one bounded EventWriterChannel around ordered publications", () => {
+    const open = {
+      ...envelope(),
+      type: "event.writer.open",
+      payload: {
+        executionGrant: EXECUTION_GRANT,
+        sessionId: "session-1",
+        turnId: "turn-1",
+        nextEventSeq: 11,
+      },
+    } as const;
+    const ready = {
+      ...envelope(),
+      type: "event.writer.ready",
+      payload: {
+        acknowledgedMessageId: IDS.message,
+        executionGrant: EXECUTION_GRANT,
+        sessionId: "session-1",
+        turnId: "turn-1",
+        acknowledgedThroughSeq: 10,
+        leaseDurationMs: 9_000,
+      },
+    } as const;
+    const close = {
+      ...envelope(),
+      type: "event.writer.close",
+      payload: { executionGrant: EXECUTION_GRANT, acknowledgedThroughSeq: 12 },
+    } as const;
+    const closed = {
+      ...envelope(),
+      type: "event.writer.closed",
+      payload: {
+        acknowledgedMessageId: IDS.message,
+        executionGrant: EXECUTION_GRANT,
+        acknowledgedThroughSeq: 12,
+      },
+    } as const;
+
+    expect(parseSupervisorToControlMessage(open)).toEqual(open);
+    expect(parseControlToSupervisorMessage(ready)).toEqual(ready);
+    expect(parseSupervisorToControlMessage(close)).toEqual(close);
+    expect(parseControlToSupervisorMessage(closed)).toEqual(closed);
+    expect(() => parseControlToSupervisorMessage(open)).toThrow(PiCloudWireProtocolError);
+    expect(() => parseSupervisorToControlMessage(ready)).toThrow(PiCloudWireProtocolError);
+  });
+
   it("returns a closed permanent rejection without pretending the event was acknowledged", () => {
     const rejected = {
       ...envelope(),

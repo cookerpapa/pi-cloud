@@ -430,6 +430,73 @@ export const EventPublishMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const EventWriterOpenMessageSchema = Type.Object(
+  {
+    ...WireEnvelopeProperties,
+    type: Type.Literal("event.writer.open"),
+    payload: Type.Object(
+      {
+        executionGrant: ExecutionGrantSchema,
+        sessionId: OpaqueIdSchema,
+        turnId: OpaqueIdSchema,
+        nextEventSeq: PositiveSafeIntegerSchema,
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export const EventWriterReadyMessageSchema = Type.Object(
+  {
+    ...WireEnvelopeProperties,
+    type: Type.Literal("event.writer.ready"),
+    payload: Type.Object(
+      {
+        acknowledgedMessageId: UuidSchema,
+        executionGrant: ExecutionGrantSchema,
+        sessionId: OpaqueIdSchema,
+        turnId: OpaqueIdSchema,
+        acknowledgedThroughSeq: NonNegativeSafeIntegerSchema,
+        leaseDurationMs: PositiveSafeIntegerSchema,
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export const EventWriterCloseMessageSchema = Type.Object(
+  {
+    ...WireEnvelopeProperties,
+    type: Type.Literal("event.writer.close"),
+    payload: Type.Object(
+      {
+        executionGrant: ExecutionGrantSchema,
+        acknowledgedThroughSeq: NonNegativeSafeIntegerSchema,
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export const EventWriterClosedMessageSchema = Type.Object(
+  {
+    ...WireEnvelopeProperties,
+    type: Type.Literal("event.writer.closed"),
+    payload: Type.Object(
+      {
+        acknowledgedMessageId: UuidSchema,
+        executionGrant: ExecutionGrantSchema,
+        acknowledgedThroughSeq: NonNegativeSafeIntegerSchema,
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
 export const EventAckMessageSchema = Type.Object(
   {
     ...WireEnvelopeProperties,
@@ -525,6 +592,8 @@ export const SupervisorToControlMessageSchema = Type.Union([
   CommandAckMessageSchema,
   CommandResultMessageSchema,
   EventPublishMessageSchema,
+  EventWriterOpenMessageSchema,
+  EventWriterCloseMessageSchema,
   SupervisorHeartbeatMessageSchema,
 ]);
 
@@ -538,6 +607,8 @@ export const ControlToSupervisorMessageSchema = Type.Union([
   CommandReleaseMessageSchema,
   EventAckMessageSchema,
   EventRejectedMessageSchema,
+  EventWriterReadyMessageSchema,
+  EventWriterClosedMessageSchema,
   SupervisorHeartbeatAckMessageSchema,
 ]);
 
@@ -554,6 +625,10 @@ export type CommandResultMessage = Static<typeof CommandResultMessageSchema>;
 export type EventPublishMessage = Static<typeof EventPublishMessageSchema>;
 export type EventAckMessage = Static<typeof EventAckMessageSchema>;
 export type EventRejectedMessage = Static<typeof EventRejectedMessageSchema>;
+export type EventWriterOpenMessage = Static<typeof EventWriterOpenMessageSchema>;
+export type EventWriterReadyMessage = Static<typeof EventWriterReadyMessageSchema>;
+export type EventWriterCloseMessage = Static<typeof EventWriterCloseMessageSchema>;
+export type EventWriterClosedMessage = Static<typeof EventWriterClosedMessageSchema>;
 export type SupervisorHeartbeatMessage = Static<typeof SupervisorHeartbeatMessageSchema>;
 export type SupervisorHeartbeatAckMessage = Static<typeof SupervisorHeartbeatAckMessageSchema>;
 
@@ -562,6 +637,8 @@ export type SupervisorToControlMessage =
   | CommandAckMessage
   | CommandResultMessage
   | EventPublishMessage
+  | EventWriterOpenMessage
+  | EventWriterCloseMessage
   | SupervisorHeartbeatMessage;
 
 export type ControlToSupervisorMessage =
@@ -574,6 +651,8 @@ export type ControlToSupervisorMessage =
   | CommandReleaseMessage
   | EventAckMessage
   | EventRejectedMessage
+  | EventWriterReadyMessage
+  | EventWriterClosedMessage
   | SupervisorHeartbeatAckMessage;
 
 export class PiCloudWireProtocolError extends Error {
