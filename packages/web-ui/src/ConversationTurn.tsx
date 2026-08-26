@@ -5,7 +5,16 @@ import type { TranscriptItem, TurnView } from "./session-view.ts";
 import { compactToolSummary, ToolActivity, type ToolTranscriptItem } from "./ToolActivity.tsx";
 import { useI18n } from "./i18n.tsx";
 
-const MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME = 1_024;
+const MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME = 32;
+const PROGRESSIVE_BOUNDARY_LOOKAHEAD = 4;
+
+function progressiveCharacterStep(remaining: number): number {
+  if (remaining > 1_024) return 32;
+  if (remaining > 512) return 20;
+  if (remaining > 128) return 12;
+  if (remaining > 32) return 8;
+  return 4;
+}
 
 export function nextProgressiveTextIndex(text: string, currentIndex: number): number {
   if (!Number.isSafeInteger(currentIndex) || currentIndex < 0 || currentIndex > text.length) {
@@ -15,7 +24,7 @@ export function nextProgressiveTextIndex(text: string, currentIndex: number): nu
   if (remaining <= 0) return text.length;
   const step = Math.min(
     MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME,
-    Math.max(2, Math.ceil(remaining / 5)),
+    progressiveCharacterStep(remaining),
   );
   let next = Math.min(text.length, currentIndex + step);
   const previousCodeUnit = text.charCodeAt(next - 1);
@@ -29,7 +38,7 @@ export function nextProgressiveTextIndex(text: string, currentIndex: number): nu
     next += 1;
   }
   const nearbyBoundary = text
-    .slice(next, Math.min(text.length, next + 12))
+    .slice(next, Math.min(text.length, next + PROGRESSIVE_BOUNDARY_LOOKAHEAD))
     .search(/[\s，。！？；：、,.!?;:)]/u);
   return nearbyBoundary < 0 ? next : Math.min(text.length, next + nearbyBoundary + 1);
 }
