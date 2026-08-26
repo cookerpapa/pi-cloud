@@ -910,6 +910,7 @@ const session = await api.createSession(
   "elastic",
 );
 assert.equal(session.executionMode, "elastic");
+let foreignSession;
 let largeSession;
 
 try {
@@ -1068,7 +1069,7 @@ try {
 
   const foreignApi = bootstrapApi;
   const foreignProject = await foreignApi.createProject(`Foreign Cube project ${suffix}`);
-  const foreignSession = await foreignApi.createSession(
+  foreignSession = await foreignApi.createSession(
     foreignProject.projectId,
     foreignProject.workspaceId,
     `Cube foreign-tenant isolation ${suffix}`,
@@ -1308,6 +1309,23 @@ try {
     );
   }
   await destroyCubeSession(session.sessionId).catch(() => undefined);
+  await api
+    .deleteWorkspace(project.workspaceId, newIdempotencyKey("acceptance-finally-workspace"))
+    .catch(() => undefined);
+  if (foreignSession !== undefined) {
+    await foreignApi
+      .deleteConversation(
+        foreignSession.sessionId,
+        newIdempotencyKey("acceptance-finally-archive-foreign"),
+      )
+      .catch(() => undefined);
+    await foreignApi
+      .deleteWorkspace(
+        foreignSession.workspaceId,
+        newIdempotencyKey("acceptance-finally-workspace-foreign"),
+      )
+      .catch(() => undefined);
+  }
   if (largeSession !== undefined) {
     await api
       .deleteConversation(
@@ -1324,6 +1342,12 @@ try {
       );
     }
     await destroyCubeSession(largeSession.sessionId).catch(() => undefined);
+    await api
+      .deleteWorkspace(
+        largeSession.workspaceId,
+        newIdempotencyKey("acceptance-finally-workspace-large"),
+      )
+      .catch(() => undefined);
   }
   await cube.close();
 }
