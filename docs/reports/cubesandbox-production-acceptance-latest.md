@@ -1,22 +1,22 @@
 # CubeSandbox production acceptance
 
-- Checked at: 2026-08-25T16:20:48.354Z
+- Checked at: 2026-08-26T04:28:53.897Z
 - Provider/model: deepseek / deepseek-v4-flash
-- Pure-chat first text / settled: 1362 ms / 1621 ms
+- Pure-chat first text / settled: 3117 ms / 3428 ms
 - Pure-chat Tool calls / Cube activations: 0 / 0
-- First coding first text / settled: 9787 ms / 10951 ms
-- Follow-up first text / settled: 6011 ms / 7757 ms
-- Coding Tool calls: 2 + 3
+- First coding first text / settled: 945 ms / 16827 ms
+- Follow-up first text / settled: 1040 ms / 7278 ms
+- Coding Tool calls: 5 + 3
 - Same running Session Cube KVM guest reused: true
 - Elastic Sandbox policy / warm archive cleanup: true / true
 - Workspace restored across Runs: true
 - Trusted Git metadata sibling / user .git absent: true / true
-- Large Workspace files / Volume reference: 1025 / 154715 bytes
+- Large Workspace files / Volume reference: 1025 / 149595 bytes
 - Large Workspace fresh-VM cold restore: true
-- Real input/output/cache-read tokens: 2916 / 2140 / 93568
-- Canonical conversation: 3 terminal Turns / 19 Pi entries / 18317 bytes
-- JetStream Agent events / Session mutations / pending mutation ACKs: 800 / 666 / 0
-- PostgreSQL hot-event table absent / projected Session mutations: true / 49
+- Real input/output/cache-read tokens: 2681 / 2279 / 108416
+- Canonical conversation: 3 terminal Turns / 25 Pi entries / 21938 bytes
+- JetStream Agent events / Session mutations / pending mutation ACKs: 1564 / 158 / 0
+- PostgreSQL hot-event table absent / projected Session mutations: true / 64
 - Scheduler / Worker pool: PostgreSQL / shared
 - Cross-tenant conversation hidden: true
 - Explicit warm eviction / remaining Cube microVMs: true / 0
