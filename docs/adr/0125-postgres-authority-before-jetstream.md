@@ -3,7 +3,8 @@
 ## Status
 
 Accepted on 2026-08-26. This refines ADR-0124 without changing PostgreSQL as
-the sole ExecutionGrant authority.
+the sole ExecutionGrant authority. ADR-0126 replaces its Agent-event
+microbatch transport; the Session-mutation decision remains current.
 
 ## Context
 
