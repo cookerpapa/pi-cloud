@@ -1,9 +1,9 @@
 {
   "format": "pi-cloud.kafka-accepted-fact-load.v1",
-  "generatedAt": "2026-08-26T14:27:09.340Z",
+  "generatedAt": "2026-08-26T14:51:23.936Z",
   "host": {
     "logicalCpuCount": 32,
-    "totalMemoryGiB": 15.46,
+    "totalMemoryGiB": 19.53,
     "node": "v24.18.0"
   },
   "kafka": {
@@ -20,12 +20,12 @@
       "eventsPerSession": 4096,
       "concurrency": 1,
       "events": 4096,
-      "elapsedMs": 36431.356,
-      "eventsPerSecond": 112.43,
+      "elapsedMs": 21936.992,
+      "eventsPerSecond": 186.72,
       "acknowledgementLatencyMs": {
-        "p50": 4.111,
-        "p95": 51.155,
-        "p99": 69.878
+        "p50": 4.045,
+        "p95": 5.709,
+        "p99": 24.774
       }
     },
     {
@@ -34,12 +34,12 @@
       "eventsPerSession": 256,
       "concurrency": 16,
       "events": 4096,
-      "elapsedMs": 5660.795,
-      "eventsPerSecond": 723.57,
+      "elapsedMs": 3974.739,
+      "eventsPerSecond": 1030.51,
       "acknowledgementLatencyMs": {
-        "p50": 5.789,
-        "p95": 78.43,
-        "p99": 85.21
+        "p50": 7.572,
+        "p95": 62.081,
+        "p99": 66.971
       }
     },
     {
@@ -48,12 +48,12 @@
       "eventsPerSession": 64,
       "concurrency": 64,
       "events": 4096,
-      "elapsedMs": 1616.373,
-      "eventsPerSecond": 2534.07,
+      "elapsedMs": 1030.862,
+      "eventsPerSecond": 3973.38,
       "acknowledgementLatencyMs": {
-        "p50": 7.427,
-        "p95": 75.434,
-        "p99": 329.482
+        "p50": 7.73,
+        "p95": 59.924,
+        "p99": 196.579
       }
     },
     {
@@ -62,14 +62,14 @@
       "eventsPerSession": 32,
       "concurrency": 128,
       "events": 4096,
-      "elapsedMs": 688.62,
-      "eventsPerSecond": 5948.12,
+      "elapsedMs": 394.274,
+      "eventsPerSecond": 10388.72,
       "acknowledgementLatencyMs": {
-        "p50": 5.411,
-        "p95": 80.599,
-        "p99": 112.09
+        "p50": 6.255,
+        "p95": 49.826,
+        "p99": 74.124
       }
     }
   ],
-  "revision": "357c4f80fd22eb2bada91a0c023d2af473140895"
+  "revision": "24929729cd093a01ef11010a57c04dcb0249d656"
 }
