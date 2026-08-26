@@ -83,7 +83,7 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
       autocreateTopics: false,
       batchSize: 128,
       batchTime: 2,
-      highWaterMark: 1_024,
+      highWaterMark: 4_096,
       reportMode: ProducerStreamReportModes.BATCH,
     });
     this.#stream.on(
