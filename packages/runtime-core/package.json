@@ -12,6 +12,8 @@
     "./conversation-turn-projection": "./src/conversation-turn-projection.ts",
     "./durable-event-store": "./src/durable-event-store.ts",
     "./agent-event-authority": "./src/agent-event-authority.ts",
+    "./accepted-fact": "./src/accepted-fact.ts",
+    "./jetstream-accepted-fact-bus": "./src/jetstream-accepted-fact-bus.ts",
     "./jetstream-agent-event-log": "./src/jetstream-agent-event-log.ts",
     "./jetstream-event-runtime": "./src/jetstream-event-runtime.ts",
     "./jetstream-pi-session-mutations": "./src/jetstream-pi-session-mutations.ts",

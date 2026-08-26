@@ -316,6 +316,18 @@ export class JetStreamAcceptedPiSessionMutationPublisher {
     this.#runtime = runtime;
   }
 
+  async append(envelope: AcceptedPiSessionMutationEnvelope): Promise<void> {
+    await this.#runtime.client.publish(
+      piSessionMutationSubject(envelope.scope.sessionId),
+      new TextEncoder().encode(JSON.stringify(envelope)),
+      {
+        msgID: envelope.mutationId,
+        expect: { streamName: PI_SESSION_MUTATION_STREAM_NAME },
+        timeout: 10_000,
+      },
+    );
+  }
+
   async appendGroup(envelopes: readonly AcceptedPiSessionMutationEnvelope[]): Promise<void> {
     const bySession = new Map<string, AcceptedPiSessionMutationEnvelope[]>();
     for (const envelope of envelopes) {
@@ -326,15 +338,7 @@ export class JetStreamAcceptedPiSessionMutationPublisher {
     await Promise.all(
       [...bySession.values()].map(async (group) => {
         for (const envelope of group) {
-          await this.#runtime.client.publish(
-            piSessionMutationSubject(envelope.scope.sessionId),
-            new TextEncoder().encode(JSON.stringify(envelope)),
-            {
-              msgID: envelope.mutationId,
-              expect: { streamName: PI_SESSION_MUTATION_STREAM_NAME },
-              timeout: 10_000,
-            },
-          );
+          await this.append(envelope);
         }
       }),
     );

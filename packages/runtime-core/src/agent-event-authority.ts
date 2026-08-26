@@ -7,6 +7,7 @@ import {
 } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
+import type { AcceptedFact, CandidateFact } from "./accepted-fact.ts";
 
 export type AcceptedAgentEventEnvelope = Readonly<{
   schemaVersion: 2;
@@ -30,6 +31,7 @@ export type AgentEventWriterAuthorityScope = Readonly<{
   generation: number;
   tenantId: string;
   sessionId: string;
+  runId: string;
   turnId: string;
   acknowledgedThroughSeq: number;
   acknowledgedEventId?: string;
@@ -185,6 +187,7 @@ export class PostgresAgentEventWriterAuthority {
         generation: grantIdentity.generation,
         tenantId: row.tenant_id,
         sessionId: row.session_id,
+        runId: row.run_id,
         turnId: row.turn_id,
         acknowledgedThroughSeq: durableThrough,
         ...(durableTail?.seq === durableThrough
@@ -193,6 +196,65 @@ export class PostgresAgentEventWriterAuthority {
         leaseDurationMs: validUntil.valueOf() - now.valueOf(),
       };
     });
+  }
+
+  accept(scope: AgentEventWriterAuthorityScope, candidate: CandidateFact): AcceptedFact {
+    if (candidate.kind === "agent_event") {
+      const publication = candidate.publication;
+      if (
+        publication.payload.executionGrant !== scope.executionGrant ||
+        publication.payload.event.sessionId !== scope.sessionId ||
+        publication.payload.event.turnId !== scope.turnId
+      ) {
+        throw new AgentEventWriterAuthorityError(
+          "stale_execution_grant",
+          "Agent event candidate does not belong to its ExecutionGrant",
+          false,
+        );
+      }
+      return {
+        kind: "agent_event",
+        factId: publication.payload.event.eventId,
+        scope: {
+          tenantId: scope.tenantId,
+          sessionId: scope.sessionId,
+          runId: scope.runId,
+          turnId: scope.turnId,
+          executionId: scope.executionId,
+          executionGeneration: scope.generation,
+        },
+        event: publication.payload.event,
+        occurredAt: publication.payload.event.occurredAt,
+      };
+    }
+    const mutation = candidate.mutation;
+    if (
+      mutation.scope.executionGrant !== scope.executionGrant ||
+      mutation.scope.tenantId !== scope.tenantId ||
+      mutation.scope.sessionId !== scope.sessionId ||
+      mutation.scope.runId !== scope.runId ||
+      mutation.scope.turnId !== scope.turnId
+    ) {
+      throw new AgentEventWriterAuthorityError(
+        "stale_execution_grant",
+        "Pi Session mutation candidate does not belong to its ExecutionGrant",
+        false,
+      );
+    }
+    return {
+      kind: "pi_session_mutation",
+      factId: mutation.mutationId,
+      scope: {
+        tenantId: scope.tenantId,
+        sessionId: scope.sessionId,
+        runId: scope.runId,
+        turnId: scope.turnId,
+        executionId: scope.executionId,
+        executionGeneration: scope.generation,
+      },
+      operation: mutation.operation,
+      occurredAt: mutation.occurredAt,
+    };
   }
 
   async renewMany(

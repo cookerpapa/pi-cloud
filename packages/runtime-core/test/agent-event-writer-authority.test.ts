@@ -99,6 +99,53 @@ describe("PostgresAgentEventWriterAuthority", () => {
       instanceId: INSTANCE_ID,
     });
     expect(scope).toMatchObject({ acknowledgedThroughSeq: 0, leaseDurationMs: 3_000 });
+    const event = parseSupervisorToControlMessage({
+      protocolVersion: 1,
+      messageId: "10000000-0000-4000-8000-000000000009",
+      sentAt: "2026-08-26T00:00:00.000Z",
+      type: "event.publish",
+      payload: {
+        executionGrant: openMessage().payload.executionGrant,
+        event: {
+          schemaVersion: 1,
+          eventId: "10000000-0000-4000-8000-000000000010",
+          sessionId: SESSION_ID,
+          turnId: TURN_ID,
+          agentId: "root",
+          seq: 1,
+          occurredAt: "2026-08-26T00:00:00.000Z",
+          type: "assistant.text.delta",
+          payload: { text: "hello" },
+        },
+      },
+    });
+    if (event.type !== "event.publish") throw new Error("Invalid event fixture");
+    const acceptedEvent = authority.accept(scope, { kind: "agent_event", publication: event });
+    const acceptedMutation = authority.accept(scope, {
+      kind: "pi_session_mutation",
+      mutation: {
+        schemaVersion: 1,
+        mutationId: "10000000-0000-4000-8000-000000000011",
+        scope: {
+          tenantId: SESSION_ID,
+          sessionId: SESSION_ID,
+          turnId: TURN_ID,
+          runId: SESSION_ID,
+          executionGrant: openMessage().payload.executionGrant,
+        },
+        operation: { kind: "projection_barrier" },
+        occurredAt: "2026-08-26T00:00:00.000Z",
+      },
+    });
+    expect(acceptedEvent).toMatchObject({
+      kind: "agent_event",
+      factId: "10000000-0000-4000-8000-000000000010",
+    });
+    expect(acceptedMutation).toMatchObject({
+      kind: "pi_session_mutation",
+      factId: "10000000-0000-4000-8000-000000000011",
+    });
+    expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pceg1_");
     await expect(
       authority.open(openMessage(), {
         connectionId: "10000000-0000-4000-8000-000000000008",

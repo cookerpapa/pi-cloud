@@ -4,6 +4,8 @@ export * from "./conversation-turn-projection.ts";
 export * from "./durable-event-store.ts";
 export * from "./agent-event-authority.ts";
 export * from "./jetstream-agent-event-log.ts";
+export * from "./accepted-fact.ts";
+export * from "./jetstream-accepted-fact-bus.ts";
 export * from "./jetstream-event-runtime.ts";
 export * from "./jetstream-pi-session-mutations.ts";
 export * from "./jetstream-runtime.ts";
