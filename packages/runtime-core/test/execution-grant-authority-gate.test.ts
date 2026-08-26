@@ -4,14 +4,14 @@ import { createDatabase } from "@pi-cloud/database";
 import {
   createExecutionGrant,
   parseSupervisorToControlMessage,
-  type EventWriterOpenMessage,
+  type FactChannelOpenMessage,
 } from "@pi-cloud/protocol";
 import { sql } from "kysely";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  AgentEventWriterAuthorityError,
-  PostgresAgentEventWriterAuthority,
-} from "../src/agent-event-authority.ts";
+  ExecutionGrantAuthorityGateError,
+  PostgresExecutionGrantAuthorityGate,
+} from "../src/execution-grant-authority-gate.ts";
 
 const resources: Array<() => Promise<void>> = [];
 const GRANT_ID = "10000000-0000-4000-8000-000000000001";
@@ -25,12 +25,12 @@ afterEach(async () => {
   for (const close of resources.splice(0).reverse()) await close();
 });
 
-function openMessage(): EventWriterOpenMessage {
+function openMessage(): FactChannelOpenMessage {
   const parsed = parseSupervisorToControlMessage({
     protocolVersion: 1,
     messageId: "10000000-0000-4000-8000-000000000007",
     sentAt: "2026-08-26T00:00:00.000Z",
-    type: "event.writer.open",
+    type: "fact.channel.open",
     payload: {
       executionGrant: createExecutionGrant(GRANT_ID, EXECUTION_ID, 1),
       sessionId: SESSION_ID,
@@ -38,12 +38,12 @@ function openMessage(): EventWriterOpenMessage {
       nextEventSeq: 1,
     },
   });
-  if (parsed.type !== "event.writer.open") throw new Error("Invalid writer open fixture");
+  if (parsed.type !== "fact.channel.open") throw new Error("Invalid writer open fixture");
   return parsed;
 }
 
-describe("PostgresAgentEventWriterAuthority", () => {
-  it("admits one short writer, renews its watermark and closes it idempotently", async () => {
+describe("PostgresExecutionGrantAuthorityGate", () => {
+  it("admits one FactChannel, accepts both Fact kinds, renews and closes idempotently", async () => {
     const pglite = await PGlite.create();
     const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
     await socket.start();
@@ -68,9 +68,9 @@ describe("PostgresAgentEventWriterAuthority", () => {
         command_id uuid not null,
         execution_id uuid unique not null,
         last_event_seq bigint not null default 0,
-        event_writer_connection_id uuid,
-        event_writer_instance_id uuid,
-        event_writer_valid_until timestamptz,
+        fact_channel_connection_id uuid,
+        fact_channel_instance_id uuid,
+        fact_channel_valid_until timestamptz,
         valid_until timestamptz not null,
         acquired_at timestamptz not null,
         renewed_at timestamptz not null
@@ -89,16 +89,16 @@ describe("PostgresAgentEventWriterAuthority", () => {
     `.execute(database);
 
     let now = new Date("2026-08-26T00:00:00.000Z");
-    const authority = new PostgresAgentEventWriterAuthority({
+    const authority = new PostgresExecutionGrantAuthorityGate({
       database,
       leaseDurationMs: 3_000,
       clock: () => now,
     });
-    const scope = await authority.open(openMessage(), {
+    const scope = await authority.open(openMessage().payload, {
       connectionId: CONNECTION_ID,
       instanceId: INSTANCE_ID,
     });
-    expect(scope).toMatchObject({ acknowledgedThroughSeq: 0, leaseDurationMs: 3_000 });
+    expect(scope).toMatchObject({ leaseDurationMs: 3_000 });
     const event = parseSupervisorToControlMessage({
       protocolVersion: 1,
       messageId: "10000000-0000-4000-8000-000000000009",
@@ -147,32 +147,32 @@ describe("PostgresAgentEventWriterAuthority", () => {
     });
     expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pceg1_");
     await expect(
-      authority.open(openMessage(), {
+      authority.open(openMessage().payload, {
         connectionId: "10000000-0000-4000-8000-000000000008",
         instanceId: INSTANCE_ID,
       }),
-    ).rejects.toBeInstanceOf(AgentEventWriterAuthorityError);
+    ).rejects.toBeInstanceOf(ExecutionGrantAuthorityGateError);
 
     now = new Date("2026-08-26T00:00:01.000Z");
-    const renewed = await authority.renewMany([{ scope, acknowledgedThroughSeq: 2 }]);
+    const renewed = await authority.renewMany([scope]);
     expect(renewed.get(CONNECTION_ID)).toBe(3_000);
-    await authority.close(scope, 2);
-    await authority.close(scope, 2);
+    await authority.close(scope);
+    await authority.close(scope);
     await expect(
       database
         .selectFrom("execution_grants")
         .select([
           "last_event_seq",
-          "event_writer_connection_id",
-          "event_writer_instance_id",
-          "event_writer_valid_until",
+          "fact_channel_connection_id",
+          "fact_channel_instance_id",
+          "fact_channel_valid_until",
         ])
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({
-      last_event_seq: "2",
-      event_writer_connection_id: null,
-      event_writer_instance_id: null,
-      event_writer_valid_until: null,
+      last_event_seq: "0",
+      fact_channel_connection_id: null,
+      fact_channel_instance_id: null,
+      fact_channel_valid_until: null,
     });
   });
 });

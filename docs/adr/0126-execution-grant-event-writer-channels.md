@@ -2,9 +2,10 @@
 
 ## Status
 
-Accepted on 2026-08-26. This replaces the Agent-event microbatch portion of
-ADR-0125. PostgreSQL remains the sole ExecutionGrant issuer, and ADR-0125 still
-governs Pi Session mutation acceptance.
+Superseded by ADR-0127 on 2026-08-26. This file records the event-only channel
+step that removed the Agent-event microbatch; it is not the current ingress
+contract. The maintained path uses one FactChannel and one Authority Gate for
+both Agent events and Pi Session mutations.
 
 ## Context
 

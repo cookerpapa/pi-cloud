@@ -670,8 +670,8 @@ export class AssignmentReconciler {
       .where("generation", "=", String(execution.generation))
       .where((expression) =>
         expression.or([
-          expression("event_writer_valid_until", "is", null),
-          expression("event_writer_valid_until", "<=", now),
+          expression("fact_channel_valid_until", "is", null),
+          expression("fact_channel_valid_until", "<=", now),
         ]),
       )
       .executeTakeFirst();

@@ -234,12 +234,9 @@ export async function createControlPlaneRuntime(
       ...(options.terminalTurnProjectionGateway === undefined
         ? {}
         : { terminalTurnProjectionGateway: options.terminalTurnProjectionGateway }),
-      ...(options.agentEventIngestGateway === undefined
+      ...(options.acceptedFactIngestGateway === undefined
         ? {}
-        : { agentEventIngestGateway: options.agentEventIngestGateway }),
-      ...(options.piSessionMutationIngestGateway === undefined
-        ? {}
-        : { piSessionMutationIngestGateway: options.piSessionMutationIngestGateway }),
+        : { acceptedFactIngestGateway: options.acceptedFactIngestGateway }),
       eventRuntime: {
         ...(options.eventRuntime ?? {}),
         eventHub,

@@ -4,13 +4,13 @@ import {
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
 } from "@pi-cloud/protocol";
-import { WebSocketAgentEventIngestor } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
+import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  AgentEventIngestGateway,
-  type AgentEventWriterServicePort,
-} from "../src/agent-event-ingest-gateway.ts";
+  AcceptedFactIngestGateway,
+  type FactChannelServicePort,
+} from "../src/accepted-fact-ingest-gateway.ts";
 
 const TOKEN = "w".repeat(48);
 const GRANT = createExecutionGrant(
@@ -24,13 +24,13 @@ afterEach(async () => {
   for (const close of resources.splice(0).reverse()) await close();
 });
 
-describe("AgentEventIngestGateway", () => {
-  it("authenticates and isolates one ordered writer channel", async () => {
+describe("AcceptedFactIngestGateway", () => {
+  it("authenticates and isolates one FactChannel", async () => {
     let acknowledgedThroughSeq = 0;
     const close = vi.fn(async () => undefined);
-    const writers: AgentEventWriterServicePort = {
+    const channels: FactChannelServicePort = {
       checkHealth: async () => undefined,
-      statistics: () => ({ activeWriters: 0 }),
+      statistics: () => ({ activeChannels: 0 }),
       open: async (message) => ({
         executionGrant: message.payload.executionGrant,
         sessionId: message.payload.sessionId,
@@ -57,12 +57,13 @@ describe("AgentEventIngestGateway", () => {
           if (ack.type !== "event.ack") throw new Error("Invalid ACK fixture");
           return ack;
         },
+        mutate: async (mutation) => ({ mutationId: mutation.mutationId, accepted: true }),
         close,
       }),
     };
     const server = Fastify({ logger: false });
     await server.register(fastifyWebsocket, { options: { perMessageDeflate: false } });
-    new AgentEventIngestGateway({ writers, serviceToken: TOKEN }).install(server);
+    new AcceptedFactIngestGateway({ channels, serviceToken: TOKEN }).install(server);
     await server.listen({ host: "127.0.0.1", port: 0 });
     resources.push(async () => server.close());
     const address = server.server.address();
@@ -70,18 +71,18 @@ describe("AgentEventIngestGateway", () => {
     const baseUrl = `http://127.0.0.1:${String(address.port)}`;
 
     await expect(
-      fetch(`${baseUrl}/internal/v1/agent-events/health`, {
+      fetch(`${baseUrl}/internal/v1/accepted-facts/health`, {
         headers: { authorization: `Bearer ${"x".repeat(48)}` },
       }),
     ).resolves.toMatchObject({ status: 401 });
 
-    const client = new WebSocketAgentEventIngestor({
+    const client = new WebSocketAcceptedFactIngestor({
       baseUrl,
       serviceToken: TOKEN,
       allowInsecureHttp: true,
     });
     await client.checkHealth();
-    const writer = await client.open({
+    const channel = await client.open({
       executionGrant: GRANT,
       sessionId: "session-1",
       turnId: "turn-1",
@@ -107,11 +108,11 @@ describe("AgentEventIngestGateway", () => {
         },
       },
     });
-    await expect(writer.ingest(event)).resolves.toMatchObject({
+    await expect(channel.ingest(event)).resolves.toMatchObject({
       type: "event.ack",
       payload: { acknowledgedThroughSeq: 1 },
     });
-    await writer.close();
+    await channel.close();
     expect(close).toHaveBeenCalledTimes(1);
     await client.close();
   }, 40_000);

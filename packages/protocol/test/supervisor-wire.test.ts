@@ -296,10 +296,10 @@ describe("supervisor/control-plane wire protocol", () => {
     ).toThrow(PiCloudWireProtocolError);
   });
 
-  it("opens and closes one bounded EventWriterChannel around ordered publications", () => {
+  it("opens and closes one bounded FactChannel around ordered publications", () => {
     const open = {
       ...envelope(),
-      type: "event.writer.open",
+      type: "fact.channel.open",
       payload: {
         executionGrant: EXECUTION_GRANT,
         sessionId: "session-1",
@@ -309,7 +309,7 @@ describe("supervisor/control-plane wire protocol", () => {
     } as const;
     const ready = {
       ...envelope(),
-      type: "event.writer.ready",
+      type: "fact.channel.ready",
       payload: {
         acknowledgedMessageId: IDS.message,
         executionGrant: EXECUTION_GRANT,
@@ -321,12 +321,12 @@ describe("supervisor/control-plane wire protocol", () => {
     } as const;
     const close = {
       ...envelope(),
-      type: "event.writer.close",
+      type: "fact.channel.close",
       payload: { executionGrant: EXECUTION_GRANT, acknowledgedThroughSeq: 12 },
     } as const;
     const closed = {
       ...envelope(),
-      type: "event.writer.closed",
+      type: "fact.channel.closed",
       payload: {
         acknowledgedMessageId: IDS.message,
         executionGrant: EXECUTION_GRANT,

@@ -1,28 +1,18 @@
 import type { Database } from "@pi-cloud/database";
-import {
-  parseExecutionGrant,
-  parsePiCloudEvent,
-  type EventWriterOpenMessage,
-  type PiCloudEvent,
-} from "@pi-cloud/protocol";
+import { parseExecutionGrant } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import type { AcceptedFact, CandidateFact } from "./accepted-fact.ts";
 
-export type AcceptedAgentEventEnvelope = Readonly<{
-  schemaVersion: 2;
-  tenantId: string;
-  events: readonly PiCloudEvent[];
+const DEFAULT_FACT_CHANNEL_LEASE_MS = 9_000;
+
+export type ExecutionGrantAuthorityRequest = Readonly<{
+  executionGrant: string;
+  sessionId: string;
+  turnId: string;
 }>;
 
-const DEFAULT_EVENT_WRITER_LEASE_MS = 9_000;
-
-export type AgentEventDurableTail = Readonly<{
-  eventId: string;
-  seq: number;
-}>;
-
-export type AgentEventWriterAuthorityScope = Readonly<{
+export type ExecutionGrantAuthorityScope = Readonly<{
   connectionId: string;
   instanceId: string;
   executionGrant: string;
@@ -33,22 +23,20 @@ export type AgentEventWriterAuthorityScope = Readonly<{
   sessionId: string;
   runId: string;
   turnId: string;
-  acknowledgedThroughSeq: number;
-  acknowledgedEventId?: string;
   leaseDurationMs: number;
 }>;
 
-export class AgentEventWriterAuthorityError extends Error {
-  readonly code: "stale_execution_grant" | "event_writer_conflict" | "event_writer_invariant";
+export class ExecutionGrantAuthorityGateError extends Error {
+  readonly code: "stale_execution_grant" | "fact_channel_conflict" | "authority_invariant";
   readonly retryable: boolean;
 
   constructor(
-    code: AgentEventWriterAuthorityError["code"],
+    code: ExecutionGrantAuthorityGateError["code"],
     safeMessage: string,
     retryable: boolean,
   ) {
     super(safeMessage);
-    this.name = "AgentEventWriterAuthorityError";
+    this.name = "ExecutionGrantAuthorityGateError";
     this.code = code;
     this.retryable = retryable;
   }
@@ -62,36 +50,24 @@ function positiveInteger(value: number, name: string): number {
 function validClockDate(clock: () => Date): Date {
   const value = clock();
   if (!(value instanceof Date) || Number.isNaN(value.valueOf())) {
-    throw new TypeError("Agent event writer clock returned an invalid Date");
+    throw new TypeError("FactChannel clock returned an invalid Date");
   }
   return value;
-}
-
-function boundedSequence(value: string | number | bigint, name: string): number {
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw new AgentEventWriterAuthorityError(
-      "event_writer_invariant",
-      `${name} is outside the supported sequence range`,
-      false,
-    );
-  }
-  return parsed;
 }
 
 function writerLeaseExpiry(now: Date, grantExpiry: Date, durationMs: number): Date {
   const value = new Date(Math.min(now.valueOf() + durationMs, grantExpiry.valueOf()));
   if (value.valueOf() <= now.valueOf()) {
-    throw new AgentEventWriterAuthorityError(
+    throw new ExecutionGrantAuthorityGateError(
       "stale_execution_grant",
-      "ExecutionGrant expired before the Agent event writer could be renewed",
+      "ExecutionGrant expired before the FactChannel could be renewed",
       false,
     );
   }
   return value;
 }
 
-export class PostgresAgentEventWriterAuthority {
+export class PostgresExecutionGrantAuthorityGate {
   readonly #database: Kysely<Database>;
   readonly #clock: () => Date;
   readonly #leaseDurationMs: number;
@@ -104,18 +80,17 @@ export class PostgresAgentEventWriterAuthority {
     this.#database = options.database;
     this.#clock = options.clock ?? (() => new Date());
     this.#leaseDurationMs = positiveInteger(
-      options.leaseDurationMs ?? DEFAULT_EVENT_WRITER_LEASE_MS,
+      options.leaseDurationMs ?? DEFAULT_FACT_CHANNEL_LEASE_MS,
       "leaseDurationMs",
     );
   }
 
   async open(
-    message: EventWriterOpenMessage,
+    request: ExecutionGrantAuthorityRequest,
     identity: Readonly<{ connectionId: string; instanceId: string }>,
-    durableTail?: AgentEventDurableTail,
-  ): Promise<AgentEventWriterAuthorityScope> {
+  ): Promise<ExecutionGrantAuthorityScope> {
     const now = validClockDate(this.#clock);
-    const grantIdentity = parseExecutionGrant(message.payload.executionGrant);
+    const grantIdentity = parseExecutionGrant(request.executionGrant);
     return this.#database.transaction().execute(async (transaction) => {
       const row = await transaction
         .selectFrom("execution_grants")
@@ -128,60 +103,50 @@ export class PostgresAgentEventWriterAuthority {
         row === undefined ||
         row.execution_id !== grantIdentity.executionId ||
         Number(row.generation) !== grantIdentity.generation ||
-        row.session_id !== message.payload.sessionId ||
-        row.turn_id !== message.payload.turnId ||
+        row.session_id !== request.sessionId ||
+        row.turn_id !== request.turnId ||
         grantExpiry.valueOf() <= now.valueOf()
       ) {
-        throw new AgentEventWriterAuthorityError(
+        throw new ExecutionGrantAuthorityGateError(
           "stale_execution_grant",
-          "Agent event writer rejected a stale ExecutionGrant",
+          "FactChannel rejected a stale ExecutionGrant",
           false,
         );
       }
       if (
-        row.event_writer_connection_id !== null &&
-        row.event_writer_valid_until !== null &&
-        new Date(row.event_writer_valid_until).valueOf() > now.valueOf()
+        row.fact_channel_connection_id !== null &&
+        row.fact_channel_valid_until !== null &&
+        new Date(row.fact_channel_valid_until).valueOf() > now.valueOf()
       ) {
-        throw new AgentEventWriterAuthorityError(
-          "event_writer_conflict",
-          "ExecutionGrant already has an active Agent event writer",
+        throw new ExecutionGrantAuthorityGateError(
+          "fact_channel_conflict",
+          "ExecutionGrant already has an active FactChannel",
           true,
-        );
-      }
-      const persistedThrough = boundedSequence(row.last_event_seq, "Grant event watermark");
-      const durableThrough = Math.max(persistedThrough, durableTail?.seq ?? 0);
-      if (message.payload.nextEventSeq > durableThrough + 1) {
-        throw new AgentEventWriterAuthorityError(
-          "event_writer_invariant",
-          "Agent event writer opened with a sequence gap",
-          false,
         );
       }
       const validUntil = writerLeaseExpiry(now, grantExpiry, this.#leaseDurationMs);
       const updated = await transaction
         .updateTable("execution_grants")
         .set({
-          event_writer_connection_id: identity.connectionId,
-          event_writer_instance_id: identity.instanceId,
-          event_writer_valid_until: validUntil,
-          last_event_seq: String(durableThrough),
+          fact_channel_connection_id: identity.connectionId,
+          fact_channel_instance_id: identity.instanceId,
+          fact_channel_valid_until: validUntil,
         })
         .where("grant_id", "=", grantIdentity.grantId)
         .where("execution_id", "=", grantIdentity.executionId)
         .where("generation", "=", String(grantIdentity.generation))
         .executeTakeFirst();
       if (updated.numUpdatedRows !== 1n) {
-        throw new AgentEventWriterAuthorityError(
-          "event_writer_invariant",
-          "Agent event writer ownership changed while opening",
+        throw new ExecutionGrantAuthorityGateError(
+          "authority_invariant",
+          "FactChannel ownership changed while opening",
           false,
         );
       }
       return {
         connectionId: identity.connectionId,
         instanceId: identity.instanceId,
-        executionGrant: message.payload.executionGrant,
+        executionGrant: request.executionGrant,
         grantId: grantIdentity.grantId,
         executionId: grantIdentity.executionId,
         generation: grantIdentity.generation,
@@ -189,16 +154,12 @@ export class PostgresAgentEventWriterAuthority {
         sessionId: row.session_id,
         runId: row.run_id,
         turnId: row.turn_id,
-        acknowledgedThroughSeq: durableThrough,
-        ...(durableTail?.seq === durableThrough
-          ? { acknowledgedEventId: durableTail.eventId }
-          : {}),
         leaseDurationMs: validUntil.valueOf() - now.valueOf(),
       };
     });
   }
 
-  accept(scope: AgentEventWriterAuthorityScope, candidate: CandidateFact): AcceptedFact {
+  accept(scope: ExecutionGrantAuthorityScope, candidate: CandidateFact): AcceptedFact {
     if (candidate.kind === "agent_event") {
       const publication = candidate.publication;
       if (
@@ -206,7 +167,7 @@ export class PostgresAgentEventWriterAuthority {
         publication.payload.event.sessionId !== scope.sessionId ||
         publication.payload.event.turnId !== scope.turnId
       ) {
-        throw new AgentEventWriterAuthorityError(
+        throw new ExecutionGrantAuthorityGateError(
           "stale_execution_grant",
           "Agent event candidate does not belong to its ExecutionGrant",
           false,
@@ -235,7 +196,7 @@ export class PostgresAgentEventWriterAuthority {
       mutation.scope.runId !== scope.runId ||
       mutation.scope.turnId !== scope.turnId
     ) {
-      throw new AgentEventWriterAuthorityError(
+      throw new ExecutionGrantAuthorityGateError(
         "stale_execution_grant",
         "Pi Session mutation candidate does not belong to its ExecutionGrant",
         false,
@@ -258,17 +219,14 @@ export class PostgresAgentEventWriterAuthority {
   }
 
   async renewMany(
-    writers: readonly Readonly<{
-      scope: AgentEventWriterAuthorityScope;
-      acknowledgedThroughSeq: number;
-    }>[],
+    writers: readonly ExecutionGrantAuthorityScope[],
   ): Promise<ReadonlyMap<string, number>> {
     if (writers.length < 1 || writers.length > 1_000) {
-      throw new TypeError("Agent event writer renewal set is invalid");
+      throw new TypeError("FactChannel renewal set is invalid");
     }
     const now = validClockDate(this.#clock);
     const requestedUntil = new Date(now.valueOf() + this.#leaseDurationMs);
-    const requested = writers.map(({ scope, acknowledgedThroughSeq }) => ({
+    const requested = writers.map((scope) => ({
       grantId: scope.grantId,
       executionId: scope.executionId,
       generation: scope.generation,
@@ -276,10 +234,9 @@ export class PostgresAgentEventWriterAuthority {
       turnId: scope.turnId,
       connectionId: scope.connectionId,
       instanceId: scope.instanceId,
-      sequence: positiveInteger(acknowledgedThroughSeq + 1, "acknowledgedThroughSeq") - 1,
     }));
     if (new Set(requested.map((writer) => writer.connectionId)).size !== requested.length) {
-      throw new TypeError("Agent event writer renewal set contains duplicate connections");
+      throw new TypeError("FactChannel renewal set contains duplicate connections");
     }
     const renewed = await sql<{ connectionId: string; validUntil: Date }>`
       with requested as (
@@ -290,25 +247,23 @@ export class PostgresAgentEventWriterAuthority {
           "sessionId" uuid,
           "turnId" uuid,
           "connectionId" uuid,
-          "instanceId" uuid,
-          sequence bigint
+          "instanceId" uuid
         )
       )
       update execution_grants as authority
-         set event_writer_valid_until = least(authority.valid_until, ${requestedUntil}),
-             last_event_seq = greatest(authority.last_event_seq, requested.sequence)
+         set fact_channel_valid_until = least(authority.valid_until, ${requestedUntil})
         from requested
        where authority.grant_id = requested."grantId"
          and authority.execution_id = requested."executionId"
          and authority.generation = requested.generation
          and authority.session_id = requested."sessionId"
          and authority.turn_id = requested."turnId"
-         and authority.event_writer_connection_id = requested."connectionId"
-         and authority.event_writer_instance_id = requested."instanceId"
-         and authority.event_writer_valid_until > ${now}
+         and authority.fact_channel_connection_id = requested."connectionId"
+         and authority.fact_channel_instance_id = requested."instanceId"
+         and authority.fact_channel_valid_until > ${now}
          and authority.valid_until > ${now}
-      returning authority.event_writer_connection_id as "connectionId",
-                authority.event_writer_valid_until as "validUntil"
+      returning authority.fact_channel_connection_id as "connectionId",
+                authority.fact_channel_valid_until as "validUntil"
     `.execute(this.#database);
     return new Map(
       renewed.rows.map((row) => [
@@ -318,73 +273,36 @@ export class PostgresAgentEventWriterAuthority {
     );
   }
 
-  async close(
-    scope: AgentEventWriterAuthorityScope,
-    acknowledgedThroughSeq: number,
-  ): Promise<void> {
-    const sequence = positiveInteger(acknowledgedThroughSeq + 1, "acknowledgedThroughSeq") - 1;
+  async close(scope: ExecutionGrantAuthorityScope): Promise<void> {
     const updated = await this.#database
       .updateTable("execution_grants")
       .set({
-        event_writer_connection_id: null,
-        event_writer_instance_id: null,
-        event_writer_valid_until: null,
-        last_event_seq: sql<string>`greatest(last_event_seq, ${sequence})`,
+        fact_channel_connection_id: null,
+        fact_channel_instance_id: null,
+        fact_channel_valid_until: null,
       })
       .where("grant_id", "=", scope.grantId)
       .where("execution_id", "=", scope.executionId)
       .where("generation", "=", String(scope.generation))
-      .where("event_writer_connection_id", "=", scope.connectionId)
-      .where("event_writer_instance_id", "=", scope.instanceId)
+      .where("fact_channel_connection_id", "=", scope.connectionId)
+      .where("fact_channel_instance_id", "=", scope.instanceId)
       .executeTakeFirst();
     if (updated.numUpdatedRows !== 1n) {
       const current = await this.#database
         .selectFrom("execution_grants")
-        .select(["event_writer_connection_id", "last_event_seq"])
+        .select("fact_channel_connection_id")
         .where("grant_id", "=", scope.grantId)
         .where("execution_id", "=", scope.executionId)
         .where("generation", "=", String(scope.generation))
         .executeTakeFirst();
-      if (
-        current !== undefined &&
-        current.event_writer_connection_id === null &&
-        boundedSequence(current.last_event_seq, "Grant event watermark") >= sequence
-      ) {
+      if (current !== undefined && current.fact_channel_connection_id === null) {
         return;
       }
-      throw new AgentEventWriterAuthorityError(
+      throw new ExecutionGrantAuthorityGateError(
         "stale_execution_grant",
-        "Agent event writer could not close stale ownership",
+        "FactChannel could not close stale ownership",
         false,
       );
     }
   }
-}
-
-export function parseAcceptedAgentEventEnvelope(
-  value: Uint8Array | Buffer | string,
-): AcceptedAgentEventEnvelope {
-  const text = typeof value === "string" ? value : Buffer.from(value).toString("utf8");
-  const candidate = JSON.parse(text) as unknown;
-  if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) {
-    throw new TypeError("Accepted Agent event envelope is invalid");
-  }
-  const envelope = candidate as Record<string, unknown>;
-  if (
-    envelope.schemaVersion !== 2 ||
-    typeof envelope.tenantId !== "string" ||
-    envelope.tenantId.length < 1 ||
-    envelope.tenantId.length > 256 ||
-    !Array.isArray(envelope.events) ||
-    envelope.events.length < 1 ||
-    envelope.events.length > 128
-  ) {
-    throw new TypeError("Accepted Agent event envelope is invalid");
-  }
-  const events = envelope.events.map(parsePiCloudEvent);
-  const sessionId = events[0]!.sessionId;
-  if (events.some((event) => event.sessionId !== sessionId)) {
-    throw new TypeError("Accepted Agent event envelope mixes Sessions");
-  }
-  return { schemaVersion: 2, tenantId: envelope.tenantId, events };
 }

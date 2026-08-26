@@ -5,12 +5,13 @@ import {
   parseSupervisorToControlMessage,
   type EventPublishMessage,
 } from "@pi-cloud/protocol";
-import { AgentEventIngestGateway } from "../../../packages/control-plane/src/agent-event-ingest-gateway.ts";
+import { AcceptedFactIngestGateway } from "../../../packages/control-plane/src/accepted-fact-ingest-gateway.ts";
 import {
-  JetStreamAcceptedAgentEventPublisher,
-  JetStreamAgentEventWriterService,
-  WebSocketAgentEventIngestor,
+  FactChannelService,
+  WebSocketAcceptedFactIngestor,
 } from "../../../packages/runtime-core/src/jetstream-agent-event-log.ts";
+import { PostgresExecutionGrantAuthorityGate } from "../../../packages/runtime-core/src/execution-grant-authority-gate.ts";
+import { JetStreamAcceptedFactBus } from "../../../packages/runtime-core/src/jetstream-accepted-fact-bus.ts";
 import {
   AGENT_EVENT_STREAM_NAME,
   PI_SESSION_MUTATION_STREAM_NAME,
@@ -215,21 +216,21 @@ try {
     throw new Error("Worker ingest benchmark requires an R=3 file-backed Stream");
   }
 
-  const service = new JetStreamAgentEventWriterService({
-    database,
-    publisher: new JetStreamAcceptedAgentEventPublisher(runtime),
+  const service = new FactChannelService({
+    authority: new PostgresExecutionGrantAuthorityGate({ database, leaseDurationMs: 30_000 }),
+    bus: new JetStreamAcceptedFactBus(runtime),
     instanceId: uuid(90_000, 1),
     leaseDurationMs: 30_000,
     maximumActiveWriters: 128,
   });
   await fastify.register(fastifyWebsocket, { options: { perMessageDeflate: false } });
-  new AgentEventIngestGateway({ writers: service, serviceToken }).install(fastify);
+  new AcceptedFactIngestGateway({ writers: service, serviceToken }).install(fastify);
   await fastify.listen({ host: "127.0.0.1", port: 0 });
   const address = fastify.server.address();
   if (address === null || typeof address === "string") {
     throw new Error("Worker ingest WebSocket Gateway did not bind a TCP port");
   }
-  const worker = new WebSocketAgentEventIngestor({
+  const worker = new WebSocketAcceptedFactIngestor({
     baseUrl: `http://127.0.0.1:${String(address.port)}`,
     serviceToken,
     allowInsecureHttp: true,
@@ -403,8 +404,8 @@ try {
       totalMemoryGiB: Number((totalmem() / 1_024 ** 3).toFixed(2)),
     },
     channel: {
-      workerClient: "WebSocketAgentEventIngestor",
-      gateway: "AgentEventIngestGateway/Fastify WebSocket",
+      workerClient: "WebSocketAcceptedFactIngestor",
+      gateway: "AcceptedFactIngestGateway/Fastify WebSocket",
       authority: "one short PostgreSQL writer lease per ExecutionGrant",
       batching: "none; one ordered event in flight per Grant",
       durabilityBoundary: "one JetStream file-storage R=3 PubAck per event",

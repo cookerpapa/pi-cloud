@@ -43,11 +43,8 @@ import {
   createControlPlaneApplication,
 } from "../src/index.ts";
 import { dispatchNextTestCommand } from "./dispatch-next-test-command.ts";
-import { PostgresAgentEventWriterAuthority } from "@pi-cloud/runtime-core/agent-event-authority";
-import {
-  PostgresPiSessionMutationAuthority,
-  type PiSessionMutationRequest,
-} from "@pi-cloud/runtime-core/jetstream-pi-session-mutations";
+import { PostgresExecutionGrantAuthorityGate } from "@pi-cloud/runtime-core/execution-grant-authority-gate";
+import type { CandidatePiSessionMutationFact } from "@pi-cloud/runtime-core/accepted-fact";
 
 const IDS = {
   tenant: "00000000-0000-4000-8000-000000000001",
@@ -542,7 +539,7 @@ describe.sequential("single-user durable turn intake API", () => {
     expect(piSession).toEqual({ next_seq: "1", lane: "main", leaf_id: null });
   });
 
-  it("rejects Agent events and Pi Session mutations after their ExecutionGrant is revoked", async () => {
+  it("emits grant-free accepted facts and rejects a revoked channel", async () => {
     const assigned = await createAssignedTurn({
       sandboxId: "50000000-0000-4000-8000-000000000019",
       sandboxBootId: "60000000-0000-4000-8000-000000000019",
@@ -571,12 +568,12 @@ describe.sequential("single-user durable turn intake API", () => {
         },
       },
     };
-    const authority = new PostgresAgentEventWriterAuthority({ database });
+    const authority = new PostgresExecutionGrantAuthorityGate({ database });
     const open = parseSupervisorToControlMessage({
       protocolVersion: 1,
       messageId: globalThis.crypto.randomUUID(),
       sentAt: now,
-      type: "event.writer.open",
+      type: "fact.channel.open",
       payload: {
         executionGrant: assigned.runtime.executionGrant,
         sessionId: assigned.assignedSession.sessionId,
@@ -584,16 +581,15 @@ describe.sequential("single-user durable turn intake API", () => {
         nextEventSeq: 1,
       },
     });
-    if (open.type !== "event.writer.open") throw new Error("Invalid EventWriter fixture");
-    const writerScope = await authority.open(open, {
+    if (open.type !== "fact.channel.open") throw new Error("Invalid FactChannel fixture");
+    const writerScope = await authority.open(open.payload, {
       connectionId: "70000000-0000-4000-8000-000000000019",
       instanceId: "80000000-0000-4000-8000-000000000019",
     });
     expect(writerScope).toMatchObject({
       tenantId: IDS.tenant,
-      acknowledgedThroughSeq: 0,
     });
-    const mutation: PiSessionMutationRequest = {
+    const mutation: CandidatePiSessionMutationFact = {
       schemaVersion: 1,
       mutationId: globalThis.crypto.randomUUID(),
       scope: {
@@ -606,31 +602,29 @@ describe.sequential("single-user durable turn intake API", () => {
       operation: { kind: "projection_barrier" },
       occurredAt: now,
     };
-    const mutationAuthority = new PostgresPiSessionMutationAuthority({ database });
-    const acceptedMutations: unknown[] = [];
-    await expect(
-      mutationAuthority.commitAcceptedMany([mutation], async (accepted) => {
-        acceptedMutations.push(...accepted);
-      }),
-    ).resolves.toMatchObject({ accepted: [{ mutationId: mutation.mutationId }], rejected: [] });
-    expect(JSON.stringify(acceptedMutations)).not.toContain("executionGrant");
-    await authority.close(writerScope, publication.payload.event.seq);
+    const acceptedEvent = authority.accept(writerScope, {
+      kind: "agent_event",
+      publication,
+    });
+    const acceptedMutation = authority.accept(writerScope, {
+      kind: "pi_session_mutation",
+      mutation,
+    });
+    expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pceg1_");
+    await authority.close(writerScope);
     await database
       .deleteFrom("execution_grants")
       .where("session_id", "=", assigned.assignedSession.sessionId)
       .executeTakeFirstOrThrow();
     await expect(
-      authority.open(open, {
+      authority.open(open.payload, {
         connectionId: "70000000-0000-4000-8000-000000000020",
         instanceId: "80000000-0000-4000-8000-000000000019",
       }),
     ).rejects.toMatchObject({ code: "stale_execution_grant" });
-    await expect(
-      mutationAuthority.commitAcceptedMany([mutation], async () => undefined),
-    ).resolves.toMatchObject({ accepted: [], rejected: [mutation] });
   });
 
-  it("does not release an ExecutionGrant while its EventWriterChannel is active", async () => {
+  it("does not release an ExecutionGrant while its FactChannel is active", async () => {
     const assigned = await createAssignedTurn({
       sandboxId: "50000000-0000-4000-8000-000000000021",
       sandboxBootId: "60000000-0000-4000-8000-000000000021",
@@ -638,12 +632,12 @@ describe.sequential("single-user durable turn intake API", () => {
       phase: "acknowledged",
       expired: false,
     });
-    const authority = new PostgresAgentEventWriterAuthority({ database });
+    const authority = new PostgresExecutionGrantAuthorityGate({ database });
     const open = parseSupervisorToControlMessage({
       protocolVersion: 1,
       messageId: globalThis.crypto.randomUUID(),
       sentAt: new Date().toISOString(),
-      type: "event.writer.open",
+      type: "fact.channel.open",
       payload: {
         executionGrant: assigned.runtime.executionGrant,
         sessionId: assigned.assignedSession.sessionId,
@@ -651,8 +645,8 @@ describe.sequential("single-user durable turn intake API", () => {
         nextEventSeq: 1,
       },
     });
-    if (open.type !== "event.writer.open") throw new Error("Invalid EventWriter fixture");
-    const writer = await authority.open(open, {
+    if (open.type !== "fact.channel.open") throw new Error("Invalid FactChannel fixture");
+    const writer = await authority.open(open.payload, {
       connectionId: "70000000-0000-4000-8000-000000000021",
       instanceId: "80000000-0000-4000-8000-000000000021",
     });
@@ -673,10 +667,10 @@ describe.sequential("single-user durable turn intake API", () => {
     const grant = { executionGrant: assigned.runtime.executionGrant };
 
     await expect(coordinator.releaseAcquired(request, grant)).rejects.toMatchObject({
-      code: "event_writer_active",
+      code: "fact_channel_active",
       retryable: true,
     });
-    await authority.close(writer, 0);
+    await authority.close(writer);
     await expect(coordinator.releaseAcquired(request, grant)).resolves.toBeUndefined();
     await expect(
       database
@@ -2045,7 +2039,7 @@ describe.sequential("single-user durable turn intake API", () => {
     const backend = new AgentRunExecutionBackend({
       supervisor,
       grantCoordinator: grantCoordinator,
-      eventIngestor: durableEventStore,
+      factChannels: durableEventStore,
     });
     const dispatcher = new RunCommandExecutor({
       database,
@@ -2265,7 +2259,7 @@ describe.sequential("single-user durable turn intake API", () => {
       backend: new AgentRunExecutionBackend({
         supervisor,
         grantCoordinator: grantCoordinator,
-        eventIngestor: durableEventStore,
+        factChannels: durableEventStore,
         heartbeatIntervalMs: 20,
       }),
       executionAuthority: grantCoordinator,
@@ -2372,7 +2366,7 @@ describe.sequential("single-user durable turn intake API", () => {
       backend: new AgentRunExecutionBackend({
         supervisor,
         grantCoordinator: grantCoordinator,
-        eventIngestor: durableEventStore,
+        factChannels: durableEventStore,
         heartbeatIntervalMs: 120,
       }),
       executionAuthority: grantCoordinator,

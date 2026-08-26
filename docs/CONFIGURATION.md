@@ -92,8 +92,8 @@ combinations.
 | --- | ---: | --- |
 | `PI_CLOUD_AGENT_EVENT_RETENTION_MS` | `86400000` | JetStream hot-event retention (24 hours) |
 | `PI_CLOUD_MAXIMUM_HOT_EVENTS_PER_SESSION` | `8192` | bounded retained events per Session Subject |
-| `PI_CLOUD_EVENT_WRITER_LEASE_MS` | `9000` | short PostgreSQL ownership lease for one active Agent event channel |
-| `PI_CLOUD_EVENT_WRITER_MAXIMUM_ACTIVE` | `128` | bounded active EventWriterChannels per Control Plane replica |
+| `PI_CLOUD_FACT_CHANNEL_LEASE_MS` | `9000` | short PostgreSQL ownership lease for one active accepted-Fact channel |
+| `PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE` | `128` | bounded active FactChannels per Control Plane replica |
 | `PI_CLOUD_PREVIEW_ORIGIN_BASE_URL` | `http://preview.localhost:8080` | isolated application Preview base domain |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS` | `2` | trusted Volume operations in flight |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_QUEUED_OPERATIONS` | `32` | bounded Volume wait queue |

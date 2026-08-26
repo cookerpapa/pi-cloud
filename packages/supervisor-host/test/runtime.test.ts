@@ -246,7 +246,7 @@ describe("PiWorkerRuntime", () => {
         objectStore: objectStore(),
         toolBroker: runtimeToolBroker,
         runWorkerFactory,
-        eventIngestor: {
+        factChannels: {
           async open() {
             throw new Error("unused");
           },
@@ -274,7 +274,7 @@ describe("PiWorkerRuntime", () => {
         objectStore: objectStore(),
         toolBroker: runtimeToolBroker,
         runWorkerFactory,
-        eventIngestor: {
+        factChannels: {
           async open() {
             throw new Error("unused");
           },

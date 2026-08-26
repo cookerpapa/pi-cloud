@@ -11,7 +11,7 @@
     "./canonical-pi-conversation": "./src/canonical-pi-conversation.ts",
     "./conversation-turn-projection": "./src/conversation-turn-projection.ts",
     "./durable-event-store": "./src/durable-event-store.ts",
-    "./agent-event-authority": "./src/agent-event-authority.ts",
+    "./execution-grant-authority-gate": "./src/execution-grant-authority-gate.ts",
     "./accepted-fact": "./src/accepted-fact.ts",
     "./jetstream-accepted-fact-bus": "./src/jetstream-accepted-fact-bus.ts",
     "./jetstream-agent-event-log": "./src/jetstream-agent-event-log.ts",

@@ -131,7 +131,7 @@ export {
 export {
   DurableEventStore,
   DurableEventStoreError,
-  type DurableEventIngestor,
+  type FactChannelFactory,
   type DurableEventStoreErrorCode,
   type DurableEventStoreOptions,
   type EventReplayWindow,

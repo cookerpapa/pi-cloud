@@ -7,7 +7,7 @@ import {
   parseSupervisorToControlMessage,
   type EventAckMessage,
   type EventPublishMessage,
-  type EventWriterOpenMessage,
+  type FactChannelOpenMessage,
   type LiveTurnSnapshotResource,
   type PiCloudEvent,
 } from "@pi-cloud/protocol";
@@ -15,19 +15,17 @@ import { DeliverPolicy } from "@nats-io/jetstream";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import {
-  AgentEventWriterAuthorityError,
-  PostgresAgentEventWriterAuthority,
-  parseAcceptedAgentEventEnvelope,
-  type AcceptedAgentEventEnvelope,
-} from "./agent-event-authority.ts";
+  ExecutionGrantAuthorityGateError,
+  PostgresExecutionGrantAuthorityGate,
+} from "./execution-grant-authority-gate.ts";
 import { performance } from "node:perf_hooks";
 import { projectConversationTurnTranscript } from "./conversation-turn-projection.ts";
 import {
   DurableEventStoreError,
-  type DurableEventIngestor,
+  type FactChannelFactory,
   type DurableEventLog,
-  type DurableEventWriter,
-  type DurableEventWriterOpenRequest,
+  type FactChannel,
+  type FactChannelOpenRequest,
   type EventReplayWindow,
 } from "./durable-event-store.ts";
 import {
@@ -45,6 +43,17 @@ import {
   type PreparedTerminalTurnProjection,
   type TerminalTurnProjectionSource,
 } from "./terminal-turn-projection.ts";
+import type {
+  AcceptedAgentEventEnvelope,
+  AcceptedFactBus,
+  ActiveFactChannelResolver,
+  CandidateFact,
+  CandidatePiSessionMutationFact,
+  PiSessionMutationAcceptedFrame,
+  PiSessionMutationFactChannel,
+  PiSessionMutationPublishFrame,
+} from "./accepted-fact.ts";
+import { parseAcceptedAgentEventEnvelope } from "./accepted-fact.ts";
 
 type LiveSubscription = ReturnType<PiCloudJetStream["connection"]["subscribe"]>;
 
@@ -137,58 +146,52 @@ export class JetStreamAcceptedAgentEventPublisher {
   }
 }
 
-export type AgentEventWriterSession = Readonly<{
+export type AcceptedFactChannelSession = Readonly<{
   executionGrant: string;
   sessionId: string;
   turnId: string;
   acknowledgedThroughSeq: number;
   leaseDurationMs: number;
   ingest(value: unknown): Promise<EventAckMessage>;
+  mutate(
+    mutation: CandidatePiSessionMutationFact,
+  ): Promise<Readonly<{ mutationId: string; accepted: true }>>;
   close(): Promise<void>;
 }>;
 
-export type AgentEventWriterPublisherPort = Pick<
-  JetStreamAcceptedAgentEventPublisher,
-  "append" | "lastAcceptedEvent" | "checkHealth"
->;
-
-export type AgentEventWriterServiceOptions = Readonly<{
-  database: Kysely<Database>;
-  publisher: AgentEventWriterPublisherPort;
+export type FactChannelServiceOptions = Readonly<{
+  authority: PostgresExecutionGrantAuthorityGate;
+  bus: AcceptedFactBus;
   instanceId: string;
   leaseDurationMs?: number;
-  maximumActiveWriters?: number;
-  clock?: () => Date;
+  maximumActiveChannels?: number;
 }>;
 
-type AgentEventAppendPort = Pick<JetStreamAcceptedAgentEventPublisher, "append">;
-
-function eventWriterError(error: unknown): DurableEventStoreError {
+function factChannelError(error: unknown): DurableEventStoreError {
   if (error instanceof DurableEventStoreError) return error;
-  if (error instanceof AgentEventWriterAuthorityError) {
+  if (error instanceof ExecutionGrantAuthorityGateError) {
     return new DurableEventStoreError(
-      error.code === "event_writer_conflict"
+      error.code === "fact_channel_conflict"
         ? "event_conflict"
-        : error.code === "event_writer_invariant"
+        : error.code === "authority_invariant"
           ? "event_store_invariant"
           : "stale_execution_grant",
       error.message,
       error.retryable,
     );
   }
-  return new DurableEventStoreError("event_store_invariant", "Agent event writer failed", true);
+  return new DurableEventStoreError("event_store_invariant", "FactChannel failed", true);
 }
 
-class JetStreamAgentEventWriter implements AgentEventWriterSession {
+class ServerFactChannel implements AcceptedFactChannelSession {
   readonly executionGrant: string;
   readonly sessionId: string;
   readonly turnId: string;
-  readonly #authority: PostgresAgentEventWriterAuthority;
-  readonly #publisher: AgentEventAppendPort;
-  readonly #scope: Awaited<ReturnType<PostgresAgentEventWriterAuthority["open"]>>;
+  readonly #authority: PostgresExecutionGrantAuthorityGate;
+  readonly #bus: AcceptedFactBus;
+  readonly #scope: Awaited<ReturnType<PostgresExecutionGrantAuthorityGate["open"]>>;
   readonly #ensureLease: () => Promise<void>;
   #acknowledgedThroughSeq: number;
-  #acknowledgedEventId: string | undefined;
   #leaseDurationMs: number;
   #usableUntil = 0;
   #publishing = false;
@@ -196,20 +199,20 @@ class JetStreamAgentEventWriter implements AgentEventWriterSession {
   #failure: DurableEventStoreError | undefined;
 
   constructor(options: {
-    authority: PostgresAgentEventWriterAuthority;
-    publisher: AgentEventAppendPort;
-    scope: Awaited<ReturnType<PostgresAgentEventWriterAuthority["open"]>>;
+    authority: PostgresExecutionGrantAuthorityGate;
+    bus: AcceptedFactBus;
+    scope: Awaited<ReturnType<PostgresExecutionGrantAuthorityGate["open"]>>;
+    acknowledgedThroughSeq: number;
     ensureLease: () => Promise<void>;
   }) {
     this.#authority = options.authority;
-    this.#publisher = options.publisher;
+    this.#bus = options.bus;
     this.#scope = options.scope;
     this.#ensureLease = options.ensureLease;
     this.executionGrant = options.scope.executionGrant;
     this.sessionId = options.scope.sessionId;
     this.turnId = options.scope.turnId;
-    this.#acknowledgedThroughSeq = options.scope.acknowledgedThroughSeq;
-    this.#acknowledgedEventId = options.scope.acknowledgedEventId;
+    this.#acknowledgedThroughSeq = options.acknowledgedThroughSeq;
     this.#leaseDurationMs = options.scope.leaseDurationMs;
     this.#recordLease(options.scope.leaseDurationMs);
   }
@@ -222,7 +225,7 @@ class JetStreamAgentEventWriter implements AgentEventWriterSession {
     return this.#leaseDurationMs;
   }
 
-  get authorityScope(): Awaited<ReturnType<PostgresAgentEventWriterAuthority["open"]>> {
+  get authorityScope(): Awaited<ReturnType<PostgresExecutionGrantAuthorityGate["open"]>> {
     return this.#scope;
   }
 
@@ -235,7 +238,7 @@ class JetStreamAgentEventWriter implements AgentEventWriterSession {
   }
 
   fail(error: unknown): void {
-    if (!this.#closed && this.#failure === undefined) this.#failure = eventWriterError(error);
+    if (!this.#closed && this.#failure === undefined) this.#failure = factChannelError(error);
   }
 
   async ingest(value: unknown): Promise<EventAckMessage> {
@@ -244,7 +247,7 @@ class JetStreamAgentEventWriter implements AgentEventWriterSession {
     if (this.#publishing) {
       throw new DurableEventStoreError(
         "event_conflict",
-        "Agent event writer accepts one ordered publication at a time",
+        "FactChannel accepts one ordered publication at a time",
         true,
       );
     }
@@ -257,23 +260,51 @@ class JetStreamAgentEventWriter implements AgentEventWriterSession {
     ) {
       throw new DurableEventStoreError(
         "invalid_event",
-        "Agent event publication does not match its writer channel",
+        "Agent event publication does not match its FactChannel",
       );
     }
-    const event = message.payload.event;
-    if (event.seq === this.#acknowledgedThroughSeq && event.eventId === this.#acknowledgedEventId) {
-      return acknowledgement(message);
+    await this.#append({ kind: "agent_event", publication: message });
+    this.#acknowledgedThroughSeq = Math.max(
+      this.#acknowledgedThroughSeq,
+      message.payload.event.seq,
+    );
+    return acknowledgement(message);
+  }
+
+  async mutate(
+    mutation: CandidatePiSessionMutationFact,
+  ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
+    await this.#append({ kind: "pi_session_mutation", mutation });
+    return { mutationId: mutation.mutationId, accepted: true };
+  }
+
+  async close(): Promise<void> {
+    if (this.#closed) return;
+    this.#closed = true;
+    try {
+      await this.#authority.close(this.#scope);
+    } catch (error: unknown) {
+      throw factChannelError(error);
     }
-    if (event.seq <= this.#acknowledgedThroughSeq) {
+  }
+
+  #recordLease(durationMs: number): void {
+    this.#leaseDurationMs = durationMs;
+    const safetyMarginMs = Math.min(250, Math.max(1, Math.floor(durationMs / 4)));
+    this.#usableUntil = performance.now() + Math.max(1, durationMs - safetyMarginMs);
+  }
+
+  async #append(candidate: CandidateFact): Promise<void> {
+    await this.#ensureLease();
+    this.#assertUsable();
+    if (this.#publishing) {
       throw new DurableEventStoreError(
         "event_conflict",
-        "Agent event sequence is already occupied by another durable event",
+        "FactChannel accepts one publication at a time",
+        true,
       );
     }
-    if (event.seq !== this.#acknowledgedThroughSeq + 1) {
-      throw new DurableEventStoreError("sequence_gap", "Agent event writer received a gap");
-    }
-
+    const accepted = this.#authority.accept(this.#scope, candidate);
     this.#publishing = true;
     try {
       const deadline = Date.now() + 30_000;
@@ -282,11 +313,10 @@ class JetStreamAgentEventWriter implements AgentEventWriterSession {
         await this.#ensureLease();
         this.#assertUsable();
         try {
-          await this.#publisher.append({
-            schemaVersion: 2,
-            tenantId: this.#scope.tenantId,
-            events: [event],
-          });
+          const receipt = await this.#bus.append(accepted);
+          if (!receipt.durable || receipt.factId !== accepted.factId) {
+            throw new Error("AcceptedFactBus returned an unrelated receipt");
+          }
           lastError = undefined;
           break;
         } catch (error: unknown) {
@@ -301,178 +331,159 @@ class JetStreamAgentEventWriter implements AgentEventWriterSession {
       if (lastError !== undefined) {
         throw new DurableEventStoreError(
           "event_store_invariant",
-          "JetStream did not acknowledge the Agent event before its deadline",
+          "AcceptedFactBus did not durably acknowledge the Fact before its deadline",
           true,
         );
       }
-      this.#acknowledgedThroughSeq = event.seq;
-      this.#acknowledgedEventId = event.eventId;
-      return acknowledgement(message);
     } finally {
       this.#publishing = false;
     }
   }
 
-  async close(): Promise<void> {
-    if (this.#closed) return;
-    this.#closed = true;
-    try {
-      await this.#authority.close(this.#scope, this.#acknowledgedThroughSeq);
-    } catch (error: unknown) {
-      throw eventWriterError(error);
-    }
-  }
-
-  #recordLease(durationMs: number): void {
-    this.#leaseDurationMs = durationMs;
-    const safetyMarginMs = Math.min(250, Math.max(1, Math.floor(durationMs / 4)));
-    this.#usableUntil = performance.now() + Math.max(1, durationMs - safetyMarginMs);
-  }
-
   #assertUsable(): void {
     if (this.#failure !== undefined) throw this.#failure;
     if (this.#closed || performance.now() >= this.#usableUntil) {
-      throw new DurableEventStoreError("stale_execution_grant", "Agent event writer lease expired");
+      throw new DurableEventStoreError("stale_execution_grant", "FactChannel lease expired");
     }
   }
 }
 
-export class JetStreamAgentEventWriterService {
-  readonly #authority: PostgresAgentEventWriterAuthority;
-  readonly #publisher: AgentEventWriterPublisherPort;
+export class FactChannelService {
+  readonly #authority: PostgresExecutionGrantAuthorityGate;
+  readonly #bus: AcceptedFactBus;
   readonly #instanceId: string;
   readonly #renewalIntervalMs: number;
-  readonly #maximumActiveWriters: number;
-  readonly #writers = new Map<
+  readonly #maximumActiveChannels: number;
+  readonly #channels = new Map<
     string,
     {
-      writer: JetStreamAgentEventWriter;
+      channel: ServerFactChannel;
       onFailure: (error: DurableEventStoreError) => void;
     }
   >();
   #renewTimer: NodeJS.Timeout | undefined;
   #renewing: Promise<void> | undefined;
   #renewDueAt = 0;
-  #openedWriters = 0;
-  #publishedEvents = 0;
+  #openedChannels = 0;
+  #publishedFacts = 0;
   #renewalCycles = 0;
   #renewalFailures = 0;
-  #openingWriters = 0;
+  #openingChannels = 0;
 
-  constructor(options: AgentEventWriterServiceOptions) {
-    this.#authority = new PostgresAgentEventWriterAuthority({
-      database: options.database,
-      ...(options.clock === undefined ? {} : { clock: options.clock }),
-      ...(options.leaseDurationMs === undefined
-        ? {}
-        : { leaseDurationMs: options.leaseDurationMs }),
-    });
-    this.#publisher = options.publisher;
+  constructor(options: FactChannelServiceOptions) {
+    this.#authority = options.authority;
+    this.#bus = options.bus;
     this.#instanceId = options.instanceId;
     this.#renewalIntervalMs = Math.max(1, Math.floor((options.leaseDurationMs ?? 9_000) / 4));
-    this.#maximumActiveWriters = options.maximumActiveWriters ?? 128;
+    this.#maximumActiveChannels = options.maximumActiveChannels ?? 128;
     if (
-      !Number.isSafeInteger(this.#maximumActiveWriters) ||
-      this.#maximumActiveWriters < 1 ||
-      this.#maximumActiveWriters > 10_000
+      !Number.isSafeInteger(this.#maximumActiveChannels) ||
+      this.#maximumActiveChannels < 1 ||
+      this.#maximumActiveChannels > 10_000
     ) {
-      throw new TypeError("maximumActiveWriters is invalid");
+      throw new TypeError("maximumActiveChannels is invalid");
     }
   }
 
   async open(
-    message: EventWriterOpenMessage,
+    message: FactChannelOpenMessage,
     connectionId: string,
     onFailure: (error: DurableEventStoreError) => void,
-  ): Promise<AgentEventWriterSession> {
-    if (this.#writers.size + this.#openingWriters >= this.#maximumActiveWriters) {
+  ): Promise<AcceptedFactChannelSession> {
+    if (this.#channels.size + this.#openingChannels >= this.#maximumActiveChannels) {
       throw new DurableEventStoreError(
         "event_store_invariant",
-        "Agent event writer Gateway is at capacity",
+        "FactChannel Gateway is at capacity",
         true,
       );
     }
-    this.#openingWriters += 1;
-    let scope: Awaited<ReturnType<PostgresAgentEventWriterAuthority["open"]>>;
+    this.#openingChannels += 1;
+    let scope: Awaited<ReturnType<PostgresExecutionGrantAuthorityGate["open"]>>;
     try {
-      const last = await this.#publisher.lastAcceptedEvent(message.payload.sessionId);
       scope = await this.#authority.open(
-        message,
+        {
+          executionGrant: message.payload.executionGrant,
+          sessionId: message.payload.sessionId,
+          turnId: message.payload.turnId,
+        },
         { connectionId, instanceId: this.#instanceId },
-        last === undefined ? undefined : { eventId: last.eventId, seq: last.seq },
       );
     } catch (error: unknown) {
-      throw eventWriterError(error);
+      throw factChannelError(error);
     } finally {
-      this.#openingWriters -= 1;
+      this.#openingChannels -= 1;
     }
-    this.#openedWriters += 1;
-    const writer = new JetStreamAgentEventWriter({
+    this.#openedChannels += 1;
+    const channel = new ServerFactChannel({
       authority: this.#authority,
-      publisher: {
-        append: async (envelope) => {
-          await this.#publisher.append(envelope);
-          this.#publishedEvents += envelope.events.length;
+      bus: {
+        append: async (fact) => {
+          const receipt = await this.#bus.append(fact);
+          this.#publishedFacts += 1;
+          return receipt;
         },
+        checkHealth: () => this.#bus.checkHealth(),
       },
       scope,
+      acknowledgedThroughSeq: message.payload.nextEventSeq - 1,
       ensureLease: () => this.#renewIfDue(false),
     });
-    this.#writers.set(scope.connectionId, { writer, onFailure });
+    this.#channels.set(scope.connectionId, { channel, onFailure });
     this.#scheduleRenewal();
     let closed = false;
     return {
-      executionGrant: writer.executionGrant,
-      sessionId: writer.sessionId,
-      turnId: writer.turnId,
+      executionGrant: channel.executionGrant,
+      sessionId: channel.sessionId,
+      turnId: channel.turnId,
       get acknowledgedThroughSeq() {
-        return writer.acknowledgedThroughSeq;
+        return channel.acknowledgedThroughSeq;
       },
       get leaseDurationMs() {
-        return writer.leaseDurationMs;
+        return channel.leaseDurationMs;
       },
-      ingest: (value) => writer.ingest(value),
+      ingest: (value) => channel.ingest(value),
+      mutate: (mutation) => channel.mutate(mutation),
       close: async () => {
         if (closed) return;
         closed = true;
-        this.#writers.delete(scope.connectionId);
-        await writer.close();
+        this.#channels.delete(scope.connectionId);
+        await channel.close();
       },
     };
   }
 
   async checkHealth(): Promise<void> {
-    await this.#publisher.checkHealth();
+    await this.#bus.checkHealth();
   }
 
   async close(): Promise<void> {
     if (this.#renewTimer !== undefined) clearTimeout(this.#renewTimer);
     await this.#renewing?.catch(() => undefined);
-    const writers = [...this.#writers.values()];
-    this.#writers.clear();
-    await Promise.allSettled(writers.map(({ writer }) => writer.close()));
+    const channels = [...this.#channels.values()];
+    this.#channels.clear();
+    await Promise.allSettled(channels.map(({ channel }) => channel.close()));
   }
 
   statistics(): Readonly<{
-    openedWriters: number;
-    activeWriters: number;
-    publishedEvents: number;
+    openedChannels: number;
+    activeChannels: number;
+    publishedFacts: number;
     renewalCycles: number;
     renewalFailures: number;
-    maximumActiveWriters: number;
+    maximumActiveChannels: number;
   }> {
     return {
-      openedWriters: this.#openedWriters,
-      activeWriters: this.#writers.size,
-      publishedEvents: this.#publishedEvents,
+      openedChannels: this.#openedChannels,
+      activeChannels: this.#channels.size,
+      publishedFacts: this.#publishedFacts,
       renewalCycles: this.#renewalCycles,
       renewalFailures: this.#renewalFailures,
-      maximumActiveWriters: this.#maximumActiveWriters,
+      maximumActiveChannels: this.#maximumActiveChannels,
     };
   }
 
   #scheduleRenewal(): void {
-    if (this.#writers.size === 0) return;
+    if (this.#channels.size === 0) return;
     if (this.#renewDueAt === 0) this.#renewDueAt = performance.now() + this.#renewalIntervalMs;
     if (this.#renewTimer !== undefined) return;
     this.#renewTimer = setTimeout(
@@ -486,7 +497,7 @@ export class JetStreamAgentEventWriterService {
   }
 
   async #renewIfDue(force: boolean): Promise<void> {
-    if (this.#writers.size === 0) return;
+    if (this.#channels.size === 0) return;
     if (!force && performance.now() < this.#renewDueAt) return;
     if (this.#renewing === undefined) {
       if (this.#renewTimer !== undefined) clearTimeout(this.#renewTimer);
@@ -501,7 +512,7 @@ export class JetStreamAgentEventWriterService {
   }
 
   async #renewAll(): Promise<void> {
-    const entries = [...this.#writers.values()];
+    const entries = [...this.#channels.values()];
     if (entries.length === 0) return;
     this.#renewalCycles += 1;
     for (let offset = 0; offset < entries.length; offset += 1_000) {
@@ -509,63 +520,60 @@ export class JetStreamAgentEventWriterService {
       let renewed: ReadonlyMap<string, number>;
       try {
         renewed = await this.#authority.renewMany(
-          chunk.map(({ writer }) => ({
-            scope: writer.authorityScope,
-            acknowledgedThroughSeq: writer.acknowledgedThroughSeq,
-          })),
+          chunk.map(({ channel }) => channel.authorityScope),
         );
       } catch (error: unknown) {
-        for (const entry of chunk) this.#failWriter(entry, error);
+        for (const entry of chunk) this.#failChannel(entry, error);
         continue;
       }
       for (const entry of chunk) {
-        if (entry.writer.closed) continue;
-        const durationMs = renewed.get(entry.writer.authorityScope.connectionId);
+        if (entry.channel.closed) continue;
+        const durationMs = renewed.get(entry.channel.authorityScope.connectionId);
         if (durationMs === undefined) {
-          this.#failWriter(
+          this.#failChannel(
             entry,
-            new AgentEventWriterAuthorityError(
+            new ExecutionGrantAuthorityGateError(
               "stale_execution_grant",
-              "Agent event writer was not renewed by PostgreSQL authority",
+              "FactChannel was not renewed by PostgreSQL authority",
               false,
             ),
           );
         } else {
-          entry.writer.renewed(durationMs);
+          entry.channel.renewed(durationMs);
         }
       }
     }
   }
 
-  #failWriter(
+  #failChannel(
     entry: {
-      writer: JetStreamAgentEventWriter;
+      channel: ServerFactChannel;
       onFailure: (error: DurableEventStoreError) => void;
     },
     error: unknown,
   ): void {
-    if (entry.writer.closed) return;
+    if (entry.channel.closed) return;
     this.#renewalFailures += 1;
-    const failure = eventWriterError(error);
-    entry.writer.fail(failure);
+    const failure = factChannelError(error);
+    entry.channel.fail(failure);
     entry.onFailure(failure);
   }
 }
 
-export const AGENT_EVENT_INGEST_PATH = "/internal/v1/agent-events";
-export const AGENT_EVENT_WRITER_PATH = `${AGENT_EVENT_INGEST_PATH}/writer`;
+export const ACCEPTED_FACT_INGEST_PATH = "/internal/v1/accepted-facts";
+export const FACT_CHANNEL_PATH = `${ACCEPTED_FACT_INGEST_PATH}/channel`;
 
-function remoteWriterUrl(baseUrl: string, allowInsecureHttp: boolean): URL {
-  const url = new URL(AGENT_EVENT_WRITER_PATH, baseUrl);
+function factChannelUrl(baseUrl: string, allowInsecureHttp: boolean): URL {
+  const url = new URL(FACT_CHANNEL_PATH, baseUrl);
   if (url.protocol === "http:") {
     if (!allowInsecureHttp) {
-      throw new TypeError("Plain HTTP Agent event ingest requires explicit opt-in");
+      throw new TypeError("Plain HTTP FactChannel requires explicit opt-in");
     }
     url.protocol = "ws:";
   } else if (url.protocol === "https:") {
     url.protocol = "wss:";
   } else {
-    throw new TypeError("Agent event ingest base URL must use HTTP or HTTPS");
+    throw new TypeError("FactChannel base URL must use HTTP or HTTPS");
   }
   return url;
 }
@@ -577,28 +585,34 @@ function remoteTextFrame(data: RawData): string {
 }
 
 type PendingRemoteExchange = {
-  expectedType: "event.writer.ready" | "event.ack" | "event.writer.closed";
-  settle: (
-    result: { message: ReturnType<typeof parseControlToSupervisorMessage> } | { error: Error },
-  ) => void;
+  expectedType:
+    | "fact.channel.ready"
+    | "event.ack"
+    | "fact.channel.closed"
+    | "fact.pi_session_mutation.accepted";
+  settle: (result: { message: RemoteFactChannelResponse } | { error: Error }) => void;
   timer: NodeJS.Timeout;
 };
 
-class RemoteAgentEventWriter implements DurableEventWriter {
+type RemoteFactChannelResponse =
+  ReturnType<typeof parseControlToSupervisorMessage> | PiSessionMutationAcceptedFrame;
+
+class RemoteFactChannel implements FactChannel {
   readonly #url: URL;
   readonly #authorization: string;
-  readonly #request: DurableEventWriterOpenRequest;
+  readonly #request: FactChannelOpenRequest;
   readonly #onClose: () => void;
   #socket: WebSocket | undefined;
   #pending: PendingRemoteExchange | undefined;
   #connecting: Promise<boolean> | undefined;
+  #operationTail = Promise.resolve();
   #acknowledgedThroughSeq: number;
   #closed = false;
 
   constructor(options: {
     url: URL;
     authorization: string;
-    request: DurableEventWriterOpenRequest;
+    request: FactChannelOpenRequest;
     onClose: () => void;
   }) {
     this.#url = options.url;
@@ -616,12 +630,59 @@ class RemoteAgentEventWriter implements DurableEventWriter {
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
       if (await this.#ensureConnected(deadline)) return;
-      this.#resetSocket(new Error("Agent event writer open will retry"));
+      this.#resetSocket(new Error("FactChannel open will retry"));
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
     }
     throw new DurableEventStoreError(
       "event_store_invariant",
-      "Agent event writer could not open its transport",
+      "FactChannel could not open its transport",
+      true,
+    );
+  }
+
+  mutate(
+    mutation: CandidatePiSessionMutationFact,
+  ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
+    return this.#serialize(() => this.#mutate(mutation));
+  }
+
+  async #mutate(
+    mutation: CandidatePiSessionMutationFact,
+  ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
+    if (this.#closed) throw new DurableEventStoreError("invalid_event", "FactChannel is closed");
+    const frame: PiSessionMutationPublishFrame = {
+      protocolVersion: 1,
+      messageId: globalThis.crypto.randomUUID(),
+      sentAt: new Date().toISOString(),
+      type: "fact.pi_session_mutation.publish",
+      payload: mutation,
+    };
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      if (!(await this.#ensureConnected(deadline))) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+      const exchanged = await this.#exchange(frame, "fact.pi_session_mutation.accepted", deadline);
+      if ("error" in exchanged) {
+        this.#resetSocket(exchanged.error);
+        if (Date.now() < deadline) await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+      const response = exchanged.message;
+      if (
+        response.type === "fact.pi_session_mutation.accepted" &&
+        response.payload.acknowledgedMessageId === frame.messageId &&
+        response.payload.mutationId === mutation.mutationId &&
+        response.payload.accepted
+      ) {
+        return { mutationId: mutation.mutationId, accepted: true };
+      }
+      this.#resetSocket(new Error("FactChannel mutation acknowledgement is unrelated"));
+    }
+    throw new DurableEventStoreError(
+      "event_store_invariant",
+      "FactChannel mutation acceptance timed out",
       true,
     );
   }
@@ -629,12 +690,16 @@ class RemoteAgentEventWriter implements DurableEventWriter {
   abort(): void {
     if (this.#closed) return;
     this.#closed = true;
-    this.#resetSocket(new Error("Agent event writer aborted"));
+    this.#resetSocket(new Error("FactChannel aborted"));
     this.#onClose();
   }
 
-  async ingest(value: unknown): Promise<EventAckMessage> {
-    if (this.#closed) throw new DurableEventStoreError("invalid_event", "Event writer is closed");
+  ingest(value: unknown): Promise<EventAckMessage> {
+    return this.#serialize(() => this.#ingest(value));
+  }
+
+  async #ingest(value: unknown): Promise<EventAckMessage> {
+    if (this.#closed) throw new DurableEventStoreError("invalid_event", "Event channel is closed");
     const message = parseSupervisorToControlMessage(value);
     if (
       message.type !== "event.publish" ||
@@ -644,7 +709,7 @@ class RemoteAgentEventWriter implements DurableEventWriter {
     ) {
       throw new DurableEventStoreError(
         "invalid_event",
-        "Event publication does not match its remote writer",
+        "Event publication does not match its remote channel",
       );
     }
     const deadline = Date.now() + 60_000;
@@ -678,22 +743,19 @@ class RemoteAgentEventWriter implements DurableEventWriter {
         return response;
       } catch (error: unknown) {
         this.#resetSocket(
-          error instanceof Error ? error : new Error("Agent event writer transport failed"),
+          error instanceof Error ? error : new Error("FactChannel transport failed"),
         );
         if (error instanceof DurableEventStoreError && !error.retryable) throw error;
         if (Date.now() >= deadline) break;
         await new Promise<void>((resolve) => setTimeout(resolve, 100));
       }
     }
-    throw new DurableEventStoreError(
-      "event_store_invariant",
-      "Agent event writer is unavailable",
-      true,
-    );
+    throw new DurableEventStoreError("event_store_invariant", "FactChannel is unavailable", true);
   }
 
   async close(): Promise<void> {
     if (this.#closed) return;
+    await this.#operationTail;
     const deadline = Date.now() + 30_000;
     let failure: unknown;
     try {
@@ -707,13 +769,13 @@ class RemoteAgentEventWriter implements DurableEventWriter {
             protocolVersion: 1,
             messageId: globalThis.crypto.randomUUID(),
             sentAt: new Date().toISOString(),
-            type: "event.writer.close",
+            type: "fact.channel.close",
             payload: {
               executionGrant: this.#request.executionGrant,
               acknowledgedThroughSeq: this.#acknowledgedThroughSeq,
             },
           });
-          const exchanged = await this.#exchange(closeMessage, "event.writer.closed", deadline);
+          const exchanged = await this.#exchange(closeMessage, "fact.channel.closed", deadline);
           if ("error" in exchanged) {
             failure = exchanged.error;
             this.#resetSocket(exchanged.error);
@@ -724,34 +786,41 @@ class RemoteAgentEventWriter implements DurableEventWriter {
           }
           const response = exchanged.message;
           if (
-            response.type !== "event.writer.closed" ||
+            response.type !== "fact.channel.closed" ||
             response.payload.acknowledgedMessageId !== closeMessage.messageId ||
             response.payload.executionGrant !== this.#request.executionGrant ||
             response.payload.acknowledgedThroughSeq !== this.#acknowledgedThroughSeq
           ) {
             throw new DurableEventStoreError(
               "invalid_event",
-              "Remote Agent event writer close ACK is invalid",
+              "Remote FactChannel close ACK is invalid",
             );
           }
           failure = undefined;
           return;
         } catch (error: unknown) {
           failure = error;
-          this.#resetSocket(
-            error instanceof Error ? error : new Error("Agent event writer close failed"),
-          );
+          this.#resetSocket(error instanceof Error ? error : new Error("FactChannel close failed"));
           if (Date.now() < deadline) {
             await new Promise<void>((resolve) => setTimeout(resolve, 100));
           }
         }
       }
-      throw eventWriterError(failure);
+      throw factChannelError(failure);
     } finally {
       this.#closed = true;
-      this.#resetSocket(new Error("Agent event writer closed"));
+      this.#resetSocket(new Error("FactChannel closed"));
       this.#onClose();
     }
+  }
+
+  #serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.#operationTail.then(operation, operation);
+    this.#operationTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
   async #ensureConnected(deadline: number): Promise<boolean> {
@@ -802,7 +871,7 @@ class RemoteAgentEventWriter implements DurableEventWriter {
     socket.once("close", () => {
       if (this.#socket === socket) {
         try {
-          this.#resetSocket(new Error("Agent event writer disconnected"));
+          this.#resetSocket(new Error("FactChannel disconnected"));
         } catch {
           this.#socket = undefined;
         }
@@ -821,14 +890,14 @@ class RemoteAgentEventWriter implements DurableEventWriter {
       protocolVersion: 1,
       messageId: globalThis.crypto.randomUUID(),
       sentAt: new Date().toISOString(),
-      type: "event.writer.open",
+      type: "fact.channel.open",
       payload: this.#request,
     });
-    const exchanged = await this.#exchange(openMessage, "event.writer.ready", deadline);
+    const exchanged = await this.#exchange(openMessage, "fact.channel.ready", deadline);
     if ("error" in exchanged) return false;
     const response = exchanged.message;
     if (
-      response.type !== "event.writer.ready" ||
+      response.type !== "fact.channel.ready" ||
       response.payload.acknowledgedMessageId !== openMessage.messageId ||
       response.payload.executionGrant !== this.#request.executionGrant ||
       response.payload.sessionId !== this.#request.sessionId ||
@@ -847,28 +916,26 @@ class RemoteAgentEventWriter implements DurableEventWriter {
     message: unknown,
     expectedType: PendingRemoteExchange["expectedType"],
     deadline: number,
-  ): Promise<{ message: ReturnType<typeof parseControlToSupervisorMessage> } | { error: Error }> {
+  ): Promise<{ message: RemoteFactChannelResponse } | { error: Error }> {
     if (this.#pending !== undefined) {
       return Promise.resolve({
         error: new DurableEventStoreError(
           "event_conflict",
-          "Agent event writer already has an in-flight frame",
+          "FactChannel already has an in-flight frame",
           true,
         ),
       });
     }
     const socket = this.#socket;
     if (socket?.readyState !== WebSocket.OPEN) {
-      return Promise.resolve({ error: new Error("Agent event writer socket is not open") });
+      return Promise.resolve({ error: new Error("FactChannel socket is not open") });
     }
-    return new Promise<
-      { message: ReturnType<typeof parseControlToSupervisorMessage> } | { error: Error }
-    >((settle) => {
+    return new Promise<{ message: RemoteFactChannelResponse } | { error: Error }>((settle) => {
       const timer = setTimeout(
         () => {
           if (this.#pending?.timer !== timer) return;
           this.#pending = undefined;
-          settle({ error: new Error("Agent event writer frame timed out") });
+          settle({ error: new Error("FactChannel frame timed out") });
         },
         Math.max(1, Math.min(60_000, deadline - Date.now())),
       );
@@ -886,18 +953,22 @@ class RemoteAgentEventWriter implements DurableEventWriter {
     const pending = this.#pending;
     if (pending === undefined) return;
     if (isBinary) {
-      this.#resetSocket(new Error("Agent event writer received a binary frame"));
+      this.#resetSocket(new Error("FactChannel received a binary frame"));
       return;
     }
-    let response;
+    let response: RemoteFactChannelResponse;
     try {
-      response = parseControlToSupervisorMessage(JSON.parse(remoteTextFrame(data)));
+      const value = JSON.parse(remoteTextFrame(data)) as RemoteFactChannelResponse;
+      response =
+        value.type === "fact.pi_session_mutation.accepted"
+          ? value
+          : parseControlToSupervisorMessage(value);
     } catch (error: unknown) {
-      this.#resetSocket(error instanceof Error ? error : new Error("Invalid event writer frame"));
+      this.#resetSocket(error instanceof Error ? error : new Error("Invalid FactChannel frame"));
       return;
     }
     if (response.type !== pending.expectedType) {
-      this.#resetSocket(new Error("Agent event writer response type is invalid"));
+      this.#resetSocket(new Error("FactChannel response type is invalid"));
       return;
     }
     clearTimeout(pending.timer);
@@ -918,36 +989,45 @@ class RemoteAgentEventWriter implements DurableEventWriter {
   }
 }
 
-export class WebSocketAgentEventIngestor implements DurableEventIngestor {
+export class WebSocketAcceptedFactIngestor
+  implements FactChannelFactory, ActiveFactChannelResolver
+{
   readonly #url: URL;
   readonly #authorization: string;
   readonly #healthUrl: URL;
-  readonly #writers = new Set<RemoteAgentEventWriter>();
+  readonly #channels = new Map<string, RemoteFactChannel>();
   #closed = false;
 
   constructor(options: { baseUrl: string; serviceToken: string; allowInsecureHttp: boolean }) {
-    this.#url = remoteWriterUrl(options.baseUrl, options.allowInsecureHttp);
-    this.#healthUrl = new URL(`${AGENT_EVENT_INGEST_PATH}/health`, options.baseUrl);
+    this.#url = factChannelUrl(options.baseUrl, options.allowInsecureHttp);
+    this.#healthUrl = new URL(`${ACCEPTED_FACT_INGEST_PATH}/health`, options.baseUrl);
     this.#authorization = `Bearer ${options.serviceToken}`;
   }
 
-  async open(request: DurableEventWriterOpenRequest): Promise<DurableEventWriter> {
+  async open(request: FactChannelOpenRequest): Promise<FactChannel> {
     if (this.#closed) throw new Error("Agent event ingestor is closed");
-    let writer!: RemoteAgentEventWriter;
-    writer = new RemoteAgentEventWriter({
+    if (this.#channels.has(request.executionGrant)) {
+      throw new Error("ExecutionGrant already has an open FactChannel");
+    }
+    let channel!: RemoteFactChannel;
+    channel = new RemoteFactChannel({
       url: this.#url,
       authorization: this.#authorization,
       request,
-      onClose: () => this.#writers.delete(writer),
+      onClose: () => this.#channels.delete(request.executionGrant),
     });
-    this.#writers.add(writer);
+    this.#channels.set(request.executionGrant, channel);
     try {
-      await writer.open();
-      return writer;
+      await channel.open();
+      return channel;
     } catch (error: unknown) {
-      writer.abort();
+      channel.abort();
       throw error;
     }
+  }
+
+  resolve(executionGrant: string): PiSessionMutationFactChannel | undefined {
+    return this.#channels.get(executionGrant);
   }
 
   async checkHealth(): Promise<void> {
@@ -961,7 +1041,7 @@ export class WebSocketAgentEventIngestor implements DurableEventIngestor {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
-    await Promise.allSettled([...this.#writers].map((writer) => writer.close()));
+    await Promise.allSettled([...this.#channels.values()].map((channel) => channel.close()));
   }
 }
 

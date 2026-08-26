@@ -852,21 +852,21 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
   ): Promise<void> {
     const writer = await transaction
       .selectFrom("execution_grants")
-      .select(["event_writer_connection_id", "event_writer_valid_until"])
+      .select(["fact_channel_connection_id", "fact_channel_valid_until"])
       .where("session_id", "=", sessionId)
       .where("grant_id", "=", grantId)
       .where("generation", "=", String(generation))
       .forUpdate()
       .executeTakeFirst();
     if (
-      writer?.event_writer_connection_id !== null &&
-      writer?.event_writer_connection_id !== undefined &&
-      writer.event_writer_valid_until !== null &&
-      new Date(writer.event_writer_valid_until).valueOf() > now.valueOf()
+      writer?.fact_channel_connection_id !== null &&
+      writer?.fact_channel_connection_id !== undefined &&
+      writer.fact_channel_valid_until !== null &&
+      new Date(writer.fact_channel_valid_until).valueOf() > now.valueOf()
     ) {
       throw new ExecutionGrantCoordinatorError(
-        "event_writer_active",
-        "ExecutionGrant still has an active Agent event writer",
+        "fact_channel_active",
+        "ExecutionGrant still has an active FactChannel",
         true,
       );
     }

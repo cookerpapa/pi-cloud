@@ -21,8 +21,7 @@ import type { DevelopmentEnvironmentService } from "./development-environment-se
 import type { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gateway.ts";
 import type { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import type { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
-import type { AgentEventIngestGateway } from "./agent-event-ingest-gateway.ts";
-import type { PiSessionMutationIngestGateway } from "./pi-session-mutation-ingest-gateway.ts";
+import type { AcceptedFactIngestGateway } from "./accepted-fact-ingest-gateway.ts";
 
 export type ControlPlaneApplicationOptions = Omit<
   ControlPlaneStoreOptions,
@@ -49,8 +48,7 @@ export type ControlPlaneApplicationOptions = Omit<
   terminalTurnProjectionGateway?: TerminalTurnProjectionGateway;
   sandboxPreviewGateway?: SandboxPreviewGateway;
   sshAccessTicketService?: SshAccessTicketService;
-  agentEventIngestGateway?: AgentEventIngestGateway;
-  piSessionMutationIngestGateway?: PiSessionMutationIngestGateway;
+  acceptedFactIngestGateway?: AcceptedFactIngestGateway;
 };
 
 export async function createControlPlaneApplication(
@@ -63,8 +61,7 @@ export async function createControlPlaneApplication(
   options.workspaceTerminalGateway?.install(adapter.getInstance());
   options.sandboxPreviewGateway?.install(adapter.getInstance());
   options.terminalTurnProjectionGateway?.install(adapter.getInstance());
-  options.agentEventIngestGateway?.install(adapter.getInstance());
-  options.piSessionMutationIngestGateway?.install(adapter.getInstance());
+  options.acceptedFactIngestGateway?.install(adapter.getInstance());
   let staticRequestIdentity;
   if (options.productionHttpGateway === undefined) {
     if (options.tenantId === undefined || options.defaultModelProfileId === undefined) {

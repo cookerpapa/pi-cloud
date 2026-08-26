@@ -98,10 +98,10 @@ retired and remain only in Git history or explicitly superseded ADRs.
 - [x] Let a durably fenced, expired Worker settle its interrupted Run even when
       its dead management endpoint cannot confirm a physical stop.
 - [x] Replace the global Agent-event Authority microbatch with one short-lived
-      PostgreSQL-owned EventWriterChannel per ExecutionGrant; preserve per-Grant
+      PostgreSQL-owned FactChannel per ExecutionGrant; preserve per-Grant
       order, immediate R=3 PubAck and crash-safe writer handoff without an
       application batching delay.
-- [ ] Unify browser events and complete Pi Session mutations on one FactChannel,
+- [x] Unify browser events and complete Pi Session mutations on one FactChannel,
       split the PostgreSQL ExecutionGrant Gate from a broker-neutral
       AcceptedFactBus, and leave ordering/deduplication to the bus/projectors.
 

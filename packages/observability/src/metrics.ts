@@ -28,9 +28,9 @@ export class PiCloudMetrics {
   readonly jetStreamBytes: Gauge<"stream">;
   readonly jetStreamConsumerPending: Gauge<"stream" | "consumer">;
   readonly jetStreamUnavailableReplicas: Gauge<"stream">;
-  readonly eventWritersActive: Gauge;
-  readonly eventWritersLimit: Gauge;
-  readonly eventWriterRenewalFailures: Gauge;
+  readonly factChannelsActive: Gauge;
+  readonly factChannelsLimit: Gauge;
+  readonly factChannelRenewalFailures: Gauge;
   readonly operationalSampleTimestamp: Gauge<"source">;
   readonly operationalSampleFailures: Counter<"source">;
   readonly sandboxActive: Gauge<"provider">;
@@ -196,19 +196,19 @@ export class PiCloudMetrics {
       labelNames: ["stream"],
       registers: [this.registry],
     });
-    this.eventWritersActive = new Gauge({
-      name: "pi_cloud_event_writers_active",
-      help: "Active Agent EventWriterChannels in this Control Plane replica",
+    this.factChannelsActive = new Gauge({
+      name: "pi_cloud_fact_channels_active",
+      help: "Active FactChannels in this Control Plane replica",
       registers: [this.registry],
     });
-    this.eventWritersLimit = new Gauge({
-      name: "pi_cloud_event_writers_limit",
-      help: "Maximum Agent EventWriterChannels admitted by this Control Plane replica",
+    this.factChannelsLimit = new Gauge({
+      name: "pi_cloud_fact_channels_limit",
+      help: "Maximum FactChannels admitted by this Control Plane replica",
       registers: [this.registry],
     });
-    this.eventWriterRenewalFailures = new Gauge({
-      name: "pi_cloud_event_writer_renewal_failures",
-      help: "Agent EventWriterChannel renewal failures observed by this process",
+    this.factChannelRenewalFailures = new Gauge({
+      name: "pi_cloud_fact_channel_renewal_failures",
+      help: "FactChannel renewal failures observed by this process",
       registers: [this.registry],
     });
     this.operationalSampleTimestamp = new Gauge({

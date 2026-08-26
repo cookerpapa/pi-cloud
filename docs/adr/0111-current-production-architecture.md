@@ -75,7 +75,8 @@ execution path and failure semantics.
 ### Event and recovery semantics
 
 - Each active ExecutionGrant owns one short PostgreSQL-leased
-  EventWriterChannel. Assistant text events cross its long-lived WebSocket
+  FactChannel. Assistant text events and complete Pi Session mutations cross
+  its long-lived WebSocket
   without an intentional application batch and receive one R=3 PubAck each.
   Independent Grants publish concurrently; one Grant is ordered. Provider
   Tool-call JSON, thinking deltas and partial Tool output are not public events.
@@ -83,8 +84,8 @@ execution path and failure semantics.
 - Pi SessionStorage and the browser stream are independent projections. A
   Session-keyed projection barrier completes before a replacement Worker reads
   PostgreSQL; it does not wait for Gateway consumers.
-  `message_end` submits a complete Pi message through PostgreSQL-authorized
-  Ingest to the accepted Session mutation topic;
+  `message_end` submits a complete Pi message through the same PostgreSQL
+  Authority Gate to the accepted Session mutation topic;
   the PostgreSQL projector applies it before the next model Step. Pi's ordered
   log stores stable identifiers and hydrates canonical entries/records on read.
 - The browser sees only the contiguous prefix durably accepted by JetStream

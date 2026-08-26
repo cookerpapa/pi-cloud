@@ -1,33 +1,37 @@
 import {
-  AGENT_EVENT_INGEST_PATH,
-  AGENT_EVENT_WRITER_PATH,
-  type AgentEventWriterSession,
+  ACCEPTED_FACT_INGEST_PATH,
+  FACT_CHANNEL_PATH,
+  type AcceptedFactChannelSession,
 } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
 import {
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
-  type EventWriterOpenMessage,
+  type FactChannelOpenMessage,
 } from "@pi-cloud/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { RawData, WebSocket } from "ws";
+import type {
+  CandidatePiSessionMutationFact,
+  PiSessionMutationAcceptedFrame,
+} from "@pi-cloud/runtime-core/accepted-fact";
 
 const MAXIMUM_PENDING_FRAMES = 8;
 
-type WriterContext = {
+type ChannelContext = {
   socket: WebSocket;
   connectionId: string;
-  writer: AgentEventWriterSession | undefined;
+  channel: AcceptedFactChannelSession | undefined;
   pendingFrames: number;
   processing: Promise<void>;
   closed: boolean;
 };
 
-export interface AgentEventWriterServicePort {
+export interface FactChannelServicePort {
   open(
-    message: EventWriterOpenMessage,
+    message: FactChannelOpenMessage,
     connectionId: string,
     onFailure: (error: Error) => void,
-  ): Promise<AgentEventWriterSession>;
+  ): Promise<AcceptedFactChannelSession>;
   checkHealth(): Promise<void>;
   statistics(): Readonly<Record<string, number>>;
 }
@@ -49,31 +53,31 @@ function closeSocket(socket: WebSocket, code: number, reason: string): void {
   else if (socket.readyState !== socket.CLOSED) socket.terminate();
 }
 
-export class AgentEventIngestGateway {
-  readonly #writers: AgentEventWriterServicePort;
+export class AcceptedFactIngestGateway {
+  readonly #channels: FactChannelServicePort;
   readonly #authorization: string;
-  readonly #contexts = new Set<WriterContext>();
+  readonly #contexts = new Set<ChannelContext>();
   #installed = false;
 
-  constructor(options: { writers: AgentEventWriterServicePort; serviceToken: string }) {
+  constructor(options: { channels: FactChannelServicePort; serviceToken: string }) {
     if (!/^[A-Za-z0-9._~+/=-]{32,4096}$/u.test(options.serviceToken)) {
       throw new TypeError("Agent event ingest service token is invalid");
     }
-    this.#writers = options.writers;
+    this.#channels = options.channels;
     this.#authorization = `Bearer ${options.serviceToken}`;
   }
 
   install(fastify: FastifyInstance): void {
     if (this.#installed) throw new Error("Agent event ingest gateway is already installed");
     this.#installed = true;
-    fastify.get(`${AGENT_EVENT_INGEST_PATH}/health`, async (request, reply) => {
+    fastify.get(`${ACCEPTED_FACT_INGEST_PATH}/health`, async (request, reply) => {
       if (!this.#authorized(request)) {
         await reply.code(401).send({ error: "authentication_required" });
         return;
       }
       try {
-        await this.#writers.checkHealth();
-        await reply.code(200).send({ status: "ready", ...this.#writers.statistics() });
+        await this.#channels.checkHealth();
+        await reply.code(200).send({ status: "ready", ...this.#channels.statistics() });
       } catch {
         await reply.code(503).send({ status: "not_ready" });
       }
@@ -82,17 +86,17 @@ export class AgentEventIngestGateway {
       scope.addHook("preValidation", async (request, reply) => {
         if (!this.#authorized(request)) await reply.code(401).send();
       });
-      scope.get(AGENT_EVENT_WRITER_PATH, { websocket: true }, (socket) => {
+      scope.get(FACT_CHANNEL_PATH, { websocket: true }, (socket) => {
         this.#accept(socket);
       });
     });
   }
 
   #accept(socket: WebSocket): void {
-    const context: WriterContext = {
+    const context: ChannelContext = {
       socket,
       connectionId: globalThis.crypto.randomUUID(),
-      writer: undefined,
+      channel: undefined,
       pendingFrames: 0,
       processing: Promise.resolve(),
       closed: false,
@@ -103,7 +107,7 @@ export class AgentEventIngestGateway {
       context.pendingFrames += 1;
       if (context.pendingFrames > MAXIMUM_PENDING_FRAMES) {
         context.pendingFrames -= 1;
-        this.#close(context, 1_013, "event writer overloaded");
+        this.#close(context, 1_013, "FactChannel overloaded");
         return;
       }
       context.processing = context.processing
@@ -118,102 +122,130 @@ export class AgentEventIngestGateway {
             error.code === "stale_execution_grant"
               ? 1_008
               : 1_011;
-          this.#close(context, code, "event writer failed");
+          this.#close(context, code, "FactChannel failed");
         })
         .finally(() => {
           context.pendingFrames -= 1;
         });
     });
     socket.once("close", () => this.#cleanup(context));
-    socket.once("error", () => this.#close(context, 1_011, "event writer transport failed"));
+    socket.once("error", () => this.#close(context, 1_011, "FactChannel transport failed"));
   }
 
-  async #process(context: WriterContext, data: RawData, isBinary: boolean): Promise<void> {
+  async #process(context: ChannelContext, data: RawData, isBinary: boolean): Promise<void> {
     if (isBinary) {
-      this.#close(context, 1_003, "binary event writer frames unsupported");
+      this.#close(context, 1_003, "binary FactChannel frames unsupported");
       return;
     }
     let value: unknown;
     try {
       value = JSON.parse(textFrame(data));
     } catch {
-      this.#close(context, 1_002, "invalid event writer json");
+      this.#close(context, 1_002, "invalid FactChannel json");
+      return;
+    }
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      (value as { type?: unknown }).type === "fact.pi_session_mutation.publish"
+    ) {
+      if (context.channel === undefined) {
+        this.#close(context, 1_002, "FactChannel must open first");
+        return;
+      }
+      const frame = value as {
+        messageId: string;
+        payload: CandidatePiSessionMutationFact;
+      };
+      const accepted = await context.channel.mutate(frame.payload);
+      const acknowledgement: PiSessionMutationAcceptedFrame = {
+        protocolVersion: 1,
+        messageId: globalThis.crypto.randomUUID(),
+        sentAt: new Date().toISOString(),
+        type: "fact.pi_session_mutation.accepted",
+        payload: {
+          acknowledgedMessageId: frame.messageId,
+          mutationId: accepted.mutationId,
+          accepted: true,
+        },
+      };
+      await send(context.socket, acknowledgement);
       return;
     }
     const message = parseSupervisorToControlMessage(value);
-    if (context.writer === undefined) {
-      if (message.type !== "event.writer.open") {
-        this.#close(context, 1_002, "event writer must open first");
+    if (context.channel === undefined) {
+      if (message.type !== "fact.channel.open") {
+        this.#close(context, 1_002, "FactChannel must open first");
         return;
       }
       await this.#open(context, message);
       return;
     }
     if (message.type === "event.publish") {
-      await send(context.socket, await context.writer.ingest(message));
+      await send(context.socket, await context.channel.ingest(message));
       return;
     }
-    if (message.type === "event.writer.close") {
-      const writer = context.writer;
+    if (message.type === "fact.channel.close") {
+      const channel = context.channel;
       if (
-        message.payload.executionGrant !== writer.executionGrant ||
-        message.payload.acknowledgedThroughSeq !== writer.acknowledgedThroughSeq
+        message.payload.executionGrant !== channel.executionGrant ||
+        message.payload.acknowledgedThroughSeq !== channel.acknowledgedThroughSeq
       ) {
-        this.#close(context, 1_002, "event writer close watermark mismatch");
+        this.#close(context, 1_002, "FactChannel close watermark mismatch");
         return;
       }
-      await writer.close();
+      await channel.close();
       const closed = parseControlToSupervisorMessage({
         protocolVersion: 1,
         messageId: globalThis.crypto.randomUUID(),
         sentAt: new Date().toISOString(),
-        type: "event.writer.closed",
+        type: "fact.channel.closed",
         payload: {
           acknowledgedMessageId: message.messageId,
-          executionGrant: writer.executionGrant,
-          acknowledgedThroughSeq: writer.acknowledgedThroughSeq,
+          executionGrant: channel.executionGrant,
+          acknowledgedThroughSeq: channel.acknowledgedThroughSeq,
         },
       });
       await send(context.socket, closed);
-      context.writer = undefined;
-      this.#close(context, 1_000, "event writer closed");
+      context.channel = undefined;
+      this.#close(context, 1_000, "FactChannel closed");
       return;
     }
-    this.#close(context, 1_002, "unexpected event writer frame");
+    this.#close(context, 1_002, "unexpected FactChannel frame");
   }
 
-  async #open(context: WriterContext, message: EventWriterOpenMessage): Promise<void> {
-    context.writer = await this.#writers.open(message, context.connectionId, () => {
-      this.#close(context, 1_008, "event writer lease expired");
+  async #open(context: ChannelContext, message: FactChannelOpenMessage): Promise<void> {
+    context.channel = await this.#channels.open(message, context.connectionId, () => {
+      this.#close(context, 1_008, "FactChannel lease expired");
     });
     const ready = parseControlToSupervisorMessage({
       protocolVersion: 1,
       messageId: globalThis.crypto.randomUUID(),
       sentAt: new Date().toISOString(),
-      type: "event.writer.ready",
+      type: "fact.channel.ready",
       payload: {
         acknowledgedMessageId: message.messageId,
-        executionGrant: context.writer.executionGrant,
-        sessionId: context.writer.sessionId,
-        turnId: context.writer.turnId,
-        acknowledgedThroughSeq: context.writer.acknowledgedThroughSeq,
-        leaseDurationMs: context.writer.leaseDurationMs,
+        executionGrant: context.channel.executionGrant,
+        sessionId: context.channel.sessionId,
+        turnId: context.channel.turnId,
+        acknowledgedThroughSeq: context.channel.acknowledgedThroughSeq,
+        leaseDurationMs: context.channel.leaseDurationMs,
       },
     });
     await send(context.socket, ready);
   }
 
-  #close(context: WriterContext, code: number, reason: string): void {
+  #close(context: ChannelContext, code: number, reason: string): void {
     if (context.closed) return;
     context.closed = true;
     closeSocket(context.socket, code, reason);
     void this.#cleanup(context);
   }
 
-  #cleanup(context: WriterContext): void {
+  #cleanup(context: ChannelContext): void {
     if (!this.#contexts.delete(context)) return;
     context.closed = true;
-    void context.writer?.close().catch(() => undefined);
+    void context.channel?.close().catch(() => undefined);
   }
 
   #authorized(request: FastifyRequest): boolean {

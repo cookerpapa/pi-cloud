@@ -37,8 +37,10 @@ npm run eval:postgres-session-projection
 The production stream is:
 
 ```text
-Pi event -> short-leased EventWriterChannel -> per-event R=3 JetStream PubAck -> resumable SSE
-Pi complete message -> fenced Ingest -> Session Mutation JetStream -> PostgreSQL SessionStorage
+Pi event ─┐
+          ├-> short-leased FactChannel -> Authority Gate -> AcceptedFactBus
+Pi entry ─┘                                      ├-> live JetStream -> resumable SSE
+                                                 └-> mutation JetStream -> PostgreSQL SessionStorage
 ```
 
 JetStream R=3 PubAck precedes visibility. JetStream retains a bounded

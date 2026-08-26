@@ -2,7 +2,7 @@ export * from "./checkpoint-object-cache.ts";
 export * from "./checkpoint-store.ts";
 export * from "./conversation-turn-projection.ts";
 export * from "./durable-event-store.ts";
-export * from "./agent-event-authority.ts";
+export * from "./execution-grant-authority-gate.ts";
 export * from "./jetstream-agent-event-log.ts";
 export * from "./accepted-fact.ts";
 export * from "./jetstream-accepted-fact-bus.ts";

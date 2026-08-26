@@ -8,6 +8,7 @@ import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { isDeepStrictEqual } from "node:util";
 import type { SessionEventHub } from "./session-event-hub.ts";
+import type { PiSessionMutationFactChannel } from "./accepted-fact.ts";
 
 export type DurableEventStoreErrorCode =
   | "not_found"
@@ -36,21 +37,21 @@ export type EventReplayWindow = {
   highWaterMark: number;
 };
 
-export type DurableEventWriterOpenRequest = Readonly<{
+export type FactChannelOpenRequest = Readonly<{
   executionGrant: string;
   sessionId: string;
   turnId: string;
   nextEventSeq: number;
 }>;
 
-export interface DurableEventWriter {
+export interface FactChannel extends PiSessionMutationFactChannel {
   readonly acknowledgedThroughSeq: number;
   ingest(value: unknown): Promise<EventAckMessage>;
   close(): Promise<void>;
 }
 
-export interface DurableEventIngestor {
-  open(request: DurableEventWriterOpenRequest): Promise<DurableEventWriter>;
+export interface FactChannelFactory {
+  open(request: FactChannelOpenRequest): Promise<FactChannel>;
 }
 
 export interface DurableEventLog {
@@ -79,7 +80,7 @@ export type DurableEventStoreOptions = Readonly<{
  * maintained production path injects JetStreamLiveEventStore and never constructs
  * this class.
  */
-export class DurableEventStore implements DurableEventLog, DurableEventIngestor {
+export class DurableEventStore implements DurableEventLog, FactChannelFactory {
   readonly #events = new Map<string, PiCloudEvent[]>();
   readonly #database: Kysely<Database> | undefined;
 
@@ -87,7 +88,7 @@ export class DurableEventStore implements DurableEventLog, DurableEventIngestor 
     this.#database = options.database;
   }
 
-  async open(request: DurableEventWriterOpenRequest): Promise<DurableEventWriter> {
+  async open(request: FactChannelOpenRequest): Promise<FactChannel> {
     let acknowledgedThroughSeq = request.nextEventSeq - 1;
     let closed = false;
     return {
@@ -123,6 +124,12 @@ export class DurableEventStore implements DurableEventLog, DurableEventIngestor 
         });
         if (acknowledgement.type !== "event.ack") throw new Error("Invalid event ACK");
         return acknowledgement;
+      },
+      mutate: async () => {
+        throw new DurableEventStoreError(
+          "event_store_invariant",
+          "The deterministic event log cannot project Pi Session mutations",
+        );
       },
       close: async () => {
         closed = true;

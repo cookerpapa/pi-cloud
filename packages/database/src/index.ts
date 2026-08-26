@@ -164,6 +164,8 @@ export {
   downMachineOwnedWorkspaces,
   upAgentEventWriterChannels,
   downAgentEventWriterChannels,
+  upFactChannels,
+  downFactChannels,
 } from "./migrations/index.ts";
 
 export {

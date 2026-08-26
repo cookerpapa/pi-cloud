@@ -31,8 +31,7 @@ import { DevelopmentEnvironmentService } from "./development-environment-service
 import { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gateway.ts";
 import { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
-import { AgentEventIngestGateway } from "./agent-event-ingest-gateway.ts";
-import { PiSessionMutationIngestGateway } from "./pi-session-mutation-ingest-gateway.ts";
+import { AcceptedFactIngestGateway } from "./accepted-fact-ingest-gateway.ts";
 import { OperationalMetricsSampler } from "./operational-metrics-sampler.ts";
 
 async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Promise<void> {
@@ -76,8 +75,8 @@ export async function startControlPlane(): Promise<void> {
         eventRetentionMs: config.agentEventRetentionMs,
         maximumEventsPerSession: config.maximumEventsPerSession,
       },
-      eventWriterLeaseMs: config.eventWriterLeaseMs,
-      eventWriterMaximumActive: config.eventWriterMaximumActive,
+      factChannelLeaseMs: config.factChannelLeaseMs,
+      factChannelMaximumActive: config.factChannelMaximumActive,
     });
     const activeAgentEvents = agentEvents;
     await verifyBootstrap(database);
@@ -180,12 +179,8 @@ export async function startControlPlane(): Promise<void> {
       source: activeAgentEvents.terminalTurnProjectionSource,
       authorize: (authorization) => provisioner.authorize(authorization),
     });
-    const agentEventIngestGateway = new AgentEventIngestGateway({
-      writers: activeAgentEvents.agentEventWriters,
-      serviceToken: config.workerEventIngestToken,
-    });
-    const piSessionMutationIngestGateway = new PiSessionMutationIngestGateway({
-      ingestor: activeAgentEvents.sessionMutationIngestor,
+    const acceptedFactIngestGateway = new AcceptedFactIngestGateway({
+      channels: activeAgentEvents.factChannels,
       serviceToken: config.workerEventIngestToken,
     });
     const httpGateway = new ProductionHttpGateway({
@@ -244,8 +239,7 @@ export async function startControlPlane(): Promise<void> {
         new RoutedHttpSandboxAssignmentInventory(resolveManagementClient, identity),
       supervisorProvisioningGateway: provisioningGateway,
       terminalTurnProjectionGateway,
-      agentEventIngestGateway,
-      piSessionMutationIngestGateway,
+      acceptedFactIngestGateway,
       turnSteerBackendFactory: resolveSteerBackend,
       productionHttpGateway: httpGateway,
       publicRegistration: registrationConfiguration,

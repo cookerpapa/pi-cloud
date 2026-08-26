@@ -737,9 +737,9 @@ export interface ExecutionGrantTable {
   command_id: string;
   execution_id: string;
   last_event_seq: GeneratedInt8;
-  event_writer_connection_id: GeneratedNullable<string>;
-  event_writer_instance_id: GeneratedNullable<string>;
-  event_writer_valid_until: NullableTimestamp;
+  fact_channel_connection_id: GeneratedNullable<string>;
+  fact_channel_instance_id: GeneratedNullable<string>;
+  fact_channel_valid_until: NullableTimestamp;
   valid_until: Timestamp;
   acquired_at: GeneratedTimestamp;
   renewed_at: GeneratedTimestamp;

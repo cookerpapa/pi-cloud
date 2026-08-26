@@ -7,7 +7,11 @@ import {
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
-import { WebSocketAgentEventIngestor } from "../src/jetstream-agent-event-log.ts";
+import { WebSocketAcceptedFactIngestor } from "../src/jetstream-agent-event-log.ts";
+import type { PiSessionMutationPublishFrame } from "../src/accepted-fact.ts";
+
+type WorkerFactFrame =
+  ReturnType<typeof parseSupervisorToControlMessage> | PiSessionMutationPublishFrame;
 
 const resources: Array<() => Promise<void>> = [];
 
@@ -45,10 +49,7 @@ function publication(index: number): EventPublishMessage {
 }
 
 async function startServer(
-  onMessage: (
-    value: ReturnType<typeof parseSupervisorToControlMessage>,
-    send: (value: unknown) => void,
-  ) => void,
+  onMessage: (value: WorkerFactFrame, send: (value: unknown) => void) => void,
 ): Promise<string> {
   const server = createServer();
   const sockets = new WebSocketServer({ noServer: true });
@@ -61,7 +62,11 @@ async function startServer(
   });
   sockets.on("connection", (client) => {
     client.on("message", (data) => {
-      const value = parseSupervisorToControlMessage(JSON.parse(data.toString("utf8")));
+      const candidate = JSON.parse(data.toString("utf8")) as WorkerFactFrame;
+      const value =
+        candidate.type === "fact.pi_session_mutation.publish"
+          ? candidate
+          : parseSupervisorToControlMessage(candidate);
       onMessage(value, (response) => client.send(JSON.stringify(response)));
     });
   });
@@ -78,17 +83,17 @@ async function startServer(
   return `http://127.0.0.1:${String(address.port)}`;
 }
 
-describe("WebSocketAgentEventIngestor", () => {
+describe("WebSocketAcceptedFactIngestor", () => {
   it("opens one Grant channel, ACKs a durable event and confirms close", async () => {
     const event = publication(1);
     const baseUrl = await startServer((message, send) => {
-      if (message.type === "event.writer.open") {
+      if (message.type === "fact.channel.open") {
         send(
           parseControlToSupervisorMessage({
             protocolVersion: 1,
             messageId: id(10, 1),
             sentAt: "2026-08-26T00:00:00.000Z",
-            type: "event.writer.ready",
+            type: "fact.channel.ready",
             payload: {
               acknowledgedMessageId: message.messageId,
               executionGrant: message.payload.executionGrant,
@@ -113,13 +118,13 @@ describe("WebSocketAgentEventIngestor", () => {
             },
           }),
         );
-      } else if (message.type === "event.writer.close") {
+      } else if (message.type === "fact.channel.close") {
         send(
           parseControlToSupervisorMessage({
             protocolVersion: 1,
             messageId: id(10, 3),
             sentAt: "2026-08-26T00:00:00.000Z",
-            type: "event.writer.closed",
+            type: "fact.channel.closed",
             payload: {
               acknowledgedMessageId: message.messageId,
               executionGrant: message.payload.executionGrant,
@@ -127,9 +132,21 @@ describe("WebSocketAgentEventIngestor", () => {
             },
           }),
         );
+      } else if (message.type === "fact.pi_session_mutation.publish") {
+        send({
+          protocolVersion: 1,
+          messageId: id(10, 4),
+          sentAt: "2026-08-26T00:00:00.000Z",
+          type: "fact.pi_session_mutation.accepted",
+          payload: {
+            acknowledgedMessageId: message.messageId,
+            mutationId: message.payload.mutationId,
+            accepted: true,
+          },
+        });
       }
     });
-    const ingestor = new WebSocketAgentEventIngestor({
+    const ingestor = new WebSocketAcceptedFactIngestor({
       baseUrl,
       serviceToken: "a".repeat(32),
       allowInsecureHttp: true,
@@ -145,6 +162,21 @@ describe("WebSocketAgentEventIngestor", () => {
       payload: { acknowledgedThroughSeq: 1 },
     });
     expect(writer.acknowledgedThroughSeq).toBe(1);
+    await expect(
+      ingestor.resolve(event.payload.executionGrant)?.mutate({
+        schemaVersion: 1,
+        mutationId: id(1, 9),
+        scope: {
+          tenantId: id(1, 10),
+          sessionId: event.payload.event.sessionId,
+          turnId: event.payload.event.turnId!,
+          runId: id(1, 11),
+          executionGrant: event.payload.executionGrant,
+        },
+        operation: { kind: "projection_barrier" },
+        occurredAt: "2026-08-26T00:00:00.000Z",
+      }),
+    ).resolves.toEqual({ mutationId: id(1, 9), accepted: true });
     await writer.close();
     await ingestor.close();
   });

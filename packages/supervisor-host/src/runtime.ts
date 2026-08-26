@@ -4,9 +4,10 @@ import {
   PostgresSandboxCheckpointStore,
   TtlCheckpointObjectStore,
 } from "@pi-cloud/runtime-core/checkpoint-runtime";
-import type { DurableEventIngestor } from "@pi-cloud/runtime-core/durable-event-store";
-import { WebSocketAgentEventIngestor } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
-import { HttpPiSessionMutationProducer } from "@pi-cloud/runtime-core/jetstream-pi-session-mutations";
+import type { FactChannelFactory } from "@pi-cloud/runtime-core/durable-event-store";
+import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/jetstream-agent-event-log";
+import { FactChannelPiSessionMutationProducer } from "@pi-cloud/runtime-core/jetstream-pi-session-mutations";
+import type { ActiveFactChannelResolver } from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
 import { HttpTerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
 import {
@@ -74,11 +75,14 @@ export type PiWorkerRuntimeOptions = {
   connectionSecretGenerator?: () => string;
   metrics?: PiCloudMetrics;
   runWorkerFactory?: (options: PostgresPiWorkerOptions) => SupervisorRunWorker;
-  eventIngestor?: DurableEventIngestor & {
+  factChannels?: FactChannelFactory & {
     checkHealth?(): Promise<void>;
     close?(): Promise<void>;
   };
-  sessionMutationProducer?: Pick<HttpPiSessionMutationProducer, "scoped" | "checkHealth" | "close">;
+  sessionMutationProducer?: Pick<
+    FactChannelPiSessionMutationProducer,
+    "scoped" | "checkHealth" | "close"
+  >;
 };
 
 export type SupervisorRunWorker = {
@@ -87,6 +91,14 @@ export type SupervisorRunWorker = {
   stop(): Promise<void>;
   prioritizeSubagent?(commandId: string): boolean;
 };
+
+function factChannelResolver(value: FactChannelFactory): ActiveFactChannelResolver {
+  const candidate = value as Partial<ActiveFactChannelResolver>;
+  if (typeof candidate.resolve !== "function" || typeof candidate.checkHealth !== "function") {
+    throw new TypeError("Production FactChannel factory does not expose active channels");
+  }
+  return candidate as ActiveFactChannelResolver;
+}
 
 function subagentExternalState(state: string) {
   switch (state) {
@@ -182,13 +194,16 @@ export class PiWorkerRuntime {
   readonly #connectionSecretGenerator: () => string;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #runWorkerFactory: (options: PostgresPiWorkerOptions) => SupervisorRunWorker;
-  readonly #eventIngestor:
-    (DurableEventIngestor & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
+  readonly #factChannels:
+    (FactChannelFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
   readonly #configuredSessionMutationProducer:
-    Pick<HttpPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<FactChannelPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
   #sessionMutationProducer:
-    Pick<HttpPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<FactChannelPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
   #ownsSessionMutationProducer = false;
+  #activeFactChannels:
+    (FactChannelFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
+  #ownsFactChannels = false;
   readonly #ownerStoppedPromise: Promise<void>;
   readonly #resolveOwnerStopped: () => void;
   readonly #terminalPromise: Promise<SupervisorHostTerminalReason>;
@@ -244,7 +259,7 @@ export class PiWorkerRuntime {
     this.#metrics = options.metrics;
     this.#runWorkerFactory =
       options.runWorkerFactory ?? ((workerOptions) => new PostgresPiWorker(workerOptions));
-    this.#eventIngestor = options.eventIngestor;
+    this.#factChannels = options.factChannels;
     this.#configuredSessionMutationProducer = options.sessionMutationProducer;
     let resolveOwnerStopped!: () => void;
     this.#ownerStoppedPromise = new Promise((resolvePromise) => {
@@ -424,13 +439,21 @@ export class PiWorkerRuntime {
       await modelGateway.start();
       this.#modelGateway = modelGateway;
       const runWorkerIdentity = `postgres:${identity.supervisorId}:${identity.bootId}`;
-      const sessionMutationProducer =
-        this.#configuredSessionMutationProducer ??
-        new HttpPiSessionMutationProducer({
-          database: this.#database,
+      const factChannels =
+        this.#factChannels ??
+        new WebSocketAcceptedFactIngestor({
           baseUrl: this.#config.controlPlaneBaseUrl,
           serviceToken: this.#config.workerEventIngestToken,
           allowInsecureHttp: this.#config.allowInsecureInternalHttp,
+        });
+      this.#activeFactChannels = factChannels;
+      this.#ownsFactChannels = this.#factChannels === undefined;
+      await factChannels.checkHealth?.();
+      const sessionMutationProducer =
+        this.#configuredSessionMutationProducer ??
+        new FactChannelPiSessionMutationProducer({
+          database: this.#database,
+          channels: factChannelResolver(factChannels),
         });
       this.#ownsSessionMutationProducer = this.#configuredSessionMutationProducer === undefined;
       await sessionMutationProducer.checkHealth();
@@ -653,17 +676,6 @@ export class PiWorkerRuntime {
       client.setAcceptingAssignments(false);
       this.#client = client;
       await client.start();
-      const ownedEventIngestor =
-        this.#eventIngestor === undefined
-          ? new WebSocketAgentEventIngestor({
-              baseUrl: this.#config.controlPlaneBaseUrl,
-              serviceToken: this.#config.workerEventIngestToken,
-              allowInsecureHttp: this.#config.allowInsecureInternalHttp,
-            })
-          : undefined;
-      const eventIngestor = this.#eventIngestor ?? ownedEventIngestor!;
-      if (ownedEventIngestor !== undefined) await ownedEventIngestor.checkHealth();
-      else await this.#eventIngestor?.checkHealth?.();
       const terminalTurnProjectionSource = new HttpTerminalTurnProjectionSource({
         baseUrl: this.#config.controlPlaneBaseUrl,
         serviceToken: this.#config.enrollmentToken,
@@ -675,7 +687,7 @@ export class PiWorkerRuntime {
       const runBackend = new AgentRunExecutionBackend({
         supervisor: runSupervisor,
         grantCoordinator,
-        eventIngestor,
+        factChannels,
         onUnexpectedError: (error) =>
           operationalLog({
             service: "pi-cloud-pi-worker",
@@ -695,8 +707,7 @@ export class PiWorkerRuntime {
         canClaimRuns: () => this.#state === "ready" && client?.state === "connected",
         admitRunClaims: async () => {
           try {
-            if (ownedEventIngestor !== undefined) await ownedEventIngestor.checkHealth();
-            else await this.#eventIngestor?.checkHealth?.();
+            await factChannels.checkHealth?.();
             await sessionMutationProducer.checkHealth();
             await this.#toolBroker.checkHealth();
             return true;
@@ -777,6 +788,9 @@ export class PiWorkerRuntime {
     await this.#modelGateway?.close().catch(() => undefined);
     if (this.#ownsSessionMutationProducer) {
       await this.#sessionMutationProducer?.close().catch(() => undefined);
+    }
+    if (this.#ownsFactChannels) {
+      await this.#activeFactChannels?.close?.().catch(() => undefined);
     }
     this.#objectStore.destroy();
     if (this.#ownsDatabase) await this.#database.destroy();

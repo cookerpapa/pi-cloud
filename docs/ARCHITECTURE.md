@@ -457,20 +457,25 @@ Tool-call JSON and partial Tool stdout. It publishes Assistant text deltas,
 complete Tool start/result Items and low-frequency lifecycle boundaries.
 
 After PostgreSQL issues the current opaque ExecutionGrant, the Worker opens one
-service-authenticated EventWriterChannel bound to that Grant, Session and Turn.
-The Gateway records a short writer lease on the same Grant row. Events then
-cross the long-lived WebSocket immediately and independently; each ACK waits
-for that event's R=3 JetStream PubAck. Different Grants publish concurrently,
-while one Grant keeps one ordered event in flight. Writer ownership and its
-watermark renew set-wise outside the event hot path. Normal settlement closes
+service-authenticated FactChannel bound to that Grant, Session and Turn.
+The Gateway records a short channel lease on the same Grant row. Both Agent
+events and complete Pi Session mutations cross that long-lived WebSocket. A
+single PostgreSQL Authority Gate binds canonical scope and removes the Grant;
+the resulting AcceptedFact is appended through a broker-neutral bus. The
+current JetStream adapter uses stable Fact IDs for duplicate suppression and
+separate Session-keyed Streams for live events and Session projection. Each ACK
+waits for R=3 PubAck. Different Grants publish concurrently, while one channel
+keeps one Fact in flight. Channel ownership renews set-wise outside the Fact hot
+path. Normal settlement closes
 the channel before releasing the Grant; crash recovery waits for its short
 lease rather than admitting overlapping generations. Workers have no NATS
 credentials or network route.
 
-Complete Pi Session mutations use a second authenticated endpoint. These
-low-frequency semantic writes retain a batched PostgreSQL ExecutionGrant check
-and their own projection barrier; they are not part of the browser-text
-transport.
+There is no second mutation endpoint or mutation-specific authority. The Gate
+does not inspect event sequence, deduplicate, replay, choose a Stream or wait
+for a projector. Those responsibilities start after acceptance. Pi still waits
+for its mutation result/projection barrier when the next Agent operation
+causally depends on canonical Session state.
 
 JetStream committed RePublish sends stored messages to one Core NATS wildcard
 subscription in every Gateway replica. The Gateway holds only its actual HTTP

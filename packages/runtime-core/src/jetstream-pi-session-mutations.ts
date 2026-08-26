@@ -1,5 +1,4 @@
 import type { Database } from "@pi-cloud/database";
-import { parseExecutionGrant } from "@pi-cloud/protocol";
 import {
   PostgresPiSessionStorage,
   type PiSessionMutationOperation,
@@ -13,19 +12,16 @@ import {
   type ProvisionedEntry,
 } from "@earendil-works/pi-agent-core";
 import { AckPolicy, DeliverPolicy, type ConsumerMessages } from "@nats-io/jetstream";
-import type { Kysely, Transaction } from "kysely";
+import type { Kysely } from "kysely";
 import {
   PI_SESSION_MUTATION_STREAM_NAME,
   PI_SESSION_MUTATION_SUBJECT_PREFIX,
   piSessionMutationSubject,
   type PiCloudJetStream,
 } from "./jetstream-runtime.ts";
+import type { ActiveFactChannelResolver, CandidatePiSessionMutationFact } from "./accepted-fact.ts";
 
 export const PI_SESSION_MUTATION_PROJECTOR_CONSUMER = "PI_CLOUD_SESSION_PROJECTOR";
-export const PI_SESSION_MUTATION_INGEST_PATH = "/internal/v1/pi-session-mutations";
-const MAXIMUM_AUTHORITY_BATCH = 256;
-const AUTHORITY_BATCH_DELAY_MS = 2;
-const MAXIMUM_QUEUED_MUTATIONS = 20_000;
 
 export type JetStreamPiSessionMutationScope = Readonly<{
   tenantId: string;
@@ -35,13 +31,7 @@ export type JetStreamPiSessionMutationScope = Readonly<{
   executionGrant: string;
 }>;
 
-export type PiSessionMutationRequest = Readonly<{
-  schemaVersion: 1;
-  mutationId: string;
-  scope: JetStreamPiSessionMutationScope;
-  operation: PiSessionMutationOperation;
-  occurredAt: string;
-}>;
+export type PiSessionMutationRequest = CandidatePiSessionMutationFact;
 
 export type AcceptedPiSessionMutationEnvelope = Readonly<{
   schemaVersion: 2;
@@ -129,33 +119,6 @@ function parseOperation(value: unknown): PiSessionMutationOperation {
   }
 }
 
-export function parsePiSessionMutationRequest(
-  value: Uint8Array | Buffer | string,
-): PiSessionMutationRequest {
-  const text = typeof value === "string" ? value : Buffer.from(value).toString("utf8");
-  const candidate = object(JSON.parse(text) as unknown, "Pi Session mutation envelope");
-  const scope = object(candidate.scope, "Pi Session mutation scope");
-  const executionGrant = string(scope.executionGrant, "ExecutionGrant", 256);
-  parseExecutionGrant(executionGrant);
-  const occurredAt = string(candidate.occurredAt, "Pi Session mutation timestamp", 64);
-  if (candidate.schemaVersion !== 1 || Number.isNaN(new Date(occurredAt).valueOf())) {
-    throw new TypeError("Pi Session mutation envelope is invalid");
-  }
-  return {
-    schemaVersion: 1,
-    mutationId: uuid(candidate.mutationId, "Pi Session mutation ID"),
-    scope: {
-      tenantId: uuid(scope.tenantId, "tenant ID"),
-      sessionId: string(scope.sessionId, "Session ID", 512),
-      turnId: uuid(scope.turnId, "Turn ID"),
-      runId: uuid(scope.runId, "Run ID"),
-      executionGrant,
-    },
-    operation: parseOperation(candidate.operation),
-    occurredAt,
-  };
-}
-
 export function parseAcceptedPiSessionMutationEnvelope(
   value: Uint8Array | Buffer | string,
 ): AcceptedPiSessionMutationEnvelope {
@@ -181,134 +144,6 @@ export function parseAcceptedPiSessionMutationEnvelope(
   };
 }
 
-export class PiSessionMutationIngestError extends Error {
-  readonly code: "stale_execution_grant" | "ingest_unavailable" | "invalid_mutation";
-  readonly retryable: boolean;
-
-  constructor(code: PiSessionMutationIngestError["code"], message: string, retryable = false) {
-    super(message);
-    this.name = "PiSessionMutationIngestError";
-    this.code = code;
-    this.retryable = retryable;
-  }
-}
-
-export type PiSessionMutationAuthorityResult = Readonly<{
-  accepted: readonly AcceptedPiSessionMutationEnvelope[];
-  rejected: readonly PiSessionMutationRequest[];
-}>;
-
-type PiSessionMutationDurableCommit = (
-  envelopes: readonly AcceptedPiSessionMutationEnvelope[],
-) => Promise<void>;
-
-type ExecutionGrantRow = Readonly<{
-  grantId: string;
-  executionId: string;
-  generation: string;
-  tenantId: string;
-  sessionId: string;
-  turnId: string;
-  runId: string;
-  validUntil: Date;
-}>;
-
-function acceptedMutation(
-  request: PiSessionMutationRequest,
-  row: ExecutionGrantRow,
-): AcceptedPiSessionMutationEnvelope {
-  return {
-    schemaVersion: 2,
-    mutationId: request.mutationId,
-    scope: {
-      tenantId: row.tenantId,
-      sessionId: row.sessionId,
-      turnId: row.turnId,
-      runId: row.runId,
-      executionId: row.executionId,
-    },
-    operation: request.operation,
-    occurredAt: request.occurredAt,
-  };
-}
-
-export class PostgresPiSessionMutationAuthority {
-  readonly #database: Kysely<Database>;
-  readonly #clock: () => Date;
-
-  constructor(options: { database: Kysely<Database>; clock?: () => Date }) {
-    this.#database = options.database;
-    this.#clock = options.clock ?? (() => new Date());
-  }
-
-  async commitAcceptedMany(
-    requests: readonly PiSessionMutationRequest[],
-    durableCommit: PiSessionMutationDurableCommit,
-  ): Promise<PiSessionMutationAuthorityResult> {
-    if (requests.length < 1 || requests.length > MAXIMUM_AUTHORITY_BATCH) {
-      throw new TypeError("Pi Session mutation authority batch is invalid");
-    }
-    return this.#database.transaction().execute(async (transaction) => {
-      const result = await this.#validate(transaction, requests);
-      if (result.accepted.length > 0) await durableCommit(result.accepted);
-      return result;
-    });
-  }
-
-  async #validate(
-    transaction: Transaction<Database>,
-    requests: readonly PiSessionMutationRequest[],
-  ): Promise<PiSessionMutationAuthorityResult> {
-    const now = this.#clock();
-    if (!(now instanceof Date) || Number.isNaN(now.valueOf())) {
-      throw new TypeError("Pi Session mutation authority clock returned an invalid Date");
-    }
-    const grantIds = [
-      ...new Set(
-        requests.map((request) => parseExecutionGrant(request.scope.executionGrant).grantId),
-      ),
-    ];
-    const rows = await transaction
-      .selectFrom("execution_grants")
-      .select([
-        "grant_id as grantId",
-        "execution_id as executionId",
-        "generation",
-        "tenant_id as tenantId",
-        "session_id as sessionId",
-        "turn_id as turnId",
-        "run_id as runId",
-        "valid_until as validUntil",
-      ])
-      .where("grant_id", "in", grantIds)
-      .orderBy("grant_id", "asc")
-      .forUpdate()
-      .execute();
-    const byGrant = new Map(rows.map((row) => [row.grantId, row as ExecutionGrantRow]));
-    const accepted: AcceptedPiSessionMutationEnvelope[] = [];
-    const rejected: PiSessionMutationRequest[] = [];
-    for (const request of requests) {
-      const identity = parseExecutionGrant(request.scope.executionGrant);
-      const row = byGrant.get(identity.grantId);
-      if (
-        row === undefined ||
-        row.executionId !== identity.executionId ||
-        Number(row.generation) !== identity.generation ||
-        row.tenantId !== request.scope.tenantId ||
-        row.sessionId !== request.scope.sessionId ||
-        row.turnId !== request.scope.turnId ||
-        row.runId !== request.scope.runId ||
-        new Date(row.validUntil).valueOf() <= now.valueOf()
-      ) {
-        rejected.push(request);
-      } else {
-        accepted.push(acceptedMutation(request, row));
-      }
-    }
-    return { accepted, rejected };
-  }
-}
-
 export class JetStreamAcceptedPiSessionMutationPublisher {
   readonly #runtime: PiCloudJetStream;
 
@@ -328,165 +163,19 @@ export class JetStreamAcceptedPiSessionMutationPublisher {
     );
   }
 
-  async appendGroup(envelopes: readonly AcceptedPiSessionMutationEnvelope[]): Promise<void> {
-    const bySession = new Map<string, AcceptedPiSessionMutationEnvelope[]>();
-    for (const envelope of envelopes) {
-      const group = bySession.get(envelope.scope.sessionId) ?? [];
-      group.push(envelope);
-      bySession.set(envelope.scope.sessionId, group);
-    }
-    await Promise.all(
-      [...bySession.values()].map(async (group) => {
-        for (const envelope of group) {
-          await this.append(envelope);
-        }
-      }),
-    );
-  }
-
   async checkHealth(): Promise<void> {
     await this.#runtime.manager.streams.info(PI_SESSION_MUTATION_STREAM_NAME);
   }
 }
 
-type PendingMutation = Readonly<{
-  request: PiSessionMutationRequest;
-  resolve: (value: Readonly<{ mutationId: string; accepted: true }>) => void;
-  reject: (error: unknown) => void;
-}>;
-
-export class JetStreamPiSessionMutationIngestor {
-  readonly #authority: Pick<PostgresPiSessionMutationAuthority, "commitAcceptedMany">;
-  readonly #publisher: Pick<
-    JetStreamAcceptedPiSessionMutationPublisher,
-    "appendGroup" | "checkHealth"
-  >;
-  #queue: PendingMutation[] = [];
-  #timer: NodeJS.Timeout | undefined;
-  #flushing: Promise<void> | undefined;
-  #closed = false;
-
-  constructor(options: {
-    database?: Kysely<Database>;
-    publisher: Pick<JetStreamAcceptedPiSessionMutationPublisher, "appendGroup" | "checkHealth">;
-    authority?: Pick<PostgresPiSessionMutationAuthority, "commitAcceptedMany">;
-  }) {
-    if (options.authority === undefined && options.database === undefined) {
-      throw new TypeError("Pi Session Mutation Ingest requires a database or authority port");
-    }
-    this.#authority =
-      options.authority ?? new PostgresPiSessionMutationAuthority({ database: options.database! });
-    this.#publisher = options.publisher;
-  }
-
-  ingest(value: unknown): Promise<Readonly<{ mutationId: string; accepted: true }>> {
-    if (this.#closed) {
-      return Promise.reject(
-        new PiSessionMutationIngestError("ingest_unavailable", "Mutation Ingest is closed", true),
-      );
-    }
-    let request: PiSessionMutationRequest;
-    try {
-      request = parsePiSessionMutationRequest(JSON.stringify(value));
-    } catch (error: unknown) {
-      return Promise.reject(
-        new PiSessionMutationIngestError("invalid_mutation", "Mutation request is invalid", false),
-      );
-    }
-    if (this.#queue.length >= MAXIMUM_QUEUED_MUTATIONS) {
-      return Promise.reject(
-        new PiSessionMutationIngestError(
-          "ingest_unavailable",
-          "Mutation Ingest queue is full",
-          true,
-        ),
-      );
-    }
-    const result = new Promise<Readonly<{ mutationId: string; accepted: true }>>(
-      (resolve, reject) => this.#queue.push({ request, resolve, reject }),
-    );
-    if (this.#queue.length >= MAXIMUM_AUTHORITY_BATCH) this.#schedule(0);
-    else this.#schedule(AUTHORITY_BATCH_DELAY_MS);
-    return result;
-  }
-
-  async checkHealth(): Promise<void> {
-    if (this.#closed) throw new Error("Pi Session Mutation Ingest is unhealthy");
-    await this.#publisher.checkHealth();
-  }
-
-  async close(): Promise<void> {
-    if (this.#closed) return;
-    this.#closed = true;
-    if (this.#timer !== undefined) clearTimeout(this.#timer);
-    if (this.#flushing !== undefined) await this.#flushing;
-    else await this.#drain();
-  }
-
-  #schedule(delayMs: number): void {
-    if (this.#flushing !== undefined) return;
-    if (this.#timer !== undefined) {
-      if (delayMs !== 0) return;
-      clearTimeout(this.#timer);
-    }
-    this.#timer = setTimeout(() => {
-      this.#timer = undefined;
-      this.#flushing = this.#drain().finally(() => {
-        this.#flushing = undefined;
-        if (this.#queue.length > 0 && !this.#closed) this.#schedule(0);
-      });
-    }, delayMs);
-    this.#timer.unref();
-  }
-
-  async #drain(): Promise<void> {
-    while (this.#queue.length > 0) {
-      const batch = this.#queue.splice(0, MAXIMUM_AUTHORITY_BATCH);
-      try {
-        const result = await this.#authority.commitAcceptedMany(
-          batch.map((entry) => entry.request),
-          (accepted) => this.#publisher.appendGroup(accepted),
-        );
-        const accepted = new Set(result.accepted.map((entry) => entry.mutationId));
-        for (const entry of batch) {
-          if (accepted.has(entry.request.mutationId)) {
-            entry.resolve({ mutationId: entry.request.mutationId, accepted: true });
-          } else {
-            entry.reject(
-              new PiSessionMutationIngestError(
-                "stale_execution_grant",
-                "Pi Session mutation was rejected by current ExecutionGrant authority",
-              ),
-            );
-          }
-        }
-      } catch (error: unknown) {
-        for (const entry of batch) entry.reject(error);
-      }
-    }
-  }
-}
-
-export class HttpPiSessionMutationProducer {
+export class FactChannelPiSessionMutationProducer {
   readonly #database: Kysely<Database>;
-  readonly #url: URL;
-  readonly #authorization: string;
-  readonly #allowInsecureHttp: boolean;
+  readonly #channels: ActiveFactChannelResolver;
   #closed = false;
 
-  constructor(options: {
-    database: Kysely<Database>;
-    baseUrl: string;
-    serviceToken: string;
-    allowInsecureHttp: boolean;
-  }) {
+  constructor(options: { database: Kysely<Database>; channels: ActiveFactChannelResolver }) {
     this.#database = options.database;
-    this.#url = new URL(PI_SESSION_MUTATION_INGEST_PATH, options.baseUrl);
-    this.#authorization = `Bearer ${options.serviceToken}`;
-    this.#allowInsecureHttp = options.allowInsecureHttp;
-    if (this.#url.protocol === "http:" && !this.#allowInsecureHttp) {
-      throw new TypeError("Plain HTTP Pi Session Mutation Ingest requires explicit opt-in");
-    }
+    this.#channels = options.channels;
   }
 
   scoped(scope: JetStreamPiSessionMutationScope): PiSessionMutationPublisher {
@@ -500,11 +189,7 @@ export class HttpPiSessionMutationProducer {
 
   async checkHealth(): Promise<void> {
     if (this.#closed) throw new Error("Pi Session mutation producer is closed");
-    const response = await fetch(new URL(`${PI_SESSION_MUTATION_INGEST_PATH}/health`, this.#url), {
-      headers: { authorization: this.#authorization },
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!response.ok) throw new Error("Pi Session Mutation Ingest is unavailable");
+    await this.#channels.checkHealth();
   }
 
   async close(): Promise<void> {
@@ -523,8 +208,6 @@ export class HttpPiSessionMutationProducer {
     };
     const deadline = Date.now() + 120_000;
     let accepted = false;
-    let ambiguous = false;
-    let stopSubmitting = false;
     let nextSubmitAt = 0;
     let retryDelayMs = 100;
     while (true) {
@@ -537,45 +220,18 @@ export class HttpPiSessionMutationProducer {
         );
       }
       if (Date.now() >= deadline) throw new Error("Pi Session mutation projection timed out");
-      if (!accepted && !stopSubmitting && Date.now() >= nextSubmitAt) {
-        const outcome = await this.#submit(request).catch(() => "ambiguous" as const);
-        if (outcome === "accepted") {
+      if (!accepted && Date.now() >= nextSubmitAt) {
+        const channel = this.#channels.resolve(scope.executionGrant);
+        const outcome = await channel?.mutate(request).catch(() => undefined);
+        if (outcome?.accepted === true && outcome.mutationId === mutationId) {
           accepted = true;
-        } else if (outcome === "stale") {
-          if (!ambiguous) {
-            throw new SessionError(
-              "storage",
-              "Pi Session mutation was rejected by a stale ExecutionGrant",
-            );
-          }
-          // A prior response may have been lost after PubAck. The stable
-          // mutation ID can still appear in the projector result even though
-          // the Grant has since expired, so stop resubmitting and wait.
-          stopSubmitting = true;
         } else {
-          ambiguous = true;
           nextSubmitAt = Date.now() + retryDelayMs;
           retryDelayMs = Math.min(1_000, retryDelayMs * 2);
         }
       }
       await new Promise<void>((resolve) => setTimeout(resolve, 10));
     }
-  }
-
-  async #submit(request: PiSessionMutationRequest): Promise<"accepted" | "stale" | "ambiguous"> {
-    const response = await fetch(this.#url, {
-      method: "POST",
-      headers: { authorization: this.#authorization, "content-type": "application/json" },
-      body: JSON.stringify(request),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (response.status === 409) return "stale";
-    if (!response.ok) return "ambiguous";
-    const value = (await response.json()) as Record<string, unknown>;
-    if (value.accepted !== true || value.mutationId !== request.mutationId) {
-      throw new Error("Pi Session Mutation Ingest response is invalid");
-    }
-    return "accepted";
   }
 
   #result(scope: JetStreamPiSessionMutationScope, mutationId: string) {

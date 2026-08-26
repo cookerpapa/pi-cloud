@@ -3,8 +3,9 @@
 ## Status
 
 Accepted on 2026-08-26. This refines ADR-0126 by separating authorization from
-the downstream broker and projections. ADR-0126's short per-Grant writer
-ownership remains current; its JetStream-coupled writer service does not.
+the downstream broker and projections. ADR-0126's short per-Grant channel
+ownership remains current; its JetStream-coupled event-writer composition does
+not.
 
 ## Context
 

@@ -30,8 +30,8 @@ import {
 } from "./run-command-executor.ts";
 import {
   DurableEventStoreError,
-  type DurableEventIngestor,
-  type DurableEventWriter,
+  type FactChannel,
+  type FactChannelFactory,
 } from "./durable-event-store.ts";
 import {
   ExecutionGrantCoordinator,
@@ -41,7 +41,7 @@ import {
 export type AgentRunExecutionBackendOptions = {
   supervisor: AgentRunSupervisor;
   grantCoordinator: ExecutionGrantCoordinator;
-  eventIngestor: DurableEventIngestor;
+  factChannels: FactChannelFactory;
   onEvent?: (message: EventPublishMessage) => Promise<void> | void;
   clock?: () => Date;
   idGenerator?: () => string;
@@ -52,7 +52,7 @@ export type AgentRunExecutionBackendOptions = {
 type TrackedGrantExecution = {
   prepared: ReturnType<AgentRunSupervisor["prepare"]>;
   execution: Promise<TurnExecutionResult>;
-  writer: DurableEventWriter;
+  writer: FactChannel;
   writerClosing?: Promise<void>;
   failure?: TurnExecutionBackendError;
 };
@@ -234,7 +234,7 @@ function validateCancellationAck(
 export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCancellationBackend {
   readonly #supervisor: AgentRunSupervisor;
   readonly #grantCoordinator: ExecutionGrantCoordinator;
-  readonly #eventIngestor: DurableEventIngestor;
+  readonly #factChannels: FactChannelFactory;
   readonly #onEvent: ((message: EventPublishMessage) => Promise<void> | void) | undefined;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
@@ -248,7 +248,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   constructor(options: AgentRunExecutionBackendOptions) {
     this.#supervisor = options.supervisor;
     this.#grantCoordinator = options.grantCoordinator;
-    this.#eventIngestor = options.eventIngestor;
+    this.#factChannels = options.factChannels;
     this.#onEvent = options.onEvent;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
@@ -264,14 +264,14 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     lifecycle: TurnExecutionLifecycle,
   ): Promise<TurnExecutionResult> {
     let acknowledgement: { executionGrant: string } | undefined;
-    let eventWriter: DurableEventWriter | undefined;
+    let factChannel: FactChannel | undefined;
     let prepared: ReturnType<AgentRunSupervisor["prepare"]> | undefined;
     let tracked: TrackedGrantExecution | undefined;
     let durableStarted = false;
 
     try {
       acknowledgement = await this.#grantCoordinator.acquire(request);
-      eventWriter = await this.#eventIngestor.open({
+      factChannel = await this.#factChannels.open({
         executionGrant: acknowledgement.executionGrant,
         sessionId: request.sessionId,
         turnId: request.turnId,
@@ -345,7 +345,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           );
         }
         const last = publications.at(-1)!;
-        const eventAck = validateEventAck(last, await eventWriter!.ingest(eventMessage));
+        const eventAck = validateEventAck(last, await factChannel!.ingest(eventMessage));
         for (const publication of publications) await this.#onEvent?.(publication);
         return eventAck;
       });
@@ -361,7 +361,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       await lifecycle.started(acknowledgement);
       durableStarted = true;
       const execution = prepared.run();
-      tracked = this.#registerGrantExecution(request.sessionId, prepared, execution, eventWriter);
+      tracked = this.#registerGrantExecution(request.sessionId, prepared, execution, factChannel);
       try {
         let result: TurnExecutionResult;
         try {
@@ -374,7 +374,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         return result;
       } finally {
         try {
-          await this.#closeTrackedWriter(tracked);
+          await this.#closeTrackedChannel(tracked);
         } finally {
           await this.#unregisterGrantExecution(request.sessionId, tracked);
         }
@@ -382,9 +382,9 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     } catch (error: unknown) {
       if (!durableStarted) {
         prepared?.releaseBeforeStart();
-        if (eventWriter !== undefined) {
-          await eventWriter.close().catch(() => undefined);
-          eventWriter = undefined;
+        if (factChannel !== undefined) {
+          await factChannel.close().catch(() => undefined);
+          factChannel = undefined;
         }
         if (acknowledgement !== undefined) {
           await this.#grantCoordinator.releaseAcquired(request, acknowledgement).catch(() => {
@@ -404,7 +404,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       }
       throw normalized;
     } finally {
-      if (eventWriter !== undefined && tracked === undefined) await eventWriter.close();
+      if (factChannel !== undefined && tracked === undefined) await factChannel.close();
     }
   }
 
@@ -456,7 +456,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       await lifecycle.started(acknowledgement);
       const result = await prepared.run();
       const tracked = this.#trackedGrantExecutions.get(request.target.sessionId);
-      if (tracked !== undefined) await this.#closeTrackedWriter(tracked);
+      if (tracked !== undefined) await this.#closeTrackedChannel(tracked);
       return result;
     } catch (error: unknown) {
       throw normalizeCancellationError(error);
@@ -467,7 +467,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     sessionId: string,
     prepared: ReturnType<AgentRunSupervisor["prepare"]>,
     execution: Promise<TurnExecutionResult>,
-    writer: DurableEventWriter,
+    writer: FactChannel,
   ): TrackedGrantExecution {
     const tracked: TrackedGrantExecution = { prepared, execution, writer };
     if (this.#trackedGrantExecutions.has(sessionId)) {
@@ -490,7 +490,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     return tracked;
   }
 
-  #closeTrackedWriter(tracked: TrackedGrantExecution): Promise<void> {
+  #closeTrackedChannel(tracked: TrackedGrantExecution): Promise<void> {
     tracked.writerClosing ??= tracked.writer.close();
     return tracked.writerClosing;
   }

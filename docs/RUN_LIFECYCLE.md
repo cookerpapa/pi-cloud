@@ -52,19 +52,21 @@ result is `UNKNOWN`.
 
 ## Events and terminal commit
 
-The Worker opens one short-leased EventWriterChannel for its opaque
+The Worker opens one short-leased FactChannel for its opaque
 ExecutionGrant before Pi starts. Assistant text deltas cross that channel
 without an intentional batching delay; one Grant remains ordered while
 different Grants publish concurrently. Tool arguments and Tool results enter
 the same stream only as complete Items. Each event's R=3 PubAck is the
-visibility boundary. Channel close advances the PostgreSQL watermark before
-terminal settlement can release the Grant.
+visibility boundary. Event ordering and duplicate handling belong to the
+JetStream/downstream adapter rather than the Authority Gate. Channel close
+releases short channel ownership before terminal settlement releases the Grant.
 
-Pi `message_end` submits a complete Session mutation to authenticated Ingest.
-Ingest validates its current PostgreSQL ExecutionGrant before JetStream PubAck
-and removes the Grant from the accepted envelope. The PostgreSQL projector
-then applies the accepted fact idempotently without a second lease query, and
-the Worker waits at a read-your-writes barrier before the next model Step. On successful settlement, the Worker
+Pi `message_end` submits a complete Session mutation through that same
+FactChannel. The unified PostgreSQL Gate validates current writer authority once
+and removes the Grant before the AcceptedFactBus performs JetStream PubAck. The
+PostgreSQL projector then applies the accepted fact idempotently without another
+authority query, and the Worker waits at a read-your-writes barrier before the
+next model Step. On successful settlement, the Worker
 prepares the bounded Workspace Volume revision. The terminal transaction
 validates the current Attempt/fence, advances the Workspace revision if
 applicable, writes a terminal event Outbox record and settles the Run. JetStream

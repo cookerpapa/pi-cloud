@@ -430,10 +430,10 @@ export const EventPublishMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const EventWriterOpenMessageSchema = Type.Object(
+export const FactChannelOpenMessageSchema = Type.Object(
   {
     ...WireEnvelopeProperties,
-    type: Type.Literal("event.writer.open"),
+    type: Type.Literal("fact.channel.open"),
     payload: Type.Object(
       {
         executionGrant: ExecutionGrantSchema,
@@ -447,10 +447,10 @@ export const EventWriterOpenMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const EventWriterReadyMessageSchema = Type.Object(
+export const FactChannelReadyMessageSchema = Type.Object(
   {
     ...WireEnvelopeProperties,
-    type: Type.Literal("event.writer.ready"),
+    type: Type.Literal("fact.channel.ready"),
     payload: Type.Object(
       {
         acknowledgedMessageId: UuidSchema,
@@ -466,10 +466,10 @@ export const EventWriterReadyMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const EventWriterCloseMessageSchema = Type.Object(
+export const FactChannelCloseMessageSchema = Type.Object(
   {
     ...WireEnvelopeProperties,
-    type: Type.Literal("event.writer.close"),
+    type: Type.Literal("fact.channel.close"),
     payload: Type.Object(
       {
         executionGrant: ExecutionGrantSchema,
@@ -481,10 +481,10 @@ export const EventWriterCloseMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const EventWriterClosedMessageSchema = Type.Object(
+export const FactChannelClosedMessageSchema = Type.Object(
   {
     ...WireEnvelopeProperties,
-    type: Type.Literal("event.writer.closed"),
+    type: Type.Literal("fact.channel.closed"),
     payload: Type.Object(
       {
         acknowledgedMessageId: UuidSchema,
@@ -592,8 +592,8 @@ export const SupervisorToControlMessageSchema = Type.Union([
   CommandAckMessageSchema,
   CommandResultMessageSchema,
   EventPublishMessageSchema,
-  EventWriterOpenMessageSchema,
-  EventWriterCloseMessageSchema,
+  FactChannelOpenMessageSchema,
+  FactChannelCloseMessageSchema,
   SupervisorHeartbeatMessageSchema,
 ]);
 
@@ -607,8 +607,8 @@ export const ControlToSupervisorMessageSchema = Type.Union([
   CommandReleaseMessageSchema,
   EventAckMessageSchema,
   EventRejectedMessageSchema,
-  EventWriterReadyMessageSchema,
-  EventWriterClosedMessageSchema,
+  FactChannelReadyMessageSchema,
+  FactChannelClosedMessageSchema,
   SupervisorHeartbeatAckMessageSchema,
 ]);
 
@@ -625,10 +625,10 @@ export type CommandResultMessage = Static<typeof CommandResultMessageSchema>;
 export type EventPublishMessage = Static<typeof EventPublishMessageSchema>;
 export type EventAckMessage = Static<typeof EventAckMessageSchema>;
 export type EventRejectedMessage = Static<typeof EventRejectedMessageSchema>;
-export type EventWriterOpenMessage = Static<typeof EventWriterOpenMessageSchema>;
-export type EventWriterReadyMessage = Static<typeof EventWriterReadyMessageSchema>;
-export type EventWriterCloseMessage = Static<typeof EventWriterCloseMessageSchema>;
-export type EventWriterClosedMessage = Static<typeof EventWriterClosedMessageSchema>;
+export type FactChannelOpenMessage = Static<typeof FactChannelOpenMessageSchema>;
+export type FactChannelReadyMessage = Static<typeof FactChannelReadyMessageSchema>;
+export type FactChannelCloseMessage = Static<typeof FactChannelCloseMessageSchema>;
+export type FactChannelClosedMessage = Static<typeof FactChannelClosedMessageSchema>;
 export type SupervisorHeartbeatMessage = Static<typeof SupervisorHeartbeatMessageSchema>;
 export type SupervisorHeartbeatAckMessage = Static<typeof SupervisorHeartbeatAckMessageSchema>;
 
@@ -637,8 +637,8 @@ export type SupervisorToControlMessage =
   | CommandAckMessage
   | CommandResultMessage
   | EventPublishMessage
-  | EventWriterOpenMessage
-  | EventWriterCloseMessage
+  | FactChannelOpenMessage
+  | FactChannelCloseMessage
   | SupervisorHeartbeatMessage;
 
 export type ControlToSupervisorMessage =
@@ -651,8 +651,8 @@ export type ControlToSupervisorMessage =
   | CommandReleaseMessage
   | EventAckMessage
   | EventRejectedMessage
-  | EventWriterReadyMessage
-  | EventWriterClosedMessage
+  | FactChannelReadyMessage
+  | FactChannelClosedMessage
   | SupervisorHeartbeatAckMessage;
 
 export class PiCloudWireProtocolError extends Error {

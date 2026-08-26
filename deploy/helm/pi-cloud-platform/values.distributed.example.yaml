@@ -63,8 +63,8 @@ external:
     replicas: 3
     eventRetentionMs: 86400000
     maximumEventsPerSession: 8192
-    eventWriterLeaseMs: 9000
-    maximumActiveWritersPerGateway: 128
+    factChannelLeaseMs: 9000
+    maximumActiveFactChannelsPerGateway: 128
   providerProxyUrl: https://provider-proxy.example.com:3129
 
 networkPolicy:

@@ -3,15 +3,13 @@ import type { StreamInfo } from "@nats-io/jetstream";
 import type { Kysely } from "kysely";
 import {
   JetStreamAcceptedAgentEventPublisher,
-  JetStreamAgentEventWriterService,
+  FactChannelService,
   JetStreamLiveEventStore,
   JetStreamLiveTurnSnapshotSource,
   JetStreamTerminalEventOutboxRelay,
   JetStreamTerminalTurnProjectionSource,
 } from "./jetstream-agent-event-log.ts";
 import {
-  JetStreamAcceptedPiSessionMutationPublisher,
-  JetStreamPiSessionMutationIngestor,
   JetStreamPiSessionMutationProjector,
   PI_SESSION_MUTATION_PROJECTOR_CONSUMER,
 } from "./jetstream-pi-session-mutations.ts";
@@ -23,14 +21,16 @@ import {
   type JetStreamAuthorityConfiguration,
 } from "./jetstream-runtime.ts";
 import { SessionEventHub } from "./session-event-hub.ts";
+import { PostgresExecutionGrantAuthorityGate } from "./execution-grant-authority-gate.ts";
+import { JetStreamAcceptedFactBus } from "./jetstream-accepted-fact-bus.ts";
 
 export type JetStreamEventRuntimeOptions = Readonly<{
   database: Kysely<Database>;
   servers: readonly string[];
   instanceId: string;
   authority: JetStreamAuthorityConfiguration;
-  eventWriterLeaseMs?: number;
-  eventWriterMaximumActive?: number;
+  factChannelLeaseMs?: number;
+  factChannelMaximumActive?: number;
 }>;
 
 export type JetStreamOperationalSnapshot = Readonly<{
@@ -45,7 +45,7 @@ export type JetStreamOperationalSnapshot = Readonly<{
     name: string;
     pending: number;
   }>[];
-  eventWriters: ReturnType<JetStreamAgentEventWriterService["statistics"]>;
+  factChannels: ReturnType<FactChannelService["statistics"]>;
 }>;
 
 function unavailableReplicas(info: StreamInfo): number {
@@ -62,8 +62,7 @@ export class JetStreamEventRuntime {
   readonly eventStore: JetStreamLiveEventStore;
   readonly liveTurnSnapshotSource: JetStreamLiveTurnSnapshotSource;
   readonly terminalTurnProjectionSource: JetStreamTerminalTurnProjectionSource;
-  readonly sessionMutationIngestor: JetStreamPiSessionMutationIngestor;
-  readonly agentEventWriters: JetStreamAgentEventWriterService;
+  readonly factChannels: FactChannelService;
   readonly #runtime;
   readonly #sessionProjector: JetStreamPiSessionMutationProjector;
   readonly #terminalRelay: JetStreamTerminalEventOutboxRelay;
@@ -75,22 +74,27 @@ export class JetStreamEventRuntime {
     runtime: Awaited<ReturnType<typeof connectPiCloudJetStream>>;
     authority: JetStreamAuthorityConfiguration;
     instanceId: string;
-    eventWriterLeaseMs?: number;
-    eventWriterMaximumActive?: number;
+    factChannelLeaseMs?: number;
+    factChannelMaximumActive?: number;
   }) {
     this.#runtime = options.runtime;
     this.#authorityConfiguration = options.authority;
     const publisher = new JetStreamAcceptedAgentEventPublisher(this.#runtime);
-    this.agentEventWriters = new JetStreamAgentEventWriterService({
-      database: options.database,
-      publisher,
+    this.factChannels = new FactChannelService({
+      authority: new PostgresExecutionGrantAuthorityGate({
+        database: options.database,
+        ...(options.factChannelLeaseMs === undefined
+          ? {}
+          : { leaseDurationMs: options.factChannelLeaseMs }),
+      }),
+      bus: new JetStreamAcceptedFactBus(this.#runtime),
       instanceId: options.instanceId,
-      ...(options.eventWriterLeaseMs === undefined
+      ...(options.factChannelLeaseMs === undefined
         ? {}
-        : { leaseDurationMs: options.eventWriterLeaseMs }),
-      ...(options.eventWriterMaximumActive === undefined
+        : { leaseDurationMs: options.factChannelLeaseMs }),
+      ...(options.factChannelMaximumActive === undefined
         ? {}
-        : { maximumActiveWriters: options.eventWriterMaximumActive }),
+        : { maximumActiveChannels: options.factChannelMaximumActive }),
     });
     this.eventStore = new JetStreamLiveEventStore({
       database: options.database,
@@ -109,10 +113,6 @@ export class JetStreamEventRuntime {
       database: options.database,
       runtime: this.#runtime,
     });
-    this.sessionMutationIngestor = new JetStreamPiSessionMutationIngestor({
-      database: options.database,
-      publisher: new JetStreamAcceptedPiSessionMutationPublisher(this.#runtime),
-    });
     this.#terminalRelay = new JetStreamTerminalEventOutboxRelay({
       database: options.database,
       publisher,
@@ -129,12 +129,12 @@ export class JetStreamEventRuntime {
       runtime,
       authority: options.authority,
       instanceId: options.instanceId,
-      ...(options.eventWriterLeaseMs === undefined
+      ...(options.factChannelLeaseMs === undefined
         ? {}
-        : { eventWriterLeaseMs: options.eventWriterLeaseMs }),
-      ...(options.eventWriterMaximumActive === undefined
+        : { factChannelLeaseMs: options.factChannelLeaseMs }),
+      ...(options.factChannelMaximumActive === undefined
         ? {}
-        : { eventWriterMaximumActive: options.eventWriterMaximumActive }),
+        : { factChannelMaximumActive: options.factChannelMaximumActive }),
     });
   }
 
@@ -165,7 +165,7 @@ export class JetStreamEventRuntime {
           pending: sessionProjector.num_pending + sessionProjector.num_ack_pending,
         },
       ],
-      eventWriters: this.agentEventWriters.statistics(),
+      factChannels: this.factChannels.statistics(),
     };
   }
 
@@ -183,10 +183,7 @@ export class JetStreamEventRuntime {
     this.eventStore.checkHealth();
     this.#sessionProjector.checkHealth();
     this.#terminalRelay.checkHealth();
-    await Promise.all([
-      this.agentEventWriters.checkHealth(),
-      this.sessionMutationIngestor.checkHealth(),
-    ]);
+    await this.factChannels.checkHealth();
   }
 
   async close(): Promise<void> {
@@ -195,11 +192,10 @@ export class JetStreamEventRuntime {
       return;
     }
     this.#started = false;
-    await this.sessionMutationIngestor.close().catch(() => undefined);
     await this.#terminalRelay.close().catch(() => undefined);
     await this.#sessionProjector.close().catch(() => undefined);
     await this.eventStore.close().catch(() => undefined);
-    await this.agentEventWriters.close().catch(() => undefined);
+    await this.factChannels.close().catch(() => undefined);
     this.eventHub.onApplicationShutdown();
     await this.#runtime.connection.close().catch(() => undefined);
   }

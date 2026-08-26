@@ -21,8 +21,8 @@
   Agent handoff and one-time SSH access;
 - Session/Workspace lifetime independence with missing-Workspace rebinding;
 - committed RePublish with one Core NATS subscription per Gateway and no replay cache;
-- batched Run capability validation and Session-keyed PostgreSQL projection barriers.
-- short-leased per-ExecutionGrant EventWriterChannels with no Agent-event
+- one ExecutionGrant Authority Gate and Session-keyed PostgreSQL projection barriers.
+- short-leased per-ExecutionGrant FactChannels with no Agent-event
   application batching delay and one R=3 PubAck per visible event.
 
 ## Current release gate
@@ -32,7 +32,7 @@
 - [x] Remove MinIO/S3 checkpoint runtime and Kopia Workspace copies.
 - [x] Make PostgreSQL SessionStorage the production Pi conversation authority.
 - [x] Attach the same Workspace Volume across Cube activations and conversations.
-- [x] Enforce Pi Session mutations at a batched PostgreSQL Authority boundary
+- [x] Enforce Agent events and Pi Session mutations at one PostgreSQL Authority Gate.
       before their accepted JetStream PubAck.
 - [x] Replace the full Harness experiment with a thin runtime composed from
       Pi Agent, SessionStorage and compaction primitives.

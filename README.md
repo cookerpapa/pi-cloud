@@ -33,9 +33,13 @@ Browser ──REST/SSE──> Control Plane ──> PostgreSQL Run queue
                                       CubeSandbox KVM
                                 elastic Volume / cloud development machine state
 
-Worker events ──> per-Grant EventWriterChannel ──> JetStream R=3 ──> committed SSE
-complete Pi entries ──> batched PostgreSQL Grant check
-                    └─> Session Mutation JetStream ──> PostgreSQL
+Worker CandidateFacts ──> per-Grant FactChannel ──> PostgreSQL Authority Gate
+                                                       │ grant-free AcceptedFacts
+                                                       ▼
+                                                AcceptedFactBus
+                                              JetStream R=3 adapter
+                                                ├─> committed SSE
+                                                └─> Pi Session projector ──> PostgreSQL
 ```
 
 There are three durable authorities:

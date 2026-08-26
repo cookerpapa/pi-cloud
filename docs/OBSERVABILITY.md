@@ -42,7 +42,7 @@ user-visible Run:
 - Tool failures and Cube lifecycle/admission capacity;
 - Workspace Volume Gateway queue, latency, rejection and cleanup backlog;
 - JetStream retained bytes, R=3 replica health and Pi Session projection lag;
-- EventWriterChannel active/limit utilization and writer-lease renewal failures;
+- FactChannel active/limit utilization and channel-lease renewal failures;
 - settled terminal events still waiting to reach JetStream.
 
 The Control Plane samples PostgreSQL and JetStream every ten seconds. These

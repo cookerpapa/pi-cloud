@@ -4,8 +4,8 @@ PiCloud separates short-lived presentation fragments from semantic conversation
 state. The following symbols make the boundary explicit:
 
 - `R` — a Worker produced a sequenced raw event;
-- `J` — R=3 JetStream durably acknowledged that event through the current
-  short-leased ExecutionGrant writer channel;
+- `J` — R=3 JetStream durably acknowledged that event after the current
+  short-leased FactChannel passed the PostgreSQL Authority Gate;
 - `V` — an authenticated SSE client observed the event;
 - `M` — authority-accepted Session Mutation received an R=3 JetStream PubAck;
 - `P` — Pi SessionStorage committed the complete message or Tool result in
@@ -19,7 +19,8 @@ The maintained invariants are:
 
 ```text
 V implies J
-M implies the mutation's ExecutionGrant was current at acceptance
+M implies the mutation crossed the same current ExecutionGrant Gate; duplicate
+identities are suppressed downstream by the bus
 T(success) implies P
 next model Step starts only after the required P projection barrier
 replacement Worker reads SessionStorage only after B and a fresh fence check

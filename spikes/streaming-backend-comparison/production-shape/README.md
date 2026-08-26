@@ -26,7 +26,7 @@ commit but before broker ACK, kills the current Stream Leader, and then opens
 credentials and ports are loopback-only.
 
 The same command also runs an exact write-channel benchmark using the production
-`WebSocketAgentEventIngestor`, Fastify `AgentEventIngestGateway`, one short
+`WebSocketAcceptedFactIngestor`, Fastify `AcceptedFactIngestGateway`, one short
 PostgreSQL writer lease per ExecutionGrant, and synchronous per-event JetStream
 R=3 PubAck. It varies active channel concurrency, event size, and Session
 locality, includes a 32K-event sustained stage, and repeats the path while the
