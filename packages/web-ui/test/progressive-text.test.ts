@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextProgressiveTextIndex } from "../src/ConversationTurn.tsx";
+import { initialProgressiveText, nextProgressiveTextIndex } from "../src/ConversationTurn.tsx";
 
 describe("progressive durable text presentation", () => {
   it("reveals a durable batch across several bounded animation frames", () => {
@@ -33,5 +33,14 @@ describe("progressive durable text presentation", () => {
   it("rejects presentation cursors outside the acknowledged text", () => {
     expect(() => nextProgressiveTextIndex("durable", -1)).toThrow(/index/u);
     expect(() => nextProgressiveTextIndex("durable", 8)).toThrow(/index/u);
+  });
+
+  it("uses the recovered Snapshot prefix as the initial visible baseline", () => {
+    const recovered = "already durable";
+    const target = `${recovered} and newly streamed`;
+    expect(initialProgressiveText(target, true, recovered.length)).toBe(recovered);
+    expect(initialProgressiveText(target, true)).toBe("");
+    expect(initialProgressiveText(target, false)).toBe(target);
+    expect(() => initialProgressiveText(target, true, -1)).toThrow(/Recovered/u);
   });
 });

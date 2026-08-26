@@ -82,6 +82,8 @@ retired and remain only in Git history or explicitly superseded ADRs.
       Session-keyed mutation projection barrier before cross-Worker reads.
 - [x] Keep broker durability independent from a browser-only progressive
       text reveal so larger acknowledged chunks do not flash into the transcript.
+- [x] Treat the active JetStream Snapshot as an immediately visible refresh
+      baseline while progressively revealing only later SSE text.
 - [x] Make both JetStream paths logs of PostgreSQL-Authority-accepted facts,
       remove Worker NATS access and renew one Worker heartbeat with set-oriented
       Grant/Run-execution updates.

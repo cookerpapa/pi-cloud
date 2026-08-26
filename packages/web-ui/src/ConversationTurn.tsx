@@ -34,16 +34,28 @@ export function nextProgressiveTextIndex(text: string, currentIndex: number): nu
   return nearbyBoundary < 0 ? next : Math.min(text.length, next + nearbyBoundary + 1);
 }
 
+export function initialProgressiveText(
+  text: string,
+  streaming: boolean,
+  recoveredTextLength = 0,
+): string {
+  if (!Number.isSafeInteger(recoveredTextLength) || recoveredTextLength < 0) {
+    throw new TypeError("Recovered text length is invalid");
+  }
+  return streaming ? text.slice(0, Math.min(text.length, recoveredTextLength)) : text;
+}
+
 function useProgressiveText(
   text: string,
   streaming: boolean,
   onProgress: (() => void) | undefined,
+  recoveredTextLength = 0,
 ): string {
   const animated = useRef(streaming);
   const callback = useRef(onProgress);
   const frameRef = useRef<number | null>(null);
   const targetRef = useRef(text);
-  const visibleRef = useRef(streaming ? "" : text);
+  const visibleRef = useRef(initialProgressiveText(text, streaming, recoveredTextLength));
   const [visible, setVisible] = useState(visibleRef.current);
 
   useEffect(() => {
@@ -106,7 +118,12 @@ function AssistantTextItem({
   processNarration: boolean;
   streaming: boolean;
 }) {
-  const visibleText = useProgressiveText(item.text, streaming, onPresentationProgress);
+  const visibleText = useProgressiveText(
+    item.text,
+    streaming,
+    onPresentationProgress,
+    item.recoveredTextLength,
+  );
   return (
     <div className={processNarration ? "product-agent-stage" : "product-agent-answer"}>
       <Markdown sessionId={sessionId}>{visibleText}</Markdown>

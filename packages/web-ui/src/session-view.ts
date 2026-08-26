@@ -25,6 +25,8 @@ export type TranscriptItem =
       text: string;
       firstSequence: number;
       lastSequence: number;
+      /** Text recovered before this browser attached; render it without replay animation. */
+      recoveredTextLength?: number;
     }
   | {
       kind: "tool";
@@ -200,9 +202,14 @@ function appendText(turn: TurnView, text: string, sequence: number): TurnView {
 
 function transcriptItem(
   item: NonNullable<ConversationDetailResource["turns"][number]["transcript"]>["items"][number],
+  recovered = false,
 ): TranscriptItem {
   if (item.kind === "text") {
-    return { ...item, key: `text:${String(item.firstSequence)}` };
+    return {
+      ...item,
+      key: `text:${String(item.firstSequence)}`,
+      ...(recovered ? { recoveredTextLength: item.text.length } : {}),
+    };
   }
   if (item.kind === "tool") {
     return { ...item, key: `tool:${item.toolCallId}` };
@@ -535,7 +542,7 @@ export function sessionViewReducer(
               workspacePatch: null,
             }
           : {
-              items: turn.transcript.items.map(transcriptItem),
+              items: turn.transcript.items.map((item) => transcriptItem(item)),
               startedSequence: turn.transcript.startedSequence,
               terminalSequence: turn.transcript.terminalSequence,
               stopReason: turn.transcript.stopReason,
@@ -578,7 +585,7 @@ export function sessionViewReducer(
       turns: updateTurn(loaded.turns, snapshot.turn.turnId, (turn): TurnView => {
         return {
           ...turn,
-          items: transcript.items.map(transcriptItem),
+          items: transcript.items.map((item) => transcriptItem(item, true)),
           startedSequence: transcript.startedSequence,
           terminalSequence: transcript.terminalSequence,
           stopReason: transcript.stopReason,

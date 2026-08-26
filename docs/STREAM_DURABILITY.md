@@ -31,13 +31,16 @@ the Session Subject while PostgreSQL owns settled semantic messages. An older
 reconnect reloads `P` from PostgreSQL. Gateway memory therefore follows active
 HTTP connections rather than historical token fragments.
 
-JetStream durability and browser presentation are deliberately decoupled. React first
-accepts the complete `J`-acknowledged text block into its in-memory target, then
-reveals that target over bounded animation frames. Later semantic events remain
-authoritative and refresh/reconnect still renders the complete durable target;
-the animation is neither another event log nor another acknowledgement. Hidden
-tabs and reduced-motion clients skip the animation, and manual scrolling stops
-automatic tail following while the local reveal continues.
+JetStream durability and browser presentation are deliberately decoupled. On a
+fresh live delivery, React first accepts the complete `J`-acknowledged text
+block into its in-memory target, then reveals the new suffix over bounded
+animation frames. A hard refresh loads canonical PostgreSQL Turns plus one
+JetStream live-Turn Snapshot; the already recovered text prefix is the initial
+visible baseline and is never animated from empty again. SSE starts at the
+Snapshot sequence and only later events animate. The animation is neither
+another event log nor another acknowledgement. Hidden tabs and reduced-motion
+clients skip it, and manual scrolling stops automatic tail following while the
+local reveal continues.
 
 Gateway startup installs one committed-RePublish Core NATS subscription. It
 does not scan retained history. Reconnect creates a temporary exact-Subject

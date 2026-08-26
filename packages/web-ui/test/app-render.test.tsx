@@ -339,6 +339,30 @@ describe("product chat experience", () => {
     expect(markup).not.toContain("secret.ts");
   });
 
+  it("renders an active Snapshot prefix immediately instead of replaying it from empty", () => {
+    const recovered = "这是刷新前已经由 JetStream 持久化的完整文本前缀。";
+    const markup = renderToStaticMarkup(
+      <ConversationTurn
+        turn={{
+          ...turn("10000000-0000-4000-8000-000000000014", "继续当前任务"),
+          status: "running",
+          stopReason: null,
+          items: [
+            {
+              kind: "text",
+              key: "text:7",
+              text: recovered,
+              firstSequence: 7,
+              lastSequence: 12,
+              recoveredTextLength: recovered.length,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(markup).toContain(recovered);
+  });
+
   it("offers a fork action only after a completed final response", () => {
     const markup = renderToStaticMarkup(
       <ConversationTurn

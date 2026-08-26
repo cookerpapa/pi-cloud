@@ -221,14 +221,23 @@ describe("session transcript reducer", () => {
     });
     expect(state).toMatchObject({
       lastSequence: 9,
-      turns: [{ status: "running", items: [{ text: "Already durable." }] }],
+      turns: [
+        {
+          status: "running",
+          items: [{ text: "Already durable.", recoveredTextLength: "Already durable.".length }],
+        },
+      ],
     });
     state = sessionViewReducer(state, {
       type: "stream.event",
       event: envelope(10, { type: "assistant.text.delta", payload: { text: " Next." } }),
     });
     expect(state.turns[0]?.items).toEqual([
-      expect.objectContaining({ text: "Already durable. Next.", lastSequence: 10 }),
+      expect.objectContaining({
+        text: "Already durable. Next.",
+        lastSequence: 10,
+        recoveredTextLength: "Already durable.".length,
+      }),
     ]);
   });
 
