@@ -46,6 +46,7 @@ import {
 import type {
   AcceptedAgentEventEnvelope,
   AcceptedFactBus,
+  AcceptedFactProgressStore,
   ActiveFactChannelResolver,
   CandidateFact,
   CandidatePiSessionMutationFact,
@@ -162,6 +163,7 @@ export type AcceptedFactChannelSession = Readonly<{
 export type FactChannelServiceOptions = Readonly<{
   authority: PostgresExecutionGrantAuthorityGate;
   bus: AcceptedFactBus;
+  progress: AcceptedFactProgressStore;
   instanceId: string;
   leaseDurationMs?: number;
   maximumActiveChannels?: number;
@@ -189,6 +191,7 @@ class ServerFactChannel implements AcceptedFactChannelSession {
   readonly turnId: string;
   readonly #authority: PostgresExecutionGrantAuthorityGate;
   readonly #bus: AcceptedFactBus;
+  readonly #progress: AcceptedFactProgressStore;
   readonly #scope: Awaited<ReturnType<PostgresExecutionGrantAuthorityGate["open"]>>;
   readonly #ensureLease: () => Promise<void>;
   #acknowledgedThroughSeq: number;
@@ -201,12 +204,14 @@ class ServerFactChannel implements AcceptedFactChannelSession {
   constructor(options: {
     authority: PostgresExecutionGrantAuthorityGate;
     bus: AcceptedFactBus;
+    progress: AcceptedFactProgressStore;
     scope: Awaited<ReturnType<PostgresExecutionGrantAuthorityGate["open"]>>;
     acknowledgedThroughSeq: number;
     ensureLease: () => Promise<void>;
   }) {
     this.#authority = options.authority;
     this.#bus = options.bus;
+    this.#progress = options.progress;
     this.#scope = options.scope;
     this.#ensureLease = options.ensureLease;
     this.executionGrant = options.scope.executionGrant;
@@ -282,10 +287,29 @@ class ServerFactChannel implements AcceptedFactChannelSession {
     if (this.#closed) return;
     this.#closed = true;
     try {
+      const recorded = await this.#progress.recordMany([this.eventProgress]);
+      if (!recorded.has(this.#scope.connectionId)) {
+        throw new ExecutionGrantAuthorityGateError(
+          "stale_execution_grant",
+          "FactChannel progress could not be recorded under current ownership",
+          false,
+        );
+      }
       await this.#authority.close(this.#scope);
     } catch (error: unknown) {
       throw factChannelError(error);
     }
+  }
+
+  get eventProgress() {
+    return {
+      grantId: this.#scope.grantId,
+      executionId: this.#scope.executionId,
+      executionGeneration: this.#scope.generation,
+      channelConnectionId: this.#scope.connectionId,
+      channelInstanceId: this.#scope.instanceId,
+      acknowledgedThroughSeq: this.#acknowledgedThroughSeq,
+    } as const;
   }
 
   #recordLease(durationMs: number): void {
@@ -351,6 +375,7 @@ class ServerFactChannel implements AcceptedFactChannelSession {
 export class FactChannelService {
   readonly #authority: PostgresExecutionGrantAuthorityGate;
   readonly #bus: AcceptedFactBus;
+  readonly #progress: AcceptedFactProgressStore;
   readonly #instanceId: string;
   readonly #renewalIntervalMs: number;
   readonly #maximumActiveChannels: number;
@@ -373,6 +398,7 @@ export class FactChannelService {
   constructor(options: FactChannelServiceOptions) {
     this.#authority = options.authority;
     this.#bus = options.bus;
+    this.#progress = options.progress;
     this.#instanceId = options.instanceId;
     this.#renewalIntervalMs = Math.max(1, Math.floor((options.leaseDurationMs ?? 9_000) / 4));
     this.#maximumActiveChannels = options.maximumActiveChannels ?? 128;
@@ -424,6 +450,7 @@ export class FactChannelService {
         },
         checkHealth: () => this.#bus.checkHealth(),
       },
+      progress: this.#progress,
       scope,
       acknowledgedThroughSeq: message.payload.nextEventSeq - 1,
       ensureLease: () => this.#renewIfDue(false),
@@ -526,10 +553,20 @@ export class FactChannelService {
         for (const entry of chunk) this.#failChannel(entry, error);
         continue;
       }
+      let recorded: ReadonlySet<string>;
+      try {
+        const progress = chunk
+          .filter(({ channel }) => renewed.has(channel.authorityScope.connectionId))
+          .map(({ channel }) => channel.eventProgress);
+        recorded = progress.length === 0 ? new Set() : await this.#progress.recordMany(progress);
+      } catch (error: unknown) {
+        for (const entry of chunk) this.#failChannel(entry, error);
+        continue;
+      }
       for (const entry of chunk) {
         if (entry.channel.closed) continue;
         const durationMs = renewed.get(entry.channel.authorityScope.connectionId);
-        if (durationMs === undefined) {
+        if (durationMs === undefined || !recorded.has(entry.channel.authorityScope.connectionId)) {
           this.#failChannel(
             entry,
             new ExecutionGrantAuthorityGateError(

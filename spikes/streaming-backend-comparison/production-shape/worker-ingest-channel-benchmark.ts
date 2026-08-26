@@ -12,6 +12,7 @@ import {
 } from "../../../packages/runtime-core/src/jetstream-agent-event-log.ts";
 import { PostgresExecutionGrantAuthorityGate } from "../../../packages/runtime-core/src/execution-grant-authority-gate.ts";
 import { JetStreamAcceptedFactBus } from "../../../packages/runtime-core/src/jetstream-accepted-fact-bus.ts";
+import { PostgresAcceptedFactProgressStore } from "../../../packages/runtime-core/src/postgres-accepted-fact-progress.ts";
 import {
   AGENT_EVENT_STREAM_NAME,
   PI_SESSION_MUTATION_STREAM_NAME,
@@ -219,6 +220,7 @@ try {
   const service = new FactChannelService({
     authority: new PostgresExecutionGrantAuthorityGate({ database, leaseDurationMs: 30_000 }),
     bus: new JetStreamAcceptedFactBus(runtime),
+    progress: new PostgresAcceptedFactProgressStore(database),
     instanceId: uuid(90_000, 1),
     leaseDurationMs: 30_000,
     maximumActiveWriters: 128,

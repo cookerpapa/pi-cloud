@@ -13,6 +13,7 @@
     "./durable-event-store": "./src/durable-event-store.ts",
     "./execution-grant-authority-gate": "./src/execution-grant-authority-gate.ts",
     "./accepted-fact": "./src/accepted-fact.ts",
+    "./postgres-accepted-fact-progress": "./src/postgres-accepted-fact-progress.ts",
     "./jetstream-accepted-fact-bus": "./src/jetstream-accepted-fact-bus.ts",
     "./jetstream-agent-event-log": "./src/jetstream-agent-event-log.ts",
     "./jetstream-event-runtime": "./src/jetstream-event-runtime.ts",

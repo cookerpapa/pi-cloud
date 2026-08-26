@@ -12,6 +12,7 @@ import {
   ExecutionGrantAuthorityGateError,
   PostgresExecutionGrantAuthorityGate,
 } from "../src/execution-grant-authority-gate.ts";
+import { PostgresAcceptedFactProgressStore } from "../src/postgres-accepted-fact-progress.ts";
 
 const resources: Array<() => Promise<void>> = [];
 const GRANT_ID = "10000000-0000-4000-8000-000000000001";
@@ -146,6 +147,17 @@ describe("PostgresExecutionGrantAuthorityGate", () => {
       factId: "10000000-0000-4000-8000-000000000011",
     });
     expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pceg1_");
+    const recorded = await new PostgresAcceptedFactProgressStore(database).recordMany([
+      {
+        grantId: scope.grantId,
+        executionId: scope.executionId,
+        executionGeneration: scope.generation,
+        channelConnectionId: scope.connectionId,
+        channelInstanceId: scope.instanceId,
+        acknowledgedThroughSeq: event.payload.event.seq,
+      },
+    ]);
+    expect(recorded.has(CONNECTION_ID)).toBe(true);
     await expect(
       authority.open(openMessage().payload, {
         connectionId: "10000000-0000-4000-8000-000000000008",
@@ -169,7 +181,7 @@ describe("PostgresExecutionGrantAuthorityGate", () => {
         ])
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({
-      last_event_seq: "0",
+      last_event_seq: "1",
       fact_channel_connection_id: null,
       fact_channel_instance_id: null,
       fact_channel_valid_until: null,

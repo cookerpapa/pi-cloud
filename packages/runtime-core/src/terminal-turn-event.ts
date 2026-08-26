@@ -69,9 +69,10 @@ export async function commitTerminalTurnEvent(
     .select([
       "run.id as runId",
       "attempt.id as attemptId",
-      sql<string>`coalesce(${sql.ref("authority.last_event_seq")}, ${sql.ref(
-        "attempt.last_event_seq",
-      )})`.as("lastEventSeq"),
+      sql<string>`greatest(
+        coalesce(${sql.ref("authority.last_event_seq")}, 0),
+        ${sql.ref("attempt.last_event_seq")}
+      )`.as("lastEventSeq"),
     ])
     .where("run.tenant_id", "=", input.tenantId)
     .where("run.session_id", "=", input.sessionId)

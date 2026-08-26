@@ -90,6 +90,19 @@ export interface AcceptedFactBus {
   checkHealth(): Promise<void>;
 }
 
+export type AcceptedAgentEventProgress = Readonly<{
+  grantId: string;
+  executionId: string;
+  executionGeneration: number;
+  channelConnectionId: string;
+  channelInstanceId: string;
+  acknowledgedThroughSeq: number;
+}>;
+
+export interface AcceptedFactProgressStore {
+  recordMany(progress: readonly AcceptedAgentEventProgress[]): Promise<ReadonlySet<string>>;
+}
+
 export type PiSessionMutationPublishFrame = Readonly<{
   protocolVersion: 1;
   messageId: string;

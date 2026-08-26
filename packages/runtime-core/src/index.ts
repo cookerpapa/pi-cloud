@@ -5,6 +5,7 @@ export * from "./durable-event-store.ts";
 export * from "./execution-grant-authority-gate.ts";
 export * from "./jetstream-agent-event-log.ts";
 export * from "./accepted-fact.ts";
+export * from "./postgres-accepted-fact-progress.ts";
 export * from "./jetstream-accepted-fact-bus.ts";
 export * from "./jetstream-event-runtime.ts";
 export * from "./jetstream-pi-session-mutations.ts";

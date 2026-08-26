@@ -23,6 +23,7 @@ import {
 import { SessionEventHub } from "./session-event-hub.ts";
 import { PostgresExecutionGrantAuthorityGate } from "./execution-grant-authority-gate.ts";
 import { JetStreamAcceptedFactBus } from "./jetstream-accepted-fact-bus.ts";
+import { PostgresAcceptedFactProgressStore } from "./postgres-accepted-fact-progress.ts";
 
 export type JetStreamEventRuntimeOptions = Readonly<{
   database: Kysely<Database>;
@@ -88,6 +89,7 @@ export class JetStreamEventRuntime {
           : { leaseDurationMs: options.factChannelLeaseMs }),
       }),
       bus: new JetStreamAcceptedFactBus(this.#runtime),
+      progress: new PostgresAcceptedFactProgressStore(options.database),
       instanceId: options.instanceId,
       ...(options.factChannelLeaseMs === undefined
         ? {}
