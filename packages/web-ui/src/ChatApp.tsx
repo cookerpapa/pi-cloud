@@ -28,6 +28,12 @@ import { AccountMenu } from "./AccountMenu.tsx";
 import { AuthScreen } from "./AuthScreen.tsx";
 import { ConversationTreeNavigator } from "./ConversationTreeNavigator.tsx";
 import { ConversationTurn } from "./ConversationTurn.tsx";
+import {
+  conversationExportFilename,
+  conversationExportMarkdown,
+  downloadConversationMarkdown,
+} from "./conversation-export.ts";
+import { MessageCopyButton } from "./MessageCopyButton.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { isConversationTailVisible } from "./conversation-scroll.ts";
 import { activeTurn, createInitialSessionView, sessionViewReducer } from "./session-view.ts";
@@ -126,6 +132,7 @@ export default function ChatApp() {
     | "deleting-conversation"
     | "rebinding-workspace"
     | "managing-environment"
+    | "downloading"
     | null
   >(null);
   const [steerNotice, setSteerNotice] = useState<string | null>(null);
@@ -907,6 +914,25 @@ export default function ChatApp() {
     }
   }
 
+  async function downloadConversation(): Promise<void> {
+    const sessionId = state.session?.sessionId;
+    if (sessionId === undefined || operation !== null) return;
+    setOperation("downloading");
+    update({ type: "api.error.cleared" });
+    try {
+      const conversation = await api.getConversation(sessionId);
+      const exportedAt = new Date();
+      downloadConversationMarkdown(
+        conversationExportFilename(conversation.session.title, exportedAt),
+        conversationExportMarkdown(conversation, exportedAt),
+      );
+    } catch (error: unknown) {
+      update({ type: "api.error", message: errorMessage(error, t) });
+    } finally {
+      setOperation(null);
+    }
+  }
+
   async function submitTurn(): Promise<void> {
     const text = prompt.trim();
     if (!text || !canMutate || !canQueue || operation !== null) return;
@@ -1268,6 +1294,25 @@ export default function ChatApp() {
                 {t("chat.reconnect")}
               </button>
             ) : null}
+            <button
+              aria-label={t("chat.downloadConversation")}
+              className="product-download-conversation"
+              disabled={state.session === null || operation !== null}
+              onClick={() => void downloadConversation()}
+              title={t("chat.downloadConversationDescription")}
+              type="button"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M12 3v12" />
+                <path d="m7 10 5 5 5-5" />
+                <path d="M5 21h14" />
+              </svg>
+              <span>
+                {operation === "downloading"
+                  ? t("chat.downloadingConversation")
+                  : t("chat.downloadConversation")}
+              </span>
+            </button>
             <button
               disabled={state.session === null || selectedDelegatedSession !== null}
               onClick={() => setInspectorOpen((value) => !value)}
@@ -1766,13 +1811,29 @@ export default function ChatApp() {
                         key={message.entryId}
                       >
                         {message.role === "user" ? (
-                          <div className="product-user-bubble">{message.text}</div>
+                          <div className="product-user-message-body">
+                            <div className="product-user-bubble">{message.text}</div>
+                            <div className="product-user-message-actions">
+                              <MessageCopyButton
+                                copiedLabel={t("turn.copied")}
+                                label={t("turn.copyUserMessage")}
+                                text={message.text}
+                              />
+                            </div>
+                          </div>
                         ) : (
                           <div className="product-inherited-assistant">
                             <div className="product-assistant-content">
                               <Markdown sessionId={selectedDelegatedSession?.sessionId}>
                                 {message.text}
                               </Markdown>
+                              <div className="product-answer-actions">
+                                <MessageCopyButton
+                                  copiedLabel={t("turn.copied")}
+                                  label={t("turn.copyAssistantMessage")}
+                                  text={message.text}
+                                />
+                              </div>
                             </div>
                           </div>
                         )}

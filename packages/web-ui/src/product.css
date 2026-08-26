@@ -749,6 +749,22 @@ body.product-panel-resizing {
   display: flex;
   gap: 5px;
 }
+
+.product-download-conversation {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.product-download-conversation svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
 .product-topbar button {
   padding: 7px 9px;
   border-radius: 8px;
@@ -966,8 +982,14 @@ body.product-panel-resizing {
   justify-content: flex-end;
 }
 
-.product-user-bubble {
+.product-user-message-body {
+  display: grid;
   max-width: min(78%, 640px);
+  justify-items: end;
+}
+
+.product-user-bubble {
+  max-width: 100%;
   padding: 10px 15px;
   border-radius: 18px;
   background: #303030;
@@ -975,6 +997,20 @@ body.product-panel-resizing {
   font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.product-user-message-actions {
+  min-height: 27px;
+  padding-top: 3px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.product-user-message:hover .product-user-message-actions,
+.product-user-message:focus-within .product-user-message-actions,
+.product-inherited-message.user:hover .product-user-message-actions,
+.product-inherited-message.user:focus-within .product-user-message-actions {
+  opacity: 1;
 }
 
 .product-assistant-message {
@@ -1006,6 +1042,20 @@ body.product-panel-resizing {
   background: transparent;
   color: #777;
   font-size: 10px;
+}
+
+.product-message-copy svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.product-message-copy[data-copied="true"] {
+  color: #aaa2d2;
 }
 
 .product-answer-actions button:hover:not(:disabled) {

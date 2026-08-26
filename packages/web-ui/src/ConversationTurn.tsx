@@ -4,6 +4,7 @@ import { Markdown } from "./Markdown.tsx";
 import type { TranscriptItem, TurnView } from "./session-view.ts";
 import { compactToolSummary, ToolActivity, type ToolTranscriptItem } from "./ToolActivity.tsx";
 import { useI18n } from "./i18n.tsx";
+import { MessageCopyButton } from "./MessageCopyButton.tsx";
 
 const MAXIMUM_PROGRESSIVE_CHARACTERS_PER_FRAME = 32;
 const PROGRESSIVE_BOUNDARY_LOOKAHEAD = 4;
@@ -294,6 +295,14 @@ export function ConversationTurn({
   const working =
     turn.status === "queued" || turn.status === "running" || turn.status === "cancelling";
   const rows = useMemo(() => deriveConversationPresentationRows(turn.items), [turn.items]);
+  const finalAnswerText = useMemo(
+    () =>
+      rows
+        .filter((row) => row.kind === "text" && !row.processNarration)
+        .map((row) => (row.kind === "text" ? row.item.text : ""))
+        .join("\n\n"),
+    [rows],
+  );
   return (
     <section
       className="product-turn"
@@ -301,7 +310,16 @@ export function ConversationTurn({
       id={`turn-${turn.turnId}`}
     >
       <div className="product-message product-user-message">
-        <div className="product-user-bubble">{turn.prompt}</div>
+        <div className="product-user-message-body">
+          <div className="product-user-bubble">{turn.prompt}</div>
+          <div className="product-user-message-actions">
+            <MessageCopyButton
+              copiedLabel={t("turn.copied")}
+              label={t("turn.copyUserMessage")}
+              text={turn.prompt}
+            />
+          </div>
+        </div>
       </div>
       <div className="product-message product-assistant-message">
         <div className="product-assistant-content">
@@ -345,8 +363,15 @@ export function ConversationTurn({
             </div>
           ) : null}
           {turn.cancellation ? <div className="product-muted-line">{t("turn.stopped")}</div> : null}
-          {turn.status === "completed" && (onFork || onPrune) ? (
+          {turn.status === "completed" && (finalAnswerText.length > 0 || onFork || onPrune) ? (
             <div className="product-answer-actions">
+              {finalAnswerText.length > 0 ? (
+                <MessageCopyButton
+                  copiedLabel={t("turn.copied")}
+                  label={t("turn.copyAssistantMessage")}
+                  text={finalAnswerText}
+                />
+              ) : null}
               {onFork ? (
                 <button disabled={!canFork} onClick={onFork} type="button">
                   <span aria-hidden="true">↳</span>

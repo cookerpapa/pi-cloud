@@ -377,6 +377,27 @@ describe("product chat experience", () => {
     expect(markup).toContain("删除后续");
   });
 
+  it("offers copy actions for the user message and completed final response", () => {
+    const markup = renderToStaticMarkup(
+      <ConversationTurn
+        turn={{
+          ...turn("10000000-0000-4000-8000-000000000027", "请解释这个实现"),
+          items: [
+            {
+              kind: "text",
+              key: "text:1",
+              text: "这是最终回答。",
+              firstSequence: 1,
+              lastSequence: 2,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(markup).toContain('aria-label="复制用户消息"');
+    expect(markup).toContain('aria-label="复制回答"');
+  });
+
   it("renders Pi-style command output instead of a collapsed JSON tool card", () => {
     const markup = renderToStaticMarkup(
       <ToolActivity
