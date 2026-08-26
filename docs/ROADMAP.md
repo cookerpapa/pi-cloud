@@ -21,8 +21,8 @@
 - [x] Ensure terminal messages unload covered Gateway fragments without racing
       in-flight immutable snapshots.
 - [x] Run full deterministic tests and real model/Cube multi-round acceptance.
-- [ ] Validate Kafka broker, canonical projector and Gateway process loss under
-      concurrent active Runs.
+- [x] Validate Kafka broker and combined canonical/Gateway process loss during
+      an active Run without creating a second Attempt.
 - [ ] Repeat the clean one-host installer on a fresh machine.
 - [ ] Validate autoscaling and persistent storage on at least three physical nodes.
 

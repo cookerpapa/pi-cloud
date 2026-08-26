@@ -55,14 +55,14 @@ const productionCompose = await readFile(
   fileURLToPath(new URL("../deploy/production/compose.yaml", import.meta.url)),
   "utf8",
 );
-assert.match(productionCompose, /PI_CLOUD_JETSTREAM_REPLICAS: "3"/u);
 assert.match(productionCompose, /kafka-1:9092,kafka-2:9092,kafka-3:9092/u);
-assert.doesNotMatch(productionCompose, /event-gateway|valkey|kafka/u);
+assert.match(productionCompose, /PI_CLOUD_KAFKA_REPLICAS: "3"/u);
+assert.doesNotMatch(productionCompose, /event-gateway|valkey|nats-/u);
 validateProductionRuntimeEnvironment({});
 assert.throws(
   () =>
     validateProductionRuntimeEnvironment({
-      PI_CLOUD_AGENT_EVENT_RETENTION_MS: "3599999",
+      PI_CLOUD_KAFKA_PARTITIONS: "not-an-integer",
     }),
   /must be an integer/u,
 );

@@ -275,10 +275,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       await http.inject({
         method: "GET",
         url: `/v1/sessions/${sessionA.sessionId}/events`,
-        headers: {
-          ...authorization(tenantB.credential.token),
-          "last-event-id": "0",
-        },
+        headers: authorization(tenantB.credential.token),
       }),
     ];
     for (const response of foreignProbes) {

@@ -1,15 +1,15 @@
 {
   "accepted": true,
-  "piCloudRevision": "bdcdbfa61bbc2f48510054fa5470f615e0fe4b8c",
-  "checkedAt": "2026-08-26T09:33:19.280Z",
+  "piCloudRevision": "87b913b881f1a2fb7b93836f65ae74d57d57f784",
+  "checkedAt": "2026-08-26T09:41:20.742Z",
   "provider": "deepseek",
   "modelId": "deepseek-v4-flash",
-  "runId": "3d2810e5-c380-4376-925f-189e1f518ce2",
-  "turnId": "8437eb68-0924-46db-9b07-5ea50a3ec61e",
+  "runId": "851071ce-49d9-4a36-9431-58d3aecad3e3",
+  "turnId": "65f1ac8a-d937-485b-80a4-3669051e5b70",
   "firstTextSequence": 3,
-  "terminalSequence": 678,
-  "sseReconnects": 2,
+  "terminalSequence": 798,
+  "sseReconnects": 0,
   "attemptCount": 1,
   "faultMode": "kafka-broker",
-  "elapsedMs": 33177
+  "elapsedMs": 24468
 }

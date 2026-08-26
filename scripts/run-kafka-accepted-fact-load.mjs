@@ -7,6 +7,18 @@ const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const image =
   "node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d";
 
+const revision = await new Promise((resolvePromise, rejectPromise) => {
+  execFile(
+    "git",
+    ["rev-parse", "HEAD"],
+    { cwd: repositoryRoot, encoding: "utf8" },
+    (error, stdout) => {
+      if (error) rejectPromise(error);
+      else resolvePromise(stdout.trim());
+    },
+  );
+});
+
 const output = await new Promise((resolvePromise, rejectPromise) => {
   execFile(
     "docker",
@@ -34,6 +46,7 @@ const output = await new Promise((resolvePromise, rejectPromise) => {
 });
 
 const report = JSON.parse(output.split("\n").at(-1));
+report.revision = revision;
 const reportDirectory = resolve(repositoryRoot, "docs/reports");
 await mkdir(reportDirectory, { recursive: true });
 await writeFile(
@@ -46,6 +59,7 @@ await writeFile(
     "# Kafka AcceptedFact load",
     "",
     `- Checked at: ${report.generatedAt}`,
+    `- Revision: \`${report.revision}\``,
     `- Kafka: ${String(report.kafka.brokers)} brokers / ${String(report.kafka.partitions)} partitions / RF ${String(report.kafka.replicas)} / acks=${report.kafka.acknowledgements}`,
     `- Application microbatch: ${String(report.applicationMicrobatch)}`,
     "",
