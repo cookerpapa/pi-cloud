@@ -93,7 +93,6 @@
     "db:migrate": "npm run migrate --workspace @pi-cloud/database",
     "db:migrate:down": "npm run migrate:down --workspace @pi-cloud/database",
     "demo": "npm run production:deploy",
-    "docs:import-chatgpt-share": "node scripts/import-chatgpt-share.mjs",
     "docs:check": "node scripts/check-documentation.mjs",
     "check": "npm run typecheck && npm test",
     "security:audit": "node scripts/run-security-audit.mjs",

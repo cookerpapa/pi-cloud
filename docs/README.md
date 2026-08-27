@@ -17,9 +17,9 @@ Use documentation in this order:
 5. [`adr/README.md`](adr/README.md) — current decisions only.
 
 `reports/` contains evidence tied to a named revision and topology. `research/`
-contains background analysis, not product truth. The implementation-log stub
-and chat transcripts only point to historical context and must never override
-the sources above.
+contains bounded background analysis, not product truth. Development
+conversations and superseded implementation logs remain in Git history instead
+of the maintained tree.
 
 Superseded ADRs and retired architecture documents are kept in Git history
 instead of the current tree. This is intentional: repository-reading agents
