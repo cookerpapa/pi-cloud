@@ -5,7 +5,7 @@ import type {
   ToolSandboxOperationRequest,
 } from "@pi-cloud/protocol";
 import {
-  createExecutionGrant,
+  createExecutionLease,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
@@ -34,7 +34,7 @@ import {
 const SERVICE_TOKEN = `service-${"s".repeat(48)}`;
 const MATERIALIZER_TOKEN = `materializer-${"m".repeat(48)}`;
 const TERMINAL_TOKEN = `terminal-${"t".repeat(48)}`;
-const CAPABILITY = `pcts_${"c".repeat(43)}`;
+const CAPABILITY = `pcel1_${"1".repeat(32)}_${"2".repeat(32)}_1`;
 const STEP_CONTEXT_SHA256 = "a".repeat(64);
 const ACTIVATION_ID = "10000000-0000-4000-8000-000000000010";
 const assignment: ToolSandboxAssignment = {
@@ -47,7 +47,7 @@ const assignment: ToolSandboxAssignment = {
   commandId: "command-manager-test",
   sessionId: "session-manager-test",
   turnId: "turn-manager-test",
-  executionGrant: createExecutionGrant(
+  executionLease: createExecutionLease(
     "10000000-0000-4000-8000-000000000003",
     "10000000-0000-4000-8000-000000000003",
     4,
@@ -63,7 +63,7 @@ const runtimeAssignment: SupervisorRuntimeAssignment = {
   workspaceId: assignment.workspaceId,
   sessionId: assignment.sessionId,
   turnId: assignment.turnId,
-  executionGrant: assignment.executionGrant,
+  executionLease: assignment.executionLease,
 };
 
 const servers: ToolBrokerServer[] = [];
@@ -94,7 +94,7 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         requestId: request.requestId,
         activationId: ACTIVATION_ID,
         ownerBaseUrl,
-        capability: CAPABILITY,
+        executionLease: CAPABILITY,
         workspaceRoot: "/workspace",
         continuity: "cold_restore",
         continuityId: ACTIVATION_ID,
@@ -346,7 +346,7 @@ describe("Tool Broker authenticated RPC", () => {
             requestId: request.requestId,
             activationId: activationIds[replica]!,
             ownerBaseUrl,
-            capability: CAPABILITY,
+            executionLease: CAPABILITY,
             workspaceRoot: "/workspace",
             continuity: "cold_restore",
             continuityId: activationIds[replica]!,
@@ -435,7 +435,7 @@ describe("Tool Broker authenticated RPC", () => {
             requestId: request.requestId,
             activationId: ACTIVATION_ID,
             ownerBaseUrl,
-            capability: CAPABILITY,
+            executionLease: CAPABILITY,
             workspaceRoot: "/workspace",
             continuity: "warm_reuse",
             continuityId: ACTIVATION_ID,
@@ -478,7 +478,7 @@ describe("Tool Broker authenticated RPC", () => {
       commandId: "delegated-command",
       sessionId: "delegated-session",
       turnId: "delegated-turn",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "20000000-0000-4000-8000-000000000084",
         "20000000-0000-4000-8000-000000000083",
         5,
@@ -564,7 +564,7 @@ describe("Tool Broker authenticated RPC", () => {
     expect(reserved.activationId).toBe(ACTIVATION_ID);
   });
 
-  it("separates the service credential from the per-activation tool capability", async () => {
+  it("uses the Session lease for Tool effects and the service credential for management", async () => {
     const metrics = new PiCloudMetrics("tool-broker-test");
     const server = new ToolBrokerServer({
       host: "127.0.0.1",
@@ -613,7 +613,7 @@ describe("Tool Broker authenticated RPC", () => {
       run: async () => {
         await expect(client.create(request)).resolves.toMatchObject({
           activationId: ACTIVATION_ID,
-          capability: CAPABILITY,
+          executionLease: CAPABILITY,
         });
       },
     });

@@ -196,7 +196,7 @@ export class TurnSteeringService {
         error instanceof TurnSteerBackendError &&
         [
           "invalid_state",
-          "stale_execution_grant",
+          "stale_session_lease",
           "stale_attempt",
           "steer_target_unavailable",
         ].includes(error.code)
@@ -340,7 +340,7 @@ export class TurnSteeringService {
           .onRef("attempt.run_id", "=", "run.id")
           .onRef("attempt.id", "=", "run.current_attempt_id"),
       )
-      .innerJoin("execution_grants as lease", "lease.session_id", "session_row.id")
+      .innerJoin("session_leases as lease", "lease.session_id", "session_row.id")
       .select([
         "turn.state as turnState",
         "session_row.state as sessionState",

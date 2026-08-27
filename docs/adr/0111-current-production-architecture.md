@@ -73,11 +73,11 @@ execution path and failure semantics.
 
 ### Event and recovery semantics
 
-- Each active ExecutionGrant owns one short PostgreSQL-leased
+- Each active ExecutionLease owns one short PostgreSQL-leased
   FactChannel. Assistant text events and complete Pi Session mutations cross
   its long-lived WebSocket
   without an intentional application batch and receive one R=3 PubAck each.
-  Independent Grants publish concurrently; one Grant is ordered. Provider
+  Independent leases publish concurrently; one lease is ordered. Provider
   Tool-call JSON, thinking deltas and partial Tool output are not public events.
   There is no Worker disk WAL.
 - Pi SessionStorage and the browser stream are independent projections. A

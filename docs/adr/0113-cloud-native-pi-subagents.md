@@ -54,7 +54,7 @@ conversation.
   subagent” request as the Child's own pending instruction. A Child may still
   make a new, concrete delegation through its registered Tool.
 - Support explicit Workspace modes:
-  - `none`: no Cube Tool capability;
+  - `none`: no Cube Tool access;
   - `shared_serialized`: the parent and child use one Workspace and one
     serialized Tool execution world;
   - `isolated`: the child receives a Volume fork at a declared parent

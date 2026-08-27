@@ -1,8 +1,8 @@
 import {
   isExpectedDefaultToolchain,
   parseEnvironmentToolchainReport,
-  createExecutionGrant,
-  parseExecutionGrant,
+  createExecutionLease,
+  parseExecutionLease,
   parseToolBrokerResponse,
   parseToolSandboxOperationResponse,
   parseToolWorkerOutput,
@@ -132,17 +132,17 @@ const METADATA = Object.freeze({
   commandId: "picloud.command_id",
   sessionId: "picloud.session_id",
   turnId: "picloud.turn_id",
-  grantId: "picloud.execution_grant_id",
-  executionId: "picloud.execution_id",
-  generation: "picloud.execution_generation",
+  leaseId: "picloud.lease_id",
+  attemptId: "picloud.attempt_id",
+  fencingToken: "picloud.fencing_token",
   bindingSha256: "picloud.binding_sha256",
   imageRevision: "picloud.image_revision",
 } as const);
 
-const ASSIGNMENT_METADATA_PREFIX = "picloud.assignment.v2.";
+const ASSIGNMENT_METADATA_PREFIX = "picloud.assignment.v3.";
 
-function executionGeneration(assignment: ToolSandboxAssignment): number {
-  return parseExecutionGrant(assignment.executionGrant).generation;
+function fencingToken(assignment: ToolSandboxAssignment): number {
+  return parseExecutionLease(assignment.executionLease).fencingToken;
 }
 
 type CubeAssignmentMetadata = Readonly<{
@@ -156,9 +156,9 @@ type CubeAssignmentMetadata = Readonly<{
   commandId: string;
   sessionId: string;
   turnId: string;
-  grantId: string;
-  executionId: string;
-  generation: number;
+  leaseId: string;
+  attemptId: string;
+  fencingToken: number;
   bindingSha256: string;
   imageRevision: string;
 }>;
@@ -432,7 +432,7 @@ function assignmentMetadata(
   imageRevision: string,
   bindingSha256: string,
 ): Readonly<Record<string, string>> {
-  const execution = parseExecutionGrant(assignment.executionGrant);
+  const execution = parseExecutionLease(assignment.executionLease);
   const current: CubeAssignmentMetadata = {
     activationId,
     tenantId: assignment.tenantId,
@@ -444,9 +444,9 @@ function assignmentMetadata(
     commandId: assignment.commandId,
     sessionId: assignment.sessionId,
     turnId: assignment.turnId,
-    grantId: execution.grantId,
-    executionId: execution.executionId,
-    generation: execution.generation,
+    leaseId: execution.leaseId,
+    attemptId: execution.attemptId,
+    fencingToken: execution.fencingToken,
     bindingSha256,
     imageRevision,
   };
@@ -464,15 +464,15 @@ function assignmentMetadata(
     [METADATA.commandId]: assignment.commandId,
     [METADATA.sessionId]: assignment.sessionId,
     [METADATA.turnId]: assignment.turnId,
-    [METADATA.grantId]: execution.grantId,
-    [METADATA.executionId]: execution.executionId,
-    [METADATA.generation]: String(execution.generation),
+    [METADATA.leaseId]: execution.leaseId,
+    [METADATA.attemptId]: execution.attemptId,
+    [METADATA.fencingToken]: String(execution.fencingToken),
     [METADATA.bindingSha256]: bindingSha256,
     [METADATA.imageRevision]: imageRevision,
     // Keep a fence-qualified immutable create record for inventory and orphan
     // reconciliation. Later Run ownership lives only in PostgreSQL and the
     // Tool Broker activation; generic envd carries no PiCloud authority.
-    [`${ASSIGNMENT_METADATA_PREFIX}${String(execution.generation).padStart(16, "0")}`]:
+    [`${ASSIGNMENT_METADATA_PREFIX}${String(execution.fencingToken).padStart(16, "0")}`]:
       JSON.stringify(current),
   });
 }
@@ -488,7 +488,7 @@ function sameAssignment(left: ToolSandboxAssignment, right: ToolSandboxAssignmen
     left.commandId === right.commandId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
-    left.executionGrant === right.executionGrant
+    left.executionLease === right.executionLease
   );
 }
 
@@ -537,7 +537,7 @@ function currentAssignmentMetadata(
     if (!key.startsWith(ASSIGNMENT_METADATA_PREFIX)) continue;
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const generation = parsed.generation;
+      const fencingToken = parsed.fencingToken;
       const required = [
         "activationId",
         "tenantId",
@@ -549,8 +549,8 @@ function currentAssignmentMetadata(
         "commandId",
         "sessionId",
         "turnId",
-        "grantId",
-        "executionId",
+        "leaseId",
+        "attemptId",
         "bindingSha256",
         "imageRevision",
       ] as const;
@@ -561,9 +561,9 @@ function currentAssignmentMetadata(
             (parsed[name] as string).length < 1 ||
             (parsed[name] as string).length > 512,
         ) ||
-        !Number.isSafeInteger(generation) ||
-        (generation as number) < 1 ||
-        key !== `${ASSIGNMENT_METADATA_PREFIX}${String(generation as number).padStart(16, "0")}`
+        !Number.isSafeInteger(fencingToken) ||
+        (fencingToken as number) < 1 ||
+        key !== `${ASSIGNMENT_METADATA_PREFIX}${String(fencingToken as number).padStart(16, "0")}`
       ) {
         throw new Error("invalid assignment metadata");
       }
@@ -576,12 +576,12 @@ function currentAssignmentMetadata(
       );
     }
   }
-  const topGeneration = Number(values[METADATA.generation]);
+  const topFencingToken = Number(values[METADATA.fencingToken]);
   const current = candidates.filter(
     (candidate) =>
-      candidate.grantId === values[METADATA.grantId] &&
-      candidate.executionId === values[METADATA.executionId] &&
-      candidate.generation === topGeneration,
+      candidate.leaseId === values[METADATA.leaseId] &&
+      candidate.attemptId === values[METADATA.attemptId] &&
+      candidate.fencingToken === topFencingToken,
   );
   if (current.length !== 1) {
     throw new ToolBrokerError(
@@ -605,13 +605,11 @@ function assignmentFromMetadata(
     return undefined;
   }
   if (
-    values[METADATA.grantId] === undefined ||
-    values[METADATA.executionId] === undefined ||
-    values[METADATA.generation] === undefined
+    values[METADATA.leaseId] === undefined ||
+    values[METADATA.attemptId] === undefined ||
+    values[METADATA.fencingToken] === undefined
   ) {
-    // Pre-ExecutionGrant Cube metadata is deliberately not adopted. The
-    // orphan reaper/admin cleanup may destroy it, but current inventory never
-    // interprets its retired identity schema.
+    // Unmanaged or obsolete Cube metadata is never adopted as current authority.
     return undefined;
   }
   const current = currentAssignmentMetadata(values);
@@ -633,7 +631,7 @@ function assignmentFromMetadata(
     commandId: current.commandId,
     sessionId: current.sessionId,
     turnId: current.turnId,
-    executionGrant: createExecutionGrant(current.grantId, current.executionId, current.generation),
+    executionLease: createExecutionLease(current.leaseId, current.attemptId, current.fencingToken),
   };
 }
 
@@ -662,7 +660,7 @@ function supervisorAssignment(
     workspaceId: assignment.workspaceId,
     sessionId: assignment.sessionId,
     turnId: assignment.turnId,
-    executionGrant: assignment.executionGrant,
+    executionLease: assignment.executionLease,
   };
 }
 
@@ -682,7 +680,7 @@ function sameRuntimeAssignment(
     actual.workspaceId === expected.workspaceId &&
     actual.sessionId === expected.sessionId &&
     actual.turnId === expected.turnId &&
-    actual.executionGrant === expected.executionGrant
+    actual.executionLease === expected.executionLease
   );
 }
 
@@ -914,7 +912,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         volumeReference.volumeId !== workspaceVolumeId(spec.assignment) ||
         volumeReference.environmentSpecSha256 !== spec.environment.specSha256 ||
         (volumeReference.sourceSessionId === spec.assignment.sessionId &&
-          executionGeneration(spec.assignment) <= volumeReference.executionGeneration))
+          fencingToken(spec.assignment) <= volumeReference.fencingToken))
     ) {
       throw new ToolBrokerError(
         "cubesandbox_volume_reference_invalid",
@@ -1081,7 +1079,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         seenOperationIds: new Set(),
         seenCaptureIds: new Set(),
         bindingSha256,
-        authorityEpoch: executionGeneration(spec.assignment),
+        authorityEpoch: fencingToken(spec.assignment),
         state: "running",
         volumeId,
         lifetime: spec.lifetime ?? "agent_turn",
@@ -1106,7 +1104,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const nextAuthorityEpoch = executionGeneration(brokerAssignment);
+    const nextAuthorityEpoch = fencingToken(brokerAssignment);
     if (
       brokerAssignment.tenantId !== handle.assignment.tenantId ||
       brokerAssignment.projectId !== handle.assignment.projectId ||
@@ -1157,10 +1155,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       workspaceRoot: toolRoot,
     });
     activation.handle = rebound;
-    activation.authorityEpoch = Math.max(
-      activation.authorityEpoch + 1,
-      executionGeneration(assignment),
-    );
+    activation.authorityEpoch = Math.max(activation.authorityEpoch + 1, fencingToken(assignment));
     activation.toolRoot = toolRoot;
     activation.state = "running";
     activation.seenOperationIds.clear();
@@ -1781,7 +1776,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         volumeId: activation.volumeId,
         activationId: handle.activationId,
         bindingSha256: activation.bindingSha256,
-        executionGeneration: executionGeneration(handle.assignment),
+        fencingToken: fencingToken(handle.assignment),
       });
       const workspace = encodeWorkspaceSnapshotBlob(
         createPersistentVolumeReference({
@@ -1792,7 +1787,7 @@ export class CubeSandboxProvider implements SandboxProvider {
           workspaceId: handle.assignment.workspaceId,
           sourceSessionId: handle.assignment.sessionId,
           bindingSha256: activation.bindingSha256,
-          executionGeneration: executionGeneration(handle.assignment),
+          fencingToken: fencingToken(handle.assignment),
           imageRevision: this.#imageRevision,
           environmentSpecSha256: handle.environment.specSha256,
           gitBaselineCommit: volume.gitBaselineCommit,

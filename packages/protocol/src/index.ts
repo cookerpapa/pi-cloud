@@ -1,10 +1,10 @@
 export {
-  ExecutionGrantSchema,
-  createExecutionGrant,
-  parseExecutionGrant,
-  type ExecutionGrant,
-  type ExecutionGrantIdentity,
-} from "./execution-grant.ts";
+  ExecutionLeaseSchema,
+  createExecutionLease,
+  parseExecutionLease,
+  type ExecutionLease,
+  type ExecutionLeaseIdentity,
+} from "./execution-lease.ts";
 
 export {
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,

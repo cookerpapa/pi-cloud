@@ -2,26 +2,26 @@ import type { Database } from "@pi-cloud/database";
 import { transitionSandbox, type SandboxState } from "@pi-cloud/domain";
 import {
   parseControlToSupervisorMessage,
-  createExecutionGrant,
-  parseExecutionGrant,
+  createExecutionLease,
+  parseExecutionLease,
   parseSupervisorToControlMessage,
   type SupervisorHeartbeatAckMessage,
 } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type {
-  TurnExecutionGrant,
+  TurnExecutionLease,
   TurnExecutionAuthority,
   TurnExecutionRequest,
 } from "./run-command-executor.ts";
 
-const DEFAULT_GRANT_DURATION_MS = 60_000;
+const DEFAULT_LEASE_DURATION_MS = 60_000;
 
-export type ExecutionGrantCoordinatorOptions = {
+export type SessionLeaseCoordinatorOptions = {
   database: Kysely<Database>;
   sandboxId: string;
   clock?: () => Date;
   idGenerator?: () => string;
-  grantDurationMs?: number;
+  leaseDurationMs?: number;
   heartbeatConnectionId?: string;
   connectionGuard?: SupervisorConnectionGuard;
 };
@@ -38,13 +38,13 @@ export type SupervisorHeartbeatIdentity = {
   connectionId: string;
 };
 
-export class ExecutionGrantCoordinatorError extends Error {
+export class SessionLeaseCoordinatorError extends Error {
   readonly code: string;
   readonly retryable: boolean;
 
   constructor(code: string, safeMessage: string, retryable: boolean) {
     super(safeMessage);
-    this.name = "ExecutionGrantCoordinatorError";
+    this.name = "SessionLeaseCoordinatorError";
     this.code = code;
     this.retryable = retryable;
   }
@@ -60,7 +60,7 @@ function positiveInteger(value: number, name: string): number {
 function validDate(clock: () => Date): Date {
   const value = clock();
   if (!(value instanceof Date) || Number.isNaN(value.valueOf())) {
-    throw new TypeError("ExecutionGrant coordinator clock must return a valid Date");
+    throw new TypeError("ExecutionLease coordinator clock must return a valid Date");
   }
   return value;
 }
@@ -68,8 +68,8 @@ function validDate(clock: () => Date): Date {
 function safeInteger(value: string | number | bigint, name: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw new ExecutionGrantCoordinatorError(
-      "execution_grant_invariant",
+    throw new SessionLeaseCoordinatorError(
+      "session_lease_invariant",
       `${name} is outside the supported integer range`,
       false,
     );
@@ -79,8 +79,8 @@ function safeInteger(value: string | number | bigint, name: string): number {
 
 function expectOne(updatedRows: bigint, description: string): void {
   if (updatedRows !== 1n) {
-    throw new ExecutionGrantCoordinatorError(
-      "execution_grant_invariant",
+    throw new SessionLeaseCoordinatorError(
+      "session_lease_invariant",
       `${description} changed ${updatedRows} rows`,
       false,
     );
@@ -107,23 +107,23 @@ type CurrentAssignmentRequest = Pick<
   | "commandId"
 >;
 
-export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
+export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   readonly #database: Kysely<Database>;
   readonly #sandboxId: string;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
-  readonly #grantDurationMs: number;
+  readonly #leaseDurationMs: number;
   readonly #heartbeatConnectionId: string;
   readonly #connectionGuard: SupervisorConnectionGuard | undefined;
 
-  constructor(options: ExecutionGrantCoordinatorOptions) {
+  constructor(options: SessionLeaseCoordinatorOptions) {
     this.#database = options.database;
     this.#sandboxId = options.sandboxId;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
-    this.#grantDurationMs = positiveInteger(
-      options.grantDurationMs ?? DEFAULT_GRANT_DURATION_MS,
-      "grantDurationMs",
+    this.#leaseDurationMs = positiveInteger(
+      options.leaseDurationMs ?? DEFAULT_LEASE_DURATION_MS,
+      "leaseDurationMs",
     );
     this.#heartbeatConnectionId = requireUuid(
       options.heartbeatConnectionId ?? globalThis.crypto.randomUUID(),
@@ -149,7 +149,7 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
   }
 
   get heartbeatIntervalMs(): number {
-    return Math.max(1, Math.floor(this.#grantDurationMs / 3));
+    return Math.max(1, Math.floor(this.#leaseDurationMs / 3));
   }
 
   async heartbeatIdentity(): Promise<SupervisorHeartbeatIdentity> {
@@ -159,7 +159,7 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
       .where("id", "=", this.#sandboxId)
       .executeTakeFirst();
     if (sandbox === undefined || sandbox.state === "terminated") {
-      throw new ExecutionGrantCoordinatorError(
+      throw new SessionLeaseCoordinatorError(
         "sandbox_unavailable",
         "Heartbeat sandbox identity is unavailable",
         false,
@@ -175,22 +175,22 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
   async renewFromHeartbeat(value: unknown): Promise<SupervisorHeartbeatAckMessage> {
     const heartbeat = parseSupervisorToControlMessage(value);
     if (heartbeat.type !== "supervisor.heartbeat") {
-      throw new ExecutionGrantCoordinatorError(
+      throw new SessionLeaseCoordinatorError(
         "invalid_heartbeat",
-        "ExecutionGrant renewal requires a supervisor heartbeat",
+        "ExecutionLease renewal requires a supervisor heartbeat",
         false,
       );
     }
     if (heartbeat.payload.connectionId !== this.#heartbeatConnectionId) {
-      throw new ExecutionGrantCoordinatorError(
+      throw new SessionLeaseCoordinatorError(
         "stale_connection",
         "Supervisor heartbeat connection is stale",
         false,
       );
     }
     const now = validDate(this.#clock);
-    const validUntil = new Date(now.valueOf() + this.#grantDurationMs);
-    const executionGrantRenewals = await this.#database
+    const validUntil = new Date(now.valueOf() + this.#leaseDurationMs);
+    const executionLeaseRenewals = await this.#database
       .transaction()
       .execute(async (transaction) => {
         const sandbox = await transaction
@@ -212,7 +212,7 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
           sandbox.max_concurrent_sessions !== heartbeat.payload.maxConcurrentSessions ||
           (sandbox.state !== "ready" && sandbox.state !== "leased")
         ) {
-          throw new ExecutionGrantCoordinatorError(
+          throw new SessionLeaseCoordinatorError(
             "stale_supervisor",
             "Supervisor heartbeat identity is stale",
             false,
@@ -242,7 +242,7 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
 
         const observations: Array<{
           observation: (typeof heartbeat.payload.sessions)[number];
-          identity: ReturnType<typeof parseExecutionGrant>;
+          identity: ReturnType<typeof parseExecutionLease>;
         }> = [];
         const seenGrantIds = new Set<string>();
         for (const observation of heartbeat.payload.sessions) {
@@ -251,12 +251,12 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
           }
           let identity;
           try {
-            identity = parseExecutionGrant(observation.executionGrant);
+            identity = parseExecutionLease(observation.executionLease);
           } catch {
             continue;
           }
-          if (seenGrantIds.has(identity.grantId)) continue;
-          seenGrantIds.add(identity.grantId);
+          if (seenGrantIds.has(identity.leaseId)) continue;
+          seenGrantIds.add(identity.leaseId);
           observations.push({ observation, identity });
         }
 
@@ -264,45 +264,45 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
           observations.length === 0
             ? []
             : await transaction
-                .selectFrom("execution_grants as grant")
-                .innerJoin("run_attempts as execution", "execution.id", "grant.execution_id")
+                .selectFrom("session_leases as grant")
+                .innerJoin("run_attempts as execution", "execution.id", "grant.attempt_id")
                 .select([
-                  "grant.grant_id as grantId",
-                  "grant.generation as generation",
+                  "grant.lease_id as grantId",
+                  "grant.fencing_token as generation",
                   "grant.valid_until as validUntil",
                   "grant.turn_id as turnId",
-                  "grant.execution_id as executionId",
+                  "grant.attempt_id as executionId",
                   "grant.session_id as sessionId",
                   "execution.state as executionState",
-                  "execution.execution_grant_id as boundGrantId",
-                  "execution.execution_generation as boundGeneration",
+                  "execution.lease_id as boundGrantId",
+                  "execution.fencing_token as boundGeneration",
                 ])
                 .where(
-                  "grant.grant_id",
+                  "grant.lease_id",
                   "in",
-                  observations.map(({ identity }) => identity.grantId),
+                  observations.map(({ identity }) => identity.leaseId),
                 )
                 .where("grant.sandbox_id", "=", this.#sandboxId)
-                .orderBy("grant.grant_id", "asc")
+                .orderBy("grant.lease_id", "asc")
                 .forUpdate(["grant", "execution"])
                 .execute();
         const grantById = new Map(grants.map((grant) => [grant.grantId, grant]));
         const accepted: Array<{
           observation: (typeof heartbeat.payload.sessions)[number];
-          identity: ReturnType<typeof parseExecutionGrant>;
+          identity: ReturnType<typeof parseExecutionLease>;
           lastAcknowledgedSeq: number;
         }> = [];
         for (const { observation, identity } of observations) {
-          const grant = grantById.get(identity.grantId);
+          const grant = grantById.get(identity.leaseId);
           if (grant === undefined) continue;
-          const generation = safeInteger(grant.generation, "ExecutionGrant generation");
+          const generation = safeInteger(grant.generation, "ExecutionLease generation");
           if (
-            grant.executionId !== identity.executionId ||
+            grant.executionId !== identity.attemptId ||
             grant.sessionId !== observation.sessionId ||
             grant.turnId !== observation.turnId ||
-            generation !== identity.generation ||
-            grant.boundGrantId !== identity.grantId ||
-            safeInteger(grant.boundGeneration ?? -1, "bound ExecutionGrant generation") !==
+            generation !== identity.fencingToken ||
+            grant.boundGrantId !== identity.leaseId ||
+            safeInteger(grant.boundGeneration ?? -1, "bound ExecutionLease generation") !==
               generation ||
             new Date(grant.validUntil).valueOf() <= now.valueOf() ||
             ["completed", "failed", "cancelled", "timed_out", "superseded"].includes(
@@ -320,9 +320,9 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
         }
         if (accepted.length > 0) {
           const values = accepted.map(({ observation, identity, lastAcknowledgedSeq }) => ({
-            grantId: identity.grantId,
-            executionId: identity.executionId,
-            generation: identity.generation,
+            grantId: identity.leaseId,
+            executionId: identity.attemptId,
+            generation: identity.fencingToken,
             sessionId: observation.sessionId,
             lastAcknowledgedSeq,
           }));
@@ -336,15 +336,15 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
                 "lastAcknowledgedSeq" bigint
               )
             )
-            update execution_grants as authority
+            update session_leases as authority
                set valid_until = ${validUntil}, renewed_at = ${now}
               from renewal
-             where authority.grant_id = renewal."grantId"
-               and authority.execution_id = renewal."executionId"
-               and authority.generation = renewal.generation
+             where authority.lease_id = renewal."grantId"
+               and authority.attempt_id = renewal."executionId"
+               and authority.fencing_token = renewal.generation
                and authority.session_id = renewal."sessionId"
                and authority.valid_until > ${now}
-            returning authority.grant_id as id
+            returning authority.lease_id as id
           `.execute(transaction);
           const renewedAttempts = await sql<{ id: string }>`
             with renewal as (
@@ -363,25 +363,25 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
                    updated_at = ${now}
               from renewal
              where execution.id = renewal."executionId"
-               and execution.execution_grant_id = renewal."grantId"
-               and execution.execution_generation = renewal.generation
+               and execution.lease_id = renewal."grantId"
+               and execution.fencing_token = renewal.generation
             returning execution.id
           `.execute(transaction);
           if (
             renewedGrants.rows.length !== accepted.length ||
             renewedAttempts.rows.length !== accepted.length
           ) {
-            throw new ExecutionGrantCoordinatorError(
-              "execution_grant_invariant",
-              "Set-oriented ExecutionGrant renewal lost a current execution",
+            throw new SessionLeaseCoordinatorError(
+              "session_lease_invariant",
+              "Set-oriented ExecutionLease renewal lost a current execution",
               false,
             );
           }
         }
-        const renewals: SupervisorHeartbeatAckMessage["payload"]["executionGrantRenewals"] =
+        const renewals: SupervisorHeartbeatAckMessage["payload"]["executionLeaseRenewals"] =
           accepted.map(({ observation }) => ({
             sessionId: observation.sessionId,
-            executionGrant: observation.executionGrant,
+            executionLease: observation.executionLease,
             validUntil: validUntil.toISOString(),
           }));
         await transaction
@@ -401,13 +401,13 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
       payload: {
         acknowledgedMessageId: heartbeat.messageId,
         connectionId: this.#heartbeatConnectionId,
-        executionGrantRenewals,
+        executionLeaseRenewals,
       },
     });
     if (acknowledgement.type !== "supervisor.heartbeat.ack") {
-      throw new ExecutionGrantCoordinatorError(
+      throw new SessionLeaseCoordinatorError(
         "invalid_heartbeat_ack",
-        "ExecutionGrant renewal acknowledgement was invalid",
+        "ExecutionLease renewal acknowledgement was invalid",
         false,
       );
     }
@@ -435,12 +435,12 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
     });
   }
 
-  async acquire(request: TurnExecutionRequest): Promise<TurnExecutionGrant> {
+  async acquire(request: TurnExecutionRequest): Promise<TurnExecutionLease> {
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
       const session = await transaction
         .selectFrom("sessions")
-        .select(["tenant_id", "project_id", "workspace_id", "state", "last_execution_generation"])
+        .select(["tenant_id", "project_id", "workspace_id", "state", "last_fencing_token"])
         .where("id", "=", request.sessionId)
         .forUpdate()
         .executeTakeFirst();
@@ -450,14 +450,14 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
         session.project_id !== request.projectId ||
         session.workspace_id !== request.workspaceId
       ) {
-        throw new ExecutionGrantCoordinatorError(
+        throw new SessionLeaseCoordinatorError(
           "session_unavailable",
           "Session is unavailable for execution",
           false,
         );
       }
       if (session.state !== "cold" && session.state !== "idle") {
-        throw new ExecutionGrantCoordinatorError(
+        throw new SessionLeaseCoordinatorError(
           "invalid_state",
           "Session is not ready for an execution lease",
           true,
@@ -470,7 +470,7 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
           .where("id", "=", this.#sandboxId)
           .executeTakeFirst();
         if (guardedSandbox === undefined) {
-          throw new ExecutionGrantCoordinatorError(
+          throw new SessionLeaseCoordinatorError(
             "sandbox_unavailable",
             "Execution sandbox is unavailable",
             true,
@@ -499,8 +499,8 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
           "run.current_attempt_id as currentAttemptId",
           "attempt.state as attemptState",
           "attempt.sandbox_id as sandboxId",
-          "attempt.execution_grant_id as executionGrantId",
-          "attempt.execution_generation as executionGeneration",
+          "attempt.lease_id as executionLeaseId",
+          "attempt.fencing_token as fencingToken",
         ])
         .where("run.tenant_id", "=", request.tenantId)
         .where("run.id", "=", request.runId)
@@ -516,10 +516,10 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
         runAttempt.runState !== "claimed" ||
         runAttempt.attemptState !== "claimed" ||
         runAttempt.sandboxId !== null ||
-        runAttempt.executionGrantId !== null ||
-        runAttempt.executionGeneration !== null
+        runAttempt.executionLeaseId !== null ||
+        runAttempt.fencingToken !== null
       ) {
-        throw new ExecutionGrantCoordinatorError(
+        throw new SessionLeaseCoordinatorError(
           "stale_attempt",
           "Run attempt is unavailable for execution",
           false,
@@ -527,25 +527,25 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
       }
 
       const existing = await transaction
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .selectAll()
         .where("session_id", "=", request.sessionId)
         .forUpdate()
         .executeTakeFirst();
       if (existing !== undefined) {
         if (new Date(existing.valid_until).valueOf() > now.valueOf()) {
-          throw new ExecutionGrantCoordinatorError(
-            "execution_grant_conflict",
-            "Session already has a current ExecutionGrant",
+          throw new SessionLeaseCoordinatorError(
+            "session_lease_conflict",
+            "Session already has a current ExecutionLease",
             true,
           );
         }
         await this.#releaseGrantRow(
           transaction,
           existing.session_id,
-          existing.grant_id,
+          existing.lease_id,
           existing.sandbox_id,
-          existing.generation,
+          existing.fencing_token,
           now,
         );
       }
@@ -564,14 +564,14 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
         .forUpdate()
         .executeTakeFirst();
       if (sandbox === undefined || (sandbox.state !== "ready" && sandbox.state !== "leased")) {
-        throw new ExecutionGrantCoordinatorError(
+        throw new SessionLeaseCoordinatorError(
           "sandbox_unavailable",
           "Execution sandbox is unavailable",
           true,
         );
       }
       if (sandbox.active_sessions >= sandbox.max_concurrent_sessions) {
-        throw new ExecutionGrantCoordinatorError(
+        throw new SessionLeaseCoordinatorError(
           "capacity",
           "Execution sandbox is at capacity",
           true,
@@ -585,56 +585,56 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
       );
 
       const previousGeneration = safeInteger(
-        session.last_execution_generation,
+        session.last_fencing_token,
         "Session execution generation",
       );
       const generation = previousGeneration + 1;
       if (!Number.isSafeInteger(generation)) {
-        throw new ExecutionGrantCoordinatorError(
-          "execution_grant_invariant",
+        throw new SessionLeaseCoordinatorError(
+          "session_lease_invariant",
           "Session execution generation is exhausted",
           false,
         );
       }
       const grantId = this.#idGenerator();
-      const executionGrant = createExecutionGrant(grantId, request.attemptId, generation);
+      const executionLease = createExecutionLease(grantId, request.attemptId, generation);
       const lastEventSeq = safeInteger(request.nextEventSeq, "Run next event sequence") - 1;
       if (lastEventSeq < 0) {
-        throw new ExecutionGrantCoordinatorError(
-          "execution_grant_invariant",
+        throw new SessionLeaseCoordinatorError(
+          "session_lease_invariant",
           "Run next event sequence must be positive",
           false,
         );
       }
-      const validUntil = new Date(now.valueOf() + this.#grantDurationMs);
+      const validUntil = new Date(now.valueOf() + this.#leaseDurationMs);
 
       const sessionUpdate = await transaction
         .updateTable("sessions")
         .set({
-          last_execution_generation: generation,
+          last_fencing_token: generation,
           row_version: sql<string>`${sql.ref("row_version")} + 1`,
           updated_at: now,
         })
         .where("id", "=", request.sessionId)
         .where("tenant_id", "=", request.tenantId)
-        .where("last_execution_generation", "=", session.last_execution_generation)
+        .where("last_fencing_token", "=", session.last_fencing_token)
         .executeTakeFirst();
       expectOne(sessionUpdate.numUpdatedRows, "advancing a Session execution generation");
 
       await transaction
-        .insertInto("execution_grants")
+        .insertInto("session_leases")
         .values({
           session_id: request.sessionId,
-          grant_id: grantId,
+          lease_id: grantId,
           sandbox_id: sandbox.id,
-          generation,
+          fencing_token: generation,
           tenant_id: request.tenantId,
           project_id: request.projectId,
           workspace_id: request.workspaceId,
           run_id: request.runId,
           turn_id: request.turnId,
           command_id: request.commandId,
-          execution_id: request.attemptId,
+          attempt_id: request.attemptId,
           last_event_seq: lastEventSeq,
           valid_until: validUntil,
           acquired_at: now,
@@ -661,8 +661,8 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
         .updateTable("run_attempts")
         .set({
           sandbox_id: sandbox.id,
-          execution_grant_id: grantId,
-          execution_generation: generation,
+          lease_id: grantId,
+          fencing_token: generation,
           claim_expires_at: validUntil,
           last_heartbeat_at: now,
           updated_at: now,
@@ -673,16 +673,16 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
         .where("state", "=", "claimed")
         .where("sandbox_id", "is", null)
         .executeTakeFirst();
-      expectOne(attemptUpdate.numUpdatedRows, "binding a Run execution grant");
+      expectOne(attemptUpdate.numUpdatedRows, "binding a Run Session lease");
 
-      return { executionGrant };
+      return { executionLease };
     });
   }
 
   async assertCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionGrant,
+    acknowledgement: TurnExecutionLease,
     now: Date,
   ): Promise<void> {
     await this.#currentGrant(transaction, request, acknowledgement, now, true);
@@ -691,7 +691,7 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
   async assertCurrentOrExpired(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionGrant,
+    acknowledgement: TurnExecutionLease,
     now: Date,
   ): Promise<void> {
     await this.#currentGrant(transaction, request, acknowledgement, now, false);
@@ -699,7 +699,7 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
 
   async assertCurrentGrant(
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionGrant,
+    acknowledgement: TurnExecutionLease,
   ): Promise<void> {
     const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
@@ -707,12 +707,12 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
     });
   }
 
-  async currentAssignment(request: CurrentAssignmentRequest): Promise<TurnExecutionGrant> {
+  async currentAssignment(request: CurrentAssignmentRequest): Promise<TurnExecutionLease> {
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
       const session = await transaction
         .selectFrom("sessions")
-        .select(["tenant_id", "project_id", "workspace_id", "state", "last_execution_generation"])
+        .select(["tenant_id", "project_id", "workspace_id", "state", "last_fencing_token"])
         .where("id", "=", request.sessionId)
         .forUpdate()
         .executeTakeFirst();
@@ -722,14 +722,14 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
         session.project_id !== request.projectId ||
         session.workspace_id !== request.workspaceId
       ) {
-        throw new ExecutionGrantCoordinatorError(
+        throw new SessionLeaseCoordinatorError(
           "session_unavailable",
           "Session is unavailable for cancellation",
           false,
         );
       }
       if (session.state !== "running" && session.state !== "waiting_approval") {
-        throw new ExecutionGrantCoordinatorError(
+        throw new SessionLeaseCoordinatorError(
           "invalid_state",
           "Session no longer has an active execution to cancel",
           false,
@@ -737,13 +737,13 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
       }
 
       const grant = await transaction
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .selectAll()
         .where("session_id", "=", request.sessionId)
         .forUpdate()
         .executeTakeFirst();
       const generation =
-        grant === undefined ? -1 : safeInteger(grant.generation, "ExecutionGrant generation");
+        grant === undefined ? -1 : safeInteger(grant.fencing_token, "ExecutionLease fencing token");
       if (
         grant === undefined ||
         grant.sandbox_id !== this.#sandboxId ||
@@ -753,19 +753,18 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
         grant.run_id !== request.runId ||
         grant.turn_id !== request.turnId ||
         grant.command_id !== request.commandId ||
-        grant.execution_id !== request.attemptId ||
+        grant.attempt_id !== request.attemptId ||
         new Date(grant.valid_until).valueOf() <= now.valueOf() ||
-        generation !==
-          safeInteger(session.last_execution_generation, "Session execution generation")
+        generation !== safeInteger(session.last_fencing_token, "Session execution generation")
       ) {
-        throw new ExecutionGrantCoordinatorError(
-          "stale_execution_grant",
-          "ExecutionGrant is stale",
+        throw new SessionLeaseCoordinatorError(
+          "stale_session_lease",
+          "ExecutionLease is stale",
           false,
         );
       }
       return {
-        executionGrant: createExecutionGrant(grant.grant_id, grant.execution_id, generation),
+        executionLease: createExecutionLease(grant.lease_id, grant.attempt_id, generation),
       };
     });
   }
@@ -773,24 +772,24 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
   async releaseCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionGrant,
+    acknowledgement: TurnExecutionLease,
     now: Date,
   ): Promise<void> {
     const grant = await this.#currentGrant(transaction, request, acknowledgement, now, false);
-    const identity = parseExecutionGrant(acknowledgement.executionGrant);
+    const identity = parseExecutionLease(acknowledgement.executionLease);
     await this.#releaseGrantRow(
       transaction,
       request.sessionId,
-      identity.grantId,
+      identity.leaseId,
       grant.sandbox_id,
-      identity.generation,
+      identity.fencingToken,
       now,
     );
   }
 
   async releaseAcquired(
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionGrant,
+    acknowledgement: TurnExecutionLease,
   ): Promise<void> {
     const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
@@ -801,24 +800,24 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
   async #currentGrant(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionGrant,
+    acknowledgement: TurnExecutionLease,
     now: Date,
     requireUnexpired: boolean,
   ) {
-    const identity = parseExecutionGrant(acknowledgement.executionGrant);
-    if (identity.executionId !== request.attemptId) {
-      throw new ExecutionGrantCoordinatorError(
-        "stale_execution_grant",
-        "ExecutionGrant belongs to another Run execution",
+    const identity = parseExecutionLease(acknowledgement.executionLease);
+    if (identity.attemptId !== request.attemptId) {
+      throw new SessionLeaseCoordinatorError(
+        "stale_session_lease",
+        "ExecutionLease belongs to another Run execution",
         false,
       );
     }
     const grant = await transaction
-      .selectFrom("execution_grants")
+      .selectFrom("session_leases")
       .selectAll()
       .where("session_id", "=", request.sessionId)
-      .where("grant_id", "=", identity.grantId)
-      .where("generation", "=", String(identity.generation))
+      .where("lease_id", "=", identity.leaseId)
+      .where("fencing_token", "=", String(identity.fencingToken))
       .forUpdate()
       .executeTakeFirst();
     if (
@@ -829,13 +828,13 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
       grant.run_id !== request.runId ||
       grant.turn_id !== request.turnId ||
       grant.command_id !== request.commandId ||
-      grant.execution_id !== request.attemptId ||
+      grant.attempt_id !== request.attemptId ||
       grant.sandbox_id !== this.#sandboxId ||
       (requireUnexpired && new Date(grant.valid_until).valueOf() <= now.valueOf())
     ) {
-      throw new ExecutionGrantCoordinatorError(
-        "stale_execution_grant",
-        "ExecutionGrant is stale",
+      throw new SessionLeaseCoordinatorError(
+        "stale_session_lease",
+        "ExecutionLease is stale",
         false,
       );
     }
@@ -851,11 +850,11 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
     now: Date,
   ): Promise<void> {
     const writer = await transaction
-      .selectFrom("execution_grants")
+      .selectFrom("session_leases")
       .select(["fact_channel_connection_id", "fact_channel_valid_until"])
       .where("session_id", "=", sessionId)
-      .where("grant_id", "=", grantId)
-      .where("generation", "=", String(generation))
+      .where("lease_id", "=", grantId)
+      .where("fencing_token", "=", String(generation))
       .forUpdate()
       .executeTakeFirst();
     if (
@@ -864,9 +863,9 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
       writer.fact_channel_valid_until !== null &&
       new Date(writer.fact_channel_valid_until).valueOf() > now.valueOf()
     ) {
-      throw new ExecutionGrantCoordinatorError(
+      throw new SessionLeaseCoordinatorError(
         "fact_channel_active",
-        "ExecutionGrant still has an active FactChannel",
+        "ExecutionLease still has an active FactChannel",
         true,
       );
     }
@@ -881,21 +880,21 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
       sandbox.active_sessions < 1 ||
       (sandbox.state !== "leased" && sandbox.state !== "draining" && sandbox.state !== "failed")
     ) {
-      throw new ExecutionGrantCoordinatorError(
-        "execution_grant_invariant",
-        "ExecutionGrant references an unavailable sandbox reservation",
+      throw new SessionLeaseCoordinatorError(
+        "session_lease_invariant",
+        "ExecutionLease references an unavailable sandbox reservation",
         false,
       );
     }
 
     const deleted = await transaction
-      .deleteFrom("execution_grants")
+      .deleteFrom("session_leases")
       .where("session_id", "=", sessionId)
-      .where("grant_id", "=", grantId)
+      .where("lease_id", "=", grantId)
       .where("sandbox_id", "=", sandboxId)
-      .where("generation", "=", String(generation))
+      .where("fencing_token", "=", String(generation))
       .executeTakeFirst();
-    expectOne(deleted.numDeletedRows, "releasing an ExecutionGrant");
+    expectOne(deleted.numDeletedRows, "releasing an ExecutionLease");
 
     const remaining = sandbox.active_sessions - 1;
     let nextState: SandboxState = sandbox.state;
@@ -944,14 +943,14 @@ export class ExecutionGrantCoordinator implements TurnExecutionAuthority {
       connection.state !== "active" ||
       new Date(connection.expires_at).valueOf() <= now.valueOf()
     ) {
-      throw new ExecutionGrantCoordinatorError(
+      throw new SessionLeaseCoordinatorError(
         "stale_connection",
         "Supervisor connection is stale",
         false,
       );
     }
     if (requireAcceptingAssignments && !connection.accepting_assignments) {
-      throw new ExecutionGrantCoordinatorError(
+      throw new SessionLeaseCoordinatorError(
         "connection_not_accepting",
         "Supervisor connection is not accepting assignments",
         true,

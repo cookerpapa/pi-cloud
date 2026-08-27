@@ -23,7 +23,7 @@ export type SessionState = Static<typeof SessionStateSchema>;
 export const TurnCancellationReasonSchema = Type.Union([
   Type.Literal("user_request"),
   Type.Literal("timeout"),
-  Type.Literal("execution_grant_revoked"),
+  Type.Literal("session_lease_revoked"),
   Type.Literal("shutdown"),
 ]);
 

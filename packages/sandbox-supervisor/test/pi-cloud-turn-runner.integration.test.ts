@@ -2,7 +2,7 @@ import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  createExecutionGrant,
+  createExecutionLease,
   type EventPublishMessage,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
@@ -39,7 +39,7 @@ const command: ExecuteTurnCommandMessage = {
     runId: "44444444-4444-4444-8444-444444444444",
     turnId: "turn-1",
     agentId: "root",
-    executionGrant: createExecutionGrant(
+    executionLease: createExecutionLease(
       "33333333-3333-4333-8333-333333333333",
       "55555555-5555-4555-8555-555555555555",
       7,

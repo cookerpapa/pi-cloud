@@ -522,7 +522,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         project_id: project.projectId,
         workspace_id: project.workspaceId,
         session_id: replacementSession.sessionId,
-        generation: 1,
+        fencing_token: 1,
         runtime_id: "workspace-terminal-runtime",
         runtime_name: "workspace-terminal-runtime",
         state: "active",

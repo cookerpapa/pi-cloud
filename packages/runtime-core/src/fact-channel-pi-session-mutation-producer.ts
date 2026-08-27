@@ -12,7 +12,7 @@ export type PiSessionMutationScope = Readonly<{
   sessionId: string;
   turnId: string;
   runId: string;
-  executionGrant: string;
+  executionLease: string;
 }>;
 
 export class FactChannelPiSessionMutationProducer {
@@ -68,7 +68,7 @@ export class FactChannelPiSessionMutationProducer {
       }
       if (Date.now() >= deadline) throw new Error("Pi Session mutation projection timed out");
       if (!accepted && Date.now() >= nextSubmitAt) {
-        const channel = this.#channels.resolve(scope.executionGrant);
+        const channel = this.#channels.resolve(scope.executionLease);
         const outcome = await channel?.mutate(request).catch(() => undefined);
         if (outcome?.accepted === true && outcome.mutationId === mutationId) {
           accepted = true;

@@ -18,7 +18,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
 import type {
   TurnExecutionAuthority,
-  TurnExecutionGrant,
+  TurnExecutionLease,
   TurnExecutionRequest,
 } from "./run-command-executor.ts";
 import { transitionCurrentRunAttempt } from "./run-attempt-state.ts";
@@ -43,7 +43,7 @@ export type TurnCancellationRequest = {
 };
 
 export type TurnCancellationLifecycle = {
-  started(grant: TurnExecutionGrant): Promise<void>;
+  started(grant: TurnExecutionLease): Promise<void>;
 };
 
 export type TurnCancellationResult = {
@@ -181,7 +181,7 @@ function parseCancellationPayload(value: Record<string, unknown>): {
   if (
     reason !== "user_request" &&
     reason !== "timeout" &&
-    reason !== "execution_grant_revoked" &&
+    reason !== "session_lease_revoked" &&
     reason !== "shutdown"
   ) {
     throw new RunCancellationExecutorInvariantError("Cancellation command reason is invalid");
@@ -258,14 +258,14 @@ export class RunCancellationExecutor {
     if (claim === undefined) return { status: "idle" };
 
     let started = false;
-    let acknowledgement: TurnExecutionGrant | undefined;
+    let acknowledgement: TurnExecutionLease | undefined;
     let startedPromise: Promise<void> | undefined;
     let startFailure: unknown;
     const lifecycle: TurnCancellationLifecycle = {
       started: (candidate) => {
         if (
           startedPromise !== undefined &&
-          candidate.executionGrant !== acknowledgement?.executionGrant
+          candidate.executionLease !== acknowledgement?.executionLease
         ) {
           return Promise.reject(
             new RunCancellationExecutorInvariantError(
@@ -547,7 +547,7 @@ export class RunCancellationExecutor {
 
   async #markStarted(
     claim: ClaimedCancellation,
-    acknowledgement: TurnExecutionGrant,
+    acknowledgement: TurnExecutionLease,
   ): Promise<void> {
     const now = safeDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
@@ -652,7 +652,7 @@ export class RunCancellationExecutor {
 
   async #complete(
     claim: ClaimedCancellation,
-    acknowledgement: TurnExecutionGrant,
+    acknowledgement: TurnExecutionLease,
     result: TurnCancellationResult,
   ): Promise<void> {
     const now = safeDate(this.#clock);

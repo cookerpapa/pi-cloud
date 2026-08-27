@@ -15,7 +15,7 @@ import type {
   SupervisorBootIdentity,
   SupervisorOwnerBoundary,
 } from "./supervisor-connection-manager.ts";
-import type { ExecutionGrantCoordinator } from "@pi-cloud/runtime-core/execution-grant-coordinator";
+import type { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import {
   TurnSteerBackendError,
   type TurnSteerBackend,
@@ -94,7 +94,7 @@ function protocolAssignment(value: SandboxRuntimeAssignment): SupervisorRuntimeA
     workspaceId: value.workspaceId,
     sessionId: value.sessionId,
     turnId: value.turnId,
-    executionGrant: value.executionGrant,
+    executionLease: value.executionLease,
   };
 }
 
@@ -109,7 +109,7 @@ function runtimeAssignment(value: SupervisorRuntimeAssignment): SandboxRuntimeAs
     workspaceId: value.workspaceId,
     sessionId: value.sessionId,
     turnId: value.turnId,
-    executionGrant: value.executionGrant,
+    executionLease: value.executionLease,
   };
 }
 
@@ -291,24 +291,24 @@ export class HttpSupervisorManagementClient {
 
 export class HttpSupervisorSteerBackend implements TurnSteerBackend {
   readonly #client: HttpSupervisorManagementClient;
-  readonly #grantCoordinator: ExecutionGrantCoordinator;
+  readonly #leaseCoordinator: SessionLeaseCoordinator;
   readonly #idGenerator: () => string;
   readonly #clock: () => Date;
 
   constructor(options: {
     client: HttpSupervisorManagementClient;
-    grantCoordinator: ExecutionGrantCoordinator;
+    leaseCoordinator: SessionLeaseCoordinator;
     idGenerator?: () => string;
     clock?: () => Date;
   }) {
     this.#client = options.client;
-    this.#grantCoordinator = options.grantCoordinator;
+    this.#leaseCoordinator = options.leaseCoordinator;
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
     this.#clock = options.clock ?? (() => new Date());
   }
 
   async steer(request: TurnSteerRequest): Promise<void> {
-    const grant = await this.#grantCoordinator.currentAssignment(request.target);
+    const grant = await this.#leaseCoordinator.currentAssignment(request.target);
     const sentAt = this.#clock();
     if (Number.isNaN(sentAt.valueOf())) throw new TypeError("steer clock returned an invalid date");
     const command = parseControlToSupervisorMessage({
@@ -327,7 +327,7 @@ export class HttpSupervisorSteerBackend implements TurnSteerBackend {
         runId: request.target.runId,
         turnId: request.target.turnId,
         agentId: "root",
-        executionGrant: grant.executionGrant,
+        executionLease: grant.executionLease,
         text: request.text,
       },
     });

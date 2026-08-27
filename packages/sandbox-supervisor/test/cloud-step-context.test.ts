@@ -1,7 +1,7 @@
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  createExecutionGrant,
+  createExecutionLease,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import { describe, expect, it } from "vitest";
@@ -26,7 +26,7 @@ const command: ExecuteTurnCommandMessage = {
     runId: "10000000-0000-4000-8000-000000000003",
     turnId: "turn-step",
     agentId: "root",
-    executionGrant: createExecutionGrant(
+    executionLease: createExecutionLease(
       "10000000-0000-4000-8000-000000000005",
       "10000000-0000-4000-8000-000000000004",
       9,
@@ -83,7 +83,7 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
         ...command.payload,
         commandId: "20000000-0000-4000-8000-000000000002",
         idempotencyKey: "frozen-step-retry",
-        executionGrant: createExecutionGrant(
+        executionLease: createExecutionLease(
           "20000000-0000-4000-8000-000000000005",
           "20000000-0000-4000-8000-000000000004",
           10,

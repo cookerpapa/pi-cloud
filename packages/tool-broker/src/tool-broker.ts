@@ -24,7 +24,7 @@ import type {
   SandboxPreviewRequest,
   SandboxPreviewResponse,
 } from "@pi-cloud/protocol";
-import { createExecutionGrant, parseCloudToolCapabilitySnapshot } from "@pi-cloud/protocol";
+import { createExecutionLease, parseCloudToolCapabilitySnapshot } from "@pi-cloud/protocol";
 import {
   canonicalEnvironmentRecipeJson,
   DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
@@ -32,7 +32,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
 } from "@pi-cloud/protocol";
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   DEFAULT_TOOL_SANDBOX_POLICY,
   ToolBrokerError,
@@ -58,7 +58,6 @@ export type ToolBrokerOptions = {
   ownerBaseUrl?: string;
   stateRepository?: SandboxActivationStateRepository;
   idGenerator?: () => string;
-  capabilityGenerator?: () => string;
   maximumActiveSandboxes?: number;
   warmTtlMs?: number;
   maximumWarmActivations?: number;
@@ -82,7 +81,6 @@ type ManagedActivation = {
   turnContextSha256: string;
   attemptContextSha256: string;
   currentStep?: Readonly<{ sequence: number; sha256: string }>;
-  capabilityDigest: Buffer;
   allowedTools: ReadonlySet<CloudToolName>;
   spec: Parameters<SandboxProvider["create"]>[0];
   reservation: SandboxActivationReservation;
@@ -181,10 +179,6 @@ function workspaceKey(assignment: ToolSandboxAssignment): string {
   return [assignment.tenantId, assignment.projectId, assignment.workspaceId].join("\0");
 }
 
-function capabilityDigest(value: string): Buffer {
-  return createHash("sha256").update(value, "utf8").digest();
-}
-
 function operationFailureCode(error: unknown): string {
   return error instanceof ToolBrokerError && /^[a-z][a-z0-9_]{0,127}$/.test(error.code)
     ? error.code
@@ -214,13 +208,6 @@ function sameEnvironment(
   );
 }
 
-function validCapability(value: string): string {
-  if (!/^pcts_[A-Za-z0-9_-]{43}$/.test(value)) {
-    throw new TypeError("Tool Sandbox capability generator returned an invalid value");
-  }
-  return value;
-}
-
 function validActivationId(value: string): string {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
     throw new TypeError("Tool Broker ID generator returned an invalid UUID");
@@ -239,7 +226,7 @@ function sameAssignment(left: ToolSandboxAssignment, right: ToolSandboxAssignmen
     left.commandId === right.commandId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
-    left.executionGrant === right.executionGrant
+    left.executionLease === right.executionLease
   );
 }
 
@@ -291,14 +278,14 @@ function sameSupervisorAssignment(
     left.commandId === right.commandId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
-    left.executionGrant === right.executionGrant
+    left.executionLease === right.executionLease
   );
 }
 
 function terminalAssignment(
   terminalId: string,
   input: Pick<WorkspaceTerminalOpenInput, "tenantId" | "projectId" | "workspaceId" | "sessionId">,
-  executionGrant: string,
+  executionLease: string,
 ): ToolSandboxAssignment {
   return {
     tenantId: input.tenantId,
@@ -310,7 +297,7 @@ function terminalAssignment(
     commandId: terminalId,
     sessionId: input.sessionId,
     turnId: terminalId,
-    executionGrant,
+    executionLease,
   };
 }
 
@@ -330,7 +317,7 @@ function developmentEnvironmentAssignment(
     commandId: input.environmentId,
     sessionId: input.environmentId,
     turnId: input.environmentId,
-    executionGrant: createExecutionGrant(
+    executionLease: createExecutionLease(
       input.environmentId,
       input.environmentId,
       input.generation,
@@ -344,7 +331,6 @@ export class ToolBroker {
   readonly #stateRepository: SandboxActivationStateRepository;
   readonly #serviceRegistry: SandboxHttpServiceRegistry | undefined;
   readonly #idGenerator: () => string;
-  readonly #capabilityGenerator: () => string;
   readonly #maximumActiveSandboxes: number;
   readonly #warmTtlMs: number;
   readonly #maximumWarmActivations: number;
@@ -369,8 +355,6 @@ export class ToolBroker {
       options.stateRepository ?? new InMemorySandboxActivationStateRepository();
     this.#serviceRegistry = options.serviceRegistry;
     this.#idGenerator = options.idGenerator ?? randomUUID;
-    this.#capabilityGenerator =
-      options.capabilityGenerator ?? (() => `pcts_${randomBytes(32).toString("base64url")}`);
     this.#maximumActiveSandboxes = positiveInteger(
       options.maximumActiveSandboxes ?? DEFAULT_MAXIMUM_ACTIVE_SANDBOXES,
       "maximumActiveSandboxes",
@@ -1037,7 +1021,7 @@ export class ToolBroker {
         true,
       );
     }
-    const assignment = terminalAssignment(terminalId, input, reservation.executionGrant);
+    const assignment = terminalAssignment(terminalId, input, reservation.executionLease);
     let admitted = false;
     let handle: SandboxHandle | undefined;
     let terminal: SandboxTerminalSession | undefined;
@@ -1358,8 +1342,6 @@ export class ToolBroker {
         false,
       );
     }
-    const capability = validCapability(this.#capabilityGenerator());
-    const capabilitySha256 = capabilityDigest(capability).toString("hex");
     const allowedTools = parseCloudToolCapabilitySnapshot(request.allowedTools);
     const spec = {
       activationId,
@@ -1376,7 +1358,6 @@ export class ToolBroker {
     const reservationInput: SandboxActivationReservation = {
       activationId,
       assignment: request.assignment,
-      capabilitySha256,
       turnContextSha256: request.turnContextSha256,
       attemptContextSha256: request.attemptContextSha256,
       environmentSha256: createHash("sha256")
@@ -1451,7 +1432,6 @@ export class ToolBroker {
       assignment: request.assignment,
       turnContextSha256: request.turnContextSha256,
       attemptContextSha256: request.attemptContextSha256,
-      capabilityDigest: Buffer.from(capabilitySha256, "hex"),
       allowedTools: new Set(allowedTools),
       spec,
       reservation: reservationInput,
@@ -1473,8 +1453,8 @@ export class ToolBroker {
       type: "tool_sandbox.reserved",
       requestId: request.requestId,
       activationId,
+      executionLease: request.assignment.executionLease,
       ownerBaseUrl: this.#ownerBaseUrl,
-      capability,
       workspaceRoot: request.toolRoot,
       continuity:
         developmentEnvironment === undefined &&
@@ -1487,11 +1467,11 @@ export class ToolBroker {
   }
 
   async execute(
-    capability: string,
+    executionLease: string,
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
-    const activation = this.#authorized(request.activationId, capability);
+    const activation = this.#authorized(request.activationId, executionLease);
     if (activation.exclusiveOperation) {
       throw new ToolBrokerError(
         "tool_sandbox_workspace_busy",
@@ -1676,7 +1656,7 @@ export class ToolBroker {
 
   async release(request: ToolSandboxReleaseRequest): Promise<ToolSandboxReleaseResponse> {
     const activation = this.#owned(request.activationId, request.assignment);
-    this.#revoke(request.activationId, activation);
+    this.#revoke(request.activationId);
     let retained = false;
     let handle = activation.handle;
     if (activation.materializing !== undefined) {
@@ -1755,7 +1735,7 @@ export class ToolBroker {
         );
         handle = await this.#provider.retainForWarm(handle, {
           ...handle.assignment,
-          executionGrant: brokerGrant,
+          executionLease: brokerGrant,
         });
       } catch (error: unknown) {
         await this.#provider.stop(handle).catch(() => undefined);
@@ -1868,7 +1848,7 @@ export class ToolBroker {
       }
       return;
     }
-    this.#revoke(activationId, activation);
+    this.#revoke(activationId);
     const handle =
       activation.materializing === undefined
         ? activation.handle
@@ -1946,7 +1926,7 @@ export class ToolBroker {
     for (const assignment of [...providerAssignments, ...durableAssignments].filter(
       (candidate) => !retainedRuntimeIds.has(candidate.containerId),
     )) {
-      assignments.set(`${assignment.containerId}\0${assignment.executionGrant}`, assignment);
+      assignments.set(`${assignment.containerId}\0${assignment.executionLease}`, assignment);
     }
     return [...assignments.values()];
   }
@@ -1955,7 +1935,7 @@ export class ToolBroker {
     const managed = [...this.#activations.entries()].filter(([, activation]) =>
       activation.handle === undefined ? false : samePhysicalRuntime(activation.handle, assignment),
     );
-    for (const [activationId, activation] of managed) this.#revoke(activationId, activation);
+    for (const [activationId] of managed) this.#revoke(activationId);
     const terminatedActivationIds = new Set(
       [...this.#admitted.entries()]
         .filter(([, admittedAssignment]) =>
@@ -2058,8 +2038,8 @@ export class ToolBroker {
       ...this.#activations.keys(),
       ...[...this.#warm.values()].map((warm) => warm.handle.activationId),
     ]);
-    for (const [activationId, activation] of this.#activations) {
-      this.#revoke(activationId, activation);
+    for (const activationId of this.#activations.keys()) {
+      this.#revoke(activationId);
     }
     this.#warm.clear();
     for (const waiter of this.#admissionWaiters.splice(0)) {
@@ -2111,18 +2091,12 @@ export class ToolBroker {
     }
   }
 
-  #authorized(activationId: string, capability: string): ManagedActivation {
+  #authorized(activationId: string, executionLease: string): ManagedActivation {
     const activation = this.#activations.get(activationId);
-    const candidate = capabilityDigest(capability);
-    const expected = activation?.capabilityDigest ?? Buffer.alloc(32);
-    if (
-      activation === undefined ||
-      candidate.byteLength !== expected.byteLength ||
-      !timingSafeEqual(candidate, expected)
-    ) {
+    if (activation === undefined || activation.assignment.executionLease !== executionLease) {
       throw new ToolBrokerError(
-        "invalid_tool_capability",
-        "Tool Sandbox operation is not authorized",
+        "stale_session_lease",
+        "Tool Sandbox operation used a stale Session lease",
         false,
       );
     }
@@ -2141,8 +2115,7 @@ export class ToolBroker {
     return activation;
   }
 
-  #revoke(activationId: string, activation: ManagedActivation): void {
-    activation.capabilityDigest.fill(0);
+  #revoke(activationId: string): void {
     this.#activations.delete(activationId);
     this.#cancelAdmissionWaiter(activationId);
   }
@@ -2346,7 +2319,7 @@ export class ToolBroker {
     );
     for (const orphan of orphaned) {
       const local = this.#activations.get(orphan.activationId);
-      if (local !== undefined) this.#revoke(orphan.activationId, local);
+      if (local !== undefined) this.#revoke(orphan.activationId);
       this.#releaseAdmission(orphan.activationId);
       try {
         await this.#provider.destroyActivation(orphan.activationId, orphan.assignment);
@@ -2367,7 +2340,7 @@ export class ToolBroker {
       const assignment = terminalAssignment(
         terminal.terminalId,
         terminal,
-        createExecutionGrant(terminal.terminalId, terminal.terminalId, terminal.generation),
+        createExecutionLease(terminal.terminalId, terminal.terminalId, terminal.fencingToken),
       );
       try {
         await this.#provider.destroyActivation(terminal.terminalId, assignment);
@@ -2430,7 +2403,7 @@ export class ToolBroker {
           );
           const brokerAssignment = {
             ...terminal.handle.assignment,
-            executionGrant: brokerGrant,
+            executionLease: brokerGrant,
           };
           const handle = await this.#provider.retainForWarm(terminal.handle, brokerAssignment);
           this.#warm.set(retained.key, {

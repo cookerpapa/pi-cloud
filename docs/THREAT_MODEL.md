@@ -22,11 +22,11 @@ no model credential.
 ### Tenant and stale-Worker isolation
 
 Every product read/write includes tenant ownership. Tool and Session mutation
-boundaries validate the current, unexpired opaque ExecutionGrant. Browser event
+boundaries validate the current, unexpired Session lease. Browser event
 writers acquire and renew a shorter PostgreSQL ownership lease under that same
-Grant before Kafka accepts their Facts.
+lease before Kafka accepts their Facts.
 A paused or partitioned old Worker cannot resume useful effects after the
-authority replaces or revokes its grant.
+authority replaces or revokes its lease.
 
 ### Durable authorities
 

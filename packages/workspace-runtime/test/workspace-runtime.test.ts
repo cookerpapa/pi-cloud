@@ -206,7 +206,7 @@ describe("shared workspace runtime", () => {
       workspaceId: "workspace-volume",
       sourceSessionId: "session-volume",
       bindingSha256: "b".repeat(64),
-      executionGeneration: 9,
+      fencingToken: 9,
       imageRevision: "development",
       environmentSpecSha256: "c".repeat(64),
       gitBaselineCommit: "e".repeat(40),
@@ -225,7 +225,7 @@ describe("shared workspace runtime", () => {
       tenantId: "tenant-volume",
       workspaceId: "workspace-volume",
       sourceSessionId: "session-volume",
-      executionGeneration: 9,
+      fencingToken: 9,
       totalSizeBytes: 7,
     });
     expect(workspaceSnapshotMetadata(checkpoint)).toEqual([

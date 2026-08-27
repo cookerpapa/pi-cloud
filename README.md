@@ -33,8 +33,8 @@ Browser ──REST/SSE──> Control Plane ──> PostgreSQL Run queue
                                       CubeSandbox KVM
                                 elastic Volume / cloud development machine state
 
-Worker CandidateFacts ──> per-Grant FactChannel ──> PostgreSQL Authority Gate
-                                                       │ grant-free AcceptedFacts
+Worker CandidateFacts ──> per-Lease FactChannel ──> PostgreSQL Authority Gate
+                                                       │ lease-free AcceptedFacts
                                                        ▼
                                                 AcceptedFactBus
                                                 Kafka acks=all
@@ -55,8 +55,8 @@ There are three durable authorities:
   releasing that machine deletes its private Volume but never its conversations.
 
 Any healthy Worker may run a Session's next message. PostgreSQL atomically
-issues one opaque, never-reused `ExecutionGrant`; every effect boundary rejects
-an expired or replaced grant, so no Session is permanently assigned to a
+issues one versioned, never-reused `ExecutionLease`; every effect boundary rejects
+an expired or replaced lease, so no Session is permanently assigned to a
 process. See [Architecture](docs/ARCHITECTURE.md),
 [Run lifecycle](docs/RUN_LIFECYCLE.md) and
 [stream durability](docs/STREAM_DURABILITY.md) for the detailed contracts.

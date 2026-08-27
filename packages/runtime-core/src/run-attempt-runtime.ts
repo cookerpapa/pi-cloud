@@ -1,6 +1,6 @@
 import type { Database } from "@pi-cloud/database";
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
-import { parseExecutionGrant } from "@pi-cloud/protocol";
+import { parseExecutionLease } from "@pi-cloud/protocol";
 import type {
   RunAttemptExecutionPhase,
   RunAttemptPhaseObserver,
@@ -39,15 +39,15 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
     phase: RunAttemptExecutionPhase,
   ): Promise<void> {
     const now = validDate(this.#clock);
-    const execution = parseExecutionGrant(command.payload.executionGrant);
+    const execution = parseExecutionLease(command.payload.executionLease);
     await this.#database.transaction().execute(async (transaction) => {
       await transitionCurrentRunAttempt(
         transaction,
         {
           tenantId: command.payload.tenantId,
           runId: command.payload.runId,
-          attemptId: execution.executionId,
-          executionGrant: command.payload.executionGrant,
+          attemptId: execution.attemptId,
+          executionLease: command.payload.executionLease,
         },
         {
           runState: phase,
@@ -63,15 +63,15 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
 
   async checkpointCommitted(command: ExecuteTurnCommandMessage, revision: string): Promise<void> {
     const now = validDate(this.#clock);
-    const execution = parseExecutionGrant(command.payload.executionGrant);
+    const execution = parseExecutionLease(command.payload.executionLease);
     await this.#database.transaction().execute(async (transaction) => {
       await transitionCurrentRunAttempt(
         transaction,
         {
           tenantId: command.payload.tenantId,
           runId: command.payload.runId,
-          attemptId: execution.executionId,
-          executionGrant: command.payload.executionGrant,
+          attemptId: execution.attemptId,
+          executionLease: command.payload.executionLease,
         },
         {
           runState: "checkpointing",

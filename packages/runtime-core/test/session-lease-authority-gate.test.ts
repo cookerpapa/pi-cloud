@@ -2,16 +2,16 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase } from "@pi-cloud/database";
 import {
-  createExecutionGrant,
+  createExecutionLease,
   parseSupervisorToControlMessage,
   type FactChannelOpenMessage,
 } from "@pi-cloud/protocol";
 import { sql } from "kysely";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  ExecutionGrantAuthorityGateError,
-  PostgresExecutionGrantAuthorityGate,
-} from "../src/execution-grant-authority-gate.ts";
+  ExecutionLeaseAuthorityGateError,
+  PostgresExecutionLeaseAuthorityGate,
+} from "../src/session-lease-authority-gate.ts";
 import { PostgresAcceptedFactProgressStore } from "../src/postgres-accepted-fact-progress.ts";
 
 const resources: Array<() => Promise<void>> = [];
@@ -33,7 +33,7 @@ function openMessage(): FactChannelOpenMessage {
     sentAt: "2026-08-26T00:00:00.000Z",
     type: "fact.channel.open",
     payload: {
-      executionGrant: createExecutionGrant(GRANT_ID, EXECUTION_ID, 1),
+      executionLease: createExecutionLease(GRANT_ID, EXECUTION_ID, 1),
       sessionId: SESSION_ID,
       turnId: TURN_ID,
       nextEventSeq: 1,
@@ -43,7 +43,7 @@ function openMessage(): FactChannelOpenMessage {
   return parsed;
 }
 
-describe("PostgresExecutionGrantAuthorityGate", () => {
+describe("PostgresExecutionLeaseAuthorityGate", () => {
   it("admits one FactChannel, accepts both Fact kinds, renews and closes idempotently", async () => {
     const pglite = await PGlite.create();
     const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
@@ -56,18 +56,18 @@ describe("PostgresExecutionGrantAuthorityGate", () => {
     resources.push(async () => socket.stop());
     resources.push(async () => database.destroy());
     await sql`
-      create table execution_grants (
+      create table session_leases (
         session_id uuid primary key,
-        grant_id uuid unique not null,
+        lease_id uuid unique not null,
         sandbox_id uuid not null,
-        generation bigint not null,
+        fencing_token bigint not null,
         tenant_id uuid not null,
         project_id uuid not null,
         workspace_id uuid not null,
         run_id uuid not null,
         turn_id uuid not null,
         command_id uuid not null,
-        execution_id uuid unique not null,
+        attempt_id uuid unique not null,
         last_event_seq bigint not null default 0,
         fact_channel_connection_id uuid,
         fact_channel_instance_id uuid,
@@ -78,9 +78,9 @@ describe("PostgresExecutionGrantAuthorityGate", () => {
       )
     `.execute(database);
     await sql`
-      insert into execution_grants(
-        session_id, grant_id, sandbox_id, generation, tenant_id, project_id, workspace_id,
-        run_id, turn_id, command_id, execution_id, valid_until, acquired_at, renewed_at
+      insert into session_leases(
+        session_id, lease_id, sandbox_id, fencing_token, tenant_id, project_id, workspace_id,
+        run_id, turn_id, command_id, attempt_id, valid_until, acquired_at, renewed_at
       ) values (
         ${SESSION_ID}, ${GRANT_ID}, ${SESSION_ID}, 1, ${SESSION_ID}, ${SESSION_ID},
         ${SESSION_ID}, ${SESSION_ID}, ${TURN_ID}, ${TURN_ID}, ${EXECUTION_ID},
@@ -90,7 +90,7 @@ describe("PostgresExecutionGrantAuthorityGate", () => {
     `.execute(database);
 
     let now = new Date("2026-08-26T00:00:00.000Z");
-    const authority = new PostgresExecutionGrantAuthorityGate({
+    const authority = new PostgresExecutionLeaseAuthorityGate({
       database,
       leaseDurationMs: 3_000,
       clock: () => now,
@@ -106,7 +106,7 @@ describe("PostgresExecutionGrantAuthorityGate", () => {
       sentAt: "2026-08-26T00:00:00.000Z",
       type: "event.publish",
       payload: {
-        executionGrant: openMessage().payload.executionGrant,
+        executionLease: openMessage().payload.executionLease,
         event: {
           schemaVersion: 1,
           eventId: "10000000-0000-4000-8000-000000000010",
@@ -132,7 +132,7 @@ describe("PostgresExecutionGrantAuthorityGate", () => {
           sessionId: SESSION_ID,
           turnId: TURN_ID,
           runId: SESSION_ID,
-          executionGrant: openMessage().payload.executionGrant,
+          executionLease: openMessage().payload.executionLease,
         },
         operation: { kind: "projection_barrier" },
         occurredAt: "2026-08-26T00:00:00.000Z",
@@ -146,12 +146,12 @@ describe("PostgresExecutionGrantAuthorityGate", () => {
       kind: "pi_session_mutation",
       factId: "10000000-0000-4000-8000-000000000011",
     });
-    expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pceg1_");
+    expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pcel1_");
     const recorded = await new PostgresAcceptedFactProgressStore(database).recordMany([
       {
-        grantId: scope.grantId,
-        executionId: scope.executionId,
-        executionGeneration: scope.generation,
+        leaseId: scope.leaseId,
+        attemptId: scope.attemptId,
+        fencingToken: scope.fencingToken,
         channelConnectionId: scope.connectionId,
         channelInstanceId: scope.instanceId,
         acknowledgedThroughSeq: event.payload.event.seq,
@@ -163,7 +163,7 @@ describe("PostgresExecutionGrantAuthorityGate", () => {
         connectionId: "10000000-0000-4000-8000-000000000008",
         instanceId: INSTANCE_ID,
       }),
-    ).rejects.toBeInstanceOf(ExecutionGrantAuthorityGateError);
+    ).rejects.toBeInstanceOf(ExecutionLeaseAuthorityGateError);
 
     now = new Date("2026-08-26T00:00:01.000Z");
     const renewed = await authority.renewMany([scope]);
@@ -172,7 +172,7 @@ describe("PostgresExecutionGrantAuthorityGate", () => {
     await authority.close(scope);
     await expect(
       database
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .select([
           "last_event_seq",
           "fact_channel_connection_id",

@@ -16,7 +16,7 @@ export type CloudAgentExecutionScope = Readonly<{
 export type OpenPostgresDurableAgentSessionOptions = Readonly<{
   database: Kysely<Database>;
   scope: CloudAgentExecutionScope;
-  executionGrant: string;
+  executionLease: string;
   pollIntervalMs?: number;
   clock?: () => Date;
   entryPayloadCache?: PostgresPiSessionEntryPayloadCache;
@@ -49,7 +49,7 @@ export async function openPostgresDurableAgentSession(
     sessionId: options.scope.sessionId,
     runId: options.scope.runId,
     turnId: options.scope.turnId,
-    executionGrant: options.executionGrant,
+    executionLease: options.executionLease,
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });

@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { createExecutionGrant } from "@pi-cloud/protocol";
+import { createExecutionLease } from "@pi-cloud/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import { PostgresSandboxActivationStateRepository } from "../src/index.ts";
 
@@ -155,13 +155,12 @@ describe("PostgreSQL Tool Broker ownership", () => {
         commandId: "20000000-0000-4000-8000-000000000031",
         sessionId: rootSessionId,
         turnId: forkTurnId,
-        executionGrant: createExecutionGrant(
+        executionLease: createExecutionLease(
           "20000000-0000-4000-8000-000000000009",
           activationAttemptId,
           1,
         ),
       },
-      capabilitySha256: "a".repeat(64),
       turnContextSha256: "b".repeat(64),
       attemptContextSha256: "c".repeat(64),
       environmentSha256: "d".repeat(64),
@@ -178,19 +177,19 @@ describe("PostgreSQL Tool Broker ownership", () => {
       })
       .executeTakeFirstOrThrow();
     await database
-      .insertInto("execution_grants")
+      .insertInto("session_leases")
       .values({
         session_id: rootSessionId,
-        grant_id: "20000000-0000-4000-8000-000000000009",
+        lease_id: "20000000-0000-4000-8000-000000000009",
         sandbox_id: activation.assignment.sandboxId,
-        generation: 1,
+        fencing_token: 1,
         tenant_id: tenantId,
         project_id: projectId,
         workspace_id: workspaceId,
         run_id: "20000000-0000-4000-8000-000000000030",
         turn_id: forkTurnId,
         command_id: activation.assignment.commandId,
-        execution_id: activationAttemptId,
+        attempt_id: activationAttemptId,
         last_event_seq: 0,
         valid_until: new Date(Date.now() + 60_000),
       })
@@ -218,7 +217,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       }),
     ).resolves.toEqual({
       status: "reserved",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "20000000-0000-4000-8000-000000000021",
         "20000000-0000-4000-8000-000000000021",
         1,
@@ -227,10 +226,10 @@ describe("PostgreSQL Tool Broker ownership", () => {
     await expect(
       database
         .selectFrom("sessions")
-        .select("last_execution_generation")
+        .select("last_fencing_token")
         .where("id", "=", rootSessionId)
         .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ last_execution_generation: "1" });
+    ).resolves.toEqual({ last_fencing_token: "1" });
     await expect(repository.reserve(activation)).resolves.toEqual({ status: "busy" });
     await repository.setTerminalState("20000000-0000-4000-8000-000000000021", "released");
     await expect(
@@ -434,64 +433,61 @@ describe("PostgreSQL Tool Broker ownership", () => {
         ...activation.assignment,
         sessionId: delegatedSessionId,
         turnId: childTurnId,
-        executionGrant: createExecutionGrant(
+        executionLease: createExecutionLease(
           "20000000-0000-4000-8000-000000000038",
           childAttemptId,
           2,
         ),
       },
-      capabilitySha256: "1".repeat(64),
       turnContextSha256: "2".repeat(64),
       attemptContextSha256: "3".repeat(64),
     } as const;
     await database
-      .updateTable("execution_grants")
+      .updateTable("session_leases")
       .set({
         session_id: delegatedSessionId,
-        grant_id: "20000000-0000-4000-8000-000000000038",
-        generation: 2,
+        lease_id: "20000000-0000-4000-8000-000000000038",
+        fencing_token: 2,
         run_id: childRunId,
         turn_id: childTurnId,
-        execution_id: childAttemptId,
+        attempt_id: childAttemptId,
       })
-      .where("grant_id", "=", "20000000-0000-4000-8000-000000000009")
+      .where("lease_id", "=", "20000000-0000-4000-8000-000000000009")
       .executeTakeFirstOrThrow();
     await expect(repository.reserve(childActivation)).resolves.toEqual({ status: "reserved" });
     await expect(
       database
         .selectFrom("tool_broker_activations")
-        .select(["activation_id", "session_id", "capability_sha256", "state"])
+        .select(["activation_id", "session_id", "state"])
         .where("activation_id", "=", activation.activationId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({
       activation_id: activation.activationId,
       session_id: delegatedSessionId,
-      capability_sha256: childActivation.capabilitySha256,
       state: "reserved",
     });
     await repository.setActivationState(activation.activationId, "active");
     await database
-      .updateTable("execution_grants")
+      .updateTable("session_leases")
       .set({
         session_id: rootSessionId,
-        grant_id: "20000000-0000-4000-8000-000000000009",
-        generation: 1,
+        lease_id: "20000000-0000-4000-8000-000000000009",
+        fencing_token: 1,
         run_id: "20000000-0000-4000-8000-000000000030",
         turn_id: forkTurnId,
-        execution_id: activationAttemptId,
+        attempt_id: activationAttemptId,
       })
-      .where("grant_id", "=", "20000000-0000-4000-8000-000000000038")
+      .where("lease_id", "=", "20000000-0000-4000-8000-000000000038")
       .executeTakeFirstOrThrow();
     await expect(repository.reserve(activation)).resolves.toEqual({ status: "reserved" });
     await expect(
       database
         .selectFrom("tool_broker_activations")
-        .select(["session_id", "capability_sha256", "state"])
+        .select(["session_id", "state"])
         .where("activation_id", "=", activation.activationId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({
       session_id: rootSessionId,
-      capability_sha256: activation.capabilitySha256,
       state: "reserved",
     });
     await expect(
@@ -503,8 +499,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
     ).resolves.toBe("started");
     await repository.settleOperation("20000000-0000-4000-8000-000000000039", "succeeded");
     await database
-      .deleteFrom("execution_grants")
-      .where("grant_id", "=", "20000000-0000-4000-8000-000000000009")
+      .deleteFrom("session_leases")
+      .where("lease_id", "=", "20000000-0000-4000-8000-000000000009")
       .executeTakeFirstOrThrow();
     await expect(
       repository.beginOperation(

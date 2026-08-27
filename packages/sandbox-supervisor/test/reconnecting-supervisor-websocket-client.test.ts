@@ -1,5 +1,5 @@
 import {
-  createExecutionGrant,
+  createExecutionLease,
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
   type SupervisorRegisteredMessage,
@@ -228,7 +228,7 @@ describe("ReconnectingSupervisorWebSocketClient", () => {
     expect(revocations).toBe(1);
   });
 
-  it("carries only the opaque ExecutionGrant on Worker heartbeats", async () => {
+  it("carries only the opaque ExecutionLease on Worker heartbeats", async () => {
     const source: ReconnectingSupervisorControlRuntime = {
       ...runtime(),
       createHeartbeat(identity, acceptingAssignments = false) {
@@ -246,7 +246,7 @@ describe("ReconnectingSupervisorWebSocketClient", () => {
                 sessionId: globalThis.crypto.randomUUID(),
                 turnId: globalThis.crypto.randomUUID(),
                 state: "running",
-                executionGrant: createExecutionGrant(
+                executionLease: createExecutionLease(
                   globalThis.crypto.randomUUID(),
                   globalThis.crypto.randomUUID(),
                   7,

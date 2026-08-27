@@ -1,6 +1,6 @@
 import {
   TWO_PHASE_COMMAND_CAPABILITY,
-  createExecutionGrant,
+  createExecutionLease,
   PI_STEER_CAPABILITY,
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
@@ -24,7 +24,7 @@ const IDS = {
 } as const;
 
 const SENT_AT = "2026-07-19T07:00:00.000Z";
-const EXECUTION_GRANT = createExecutionGrant(IDS.lease, IDS.attempt, 1);
+const EXECUTION_GRANT = createExecutionLease(IDS.lease, IDS.attempt, 1);
 
 function command(): SteerTurnCommandMessage {
   const parsed = parseControlToSupervisorMessage({
@@ -43,7 +43,7 @@ function command(): SteerTurnCommandMessage {
       runId: IDS.run,
       turnId: "turn-1",
       agentId: "root",
-      executionGrant: EXECUTION_GRANT,
+      executionLease: EXECUTION_GRANT,
       text: "Focus on the current Run.",
     },
   });
@@ -88,7 +88,7 @@ describe("Worker control channel", () => {
         commandId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         status: "accepted",
       },
     });
@@ -107,7 +107,7 @@ describe("Worker control channel", () => {
         commandId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         acknowledgedMessageId: IDS.ack,
       },
     });
@@ -123,7 +123,7 @@ describe("Worker control channel", () => {
         commandId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         commitMessageId: IDS.commit,
         commandKind: "turn.steer",
         status: "completed",
@@ -166,7 +166,7 @@ describe("Worker control channel", () => {
         commandId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionGrant: createExecutionGrant(IDS.lease, IDS.attempt, 2),
+        executionLease: createExecutionLease(IDS.lease, IDS.attempt, 2),
         status: "accepted",
       },
     });

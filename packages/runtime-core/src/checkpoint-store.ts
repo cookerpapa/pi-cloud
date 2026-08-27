@@ -5,7 +5,7 @@ import {
   MAX_WORKSPACE_PATCH_BYTES,
   MAX_WORKSPACE_SNAPSHOT_BYTES,
   parseEnvironmentValidationReport,
-  parseExecutionGrant,
+  parseExecutionLease,
 } from "@pi-cloud/protocol";
 import {
   type CapturedEnvironmentSandboxCheckpoint,
@@ -259,14 +259,14 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       );
     }
     const artifactId = this.#idGenerator();
-    const execution = parseExecutionGrant(command.payload.executionGrant);
+    const execution = parseExecutionLease(command.payload.executionLease);
     const digest = sha256(output.bytes);
     const safe = [
       "tool-outputs",
       command.payload.tenantId,
       command.payload.sessionId,
       command.payload.runId,
-      execution.executionId,
+      execution.attemptId,
     ].map((segment) => segment.replace(/[^A-Za-z0-9._-]/g, "-"));
     const objectKey = `${safe.join("/")}/${artifactId}-${digest}.log`;
     validateCheckpointObjectKey(objectKey);
@@ -303,7 +303,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
     baseRevision: string | null,
     checkpoint: CapturedEnvironmentSandboxCheckpoint,
   ): Promise<SavedSandboxCheckpoint> {
-    const execution = parseExecutionGrant(command.payload.executionGrant);
+    const execution = parseExecutionLease(command.payload.executionLease);
     const environment = parseEnvironmentValidationReport(checkpoint.environment);
     if (
       environment.profileKey !== command.payload.environment.profileKey ||
@@ -427,7 +427,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
             project_id: command.payload.projectId,
             environment_version_id: command.payload.environment.environmentVersionId,
             run_id: command.payload.runId,
-            attempt_id: execution.executionId,
+            attempt_id: execution.attemptId,
             status: "validated",
             report: environment,
             failure_code: null,
@@ -478,7 +478,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
             source_version_id: null,
             origin_kind: "checkpoint",
             run_id: command.payload.runId,
-            attempt_id: execution.executionId,
+            attempt_id: execution.attemptId,
             turn_id: command.payload.turnId,
             workspace_artifact_id: workspaceArtifactId,
             patch_artifact_id: patchArtifactId ?? null,
@@ -634,10 +634,10 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
     rowVersion: string;
     currentVersionId: string | null;
   }> {
-    const execution = parseExecutionGrant(command.payload.executionGrant);
+    const execution = parseExecutionLease(command.payload.executionLease);
     let query = transaction
       .selectFrom("sessions as session_row")
-      .innerJoin("execution_grants as grant", "grant.session_id", "session_row.id")
+      .innerJoin("session_leases as grant", "grant.session_id", "session_row.id")
       .innerJoin("workspaces as workspace_row", (join) =>
         join
           .onRef("workspace_row.tenant_id", "=", "session_row.tenant_id")
@@ -701,7 +701,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
             then ${sql.ref("workspace_row.current_workspace_version_id")}
           else ${sql.ref("session_row.current_workspace_version_id")}
         end`.as("currentVersionId"),
-        "session_row.last_execution_generation as sessionExecutionGeneration",
+        "session_row.last_fencing_token as sessionExecutionGeneration",
         "session_row.state as sessionState",
         "turn_row.state as turnState",
         "command_row.kind as commandKind",
@@ -712,12 +712,12 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
         "attempt_row.id as attemptId",
         "attempt_row.state as attemptState",
         "attempt_row.sandbox_id as attemptSandboxId",
-        "attempt_row.execution_grant_id as attemptGrantId",
-        "attempt_row.execution_generation as attemptGeneration",
-        "grant.grant_id as grantId",
-        "grant.execution_id as executionId",
+        "attempt_row.lease_id as attemptGrantId",
+        "attempt_row.fencing_token as attemptGeneration",
+        "grant.lease_id as grantId",
+        "grant.attempt_id as executionId",
         "grant.sandbox_id as grantSandboxId",
-        "grant.generation as generation",
+        "grant.fencing_token as generation",
         "grant.valid_until as validUntil",
       ])
       .where("workspace_row.deleted_at", "is", null)
@@ -725,8 +725,8 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       .where("turn_row.id", "=", command.payload.turnId)
       .where("command_row.id", "=", command.payload.commandId)
       .where("run_row.id", "=", command.payload.runId)
-      .where("attempt_row.id", "=", execution.executionId)
-      .where("grant.grant_id", "=", execution.grantId);
+      .where("attempt_row.id", "=", execution.attemptId)
+      .where("grant.lease_id", "=", execution.leaseId);
     if (lock) query = query.forUpdate(["session_row", "workspace_row"]);
     const row = await query.executeTakeFirst();
     if (
@@ -734,20 +734,20 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       row.tenantId !== command.payload.tenantId ||
       row.projectId !== command.payload.projectId ||
       row.workspaceId !== command.payload.workspaceId ||
-      row.grantId !== execution.grantId ||
-      row.executionId !== execution.executionId ||
-      Number(row.generation) !== execution.generation ||
-      Number(row.sessionExecutionGeneration) !== execution.generation ||
+      row.grantId !== execution.leaseId ||
+      row.executionId !== execution.attemptId ||
+      Number(row.generation) !== execution.fencingToken ||
+      Number(row.sessionExecutionGeneration) !== execution.fencingToken ||
       row.sessionState !== "running" ||
       row.turnState !== "running" ||
       row.commandKind !== "turn.execute" ||
       row.commandState !== "acknowledged" ||
       row.runId !== command.payload.runId ||
-      row.currentAttemptId !== execution.executionId ||
-      row.attemptId !== execution.executionId ||
-      row.attemptGrantId !== execution.grantId ||
+      row.currentAttemptId !== execution.attemptId ||
+      row.attemptId !== execution.attemptId ||
+      row.attemptGrantId !== execution.leaseId ||
       row.attemptSandboxId !== row.grantSandboxId ||
-      Number(row.attemptGeneration) !== execution.generation ||
+      Number(row.attemptGeneration) !== execution.fencingToken ||
       (row.runState !== "provisioning" &&
         row.runState !== "restoring" &&
         row.runState !== "running" &&
@@ -759,8 +759,8 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       new Date(row.validUntil).valueOf() <= now.valueOf()
     ) {
       throw new SandboxCheckpointStoreError(
-        "stale_execution_grant",
-        "Checkpoint operation does not own the current ExecutionGrant",
+        "stale_session_lease",
+        "Checkpoint operation does not own the current ExecutionLease",
         false,
       );
     }

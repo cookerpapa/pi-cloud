@@ -28,7 +28,7 @@ describe("fact channel migration", () => {
     const columns = await sql<{ column_name: string }>`
       select column_name
         from information_schema.columns
-       where table_name = 'execution_grants'
+       where table_name = 'session_leases'
          and column_name like 'fact_channel_%'
        order by column_name
     `.execute(database);
@@ -41,8 +41,8 @@ describe("fact channel migration", () => {
     const constraints = await sql<{ name: string }>`
       select conname as name
         from pg_constraint
-       where conname = 'execution_grants_fact_channel_complete'
+       where conname = 'session_leases_fact_channel_complete'
     `.execute(database);
-    expect(constraints.rows).toEqual([{ name: "execution_grants_fact_channel_complete" }]);
+    expect(constraints.rows).toEqual([{ name: "session_leases_fact_channel_complete" }]);
   }, 20_000);
 });

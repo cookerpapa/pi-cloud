@@ -12,7 +12,7 @@ export type DurableEventStoreErrorCode =
   | "invalid_event"
   | "event_conflict"
   | "sequence_gap"
-  | "stale_execution_grant"
+  | "stale_session_lease"
   | "event_store_invariant";
 
 export class DurableEventStoreError extends Error {
@@ -28,7 +28,7 @@ export class DurableEventStoreError extends Error {
 }
 
 export type FactChannelOpenRequest = Readonly<{
-  executionGrant: string;
+  executionLease: string;
   sessionId: string;
   turnId: string;
   nextEventSeq: number;
@@ -83,7 +83,7 @@ export class DurableEventStore implements FactChannelFactory {
         const publication = parseSupervisorToControlMessage(value);
         if (
           publication.type !== "event.publish" ||
-          publication.payload.executionGrant !== request.executionGrant ||
+          publication.payload.executionLease !== request.executionLease ||
           publication.payload.event.sessionId !== request.sessionId ||
           publication.payload.event.turnId !== request.turnId
         ) {
@@ -101,7 +101,7 @@ export class DurableEventStore implements FactChannelFactory {
           type: "event.ack",
           payload: {
             sessionId: publication.payload.event.sessionId,
-            executionGrant: publication.payload.executionGrant,
+            executionLease: publication.payload.executionLease,
             acknowledgedThroughSeq,
           },
         });

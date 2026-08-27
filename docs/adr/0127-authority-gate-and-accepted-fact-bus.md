@@ -3,7 +3,7 @@
 ## Status
 
 Accepted on 2026-08-26. This refines ADR-0126 by separating authorization from
-the downstream broker and projections. ADR-0126's short per-Grant channel
+the downstream broker and projections. ADR-0126's short per-Lease channel
 ownership remains current; its JetStream-coupled event-writer composition does
 not.
 
@@ -16,7 +16,7 @@ Session mutations crossed a second HTTP endpoint that combined PostgreSQL
 authority, mutation batching, JetStream publication and result handling.
 
 Both paths correctly ensured that downstream consumers saw only facts accepted
-under a current ExecutionGrant, but the acceptance boundary was not a single
+under a current ExecutionLease, but the acceptance boundary was not a single
 replaceable component. A Worker and two ingress implementations knew which
 JetStream Stream served each fact. Changing the broker or the acceptance
 protocol therefore required changes on both sides of the Authority boundary.
@@ -31,7 +31,7 @@ The pipeline has four independent roles:
 
 ```text
 CandidateFact
-→ ExecutionGrantAuthorityGate
+→ ExecutionLeaseAuthorityGate
 → AcceptedFact
 → AcceptedFactBus
 → independent projectors
@@ -39,7 +39,7 @@ CandidateFact
 
 The Authority Gate answers only whether the current writer may represent the
 canonical Tenant, Session, Run and Turn. It binds those canonical fields from
-the PostgreSQL Grant row and removes the opaque ExecutionGrant from its output.
+the PostgreSQL Session lease row and removes the Session lease from its output.
 It does not query or control a broker, assign broker cursors, sequence facts,
 deduplicate facts, replay history or wait for a downstream projection.
 
@@ -47,7 +47,7 @@ The `AcceptedFactBus` port owns durable append and returns a broker-neutral
 receipt. Its current Kafka adapter maps both Fact kinds to one Session-keyed
 Topic. Stable Fact IDs, physical log
 ordering, duplicate suppression, retention and replay are bus/downstream
-concerns. Consumers never call the Authority Gate or receive a bearer Grant.
+concerns. Consumers never call the Authority Gate or receive a Session lease.
 
 Agent events have one additional downstream progress projection. It records
 the highest Kafka-acknowledged logical event sequence in PostgreSQL in set-wise
@@ -76,7 +76,7 @@ defense policy requires separate product evidence.
 
 ## Failure semantics
 
-- stale Grant at channel open: no CandidateFact reaches the Gate output;
+- stale lease at channel open: no CandidateFact reaches the Gate output;
 - writer expires or is replaced: the channel closes and later candidates are
   not accepted;
 - broker unavailable after authorization: no durable receipt is returned and
@@ -84,7 +84,7 @@ defense policy requires separate product evidence.
 - broker acknowledges but the Worker loses the receipt: the bus handles the
   duplicate identity; downstream projectors remain idempotent;
 - SSE or Session projector fails: accepted facts remain replayable without
-  rechecking an expired Grant;
+  rechecking an expired lease;
 - PostgreSQL Session projection lags: the Pi runtime waits on its mutation
   result/barrier, while unrelated live facts continue independently.
 

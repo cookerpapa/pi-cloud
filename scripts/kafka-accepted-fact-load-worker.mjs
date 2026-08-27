@@ -58,7 +58,7 @@ function fact(seed, sequence, payloadBytes) {
       runId: seed.runId,
       turnId: seed.turnId,
       executionId: seed.executionId,
-      executionGeneration: 1,
+      fencingToken: 1,
     },
     event: {
       schemaVersion: 1,

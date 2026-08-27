@@ -1,5 +1,5 @@
 import {
-  createExecutionGrant,
+  createExecutionLease,
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
   type EventPublishMessage,
@@ -30,7 +30,7 @@ function publication(index: number): EventPublishMessage {
     sentAt: "2026-08-26T00:00:00.000Z",
     type: "event.publish",
     payload: {
-      executionGrant: createExecutionGrant(id(index, 5), id(index, 4), 1),
+      executionLease: createExecutionLease(id(index, 5), id(index, 4), 1),
       event: {
         schemaVersion: 1,
         eventId: id(index, 6),
@@ -96,7 +96,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
             type: "fact.channel.ready",
             payload: {
               acknowledgedMessageId: message.messageId,
-              executionGrant: message.payload.executionGrant,
+              executionLease: message.payload.executionLease,
               sessionId: message.payload.sessionId,
               turnId: message.payload.turnId,
               acknowledgedThroughSeq: 0,
@@ -113,7 +113,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
             type: "event.ack",
             payload: {
               sessionId: message.payload.event.sessionId,
-              executionGrant: message.payload.executionGrant,
+              executionLease: message.payload.executionLease,
               acknowledgedThroughSeq: message.payload.event.seq,
             },
           }),
@@ -127,7 +127,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
             type: "fact.channel.closed",
             payload: {
               acknowledgedMessageId: message.messageId,
-              executionGrant: message.payload.executionGrant,
+              executionLease: message.payload.executionLease,
               acknowledgedThroughSeq: message.payload.acknowledgedThroughSeq,
             },
           }),
@@ -152,7 +152,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
       allowInsecureHttp: true,
     });
     const writer = await ingestor.open({
-      executionGrant: event.payload.executionGrant,
+      executionLease: event.payload.executionLease,
       sessionId: event.payload.event.sessionId,
       turnId: event.payload.event.turnId!,
       nextEventSeq: 1,
@@ -163,7 +163,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
     });
     expect(writer.acknowledgedThroughSeq).toBe(1);
     await expect(
-      ingestor.resolve(event.payload.executionGrant)?.mutate({
+      ingestor.resolve(event.payload.executionLease)?.mutate({
         schemaVersion: 1,
         mutationId: id(1, 9),
         scope: {
@@ -171,7 +171,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
           sessionId: event.payload.event.sessionId,
           turnId: event.payload.event.turnId!,
           runId: id(1, 11),
-          executionGrant: event.payload.executionGrant,
+          executionLease: event.payload.executionLease,
         },
         operation: { kind: "projection_barrier" },
         occurredAt: "2026-08-26T00:00:00.000Z",

@@ -41,10 +41,11 @@ messages or modifications to the user's text. Repeated context hooks on the
 same binding do not append another fact, and Compaction retains the newest
 material fact for cross-Worker recovery.
 
-For a Tool call, the Worker sends the Tool Broker a server-generated capability
-bound to tenant, Workspace, Session, Run, Attempt, fence and Step. The Broker
-checks current authority, lazily creates/rebinds Cube, attaches the stable
-Workspace Volume and executes exactly one admitted operation.
+For a Tool call, the Worker presents the same Session lease used by the
+FactChannel. Tool Broker atomically verifies its expiry and fence together with
+the activation, frozen Tool policy and Step context; it then lazily
+creates/rebinds Cube, attaches the stable Workspace Volume and executes exactly
+one admitted operation. No second per-activation bearer is minted.
 
 A Tool transport retry may reattach to the same operation identity. It must not
 start a second arbitrary shell operation. If start/result cannot be proven, the
@@ -53,20 +54,20 @@ result is `UNKNOWN`.
 ## Events and terminal commit
 
 The Worker opens one short-leased FactChannel for its opaque
-ExecutionGrant before Pi starts. Assistant text deltas cross that channel
-without an intentional batching delay; one Grant remains ordered while
-different Grants publish concurrently. Tool arguments and Tool results enter
+ExecutionLease before Pi starts. Assistant text deltas cross that channel
+without an intentional batching delay; one lease remains ordered while
+different leases publish concurrently. Tool arguments and Tool results enter
 the same stream only as complete Items. Each event's Kafka `acks=all` receipt is the
 visibility boundary. Event ordering and duplicate handling belong to the
 Kafka/downstream adapter rather than the Authority Gate. Channel close
 flushes the post-PubAck event progress and releases short channel ownership
-before terminal settlement releases the Grant. Terminal sequence allocation
+before terminal settlement releases the lease. Terminal sequence allocation
 uses the maximum of Attempt progress and the separately projected channel
 progress, so a lagging projection cannot move the Session stream backwards.
 
 Pi `message_end` submits a complete Session mutation through that same
 FactChannel. The unified PostgreSQL Gate validates current writer authority once
-and removes the Grant before the AcceptedFactBus performs Kafka append. The
+and removes the lease before the AcceptedFactBus performs Kafka append. The
 PostgreSQL projector then applies the accepted fact idempotently without another
 authority query, and the Worker waits at a read-your-writes barrier before the
 next model Step. On successful settlement, the Worker

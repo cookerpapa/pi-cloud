@@ -397,15 +397,15 @@ function wait(delayMs, signal) {
 function currentCubeAssignment(metadata) {
   const records = [];
   for (const [key, raw] of Object.entries(metadata)) {
-    if (!key.startsWith("picloud.assignment.v2.")) continue;
+    if (!key.startsWith("picloud.assignment.v3.")) continue;
     try {
       const parsed = JSON.parse(raw);
       if (
-        Number.isSafeInteger(parsed?.generation) &&
-        parsed.generation > 0 &&
+        Number.isSafeInteger(parsed?.fencingToken) &&
+        parsed.fencingToken > 0 &&
         typeof parsed.sessionId === "string" &&
         typeof parsed.activationId === "string" &&
-        typeof parsed.executionId === "string" &&
+        typeof parsed.attemptId === "string" &&
         typeof parsed.turnId === "string"
       ) {
         records.push(parsed);
@@ -414,12 +414,12 @@ function currentCubeAssignment(metadata) {
       throw new Error("Cube assignment inventory contained malformed managed metadata");
     }
   }
-  const generation = Number(metadata["picloud.execution_generation"]);
+  const fencingToken = Number(metadata["picloud.fencing_token"]);
   const current = records.filter(
     (record) =>
-      record.grantId === metadata["picloud.execution_grant_id"] &&
-      record.executionId === metadata["picloud.execution_id"] &&
-      record.generation === generation,
+      record.leaseId === metadata["picloud.lease_id"] &&
+      record.attemptId === metadata["picloud.attempt_id"] &&
+      record.fencingToken === fencingToken,
   );
   if (current.length !== 1) {
     throw new Error("Cube assignment inventory contained ambiguous current authority");
@@ -647,8 +647,8 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
               'workspaceId', workspace_id,
               'sessionId', session_id,
               'turnId', turn_id,
-              'executionGrant', 'pceg1_' || replace(execution_grant_id::text, '-', '') ||
-                '_' || replace(attempt_id::text, '-', '') || '_' || execution_generation::text
+              'executionLease', 'pcel1_' || replace(lease_id::text, '-', '') ||
+                '_' || replace(attempt_id::text, '-', '') || '_' || fencing_token::text
             )::text
        from tool_broker_activations
       where sandbox_id = ${sqlLiteral(logicalSandboxId)}

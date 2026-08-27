@@ -15,7 +15,7 @@ import {
   type SupervisorTransportAuthority,
 } from "./supervisor-connection-manager.ts";
 import type { SupervisorConnectionManager } from "./supervisor-connection-manager.ts";
-import type { ExecutionGrantCoordinator } from "@pi-cloud/runtime-core/execution-grant-coordinator";
+import type { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { RemoteSupervisorSteerBackend } from "./remote-supervisor-steer-backend.ts";
 
 export const SUPERVISOR_WEBSOCKET_PATH = "/internal/v1/supervisor";
@@ -229,7 +229,7 @@ export class SupervisorWebSocketGateway {
     return this.#shuttingDown;
   }
 
-  async currentExecutionGrantCoordinator(sandboxId: string): Promise<ExecutionGrantCoordinator> {
+  async currentSessionLeaseCoordinator(sandboxId: string): Promise<SessionLeaseCoordinator> {
     const context = this.#activeBySandbox.get(sandboxId);
     if (context === undefined || context.closed || context.registeredConnectionId === undefined) {
       throw new SupervisorConnectionManagerError(
@@ -238,7 +238,7 @@ export class SupervisorWebSocketGateway {
         true,
       );
     }
-    return this.#manager.executionGrantCoordinator(
+    return this.#manager.executionLeaseCoordinator(
       context.registeredConnectionId,
       context.authority,
     );
@@ -255,7 +255,7 @@ export class SupervisorWebSocketGateway {
     return new RemoteSupervisorSteerBackend({
       sandboxId,
       transport: this.#controlChannelRouter,
-      grantCoordinatorProvider: () => this.currentExecutionGrantCoordinator(sandboxId),
+      leaseCoordinatorProvider: () => this.currentSessionLeaseCoordinator(sandboxId),
     });
   }
 

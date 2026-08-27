@@ -34,13 +34,13 @@ import {
   type FactChannelFactory,
 } from "./durable-event-store.ts";
 import {
-  ExecutionGrantCoordinator,
-  ExecutionGrantCoordinatorError,
-} from "./execution-grant-coordinator.ts";
+  SessionLeaseCoordinator,
+  SessionLeaseCoordinatorError,
+} from "./session-lease-coordinator.ts";
 
 export type AgentRunExecutionBackendOptions = {
   supervisor: AgentRunSupervisor;
-  grantCoordinator: ExecutionGrantCoordinator;
+  leaseCoordinator: SessionLeaseCoordinator;
   factChannels: FactChannelFactory;
   onEvent?: (message: EventPublishMessage) => Promise<void> | void;
   clock?: () => Date;
@@ -49,7 +49,7 @@ export type AgentRunExecutionBackendOptions = {
   onUnexpectedError?: (error: unknown) => void;
 };
 
-type TrackedGrantExecution = {
+type TrackedLeaseExecution = {
   prepared: ReturnType<AgentRunSupervisor["prepare"]>;
   execution: Promise<TurnExecutionResult>;
   writer: FactChannel;
@@ -107,9 +107,9 @@ function positiveSafeInteger(value: string, name: string): number {
 function normalizeBackendError(error: unknown): TurnExecutionBackendError {
   if (error instanceof TurnExecutionBackendError) return error;
   if (error instanceof PiTurnCancelledError) {
-    if (error.reason === "execution_grant_revoked") {
+    if (error.reason === "session_lease_revoked") {
       return new TurnExecutionBackendError(
-        "execution_grant_revoked",
+        "session_lease_revoked",
         "Execution lease was revoked and the runtime was stopped",
         false,
         true,
@@ -117,7 +117,7 @@ function normalizeBackendError(error: unknown): TurnExecutionBackendError {
     }
     return new TurnExecutionCancelledError(error.reason, error.forced);
   }
-  if (error instanceof ExecutionGrantCoordinatorError || error instanceof PiTurnError) {
+  if (error instanceof SessionLeaseCoordinatorError || error instanceof PiTurnError) {
     return new TurnExecutionBackendError(error.code, error.message, error.retryable);
   }
   if (error instanceof DurableEventStoreError) {
@@ -138,7 +138,7 @@ function normalizeBackendError(error: unknown): TurnExecutionBackendError {
 
 function normalizeCancellationError(error: unknown): TurnCancellationBackendError {
   if (error instanceof TurnCancellationBackendError) return error;
-  if (error instanceof ExecutionGrantCoordinatorError || error instanceof PiTurnError) {
+  if (error instanceof SessionLeaseCoordinatorError || error instanceof PiTurnError) {
     return new TurnCancellationBackendError(error.code, error.message, error.retryable);
   }
   if (error instanceof AgentRunSupervisorError) {
@@ -163,7 +163,7 @@ function validateEventAck(eventMessage: EventPublishMessage, value: unknown): Ev
   if (
     parsed.type !== "event.ack" ||
     parsed.payload.sessionId !== eventMessage.payload.event.sessionId ||
-    parsed.payload.executionGrant !== eventMessage.payload.executionGrant ||
+    parsed.payload.executionLease !== eventMessage.payload.executionLease ||
     parsed.payload.acknowledgedThroughSeq !== eventMessage.payload.event.seq
   ) {
     throw new TurnExecutionBackendError(
@@ -192,7 +192,7 @@ function validateAck(
     parsed.payload.commandId !== request.commandId ||
     parsed.payload.sessionId !== request.sessionId ||
     parsed.payload.turnId !== request.turnId ||
-    parsed.payload.executionGrant !== command.payload.executionGrant
+    parsed.payload.executionLease !== command.payload.executionLease
   ) {
     throw new TurnExecutionBackendError(
       "backend_protocol_violation",
@@ -220,7 +220,7 @@ function validateCancellationAck(
     parsed.payload.commandId !== request.commandId ||
     parsed.payload.sessionId !== request.target.sessionId ||
     parsed.payload.turnId !== request.target.turnId ||
-    parsed.payload.executionGrant !== command.payload.executionGrant
+    parsed.payload.executionLease !== command.payload.executionLease
   ) {
     throw new TurnCancellationBackendError(
       "backend_protocol_violation",
@@ -233,27 +233,27 @@ function validateCancellationAck(
 
 export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCancellationBackend {
   readonly #supervisor: AgentRunSupervisor;
-  readonly #grantCoordinator: ExecutionGrantCoordinator;
+  readonly #leaseCoordinator: SessionLeaseCoordinator;
   readonly #factChannels: FactChannelFactory;
   readonly #onEvent: ((message: EventPublishMessage) => Promise<void> | void) | undefined;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
   readonly #heartbeatIntervalMs: number;
   readonly #onUnexpectedError: ((error: unknown) => void) | undefined;
-  readonly #trackedGrantExecutions = new Map<string, TrackedGrantExecution>();
+  readonly #trackedLeaseExecutions = new Map<string, TrackedLeaseExecution>();
   #heartbeatAbort: AbortController | undefined;
   #heartbeatTask: Promise<void> | undefined;
   #heartbeatFailure: TurnExecutionBackendError | undefined;
 
   constructor(options: AgentRunExecutionBackendOptions) {
     this.#supervisor = options.supervisor;
-    this.#grantCoordinator = options.grantCoordinator;
+    this.#leaseCoordinator = options.leaseCoordinator;
     this.#factChannels = options.factChannels;
     this.#onEvent = options.onEvent;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
     this.#heartbeatIntervalMs = positiveInteger(
-      options.heartbeatIntervalMs ?? this.#grantCoordinator.heartbeatIntervalMs,
+      options.heartbeatIntervalMs ?? this.#leaseCoordinator.heartbeatIntervalMs,
       "heartbeatIntervalMs",
     );
     this.#onUnexpectedError = options.onUnexpectedError;
@@ -263,16 +263,16 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     request: TurnExecutionRequest,
     lifecycle: TurnExecutionLifecycle,
   ): Promise<TurnExecutionResult> {
-    let acknowledgement: { executionGrant: string } | undefined;
+    let acknowledgement: { executionLease: string } | undefined;
     let factChannel: FactChannel | undefined;
     let prepared: ReturnType<AgentRunSupervisor["prepare"]> | undefined;
-    let tracked: TrackedGrantExecution | undefined;
+    let tracked: TrackedLeaseExecution | undefined;
     let durableStarted = false;
 
     try {
-      acknowledgement = await this.#grantCoordinator.acquire(request);
+      acknowledgement = await this.#leaseCoordinator.acquire(request);
       factChannel = await this.#factChannels.open({
-        executionGrant: acknowledgement.executionGrant,
+        executionLease: acknowledgement.executionLease,
         sessionId: request.sessionId,
         turnId: request.turnId,
         nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
@@ -292,7 +292,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           runId: request.runId,
           turnId: request.turnId,
           agentId: "root",
-          executionGrant: acknowledgement.executionGrant,
+          executionLease: acknowledgement.executionLease,
           nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
           input: { kind: "prompt", text: request.input.prompt },
           executionMode: request.executionMode,
@@ -333,7 +333,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           publications.length === 0 ||
           publications.some(
             (publication) =>
-              publication.payload.executionGrant !== acknowledgement?.executionGrant ||
+              publication.payload.executionLease !== acknowledgement?.executionLease ||
               publication.payload.event.sessionId !== request.sessionId ||
               publication.payload.event.turnId !== request.turnId,
           )
@@ -387,7 +387,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           factChannel = undefined;
         }
         if (acknowledgement !== undefined) {
-          await this.#grantCoordinator.releaseAcquired(request, acknowledgement).catch(() => {
+          await this.#leaseCoordinator.releaseAcquired(request, acknowledgement).catch(() => {
             // Preserve the original delivery error. The durable grant expires and
             // the next acquisition replaces it if cleanup also failed.
           });
@@ -413,7 +413,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     lifecycle: TurnCancellationLifecycle,
   ): Promise<TurnCancellationResult> {
     try {
-      const acknowledgement = await this.#grantCoordinator.currentAssignment(request.target);
+      const acknowledgement = await this.#leaseCoordinator.currentAssignment(request.target);
       const parsed = parseControlToSupervisorMessage({
         protocolVersion: 1,
         messageId: this.#idGenerator(),
@@ -430,7 +430,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           runId: request.target.runId,
           turnId: request.target.turnId,
           agentId: "root",
-          executionGrant: acknowledgement.executionGrant,
+          executionLease: acknowledgement.executionLease,
           reason: request.reason,
           gracePeriodMs: request.gracePeriodMs,
         },
@@ -455,7 +455,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
 
       await lifecycle.started(acknowledgement);
       const result = await prepared.run();
-      const tracked = this.#trackedGrantExecutions.get(request.target.sessionId);
+      const tracked = this.#trackedLeaseExecutions.get(request.target.sessionId);
       if (tracked !== undefined) await this.#closeTrackedChannel(tracked);
       return result;
     } catch (error: unknown) {
@@ -468,41 +468,41 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     prepared: ReturnType<AgentRunSupervisor["prepare"]>,
     execution: Promise<TurnExecutionResult>,
     writer: FactChannel,
-  ): TrackedGrantExecution {
-    const tracked: TrackedGrantExecution = { prepared, execution, writer };
-    if (this.#trackedGrantExecutions.has(sessionId)) {
+  ): TrackedLeaseExecution {
+    const tracked: TrackedLeaseExecution = { prepared, execution, writer };
+    if (this.#trackedLeaseExecutions.has(sessionId)) {
       tracked.failure = new TurnExecutionBackendError(
-        "execution_grant_monitor_invariant",
-        "Session already had a tracked ExecutionGrant",
+        "session_lease_monitor_invariant",
+        "Session already had a tracked ExecutionLease",
         false,
         true,
       );
-      prepared.revokeGrant();
+      prepared.revokeLease();
       return tracked;
     }
-    this.#trackedGrantExecutions.set(sessionId, tracked);
+    this.#trackedLeaseExecutions.set(sessionId, tracked);
     if (this.#heartbeatFailure !== undefined) {
       tracked.failure = this.#heartbeatFailure;
-      prepared.revokeGrant();
+      prepared.revokeLease();
     } else {
       this.#startHeartbeatTask();
     }
     return tracked;
   }
 
-  #closeTrackedChannel(tracked: TrackedGrantExecution): Promise<void> {
+  #closeTrackedChannel(tracked: TrackedLeaseExecution): Promise<void> {
     tracked.writerClosing ??= tracked.writer.close();
     return tracked.writerClosing;
   }
 
   async #unregisterGrantExecution(
     sessionId: string,
-    tracked: TrackedGrantExecution,
+    tracked: TrackedLeaseExecution,
   ): Promise<void> {
-    if (this.#trackedGrantExecutions.get(sessionId) === tracked) {
-      this.#trackedGrantExecutions.delete(sessionId);
+    if (this.#trackedLeaseExecutions.get(sessionId) === tracked) {
+      this.#trackedLeaseExecutions.delete(sessionId);
     }
-    if (this.#trackedGrantExecutions.size !== 0) return;
+    if (this.#trackedLeaseExecutions.size !== 0) return;
     this.#heartbeatAbort?.abort();
     await this.#heartbeatTask;
   }
@@ -515,7 +515,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       if (this.#heartbeatTask === task) {
         this.#heartbeatTask = undefined;
         this.#heartbeatAbort = undefined;
-        if (this.#trackedGrantExecutions.size > 0 && this.#heartbeatFailure === undefined) {
+        if (this.#trackedLeaseExecutions.size > 0 && this.#heartbeatFailure === undefined) {
           this.#startHeartbeatTask();
         }
       }
@@ -525,13 +525,13 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
 
   async #runHeartbeatTask(signal: AbortSignal): Promise<void> {
     try {
-      const identity = await this.#grantCoordinator.heartbeatIdentity();
-      while (!signal.aborted && this.#trackedGrantExecutions.size > 0) {
+      const identity = await this.#leaseCoordinator.heartbeatIdentity();
+      while (!signal.aborted && this.#trackedLeaseExecutions.size > 0) {
         const heartbeat = this.#supervisor.createHeartbeat(identity);
         let acknowledgement;
         for (let attempt = 1; ; attempt += 1) {
           try {
-            acknowledgement = await this.#grantCoordinator.renewFromHeartbeat(heartbeat);
+            acknowledgement = await this.#leaseCoordinator.renewFromHeartbeat(heartbeat);
             break;
           } catch (error: unknown) {
             if (postgresRetryCode(error) === undefined || attempt >= 5 || signal.aborted) {
@@ -548,30 +548,30 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           );
         }
         for (const sessionId of result.revokedSessionIds) {
-          const tracked = this.#trackedGrantExecutions.get(sessionId);
-          if (tracked !== undefined) tracked.failure = this.#grantRenewalFailure();
+          const tracked = this.#trackedLeaseExecutions.get(sessionId);
+          if (tracked !== undefined) tracked.failure = this.#leaseRenewalFailure();
         }
         await wait(this.#heartbeatIntervalMs, signal);
       }
     } catch (error: unknown) {
       if (signal.aborted) return;
       this.#onUnexpectedError?.(error);
-      const failure = this.#grantRenewalFailure();
+      const failure = this.#leaseRenewalFailure();
       this.#heartbeatFailure = failure;
-      await this.#grantCoordinator.quarantineSandbox().catch(() => undefined);
-      const trackedGrantExecutions = [...this.#trackedGrantExecutions.values()];
-      for (const tracked of trackedGrantExecutions) {
+      await this.#leaseCoordinator.quarantineSandbox().catch(() => undefined);
+      const trackedLeaseExecutions = [...this.#trackedLeaseExecutions.values()];
+      for (const tracked of trackedLeaseExecutions) {
         tracked.failure = failure;
-        tracked.prepared.revokeGrant();
+        tracked.prepared.revokeLease();
       }
-      await Promise.allSettled(trackedGrantExecutions.map((tracked) => tracked.execution));
+      await Promise.allSettled(trackedLeaseExecutions.map((tracked) => tracked.execution));
     }
   }
 
-  #grantRenewalFailure(): TurnExecutionBackendError {
+  #leaseRenewalFailure(): TurnExecutionBackendError {
     return new TurnExecutionBackendError(
-      "execution_grant_renewal_failed",
-      "ExecutionGrant renewal failed and the runtime was revoked",
+      "session_lease_renewal_failed",
+      "ExecutionLease renewal failed and the runtime was revoked",
       false,
       true,
     );

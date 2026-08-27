@@ -57,7 +57,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const captured = await mover.snapshot({
       ...first,
       activationId: randomUUID(),
-      executionGeneration: 1,
+      fencingToken: 1,
       bindingSha256: "a".repeat(64),
     });
     expect(captured.volumeRevision).toMatch(/^[0-9a-f]{64}$/);
@@ -103,7 +103,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const captured = await mover.snapshot({
       ...source,
       activationId: randomUUID(),
-      executionGeneration: 1,
+      fencingToken: 1,
       bindingSha256: "a".repeat(64),
     });
     const target = {
@@ -229,7 +229,7 @@ describe("HttpWorkspaceVolumeGateway", () => {
       const snapshot = await client.snapshot({
         ...identity("session-large-index"),
         activationId: randomUUID(),
-        executionGeneration: 1,
+        fencingToken: 1,
         bindingSha256: "3".repeat(64),
       });
       expect(snapshot.files).toHaveLength(files.length);

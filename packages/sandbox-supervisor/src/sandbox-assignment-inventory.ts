@@ -11,7 +11,7 @@ export type SandboxRuntimeAssignment = SandboxRuntimeIdentity & {
   workspaceId: string;
   sessionId: string;
   turnId: string;
-  executionGrant: string;
+  executionLease: string;
 };
 
 export interface SandboxAssignmentInventory {

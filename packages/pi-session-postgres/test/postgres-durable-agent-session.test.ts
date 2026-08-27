@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { synchronizePiSessionProjectionBeforeRead } from "../src/postgres-durable-agent-session.ts";
 
 describe("durable Agent Session recovery barrier", () => {
-  it("waits for older Session mutations before rechecking the current ExecutionGrant", async () => {
+  it("waits for older Session mutations before rechecking the current ExecutionLease", async () => {
     const order: string[] = [];
 
     await synchronizePiSessionProjectionBeforeRead(

@@ -16,10 +16,10 @@ import { createHash } from "node:crypto";
 import type { Kysely, Transaction } from "kysely";
 import type { SandboxRetirementResult } from "./assignment-reconciler.ts";
 import {
-  ExecutionGrantCoordinator,
-  ExecutionGrantCoordinatorError,
+  SessionLeaseCoordinator,
+  SessionLeaseCoordinatorError,
   type SupervisorConnectionGuard,
-} from "@pi-cloud/runtime-core/execution-grant-coordinator";
+} from "@pi-cloud/runtime-core/session-lease-coordinator";
 
 const DEFAULT_SUPERVISOR_VERSION = "0.1.0";
 const DEFAULT_PI_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
@@ -619,7 +619,7 @@ export class SupervisorConnectionManager {
         payload: {
           acknowledgedMessageId: parsed.messageId,
           connectionId: parsed.payload.connectionId,
-          executionGrantRenewals: [],
+          executionLeaseRenewals: [],
         },
       });
       if (acknowledgement.type !== "supervisor.heartbeat.ack") {
@@ -631,14 +631,14 @@ export class SupervisorConnectionManager {
       }
       return acknowledgement;
     }
-    const coordinator = await this.executionGrantCoordinator(
+    const coordinator = await this.executionLeaseCoordinator(
       parsed.payload.connectionId,
       authority,
     );
     try {
       return await coordinator.renewFromHeartbeat(parsed);
     } catch (error: unknown) {
-      if (error instanceof ExecutionGrantCoordinatorError) {
+      if (error instanceof SessionLeaseCoordinatorError) {
         throw new SupervisorConnectionManagerError(
           error.code,
           "Supervisor heartbeat was rejected",
@@ -656,22 +656,22 @@ export class SupervisorConnectionManager {
     await this.#currentConnection(connectionId, authority);
   }
 
-  async executionGrantCoordinator(
+  async executionLeaseCoordinator(
     connectionId: string,
     authority: SupervisorTransportAuthority,
-  ): Promise<ExecutionGrantCoordinator> {
+  ): Promise<SessionLeaseCoordinator> {
     const connection = await this.#currentConnection(connectionId, authority);
     const guard: SupervisorConnectionGuard = {
       controlPlaneInstanceId: this.#controlPlaneInstanceId,
       transportId: authority.transportId,
       heartbeatTimeoutMs: connection.heartbeat_timeout_ms,
     };
-    return new ExecutionGrantCoordinator({
+    return new SessionLeaseCoordinator({
       database: this.#database,
       sandboxId: authority.sandboxId,
       clock: this.#clock,
       idGenerator: this.#idGenerator,
-      grantDurationMs: this.#leaseDurationMs,
+      leaseDurationMs: this.#leaseDurationMs,
       heartbeatConnectionId: connectionId,
       connectionGuard: guard,
     });
@@ -763,7 +763,7 @@ export class SupervisorConnectionManager {
         ) {
           throw error;
         }
-        // The connection, Sandbox row and execution grant were fenced before
+        // The connection, Sandbox row and Session lease were fenced before
         // retirement became eligible. Once owner-stop also confirms, that
         // Worker intentionally exits, so a following inventory request can
         // race with its management endpoint disappearing. Either proof is

@@ -10,19 +10,19 @@
       "invariant": "At-least-once delivery does not execute the same command twice."
     },
     {
-      "id": "stale-execution-grant",
+      "id": "stale-execution-lease",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/agent-run-supervisor.test.ts",
       "test": "retains the high-water generation after a pre-start release",
-      "invariant": "A released or recovered old Worker cannot reuse an obsolete ExecutionGrant."
+      "invariant": "A released or recovered old Worker cannot reuse an obsolete ExecutionLease."
     },
     {
       "id": "stale-accepted-log-authority",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/control-plane-api.test.ts",
-      "test": "rejects Agent events and Pi Session mutations after their ExecutionGrant is revoked",
+      "test": "rejects Agent events and Pi Session mutations after their ExecutionLease is revoked",
       "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "A stale Worker cannot cross the PostgreSQL ExecutionGrant boundary into either accepted JetStream log."
+      "invariant": "A stale Worker cannot cross the PostgreSQL ExecutionLease boundary into either accepted JetStream log."
     },
     {
       "id": "session-mutation-redelivery",
@@ -38,8 +38,8 @@
       "id": "session-projection-barrier-before-read",
       "workspace": "@pi-cloud/pi-session-postgres",
       "file": "test/postgres-durable-agent-session.test.ts",
-      "test": "waits for older Session mutations before rechecking the current ExecutionGrant",
-      "invariant": "A replacement Worker crosses the Session-keyed projection barrier and rechecks its ExecutionGrant before reading PostgreSQL."
+      "test": "waits for older Session mutations before rechecking the current ExecutionLease",
+      "invariant": "A replacement Worker crosses the Session-keyed projection barrier and rechecks its ExecutionLease before reading PostgreSQL."
     },
     {
       "id": "message-stream-independence",
@@ -76,7 +76,7 @@
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/control-channel-process-fault.test.ts",
       "test": "keeps an active assignment alive while the Control Plane process is killed and replaced",
-      "invariant": "A Control Plane process replacement does not revoke a healthy Agent Loop's ExecutionGrant."
+      "invariant": "A Control Plane process replacement does not revoke a healthy Agent Loop's ExecutionLease."
     },
     {
       "id": "control-channel-expiry-with-live-run",
@@ -90,7 +90,7 @@
       "workspace": "@pi-cloud/control-plane",
       "file": "test/supervisor-connection-manager.test.ts",
       "test": "settles a revoked active Run when the dead Worker has no management endpoint",
-      "invariant": "After connection and ExecutionGrant expiry, a dead management endpoint cannot strand the interrupted Run or Session."
+      "invariant": "After connection and ExecutionLease expiry, a dead management endpoint cannot strand the interrupted Run or Session."
     },
     {
       "id": "assignment-loss-releases-model-reservation",
@@ -105,13 +105,13 @@
       "workspace": "@pi-cloud/tool-broker",
       "file": "test/activation-state-repository.test.ts",
       "test": "resolves a Workspace through its Sandbox Domain without ambiguous columns",
-      "invariant": "A replacement writer can retire a failed activation, while a revoked ExecutionGrant cannot start another Tool operation."
+      "invariant": "A replacement writer can retire a failed activation, while a revoked ExecutionLease cannot start another Tool operation."
     },
     {
       "id": "checkpoint-corruption-and-cas",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/checkpoint-store.test.ts",
-      "test": "commits artifacts under an ExecutionGrant, cold-loads them, and rejects stale or corrupt state",
+      "test": "commits artifacts under an ExecutionLease, cold-loads them, and rejects stale or corrupt state",
       "invariant": "Checkpoint integrity and compare-and-swap generation checks survive cold recovery."
     },
     {

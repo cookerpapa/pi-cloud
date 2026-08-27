@@ -164,8 +164,8 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     const identity = validatedIdentity(input);
     if (
       !UUID_PATTERN.test(input.activationId) ||
-      !Number.isSafeInteger(input.executionGeneration) ||
-      input.executionGeneration < 1 ||
+      !Number.isSafeInteger(input.fencingToken) ||
+      input.fencingToken < 1 ||
       !SHA256_PATTERN.test(input.bindingSha256)
     ) {
       throw new WorkspaceVolumeGatewayError(

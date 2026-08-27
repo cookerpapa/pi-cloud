@@ -61,9 +61,9 @@ export async function commitTerminalTurnEvent(
         .onRef("attempt.run_id", "=", "run.id")
         .onRef("attempt.id", "=", "run.current_attempt_id"),
     )
-    .leftJoin("execution_grants as authority", (join) =>
+    .leftJoin("session_leases as authority", (join) =>
       join
-        .onRef("authority.execution_id", "=", "attempt.id")
+        .onRef("authority.attempt_id", "=", "attempt.id")
         .onRef("authority.run_id", "=", "run.id"),
     )
     .select([

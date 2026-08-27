@@ -10,8 +10,8 @@ afterEach(async () => {
   for (const close of resources.splice(0).reverse()) await close();
 });
 
-describe("ExecutionGrant migration", () => {
-  it("leaves one current authority table and removes the old execution columns", async () => {
+describe("Session lease and fencing migration", () => {
+  it("leaves one lease authority and removes the secondary Tool capability", async () => {
     const pglite = await PGlite.create();
     const socket = new PGLiteSocketServer({ db: pglite, host: "127.0.0.1", port: 0 });
     await socket.start();
@@ -29,7 +29,7 @@ describe("ExecutionGrant migration", () => {
         from information_schema.columns
        where table_schema = 'public'
          and table_name in (
-           'execution_grants',
+           'session_leases',
            'run_attempts',
            'sessions',
            'tool_broker_activations',
@@ -40,14 +40,16 @@ describe("ExecutionGrant migration", () => {
       columns.rows.map((column) => `${column.table_name}.${column.column_name}`),
     );
 
-    expect(names).toContain("execution_grants.grant_id");
-    expect(names).toContain("execution_grants.execution_id");
-    expect(names).toContain("execution_grants.last_event_seq");
-    expect(names).toContain("run_attempts.execution_grant_id");
-    expect(names).toContain("sessions.last_execution_generation");
-    expect(names).toContain("tool_broker_activations.execution_grant_id");
-    expect(names).toContain("workspace_terminal_sessions.generation");
-    expect(names).not.toContain("execution_grants.lease_id");
-    expect(names).not.toContain("run_attempts.fencing_token");
+    expect(names).toContain("session_leases.lease_id");
+    expect(names).toContain("session_leases.fencing_token");
+    expect(names).toContain("session_leases.attempt_id");
+    expect(names).toContain("session_leases.last_event_seq");
+    expect(names).toContain("run_attempts.lease_id");
+    expect(names).toContain("run_attempts.fencing_token");
+    expect(names).toContain("sessions.last_fencing_token");
+    expect(names).toContain("tool_broker_activations.lease_id");
+    expect(names).toContain("tool_broker_activations.fencing_token");
+    expect(names).toContain("workspace_terminal_sessions.fencing_token");
+    expect(names).not.toContain("tool_broker_activations.capability_sha256");
   }, 20_000);
 });

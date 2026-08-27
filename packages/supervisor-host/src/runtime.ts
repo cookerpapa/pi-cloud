@@ -16,7 +16,7 @@ import {
 } from "@pi-cloud/runtime-core/model-credential-runtime";
 import { RunCommandExecutor } from "@pi-cloud/runtime-core/run-command-executor";
 import { PostgresRunAttemptPhaseObserver } from "@pi-cloud/runtime-core/run-attempt-runtime";
-import { ExecutionGrantCoordinator } from "@pi-cloud/runtime-core/execution-grant-coordinator";
+import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { createDatabase, type Database } from "@pi-cloud/database";
 import { GitHubGatewayClient } from "@pi-cloud/github-gateway";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
@@ -489,14 +489,14 @@ export class PiWorkerRuntime {
               turnId: command.payload.turnId,
               runId: command.payload.runId,
             },
-            executionGrant: command.payload.executionGrant,
+            executionLease: command.payload.executionLease,
             entryPayloadCache: sessionEntryPayloadCache,
             mutationPublisher: sessionMutationProducer.scoped({
               tenantId: command.payload.tenantId,
               sessionId: command.payload.sessionId,
               turnId: command.payload.turnId,
               runId: command.payload.runId,
-              executionGrant: command.payload.executionGrant,
+              executionLease: command.payload.executionLease,
             }),
           }),
         createOrchestrationTools: async (command, orchestrationContext) => {
@@ -571,7 +571,7 @@ export class PiWorkerRuntime {
                   tenantId: command.payload.tenantId,
                   parentSessionId: command.payload.sessionId,
                   parentRunId: command.payload.runId,
-                  parentExecutionGrant: command.payload.executionGrant,
+                  parentExecutionLease: command.payload.executionLease,
                   parentToolCallId,
                   workflowRunId: input.runId,
                   stepIndex: input.stepIndex,
@@ -680,13 +680,13 @@ export class PiWorkerRuntime {
         baseUrl: this.#config.controlPlaneBaseUrl,
         serviceToken: this.#config.enrollmentToken,
       });
-      const grantCoordinator = new ExecutionGrantCoordinator({
+      const leaseCoordinator = new SessionLeaseCoordinator({
         database: this.#database,
         sandboxId: identity.sandboxId,
       });
       const runBackend = new AgentRunExecutionBackend({
         supervisor: runSupervisor,
-        grantCoordinator,
+        leaseCoordinator,
         factChannels,
         onUnexpectedError: (error) =>
           operationalLog({
@@ -718,7 +718,7 @@ export class PiWorkerRuntime {
         commandExecutor: new RunCommandExecutor({
           database: this.#database,
           backend: runBackend,
-          executionAuthority: grantCoordinator,
+          executionAuthority: leaseCoordinator,
           terminalTurnProjectionSource,
           claimOwnerId: runWorkerIdentity,
           ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
@@ -726,7 +726,7 @@ export class PiWorkerRuntime {
         cancellationExecutor: new RunCancellationExecutor({
           database: this.#database,
           backend: runBackend,
-          executionAuthority: grantCoordinator,
+          executionAuthority: leaseCoordinator,
           terminalTurnProjectionSource,
         }),
         onFailure: (operation, error) =>

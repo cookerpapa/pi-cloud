@@ -4,7 +4,7 @@
 
 Accepted on 2026-08-26. This supersedes the JetStream transport, replay and
 browser-cursor portions of ADR-0111, ADR-0122, ADR-0125, ADR-0126 and ADR-0127.
-ADR-0127's single PostgreSQL ExecutionGrant Gate and grant-free AcceptedFact
+ADR-0127's single PostgreSQL ExecutionLease Gate and lease-free AcceptedFact
 boundary remain current.
 
 ## Context
@@ -25,7 +25,7 @@ instead of replaying characters from an old browser watermark.
 
 One Kafka topic keyed by opaque Session ID is the only AcceptedFact durable
 append log. It carries Agent events and complete Pi Session mutations. The
-Authority Gate publishes one grant-free AcceptedFact and acknowledges the Worker
+Authority Gate publishes one lease-free AcceptedFact and acknowledges the Worker
 only after Kafka `acks=all`. Kafka partition order, stable Fact IDs and consumer
 idempotency are downstream concerns. No application microbatch precedes Kafka;
 the maintained client may use its native producer aggregation.

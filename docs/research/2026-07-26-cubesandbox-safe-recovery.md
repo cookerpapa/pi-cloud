@@ -51,7 +51,7 @@ It does not answer:
 
 Redis lifecycle state, Cube metadata and a Cube traffic token are therefore not
 business fencing tokens. PiCloud must seal the guest before pause, revoke the
-old Tool capability, and require a strictly higher writer fence before the
+old Session lease, and require a strictly higher writer fence before the
 resumed guest accepts another Tool operation.
 
 ## Selected PiCloud recovery profile

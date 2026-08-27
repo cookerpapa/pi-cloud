@@ -597,11 +597,14 @@ export class ToolBrokerServer {
     });
 
     this.#server.post(TOOL_BROKER_OPERATION_PATH, async (request, reply) => {
-      const capability = bearer(request.headers.authorization);
-      if (capability === undefined || !/^pcts_[A-Za-z0-9_-]{43}$/.test(capability)) {
+      const executionLease = bearer(request.headers.authorization);
+      if (
+        executionLease === undefined ||
+        !/^pcel1_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionLease)
+      ) {
         await reply.code(401).send({
           error: {
-            code: "invalid_tool_capability",
+            code: "invalid_execution_lease",
             message: "Tool Sandbox operation is not authorized",
             retryable: false,
           },
@@ -617,7 +620,7 @@ export class ToolBrokerServer {
           kind: "tool",
           // Tool execution is owned by operationId and the Run lease, not by
           // this particular HTTP connection. Explicit stop/cancel revokes it.
-          run: () => this.#broker.execute(capability, message),
+          run: () => this.#broker.execute(executionLease, message),
         });
         this.#metrics?.sandboxActive.set(
           { provider: this.#broker.providerId },

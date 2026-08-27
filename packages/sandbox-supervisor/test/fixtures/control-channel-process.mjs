@@ -43,7 +43,7 @@ server.on("connection", (socket) => {
           payload: {
             acknowledgedMessageId: message.messageId,
             connectionId,
-            executionGrantRenewals: [],
+            executionLeaseRenewals: [],
           },
         }),
       );
@@ -62,7 +62,7 @@ server.on("connection", (socket) => {
           type: "event.ack",
           payload: {
             sessionId: event.sessionId,
-            executionGrant: message.payload.executionGrant,
+            executionLease: message.payload.executionLease,
             acknowledgedThroughSeq: event.seq,
           },
         }),

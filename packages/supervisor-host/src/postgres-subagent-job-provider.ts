@@ -11,7 +11,7 @@ import {
 } from "@pi-cloud/pi-session-postgres";
 import {
   parseCloudToolCapabilitySnapshot,
-  parseExecutionGrant,
+  parseExecutionLease,
   TURN_CANCELLATION_OUTBOX_TOPIC,
   TURN_COMMAND_OUTBOX_TOPIC,
   type CloudToolCapabilitySnapshot,
@@ -26,7 +26,7 @@ export type StartCloudSubagentJobInput = Readonly<{
   tenantId: string;
   parentSessionId: string;
   parentRunId: string;
-  parentExecutionGrant: string;
+  parentExecutionLease: string;
   parentToolCallId: string;
   workflowRunId: string;
   stepIndex: number;
@@ -125,13 +125,13 @@ function safeStep(value: number): number {
 }
 
 function requestSha256(input: StartCloudSubagentJobInput, tools: readonly string[]): string {
-  const parentExecution = parseExecutionGrant(input.parentExecutionGrant);
+  const parentExecution = parseExecutionLease(input.parentExecutionLease);
   return createHash("sha256")
     .update(
       JSON.stringify({
         agentName: input.agentName,
         contextMode: input.contextMode,
-        parentExecutionId: parentExecution.executionId,
+        parentExecutionId: parentExecution.attemptId,
         parentRunId: input.parentRunId,
         parentSessionId: input.parentSessionId,
         parentToolCallId: input.parentToolCallId,
@@ -248,7 +248,7 @@ export class PostgresSubagentJobProvider {
       nonEmpty(input.systemPrompt, "Subagent system prompt", 100_000);
     }
     safeStep(input.stepIndex);
-    const parentGrant = parseExecutionGrant(input.parentExecutionGrant);
+    const parentGrant = parseExecutionLease(input.parentExecutionLease);
     if (input.contextMode !== "fresh" && input.contextMode !== "fork") {
       throw new TypeError("Subagent context mode is invalid");
     }
@@ -321,8 +321,8 @@ export class PostgresSubagentJobProvider {
           "parent_run.source_set_snapshot as sourceSetSnapshot",
           "parent_run.tool_capability_snapshot as parentTools",
           "parent_attempt.state as attemptState",
-          "parent_attempt.execution_grant_id as executionGrantId",
-          "parent_attempt.execution_generation as executionGeneration",
+          "parent_attempt.lease_id as executionLeaseId",
+          "parent_attempt.fencing_token as fencingToken",
           "parent_session.id as sessionId",
           "parent_session.desired_model_profile_id as modelProfileId",
           "parent_session.execution_mode as executionMode",
@@ -375,11 +375,11 @@ export class PostgresSubagentJobProvider {
       }
 
       if (
-        parent.currentAttemptId !== parentGrant.executionId ||
+        parent.currentAttemptId !== parentGrant.attemptId ||
         parent.runState !== "running" ||
         parent.attemptState !== "running" ||
-        parent.executionGrantId !== parentGrant.grantId ||
-        Number(parent.executionGeneration) !== parentGrant.generation
+        parent.executionLeaseId !== parentGrant.leaseId ||
+        Number(parent.fencingToken) !== parentGrant.fencingToken
       ) {
         throw new PostgresSubagentJobError(
           "parent_authority_expired",
@@ -776,7 +776,7 @@ export class PostgresSubagentJobProvider {
           tenant_id: input.tenantId,
           parent_session_id: input.parentSessionId,
           parent_run_id: input.parentRunId,
-          parent_attempt_id: parentGrant.executionId,
+          parent_attempt_id: parentGrant.attemptId,
           parent_tool_call_id: input.parentToolCallId,
           root_session_id: treeContext.rootSessionId,
           root_run_id: treeContext.rootRunId,
@@ -816,7 +816,7 @@ export class PostgresSubagentJobProvider {
     input: StartCloudSubagentJobInput,
     pending: CloudSubagentJobHandle,
   ): Promise<CloudSubagentJobHandle> {
-    const parentGrant = parseExecutionGrant(input.parentExecutionGrant);
+    const parentGrant = parseExecutionLease(input.parentExecutionLease);
     const activation = input.parentActivation;
     const forkWorkspace = this.#forkWorkspace;
     if (activation === undefined || forkWorkspace === undefined) {
@@ -849,7 +849,7 @@ export class PostgresSubagentJobProvider {
       activation.assignment.projectId !== target.projectId ||
       activation.assignment.workspaceId === target.workspaceId ||
       activation.assignment.sessionId !== input.parentSessionId ||
-      activation.assignment.executionGrant !== input.parentExecutionGrant
+      activation.assignment.executionLease !== input.parentExecutionLease
     ) {
       await this.#failPreparation(input.tenantId, pending, "workspace_fork_identity_invalid");
       throw new PostgresSubagentJobError(
@@ -884,8 +884,8 @@ export class PostgresSubagentJobProvider {
             "parent_run.state as runState",
             "parent_run.current_attempt_id as attemptId",
             "parent_attempt.state as attemptState",
-            "parent_attempt.execution_grant_id as executionGrantId",
-            "parent_attempt.execution_generation as executionGeneration",
+            "parent_attempt.lease_id as executionLeaseId",
+            "parent_attempt.fencing_token as fencingToken",
           ])
           .where("parent_run.tenant_id", "=", input.tenantId)
           .where("parent_run.id", "=", input.parentRunId)
@@ -904,9 +904,9 @@ export class PostgresSubagentJobProvider {
         if (
           authority?.runState !== "running" ||
           authority.attemptState !== "running" ||
-          authority.attemptId !== parentGrant.executionId ||
-          authority.executionGrantId !== parentGrant.grantId ||
-          Number(authority.executionGeneration) !== parentGrant.generation
+          authority.attemptId !== parentGrant.attemptId ||
+          authority.executionLeaseId !== parentGrant.leaseId ||
+          Number(authority.fencingToken) !== parentGrant.fencingToken
         ) {
           throw new PostgresSubagentJobError(
             "parent_authority_expired",

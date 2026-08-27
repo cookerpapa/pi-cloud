@@ -1,8 +1,8 @@
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  createExecutionGrant,
-  parseExecutionGrant,
+  createExecutionLease,
+  parseExecutionLease,
   type ToolSandboxAssignment,
   type ToolSandboxCreateRequest,
   type ToolSandboxOperationRequest,
@@ -154,7 +154,7 @@ function assignment(testRun: string, index: number): ToolSandboxAssignment {
     commandId: `cube-live-${testRun}-command-${String(index)}`,
     sessionId: `cube-live-${testRun}-session-${String(index)}`,
     turnId: `cube-live-${testRun}-turn-${String(index)}`,
-    executionGrant: createExecutionGrant(randomUUID(), randomUUID(), index),
+    executionLease: createExecutionLease(randomUUID(), randomUUID(), index),
   };
 }
 
@@ -472,7 +472,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              first.capability,
+              first.executionLease,
               operation(first.activationId, `printf '%s' '${firstCanary}' > tenant-canary`),
             ),
           ),
@@ -483,7 +483,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              second.capability,
+              second.executionLease,
               operation(second.activationId, `printf '%s' '${secondCanary}' > tenant-canary`),
             ),
           ),
@@ -493,7 +493,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              first.capability,
+              first.executionLease,
               operation(first.activationId, "cat tenant-canary"),
             ),
           ),
@@ -501,7 +501,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              first.capability,
+              first.executionLease,
               operation(
                 first.activationId,
                 "node -e \"const fs=require('node:fs');fs.mkdirSync('large',{recursive:true});for(let i=0;i<600;i++)fs.writeFileSync('large/file-'+i,String(i))\"",
@@ -512,14 +512,14 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              second.capability,
+              second.executionLease,
               operation(second.activationId, "cat tenant-canary"),
             ),
           ),
         ).toBe(secondCanary);
 
         const kernel = output(
-          await manager.execute(first.capability, operation(first.activationId, "uname -r")),
+          await manager.execute(first.executionLease, operation(first.activationId, "uname -r")),
         ).trim();
         expect(kernel).not.toBe(hostKernelRelease());
         await expect(manager.inspect(first.activationId, firstAssignment)).resolves.toMatchObject({
@@ -539,7 +539,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              first.capability,
+              first.executionLease,
               operation(
                 first.activationId,
                 "test ! -S /var/run/docker.sock; " +
@@ -552,7 +552,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              first.capability,
+              first.executionLease,
               operation(
                 first.activationId,
                 denyProbeCommand([
@@ -567,7 +567,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              first.capability,
+              first.executionLease,
               operation(first.activationId, publicHttpsProbeCommand(config.publicHttpsUrl), 15_000),
             ),
           ),
@@ -585,7 +585,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           providerId: "cubesandbox",
           tenantId: firstAssignment.tenantId,
           workspaceId: firstAssignment.workspaceId,
-          executionGeneration: parseExecutionGrant(firstAssignment.executionGrant).generation,
+          fencingToken: parseExecutionLease(firstAssignment.executionLease).fencingToken,
         });
         expect(checkpoint?.files.length).toBeGreaterThan(512);
         expect(checkpoint?.files.find((file) => file.path === "tenant-canary")).toMatchObject({
@@ -608,10 +608,10 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           sandboxId: randomUUID(),
           commandId: `cube-live-${testRun}-command-restored`,
           turnId: `cube-live-${testRun}-turn-restored`,
-          executionGrant: createExecutionGrant(
+          executionLease: createExecutionLease(
             randomUUID(),
             randomUUID(),
-            parseExecutionGrant(firstAssignment.executionGrant).generation + 10,
+            parseExecutionLease(firstAssignment.executionLease).fencingToken + 10,
           ),
         };
         activeFirstAssignment = restoredFirstAssignment;
@@ -626,7 +626,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              first.capability,
+              first.executionLease,
               operation(first.activationId, "cat tenant-canary"),
             ),
           ),
@@ -644,7 +644,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              second.capability,
+              second.executionLease,
               operation(
                 second.activationId,
                 `nohup node -e ${JSON.stringify(backgroundProgram)} >/tmp/picloud-preview.log 2>&1 & echo $! > background.pid; sleep 1; kill -0 "$(cat background.pid)"; node -e "fetch('http://127.0.0.1:43123').then(async r=>process.stdout.write(await r.text()))"`,
@@ -655,7 +655,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         ).toBe("preview-alive");
         const backgroundPid = output(
           await manager.execute(
-            second.capability,
+            second.executionLease,
             operation(second.activationId, "cat background.pid"),
           ),
         ).trim();
@@ -680,10 +680,10 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         ).resolves.toMatchObject({ retained: true });
         await expect(
           manager.execute(
-            second.capability,
+            second.executionLease,
             operation(second.activationId, "printf stale-authority-must-not-run"),
           ),
-        ).rejects.toMatchObject({ code: "invalid_tool_capability" });
+        ).rejects.toMatchObject({ code: "stale_session_lease" });
         await new Promise((resolvePromise) =>
           setTimeout(resolvePromise, PERSISTENT_IDLE_TTL_PROOF_MS * 2),
         );
@@ -696,10 +696,10 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           sandboxId: randomUUID(),
           commandId: `cube-live-${testRun}-command-rebound`,
           turnId: `cube-live-${testRun}-turn-rebound`,
-          executionGrant: createExecutionGrant(
+          executionLease: createExecutionLease(
             randomUUID(),
             randomUUID(),
-            parseExecutionGrant(secondAssignment.executionGrant).generation + 10,
+            parseExecutionLease(secondAssignment.executionLease).fencingToken + 10,
           ),
         };
         activeSecondAssignment = reboundAssignment;
@@ -712,7 +712,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              second.capability,
+              second.executionLease,
               operation(
                 second.activationId,
                 `test "$(cat background.pid)" = "${backgroundPid}"; kill -0 "${backgroundPid}"; test "$(grep -c tick background-state)" -gt 0; node -e "fetch('http://127.0.0.1:43123').then(async r=>process.stdout.write(await r.text()))"`,
@@ -724,7 +724,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         expect(
           output(
             await manager.execute(
-              second.capability,
+              second.executionLease,
               operation(second.activationId, "cat tenant-canary"),
             ),
           ),
@@ -732,11 +732,11 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         const secondRuntimeAfter = (await manager.listAssignments(reboundAssignment.sandboxId))[0];
         expect(secondRuntimeAfter?.containerId).toBe(secondRuntimeBefore?.containerId);
         expect(secondRuntimeAfter?.containerName).toBe(secondRuntimeBefore?.containerName);
-        expect(secondRuntimeAfter?.executionGrant).toBe(reboundAssignment.executionGrant);
+        expect(secondRuntimeAfter?.executionLease).toBe(reboundAssignment.executionLease);
 
         const controller = new AbortController();
         const cancelled = manager.execute(
-          first.capability,
+          first.executionLease,
           operation(first.activationId, "sleep 120", 125_000),
           controller.signal,
         );

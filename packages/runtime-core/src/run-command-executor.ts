@@ -70,12 +70,12 @@ export type TurnExecutionRequest = {
   traceContext?: TraceContext;
 };
 
-export type TurnExecutionGrant = {
-  executionGrant: string;
+export type TurnExecutionLease = {
+  executionLease: string;
 };
 
 export type TurnExecutionLifecycle = {
-  started(grant?: TurnExecutionGrant): Promise<void>;
+  started(grant?: TurnExecutionLease): Promise<void>;
 };
 
 export type TurnExecutionResult = {
@@ -95,19 +95,19 @@ export interface TurnExecutionAuthority {
   assertCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    grant: TurnExecutionGrant,
+    grant: TurnExecutionLease,
     now: Date,
   ): Promise<void>;
   assertCurrentOrExpired?(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    grant: TurnExecutionGrant,
+    grant: TurnExecutionLease,
     now: Date,
   ): Promise<void>;
   releaseCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    grant: TurnExecutionGrant,
+    grant: TurnExecutionLease,
     now: Date,
   ): Promise<void>;
 }
@@ -397,7 +397,7 @@ export class RunCommandExecutor {
         },
         run: async () => {
           let started = false;
-          let acknowledgement: TurnExecutionGrant | undefined;
+          let acknowledgement: TurnExecutionLease | undefined;
           let startedPromise: Promise<void> | undefined;
           let startFailure: unknown;
           const lifecycle: TurnExecutionLifecycle = {
@@ -411,7 +411,7 @@ export class RunCommandExecutor {
               }
               if (
                 startedPromise !== undefined &&
-                candidate?.executionGrant !== acknowledgement?.executionGrant
+                candidate?.executionLease !== acknowledgement?.executionLease
               ) {
                 return Promise.reject(
                   new RunCommandExecutorInvariantError(
@@ -926,8 +926,8 @@ export class RunCommandExecutor {
           claim_owner_id: this.#claimOwnerId,
           claim_expires_at: leaseUntil,
           sandbox_id: null,
-          execution_grant_id: null,
-          execution_generation: null,
+          lease_id: null,
+          fencing_token: null,
           checkpoint_revision: null,
           failure_code: null,
           failure_message: null,
@@ -1104,7 +1104,7 @@ export class RunCommandExecutor {
 
   async #markStarted(
     claim: ClaimedTurn,
-    acknowledgement: TurnExecutionGrant | undefined,
+    acknowledgement: TurnExecutionLease | undefined,
   ): Promise<void> {
     const now = safeDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
@@ -1209,7 +1209,7 @@ export class RunCommandExecutor {
   async #complete(
     claim: ClaimedTurn,
     result: TurnExecutionResult,
-    acknowledgement: TurnExecutionGrant | undefined,
+    acknowledgement: TurnExecutionLease | undefined,
   ): Promise<void> {
     const now = safeDate(this.#clock);
     const terminalEventId = this.#idGenerator();
@@ -1345,7 +1345,7 @@ export class RunCommandExecutor {
     claim: ClaimedTurn,
     started: boolean,
     failure: ExecutionFailure,
-    acknowledgement: TurnExecutionGrant | undefined,
+    acknowledgement: TurnExecutionLease | undefined,
   ): Promise<RunCommandExecutionResult> {
     const now = safeDate(this.#clock);
     const shouldRetry = !started && failure.retryable && claim.attempt < this.#maxAttempts;

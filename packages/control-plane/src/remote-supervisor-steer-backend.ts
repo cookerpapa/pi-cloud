@@ -8,9 +8,9 @@ import {
   type SteerTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import {
-  ExecutionGrantCoordinator,
-  ExecutionGrantCoordinatorError,
-} from "@pi-cloud/runtime-core/execution-grant-coordinator";
+  SessionLeaseCoordinator,
+  SessionLeaseCoordinatorError,
+} from "@pi-cloud/runtime-core/session-lease-coordinator";
 import {
   WorkerControlChannelError,
   type RemoteWorkerControlTransport,
@@ -32,13 +32,12 @@ type RemoteSupervisorSteerBackendCommonOptions = {
 export type RemoteSupervisorSteerBackendOptions = RemoteSupervisorSteerBackendCommonOptions &
   (
     | {
-        grantCoordinator: ExecutionGrantCoordinator;
-        grantCoordinatorProvider?: never;
+        leaseCoordinator: SessionLeaseCoordinator;
+        leaseCoordinatorProvider?: never;
       }
     | {
-        grantCoordinator?: never;
-        grantCoordinatorProvider: () =>
-          ExecutionGrantCoordinator | Promise<ExecutionGrantCoordinator>;
+        leaseCoordinator?: never;
+        leaseCoordinatorProvider: () => SessionLeaseCoordinator | Promise<SessionLeaseCoordinator>;
       }
   );
 
@@ -61,20 +60,20 @@ function sameCommandIdentity(
     commandId: string;
     sessionId: string;
     turnId: string;
-    executionGrant: string;
+    executionLease: string;
   },
 ): boolean {
   return (
     value.commandId === command.payload.commandId &&
     value.sessionId === command.payload.sessionId &&
     value.turnId === command.payload.turnId &&
-    value.executionGrant === command.payload.executionGrant
+    value.executionLease === command.payload.executionLease
   );
 }
 
 function normalizeSteerError(error: unknown, committed: boolean): TurnSteerBackendError {
   if (error instanceof TurnSteerBackendError) return error;
-  if (error instanceof ExecutionGrantCoordinatorError) {
+  if (error instanceof SessionLeaseCoordinatorError) {
     return new TurnSteerBackendError(error.code, error.message, error.retryable);
   }
   if (error instanceof WorkerControlChannelError) {
@@ -109,8 +108,8 @@ function normalizeSteerError(error: unknown, committed: boolean): TurnSteerBacke
 export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
   readonly #sandboxId: string;
   readonly #transport: RemoteWorkerControlTransport;
-  readonly #grantCoordinatorProvider: () =>
-    ExecutionGrantCoordinator | Promise<ExecutionGrantCoordinator>;
+  readonly #leaseCoordinatorProvider: () =>
+    SessionLeaseCoordinator | Promise<SessionLeaseCoordinator>;
   readonly #agentId: string;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
@@ -119,15 +118,15 @@ export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
     this.#sandboxId = nonEmpty(options.sandboxId, "sandboxId");
     this.#transport = options.transport;
     if (
-      (options.grantCoordinator === undefined) ===
-      (options.grantCoordinatorProvider === undefined)
+      (options.leaseCoordinator === undefined) ===
+      (options.leaseCoordinatorProvider === undefined)
     ) {
       throw new TypeError(
-        "exactly one of grantCoordinator or grantCoordinatorProvider must be configured",
+        "exactly one of leaseCoordinator or leaseCoordinatorProvider must be configured",
       );
     }
-    this.#grantCoordinatorProvider =
-      options.grantCoordinatorProvider ?? (() => options.grantCoordinator);
+    this.#leaseCoordinatorProvider =
+      options.leaseCoordinatorProvider ?? (() => options.leaseCoordinator);
     this.#agentId = nonEmpty(options.agentId ?? "root", "agentId");
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
@@ -138,8 +137,8 @@ export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
     let acknowledgement: CommandAckMessage | undefined;
     let committed = false;
     try {
-      const grantCoordinator = await this.#grantCoordinatorProvider();
-      const grant = await grantCoordinator.currentAssignment(request.target);
+      const leaseCoordinator = await this.#leaseCoordinatorProvider();
+      const grant = await leaseCoordinator.currentAssignment(request.target);
       command = this.#command(request, grant);
       acknowledgement = this.#acceptedAcknowledgement(
         command,
@@ -211,7 +210,7 @@ export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
     }
   }
 
-  #command(request: TurnSteerRequest, grant: { executionGrant: string }): SteerTurnCommandMessage {
+  #command(request: TurnSteerRequest, grant: { executionLease: string }): SteerTurnCommandMessage {
     const parsed = parseControlToSupervisorMessage({
       protocolVersion: 1,
       messageId: this.#idGenerator(),
@@ -228,7 +227,7 @@ export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
         runId: request.target.runId,
         turnId: request.target.turnId,
         agentId: this.#agentId,
-        executionGrant: grant.executionGrant,
+        executionLease: grant.executionLease,
         text: request.text,
       },
     });
@@ -268,7 +267,7 @@ export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
         commandId: command.payload.commandId,
         sessionId: command.payload.sessionId,
         turnId: command.payload.turnId,
-        executionGrant: command.payload.executionGrant,
+        executionLease: command.payload.executionLease,
         acknowledgedMessageId: acknowledgement.messageId,
       },
     });

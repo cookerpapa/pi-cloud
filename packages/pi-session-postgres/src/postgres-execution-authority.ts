@@ -1,5 +1,5 @@
 import type { Database } from "@pi-cloud/database";
-import { parseExecutionGrant } from "@pi-cloud/protocol";
+import { parseExecutionLease } from "@pi-cloud/protocol";
 import { SessionError } from "@earendil-works/pi-agent-core";
 import type { Kysely, Transaction } from "kysely";
 import type { ActiveExecutionAuthority } from "./execution-authority.ts";
@@ -10,7 +10,7 @@ export type PostgresRunExecutionAuthorityOptions = {
   sessionId: string;
   runId: string;
   turnId: string;
-  executionGrant: string;
+  executionLease: string;
   clock?: () => Date;
   pollIntervalMs?: number;
 };
@@ -29,7 +29,7 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
   readonly #sessionId: string;
   readonly #runId: string;
   readonly #turnId: string;
-  readonly #executionGrant: ReturnType<typeof parseExecutionGrant>;
+  readonly #executionLease: ReturnType<typeof parseExecutionLease>;
   readonly #clock: () => Date;
   readonly #pollIntervalMs: number;
   readonly #abort = new AbortController();
@@ -42,7 +42,7 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
     this.#sessionId = options.sessionId;
     this.#runId = options.runId;
     this.#turnId = options.turnId;
-    this.#executionGrant = parseExecutionGrant(options.executionGrant);
+    this.#executionLease = parseExecutionLease(options.executionLease);
     this.#clock = options.clock ?? (() => new Date());
     this.#pollIntervalMs = positiveInteger(options.pollIntervalMs ?? 1_000, "pollIntervalMs");
   }
@@ -62,11 +62,11 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
     }
     const authority = database ?? this.#database;
     const row = await authority
-      .selectFrom("execution_grants")
-      .select("grant_id")
-      .where("grant_id", "=", this.#executionGrant.grantId)
-      .where("execution_id", "=", this.#executionGrant.executionId)
-      .where("generation", "=", String(this.#executionGrant.generation))
+      .selectFrom("session_leases")
+      .select("lease_id")
+      .where("lease_id", "=", this.#executionLease.leaseId)
+      .where("attempt_id", "=", this.#executionLease.attemptId)
+      .where("fencing_token", "=", String(this.#executionLease.fencingToken))
       .where("tenant_id", "=", this.#tenantId)
       .where("session_id", "=", this.#sessionId)
       .where("run_id", "=", this.#runId)
@@ -76,7 +76,7 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
     if (row === undefined) {
       const error = new SessionError(
         "storage",
-        "Pi Session mutation was rejected by a stale ExecutionGrant",
+        "Pi Session mutation was rejected by a stale ExecutionLease",
       );
       this.#abort.abort(error);
       throw error;

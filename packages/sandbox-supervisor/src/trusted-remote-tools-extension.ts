@@ -73,7 +73,7 @@ class RemoteToolError extends Error {
 export type TrustedRemoteToolsRuntimeConfiguration = {
   operationUrl: string;
   activationId: string;
-  capability: string;
+  executionLease: string;
   turnContextSha256: string;
   attemptContextSha256: string;
   allowedTools?: CloudToolCapabilitySnapshot;
@@ -119,7 +119,7 @@ function validateRuntimeConfiguration(
     throw new Error("Trusted Tool Sandbox operation URL is invalid");
   }
   const activationId = candidate.activationId;
-  const capability = candidate.capability;
+  const executionLease = candidate.executionLease;
   const turnContextSha256 = candidate.turnContextSha256;
   const attemptContextSha256 = candidate.attemptContextSha256;
   const remainingToolCalls = candidate.remainingToolCalls;
@@ -137,7 +137,7 @@ function validateRuntimeConfiguration(
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
       activationId,
     ) ||
-    !/^pcts_[A-Za-z0-9_-]{43}$/.test(capability) ||
+    !/^pcel1_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionLease) ||
     !/^[0-9a-f]{64}$/.test(turnContextSha256) ||
     !/^[0-9a-f]{64}$/.test(attemptContextSha256) ||
     typeof candidate.captureStepContext !== "function" ||
@@ -183,7 +183,7 @@ function validateRuntimeConfiguration(
   return {
     operationUrl: parsed.toString(),
     activationId,
-    capability,
+    executionLease,
     turnContextSha256,
     attemptContextSha256,
     allowedTools,
@@ -411,7 +411,7 @@ function registerTrustedRemoteTools(
       const response = await fetch(runtime.operationUrl, {
         method: "POST",
         headers: {
-          authorization: `Bearer ${runtime.capability}`,
+          authorization: `Bearer ${runtime.executionLease}`,
           "content-type": "application/json",
           ...(runtime.traceparent === undefined ? {} : { traceparent: runtime.traceparent }),
           ...(runtime.tracestate === undefined ? {} : { tracestate: runtime.tracestate }),

@@ -69,7 +69,7 @@ export type CloudAttemptContext = Readonly<{
   identity: Readonly<{
     commandId: string;
     idempotencyKey: string;
-    executionGrantSha256: string;
+    executionLeaseSha256: string;
     supervisorId: string;
     bootId: string;
     sandboxId: string;
@@ -200,7 +200,7 @@ export function createCloudAttemptContext(input: {
     identity: {
       commandId: payload.commandId,
       idempotencyKey: payload.idempotencyKey,
-      executionGrantSha256: sha256(payload.executionGrant),
+      executionLeaseSha256: sha256(payload.executionLease),
       supervisorId: input.runtimeIdentity.supervisorId,
       bootId: input.runtimeIdentity.bootId,
       sandboxId: input.runtimeIdentity.sandboxId,

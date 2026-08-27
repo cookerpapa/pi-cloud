@@ -8,7 +8,7 @@ import { createDatabase, runMigrations, type Database } from "@pi-cloud/database
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  createExecutionGrant,
+  createExecutionLease,
   type ExecuteTurnCommandMessage,
   type GitHubRepositorySource,
 } from "@pi-cloud/protocol";
@@ -94,7 +94,7 @@ function command(tenantId: string = IDS.tenant): ExecuteTurnCommandMessage {
       runId: IDS.run,
       turnId: IDS.turn,
       agentId: "root",
-      executionGrant: createExecutionGrant(IDS.lease, "70000000-0000-4000-8000-000000000001", 1),
+      executionLease: createExecutionLease(IDS.lease, "70000000-0000-4000-8000-000000000001", 1),
       nextEventSeq: 1,
       input: { kind: "prompt", text: "Inspect the imported repository" },
       executionMode: "elastic",

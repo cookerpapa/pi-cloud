@@ -6,7 +6,7 @@ import type {
   SteerTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import {
-  createExecutionGrant,
+  createExecutionLease,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
@@ -53,7 +53,7 @@ function command(
       runId: "40000000-0000-4000-8000-000000000001",
       turnId: "turn-1",
       agentId: "root",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         overrides.grantId ?? IDS.lease,
         "50000000-0000-4000-8000-000000000001",
         overrides.generation ?? 1,
@@ -103,7 +103,7 @@ function cancellation(target: ExecuteTurnCommandMessage = command()): CancelTurn
       runId: target.payload.runId,
       turnId: target.payload.turnId,
       agentId: target.payload.agentId,
-      executionGrant: target.payload.executionGrant,
+      executionLease: target.payload.executionLease,
       reason: "user_request",
       gracePeriodMs: 50,
     },
@@ -127,7 +127,7 @@ function steer(target: ExecuteTurnCommandMessage = command()): SteerTurnCommandM
       runId: target.payload.runId,
       turnId: target.payload.turnId,
       agentId: target.payload.agentId,
-      executionGrant: target.payload.executionGrant,
+      executionLease: target.payload.executionLease,
       text: "Inspect the boundary condition first.",
     },
   };
@@ -200,7 +200,7 @@ describe("AgentRunSupervisor", () => {
     const stale = supervisor.prepare(command({ generation: 1 }), rejectUnexpectedEvent);
     expect(stale.ack.payload).toMatchObject({
       status: "rejected",
-      code: "stale_execution_grant",
+      code: "stale_session_lease",
       retryable: false,
     });
     expect(runner.calls).toHaveLength(0);
@@ -226,7 +226,7 @@ describe("AgentRunSupervisor", () => {
     });
   });
 
-  it("rejects runner events with a mismatched ExecutionGrant", async () => {
+  it("rejects runner events with a mismatched ExecutionLease", async () => {
     const badRunner: SupervisorTurnRunner = {
       async run(value, publishEvent) {
         const event = {
@@ -235,7 +235,7 @@ describe("AgentRunSupervisor", () => {
           sentAt: "2026-07-18T08:00:00.000Z",
           type: "event.publish",
           payload: {
-            executionGrant: createExecutionGrant(
+            executionLease: createExecutionLease(
               IDS.lease2,
               "50000000-0000-4000-8000-000000000001",
               2,
@@ -272,7 +272,7 @@ describe("AgentRunSupervisor", () => {
           sentAt: "2026-07-18T08:00:00.000Z",
           type: "event.publish",
           payload: {
-            executionGrant: value.payload.executionGrant,
+            executionLease: value.payload.executionLease,
             event: {
               schemaVersion: 1,
               eventId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -297,7 +297,7 @@ describe("AgentRunSupervisor", () => {
       type: "event.ack",
       payload: {
         sessionId: message.payload.event.sessionId,
-        executionGrant: message.payload.executionGrant,
+        executionLease: message.payload.executionLease,
         acknowledgedThroughSeq: 2,
       },
     }));
@@ -383,7 +383,7 @@ describe("AgentRunSupervisor", () => {
           signal.addEventListener(
             "abort",
             () => {
-              const reason = signal.reason as { reason: "execution_grant_revoked" };
+              const reason = signal.reason as { reason: "session_lease_revoked" };
               reject(new PiTurnCancelledError(reason.reason, false));
             },
             { once: true },
@@ -406,7 +406,7 @@ describe("AgentRunSupervisor", () => {
         sessionId: "session-1",
         turnId: "turn-1",
         state: "running",
-        executionGrant: command().payload.executionGrant,
+        executionLease: command().payload.executionLease,
         lastProducedSeq: 0,
         lastAcknowledgedSeq: 0,
       },
@@ -420,10 +420,10 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
-          executionGrantRenewals: [
+          executionLeaseRenewals: [
             {
               sessionId: "session-1",
-              executionGrant: command().payload.executionGrant,
+              executionLease: command().payload.executionLease,
               validUntil: "2026-07-18T08:01:00.000Z",
             },
           ],
@@ -435,8 +435,8 @@ describe("AgentRunSupervisor", () => {
       revokedSessionIds: [],
     });
 
-    prepared.revokeGrant();
-    await expect(execution).rejects.toMatchObject({ reason: "execution_grant_revoked" });
+    prepared.revokeLease();
+    await expect(execution).rejects.toMatchObject({ reason: "session_lease_revoked" });
     expect(supervisor.activeSessionCount).toBe(0);
   });
 
@@ -447,7 +447,7 @@ describe("AgentRunSupervisor", () => {
           signal.addEventListener(
             "abort",
             () => {
-              const reason = signal.reason as { reason: "execution_grant_revoked" };
+              const reason = signal.reason as { reason: "session_lease_revoked" };
               reject(new PiTurnCancelledError(reason.reason, false));
             },
             { once: true },
@@ -491,9 +491,9 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
-          executionGrantRenewals: heartbeat.payload.sessions.map((value) => ({
+          executionLeaseRenewals: heartbeat.payload.sessions.map((value) => ({
             sessionId: value.sessionId,
-            executionGrant: value.executionGrant,
+            executionLease: value.executionLease,
             validUntil: "2026-07-18T08:01:00.000Z",
           })),
         },
@@ -504,8 +504,8 @@ describe("AgentRunSupervisor", () => {
       revokedSessionIds: [],
     });
 
-    first.revokeGrant();
-    second.revokeGrant();
+    first.revokeLease();
+    second.revokeLease();
     await Promise.all(executions.map((execution) => expect(execution).rejects.toBeDefined()));
     expect(supervisor.activeSessionCount).toBe(0);
   });
@@ -519,7 +519,7 @@ describe("AgentRunSupervisor", () => {
           signal.addEventListener(
             "abort",
             () => {
-              const reason = signal.reason as { reason: "execution_grant_revoked" };
+              const reason = signal.reason as { reason: "session_lease_revoked" };
               reject(new PiTurnCancelledError(reason.reason, false));
             },
             { once: true },
@@ -546,7 +546,7 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
-          executionGrantRenewals: [],
+          executionLeaseRenewals: [],
         },
       }),
     ).toEqual({
@@ -555,10 +555,10 @@ describe("AgentRunSupervisor", () => {
       revokedSessionIds: ["session-1"],
     });
     expect(observedSignal?.reason).toMatchObject({
-      reason: "execution_grant_revoked",
+      reason: "session_lease_revoked",
       gracePeriodMs: 0,
     });
-    await expect(execution).rejects.toMatchObject({ reason: "execution_grant_revoked" });
+    await expect(execution).rejects.toMatchObject({ reason: "session_lease_revoked" });
     expect(supervisor.activeSessionCount).toBe(0);
   });
 
@@ -579,10 +579,10 @@ describe("AgentRunSupervisor", () => {
     const execution = prepared.run();
     void execution.catch(() => undefined);
 
-    prepared.revokeGrant();
+    prepared.revokeLease();
     releaseRunner?.();
     await expect(execution).rejects.toMatchObject({
-      code: "execution_grant_revocation_not_confirmed",
+      code: "session_lease_revocation_not_confirmed",
     });
     expect(supervisor.activeSessionCount).toBe(0);
   });
@@ -603,7 +603,7 @@ describe("AgentRunSupervisor", () => {
           }
           abortObserved = true;
           await teardownGate;
-          throw new PiTurnCancelledError("execution_grant_revoked", false);
+          throw new PiTurnCancelledError("session_lease_revoked", false);
         },
       },
     });
@@ -626,7 +626,7 @@ describe("AgentRunSupervisor", () => {
 
     finishTeardown?.();
     await settlement;
-    await expect(execution).rejects.toMatchObject({ reason: "execution_grant_revoked" });
+    await expect(execution).rejects.toMatchObject({ reason: "session_lease_revoked" });
     expect(settled).toBe(true);
     expect(supervisor.activeSessionCount).toBe(0);
   });

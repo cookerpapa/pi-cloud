@@ -6,9 +6,9 @@ import {
   type FactChannelOpenMessage,
 } from "@pi-cloud/protocol";
 import {
-  ExecutionGrantAuthorityGateError,
-  PostgresExecutionGrantAuthorityGate,
-} from "./execution-grant-authority-gate.ts";
+  ExecutionLeaseAuthorityGateError,
+  PostgresExecutionLeaseAuthorityGate,
+} from "./session-lease-authority-gate.ts";
 import { performance } from "node:perf_hooks";
 import {
   DurableEventStoreError,
@@ -36,7 +36,7 @@ function acknowledgement(message: EventPublishMessage): EventAckMessage {
     type: "event.ack",
     payload: {
       sessionId: message.payload.event.sessionId,
-      executionGrant: message.payload.executionGrant,
+      executionLease: message.payload.executionLease,
       acknowledgedThroughSeq: message.payload.event.seq,
     },
   });
@@ -45,7 +45,7 @@ function acknowledgement(message: EventPublishMessage): EventAckMessage {
 }
 
 export type AcceptedFactChannelSession = Readonly<{
-  executionGrant: string;
+  executionLease: string;
   sessionId: string;
   turnId: string;
   acknowledgedThroughSeq: number;
@@ -58,7 +58,7 @@ export type AcceptedFactChannelSession = Readonly<{
 }>;
 
 export type FactChannelServiceOptions = Readonly<{
-  authority: PostgresExecutionGrantAuthorityGate;
+  authority: PostgresExecutionLeaseAuthorityGate;
   bus: AcceptedFactBus;
   progress: AcceptedFactProgressStore;
   instanceId: string;
@@ -68,13 +68,13 @@ export type FactChannelServiceOptions = Readonly<{
 
 function factChannelError(error: unknown): DurableEventStoreError {
   if (error instanceof DurableEventStoreError) return error;
-  if (error instanceof ExecutionGrantAuthorityGateError) {
+  if (error instanceof ExecutionLeaseAuthorityGateError) {
     return new DurableEventStoreError(
       error.code === "fact_channel_conflict"
         ? "event_conflict"
         : error.code === "authority_invariant"
           ? "event_store_invariant"
-          : "stale_execution_grant",
+          : "stale_session_lease",
       error.message,
       error.retryable,
     );
@@ -83,13 +83,13 @@ function factChannelError(error: unknown): DurableEventStoreError {
 }
 
 class ServerFactChannel implements AcceptedFactChannelSession {
-  readonly executionGrant: string;
+  readonly executionLease: string;
   readonly sessionId: string;
   readonly turnId: string;
-  readonly #authority: PostgresExecutionGrantAuthorityGate;
+  readonly #authority: PostgresExecutionLeaseAuthorityGate;
   readonly #bus: AcceptedFactBus;
   readonly #progress: AcceptedFactProgressStore;
-  readonly #scope: Awaited<ReturnType<PostgresExecutionGrantAuthorityGate["open"]>>;
+  readonly #scope: Awaited<ReturnType<PostgresExecutionLeaseAuthorityGate["open"]>>;
   readonly #ensureLease: () => Promise<void>;
   #acknowledgedThroughSeq: number;
   #leaseDurationMs: number;
@@ -99,10 +99,10 @@ class ServerFactChannel implements AcceptedFactChannelSession {
   #failure: DurableEventStoreError | undefined;
 
   constructor(options: {
-    authority: PostgresExecutionGrantAuthorityGate;
+    authority: PostgresExecutionLeaseAuthorityGate;
     bus: AcceptedFactBus;
     progress: AcceptedFactProgressStore;
-    scope: Awaited<ReturnType<PostgresExecutionGrantAuthorityGate["open"]>>;
+    scope: Awaited<ReturnType<PostgresExecutionLeaseAuthorityGate["open"]>>;
     acknowledgedThroughSeq: number;
     ensureLease: () => Promise<void>;
   }) {
@@ -111,7 +111,7 @@ class ServerFactChannel implements AcceptedFactChannelSession {
     this.#progress = options.progress;
     this.#scope = options.scope;
     this.#ensureLease = options.ensureLease;
-    this.executionGrant = options.scope.executionGrant;
+    this.executionLease = options.scope.executionLease;
     this.sessionId = options.scope.sessionId;
     this.turnId = options.scope.turnId;
     this.#acknowledgedThroughSeq = options.acknowledgedThroughSeq;
@@ -127,7 +127,7 @@ class ServerFactChannel implements AcceptedFactChannelSession {
     return this.#leaseDurationMs;
   }
 
-  get authorityScope(): Awaited<ReturnType<PostgresExecutionGrantAuthorityGate["open"]>> {
+  get authorityScope(): Awaited<ReturnType<PostgresExecutionLeaseAuthorityGate["open"]>> {
     return this.#scope;
   }
 
@@ -156,7 +156,7 @@ class ServerFactChannel implements AcceptedFactChannelSession {
     const message = parseSupervisorToControlMessage(value);
     if (
       message.type !== "event.publish" ||
-      message.payload.executionGrant !== this.executionGrant ||
+      message.payload.executionLease !== this.executionLease ||
       message.payload.event.sessionId !== this.sessionId ||
       message.payload.event.turnId !== this.turnId
     ) {
@@ -186,8 +186,8 @@ class ServerFactChannel implements AcceptedFactChannelSession {
     try {
       const recorded = await this.#progress.recordMany([this.eventProgress]);
       if (!recorded.has(this.#scope.connectionId)) {
-        throw new ExecutionGrantAuthorityGateError(
-          "stale_execution_grant",
+        throw new ExecutionLeaseAuthorityGateError(
+          "stale_session_lease",
           "FactChannel progress could not be recorded under current ownership",
           false,
         );
@@ -200,9 +200,9 @@ class ServerFactChannel implements AcceptedFactChannelSession {
 
   get eventProgress() {
     return {
-      grantId: this.#scope.grantId,
-      executionId: this.#scope.executionId,
-      executionGeneration: this.#scope.generation,
+      leaseId: this.#scope.leaseId,
+      attemptId: this.#scope.attemptId,
+      fencingToken: this.#scope.fencingToken,
       channelConnectionId: this.#scope.connectionId,
       channelInstanceId: this.#scope.instanceId,
       acknowledgedThroughSeq: this.#acknowledgedThroughSeq,
@@ -264,13 +264,13 @@ class ServerFactChannel implements AcceptedFactChannelSession {
   #assertUsable(): void {
     if (this.#failure !== undefined) throw this.#failure;
     if (this.#closed || performance.now() >= this.#usableUntil) {
-      throw new DurableEventStoreError("stale_execution_grant", "FactChannel lease expired");
+      throw new DurableEventStoreError("stale_session_lease", "FactChannel lease expired");
     }
   }
 }
 
 export class FactChannelService {
-  readonly #authority: PostgresExecutionGrantAuthorityGate;
+  readonly #authority: PostgresExecutionLeaseAuthorityGate;
   readonly #bus: AcceptedFactBus;
   readonly #progress: AcceptedFactProgressStore;
   readonly #instanceId: string;
@@ -321,11 +321,11 @@ export class FactChannelService {
       );
     }
     this.#openingChannels += 1;
-    let scope: Awaited<ReturnType<PostgresExecutionGrantAuthorityGate["open"]>>;
+    let scope: Awaited<ReturnType<PostgresExecutionLeaseAuthorityGate["open"]>>;
     try {
       scope = await this.#authority.open(
         {
-          executionGrant: message.payload.executionGrant,
+          executionLease: message.payload.executionLease,
           sessionId: message.payload.sessionId,
           turnId: message.payload.turnId,
         },
@@ -356,7 +356,7 @@ export class FactChannelService {
     this.#scheduleRenewal();
     let closed = false;
     return {
-      executionGrant: channel.executionGrant,
+      executionLease: channel.executionLease,
       sessionId: channel.sessionId,
       turnId: channel.turnId,
       get acknowledgedThroughSeq() {
@@ -466,8 +466,8 @@ export class FactChannelService {
         if (durationMs === undefined || !recorded.has(entry.channel.authorityScope.connectionId)) {
           this.#failChannel(
             entry,
-            new ExecutionGrantAuthorityGateError(
-              "stale_execution_grant",
+            new ExecutionLeaseAuthorityGateError(
+              "stale_session_lease",
               "FactChannel was not renewed by PostgreSQL authority",
               false,
             ),
@@ -637,7 +637,7 @@ class RemoteFactChannel implements FactChannel {
     const message = parseSupervisorToControlMessage(value);
     if (
       message.type !== "event.publish" ||
-      message.payload.executionGrant !== this.#request.executionGrant ||
+      message.payload.executionLease !== this.#request.executionLease ||
       message.payload.event.sessionId !== this.#request.sessionId ||
       message.payload.event.turnId !== this.#request.turnId
     ) {
@@ -664,7 +664,7 @@ class RemoteFactChannel implements FactChannel {
         const response = exchanged.message;
         if (
           response.type !== "event.ack" ||
-          response.payload.executionGrant !== this.#request.executionGrant ||
+          response.payload.executionLease !== this.#request.executionLease ||
           response.payload.sessionId !== this.#request.sessionId ||
           response.payload.acknowledgedThroughSeq !== message.payload.event.seq
         ) {
@@ -705,7 +705,7 @@ class RemoteFactChannel implements FactChannel {
             sentAt: new Date().toISOString(),
             type: "fact.channel.close",
             payload: {
-              executionGrant: this.#request.executionGrant,
+              executionLease: this.#request.executionLease,
               acknowledgedThroughSeq: this.#acknowledgedThroughSeq,
             },
           });
@@ -722,7 +722,7 @@ class RemoteFactChannel implements FactChannel {
           if (
             response.type !== "fact.channel.closed" ||
             response.payload.acknowledgedMessageId !== closeMessage.messageId ||
-            response.payload.executionGrant !== this.#request.executionGrant ||
+            response.payload.executionLease !== this.#request.executionLease ||
             response.payload.acknowledgedThroughSeq !== this.#acknowledgedThroughSeq
           ) {
             throw new DurableEventStoreError(
@@ -833,7 +833,7 @@ class RemoteFactChannel implements FactChannel {
     if (
       response.type !== "fact.channel.ready" ||
       response.payload.acknowledgedMessageId !== openMessage.messageId ||
-      response.payload.executionGrant !== this.#request.executionGrant ||
+      response.payload.executionLease !== this.#request.executionLease ||
       response.payload.sessionId !== this.#request.sessionId ||
       response.payload.turnId !== this.#request.turnId
     ) {
@@ -940,17 +940,17 @@ export class WebSocketAcceptedFactIngestor
 
   async open(request: FactChannelOpenRequest): Promise<FactChannel> {
     if (this.#closed) throw new Error("Agent event ingestor is closed");
-    if (this.#channels.has(request.executionGrant)) {
-      throw new Error("ExecutionGrant already has an open FactChannel");
+    if (this.#channels.has(request.executionLease)) {
+      throw new Error("ExecutionLease already has an open FactChannel");
     }
     let channel!: RemoteFactChannel;
     channel = new RemoteFactChannel({
       url: this.#url,
       authorization: this.#authorization,
       request,
-      onClose: () => this.#channels.delete(request.executionGrant),
+      onClose: () => this.#channels.delete(request.executionLease),
     });
-    this.#channels.set(request.executionGrant, channel);
+    this.#channels.set(request.executionLease, channel);
     try {
       await channel.open();
       return channel;
@@ -960,8 +960,8 @@ export class WebSocketAcceptedFactIngestor
     }
   }
 
-  resolve(executionGrant: string): PiSessionMutationFactChannel | undefined {
-    return this.#channels.get(executionGrant);
+  resolve(executionLease: string): PiSessionMutationFactChannel | undefined {
+    return this.#channels.get(executionLease);
   }
 
   async checkHealth(): Promise<void> {

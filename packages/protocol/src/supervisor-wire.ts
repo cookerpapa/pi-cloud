@@ -18,7 +18,7 @@ import {
 import { EnvironmentRuntimeSnapshotSchema } from "./environment.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
 import { CloudToolCapabilitySnapshotSchema } from "./tool-capabilities.ts";
-import { ExecutionGrantSchema } from "./execution-grant.ts";
+import { ExecutionLeaseSchema } from "./execution-lease.ts";
 
 export const TWO_PHASE_COMMAND_CAPABILITY = "command.two_phase.v1";
 export const PI_STEER_CAPABILITY = "pi.steer.v1";
@@ -39,7 +39,7 @@ const CommandIdentityProperties = {
   runId: UuidSchema,
   turnId: OpaqueIdSchema,
   agentId: OpaqueIdSchema,
-  executionGrant: ExecutionGrantSchema,
+  executionLease: ExecutionLeaseSchema,
 };
 
 const RuntimeVersionSchema = Type.String({
@@ -270,7 +270,7 @@ const CommandAckIdentityProperties = {
   commandId: UuidSchema,
   sessionId: OpaqueIdSchema,
   turnId: OpaqueIdSchema,
-  executionGrant: ExecutionGrantSchema,
+  executionLease: ExecutionLeaseSchema,
 };
 
 const AcceptedCommandAckPayloadSchema = Type.Object(
@@ -286,7 +286,7 @@ const RejectedCommandAckPayloadSchema = Type.Object(
     ...CommandAckIdentityProperties,
     status: Type.Literal("rejected"),
     code: Type.Union([
-      Type.Literal("stale_execution_grant"),
+      Type.Literal("stale_session_lease"),
       Type.Literal("invalid_state"),
       Type.Literal("capacity"),
       Type.Literal("invalid_command"),
@@ -421,7 +421,7 @@ export const EventPublishMessageSchema = Type.Object(
     type: Type.Literal("event.publish"),
     payload: Type.Object(
       {
-        executionGrant: ExecutionGrantSchema,
+        executionLease: ExecutionLeaseSchema,
         event: PiCloudEventSchema,
       },
       { additionalProperties: false },
@@ -436,7 +436,7 @@ export const FactChannelOpenMessageSchema = Type.Object(
     type: Type.Literal("fact.channel.open"),
     payload: Type.Object(
       {
-        executionGrant: ExecutionGrantSchema,
+        executionLease: ExecutionLeaseSchema,
         sessionId: OpaqueIdSchema,
         turnId: OpaqueIdSchema,
         nextEventSeq: PositiveSafeIntegerSchema,
@@ -454,7 +454,7 @@ export const FactChannelReadyMessageSchema = Type.Object(
     payload: Type.Object(
       {
         acknowledgedMessageId: UuidSchema,
-        executionGrant: ExecutionGrantSchema,
+        executionLease: ExecutionLeaseSchema,
         sessionId: OpaqueIdSchema,
         turnId: OpaqueIdSchema,
         acknowledgedThroughSeq: NonNegativeSafeIntegerSchema,
@@ -472,7 +472,7 @@ export const FactChannelCloseMessageSchema = Type.Object(
     type: Type.Literal("fact.channel.close"),
     payload: Type.Object(
       {
-        executionGrant: ExecutionGrantSchema,
+        executionLease: ExecutionLeaseSchema,
         acknowledgedThroughSeq: NonNegativeSafeIntegerSchema,
       },
       { additionalProperties: false },
@@ -488,7 +488,7 @@ export const FactChannelClosedMessageSchema = Type.Object(
     payload: Type.Object(
       {
         acknowledgedMessageId: UuidSchema,
-        executionGrant: ExecutionGrantSchema,
+        executionLease: ExecutionLeaseSchema,
         acknowledgedThroughSeq: NonNegativeSafeIntegerSchema,
       },
       { additionalProperties: false },
@@ -504,7 +504,7 @@ export const EventAckMessageSchema = Type.Object(
     payload: Type.Object(
       {
         sessionId: OpaqueIdSchema,
-        executionGrant: ExecutionGrantSchema,
+        executionLease: ExecutionLeaseSchema,
         acknowledgedThroughSeq: PositiveSafeIntegerSchema,
       },
       { additionalProperties: false },
@@ -520,9 +520,9 @@ export const EventRejectedMessageSchema = Type.Object(
     payload: Type.Object(
       {
         sessionId: OpaqueIdSchema,
-        executionGrant: ExecutionGrantSchema,
+        executionLease: ExecutionLeaseSchema,
         rejectedSeq: PositiveSafeIntegerSchema,
-        code: Type.Literal("stale_execution_grant"),
+        code: Type.Literal("stale_session_lease"),
         retryable: Type.Literal(false),
       },
       { additionalProperties: false },
@@ -536,7 +536,7 @@ const HeartbeatSessionSchema = Type.Object(
     sessionId: OpaqueIdSchema,
     turnId: Type.Union([OpaqueIdSchema, Type.Null()]),
     state: SessionStateSchema,
-    executionGrant: ExecutionGrantSchema,
+    executionLease: ExecutionLeaseSchema,
     lastProducedSeq: NonNegativeSafeIntegerSchema,
     lastAcknowledgedSeq: NonNegativeSafeIntegerSchema,
   },
@@ -562,10 +562,10 @@ export const SupervisorHeartbeatMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const ExecutionGrantRenewalSchema = Type.Object(
+const ExecutionLeaseRenewalSchema = Type.Object(
   {
     sessionId: OpaqueIdSchema,
-    executionGrant: ExecutionGrantSchema,
+    executionLease: ExecutionLeaseSchema,
     validUntil: UtcTimestampSchema,
   },
   { additionalProperties: false },
@@ -579,7 +579,7 @@ export const SupervisorHeartbeatAckMessageSchema = Type.Object(
       {
         acknowledgedMessageId: UuidSchema,
         connectionId: UuidSchema,
-        executionGrantRenewals: Type.Array(ExecutionGrantRenewalSchema, { maxItems: 1_000 }),
+        executionLeaseRenewals: Type.Array(ExecutionLeaseRenewalSchema, { maxItems: 1_000 }),
       },
       { additionalProperties: false },
     ),
@@ -737,8 +737,8 @@ export function parseControlToSupervisorMessage(value: unknown): ControlToSuperv
 
   if (message.type === "supervisor.heartbeat.ack") {
     assertUniqueSessionIds(
-      message.payload.executionGrantRenewals,
-      "supervisor.heartbeat.ack executionGrantRenewals",
+      message.payload.executionLeaseRenewals,
+      "supervisor.heartbeat.ack executionLeaseRenewals",
     );
   }
 

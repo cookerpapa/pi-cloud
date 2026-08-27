@@ -9,10 +9,10 @@ Read the documents in this order:
 1. [ADR-0128](0128-kafka-soft-state-session-gateway.md) — Kafka AcceptedFact
    durability, rebuildable Gateway hot tails and cursor-free snapshot-first SSE.
 2. [ADR-0127](0127-authority-gate-and-accepted-fact-bus.md) — one
-   ExecutionGrant Authority Gate, one Worker FactChannel and a broker-neutral
+   ExecutionLease Authority Gate, one Worker FactChannel and a broker-neutral
    AcceptedFactBus before independent downstream projections.
-3. [ADR-0124](0124-opaque-execution-grant-sequencer.md) — one opaque,
-   never-reused ExecutionGrant across Worker, events, SessionStorage and Tools.
+3. [ADR-0124](0124-session-lease-fencing-authority.md) — one durable Session
+   lease with a monotonically increasing fence across every Run effect boundary.
 4. [ADR-0123](0123-isolated-preview-origins.md) — target-scoped capabilities
    and independent browser origins for untrusted application Preview.
 5. [ADR-0120](0120-exclusive-full-vm-authority.md) — exclusive Cube full-VM

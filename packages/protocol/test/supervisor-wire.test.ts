@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PiCloudWireProtocolError,
-  createExecutionGrant,
+  createExecutionLease,
   createPiCloudEventFactory,
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
@@ -29,7 +29,7 @@ const IDS = {
 };
 
 const SENT_AT = "2026-07-18T08:00:00.000Z";
-const EXECUTION_GRANT = createExecutionGrant(IDS.lease, IDS.attempt, 7);
+const EXECUTION_GRANT = createExecutionLease(IDS.lease, IDS.attempt, 7);
 
 function envelope(messageId = IDS.message) {
   return {
@@ -50,7 +50,7 @@ function commandIdentity() {
     runId: IDS.run,
     turnId: "turn-1",
     agentId: "root",
-    executionGrant: EXECUTION_GRANT,
+    executionLease: EXECUTION_GRANT,
   } as const;
 }
 
@@ -83,7 +83,7 @@ function commandResultIdentity() {
     commandId: IDS.command,
     sessionId: "session-1",
     turnId: "turn-1",
-    executionGrant: EXECUTION_GRANT,
+    executionLease: EXECUTION_GRANT,
     commitMessageId: IDS.commit,
   } as const;
 }
@@ -124,7 +124,7 @@ function heartbeat() {
           sessionId: "session-1",
           turnId: "turn-1",
           state: "running",
-          executionGrant: EXECUTION_GRANT,
+          executionLease: EXECUTION_GRANT,
           lastProducedSeq: 12,
           lastAcknowledgedSeq: 10,
         },
@@ -271,7 +271,7 @@ describe("supervisor/control-plane wire protocol", () => {
       ...envelope(),
       type: "event.publish",
       payload: {
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         event,
       },
     } as const;
@@ -301,7 +301,7 @@ describe("supervisor/control-plane wire protocol", () => {
       ...envelope(),
       type: "fact.channel.open",
       payload: {
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         sessionId: "session-1",
         turnId: "turn-1",
         nextEventSeq: 11,
@@ -312,7 +312,7 @@ describe("supervisor/control-plane wire protocol", () => {
       type: "fact.channel.ready",
       payload: {
         acknowledgedMessageId: IDS.message,
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         sessionId: "session-1",
         turnId: "turn-1",
         acknowledgedThroughSeq: 10,
@@ -322,14 +322,14 @@ describe("supervisor/control-plane wire protocol", () => {
     const close = {
       ...envelope(),
       type: "fact.channel.close",
-      payload: { executionGrant: EXECUTION_GRANT, acknowledgedThroughSeq: 12 },
+      payload: { executionLease: EXECUTION_GRANT, acknowledgedThroughSeq: 12 },
     } as const;
     const closed = {
       ...envelope(),
       type: "fact.channel.closed",
       payload: {
         acknowledgedMessageId: IDS.message,
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         acknowledgedThroughSeq: 12,
       },
     } as const;
@@ -348,9 +348,9 @@ describe("supervisor/control-plane wire protocol", () => {
       type: "event.rejected",
       payload: {
         sessionId: "session-1",
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         rejectedSeq: 11,
-        code: "stale_execution_grant",
+        code: "stale_session_lease",
         retryable: false,
       },
     } as const;
@@ -373,7 +373,7 @@ describe("supervisor/control-plane wire protocol", () => {
         commandId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         status: "accepted",
       },
     } as const;
@@ -390,7 +390,7 @@ describe("supervisor/control-plane wire protocol", () => {
         commandId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         acknowledgedMessageId: IDS.message,
       },
     } as const;
@@ -507,10 +507,10 @@ describe("supervisor/control-plane wire protocol", () => {
       payload: {
         acknowledgedMessageId: IDS.message,
         connectionId: IDS.connection,
-        executionGrantRenewals: [
+        executionLeaseRenewals: [
           {
             sessionId: "session-1",
-            executionGrant: EXECUTION_GRANT,
+            executionLease: EXECUTION_GRANT,
             validUntil: "2026-07-18T08:01:00.000Z",
           },
         ],
@@ -530,9 +530,9 @@ describe("supervisor/control-plane wire protocol", () => {
         ...heartbeatAck,
         payload: {
           ...heartbeatAck.payload,
-          executionGrantRenewals: [
-            heartbeatAck.payload.executionGrantRenewals[0],
-            heartbeatAck.payload.executionGrantRenewals[0],
+          executionLeaseRenewals: [
+            heartbeatAck.payload.executionLeaseRenewals[0],
+            heartbeatAck.payload.executionLeaseRenewals[0],
           ],
         },
       }),
@@ -545,7 +545,7 @@ describe("supervisor/control-plane wire protocol", () => {
       type: "event.ack",
       payload: {
         sessionId: "session-1",
-        executionGrant: EXECUTION_GRANT,
+        executionLease: EXECUTION_GRANT,
         acknowledgedThroughSeq: 12,
       },
     } as const;

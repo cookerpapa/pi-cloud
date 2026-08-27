@@ -5,8 +5,8 @@ import type {
   ToolSandboxOperationRequest,
 } from "@pi-cloud/protocol";
 import {
-  createExecutionGrant,
-  parseExecutionGrant,
+  createExecutionLease,
+  parseExecutionLease,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
@@ -25,9 +25,7 @@ import {
 } from "../src/index.ts";
 
 const ACTIVATION_ID = "10000000-0000-4000-8000-000000000010";
-const CAPABILITY = `pcts_${"c".repeat(43)}`;
 const SECOND_ACTIVATION_ID = "20000000-0000-4000-8000-000000000020";
-const SECOND_CAPABILITY = `pcts_${"d".repeat(43)}`;
 const STEP_CONTEXT_SHA256 = "a".repeat(64);
 const TURN_CONTEXT_SHA256 = "b".repeat(64);
 const ATTEMPT_CONTEXT_SHA256 = "c".repeat(64);
@@ -41,7 +39,7 @@ const assignment: ToolSandboxAssignment = {
   commandId: "command-provider-test",
   sessionId: "session-provider-test",
   turnId: "turn-provider-test",
-  executionGrant: createExecutionGrant(
+  executionLease: createExecutionLease(
     "10000000-0000-4000-8000-000000000003",
     "10000000-0000-4000-8000-000000000003",
     5,
@@ -319,7 +317,6 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     await expect(
       manager.provisionDevelopmentEnvironment({
@@ -348,7 +345,7 @@ describe("provider-backed Tool Tool Broker", () => {
       continuityId: "66666666-6666-4666-8666-666666666666",
     });
     await expect(
-      manager.execute(agent.capability, operation("21111111-1111-4111-8111-111111111111")),
+      manager.execute(assignment.executionLease, operation("21111111-1111-4111-8111-111111111111")),
     ).resolves.toMatchObject({ exitCode: 0 });
     await manager.capture(agent.activationId, assignment, "21111111-1111-4111-8111-111111111112");
     await expect(
@@ -394,7 +391,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...assignment,
       turnId: "21111111-1111-4111-8111-111111111114",
       commandId: "second-development-environment-run",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "21111111-1111-4111-8111-111111111116",
         "21111111-1111-4111-8111-111111111115",
         3,
@@ -422,7 +419,7 @@ describe("provider-backed Tool Tool Broker", () => {
         name: "blocked",
       }),
     ).rejects.toMatchObject({ code: "development_environment_directory_busy" });
-    await manager.execute(secondAgent.capability, {
+    await manager.execute(secondAssignment.executionLease, {
       ...operation("21111111-1111-4111-8111-111111111118"),
       activationId: secondAgent.activationId,
     });
@@ -507,7 +504,6 @@ describe("provider-backed Tool Tool Broker", () => {
       provider: fixture.provider,
       stateRepository,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
 
     await expect(
@@ -530,7 +526,6 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     await manager.provisionDevelopmentEnvironment({
       developmentEnvironmentProtocolVersion: 1,
@@ -586,7 +581,6 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     const terminal = await manager.openTerminal({
       tenantId: assignment.tenantId,
@@ -620,7 +614,6 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     await expect(
       manager.create({ ...createRequest, executionMode: "development_environment" }),
@@ -632,23 +625,23 @@ describe("provider-backed Tool Tool Broker", () => {
   it("hands an idle warm Cube to the human terminal without replacing its process world", async () => {
     class PersistentTerminalRepository extends InMemorySandboxActivationStateRepository {
       override async reserveTerminal(input: { terminalId: string }) {
-        const execution = parseExecutionGrant(assignment.executionGrant);
+        const execution = parseExecutionLease(assignment.executionLease);
         return {
           status: "reserved" as const,
-          executionGrant: createExecutionGrant(
+          executionLease: createExecutionLease(
             input.terminalId,
-            execution.executionId,
-            execution.generation + 2,
+            execution.attemptId,
+            execution.fencingToken + 2,
           ),
           retiredActivation: {
             activationId: ACTIVATION_ID,
             workspaceRevision: "1".repeat(64),
             assignment: {
               ...assignment,
-              executionGrant: createExecutionGrant(
+              executionLease: createExecutionLease(
                 "30000000-0000-4000-8000-000000000001",
-                parseExecutionGrant(assignment.executionGrant).executionId,
-                parseExecutionGrant(assignment.executionGrant).generation + 1,
+                parseExecutionLease(assignment.executionLease).attemptId,
+                parseExecutionLease(assignment.executionLease).fencingToken + 1,
               ),
             },
           },
@@ -659,11 +652,11 @@ describe("provider-backed Tool Tool Broker", () => {
         _activationId: string,
         currentAssignment: ToolSandboxAssignment,
       ) {
-        const current = parseExecutionGrant(currentAssignment.executionGrant);
-        return createExecutionGrant(
+        const current = parseExecutionLease(currentAssignment.executionLease);
+        return createExecutionLease(
           "30000000-0000-4000-8000-000000000002",
-          current.executionId,
-          current.generation + 1,
+          current.attemptId,
+          current.fencingToken + 1,
         );
       }
     }
@@ -675,10 +668,12 @@ describe("provider-backed Tool Tool Broker", () => {
         const ids = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
         return () => ids.shift()!;
       })(),
-      capabilityGenerator: () => CAPABILITY,
     });
     const created = await manager.create({ ...createRequest, workspaceRevision: "1".repeat(64) });
-    await manager.execute(created.capability, operation("31000000-0000-4000-8000-000000000001"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("31000000-0000-4000-8000-000000000001"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -714,9 +709,9 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "31000000-0000-4000-8000-000000000003",
       assignment: {
         ...assignment,
-        executionGrant: createExecutionGrant(
+        executionLease: createExecutionLease(
           "30000000-0000-4000-8000-000000000003",
-          parseExecutionGrant(assignment.executionGrant).executionId,
+          parseExecutionLease(assignment.executionLease).attemptId,
           9,
         ),
       },
@@ -724,16 +719,16 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     expect(next.continuity).toBe("warm_reuse");
     expect(fixture.createCount).toBe(1);
-    await manager.execute(next.capability, {
+    await manager.execute(next.executionLease, {
       ...operation("31000000-0000-4000-8000-000000000004"),
       activationId: next.activationId,
     });
     expect(fixture.rebind).toHaveBeenCalledTimes(2);
     await manager.stop(next.activationId, {
       ...assignment,
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "30000000-0000-4000-8000-000000000003",
-        parseExecutionGrant(assignment.executionGrant).executionId,
+        parseExecutionLease(assignment.executionLease).attemptId,
         9,
       ),
     });
@@ -752,10 +747,12 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     const created = await manager.create({ ...createRequest, workspaceRevision: "1".repeat(64) });
-    await manager.execute(created.capability, operation("32000000-0000-4000-8000-000000000001"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("32000000-0000-4000-8000-000000000001"),
+    );
     await expect(
       manager.release({
         toolBrokerProtocolVersion: 1,
@@ -776,10 +773,12 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     const created = await manager.create({ ...createRequest, workspaceRevision: "1".repeat(64) });
-    await manager.execute(created.capability, operation("32000000-0000-4000-8000-000000000001"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("32000000-0000-4000-8000-000000000001"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -830,7 +829,6 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
       stateRepository: new TenantCapacityRepository(),
     });
 
@@ -841,18 +839,17 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.createCount).toBe(0);
   });
 
-  it("keeps capabilities above the provider and binds an immutable identity handle", async () => {
+  it("keeps the Session lease above the provider and binds an immutable identity handle", async () => {
     const fixture = providerFixture();
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
 
     const created = await manager.create(createRequest);
     expect(created).toMatchObject({
       activationId: ACTIVATION_ID,
-      capability: CAPABILITY,
+      executionLease: assignment.executionLease,
       continuity: "cold_restore",
     });
     expect(fixture.createSpec).toBeUndefined();
@@ -861,13 +858,13 @@ describe("provider-backed Tool Tool Broker", () => {
     ).resolves.toMatchObject({ type: "tool_sandbox.unused" });
 
     await expect(
-      manager.execute(CAPABILITY, {
+      manager.execute(assignment.executionLease, {
         ...operation("10000000-0000-4000-8000-000000000011"),
         turnContextSha256: "d".repeat(64),
       }),
     ).rejects.toMatchObject({ code: "turn_context_mismatch" });
     await expect(
-      manager.execute(CAPABILITY, {
+      manager.execute(assignment.executionLease, {
         ...operation("10000000-0000-4000-8000-000000000021"),
         attemptContextSha256: "d".repeat(64),
       }),
@@ -875,24 +872,35 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.createSpec).toBeUndefined();
 
     await expect(
-      manager.execute(`pcts_${"x".repeat(43)}`, operation("10000000-0000-4000-8000-000000000012")),
-    ).rejects.toMatchObject({ code: "invalid_tool_capability" });
+      manager.execute(
+        createExecutionLease(
+          "90000000-0000-4000-8000-000000000001",
+          "90000000-0000-4000-8000-000000000002",
+          99,
+        ),
+        operation("10000000-0000-4000-8000-000000000012"),
+      ),
+    ).rejects.toMatchObject({ code: "stale_session_lease" });
     const request = operation("10000000-0000-4000-8000-000000000013");
-    await expect(manager.execute(CAPABILITY, request)).resolves.toMatchObject({ exitCode: 0 });
+    await expect(manager.execute(assignment.executionLease, request)).resolves.toMatchObject({
+      exitCode: 0,
+    });
     expect(fixture.createSpec).toMatchObject({
       activationId: ACTIVATION_ID,
       assignment: {
         tenantId: assignment.tenantId,
         sessionId: assignment.sessionId,
         turnId: assignment.turnId,
-        executionGrant: assignment.executionGrant,
+        executionLease: assignment.executionLease,
       },
       policy: { network: { mode: "deny_all" } },
     });
     expect(fixture.createSpec).not.toHaveProperty("capability");
-    await expect(manager.execute(CAPABILITY, request)).resolves.toMatchObject({ exitCode: 0 });
+    await expect(manager.execute(assignment.executionLease, request)).resolves.toMatchObject({
+      exitCode: 0,
+    });
     await expect(
-      manager.execute(CAPABILITY, { ...request, command: "whoami" }),
+      manager.execute(assignment.executionLease, { ...request, command: "whoami" }),
     ).rejects.toMatchObject({ code: "tool_operation_identity_conflict" });
     expect(fixture.exec).toHaveBeenCalledTimes(1);
 
@@ -901,13 +909,17 @@ describe("provider-backed Tool Tool Broker", () => {
       stepContextSequence: 2,
       stepContextSha256: "b".repeat(64),
     };
-    await expect(manager.execute(CAPABILITY, secondStep)).resolves.toMatchObject({ exitCode: 0 });
-    await expect(manager.execute(CAPABILITY, request)).resolves.toMatchObject({ exitCode: 0 });
+    await expect(manager.execute(assignment.executionLease, secondStep)).resolves.toMatchObject({
+      exitCode: 0,
+    });
+    await expect(manager.execute(assignment.executionLease, request)).resolves.toMatchObject({
+      exitCode: 0,
+    });
     await expect(
-      manager.execute(CAPABILITY, operation("10000000-0000-4000-8000-000000000019")),
+      manager.execute(assignment.executionLease, operation("10000000-0000-4000-8000-000000000019")),
     ).rejects.toMatchObject({ code: "step_context_mismatch" });
     await expect(
-      manager.execute(CAPABILITY, {
+      manager.execute(assignment.executionLease, {
         ...secondStep,
         operationId: "10000000-0000-4000-8000-000000000020",
         stepContextSha256: "c".repeat(64),
@@ -920,7 +932,7 @@ describe("provider-backed Tool Tool Broker", () => {
       handle: {
         assignment: {
           tenantId: assignment.tenantId,
-          executionGrant: assignment.executionGrant,
+          executionLease: assignment.executionLease,
         },
       },
     });
@@ -928,8 +940,8 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.stopped).toBe(true);
     expect(manager.activeCount).toBe(0);
     await expect(
-      manager.execute(CAPABILITY, operation("10000000-0000-4000-8000-000000000014")),
-    ).rejects.toMatchObject({ code: "invalid_tool_capability" });
+      manager.execute(assignment.executionLease, operation("10000000-0000-4000-8000-000000000014")),
+    ).rejects.toMatchObject({ code: "stale_session_lease" });
   });
 
   it("records structured HTTP listeners without exposing Preview routing to the model", async () => {
@@ -942,11 +954,13 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
       serviceRegistry: { observe, async end() {} },
     });
     const created = await manager.create(createRequest);
-    await manager.execute(created.capability, operation("10000000-0000-4000-8000-000000000031"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("10000000-0000-4000-8000-000000000031"),
+    );
     expect(observe).toHaveBeenCalledWith(
       expect.objectContaining({
         target: expect.objectContaining({
@@ -966,15 +980,14 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
-    const created = await manager.create({ ...createRequest, allowedTools: ["read"] });
+    await manager.create({ ...createRequest, allowedTools: ["read"] });
 
     await expect(
-      manager.execute(created.capability, operation("10000000-0000-4000-8000-000000000041")),
+      manager.execute(assignment.executionLease, operation("10000000-0000-4000-8000-000000000041")),
     ).rejects.toMatchObject({ code: "tool_not_granted" });
     await expect(
-      manager.execute(created.capability, {
+      manager.execute(assignment.executionLease, {
         ...operation("10000000-0000-4000-8000-000000000042"),
         toolName: "read",
       }),
@@ -986,11 +999,9 @@ describe("provider-backed Tool Tool Broker", () => {
   it("queues materialization behind the global active Sandbox admission limit", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const capabilities = [CAPABILITY, SECOND_CAPABILITY];
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
-      capabilityGenerator: () => capabilities.shift()!,
       maximumActiveSandboxes: 1,
     });
     const secondAssignment = {
@@ -999,7 +1010,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: "workspace-provider-test-second",
       sessionId: "session-provider-test-second",
       turnId: "turn-provider-test-second",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "20000000-0000-4000-8000-000000000003",
         "20000000-0000-4000-8000-000000000003",
         6,
@@ -1011,8 +1022,11 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "20000000-0000-4000-8000-000000000011",
       assignment: secondAssignment,
     });
-    await manager.execute(first.capability, operation("20000000-0000-4000-8000-000000000012"));
-    const waiting = manager.execute(second.capability, {
+    await manager.execute(
+      assignment.executionLease,
+      operation("20000000-0000-4000-8000-000000000012"),
+    );
+    const waiting = manager.execute(secondAssignment.executionLease, {
       ...operation("20000000-0000-4000-8000-000000000013"),
       activationId: second.activationId,
     });
@@ -1034,11 +1048,13 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
       maximumActiveSandboxes: 1,
     });
     const active = await manager.create(createRequest);
-    await manager.execute(active.capability, operation("20000000-0000-4000-8000-000000000050"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("20000000-0000-4000-8000-000000000050"),
+    );
     expect(manager.admittedCount).toBe(1);
     const snapshot = Buffer.from("persistent-volume-reference", "utf8");
 
@@ -1070,11 +1086,9 @@ describe("provider-backed Tool Tool Broker", () => {
   it("removes an aborted Tool Sandbox admission waiter without consuming capacity", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const capabilities = [CAPABILITY, SECOND_CAPABILITY];
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
-      capabilityGenerator: () => capabilities.shift()!,
       maximumActiveSandboxes: 1,
     });
     const secondAssignment = {
@@ -1083,7 +1097,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: "workspace-provider-test-aborted",
       sessionId: "session-provider-test-aborted",
       turnId: "turn-provider-test-aborted",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "30000000-0000-4000-8000-000000000003",
         "30000000-0000-4000-8000-000000000003",
         7,
@@ -1095,10 +1109,13 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "30000000-0000-4000-8000-000000000011",
       assignment: secondAssignment,
     });
-    await manager.execute(first.capability, operation("30000000-0000-4000-8000-000000000012"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("30000000-0000-4000-8000-000000000012"),
+    );
     const controller = new AbortController();
     const waiting = manager.execute(
-      second.capability,
+      second.executionLease,
       {
         ...operation("30000000-0000-4000-8000-000000000013"),
         activationId: second.activationId,
@@ -1121,10 +1138,12 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     const first = await manager.create(createRequest);
-    await manager.execute(first.capability, operation("10000000-0000-4000-8000-000000000018"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("10000000-0000-4000-8000-000000000018"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1142,7 +1161,7 @@ describe("provider-backed Tool Tool Broker", () => {
       sandboxId: "20000000-0000-4000-8000-000000000021",
       commandId: "command-provider-test-next",
       turnId: "turn-provider-test-next",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "10000000-0000-4000-8000-000000000020",
         "10000000-0000-4000-8000-000000000020",
         6,
@@ -1156,7 +1175,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     expect(second.activationId).toBe(first.activationId);
     expect(second.continuity).toBe("warm_reuse");
-    await manager.execute(second.capability, {
+    await manager.execute(nextAssignment.executionLease, {
       ...operation("10000000-0000-4000-8000-000000000022"),
       activationId: second.activationId,
     });
@@ -1165,28 +1184,29 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.stop(second.activationId, nextAssignment);
   });
 
-  it("suspends and restores a parent capability around one shared-Workspace Subagent", async () => {
+  it("suspends and restores a parent lease around one shared-Workspace Subagent", async () => {
     class DelegatedHandoffRepository extends InMemorySandboxActivationStateRepository {
       override async allowsDelegatedSandboxHandoff(): Promise<boolean> {
         return true;
       }
     }
     const fixture = providerFixture();
-    const capabilities = [CAPABILITY, SECOND_CAPABILITY];
     const manager = new ToolBroker({
       provider: fixture.provider,
       stateRepository: new DelegatedHandoffRepository(),
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => capabilities.shift()!,
     });
     const parent = await manager.create(createRequest);
-    await manager.execute(parent.capability, operation("73300000-0000-4000-8000-000000000001"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("73300000-0000-4000-8000-000000000001"),
+    );
     const childAssignment = {
       ...assignment,
       sessionId: "session-provider-test-subagent",
       commandId: "command-provider-test-subagent",
       turnId: "turn-provider-test-subagent",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "73300000-0000-4000-8000-000000000002",
         "73300000-0000-4000-8000-000000000002",
         8,
@@ -1200,9 +1220,12 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     expect(child).toMatchObject({ activationId: parent.activationId, continuity: "warm_reuse" });
     await expect(
-      manager.execute(parent.capability, operation("73300000-0000-4000-8000-000000000004")),
-    ).rejects.toMatchObject({ code: "invalid_tool_capability" });
-    await manager.execute(child.capability, operation("73300000-0000-4000-8000-000000000005"));
+      manager.execute(assignment.executionLease, operation("73300000-0000-4000-8000-000000000004")),
+    ).rejects.toMatchObject({ code: "stale_session_lease" });
+    await manager.execute(
+      childAssignment.executionLease,
+      operation("73300000-0000-4000-8000-000000000005"),
+    );
     await manager.capture(
       child.activationId,
       childAssignment,
@@ -1218,7 +1241,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceRevision: "2".repeat(64),
     });
     await expect(
-      manager.execute(parent.capability, operation("73300000-0000-4000-8000-000000000007")),
+      manager.execute(assignment.executionLease, operation("73300000-0000-4000-8000-000000000007")),
     ).resolves.toMatchObject({ operation: "bash.exec" });
     expect(fixture.createCount).toBe(1);
     expect(fixture.snapshot).toHaveBeenCalledTimes(2);
@@ -1226,15 +1249,17 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.stop(parent.activationId, assignment);
   });
 
-  it("creates an isolated Workspace fork without revoking the parent capability", async () => {
+  it("creates an isolated Workspace fork without revoking the parent lease", async () => {
     const fixture = providerFixture();
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     const parent = await manager.create(createRequest);
-    await manager.execute(parent.capability, operation("73400000-0000-4000-8000-000000000001"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("73400000-0000-4000-8000-000000000001"),
+    );
     const forked = await manager.forkWorkspace({
       toolBrokerProtocolVersion: 1,
       type: "workspace.fork",
@@ -1254,7 +1279,7 @@ describe("provider-backed Tool Tool Broker", () => {
       targetRevision: "b".repeat(64),
     });
     await expect(
-      manager.execute(parent.capability, operation("73400000-0000-4000-8000-000000000005")),
+      manager.execute(assignment.executionLease, operation("73400000-0000-4000-8000-000000000005")),
     ).resolves.toMatchObject({ exitCode: 0 });
     expect(fixture.forkWorkspace).toHaveBeenCalledTimes(1);
     await manager.stop(parent.activationId, assignment);
@@ -1266,12 +1291,14 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
       warmTtlMs: 1_000,
       clock: () => now,
     });
     const first = await manager.create(createRequest);
-    await manager.execute(first.capability, operation("71000000-0000-4000-8000-000000000001"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("71000000-0000-4000-8000-000000000001"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1302,10 +1329,12 @@ describe("provider-backed Tool Tool Broker", () => {
       provider: fixture.provider,
       stateRepository,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     const created = await manager.create(createRequest);
-    await manager.execute(created.capability, operation("72000000-0000-4000-8000-000000000001"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("72000000-0000-4000-8000-000000000001"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1337,15 +1366,16 @@ describe("provider-backed Tool Tool Broker", () => {
     const fixture = providerFixture();
     const stateRepository = new TrackingStateRepository();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const capabilities = [CAPABILITY, SECOND_CAPABILITY];
     const manager = new ToolBroker({
       provider: fixture.provider,
       stateRepository,
       idGenerator: () => activationIds.shift()!,
-      capabilityGenerator: () => capabilities.shift()!,
     });
     const first = await manager.create(createRequest);
-    await manager.execute(first.capability, operation("73500000-0000-4000-8000-000000000001"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("73500000-0000-4000-8000-000000000001"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1361,7 +1391,7 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-conversation-child",
       commandId: "command-provider-test-conversation-child",
       turnId: "turn-provider-test-conversation-child",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "73500000-0000-4000-8000-000000000003",
         "73500000-0000-4000-8000-000000000003",
         6,
@@ -1389,21 +1419,17 @@ describe("provider-backed Tool Tool Broker", () => {
       "30000000-0000-4000-8000-000000000030",
       "30000000-0000-4000-8000-000000000031",
     ];
-    const capabilities = [
-      CAPABILITY,
-      SECOND_CAPABILITY,
-      `pcts_${"e".repeat(43)}`,
-      `pcts_${"f".repeat(43)}`,
-    ];
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
-      capabilityGenerator: () => capabilities.shift()!,
       maximumActiveSandboxes: 2,
       maximumWarmActivations: 1,
     });
     const persistent = await manager.create(createRequest);
-    await manager.execute(persistent.capability, operation("74000000-0000-4000-8000-000000000001"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("74000000-0000-4000-8000-000000000001"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1420,7 +1446,7 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-ordinary",
       commandId: "command-provider-test-ordinary",
       turnId: "turn-provider-test-ordinary",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "74000000-0000-4000-8000-000000000003",
         "74000000-0000-4000-8000-000000000003",
         6,
@@ -1431,7 +1457,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "74000000-0000-4000-8000-000000000004",
       assignment: ordinaryAssignment,
     });
-    await manager.execute(ordinary.capability, {
+    await manager.execute(ordinaryAssignment.executionLease, {
       ...operation("74000000-0000-4000-8000-000000000005"),
       activationId: ordinary.activationId,
     });
@@ -1452,7 +1478,7 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-new-demand",
       commandId: "command-provider-test-new-demand",
       turnId: "turn-provider-test-new-demand",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "74000000-0000-4000-8000-000000000007",
         "74000000-0000-4000-8000-000000000007",
         7,
@@ -1463,7 +1489,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "74000000-0000-4000-8000-000000000008",
       assignment: demandAssignment,
     });
-    await manager.execute(demand.capability, {
+    await manager.execute(demandAssignment.executionLease, {
       ...operation("74000000-0000-4000-8000-000000000009"),
       activationId: demand.activationId,
     });
@@ -1473,7 +1499,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...assignment,
       commandId: "command-provider-test-persistent-after-pressure",
       turnId: "turn-provider-test-persistent-after-pressure",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "74000000-0000-4000-8000-000000000010",
         "74000000-0000-4000-8000-000000000010",
         8,
@@ -1493,14 +1519,15 @@ describe("provider-backed Tool Tool Broker", () => {
   it("destroys a warm process world before another Session uses the same Workspace", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const capabilities = [CAPABILITY, SECOND_CAPABILITY];
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
-      capabilityGenerator: () => capabilities.shift()!,
     });
     const first = await manager.create(createRequest);
-    await manager.execute(first.capability, operation("60000000-0000-4000-8000-000000000012"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("60000000-0000-4000-8000-000000000012"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1516,7 +1543,7 @@ describe("provider-backed Tool Tool Broker", () => {
       commandId: "command-provider-test-sibling-session",
       sessionId: "session-provider-test-sibling",
       turnId: "turn-provider-test-sibling",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "60000000-0000-4000-8000-000000000014",
         "60000000-0000-4000-8000-000000000014",
         6,
@@ -1531,7 +1558,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(second.continuity).toBe("cold_restore");
     expect(second.activationId).toBe(SECOND_ACTIVATION_ID);
     expect(fixture.stopped).toBe(true);
-    await manager.execute(second.capability, {
+    await manager.execute(siblingSession.executionLease, {
       ...operation("60000000-0000-4000-8000-000000000016"),
       activationId: second.activationId,
     });
@@ -1543,16 +1570,17 @@ describe("provider-backed Tool Tool Broker", () => {
   it("evicts the least-recently-used warm runtime when new demand reaches admission capacity", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const capabilities = [CAPABILITY, SECOND_CAPABILITY];
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
-      capabilityGenerator: () => capabilities.shift()!,
       maximumActiveSandboxes: 1,
       maximumWarmActivations: 4,
     });
     const first = await manager.create(createRequest);
-    await manager.execute(first.capability, operation("50000000-0000-4000-8000-000000000012"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("50000000-0000-4000-8000-000000000012"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1571,7 +1599,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: "workspace-provider-test-capacity-eviction",
       sessionId: "session-provider-test-capacity-eviction",
       turnId: "turn-provider-test-capacity-eviction",
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "50000000-0000-4000-8000-000000000014",
         "50000000-0000-4000-8000-000000000014",
         6,
@@ -1583,7 +1611,7 @@ describe("provider-backed Tool Tool Broker", () => {
       assignment: nextAssignment,
     });
     await expect(
-      manager.execute(second.capability, {
+      manager.execute(nextAssignment.executionLease, {
         ...operation("50000000-0000-4000-8000-000000000016"),
         activationId: second.activationId,
       }),
@@ -1601,17 +1629,19 @@ describe("provider-backed Tool Tool Broker", () => {
     const fixture = providerFixture();
     let brokerGrant: string | undefined;
     fixture.provider.retainForWarm = async (handle, brokerAssignment) => {
-      brokerGrant = brokerAssignment.executionGrant;
+      brokerGrant = brokerAssignment.executionLease;
       return { ...handle, assignment: brokerAssignment };
     };
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
       maximumActiveSandboxes: 1,
     });
     const created = await manager.create(createRequest);
-    await manager.execute(created.capability, operation("40000000-0000-4000-8000-000000000012"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("40000000-0000-4000-8000-000000000012"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1635,7 +1665,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: assignment.workspaceId,
       sessionId: assignment.sessionId,
       turnId: "turn-provider-test-advanced",
-      executionGrant: brokerGrant!,
+      executionLease: brokerGrant!,
     };
     await manager.terminateAndConfirmAbsent(advancedInventoryAssignment);
 
@@ -1646,7 +1676,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...advancedInventoryAssignment,
       commandId: assignment.commandId,
       turnId: assignment.turnId,
-      executionGrant: brokerGrant!,
+      executionLease: brokerGrant!,
     });
 
     expect(manager.admittedCount).toBe(0);
@@ -1666,16 +1696,18 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: assignment.workspaceId,
       sessionId: assignment.sessionId,
       turnId: assignment.turnId,
-      executionGrant: assignment.executionGrant,
+      executionLease: assignment.executionLease,
     };
     fixture.provider.listAssignments = async () => [runtimeAssignment];
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     const created = await manager.create(createRequest);
-    await manager.execute(created.capability, operation("41000000-0000-4000-8000-000000000001"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("41000000-0000-4000-8000-000000000001"),
+    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1691,7 +1723,7 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
-  it("revokes the capability before a provider stop failure escapes", async () => {
+  it("revokes the Session lease before a provider stop failure escapes", async () => {
     const fixture = providerFixture();
     fixture.provider.stop = async () => {
       throw new ToolBrokerError("cleanup_failed", "cleanup failed", true);
@@ -1699,18 +1731,20 @@ describe("provider-backed Tool Tool Broker", () => {
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      capabilityGenerator: () => CAPABILITY,
     });
     await manager.create(createRequest);
-    await manager.execute(CAPABILITY, operation("10000000-0000-4000-8000-000000000016"));
+    await manager.execute(
+      assignment.executionLease,
+      operation("10000000-0000-4000-8000-000000000016"),
+    );
     await expect(manager.stop(ACTIVATION_ID, assignment)).rejects.toMatchObject({
       code: "cleanup_failed",
     });
     expect(manager.activeCount).toBe(0);
     expect(manager.admittedCount).toBe(1);
     await expect(
-      manager.execute(CAPABILITY, operation("10000000-0000-4000-8000-000000000015")),
-    ).rejects.toMatchObject({ code: "invalid_tool_capability" });
+      manager.execute(assignment.executionLease, operation("10000000-0000-4000-8000-000000000015")),
+    ).rejects.toMatchObject({ code: "stale_session_lease" });
     fixture.provider.destroyActivation = async () => {};
     await manager.stop(ACTIVATION_ID, assignment);
     expect(manager.admittedCount).toBe(0);

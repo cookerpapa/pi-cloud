@@ -15,9 +15,9 @@ export class PostgresAcceptedFactProgressStore implements AcceptedFactProgressSt
       throw new TypeError("Accepted Fact progress set is invalid");
     }
     const requested = progress.map((entry) => ({
-      grantId: entry.grantId,
-      executionId: entry.executionId,
-      generation: entry.executionGeneration,
+      leaseId: entry.leaseId,
+      attemptId: entry.attemptId,
+      fencingToken: entry.fencingToken,
       connectionId: entry.channelConnectionId,
       instanceId: entry.channelInstanceId,
       sequence: entry.acknowledgedThroughSeq,
@@ -25,20 +25,20 @@ export class PostgresAcceptedFactProgressStore implements AcceptedFactProgressSt
     const recorded = await sql<{ connectionId: string }>`
       with requested as (
         select * from jsonb_to_recordset(${JSON.stringify(requested)}::jsonb) as item(
-          "grantId" uuid,
-          "executionId" uuid,
-          generation bigint,
+          "leaseId" uuid,
+          "attemptId" uuid,
+          "fencingToken" bigint,
           "connectionId" uuid,
           "instanceId" uuid,
           sequence bigint
         )
       )
-      update execution_grants as progress
+      update session_leases as progress
          set last_event_seq = greatest(progress.last_event_seq, requested.sequence)
         from requested
-       where progress.grant_id = requested."grantId"
-         and progress.execution_id = requested."executionId"
-         and progress.generation = requested.generation
+       where progress.lease_id = requested."leaseId"
+         and progress.attempt_id = requested."attemptId"
+         and progress.fencing_token = requested."fencingToken"
          and progress.fact_channel_connection_id = requested."connectionId"
          and progress.fact_channel_instance_id = requested."instanceId"
       returning progress.fact_channel_connection_id as "connectionId"

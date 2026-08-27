@@ -1,6 +1,6 @@
 import {
   parseControlToSupervisorMessage,
-  parseExecutionGrant,
+  parseExecutionLease,
   parseSupervisorToControlMessage,
   type CommandAckMessage,
   type CancelTurnCommandMessage,
@@ -33,7 +33,7 @@ export type PreparedTurnExecution = {
   run(): Promise<PiTurnResult>;
   lastAcknowledgedEventSeq(): number;
   releaseBeforeStart(): void;
-  revokeGrant(): void;
+  revokeLease(): void;
 };
 
 export type AgentRunHeartbeatIdentity = {
@@ -89,7 +89,7 @@ type Assignment = {
   abortController: AbortController;
   state: AssignmentState;
   runPromise?: Promise<PiTurnResult>;
-  grantValidUntil?: string;
+  leaseValidUntil?: string;
   lastProducedSeq: number;
   lastAcknowledgedSeq: number;
 };
@@ -214,7 +214,7 @@ export class AgentRunSupervisor {
         continue;
       }
       if (assignment.state === "running" || assignment.state === "cancelling") {
-        this.#revokeGrant(assignment);
+        this.#revokeLease(assignment);
         revokedExecutions += 1;
       }
     }
@@ -232,7 +232,7 @@ export class AgentRunSupervisor {
           sessionId: assignment.command.payload.sessionId,
           turnId: assignment.command.payload.turnId,
           state: assignment.state === "cancelling" ? ("cancelling" as const) : ("running" as const),
-          executionGrant: assignment.command.payload.executionGrant,
+          executionLease: assignment.command.payload.executionLease,
           lastProducedSeq: assignment.lastProducedSeq,
           lastAcknowledgedSeq: assignment.lastAcknowledgedSeq,
         };
@@ -273,7 +273,7 @@ export class AgentRunSupervisor {
     this.#assertHeartbeatRenewalScope(heartbeat, acknowledgement);
 
     const renewalBySession = new Map(
-      acknowledgement.payload.executionGrantRenewals.map((renewal) => [renewal.sessionId, renewal]),
+      acknowledgement.payload.executionLeaseRenewals.map((renewal) => [renewal.sessionId, renewal]),
     );
     let renewedAssignments = 0;
     let revokedAssignments = 0;
@@ -283,21 +283,21 @@ export class AgentRunSupervisor {
       const assignment = this.#currentBySession.get(observation.sessionId);
       if (
         assignment === undefined ||
-        assignment.command.payload.executionGrant !== observation.executionGrant
+        assignment.command.payload.executionLease !== observation.executionLease
       ) {
         continue;
       }
       const renewal = renewalBySession.get(observation.sessionId);
       if (
         renewal !== undefined &&
-        renewal.executionGrant === observation.executionGrant &&
+        renewal.executionLease === observation.executionLease &&
         new Date(renewal.validUntil).valueOf() > now
       ) {
-        assignment.grantValidUntil = renewal.validUntil;
+        assignment.leaseValidUntil = renewal.validUntil;
         renewedAssignments += 1;
         continue;
       }
-      this.#revokeGrant(assignment);
+      this.#revokeLease(assignment);
       revokedAssignments += 1;
       revokedSessionIds.push(observation.sessionId);
     }
@@ -328,14 +328,14 @@ export class AgentRunSupervisor {
       return this.#rejected(command, "unsupported", "Only prompt input is supported", false);
     }
 
-    const generation = parseExecutionGrant(command.payload.executionGrant).generation;
+    const generation = parseExecutionLease(command.payload.executionLease).fencingToken;
     const highestGeneration = this.#highestGenerationBySession.get(command.payload.sessionId) ?? 0;
     const current = this.#currentBySession.get(command.payload.sessionId);
     if (generation <= highestGeneration && highestGeneration > 0) {
       return this.#rejected(
         command,
-        "stale_execution_grant",
-        "Execution grant is no longer current",
+        "stale_session_lease",
+        "Session lease is no longer current",
         false,
       );
     }
@@ -404,7 +404,7 @@ export class AgentRunSupervisor {
       command.payload.sessionId !== target.sessionId ||
       command.payload.turnId !== target.turnId ||
       command.payload.agentId !== target.agentId ||
-      command.payload.executionGrant !== target.executionGrant
+      command.payload.executionLease !== target.executionLease
     ) {
       return this.#rejectedCancellation(
         command,
@@ -466,7 +466,7 @@ export class AgentRunSupervisor {
       command.payload.runId !== target.runId ||
       command.payload.turnId !== target.turnId ||
       command.payload.agentId !== target.agentId ||
-      command.payload.executionGrant !== target.executionGrant
+      command.payload.executionLease !== target.executionLease
     ) {
       return this.#rejectedSteer(
         command,
@@ -487,14 +487,13 @@ export class AgentRunSupervisor {
       run: () => this.#run(assignment),
       lastAcknowledgedEventSeq: () => assignment.lastAcknowledgedSeq,
       releaseBeforeStart: () => this.#releaseBeforeStart(assignment),
-      revokeGrant: () => this.#revokeGrant(assignment),
+      revokeLease: () => this.#revokeLease(assignment),
     };
   }
 
   #rejected(
     command: ExecuteTurnCommandMessage,
-    code:
-      "stale_execution_grant" | "invalid_state" | "capacity" | "invalid_command" | "unsupported",
+    code: "stale_session_lease" | "invalid_state" | "capacity" | "invalid_command" | "unsupported",
     message: string,
     retryable: boolean,
   ): PreparedTurnExecution {
@@ -503,7 +502,7 @@ export class AgentRunSupervisor {
       run: () => Promise.reject(new AgentRunSupervisorError(code, "Rejected command cannot run")),
       lastAcknowledgedEventSeq: () => command.payload.nextEventSeq - 1,
       releaseBeforeStart: () => undefined,
-      revokeGrant: () => undefined,
+      revokeLease: () => undefined,
     };
   }
 
@@ -520,8 +519,7 @@ export class AgentRunSupervisor {
 
   #rejectedCancellation(
     command: CancelTurnCommandMessage,
-    code:
-      "stale_execution_grant" | "invalid_state" | "capacity" | "invalid_command" | "unsupported",
+    code: "stale_session_lease" | "invalid_state" | "capacity" | "invalid_command" | "unsupported",
     message: string,
     retryable: boolean,
   ): PreparedTurnCancellation {
@@ -543,8 +541,7 @@ export class AgentRunSupervisor {
 
   #rejectedSteer(
     command: SteerTurnCommandMessage,
-    code:
-      "stale_execution_grant" | "invalid_state" | "capacity" | "invalid_command" | "unsupported",
+    code: "stale_session_lease" | "invalid_state" | "capacity" | "invalid_command" | "unsupported",
     message: string,
     retryable: boolean,
   ): PreparedTurnSteer {
@@ -562,7 +559,7 @@ export class AgentRunSupervisor {
       | {
           status: "rejected";
           code:
-            | "stale_execution_grant"
+            | "stale_session_lease"
             | "invalid_state"
             | "capacity"
             | "invalid_command"
@@ -580,7 +577,7 @@ export class AgentRunSupervisor {
         commandId: command.payload.commandId,
         sessionId: command.payload.sessionId,
         turnId: command.payload.turnId,
-        executionGrant: command.payload.executionGrant,
+        executionLease: command.payload.executionLease,
         ...result,
       },
     });
@@ -596,7 +593,7 @@ export class AgentRunSupervisor {
     if (current !== assignment || assignment.state !== "prepared") {
       return Promise.reject(
         new AgentRunSupervisorError(
-          "stale_execution_grant",
+          "stale_session_lease",
           "Prepared assignment is no longer current",
         ),
       );
@@ -608,7 +605,7 @@ export class AgentRunSupervisor {
         (result) => {
           if (assignment.state === "cancelling") {
             throw new AgentRunSupervisorError(
-              "execution_grant_revocation_not_confirmed",
+              "session_lease_revocation_not_confirmed",
               "Runner completed without confirming its requested termination",
             );
           }
@@ -643,12 +640,12 @@ export class AgentRunSupervisor {
             (assignment.state !== "running" && assignment.state !== "cancelling")
           ) {
             throw new AgentRunSupervisorError(
-              "stale_execution_grant",
+              "stale_session_lease",
               "Stale assignment cannot publish events",
             );
           }
           if (
-            message.payload.executionGrant !== assignment.command.payload.executionGrant ||
+            message.payload.executionLease !== assignment.command.payload.executionLease ||
             message.payload.event.seq !== assignment.lastProducedSeq + 1
           ) {
             throw new AgentRunSupervisorError(
@@ -669,7 +666,7 @@ export class AgentRunSupervisor {
           }
           if (
             acknowledgement.payload.sessionId !== message.payload.event.sessionId ||
-            acknowledgement.payload.executionGrant !== message.payload.executionGrant ||
+            acknowledgement.payload.executionLease !== message.payload.executionLease ||
             acknowledgement.payload.acknowledgedThroughSeq !== message.payload.event.seq
           ) {
             throw new AgentRunSupervisorError(
@@ -691,9 +688,9 @@ export class AgentRunSupervisor {
     const observed = new Map(
       heartbeat.payload.sessions.map((session) => [session.sessionId, session]),
     );
-    for (const renewal of acknowledgement.payload.executionGrantRenewals) {
+    for (const renewal of acknowledgement.payload.executionLeaseRenewals) {
       const observation = observed.get(renewal.sessionId);
-      if (observation === undefined || observation.executionGrant !== renewal.executionGrant) {
+      if (observation === undefined || observation.executionLease !== renewal.executionLease) {
         throw new AgentRunSupervisorError(
           "invalid_heartbeat_ack",
           "Heartbeat acknowledgement renewed an unobserved assignment",
@@ -702,7 +699,7 @@ export class AgentRunSupervisor {
     }
   }
 
-  #revokeGrant(assignment: Assignment): void {
+  #revokeLease(assignment: Assignment): void {
     if (
       (assignment.state !== "running" && assignment.state !== "cancelling") ||
       assignment.abortController.signal.aborted
@@ -711,7 +708,7 @@ export class AgentRunSupervisor {
     }
     const cancellationSignal: PiCancellationSignal = {
       kind: "pi-cloud.turn-cancellation",
-      reason: "execution_grant_revoked",
+      reason: "session_lease_revoked",
       gracePeriodMs: 0,
     };
     assignment.state = "cancelling";

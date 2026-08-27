@@ -9,7 +9,7 @@ import {
   RoutedHttpSandboxAssignmentInventory,
   RoutedHttpSupervisorOwnerBoundary,
 } from "./http-supervisor-management.ts";
-import { ExecutionGrantCoordinator } from "@pi-cloud/runtime-core/execution-grant-coordinator";
+import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { PostgresCheckpointObjectStore } from "@pi-cloud/runtime-core/postgres-checkpoint-object-store";
 import { KafkaEventRuntime } from "@pi-cloud/runtime-core/kafka-event-runtime";
 import {
@@ -157,7 +157,7 @@ export async function startControlPlane(): Promise<void> {
           bootId: identity.boot_id,
           sandboxId,
         }),
-        grantCoordinator: new ExecutionGrantCoordinator({ database, sandboxId }),
+        leaseCoordinator: new SessionLeaseCoordinator({ database, sandboxId }),
       });
     };
     const snapshotMaterializer = new ReplicatedToolBrokerClient({

@@ -59,7 +59,7 @@ export class PostgresPiSessionMutationProjector {
         tenant_id: fact.scope.tenantId,
         session_id: fact.scope.sessionId,
         run_id: fact.scope.runId,
-        attempt_id: fact.scope.executionId,
+        attempt_id: fact.scope.attemptId,
         state,
         result: result as Record<string, unknown> | null,
         error_code: error?.code ?? null,

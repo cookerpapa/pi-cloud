@@ -27,9 +27,9 @@ export class LiveTailTerminalTurnProjectionSource implements TerminalTurnProject
     const boundary = await this.#database
       .selectFrom("runs as run")
       .innerJoin("run_attempts as attempt", "attempt.id", "run.current_attempt_id")
-      .innerJoin("execution_grants as authority", (join) =>
+      .innerJoin("session_leases as authority", (join) =>
         join
-          .onRef("authority.execution_id", "=", "attempt.id")
+          .onRef("authority.attempt_id", "=", "attempt.id")
           .onRef("authority.run_id", "=", "run.id"),
       )
       .select("authority.last_event_seq as lastEventSequence")

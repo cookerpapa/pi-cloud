@@ -17,8 +17,8 @@ function delta(): AcceptedFact {
       sessionId: SESSION_ID,
       runId: RUN_ID,
       turnId: TURN_ID,
-      executionId: "10000000-0000-4000-8000-000000000006",
-      executionGeneration: 1,
+      attemptId: "10000000-0000-4000-8000-000000000006",
+      fencingToken: 1,
     },
     event: {
       schemaVersion: 1,

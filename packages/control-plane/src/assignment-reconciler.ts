@@ -18,7 +18,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
 import { transitionCurrentRunAttempt } from "@pi-cloud/runtime-core/run-attempt-state";
 import { commitTerminalTurnEvent } from "@pi-cloud/runtime-core/terminal-turn-event";
-import { createExecutionGrant, parseExecutionGrant } from "@pi-cloud/protocol";
+import { createExecutionLease, parseExecutionLease } from "@pi-cloud/protocol";
 import type {
   PreparedTerminalTurnProjection,
   TerminalTurnProjectionSource,
@@ -67,7 +67,7 @@ export class AssignmentReconcilerError extends Error {
 
 type DurableAssignment = {
   sessionId: string;
-  executionGrant: string;
+  executionLease: string;
   validUntil: Date;
   commandId: string | null;
   turnId: string | null;
@@ -102,15 +102,15 @@ function safeInteger(value: string | number | bigint, name: string): number {
   return parsed;
 }
 
-function sameGrant(runtime: SandboxRuntimeAssignment, durable: DurableAssignment): boolean {
+function sameLease(runtime: SandboxRuntimeAssignment, durable: DurableAssignment): boolean {
   return (
-    runtime.sessionId === durable.sessionId && runtime.executionGrant === durable.executionGrant
+    runtime.sessionId === durable.sessionId && runtime.executionLease === durable.executionLease
   );
 }
 
 function sameAssignment(runtime: SandboxRuntimeAssignment, durable: DurableAssignment): boolean {
   return (
-    sameGrant(runtime, durable) &&
+    sameLease(runtime, durable) &&
     durable.commandId !== null &&
     durable.turnId !== null &&
     runtime.commandId === durable.commandId &&
@@ -164,14 +164,14 @@ export class AssignmentReconciler {
       const targets = durableAssignments
         .filter((assignment) => assignment.validUntil.valueOf() <= now.valueOf())
         .slice(0, boundedLimit);
-      const targetKeys = new Set(targets.map((assignment) => assignment.executionGrant));
+      const targetKeys = new Set(targets.map((assignment) => assignment.executionLease));
       const orphans = runtimes.filter(
         (runtime) => !durableAssignments.some((assignment) => sameAssignment(runtime, assignment)),
       );
       const targetRuntimes = runtimes.filter((runtime) =>
         targets.some(
           (assignment) =>
-            targetKeys.has(runtime.executionGrant) && sameAssignment(runtime, assignment),
+            targetKeys.has(runtime.executionLease) && sameAssignment(runtime, assignment),
         ),
       );
       const toTerminate = [
@@ -188,7 +188,7 @@ export class AssignmentReconciler {
       result.orphanRuntimes = orphans.length;
       await this.#database.transaction().execute(async (transaction) => {
         for (const target of targets) {
-          const finalized = await this.#finalizeGrant(transaction, target, now, true);
+          const finalized = await this.#finalizeLease(transaction, target, now, true);
           if (finalized === "requeued") result.requeuedAssignments += 1;
           if (finalized === "settled" || finalized === "released") {
             result.settledAssignments += 1;
@@ -293,12 +293,12 @@ export class AssignmentReconciler {
 
   async #loadDurableAssignments(): Promise<DurableAssignment[]> {
     const grants = await this.#database
-      .selectFrom("execution_grants")
+      .selectFrom("session_leases")
       .select([
         "session_id",
-        "grant_id",
-        "execution_id",
-        "generation",
+        "lease_id",
+        "attempt_id",
+        "fencing_token",
         "valid_until",
         "command_id",
         "turn_id",
@@ -308,10 +308,10 @@ export class AssignmentReconciler {
       .execute();
     return grants.map((grant) => ({
       sessionId: grant.session_id,
-      executionGrant: createExecutionGrant(
-        grant.grant_id,
-        grant.execution_id,
-        safeInteger(grant.generation, "execution generation"),
+      executionLease: createExecutionLease(
+        grant.lease_id,
+        grant.attempt_id,
+        safeInteger(grant.fencing_token, "fencing token"),
       ),
       validUntil: new Date(grant.valid_until),
       commandId: grant.command_id,
@@ -319,25 +319,25 @@ export class AssignmentReconciler {
     }));
   }
 
-  async #finalizeGrant(
+  async #finalizeLease(
     transaction: Transaction<Database>,
     candidate: DurableAssignment,
     now: Date,
     requireExpired: boolean,
   ): Promise<Finalization> {
-    const execution = parseExecutionGrant(candidate.executionGrant);
+    const execution = parseExecutionLease(candidate.executionLease);
     const grant = await transaction
-      .selectFrom("execution_grants")
-      .select(["grant_id", "execution_id", "sandbox_id", "generation", "valid_until"])
+      .selectFrom("session_leases")
+      .select(["lease_id", "attempt_id", "sandbox_id", "fencing_token", "valid_until"])
       .where("session_id", "=", candidate.sessionId)
       .forUpdate()
       .executeTakeFirst();
     if (
       grant === undefined ||
-      grant.grant_id !== execution.grantId ||
-      grant.execution_id !== execution.executionId ||
+      grant.lease_id !== execution.leaseId ||
+      grant.attempt_id !== execution.attemptId ||
       grant.sandbox_id !== this.#sandboxId ||
-      safeInteger(grant.generation, "final execution generation") !== execution.generation ||
+      safeInteger(grant.fencing_token, "final fencing token") !== execution.fencingToken ||
       (requireExpired && new Date(grant.valid_until).valueOf() > now.valueOf())
     ) {
       return "skipped";
@@ -372,7 +372,7 @@ export class AssignmentReconciler {
           false,
         );
       }
-      await this.#deleteGrant(transaction, candidate, now);
+      await this.#deleteLease(transaction, candidate, now);
       return "released";
     }
 
@@ -503,7 +503,7 @@ export class AssignmentReconciler {
         .where("id", "=", executeOutbox.id)
         .where("published_at", "is", null)
         .executeTakeFirstOrThrow();
-      await this.#deleteGrant(transaction, candidate, now);
+      await this.#deleteLease(transaction, candidate, now);
       return "requeued";
     }
 
@@ -652,22 +652,22 @@ export class AssignmentReconciler {
       eventId: terminalEventId,
       ...(preparedProjection === undefined ? {} : { preparedProjection }),
     });
-    await this.#deleteGrant(transaction, candidate, now);
+    await this.#deleteLease(transaction, candidate, now);
     return "settled";
   }
 
-  async #deleteGrant(
+  async #deleteLease(
     transaction: Transaction<Database>,
     assignment: DurableAssignment,
     now: Date,
   ): Promise<void> {
-    const execution = parseExecutionGrant(assignment.executionGrant);
+    const execution = parseExecutionLease(assignment.executionLease);
     const deleted = await transaction
-      .deleteFrom("execution_grants")
+      .deleteFrom("session_leases")
       .where("session_id", "=", assignment.sessionId)
-      .where("grant_id", "=", execution.grantId)
+      .where("lease_id", "=", execution.leaseId)
       .where("sandbox_id", "=", this.#sandboxId)
-      .where("generation", "=", String(execution.generation))
+      .where("fencing_token", "=", String(execution.fencingToken))
       .where((expression) =>
         expression.or([
           expression("fact_channel_valid_until", "is", null),
@@ -691,14 +691,14 @@ export class AssignmentReconciler {
   ): Promise<SandboxRetirementResult> {
     await this.#database.transaction().execute(async (transaction) => {
       for (const assignment of assignments) {
-        const finalized = await this.#finalizeGrant(transaction, assignment, now, false);
+        const finalized = await this.#finalizeLease(transaction, assignment, now, false);
         if (finalized === "requeued") result.requeuedAssignments += 1;
         if (finalized === "settled" || finalized === "released") {
           result.settledAssignments += 1;
         }
       }
       const remaining = await transaction
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .select((expression) => expression.fn.countAll<string>().as("count"))
         .where("sandbox_id", "=", this.#sandboxId)
         .executeTakeFirstOrThrow();
@@ -746,7 +746,7 @@ export class AssignmentReconciler {
       .forUpdate()
       .executeTakeFirstOrThrow();
     const remaining = await transaction
-      .selectFrom("execution_grants")
+      .selectFrom("session_leases")
       .select((expression) => expression.fn.countAll<string>().as("count"))
       .where("sandbox_id", "=", this.#sandboxId)
       .executeTakeFirstOrThrow();

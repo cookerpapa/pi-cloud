@@ -27,7 +27,7 @@ The current Worker invariant is deliberately precise:
   when its reserved Child slot is free; this is an opportunistic race, never a
   queued or persisted affinity decision;
 - the Worker/Supervisor identity on a live RunAttempt is ephemeral execution
-  ownership represented externally by one opaque `ExecutionGrant`, not affinity;
+  ownership represented externally by one versioned `ExecutionLease`, not affinity;
 - later Turns restore their bounded Pi context from PostgreSQL and therefore
   do not depend on the previous Worker remaining alive or warm.
 
@@ -80,7 +80,7 @@ execute every definition.
 Pi 0.84's official `SessionStorage` interface is implemented by
 `@pi-cloud/pi-session-postgres`. It stores Pi entries, lanes, records, labels
 and the append log in PostgreSQL, and bounds an active branch at Pi compaction.
-Active-Run mutations first cross the same PostgreSQL `ExecutionGrant` authority
+Active-Run mutations first cross the same PostgreSQL `ExecutionLease` authority
 as browser-visible events, then enter one accepted Session-keyed Kafka topic.
 The Projector applies those accepted facts idempotently without rechecking a
 lease that may legitimately expire after PubAck. Direct administrative
@@ -101,7 +101,7 @@ create Sessions through that repository rather than through a second
 PiCloud-only lifecycle. Pi's pinned, unmodified backend conformance suite
 defines the baseline CRUD, fork, query, ledger and ordering semantics. Opaque
 Pi identifiers are stored as `text`; PiCloud product UUIDs are one valid
-subset. Tenant isolation and exact `ExecutionGrant` validation are additional cloud
+subset. Tenant isolation and exact `ExecutionLease` validation are additional cloud
 contracts layered around the official port.
 
 Forked Pi entries use copy-on-write references. PostgreSQL stores the selected
@@ -266,11 +266,11 @@ to a fenced Run/Attempt. The Control Plane sends the trusted descriptor over a
 dedicated service credential to the Tool Broker, which lazily creates a Cube
 and opens a UID 1000 PTY in `/workspace` through Cube's standard envd process
 API. Cube-agent starts envd through the VM's vsock control path. The generic
-guest agent is transport only: tenant identity, writer admission, ExecutionGrant
+guest agent is transport only: tenant identity, writer admission, ExecutionLease
 and operation idempotency remain in PostgreSQL and the external Tool Broker.
 
-Human terminal authority is deliberately separate from an Agent ExecutionGrant and
-Tool capability. It still reserves the next monotonic Session generation in
+Human terminal authority is deliberately separate from an Agent ExecutionLease and
+Tool policy snapshot. It still reserves the next monotonic Session fence in
 PostgreSQL, so its Workspace checkpoint cannot be mistaken for an older Agent
 write and the next Run necessarily receives a higher fence. An active Agent
 activation blocks a terminal, and an active terminal keeps a newly accepted Run
@@ -456,19 +456,19 @@ events. The public adapter intentionally ignores thinking fragments, streamed
 Tool-call JSON and partial Tool stdout. It publishes Assistant text deltas,
 complete Tool start/result Items and low-frequency lifecycle boundaries.
 
-After PostgreSQL issues the current opaque ExecutionGrant, the Worker opens one
-service-authenticated FactChannel bound to that Grant, Session and Turn.
-The Gateway records a short channel lease on the same Grant row. Both Agent
+After PostgreSQL issues the current Session lease, the Worker opens one
+service-authenticated FactChannel bound to that lease, Session and Turn.
+The Gateway records a short channel lease on the same Session lease row. Both Agent
 events and complete Pi Session mutations cross that long-lived WebSocket. A
-single PostgreSQL Authority Gate binds canonical scope and removes the Grant;
+single PostgreSQL Authority Gate binds canonical scope and removes the lease;
 the resulting AcceptedFact is appended through a broker-neutral bus. The
 Kafka adapter keys every Fact by Session ID and uses `acks=all`. Different
-Grants publish concurrently, while one channel
+Session leases publish concurrently, while one channel
 keeps one Fact in flight. Channel ownership renews set-wise outside the Fact hot
 path. After PubAck, a separate progress store checkpoints the acknowledged
 Agent-event sequence set-wise and flushes it on normal channel close; this is a
 terminal-stream boundary, not an admission decision. Normal settlement closes
-the channel before releasing the Grant; crash recovery waits for its short
+the channel before releasing the lease; crash recovery waits for its short
 lease rather than admitting overlapping generations. Workers have no Kafka
 credentials or network route.
 
@@ -486,7 +486,7 @@ are sent to existing subscribers and then unload the covered shared tail. Slow
 connections have bounded queues and reconnect for another snapshot.
 
 Accepted Pi Session mutations contain immutable Run execution identity for
-result correlation but no ExecutionGrant. A shared Kafka consumer group applies
+result correlation but no ExecutionLease. A shared Kafka consumer group applies
 complete entries, records and compaction facts idempotently to PostgreSQL. Before opening a Session,
 every Run appends a keyed recovery barrier and waits for its projection; all
 older accepted Session mutations have then been applied before the Worker
@@ -545,7 +545,7 @@ claimed as durable.
   barriered next Run;
 - cancellation revokes authority before process termination;
 - during `cancel_requested`, Tool authority is revoked while the current
-  ExecutionGrant retains narrowly bounded Pi Session write authority to commit
+  ExecutionLease retains narrowly bounded Pi Session write authority to commit
   interruption and unknown-effect facts; terminal cancellation then closes it;
 - visible live events are durable before SSE; successful terminal messages are
   Pi-native and canonical before completion;

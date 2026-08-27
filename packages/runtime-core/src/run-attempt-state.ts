@@ -8,7 +8,7 @@ import {
   type RunState,
 } from "@pi-cloud/domain";
 import { randomUUID } from "node:crypto";
-import { parseExecutionGrant } from "@pi-cloud/protocol";
+import { parseExecutionLease } from "@pi-cloud/protocol";
 import { sql, type Transaction } from "kysely";
 
 class RunAttemptLifecycleError extends Error {
@@ -26,7 +26,7 @@ export type CurrentRunAttemptIdentity = {
   tenantId: string;
   runId: string;
   attemptId: string;
-  executionGrant?: string;
+  executionLease?: string;
 };
 
 type RunAttemptFailure = {
@@ -123,8 +123,8 @@ export async function transitionCurrentRunAttempt(
       "session_row.session_kind as sessionKind",
       "subagent_execution.workspace_mode as subagentWorkspaceMode",
       "attempt.state as attemptState",
-      "attempt.execution_grant_id as executionGrantId",
-      "attempt.execution_generation as executionGeneration",
+      "attempt.lease_id as executionLeaseId",
+      "attempt.fencing_token as fencingToken",
     ])
     .where("run.tenant_id", "=", identity.tenantId)
     .where("run.id", "=", identity.runId)
@@ -134,16 +134,16 @@ export async function transitionCurrentRunAttempt(
   if (row === undefined || row.currentAttemptId !== identity.attemptId) {
     throw new RunAttemptLifecycleError("run_attempt_stale", "Run attempt is no longer current");
   }
-  if (identity.executionGrant !== undefined) {
-    const grant = parseExecutionGrant(identity.executionGrant);
+  if (identity.executionLease !== undefined) {
+    const grant = parseExecutionLease(identity.executionLease);
     if (
-      grant.executionId !== identity.attemptId ||
-      row.executionGrantId !== grant.grantId ||
-      Number(row.executionGeneration) !== grant.generation
+      grant.attemptId !== identity.attemptId ||
+      row.executionLeaseId !== grant.leaseId ||
+      Number(row.fencingToken) !== grant.fencingToken
     ) {
       throw new RunAttemptLifecycleError(
         "run_attempt_stale",
-        "Run attempt ExecutionGrant authority is stale",
+        "Run attempt ExecutionLease authority is stale",
       );
     }
   }

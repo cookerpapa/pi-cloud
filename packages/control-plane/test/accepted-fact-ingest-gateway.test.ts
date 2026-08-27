@@ -1,6 +1,6 @@
 import fastifyWebsocket from "@fastify/websocket";
 import {
-  createExecutionGrant,
+  createExecutionLease,
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
 } from "@pi-cloud/protocol";
@@ -13,7 +13,7 @@ import {
 } from "../src/accepted-fact-ingest-gateway.ts";
 
 const TOKEN = "w".repeat(48);
-const GRANT = createExecutionGrant(
+const GRANT = createExecutionLease(
   "20000000-0000-4000-8000-000000000001",
   "20000000-0000-4000-8000-000000000002",
   1,
@@ -32,7 +32,7 @@ describe("AcceptedFactIngestGateway", () => {
       checkHealth: async () => undefined,
       statistics: () => ({ activeChannels: 0 }),
       open: async (message) => ({
-        executionGrant: message.payload.executionGrant,
+        executionLease: message.payload.executionLease,
         sessionId: message.payload.sessionId,
         turnId: message.payload.turnId,
         get acknowledgedThroughSeq() {
@@ -50,7 +50,7 @@ describe("AcceptedFactIngestGateway", () => {
             type: "event.ack",
             payload: {
               sessionId: event.payload.event.sessionId,
-              executionGrant: event.payload.executionGrant,
+              executionLease: event.payload.executionLease,
               acknowledgedThroughSeq,
             },
           });
@@ -83,7 +83,7 @@ describe("AcceptedFactIngestGateway", () => {
     });
     await client.checkHealth();
     const channel = await client.open({
-      executionGrant: GRANT,
+      executionLease: GRANT,
       sessionId: "session-1",
       turnId: "turn-1",
       nextEventSeq: 1,
@@ -94,7 +94,7 @@ describe("AcceptedFactIngestGateway", () => {
       sentAt: "2026-08-26T00:00:00.000Z",
       type: "event.publish",
       payload: {
-        executionGrant: GRANT,
+        executionLease: GRANT,
         event: {
           schemaVersion: 1,
           eventId: "20000000-0000-4000-8000-000000000005",

@@ -11,7 +11,7 @@ import { type Kysely, sql } from "kysely";
 import {
   AssignmentReconciler,
   ControlPlaneStore,
-  ExecutionGrantCoordinatorError,
+  SessionLeaseCoordinatorError,
   SupervisorConnectionManager,
   SupervisorConnectionManagerError,
   SupervisorOwnerBoundaryError,
@@ -110,7 +110,7 @@ function heartbeat(options: {
   sessions?: readonly {
     sessionId: string;
     turnId: string;
-    executionGrant: string;
+    executionLease: string;
     lastProducedSeq?: number;
     lastAcknowledgedSeq?: number;
   }[];
@@ -130,7 +130,7 @@ function heartbeat(options: {
         sessionId: session.sessionId,
         turnId: session.turnId,
         state: "running" as const,
-        executionGrant: session.executionGrant,
+        executionLease: session.executionLease,
         lastProducedSeq: session.lastProducedSeq ?? 0,
         lastAcknowledgedSeq: session.lastAcknowledgedSeq ?? 0,
       })),
@@ -265,8 +265,8 @@ async function createAcceptedTurn(): Promise<{
         claim_owner_id: "supervisor-connection-test",
         claim_expires_at: new Date("2026-08-01T00:00:00.000Z"),
         sandbox_id: null,
-        execution_grant_id: null,
-        execution_generation: null,
+        lease_id: null,
+        fencing_token: null,
         checkpoint_revision: null,
         failure_code: null,
         failure_message: null,
@@ -560,7 +560,7 @@ describe.sequential("durable supervisor registration and health management", () 
       transportAuthority,
     );
 
-    expect(acknowledgement.payload.executionGrantRenewals).toEqual([]);
+    expect(acknowledgement.payload.executionLeaseRenewals).toEqual([]);
     const after = await database
       .selectFrom("supervisor_connections")
       .select(["accepting_assignments", "expires_at"])
@@ -624,7 +624,7 @@ describe.sequential("durable supervisor registration and health management", () 
       transportAuthority,
     );
     const accepted = await createAcceptedTurn();
-    const coordinator = await connectionManager.executionGrantCoordinator(
+    const coordinator = await connectionManager.executionLeaseCoordinator(
       registered.payload.connectionId,
       transportAuthority,
     );
@@ -634,7 +634,7 @@ describe.sequential("durable supervisor registration and health management", () 
     const secondLease = await coordinator.acquire(second.request);
     await markAssignmentAcknowledged({ ...second, now });
     const before = await database
-      .selectFrom("execution_grants")
+      .selectFrom("session_leases")
       .select(["session_id", "valid_until"])
       .where("session_id", "in", [accepted.sessionId, second.sessionId])
       .orderBy("session_id", "asc")
@@ -651,20 +651,20 @@ describe.sequential("durable supervisor registration and health management", () 
           {
             sessionId: accepted.sessionId,
             turnId: accepted.turnId,
-            executionGrant: lease.executionGrant,
+            executionLease: lease.executionLease,
           },
           {
             sessionId: second.sessionId,
             turnId: second.turnId,
-            executionGrant: secondLease.executionGrant,
+            executionLease: secondLease.executionLease,
           },
         ],
       }),
       transportAuthority,
     );
-    expect(acknowledgement.payload.executionGrantRenewals).toHaveLength(2);
+    expect(acknowledgement.payload.executionLeaseRenewals).toHaveLength(2);
     const after = await database
-      .selectFrom("execution_grants")
+      .selectFrom("session_leases")
       .select(["session_id", "valid_until"])
       .where("session_id", "in", [accepted.sessionId, second.sessionId])
       .orderBy("session_id", "asc")
@@ -687,7 +687,7 @@ describe.sequential("durable supervisor registration and health management", () 
 
     const follower = await createAcceptedTurn();
     await expect(coordinator.acquire(follower.request)).rejects.toEqual(
-      expect.objectContaining<Partial<ExecutionGrantCoordinatorError>>({
+      expect.objectContaining<Partial<SessionLeaseCoordinatorError>>({
         code: "connection_not_accepting",
         retryable: true,
       }),
@@ -717,7 +717,7 @@ describe.sequential("durable supervisor registration and health management", () 
       transportAuthority,
     );
     const accepted = await createAcceptedTurn();
-    const coordinator = await connectionManager.executionGrantCoordinator(
+    const coordinator = await connectionManager.executionLeaseCoordinator(
       registered.payload.connectionId,
       transportAuthority,
     );
@@ -730,7 +730,7 @@ describe.sequential("durable supervisor registration and health management", () 
     expect(stopped).toEqual([]);
     expect(
       await database
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .select("session_id")
         .where("session_id", "=", accepted.sessionId)
         .executeTakeFirst(),
@@ -756,7 +756,7 @@ describe.sequential("durable supervisor registration and health management", () 
     expect(stopped).toHaveLength(1);
     expect(
       await database
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .select("session_id")
         .where("session_id", "=", accepted.sessionId)
         .executeTakeFirst(),
@@ -787,7 +787,7 @@ describe.sequential("durable supervisor registration and health management", () 
       firstAuthority,
     );
     const accepted = await createAcceptedTurn();
-    const coordinator = await connectionManager.executionGrantCoordinator(
+    const coordinator = await connectionManager.executionLeaseCoordinator(
       firstRegistration.payload.connectionId,
       firstAuthority,
     );
@@ -922,7 +922,7 @@ describe.sequential("durable supervisor registration and health management", () 
       transportAuthority,
     );
     const accepted = await createAcceptedTurn();
-    const coordinator = await connectionManager.executionGrantCoordinator(
+    const coordinator = await connectionManager.executionLeaseCoordinator(
       registered.payload.connectionId,
       transportAuthority,
     );

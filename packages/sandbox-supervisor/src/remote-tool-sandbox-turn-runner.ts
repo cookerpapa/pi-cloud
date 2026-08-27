@@ -4,7 +4,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
   type ExecuteTurnCommandMessage,
   modelSamplingHeaders,
-  parseExecutionGrant,
+  parseExecutionLease,
   type ToolSandboxAssignment,
   type ToolSandboxCaptureResponse,
   type ToolSandboxCreateRequest,
@@ -128,7 +128,7 @@ function assignment(
     commandId: command.payload.commandId,
     sessionId: command.payload.sessionId,
     turnId: command.payload.turnId,
-    executionGrant: command.payload.executionGrant,
+    executionLease: command.payload.executionLease,
   };
 }
 
@@ -224,7 +224,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : { parent: command.payload.traceContext }),
         attributes: {
           "pi_cloud.run.id": command.payload.runId,
-          "pi_cloud.execution.id": parseExecutionGrant(command.payload.executionGrant).executionId,
+          "pi_cloud.execution.id": parseExecutionLease(command.payload.executionLease).attemptId,
           "pi_cloud.session.id": command.payload.sessionId,
         },
         run: () => this.#run(command, publishEvent, signal, slot.resolve),
@@ -605,7 +605,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         sandboxContinuity: {
           continuityId:
             activeSandbox?.continuityId ??
-            parseExecutionGrant(command.payload.executionGrant).executionId,
+            parseExecutionLease(command.payload.executionLease).attemptId,
           continuity: activeSandbox?.continuity ?? "cold_restore",
           environmentSha256: cloudTurn.environmentSha256,
           workspaceBindingSha256: cloudTurn.workspaceBindingSha256,
@@ -725,9 +725,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           }
           let stepSequence = 0;
           const remoteTools = createTrustedRemoteAgentTools({
-            operationUrl: this.#broker.operationUrlFor(activeSandbox.activationId),
             activationId: activeSandbox.activationId,
-            capability: activeSandbox.capability,
+            executionLease: toolAssignment.executionLease,
+            operationUrl: this.#broker.operationUrlFor(activeSandbox.activationId),
             turnContextSha256: cloudTurn.sha256,
             attemptContextSha256: cloudAttempt.sha256,
             allowedTools: cloudTurn.context.tools.names,

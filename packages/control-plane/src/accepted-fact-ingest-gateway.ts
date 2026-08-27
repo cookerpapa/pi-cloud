@@ -119,7 +119,7 @@ export class AcceptedFactIngestGateway {
             typeof error === "object" &&
             error !== null &&
             "code" in error &&
-            error.code === "stale_execution_grant"
+            error.code === "stale_session_lease"
               ? 1_008
               : 1_011;
           this.#close(context, code, "FactChannel failed");
@@ -188,7 +188,7 @@ export class AcceptedFactIngestGateway {
     if (message.type === "fact.channel.close") {
       const channel = context.channel;
       if (
-        message.payload.executionGrant !== channel.executionGrant ||
+        message.payload.executionLease !== channel.executionLease ||
         message.payload.acknowledgedThroughSeq !== channel.acknowledgedThroughSeq
       ) {
         this.#close(context, 1_002, "FactChannel close watermark mismatch");
@@ -202,7 +202,7 @@ export class AcceptedFactIngestGateway {
         type: "fact.channel.closed",
         payload: {
           acknowledgedMessageId: message.messageId,
-          executionGrant: channel.executionGrant,
+          executionLease: channel.executionLease,
           acknowledgedThroughSeq: channel.acknowledgedThroughSeq,
         },
       });
@@ -225,7 +225,7 @@ export class AcceptedFactIngestGateway {
       type: "fact.channel.ready",
       payload: {
         acknowledgedMessageId: message.messageId,
-        executionGrant: context.channel.executionGrant,
+        executionLease: context.channel.executionLease,
         sessionId: context.channel.sessionId,
         turnId: context.channel.turnId,
         acknowledgedThroughSeq: context.channel.acknowledgedThroughSeq,

@@ -10,7 +10,7 @@ import type {
   SessionResource,
 } from "@pi-cloud/protocol";
 import {
-  createExecutionGrant,
+  createExecutionLease,
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
 } from "@pi-cloud/protocol";
@@ -35,7 +35,7 @@ import {
   RunCommandExecutorStaleClaimError,
   TurnExecutionCancelledError,
   PostgresRunAttemptPhaseObserver,
-  ExecutionGrantCoordinator,
+  SessionLeaseCoordinator,
   TurnCancellationBackendError,
   type TurnCancellationBackend,
   type TurnExecutionBackend,
@@ -43,7 +43,7 @@ import {
   createControlPlaneApplication,
 } from "../src/index.ts";
 import { dispatchNextTestCommand } from "./dispatch-next-test-command.ts";
-import { PostgresExecutionGrantAuthorityGate } from "@pi-cloud/runtime-core/execution-grant-authority-gate";
+import { PostgresExecutionLeaseAuthorityGate } from "@pi-cloud/runtime-core/session-lease-authority-gate";
 import type { CandidatePiSessionMutationFact } from "@pi-cloud/runtime-core/accepted-fact";
 
 const IDS = {
@@ -335,8 +335,8 @@ async function createAssignedTurn(options: {
         claim_owner_id: "reconciliation-test",
         claim_expires_at: validUntil,
         sandbox_id: options.sandboxId,
-        execution_grant_id: grantId,
-        execution_generation: 1,
+        lease_id: grantId,
+        fencing_token: 1,
         checkpoint_revision: null,
         failure_code: null,
         failure_message: null,
@@ -398,7 +398,7 @@ async function createAssignedTurn(options: {
       .updateTable("sessions")
       .set({
         state: options.phase === "acknowledged" ? "running" : "cold",
-        last_execution_generation: 1,
+        last_fencing_token: 1,
       })
       .where("id", "=", assignedSession.sessionId)
       .executeTakeFirstOrThrow();
@@ -411,19 +411,19 @@ async function createAssignedTurn(options: {
       .where(sql<boolean>`${sql.ref("payload")} ->> 'commandId' = ${accepted.commandId}`)
       .executeTakeFirstOrThrow();
     await transaction
-      .insertInto("execution_grants")
+      .insertInto("session_leases")
       .values({
         session_id: assignedSession.sessionId,
-        grant_id: grantId,
+        lease_id: grantId,
         sandbox_id: options.sandboxId,
-        generation: 1,
+        fencing_token: 1,
         tenant_id: IDS.tenant,
         project_id: assignedSession.projectId,
         workspace_id: assignedSession.workspaceId,
         run_id: accepted.runId,
         turn_id: accepted.turnId,
         command_id: accepted.commandId,
-        execution_id: attemptId,
+        attempt_id: attemptId,
         last_event_seq: 0,
         acquired_at: acquiredAt,
         renewed_at: acquiredAt,
@@ -445,7 +445,7 @@ async function createAssignedTurn(options: {
       workspaceId: assignedSession.workspaceId,
       sessionId: assignedSession.sessionId,
       turnId: accepted.turnId,
-      executionGrant: createExecutionGrant(grantId, attemptId, 1),
+      executionLease: createExecutionLease(grantId, attemptId, 1),
     },
   };
 }
@@ -554,7 +554,7 @@ describe.sequential("single-user durable turn intake API", () => {
       sentAt: now,
       type: "event.publish",
       payload: {
-        executionGrant: assigned.runtime.executionGrant,
+        executionLease: assigned.runtime.executionLease,
         event: {
           schemaVersion: 1,
           eventId: globalThis.crypto.randomUUID(),
@@ -568,14 +568,14 @@ describe.sequential("single-user durable turn intake API", () => {
         },
       },
     };
-    const authority = new PostgresExecutionGrantAuthorityGate({ database });
+    const authority = new PostgresExecutionLeaseAuthorityGate({ database });
     const open = parseSupervisorToControlMessage({
       protocolVersion: 1,
       messageId: globalThis.crypto.randomUUID(),
       sentAt: now,
       type: "fact.channel.open",
       payload: {
-        executionGrant: assigned.runtime.executionGrant,
+        executionLease: assigned.runtime.executionLease,
         sessionId: assigned.assignedSession.sessionId,
         turnId: assigned.accepted.turnId,
         nextEventSeq: 1,
@@ -597,7 +597,7 @@ describe.sequential("single-user durable turn intake API", () => {
         sessionId: assigned.assignedSession.sessionId,
         turnId: assigned.accepted.turnId,
         runId: assigned.accepted.runId,
-        executionGrant: assigned.runtime.executionGrant,
+        executionLease: assigned.runtime.executionLease,
       },
       operation: { kind: "projection_barrier" },
       occurredAt: now,
@@ -610,10 +610,10 @@ describe.sequential("single-user durable turn intake API", () => {
       kind: "pi_session_mutation",
       mutation,
     });
-    expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pceg1_");
+    expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pcel1_");
     await authority.close(writerScope);
     await database
-      .deleteFrom("execution_grants")
+      .deleteFrom("session_leases")
       .where("session_id", "=", assigned.assignedSession.sessionId)
       .executeTakeFirstOrThrow();
     await expect(
@@ -621,10 +621,10 @@ describe.sequential("single-user durable turn intake API", () => {
         connectionId: "70000000-0000-4000-8000-000000000020",
         instanceId: "80000000-0000-4000-8000-000000000019",
       }),
-    ).rejects.toMatchObject({ code: "stale_execution_grant" });
+    ).rejects.toMatchObject({ code: "stale_session_lease" });
   });
 
-  it("does not release an ExecutionGrant while its FactChannel is active", async () => {
+  it("does not release an ExecutionLease while its FactChannel is active", async () => {
     const assigned = await createAssignedTurn({
       sandboxId: "50000000-0000-4000-8000-000000000021",
       sandboxBootId: "60000000-0000-4000-8000-000000000021",
@@ -632,14 +632,14 @@ describe.sequential("single-user durable turn intake API", () => {
       phase: "acknowledged",
       expired: false,
     });
-    const authority = new PostgresExecutionGrantAuthorityGate({ database });
+    const authority = new PostgresExecutionLeaseAuthorityGate({ database });
     const open = parseSupervisorToControlMessage({
       protocolVersion: 1,
       messageId: globalThis.crypto.randomUUID(),
       sentAt: new Date().toISOString(),
       type: "fact.channel.open",
       payload: {
-        executionGrant: assigned.runtime.executionGrant,
+        executionLease: assigned.runtime.executionLease,
         sessionId: assigned.assignedSession.sessionId,
         turnId: assigned.accepted.turnId,
         nextEventSeq: 1,
@@ -650,7 +650,7 @@ describe.sequential("single-user durable turn intake API", () => {
       connectionId: "70000000-0000-4000-8000-000000000021",
       instanceId: "80000000-0000-4000-8000-000000000021",
     });
-    const coordinator = new ExecutionGrantCoordinator({
+    const coordinator = new SessionLeaseCoordinator({
       database,
       sandboxId: assigned.runtime.sandboxId,
     });
@@ -663,8 +663,8 @@ describe.sequential("single-user durable turn intake API", () => {
       turnId: assigned.accepted.turnId,
       commandId: assigned.accepted.commandId,
       attemptId: assigned.attemptId,
-    } as Parameters<ExecutionGrantCoordinator["releaseAcquired"]>[0];
-    const grant = { executionGrant: assigned.runtime.executionGrant };
+    } as Parameters<SessionLeaseCoordinator["releaseAcquired"]>[0];
+    const grant = { executionLease: assigned.runtime.executionLease };
 
     await expect(coordinator.releaseAcquired(request, grant)).rejects.toMatchObject({
       code: "fact_channel_active",
@@ -674,8 +674,8 @@ describe.sequential("single-user durable turn intake API", () => {
     await expect(coordinator.releaseAcquired(request, grant)).resolves.toBeUndefined();
     await expect(
       database
-        .selectFrom("execution_grants")
-        .select("grant_id")
+        .selectFrom("session_leases")
+        .select("lease_id")
         .where("session_id", "=", assigned.assignedSession.sessionId)
         .executeTakeFirst(),
     ).resolves.toBeUndefined();
@@ -1674,16 +1674,16 @@ describe.sequential("single-user durable turn intake API", () => {
         active_sessions: 0,
       })
       .executeTakeFirstOrThrow();
-    const grantCoordinator = new ExecutionGrantCoordinator({
+    const leaseCoordinator = new SessionLeaseCoordinator({
       database,
       sandboxId: IDS.phaseSandbox,
-      grantDurationMs: 120_000,
+      leaseDurationMs: 120_000,
     });
     const observer = new PostgresRunAttemptPhaseObserver({ database });
     const revision = "a".repeat(64);
     const backend: TurnExecutionBackend = {
       async execute(request, lifecycle) {
-        const grant = await grantCoordinator.acquire(request);
+        const grant = await leaseCoordinator.acquire(request);
         await lifecycle.started(grant);
         const command = parseControlToSupervisorMessage({
           protocolVersion: 1,
@@ -1700,7 +1700,7 @@ describe.sequential("single-user durable turn intake API", () => {
             runId: request.runId,
             turnId: request.turnId,
             agentId: "root",
-            executionGrant: grant.executionGrant,
+            executionLease: grant.executionLease,
             nextEventSeq: Number(request.nextEventSeq),
             input: { kind: "prompt", text: request.input.prompt },
             executionMode: request.executionMode,
@@ -1725,7 +1725,7 @@ describe.sequential("single-user durable turn intake API", () => {
     const dispatcher = new RunCommandExecutor({
       database,
       backend,
-      executionAuthority: grantCoordinator,
+      executionAuthority: leaseCoordinator,
     });
     const phaseResult = await dispatchNextTestCommand(database, dispatcher, IDS.tenant);
     expect(phaseResult.status, JSON.stringify(phaseResult)).toBe("completed");
@@ -1888,7 +1888,7 @@ describe.sequential("single-user durable turn intake API", () => {
     const accepted = turnResponse.json() as AcceptedTurnResource;
 
     const acknowledgement = {
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         "70000000-0000-4000-8000-000000000001",
         "70000000-0000-4000-8000-000000000002",
         7,
@@ -2024,10 +2024,10 @@ describe.sequential("single-user durable turn intake API", () => {
     });
     expect(turnResponse.statusCode).toBe(202);
     const accepted = turnResponse.json() as AcceptedTurnResource;
-    const grantCoordinator = new ExecutionGrantCoordinator({
+    const leaseCoordinator = new SessionLeaseCoordinator({
       database,
       sandboxId: IDS.sandbox,
-      grantDurationMs: 120_000,
+      leaseDurationMs: 120_000,
     });
     const supervisor = new AgentRunSupervisor({
       runner: {
@@ -2038,13 +2038,13 @@ describe.sequential("single-user durable turn intake API", () => {
     });
     const backend = new AgentRunExecutionBackend({
       supervisor,
-      grantCoordinator: grantCoordinator,
+      leaseCoordinator: leaseCoordinator,
       factChannels: durableEventStore,
     });
     const dispatcher = new RunCommandExecutor({
       database,
       backend,
-      executionAuthority: grantCoordinator,
+      executionAuthority: leaseCoordinator,
     });
 
     await expect(dispatchNextTestCommand(database, dispatcher, IDS.tenant)).resolves.toMatchObject({
@@ -2066,7 +2066,7 @@ describe.sequential("single-user durable turn intake API", () => {
       attempts: 1,
     });
     const leaseCount = await database
-      .selectFrom("execution_grants")
+      .selectFrom("session_leases")
       .select((expression) => expression.fn.countAll<string>().as("count"))
       .where("session_id", "=", failedSession.sessionId)
       .executeTakeFirstOrThrow();
@@ -2116,7 +2116,7 @@ describe.sequential("single-user durable turn intake API", () => {
         project_id: project.projectId,
         workspace_id: project.workspaceId,
         session_id: session.sessionId,
-        generation: 1,
+        fencing_token: 1,
         state: "cleaning",
         lease_expires_at: new Date(now.valueOf() + 60_000),
         last_heartbeat_at: now,
@@ -2241,10 +2241,10 @@ describe.sequential("single-user durable turn intake API", () => {
     const runnerGate = new Promise<void>((resolvePromise) => {
       releaseRunner = resolvePromise;
     });
-    const grantCoordinator = new ExecutionGrantCoordinator({
+    const leaseCoordinator = new SessionLeaseCoordinator({
       database,
       sandboxId: IDS.heartbeatSandbox,
-      grantDurationMs: 90,
+      leaseDurationMs: 90,
     });
     const supervisor = new AgentRunSupervisor({
       runner: {
@@ -2258,24 +2258,24 @@ describe.sequential("single-user durable turn intake API", () => {
       database,
       backend: new AgentRunExecutionBackend({
         supervisor,
-        grantCoordinator: grantCoordinator,
+        leaseCoordinator: leaseCoordinator,
         factChannels: durableEventStore,
         heartbeatIntervalMs: 20,
       }),
-      executionAuthority: grantCoordinator,
+      executionAuthority: leaseCoordinator,
     });
 
     const dispatch = dispatchNextTestCommand(database, dispatcher, IDS.tenant);
     await waitForCondition(async () => {
       const row = await database
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .select("session_id")
         .where("session_id", "=", longSession.sessionId)
         .executeTakeFirst();
       return row !== undefined;
     });
     const initialLease = await database
-      .selectFrom("execution_grants")
+      .selectFrom("session_leases")
       .select(["acquired_at", "renewed_at", "valid_until"])
       .where("session_id", "=", longSession.sessionId)
       .executeTakeFirstOrThrow();
@@ -2286,7 +2286,7 @@ describe.sequential("single-user durable turn intake API", () => {
       .executeTakeFirstOrThrow();
     await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 180));
     const renewedLease = await database
-      .selectFrom("execution_grants")
+      .selectFrom("session_leases")
       .select(["renewed_at", "valid_until"])
       .where("session_id", "=", longSession.sessionId)
       .executeTakeFirstOrThrow();
@@ -2340,10 +2340,10 @@ describe.sequential("single-user durable turn intake API", () => {
     });
     expect(turnResponse.statusCode).toBe(202);
     const accepted = turnResponse.json() as AcceptedTurnResource;
-    const grantCoordinator = new ExecutionGrantCoordinator({
+    const leaseCoordinator = new SessionLeaseCoordinator({
       database,
       sandboxId: IDS.expiredLeaseSandbox,
-      grantDurationMs: 60,
+      leaseDurationMs: 60,
     });
     const supervisor = new AgentRunSupervisor({
       runner: {
@@ -2352,7 +2352,7 @@ describe.sequential("single-user durable turn intake API", () => {
             signal.addEventListener(
               "abort",
               () => {
-                const reason = signal.reason as { reason: "execution_grant_revoked" };
+                const reason = signal.reason as { reason: "session_lease_revoked" };
                 reject(new PiTurnCancelledError(reason.reason, false));
               },
               { once: true },
@@ -2365,11 +2365,11 @@ describe.sequential("single-user durable turn intake API", () => {
       database,
       backend: new AgentRunExecutionBackend({
         supervisor,
-        grantCoordinator: grantCoordinator,
+        leaseCoordinator: leaseCoordinator,
         factChannels: durableEventStore,
         heartbeatIntervalMs: 120,
       }),
-      executionAuthority: grantCoordinator,
+      executionAuthority: leaseCoordinator,
     });
 
     await expect(dispatchNextTestCommand(database, dispatcher, IDS.tenant)).resolves.toMatchObject({
@@ -2378,19 +2378,19 @@ describe.sequential("single-user durable turn intake API", () => {
       sessionId: expiredSession.sessionId,
       turnId: accepted.turnId,
       phase: "after_start",
-      failureCode: "execution_grant_renewal_failed",
+      failureCode: "session_lease_renewal_failed",
     });
     expect(await readTurnExecution(accepted)).toMatchObject({
       commandState: "failed",
       turnState: "failed",
       sessionState: "failed",
-      turnFailureCode: "execution_grant_renewal_failed",
+      turnFailureCode: "session_lease_renewal_failed",
       failureRetryable: false,
     });
     expect(supervisor.activeSessionCount).toBe(0);
     expect(
       await database
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .select((expression) => expression.fn.countAll<string>().as("count"))
         .where("session_id", "=", expiredSession.sessionId)
         .executeTakeFirstOrThrow(),
@@ -2433,7 +2433,7 @@ describe.sequential("single-user durable turn intake API", () => {
       commandId: globalThis.crypto.randomUUID(),
       sessionId: globalThis.crypto.randomUUID(),
       turnId: globalThis.crypto.randomUUID(),
-      executionGrant: createExecutionGrant(
+      executionLease: createExecutionLease(
         globalThis.crypto.randomUUID(),
         globalThis.crypto.randomUUID(),
         9,
@@ -2524,7 +2524,7 @@ describe.sequential("single-user durable turn intake API", () => {
     });
     expect(
       await database
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .select((expression) => expression.fn.countAll<string>().as("count"))
         .where("session_id", "=", fixture.assignedSession.sessionId)
         .executeTakeFirstOrThrow(),

@@ -95,6 +95,7 @@ import * as machineOwnedWorkspaces from "./093_machine_owned_workspaces.ts";
 import * as agentEventWriterChannels from "./094_agent_event_writer_channels.ts";
 import * as factChannels from "./095_fact_channels.ts";
 import * as sessionKafkaHeads from "./096_session_kafka_heads.ts";
+import * as sessionLeaseFencing from "./097_session_lease_fencing.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -195,6 +196,7 @@ export const migrationProvider: MigrationProvider = {
       "094_agent_event_writer_channels": agentEventWriterChannels,
       "095_fact_channels": factChannels,
       "096_session_kafka_heads": sessionKafkaHeads,
+      "097_session_lease_fencing": sessionLeaseFencing,
     };
   },
 };
@@ -541,3 +543,7 @@ export {
   down as downSessionKafkaHeads,
   up as upSessionKafkaHeads,
 } from "./096_session_kafka_heads.ts";
+export {
+  down as downSessionLeaseFencing,
+  up as upSessionLeaseFencing,
+} from "./097_session_lease_fencing.ts";

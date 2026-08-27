@@ -276,11 +276,11 @@ export class ToolBrokerClient {
   }
 
   async operation(
-    capability: string,
+    executionLease: string,
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
-    const response = await this.#post(TOOL_BROKER_OPERATION_PATH, capability, request, signal);
+    const response = await this.#post(TOOL_BROKER_OPERATION_PATH, executionLease, request, signal);
     const parsed = parseToolSandboxOperationResponse(response);
     if (
       parsed.activationId !== request.activationId ||
@@ -573,11 +573,11 @@ export class ReplicatedToolBrokerClient {
   }
 
   operation(
-    capability: string,
+    executionLease: string,
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
-    return this.#ownedClient(request.activationId).operation(capability, request, signal);
+    return this.#ownedClient(request.activationId).operation(executionLease, request, signal);
   }
 
   importGitHub(source: GitHubRepositorySource, signal: AbortSignal): Promise<Uint8Array> {
@@ -601,7 +601,7 @@ export class ReplicatedToolBrokerClient {
     );
     const unique = new Map<string, SupervisorRuntimeAssignment>();
     for (const assignment of assignments.flat()) {
-      unique.set(`${assignment.containerId}\0${assignment.executionGrant}`, assignment);
+      unique.set(`${assignment.containerId}\0${assignment.executionLease}`, assignment);
     }
     return [...unique.values()];
   }
@@ -658,7 +658,7 @@ export class ReplicatedToolBrokerClient {
       assignment.tenantId,
       assignment.workspaceId,
       assignment.sessionId,
-      assignment.executionGrant,
+      assignment.executionLease,
     ].join("\0");
   }
 

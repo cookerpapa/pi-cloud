@@ -1,24 +1,24 @@
 import type { Database } from "@pi-cloud/database";
-import { parseExecutionGrant } from "@pi-cloud/protocol";
+import { parseExecutionLease } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import type { AcceptedFact, CandidateFact } from "./accepted-fact.ts";
 
 const DEFAULT_FACT_CHANNEL_LEASE_MS = 9_000;
 
-export type ExecutionGrantAuthorityRequest = Readonly<{
-  executionGrant: string;
+export type ExecutionLeaseAuthorityRequest = Readonly<{
+  executionLease: string;
   sessionId: string;
   turnId: string;
 }>;
 
-export type ExecutionGrantAuthorityScope = Readonly<{
+export type ExecutionLeaseAuthorityScope = Readonly<{
   connectionId: string;
   instanceId: string;
-  executionGrant: string;
-  grantId: string;
-  executionId: string;
-  generation: number;
+  executionLease: string;
+  leaseId: string;
+  attemptId: string;
+  fencingToken: number;
   tenantId: string;
   sessionId: string;
   runId: string;
@@ -26,17 +26,17 @@ export type ExecutionGrantAuthorityScope = Readonly<{
   leaseDurationMs: number;
 }>;
 
-export class ExecutionGrantAuthorityGateError extends Error {
-  readonly code: "stale_execution_grant" | "fact_channel_conflict" | "authority_invariant";
+export class ExecutionLeaseAuthorityGateError extends Error {
+  readonly code: "stale_session_lease" | "fact_channel_conflict" | "authority_invariant";
   readonly retryable: boolean;
 
   constructor(
-    code: ExecutionGrantAuthorityGateError["code"],
+    code: ExecutionLeaseAuthorityGateError["code"],
     safeMessage: string,
     retryable: boolean,
   ) {
     super(safeMessage);
-    this.name = "ExecutionGrantAuthorityGateError";
+    this.name = "ExecutionLeaseAuthorityGateError";
     this.code = code;
     this.retryable = retryable;
   }
@@ -58,16 +58,16 @@ function validClockDate(clock: () => Date): Date {
 function writerLeaseExpiry(now: Date, grantExpiry: Date, durationMs: number): Date {
   const value = new Date(Math.min(now.valueOf() + durationMs, grantExpiry.valueOf()));
   if (value.valueOf() <= now.valueOf()) {
-    throw new ExecutionGrantAuthorityGateError(
-      "stale_execution_grant",
-      "ExecutionGrant expired before the FactChannel could be renewed",
+    throw new ExecutionLeaseAuthorityGateError(
+      "stale_session_lease",
+      "ExecutionLease expired before the FactChannel could be renewed",
       false,
     );
   }
   return value;
 }
 
-export class PostgresExecutionGrantAuthorityGate {
+export class PostgresExecutionLeaseAuthorityGate {
   readonly #database: Kysely<Database>;
   readonly #clock: () => Date;
   readonly #leaseDurationMs: number;
@@ -86,30 +86,30 @@ export class PostgresExecutionGrantAuthorityGate {
   }
 
   async open(
-    request: ExecutionGrantAuthorityRequest,
+    request: ExecutionLeaseAuthorityRequest,
     identity: Readonly<{ connectionId: string; instanceId: string }>,
-  ): Promise<ExecutionGrantAuthorityScope> {
+  ): Promise<ExecutionLeaseAuthorityScope> {
     const now = validClockDate(this.#clock);
-    const grantIdentity = parseExecutionGrant(request.executionGrant);
+    const grantIdentity = parseExecutionLease(request.executionLease);
     return this.#database.transaction().execute(async (transaction) => {
       const row = await transaction
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .selectAll()
-        .where("grant_id", "=", grantIdentity.grantId)
+        .where("lease_id", "=", grantIdentity.leaseId)
         .forUpdate()
         .executeTakeFirst();
       const grantExpiry = row === undefined ? now : new Date(row.valid_until);
       if (
         row === undefined ||
-        row.execution_id !== grantIdentity.executionId ||
-        Number(row.generation) !== grantIdentity.generation ||
+        row.attempt_id !== grantIdentity.attemptId ||
+        Number(row.fencing_token) !== grantIdentity.fencingToken ||
         row.session_id !== request.sessionId ||
         row.turn_id !== request.turnId ||
         grantExpiry.valueOf() <= now.valueOf()
       ) {
-        throw new ExecutionGrantAuthorityGateError(
-          "stale_execution_grant",
-          "FactChannel rejected a stale ExecutionGrant",
+        throw new ExecutionLeaseAuthorityGateError(
+          "stale_session_lease",
+          "FactChannel rejected a stale ExecutionLease",
           false,
         );
       }
@@ -118,26 +118,26 @@ export class PostgresExecutionGrantAuthorityGate {
         row.fact_channel_valid_until !== null &&
         new Date(row.fact_channel_valid_until).valueOf() > now.valueOf()
       ) {
-        throw new ExecutionGrantAuthorityGateError(
+        throw new ExecutionLeaseAuthorityGateError(
           "fact_channel_conflict",
-          "ExecutionGrant already has an active FactChannel",
+          "ExecutionLease already has an active FactChannel",
           true,
         );
       }
       const validUntil = writerLeaseExpiry(now, grantExpiry, this.#leaseDurationMs);
       const updated = await transaction
-        .updateTable("execution_grants")
+        .updateTable("session_leases")
         .set({
           fact_channel_connection_id: identity.connectionId,
           fact_channel_instance_id: identity.instanceId,
           fact_channel_valid_until: validUntil,
         })
-        .where("grant_id", "=", grantIdentity.grantId)
-        .where("execution_id", "=", grantIdentity.executionId)
-        .where("generation", "=", String(grantIdentity.generation))
+        .where("lease_id", "=", grantIdentity.leaseId)
+        .where("attempt_id", "=", grantIdentity.attemptId)
+        .where("fencing_token", "=", String(grantIdentity.fencingToken))
         .executeTakeFirst();
       if (updated.numUpdatedRows !== 1n) {
-        throw new ExecutionGrantAuthorityGateError(
+        throw new ExecutionLeaseAuthorityGateError(
           "authority_invariant",
           "FactChannel ownership changed while opening",
           false,
@@ -146,10 +146,10 @@ export class PostgresExecutionGrantAuthorityGate {
       return {
         connectionId: identity.connectionId,
         instanceId: identity.instanceId,
-        executionGrant: request.executionGrant,
-        grantId: grantIdentity.grantId,
-        executionId: grantIdentity.executionId,
-        generation: grantIdentity.generation,
+        executionLease: request.executionLease,
+        leaseId: grantIdentity.leaseId,
+        attemptId: grantIdentity.attemptId,
+        fencingToken: grantIdentity.fencingToken,
         tenantId: row.tenant_id,
         sessionId: row.session_id,
         runId: row.run_id,
@@ -159,17 +159,17 @@ export class PostgresExecutionGrantAuthorityGate {
     });
   }
 
-  accept(scope: ExecutionGrantAuthorityScope, candidate: CandidateFact): AcceptedFact {
+  accept(scope: ExecutionLeaseAuthorityScope, candidate: CandidateFact): AcceptedFact {
     if (candidate.kind === "agent_event") {
       const publication = candidate.publication;
       if (
-        publication.payload.executionGrant !== scope.executionGrant ||
+        publication.payload.executionLease !== scope.executionLease ||
         publication.payload.event.sessionId !== scope.sessionId ||
         publication.payload.event.turnId !== scope.turnId
       ) {
-        throw new ExecutionGrantAuthorityGateError(
-          "stale_execution_grant",
-          "Agent event candidate does not belong to its ExecutionGrant",
+        throw new ExecutionLeaseAuthorityGateError(
+          "stale_session_lease",
+          "Agent event candidate does not belong to its ExecutionLease",
           false,
         );
       }
@@ -181,8 +181,8 @@ export class PostgresExecutionGrantAuthorityGate {
           sessionId: scope.sessionId,
           runId: scope.runId,
           turnId: scope.turnId,
-          executionId: scope.executionId,
-          executionGeneration: scope.generation,
+          attemptId: scope.attemptId,
+          fencingToken: scope.fencingToken,
         },
         event: publication.payload.event,
         occurredAt: publication.payload.event.occurredAt,
@@ -190,15 +190,15 @@ export class PostgresExecutionGrantAuthorityGate {
     }
     const mutation = candidate.mutation;
     if (
-      mutation.scope.executionGrant !== scope.executionGrant ||
+      mutation.scope.executionLease !== scope.executionLease ||
       mutation.scope.tenantId !== scope.tenantId ||
       mutation.scope.sessionId !== scope.sessionId ||
       mutation.scope.runId !== scope.runId ||
       mutation.scope.turnId !== scope.turnId
     ) {
-      throw new ExecutionGrantAuthorityGateError(
-        "stale_execution_grant",
-        "Pi Session mutation candidate does not belong to its ExecutionGrant",
+      throw new ExecutionLeaseAuthorityGateError(
+        "stale_session_lease",
+        "Pi Session mutation candidate does not belong to its ExecutionLease",
         false,
       );
     }
@@ -210,8 +210,8 @@ export class PostgresExecutionGrantAuthorityGate {
         sessionId: scope.sessionId,
         runId: scope.runId,
         turnId: scope.turnId,
-        executionId: scope.executionId,
-        executionGeneration: scope.generation,
+        attemptId: scope.attemptId,
+        fencingToken: scope.fencingToken,
       },
       operation: mutation.operation,
       occurredAt: mutation.occurredAt,
@@ -219,7 +219,7 @@ export class PostgresExecutionGrantAuthorityGate {
   }
 
   async renewMany(
-    writers: readonly ExecutionGrantAuthorityScope[],
+    writers: readonly ExecutionLeaseAuthorityScope[],
   ): Promise<ReadonlyMap<string, number>> {
     if (writers.length < 1 || writers.length > 1_000) {
       throw new TypeError("FactChannel renewal set is invalid");
@@ -227,9 +227,9 @@ export class PostgresExecutionGrantAuthorityGate {
     const now = validClockDate(this.#clock);
     const requestedUntil = new Date(now.valueOf() + this.#leaseDurationMs);
     const requested = writers.map((scope) => ({
-      grantId: scope.grantId,
-      executionId: scope.executionId,
-      generation: scope.generation,
+      leaseId: scope.leaseId,
+      attemptId: scope.attemptId,
+      fencingToken: scope.fencingToken,
       sessionId: scope.sessionId,
       turnId: scope.turnId,
       connectionId: scope.connectionId,
@@ -241,21 +241,21 @@ export class PostgresExecutionGrantAuthorityGate {
     const renewed = await sql<{ connectionId: string; validUntil: Date }>`
       with requested as (
         select * from jsonb_to_recordset(${JSON.stringify(requested)}::jsonb) as item(
-          "grantId" uuid,
-          "executionId" uuid,
-          generation bigint,
+          "leaseId" uuid,
+          "attemptId" uuid,
+          "fencingToken" bigint,
           "sessionId" uuid,
           "turnId" uuid,
           "connectionId" uuid,
           "instanceId" uuid
         )
       )
-      update execution_grants as authority
+      update session_leases as authority
          set fact_channel_valid_until = least(authority.valid_until, ${requestedUntil})
         from requested
-       where authority.grant_id = requested."grantId"
-         and authority.execution_id = requested."executionId"
-         and authority.generation = requested.generation
+       where authority.lease_id = requested."leaseId"
+         and authority.attempt_id = requested."attemptId"
+         and authority.fencing_token = requested."fencingToken"
          and authority.session_id = requested."sessionId"
          and authority.turn_id = requested."turnId"
          and authority.fact_channel_connection_id = requested."connectionId"
@@ -273,33 +273,33 @@ export class PostgresExecutionGrantAuthorityGate {
     );
   }
 
-  async close(scope: ExecutionGrantAuthorityScope): Promise<void> {
+  async close(scope: ExecutionLeaseAuthorityScope): Promise<void> {
     const updated = await this.#database
-      .updateTable("execution_grants")
+      .updateTable("session_leases")
       .set({
         fact_channel_connection_id: null,
         fact_channel_instance_id: null,
         fact_channel_valid_until: null,
       })
-      .where("grant_id", "=", scope.grantId)
-      .where("execution_id", "=", scope.executionId)
-      .where("generation", "=", String(scope.generation))
+      .where("lease_id", "=", scope.leaseId)
+      .where("attempt_id", "=", scope.attemptId)
+      .where("fencing_token", "=", String(scope.fencingToken))
       .where("fact_channel_connection_id", "=", scope.connectionId)
       .where("fact_channel_instance_id", "=", scope.instanceId)
       .executeTakeFirst();
     if (updated.numUpdatedRows !== 1n) {
       const current = await this.#database
-        .selectFrom("execution_grants")
+        .selectFrom("session_leases")
         .select("fact_channel_connection_id")
-        .where("grant_id", "=", scope.grantId)
-        .where("execution_id", "=", scope.executionId)
-        .where("generation", "=", String(scope.generation))
+        .where("lease_id", "=", scope.leaseId)
+        .where("attempt_id", "=", scope.attemptId)
+        .where("fencing_token", "=", String(scope.fencingToken))
         .executeTakeFirst();
       if (current !== undefined && current.fact_channel_connection_id === null) {
         return;
       }
-      throw new ExecutionGrantAuthorityGateError(
-        "stale_execution_grant",
+      throw new ExecutionLeaseAuthorityGateError(
+        "stale_session_lease",
         "FactChannel could not close stale ownership",
         false,
       );

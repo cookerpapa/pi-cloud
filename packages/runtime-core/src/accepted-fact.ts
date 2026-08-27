@@ -9,7 +9,7 @@ export type CandidatePiSessionMutationFact = Readonly<{
     sessionId: string;
     turnId: string;
     runId: string;
-    executionGrant: string;
+    executionLease: string;
   }>;
   operation: PiSessionMutationOperation;
   occurredAt: string;
@@ -24,8 +24,8 @@ export type AcceptedFactScope = Readonly<{
   sessionId: string;
   runId: string;
   turnId: string;
-  executionId: string;
-  executionGeneration: number;
+  attemptId: string;
+  fencingToken: number;
 }>;
 
 export type AcceptedAgentEventFact = Readonly<{
@@ -71,9 +71,9 @@ export interface AcceptedFactBus {
 }
 
 export type AcceptedAgentEventProgress = Readonly<{
-  grantId: string;
-  executionId: string;
-  executionGeneration: number;
+  leaseId: string;
+  attemptId: string;
+  fencingToken: number;
   channelConnectionId: string;
   channelInstanceId: string;
   acknowledgedThroughSeq: number;
@@ -110,6 +110,6 @@ export interface PiSessionMutationFactChannel {
 }
 
 export interface ActiveFactChannelResolver {
-  resolve(executionGrant: string): PiSessionMutationFactChannel | undefined;
+  resolve(executionLease: string): PiSessionMutationFactChannel | undefined;
   checkHealth(): Promise<void>;
 }
