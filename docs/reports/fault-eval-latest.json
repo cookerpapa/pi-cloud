@@ -1,122 +1,122 @@
 {
   "format": "pi-cloud.fault-eval-report.v1",
-  "piCloudRevision": "f22e1344f5e30a0f275effb7827316a06fde2774",
-  "generatedAt": "2026-08-25T10:16:08.929Z",
+  "piCloudRevision": "69c7bcaf4ac06eac6802a7f4c447ea8659919e30",
+  "generatedAt": "2026-08-27T03:47:55.606Z",
   "methodology": "deterministic_targeted_fault_injection",
   "liveChaosExperiment": false,
   "caseCount": 18,
   "successful": 18,
   "successRate": 1,
-  "p50DurationMs": 8520,
-  "p95DurationMs": 9553,
+  "p50DurationMs": 11186,
+  "p95DurationMs": 14689,
   "results": [
     {
       "id": "duplicate-command",
       "success": true,
       "invariant": "At-least-once delivery does not execute the same command twice.",
-      "durationMs": 3378
+      "durationMs": 5883
     },
     {
-      "id": "stale-execution-grant",
+      "id": "stale-execution-lease",
       "success": true,
-      "invariant": "A released or recovered old Worker cannot reuse an obsolete ExecutionGrant.",
-      "durationMs": 3987
+      "invariant": "A released or recovered old Worker cannot reuse an obsolete ExecutionLease.",
+      "durationMs": 5339
     },
     {
-      "id": "stale-jetstream-event-authority",
+      "id": "stale-accepted-log-authority",
       "success": true,
-      "invariant": "A stale Worker cannot cross the transaction-scoped ExecutionGrant boundary into browser-visible JetStream events.",
-      "durationMs": 8795
+      "invariant": "A stale Worker cannot cross the PostgreSQL ExecutionLease boundary into either Kafka AcceptedFact log.",
+      "durationMs": 11616
     },
     {
       "id": "session-mutation-redelivery",
       "success": true,
       "invariant": "At-least-once Session mutation delivery creates one canonical PostgreSQL effect.",
-      "durationMs": 6366
+      "durationMs": 8530
     },
     {
       "id": "session-projection-barrier-before-read",
       "success": true,
-      "invariant": "A replacement Worker crosses the Session-keyed projection barrier and rechecks its ExecutionGrant before reading PostgreSQL.",
-      "durationMs": 1572
+      "invariant": "A replacement Worker crosses the Session-keyed projection barrier and rechecks its ExecutionLease before reading PostgreSQL.",
+      "durationMs": 1991
     },
     {
       "id": "message-stream-independence",
       "success": true,
       "invariant": "A streaming-path failure cannot roll back a complete Pi message already committed to SessionStorage.",
-      "durationMs": 6501
+      "durationMs": 8589
     },
     {
       "id": "interrupted-visible-prefix",
       "success": true,
       "invariant": "A browser-visible failed prefix remains model-visible after Worker replacement.",
-      "durationMs": 6553
+      "durationMs": 8524
     },
     {
       "id": "terminal-stream-independence",
       "success": true,
       "invariant": "A successful Run terminal commit does not reconstruct a complete message from the short-lived delta tail.",
-      "durationMs": 9012
+      "durationMs": 11607
     },
     {
       "id": "accepted-projection-ahead-of-worker-ack",
       "success": true,
-      "invariant": "A JetStream event watermark already ahead of the Worker ACK cannot strand terminal Run settlement.",
-      "durationMs": 9553
+      "invariant": "A Kafka AcceptedFact watermark already ahead of the Worker ACK cannot strand terminal Run settlement.",
+      "durationMs": 11646
     },
     {
       "id": "control-plane-process-sigkill",
       "success": true,
-      "invariant": "A Control Plane process replacement does not revoke a healthy Agent Loop's ExecutionGrant.",
-      "durationMs": 4038
+      "invariant": "A Control Plane process replacement does not revoke a healthy Agent Loop's ExecutionLease.",
+      "durationMs": 5387
     },
     {
       "id": "control-channel-expiry-with-live-run",
       "success": true,
       "invariant": "A stale Control Channel cannot retire a Worker whose active RunAttempt still has fresh database authority.",
-      "durationMs": 8608
+      "durationMs": 11186
     },
     {
       "id": "dead-worker-management-unavailable",
       "success": true,
-      "invariant": "After connection and ExecutionGrant expiry, a dead management endpoint cannot strand the interrupted Run or Session.",
-      "durationMs": 8610
+      "invariant": "After connection and ExecutionLease expiry, a dead management endpoint cannot strand the interrupted Run or Session.",
+      "durationMs": 11814
     },
     {
       "id": "assignment-loss-releases-model-reservation",
       "success": true,
       "invariant": "Worker loss settles its model reservation so the replacement Run does not wait for quota TTL.",
-      "durationMs": 8520
+      "durationMs": 12761
     },
     {
       "id": "terminal-tool-activation-before-next-writer",
       "success": true,
-      "invariant": "A replacement writer can retire a failed activation, while a revoked ExecutionGrant cannot start another Tool operation.",
-      "durationMs": 8036
+      "invariant": "A replacement writer can retire a failed activation, while a revoked ExecutionLease cannot start another Tool operation.",
+      "durationMs": 10105
     },
     {
       "id": "checkpoint-corruption-and-cas",
       "success": true,
-      "invariant": "Checkpoint integrity and compare-and-swap generation checks survive cold recovery.",
-      "durationMs": 9141
+      "invariant": "Checkpoint integrity and compare-and-swap fencing token checks survive cold recovery.",
+      "durationMs": 14264
     },
     {
       "id": "cancel-complete-race",
       "success": true,
       "invariant": "Exactly one terminal Run outcome wins a cancel/complete race.",
-      "durationMs": 9193
+      "durationMs": 12672
     },
     {
       "id": "stale-dispatch-claim",
       "success": true,
       "invariant": "A superseded dispatcher cannot start external work.",
-      "durationMs": 9196
+      "durationMs": 12985
     },
     {
       "id": "orphan-runtime-cleanup",
       "success": true,
       "invariant": "Expired ownership is reconciled only after the orphan runtime is terminated.",
-      "durationMs": 8758
+      "durationMs": 14689
     }
   ]
 }

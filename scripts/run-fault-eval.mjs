@@ -39,7 +39,17 @@ function executeCase(faultCase) {
       .join("|");
     const child = spawn(
       "npm",
-      ["run", "test", "--workspace", faultCase.workspace, "--", faultCase.file, "-t", testPattern],
+      [
+        "run",
+        "test",
+        "--workspace",
+        faultCase.workspace,
+        "--",
+        faultCase.file,
+        "-t",
+        testPattern,
+        "--reporter=verbose",
+      ],
       {
         cwd: repositoryRoot,
         env: { ...process.env, FORCE_COLOR: "0" },
@@ -63,7 +73,8 @@ function executeCase(faultCase) {
       });
     });
     child.once("exit", (code, signal) => {
-      const success = code === 0;
+      const targetExecuted = output.includes(`> ${faultCase.test}`);
+      const success = code === 0 && targetExecuted;
       resolvePromise({
         id: faultCase.id,
         success,
@@ -72,7 +83,9 @@ function executeCase(faultCase) {
         ...(success
           ? {}
           : {
-              failure: `exit=${String(code)}, signal=${String(signal)}`,
+              failure: targetExecuted
+                ? `exit=${String(code)}, signal=${String(signal)}`
+                : `target test was not executed: ${faultCase.test}`,
               outputTail: output.trim().slice(-4_000),
             }),
       });

@@ -13,16 +13,16 @@
       "id": "stale-execution-lease",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/agent-run-supervisor.test.ts",
-      "test": "retains the high-water generation after a pre-start release",
+      "test": "retains the high-water fencing token after a pre-start release",
       "invariant": "A released or recovered old Worker cannot reuse an obsolete ExecutionLease."
     },
     {
       "id": "stale-accepted-log-authority",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/control-plane-api.test.ts",
-      "test": "rejects Agent events and Pi Session mutations after their ExecutionLease is revoked",
+      "test": "emits lease-free accepted facts and rejects a revoked channel",
       "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "A stale Worker cannot cross the PostgreSQL ExecutionLease boundary into either accepted JetStream log."
+      "invariant": "A stale Worker cannot cross the PostgreSQL ExecutionLease boundary into either Kafka AcceptedFact log."
     },
     {
       "id": "session-mutation-redelivery",
@@ -67,9 +67,9 @@
       "id": "accepted-projection-ahead-of-worker-ack",
       "workspace": "@pi-cloud/control-plane",
       "file": "test/control-plane-api.test.ts",
-      "test": "accepts an already-ahead JetStream projection boundary during Run settlement",
+      "test": "accepts an already-ahead Kafka projection boundary during Run settlement",
       "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "A JetStream event watermark already ahead of the Worker ACK cannot strand terminal Run settlement."
+      "invariant": "A Kafka AcceptedFact watermark already ahead of the Worker ACK cannot strand terminal Run settlement."
     },
     {
       "id": "control-plane-process-sigkill",
@@ -112,7 +112,7 @@
       "workspace": "@pi-cloud/control-plane",
       "file": "test/checkpoint-store.test.ts",
       "test": "commits artifacts under an ExecutionLease, cold-loads them, and rejects stale or corrupt state",
-      "invariant": "Checkpoint integrity and compare-and-swap generation checks survive cold recovery."
+      "invariant": "Checkpoint integrity and compare-and-swap fencing token checks survive cold recovery."
     },
     {
       "id": "cancel-complete-race",

@@ -539,7 +539,7 @@ describe.sequential("single-user durable turn intake API", () => {
     expect(piSession).toEqual({ next_seq: "1", lane: "main", leaf_id: null });
   });
 
-  it("emits grant-free accepted facts and rejects a revoked channel", async () => {
+  it("emits lease-free accepted facts and rejects a revoked channel", async () => {
     const assigned = await createAssignedTurn({
       sandboxId: "50000000-0000-4000-8000-000000000019",
       sandboxBootId: "60000000-0000-4000-8000-000000000019",

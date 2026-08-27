@@ -188,7 +188,7 @@ describe("AgentRunSupervisor", () => {
     });
   });
 
-  it("retains the high-water generation after a pre-start release", () => {
+  it("retains the high-water fencing token after a pre-start release", () => {
     const runner = new RecordingRunner();
     const supervisor = new AgentRunSupervisor({ runner });
     const current = supervisor.prepare(
