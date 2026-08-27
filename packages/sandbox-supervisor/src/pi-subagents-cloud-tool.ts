@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -77,33 +77,37 @@ async function loadContract(): Promise<Contract> {
     const packageSpecifier: string = "pi-subagents";
     const imported = (await import(packageSpecifier)) as { default: ExtensionFactory };
     const agentDir = await mkdtemp(resolve(tmpdir(), "pi-cloud-subagents-contract-"));
-    const loader = new DefaultResourceLoader({
-      cwd: agentDir,
-      agentDir,
-      eventBus: createEventBus(),
-      extensionFactories: [{ name: "pi-subagents", factory: imported.default }],
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-      noContextFiles: true,
-    });
-    await loader.reload();
-    const errors = loader.getExtensions().errors;
-    if (errors.length > 0) {
-      throw new Error(`pi-subagents contract failed to load: ${errors[0]!.error}`);
+    try {
+      const loader = new DefaultResourceLoader({
+        cwd: agentDir,
+        agentDir,
+        eventBus: createEventBus(),
+        extensionFactories: [{ name: "pi-subagents", factory: imported.default }],
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        noContextFiles: true,
+      });
+      await loader.reload();
+      const errors = loader.getExtensions().errors;
+      if (errors.length > 0) {
+        throw new Error(`pi-subagents contract failed to load: ${errors[0]!.error}`);
+      }
+      const registered = loader
+        .getExtensions()
+        .extensions.flatMap((extension) => [...extension.tools.values()])
+        .find((tool) => tool.definition.name === "subagent");
+      if (registered === undefined) throw new Error("pi-subagents did not register its Tool");
+      const definition = registered.definition;
+      return {
+        name: definition.name,
+        label: definition.label,
+        description: definition.description,
+        parameters: definition.parameters,
+      };
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
     }
-    const registered = loader
-      .getExtensions()
-      .extensions.flatMap((extension) => [...extension.tools.values()])
-      .find((tool) => tool.definition.name === "subagent");
-    if (registered === undefined) throw new Error("pi-subagents did not register its Tool");
-    const definition = registered.definition;
-    return {
-      name: definition.name,
-      label: definition.label,
-      description: definition.description,
-      parameters: definition.parameters,
-    };
   })();
   return contractPromise;
 }
