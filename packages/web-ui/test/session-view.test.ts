@@ -485,6 +485,37 @@ describe("session transcript reducer", () => {
     });
   });
 
+  it("does not let Run polling terminate an active SSE transcript", () => {
+    let state = preparedState();
+    state = sessionViewReducer(state, {
+      type: "stream.event",
+      event: envelope(1, { type: "turn.started", payload: { inputKind: "prompt" } }),
+    });
+    state = sessionViewReducer(state, {
+      type: "stream.event",
+      event: envelope(2, { type: "assistant.text.delta", payload: { text: "still streaming" } }),
+    });
+
+    state = sessionViewReducer(state, {
+      type: "run.reconciled",
+      run: {
+        runId: accepted.runId,
+        state: "completed",
+        stopReason: "stop",
+      },
+    });
+    expect(state.turns[0]).toMatchObject({
+      status: "running",
+      items: [expect.objectContaining({ kind: "text", text: "still streaming" })],
+    });
+
+    state = sessionViewReducer(state, {
+      type: "stream.event",
+      event: envelope(3, { type: "turn.completed", payload: { stopReason: "stop" } }),
+    });
+    expect(state.turns[0]).toMatchObject({ status: "completed", terminalSequence: 3 });
+  });
+
   it("renders Gateway-ordered events without keeping a browser cursor", () => {
     const state = sessionViewReducer(preparedState(), {
       type: "stream.event",

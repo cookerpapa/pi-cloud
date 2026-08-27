@@ -534,6 +534,11 @@ export function sessionViewReducer(
         return turn;
       }
       if (action.run.state === "completed") {
+        // Once the durable event stream has started this Turn, its ordered
+        // terminal event is the only authority allowed to end presentation.
+        // Completing from the polling fallback would set streaming=false and
+        // flush the remaining progressive text before SSE reaches the browser.
+        if (turn.startedSequence !== null) return turn;
         return {
           ...turn,
           status: "completed",

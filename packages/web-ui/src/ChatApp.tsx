@@ -468,8 +468,9 @@ export default function ChatApp() {
   ]);
 
   // A Run can fail before the trusted Runner publishes its first session
-  // event (for example during Sandbox provisioning). The durable Run record is
-  // therefore the terminal-state fallback for the streaming transcript.
+  // event (for example during Sandbox provisioning). Polling is only a
+  // terminal-state fallback for that pre-stream interval; an active SSE Turn
+  // remains owned by its ordered terminal event.
   useEffect(() => {
     const runId = currentTurn?.runId;
     if (runId === null || runId === undefined || authPhase !== "authenticated") return;
@@ -488,20 +489,6 @@ export default function ChatApp() {
           run.state === "superseded"
         ) {
           setInspectorRefreshSignal((value) => value + 1);
-          if (state.session !== null) {
-            const loaded = await loadConversation(state.session.sessionId).catch(() => null);
-            if (!cancelled && loaded !== null) {
-              update({
-                type: "conversation.loaded",
-                conversation: loaded.conversation,
-              });
-              update({
-                type: "project.environment.refreshed",
-                environment: loaded.conversation.project.environment,
-              });
-              setReconnectGeneration((value) => value + 1);
-            }
-          }
           await refreshConversations().catch(() => undefined);
           return;
         }
@@ -519,9 +506,7 @@ export default function ChatApp() {
     api,
     authPhase,
     currentTurn?.runId,
-    loadConversation,
     refreshConversations,
-    state.session,
     update,
   ]);
 
