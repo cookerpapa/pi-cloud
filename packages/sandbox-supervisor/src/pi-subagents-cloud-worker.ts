@@ -428,14 +428,20 @@ async function startShimBridge(socketPath: string): Promise<Server> {
       activeCloudWaits.add(cloudWait);
       void cloudWait
         .then((result) => socket.end(`${JSON.stringify(result)}\n`))
-        .catch((error: unknown) =>
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          failedCloudResults.set(`bridge-${randomUUID()}`, {
+            stepIndex: 0,
+            state: "failed",
+            message,
+          });
           socket.end(
             `${JSON.stringify({
               state: "failed",
-              failureMessage: error instanceof Error ? error.message : String(error),
+              failureMessage: message,
             })}\n`,
-          ),
-        )
+          );
+        })
         .finally(() => activeCloudWaits.delete(cloudWait));
     });
   });
