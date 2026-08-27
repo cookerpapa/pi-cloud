@@ -77,6 +77,15 @@ capability and Tool set from the accepted Run. Process-wide registries contain
 trusted definitions only and never imply that every Agent runtime can see or
 execute every definition.
 
+Before a Worker becomes Ready it preloads the governed `pi-subagents` Tool
+contract and two empty Pi `ModelRuntime` slots. An active Run exclusively owns
+one slot and injects its short-lived Model Gateway capability only after
+checkout; concurrent Runs never share a mutable runtime. The slot returns to
+the Worker-local pool after settlement, while additional slots are created
+lazily if configured Worker concurrency exceeds the prewarmed capacity. This
+moves module/provider initialization out of user-visible first-token latency
+without making Session affinity part of correctness.
+
 Pi 0.84's official `SessionStorage` interface is implemented by
 `@pi-cloud/pi-session-postgres`. It stores Pi entries, lanes, records, labels
 and the append log in PostgreSQL, and bounds an active branch at Pi compaction.

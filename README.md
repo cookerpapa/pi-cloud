@@ -14,6 +14,7 @@ shell operations run in CubeSandbox KVM microVMs.
 - elastic Sandboxes or user-owned full-VM Cube environments with root SSH/terminal access;
 - snapshot-first SSE whose visible bytes were acknowledged by Kafka first;
 - horizontally replaceable Pi Workers and Kubernetes/KEDA deployment support.
+- Worker-ready prewarming for isolated Pi model-runtime slots and the governed Subagent contract.
 
 PiCloud targets private or controlled enterprise deployments. It is not a
 hostile public-SaaS security or abuse-management product.
