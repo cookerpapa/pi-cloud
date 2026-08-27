@@ -530,7 +530,9 @@ It first crosses the Session mutation projection barrier, rechecks its newer
 fence, then Pi reconstructs the active model context and respects its native
 compaction boundary. If the previous Cube is still warm it is rebound under a newer fence;
 otherwise a new KVM mounts the same persistent Volume. Process state is not
-claimed as durable.
+claimed as durable. Cube has no competing absolute lifetime: Broker idle TTL is
+the sole elastic-compute expiry policy, so continuously active Sessions are not
+terminated because their VM crosses one Turn's timeout.
 
 ## Failure rules
 

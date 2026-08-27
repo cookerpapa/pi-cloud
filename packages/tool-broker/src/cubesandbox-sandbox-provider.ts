@@ -942,10 +942,10 @@ export class CubeSandboxProvider implements SandboxProvider {
           spec.sandboxProfileKey !== undefined
             ? this.#developmentTemplateIds.get(spec.sandboxProfileKey)!
             : this.#templateId,
-        timeoutSeconds:
-          spec.lifetime === "development_environment"
-            ? -1
-            : Math.ceil(spec.policy.resources.turnWallClockTimeoutMs / 1_000),
+        // Tool Broker owns both elastic idle expiry and exclusive machine
+        // lifecycle. A second absolute Cube timer would kill a continuously
+        // active multi-Turn Session even though its Broker lease is healthy.
+        timeoutSeconds: -1,
         metadata: assignmentMetadata(
           spec.activationId,
           spec.assignment,

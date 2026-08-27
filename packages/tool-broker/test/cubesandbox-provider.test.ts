@@ -586,6 +586,7 @@ describe("CubeSandbox Provider contract", () => {
       operation(reserved.activationId),
     );
     expect(response).toMatchObject({ operation: "bash.exec", exitCode: 0 });
+    expect(runtime.creates[0]?.timeoutSeconds).toBe(-1);
     expect(workspaceVolumeGateway.initializeBaseline).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: assignment.tenantId,

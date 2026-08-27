@@ -1,8 +1,8 @@
 {
   "accepted": true,
-  "piCloudRevision": "10807f5ef94a0fddc74508d0472a3f96121ecac8",
-  "checkedAt": "2026-08-26T14:24:45.426Z",
-  "account": "browser.acceptance.mta6pe33",
+  "piCloudRevision": "a7513c9f54b196d473fd50bd7a99adfea6db4b46",
+  "checkedAt": "2026-08-27T09:09:41.762Z",
+  "account": "browser.acceptance.mtbawali",
   "clickedControls": [
     "auth.registerTab",
     "auth.loginTab",

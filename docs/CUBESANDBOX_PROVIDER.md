@@ -58,6 +58,13 @@ never a conversation or Workspace durability dependency. User-owned development
 machines use the separate pause/resume/release lifecycle and never enter the
 elastic warm pool.
 
+Cube's absolute timeout is disabled for every Broker-managed activation. The
+Broker is the sole lifecycle authority: an active multi-Turn Session is never
+killed merely because its VM is old, while an idle elastic activation is
+destroyed after `PI_CLOUD_SANDBOX_WARM_TTL_MS`. Broker restart reconciliation
+recovers or retires recorded activations instead of depending on a competing VM
+timer.
+
 ## Tool and terminal channels
 
 Agent file and shell Tools use Cube's private envd data plane. The Web Terminal
