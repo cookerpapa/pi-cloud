@@ -51,6 +51,7 @@ export type PiCloudTurnRunnerOptions = Readonly<{
     model: ExecuteTurnCommandMessage["payload"]["model"],
   ) => Promise<PiModelRuntimeConfig> | PiModelRuntimeConfig;
   openSession: (command: ExecuteTurnCommandMessage) => Promise<PiCloudSessionHandle>;
+  modelRuntimePool?: PiModelRuntimePool;
   createAgentTools: (context: {
     session: Session;
     toolOutputDirectory: string;
@@ -150,6 +151,12 @@ async function createModelRuntime(config: PiModelRuntimeConfig): Promise<ModelRu
     modelsPath: null,
     allowModelNetwork: false,
   });
+  configureModelRuntime(runtime, config);
+  await runtime.setRuntimeApiKey(config.provider, config.apiKey);
+  return runtime;
+}
+
+function configureModelRuntime(runtime: ModelRuntime, config: PiModelRuntimeConfig): void {
   runtime.registerProvider(config.provider, {
     name: config.provider,
     baseUrl: config.baseUrl,
@@ -186,8 +193,86 @@ async function createModelRuntime(config: PiModelRuntimeConfig): Promise<ModelRu
       },
     ],
   });
-  await runtime.setRuntimeApiKey(config.provider, config.apiKey);
-  return runtime;
+}
+
+function modelRuntimeSignature(config: PiModelRuntimeConfig): string {
+  return JSON.stringify({
+    provider: config.provider,
+    modelId: config.modelId,
+    baseUrl: config.baseUrl,
+    api: config.api,
+    reasoning: config.reasoning ?? false,
+    contextWindow: config.contextWindow ?? 16_384,
+    maxTokens: config.maxTokens ?? 1_024,
+  });
+}
+
+type PooledModelRuntime = {
+  runtime: ModelRuntime;
+  signature?: string;
+  inUse: boolean;
+};
+
+export type PiModelRuntimeLease = Readonly<{
+  runtime: ModelRuntime;
+  release(): void;
+}>;
+
+/** Worker-local pool; one mutable ModelRuntime belongs to at most one active Run. */
+export class PiModelRuntimePool {
+  readonly #slots: PooledModelRuntime[] = [];
+  readonly #prewarming: Promise<void>;
+
+  constructor(prewarmSlots = 2) {
+    if (!Number.isSafeInteger(prewarmSlots) || prewarmSlots < 0 || prewarmSlots > 64) {
+      throw new TypeError("ModelRuntime prewarm slot count is invalid");
+    }
+    this.#prewarming = Promise.all(
+      Array.from({ length: prewarmSlots }, () =>
+        ModelRuntime.create({ modelsPath: null, allowModelNetwork: false }).catch(() => undefined),
+      ),
+    ).then((runtimes) => {
+      for (const runtime of runtimes) {
+        if (runtime !== undefined) this.#slots.push({ runtime, inUse: false });
+      }
+    });
+  }
+
+  async acquire(config: PiModelRuntimeConfig): Promise<PiModelRuntimeLease> {
+    await this.#prewarming;
+    const signature = modelRuntimeSignature(config);
+    let slot = this.#slots.find(
+      (candidate) => !candidate.inUse && candidate.signature === signature,
+    );
+    slot ??= this.#slots.find((candidate) => !candidate.inUse && candidate.signature === undefined);
+    if (slot === undefined) {
+      slot = {
+        runtime: await ModelRuntime.create({ modelsPath: null, allowModelNetwork: false }),
+        inUse: false,
+      };
+      this.#slots.push(slot);
+    }
+    slot.inUse = true;
+    try {
+      if (slot.signature === undefined) {
+        configureModelRuntime(slot.runtime, config);
+        slot.signature = signature;
+      }
+      await slot.runtime.setRuntimeApiKey(config.provider, config.apiKey);
+    } catch (error: unknown) {
+      slot.inUse = false;
+      throw error;
+    }
+    let released = false;
+    return {
+      runtime: slot.runtime,
+      release: () => {
+        if (released) return;
+        released = true;
+        slot!.inUse = false;
+      },
+    };
+  }
 }
 
 function cancellationSignal(value: unknown): PiCancellationSignal {
@@ -287,353 +372,364 @@ export class PiCloudTurnRunner {
       command,
       await this.#options.resolveModelRuntime(command.payload.model),
     );
-    const modelRuntime = await createModelRuntime(config);
-    const model = modelRuntime.getModel(config.provider, config.modelId);
-    if (model === undefined)
-      throw new PiTurnError("invalid_model_runtime", "Configured model is unavailable", false);
-    const sessionHandle = await this.#options.openSession(command);
-    let toolOutputDirectoryForCleanup: string | undefined;
-
+    const modelRuntimeLease =
+      this.#options.modelRuntimePool === undefined
+        ? { runtime: await createModelRuntime(config), release: () => undefined }
+        : await this.#options.modelRuntimePool.acquire(config);
     try {
-      const toolOutputDirectory = await mkdtemp(resolve(tmpdir(), "pi-cloud-tool-output-"));
-      toolOutputDirectoryForCleanup = toolOutputDirectory;
-      const eventFactory = createPiCloudEventFactory(
-        {
-          sessionId: command.payload.sessionId,
-          turnId: command.payload.turnId,
-          agentId: command.payload.agentId,
-        },
-        {
-          initialSequence: command.payload.nextEventSeq - 1,
-          clock: this.#clock,
-          idGenerator: this.#id,
-        },
-      );
-      const adapter = new PiAgentEventAdapter(eventFactory, {
-        inputKind: "prompt",
-        requireSamplingIdentity: true,
-        ...(command.payload.budgets === undefined
-          ? {}
-          : { maximumToolOutputBytes: command.payload.budgets.maximumToolOutputBytes }),
-      });
-      const worldState = await PiSessionWorldStateController.create(
-        sessionHandle.session,
-        this.#options.sandboxContinuity,
-      );
-      // Persist execution-world changes before the accepted user prompt is
-      // appended so later context preserves the causal boundary.
-      await worldState.capture();
-      const samplingSteps = new PiSamplingStepController();
-      let toolStarted = false;
-      let eventChain = Promise.resolve();
-      let pendingPublicEvents = 0;
-      let fatalError: Error | undefined;
-
-      const eventMessage = (event: PiCloudEvent): EventPublishMessage => {
-        const parsed = parseSupervisorToControlMessage({
-          protocolVersion: 1,
-          messageId: this.#id(),
-          sentAt: validDate(this.#clock).toISOString(),
-          type: "event.publish",
-          payload: {
-            executionLease: command.payload.executionLease,
-            event,
-          },
-        });
-        if (parsed.type !== "event.publish")
-          throw new PiTurnError("pi_protocol_error", "Pi event envelope was invalid", false);
-        return parsed;
-      };
-
-      const publishMapped = async (
-        source: unknown,
-      ): Promise<ReturnType<PiAgentEventAdapter["adapt"]>> => {
-        const outcome = adapter.adapt(source);
-        if (outcome.kind === "invalid")
-          throw new PiTurnError("pi_protocol_error", outcome.reason, false);
-        if (outcome.kind === "mapped" && outcome.event.type === "model.sampling.retry.scheduled") {
-          await sessionHandle.session.appendCustomEntry(PI_MODEL_RETRY_CUSTOM_TYPE, {
-            nextSamplingAttempt: outcome.event.payload.nextSamplingAttempt,
-            maximumSamplingAttempts: outcome.event.payload.maximumSamplingAttempts,
-            delayMs: outcome.event.payload.delayMs,
-          });
-        }
-        if (outcome.kind === "mapped" && isRecord(source) && source.type === "auto_retry_start") {
-          samplingSteps.scheduleRetry(source.attempt as number);
-        } else if (
-          isRecord(source) &&
-          source.type === "auto_retry_end" &&
-          source.success === false
-        ) {
-          samplingSteps.cancelScheduledRetry();
-        }
-        if (outcome.kind === "mapped") {
-          let publicEvent = outcome.event;
-          if (publicEvent.type === "tool.started") toolStarted = true;
-          if (
-            publicEvent.type === "tool.completed" &&
-            this.#options.persistToolOutputArtifact !== undefined
-          ) {
-            const artifactPath = resolve(
-              toolOutputDirectory,
-              `${createHash("sha256").update(publicEvent.payload.toolCallId, "utf8").digest("hex")}.output`,
-            );
-            const metadata = await lstat(artifactPath).catch((error: unknown) =>
-              isRecord(error) && error.code === "ENOENT" ? undefined : Promise.reject(error),
-            );
-            if (metadata !== undefined) {
-              if (
-                !metadata.isFile() ||
-                metadata.isSymbolicLink() ||
-                metadata.size > MAX_TOOL_OUTPUT_BYTES
-              ) {
-                throw new PiTurnError(
-                  "tool_output_artifact_invalid",
-                  "Trusted Tool output artifact was invalid",
-                  false,
-                );
-              }
-              const artifact = await this.#options.persistToolOutputArtifact({
-                toolCallId: publicEvent.payload.toolCallId,
-                bytes: await readFile(artifactPath),
-              });
-              publicEvent = {
-                ...publicEvent,
-                payload: { ...publicEvent.payload, outputArtifact: artifact },
-              };
-            }
-          }
-          await publishEvent(eventMessage(publicEvent));
-        }
-        return outcome;
-      };
-
-      const enqueue = (event: CloudAgentRuntimeEvent): void => {
-        pendingPublicEvents += 1;
-        eventChain = eventChain
-          .then(async () => {
-            await publishMapped(this.#adapterEvent(event));
-          })
-          .catch((error: unknown) => {
-            fatalError ??= error instanceof Error ? error : new Error(String(error));
-          })
-          .finally(() => {
-            pendingPublicEvents -= 1;
-          });
-      };
-      let textBlockActive = false;
-      let pendingText:
-        { event: CloudAgentRuntimeEvent; delta: string; contentIndex?: number } | undefined;
-      let textFlushTimer: NodeJS.Timeout | undefined;
-      const flushPendingText = (): void => {
-        if (textFlushTimer !== undefined) clearTimeout(textFlushTimer);
-        textFlushTimer = undefined;
-        if (pendingText === undefined) return;
-        const buffered = pendingText;
-        pendingText = undefined;
-        enqueue(withStreamedTextDelta(buffered.event, buffered.delta));
-      };
-      const scheduleTextFlush = (): void => {
-        if (textFlushTimer !== undefined) return;
-        textFlushTimer = setTimeout(flushPendingText, TEXT_DELTA_AGGREGATION_MS);
-        textFlushTimer.unref();
-      };
-      const bufferText = (
-        event: CloudAgentRuntimeEvent,
-        delta: { delta: string; contentIndex?: number },
-      ): void => {
-        if (!textBlockActive) {
-          textBlockActive = true;
-          enqueue(event);
-          return;
-        }
-        if (
-          pendingText !== undefined &&
-          pendingText.contentIndex === delta.contentIndex &&
-          pendingText.delta.length + delta.delta.length <= MAXIMUM_AGGREGATED_TEXT_CHARACTERS
-        ) {
-          pendingText.delta += delta.delta;
-        } else {
-          flushPendingText();
-          pendingText = {
-            event,
-            delta: delta.delta,
-            ...(delta.contentIndex === undefined ? {} : { contentIndex: delta.contentIndex }),
-          };
-        }
-        if (pendingText.delta.length >= MAXIMUM_AGGREGATED_TEXT_CHARACTERS) flushPendingText();
-        else scheduleTextFlush();
-      };
-      const tools = this.#options.createAgentTools({
-        session: sessionHandle.session,
-        toolOutputDirectory,
-        stepWorldState: worldState,
-        captureSamplingStep: async (createFresh, captureOptions) => {
-          const captured = await samplingSteps.captureAsync(createFresh);
-          if (captureOptions?.publishEvent !== false) {
-            eventChain = eventChain.then(() =>
-              publishEvent(
-                eventMessage(
-                  adapter.samplingStarted({
-                    stepSequence: captured.step.context.sequence,
-                    stepSha256: captured.step.sha256,
-                    samplingAttempt: captured.samplingAttempt,
-                  }),
-                ),
-              ),
-            );
-            await eventChain;
-            if (fatalError !== undefined) throw fatalError;
-          }
-          return captured;
-        },
-      });
-      const runtime = new CloudAgentRuntime({
-        session: sessionHandle.session,
-        authority: sessionHandle.authority,
-        model,
-        models: modelRuntime,
-        systemPrompt: () => {
-          const alignment =
-            command.payload.input.kind === "prompt"
-              ? languageAlignmentInstruction(command.payload.input.text)
-              : undefined;
-          const platformPrompt =
-            alignment === undefined ? BASE_SYSTEM_PROMPT : `${alignment}\n${BASE_SYSTEM_PROMPT}`;
-          return tools.systemPrompt(
-            command.payload.agentSystemPrompt === undefined
-              ? platformPrompt
-              : `${platformPrompt}\n\n${command.payload.agentSystemPrompt}`,
-          );
-        },
-        tools: tools.tools,
-        thinkingLevel: command.payload.model.thinkingLevel,
-        streamOptions: {
-          timeoutMs: this.#requestTimeoutMs,
-          // The cloud runtime owns visible, governed retry attempts so each one
-          // receives a fresh sampling identity and model-request ledger row.
-          maxRetries: 0,
-          ...(config.maxTokens === undefined ? {} : { maxTokens: config.maxTokens }),
-        },
-        retry: { enabled: true, maxRetries: 2, baseDelayMs: 500 },
-        compaction: {
-          enabled: true,
-          reserveTokens: command.payload.budgets?.compactionReserveTokens ?? 16_384,
-          keepRecentTokens: command.payload.budgets?.compactionKeepRecentTokens ?? 20_000,
-        },
-        transformContext: (messages) => tools.transformContext(messages),
-        prepareContextMaintenance: async (messages) => {
-          await tools.transformContext(messages, "context_maintenance");
-        },
-        transformHeaders: (headers) =>
-          tools.transformHeaders(headers as ProviderHeaders) as Promise<
-            Record<string, string | null>
-          >,
-        entryProjectors: PI_WORLD_STATE_ENTRY_PROJECTORS,
-        compactionRetainedCustomTypes: Object.keys(PI_WORLD_STATE_ENTRY_PROJECTORS),
-        onEvent: async (event) => {
-          this.#options.observeEvent?.(event);
-          const textDelta = streamedTextDelta(event);
-          if (textDelta === undefined) {
-            flushPendingText();
-            textBlockActive = false;
-            enqueue(event);
-            await eventChain;
-          } else {
-            bufferText(event, textDelta);
-            if (pendingPublicEvents >= MAXIMUM_PENDING_PUBLIC_EVENTS) {
-              flushPendingText();
-              await eventChain;
-            }
-          }
-          if (fatalError !== undefined) throw fatalError;
-        },
-        ...(this.#options.prepareFollowUp === undefined
-          ? {}
-          : { prepareFollowUp: this.#options.prepareFollowUp }),
-        idGenerator: this.#id,
-      });
-      this.#activeRuntime = runtime;
-      for (const waiter of this.#steerWaiters) waiter.resolve(runtime);
-      this.#steerWaiters.clear();
-
-      const timeout = new AbortController();
-      const timer = setTimeout(
-        () =>
-          timeout.abort({
-            kind: "pi-cloud.turn-cancellation",
-            reason: "timeout",
-            gracePeriodMs: 0,
-          }),
-        this.#turnTimeoutMs,
-      );
-      timer.unref();
-      const combined =
-        signal === undefined ? timeout.signal : AbortSignal.any([signal, timeout.signal]);
-      const abort = (): void => {
-        const cancellation = cancellationSignal(combined.reason);
-        try {
-          adapter.requestCancellation(cancellation.reason);
-        } catch {
-          /* already settled */
-        }
-        runtime.abort();
-      };
-      combined.addEventListener("abort", abort, { once: true });
-      if (combined.aborted) abort();
+      const modelRuntime = modelRuntimeLease.runtime;
+      const model = modelRuntime.getModel(config.provider, config.modelId);
+      if (model === undefined)
+        throw new PiTurnError("invalid_model_runtime", "Configured model is unavailable", false);
+      const sessionHandle = await this.#options.openSession(command);
+      let toolOutputDirectoryForCleanup: string | undefined;
 
       try {
-        const result = await runtime.run(command.payload.input.text);
-        flushPendingText();
-        await eventChain;
-        if (fatalError !== undefined) throw fatalError;
-        if (result.kind === "completed") {
-          await sessionHandle.authority.assertCurrent();
-          await this.#options.onSettled?.(sessionHandle.session);
-          await sessionHandle.authority.assertCurrent();
-        } else {
-          if (toolStarted) await worldState.recordUnavailable().catch(() => undefined);
-        }
-        const settled = await publishMapped({ type: "agent_settled" });
-        if (settled.kind !== "settled")
-          throw new PiTurnError("pi_protocol_error", "Pi did not settle", false);
-        if (settled.result.status === "cancelled")
-          throw new PiTurnCancelledError(settled.result.reason, settled.result.forced);
-        if (settled.result.status === "failed")
-          throw new PiTurnError(
-            settled.result.code,
-            settled.result.message,
-            settled.result.retryable,
-          );
-        const workspacePatch = await this.#options.collectWorkspacePatch?.();
-        return {
-          stopReason: settled.result.stopReason,
-          ...(workspacePatch === undefined ? {} : { workspacePatch }),
+        const toolOutputDirectory = await mkdtemp(resolve(tmpdir(), "pi-cloud-tool-output-"));
+        toolOutputDirectoryForCleanup = toolOutputDirectory;
+        const eventFactory = createPiCloudEventFactory(
+          {
+            sessionId: command.payload.sessionId,
+            turnId: command.payload.turnId,
+            agentId: command.payload.agentId,
+          },
+          {
+            initialSequence: command.payload.nextEventSeq - 1,
+            clock: this.#clock,
+            idGenerator: this.#id,
+          },
+        );
+        const adapter = new PiAgentEventAdapter(eventFactory, {
+          inputKind: "prompt",
+          requireSamplingIdentity: true,
+          ...(command.payload.budgets === undefined
+            ? {}
+            : { maximumToolOutputBytes: command.payload.budgets.maximumToolOutputBytes }),
+        });
+        const worldState = await PiSessionWorldStateController.create(
+          sessionHandle.session,
+          this.#options.sandboxContinuity,
+        );
+        // Persist execution-world changes before the accepted user prompt is
+        // appended so later context preserves the causal boundary.
+        await worldState.capture();
+        const samplingSteps = new PiSamplingStepController();
+        let toolStarted = false;
+        let eventChain = Promise.resolve();
+        let pendingPublicEvents = 0;
+        let fatalError: Error | undefined;
+
+        const eventMessage = (event: PiCloudEvent): EventPublishMessage => {
+          const parsed = parseSupervisorToControlMessage({
+            protocolVersion: 1,
+            messageId: this.#id(),
+            sentAt: validDate(this.#clock).toISOString(),
+            type: "event.publish",
+            payload: {
+              executionLease: command.payload.executionLease,
+              event,
+            },
+          });
+          if (parsed.type !== "event.publish")
+            throw new PiTurnError("pi_protocol_error", "Pi event envelope was invalid", false);
+          return parsed;
         };
-      } catch (error: unknown) {
-        if (toolStarted) await worldState.recordUnavailable().catch(() => undefined);
-        throw error;
-      } finally {
-        clearTimeout(timer);
-        combined.removeEventListener("abort", abort);
-        flushPendingText();
-        await eventChain.catch(() => undefined);
-        this.#activeRuntime = undefined;
-        for (const waiter of this.#steerWaiters)
-          waiter.reject(
-            new PiTurnError(
-              "steer_target_unavailable",
-              "Pi Run ended before steer delivery",
-              false,
-            ),
-          );
+
+        const publishMapped = async (
+          source: unknown,
+        ): Promise<ReturnType<PiAgentEventAdapter["adapt"]>> => {
+          const outcome = adapter.adapt(source);
+          if (outcome.kind === "invalid")
+            throw new PiTurnError("pi_protocol_error", outcome.reason, false);
+          if (
+            outcome.kind === "mapped" &&
+            outcome.event.type === "model.sampling.retry.scheduled"
+          ) {
+            await sessionHandle.session.appendCustomEntry(PI_MODEL_RETRY_CUSTOM_TYPE, {
+              nextSamplingAttempt: outcome.event.payload.nextSamplingAttempt,
+              maximumSamplingAttempts: outcome.event.payload.maximumSamplingAttempts,
+              delayMs: outcome.event.payload.delayMs,
+            });
+          }
+          if (outcome.kind === "mapped" && isRecord(source) && source.type === "auto_retry_start") {
+            samplingSteps.scheduleRetry(source.attempt as number);
+          } else if (
+            isRecord(source) &&
+            source.type === "auto_retry_end" &&
+            source.success === false
+          ) {
+            samplingSteps.cancelScheduledRetry();
+          }
+          if (outcome.kind === "mapped") {
+            let publicEvent = outcome.event;
+            if (publicEvent.type === "tool.started") toolStarted = true;
+            if (
+              publicEvent.type === "tool.completed" &&
+              this.#options.persistToolOutputArtifact !== undefined
+            ) {
+              const artifactPath = resolve(
+                toolOutputDirectory,
+                `${createHash("sha256").update(publicEvent.payload.toolCallId, "utf8").digest("hex")}.output`,
+              );
+              const metadata = await lstat(artifactPath).catch((error: unknown) =>
+                isRecord(error) && error.code === "ENOENT" ? undefined : Promise.reject(error),
+              );
+              if (metadata !== undefined) {
+                if (
+                  !metadata.isFile() ||
+                  metadata.isSymbolicLink() ||
+                  metadata.size > MAX_TOOL_OUTPUT_BYTES
+                ) {
+                  throw new PiTurnError(
+                    "tool_output_artifact_invalid",
+                    "Trusted Tool output artifact was invalid",
+                    false,
+                  );
+                }
+                const artifact = await this.#options.persistToolOutputArtifact({
+                  toolCallId: publicEvent.payload.toolCallId,
+                  bytes: await readFile(artifactPath),
+                });
+                publicEvent = {
+                  ...publicEvent,
+                  payload: { ...publicEvent.payload, outputArtifact: artifact },
+                };
+              }
+            }
+            await publishEvent(eventMessage(publicEvent));
+          }
+          return outcome;
+        };
+
+        const enqueue = (event: CloudAgentRuntimeEvent): void => {
+          pendingPublicEvents += 1;
+          eventChain = eventChain
+            .then(async () => {
+              await publishMapped(this.#adapterEvent(event));
+            })
+            .catch((error: unknown) => {
+              fatalError ??= error instanceof Error ? error : new Error(String(error));
+            })
+            .finally(() => {
+              pendingPublicEvents -= 1;
+            });
+        };
+        let textBlockActive = false;
+        let pendingText:
+          { event: CloudAgentRuntimeEvent; delta: string; contentIndex?: number } | undefined;
+        let textFlushTimer: NodeJS.Timeout | undefined;
+        const flushPendingText = (): void => {
+          if (textFlushTimer !== undefined) clearTimeout(textFlushTimer);
+          textFlushTimer = undefined;
+          if (pendingText === undefined) return;
+          const buffered = pendingText;
+          pendingText = undefined;
+          enqueue(withStreamedTextDelta(buffered.event, buffered.delta));
+        };
+        const scheduleTextFlush = (): void => {
+          if (textFlushTimer !== undefined) return;
+          textFlushTimer = setTimeout(flushPendingText, TEXT_DELTA_AGGREGATION_MS);
+          textFlushTimer.unref();
+        };
+        const bufferText = (
+          event: CloudAgentRuntimeEvent,
+          delta: { delta: string; contentIndex?: number },
+        ): void => {
+          if (!textBlockActive) {
+            textBlockActive = true;
+            enqueue(event);
+            return;
+          }
+          if (
+            pendingText !== undefined &&
+            pendingText.contentIndex === delta.contentIndex &&
+            pendingText.delta.length + delta.delta.length <= MAXIMUM_AGGREGATED_TEXT_CHARACTERS
+          ) {
+            pendingText.delta += delta.delta;
+          } else {
+            flushPendingText();
+            pendingText = {
+              event,
+              delta: delta.delta,
+              ...(delta.contentIndex === undefined ? {} : { contentIndex: delta.contentIndex }),
+            };
+          }
+          if (pendingText.delta.length >= MAXIMUM_AGGREGATED_TEXT_CHARACTERS) flushPendingText();
+          else scheduleTextFlush();
+        };
+        const tools = this.#options.createAgentTools({
+          session: sessionHandle.session,
+          toolOutputDirectory,
+          stepWorldState: worldState,
+          captureSamplingStep: async (createFresh, captureOptions) => {
+            const captured = await samplingSteps.captureAsync(createFresh);
+            if (captureOptions?.publishEvent !== false) {
+              eventChain = eventChain.then(() =>
+                publishEvent(
+                  eventMessage(
+                    adapter.samplingStarted({
+                      stepSequence: captured.step.context.sequence,
+                      stepSha256: captured.step.sha256,
+                      samplingAttempt: captured.samplingAttempt,
+                    }),
+                  ),
+                ),
+              );
+              await eventChain;
+              if (fatalError !== undefined) throw fatalError;
+            }
+            return captured;
+          },
+        });
+        const runtime = new CloudAgentRuntime({
+          session: sessionHandle.session,
+          authority: sessionHandle.authority,
+          model,
+          models: modelRuntime,
+          systemPrompt: () => {
+            const alignment =
+              command.payload.input.kind === "prompt"
+                ? languageAlignmentInstruction(command.payload.input.text)
+                : undefined;
+            const platformPrompt =
+              alignment === undefined ? BASE_SYSTEM_PROMPT : `${alignment}\n${BASE_SYSTEM_PROMPT}`;
+            return tools.systemPrompt(
+              command.payload.agentSystemPrompt === undefined
+                ? platformPrompt
+                : `${platformPrompt}\n\n${command.payload.agentSystemPrompt}`,
+            );
+          },
+          tools: tools.tools,
+          thinkingLevel: command.payload.model.thinkingLevel,
+          streamOptions: {
+            timeoutMs: this.#requestTimeoutMs,
+            // The cloud runtime owns visible, governed retry attempts so each one
+            // receives a fresh sampling identity and model-request ledger row.
+            maxRetries: 0,
+            ...(config.maxTokens === undefined ? {} : { maxTokens: config.maxTokens }),
+          },
+          retry: { enabled: true, maxRetries: 2, baseDelayMs: 500 },
+          compaction: {
+            enabled: true,
+            reserveTokens: command.payload.budgets?.compactionReserveTokens ?? 16_384,
+            keepRecentTokens: command.payload.budgets?.compactionKeepRecentTokens ?? 20_000,
+          },
+          transformContext: (messages) => tools.transformContext(messages),
+          prepareContextMaintenance: async (messages) => {
+            await tools.transformContext(messages, "context_maintenance");
+          },
+          transformHeaders: (headers) =>
+            tools.transformHeaders(headers as ProviderHeaders) as Promise<
+              Record<string, string | null>
+            >,
+          entryProjectors: PI_WORLD_STATE_ENTRY_PROJECTORS,
+          compactionRetainedCustomTypes: Object.keys(PI_WORLD_STATE_ENTRY_PROJECTORS),
+          onEvent: async (event) => {
+            this.#options.observeEvent?.(event);
+            const textDelta = streamedTextDelta(event);
+            if (textDelta === undefined) {
+              flushPendingText();
+              textBlockActive = false;
+              enqueue(event);
+              await eventChain;
+            } else {
+              bufferText(event, textDelta);
+              if (pendingPublicEvents >= MAXIMUM_PENDING_PUBLIC_EVENTS) {
+                flushPendingText();
+                await eventChain;
+              }
+            }
+            if (fatalError !== undefined) throw fatalError;
+          },
+          ...(this.#options.prepareFollowUp === undefined
+            ? {}
+            : { prepareFollowUp: this.#options.prepareFollowUp }),
+          idGenerator: this.#id,
+        });
+        this.#activeRuntime = runtime;
+        for (const waiter of this.#steerWaiters) waiter.resolve(runtime);
         this.#steerWaiters.clear();
+
+        const timeout = new AbortController();
+        const timer = setTimeout(
+          () =>
+            timeout.abort({
+              kind: "pi-cloud.turn-cancellation",
+              reason: "timeout",
+              gracePeriodMs: 0,
+            }),
+          this.#turnTimeoutMs,
+        );
+        timer.unref();
+        const combined =
+          signal === undefined ? timeout.signal : AbortSignal.any([signal, timeout.signal]);
+        const abort = (): void => {
+          const cancellation = cancellationSignal(combined.reason);
+          try {
+            adapter.requestCancellation(cancellation.reason);
+          } catch {
+            /* already settled */
+          }
+          runtime.abort();
+        };
+        combined.addEventListener("abort", abort, { once: true });
+        if (combined.aborted) abort();
+
+        try {
+          const result = await runtime.run(command.payload.input.text);
+          flushPendingText();
+          await eventChain;
+          if (fatalError !== undefined) throw fatalError;
+          if (result.kind === "completed") {
+            await sessionHandle.authority.assertCurrent();
+            await this.#options.onSettled?.(sessionHandle.session);
+            await sessionHandle.authority.assertCurrent();
+          } else {
+            if (toolStarted) await worldState.recordUnavailable().catch(() => undefined);
+          }
+          const settled = await publishMapped({ type: "agent_settled" });
+          if (settled.kind !== "settled")
+            throw new PiTurnError("pi_protocol_error", "Pi did not settle", false);
+          if (settled.result.status === "cancelled")
+            throw new PiTurnCancelledError(settled.result.reason, settled.result.forced);
+          if (settled.result.status === "failed")
+            throw new PiTurnError(
+              settled.result.code,
+              settled.result.message,
+              settled.result.retryable,
+            );
+          const workspacePatch = await this.#options.collectWorkspacePatch?.();
+          return {
+            stopReason: settled.result.stopReason,
+            ...(workspacePatch === undefined ? {} : { workspacePatch }),
+          };
+        } catch (error: unknown) {
+          if (toolStarted) await worldState.recordUnavailable().catch(() => undefined);
+          throw error;
+        } finally {
+          clearTimeout(timer);
+          combined.removeEventListener("abort", abort);
+          flushPendingText();
+          await eventChain.catch(() => undefined);
+          this.#activeRuntime = undefined;
+          for (const waiter of this.#steerWaiters)
+            waiter.reject(
+              new PiTurnError(
+                "steer_target_unavailable",
+                "Pi Run ended before steer delivery",
+                false,
+              ),
+            );
+          this.#steerWaiters.clear();
+        }
+      } finally {
+        await sessionHandle.authority.close();
+        if (toolOutputDirectoryForCleanup !== undefined) {
+          await rm(toolOutputDirectoryForCleanup, { recursive: true, force: true });
+        }
       }
     } finally {
-      await sessionHandle.authority.close();
-      if (toolOutputDirectoryForCleanup !== undefined) {
-        await rm(toolOutputDirectoryForCleanup, { recursive: true, force: true });
-      }
+      modelRuntimeLease.release();
     }
   }
 

@@ -22,6 +22,8 @@ import {
   createCloudTurnContext,
   PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
   PiCloudTurnRunner,
+  PiModelRuntimePool,
+  type PiModelRuntimeConfig,
 } from "../src/index.ts";
 
 const command: ExecuteTurnCommandMessage = {
@@ -81,6 +83,28 @@ class TestAuthority implements CloudAgentExecutionAuthority {
 }
 
 describe("PiCloudTurnRunner integration", () => {
+  it("reuses an idle ModelRuntime without sharing one between active Runs", async () => {
+    const pool = new PiModelRuntimePool(1);
+    const runtime: PiModelRuntimeConfig = {
+      provider: "pi-cloud-fake",
+      modelId: "pi-cloud-fake",
+      baseUrl: "http://127.0.0.1:1/v1",
+      api: "openai-completions",
+      apiKey: FAKE_MODEL_API_KEY,
+      contextWindow: 131_072,
+    };
+
+    const first = await pool.acquire(runtime);
+    first.release();
+    const reused = await pool.acquire(runtime);
+    expect(reused.runtime).toBe(first.runtime);
+
+    const concurrent = await pool.acquire(runtime);
+    expect(concurrent.runtime).not.toBe(reused.runtime);
+    concurrent.release();
+    reused.release();
+  });
+
   it("executes the native Pi loop from SessionStorage and publishes reviewed events", async () => {
     const fake = new FakeModelServer({ scenarioSequence: ["rate_limit", "text"] });
     await fake.start();

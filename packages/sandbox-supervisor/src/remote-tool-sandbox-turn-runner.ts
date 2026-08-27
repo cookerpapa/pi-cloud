@@ -23,6 +23,7 @@ import type { SupervisorTurnRunner } from "./agent-run-supervisor.ts";
 import { PiTurnError, type PiEventPublisher, type PiTurnResult } from "./pi-turn-runtime.ts";
 import {
   PiCloudTurnRunner,
+  PiModelRuntimePool,
   type PiCloudSessionHandle,
   type PiCloudTurnRunnerOptions,
 } from "./pi-cloud-turn-runner.ts";
@@ -168,6 +169,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #turnTimeoutMs: number | undefined;
   readonly #idGenerator: () => string;
   readonly #metrics: PiCloudMetrics | undefined;
+  readonly #modelRuntimePool = new PiModelRuntimePool(2);
   readonly #activePiRunners = new Map<
     string,
     {
@@ -595,6 +597,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       const commonRunnerOptions = {
         resolveModelRuntime,
         openSession: this.#openAgentSession,
+        modelRuntimePool: this.#modelRuntimePool,
         collectWorkspacePatch: () => capturedPatch,
         ...(this.#checkpointStore?.saveToolOutput === undefined
           ? {}

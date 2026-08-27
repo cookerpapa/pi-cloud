@@ -30,7 +30,9 @@ export {
 
 export {
   PiCloudTurnRunner,
+  PiModelRuntimePool,
   type PiCloudSessionHandle,
+  type PiModelRuntimeLease,
   type PiCloudTurnRunnerOptions,
 } from "./pi-cloud-turn-runner.ts";
 
