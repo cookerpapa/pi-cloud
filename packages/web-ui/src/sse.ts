@@ -5,7 +5,11 @@ import {
   type SessionViewSnapshotResource,
 } from "@pi-cloud/protocol";
 
-const MAX_PENDING_FRAME_BYTES = 1 * 1_024 * 1_024;
+// A replacement snapshot includes the canonical transcript as well as the
+// incomplete live tail. Long Pi Sessions routinely exceed 1 MiB before native
+// Compaction, so this bound must cover the supported product projection while
+// still rejecting an unbounded or malformed stream.
+const MAX_PENDING_FRAME_BYTES = 16 * 1_024 * 1_024;
 const DEFAULT_RETRY_DELAY_MS = 300;
 const MAX_RETRY_DELAY_MS = 5_000;
 

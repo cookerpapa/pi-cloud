@@ -100,6 +100,14 @@ describe("cursor-free SSE Session client", () => {
     ]);
   });
 
+  it("accepts a bounded long-session snapshot frame larger than one MiB", () => {
+    const parser = new SseFrameParser();
+    const payload = "x".repeat(2 * 1_024 * 1_024);
+    expect(parser.push(`event: snapshot\ndata: ${payload}\n\n`)).toEqual([
+      { event: "snapshot", data: payload },
+    ]);
+  });
+
   it("reconnects with a replacement snapshot and never sends a browser cursor", async () => {
     const controller = new AbortController();
     const headers: Headers[] = [];
