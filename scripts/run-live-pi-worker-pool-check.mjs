@@ -80,8 +80,10 @@ const baseUrl = new URL(
 const token = (
   await readPrivate(resolve(runtimeDirectory, "secrets/api-token"), 4_096, "Production API token")
 ).trim();
+let authorizationToken = token;
 const fetchFromProduction = (input, init) => fetch(new URL(String(input), baseUrl), init);
-const api = new PiCloudApi(fetchFromProduction, token);
+const bootstrapApi = new PiCloudApi(fetchFromProduction, token);
+let api = bootstrapApi;
 const workerDeployment = environment.PI_CLOUD_PI_WORKER_DEPLOYMENT ?? "compose";
 if (workerDeployment !== "compose" && workerDeployment !== "kubernetes") {
   throw new Error("Production Pi Worker deployment mode is invalid");
@@ -231,7 +233,7 @@ async function runTurn(sessionId, prompt) {
     await streamSessionEvents({
       sessionId,
       signal: controller.signal,
-      authorizationToken: token,
+      authorizationToken,
       fetchImplementation: fetchFromProduction,
       retryDelayMs: 100,
       onStatus() {},
@@ -399,7 +401,7 @@ async function crashStreamingTurn(sessionId) {
     await streamSessionEvents({
       sessionId,
       signal: controller.signal,
-      authorizationToken: token,
+      authorizationToken,
       fetchImplementation: fetchFromProduction,
       retryDelayMs: 100,
       onStatus() {},
@@ -471,11 +473,19 @@ function sumUsage(results) {
 }
 
 const initialWorkers = await waitForWorkers(2);
+const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+const registration = await new PiCloudApi(fetchFromProduction).registerTenant(
+  `worker-pool-${suffix}`.replaceAll(/[^a-z0-9-]/gu, "-").slice(0, 63),
+  "Pi Worker pool acceptance",
+);
+api = new PiCloudApi(fetchFromProduction, registration.apiToken);
+authorizationToken = registration.apiToken;
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production tenant must have a real model configured");
 
-const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 let stoppedWorker;
+const createdSessionIds = [];
+const createdWorkspaceIds = [];
 
 try {
   const candidates = [];
@@ -489,6 +499,8 @@ try {
       project.workspaceId,
       `Pi Worker pool acceptance ${suffix}-${index + 1}`,
     );
+    createdWorkspaceIds.push(project.workspaceId);
+    createdSessionIds.push(session.sessionId);
     const turn = await runTurn(
       session.sessionId,
       `Remember this marker for my next message: ${marker}. Do not call tools. Reply exactly ACK.`,
@@ -529,6 +541,8 @@ try {
     crashProject.workspaceId,
     `Pi Worker crash ${suffix}`,
   );
+  createdWorkspaceIds.push(crashProject.workspaceId);
+  createdSessionIds.push(crashSession.sessionId);
   const crashed = await crashStreamingTurn(crashSession.sessionId);
   const crashSurvivors = await waitForWorkers(1);
   assert(!crashSurvivors.includes(crashed.killed.evidence.supervisorId));
@@ -569,6 +583,8 @@ try {
         concurrentProject.workspaceId,
         `Pi pool lane ${index + 1} ${suffix}`,
       );
+      createdWorkspaceIds.push(concurrentProject.workspaceId);
+      createdSessionIds.push(concurrentSession.sessionId);
       const turn = await runTurn(
         concurrentSession.sessionId,
         [
@@ -673,5 +689,11 @@ try {
 } finally {
   if (stoppedWorker !== undefined) {
     await restoreWorker(stoppedWorker).catch(() => undefined);
+  }
+  for (const sessionId of createdSessionIds) {
+    await api.deleteConversation(sessionId, newIdempotencyKey("delete")).catch(() => undefined);
+  }
+  for (const workspaceId of createdWorkspaceIds) {
+    await api.deleteWorkspace(workspaceId, newIdempotencyKey("delete")).catch(() => undefined);
   }
 }
