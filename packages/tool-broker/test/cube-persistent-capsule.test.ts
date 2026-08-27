@@ -7,7 +7,11 @@ describe("encrypted Cube persistent-machine capsule", () => {
     const capsule = codec.seal({ runtime: "cube-1", secret: "not-plaintext" });
     expect(capsule).not.toContain("not-plaintext");
     expect(codec.open(capsule)).toEqual({ runtime: "cube-1", secret: "not-plaintext" });
-    expect(() => codec.open(`${capsule.slice(0, -1)}A`)).toThrow(/authentication|invalid/u);
+    const [nonce, encodedTag, ciphertext] = capsule.slice("pcvm1_".length).split(".");
+    const tag = Buffer.from(encodedTag!, "base64url");
+    tag[0] = tag[0]! ^ 1;
+    const tampered = `pcvm1_${nonce}.${tag.toString("base64url")}.${ciphertext}`;
+    expect(() => codec.open(tampered)).toThrow(/authentication/u);
     expect(() => new CubePersistentCapsuleCodec(Buffer.alloc(32, 8)).open(capsule)).toThrow(
       /authentication/u,
     );
