@@ -202,7 +202,6 @@ export default function ChatApp() {
       state.sessionState === "cold" ||
       state.sessionState === "idle" ||
       state.sessionState === "running" ||
-      state.sessionState === "waiting_approval" ||
       state.sessionState === "cancelling");
   const conversationChildren = useMemo(() => {
     const children = new Map<string, ConversationSummaryResource[]>();

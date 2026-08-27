@@ -40,7 +40,6 @@ export {
   type OfficialCubeSandboxRuntimeClientOptions,
 } from "./cubesandbox-runtime-client.ts";
 export {
-  DEFAULT_TOOL_SANDBOX_POLICY,
   SANDBOX_PROVIDER_API_VERSION,
   ToolBrokerError,
   type SandboxCreateSpec,

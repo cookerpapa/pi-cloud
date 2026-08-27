@@ -45,7 +45,6 @@ The product page adds:
 - no model picker or credential form; platform model policy is an operator
   concern;
 - streamed assistant text and complete Tool lifecycle from `PiCloudEvent`;
-- inline approval cards for confirm/select/input/editor;
 - a visible turn-cancel control and clear cancelling/failed states;
 - compact sandbox/runner health details for debugging;
 - an event sequence indicator useful for demonstrating durable SSE replay.
@@ -70,7 +69,7 @@ authenticated service Preview, the brokered terminal and active Pi steer are sup
   overlay on small screens.
 - A disconnected SSE client visibly reconnects and resumes without duplicating
   rendered events.
-- Session, turn, approval, and failure states are distinguishable without
+- Session, turn, and failure states are distinguishable without
   relying on color alone.
 
 ## Implemented conversation product
@@ -105,7 +104,7 @@ selected.
 
 The transcript preserves event order, merges adjacent text deltas, renders
 Markdown without raw HTML or remote-image fetches, collapses tool input/output,
-and shows approval and terminal cards. Stable presentation rows keep transport
+and shows Tool and terminal cards. Stable presentation rows keep transport
 state out of React components; adjacent Tools form one expandable activity row,
 while `bash`, `read`, `write`, `edit` and unknown Tools use a renderer registry.
 Fenced Markdown and source previews share a lazy Highlight.js bundle, Edit

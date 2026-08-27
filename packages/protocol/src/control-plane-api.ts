@@ -8,7 +8,6 @@ import {
   UuidSchema,
 } from "./protocol-primitives.ts";
 import {
-  ApprovalRequestPayloadSchema,
   PiCloudEventSchema,
   SessionStateSchema,
   TurnCancellationReasonSchema,
@@ -275,7 +274,6 @@ export const ConversationTurnStateSchema = Type.Union([
   Type.Literal("queued"),
   Type.Literal("dispatching"),
   Type.Literal("running"),
-  Type.Literal("waiting_approval"),
   Type.Literal("cancelling"),
   Type.Literal("completed"),
   Type.Literal("failed"),
@@ -572,19 +570,6 @@ export const ConversationTranscriptItemResourceSchema = Type.Union([
       lastSequence: Type.Optional(PositiveSafeIntegerSchema),
       startedAt: UtcTimestampSchema,
       completedAt: Type.Optional(UtcTimestampSchema),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      kind: Type.Literal("approval"),
-      approval: ApprovalRequestPayloadSchema,
-      outcome: Type.Optional(
-        Type.Union([Type.Literal("approved"), Type.Literal("rejected"), Type.Literal("cancelled")]),
-      ),
-      value: Type.Optional(Type.String({ maxLength: 100_000 })),
-      firstSequence: PositiveSafeIntegerSchema,
-      lastSequence: Type.Optional(PositiveSafeIntegerSchema),
     },
     { additionalProperties: false },
   ),

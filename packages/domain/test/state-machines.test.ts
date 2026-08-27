@@ -3,13 +3,9 @@ import {
   DomainTransitionError,
   canTransitionCommand,
   canTransitionTurn,
-  isTerminalAgentNodeState,
-  isTerminalApprovalState,
   isTerminalCommandState,
   isTerminalSandboxState,
   isTerminalTurnState,
-  transitionAgentNode,
-  transitionApproval,
   transitionCommand,
   transitionRun,
   transitionRunAttempt,
@@ -46,10 +42,8 @@ describe("domain state machines", () => {
     expect(() => transitionRunAttempt("superseded", "running")).toThrow(DomainTransitionError);
   });
 
-  it("walks a session through activation, approval, cancellation, and eviction", () => {
-    expect(
-      walkSession("cold", ["starting", "idle", "running", "waiting_approval", "running", "idle"]),
-    ).toBe("idle");
+  it("walks a session through activation, cancellation, and eviction", () => {
+    expect(walkSession("cold", ["starting", "idle", "running", "idle"])).toBe("idle");
     expect(walkSession("idle", ["running", "cancelling", "idle", "evicting", "cold"])).toBe("cold");
   });
 
@@ -61,20 +55,14 @@ describe("domain state machines", () => {
     );
   });
 
-  it("walks a turn through dispatch, approval, and completion", () => {
-    const state = walkTurn("queued", [
-      "dispatching",
-      "running",
-      "waiting_approval",
-      "running",
-      "completed",
-    ]);
+  it("walks a turn through dispatch and completion", () => {
+    const state = walkTurn("queued", ["dispatching", "running", "completed"]);
     expect(state).toBe("completed");
     expect(isTerminalTurnState(state)).toBe(true);
     expect(() => transitionTurn("completed", "running")).toThrow(DomainTransitionError);
   });
 
-  it.each(["queued", "dispatching", "running", "waiting_approval"] as const)(
+  it.each(["queued", "dispatching", "running"] as const)(
     "cancels a %s turn through an explicit cancelling state",
     (from) => {
       expect(transitionTurn(transitionTurn(from, "cancelling"), "cancelled")).toBe("cancelled");
@@ -107,13 +95,6 @@ describe("domain state machines", () => {
     expect(() => transitionCommand("completed", "failed")).toThrow(DomainTransitionError);
   });
 
-  it("makes every approval outcome terminal", () => {
-    for (const outcome of ["resolved", "expired", "cancelled"] as const) {
-      expect(isTerminalApprovalState(transitionApproval("pending", outcome))).toBe(true);
-      expect(() => transitionApproval(outcome, "resolved")).toThrow(DomainTransitionError);
-    }
-  });
-
   it("leases, drains, and permanently terminates a sandbox", () => {
     expect(transitionSandbox("provisioning", "ready")).toBe("ready");
     expect(transitionSandbox("ready", "leased")).toBe("leased");
@@ -129,20 +110,8 @@ describe("domain state machines", () => {
     expect(() => transitionSandbox("failed", "ready")).toThrow(DomainTransitionError);
   });
 
-  it("models agent waiting and cancellation without reviving terminal nodes", () => {
-    expect(transitionAgentNode("pending", "running")).toBe("running");
-    expect(transitionAgentNode("running", "waiting")).toBe("waiting");
-    expect(transitionAgentNode("waiting", "running")).toBe("running");
-    expect(transitionAgentNode("running", "completed")).toBe("completed");
-    expect(isTerminalAgentNodeState("completed")).toBe(true);
-
-    expect(transitionAgentNode("cancelling", "cancelled")).toBe("cancelled");
-    expect(() => transitionAgentNode("cancelled", "running")).toThrow(DomainTransitionError);
-  });
-
   it("rejects self-transitions so duplicate delivery is handled by idempotency", () => {
     expect(() => transitionSession("idle", "idle")).toThrow(DomainTransitionError);
     expect(() => transitionTurn("running", "running")).toThrow(DomainTransitionError);
-    expect(() => transitionApproval("pending", "pending")).toThrow(DomainTransitionError);
   });
 });

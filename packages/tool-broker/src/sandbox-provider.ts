@@ -27,16 +27,7 @@ export class ToolBrokerError extends Error {
   }
 }
 
-export type SandboxNetworkPolicy =
-  | Readonly<{ mode: "deny_all" }>
-  | Readonly<{ mode: "public_egress_private_denied" }>
-  | Readonly<{ mode: "public_web_proxy_private_denied" }>
-  | Readonly<{ mode: "github" }>
-  | Readonly<{
-      mode: "package_registries";
-      ecosystems: readonly ("maven" | "npm" | "pypi")[];
-    }>
-  | Readonly<{ mode: "explicit_hosts"; hosts: readonly string[] }>;
+export type SandboxNetworkPolicy = Readonly<{ mode: "public_web_proxy_private_denied" }>;
 
 export type SandboxResourceLimits = Readonly<{
   cpuNano: number;
@@ -62,29 +53,6 @@ export type SandboxPolicy = Readonly<{
   allowHostMounts: boolean;
   allowDockerSocket: boolean;
 }>;
-
-export const DEFAULT_TOOL_SANDBOX_POLICY: SandboxPolicy = Object.freeze({
-  policyVersion: 1,
-  network: Object.freeze({ mode: "deny_all" }),
-  resources: Object.freeze({
-    cpuNano: 1_000_000_000,
-    memoryBytes: 768 * 1_024 * 1_024,
-    pids: 128,
-    openFiles: 1_024,
-    temporaryBytes: 64 * 1_024 * 1_024,
-    workspaceBytes: 128 * 1_024 * 1_024,
-    maximumOutputBytes: 1 * 1_024 * 1_024,
-    maximumCommandTimeoutMs: 300_000,
-    turnWallClockTimeoutMs: 900_000,
-  }),
-  user: "1000:1000",
-  readOnlyRootFilesystem: true,
-  privileged: false,
-  dropAllCapabilities: true,
-  noNewPrivileges: true,
-  allowHostMounts: false,
-  allowDockerSocket: false,
-});
 
 export type SandboxCreateSpec = Readonly<{
   activationId: string;
@@ -224,7 +192,7 @@ export interface SandboxProvider {
   readonly providerId: string;
   readonly cleanPrewarmCount?: number;
   /** Provider-specific policy selected only by trusted deployment config. */
-  readonly defaultPolicy?: SandboxPolicy;
+  readonly defaultPolicy: SandboxPolicy;
   /**
    * False when the runtime cannot atomically rebind persisted assignment
    * metadata to a higher fencing token. Such Providers are destroyed at the

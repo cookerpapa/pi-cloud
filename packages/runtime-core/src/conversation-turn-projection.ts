@@ -125,32 +125,6 @@ export function projectConversationTurnTranscript(
       }
       continue;
     }
-    if (event.type === "approval.requested") {
-      items.push({
-        kind: "approval",
-        approval: event.payload,
-        firstSequence: event.seq,
-      });
-      continue;
-    }
-    if (event.type === "approval.resolved") {
-      const index = items.findIndex(
-        (item) => item.kind === "approval" && item.approval.approvalId === event.payload.approvalId,
-      );
-      if (index >= 0) {
-        const existing = items[index]!;
-        if (existing.kind !== "approval") {
-          throw new Error("Approval projection index was corrupted");
-        }
-        items[index] = {
-          ...existing,
-          outcome: event.payload.outcome,
-          ...(event.payload.value === undefined ? {} : { value: event.payload.value }),
-          lastSequence: event.seq,
-        };
-      }
-      continue;
-    }
     if (event.type === "ui.notification") {
       items.push({
         kind: "notification",

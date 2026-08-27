@@ -655,13 +655,7 @@ export class DevelopmentEnvironmentService {
         .select("turn.id")
         .where("turn.tenant_id", "=", identity.tenantId)
         .where("session_row.workspace_id", "=", environment.workspace_id)
-        .where("turn.state", "in", [
-          "queued",
-          "dispatching",
-          "running",
-          "waiting_approval",
-          "cancelling",
-        ])
+        .where("turn.state", "in", ["queued", "dispatching", "running", "cancelling"])
         .limit(1)
         .executeTakeFirst();
       if (activeTurn !== undefined) {

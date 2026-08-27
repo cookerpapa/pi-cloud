@@ -62,13 +62,6 @@ const PromptInputSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const ContinueInputSchema = Type.Object(
-  {
-    kind: Type.Literal("continue"),
-  },
-  { additionalProperties: false },
-);
-
 const ModelThinkingLevelSchema = Type.Union([
   Type.Literal("off"),
   Type.Literal("minimal"),
@@ -110,28 +103,6 @@ export const TurnBudgetSnapshotSchema = Type.Object(
   { additionalProperties: false },
 );
 export type TurnBudgetSnapshot = Static<typeof TurnBudgetSnapshotSchema>;
-
-const ApprovalResolutionSchema = Type.Union([
-  Type.Object(
-    {
-      outcome: Type.Literal("approved"),
-      value: Type.Optional(Type.String({ maxLength: 100_000 })),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      outcome: Type.Literal("rejected"),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      outcome: Type.Literal("cancelled"),
-    },
-    { additionalProperties: false },
-  ),
-]);
 
 export const SupervisorRegisterMessageSchema = Type.Object(
   {
@@ -196,7 +167,7 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
       {
         ...CommandIdentityProperties,
         nextEventSeq: PositiveSafeIntegerSchema,
-        input: Type.Union([PromptInputSchema, ContinueInputSchema]),
+        input: PromptInputSchema,
         executionMode: ExecutionModeSchema,
         sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,
         workingDirectory: Type.String({
@@ -243,22 +214,6 @@ export const SteerTurnCommandMessageSchema = Type.Object(
         ...CommandIdentityProperties,
         targetCommandId: UuidSchema,
         text: Type.String({ minLength: 1, maxLength: 100_000 }),
-      },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
-
-export const ResolveApprovalCommandMessageSchema = Type.Object(
-  {
-    ...WireEnvelopeProperties,
-    type: Type.Literal("command.approval.resolve"),
-    payload: Type.Object(
-      {
-        ...CommandIdentityProperties,
-        approvalId: UuidSchema,
-        decision: ApprovalResolutionSchema,
       },
       { additionalProperties: false },
     ),
@@ -602,7 +557,6 @@ export const ControlToSupervisorMessageSchema = Type.Union([
   ExecuteTurnCommandMessageSchema,
   CancelTurnCommandMessageSchema,
   SteerTurnCommandMessageSchema,
-  ResolveApprovalCommandMessageSchema,
   CommandCommitMessageSchema,
   CommandReleaseMessageSchema,
   EventAckMessageSchema,
@@ -617,7 +571,6 @@ export type SupervisorRegisteredMessage = Static<typeof SupervisorRegisteredMess
 export type ExecuteTurnCommandMessage = Static<typeof ExecuteTurnCommandMessageSchema>;
 export type CancelTurnCommandMessage = Static<typeof CancelTurnCommandMessageSchema>;
 export type SteerTurnCommandMessage = Static<typeof SteerTurnCommandMessageSchema>;
-export type ResolveApprovalCommandMessage = Static<typeof ResolveApprovalCommandMessageSchema>;
 export type CommandAckMessage = Static<typeof CommandAckMessageSchema>;
 export type CommandCommitMessage = Static<typeof CommandCommitMessageSchema>;
 export type CommandReleaseMessage = Static<typeof CommandReleaseMessageSchema>;
@@ -646,7 +599,6 @@ export type ControlToSupervisorMessage =
   | ExecuteTurnCommandMessage
   | CancelTurnCommandMessage
   | SteerTurnCommandMessage
-  | ResolveApprovalCommandMessage
   | CommandCommitMessage
   | CommandReleaseMessage
   | EventAckMessage

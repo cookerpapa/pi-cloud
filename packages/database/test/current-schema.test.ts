@@ -46,6 +46,9 @@ describe("current PiCloud schema", () => {
         "github_repositories",
         "github_pull_request_deliveries",
         "github_webhook_deliveries",
+        "approvals",
+        "agent_nodes",
+        "test_results",
       ]) {
         expect(names.has(retired), `retired table ${retired} survived`).toBe(false);
       }
@@ -64,7 +67,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("098_remove_repository_import");
+      expect(applied.rows.at(-1)?.name).toBe("099_remove_dormant_approval_graph");
     } finally {
       await database.destroy();
       await socket.stop();

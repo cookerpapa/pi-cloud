@@ -552,9 +552,7 @@ export class RunCancellationExecutor {
     const now = safeDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
-      const activePair =
-        (rows.turnState === "running" && rows.sessionState === "running") ||
-        (rows.turnState === "waiting_approval" && rows.sessionState === "waiting_approval");
+      const activePair = rows.turnState === "running" && rows.sessionState === "running";
       if (
         rows.cancellationCommandState !== "dispatched" ||
         rows.targetCommandState !== "acknowledged" ||

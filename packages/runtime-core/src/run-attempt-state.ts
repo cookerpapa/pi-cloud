@@ -226,12 +226,6 @@ export async function transitionCurrentRunAttempt(
         .returning(["id", "workspace_id", "session_id", "workspace_artifact_id"])
         .executeTakeFirst();
       if (version !== undefined) {
-        await transaction
-          .updateTable("test_results")
-          .set({ workspace_version_id: version.id })
-          .where("tenant_id", "=", identity.tenantId)
-          .where("run_id", "=", identity.runId)
-          .execute();
         const artifacts = await transaction
           .selectFrom("artifacts")
           .select(["id", "object_key"])

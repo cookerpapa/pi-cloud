@@ -674,13 +674,7 @@ export class ConversationTreeService {
           .where("tenant_id", "=", tenantId)
           .where("session_id", "=", sessionId)
           .where("pruned_at", "is", null)
-          .where("state", "in", [
-            "queued",
-            "dispatching",
-            "running",
-            "waiting_approval",
-            "cancelling",
-          ])
+          .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
           .limit(1)
           .executeTakeFirst();
         if (unsettled !== undefined) {
@@ -782,13 +776,7 @@ export class ConversationTreeService {
             .where("tenant_id", "=", tenantId)
             .where("session_id", "in", descendantIds)
             .where("pruned_at", "is", null)
-            .where("state", "in", [
-              "queued",
-              "dispatching",
-              "running",
-              "waiting_approval",
-              "cancelling",
-            ])
+            .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
             .limit(1)
             .executeTakeFirst();
           if (activeDescendant !== undefined || unsettledDescendant !== undefined) {
@@ -1045,13 +1033,7 @@ export class ConversationTreeService {
           .select("id")
           .where("tenant_id", "=", tenantId)
           .where("session_id", "=", sourceSessionId)
-          .where("state", "in", [
-            "queued",
-            "dispatching",
-            "running",
-            "waiting_approval",
-            "cancelling",
-          ])
+          .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
           .executeTakeFirst();
         if (unsettled !== undefined) {
           throw new ControlPlaneStoreError(

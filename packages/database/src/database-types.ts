@@ -1,6 +1,4 @@
 import type {
-  AgentNodeState,
-  ApprovalState,
   CommandState as DomainCommandState,
   ModelThinkingLevel,
   RunAttemptState,
@@ -51,11 +49,9 @@ type GeneratedJsonArray = JSONColumnType<unknown[], unknown[] | undefined, unkno
 
 export type CredentialBindingStatus = "active" | "disabled" | "revoked";
 export type CredentialKind = "oauth" | "api_key" | "brokered";
-export type TurnInputKind = "prompt" | "continue";
-export type CommandKind = "turn.execute" | "turn.cancel" | "turn.steer" | "approval.resolve";
+export type TurnInputKind = "prompt";
+export type CommandKind = "turn.execute" | "turn.cancel" | "turn.steer";
 export type CommandState = DomainCommandState;
-export type ApprovalKind = "confirm" | "select" | "input" | "editor";
-export type ApprovalOutcome = "approved" | "rejected" | "cancelled";
 export type ArtifactKind =
   "workspace_snapshot" | "tool_output" | "patch" | "report" | "crash_bundle";
 export type SupervisorConnectionState = "active" | "superseded" | "fenced";
@@ -653,26 +649,6 @@ export interface RunAttemptTransitionTable {
   occurred_at: GeneratedTimestamp;
 }
 
-export interface AgentNodeTable {
-  id: string;
-  tenant_id: string;
-  session_id: string;
-  parent_agent_node_id: string | null;
-  state: AgentNodeState;
-  depth: number;
-  model_profile_id: string;
-  provider: string;
-  model_id: string;
-  thinking_level: ModelThinkingLevel;
-  credential_binding_id: string;
-  credential_binding_version: Int8;
-  token_budget: Int8 | null;
-  wall_time_budget_ms: Int8 | null;
-  created_at: GeneratedTimestamp;
-  started_at: NullableTimestamp;
-  settled_at: NullableTimestamp;
-}
-
 export interface SandboxTable {
   id: string;
   supervisor_id: string;
@@ -797,21 +773,6 @@ export interface CommandTable {
   failure_code: string | null;
 }
 
-export interface ApprovalTable {
-  id: string;
-  tenant_id: string;
-  session_id: string;
-  turn_id: string;
-  kind: ApprovalKind;
-  state: ApprovalState;
-  request_payload: JsonObject;
-  outcome: ApprovalOutcome | null;
-  resolved_value: string | null;
-  requested_at: GeneratedTimestamp;
-  expires_at: NullableTimestamp;
-  resolved_at: NullableTimestamp;
-}
-
 export interface SessionTerminalEventTable {
   event_id: string;
   tenant_id: string;
@@ -886,24 +847,6 @@ export interface WorkspaceOperationTable {
   from_version_id: string | null;
   to_version_id: string | null;
   source_session_id: string | null;
-  created_at: GeneratedTimestamp;
-}
-
-export interface TestResultTable {
-  id: string;
-  tenant_id: string;
-  session_id: string;
-  turn_id: string;
-  run_id: string;
-  workspace_version_id: string | null;
-  tool_call_id: string;
-  command: string;
-  suite: string;
-  status: "passed" | "failed" | "errored";
-  exit_code: number | null;
-  duration_ms: number | null;
-  summary: string | null;
-  artifact_id: string | null;
   created_at: GeneratedTimestamp;
 }
 
@@ -1147,7 +1090,6 @@ export interface Database {
   runs: RunTable;
   run_attempts: RunAttemptTable;
   run_attempt_transitions: RunAttemptTransitionTable;
-  agent_nodes: AgentNodeTable;
   sandboxes: SandboxTable;
   supervisor_connections: SupervisorConnectionTable;
   supervisor_boot_credentials: SupervisorBootCredentialTable;
@@ -1156,12 +1098,10 @@ export interface Database {
   session_leases: SessionLeaseTable;
   session_kafka_heads: SessionKafkaHeadTable;
   commands: CommandTable;
-  approvals: ApprovalTable;
   conversation_fork_operations: ConversationForkOperationTable;
   session_terminal_events: SessionTerminalEventTable;
   outbox: OutboxTable;
   artifacts: ArtifactTable;
-  test_results: TestResultTable;
   usage_ledger: UsageLedgerTable;
   model_rates: ModelRateTable;
   model_routing_policies: ModelRoutingPolicyTable;

@@ -259,7 +259,6 @@ const TURN_ACCEPTING_SESSION_STATES = new Set<SessionState>([
   "cold",
   "idle",
   "running",
-  "waiting_approval",
   "cancelling",
 ]);
 
@@ -847,13 +846,7 @@ export class ControlPlaneStore {
             .select("turn.id")
             .where("turn.tenant_id", "=", this.#tenantId)
             .where("session_row.workspace_id", "=", workspaceId)
-            .where("turn.state", "in", [
-              "queued",
-              "dispatching",
-              "running",
-              "waiting_approval",
-              "cancelling",
-            ])
+            .where("turn.state", "in", ["queued", "dispatching", "running", "cancelling"])
             .limit(1)
             .executeTakeFirst();
           if (activeTurn !== undefined) {
@@ -1119,13 +1112,7 @@ export class ControlPlaneStore {
         .select("id")
         .where("tenant_id", "=", this.#tenantId)
         .where("session_id", "=", sessionId)
-        .where("state", "in", [
-          "queued",
-          "dispatching",
-          "running",
-          "waiting_approval",
-          "cancelling",
-        ])
+        .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
         .limit(1)
         .executeTakeFirst();
       if (activeTurn !== undefined) {
@@ -2007,13 +1994,7 @@ export class ControlPlaneStore {
         .selectFrom("turns")
         .select((expression) => expression.fn.countAll<string>().as("count"))
         .where("tenant_id", "=", this.#tenantId)
-        .where("state", "in", [
-          "queued",
-          "dispatching",
-          "running",
-          "waiting_approval",
-          "cancelling",
-        ])
+        .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
         .executeTakeFirstOrThrow();
       if (
         nonNegativeSafeInteger(unsettled.count, "Tenant unsettled-turn count") >=
@@ -2274,10 +2255,7 @@ export class ControlPlaneStore {
       if (lifecycle === undefined) {
         throw new ControlPlaneStoreError("not_found", "Turn was not found");
       }
-      const activePair =
-        (lifecycle.turnState === "running" && lifecycle.sessionState === "running") ||
-        (lifecycle.turnState === "waiting_approval" &&
-          lifecycle.sessionState === "waiting_approval");
+      const activePair = lifecycle.turnState === "running" && lifecycle.sessionState === "running";
       if (!activePair) {
         throw new ControlPlaneStoreError(
           "conflict",

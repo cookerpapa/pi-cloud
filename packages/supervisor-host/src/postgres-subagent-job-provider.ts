@@ -486,13 +486,7 @@ export class PostgresSubagentJobProvider {
         .selectFrom("turns")
         .select(({ fn }) => fn.countAll<string>().as("count"))
         .where("tenant_id", "=", input.tenantId)
-        .where("state", "in", [
-          "queued",
-          "dispatching",
-          "running",
-          "waiting_approval",
-          "cancelling",
-        ])
+        .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
         .executeTakeFirstOrThrow();
       if (Number(sessionCount.count) >= policy.maximum_sessions) {
         throw new PostgresSubagentJobError(

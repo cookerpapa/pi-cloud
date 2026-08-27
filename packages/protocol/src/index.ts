@@ -23,7 +23,6 @@ export {
 } from "./sandbox-preview.ts";
 
 export {
-  ApprovalRequestPayloadSchema,
   PiCloudEventSchema,
   PiCloudProtocolError,
   MAX_WORKSPACE_PATCH_BYTES,
@@ -462,7 +461,6 @@ export {
   FactChannelClosedMessageSchema,
   ExecuteTurnCommandMessageSchema,
   SteerTurnCommandMessageSchema,
-  ResolveApprovalCommandMessageSchema,
   SupervisorHeartbeatAckMessageSchema,
   SupervisorHeartbeatMessageSchema,
   SupervisorRegisterMessageSchema,
@@ -488,7 +486,6 @@ export {
   type FactChannelCloseMessage,
   type FactChannelClosedMessage,
   type ExecuteTurnCommandMessage,
-  type ResolveApprovalCommandMessage,
   type SupervisorHeartbeatAckMessage,
   type SupervisorHeartbeatMessage,
   type SupervisorRegisterMessage,

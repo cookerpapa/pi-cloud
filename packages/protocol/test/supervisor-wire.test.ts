@@ -23,7 +23,6 @@ const IDS = {
   targetCommand: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   run: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   attempt: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-  approval: "88888888-8888-4888-8888-888888888888",
   event: "99999999-9999-4999-8999-999999999999",
   commit: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 };
@@ -192,15 +191,6 @@ describe("supervisor/control-plane wire protocol", () => {
         gracePeriodMs: 2_000,
       },
     } as const;
-    const resolve = {
-      ...envelope(IDS.message3),
-      type: "command.approval.resolve",
-      payload: {
-        ...commandIdentity(),
-        approvalId: IDS.approval,
-        decision: { outcome: "approved", value: "yes" },
-      },
-    } as const;
     const steer = {
       ...envelope("44444444-1111-4111-8111-444444444444"),
       type: "command.turn.steer",
@@ -213,15 +203,8 @@ describe("supervisor/control-plane wire protocol", () => {
     } as const;
 
     expect(
-      [execute, cancel, steer, resolve].map(
-        (message) => parseControlToSupervisorMessage(message).type,
-      ),
-    ).toEqual([
-      "command.turn.execute",
-      "command.turn.cancel",
-      "command.turn.steer",
-      "command.approval.resolve",
-    ]);
+      [execute, cancel, steer].map((message) => parseControlToSupervisorMessage(message).type),
+    ).toEqual(["command.turn.execute", "command.turn.cancel", "command.turn.steer"]);
     const parsedExecute = parseControlToSupervisorMessage(execute);
     if (parsedExecute.type !== "command.turn.execute") throw new Error("Expected execute command");
     expect(parsedExecute.payload.traceContext?.traceparent).toContain(

@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   ToolBrokerError,
+  CUBESANDBOX_TOOL_POLICY,
   InMemorySandboxActivationStateRepository,
   ToolBroker,
   loadToolBrokerConfig,
@@ -171,6 +172,7 @@ function providerFixture() {
   );
   const provider: SandboxProvider = {
     providerId: "cubesandbox",
+    defaultPolicy: CUBESANDBOX_TOOL_POLICY,
     async checkHealth() {},
     async create(spec) {
       createCount += 1;
@@ -890,7 +892,7 @@ describe("provider-backed Tool Tool Broker", () => {
         turnId: assignment.turnId,
         executionLease: assignment.executionLease,
       },
-      policy: { network: { mode: "deny_all" } },
+      policy: { network: { mode: "public_web_proxy_private_denied" } },
     });
     expect(fixture.createSpec).not.toHaveProperty("capability");
     await expect(manager.execute(assignment.executionLease, request)).resolves.toMatchObject({
@@ -1828,13 +1830,6 @@ describe("provider-backed Tool Tool Broker", () => {
           PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE: workspaceVolumeGatewayTokenPath,
         }),
       ).rejects.toThrow("heartbeat must leave lease failure margin");
-      await expect(
-        loadToolBrokerConfig({
-          PI_CLOUD_TOOL_BROKER_TOKEN_FILE: tokenPath,
-          PI_CLOUD_IMAGE_REVISION: "development",
-          PI_CLOUD_REPOSITORY_IMPORT_NETWORK: "repository-egress",
-        }),
-      ).rejects.toThrow("was removed");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

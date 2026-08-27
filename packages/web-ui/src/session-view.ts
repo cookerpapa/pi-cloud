@@ -12,8 +12,6 @@ import type {
 } from "@pi-cloud/protocol";
 import type { SessionStreamStatus } from "./sse.ts";
 
-type ApprovalPayload = Extract<PiCloudEvent, { type: "approval.requested" }>["payload"];
-
 export type TurnViewStatus =
   "queued" | "running" | "cancelling" | "completed" | "failed" | "cancelled";
 
@@ -39,15 +37,6 @@ export type TranscriptItem =
       lastSequence?: number;
       startedAt: string;
       completedAt?: string;
-    }
-  | {
-      kind: "approval";
-      key: string;
-      approval: ApprovalPayload;
-      outcome?: "approved" | "rejected" | "cancelled";
-      value?: string;
-      firstSequence: number;
-      lastSequence?: number;
     }
   | {
       kind: "notification";
@@ -211,9 +200,6 @@ function transcriptItem(
   if (item.kind === "tool") {
     return { ...item, key: `tool:${item.toolCallId}` };
   }
-  if (item.kind === "approval") {
-    return { ...item, key: `approval:${item.approval.approvalId}` };
-  }
   if (item.kind === "notification") {
     return { ...item, key: `notification:${String(item.sequence)}` };
   }
@@ -303,35 +289,6 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
         });
       }
       return { ...turn, items };
-    }
-    if (event.type === "approval.requested") {
-      return {
-        ...turn,
-        items: [
-          ...turn.items,
-          {
-            kind: "approval",
-            key: `approval:${event.payload.approvalId}`,
-            approval: event.payload,
-            firstSequence: event.seq,
-          },
-        ],
-      };
-    }
-    if (event.type === "approval.resolved") {
-      return {
-        ...turn,
-        items: turn.items.map((item): TranscriptItem =>
-          item.kind === "approval" && item.approval.approvalId === event.payload.approvalId
-            ? {
-                ...item,
-                outcome: event.payload.outcome,
-                ...(event.payload.value === undefined ? {} : { value: event.payload.value }),
-                lastSequence: event.seq,
-              }
-            : item,
-        ),
-      };
     }
     if (event.type === "ui.notification") {
       return {
@@ -537,12 +494,7 @@ export function sessionViewReducer(
         mailboxPosition: turn.mailboxPosition,
         prompt: turn.prompt,
         acceptedAt: turn.acceptedAt,
-        status:
-          turn.state === "queued" || turn.state === "dispatching"
-            ? "queued"
-            : turn.state === "waiting_approval"
-              ? "running"
-              : turn.state,
+        status: turn.state === "queued" || turn.state === "dispatching" ? "queued" : turn.state,
       })),
       historyTruncated: action.conversation.historyTruncated,
       connection: { phase: "offline", attempt: 0, message: "Opening durable event stream" },

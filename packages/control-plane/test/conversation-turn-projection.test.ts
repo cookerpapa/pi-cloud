@@ -21,7 +21,7 @@ function events(bodies: readonly PiCloudEventBody[]) {
 }
 
 describe("conversation turn projection", () => {
-  it("coalesces text while preserving tool, approval, notification, and terminal semantics", () => {
+  it("coalesces text while preserving tool, notification, and terminal semantics", () => {
     const projected = projectConversationTurnTranscript(
       events([
         { type: "turn.started", payload: { inputKind: "prompt" } },
@@ -59,22 +59,6 @@ describe("conversation turn projection", () => {
         },
         { type: "assistant.text.delta", payload: { text: "Done." } },
         {
-          type: "approval.requested",
-          payload: {
-            approvalId: "40000000-0000-4000-8000-000000000001",
-            kind: "confirm",
-            title: "Publish?",
-            message: "Create the artifact",
-          },
-        },
-        {
-          type: "approval.resolved",
-          payload: {
-            approvalId: "40000000-0000-4000-8000-000000000001",
-            outcome: "approved",
-          },
-        },
-        {
           type: "ui.notification",
           payload: { level: "info", message: "Artifact ready" },
         },
@@ -94,9 +78,9 @@ describe("conversation turn projection", () => {
 
     expect(projected).toMatchObject({
       schemaVersion: 1,
-      throughSequence: 13,
+      throughSequence: 11,
       startedSequence: 1,
-      terminalSequence: 13,
+      terminalSequence: 11,
       stopReason: "stop",
       failure: null,
       cancellation: null,
@@ -151,22 +135,10 @@ describe("conversation turn projection", () => {
         lastSequence: 9,
       },
       {
-        kind: "approval",
-        approval: {
-          approvalId: "40000000-0000-4000-8000-000000000001",
-          kind: "confirm",
-          title: "Publish?",
-          message: "Create the artifact",
-        },
-        outcome: "approved",
-        firstSequence: 10,
-        lastSequence: 11,
-      },
-      {
         kind: "notification",
         level: "info",
         message: "Artifact ready",
-        sequence: 12,
+        sequence: 10,
       },
     ]);
   });

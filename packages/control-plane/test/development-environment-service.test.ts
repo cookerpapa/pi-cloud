@@ -11,6 +11,7 @@ import {
 } from "@pi-cloud/protocol";
 import {
   PostgresSandboxActivationStateRepository,
+  CUBESANDBOX_TOOL_POLICY,
   ToolBroker,
   ToolBrokerServer,
   type SandboxHandle,
@@ -65,6 +66,7 @@ function provider(): SandboxProvider {
   };
   return {
     providerId: "cubesandbox",
+    defaultPolicy: CUBESANDBOX_TOOL_POLICY,
     async checkHealth() {},
     async create(spec) {
       return {

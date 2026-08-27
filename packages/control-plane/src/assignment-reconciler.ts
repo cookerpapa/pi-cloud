@@ -1,7 +1,5 @@
 import type { Database } from "@pi-cloud/database";
 import {
-  transitionAgentNode,
-  transitionApproval,
   transitionCommand,
   transitionRun,
   transitionRunAttempt,
@@ -29,8 +27,8 @@ const ASSIGNMENT_LOST_MESSAGE =
   "The sandbox assignment disappeared before the turn reached a durable terminal state";
 const DEFAULT_RECONCILIATION_LIMIT = 100;
 
-const ACTIVE_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "cancelling"]);
-const ACTIVE_TURN_STATES = new Set(["dispatching", "running", "waiting_approval", "cancelling"]);
+const ACTIVE_SESSION_STATES = new Set(["starting", "running", "cancelling"]);
+const ACTIVE_TURN_STATES = new Set(["dispatching", "running", "cancelling"]);
 const NONTERMINAL_COMMAND_STATES = new Set(["pending", "dispatched", "acknowledged"]);
 
 export type AssignmentReconcilerOptions = {
@@ -353,7 +351,7 @@ export class AssignmentReconciler {
       .selectFrom("turns")
       .select(["id", "state"])
       .where("session_id", "=", candidate.sessionId)
-      .where("state", "in", ["dispatching", "running", "waiting_approval", "cancelling"])
+      .where("state", "in", ["dispatching", "running", "cancelling"])
       .forUpdate()
       .execute();
     if (turns.length > 1) {
@@ -567,31 +565,6 @@ export class AssignmentReconciler {
         .where("tenant_id", "=", session.tenant_id)
         .where(sql<boolean>`${sql.ref("payload")} ->> 'commandId' = ${command.id}`)
         .execute();
-    }
-    await transaction
-      .updateTable("approvals")
-      .set({
-        state: transitionApproval("pending", "cancelled"),
-        outcome: "cancelled",
-        resolved_at: now,
-      })
-      .where("turn_id", "=", turn.id)
-      .where("state", "=", "pending")
-      .execute();
-    const agentNodes = await transaction
-      .selectFrom("agent_nodes")
-      .select(["id", "state"])
-      .where("session_id", "=", candidate.sessionId)
-      .where("state", "in", ["pending", "running", "waiting", "cancelling"])
-      .forUpdate()
-      .execute();
-    for (const node of agentNodes) {
-      await transaction
-        .updateTable("agent_nodes")
-        .set({ state: transitionAgentNode(node.state, "failed"), settled_at: now })
-        .where("id", "=", node.id)
-        .where("state", "=", node.state)
-        .executeTakeFirstOrThrow();
     }
     await transaction
       .updateTable("turns")

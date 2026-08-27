@@ -7,7 +7,6 @@ export const TurnStateSchema = Type.Union([
   Type.Literal("queued"),
   Type.Literal("dispatching"),
   Type.Literal("running"),
-  Type.Literal("waiting_approval"),
   Type.Literal("cancelling"),
   Type.Literal("completed"),
   Type.Literal("failed"),
@@ -21,23 +20,6 @@ export const SandboxStateSchema = Type.Union([
   Type.Literal("draining"),
   Type.Literal("failed"),
   Type.Literal("terminated"),
-]);
-
-export const ApprovalStateSchema = Type.Union([
-  Type.Literal("pending"),
-  Type.Literal("resolved"),
-  Type.Literal("expired"),
-  Type.Literal("cancelled"),
-]);
-
-export const AgentNodeStateSchema = Type.Union([
-  Type.Literal("pending"),
-  Type.Literal("running"),
-  Type.Literal("waiting"),
-  Type.Literal("cancelling"),
-  Type.Literal("completed"),
-  Type.Literal("failed"),
-  Type.Literal("cancelled"),
 ]);
 
 export const CommandStateSchema = Type.Union([
@@ -79,14 +61,11 @@ export const RunAttemptStateSchema = Type.Union([
 
 export type TurnState = Static<typeof TurnStateSchema>;
 export type SandboxState = Static<typeof SandboxStateSchema>;
-export type ApprovalState = Static<typeof ApprovalStateSchema>;
-export type AgentNodeState = Static<typeof AgentNodeStateSchema>;
 export type CommandState = Static<typeof CommandStateSchema>;
 export type RunState = Static<typeof RunStateSchema>;
 export type RunAttemptState = Static<typeof RunAttemptStateSchema>;
 
-export type DomainEntityKind =
-  "session" | "turn" | "sandbox" | "approval" | "agent_node" | "command" | "run" | "run_attempt";
+export type DomainEntityKind = "session" | "turn" | "sandbox" | "command" | "run" | "run_attempt";
 
 type TransitionTable<State extends string> = Readonly<Record<State, readonly State[]>>;
 
@@ -94,8 +73,7 @@ const sessionTransitions = {
   cold: ["starting"],
   starting: ["idle", "failed"],
   idle: ["running", "evicting", "failed"],
-  running: ["idle", "waiting_approval", "cancelling", "failed"],
-  waiting_approval: ["running", "cancelling", "failed"],
+  running: ["idle", "cancelling", "failed"],
   cancelling: ["idle", "failed"],
   failed: ["recovering"],
   recovering: ["idle", "failed"],
@@ -105,8 +83,7 @@ const sessionTransitions = {
 const turnTransitions = {
   queued: ["dispatching", "cancelling"],
   dispatching: ["queued", "running", "cancelling", "failed"],
-  running: ["waiting_approval", "cancelling", "completed", "failed"],
-  waiting_approval: ["running", "cancelling", "failed"],
+  running: ["cancelling", "completed", "failed"],
   cancelling: ["cancelled", "failed"],
   completed: [],
   failed: [],
@@ -121,23 +98,6 @@ const sandboxTransitions = {
   failed: ["terminated"],
   terminated: [],
 } as const satisfies TransitionTable<SandboxState>;
-
-const approvalTransitions = {
-  pending: ["resolved", "expired", "cancelled"],
-  resolved: [],
-  expired: [],
-  cancelled: [],
-} as const satisfies TransitionTable<ApprovalState>;
-
-const agentNodeTransitions = {
-  pending: ["running", "cancelling", "failed"],
-  running: ["waiting", "cancelling", "completed", "failed"],
-  waiting: ["running", "cancelling", "completed", "failed"],
-  cancelling: ["cancelled", "failed"],
-  completed: [],
-  failed: [],
-  cancelled: [],
-} as const satisfies TransitionTable<AgentNodeState>;
 
 const commandTransitions = {
   pending: ["dispatched", "failed"],
@@ -242,22 +202,6 @@ export function transitionSandbox(from: SandboxState, to: SandboxState): Sandbox
   return transition("sandbox", sandboxTransitions, from, to);
 }
 
-export function canTransitionApproval(from: ApprovalState, to: ApprovalState): boolean {
-  return canTransition(approvalTransitions, from, to);
-}
-
-export function transitionApproval(from: ApprovalState, to: ApprovalState): ApprovalState {
-  return transition("approval", approvalTransitions, from, to);
-}
-
-export function canTransitionAgentNode(from: AgentNodeState, to: AgentNodeState): boolean {
-  return canTransition(agentNodeTransitions, from, to);
-}
-
-export function transitionAgentNode(from: AgentNodeState, to: AgentNodeState): AgentNodeState {
-  return transition("agent_node", agentNodeTransitions, from, to);
-}
-
 export function canTransitionCommand(from: CommandState, to: CommandState): boolean {
   return canTransition(commandTransitions, from, to);
 }
@@ -286,16 +230,8 @@ export function isTerminalTurnState(state: TurnState): boolean {
   return state === "completed" || state === "failed" || state === "cancelled";
 }
 
-export function isTerminalApprovalState(state: ApprovalState): boolean {
-  return state === "resolved" || state === "expired" || state === "cancelled";
-}
-
 export function isTerminalSandboxState(state: SandboxState): boolean {
   return state === "terminated";
-}
-
-export function isTerminalAgentNodeState(state: AgentNodeState): boolean {
-  return state === "completed" || state === "failed" || state === "cancelled";
 }
 
 export function isTerminalCommandState(state: CommandState): boolean {

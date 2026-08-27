@@ -256,7 +256,6 @@ function OtherItem({
 }: {
   item: Exclude<TranscriptItem, { kind: "text" } | { kind: "tool" }>;
 }) {
-  const { t } = useI18n();
   if (item.kind === "compaction" || item.kind === "retry") return <LifecycleItem item={item} />;
   if (item.kind === "notification") {
     return (
@@ -265,13 +264,7 @@ function OtherItem({
       </div>
     );
   }
-  return (
-    <div className="product-notification">
-      {item.outcome === undefined
-        ? t("turn.awaitingApproval", { title: item.approval.title })
-        : t("turn.approvalHandled", { title: item.approval.title })}
-    </div>
-  );
+  return null;
 }
 
 export function ConversationTurn({

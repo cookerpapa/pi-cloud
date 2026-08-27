@@ -109,7 +109,7 @@ function assistantStopReason(value: unknown): AssistantStopReason | undefined {
  */
 export class PiAgentEventAdapter {
   readonly #eventFactory: PiCloudEventFactory;
-  readonly #inputKind: "prompt" | "continue";
+  readonly #inputKind: "prompt";
   #agentStarted = false;
   #piTurnActive = false;
   #settled = false;
@@ -124,7 +124,7 @@ export class PiAgentEventAdapter {
   constructor(
     eventFactory: PiCloudEventFactory,
     options: {
-      inputKind: "prompt" | "continue";
+      inputKind: "prompt";
       maximumToolOutputBytes?: number;
       requireSamplingIdentity?: boolean;
     },

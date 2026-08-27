@@ -1,8 +1,6 @@
 export { createDatabase, type CreateDatabaseOptions } from "./client.ts";
 
 export {
-  type ApprovalKind,
-  type ApprovalOutcome,
   type ArtifactKind,
   type CommandKind,
   type CommandState,

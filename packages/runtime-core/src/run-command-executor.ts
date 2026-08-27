@@ -704,7 +704,7 @@ export class RunCommandExecutor {
                 from turns as active_turn
                 where active_turn.tenant_id = ${sql.ref("command.tenant_id")}
                   and active_turn.session_id = ${sql.ref("command.session_id")}
-                  and active_turn.state in ('dispatching', 'running', 'waiting_approval', 'cancelling')
+                  and active_turn.state in ('dispatching', 'running', 'cancelling')
               )
             )
             or (
@@ -740,7 +740,6 @@ export class RunCommandExecutor {
                 and workspace_active_turn.state in (
                   'dispatching',
                   'running',
-                  'waiting_approval',
                   'cancelling'
                 )
                 and not (
@@ -772,7 +771,7 @@ export class RunCommandExecutor {
             from turns as tenant_active_turn
             where tenant_active_turn.tenant_id = ${sql.ref("command.tenant_id")}
               and tenant_active_turn.id <> ${sql.ref("command.turn_id")}
-              and tenant_active_turn.state in ('dispatching', 'running', 'waiting_approval', 'cancelling')
+              and tenant_active_turn.state in ('dispatching', 'running', 'cancelling')
           ) < ${sql.ref("policy.maximum_concurrent_turns")}`,
         )
         .limit(1)
@@ -807,12 +806,7 @@ export class RunCommandExecutor {
                   .where("active_session.workspace_id", "=", row.workspaceId)
                   .where("active_session.forked_from_session_id", "is", null)
                   .where("active_turn.id", "!=", row.turnId)
-                  .where("active_turn.state", "in", [
-                    "dispatching",
-                    "running",
-                    "waiting_approval",
-                    "cancelling",
-                  ])
+                  .where("active_turn.state", "in", ["dispatching", "running", "cancelling"])
                   .where(
                     sql<boolean>`not (
                       ${row.sessionKind} = 'subagent'

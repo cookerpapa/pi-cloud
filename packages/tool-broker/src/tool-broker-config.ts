@@ -194,15 +194,6 @@ async function readDatabaseUrl(path: string): Promise<string> {
 export async function loadToolBrokerConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<ToolBrokerConfig> {
-  if (
-    environment.PI_CLOUD_DOCKER_COMMAND !== undefined ||
-    environment.PI_CLOUD_REPOSITORY_IMPORT_NETWORK !== undefined ||
-    Object.keys(environment).some((name) => name.startsWith("PI_CLOUD_MICROVM_"))
-  ) {
-    throw new TypeError(
-      "Legacy Sandbox Provider configuration was removed; select a current trusted Provider",
-    );
-  }
   const cubeProxyScheme = environment.PI_CLOUD_CUBESANDBOX_PROXY_SCHEME ?? "http";
   if (cubeProxyScheme !== "http" && cubeProxyScheme !== "https") {
     throw new TypeError("PI_CLOUD_CUBESANDBOX_PROXY_SCHEME is invalid");

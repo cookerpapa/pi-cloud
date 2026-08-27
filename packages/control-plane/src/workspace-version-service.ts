@@ -358,13 +358,7 @@ export class WorkspaceVersionService {
               .where("tenant_id", "=", tenantId)
               .where("session_id", "in", descendantSessionIds)
               .where("pruned_at", "is", null)
-              .where("state", "in", [
-                "queued",
-                "dispatching",
-                "running",
-                "waiting_approval",
-                "cancelling",
-              ])
+              .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
               .limit(1)
               .executeTakeFirst();
             if (unsettledDescendant !== undefined) {
@@ -571,7 +565,7 @@ export class WorkspaceVersionService {
       .select("id")
       .where("tenant_id", "=", tenantId)
       .where("session_id", "=", sessionId)
-      .where("state", "in", ["queued", "dispatching", "running", "waiting_approval", "cancelling"])
+      .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
       .executeTakeFirst();
     if (active !== undefined) {
       throw new WorkspaceVersionError("conflict", "Session has unsettled work");

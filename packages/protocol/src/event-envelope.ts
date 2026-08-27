@@ -12,7 +12,6 @@ export const SessionStateSchema = Type.Union([
   Type.Literal("starting"),
   Type.Literal("idle"),
   Type.Literal("running"),
-  Type.Literal("waiting_approval"),
   Type.Literal("cancelling"),
   Type.Literal("failed"),
   Type.Literal("recovering"),
@@ -64,7 +63,7 @@ const TurnStartedEventSchema = Type.Object(
     type: Type.Literal("turn.started"),
     payload: Type.Object(
       {
-        inputKind: Type.Union([Type.Literal("prompt"), Type.Literal("continue")]),
+        inputKind: Type.Literal("prompt"),
       },
       { additionalProperties: false },
     ),
@@ -261,85 +260,6 @@ const ContextCompactionCompletedEventSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const ConfirmApprovalPayloadSchema = Type.Object(
-  {
-    approvalId: UuidSchema,
-    kind: Type.Literal("confirm"),
-    title: Type.String({ maxLength: 4_096 }),
-    message: Type.String({ maxLength: 16_384 }),
-    timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
-  },
-  { additionalProperties: false },
-);
-
-const SelectApprovalPayloadSchema = Type.Object(
-  {
-    approvalId: UuidSchema,
-    kind: Type.Literal("select"),
-    title: Type.String({ maxLength: 4_096 }),
-    options: Type.Array(Type.String({ maxLength: 4_096 }), { minItems: 1, maxItems: 100 }),
-    timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
-  },
-  { additionalProperties: false },
-);
-
-const InputApprovalPayloadSchema = Type.Object(
-  {
-    approvalId: UuidSchema,
-    kind: Type.Literal("input"),
-    title: Type.String({ maxLength: 4_096 }),
-    placeholder: Type.Optional(Type.String({ maxLength: 4_096 })),
-    timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
-  },
-  { additionalProperties: false },
-);
-
-const EditorApprovalPayloadSchema = Type.Object(
-  {
-    approvalId: UuidSchema,
-    kind: Type.Literal("editor"),
-    title: Type.String({ maxLength: 4_096 }),
-    initialValue: Type.Optional(Type.String({ maxLength: 100_000 })),
-  },
-  { additionalProperties: false },
-);
-
-export const ApprovalRequestPayloadSchema = Type.Union([
-  ConfirmApprovalPayloadSchema,
-  SelectApprovalPayloadSchema,
-  InputApprovalPayloadSchema,
-  EditorApprovalPayloadSchema,
-]);
-
-const ApprovalRequestedEventSchema = Type.Object(
-  {
-    ...TurnEnvelopeProperties,
-    type: Type.Literal("approval.requested"),
-    payload: ApprovalRequestPayloadSchema,
-  },
-  { additionalProperties: false },
-);
-
-const ApprovalResolvedEventSchema = Type.Object(
-  {
-    ...TurnEnvelopeProperties,
-    type: Type.Literal("approval.resolved"),
-    payload: Type.Object(
-      {
-        approvalId: UuidSchema,
-        outcome: Type.Union([
-          Type.Literal("approved"),
-          Type.Literal("rejected"),
-          Type.Literal("cancelled"),
-        ]),
-        value: Type.Optional(Type.String({ maxLength: 100_000 })),
-      },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
-
 const UiNotificationEventSchema = Type.Object(
   {
     ...TurnEnvelopeProperties,
@@ -412,8 +332,6 @@ export const PiCloudEventSchema = Type.Union([
   ToolCompletedEventSchema,
   ContextCompactionStartedEventSchema,
   ContextCompactionCompletedEventSchema,
-  ApprovalRequestedEventSchema,
-  ApprovalResolvedEventSchema,
   UiNotificationEventSchema,
   TurnCompletedEventSchema,
   TurnFailedEventSchema,
@@ -431,8 +349,6 @@ export type PiCloudEvent =
   | Static<typeof ToolCompletedEventSchema>
   | Static<typeof ContextCompactionStartedEventSchema>
   | Static<typeof ContextCompactionCompletedEventSchema>
-  | Static<typeof ApprovalRequestedEventSchema>
-  | Static<typeof ApprovalResolvedEventSchema>
   | Static<typeof UiNotificationEventSchema>
   | Static<typeof TurnCompletedEventSchema>
   | Static<typeof TurnFailedEventSchema>

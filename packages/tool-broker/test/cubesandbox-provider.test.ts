@@ -435,7 +435,7 @@ describe("CubeSandbox Provider contract", () => {
         workspaceSeed: { kind: "sample_java" },
         policy: {
           ...provider.defaultPolicy,
-          network: { mode: "deny_all" },
+          network: { mode: "deny_all" } as never,
         },
       }),
     ).rejects.toMatchObject({

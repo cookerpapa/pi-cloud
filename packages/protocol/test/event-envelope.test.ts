@@ -40,7 +40,7 @@ describe("PiCloudEventSchema", () => {
 
   it("covers the public v1 event categories", () => {
     const bodies: PiCloudEventBody[] = [
-      { type: "turn.started", payload: { inputKind: "continue" } },
+      { type: "turn.started", payload: { inputKind: "prompt" } },
       { type: "session.state.changed", payload: { from: "idle", to: "running" } },
       {
         type: "model.sampling.started",
@@ -75,19 +75,6 @@ describe("PiCloudEventSchema", () => {
       {
         type: "tool.completed",
         payload: { toolCallId: "call-1", outcome: "completed", output: "ok" },
-      },
-      {
-        type: "approval.requested",
-        payload: {
-          approvalId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-          kind: "confirm",
-          title: "Allow?",
-          message: "Continue?",
-        },
-      },
-      {
-        type: "approval.resolved",
-        payload: { approvalId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", outcome: "approved" },
       },
       { type: "ui.notification", payload: { message: "done", level: "info" } },
       { type: "turn.completed", payload: { stopReason: "agent_end" } },

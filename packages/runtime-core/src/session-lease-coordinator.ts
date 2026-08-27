@@ -94,7 +94,7 @@ function requireUuid(value: string, name: string): string {
   return value;
 }
 
-const ACTIVE_SESSION_STATES = new Set(["running", "waiting_approval", "cancelling"]);
+const ACTIVE_SESSION_STATES = new Set(["running", "cancelling"]);
 type CurrentAssignmentRequest = Pick<
   TurnExecutionRequest,
   | "tenantId"
@@ -728,7 +728,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           false,
         );
       }
-      if (session.state !== "running" && session.state !== "waiting_approval") {
+      if (session.state !== "running") {
         throw new SessionLeaseCoordinatorError(
           "invalid_state",
           "Session no longer has an active execution to cancel",

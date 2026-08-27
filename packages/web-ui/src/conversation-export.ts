@@ -36,9 +36,6 @@ function transcriptItemMarkdown(item: ConversationTranscriptItemResource): strin
   if (item.kind === "text") return item.text;
   if (item.kind === "tool") return toolMarkdown(item);
   if (item.kind === "notification") return `> ${item.level.toUpperCase()}: ${item.message}`;
-  if (item.kind === "approval") {
-    return `> Approval: ${item.approval.title} · ${item.outcome ?? "pending"}`;
-  }
   if (item.kind === "compaction") {
     const tokens = item.tokensBefore === undefined ? "" : ` · ${String(item.tokensBefore)} tokens`;
     return `> Context compaction: ${item.status}${tokens}`;

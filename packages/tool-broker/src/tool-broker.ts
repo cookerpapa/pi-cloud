@@ -33,7 +33,6 @@ import {
 } from "@pi-cloud/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import {
-  DEFAULT_TOOL_SANDBOX_POLICY,
   ToolBrokerError,
   type SandboxHandle,
   type SandboxInspection,
@@ -575,7 +574,7 @@ export class ToolBroker {
         assignment,
         environment: request.environment,
         workspaceSeed: request.workspaceSeed,
-        policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
+        policy: this.#provider.defaultPolicy,
         toolRoot: DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
         lifetime: "development_environment",
         sandboxProfileKey: request.profileKey,
@@ -1070,7 +1069,7 @@ export class ToolBroker {
           assignment,
           environment: input.environment,
           workspaceSeed: input.workspaceSeed,
-          policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
+          policy: this.#provider.defaultPolicy,
           toolRoot: "/workspace",
         });
       }
@@ -1350,7 +1349,7 @@ export class ToolBroker {
       ...(request.workspaceRestore === undefined
         ? {}
         : { workspaceRestore: request.workspaceRestore }),
-      policy: this.#provider.defaultPolicy ?? DEFAULT_TOOL_SANDBOX_POLICY,
+      policy: this.#provider.defaultPolicy,
       toolRoot: request.toolRoot,
       sandboxProfileKey: request.sandboxProfileKey,
     } as const;
