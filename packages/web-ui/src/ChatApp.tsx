@@ -473,7 +473,14 @@ export default function ChatApp() {
   // remains owned by its ordered terminal event.
   useEffect(() => {
     const runId = currentTurn?.runId;
-    if (runId === null || runId === undefined || authPhase !== "authenticated") return;
+    if (
+      runId === null ||
+      runId === undefined ||
+      currentTurn.startedSequence !== null ||
+      authPhase !== "authenticated"
+    ) {
+      return;
+    }
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async (): Promise<void> => {
@@ -506,19 +513,10 @@ export default function ChatApp() {
     api,
     authPhase,
     currentTurn?.runId,
+    currentTurn?.startedSequence,
     refreshConversations,
     update,
   ]);
-
-  useEffect(() => {
-    if (authPhase !== "authenticated" || currentTurn === undefined) return;
-    const refresh = (): void => {
-      void refreshConversations().catch(() => undefined);
-    };
-    refresh();
-    const timer = setInterval(refresh, 1_500);
-    return () => clearInterval(timer);
-  }, [authPhase, currentTurn?.runId, refreshConversations]);
 
   const followConversationTail = useCallback((follow: boolean): void => {
     followingConversationTailRef.current = follow;

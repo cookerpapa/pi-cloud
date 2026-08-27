@@ -1198,12 +1198,6 @@ export class ToolBroker {
   }
 
   async create(request: ToolSandboxCreateRequest): Promise<ToolSandboxCreateResponse> {
-    await Promise.all([
-      this.reapWarm(),
-      this.reapRetiredWarm(),
-      this.#reapOrphanedActivations(),
-      this.#reapTerminalRunActivations(0),
-    ]);
     if (
       request.environment.profileKey !== DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY ||
       request.environment.profileVersion !== DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION ||

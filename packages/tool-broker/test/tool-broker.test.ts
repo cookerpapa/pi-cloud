@@ -311,6 +311,29 @@ function operation(
 }
 
 describe("provider-backed Tool Tool Broker", () => {
+  it("keeps global resource reconciliation off the reservation critical path", async () => {
+    const fixture = providerFixture();
+    const repository = new InMemorySandboxActivationStateRepository();
+    const retired = vi.spyOn(repository, "listRetiredWarmActivationIds");
+    const orphaned = vi.spyOn(repository, "claimOrphanedActivations");
+    const terminal = vi.spyOn(repository, "claimTerminalRunActivations");
+    const manager = new ToolBroker({
+      provider: fixture.provider,
+      stateRepository: repository,
+      idGenerator: () => ACTIVATION_ID,
+    });
+
+    await expect(manager.create(createRequest)).resolves.toMatchObject({
+      activationId: ACTIVATION_ID,
+    });
+    expect(retired).not.toHaveBeenCalled();
+    expect(orphaned).not.toHaveBeenCalled();
+    expect(terminal).not.toHaveBeenCalled();
+
+    await manager.stop(ACTIVATION_ID, assignment);
+    await manager.close();
+  });
+
   it("keeps a user-owned development KVM across PTY disconnect and supports pause/resume", async () => {
     const fixture = providerFixture();
     const manager = new ToolBroker({
