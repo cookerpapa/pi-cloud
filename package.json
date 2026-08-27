@@ -101,9 +101,12 @@
     "eval:load": "node scripts/run-control-plane-load.mjs"
   },
   "devDependencies": {
+    "@pi-cloud/database": "0.1.0",
+    "@pi-cloud/pi-session-postgres": "0.1.0",
     "@types/node": "24.12.4",
     "kysely": "0.29.4",
     "prettier": "3.9.5",
+    "ssh2": "1.17.0",
     "tsx": "4.23.1",
     "typescript": "5.9.3",
     "vitest": "3.2.7",
