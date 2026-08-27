@@ -353,7 +353,7 @@ try {
     session.sessionId,
     [
       "Create a two-level recursive Agent tree.",
-      `Call the subagent Tool exactly once with this exact workflowScript: return runs.run("recursive-parent", {agent:"worker", task:${JSON.stringify(nestedTask)}})`,
+      `Call the subagent Tool exactly once with this exact workflowScript: return runs.run("recursive-parent", {agent:"cloud-fanout", task:${JSON.stringify(nestedTask)}})`,
       "After it finishes, reply exactly SUBAGENT-RECURSIVE-OK.",
     ].join(" "),
   );

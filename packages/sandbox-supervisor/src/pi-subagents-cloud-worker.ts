@@ -101,9 +101,26 @@ function prepareAgentDir(): {
   const agentDir = mkdtempSync(join(tmpdir(), "pi-cloud-subagent-agent-"));
   const stateDir = mkdtempSync(join(tmpdir(), "pi-cloud-subagent-state-"));
   mkdirSync(join(agentDir, "extensions", "subagent"), { recursive: true });
+  mkdirSync(join(agentDir, "agents"), { recursive: true });
   writeFileSync(
     join(agentDir, "extensions", "subagent", "config.json"),
-    `${JSON.stringify({ asyncByDefault: false, defaultSubagentContext: "fresh", maxSubagentDepth: 1 })}\n`,
+    `${JSON.stringify({ asyncByDefault: false, defaultSubagentContext: "fresh", maxSubagentDepth: 64 })}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+  writeFileSync(
+    join(agentDir, "agents", "cloud-fanout.md"),
+    [
+      "---",
+      "name: cloud-fanout",
+      "description: Deployment-owned bounded fanout agent for cloud recursion",
+      "tools: subagent",
+      "defaultContext: fork",
+      "inheritProjectContext: true",
+      "inheritSkills: false",
+      "---",
+      "Execute only the delegated fanout task. Use the subagent tool for the explicitly requested child work, wait for it, and return its focused result. Do not invent additional branches.",
+      "",
+    ].join("\n"),
     { encoding: "utf8", mode: 0o600 },
   );
   const socketPath = join(stateDir, "cloud-runner.sock");
