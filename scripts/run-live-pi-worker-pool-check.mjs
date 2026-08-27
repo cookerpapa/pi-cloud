@@ -374,6 +374,7 @@ async function crashStreamingTurn(sessionId) {
   );
   let crash;
   let terminal;
+  let canonicalTerminalSeen = false;
   let firstVisibleSequence;
   const visibleText = [];
   const observeEvent = (event) => {
@@ -407,6 +408,13 @@ async function crashStreamingTurn(sessionId) {
       onStatus() {},
       onSnapshot(snapshot) {
         for (const event of snapshot.liveEvents) observeEvent(event);
+        const turn = snapshot.conversation.turns.find(
+          (candidate) => candidate.turnId === accepted.turnId,
+        );
+        if (turn !== undefined && ["completed", "failed", "cancelled"].includes(turn.state)) {
+          canonicalTerminalSeen = true;
+          controller.abort();
+        }
       },
       onEvent: observeEvent,
     });
@@ -414,6 +422,18 @@ async function crashStreamingTurn(sessionId) {
     const killed = await crash;
     stoppedWorker = killed.stopped;
     assert(firstVisibleSequence, "The Worker crash workload had no visible sequence");
+    if (terminal === undefined && canonicalTerminalSeen) {
+      const stored = await psql(
+        `select type || '|' || seq::text
+           from session_terminal_events
+          where tenant_id = ${sqlLiteral(registration.tenantId)}
+            and session_id = ${sqlLiteral(sessionId)}
+            and turn_id = ${sqlLiteral(accepted.turnId)}`,
+      );
+      const [type, sequence] = stored.split("|");
+      assert(type && sequence, "Canonical Worker-loss terminal evidence was unavailable");
+      terminal = { type, seq: Number(sequence) };
+    }
     assert(terminal, "Worker loss did not produce a terminal event");
     assert.notEqual(terminal.type, "turn.completed", "The killed Worker completed unexpectedly");
     const run = await waitForTerminalRun(accepted.runId);
