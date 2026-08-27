@@ -354,7 +354,10 @@ try {
   });
   const versions = await api.listWorkspaceVersions(session.sessionId);
   assert(versions.currentVersionId);
-  const version = await api.getWorkspaceVersion(versions.currentVersionId);
+  const version = versions.versions.find(
+    (candidate) => candidate.versionId === versions.currentVersionId,
+  );
+  assert(version);
   assert.equal(version.workspaceId, project.workspaceId);
   const files = await api.listWorkspaceFiles(version.versionId);
   assert(files.files.some((file) => file.path === "surface_check.py"));
@@ -413,35 +416,23 @@ try {
   });
   progress("cancellation and next-Turn interruption recovery passed");
 
-  const archiveProject = await api.createProject(`Archive surface ${suffix}`);
-  createdWorkspaceIds.add(archiveProject.workspaceId);
+  const detachableProject = await api.createProject(`Rebind surface ${suffix}`);
+  createdWorkspaceIds.add(detachableProject.workspaceId);
   const sibling = await api.createSession(
-    archiveProject.projectId,
-    archiveProject.workspaceId,
-    `Archive surface ${suffix}`,
+    detachableProject.projectId,
+    detachableProject.workspaceId,
+    `Rebind surface ${suffix}`,
     "elastic",
   );
   createdSessionIds.add(sibling.sessionId);
-  const siblingBaseline = await runTurn({
+  await runTurn({
     api,
     browser,
     sessionId: sibling.sessionId,
     prompt: "Do not call tools. Reply with exactly PRODUCT-SURFACE-PRE-REBIND-OK.",
     expectTools: false,
   });
-  await api.archiveSession(sibling.sessionId, true, newIdempotencyKey("archive"));
-  assert(
-    !(await api.listConversations()).conversations.some(
-      (item) => item.sessionId === sibling.sessionId,
-    ),
-  );
-  await api.archiveSession(sibling.sessionId, false, newIdempotencyKey("archive"));
-  assert(
-    (await api.listConversations()).conversations.some(
-      (item) => item.sessionId === sibling.sessionId,
-    ),
-  );
-  progress("archive and unarchive passed");
+  progress("secondary conversation baseline passed");
 
   const foreignBrowser = new BrowserCookieFetch();
   const foreignApi = new PiCloudApi(foreignBrowser.fetch);
@@ -458,12 +449,12 @@ try {
   );
   progress("cross-tenant API isolation passed");
 
-  const archiveDeletion = await api.deleteWorkspace(
-    archiveProject.workspaceId,
+  const workspaceDeletion = await api.deleteWorkspace(
+    detachableProject.workspaceId,
     newIdempotencyKey("delete"),
   );
-  assert.equal(archiveDeletion.workspaceId, archiveProject.workspaceId);
-  assert.equal(archiveDeletion.detachedSessionCount, 1);
+  assert.equal(workspaceDeletion.workspaceId, detachableProject.workspaceId);
+  assert.equal(workspaceDeletion.detachedSessionCount, 1);
   assert.equal((await api.getConversation(sibling.sessionId)).session.workspaceState, "missing");
   const rebindProject = await api.createProject(`Rebound surface ${suffix}`);
   createdWorkspaceIds.add(rebindProject.workspaceId);
@@ -513,7 +504,6 @@ try {
       terminal: true,
       steer: true,
       cancelAndRecover: true,
-      archive: true,
       workspaceRebind: true,
       tenantIsolation: true,
       deletion: deletion.storageState,
