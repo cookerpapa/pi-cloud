@@ -45,7 +45,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         tenant_id: tenantId,
         project_id: projectId,
         sandbox_domain_id: "sandbox-domain-0001",
-        object_snapshot_key: null,
+        seed_kind: "empty",
       })
       .execute();
     const credentialId = "20000000-0000-4000-8000-000000000010";

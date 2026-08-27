@@ -256,9 +256,6 @@ function providerFixture() {
     },
     async terminateAndConfirmAbsent() {},
     async confirmAbsent() {},
-    async importGitHub() {
-      return Buffer.alloc(0);
-    },
     async close() {},
   };
   return {

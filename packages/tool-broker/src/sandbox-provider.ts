@@ -314,9 +314,5 @@ export interface SandboxProvider {
   listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]>;
   terminateAndConfirmAbsent(assignment: SupervisorRuntimeAssignment): Promise<void>;
   confirmAbsent(assignment: SupervisorRuntimeAssignment): Promise<void>;
-  importGitHub?(
-    source: import("@pi-cloud/protocol").GitHubRepositorySource,
-    signal: AbortSignal,
-  ): Promise<Uint8Array>;
   close(): Promise<void>;
 }

@@ -60,10 +60,8 @@ export { createCloudPreviewTool } from "./postgres-preview-tool.ts";
 
 export {
   PostgresWorkspaceSeedResolver,
-  GatewayGitHubWorkspaceImporter,
   WorkspaceSeedError,
   type PostgresWorkspaceSeedResolverOptions,
-  type PrivateGitHubWorkspaceImporter,
 } from "./workspace-seed.ts";
 export {
   PostgresPiWorker,

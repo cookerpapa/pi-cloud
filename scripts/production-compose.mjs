@@ -47,7 +47,7 @@ if (piWorkerDeployment !== "compose" && piWorkerDeployment !== "kubernetes") {
 if (new Set(["config", "run", "up"]).has(command)) {
   validateProductionRuntimeEnvironment({ ...runtimeEnvironment, ...process.env });
 }
-const supportedOptionalProfiles = new Set(["observability", "github"]);
+const supportedOptionalProfiles = new Set(["observability"]);
 const requestedOptionalProfiles = (
   process.env.PI_CLOUD_PRODUCTION_PROFILES ??
   runtimeEnvironment.PI_CLOUD_PRODUCTION_PROFILES ??
@@ -74,9 +74,6 @@ if (composeOverride !== undefined) await access(composeOverride);
 const applicationSecretNames = [
   "api-token",
   "database-url",
-  "github-app-private-key.pem",
-  "github-gateway-token",
-  "github-webhook-secret",
   "grafana-admin-password",
   "metrics-token",
   "model-credential-master-key",
@@ -281,7 +278,6 @@ const serviceArguments =
         "ssh-gateway",
         "web",
         "provider-egress-relay-image",
-        ...(requestedOptionalProfiles.includes("github") ? ["github-gateway"] : []),
       ]
     : commandArguments;
 const args = [

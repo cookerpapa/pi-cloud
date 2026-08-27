@@ -63,14 +63,9 @@ export type SupervisorConnectionCloseReason = "reconnected" | "heartbeat_timeout
 export type SandboxRetirementReason = "heartbeat_timeout" | "new_boot";
 export type SandboxRetirementState = "pending" | "claimed" | "blocked" | "completed";
 export type TenantApiCredentialRole = "owner" | "member" | "viewer";
-export type WorkspaceSourceKind =
-  "empty" | "sample_java" | "github_public" | "github_app" | "repository_set";
-export type WorkspaceImportStatus = "pending" | "importing" | "ready" | "failed";
+export type WorkspaceSeedKind = "empty" | "sample_java";
 export type WorkspaceVersionOrigin = "checkpoint" | "fork" | "migration" | "promotion";
 export type WorkspaceOperationKind = "fork" | "rollback" | "archive" | "unarchive" | "promote";
-export type GitHubInstallationStatus = "active" | "suspended" | "removed";
-export type GitHubPullRequestDeliveryState = "pending" | "delivering" | "completed" | "failed";
-export type GitHubWebhookDeliveryStatus = "processed" | "ignored" | "failed";
 export type ModelRequestState = "reserved" | "completed" | "failed" | "aborted" | "budget_denied";
 export type EnvironmentVersionState = "pending" | "validated" | "failed";
 export type SandboxProfileKey = "starter" | "standard" | "performance";
@@ -409,7 +404,7 @@ export interface WorkspaceTable {
   tenant_id: string;
   project_id: string;
   sandbox_domain_id: string;
-  object_snapshot_key: string | null;
+  seed_kind: Generated<WorkspaceSeedKind>;
   workspace_kind: Generated<WorkspaceKind>;
   parent_workspace_id: GeneratedNullable<string>;
   current_workspace_version_id: GeneratedNullable<string>;
@@ -427,38 +422,6 @@ export interface WorkspaceDeleteOperationTable {
   idempotency_key: string;
   deleted_at: Timestamp;
   detached_session_count: GeneratedInteger;
-  created_at: GeneratedTimestamp;
-}
-
-export interface WorkspaceSourceTable {
-  tenant_id: string;
-  workspace_id: string;
-  kind: WorkspaceSourceKind;
-  repository: string | null;
-  commit_sha: string | null;
-  status: WorkspaceImportStatus;
-  object_key: string | null;
-  sha256: string | null;
-  size_bytes: NullableInt8;
-  import_lease_id: string | null;
-  lease_expires_at: NullableTimestamp;
-  failure_code: string | null;
-  github_installation_id: NullableInt8;
-  github_repository_id: NullableInt8;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
-}
-
-export interface WorkspaceRepositorySourceTable {
-  tenant_id: string;
-  workspace_id: string;
-  ordinal: number;
-  root_path: string;
-  kind: "github_public" | "github_app";
-  repository: string;
-  commit_sha: string;
-  github_installation_id: NullableInt8;
-  github_repository_id: NullableInt8;
   created_at: GeneratedTimestamp;
 }
 
@@ -633,7 +596,6 @@ export interface RunTable {
   sandbox_profile_key: Generated<SandboxProfileKey>;
   agent_system_prompt: GeneratedNullable<string>;
   tool_capability_snapshot: GeneratedJsonArray;
-  source_set_snapshot: GeneratedJsonObject;
   conversation_base_seq: GeneratedInt8;
   workspace_base_version_id: GeneratedNullable<string>;
   idempotency_key: string;
@@ -945,70 +907,6 @@ export interface TestResultTable {
   created_at: GeneratedTimestamp;
 }
 
-export interface GitHubAppInstallationTable {
-  tenant_id: string;
-  installation_id: Int8;
-  account_id: Int8;
-  account_login: string;
-  target_type: "User" | "Organization";
-  repository_selection: "all" | "selected";
-  status: GitHubInstallationStatus;
-  permissions: JsonObject;
-  suspended_at: NullableTimestamp;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
-}
-
-export interface GitHubRepositoryTable {
-  tenant_id: string;
-  repository_id: Int8;
-  installation_id: Int8;
-  full_name: string;
-  owner_login: string;
-  name: string;
-  private: boolean;
-  default_branch: string;
-  enabled: GeneratedBoolean;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
-}
-
-export interface GitHubPullRequestDeliveryTable {
-  id: string;
-  tenant_id: string;
-  workspace_version_id: string;
-  repository_id: Int8;
-  installation_id: Int8;
-  idempotency_key: string;
-  state: GitHubPullRequestDeliveryState;
-  base_branch: string;
-  base_commit_sha: string;
-  head_branch: string;
-  title: string;
-  body: string;
-  commit_sha: string | null;
-  pull_request_number: number | null;
-  pull_request_url: string | null;
-  check_run_id: NullableInt8;
-  attempts: GeneratedInteger;
-  failure_code: string | null;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
-  completed_at: NullableTimestamp;
-}
-
-export interface GitHubWebhookDeliveryTable {
-  delivery_id: string;
-  event_name: string;
-  payload_sha256: string;
-  tenant_id: string | null;
-  installation_id: NullableInt8;
-  status: GitHubWebhookDeliveryStatus;
-  failure_code: string | null;
-  received_at: GeneratedTimestamp;
-  processed_at: NullableTimestamp;
-}
-
 export interface UsageLedgerTable {
   id: string;
   tenant_id: string;
@@ -1235,8 +1133,6 @@ export interface Database {
   environment_validations: EnvironmentValidationTable;
   environment_operations: EnvironmentOperationTable;
   workspaces: WorkspaceTable;
-  workspace_sources: WorkspaceSourceTable;
-  workspace_repository_sources: WorkspaceRepositorySourceTable;
   workspace_versions: WorkspaceVersionTable;
   workspace_operations: WorkspaceOperationTable;
   workspace_delete_operations: WorkspaceDeleteOperationTable;
@@ -1282,8 +1178,4 @@ export interface Database {
   pi_session_log: PiSessionLogTable;
   pi_session_mutation_results: PiSessionMutationResultTable;
   checkpoint_objects: CheckpointObjectTable;
-  github_app_installations: GitHubAppInstallationTable;
-  github_repositories: GitHubRepositoryTable;
-  github_pull_request_deliveries: GitHubPullRequestDeliveryTable;
-  github_webhook_deliveries: GitHubWebhookDeliveryTable;
 }

@@ -513,7 +513,7 @@ services:
       NODE_USE_ENV_PROXY: "1"
       HTTP_PROXY: http://provider-egress-relay:3129
       HTTPS_PROXY: http://provider-egress-relay:3129
-      NO_PROXY: 127.0.0.1,localhost,control-plane,tool-broker,github-gateway,jaeger,postgres,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2
+      NO_PROXY: 127.0.0.1,localhost,control-plane,tool-broker,jaeger,postgres,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2
       DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
       PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: /run/pi-cloud-secrets/worker-event-ingest-token
       PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true"
@@ -545,10 +545,6 @@ services:
       PI_CLOUD_MODEL_GATEWAY_UPSTREAM_REQUEST_TIMEOUT_MS: "120000"
       PI_CLOUD_PI_MODEL_REQUEST_TIMEOUT_MS: "150000"
       PI_CLOUD_PI_TURN_TIMEOUT_MS: "600000"
-      PI_CLOUD_REPOSITORY_IMPORT_LEASE_MS: "240000"
-      PI_CLOUD_REPOSITORY_IMPORT_WAIT_MS: "300000"
-      PI_CLOUD_GITHUB_GATEWAY_URL: http://github-gateway:4400
-      PI_CLOUD_GITHUB_GATEWAY_TOKEN_FILE: /run/pi-cloud-secrets/github-gateway-token
       PI_CLOUD_METRICS_HOST: 0.0.0.0
       PI_CLOUD_METRICS_PORT: "9465"
       PI_CLOUD_METRICS_TOKEN_FILE: /run/pi-cloud-secrets/metrics-token
@@ -580,10 +576,6 @@ services:
         target: /run/pi-cloud-secrets/model-credential-master-key
         read_only: true
       - type: bind
-        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/github-gateway-token
-        target: /run/pi-cloud-secrets/github-gateway-token
-        read_only: true
-      - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/metrics-token
         target: /run/pi-cloud-secrets/metrics-token
         read_only: true
@@ -594,7 +586,6 @@ services:
       database: {}
       sandbox-control: {}
       model-egress: {}
-      github-control: {}
       observability: {}
       api: {}
     healthcheck:
@@ -635,7 +626,6 @@ services:
       database: {}
       sandbox-control: {}
       model-egress: {}
-      github-control: {}
       observability: {}
       api: {}
 
@@ -831,62 +821,6 @@ services:
     mem_limit: 384m
     cpus: 1.0
     stop_grace_period: 12m
-    logging: *bounded-logging
-
-  github-gateway:
-    profiles: [github]
-    image: pi-cloud/github-gateway:${PI_CLOUD_IMAGE_VERSION:-production}
-    build:
-      context: ../..
-      dockerfile: packages/github-gateway/Dockerfile
-      args: *application-build-args
-      network: host
-    restart: unless-stopped
-    user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
-    environment:
-      NODE_ENV: production
-      HOST: 0.0.0.0
-      PORT: "4400"
-      PI_CLOUD_GITHUB_GATEWAY_TOKEN_FILE: /run/pi-cloud-secrets/github-gateway-token
-      PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE: /run/pi-cloud-secrets/github-webhook-secret
-      PI_CLOUD_GITHUB_APP_ID: ${PI_CLOUD_GITHUB_APP_ID:-}
-      PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE: /run/pi-cloud-secrets/github-app-private-key.pem
-      PI_CLOUD_CONTROL_PLANE_URL: http://control-plane:3000
-    volumes:
-      - type: bind
-        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/github-gateway-token
-        target: /run/pi-cloud-secrets/github-gateway-token
-        read_only: true
-      - type: bind
-        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/github-webhook-secret
-        target: /run/pi-cloud-secrets/github-webhook-secret
-        read_only: true
-      - type: bind
-        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/github-app-private-key.pem
-        target: /run/pi-cloud-secrets/github-app-private-key.pem
-        read_only: true
-    networks:
-      - github-control
-      - provider-egress
-    healthcheck:
-      test:
-        [
-          CMD,
-          node,
-          -e,
-          "fetch('http://127.0.0.1:4400/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 10s
-    <<: *application-security
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777,uid=${PI_CLOUD_APPLICATION_UID:-1000},gid=${PI_CLOUD_APPLICATION_GID:-1000}
-    pids_limit: 128
-    mem_limit: 256m
-    cpus: 0.75
-    stop_grace_period: 15s
     logging: *bounded-logging
 
   web:
@@ -1167,8 +1101,6 @@ networks:
   management:
     internal: true
   sandbox-control:
-    internal: true
-  github-control:
     internal: true
   model-egress:
     internal: true

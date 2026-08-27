@@ -152,7 +152,7 @@ async function seed(targetDatabase: Kysely<Database> = database): Promise<void> 
       tenant_id: IDS.tenant,
       project_id: IDS.project,
       sandbox_domain_id: "sandbox-domain-0001",
-      object_snapshot_key: null,
+      seed_kind: "empty",
     })
     .execute();
   await targetDatabase

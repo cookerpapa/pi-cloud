@@ -42,8 +42,8 @@ consumed by the first successful login. No Cube credential is exposed.
 
 The default topology includes PostgreSQL, a three-node Kafka cluster, Control Plane, two trusted Pi
 Workers, Tool Broker, persistent Workspace Volume
-gateway, Cube integration, provider proxy and Web. Observability and GitHub
-experiments are optional profiles. The trusted SSH gateway is enabled by
+gateway, Cube integration, provider proxy and Web. Observability is an optional
+profile. The trusted SSH gateway is enabled by
 default in the one-host profile.
 
 Temporal, Valkey, MinIO and Kopia are not installed.

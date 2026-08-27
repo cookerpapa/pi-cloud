@@ -19,9 +19,6 @@
 {{- if lt (int $timeouts.modelCapabilityTtlMs) (add (int $timeouts.turnMs) 60000) -}}
 {{- fail "runtime.timeouts.modelCapabilityTtlMs must outlive turnMs by one minute" -}}
 {{- end -}}
-{{- if lt (int .Values.runtime.repositoryImport.waitMs) (int .Values.runtime.repositoryImport.leaseMs) -}}
-{{- fail "runtime.repositoryImport.waitMs cannot expire before leaseMs" -}}
-{{- end -}}
 {{- $requiredTerminationGraceMs := add (int $timeouts.turnMs) (int $timeouts.toolBrokerRequestMs) 360000 -}}
 {{- if lt (mul (int .Values.lifecycle.terminationGracePeriodSeconds) 1000) $requiredTerminationGraceMs -}}
 {{- fail "lifecycle.terminationGracePeriodSeconds cannot expire before Worker settlement" -}}
@@ -197,16 +194,6 @@ spec:
               value: {{ .Values.runtime.timeouts.modelRequestMs | quote }}
             - name: PI_CLOUD_PI_TURN_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.turnMs | quote }}
-            - name: PI_CLOUD_REPOSITORY_IMPORT_LEASE_MS
-              value: {{ .Values.runtime.repositoryImport.leaseMs | quote }}
-            - name: PI_CLOUD_REPOSITORY_IMPORT_WAIT_MS
-              value: {{ .Values.runtime.repositoryImport.waitMs | quote }}
-            {{- if .Values.services.githubGateway.enabled }}
-            - name: PI_CLOUD_GITHUB_GATEWAY_URL
-              value: {{ .Values.services.githubGateway.url | quote }}
-            - name: PI_CLOUD_GITHUB_GATEWAY_TOKEN_FILE
-              value: /run/pi-cloud-secrets/github-gateway-token
-            {{- end }}
             - name: PI_CLOUD_METRICS_HOST
               value: 0.0.0.0
             - name: PI_CLOUD_METRICS_PORT
@@ -286,12 +273,6 @@ spec:
               mountPath: /run/pi-cloud-secrets/model-credential-master-key
               subPath: model-credential-master-key
               readOnly: true
-            {{- if .Values.services.githubGateway.enabled }}
-            - name: secrets
-              mountPath: /run/pi-cloud-secrets/github-gateway-token
-              subPath: github-gateway-token
-              readOnly: true
-            {{- end }}
             - name: secrets
               mountPath: /run/pi-cloud-secrets/metrics-token
               subPath: {{ .Values.credentials.metricsTokenKey }}
@@ -324,10 +305,6 @@ spec:
                 path: worker-event-ingest-token
               - key: {{ .Values.credentials.modelCredentialMasterKeyKey }}
                 path: model-credential-master-key
-              {{- if .Values.services.githubGateway.enabled }}
-              - key: {{ .Values.credentials.githubGatewayTokenKey }}
-                path: github-gateway-token
-              {{- end }}
               - key: {{ .Values.credentials.metricsTokenKey }}
                 path: metrics-token
   volumeClaimTemplates:

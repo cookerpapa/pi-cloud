@@ -89,8 +89,6 @@ jobs:
             dockerfile: packages/supervisor-host/Dockerfile
           - image: tool-broker
             dockerfile: packages/tool-broker/Dockerfile
-          - image: github-gateway
-            dockerfile: packages/github-gateway/Dockerfile
           - image: web-ui
             dockerfile: packages/web-ui/Dockerfile
           - image: provider-egress-relay

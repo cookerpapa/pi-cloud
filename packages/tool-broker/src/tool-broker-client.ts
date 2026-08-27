@@ -4,7 +4,6 @@ import {
   parseToolBrokerResponse,
   parseSupervisorManagementResponse,
   parseToolSandboxOperationResponse,
-  type GitHubRepositorySource,
   type ToolBrokerRequest,
   type ToolBrokerResponse,
   type ToolBrokerMaterializeFileRequest,
@@ -22,7 +21,6 @@ import {
   type ToolSandboxOperationResponse,
   type ToolSandboxReleaseResponse,
 } from "@pi-cloud/protocol";
-import { decodeWorkspaceSnapshotBlob } from "@pi-cloud/workspace-runtime";
 import { activeTraceCarrier } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
 
@@ -295,35 +293,6 @@ export class ToolBrokerClient {
     return parsed;
   }
 
-  async importGitHub(source: GitHubRepositorySource, signal: AbortSignal): Promise<Uint8Array> {
-    const requestId = this.#idGenerator();
-    const response = await this.#service(
-      {
-        toolBrokerProtocolVersion: 1,
-        type: "workspace.github_import",
-        requestId,
-        source,
-      },
-      signal,
-    );
-    if (response.type !== "workspace.github_imported" || response.requestId !== requestId) {
-      throw new ToolBrokerClientError(
-        "tool_broker_protocol_error",
-        "Repository import response did not match",
-        false,
-      );
-    }
-    try {
-      return decodeWorkspaceSnapshotBlob(response.snapshot);
-    } catch {
-      throw new ToolBrokerClientError(
-        "tool_broker_protocol_error",
-        "Repository import snapshot envelope did not match",
-        false,
-      );
-    }
-  }
-
   async forkWorkspace(
     request: ToolBrokerWorkspaceForkRequest,
   ): Promise<ToolBrokerWorkspaceForkResponse> {
@@ -578,10 +547,6 @@ export class ReplicatedToolBrokerClient {
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
     return this.#ownedClient(request.activationId).operation(executionLease, request, signal);
-  }
-
-  importGitHub(source: GitHubRepositorySource, signal: AbortSignal): Promise<Uint8Array> {
-    return this.#nextReplica().importGitHub(source, signal);
   }
 
   forkWorkspace(request: ToolBrokerWorkspaceForkRequest): Promise<ToolBrokerWorkspaceForkResponse> {

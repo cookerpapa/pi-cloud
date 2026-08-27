@@ -318,7 +318,6 @@ export class PostgresSubagentJobProvider {
           "parent_run.project_id as projectId",
           "parent_run.workspace_id as workspaceId",
           "parent_run.environment_version_id as environmentVersionId",
-          "parent_run.source_set_snapshot as sourceSetSnapshot",
           "parent_run.tool_capability_snapshot as parentTools",
           "parent_attempt.state as attemptState",
           "parent_attempt.lease_id as executionLeaseId",
@@ -530,28 +529,9 @@ export class PostgresSubagentJobProvider {
             tenant_id: input.tenantId,
             project_id: parent.projectId,
             sandbox_domain_id: parent.sandboxDomainId,
-            object_snapshot_key: null,
+            seed_kind: "empty",
             workspace_kind: "subagent_isolated",
             parent_workspace_id: parent.workspaceId,
-          })
-          .executeTakeFirstOrThrow();
-        await transaction
-          .insertInto("workspace_sources")
-          .values({
-            tenant_id: input.tenantId,
-            workspace_id: childWorkspaceId,
-            kind: "empty",
-            repository: null,
-            commit_sha: null,
-            status: "ready",
-            object_key: null,
-            sha256: null,
-            size_bytes: null,
-            import_lease_id: null,
-            lease_expires_at: null,
-            failure_code: null,
-            github_installation_id: null,
-            github_repository_id: null,
           })
           .executeTakeFirstOrThrow();
         await transaction
@@ -722,7 +702,6 @@ export class PostgresSubagentJobProvider {
             treeContext.depth < this.#treePolicy.maximumDepth,
           ),
           tool_capability_snapshot: sql<unknown[]>`${JSON.stringify(tools)}::jsonb`,
-          source_set_snapshot: parent.sourceSetSnapshot,
           conversation_base_seq: 0,
           workspace_base_version_id: effectiveWorkspaceVersionId,
           idempotency_key: idempotencyKey,

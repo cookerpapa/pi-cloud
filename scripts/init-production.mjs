@@ -276,38 +276,6 @@ async function ensureObservabilitySecrets(runtimeDirectory) {
   return created;
 }
 
-async function ensureGitHubGatewaySecrets(runtimeDirectory) {
-  const application = applicationIdentity();
-  const specs = [
-    ["github-gateway-token", `${randomSecret()}\n`, /^[A-Za-z0-9_-]{64}$/],
-    ["github-webhook-secret", `${randomSecret()}\n`, /^[A-Za-z0-9_-]{64}$/],
-    ["github-app-private-key.pem", "not-configured\n", /^not-configured$/],
-  ];
-  const created = [];
-  for (const [name, contents, pattern] of specs) {
-    const path = resolve(runtimeDirectory, "secrets", name);
-    try {
-      const existing = (await readPrivateFile(path)).trim();
-      if (!pattern.test(existing) && name !== "github-app-private-key.pem") {
-        throw new Error(`Production ${name} is invalid`);
-      }
-      if (
-        name === "github-app-private-key.pem" &&
-        existing !== "not-configured" &&
-        !existing.includes("PRIVATE KEY")
-      ) {
-        throw new Error("Production GitHub App private key file is invalid");
-      }
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-      await writePrivateFile(path, contents);
-      if (application.changeOwnership) await chown(path, application.uid, application.gid);
-      created.push(name);
-    }
-  }
-  return created;
-}
-
 async function validateExisting(runtimeDirectory) {
   const manifestPath = resolve(runtimeDirectory, "deployment.json");
   let manifestBytes;
@@ -446,7 +414,6 @@ if (await validateExisting(runtimeDirectory)) {
   const workspaceVolumeGatewaySecretsCreated =
     await ensureWorkspaceVolumeGatewaySecrets(runtimeDirectory);
   const cubeEgressConfigTokenCreated = await ensureCubeEgressConfigToken(runtimeDirectory);
-  const githubGatewaySecretsCreated = await ensureGitHubGatewaySecrets(runtimeDirectory);
   const observabilitySecretsCreated = await ensureObservabilitySecrets(runtimeDirectory);
   process.stdout.write(
     `${JSON.stringify({
@@ -461,7 +428,6 @@ if (await validateExisting(runtimeDirectory)) {
       sshHostKeyCreated,
       workspaceVolumeGatewaySecretsCreated,
       cubeEgressConfigTokenCreated,
-      githubGatewaySecretsCreated,
       observabilitySecretsCreated,
       runtimeDirectory,
     })}\n`,
@@ -598,9 +564,6 @@ await writePrivateFile(
   resolve(secretsDirectory, "cube-egress-config-token"),
   `${randomSecret()}\n`,
 );
-await writePrivateFile(resolve(secretsDirectory, "github-gateway-token"), `${randomSecret()}\n`);
-await writePrivateFile(resolve(secretsDirectory, "github-webhook-secret"), `${randomSecret()}\n`);
-await writePrivateFile(resolve(secretsDirectory, "github-app-private-key.pem"), "not-configured\n");
 await writePrivateFile(resolve(secretsDirectory, "metrics-token"), `${randomSecret()}\n`);
 await writePrivateFile(resolve(secretsDirectory, "grafana-admin-password"), `${randomSecret()}\n`);
 if (application.changeOwnership) {
@@ -667,7 +630,6 @@ const environment = [
   "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS=660000",
   "PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS=30000",
   "PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE=16",
-  "PI_CLOUD_GITHUB_APP_ID=",
   "PI_CLOUD_PROMETHEUS_PORT=9090",
   "PI_CLOUD_ALERTMANAGER_PORT=9093",
   "PI_CLOUD_GRAFANA_PORT=3001",

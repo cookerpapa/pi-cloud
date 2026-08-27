@@ -107,7 +107,7 @@ beforeAll(async () => {
       tenant_id: tenant.tenantId,
       project_id: IDS.project,
       sandbox_domain_id: "sandbox-domain-0001",
-      object_snapshot_key: null,
+      seed_kind: "empty",
       created_at: now,
       updated_at: now,
     })

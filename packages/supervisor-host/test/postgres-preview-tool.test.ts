@@ -42,7 +42,7 @@ describe("trusted Preview Tool", () => {
         tenant_id: tenantId,
         project_id: projectId,
         sandbox_domain_id: "sandbox-domain-0001",
-        object_snapshot_key: null,
+        seed_kind: "empty",
       })
       .execute();
     await database

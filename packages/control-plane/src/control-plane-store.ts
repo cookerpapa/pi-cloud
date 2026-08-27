@@ -26,7 +26,6 @@ import type {
   ExecutionMode,
   SessionResource,
   WorkspaceSourceResource,
-  WorkspaceSourceSetSnapshot,
   WorkspaceDeletionResource,
   WorkspaceListResource,
 } from "@pi-cloud/protocol";
@@ -37,11 +36,9 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
   canonicalEnvironmentRecipeJson,
-  canonicalWorkspaceSourceSetJson,
   parseEnvironmentRecipe,
   parseEnvironmentValidationReport,
   parseCloudToolCapabilitySnapshot,
-  parseWorkspaceSourceSetSnapshot,
   TURN_CANCELLATION_OUTBOX_TOPIC,
   TURN_COMMAND_OUTBOX_TOPIC,
 } from "@pi-cloud/protocol";
@@ -134,28 +131,6 @@ type TenantRuntimePolicy = {
   maximumUnsettledTurns: number;
 };
 
-type WorkspaceSourceRow = {
-  sourceKind: string;
-  sourceRepository: string | null;
-  sourceCommitSha: string | null;
-  sourceStatus: string;
-  sourceFailureCode: string | null;
-  sourceInstallationId: string | null;
-  sourceRepositoryId: string | null;
-  sourcePrivate: boolean | null;
-  sourceRepositories?: readonly WorkspaceRepositorySourceRow[];
-};
-
-type WorkspaceRepositorySourceRow = {
-  sourceRoot: string;
-  sourceKind: "github_public" | "github_app";
-  sourceRepository: string;
-  sourceCommitSha: string;
-  sourceInstallationId: string | null;
-  sourceRepositoryId: string | null;
-  sourcePrivate: boolean | null;
-};
-
 type AssignedSandboxDomain = {
   id: string;
 };
@@ -203,222 +178,11 @@ function environmentSnapshot(row: EnvironmentVersionRow): EnvironmentRuntimeSnap
   };
 }
 
-function workspaceSourceResource(row: WorkspaceSourceRow): WorkspaceSourceResource {
-  if (row.sourceKind === "empty" && row.sourceStatus === "ready") {
-    return { kind: "empty", status: "ready" };
+function workspaceSourceResource(seedKind: string): WorkspaceSourceResource {
+  if (seedKind === "empty" || seedKind === "sample_java") {
+    return { kind: seedKind, status: "ready" };
   }
-  if (row.sourceKind === "sample_java" && row.sourceStatus === "ready") {
-    return { kind: "sample_java", status: "ready" };
-  }
-  if (
-    row.sourceKind === "github_public" &&
-    row.sourceRepository !== null &&
-    row.sourceCommitSha !== null &&
-    (row.sourceStatus === "pending" ||
-      row.sourceStatus === "importing" ||
-      row.sourceStatus === "ready" ||
-      row.sourceStatus === "failed")
-  ) {
-    return {
-      kind: "github_public",
-      repository: row.sourceRepository,
-      commitSha: row.sourceCommitSha,
-      status: row.sourceStatus,
-      ...(row.sourceStatus === "failed" && row.sourceFailureCode !== null
-        ? { failureCode: row.sourceFailureCode }
-        : {}),
-    };
-  }
-  if (
-    row.sourceKind === "repository_set" &&
-    (row.sourceStatus === "pending" ||
-      row.sourceStatus === "importing" ||
-      row.sourceStatus === "ready" ||
-      row.sourceStatus === "failed") &&
-    row.sourceRepositories !== undefined &&
-    row.sourceRepositories.length >= 2 &&
-    row.sourceRepositories.length <= 8
-  ) {
-    return {
-      kind: "repository_set",
-      repositories: row.sourceRepositories.map((repository) =>
-        repository.sourceKind === "github_public"
-          ? {
-              root: repository.sourceRoot,
-              kind: "github_public" as const,
-              repository: repository.sourceRepository,
-              commitSha: repository.sourceCommitSha,
-            }
-          : {
-              root: repository.sourceRoot,
-              kind: "github_app" as const,
-              installationId: positiveSafeInteger(
-                repository.sourceInstallationId ?? "",
-                "GitHub installation ID",
-              ),
-              repositoryId: positiveSafeInteger(
-                repository.sourceRepositoryId ?? "",
-                "GitHub repository ID",
-              ),
-              repository: repository.sourceRepository,
-              commitSha: repository.sourceCommitSha,
-              private:
-                repository.sourcePrivate ??
-                (() => {
-                  throw new ControlPlaneStoreError(
-                    "control_plane_misconfigured",
-                    "GitHub repository privacy metadata is invalid",
-                  );
-                })(),
-            },
-      ),
-      status: row.sourceStatus,
-      ...(row.sourceStatus === "failed" && row.sourceFailureCode !== null
-        ? { failureCode: row.sourceFailureCode }
-        : {}),
-    };
-  }
-  if (
-    row.sourceKind === "github_app" &&
-    row.sourceRepository !== null &&
-    row.sourceCommitSha !== null &&
-    row.sourceInstallationId !== null &&
-    row.sourceRepositoryId !== null &&
-    row.sourcePrivate !== null &&
-    (row.sourceStatus === "pending" ||
-      row.sourceStatus === "importing" ||
-      row.sourceStatus === "ready" ||
-      row.sourceStatus === "failed")
-  ) {
-    return {
-      kind: "github_app",
-      installationId: positiveSafeInteger(row.sourceInstallationId, "GitHub installation ID"),
-      repositoryId: positiveSafeInteger(row.sourceRepositoryId, "GitHub repository ID"),
-      repository: row.sourceRepository,
-      commitSha: row.sourceCommitSha,
-      private: row.sourcePrivate,
-      status: row.sourceStatus,
-      ...(row.sourceStatus === "failed" && row.sourceFailureCode !== null
-        ? { failureCode: row.sourceFailureCode }
-        : {}),
-    };
-  }
-  throw new ControlPlaneStoreError(
-    "control_plane_misconfigured",
-    "Workspace source metadata is invalid",
-  );
-}
-
-function workspaceSourceSetSnapshot(row: WorkspaceSourceRow): WorkspaceSourceSetSnapshot {
-  if (row.sourceKind === "empty" || row.sourceKind === "sample_java") {
-    return parseWorkspaceSourceSetSnapshot({
-      schemaVersion: 1,
-      entries: [{ root: ".", kind: row.sourceKind }],
-    });
-  }
-  if (row.sourceKind === "github_public" && row.sourceRepository && row.sourceCommitSha) {
-    return parseWorkspaceSourceSetSnapshot({
-      schemaVersion: 1,
-      entries: [
-        {
-          root: ".",
-          kind: "github_public",
-          repository: row.sourceRepository,
-          commitSha: row.sourceCommitSha,
-        },
-      ],
-    });
-  }
-  if (
-    row.sourceKind === "github_app" &&
-    row.sourceRepository &&
-    row.sourceCommitSha &&
-    row.sourceInstallationId &&
-    row.sourceRepositoryId &&
-    row.sourcePrivate !== null
-  ) {
-    return parseWorkspaceSourceSetSnapshot({
-      schemaVersion: 1,
-      entries: [
-        {
-          root: ".",
-          kind: "github_app",
-          installationId: positiveSafeInteger(row.sourceInstallationId, "GitHub installation ID"),
-          repositoryId: positiveSafeInteger(row.sourceRepositoryId, "GitHub repository ID"),
-          repository: row.sourceRepository,
-          commitSha: row.sourceCommitSha,
-          private: row.sourcePrivate,
-        },
-      ],
-    });
-  }
-  if (row.sourceKind === "repository_set" && row.sourceRepositories !== undefined) {
-    return parseWorkspaceSourceSetSnapshot({
-      schemaVersion: 1,
-      entries: row.sourceRepositories.map((repository) =>
-        repository.sourceKind === "github_public"
-          ? {
-              root: repository.sourceRoot,
-              kind: "github_public" as const,
-              repository: repository.sourceRepository,
-              commitSha: repository.sourceCommitSha,
-            }
-          : {
-              root: repository.sourceRoot,
-              kind: "github_app" as const,
-              installationId: positiveSafeInteger(
-                repository.sourceInstallationId ?? "",
-                "GitHub installation ID",
-              ),
-              repositoryId: positiveSafeInteger(
-                repository.sourceRepositoryId ?? "",
-                "GitHub repository ID",
-              ),
-              repository: repository.sourceRepository,
-              commitSha: repository.sourceCommitSha,
-              private:
-                repository.sourcePrivate ??
-                (() => {
-                  throw new ControlPlaneStoreError(
-                    "control_plane_misconfigured",
-                    "GitHub repository privacy metadata is invalid",
-                  );
-                })(),
-            },
-      ),
-    });
-  }
-  throw new ControlPlaneStoreError(
-    "control_plane_misconfigured",
-    "Workspace source-set metadata is invalid",
-  );
-}
-
-async function loadWorkspaceRepositorySources(
-  database: Kysely<Database> | Transaction<Database>,
-  tenantId: string,
-  workspaceId: string,
-): Promise<WorkspaceRepositorySourceRow[]> {
-  return database
-    .selectFrom("workspace_repository_sources as repository_source")
-    .leftJoin("github_repositories as github_repository", (join) =>
-      join
-        .onRef("github_repository.tenant_id", "=", "repository_source.tenant_id")
-        .onRef("github_repository.repository_id", "=", "repository_source.github_repository_id"),
-    )
-    .select([
-      "repository_source.root_path as sourceRoot",
-      "repository_source.kind as sourceKind",
-      "repository_source.repository as sourceRepository",
-      "repository_source.commit_sha as sourceCommitSha",
-      "repository_source.github_installation_id as sourceInstallationId",
-      "repository_source.github_repository_id as sourceRepositoryId",
-      "github_repository.private as sourcePrivate",
-    ])
-    .where("repository_source.tenant_id", "=", tenantId)
-    .where("repository_source.workspace_id", "=", workspaceId)
-    .orderBy("repository_source.ordinal", "asc")
-    .execute() as Promise<WorkspaceRepositorySourceRow[]>;
+  throw new ControlPlaneStoreError("control_plane_misconfigured", "Workspace seed is invalid");
 }
 
 function isoTimestamp(value: Date | string): string {
@@ -641,55 +405,6 @@ export class ControlPlaneStore {
             "Tenant project quota has been reached",
           );
         }
-        const requestedRepositories =
-          source.kind === "repository_set" ? source.repositories : [source];
-        const appRepositories = new Map<string, { full_name: string; private: boolean }>();
-        for (const requestedRepository of requestedRepositories) {
-          if (requestedRepository.kind !== "github_app") continue;
-          const appRepository = await transaction
-            .selectFrom("github_repositories as repository")
-            .innerJoin("github_app_installations as installation", (join) =>
-              join
-                .onRef("installation.tenant_id", "=", "repository.tenant_id")
-                .onRef("installation.installation_id", "=", "repository.installation_id"),
-            )
-            .select(["repository.full_name", "repository.private"])
-            .where("repository.tenant_id", "=", this.#tenantId)
-            .where("repository.repository_id", "=", String(requestedRepository.repositoryId))
-            .where("repository.installation_id", "=", String(requestedRepository.installationId))
-            .where("repository.enabled", "=", true)
-            .where("installation.status", "=", "active")
-            .executeTakeFirst();
-          if (appRepository === undefined) {
-            throw new ControlPlaneStoreError(
-              "not_found",
-              "GitHub App repository was not found or is not allowlisted",
-            );
-          }
-          appRepositories.set(
-            `${String(requestedRepository.installationId)}:${String(requestedRepository.repositoryId)}`,
-            appRepository,
-          );
-        }
-        if (source.kind === "repository_set") {
-          const resolvedRepositories = new Set<string>();
-          for (const requestedRepository of source.repositories) {
-            const resolvedRepository =
-              requestedRepository.kind === "github_public"
-                ? requestedRepository.repository
-                : appRepositories.get(
-                    `${String(requestedRepository.installationId)}:${String(requestedRepository.repositoryId)}`,
-                  )!.full_name;
-            const identity = resolvedRepository.toLowerCase();
-            if (resolvedRepositories.has(identity)) {
-              throw new ControlPlaneStoreError(
-                "invalid_request",
-                "Repository-set entries must resolve to distinct repositories",
-              );
-            }
-            resolvedRepositories.add(identity);
-          }
-        }
         const project = await transaction
           .insertInto("projects")
           .values({ id: projectId, tenant_id: this.#tenantId, name: request.name })
@@ -703,7 +418,7 @@ export class ControlPlaneStore {
             tenant_id: this.#tenantId,
             project_id: project.id,
             sandbox_domain_id: sandboxDomain.id,
-            object_snapshot_key: null,
+            seed_kind: source.kind,
           })
           .executeTakeFirstOrThrow();
         const environment = await transaction
@@ -727,113 +442,12 @@ export class ControlPlaneStore {
           })
           .returning(["id", "version_number", "state", "created_at"])
           .executeTakeFirstOrThrow();
-        await transaction
-          .insertInto("workspace_sources")
-          .values({
-            tenant_id: this.#tenantId,
-            workspace_id: workspaceId,
-            kind: source.kind,
-            repository:
-              source.kind === "github_public"
-                ? source.repository
-                : source.kind === "github_app"
-                  ? appRepositories.get(
-                      `${String(source.installationId)}:${String(source.repositoryId)}`,
-                    )!.full_name
-                  : null,
-            commit_sha:
-              source.kind === "github_public" || source.kind === "github_app"
-                ? source.commitSha
-                : null,
-            status: source.kind === "empty" || source.kind === "sample_java" ? "ready" : "pending",
-            object_key: null,
-            sha256: null,
-            size_bytes: null,
-            import_lease_id: null,
-            lease_expires_at: null,
-            failure_code: null,
-            github_installation_id: source.kind === "github_app" ? source.installationId : null,
-            github_repository_id: source.kind === "github_app" ? source.repositoryId : null,
-          })
-          .executeTakeFirstOrThrow();
-        if (source.kind === "repository_set") {
-          await transaction
-            .insertInto("workspace_repository_sources")
-            .values(
-              source.repositories.map((repository, index) => {
-                const appRepository =
-                  repository.kind === "github_app"
-                    ? appRepositories.get(
-                        `${String(repository.installationId)}:${String(repository.repositoryId)}`,
-                      )!
-                    : undefined;
-                return {
-                  tenant_id: this.#tenantId,
-                  workspace_id: workspaceId,
-                  ordinal: index + 1,
-                  root_path: repository.root,
-                  kind: repository.kind,
-                  repository:
-                    repository.kind === "github_public"
-                      ? repository.repository
-                      : appRepository!.full_name,
-                  commit_sha: repository.commitSha,
-                  github_installation_id:
-                    repository.kind === "github_app" ? repository.installationId : null,
-                  github_repository_id:
-                    repository.kind === "github_app" ? repository.repositoryId : null,
-                };
-              }),
-            )
-            .execute();
-        }
-        const sourceResource: WorkspaceSourceResource =
-          source.kind === "github_public"
-            ? {
-                kind: "github_public",
-                repository: source.repository,
-                commitSha: source.commitSha,
-                status: "pending",
-              }
-            : source.kind === "github_app"
-              ? {
-                  kind: "github_app",
-                  installationId: source.installationId,
-                  repositoryId: source.repositoryId,
-                  repository: appRepositories.get(
-                    `${String(source.installationId)}:${String(source.repositoryId)}`,
-                  )!.full_name,
-                  commitSha: source.commitSha,
-                  private: appRepositories.get(
-                    `${String(source.installationId)}:${String(source.repositoryId)}`,
-                  )!.private,
-                  status: "pending",
-                }
-              : source.kind === "repository_set"
-                ? {
-                    kind: "repository_set",
-                    repositories: source.repositories.map((repository) => {
-                      if (repository.kind === "github_public") return repository;
-                      const appRepository = appRepositories.get(
-                        `${String(repository.installationId)}:${String(repository.repositoryId)}`,
-                      )!;
-                      return {
-                        ...repository,
-                        repository: appRepository.full_name,
-                        private: appRepository.private,
-                      };
-                    }),
-                    status: "pending",
-                  }
-                : source.kind === "empty"
-                  ? { kind: "empty", status: "ready" }
-                  : { kind: "sample_java", status: "ready" };
         return {
           projectId: project.id,
           workspaceId,
           name: project.name,
           createdAt: isoTimestamp(project.created_at),
-          source: sourceResource,
+          source: workspaceSourceResource(source.kind),
           environment: {
             environmentVersionId: environment.id,
             versionNumber: environment.version_number,
@@ -1709,16 +1323,6 @@ export class ControlPlaneStore {
           .onRef("workspace.tenant_id", "=", "session_row.tenant_id")
           .onRef("workspace.id", "=", "session_row.workspace_id"),
       )
-      .innerJoin("workspace_sources as source", (join) =>
-        join
-          .onRef("source.tenant_id", "=", "session_row.tenant_id")
-          .onRef("source.workspace_id", "=", "session_row.workspace_id"),
-      )
-      .leftJoin("github_repositories as github_repository", (join) =>
-        join
-          .onRef("github_repository.tenant_id", "=", "source.tenant_id")
-          .onRef("github_repository.repository_id", "=", "source.github_repository_id"),
-      )
       .select([
         "session_row.id as sessionId",
         "session_row.session_kind as sessionKind",
@@ -1738,14 +1342,7 @@ export class ControlPlaneStore {
         "project.name as projectName",
         "project.created_at as projectCreatedAt",
         "workspace.deleted_at as workspaceDeletedAt",
-        "source.kind as sourceKind",
-        "source.repository as sourceRepository",
-        "source.commit_sha as sourceCommitSha",
-        "source.status as sourceStatus",
-        "source.failure_code as sourceFailureCode",
-        "source.github_installation_id as sourceInstallationId",
-        "source.github_repository_id as sourceRepositoryId",
-        "github_repository.private as sourcePrivate",
+        "workspace.seed_kind as workspaceSeedKind",
         "session_row.next_event_seq as nextEventSequence",
       ])
       .where("session_row.tenant_id", "=", this.#tenantId)
@@ -1865,25 +1462,13 @@ export class ControlPlaneStore {
       conversation.sessionKind === "subagent"
         ? await this.#delegatedInheritedMessages(sessionId)
         : [];
-    const conversationSource: WorkspaceSourceRow = {
-      ...conversation,
-      ...(conversation.sourceKind === "repository_set"
-        ? {
-            sourceRepositories: await loadWorkspaceRepositorySources(
-              this.#database,
-              this.#tenantId,
-              conversation.workspaceId,
-            ),
-          }
-        : {}),
-    };
     return {
       project: {
         projectId: conversation.projectId,
         workspaceId: conversation.workspaceId,
         name: conversation.projectName,
         createdAt: isoTimestamp(conversation.projectCreatedAt),
-        source: workspaceSourceResource(conversationSource),
+        source: workspaceSourceResource(conversation.workspaceSeedKind),
         environment,
       },
       session: {
@@ -2194,7 +1779,6 @@ export class ControlPlaneStore {
       turnId: run.turn_id,
       commandId: run.command_id,
       environment: environmentSnapshot(run),
-      sourceSet: parseWorkspaceSourceSetSnapshot(run.source_set_snapshot),
       state: run.state,
       traceId: run.trace_id,
       attemptCount: nonNegativeSafeInteger(run.attempt_count, "Run attempt count"),
@@ -2462,11 +2046,6 @@ export class ControlPlaneStore {
               session.project_id,
               validation.environmentVersionId,
             );
-      const sourceSet = await this.#workspaceSourceSetForRun(
-        transaction,
-        session.project_id,
-        session.workspace_id,
-      );
       await transaction
         .insertInto("turns")
         .values({
@@ -2552,9 +2131,6 @@ export class ControlPlaneStore {
           working_directory: session.working_directory,
           sandbox_profile_key: session.sandbox_profile_key,
           tool_capability_snapshot: sql<unknown[]>`${JSON.stringify(toolCapabilities)}::jsonb`,
-          source_set_snapshot: sql<Record<string, unknown>>`${canonicalWorkspaceSourceSetJson(
-            sourceSet,
-          )}::jsonb`,
           conversation_base_seq: Math.max(
             0,
             positiveSafeInteger(session.next_event_seq, "Next event sequence") - 1,
@@ -2884,55 +2460,6 @@ export class ControlPlaneStore {
         : { validatedAt: isoTimestamp(row.environmentValidatedAt) }),
       ...(latestValidation === undefined ? {} : { latestValidation }),
     };
-  }
-
-  async #workspaceSourceSetForRun(
-    transaction: Transaction<Database>,
-    projectId: string,
-    workspaceId: string,
-  ): Promise<WorkspaceSourceSetSnapshot> {
-    const row = await transaction
-      .selectFrom("workspaces as workspace")
-      .innerJoin("workspace_sources as source", (join) =>
-        join
-          .onRef("source.tenant_id", "=", "workspace.tenant_id")
-          .onRef("source.workspace_id", "=", "workspace.id"),
-      )
-      .leftJoin("github_repositories as github_repository", (join) =>
-        join
-          .onRef("github_repository.tenant_id", "=", "source.tenant_id")
-          .onRef("github_repository.repository_id", "=", "source.github_repository_id"),
-      )
-      .select([
-        "source.kind as sourceKind",
-        "source.repository as sourceRepository",
-        "source.commit_sha as sourceCommitSha",
-        "source.status as sourceStatus",
-        "source.failure_code as sourceFailureCode",
-        "source.github_installation_id as sourceInstallationId",
-        "source.github_repository_id as sourceRepositoryId",
-        "github_repository.private as sourcePrivate",
-      ])
-      .where("workspace.tenant_id", "=", this.#tenantId)
-      .where("workspace.project_id", "=", projectId)
-      .where("workspace.id", "=", workspaceId)
-      .where("workspace.deleted_at", "is", null)
-      .executeTakeFirst();
-    if (row === undefined) {
-      throw new ControlPlaneStoreError("not_found", "Workspace source was not found");
-    }
-    return workspaceSourceSetSnapshot({
-      ...row,
-      ...(row.sourceKind === "repository_set"
-        ? {
-            sourceRepositories: await loadWorkspaceRepositorySources(
-              transaction,
-              this.#tenantId,
-              workspaceId,
-            ),
-          }
-        : {}),
-    });
   }
 
   async #activeEnvironmentForRun(

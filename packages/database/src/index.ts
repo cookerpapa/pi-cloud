@@ -40,9 +40,8 @@ export {
   type SupervisorConnectionState,
   type TenantApiCredentialRole,
   type TurnInputKind,
-  type WorkspaceImportStatus,
   type WorkspaceKind,
-  type WorkspaceSourceKind,
+  type WorkspaceSeedKind,
   type WorkspaceTerminalState,
 } from "./database-types.ts";
 

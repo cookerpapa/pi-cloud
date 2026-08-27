@@ -108,9 +108,6 @@ function toolBroker(): SupervisorToolBroker {
       throw new Error("unused");
     },
     async stop() {},
-    async importGitHub() {
-      throw new Error("unused");
-    },
     async listAssignments() {
       return [];
     },
@@ -221,8 +218,6 @@ describe("PiWorkerRuntime", () => {
       modelGatewayUpstreamRequestTimeoutMs: 10_000,
       piModelRequestTimeoutMs: 15_000,
       piTurnTimeoutMs: 60_000,
-      repositoryImportLeaseMs: 240_000,
-      repositoryImportWaitMs: 300_000,
     };
     expect(
       () =>

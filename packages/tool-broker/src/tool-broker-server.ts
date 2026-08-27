@@ -56,7 +56,6 @@ export type ToolBrokerBackend = Pick<
   | "release"
   | "stop"
   | "execute"
-  | "importGitHub"
   | "materializeFile"
   | "listAssignments"
   | "terminateAndConfirmAbsent"
@@ -548,22 +547,7 @@ export class ToolBrokerServer {
           );
           return;
         }
-        const controller = new AbortController();
-        request.raw.once("aborted", () => controller.abort());
-        const snapshot = await this.#observed({
-          request,
-          spanName: "sandbox.import_github",
-          operation: "import_github",
-          kind: "sandbox",
-          run: () => this.#broker.importGitHub(message.source, controller.signal),
-        });
-        const { encodeWorkspaceSnapshotBlob } = await import("@pi-cloud/workspace-runtime");
-        await reply.code(200).send({
-          toolBrokerProtocolVersion: 1,
-          type: "workspace.github_imported",
-          requestId: message.requestId,
-          snapshot: encodeWorkspaceSnapshotBlob(snapshot),
-        });
+        message satisfies never;
       } catch (error: unknown) {
         await this.#failure(reply, error);
       }

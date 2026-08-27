@@ -419,7 +419,7 @@ export class DevelopmentEnvironmentService {
           tenant_id: identity.tenantId,
           project_id: projectId,
           sandbox_domain_id: domain.id,
-          object_snapshot_key: null,
+          seed_kind: "empty",
           workspace_kind: "development_environment",
         })
         .executeTakeFirstOrThrow();
@@ -441,25 +441,6 @@ export class DevelopmentEnvironmentService {
           state: "pending",
           active: true,
           validated_at: null,
-        })
-        .executeTakeFirstOrThrow();
-      await transaction
-        .insertInto("workspace_sources")
-        .values({
-          tenant_id: identity.tenantId,
-          workspace_id: workspaceId,
-          kind: "empty",
-          repository: null,
-          commit_sha: null,
-          status: "ready",
-          object_key: null,
-          sha256: null,
-          size_bytes: null,
-          import_lease_id: null,
-          lease_expires_at: null,
-          failure_code: null,
-          github_installation_id: null,
-          github_repository_id: null,
         })
         .executeTakeFirstOrThrow();
       await transaction

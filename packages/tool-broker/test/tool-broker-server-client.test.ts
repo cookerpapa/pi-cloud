@@ -144,9 +144,6 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         outputSha256: createHash("sha256").update("isolated\n").digest("hex"),
       };
     },
-    async importGitHub() {
-      return Buffer.from('{"format":"pi-cloud.workspace-manifest.v1","files":[]}\n');
-    },
     async materializeFile(request) {
       const content = Buffer.from("immutable\n");
       return {
@@ -656,16 +653,6 @@ describe("Tool Broker authenticated RPC", () => {
       type: "workspace.forked",
       targetWorkspaceId: "10000000-0000-4000-8000-000000000015",
     });
-    await expect(
-      client.importGitHub(
-        {
-          kind: "github_public",
-          repository: "octocat/hello-world",
-          commitSha: "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d",
-        },
-        new AbortController().signal,
-      ),
-    ).resolves.toEqual(Buffer.from('{"format":"pi-cloud.workspace-manifest.v1","files":[]}\n'));
     await expect(client.listAssignments(runtimeAssignment.sandboxId)).resolves.toEqual([
       runtimeAssignment,
     ]);

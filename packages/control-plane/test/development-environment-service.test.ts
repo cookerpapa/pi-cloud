@@ -495,7 +495,7 @@ describe("user-owned development environments", () => {
         tenant_id: identity.tenantId,
         project_id: projectId,
         sandbox_domain_id: DOMAIN_ID,
-        object_snapshot_key: null,
+        seed_kind: "empty",
         workspace_kind: "development_environment",
       })
       .executeTakeFirstOrThrow();

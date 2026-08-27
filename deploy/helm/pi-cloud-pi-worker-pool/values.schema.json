@@ -98,13 +98,7 @@
     "services": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "controlPlaneUrl",
-        "toolBrokerUrls",
-        "githubGateway",
-        "providerProxyUrl",
-        "otlpTracesEndpoint"
-      ],
+      "required": ["controlPlaneUrl", "toolBrokerUrls", "providerProxyUrl", "otlpTracesEndpoint"],
       "properties": {
         "controlPlaneUrl": { "$ref": "#/$defs/httpUrl" },
         "toolBrokerUrls": {
@@ -115,13 +109,7 @@
           "items": { "$ref": "#/$defs/httpUrl" }
         },
         "providerProxyUrl": { "$ref": "#/$defs/optionalHttpUrl" },
-        "otlpTracesEndpoint": { "$ref": "#/$defs/optionalHttpUrl" },
-        "githubGateway": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["enabled", "url"],
-          "properties": { "enabled": { "type": "boolean" }, "url": { "$ref": "#/$defs/httpUrl" } }
-        }
+        "otlpTracesEndpoint": { "$ref": "#/$defs/optionalHttpUrl" }
       }
     },
     "database": {
@@ -143,7 +131,6 @@
         "toolBrokerTokenKey",
         "workerEventIngestTokenKey",
         "modelCredentialMasterKeyKey",
-        "githubGatewayTokenKey",
         "metricsTokenKey"
       ],
       "properties": {
@@ -152,20 +139,13 @@
         "toolBrokerTokenKey": { "$ref": "#/$defs/secretKey" },
         "workerEventIngestTokenKey": { "$ref": "#/$defs/secretKey" },
         "modelCredentialMasterKeyKey": { "$ref": "#/$defs/secretKey" },
-        "githubGatewayTokenKey": { "$ref": "#/$defs/secretKey" },
         "metricsTokenKey": { "$ref": "#/$defs/secretKey" }
       }
     },
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "allowInsecureInternalHttp",
-        "subagents",
-        "checkpointCache",
-        "timeouts",
-        "repositoryImport"
-      ],
+      "required": ["allowInsecureInternalHttp", "subagents", "checkpointCache", "timeouts"],
       "properties": {
         "allowInsecureInternalHttp": { "type": "boolean" },
         "subagents": {
@@ -204,15 +184,6 @@
             "modelUpstreamRequestMs": { "$ref": "#/$defs/positiveMs" },
             "modelRequestMs": { "$ref": "#/$defs/positiveMs" },
             "turnMs": { "$ref": "#/$defs/positiveMs" }
-          }
-        },
-        "repositoryImport": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["leaseMs", "waitMs"],
-          "properties": {
-            "leaseMs": { "$ref": "#/$defs/positiveMs" },
-            "waitMs": { "$ref": "#/$defs/positiveMs" }
           }
         }
       }

@@ -113,7 +113,6 @@ async function imageEvidence(imageVersion, cubeToolRevision) {
     "control-plane",
     "supervisor-host",
     "tool-broker",
-    "github-gateway",
     "web-ui",
     "provider-egress-relay",
   ];

@@ -100,7 +100,7 @@ const composeDataMover = composeText.slice(
 );
 const composeToolBroker = composeText.slice(
   composeText.indexOf("\n  tool-broker:"),
-  composeText.indexOf("\n  github-gateway:"),
+  composeText.indexOf("\n  web:"),
 );
 assert.ok(composeDataMover.length > 0, "Compose Workspace Volume Gateway service is missing");
 assert.ok(composeToolBroker.length > 0, "Compose Tool Broker service is missing");

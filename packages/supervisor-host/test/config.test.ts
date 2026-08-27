@@ -149,13 +149,6 @@ describe("Supervisor host production configuration", () => {
     await expect(
       loadSupervisorHostConfig({
         ...environment,
-        PI_CLOUD_REPOSITORY_IMPORT_LEASE_MS: "300000",
-        PI_CLOUD_REPOSITORY_IMPORT_WAIT_MS: "299999",
-      }),
-    ).rejects.toThrow("ownership lease");
-    await expect(
-      loadSupervisorHostConfig({
-        ...environment,
         PI_CLOUD_SUBAGENT_MAXIMUM_NODES: "2",
         PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT: "3",
       }),

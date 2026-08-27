@@ -132,14 +132,9 @@ function validateManifest(value) {
     throw new Error("Backup manifest is invalid or unsupported");
   }
   const expectedImages = new Set([
-    ...[
-      "control-plane",
-      "supervisor-host",
-      "tool-broker",
-      "github-gateway",
-      "web-ui",
-      "provider-egress-relay",
-    ].map((repository) => `pi-cloud/${repository}:${value.imageVersion}`),
+    ...["control-plane", "supervisor-host", "tool-broker", "web-ui", "provider-egress-relay"].map(
+      (repository) => `pi-cloud/${repository}:${value.imageVersion}`,
+    ),
     "pi-cloud/cube-api-authorizer:local",
     "pi-cloud/cube-egress-gateway:local",
     `localhost:5000/pi-cloud/cubesandbox-tool:${value.gitCommit}`,

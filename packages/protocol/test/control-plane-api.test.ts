@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  canonicalWorkspaceSourceSetJson,
   ControlPlaneApiValidationError,
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
@@ -29,7 +28,6 @@ import {
   parseTenantIdentityResource,
   parseTenantRegistrationResource,
   parseUuidPathParameter,
-  parseWorkspaceSourceSetSnapshot,
 } from "../src/index.ts";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
@@ -278,10 +276,6 @@ describe("control-plane public API schemas", () => {
         commandId: "60000000-0000-4000-8000-000000000001",
         state: "running",
         environment: ENVIRONMENT_SNAPSHOT,
-        sourceSet: {
-          schemaVersion: 1,
-          entries: [{ root: ".", kind: "sample_java" }],
-        },
         attemptCount: 1,
         currentAttemptId: "50000000-0000-4000-8000-000000000011",
         queuedAt: createdAt,
@@ -366,21 +360,10 @@ describe("control-plane public API schemas", () => {
       source: { kind: "empty" },
     });
     expect(
-      parseCreateProjectRequest({
-        name: "Imported repository",
-        source: {
-          kind: "github_public",
-          repository: "octocat/hello-world",
-          commitSha: "a".repeat(40),
-        },
-      }),
+      parseCreateProjectRequest({ name: "Java fixture", source: { kind: "sample_java" } }),
     ).toEqual({
-      name: "Imported repository",
-      source: {
-        kind: "github_public",
-        repository: "octocat/hello-world",
-        commitSha: "a".repeat(40),
-      },
+      name: "Java fixture",
+      source: { kind: "sample_java" },
     });
     expect(parseAcceptTurnRequest({ prompt: "  fix the test  ", thinkingLevel: "low" })).toEqual({
       prompt: "  fix the test  ",
@@ -392,112 +375,6 @@ describe("control-plane public API schemas", () => {
         displayName: "  Alpha Owner  ",
       }),
     ).toEqual({ tenantSlug: "team-alpha", displayName: "Alpha Owner" });
-  });
-
-  it("normalizes immutable multi-repository sources and rejects overlapping identities", () => {
-    const sourceSet = parseCreateProjectRequest({
-      name: "  Full stack  ",
-      source: {
-        kind: "repository_set",
-        repositories: [
-          {
-            root: "web",
-            kind: "github_public",
-            repository: "octocat/frontend",
-            commitSha: "a".repeat(40),
-          },
-          {
-            root: "api",
-            kind: "github_app",
-            installationId: 17,
-            repositoryId: 29,
-            commitSha: "b".repeat(40),
-          },
-        ],
-      },
-    });
-    expect(sourceSet).toMatchObject({
-      name: "Full stack",
-      source: {
-        kind: "repository_set",
-        repositories: [{ root: "web" }, { root: "api" }],
-      },
-    });
-
-    const snapshot = parseWorkspaceSourceSetSnapshot({
-      schemaVersion: 1,
-      entries: [
-        {
-          root: "web",
-          kind: "github_public",
-          repository: "octocat/frontend",
-          commitSha: "a".repeat(40),
-        },
-        {
-          root: "api",
-          kind: "github_app",
-          installationId: 17,
-          repositoryId: 29,
-          repository: "octocat/backend",
-          commitSha: "b".repeat(40),
-          private: true,
-        },
-      ],
-    });
-    expect(snapshot.entries.map((entry) => entry.root)).toEqual(["api", "web"]);
-    expect(canonicalWorkspaceSourceSetJson(snapshot)).toContain('"root":"api"');
-
-    for (const repositories of [
-      [
-        {
-          root: "web",
-          kind: "github_public",
-          repository: "octocat/frontend",
-          commitSha: "a".repeat(40),
-        },
-        {
-          root: "web",
-          kind: "github_public",
-          repository: "octocat/backend",
-          commitSha: "b".repeat(40),
-        },
-      ],
-      [
-        {
-          root: "web",
-          kind: "github_public",
-          repository: "octocat/frontend",
-          commitSha: "a".repeat(40),
-        },
-        {
-          root: "api",
-          kind: "github_public",
-          repository: "octocat/frontend",
-          commitSha: "b".repeat(40),
-        },
-      ],
-      [
-        {
-          root: "web",
-          kind: "github_public",
-          repository: "octocat/frontend.git",
-          commitSha: "a".repeat(40),
-        },
-        {
-          root: "api",
-          kind: "github_public",
-          repository: "octocat/backend",
-          commitSha: "b".repeat(40),
-        },
-      ],
-    ]) {
-      expect(() =>
-        parseCreateProjectRequest({
-          name: "invalid set",
-          source: { kind: "repository_set", repositories },
-        }),
-      ).toThrow(ControlPlaneApiValidationError);
-    }
   });
 
   it("keeps tenant model configuration closed and secret-free on reads", () => {
@@ -551,30 +428,20 @@ describe("control-plane public API schemas", () => {
     );
   });
 
-  it("accepts only normalized public GitHub coordinates pinned to an exact commit", () => {
-    const invalidSources = [
-      {
-        kind: "github_public",
-        repository: "https://github.com/octocat/hello-world",
-        commitSha: "a".repeat(40),
-      },
-      { kind: "github_public", repository: "Octocat/hello-world", commitSha: "a".repeat(40) },
-      { kind: "github_public", repository: "octocat/../secret", commitSha: "a".repeat(40) },
-      { kind: "github_public", repository: "octocat/hello-world.git", commitSha: "a".repeat(40) },
-      { kind: "github_public", repository: "octocat/hello-world", commitSha: "main" },
-      { kind: "github_public", repository: "octocat/hello-world", commitSha: "A".repeat(40) },
-      {
-        kind: "github_public",
-        repository: "octocat/hello-world",
-        commitSha: "a".repeat(40),
-        token: "must-not-cross",
-      },
-    ];
-    for (const source of invalidSources) {
-      expect(() => parseCreateProjectRequest({ name: "invalid", source })).toThrow(
-        ControlPlaneApiValidationError,
-      );
-    }
+  it("accepts only built-in Workspace seeds", () => {
+    expect(parseCreateProjectRequest({ name: "Empty" })).toEqual({
+      name: "Empty",
+      source: { kind: "empty" },
+    });
+    expect(parseCreateProjectRequest({ name: "Fixture", source: { kind: "sample_java" } })).toEqual(
+      { name: "Fixture", source: { kind: "sample_java" } },
+    );
+    expect(() =>
+      parseCreateProjectRequest({
+        name: "Repository",
+        source: { kind: "github_public", repository: "octocat/repo", commitSha: "a".repeat(40) },
+      }),
+    ).toThrow(ControlPlaneApiValidationError);
   });
 
   it("rejects whitespace-only values, extra fields, and unsupported thinking levels", () => {

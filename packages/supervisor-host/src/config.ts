@@ -43,10 +43,6 @@ export type SupervisorHostConfig = {
   modelGatewayUpstreamRequestTimeoutMs: number;
   piModelRequestTimeoutMs: number;
   piTurnTimeoutMs: number;
-  repositoryImportLeaseMs: number;
-  repositoryImportWaitMs: number;
-  githubGatewayBaseUrl?: string;
-  githubGatewayServiceToken?: string;
 };
 
 function required(environment: SupervisorHostEnvironment, name: string): string {
@@ -238,15 +234,6 @@ export async function loadSupervisorHostConfig(
     required(environment, "PI_CLOUD_CONTROL_PLANE_URL"),
     allowInsecureInternalHttp,
   );
-  const githubGatewayBaseUrl = environment.PI_CLOUD_GITHUB_GATEWAY_URL;
-  const githubGatewayServiceToken = await optionalSecret(
-    environment,
-    "PI_CLOUD_GITHUB_GATEWAY_TOKEN",
-    allowInlineSecrets,
-  );
-  if ((githubGatewayBaseUrl === undefined) !== (githubGatewayServiceToken === undefined)) {
-    throw new TypeError("GitHub Gateway URL and service token must be configured together");
-  }
   const toolBrokerRequestTimeoutMs = integerValue(
     environment,
     "PI_CLOUD_TOOL_BROKER_REQUEST_TIMEOUT_MS",
@@ -282,20 +269,6 @@ export async function loadSupervisorHostConfig(
     1_000,
     300_000,
   );
-  const repositoryImportLeaseMs = integerValue(
-    environment,
-    "PI_CLOUD_REPOSITORY_IMPORT_LEASE_MS",
-    240_000,
-    1_000,
-    10 * 60_000,
-  );
-  const repositoryImportWaitMs = integerValue(
-    environment,
-    "PI_CLOUD_REPOSITORY_IMPORT_WAIT_MS",
-    300_000,
-    1_000,
-    15 * 60_000,
-  );
   if (toolBrokerRequestTimeoutMs < MAX_REMOTE_TOOL_EXECUTION_MS + REMOTE_TOOL_TRANSPORT_MARGIN_MS) {
     throw new TypeError(
       "Tool Broker timeout must outlive the maximum Tool execution and transport margin",
@@ -309,9 +282,6 @@ export async function loadSupervisorHostConfig(
   }
   if (modelGatewayCapabilityTtlMs < piTurnTimeoutMs + MODEL_CAPABILITY_EXPIRY_MARGIN_MS) {
     throw new TypeError("Model capability TTL must outlive the Pi Turn timeout and expiry margin");
-  }
-  if (repositoryImportWaitMs < repositoryImportLeaseMs) {
-    throw new TypeError("Repository import wait must not expire before its ownership lease");
   }
   const subagentMaximumNodes = integerValue(
     environment,
@@ -443,17 +413,5 @@ export async function loadSupervisorHostConfig(
     modelGatewayUpstreamRequestTimeoutMs,
     piModelRequestTimeoutMs,
     piTurnTimeoutMs,
-    repositoryImportLeaseMs,
-    repositoryImportWaitMs,
-    ...(githubGatewayBaseUrl === undefined || githubGatewayServiceToken === undefined
-      ? {}
-      : {
-          githubGatewayBaseUrl: internalServiceBaseUrl(
-            githubGatewayBaseUrl,
-            allowInsecureInternalHttp,
-            "PI_CLOUD_GITHUB_GATEWAY_URL",
-          ),
-          githubGatewayServiceToken,
-        }),
   };
 }

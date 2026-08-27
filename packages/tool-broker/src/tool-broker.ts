@@ -6,7 +6,6 @@ import type {
   DevelopmentEnvironmentProvisionRequest,
   DevelopmentEnvironmentTerminalOpenRequest,
   EnvironmentRuntimeSnapshot,
-  GitHubRepositorySource,
   SupervisorRuntimeAssignment,
   ToolSandboxAssignment,
   ToolSandboxCaptureResponse,
@@ -1959,17 +1958,6 @@ export class ToolBroker {
 
   async confirmAbsent(assignment: SupervisorRuntimeAssignment): Promise<void> {
     await this.#provider.confirmAbsent(assignment);
-  }
-
-  async importGitHub(source: GitHubRepositorySource, signal: AbortSignal): Promise<Uint8Array> {
-    if (this.#provider.importGitHub === undefined) {
-      throw new ToolBrokerError(
-        "repository_import_removed",
-        "Repository import is not available; clone the repository from a Cube Tool session",
-        false,
-      );
-    }
-    return this.#provider.importGitHub(source, signal);
   }
 
   async materializeFile(

@@ -103,25 +103,7 @@ async function seed(): Promise<void> {
       tenant_id: IDS.tenant,
       project_id: IDS.project,
       sandbox_domain_id: "sandbox-domain-0001",
-    })
-    .execute();
-  await database
-    .insertInto("workspace_sources")
-    .values({
-      tenant_id: IDS.tenant,
-      workspace_id: IDS.workspace,
-      kind: "sample_java",
-      repository: null,
-      commit_sha: null,
-      github_installation_id: null,
-      github_repository_id: null,
-      status: "ready",
-      object_key: null,
-      sha256: null,
-      size_bytes: null,
-      import_lease_id: null,
-      lease_expires_at: null,
-      failure_code: null,
+      seed_kind: "sample_java",
     })
     .execute();
   await database

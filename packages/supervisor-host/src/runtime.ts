@@ -18,7 +18,6 @@ import { RunCommandExecutor } from "@pi-cloud/runtime-core/run-command-executor"
 import { PostgresRunAttemptPhaseObserver } from "@pi-cloud/runtime-core/run-attempt-runtime";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { createDatabase, type Database } from "@pi-cloud/database";
-import { GitHubGatewayClient } from "@pi-cloud/github-gateway";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
 import {
   PostgresPiSessionEntryPayloadCache,
@@ -59,7 +58,7 @@ import {
   type PostgresPiWorkerState,
 } from "./postgres-pi-worker.ts";
 import { SupervisorProvisioningClient } from "./provisioning-client.ts";
-import { GatewayGitHubWorkspaceImporter, PostgresWorkspaceSeedResolver } from "./workspace-seed.ts";
+import { PostgresWorkspaceSeedResolver } from "./workspace-seed.ts";
 import { createCloudPreviewTool } from "./postgres-preview-tool.ts";
 
 export type PiWorkerRuntimeState =
@@ -130,7 +129,6 @@ export type SupervisorToolBroker = Pick<
   | "capture"
   | "release"
   | "stop"
-  | "importGitHub"
   | "listAssignments"
   | "terminateAndConfirmAbsent"
   | "confirmAbsent"
@@ -399,26 +397,8 @@ export class PiWorkerRuntime {
         database: this.#database,
         objectStore: cachedCheckpointObjects,
       });
-      const githubGateway =
-        this.#config.githubGatewayBaseUrl === undefined ||
-        this.#config.githubGatewayServiceToken === undefined
-          ? undefined
-          : new GitHubGatewayClient({
-              baseUrl: this.#config.githubGatewayBaseUrl,
-              serviceToken: this.#config.githubGatewayServiceToken,
-              allowInsecureHttp: this.#config.allowInsecureInternalHttp,
-            });
       const workspaceSeedResolver = new PostgresWorkspaceSeedResolver({
         database: this.#database,
-        objectStore: this.#objectStore,
-        importer: {
-          import: (source, signal) => this.#toolBroker.importGitHub(source, signal),
-        },
-        ...(githubGateway === undefined
-          ? {}
-          : { privateImporter: new GatewayGitHubWorkspaceImporter(githubGateway) }),
-        importLeaseMs: this.#config.repositoryImportLeaseMs,
-        maximumWaitMs: this.#config.repositoryImportWaitMs,
       });
       const modelGateway = new TenantModelGateway({
         database: this.#database,

@@ -61,7 +61,6 @@ const composeNetworks = {
   database: "pi-cloud-production_database",
   sandboxControl: "pi-cloud-production_sandbox-control",
   modelEgress: "pi-cloud-production_model-egress",
-  githubControl: "pi-cloud-production_github-control",
   observability: "pi-cloud-production_observability",
 };
 
@@ -92,12 +91,6 @@ const bridgeTargets = [
   },
 ];
 const optionalBridgeTargets = [
-  {
-    name: "github-gateway",
-    composeService: "github-gateway",
-    network: composeNetworks.githubControl,
-    port: 4400,
-  },
   {
     name: "jaeger",
     composeService: "jaeger",
@@ -650,7 +643,7 @@ async function bridgeComposeServices() {
   return resolved;
 }
 
-async function applyWorkerSecret(githubGatewayEnabled) {
+async function applyWorkerSecret() {
   const secretDirectory = join(runtimeDirectory, "secrets");
   const source = async (name) => (await readFile(join(secretDirectory, name))).toString("base64");
   const databaseUrl = new URL(
@@ -667,9 +660,6 @@ async function applyWorkerSecret(githubGatewayEnabled) {
     "model-credential-master-key": await source("model-credential-master-key"),
     "metrics-token": await source("metrics-token"),
   };
-  if (githubGatewayEnabled) {
-    data["github-gateway-token"] = await source("github-gateway-token");
-  }
   await applyManifest([
     {
       apiVersion: "v1",
@@ -878,8 +868,7 @@ async function waitForWorkerPodInventory(timeoutMs = 120_000) {
 }
 
 async function deployWorkerPool(revision, imageTag, resolvedTargets, runtimeEnvironment) {
-  const githubGatewayEnabled = resolvedTargets.some((target) => target.name === "github-gateway");
-  await applyWorkerSecret(githubGatewayEnabled);
+  await applyWorkerSecret();
   const externalCidrs = [...new Set(resolvedTargets.map((target) => `${target.address}/32`))];
   const localJaegerAvailable = resolvedTargets.some((target) => target.name === "jaeger");
   const otlpTracesEndpoint =
@@ -917,8 +906,6 @@ async function deployWorkerPool(revision, imageTag, resolvedTargets, runtimeEnvi
     "services.controlPlaneUrl=http://control-plane.pi-cloud-system.svc.cluster.local:3000",
     "--set",
     "services.toolBrokerUrls[0]=http://tool-broker.pi-cloud-system.svc.cluster.local:4300",
-    "--set",
-    `services.githubGateway.enabled=${String(githubGatewayEnabled)}`,
     "--set",
     "services.providerProxyUrl=http://provider-egress-relay.pi-cloud-system.svc.cluster.local:3129",
     "--set-string",

@@ -21,25 +21,11 @@ Prometheus, Jaeger and Grafana are already an explicit Compose profile:
 npm run production:up:observability
 ```
 
-## GitHub gateway
-
-The GitHub Gateway service remains a separate `github` Compose profile for
-controlled repository-import experiments. The product's GitHub App/PR routes
-and browser workflow are removed; enabling this service alone does not expose
-them.
-
-```bash
-npm run production:config:github
-npm run production:up:github
-```
-
-The default production build does not build or start this profile.
-
 ## Removed product surfaces
 
 The following unfinished product workflows are not part of either core or the
 advanced Web product: structured Diff, Artifact download,
-test-result navigation, Workspace rollback, GitHub App/PR delivery, and
+test-result navigation, Workspace rollback, repository-import/GitHub delivery, and
 organization, RBAC or audit-search pages. Conversation forks, recursive tree
 deletion and conversation-tail pruning are current core features; none of them
 pretends to roll back Workspace bytes. Reintroducing a removed workflow

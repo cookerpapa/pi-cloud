@@ -64,7 +64,7 @@ describe("WorkspaceVolumeDeletionReaper", () => {
           tenant_id: IDS.tenant,
           project_id: IDS.project,
           sandbox_domain_id: "sandbox-domain-delete",
-          object_snapshot_key: null,
+          seed_kind: "empty",
         })
         .execute();
 

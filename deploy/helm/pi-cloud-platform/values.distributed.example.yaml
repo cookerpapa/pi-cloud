@@ -105,7 +105,6 @@ pi-workers:
     controlPlaneUrl: http://control-plane:3000
     toolBrokerUrls:
       - http://tool-broker:4300
-    githubGateway: { enabled: false, url: http://github-gateway:4400 }
     providerProxyUrl: https://provider-proxy.example.com:3129
     otlpTracesEndpoint: ""
   database:

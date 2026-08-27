@@ -1,7 +1,6 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { WorkspacePatchSchema } from "./event-envelope.ts";
-import { GitHubRepositorySourceSchema } from "./control-plane-api.ts";
 import { AgentWorkspaceSeedSchema, SandboxCheckpointBlobSchema } from "./agent-runtime.ts";
 import {
   OpaqueIdSchema,
@@ -295,26 +294,6 @@ export const ToolSandboxStopResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ToolBrokerGitHubImportRequestSchema = Type.Object(
-  {
-    ...ToolSandboxEnvelope,
-    type: Type.Literal("workspace.github_import"),
-    requestId: UuidSchema,
-    source: GitHubRepositorySourceSchema,
-  },
-  { additionalProperties: false },
-);
-
-export const ToolBrokerGitHubImportResponseSchema = Type.Object(
-  {
-    ...ToolSandboxEnvelope,
-    type: Type.Literal("workspace.github_imported"),
-    requestId: UuidSchema,
-    snapshot: SandboxCheckpointBlobSchema,
-  },
-  { additionalProperties: false },
-);
-
 export const ToolBrokerMaterializeFileRequestSchema = Type.Object(
   {
     ...ToolSandboxEnvelope,
@@ -349,7 +328,6 @@ export const ToolBrokerRequestSchema = Type.Union([
   ToolSandboxCaptureRequestSchema,
   ToolSandboxReleaseRequestSchema,
   ToolSandboxStopRequestSchema,
-  ToolBrokerGitHubImportRequestSchema,
   ToolBrokerWorkspaceForkRequestSchema,
 ]);
 
@@ -359,7 +337,6 @@ export const ToolBrokerResponseSchema = Type.Union([
   ToolSandboxCaptureResponseSchema,
   ToolSandboxReleaseResponseSchema,
   ToolSandboxStopResponseSchema,
-  ToolBrokerGitHubImportResponseSchema,
   ToolBrokerWorkspaceForkResponseSchema,
 ]);
 
@@ -598,8 +575,6 @@ export type ToolSandboxReleaseRequest = Static<typeof ToolSandboxReleaseRequestS
 export type ToolSandboxReleaseResponse = Static<typeof ToolSandboxReleaseResponseSchema>;
 export type ToolSandboxStopRequest = Static<typeof ToolSandboxStopRequestSchema>;
 export type ToolSandboxStopResponse = Static<typeof ToolSandboxStopResponseSchema>;
-export type ToolBrokerGitHubImportRequest = Static<typeof ToolBrokerGitHubImportRequestSchema>;
-export type ToolBrokerGitHubImportResponse = Static<typeof ToolBrokerGitHubImportResponseSchema>;
 export type ToolBrokerWorkspaceForkRequest = Static<typeof ToolBrokerWorkspaceForkRequestSchema>;
 export type ToolBrokerWorkspaceForkResponse = Static<typeof ToolBrokerWorkspaceForkResponseSchema>;
 export type ToolBrokerMaterializeFileRequest = Static<
