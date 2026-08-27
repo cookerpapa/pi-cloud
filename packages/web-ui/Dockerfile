@@ -53,6 +53,16 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 
 FROM alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 
+ARG PI_CLOUD_ALPINE_MIRROR=https://mirrors.aliyun.com/alpine
+RUN sed -i "s|https://dl-cdn.alpinelinux.org/alpine|${PI_CLOUD_ALPINE_MIRROR}|g" \
+    /etc/apk/repositories \
+    && upgraded=0 \
+    && for attempt in 1 2 3; do \
+      if apk upgrade --no-cache; then upgraded=1; break; fi; \
+      sleep "$((attempt * 2))"; \
+    done \
+    && test "$upgraded" = 1
+
 ARG PI_CLOUD_VERSION=development
 ARG PI_CLOUD_REVISION=unknown
 LABEL org.opencontainers.image.title="PiCloud production web ingress" \
