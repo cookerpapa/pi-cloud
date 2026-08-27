@@ -2,10 +2,9 @@
 
 ## Status
 
-Accepted on 2026-08-26. This supersedes the JetStream transport, replay and
-browser-cursor portions of ADR-0111, ADR-0122, ADR-0125, ADR-0126 and ADR-0127.
-ADR-0127's single PostgreSQL ExecutionLease Gate and lease-free AcceptedFact
-boundary remain current.
+Accepted on 2026-08-26. This replaces the previous replay-oriented transport
+and browser-cursor design. ADR-0127's single PostgreSQL ExecutionLease Gate and
+lease-free AcceptedFact boundary remain current.
 
 ## Context
 
@@ -97,4 +96,3 @@ reconstructible soft state and active sockets, while Kafka and PostgreSQL remain
 the authorities. The frontend loses `Last-Event-ID`, cursor-expiry and replay
 code. JetStream Streams, RePublish, exact-Subject replay consumers and their
 deployment topology are removed rather than retained as compatibility paths.
-

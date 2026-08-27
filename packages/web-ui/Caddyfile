@@ -18,10 +18,6 @@
 		respond 404
 	}
 
-	handle /webhooks/github {
-		reverse_proxy github-gateway:4400
-	}
-
 	handle /v1/* {
 		reverse_proxy control-plane:3000
 	}

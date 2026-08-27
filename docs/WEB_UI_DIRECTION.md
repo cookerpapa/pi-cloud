@@ -96,7 +96,7 @@ resources, their CPU/memory/disk specification, Cube guest IP and associated
 conversations.
 
 The expanded conversation sidebar carries a compact PiCloud `π` brand rather
-than the retired AgentDock-style avatar. Cloud-machine conversation directory
+than a generic letter avatar. Cloud-machine conversation directory
 selection uses a GNOME-style folder chooser with Places, breadcrumbs, file
 metadata rows, single-selection/double-open behavior and a first-class New
 Folder action. Files remain visible for orientation but only directories can be

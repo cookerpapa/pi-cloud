@@ -2,30 +2,28 @@
 
 ## Status
 
-Accepted on 2026-08-26. This refines ADR-0126 by separating authorization from
-the downstream broker and projections. ADR-0126's short per-Lease channel
-ownership remains current; its JetStream-coupled event-writer composition does
-not.
+Accepted on 2026-08-26. It separates authorization from the downstream broker
+and projections. Short per-Lease channel ownership remains current; the former
+broker-coupled writer does not.
 
 ## Context
 
-PiCloud had two trusted Worker ingress paths. Browser events crossed an
-EventWriterChannel whose service combined writer authority, sequence checks,
-duplicate handling, JetStream publication and watermark recovery. Complete Pi
-Session mutations crossed a second HTTP endpoint that combined PostgreSQL
-authority, mutation batching, JetStream publication and result handling.
+PiCloud once had two trusted Worker ingress paths. Browser events crossed a
+writer that combined authority, ordering, duplicate handling, publication and
+recovery. Complete Pi Session mutations crossed a second endpoint that mixed
+PostgreSQL authority, batching, publication and result handling.
 
 Both paths correctly ensured that downstream consumers saw only facts accepted
 under a current ExecutionLease, but the acceptance boundary was not a single
 replaceable component. A Worker and two ingress implementations knew which
-JetStream Stream served each fact. Changing the broker or the acceptance
-protocol therefore required changes on both sides of the Authority boundary.
+broker served each fact. Changing the broker or the acceptance protocol
+therefore required changes on both sides of the Authority boundary.
 
 ## Decision
 
 One active Run owns one service-authenticated `FactChannel`. It carries both
 browser-facing Agent events and complete Pi Session mutations. The channel is
-opened under the same short PostgreSQL writer lease introduced by ADR-0126.
+opened under the current PostgreSQL Session lease.
 
 The pipeline has four independent roles:
 
