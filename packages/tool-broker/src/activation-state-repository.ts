@@ -1126,81 +1126,15 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "Workspace terminal capacity policy was unavailable",
         );
       }
-      const [
-        tenantActivations,
-        tenantTerminals,
-        tenantDevelopmentEnvironments,
-        domainActivations,
-        domainTerminals,
-        domainDevelopmentEnvironments,
-      ] = await Promise.all([
-        transaction
-          .selectFrom("tool_broker_activations")
-          .select(({ fn }) => fn.countAll<string>().as("count"))
-          .where("tenant_id", "=", input.tenantId)
-          .where("state", "in", [
-            "reserved",
-            "materializing",
-            "active",
-            "warm",
-            "cleaning",
-            "unknown",
-          ])
-          .executeTakeFirstOrThrow(),
-        transaction
-          .selectFrom("workspace_terminal_sessions")
-          .select(({ fn }) => fn.countAll<string>().as("count"))
-          .where("tenant_id", "=", input.tenantId)
-          .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
-          .executeTakeFirstOrThrow(),
-        transaction
-          .selectFrom("development_environments")
-          .select(({ fn }) => fn.countAll<string>().as("count"))
-          .where("tenant_id", "=", input.tenantId)
-          .where("state", "in", ["provisioning", "running", "paused", "releasing", "unknown"])
-          .executeTakeFirstOrThrow(),
-        transaction
-          .selectFrom("tool_broker_activations")
-          .select(({ fn }) => fn.countAll<string>().as("count"))
-          .where("sandbox_domain_id", "=", this.#sandboxDomainId)
-          .where("state", "in", [
-            "reserved",
-            "materializing",
-            "active",
-            "warm",
-            "cleaning",
-            "unknown",
-          ])
-          .executeTakeFirstOrThrow(),
-        transaction
-          .selectFrom("workspace_terminal_sessions")
-          .select(({ fn }) => fn.countAll<string>().as("count"))
-          .where("sandbox_domain_id", "=", this.#sandboxDomainId)
-          .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
-          .executeTakeFirstOrThrow(),
-        transaction
-          .selectFrom("development_environments")
-          .select(({ fn }) => fn.countAll<string>().as("count"))
-          .where("sandbox_domain_id", "=", this.#sandboxDomainId)
-          .where("state", "in", ["provisioning", "running", "paused", "releasing", "unknown"])
-          .executeTakeFirstOrThrow(),
+      const [tenantReserved, domainReserved] = await Promise.all([
+        this.#tenantReservedSandboxes(transaction, input.tenantId),
+        this.#domainReservedSandboxes(transaction),
       ]);
-      if (
-        Number(tenantActivations.count) +
-          Number(tenantTerminals.count) -
-          (activation === undefined ? 0 : 1) +
-          Number(tenantDevelopmentEnvironments.count) >=
-        policy.maximum_active_sandboxes
-      ) {
+      const replacedWarmActivation = activation === undefined ? 0 : 1;
+      if (tenantReserved - replacedWarmActivation >= policy.maximum_active_sandboxes) {
         return { status: "tenant_capacity" };
       }
-      if (
-        Number(domainActivations.count) +
-          Number(domainTerminals.count) -
-          (activation === undefined ? 0 : 1) +
-          Number(domainDevelopmentEnvironments.count) >=
-        domain.maximum_active_sandboxes
-      ) {
+      if (domainReserved - replacedWarmActivation >= domain.maximum_active_sandboxes) {
         return { status: "capacity" };
       }
       const currentFence = Math.max(

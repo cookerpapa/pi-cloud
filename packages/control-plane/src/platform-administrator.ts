@@ -38,7 +38,7 @@ function usernameArgument(values: readonly string[]): string {
   return values[2]!;
 }
 
-export async function runPlatformAdministratorResolver(
+async function runPlatformAdministratorResolver(
   values: readonly string[],
   environment: ProductionControlPlaneEnvironment = process.env,
   output: Pick<NodeJS.WriteStream, "write"> = process.stdout,

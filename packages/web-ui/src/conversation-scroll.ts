@@ -1,4 +1,4 @@
-export const CONVERSATION_TAIL_THRESHOLD_PX = 96;
+const CONVERSATION_TAIL_THRESHOLD_PX = 96;
 
 export function isConversationTailVisible(
   metrics: Readonly<{ scrollTop: number; scrollHeight: number; clientHeight: number }>,

@@ -16,7 +16,7 @@ export const TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_PATH =
 export const TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH =
   "/internal/v1/development-environment-terminal" as const;
 
-export const DevelopmentEnvironmentBrokerStateSchema = Type.Union([
+const DevelopmentEnvironmentBrokerStateSchema = Type.Union([
   Type.Literal("provisioning"),
   Type.Literal("running"),
   Type.Literal("paused"),
@@ -98,7 +98,7 @@ export const DevelopmentEnvironmentCreateDirectoryRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const DevelopmentEnvironmentDirectoryEntrySchema = Type.Object(
+const DevelopmentEnvironmentDirectoryEntrySchema = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 255 }),
     path: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),

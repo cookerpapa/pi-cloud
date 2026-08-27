@@ -23,11 +23,8 @@ The reference qualities to preserve are:
 - timestamps and session/model metadata that remain visually secondary;
 - responsive sidebar overlay behavior on narrow screens.
 
-The current implementation also follows Pi's maintained Tool/TUI semantics and
-the presentation-row pattern surveyed in
-[`research/pi-web-transcript-rendering-2026-08-24.md`](research/pi-web-transcript-rendering-2026-08-24.md).
-It does not import the retired Pi Web UI package or let a browser own an Agent
-runtime.
+The current implementation also follows Pi's maintained Tool/TUI semantics. It
+does not import a Pi Web UI package or let a browser own an Agent runtime.
 
 The existing Session Tree Browser also demonstrates useful live behavior:
 independent transcript/sidebar scrolling, an anchored composer, streamed output,
@@ -41,13 +38,12 @@ processes. It talks only to the control-plane REST/SSE contract.
 
 The product page adds:
 
-- session state and reconnect/replay status;
+- session state and reconnect status;
 - no model picker or credential form; platform model policy is an operator
   concern;
 - streamed assistant text and complete Tool lifecycle from `PiCloudEvent`;
 - a visible turn-cancel control and clear cancelling/failed states;
-- compact sandbox/runner health details for debugging;
-- an event sequence indicator useful for demonstrating durable SSE replay.
+- compact sandbox/runner health details for debugging.
 
 Raw Pi runtime events, lease secrets, credential references, and provider tokens
 must never appear in the DOM or browser developer logs.
@@ -67,8 +63,8 @@ authenticated service Preview, the brokered terminal and active Pi steer are sup
 - Tool and thinking blocks can be expanded and collapsed with keyboard access.
 - Sidebar and transcript scroll independently on desktop; sidebar becomes an
   overlay on small screens.
-- A disconnected SSE client visibly reconnects and resumes without duplicating
-  rendered events.
+- A disconnected SSE client visibly reconnects with a replacement snapshot
+  without duplicating rendered events.
 - Session, turn, and failure states are distinguishable without
   relying on color alone.
 

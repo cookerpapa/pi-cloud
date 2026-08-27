@@ -64,7 +64,7 @@ export type ProductionBootstrapConfig = {
   sandboxDomains: readonly ProductionSandboxDomainConfig[];
 };
 
-export type ProductionSandboxDomainConfig = {
+type ProductionSandboxDomainConfig = {
   id: string;
   displayName: string;
   state: "active" | "draining" | "disabled";
