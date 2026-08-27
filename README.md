@@ -21,28 +21,41 @@ hostile public-SaaS security or abuse-management product.
 ## Architecture
 
 ```text
-Browser ──REST/SSE──> Control Plane ──> PostgreSQL Run queue
-                                             │
-                                      shared Pi Workers
-                                      Pi SDK / Agent Loop
-                                             │ fenced Tool RPC
-                                             ▼
-                                         Tool Broker
-                                             │
-                                             ▼
-                                      CubeSandbox KVM
-                                elastic Volume / cloud development machine state
+                                      trusted plane
 
-Worker CandidateFacts ──> per-Lease FactChannel ──> PostgreSQL Authority Gate
-                                                       │ lease-free AcceptedFacts
-                                                       ▼
-                                                AcceptedFactBus
-                                                Kafka acks=all
-                                             ┌─────────┴─────────┐
-                                             ▼                   ▼
-                                  Gateway live-tail cache   Pi Session projector
-                                             │                   │
-                                      snapshot-first SSE      PostgreSQL
+Browser ── REST ──▶ Web ingress ──▶ Control Plane ──┐
+   ▲                  │              │ auth / quota / Runs  │
+   │                  │ cursor-free  │ Session API          ▼
+   └── snapshot + SSE ─┘              ├──────────────▶ PostgreSQL
+                                      │                  product state
+                                      │ shared Run queue Pi SessionStorage
+                                      ▼                  Lease / Fence
+                                Pi Worker pool
+                                Pi SDK Agent Loop
+                                Model Gateway ──▶ model provider
+                                      │
+                                      │ Session Lease + Tool RPC
+                                      ▼
+                                  Tool Broker ─────────────┐
+                                      │ Cube lifecycle / envd       │
+                                      ▼                             ▼
+                              CubeSandbox KVM                 Workspace Volume Gateway
+                       untrusted code / processes             persistent Workspace bytes
+
+                                durable event plane
+
+Pi Worker CandidateFacts
+          │ one ordered FactChannel per Session Lease
+          ▼
+Control Plane Authority Gate ── PostgreSQL validates Lease/Fence once
+          │ lease-free AcceptedFacts
+          ▼
+Kafka (Session-keyed, acks=all)
+          ├──▶ canonical projector ──▶ PostgreSQL Pi SessionStorage
+          └──▶ rebuildable live tail ──▶ snapshot-first SSE ──▶ Browser
+
+Cloud development machine only:
+Browser SSH / Terminal / Preview ──▶ trusted gateways ──▶ Tool Broker ──▶ owned Cube
 ```
 
 There are three durable authorities:
