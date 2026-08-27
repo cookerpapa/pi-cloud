@@ -16,6 +16,7 @@ import {
 import type { AgentMessage, Session } from "@earendil-works/pi-agent-core";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
+import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { createHash } from "node:crypto";
 import { lstat, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -52,6 +53,7 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   ) => Promise<PiModelRuntimeConfig> | PiModelRuntimeConfig;
   openSession: (command: ExecuteTurnCommandMessage) => Promise<PiCloudSessionHandle>;
   modelRuntimePool?: PiModelRuntimePool;
+  metrics?: PiCloudMetrics;
   createAgentTools: (context: {
     session: Session;
     toolOutputDirectory: string;
@@ -368,6 +370,7 @@ export class PiCloudTurnRunner {
         false,
       );
     }
+    const modelRuntimeStartedAt = performance.now();
     const config = validateRuntimeConfig(
       command,
       await this.#options.resolveModelRuntime(command.payload.model),
@@ -376,12 +379,21 @@ export class PiCloudTurnRunner {
       this.#options.modelRuntimePool === undefined
         ? { runtime: await createModelRuntime(config), release: () => undefined }
         : await this.#options.modelRuntimePool.acquire(config);
+    this.#options.metrics?.runPreparationDuration.observe(
+      { stage: "pi_model_runtime", outcome: "completed" },
+      (performance.now() - modelRuntimeStartedAt) / 1_000,
+    );
     try {
       const modelRuntime = modelRuntimeLease.runtime;
       const model = modelRuntime.getModel(config.provider, config.modelId);
       if (model === undefined)
         throw new PiTurnError("invalid_model_runtime", "Configured model is unavailable", false);
+      const sessionStartedAt = performance.now();
       const sessionHandle = await this.#options.openSession(command);
+      this.#options.metrics?.runPreparationDuration.observe(
+        { stage: "pi_session_open", outcome: "completed" },
+        (performance.now() - sessionStartedAt) / 1_000,
+      );
       let toolOutputDirectoryForCleanup: string | undefined;
 
       try {
@@ -406,6 +418,7 @@ export class PiCloudTurnRunner {
             ? {}
             : { maximumToolOutputBytes: command.payload.budgets.maximumToolOutputBytes }),
         });
+        const worldStateStartedAt = performance.now();
         const worldState = await PiSessionWorldStateController.create(
           sessionHandle.session,
           this.#options.sandboxContinuity,
@@ -413,6 +426,10 @@ export class PiCloudTurnRunner {
         // Persist execution-world changes before the accepted user prompt is
         // appended so later context preserves the causal boundary.
         await worldState.capture();
+        this.#options.metrics?.runPreparationDuration.observe(
+          { stage: "pi_world_state", outcome: "completed" },
+          (performance.now() - worldStateStartedAt) / 1_000,
+        );
         const samplingSteps = new PiSamplingStepController();
         let toolStarted = false;
         let eventChain = Promise.resolve();

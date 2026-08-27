@@ -598,6 +598,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         resolveModelRuntime,
         openSession: this.#openAgentSession,
         modelRuntimePool: this.#modelRuntimePool,
+        ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
         collectWorkspacePatch: () => capturedPatch,
         ...(this.#checkpointStore?.saveToolOutput === undefined
           ? {}
