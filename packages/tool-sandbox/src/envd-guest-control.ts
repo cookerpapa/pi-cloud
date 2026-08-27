@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { chown, lstat, mkdir, open, readFile, readdir, realpath } from "node:fs/promises";
+import { chown, lstat, mkdir, open, readFile, readdir, realpath, rmdir } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
@@ -247,6 +247,18 @@ async function createDirectory(path: string, name: unknown): Promise<Record<stri
 async function prepareExclusiveMachine(): Promise<Record<string, unknown>> {
   await mkdir("/home/user", { recursive: true, mode: 0o700 });
   await chown("/home/user", TOOL_UID, TOOL_UID);
+  const elasticRoot = await lstat("/workspace").catch((error: unknown) => {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  });
+  if (elasticRoot !== undefined) {
+    if (!elasticRoot.isDirectory() || (await readdir("/workspace")).length !== 0) {
+      throw new Error("Exclusive machine received a non-empty elastic Workspace root");
+    }
+    await rmdir("/workspace");
+  }
   return { home: "/home/user" };
 }
 
