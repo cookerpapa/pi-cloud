@@ -164,6 +164,46 @@ describe("PiAgentEventAdapter", () => {
     });
   });
 
+  it("binds a transport retry when Pi omits message_end for the failed sampling", () => {
+    let eventId = 0;
+    const adapter = new PiAgentEventAdapter(
+      createPiCloudEventFactory(
+        { sessionId: "session-1", turnId: "turn-1", agentId: "root" },
+        {
+          idGenerator: () => `${String(++eventId).padStart(8, "0")}-0000-4000-8000-000000000000`,
+        },
+      ),
+      { inputKind: "prompt", requireSamplingIdentity: true },
+    );
+    const step = { stepSequence: 9, stepSha256: "b".repeat(64) } as const;
+    adapter.adapt({ type: "agent_start" });
+    adapter.samplingStarted({ ...step, samplingAttempt: 1 });
+
+    expect(
+      adapter.adapt({
+        type: "auto_retry_start",
+        attempt: 1,
+        maxAttempts: 2,
+        delayMs: 10,
+        errorMessage: "private transport failure",
+      }),
+    ).toMatchObject({
+      kind: "mapped",
+      event: {
+        type: "model.sampling.retry.scheduled",
+        payload: {
+          ...step,
+          completedSamplingAttempt: 1,
+          nextSamplingAttempt: 2,
+        },
+      },
+    });
+    expect(adapter.samplingStarted({ ...step, samplingAttempt: 2 })).toMatchObject({
+      type: "model.sampling.started",
+      payload: { ...step, samplingAttempt: 2 },
+    });
+  });
+
   it("maps an expected Pi abort to a private cancellation result", () => {
     const adapter = createAdapter();
     adapter.adapt({ type: "agent_start" });

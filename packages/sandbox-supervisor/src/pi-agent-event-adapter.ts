@@ -417,12 +417,25 @@ export class PiAgentEventAdapter {
     }
 
     if (value.type === "auto_retry_start") {
-      if (!this.#requireSamplingIdentity && this.#lastCompletedSampling === undefined) {
+      if (
+        !this.#requireSamplingIdentity &&
+        this.#activeSampling === undefined &&
+        this.#lastCompletedSampling === undefined
+      ) {
         return { kind: "ignored", sourceType: value.type };
       }
       const attempt = nonNegativeInteger(value.attempt);
       const maxAttempts = nonNegativeInteger(value.maxAttempts);
       const delayMs = nonNegativeInteger(value.delayMs);
+      // A provider stream can fail before Pi emits message_end. In that path
+      // auto_retry_start is the first terminal fact for the active sampling;
+      // bind the retry to it instead of comparing against an older completed
+      // model call from the same Agent loop.
+      const completedSampling = this.#activeSampling ?? this.#lastCompletedSampling;
+      if (this.#activeSampling !== undefined) {
+        this.#activeSampling = undefined;
+        this.#lastCompletedSampling = completedSampling;
+      }
       if (
         attempt === undefined ||
         attempt < 1 ||
@@ -430,8 +443,8 @@ export class PiAgentEventAdapter {
         maxAttempts < attempt ||
         delayMs === undefined ||
         delayMs > 300_000 ||
-        this.#lastCompletedSampling === undefined ||
-        this.#lastCompletedSampling.samplingAttempt !== attempt
+        completedSampling === undefined ||
+        completedSampling.samplingAttempt !== attempt
       ) {
         return {
           kind: "invalid",
@@ -445,8 +458,8 @@ export class PiAgentEventAdapter {
         event: this.#eventFactory.next({
           type: "model.sampling.retry.scheduled",
           payload: {
-            stepSequence: this.#lastCompletedSampling.stepSequence,
-            stepSha256: this.#lastCompletedSampling.stepSha256,
+            stepSequence: completedSampling.stepSequence,
+            stepSha256: completedSampling.stepSha256,
             completedSamplingAttempt: attempt,
             nextSamplingAttempt: attempt + 1,
             maximumSamplingAttempts: maxAttempts + 1,
