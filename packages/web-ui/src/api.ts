@@ -3,7 +3,6 @@ import {
   parseAcceptedTurnResource,
   parseTurnSteerResource,
   parseAuthSessionResource,
-  parseArchiveSessionRequest,
   parseConversationDetailResource,
   parseConversationListResource,
   parseConversationTreeResource,
@@ -14,7 +13,6 @@ import {
   parseCubeProxyConfigurationResource,
   parseLogoutResource,
   parseProjectResource,
-  parseRunListResource,
   parseRunResource,
   parseSessionResource,
   parseTenantIdentityResource,
@@ -27,10 +25,8 @@ import {
   parseWorkspaceListResource,
   parseWorkspaceOperationResource,
   parseWorkspaceVersionListResource,
-  parseWorkspaceVersionResource,
   parseConversationWorkspaceBindingResource,
   parseSshAccessTicketResource,
-  parseSandboxHttpServiceListResource,
   type ConversationDetailResource,
   type AuthSessionResource,
   type ConversationListResource,
@@ -46,7 +42,6 @@ import {
   type ModelConfigurationResource,
   type CubeProxyConfigurationResource,
   type LogoutResource,
-  type RunListResource,
   type RunResource,
   type ExecutionMode,
   type SessionResource,
@@ -63,10 +58,8 @@ import {
   type WorkspaceOperationResource,
   type WorkspaceSourceRequest,
   type WorkspaceVersionListResource,
-  type WorkspaceVersionResource,
   type ConversationWorkspaceBindingResource,
   type SshAccessTicketResource,
-  type SandboxHttpServiceListResource,
 } from "@pi-cloud/protocol";
 
 export class PiCloudApiError extends Error {
@@ -333,30 +326,6 @@ export class PiCloudApi {
     );
   }
 
-  async listConversationServices(sessionId: string): Promise<SandboxHttpServiceListResource> {
-    return parseSandboxHttpServiceListResource(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}/services`,
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async listDevelopmentEnvironmentServices(
-    environmentId: string,
-  ): Promise<SandboxHttpServiceListResource> {
-    return parseSandboxHttpServiceListResource(
-      await request(
-        this.#fetch,
-        `/v1/development-environments/${encodeURIComponent(environmentId)}/services`,
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
   async createDevelopmentEnvironment(
     name: string,
     profileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey,
@@ -521,17 +490,6 @@ export class PiCloudApi {
     );
   }
 
-  async listRuns(sessionId: string): Promise<RunListResource> {
-    return parseRunListResource(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/runs`,
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
   async getRun(runId: string): Promise<RunResource> {
     return parseRunResource(
       await request(
@@ -548,17 +506,6 @@ export class PiCloudApi {
       await request(
         this.#fetch,
         `/v1/sessions/${encodeURIComponent(sessionId)}/workspace-versions`,
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async getWorkspaceVersion(versionId: string): Promise<WorkspaceVersionResource> {
-    return parseWorkspaceVersionResource(
-      await request(
-        this.#fetch,
-        `/v1/workspace-versions/${encodeURIComponent(versionId)}`,
         { method: "GET" },
         this.#authorizationToken,
       ),
@@ -585,22 +532,6 @@ export class PiCloudApi {
       this.#fetch,
       `/v1/workspace-versions/${encodeURIComponent(versionId)}/file?path=${encodeURIComponent(path)}`,
       this.#authorizationToken,
-    );
-  }
-
-  async archiveSession(
-    sessionId: string,
-    archived: boolean,
-    idempotencyKey: string,
-  ): Promise<WorkspaceOperationResource> {
-    const body = parseArchiveSessionRequest({ archived });
-    return parseWorkspaceOperationResource(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/archive`,
-        jsonRequest(body, idempotencyKey),
-        this.#authorizationToken,
-      ),
     );
   }
 

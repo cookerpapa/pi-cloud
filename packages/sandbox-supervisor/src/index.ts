@@ -23,7 +23,6 @@ export {
   PI_TOOL_POLICY_CHANGED_MESSAGE,
   PI_WORLD_STATE_ENTRY_PROJECTORS,
   PiSessionWorldStateController,
-  PiStepWorldStateController,
   type PiRuntimeWorldState,
   type PiSandboxContinuity,
   type PiWorldStateModelMessage,

@@ -272,7 +272,7 @@ describe.sequential("versioned Workspace service", () => {
     await expect(service.file(IDS.tenant, IDS.version2, "README.md")).resolves.toMatchObject({
       bytes: Buffer.from("second\n"),
     });
-    await expect(service.get(IDS.otherTenant, IDS.version2)).rejects.toMatchObject({
+    await expect(service.files(IDS.otherTenant, IDS.version2)).rejects.toMatchObject({
       code: "not_found",
     });
   });

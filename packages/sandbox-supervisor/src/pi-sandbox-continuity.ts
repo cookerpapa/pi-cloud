@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { SessionManager, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type {
   AgentMessage,
   CustomEntryContextMessageProjector,
@@ -73,7 +72,11 @@ function sha256(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 
-function runtimeWorldState(entry: SessionEntry): PiRuntimeWorldState | undefined {
+function runtimeWorldState(entry: {
+  type: string;
+  customType?: string;
+  data?: unknown;
+}): PiRuntimeWorldState | undefined {
   if (entry.type !== "custom" || entry.customType !== PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE) {
     return undefined;
   }
@@ -110,23 +113,6 @@ function runtimeWorldState(entry: SessionEntry): PiRuntimeWorldState | undefined
   };
 }
 
-function postgresRuntimeWorldState(entry: {
-  type: string;
-  customType?: string;
-  data?: unknown;
-}): PiRuntimeWorldState | undefined {
-  return runtimeWorldState(entry as SessionEntry);
-}
-
-function latestRuntimeWorldState(sessionManager: SessionManager): PiRuntimeWorldState | undefined {
-  const entries = sessionManager.getBranch();
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const state = runtimeWorldState(entries[index]!);
-    if (state !== undefined) return state;
-  }
-  return undefined;
-}
-
 function sameState(left: PiRuntimeWorldState, right: PiRuntimeWorldState): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -152,112 +138,6 @@ function modelMessage(
     return { customType, content: PI_ENVIRONMENT_CHANGED_MESSAGE, display: false, details };
   }
   return { customType, content: PI_TOOL_POLICY_CHANGED_MESSAGE, display: false, details };
-}
-
-/**
- * Owns the typed execution-world baseline for one Pi runtime. The tracker is
- * sampled by the public Pi `context` extension hook before every provider
- * request and is also updated at Tool terminal boundaries.
- */
-export class PiStepWorldStateController {
-  readonly #sessionManager: SessionManager;
-  readonly #continuity: PiSandboxContinuity;
-  readonly #messagesAppendedDuringRun: PiWorldStateModelMessage[] = [];
-  #status: PiRuntimeWorldState["sandbox"]["status"];
-  #previous: PiRuntimeWorldState | undefined;
-
-  constructor(sessionManager: SessionManager, continuity: PiSandboxContinuity) {
-    this.#sessionManager = sessionManager;
-    this.#continuity = continuity;
-    this.#status = continuity.continuity === "warm_reuse" ? "active" : "inactive";
-    this.#previous = latestRuntimeWorldState(sessionManager);
-  }
-
-  capture(): Readonly<{
-    worldState: CloudStepWorldState;
-    modelMessages: readonly PiWorldStateModelMessage[];
-  }> {
-    const state = this.#reconcile();
-    return {
-      worldState: {
-        sandbox: {
-          status: state.sandbox.status,
-          continuitySha256:
-            state.sandbox.continuityId === null
-              ? null
-              : createHash("sha256").update(state.sandbox.continuityId, "utf8").digest("hex"),
-        },
-        environmentSha256: state.environmentSha256,
-        workspaceBindingSha256: state.workspaceBindingSha256,
-        committedWorkspaceRevision: state.committedWorkspaceRevision,
-        toolPolicySha256: state.toolPolicySha256,
-      },
-      modelMessages: [...this.#messagesAppendedDuringRun],
-    };
-  }
-
-  recordActive(): void {
-    this.#status = "active";
-    this.#reconcile();
-  }
-
-  recordUnavailable(): void {
-    this.#status = "unavailable";
-    this.#reconcile();
-  }
-
-  #current(): PiRuntimeWorldState {
-    return {
-      schemaVersion: 3,
-      sandbox: {
-        status: this.#status,
-        continuityId: this.#status === "inactive" ? null : this.#continuity.continuityId,
-      },
-      environmentSha256: this.#continuity.environmentSha256,
-      workspaceBindingSha256: this.#continuity.workspaceBindingSha256,
-      committedWorkspaceRevision: this.#continuity.committedWorkspaceRevision,
-      toolPolicySha256: this.#continuity.toolPolicySha256,
-    };
-  }
-
-  #reconcile(): PiRuntimeWorldState {
-    const current = this.#current();
-    const previous = this.#previous;
-    if (previous !== undefined && sameState(previous, current)) return current;
-
-    const material: PiWorldStateModelMessage["customType"][] = [];
-    const workspaceChanged =
-      previous !== undefined && previous.workspaceBindingSha256 !== current.workspaceBindingSha256;
-    if (
-      !workspaceChanged &&
-      previous?.sandbox.status === "active" &&
-      (current.sandbox.status !== "active" ||
-        previous.sandbox.continuityId !== current.sandbox.continuityId)
-    ) {
-      material.push(PI_SANDBOX_RESET_CUSTOM_TYPE);
-    }
-    if (workspaceChanged) material.push(PI_WORKSPACE_CHANGED_CUSTOM_TYPE);
-    if (previous !== undefined && previous.environmentSha256 !== current.environmentSha256) {
-      material.push(PI_ENVIRONMENT_CHANGED_CUSTOM_TYPE);
-    }
-    if (previous !== undefined && previous.toolPolicySha256 !== current.toolPolicySha256) {
-      material.push(PI_TOOL_POLICY_CHANGED_CUSTOM_TYPE);
-    }
-
-    for (const customType of material) {
-      const message = modelMessage(customType, previous!, current);
-      this.#sessionManager.appendCustomMessageEntry(
-        message.customType,
-        message.content,
-        message.display,
-        message.details,
-      );
-      this.#messagesAppendedDuringRun.push(message);
-    }
-    this.#sessionManager.appendCustomEntry(PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE, current);
-    this.#previous = current;
-    return current;
-  }
 }
 
 function customWorldStateProjector(entry: {
@@ -340,7 +220,7 @@ export class PiSessionWorldStateController {
     return new PiSessionWorldStateController(
       session,
       continuity,
-      latest === undefined ? undefined : postgresRuntimeWorldState(latest),
+      latest === undefined ? undefined : runtimeWorldState(latest),
     );
   }
 

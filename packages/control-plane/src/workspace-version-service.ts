@@ -1,6 +1,5 @@
 import type { Database } from "@pi-cloud/database";
 import type {
-  ArchiveSessionRequest,
   WorkspaceFileListResource,
   WorkspaceOperationResource,
   WorkspaceVersionListResource,
@@ -11,6 +10,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 
 const MAX_VERSIONS = 100;
+type ArchiveSessionRequest = Readonly<{ archived: boolean }>;
 
 export interface TrustedArtifactReader {
   get(objectKey: string): Promise<Uint8Array>;
@@ -185,10 +185,6 @@ export class WorkspaceVersionService {
       versions: rows.slice(0, MAX_VERSIONS).map(versionResource),
       truncated: rows.length > MAX_VERSIONS,
     };
-  }
-
-  async get(tenantId: string, versionId: string): Promise<WorkspaceVersionResource> {
-    return versionResource(await this.#getVersionRow(tenantId, versionId));
   }
 
   async files(

@@ -21,7 +21,6 @@ import type {
   ProjectResource,
   ProjectEnvironmentResource,
   EnvironmentRuntimeSnapshot,
-  RunListResource,
   RunResource,
   ExecutionMode,
   SessionResource,
@@ -254,7 +253,6 @@ const MAX_DELEGATED_SESSION_SUMMARIES = 500;
 const MAX_WORKSPACE_SUMMARIES = 100;
 const MAX_CONVERSATION_TURNS = 200;
 const MAX_INHERITED_MESSAGES = 10_000;
-const MAX_SESSION_RUNS = 100;
 const TURN_ACCEPTING_SESSION_STATES = new Set<SessionState>([
   "cold",
   "idle",
@@ -1610,33 +1608,6 @@ export class ControlPlaneStore {
       cursor = row.parentSessionId;
     }
     return lineage.reverse();
-  }
-
-  async listRuns(sessionId: string): Promise<RunListResource> {
-    const session = await this.#database
-      .selectFrom("sessions")
-      .select("id")
-      .where("tenant_id", "=", this.#tenantId)
-      .where("id", "=", sessionId)
-      .executeTakeFirst();
-    if (session === undefined) {
-      throw new ControlPlaneStoreError("not_found", "Session was not found");
-    }
-    const rows = await this.#database
-      .selectFrom("runs")
-      .select("id")
-      .where("tenant_id", "=", this.#tenantId)
-      .where("session_id", "=", sessionId)
-      .orderBy("created_at", "desc")
-      .orderBy("id", "desc")
-      .limit(MAX_SESSION_RUNS + 1)
-      .execute();
-    return {
-      runs: await Promise.all(
-        rows.slice(0, MAX_SESSION_RUNS).map((row) => this.#loadRunResource(row.id)),
-      ),
-      truncated: rows.length > MAX_SESSION_RUNS,
-    };
   }
 
   async getRun(runId: string): Promise<RunResource> {

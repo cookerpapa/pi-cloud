@@ -773,24 +773,6 @@ describe.sequential("single-user durable turn intake API", () => {
         kind: "turn.execute",
       },
     });
-    const queuedRuns = await http.inject({
-      method: "GET",
-      url: `/v1/sessions/${session.sessionId}/runs`,
-    });
-    expect(queuedRuns.statusCode).toBe(200);
-    expect(queuedRuns.json()).toMatchObject({
-      truncated: false,
-      runs: [
-        {
-          runId: firstAccepted.runId,
-          turnId: firstAccepted.turnId,
-          commandId: firstAccepted.commandId,
-          state: "queued",
-          attemptCount: 0,
-          attempts: [],
-        },
-      ],
-    });
     const queuedRun = await http.inject({
       method: "GET",
       url: `/v1/runs/${firstAccepted.runId}`,

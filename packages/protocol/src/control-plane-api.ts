@@ -523,26 +523,6 @@ export const DevelopmentEnvironmentListResourceSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SandboxHttpServiceResourceSchema = Type.Object(
-  {
-    serviceId: UuidSchema,
-    port: Type.Integer({ minimum: 1_024, maximum: 65_535 }),
-    protocol: Type.Literal("http"),
-    previewPath: Type.String({ minLength: 1, maxLength: 8_192, pattern: "^/" }),
-    firstSeenAt: UtcTimestampSchema,
-    lastSeenAt: UtcTimestampSchema,
-  },
-  { additionalProperties: false },
-);
-
-export const SandboxHttpServiceListResourceSchema = Type.Object(
-  {
-    services: Type.Array(SandboxHttpServiceResourceSchema, { maxItems: 64 }),
-    truncated: Type.Boolean(),
-  },
-  { additionalProperties: false },
-);
-
 export const ConversationTranscriptItemResourceSchema = Type.Union([
   Type.Object(
     {
@@ -900,14 +880,6 @@ export const RunResourceSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const RunListResourceSchema = Type.Object(
-  {
-    runs: Type.Array(RunResourceSchema, { maxItems: 100 }),
-    truncated: Type.Boolean(),
-  },
-  { additionalProperties: false },
-);
-
 export const WorkspaceVersionResourceSchema = Type.Object(
   {
     versionId: UuidSchema,
@@ -966,11 +938,6 @@ export const WorkspaceFileListResourceSchema = Type.Object(
     truncated: Type.Boolean(),
     nextCursor: Type.Optional(WorkspaceFileCursorSchema),
   },
-  { additionalProperties: false },
-);
-
-export const ArchiveSessionRequestSchema = Type.Object(
-  { archived: Type.Boolean() },
   { additionalProperties: false },
 );
 
@@ -1094,8 +1061,6 @@ export type DevelopmentEnvironmentResource = Static<typeof DevelopmentEnvironmen
 export type DevelopmentEnvironmentListResource = Static<
   typeof DevelopmentEnvironmentListResourceSchema
 >;
-export type SandboxHttpServiceResource = Static<typeof SandboxHttpServiceResourceSchema>;
-export type SandboxHttpServiceListResource = Static<typeof SandboxHttpServiceListResourceSchema>;
 export type ConversationTurnState = Static<typeof ConversationTurnStateSchema>;
 export type ConversationSummaryResource = Static<typeof ConversationSummaryResourceSchema>;
 export type DelegatedSessionContextMode = Static<typeof DelegatedSessionContextModeSchema>;
@@ -1128,12 +1093,10 @@ export type RunAttemptState = Static<typeof RunAttemptStateSchema>;
 export type RunAttemptTransitionResource = Static<typeof RunAttemptTransitionResourceSchema>;
 export type RunAttemptResource = Static<typeof RunAttemptResourceSchema>;
 export type RunResource = Static<typeof RunResourceSchema>;
-export type RunListResource = Static<typeof RunListResourceSchema>;
 export type WorkspaceVersionResource = Static<typeof WorkspaceVersionResourceSchema>;
 export type WorkspaceVersionListResource = Static<typeof WorkspaceVersionListResourceSchema>;
 export type WorkspaceFileResource = Static<typeof WorkspaceFileResourceSchema>;
 export type WorkspaceFileListResource = Static<typeof WorkspaceFileListResourceSchema>;
-export type ArchiveSessionRequest = Static<typeof ArchiveSessionRequestSchema>;
 export type WorkspaceOperationResource = Static<typeof WorkspaceOperationResourceSchema>;
 export type CreateTurnCancellationRequest = Static<typeof CreateTurnCancellationRequestSchema>;
 export type AcceptedTurnCancellationResource = Static<
@@ -1419,16 +1382,6 @@ export function parseDevelopmentEnvironmentListResource(
   );
 }
 
-export function parseSandboxHttpServiceListResource(
-  value: unknown,
-): SandboxHttpServiceListResource {
-  return parseSchema(
-    SandboxHttpServiceListResourceSchema,
-    value,
-    "Sandbox HTTP service list resource",
-  );
-}
-
 export function parseConversationListResource(value: unknown): ConversationListResource {
   return parseSchema(ConversationListResourceSchema, value, "conversation list resource");
 }
@@ -1499,18 +1452,6 @@ export function parseAcceptedTurnResource(value: unknown): AcceptedTurnResource 
 
 export function parseRunResource(value: unknown): RunResource {
   return parseSchema(RunResourceSchema, value, "run resource");
-}
-
-export function parseRunListResource(value: unknown): RunListResource {
-  return parseSchema(RunListResourceSchema, value, "run list resource");
-}
-
-export function parseArchiveSessionRequest(value: unknown): ArchiveSessionRequest {
-  return parseSchema(ArchiveSessionRequestSchema, value, "archive-session request");
-}
-
-export function parseWorkspaceVersionResource(value: unknown): WorkspaceVersionResource {
-  return parseSchema(WorkspaceVersionResourceSchema, value, "workspace-version resource");
 }
 
 export function parseWorkspaceVersionListResource(value: unknown): WorkspaceVersionListResource {

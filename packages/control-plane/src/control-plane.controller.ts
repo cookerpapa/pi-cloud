@@ -17,7 +17,6 @@ import {
   parseAcceptTurnRequest,
   parseLoginAccountRequest,
   parseRegisterAccountRequest,
-  parseArchiveSessionRequest,
   parseCreateTenantRegistrationRequest,
   parseCreateProjectRequest,
   parseCreateSessionRequest,
@@ -49,7 +48,6 @@ import {
   type ModelConfigurationResource,
   type CubeProxyConfigurationResource,
   type InternalCubeProxyConfigurationResource,
-  type RunListResource,
   type RunResource,
   type SessionResource,
   type TenantIdentityResource,
@@ -58,14 +56,12 @@ import {
   type WorkspaceFileListResource,
   type WorkspaceOperationResource,
   type WorkspaceVersionListResource,
-  type WorkspaceVersionResource,
   type WorkspaceListResource,
   type WorkspaceDeletionResource,
   type DevelopmentEnvironmentListResource,
   type DevelopmentEnvironmentResource,
   type DevelopmentEnvironmentDirectoryResource,
   type SshAccessTicketResource,
-  type SandboxHttpServiceListResource,
 } from "@pi-cloud/protocol";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ControlPlaneStoreFactory } from "./control-plane-store-factory.ts";
@@ -80,7 +76,6 @@ import { TurnSteeringService } from "./turn-steering-service.ts";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
-import { SandboxHttpServiceService } from "./sandbox-http-service-service.ts";
 
 @Controller("v1")
 export class ControlPlaneController {
@@ -106,8 +101,6 @@ export class ControlPlaneController {
     private readonly developmentEnvironments: DevelopmentEnvironmentService,
     @Inject(SshAccessTicketService)
     private readonly sshAccessTickets: SshAccessTicketService,
-    @Inject(SandboxHttpServiceService)
-    private readonly sandboxHttpServices: SandboxHttpServiceService,
   ) {}
 
   @Post("auth/register")
@@ -261,28 +254,6 @@ export class ControlPlaneController {
     );
   }
 
-  @Get("development-environments/:environmentId/services")
-  async developmentEnvironmentServices(
-    @Req() request: FastifyRequest,
-    @Param("environmentId") environmentIdValue: unknown,
-  ): Promise<SandboxHttpServiceListResource> {
-    return this.sandboxHttpServices.forDevelopmentEnvironment(
-      this.tenantRequestContext.resolve(request),
-      parseUuidPathParameter(environmentIdValue, "environmentId"),
-    );
-  }
-
-  @Get("conversations/:sessionId/services")
-  async conversationServices(
-    @Req() request: FastifyRequest,
-    @Param("sessionId") sessionIdValue: unknown,
-  ): Promise<SandboxHttpServiceListResource> {
-    return this.sandboxHttpServices.forConversation(
-      this.tenantRequestContext.resolve(request),
-      parseUuidPathParameter(sessionIdValue, "sessionId"),
-    );
-  }
-
   @Post("development-environments/:environmentId/directory")
   @HttpCode(200)
   async createDevelopmentEnvironmentDirectory(
@@ -430,16 +401,6 @@ export class ControlPlaneController {
     );
   }
 
-  @Get("sessions/:sessionId/runs")
-  async listRuns(
-    @Req() request: FastifyRequest,
-    @Param("sessionId") sessionIdValue: unknown,
-  ): Promise<RunListResource> {
-    const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
-    const identity = this.tenantRequestContext.resolve(request);
-    return this.controlPlaneStores.forIdentity(identity).listRuns(sessionId);
-  }
-
   @Get("runs/:runId")
   async getRun(
     @Req() request: FastifyRequest,
@@ -458,16 +419,6 @@ export class ControlPlaneController {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     const identity = this.tenantRequestContext.resolve(request);
     return this.workspaceVersions.list(identity.tenantId, sessionId);
-  }
-
-  @Get("workspace-versions/:versionId")
-  async getWorkspaceVersion(
-    @Req() request: FastifyRequest,
-    @Param("versionId") versionIdValue: unknown,
-  ): Promise<WorkspaceVersionResource> {
-    const versionId = parseUuidPathParameter(versionIdValue, "versionId");
-    const identity = this.tenantRequestContext.resolve(request);
-    return this.workspaceVersions.get(identity.tenantId, versionId);
   }
 
   @Get("workspace-versions/:versionId/files")
@@ -499,24 +450,6 @@ export class ControlPlaneController {
       .header("etag", `"${file.sha256}"`)
       .header("x-content-type-options", "nosniff")
       .send(Buffer.from(file.bytes));
-  }
-
-  @Post("sessions/:sessionId/archive")
-  async archiveSession(
-    @Req() request: FastifyRequest,
-    @Param("sessionId") sessionIdValue: unknown,
-    @Headers("idempotency-key") idempotencyKeyValue: unknown,
-    @Body() body: unknown,
-  ): Promise<WorkspaceOperationResource> {
-    const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
-    const idempotencyKey = parseIdempotencyKey(idempotencyKeyValue);
-    const identity = this.tenantRequestContext.requireMutation(request);
-    return this.workspaceVersions.archive(
-      identity.tenantId,
-      idempotencyKey,
-      sessionId,
-      parseArchiveSessionRequest(body),
-    );
   }
 
   @Post("projects/:projectId/sessions")
