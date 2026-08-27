@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
@@ -90,12 +91,39 @@ async function waitForRun(api, runId) {
 }
 
 async function preview(browser, sessionId, portNumber) {
-  const response = await browser.fetch(
+  const bootstrap = await browser.fetch(
     `/v1/conversations/${sessionId}/preview/${String(portNumber)}/`,
-    { headers: { accept: "*/*" } },
+    { headers: { accept: "*/*" }, redirect: "manual" },
   );
+  assert.equal(bootstrap.status, 307);
+  const location = bootstrap.headers.get("location");
+  assert(location, "Preview bootstrap did not return an isolated origin");
+  const publicUrl = new URL(location, baseUrl);
+  const response = await new Promise((resolvePromise, rejectPromise) => {
+    const request = httpRequest(
+      {
+        hostname: connectHost,
+        port: publicUrl.port,
+        path: `${publicUrl.pathname}${publicUrl.search}`,
+        headers: { accept: "*/*", host: publicUrl.host },
+      },
+      (incoming) => {
+        const chunks = [];
+        incoming.on("data", (chunk) => chunks.push(chunk));
+        incoming.once("end", () =>
+          resolvePromise({
+            status: incoming.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString("utf8"),
+          }),
+        );
+      },
+    );
+    request.once("error", rejectPromise);
+    request.setTimeout(30_000, () => request.destroy(new Error("Preview request timed out")));
+    request.end();
+  });
   assert.equal(response.status, 200);
-  return response.text();
+  return response.body;
 }
 
 function twoServicePrompt(label) {
