@@ -476,7 +476,7 @@ export default function ChatApp() {
     if (
       runId === null ||
       runId === undefined ||
-      currentTurn.startedSequence !== null ||
+      currentTurn?.startedSequence !== null ||
       authPhase !== "authenticated"
     ) {
       return;
