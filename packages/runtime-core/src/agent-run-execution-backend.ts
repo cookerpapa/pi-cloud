@@ -13,6 +13,7 @@ import {
   type CancelTurnCommandMessage,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
+import type { PiCloudMetrics } from "@pi-cloud/observability";
 import {
   TurnCancellationBackendError,
   type TurnCancellationBackend,
@@ -47,6 +48,7 @@ export type AgentRunExecutionBackendOptions = {
   idGenerator?: () => string;
   heartbeatIntervalMs?: number;
   onUnexpectedError?: (error: unknown) => void;
+  metrics?: PiCloudMetrics;
 };
 
 type TrackedLeaseExecution = {
@@ -240,6 +242,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   readonly #idGenerator: () => string;
   readonly #heartbeatIntervalMs: number;
   readonly #onUnexpectedError: ((error: unknown) => void) | undefined;
+  readonly #metrics: PiCloudMetrics | undefined;
   readonly #trackedLeaseExecutions = new Map<string, TrackedLeaseExecution>();
   #heartbeatAbort: AbortController | undefined;
   #heartbeatTask: Promise<void> | undefined;
@@ -257,6 +260,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       "heartbeatIntervalMs",
     );
     this.#onUnexpectedError = options.onUnexpectedError;
+    this.#metrics = options.metrics;
   }
 
   async execute(
@@ -270,13 +274,17 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     let durableStarted = false;
 
     try {
-      acknowledgement = await this.#leaseCoordinator.acquire(request);
-      factChannel = await this.#factChannels.open({
-        executionLease: acknowledgement.executionLease,
-        sessionId: request.sessionId,
-        turnId: request.turnId,
-        nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
-      });
+      acknowledgement = await this.#measurePreparation("execution_lease", () =>
+        this.#leaseCoordinator.acquire(request),
+      );
+      factChannel = await this.#measurePreparation("fact_channel", () =>
+        this.#factChannels.open({
+          executionLease: acknowledgement!.executionLease,
+          sessionId: request.sessionId,
+          turnId: request.turnId,
+          nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
+        }),
+      );
       const parsed = parseControlToSupervisorMessage({
         protocolVersion: 1,
         messageId: this.#idGenerator(),
@@ -326,6 +334,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         );
       }
       const command = parsed;
+      const prepareStartedAt = performance.now();
       prepared = this.#supervisor.prepare(command, async (message) => {
         const eventMessage = parseSupervisorToControlMessage(message);
         const publications = eventMessage.type === "event.publish" ? [eventMessage] : [];
@@ -349,6 +358,10 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         for (const publication of publications) await this.#onEvent?.(publication);
         return eventAck;
       });
+      this.#metrics?.runPreparationDuration.observe(
+        { stage: "runner_prepare", outcome: "completed" },
+        (performance.now() - prepareStartedAt) / 1_000,
+      );
       const ack = validateAck(request, command, prepared.ack);
       if (ack.payload.status === "rejected") {
         throw new TurnExecutionBackendError(
@@ -358,7 +371,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         );
       }
 
-      await lifecycle.started(acknowledgement);
+      await this.#measurePreparation("durable_started", () => lifecycle.started(acknowledgement));
       durableStarted = true;
       const execution = prepared.run();
       tracked = this.#registerGrantExecution(request.sessionId, prepared, execution, factChannel);
@@ -405,6 +418,24 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       throw normalized;
     } finally {
       if (factChannel !== undefined && tracked === undefined) await factChannel.close();
+    }
+  }
+
+  async #measurePreparation<T>(stage: string, operation: () => Promise<T>): Promise<T> {
+    const startedAt = performance.now();
+    try {
+      const result = await operation();
+      this.#metrics?.runPreparationDuration.observe(
+        { stage, outcome: "completed" },
+        (performance.now() - startedAt) / 1_000,
+      );
+      return result;
+    } catch (error: unknown) {
+      this.#metrics?.runPreparationDuration.observe(
+        { stage, outcome: "failed" },
+        (performance.now() - startedAt) / 1_000,
+      );
+      throw error;
     }
   }
 

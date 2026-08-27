@@ -7,6 +7,7 @@ export class PiCloudMetrics {
   readonly runs: Counter<"outcome">;
   readonly queueWait: Histogram;
   readonly runDuration: Histogram<"outcome">;
+  readonly runPreparationDuration: Histogram<"stage" | "outcome">;
   readonly sandboxDuration: Histogram<"operation" | "outcome">;
   readonly modelDuration: Histogram<"provider" | "model" | "outcome">;
   readonly modelTokens: Counter<"provider" | "model" | "kind">;
@@ -65,6 +66,13 @@ export class PiCloudMetrics {
       name: "pi_cloud_run_duration_seconds",
       help: "Run execution duration",
       labelNames: ["outcome"],
+      buckets: DURATION_BUCKETS,
+      registers: [this.registry],
+    });
+    this.runPreparationDuration = new Histogram({
+      name: "pi_cloud_run_preparation_seconds",
+      help: "Latency of the durable steps before a trusted Agent Run starts",
+      labelNames: ["stage", "outcome"],
       buckets: DURATION_BUCKETS,
       registers: [this.registry],
     });

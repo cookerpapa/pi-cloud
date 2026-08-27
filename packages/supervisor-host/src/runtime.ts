@@ -668,6 +668,7 @@ export class PiWorkerRuntime {
         supervisor: runSupervisor,
         leaseCoordinator,
         factChannels,
+        ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
         onUnexpectedError: (error) =>
           operationalLog({
             service: "pi-cloud-pi-worker",
