@@ -515,6 +515,11 @@ describe("CubeSandbox Provider contract", () => {
       runtime.requests.find((entry) => entry.guestRequest.mode === "initialize")?.guestRequest,
     ).toMatchObject({ initialization: { toolRoot: "/home/user" } });
     expect(
+      runtime.requests.findIndex(
+        (entry) => entry.guestRequest.mode === "prepare_exclusive_machine",
+      ),
+    ).toBeLessThan(runtime.requests.findIndex((entry) => entry.guestRequest.mode === "initialize"));
+    expect(
       runtime.requests.some((entry) => entry.guestRequest.mode === "prepare_exclusive_machine"),
     ).toBe(true);
     await provider.pause(handle);

@@ -235,8 +235,8 @@ try {
       );
       await waitFor(
         async () => {
-          const runs = await api.listRuns(elasticConversation.sessionId);
-          return runs.runs.at(-1)?.state === "completed";
+          const conversation = await api.getConversation(elasticConversation.sessionId);
+          return conversation.turns.at(-1)?.state === "completed";
         },
         "completed browser-submitted Run",
         180_000,
@@ -247,6 +247,10 @@ try {
       );
       await page.waitFor(
         '[...document.querySelectorAll(".product-turn .product-user-message .product-message-copy")].at(-1)?.dataset.copied==="true"',
+      );
+      await page.waitFor(
+        'document.querySelectorAll(".product-turn .product-answer-actions .product-message-copy").length>0',
+        30_000,
       );
       await clickLast(
         ".product-turn .product-answer-actions .product-message-copy",
