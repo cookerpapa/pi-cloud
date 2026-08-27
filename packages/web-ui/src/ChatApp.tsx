@@ -927,6 +927,29 @@ export default function ChatApp() {
         beginNewConversation(text);
         return;
       }
+      if (session.executionMode === "development_environment") {
+        const environmentId = session.developmentEnvironmentId;
+        const environments = (await api.listDevelopmentEnvironments()).environments;
+        setDevelopmentEnvironments(environments);
+        const environment = environments.find(
+          (candidate) => candidate.environmentId === environmentId,
+        );
+        if (environment?.state === "paused") {
+          const resumed = await api.developmentEnvironmentAction(
+            environment.environmentId,
+            "resume",
+            newIdempotencyKey("environment"),
+          );
+          setDevelopmentEnvironments((current) =>
+            current.map((candidate) =>
+              candidate.environmentId === resumed.environmentId ? resumed : candidate,
+            ),
+          );
+        } else if (environment?.state !== "running") {
+          update({ type: "api.error", message: t("chat.selectExclusiveError") });
+          return;
+        }
+      }
       const accepted = await api.acceptTurn(
         session.sessionId,
         text,

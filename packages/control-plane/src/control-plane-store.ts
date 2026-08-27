@@ -1875,6 +1875,8 @@ export class ControlPlaneStore {
           "desired_model_profile_id",
           "session_kind",
           "state",
+          "execution_mode",
+          "development_environment_id",
           "working_directory",
           "sandbox_profile_key",
           "next_event_seq",
@@ -1927,6 +1929,28 @@ export class ControlPlaneStore {
       }
       if (session.archived_at !== null) {
         throw new ControlPlaneStoreError("conflict", "Archived Session cannot accept turns");
+      }
+      if (session.execution_mode === "development_environment") {
+        if (session.development_environment_id === null) {
+          throw new ControlPlaneStoreError(
+            "control_plane_misconfigured",
+            "Development-machine Session has no environment identity",
+          );
+        }
+        const developmentEnvironment = await transaction
+          .selectFrom("development_environments")
+          .select("state")
+          .where("tenant_id", "=", this.#tenantId)
+          .where("id", "=", session.development_environment_id)
+          .where("workspace_id", "=", session.workspace_id)
+          .forShare()
+          .executeTakeFirst();
+        if (developmentEnvironment?.state !== "running") {
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Resume the development machine before sending a message",
+          );
+        }
       }
       const workspaceBaseVersionId =
         session.forked_from_session_id === null
