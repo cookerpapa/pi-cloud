@@ -9,7 +9,13 @@ import type {
 import { newIdempotencyKey, PiCloudApi, PiCloudApiError } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
 
-const ACTIVE_SESSION_STATES = new Set(["starting", "running", "cancelling"]);
+const ACTIVE_SESSION_STATES = new Set([
+  "starting",
+  "running",
+  "cancelling",
+  "recovering",
+  "evicting",
+]);
 
 function associations(
   conversations: readonly ConversationSummaryResource[],

@@ -258,7 +258,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       if (request.mode === "freeze") return this.#result({ processes: [] });
       if (request.mode === "thaw") return this.#result({ resumed: 0 });
       if (request.mode === "prepare_exclusive_machine") {
-        return this.#result({ home: "/home/user", legacyWorkspaceRemoved: true });
+        return this.#result({ home: "/home/user" });
       }
       if (request.mode === "list_directory") {
         return this.#result({
@@ -511,6 +511,9 @@ describe("CubeSandbox Provider contract", () => {
       ],
     });
     expect(handle.workspaceRoot).toBe("/home/user");
+    expect(
+      runtime.requests.find((entry) => entry.guestRequest.mode === "initialize")?.guestRequest,
+    ).toMatchObject({ initialization: { toolRoot: "/home/user" } });
     expect(
       runtime.requests.some((entry) => entry.guestRequest.mode === "prepare_exclusive_machine"),
     ).toBe(true);

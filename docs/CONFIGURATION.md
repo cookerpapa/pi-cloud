@@ -93,11 +93,6 @@ combinations.
 | `PI_CLOUD_ACCEPTED_FACT_RETENTION_MS` | `7200000` | Kafka AcceptedFact retention (2 hours) |
 | `PI_CLOUD_KAFKA_PARTITIONS` | `32` | Session-keyed AcceptedFact partitions |
 | `PI_CLOUD_KAFKA_REPLICAS` | `3` | Kafka Topic replication factor |
-
-The one-host deployment assigns each combined KRaft Broker/Controller 4 CPU,
-2 GiB of container memory and an explicit 1 GiB JVM heap. The remaining memory
-is required for native allocations and Linux page cache; the container limit
-must never be lower than `-Xmx`.
 | `PI_CLOUD_FACT_CHANNEL_LEASE_MS` | `9000` | short PostgreSQL ownership lease for one active accepted-Fact channel |
 | `PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE` | `128` | bounded active FactChannels per Control Plane replica |
 | `PI_CLOUD_PREVIEW_ORIGIN_BASE_URL` | `http://preview.localhost:8080` | isolated application Preview base domain |
@@ -109,6 +104,11 @@ must never be lower than `-Xmx`.
 | `PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE` | `16` | deletions considered per scan |
 | `PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS` | empty | up to eight comma-separated RFC1918 `/24`–`/32` CIDRs that Cube guests may reach directly |
 | `PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS` | `120000` | Cube lifecycle/control request timeout |
+
+The one-host deployment assigns each combined KRaft Broker/Controller 4 CPU,
+2 GiB of container memory and an explicit 1 GiB JVM heap. The remaining memory
+is required for native allocations and Linux page cache; the container limit
+must never be lower than `-Xmx`.
 
 Kafka retention must cover a maximum Turn plus settlement grace. Browser
 reconnect always receives a replacement PostgreSQL + Gateway-tail snapshot;

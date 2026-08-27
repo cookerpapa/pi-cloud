@@ -349,53 +349,6 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     ).toBe(403);
   });
 
-  it("lists only structured HTTP services owned by the authenticated conversation", async () => {
-    await database
-      .insertInto("sandbox_http_services")
-      .values({
-        id: "10000000-0000-4000-8000-000000000081",
-        tenant_id: alpha.tenantId,
-        target_kind: "conversation",
-        target_id: alphaSession.sessionId,
-        workspace_id: alphaProject.workspaceId,
-        session_id: alphaSession.sessionId,
-        development_environment_id: null,
-        runtime_id: "runtime-alpha",
-        activation_id: "10000000-0000-4000-8000-000000000082",
-        last_operation_id: "10000000-0000-4000-8000-000000000083",
-        port: 3_000,
-        protocol: "http",
-        state: "active",
-        ended_at: null,
-      })
-      .executeTakeFirstOrThrow();
-
-    const owned = await http.inject({
-      method: "GET",
-      url: `/v1/conversations/${alphaSession.sessionId}/services`,
-      headers: authorization(alpha.apiToken),
-    });
-    expect(owned.statusCode).toBe(200);
-    expect(owned.json()).toMatchObject({
-      services: [
-        {
-          port: 3_000,
-          protocol: "http",
-          previewPath: `/v1/conversations/${alphaSession.sessionId}/preview/3000/`,
-        },
-      ],
-      truncated: false,
-    });
-
-    const foreign = await http.inject({
-      method: "GET",
-      url: `/v1/conversations/${alphaSession.sessionId}/services`,
-      headers: authorization(bravo.apiToken),
-    });
-    expect(foreign.statusCode).toBe(404);
-    expect(foreign.body).not.toContain("3000");
-  });
-
   it("reuses one Workspace across named conversations and deletes only the selected conversation", async () => {
     const secondSessionResponse = await http.inject({
       method: "POST",

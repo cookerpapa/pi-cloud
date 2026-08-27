@@ -465,7 +465,7 @@ async function main(): Promise<void> {
   if (model === undefined) throw new Error("Subagent extension host model was unavailable");
   const sessionManager = SessionManager.create(
     directories.stateDir,
-    join(directories.stateDir, "compatibility-sessions"),
+    join(directories.stateDir, "contract-sessions"),
     { id: input.parentSessionId },
   );
   sessionManager.appendMessage({
@@ -475,10 +475,10 @@ async function main(): Promise<void> {
   });
   sessionManager.appendMessage({
     role: "assistant",
-    content: [{ type: "text", text: "Cloud compatibility boundary ready." }],
+    content: [{ type: "text", text: "Cloud provider boundary ready." }],
     api: "openai-completions",
     provider: "pi-cloud",
-    model: "compatibility",
+    model: "provider-adapter",
     usage: {
       input: 0,
       output: 0,

@@ -985,7 +985,7 @@ export class CubeSandboxProvider implements SandboxProvider {
               toolWorkerProtocolVersion: 1,
               type: "worker.initialize",
               activationId: spec.activationId,
-              toolRoot: exclusiveMachine ? "/workspace" : toolRoot,
+              toolRoot,
               environment: spec.environment,
               workspaceSeed: spec.workspaceSeed,
               ...(prepared.attached
@@ -1032,10 +1032,7 @@ export class CubeSandboxProvider implements SandboxProvider {
           ),
           "Cube exclusive machine preparation",
         );
-        if (
-          preparedMachine.home !== "/home/user" ||
-          preparedMachine.legacyWorkspaceRemoved !== true
-        ) {
+        if (preparedMachine.home !== "/home/user") {
           throw new ToolBrokerError(
             "development_environment_home_invalid",
             "Exclusive machine home directory could not be prepared",
