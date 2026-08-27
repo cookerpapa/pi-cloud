@@ -30,6 +30,7 @@ import {
 import { ReplicatedToolBrokerClient } from "@pi-cloud/tool-broker";
 import {
   createPiSubagentsCloudTool,
+  preloadPiSubagentsCloudToolContract,
   AgentRunSupervisor,
   RemoteToolSandboxTurnRunner,
   ReconnectingSupervisorWebSocketClient,
@@ -637,6 +638,7 @@ export class PiWorkerRuntime {
         turnTimeoutMs: this.#config.piTurnTimeoutMs,
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
       });
+      await Promise.all([runner.warm(), preloadPiSubagentsCloudToolContract()]);
       const runSupervisor = new AgentRunSupervisor({
         runner,
         maxConcurrentSessions: this.#config.maxConcurrentSessions,

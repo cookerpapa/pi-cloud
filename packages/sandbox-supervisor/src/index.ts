@@ -44,6 +44,7 @@ export {
   type TrustedRemoteToolsRuntimeConfiguration,
 } from "./trusted-remote-tools-extension.ts";
 export {
+  preloadPiSubagentsCloudToolContract,
   createPiSubagentsCloudTool,
   type PiSubagentCloudCoordinator,
   type PiSubagentCloudToolContext,

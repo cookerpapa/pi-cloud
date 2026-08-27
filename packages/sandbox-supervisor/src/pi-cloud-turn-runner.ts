@@ -240,6 +240,10 @@ export class PiModelRuntimePool {
     });
   }
 
+  ready(): Promise<void> {
+    return this.#prewarming;
+  }
+
   async acquire(config: PiModelRuntimeConfig): Promise<PiModelRuntimeLease> {
     await this.#prewarming;
     const signature = modelRuntimeSignature(config);

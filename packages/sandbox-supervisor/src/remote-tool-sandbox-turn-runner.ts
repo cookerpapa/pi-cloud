@@ -196,6 +196,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#metrics = options.metrics;
   }
 
+  warm(): Promise<void> {
+    return this.#modelRuntimePool.ready();
+  }
+
   async run(
     command: ExecuteTurnCommandMessage,
     publishEvent: PiEventPublisher,

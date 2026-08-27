@@ -108,6 +108,11 @@ async function loadContract(): Promise<Contract> {
   return contractPromise;
 }
 
+/** Loads the upstream Tool contract before this Worker accepts user Runs. */
+export async function preloadPiSubagentsCloudToolContract(): Promise<void> {
+  await loadContract();
+}
+
 function failure(message: string): AgentToolResult<unknown> {
   return { content: [{ type: "text", text: message }], details: { error: message } };
 }
