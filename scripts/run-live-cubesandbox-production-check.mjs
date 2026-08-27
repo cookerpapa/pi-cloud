@@ -1313,13 +1313,13 @@ try {
     .deleteWorkspace(project.workspaceId, newIdempotencyKey("acceptance-finally-workspace"))
     .catch(() => undefined);
   if (foreignSession !== undefined) {
-    await foreignApi
+    await bootstrapApi
       .deleteConversation(
         foreignSession.sessionId,
         newIdempotencyKey("acceptance-finally-archive-foreign"),
       )
       .catch(() => undefined);
-    await foreignApi
+    await bootstrapApi
       .deleteWorkspace(
         foreignSession.workspaceId,
         newIdempotencyKey("acceptance-finally-workspace-foreign"),

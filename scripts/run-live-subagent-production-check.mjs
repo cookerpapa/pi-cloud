@@ -79,7 +79,9 @@ const token = (
   await readPrivate(resolve(runtimeDirectory, "secrets/api-token"), 4_096, "Production API token")
 ).trim();
 const fetchFromProduction = (input, init) => fetch(new URL(String(input), baseUrl), init);
-const api = new PiCloudApi(fetchFromProduction, token);
+const bootstrapApi = new PiCloudApi(fetchFromProduction, token);
+let api = bootstrapApi;
+let authorizationToken = token;
 
 function capture(command, args, timeoutMs = 120_000) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -191,7 +193,7 @@ async function runTurn(sessionId, prompt) {
     await streamSessionEvents({
       sessionId,
       signal: controller.signal,
-      authorizationToken: token,
+      authorizationToken,
       fetchImplementation: fetchFromProduction,
       retryDelayMs: 100,
       onStatus() {},
@@ -281,9 +283,15 @@ async function recursiveTreeEvidence(rootRunId) {
 }
 
 await retireHistoricalAcceptanceCubes();
+const suffix = `${Date.now().toString(36)}`;
+const registration = await new PiCloudApi(fetchFromProduction).registerTenant(
+  `subagent-${suffix}`.slice(0, 63),
+  "Subagent production acceptance",
+);
+api = new PiCloudApi(fetchFromProduction, registration.apiToken);
+authorizationToken = registration.apiToken;
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production tenant must use a real model");
-const suffix = `${Date.now().toString(36)}`;
 const project = await api.createProject(`Subagent production acceptance ${suffix}`);
 const session = await api.createSession(
   project.projectId,
@@ -292,122 +300,131 @@ const session = await api.createSession(
   "elastic",
 );
 
-const none = await runTurn(
-  session.sessionId,
-  [
-    "Call the subagent Tool exactly once and do not call any file or bash Tool.",
-    'Use this exact workflowScript: return runs.run("none", {agent:"oracle", task:"Reply exactly SUBAGENT-NONE-OK"})',
-    "After it finishes, reply with SUBAGENT-NONE-OK.",
-  ].join(" "),
-);
-const noneEvidence = await executionEvidence(none.accepted.runId);
-assert.equal(noneEvidence.workspaceMode, "none");
-assert.equal(noneEvidence.childRunState, "completed");
+try {
+  const none = await runTurn(
+    session.sessionId,
+    [
+      "Call the subagent Tool exactly once and do not call any file or bash Tool.",
+      'Use this exact workflowScript: return runs.run("none", {agent:"oracle", task:"Reply exactly SUBAGENT-NONE-OK"})',
+      "After it finishes, reply with SUBAGENT-NONE-OK.",
+    ].join(" "),
+  );
+  const noneEvidence = await executionEvidence(none.accepted.runId);
+  assert.equal(noneEvidence.workspaceMode, "none");
+  assert.equal(noneEvidence.childRunState, "completed");
 
-const shared = await runTurn(
-  session.sessionId,
-  [
-    "First use bash to write exactly SHARED-PARENT-OK into /workspace/shared-parent-marker.txt.",
-    "Then call the subagent Tool exactly once with worktree:false.",
-    'Use this exact workflowScript: return runs.run("shared", {agent:"worker", task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK"})',
-    "After it finishes, reply with SHARED-CHILD-OK.",
-  ].join(" "),
-);
-const sharedEvidence = await executionEvidence(shared.accepted.runId);
-assert.equal(sharedEvidence.workspaceMode, "shared_serialized");
-assert.equal(sharedEvidence.childWorkspaceId, sharedEvidence.parentWorkspaceId);
-assert.equal(sharedEvidence.childRunState, "completed");
-assert(sharedEvidence.inheritedReferenceCount > 0);
+  const shared = await runTurn(
+    session.sessionId,
+    [
+      "First use bash to write exactly SHARED-PARENT-OK into /workspace/shared-parent-marker.txt.",
+      "Then call the subagent Tool exactly once with worktree:false.",
+      'Use this exact workflowScript: return runs.run("shared", {agent:"worker", task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK"})',
+      "After it finishes, reply with SHARED-CHILD-OK.",
+    ].join(" "),
+  );
+  const sharedEvidence = await executionEvidence(shared.accepted.runId);
+  assert.equal(sharedEvidence.workspaceMode, "shared_serialized");
+  assert.equal(sharedEvidence.childWorkspaceId, sharedEvidence.parentWorkspaceId);
+  assert.equal(sharedEvidence.childRunState, "completed");
+  assert(sharedEvidence.inheritedReferenceCount > 0);
 
-const isolated = await runTurn(
-  session.sessionId,
-  [
-    "Call the subagent Tool exactly once with worktree:true.",
-    'Use this exact workflowScript: return runs.run("isolated", {agent:"worker", task:"Use bash to create /workspace/isolated-child-only.txt containing ISOLATED-CHILD-OK, read it back, and reply exactly ISOLATED-CHILD-OK"})',
-    "Do not create isolated-child-only.txt yourself. After the child finishes, reply with ISOLATED-CHILD-OK.",
-  ].join(" "),
-);
-const isolatedEvidence = await executionEvidence(isolated.accepted.runId);
-assert.equal(isolatedEvidence.workspaceMode, "isolated");
-assert.notEqual(isolatedEvidence.childWorkspaceId, isolatedEvidence.parentWorkspaceId);
-assert.equal(isolatedEvidence.workspaceKind, "subagent_isolated");
-assert.equal(isolatedEvidence.workspaceDeleted, true);
-assert.equal(isolatedEvidence.patchContainsIsolatedFile, true);
-assert(isolatedEvidence.inheritedReferenceCount > 0);
+  const isolated = await runTurn(
+    session.sessionId,
+    [
+      "Call the subagent Tool exactly once with worktree:true.",
+      'Use this exact workflowScript: return runs.run("isolated", {agent:"worker", task:"Use bash to create /workspace/isolated-child-only.txt containing ISOLATED-CHILD-OK, read it back, and reply exactly ISOLATED-CHILD-OK"})',
+      "Do not create isolated-child-only.txt yourself. After the child finishes, reply with ISOLATED-CHILD-OK.",
+    ].join(" "),
+  );
+  const isolatedEvidence = await executionEvidence(isolated.accepted.runId);
+  assert.equal(isolatedEvidence.workspaceMode, "isolated");
+  assert.notEqual(isolatedEvidence.childWorkspaceId, isolatedEvidence.parentWorkspaceId);
+  assert.equal(isolatedEvidence.workspaceKind, "subagent_isolated");
+  assert.equal(isolatedEvidence.workspaceDeleted, true);
+  assert.equal(isolatedEvidence.patchContainsIsolatedFile, true);
+  assert(isolatedEvidence.inheritedReferenceCount > 0);
 
-const nestedTask = [
-  "Call the subagent Tool exactly once and do not call file or bash Tools.",
-  'Use this exact workflowScript: return runs.run("nested", {agent:"oracle", task:"Reply exactly SUBAGENT-NESTED-LEAF-OK"})',
-  "After it finishes, reply exactly SUBAGENT-NESTED-PARENT-OK.",
-].join(" ");
-const recursive = await runTurn(
-  session.sessionId,
-  [
-    "Create a two-level recursive Agent tree.",
-    `Call the subagent Tool exactly once with this exact workflowScript: return runs.run("recursive-parent", {agent:"worker", task:${JSON.stringify(nestedTask)}})`,
-    "After it finishes, reply exactly SUBAGENT-RECURSIVE-OK.",
-  ].join(" "),
-);
-const recursiveEvidence = await recursiveTreeEvidence(recursive.accepted.runId);
-assert.equal(recursiveEvidence.length, 2, JSON.stringify(recursiveEvidence));
-assert.deepEqual(
-  recursiveEvidence.map((execution) => execution.depth),
-  [1, 2],
-);
-assert(recursiveEvidence.every((execution) => execution.rootRunId === recursive.accepted.runId));
-assert(recursiveEvidence.every((execution) => execution.childRunState === "completed"));
-assert.equal(recursiveEvidence[0].parentExecutionId, null);
-assert.equal(recursiveEvidence[1].parentExecutionId, recursiveEvidence[0].executionId);
-const conversationList = await api.listConversations();
-const projectedRecursiveSessions = new Set(
-  conversationList.delegatedSessions
-    .filter((delegated) => delegated.rootSessionId === session.sessionId)
-    .map((delegated) => delegated.sessionId),
-);
-assert(projectedRecursiveSessions.has(recursiveEvidence[0].childSessionId));
-assert(projectedRecursiveSessions.has(recursiveEvidence[1].childSessionId));
-const fullTree = await api.getConversationTree(session.sessionId, "full");
-assert(
-  fullTree.branches.some(
-    (branch) =>
-      branch.sessionId === recursiveEvidence[1].childSessionId &&
-      branch.parentSessionId === recursiveEvidence[0].childSessionId,
-  ),
-  "Whole-tree projection did not preserve the recursive execution edge",
-);
-const focusedTree = await api.getConversationTree(recursiveEvidence[1].childSessionId, "focus");
-assert.equal(focusedTree.rootSessionId, recursiveEvidence[1].childSessionId);
-assert.equal(focusedTree.currentSessionId, recursiveEvidence[1].childSessionId);
+  const nestedTask = [
+    "Call the subagent Tool exactly once and do not call file or bash Tools.",
+    'Use this exact workflowScript: return runs.run("nested", {agent:"oracle", task:"Reply exactly SUBAGENT-NESTED-LEAF-OK"})',
+    "After it finishes, reply exactly SUBAGENT-NESTED-PARENT-OK.",
+  ].join(" ");
+  const recursive = await runTurn(
+    session.sessionId,
+    [
+      "Create a two-level recursive Agent tree.",
+      `Call the subagent Tool exactly once with this exact workflowScript: return runs.run("recursive-parent", {agent:"worker", task:${JSON.stringify(nestedTask)}})`,
+      "After it finishes, reply exactly SUBAGENT-RECURSIVE-OK.",
+    ].join(" "),
+  );
+  const recursiveEvidence = await recursiveTreeEvidence(recursive.accepted.runId);
+  assert.equal(recursiveEvidence.length, 2, JSON.stringify(recursiveEvidence));
+  assert.deepEqual(
+    recursiveEvidence.map((execution) => execution.depth),
+    [1, 2],
+  );
+  assert(recursiveEvidence.every((execution) => execution.rootRunId === recursive.accepted.runId));
+  assert(recursiveEvidence.every((execution) => execution.childRunState === "completed"));
+  assert.equal(recursiveEvidence[0].parentExecutionId, null);
+  assert.equal(recursiveEvidence[1].parentExecutionId, recursiveEvidence[0].executionId);
+  const conversationList = await api.listConversations();
+  const projectedRecursiveSessions = new Set(
+    conversationList.delegatedSessions
+      .filter((delegated) => delegated.rootSessionId === session.sessionId)
+      .map((delegated) => delegated.sessionId),
+  );
+  assert(projectedRecursiveSessions.has(recursiveEvidence[0].childSessionId));
+  assert(projectedRecursiveSessions.has(recursiveEvidence[1].childSessionId));
+  const fullTree = await api.getConversationTree(session.sessionId, "full");
+  assert(
+    fullTree.branches.some(
+      (branch) =>
+        branch.sessionId === recursiveEvidence[1].childSessionId &&
+        branch.parentSessionId === recursiveEvidence[0].childSessionId,
+    ),
+    "Whole-tree projection did not preserve the recursive execution edge",
+  );
+  const focusedTree = await api.getConversationTree(recursiveEvidence[1].childSessionId, "focus");
+  assert.equal(focusedTree.rootSessionId, recursiveEvidence[1].childSessionId);
+  assert.equal(focusedTree.currentSessionId, recursiveEvidence[1].childSessionId);
 
-const tenantId = await psql(
-  `select tenant_id::text from sessions where id = ${sqlLiteral(session.sessionId)}`,
-);
-const volumeId = workspaceVolumeId({ tenantId, workspaceId: session.workspaceId });
-const possibleParentFile = resolve(
-  runtimeDirectory,
-  "state/cube-shared/volume",
-  `picloud-posix-${volumeId}`,
-  "workspace/isolated-child-only.txt",
-);
-await assert.rejects(access(possibleParentFile), (error) => error?.code === "ENOENT");
+  const tenantId = await psql(
+    `select tenant_id::text from sessions where id = ${sqlLiteral(session.sessionId)}`,
+  );
+  const volumeId = workspaceVolumeId({ tenantId, workspaceId: session.workspaceId });
+  const possibleParentFile = resolve(
+    runtimeDirectory,
+    "state/cube-shared/volume",
+    `picloud-posix-${volumeId}`,
+    "workspace/isolated-child-only.txt",
+  );
+  await assert.rejects(access(possibleParentFile), (error) => error?.code === "ENOENT");
 
-const report = {
-  accepted: true,
-  checkedAt: new Date().toISOString(),
-  model: { provider: model.provider, modelId: model.modelId },
-  parentSessionId: session.sessionId,
-  modes: { none: noneEvidence, shared: sharedEvidence, isolated: isolatedEvidence },
-  recursiveTree: recursiveEvidence,
-  productProjection: {
-    listContainsEveryRecursiveSession: true,
-    fullTreePreservesNestedParent: true,
-    nestedFocusRoot: focusedTree.rootSessionId,
-  },
-};
-await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
-await writeFile(
-  resolve(repositoryRoot, "docs/reports/subagent-production-acceptance-latest.json"),
-  `${JSON.stringify(report, null, 2)}\n`,
-  "utf8",
-);
-process.stdout.write(`${JSON.stringify(report)}\n`);
+  const report = {
+    accepted: true,
+    checkedAt: new Date().toISOString(),
+    model: { provider: model.provider, modelId: model.modelId },
+    parentSessionId: session.sessionId,
+    modes: { none: noneEvidence, shared: sharedEvidence, isolated: isolatedEvidence },
+    recursiveTree: recursiveEvidence,
+    productProjection: {
+      listContainsEveryRecursiveSession: true,
+      fullTreePreservesNestedParent: true,
+      nestedFocusRoot: focusedTree.rootSessionId,
+    },
+  };
+  await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
+  await writeFile(
+    resolve(repositoryRoot, "docs/reports/subagent-production-acceptance-latest.json"),
+    `${JSON.stringify(report, null, 2)}\n`,
+    "utf8",
+  );
+  process.stdout.write(`${JSON.stringify(report)}\n`);
+} finally {
+  await api
+    .deleteConversation(session.sessionId, newIdempotencyKey("delete"))
+    .catch(() => undefined);
+  await api
+    .deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"))
+    .catch(() => undefined);
+}
