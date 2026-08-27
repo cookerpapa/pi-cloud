@@ -124,42 +124,46 @@ export class WorkspaceVolumeDeletionReaper {
     `.execute(this.#database);
     let purged = 0;
     for (const workspace of pending.rows) {
-      const volumeId = workspaceVolumeId(workspace);
-      await this.#gateway.delete({
-        tenantId: workspace.tenantId,
-        workspaceId: workspace.workspaceId,
-        volumeId,
-      });
-      await this.#deleteVolumeMetadata(volumeId);
-      const purgedAt = this.#clock();
-      const updated = await this.#database
-        .updateTable("workspaces")
-        .set({ storage_purged_at: purgedAt, updated_at: purgedAt })
-        .where("tenant_id", "=", workspace.tenantId)
-        .where("id", "=", workspace.workspaceId)
-        .where("sandbox_domain_id", "=", this.#sandboxDomainId)
-        .where("deleted_at", "is not", null)
-        .where("storage_purged_at", "is", null)
-        .where(
-          sql<boolean>`not exists (
-            select 1
-            from tool_broker_activations as activation
-            where activation.tenant_id = ${workspace.tenantId}
-              and activation.workspace_id = ${workspace.workspaceId}
-              and activation.state in (${sql.join(LIVE_ACTIVATION_STATES)})
-          )`,
-        )
-        .where(
-          sql<boolean>`not exists (
-            select 1
-            from workspace_terminal_sessions as terminal
-            where terminal.tenant_id = ${workspace.tenantId}
-              and terminal.workspace_id = ${workspace.workspaceId}
-              and terminal.state in ('reserved', 'materializing', 'active', 'cleaning', 'unknown')
-          )`,
-        )
-        .executeTakeFirst();
-      if (updated.numUpdatedRows === 1n) purged += 1;
+      try {
+        const volumeId = workspaceVolumeId(workspace);
+        await this.#gateway.delete({
+          tenantId: workspace.tenantId,
+          workspaceId: workspace.workspaceId,
+          volumeId,
+        });
+        await this.#deleteVolumeMetadata(volumeId);
+        const purgedAt = this.#clock();
+        const updated = await this.#database
+          .updateTable("workspaces")
+          .set({ storage_purged_at: purgedAt, updated_at: purgedAt })
+          .where("tenant_id", "=", workspace.tenantId)
+          .where("id", "=", workspace.workspaceId)
+          .where("sandbox_domain_id", "=", this.#sandboxDomainId)
+          .where("deleted_at", "is not", null)
+          .where("storage_purged_at", "is", null)
+          .where(
+            sql<boolean>`not exists (
+              select 1
+              from tool_broker_activations as activation
+              where activation.tenant_id = ${workspace.tenantId}
+                and activation.workspace_id = ${workspace.workspaceId}
+                and activation.state in (${sql.join(LIVE_ACTIVATION_STATES)})
+            )`,
+          )
+          .where(
+            sql<boolean>`not exists (
+              select 1
+              from workspace_terminal_sessions as terminal
+              where terminal.tenant_id = ${workspace.tenantId}
+                and terminal.workspace_id = ${workspace.workspaceId}
+                and terminal.state in ('reserved', 'materializing', 'active', 'cleaning', 'unknown')
+            )`,
+          )
+          .executeTakeFirst();
+        if (updated.numUpdatedRows === 1n) purged += 1;
+      } catch (error: unknown) {
+        this.#onError(error);
+      }
     }
     return purged;
   }

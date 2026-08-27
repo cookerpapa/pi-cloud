@@ -128,7 +128,12 @@ describe("WorkspaceVolumeDeletionReaper", () => {
         .execute();
       await pglite.exec("alter table tool_broker_activations enable trigger all");
 
-      const deleteVolumeMetadata = vi.fn(async (_volumeId: string) => undefined);
+      let failNextMetadataDelete = true;
+      const deleteVolumeMetadata = vi.fn(async (_volumeId: string) => {
+        if (!failNextMetadataDelete) return;
+        failNextMetadataDelete = false;
+        throw new Error("transient Cube Volume metadata conflict");
+      });
       const reaper = new WorkspaceVolumeDeletionReaper({
         database,
         sandboxDomainId: "sandbox-domain-delete",
@@ -173,9 +178,10 @@ describe("WorkspaceVolumeDeletionReaper", () => {
         .set({ state: "released" })
         .where("terminal_id", "=", "e0000000-0000-4000-8000-000000000001")
         .execute();
-      await expect(reaper.runOnce()).resolves.toBe(1);
+      await expect(reaper.runOnce()).resolves.toBe(0);
       await expect(lstat(volumeRoot)).rejects.toMatchObject({ code: "ENOENT" });
       expect(deleteVolumeMetadata).toHaveBeenCalledWith(volumeId);
+      await expect(reaper.runOnce()).resolves.toBe(1);
       await expect(
         database
           .selectFrom("workspaces")

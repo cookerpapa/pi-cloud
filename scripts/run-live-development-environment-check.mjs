@@ -413,14 +413,10 @@ const continuityRun = await api.acceptTurn(
   "off",
 );
 await waitForRun(continuityRun.runId);
-const discoveredServices = await api.listConversationServices(session.sessionId);
-const discoveredPreview = discoveredServices.services.find(
-  (service) => service.port === previewPort && service.protocol === "http",
+const discoveredPreviewResponse = await fetchFromProduction(
+  `/v1/conversations/${session.sessionId}/preview/${String(previewPort)}/`,
+  { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
 );
-assert(discoveredPreview, "Agent Tool execution did not register the running HTTP service");
-const discoveredPreviewResponse = await fetchFromProduction(discoveredPreview.previewPath, {
-  headers: { authorization: `Bearer ${token}`, accept: "text/html" },
-});
 assert.equal(discoveredPreviewResponse.status, 200);
 assert.match(await discoveredPreviewResponse.text(), /PI_CLOUD_PREVIEW_OK/);
 assert.equal(
