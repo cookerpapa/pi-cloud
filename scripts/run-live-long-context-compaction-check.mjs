@@ -776,6 +776,7 @@ const session = await api.createSession(
 
 const rounds = [];
 let completedCompaction;
+const requiredCompactions = 2;
 let stoppedWorkerService;
 let cleanupCompleted = false;
 
@@ -808,20 +809,23 @@ try {
     progress(
       `round ${String(index + 1)} ${task[0]}: input(max/sum)=${String(usage.maximumRequestInputTokens)}/${String(usage.inputTokens)}, output=${String(usage.outputTokens)}, tools=${String(turn.toolCalls)}, firstResponse=${String(turn.firstResponseMs)}ms, settled=${String(turn.settledMs)}ms, active-context=${String(evidence.activeContextBytes)}B/${String(evidence.activeContextEntries)} entries`,
     );
-    completedCompaction = turn.eventCompactions.find(
+    const roundCompaction = turn.eventCompactions.find(
       (compaction) => compaction.runId === turn.runId && compaction.status === "completed",
     );
-    if (completedCompaction !== undefined) {
+    if (roundCompaction !== undefined) {
+      completedCompaction = roundCompaction;
+      const completedCount = rounds.flatMap((candidate) => candidate.eventCompactions).length;
       progress(
-        `Pi compaction completed: ${String(completedCompaction.tokensBefore)} -> ${String(completedCompaction.estimatedTokensAfter)} estimated tokens in ${String(completedCompaction.durationMs)}ms`,
+        `Pi compaction ${String(completedCount)}/${String(requiredCompactions)} completed: ${String(roundCompaction.tokensBefore)} -> ${String(roundCompaction.estimatedTokensAfter)} estimated tokens in ${String(roundCompaction.durationMs)}ms`,
       );
-      break;
+      if (completedCount >= requiredCompactions) break;
     }
   }
 
+  const observedCompactions = rounds.flatMap((round) => round.eventCompactions);
   assert(
-    completedCompaction !== undefined,
-    `Pi did not compact after ${String(rounds.length)} real coding turns`,
+    completedCompaction !== undefined && observedCompactions.length >= requiredCompactions,
+    `Pi completed only ${String(observedCompactions.length)} compactions after ${String(rounds.length)} real coding turns`,
   );
   assert(["threshold", "overflow"].includes(completedCompaction.reason));
   assert(completedCompaction.tokensBefore > completedCompaction.estimatedTokensAfter);
@@ -946,7 +950,8 @@ try {
       sessionId: session.sessionId,
       workspaceId: session.workspaceId,
       marker,
-      codingTurnsUntilCompaction: rounds.length,
+      codingTurnsUntilRequiredCompactions: rounds.length,
+      requiredCompactions,
       finalWorkspaceVersionId: versions.currentVersionId,
       visibleFilesOnFirstPage: files.files.length,
     },
@@ -1020,7 +1025,8 @@ try {
         `- Checked at: ${report.checkedAt}`,
         `- Revision: \`${report.revision}\``,
         `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
-        `- Coding Turns before first completed compaction: ${String(report.session.codingTurnsUntilCompaction)}`,
+        `- Coding Turns before ${String(report.session.requiredCompactions)} completed Compactions: ${String(report.session.codingTurnsUntilRequiredCompactions)}`,
+        `- Native Pi Compactions observed: ${String(report.compactions.length)}`,
         `- Compaction reason/tokens: ${report.compaction.reason}, ${String(report.compaction.tokensBefore)} -> ${String(report.compaction.estimatedTokensAfter)}`,
         `- Compaction duration: ${String(report.compaction.durationMs)} ms`,
         `- Triggering Run first-response/settled: ${String(report.compaction.triggeringRun.firstResponseMs)} / ${String(report.compaction.triggeringRun.settledMs)} ms`,
@@ -1033,7 +1039,7 @@ try {
         `- Final Pi SessionStorage bytes/entries: ${String(report.postCompaction.crossWorker.sessionBytes)} / ${String(report.postCompaction.crossWorker.sessionEntries)}`,
         `- Final active context bytes/entries: ${String(report.postCompaction.crossWorker.activeContextBytes)} / ${String(report.postCompaction.crossWorker.activeContextEntries)}`,
         "",
-        "The workload used real multi-round Python coding tasks, remote Tool calls, deterministic tests and a bounded-warm CubeSandbox KVM over a persistent Workspace Volume. Pi completed native threshold/overflow compaction, retained an early conversation invariant, continued coding after compaction, and restored the compacted native Session on a different Worker while rebinding the same warm Cube runtime.",
+        "The workload used real multi-round Python coding tasks, remote Tool calls, deterministic tests and a bounded-warm CubeSandbox KVM over a persistent Workspace Volume. Pi completed two native threshold/overflow Compactions, retained an early conversation invariant, continued coding afterward, and restored the compacted native Session on a different Worker while rebinding the same warm Cube runtime.",
         "",
       ].join("\n"),
       "utf8",
