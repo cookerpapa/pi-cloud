@@ -590,7 +590,7 @@ async function main(): Promise<void> {
       .find((candidate) => candidate.definition.name === "subagent_wait");
     if (registeredWait === undefined) throw new Error("pi-subagents wait Tool was unavailable");
     const waitTool = wrapRegisteredTool(registeredWait, session.extensionRunner);
-    await waitTool.execute(
+    const waited = await waitTool.execute(
       `${input.toolCallId}:wait`,
       { id: asyncId, timeoutMs: 300_000 },
       abort.signal,
@@ -602,6 +602,14 @@ async function main(): Promise<void> {
     // cloud leaf is still active.
     while (activeCloudWaits.size > 0) {
       await Promise.allSettled([...activeCloudWaits]);
+    }
+    if (
+      completedCloudResults.size === 0 &&
+      failedCloudResults.size === 0 &&
+      blockedCloudResults.size === 0
+    ) {
+      parentPort!.postMessage({ type: "result", result: waited });
+      return;
     }
     const blocked = [...blockedCloudResults.values()].sort(
       (left, right) => left.stepIndex - right.stepIndex,
