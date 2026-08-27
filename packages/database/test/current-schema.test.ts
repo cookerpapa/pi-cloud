@@ -67,7 +67,17 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("099_remove_dormant_approval_graph");
+      expect(applied.rows.at(-1)?.name).toBe("100_remove_legacy_database_functions");
+
+      const legacyFunctions = await sql<{ proname: string }>`
+        select proname
+          from pg_proc
+         where proname in (
+           'agent_dock_reject_orchestration_acceptance_mutation',
+           'agent_dock_reject_review_bundle_mutation'
+         )
+      `.execute(database);
+      expect(legacyFunctions.rows).toEqual([]);
     } finally {
       await database.destroy();
       await socket.stop();
