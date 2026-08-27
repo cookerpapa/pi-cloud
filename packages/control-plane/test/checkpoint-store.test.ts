@@ -166,6 +166,8 @@ async function seed(targetDatabase: Kysely<Database> = database): Promise<void> 
       profile_version: "1",
       image_revision: "development",
       spec_sha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+      recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+      recipe_sha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
       state: "pending",
       active: true,
       validated_at: null,

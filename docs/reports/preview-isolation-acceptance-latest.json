@@ -1,0 +1,17 @@
+{
+  "accepted": true,
+  "piCloudRevision": "798e8df2b497a72d1160d20d1f46b40b8698e4cd",
+  "checkedAt": "2026-08-27T11:24:06.312Z",
+  "sessions": 2,
+  "concurrentInitialRuns": 2,
+  "sameSessionPorts": [
+    3000,
+    8000,
+    5173
+  ],
+  "reusedCrossSessionPorts": [
+    3000,
+    8000
+  ],
+  "crossSessionMarkerLeak": false
+}
