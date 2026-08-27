@@ -12,7 +12,7 @@ export const DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION = "1" as const;
 export const DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256 =
   "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630" as const;
 export const DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256 =
-  "2d6c5260fe7bc3901e454ff93106dc5ed263d6edbbabf7bafdf852021289e5ba" as const;
+  "ba9924c0061bd35e002b13cad9746f3c9badaadeabce625bf3fae045bbae4618" as const;
 
 const EnvironmentCommandIdSchema = Type.String({
   minLength: 1,
@@ -63,8 +63,8 @@ export const DEFAULT_PROJECT_ENVIRONMENT_RECIPE = {
   setupCommands: [],
   verificationCommands: [
     {
-      id: "workspace-root",
-      command: 'test "$PWD" = /workspace && test -w .',
+      id: "tool-root",
+      command: "test -d . && test -w .",
       cwd: ".",
       timeoutMs: 10_000,
       network: "none",

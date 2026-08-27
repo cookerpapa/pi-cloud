@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
@@ -98,6 +99,11 @@ describe("versioned project environment protocol", () => {
     expect(canonicalEnvironmentRecipeJson(DEFAULT_PROJECT_ENVIRONMENT_RECIPE)).toBe(
       JSON.stringify(DEFAULT_PROJECT_ENVIRONMENT_RECIPE),
     );
+    expect(
+      createHash("sha256")
+        .update(canonicalEnvironmentRecipeJson(DEFAULT_PROJECT_ENVIRONMENT_RECIPE))
+        .digest("hex"),
+    ).toBe(DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256);
     expect(() =>
       parseEnvironmentRuntimeSnapshot({
         ...snapshot,
@@ -105,7 +111,7 @@ describe("versioned project environment protocol", () => {
           schemaVersion: 1,
           setupCommands: [
             {
-              id: "workspace-root",
+              id: "tool-root",
               command: "true",
               cwd: ".",
               timeoutMs: 1_000,
