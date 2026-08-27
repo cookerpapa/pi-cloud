@@ -960,9 +960,7 @@
         ],
         "attemptCount": 22,
         "requestCount": 21,
-        "recoveredFailures": [
-          { "sequence": 6, "failureCode": "stream_failed" }
-        ],
+        "recoveredFailures": [{ "sequence": 6, "failureCode": "stream_failed" }],
         "inputTokens": 9456,
         "outputTokens": 24059,
         "cacheReadTokens": 1729664,
@@ -1308,9 +1306,7 @@
         ],
         "attemptCount": 15,
         "requestCount": 14,
-        "recoveredFailures": [
-          { "sequence": 4, "failureCode": "stream_failed" }
-        ],
+        "recoveredFailures": [{ "sequence": 4, "failureCode": "stream_failed" }],
         "inputTokens": 114885,
         "outputTokens": 15309,
         "cacheReadTokens": 451456,

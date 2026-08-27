@@ -197,7 +197,7 @@ try {
   assert(processView.exitCode === 0 && processView.stdout.includes("envd"), "envd was not running");
   assert(
     !processView.stdout.includes("pi-cloud-cube-tool"),
-    "legacy PiCloud guest daemon was running",
+    "a persistent PiCloud guest daemon was running",
   );
 
   const evidencePath = `/tmp/pi-cloud-envd-${randomUUID()}.json`;

@@ -415,9 +415,9 @@ export class WorkspaceTerminalGateway {
     if (row.environmentState === "failed") {
       throw new Error("Workspace environment failed validation");
     }
-    // The persistent Cube Volume is the Workspace authority. This seed is used
-    // only when that volume has never been initialized; an attached volume
-    // ignores it, so terminal startup never depends on legacy artifact bytes.
+    // The persistent Cube Volume is the Workspace authority. This empty seed
+    // is used only when that volume has never been initialized; an attached
+    // volume ignores it.
     const workspace = createWorkspaceSnapshot([]);
     return {
       domainId: row.domainId,

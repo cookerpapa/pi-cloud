@@ -565,7 +565,7 @@ const report = {
   structuredServiceDiscoveryPassed: true,
   previewPort,
   rootFilesystemPreserved: true,
-  legacyWorkspaceAbsent: true,
+  elasticWorkspaceRootAbsent: true,
   brokerRestartAdoptedSameCube: recoveredAfterBrokerRestart.state === "paused",
   emptyDirectoryBrowsePassed: true,
   archivedSessionDidNotReleaseMachine: true,
