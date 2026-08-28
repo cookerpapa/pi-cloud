@@ -264,6 +264,7 @@ async function openHeldTerminal(sessionId, cookieHeader) {
     ready,
     output: () => output,
     close: async () => {
+      const closed = new Promise((resolvePromise) => socket.once("close", resolvePromise));
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(
           JSON.stringify({
@@ -271,9 +272,10 @@ async function openHeldTerminal(sessionId, cookieHeader) {
             type: "workspace_terminal.close",
           }),
         );
-        await wait(50);
+        await Promise.race([closed, wait(5_000)]);
       }
-      socket.close();
+      if (socket.readyState !== WebSocket.CLOSED) socket.close();
+      await Promise.race([closed, wait(1_000)]);
     },
   };
 }
