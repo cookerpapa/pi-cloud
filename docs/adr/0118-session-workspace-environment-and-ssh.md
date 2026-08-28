@@ -53,11 +53,10 @@ contract for exposing an ordinary Sandbox's port 22 directly.
   a bounded idle period. Reclamation loses processes, not Workspace bytes.
 - An exclusive execution environment is a user-owned full Cube machine with a
   deployment-owned size profile. Its complete guest state follows ADR-0120; a
-  mounted Volume is no longer the definition of its durability. An Agent Run and a human
-  terminal borrow the same Cube through a fenced, serialized Tool Broker
-  handoff; two VMs never write that Volume concurrently. Several conversations
-  may select different directories beneath that Volume; Workspace single-writer
-  admission still serializes their mutable Runs.
+  mounted Volume is no longer the definition of its durability. An Agent Run
+  and one human terminal may use the same Cube concurrently under independent
+  external authorities. Several conversations may select different directories
+  beneath that Volume; one Agent activation at a time owns the machine.
 - Workspace creation/deletion and environment create/pause/resume/release live
   on a dedicated user resource page. The new-conversation dialog only selects
   elastic versus exclusive execution and progressively discloses the relevant

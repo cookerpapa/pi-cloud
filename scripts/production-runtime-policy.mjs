@@ -47,21 +47,7 @@ export function validateProductionRuntimeEnvironment(environment) {
   integer(environment, "PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS", 1_000, 2, 1_000_000);
   integer(environment, "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS", 10, 1, 1_000_000);
   integer(environment, "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS", 100, 1, 1_000_000);
-  const maximumUnsettledTurns = integer(
-    environment,
-    "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS",
-    10,
-    1,
-    1_000_000,
-  );
-  const maximumConcurrentTurns = integer(
-    environment,
-    "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS",
-    4,
-    1,
-    256,
-  );
-  integer(environment, "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_ACTIVE_SANDBOXES", 2, 1, 1_000_000);
+  integer(environment, "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS", 10, 1, 1_000_000);
   integer(environment, "PI_CLOUD_SUPERVISOR_CAPACITY", 2, 1, 16);
   integer(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH", 4, 1, 64);
   const subagentNodes = integer(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_NODES", 32, 1, 10_000);
@@ -74,11 +60,6 @@ export function validateProductionRuntimeEnvironment(environment) {
   );
   if (subagentConcurrent > subagentNodes) {
     throw new Error("Subagent concurrency cannot exceed the Subagent node budget");
-  }
-  if (maximumConcurrentTurns > maximumUnsettledTurns) {
-    throw new Error(
-      "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS cannot exceed PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS",
-    );
   }
   const queueWaitMs = integer(
     environment,

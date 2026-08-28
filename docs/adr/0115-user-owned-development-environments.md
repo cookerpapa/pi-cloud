@@ -27,19 +27,20 @@ user-owned development-environment lifecycle.
 - Only Tool Broker may call CubeAPI. The browser uses authenticated PiCloud
   REST and WebSocket endpoints and never receives Cube IDs, traffic tokens or
   control credentials.
-- A live allocation has one Cube KVM and one Workspace writer. A human terminal
-  keeps Agent Runs queued. Otherwise Tool Broker may seal the current boundary,
-  rotate authority to one fenced Agent Run and return the same Cube after
-  settlement. No second Cube writes the Volume.
+- A live allocation has one Cube KVM and at most one Agent authority. One human
+  terminal may coexist inside that same KVM under independent external
+  authority. Tool Broker rotates Agent authority at Run boundaries and returns
+  the same Cube after settlement; pause and release wait for both owners.
 - Support explicit `pause`, `resume` and `release` operations. Creation is a
-  synchronous admission operation: tenant project quota, active-Sandbox limits
+  synchronous admission operation: tenant durable-resource admission,
+  Sandbox-Domain active-Sandbox limits
   and Cube scheduling must succeed before the API returns. Pause
   uses Cube's memory/filesystem snapshot lifecycle; resume reconnects the same
   Sandbox identity. Release destroys the VM and its machine-owned Volume while
   preserving independently stored conversations.
 - The environment terminal opens a PTY inside the existing KVM. Disconnecting
   kills only that PTY; it does not release the environment.
-- One Workspace has at most one live development environment. Tenant and
+- One machine Workspace has at most one live development environment.
   Sandbox-Domain capacity accounting includes these environments.
 - Tool Broker ownership remains leased. A replacement Broker may adopt the same
   machine only after its encrypted reconnect capsule, PostgreSQL ownership and

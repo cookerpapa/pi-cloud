@@ -13,7 +13,6 @@ const valid = {
     providerProxyUrl: "https://provider.internal:3129",
     kafka: { brokers: ["kafka.internal:9092"], acceptedFactRetentionMs: 7_200_000 },
   },
-  controlPlane: { publicRegistration: { maximumConcurrentTurns: 4 } },
   sandboxPlane: {
     cube: { apiUrl: "https://cube.internal", templateId: `tpl-${"a".repeat(24)}` },
     volumeGatewayQueueWaitTimeoutMs: 30_000,

@@ -350,7 +350,6 @@ export class WorkspaceTerminalGateway {
       .where("session_row.archived_at", "is", null)
       .where("development.owner_user_id", "=", identity.userId)
       .where("development.state", "=", "running")
-      .where("development.agent_activation_id", "is", null)
       .where("domain.state", "=", "active")
       .orderBy("development.updated_at", "desc")
       .executeTakeFirst();

@@ -22,7 +22,6 @@ async function seedTenant(options: {
   bindingId: string;
   profileId: string;
   slug: string;
-  maximumConcurrentTurns: number;
 }): Promise<ControlPlaneStore> {
   await database
     .insertInto("tenants")
@@ -63,7 +62,6 @@ async function seedTenant(options: {
       maximum_projects: 100,
       maximum_sessions: 100,
       maximum_unsettled_turns: 100,
-      maximum_concurrent_turns: options.maximumConcurrentTurns,
     })
     .execute();
   return new ControlPlaneStore({
@@ -137,7 +135,6 @@ describe.sequential("global tenant scheduling", () => {
       bindingId: "90000000-0000-4000-8000-000000000002",
       profileId: "90000000-0000-4000-8000-000000000003",
       slug: "fair-target",
-      maximumConcurrentTurns: 1,
     });
     const turns = await createQueuedTurns(store, 2, "fair-target");
     const executed: string[] = [];
@@ -170,7 +167,7 @@ describe.sequential("global tenant scheduling", () => {
     );
   });
 
-  it("enforces each tenant's concurrent-turn limit across competing lanes", async () => {
+  it("does not impose a per-tenant active-Run ceiling on available Worker lanes", async () => {
     const tenantA = "93000000-0000-4000-8000-000000000001";
     const tenantB = "94000000-0000-4000-8000-000000000001";
     const storeA = await seedTenant({
@@ -178,14 +175,12 @@ describe.sequential("global tenant scheduling", () => {
       bindingId: "93000000-0000-4000-8000-000000000002",
       profileId: "93000000-0000-4000-8000-000000000003",
       slug: "cap-alpha",
-      maximumConcurrentTurns: 1,
     });
     const storeB = await seedTenant({
       tenantId: tenantB,
       bindingId: "94000000-0000-4000-8000-000000000002",
       profileId: "94000000-0000-4000-8000-000000000003",
       slug: "cap-bravo",
-      maximumConcurrentTurns: 1,
     });
     await createQueuedTurns(storeA, 1, "cap-alpha-one");
     await createQueuedTurns(storeA, 1, "cap-alpha-two");
@@ -193,12 +188,12 @@ describe.sequential("global tenant scheduling", () => {
 
     const entered: TurnExecutionRequest[] = [];
     let release!: () => void;
-    let announceTwo!: () => void;
+    let announceThree!: () => void;
     const released = new Promise<void>((resolvePromise) => {
       release = resolvePromise;
     });
-    const twoEntered = new Promise<void>((resolvePromise) => {
-      announceTwo = resolvePromise;
+    const threeEntered = new Promise<void>((resolvePromise) => {
+      announceThree = resolvePromise;
     });
     const activeByTenant = new Map<string, number>();
     const maximumByTenant = new Map<string, number>();
@@ -212,7 +207,7 @@ describe.sequential("global tenant scheduling", () => {
           Math.max(maximumByTenant.get(request.tenantId) ?? 0, active),
         );
         await lifecycle.started();
-        if (entered.length === 2) announceTwo();
+        if (entered.length === 3) announceThree();
         await released;
         activeByTenant.set(request.tenantId, active - 1);
         return { stopReason: "concurrency-test" };
@@ -220,20 +215,18 @@ describe.sequential("global tenant scheduling", () => {
     };
     const laneOne = new RunCommandExecutor({ database, backend });
     const laneTwo = new RunCommandExecutor({ database, backend });
-    const probeLane = new RunCommandExecutor({ database, backend });
+    const laneThree = new RunCommandExecutor({ database, backend });
     const dispatches = [
-      dispatchNextTestCommand(database, laneOne),
-      dispatchNextTestCommand(database, laneTwo),
+      dispatchUntilWork(laneOne),
+      dispatchUntilWork(laneTwo),
+      dispatchUntilWork(laneThree),
     ];
-    await twoEntered;
+    await threeEntered;
 
-    expect(new Set(entered.map((request) => request.tenantId))).toEqual(
-      new Set([tenantA, tenantB]),
-    );
-    await expect(dispatchNextTestCommand(database, probeLane)).resolves.toEqual({ status: "idle" });
+    expect(entered.map((request) => request.tenantId).sort()).toEqual([tenantA, tenantA, tenantB]);
     expect(maximumByTenant).toEqual(
       new Map([
-        [tenantA, 1],
+        [tenantA, 2],
         [tenantB, 1],
       ]),
     );
@@ -242,22 +235,17 @@ describe.sequential("global tenant scheduling", () => {
     await expect(Promise.all(dispatches)).resolves.toEqual([
       expect.objectContaining({ status: "completed" }),
       expect.objectContaining({ status: "completed" }),
+      expect.objectContaining({ status: "completed" }),
     ]);
-    // The production scheduler polls. Under a loaded PGlite socket, a claim
-    // transaction can briefly observe the just-completed lanes before their
-    // commits become visible on another connection, so exercise the same
-    // bounded poll behavior instead of assuming one immediate poll.
-    await expect(dispatchUntilWork(probeLane)).resolves.toMatchObject({ status: "completed" });
   });
 
-  it("serializes ordinary conversations that write the same shared Workspace", async () => {
+  it("lets different Sessions use the same Workspace concurrently", async () => {
     const tenantId = "95000000-0000-4000-8000-000000000001";
     const store = await seedTenant({
       tenantId,
       bindingId: "95000000-0000-4000-8000-000000000002",
       profileId: "95000000-0000-4000-8000-000000000003",
       slug: "shared-workspace",
-      maximumConcurrentTurns: 2,
     });
     const project = await store.createProject("shared-directory");
     const firstSession = await store.createSession(
@@ -276,33 +264,33 @@ describe.sequential("global tenant scheduling", () => {
     await store.acceptTurn(secondSession.sessionId, "shared-two", { prompt: "second" });
 
     let entered = 0;
-    let announceFirst!: () => void;
-    let releaseFirst!: () => void;
-    const firstEntered = new Promise<void>((resolvePromise) => {
-      announceFirst = resolvePromise;
+    let announceBoth!: () => void;
+    let releaseBoth!: () => void;
+    const bothEntered = new Promise<void>((resolvePromise) => {
+      announceBoth = resolvePromise;
     });
-    const firstRelease = new Promise<void>((resolvePromise) => {
-      releaseFirst = resolvePromise;
+    const bothRelease = new Promise<void>((resolvePromise) => {
+      releaseBoth = resolvePromise;
     });
     const backend: TurnExecutionBackend = {
       async execute(_request, lifecycle) {
         entered += 1;
         await lifecycle.started();
-        if (entered === 1) {
-          announceFirst();
-          await firstRelease;
-        }
+        if (entered === 2) announceBoth();
+        await bothRelease;
         return { stopReason: "shared-workspace-test" };
       },
     };
     const activeLane = new RunCommandExecutor({ database, backend });
     const probeLane = new RunCommandExecutor({ database, backend });
     const first = dispatchNextTestCommand(database, activeLane);
-    await firstEntered;
-    await expect(dispatchNextTestCommand(database, probeLane)).resolves.toEqual({ status: "idle" });
-    releaseFirst();
-    await expect(first).resolves.toMatchObject({ status: "completed" });
-    await expect(dispatchUntilWork(probeLane)).resolves.toMatchObject({ status: "completed" });
+    const second = dispatchNextTestCommand(database, probeLane);
+    await bothEntered;
     expect(entered).toBe(2);
+    releaseBoth();
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ status: "completed" }),
+      expect.objectContaining({ status: "completed" }),
+    ]);
   });
 });

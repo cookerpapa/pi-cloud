@@ -59,8 +59,6 @@ export type ProductionBootstrapConfig = {
   maximumProjects: number;
   maximumSessions: number;
   maximumUnsettledTurns: number;
-  maximumConcurrentTurns: number;
-  maximumActiveSandboxes: number;
   sandboxDomains: readonly ProductionSandboxDomainConfig[];
 };
 
@@ -317,18 +315,6 @@ export async function loadProductionControlPlaneConfig(
     1,
     1_000_000,
   );
-  const publicTenantMaximumConcurrentTurns = integerValue(
-    environment,
-    "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS",
-    4,
-    1,
-    256,
-  );
-  if (publicTenantMaximumConcurrentTurns > publicTenantMaximumUnsettledTurns) {
-    throw new TypeError(
-      "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS cannot exceed PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS",
-    );
-  }
   const platformModelSourceTenantId = parseUuidPathParameter(
     required(environment, "PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID"),
     "PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID",
@@ -491,14 +477,6 @@ export async function loadProductionControlPlaneConfig(
           1_000_000,
         ),
         maximumUnsettledTurns: publicTenantMaximumUnsettledTurns,
-        maximumConcurrentTurns: publicTenantMaximumConcurrentTurns,
-        maximumActiveSandboxes: integerValue(
-          environment,
-          "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_ACTIVE_SANDBOXES",
-          2,
-          1,
-          1_000_000,
-        ),
       },
     },
   };
@@ -572,20 +550,6 @@ export function loadProductionBootstrapConfig(
       environment,
       "PI_CLOUD_TENANT_MAXIMUM_UNSETTLED_TURNS",
       100,
-      1,
-      1_000_000,
-    ),
-    maximumConcurrentTurns: integerValue(
-      environment,
-      "PI_CLOUD_TENANT_MAXIMUM_CONCURRENT_TURNS",
-      2,
-      1,
-      256,
-    ),
-    maximumActiveSandboxes: integerValue(
-      environment,
-      "PI_CLOUD_TENANT_MAXIMUM_ACTIVE_SANDBOXES",
-      64,
       1,
       1_000_000,
     ),

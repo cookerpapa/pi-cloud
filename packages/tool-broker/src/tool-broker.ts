@@ -170,11 +170,12 @@ function positiveInteger(value: number, name: string, maximum: number): number {
   return value;
 }
 
-function workspaceKey(assignment: ToolSandboxAssignment): string {
-  // One Workspace must have at most one active or warm process world. A second
-  // Session may share its files, but it must not leave the first Session's
-  // background processes alive as an independent writer.
+function workspaceIdentityKey(assignment: ToolSandboxAssignment): string {
   return [assignment.tenantId, assignment.projectId, assignment.workspaceId].join("\0");
+}
+
+function runtimeKey(assignment: ToolSandboxAssignment): string {
+  return [workspaceIdentityKey(assignment), assignment.sessionId].join("\0");
 }
 
 function operationFailureCode(error: unknown): string {
@@ -578,13 +579,6 @@ export class ToolBroker {
         true,
       );
     }
-    if (reserved.status === "tenant_capacity") {
-      throw new ToolBrokerError(
-        "tenant_sandbox_capacity_exhausted",
-        "Tenant has reached its active Sandbox limit",
-        true,
-      );
-    }
     const assignment = developmentEnvironmentAssignment(request);
     let handle: SandboxHandle | undefined;
     let admitted = false;
@@ -859,16 +853,6 @@ export class ToolBroker {
         false,
       );
     }
-    if (
-      request.type === "development_environment.create_directory" &&
-      (environment.agentActivationId !== undefined || environment.terminal !== undefined)
-    ) {
-      throw new ToolBrokerError(
-        "development_environment_directory_busy",
-        "Wait for the active Agent Run or terminal before creating a directory",
-        true,
-      );
-    }
     const directory =
       request.type === "development_environment.create_directory"
         ? await this.#provider.createDirectory!(environment.handle, request.path, request.name)
@@ -923,13 +907,6 @@ export class ToolBroker {
         false,
       );
     }
-    if (environment.agentActivationId !== undefined) {
-      throw new ToolBrokerError(
-        "development_environment_agent_active",
-        "Development environment is currently owned by an Agent Run",
-        true,
-      );
-    }
     if (environment.terminal !== undefined) {
       throw new ToolBrokerError(
         "development_environment_terminal_busy",
@@ -940,13 +917,21 @@ export class ToolBroker {
     if (!(await this.#stateRepository.reserveDevelopmentEnvironmentTerminal(input.environmentId))) {
       throw new ToolBrokerError(
         "development_environment_terminal_busy",
-        "Development environment terminal or Agent authority is already active",
+        "Development environment already has an active terminal",
         true,
       );
     }
+    const agentActivation =
+      environment.agentActivationId === undefined
+        ? undefined
+        : this.#activations.get(environment.agentActivationId);
+    const terminalHandle =
+      agentActivation?.materializing === undefined
+        ? (agentActivation?.handle ?? environment.handle)
+        : ((await agentActivation.materializing.catch(() => undefined)) ?? environment.handle);
     let terminal: SandboxTerminalSession;
     try {
-      terminal = await this.#provider.openTerminal(environment.handle, {
+      terminal = await this.#provider.openTerminal(terminalHandle, {
         rows: input.rows,
         cols: input.cols,
       });
@@ -961,7 +946,7 @@ export class ToolBroker {
     return Object.freeze({
       terminalId: input.environmentId,
       pid: terminal.pid,
-      workspaceRoot: environment.handle.workspaceRoot,
+      workspaceRoot: terminalHandle.workspaceRoot,
       output: terminal.output,
       sendInput: (data: Uint8Array) => terminal.sendInput(data),
       resize: (size: SandboxTerminalSize) => terminal.resize(size),
@@ -1023,7 +1008,7 @@ export class ToolBroker {
     if (reservation.status === "busy") {
       throw new ToolBrokerError(
         "workspace_terminal_busy",
-        "Workspace is currently owned by an Agent or another terminal",
+        "Workspace already has an active human terminal",
         true,
       );
     }
@@ -1031,13 +1016,6 @@ export class ToolBroker {
       throw new ToolBrokerError(
         "sandbox_domain_capacity_exhausted",
         "Sandbox Domain has reached its active Sandbox limit",
-        true,
-      );
-    }
-    if (reservation.status === "tenant_capacity") {
-      throw new ToolBrokerError(
-        "tenant_sandbox_capacity_exhausted",
-        "Tenant has reached its active Sandbox limit",
         true,
       );
     }
@@ -1049,7 +1027,7 @@ export class ToolBroker {
     try {
       if (reservation.retiredActivation !== undefined) {
         const retired = reservation.retiredActivation;
-        const retiredKey = workspaceKey(retired.assignment);
+        const retiredKey = runtimeKey(retired.assignment);
         const warm = this.#warm.get(retiredKey);
         const warmEntry = warm === undefined ? undefined : ([retiredKey, warm] as const);
         if (warmEntry !== undefined && warmEntry[1].handle.activationId !== retired.activationId) {
@@ -1235,66 +1213,75 @@ export class ToolBroker {
         false,
       );
     }
-    const key = workspaceKey(request.assignment);
-    const activeWorkspace = [...this.#activations.entries()].find(
-      ([, entry]) => workspaceKey(entry.assignment) === key,
-    );
+    const key = runtimeKey(request.assignment);
     let delegatedParent: ManagedActivation | undefined;
-    if (activeWorkspace !== undefined) {
-      const [activeId, active] = activeWorkspace;
+    for (const [activeId, active] of this.#activations) {
+      if (workspaceIdentityKey(active.assignment) !== workspaceIdentityKey(request.assignment)) {
+        continue;
+      }
       const delegated = await this.#stateRepository.allowsDelegatedSandboxHandoff({
         tenantId: request.assignment.tenantId,
         workspaceId: request.assignment.workspaceId,
         currentSessionId: active.assignment.sessionId,
         nextSessionId: request.assignment.sessionId,
       });
-      if (
-        !delegated ||
-        active.activeOperations !== 0 ||
-        active.exclusiveOperation ||
-        active.materializing !== undefined
-      ) {
-        throw new ToolBrokerError(
-          "tool_sandbox_workspace_busy",
-          "Workspace already has a Tool Sandbox reservation",
-          true,
-        );
+      if (delegated) {
+        if (
+          active.activeOperations !== 0 ||
+          active.exclusiveOperation ||
+          active.materializing !== undefined
+        ) {
+          throw new ToolBrokerError(
+            "tool_sandbox_workspace_busy",
+            "Delegated Workspace handoff is waiting for an active Tool operation",
+            true,
+          );
+        }
+        if (active.handle !== undefined && active.materializedForCurrentAssignment) {
+          await this.#provider.snapshot(active.handle, request.requestId);
+          active.materializedForCurrentAssignment = false;
+        }
+        delegatedParent = active;
+        this.#activations.delete(activeId);
+        if (this.#admitted.has(activeId)) this.#admitted.set(activeId, request.assignment);
+        this.#suspended.set(key, { activation: active, reservation: active.reservation });
+        break;
       }
-      if (active.handle !== undefined && active.materializedForCurrentAssignment) {
-        await this.#provider.snapshot(active.handle, request.requestId);
-        active.materializedForCurrentAssignment = false;
-      }
-      delegatedParent = active;
-      this.#activations.delete(activeId);
-      if (this.#admitted.has(activeId)) this.#admitted.set(activeId, request.assignment);
-      this.#suspended.set(key, { activation: active, reservation: active.reservation });
     }
 
-    let inherited = this.#warm.get(key);
-    let crossSessionHandoffAllowed = false;
-    if (
-      inherited !== undefined &&
-      inherited.handle.assignment.sessionId !== request.assignment.sessionId
-    ) {
-      crossSessionHandoffAllowed = await this.#stateRepository.allowsDelegatedSandboxHandoff({
-        tenantId: request.assignment.tenantId,
-        workspaceId: request.assignment.workspaceId,
-        currentSessionId: inherited.handle.assignment.sessionId,
-        nextSessionId: request.assignment.sessionId,
-      });
+    let inheritedKey = key;
+    let inherited = this.#warm.get(inheritedKey);
+    if (inherited === undefined) {
+      for (const [candidateKey, candidate] of this.#warm) {
+        if (
+          workspaceIdentityKey(candidate.handle.assignment) !==
+          workspaceIdentityKey(request.assignment)
+        ) {
+          continue;
+        }
+        const delegated = await this.#stateRepository.allowsDelegatedSandboxHandoff({
+          tenantId: request.assignment.tenantId,
+          workspaceId: request.assignment.workspaceId,
+          currentSessionId: candidate.handle.assignment.sessionId,
+          nextSessionId: request.assignment.sessionId,
+        });
+        if (delegated) {
+          inheritedKey = candidateKey;
+          inherited = candidate;
+          break;
+        }
+      }
     }
     if (
       inherited !== undefined &&
-      ((!crossSessionHandoffAllowed &&
-        inherited.handle.assignment.sessionId !== request.assignment.sessionId) ||
-        request.workspaceRevision === undefined ||
+      (request.workspaceRevision === undefined ||
         request.workspaceRevision !== inherited.workspaceRevision ||
         !sameEnvironment(request.environment, inherited.environment))
     ) {
-      await this.#discardWarm(key, inherited);
+      await this.#discardWarm(inheritedKey, inherited);
       inherited = undefined;
     }
-    if (inherited !== undefined) this.#warm.delete(key);
+    if (inherited !== undefined) this.#warm.delete(inheritedKey);
 
     const developmentEnvironment = [...this.#developmentEnvironments.values()].find(
       (environment) =>
@@ -1328,14 +1315,10 @@ export class ToolBroker {
         false,
       );
     }
-    if (
-      developmentEnvironment !== undefined &&
-      (developmentEnvironment.terminal !== undefined ||
-        developmentEnvironment.agentActivationId !== undefined)
-    ) {
+    if (developmentEnvironment?.agentActivationId !== undefined) {
       throw new ToolBrokerError(
         "development_environment_workspace_busy",
-        "Exclusive development environment is currently in use",
+        "Exclusive development environment already has an active Agent Run",
         true,
       );
     }
@@ -1418,13 +1401,6 @@ export class ToolBroker {
       throw new ToolBrokerError(
         "sandbox_domain_capacity_exhausted",
         "Sandbox Domain has reached its active Sandbox limit",
-        true,
-      );
-    }
-    if (reservation.status === "tenant_capacity") {
-      throw new ToolBrokerError(
-        "tenant_sandbox_capacity_exhausted",
-        "Tenant has reached its active Sandbox limit",
         true,
       );
     }
@@ -1762,7 +1738,7 @@ export class ToolBroker {
         // recovery authority.
       }
     }
-    const key = workspaceKey(request.assignment);
+    const key = runtimeKey(request.assignment);
     if (this.#suspended.has(key)) {
       if (!retainRequested && handle !== undefined) {
         await this.#provider.stop(handle).catch(() => undefined);
@@ -1867,7 +1843,7 @@ export class ToolBroker {
       activation.materializing === undefined
         ? activation.handle
         : await activation.materializing.catch(() => undefined);
-    const key = workspaceKey(assignment);
+    const key = runtimeKey(assignment);
     if (this.#suspended.has(key)) {
       if (handle !== undefined) await this.#provider.stop(handle).catch(() => undefined);
       await this.#restoreSuspended(key, undefined);

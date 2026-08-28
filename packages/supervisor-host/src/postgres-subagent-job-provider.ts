@@ -467,16 +467,10 @@ export class PostgresSubagentJobProvider {
 
       const policy = await transaction
         .selectFrom("tenant_runtime_policies")
-        .select(["maximum_sessions", "maximum_unsettled_turns", "maximum_concurrent_turns"])
+        .select(["maximum_sessions", "maximum_unsettled_turns"])
         .where("tenant_id", "=", input.tenantId)
         .forUpdate()
         .executeTakeFirstOrThrow();
-      if (Number(activeTreeNodes.count) + 2 > policy.maximum_concurrent_turns) {
-        throw new PostgresSubagentJobError(
-          "tenant_subagent_concurrency_exhausted",
-          "Tenant concurrent-Run quota has no lane for another recursive Subagent",
-        );
-      }
       const sessionCount = await transaction
         .selectFrom("sessions")
         .select(({ fn }) => fn.countAll<string>().as("count"))

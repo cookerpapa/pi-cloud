@@ -99,6 +99,7 @@ import * as sessionLeaseFencing from "./097_session_lease_fencing.ts";
 import * as removeRepositoryImport from "./098_remove_repository_import.ts";
 import * as removeDormantApprovalGraph from "./099_remove_dormant_approval_graph.ts";
 import * as removeLegacyDatabaseFunctions from "./100_remove_legacy_database_functions.ts";
+import * as userManagedWorkspaceConcurrency from "./101_user_managed_workspace_concurrency.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -203,6 +204,7 @@ export const migrationProvider: MigrationProvider = {
       "098_remove_repository_import": removeRepositoryImport,
       "099_remove_dormant_approval_graph": removeDormantApprovalGraph,
       "100_remove_legacy_database_functions": removeLegacyDatabaseFunctions,
+      "101_user_managed_workspace_concurrency": userManagedWorkspaceConcurrency,
     };
   },
 };

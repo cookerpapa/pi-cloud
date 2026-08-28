@@ -25,8 +25,6 @@ const CONFIG: ProductionBootstrapConfig = {
   maximumProjects: 100,
   maximumSessions: 1_000,
   maximumUnsettledTurns: 100,
-  maximumConcurrentTurns: 2,
-  maximumActiveSandboxes: 64,
   sandboxDomains: [
     {
       id: "sandbox-domain-bootstrap",
@@ -283,8 +281,6 @@ describe.sequential("production bootstrap and configuration", () => {
           maximumProjects: 10,
           maximumSessions: 100,
           maximumUnsettledTurns: 10,
-          maximumConcurrentTurns: 4,
-          maximumActiveSandboxes: 2,
         },
       },
     });

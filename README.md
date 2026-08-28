@@ -25,7 +25,7 @@ hostile public-SaaS security or abuse-management product.
                                       trusted plane
 
 Browser ── REST ──▶ Web ingress ──▶ Control Plane ──┐
-   ▲                  │              │ auth / quota / Runs  │
+   ▲                  │              │ auth / admission / Runs │
    │                  │ cursor-free  │ Session API          ▼
    └── snapshot + SSE ─┘              ├──────────────▶ PostgreSQL
                                       │                  product state
@@ -109,8 +109,8 @@ After deployment:
 
 An elastic Workspace is durable storage, not reserved compute: Cube capacity is
 admitted when a Tool-using Run starts. Creating a cloud development machine is
-synchronous and succeeds only after tenant quota, Sandbox capacity and the
-selected Cube profile have all been admitted.
+synchronous and succeeds only after durable-resource admission, Sandbox Domain
+capacity and the selected Cube profile have all been admitted.
 
 Releasing a cloud development machine deletes that machine and all of its files.
 Its conversations remain readable and must be rebound to another Workspace
@@ -130,9 +130,9 @@ main origin issues a short-lived target capability and redirects to an isolated
 `*.preview.localhost` origin, so application storage and scripts work without
 receiving PiCloud cookies. Production DNS/TLS must cover
 `*.preview.<application-host>`; Cube addresses and public port mappings are
-never exposed to the Agent. SSH is available only for
-cloud development machines, only while no Agent Run or browser terminal owns the
-environment, and each password can be used once.
+never exposed to the Agent. SSH is available only for cloud development
+machines and only while no other human terminal owns the environment; it may
+coexist with one Agent Run, and each password can be used once.
 
 Re-running `./install.sh` reconciles the same private runtime. Generated
 credentials and state live under `deploy/production/runtime/` by default and

@@ -54,7 +54,6 @@ export class SshTicketAuthority {
         .where("ticket.consumed_at", "is", null)
         .where("development.owner_user_id", "=", (eb) => eb.ref("ticket.user_id"))
         .where("development.state", "=", "running")
-        .where("development.agent_activation_id", "is", null)
         .where("development.terminal_active", "=", false)
         .where("domain.state", "=", "active")
         .forUpdate("ticket")

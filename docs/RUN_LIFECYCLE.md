@@ -5,8 +5,8 @@
 `POST /sessions/{id}/messages` authenticates tenant ownership and writes the
 user message, Turn, Run, command and Run-queue Outbox row in one PostgreSQL
 transaction. The idempotency key prevents a retry from creating another Run.
-Same-Session mutating Runs remain serialized and tenant quota is checked while
-holding the relevant database lock.
+Same-Session Runs remain serialized. Project, Session and unsettled-Turn limits
+bound durable metadata; they do not cap active Runs or Cubes per tenant.
 
 ## Claim and execution
 
@@ -18,7 +18,6 @@ are ordered by tenant scheduling time, availability and creation time.
 
 - the command and Run are still eligible;
 - this is the Session's next runnable message;
-- tenant and Workspace concurrency allow execution;
 - cancellation has not won;
 - no current Attempt already owns the Run.
 
@@ -73,8 +72,9 @@ PostgreSQL projector then applies the accepted fact idempotently without another
 authority query, and the Worker waits at a read-your-writes barrier before the
 next model Step. On successful settlement, the Worker
 prepares the bounded Workspace Volume revision. The terminal transaction
-validates the current Attempt/fence, advances the Workspace revision if
-applicable, writes a terminal event Outbox record and settles the Run. Kafka
+validates the current Attempt/fence, records the last-settled Workspace version
+if applicable, writes a terminal event Outbox record and settles the Run. A
+different Session settling the same Workspace first does not fail this Run. Kafka
 retention eventually removes hot fragments while canonical Pi
 messages remain in PostgreSQL.
 
@@ -103,7 +103,7 @@ capacity.
 Run queue              at-least-once wakeup + transactional claim
 Pi Session mutation    Authority Gate + Kafka + idempotent PostgreSQL projection
 Tool start              no blind retry; UNKNOWN if ambiguous
-Workspace revision      fence + expected revision
+Workspace revision      fenced last-settled observation; persistent Volume owns bytes
 terminal Run commit     idempotent current-Attempt transaction
 Cube create/delete      idempotent reconcile
 live AcceptedFact       Authority Gate + Kafka acks=all + Gateway fact-id/sequence projection

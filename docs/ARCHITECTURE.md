@@ -41,7 +41,9 @@ deletion, settled-message tail pruning, named Workspaces, snapshot-first output,
 file browsing, user-owned full-VM development environments, authenticated service
 previews, one-time SSH access, Workspace rebinding and administrator settings. The Control Plane
 commits each idempotent message and its Run command in one PostgreSQL
-transaction. It enforces tenant quota and same-Session serialization.
+transaction. It enforces bounded durable-resource admission and same-Session
+serialization. Different Sessions may intentionally share a Workspace without
+becoming scheduler locks for one another.
 
 ### PostgreSQL Run queue
 
@@ -200,9 +202,8 @@ the root-Run lock. These bounds can be configured per Worker deployment but are
 never model-controlled. Nested Child Runs use the same PostgreSQL queue,
 RunAttempt fence, Tool Broker authorization and Cube Workspace modes as the
 first generation. Cancelling or archiving a parent covers its full descendant
-execution subtree. Admission also proves the tenant concurrent-Run quota has a
-lane for the new Child; an undersized quota fails the Tool call immediately
-instead of leaving a parent/child chain deadlocked in the queue.
+execution subtree. Worker admission keeps a deployment-owned Child slot
+available so a waiting parent cannot occupy every local execution lane.
 
 The upstream native supervisor channel is local-file based, so PiCloud replaces
 that transport with a PostgreSQL channel while preserving the
@@ -289,20 +290,15 @@ API. Cube-agent starts envd through the VM's vsock control path. The generic
 guest agent is transport only: tenant identity, writer admission, ExecutionLease
 and operation idempotency remain in PostgreSQL and the external Tool Broker.
 
-Human terminal authority is deliberately separate from an Agent ExecutionLease and
-Tool policy snapshot. It still reserves the next monotonic Session fence in
-PostgreSQL, so its Workspace checkpoint cannot be mistaken for an older Agent
-write and the next Run necessarily receives a higher fence. An active Agent
-activation blocks a terminal, and an active terminal keeps a newly accepted Run
-queued until terminal cleanup has released the writer reservation. An idle
-persistent same-Session Cube is rebound to a human-only Broker reservation and
-returned to the warm pool after PTY close; the old Agent capability remains
-revoked throughout the handoff. No in-guest secret is an ownership authority.
-Warm runtimes are Broker-owned and excluded from expired
-Supervisor inventory, preventing a stale Run reconciler from deleting them. An
-ordinary elastic warm Cube is still retired before a separate terminal runtime
-starts. Input, output and resize frames are bounded; terminal transcripts are
-not persisted.
+Human terminal authority is deliberately separate from an Agent ExecutionLease
+and Tool policy snapshot. It does not advance or revoke the Session's Agent
+fence. If that Session has an idle warm Cube, the terminal may reuse it;
+otherwise it receives a separate Cube that mounts the same persistent Volume.
+An Agent Run and terminal may therefore coexist, with ordinary POSIX conflict
+semantics and user-managed coordination. No in-guest secret is an ownership
+authority. Warm runtimes are Broker-owned and excluded from expired Supervisor
+inventory, preventing a stale Run reconciler from deleting them. Input, output
+and resize frames are bounded; terminal transcripts are not persisted.
 
 ### User-owned development environments
 
@@ -312,8 +308,8 @@ kind is rejected by elastic Session and Workspace APIs. Public REST and WebSocke
 owner from authenticated request identity; responses contain no Cube runtime
 ID, traffic token or Broker credential. Tool Broker is the only CubeAPI client.
 
-Creation synchronously checks tenant project quota, tenant/Domain active-Sandbox
-capacity and the real Cube scheduling result. The API returns `201` only after
+Creation synchronously checks tenant durable-resource admission,
+Sandbox-Domain capacity and the real Cube scheduling result. The API returns `201` only after
 the requested profile is running; capacity exhaustion returns a structured
 retryable error and the rejected machine allocation is retired. A reconciler
 removes a `requested` row abandoned by a Control Plane crash before provisioning.
@@ -336,28 +332,28 @@ are never accepted from the browser.
 The product calls this allocation a cloud development machine. It is requested
 independently from elastic Workspaces. The Control Plane allocates its private
 machine Volume and internal project identity transactionally; neither ever
-enters the elastic Workspace inventory. Several conversations may
-select working directories from the complete guest filesystem. The directory is
-a Session binding, not another Volume. Machine single-writer admission still
-permits only one active Agent Run or human terminal at a time.
+enters the elastic Workspace inventory. Several conversations may select
+working directories from the complete guest filesystem. The directory is a
+Session binding, not another Volume. The machine permits one active Agent
+authority and one human terminal/SSH session at the same time; pause and release
+still wait for both.
 
 The authenticated folder chooser may create one bounded child directory in an
-idle owned machine. Control Plane binds tenant/user identity, Tool Broker rejects
-the mutation while an Agent activation or terminal owns the machine, validates
-the parent/name, and asks envd to start a bounded, root-owned one-shot filesystem
-helper. The helper exits after returning the directory result. The browser never
-sends a shell command or receives Cube authority.
+owned running machine. Control Plane binds tenant/user identity, Tool Broker
+validates the parent/name and asks envd to start a bounded, root-owned one-shot
+filesystem helper. It may run alongside an Agent or terminal under ordinary
+filesystem semantics. The helper exits after returning the directory result.
+The browser never sends a shell command or receives Cube authority.
 
 Guest evidence includes a bounded control-protocol version. Broker and guest
 must match the current version exactly; an older exclusive machine is released
 instead of carrying a compatibility execution path or silently rebuilding a
 different machine. Users create a new machine explicitly after release.
 
-The allocation participates in tenant/Domain Sandbox quotas and the global
-Workspace single-writer rule. `agent_activation_id` and `terminal_active` are
-durable admission facts. Tool Broker lazily seals and rebinds the same Cube to a
-Run's opaque authority on first Tool use, then captures and returns it to the
-environment authority. Worker scans wait while a human terminal is active. A
+The allocation participates in Sandbox-Domain capacity. `agent_activation_id`
+and `terminal_active` are independent durable ownership facts. Tool Broker
+lazily seals and rebinds the same Cube to a Run's opaque authority on first
+Tool use, then captures and returns it to the environment authority. A
 planned Broker shutdown stores an encrypted reconnect capsule, detaches its
 process-local handle and leaves each cloud development machine in its existing
 physical state. It does not pause a running VM. A replacement Broker validates
@@ -420,8 +416,8 @@ NAT mapping.
 Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented. PiCloud does not
 expose Sandbox port 22. A separate trusted SSH gateway validates a one-time
 PostgreSQL ticket and translates a standard SSH shell channel to the existing
-Tool Broker PTY protocol. Tickets are issued only for an owned, running
-cloud development machine with no active Agent or terminal. An unused ticket lasts
+Tool Broker PTY protocol. Tickets are issued only for an owned, running cloud
+development machine with no other human terminal. An unused ticket lasts
 24 hours by default, but the first successful authentication consumes it. The
 gateway has no CubeAPI or model credential.
 
@@ -533,7 +529,7 @@ preserve a visible prefix that never reached `message_end`.
 
 | State | Authority |
 | --- | --- |
-| tenants, users, sessions, quotas | PostgreSQL |
+| tenants, users, sessions, durable-resource admission | PostgreSQL |
 | Runs, Attempts, leases, fences, ready queue | PostgreSQL |
 | Pi Session entries/compaction/operation records | PostgreSQL SessionStorage |
 | Session Tool grants and immutable Run capability snapshots | PostgreSQL |

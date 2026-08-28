@@ -83,8 +83,8 @@ export interface SandboxDomainTable {
   state: SandboxDomainState;
   tool_broker_base_url: string;
   workspace_storage_key: string;
-  maximum_active_sandboxes: GeneratedInteger;
   assigned_workspaces: GeneratedInt8;
+  maximum_active_sandboxes: GeneratedInteger;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
 }
@@ -285,8 +285,6 @@ export interface TenantRuntimePolicyTable {
   maximum_projects: GeneratedInteger;
   maximum_sessions: GeneratedInteger;
   maximum_unsettled_turns: GeneratedInteger;
-  maximum_concurrent_turns: GeneratedInteger;
-  maximum_active_sandboxes: GeneratedInteger;
   maximum_model_requests_per_run: GeneratedInteger;
   maximum_cost_microusd_per_run: GeneratedInt8;
   daily_token_budget: GeneratedInt8;

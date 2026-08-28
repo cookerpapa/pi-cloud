@@ -156,7 +156,6 @@ async function seedSingleUserProfile(): Promise<void> {
       maximum_projects: 10_000,
       maximum_sessions: 10_000,
       maximum_unsettled_turns: 10_000,
-      maximum_concurrent_turns: 256,
     })
     .executeTakeFirstOrThrow();
 }
@@ -1843,7 +1842,7 @@ describe.sequential("single-user durable turn intake API", () => {
     expect(sandbox).toEqual({ state: "ready", active_sessions: 0 });
   });
 
-  it("keeps a Run queued until a Workspace terminal releases its writer reservation", async () => {
+  it("claims a Run while a human terminal is attached to the same Workspace", async () => {
     const accepted = await acceptTurn(
       "workspace-terminal-writer-gate",
       "wait for the human terminal writer before starting",
@@ -1896,14 +1895,15 @@ describe.sequential("single-user durable turn intake API", () => {
       },
     });
 
-    await expect(dispatchNextTestCommand(database, dispatcher, IDS.tenant)).resolves.toEqual({
-      status: "idle",
+    await expect(dispatchNextTestCommand(database, dispatcher, IDS.tenant)).resolves.toMatchObject({
+      status: "completed",
+      commandId: accepted.commandId,
     });
     await expect(readTurnExecution(accepted)).resolves.toMatchObject({
-      commandState: "pending",
-      turnState: "queued",
+      commandState: "completed",
+      turnState: "completed",
       sessionState: "idle",
-      attempts: 0,
+      attempts: 1,
     });
 
     await database
@@ -1911,10 +1911,6 @@ describe.sequential("single-user durable turn intake API", () => {
       .set({ state: "released", updated_at: new Date() })
       .where("terminal_id", "=", terminalId)
       .executeTakeFirstOrThrow();
-    await expect(dispatchClaimableWork(dispatcher)).resolves.toMatchObject({
-      status: "completed",
-      commandId: accepted.commandId,
-    });
   });
 
   it("settles the original failure when terminal projection preparation also fails", async () => {

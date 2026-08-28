@@ -49,8 +49,6 @@ bootstrap:
   maximumProjects: 100
   maximumSessions: 1000
   maximumUnsettledTurns: 100
-  maximumConcurrentTurns: 32
-  maximumActiveSandboxes: 64
 
 controlPlane:
   replicas: 3
@@ -67,8 +65,6 @@ controlPlane:
     maximumProjects: 10
     maximumSessions: 100
     maximumUnsettledTurns: 10
-    maximumConcurrentTurns: 4
-    maximumActiveSandboxes: 2
   supervisorIdPrefix: pi-cloud-pi-worker-
   resources:
     requests: { cpu: 500m, memory: 1Gi }

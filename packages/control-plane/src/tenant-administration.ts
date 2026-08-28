@@ -14,8 +14,6 @@ export type TenantQuotaConfiguration = Readonly<{
   maximumProjects: number;
   maximumSessions: number;
   maximumUnsettledTurns: number;
-  maximumConcurrentTurns: number;
-  maximumActiveSandboxes: number;
 }>;
 
 export type PrivateTenantInitialModel = Readonly<{
@@ -72,8 +70,6 @@ const DEFAULT_QUOTAS: TenantQuotaConfiguration = {
   maximumProjects: 100,
   maximumSessions: 1_000,
   maximumUnsettledTurns: 100,
-  maximumConcurrentTurns: 1,
-  maximumActiveSandboxes: 16,
 };
 
 export class TenantAdministrationError extends Error {
@@ -138,20 +134,7 @@ function quotaConfiguration(
       "maximumUnsettledTurns",
       1_000_000,
     ),
-    maximumConcurrentTurns: positiveInteger(
-      value.maximumConcurrentTurns ?? DEFAULT_QUOTAS.maximumConcurrentTurns,
-      "maximumConcurrentTurns",
-      256,
-    ),
-    maximumActiveSandboxes: positiveInteger(
-      value.maximumActiveSandboxes ?? DEFAULT_QUOTAS.maximumActiveSandboxes,
-      "maximumActiveSandboxes",
-      1_000_000,
-    ),
   };
-  if (quotas.maximumConcurrentTurns > quotas.maximumUnsettledTurns) {
-    throw new TypeError("maximumConcurrentTurns cannot exceed maximumUnsettledTurns");
-  }
   return quotas;
 }
 
@@ -355,8 +338,6 @@ export async function createPrivateTenant(
           maximum_projects: quotas.maximumProjects,
           maximum_sessions: quotas.maximumSessions,
           maximum_unsettled_turns: quotas.maximumUnsettledTurns,
-          maximum_concurrent_turns: quotas.maximumConcurrentTurns,
-          maximum_active_sandboxes: quotas.maximumActiveSandboxes,
           created_at: now,
           updated_at: now,
         })

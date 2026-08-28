@@ -259,10 +259,7 @@ export class ToolBrokerServer {
 
   async #failure(reply: FastifyReply, error: unknown): Promise<void> {
     const failure = safeFailure(error);
-    if (
-      failure.code === "tenant_sandbox_capacity_exhausted" ||
-      failure.code === "sandbox_domain_capacity_exhausted"
-    ) {
+    if (failure.code === "sandbox_domain_capacity_exhausted") {
       this.#metrics?.sandboxAdmissionRejected.inc({ reason: failure.code });
     }
 

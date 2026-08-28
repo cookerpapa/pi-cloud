@@ -53,8 +53,6 @@ describe.sequential("private tenant administration", () => {
         maximumProjects: 4,
         maximumSessions: 20,
         maximumUnsettledTurns: 6,
-        maximumConcurrentTurns: 2,
-        maximumActiveSandboxes: 3,
       },
       idGenerator: () => IDS[index++]!,
       randomSecret: () => "a".repeat(43),
@@ -71,8 +69,6 @@ describe.sequential("private tenant administration", () => {
         maximumProjects: 4,
         maximumSessions: 20,
         maximumUnsettledTurns: 6,
-        maximumConcurrentTurns: 2,
-        maximumActiveSandboxes: 3,
       },
     });
     const counts = [];
@@ -83,7 +79,7 @@ describe.sequential("private tenant administration", () => {
     counts.push(await database.selectFrom("tenant_runtime_policies").selectAll().execute());
     counts.push(await database.selectFrom("tenant_api_credentials").selectAll().execute());
     expect(counts.map((rows) => rows.length)).toEqual([1, 1, 1, 1, 1, 1]);
-    expect(counts[4]?.[0]).toMatchObject({ maximum_active_sandboxes: 3 });
+    expect(counts[4]?.[0]).toMatchObject({ maximum_unsettled_turns: 6 });
     expect(JSON.stringify(counts)).not.toContain(created.credential.token);
     await expect(
       new PostgresTenantApiAuthenticator({ database, clock: () => NOW }).authenticate(
@@ -110,9 +106,9 @@ describe.sequential("private tenant administration", () => {
       createPrivateTenant(database, {
         slug: "invalid-quota",
         ownerDisplayName: "Invalid",
-        quotas: { maximumUnsettledTurns: 1, maximumConcurrentTurns: 2 },
+        quotas: { maximumUnsettledTurns: 0 },
       }),
-    ).rejects.toThrow("cannot exceed");
+    ).rejects.toThrow("maximumUnsettledTurns");
     expect(await database.selectFrom("tenants").selectAll().execute()).toHaveLength(1);
   });
 

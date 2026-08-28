@@ -85,7 +85,7 @@ async function ensureCredential(path) {
 }
 
 function validSecret(value) {
-  return typeof value === "string" && /^[A-Za-z0-9_-]{64}$/.test(value);
+  return typeof value === "string" && /^[A-Za-z0-9_-]{43,128}$/.test(value);
 }
 
 async function ensureSecretValues(path) {

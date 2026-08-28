@@ -97,8 +97,6 @@ spec:
             - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS, value: {{ .Values.controlPlane.publicRegistration.maximumProjects | quote }} }
             - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS, value: {{ .Values.controlPlane.publicRegistration.maximumSessions | quote }} }
             - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS, value: {{ .Values.controlPlane.publicRegistration.maximumUnsettledTurns | quote }} }
-            - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS, value: {{ .Values.controlPlane.publicRegistration.maximumConcurrentTurns | quote }} }
-            - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_ACTIVE_SANDBOXES, value: {{ .Values.controlPlane.publicRegistration.maximumActiveSandboxes | quote }} }
             - { name: PI_CLOUD_WEB_SESSION_COOKIE_SECURE, value: "true" }
             - { name: PI_CLOUD_METRICS_HOST, value: 0.0.0.0 }
             - { name: PI_CLOUD_METRICS_PORT, value: "9464" }

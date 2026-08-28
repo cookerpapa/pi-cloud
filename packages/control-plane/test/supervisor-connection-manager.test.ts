@@ -233,7 +233,6 @@ async function createAcceptedTurn(): Promise<{
     .values({
       tenant_id: tenantId,
       default_model_profile_id: profileId,
-      maximum_concurrent_turns: 4,
     })
     .executeTakeFirstOrThrow();
   const store = new ControlPlaneStore({

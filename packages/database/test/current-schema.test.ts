@@ -57,17 +57,32 @@ describe("current PiCloud schema", () => {
         select table_name, column_name
           from information_schema.columns
          where table_schema = 'public'
-           and table_name in ('workspaces', 'runs')
+           and table_name in ('workspaces', 'runs', 'tenant_runtime_policies')
       `.execute(database);
       const keys = new Set(columns.rows.map((row) => `${row.table_name}.${row.column_name}`));
       expect(keys.has("workspaces.seed_kind")).toBe(true);
       expect(keys.has("workspaces.object_snapshot_key")).toBe(false);
       expect(keys.has("runs.source_set_snapshot")).toBe(false);
+      expect(keys.has("tenant_runtime_policies.maximum_concurrent_turns")).toBe(false);
+      expect(keys.has("tenant_runtime_policies.maximum_active_sandboxes")).toBe(false);
+
+      const activationIndexes = await sql<{ indexname: string; indexdef: string }>`
+        select indexname, indexdef
+          from pg_indexes
+         where schemaname = 'public'
+           and indexname in ('tool_broker_workspace_live_unique', 'tool_broker_workspace_live_idx')
+      `.execute(database);
+      expect(activationIndexes.rows).toEqual([
+        expect.objectContaining({
+          indexname: "tool_broker_workspace_live_idx",
+          indexdef: expect.not.stringContaining("UNIQUE"),
+        }),
+      ]);
 
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("100_remove_legacy_database_functions");
+      expect(applied.rows.at(-1)?.name).toBe("101_user_managed_workspace_concurrency");
 
       const legacyFunctions = await sql<{ proname: string }>`
         select proname

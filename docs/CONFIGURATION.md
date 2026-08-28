@@ -61,8 +61,6 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS` | `10` | projects per public tenant |
 | `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS` | `100` | Sessions per public tenant |
 | `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS` | `10` | queued/running Turns per tenant |
-| `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS` | `4` | active Runs per tenant |
-| `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_ACTIVE_SANDBOXES` | `2` | active Cubes per tenant |
 | `PI_CLOUD_WEB_SESSION_TTL_MS` | `2592000000` | browser login lifetime (30 days) |
 | `PI_CLOUD_WEB_SESSION_COOKIE_SECURE` | `false` | set `true` when the public endpoint is HTTPS |
 
@@ -80,11 +78,9 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS` | `15000` | Broker replica ownership lease |
 | `PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS` | `5000` | Broker ownership heartbeat |
 
-To realize the full configured Subagent concurrency, tenant concurrency must
-have room for the root Run plus those children; lower tenant quotas safely
-reduce effective parallelism. Broker heartbeat must leave more than one missed
-interval before lease expiry. `production:config` rejects incoherent lease
-combinations.
+Worker capacity must leave room for a root Run and its configured active
+children. Broker heartbeat must leave more than one missed interval before
+lease expiry. `production:config` rejects incoherent lease combinations.
 
 ### Streaming and Workspace operations
 

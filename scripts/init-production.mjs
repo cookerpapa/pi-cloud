@@ -502,23 +502,6 @@ const publicTenantMaximumUnsettledTurns = integerEnvironmentValue(
   1,
   1_000_000,
 );
-const publicTenantMaximumConcurrentTurns = integerEnvironmentValue(
-  "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS",
-  4,
-  1,
-  256,
-);
-const publicTenantMaximumActiveSandboxes = integerEnvironmentValue(
-  "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_ACTIVE_SANDBOXES",
-  2,
-  1,
-  1_000_000,
-);
-if (Number(publicTenantMaximumConcurrentTurns) > Number(publicTenantMaximumUnsettledTurns)) {
-  throw new Error(
-    "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS cannot exceed PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS",
-  );
-}
 
 await writePrivateFile(resolve(secretsDirectory, "postgres-password"), `${postgresPassword}\n`);
 await writePrivateFile(
@@ -611,8 +594,6 @@ const environment = [
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS=${publicTenantMaximumProjects}`,
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS=${publicTenantMaximumSessions}`,
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS=${publicTenantMaximumUnsettledTurns}`,
-  `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_CONCURRENT_TURNS=${publicTenantMaximumConcurrentTurns}`,
-  `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_ACTIVE_SANDBOXES=${publicTenantMaximumActiveSandboxes}`,
   "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS=7200000",
   "PI_CLOUD_KAFKA_PARTITIONS=32",
   "PI_CLOUD_FACT_CHANNEL_LEASE_MS=9000",

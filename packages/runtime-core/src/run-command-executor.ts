@@ -665,36 +665,6 @@ export class RunCommandExecutor {
         .where("command.kind", "=", "turn.execute")
         .where("command.id", "=", commandId)
         .where(
-          sql<boolean>`not exists (
-            select 1
-            from workspace_terminal_sessions as active_terminal
-            where active_terminal.tenant_id = ${sql.ref("command.tenant_id")}
-              and active_terminal.workspace_id = ${sql.ref("session_row.workspace_id")}
-              and active_terminal.state in (
-                'reserved',
-                'materializing',
-                'active',
-                'cleaning',
-                'unknown'
-              )
-          )`,
-        )
-        .where(
-          sql<boolean>`not exists (
-            select 1
-            from development_environments as active_environment
-            where active_environment.tenant_id = ${sql.ref("command.tenant_id")}
-              and active_environment.workspace_id = ${sql.ref("session_row.workspace_id")}
-              and active_environment.state in (
-                'requested', 'provisioning', 'running', 'paused', 'releasing', 'unknown'
-              )
-              and (
-                active_environment.state <> 'running'
-                or active_environment.terminal_active = true
-              )
-          )`,
-        )
-        .where(
           sql<boolean>`(
             (
               ${sql.ref("command.state")} = 'pending'
@@ -724,116 +694,13 @@ export class RunCommandExecutor {
               and earlier_command.mailbox_position < ${sql.ref("command.mailbox_position")}
           )`,
         )
-        .where(
-          sql<boolean>`(
-            ${sql.ref("session_row.forked_from_session_id")} is not null
-            or not exists (
-              select 1
-              from turns as workspace_active_turn
-              inner join sessions as workspace_active_session
-                on workspace_active_session.tenant_id = workspace_active_turn.tenant_id
-                and workspace_active_session.id = workspace_active_turn.session_id
-              where workspace_active_turn.tenant_id = ${sql.ref("command.tenant_id")}
-                and workspace_active_session.workspace_id = ${sql.ref("session_row.workspace_id")}
-                and workspace_active_session.forked_from_session_id is null
-                and workspace_active_turn.id <> ${sql.ref("command.turn_id")}
-                and workspace_active_turn.state in (
-                  'dispatching',
-                  'running',
-                  'cancelling'
-                )
-                and not (
-                  ${sql.ref("session_row.session_kind")} = 'subagent'
-                  and exists (
-                    select 1
-                    from subagent_executions as child_execution
-                    inner join runs as parent_run
-                      on parent_run.tenant_id = child_execution.tenant_id
-                      and parent_run.id = child_execution.parent_run_id
-                    where child_execution.tenant_id = ${sql.ref("run.tenant_id")}
-                      and child_execution.child_run_id = ${sql.ref("run.id")}
-                      and (
-                        child_execution.workspace_mode = 'none'
-                        or (
-                          child_execution.workspace_mode = 'shared_serialized'
-                          and parent_run.turn_id = workspace_active_turn.id
-                        )
-                      )
-                  )
-                )
-            )
-          )`,
-        )
         .where("session_row.state", "in", ["cold", "idle"])
-        .where(
-          sql<boolean>`(
-            select count(*)
-            from turns as tenant_active_turn
-            where tenant_active_turn.tenant_id = ${sql.ref("command.tenant_id")}
-              and tenant_active_turn.id <> ${sql.ref("command.turn_id")}
-              and tenant_active_turn.state in ('dispatching', 'running', 'cancelling')
-          ) < ${sql.ref("policy.maximum_concurrent_turns")}`,
-        )
         .limit(1)
         .forUpdate(["outbox", "session_row", "run"])
         .skipLocked()
         .executeTakeFirst();
 
       if (!row) return undefined;
-
-      if (row.forkedFromSessionId === null) {
-        await transaction
-          .selectFrom("workspaces")
-          .select("id")
-          .where("tenant_id", "=", row.tenantId)
-          .where("id", "=", row.workspaceId)
-          .where("deleted_at", "is", null)
-          .forUpdate()
-          .executeTakeFirstOrThrow();
-        const workspaceBlocked = await transaction
-          .selectNoFrom((expression) =>
-            expression
-              .exists(
-                transaction
-                  .selectFrom("turns as active_turn")
-                  .innerJoin("sessions as active_session", (join) =>
-                    join
-                      .onRef("active_session.tenant_id", "=", "active_turn.tenant_id")
-                      .onRef("active_session.id", "=", "active_turn.session_id"),
-                  )
-                  .select("active_turn.id")
-                  .where("active_turn.tenant_id", "=", row.tenantId)
-                  .where("active_session.workspace_id", "=", row.workspaceId)
-                  .where("active_session.forked_from_session_id", "is", null)
-                  .where("active_turn.id", "!=", row.turnId)
-                  .where("active_turn.state", "in", ["dispatching", "running", "cancelling"])
-                  .where(
-                    sql<boolean>`not (
-                      ${row.sessionKind} = 'subagent'
-                      and exists (
-                        select 1
-                        from subagent_executions as child_execution
-                        inner join runs as parent_run
-                          on parent_run.tenant_id = child_execution.tenant_id
-                          and parent_run.id = child_execution.parent_run_id
-                        where child_execution.tenant_id = ${row.tenantId}
-                          and child_execution.child_run_id = ${row.runId}
-                          and (
-                            child_execution.workspace_mode = 'none'
-                            or (
-                              child_execution.workspace_mode = 'shared_serialized'
-                              and parent_run.turn_id = ${sql.ref("active_turn.id")}
-                            )
-                          )
-                      )
-                    )`,
-                  ),
-              )
-              .as("blocked"),
-          )
-          .executeTakeFirstOrThrow();
-        if (workspaceBlocked.blocked) return undefined;
-      }
 
       const payload = parseTurnCommandOutboxPayload(row.outboxPayload);
       if (

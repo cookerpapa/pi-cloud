@@ -81,10 +81,12 @@ authenticated browser WebSocket
   -> unprivileged PTY in /workspace
 ```
 
-A human terminal and an Agent Run cannot write the same Workspace at the same
-time. Standard SSH is terminated by PiCloud's trusted ticket gateway and
-translated into this PTY protocol; Cube port 22 remains private. Envd is the
-single generic guest agent and holds no PiCloud, model or database credential.
+A human terminal and an Agent Run may write the same Workspace at the same
+time. Elastic execution uses independent Cube process worlds over the same
+persistent Volume; a cloud development machine uses one Cube. Standard SSH is
+terminated by PiCloud's trusted ticket gateway and translated into this PTY
+protocol; Cube port 22 remains private. Envd is the single generic guest agent
+and holds no PiCloud, model or database credential.
 
 ## Network policy
 

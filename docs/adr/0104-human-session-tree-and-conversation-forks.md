@@ -26,7 +26,8 @@ PiCloud adopts Pi's `/fork` product semantics:
   has a fresh append sequence and no inherited open operation records;
 - the child continues to use the same Workspace as its parent. The fork changes
   conversation context; it does not rewind Workspace bytes;
-- Workspace serialization and Tool fencing remain unchanged.
+- same-Session ordering and Tool fencing remain unchanged; cross-Session
+  Workspace concurrency follows ADR-0130.
 
 Product Sessions record their parent Session, fork Turn and fork Pi entry. A
 tree endpoint returns an PiCloud-owned, bounded projection of user and final
@@ -63,13 +64,11 @@ bounded, local database copy rather than a full JSONL download or an object
 store checkpoint. It keeps the production Pi runtime unchanged: each child is
 still opened on its `main` lane by the existing Worker.
 
-All branches share one logical Workspace and therefore one writable execution
-slot. When a branch first invokes a tool, Tool Broker retires an ordinary warm
-activation owned by another branch before reserving the new activation. A
-persistent activation may be transferred only when PostgreSQL proves that both
-Sessions belong to the same conversation tree. The old process world is stopped
-and its durable reservation is released; files continue from the authoritative
-Workspace revision, while background processes do not migrate between branches.
+All branches share one logical Workspace. Each ordinary branch keeps a
+Session-scoped Cube process world while sharing the persistent Volume; users
+are responsible for concurrent edits. The explicit `shared_serialized`
+Subagent mode remains a coordinated handoff rather than ordinary branch
+concurrency.
 
 Workspace files reflect the latest shared Workspace state, not historical file
 state at the fork point. The UI states this explicitly. Historical Workspace

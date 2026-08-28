@@ -87,7 +87,6 @@ beforeAll(async () => {
       maximumProjects: 1,
       maximumSessions: 2,
       maximumUnsettledTurns: 1,
-      maximumConcurrentTurns: 1,
     },
     idGenerator: sequence(TENANT_A_IDS),
     randomSecret: () => "a".repeat(43),

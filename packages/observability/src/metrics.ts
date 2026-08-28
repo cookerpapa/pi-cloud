@@ -155,7 +155,7 @@ export class PiCloudMetrics {
     });
     this.tenantAdmissionLockWait = new Histogram({
       name: "pi_cloud_tenant_admission_lock_wait_seconds",
-      help: "Time waiting for the tenant quota serialization row",
+      help: "Time waiting for the tenant durable-resource admission row",
       buckets: DURATION_BUCKETS,
       registers: [this.registry],
     });

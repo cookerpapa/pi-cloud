@@ -36,12 +36,6 @@ export async function bootstrapProductionDatabase(
   config: ProductionBootstrapConfig,
   apiToken: string,
 ): Promise<ProductionBootstrapResult> {
-  if (config.maximumConcurrentTurns > config.maximumUnsettledTurns) {
-    throw new ProductionBootstrapError(
-      "bootstrap_policy_invalid",
-      "Tenant concurrent-turn limit cannot exceed its unsettled-turn limit",
-    );
-  }
   const apiTokenSha256 = tenantApiTokenDigest(apiToken);
   await database.transaction().execute(async (transaction) => {
     for (const domain of config.sandboxDomains) {
@@ -248,8 +242,6 @@ export async function bootstrapProductionDatabase(
         maximum_projects: config.maximumProjects,
         maximum_sessions: config.maximumSessions,
         maximum_unsettled_turns: config.maximumUnsettledTurns,
-        maximum_concurrent_turns: config.maximumConcurrentTurns,
-        maximum_active_sandboxes: config.maximumActiveSandboxes,
       })
       .onConflict((conflict) => conflict.column("tenant_id").doNothing())
       .executeTakeFirst();
@@ -261,8 +253,6 @@ export async function bootstrapProductionDatabase(
         "maximum_projects",
         "maximum_sessions",
         "maximum_unsettled_turns",
-        "maximum_concurrent_turns",
-        "maximum_active_sandboxes",
       ])
       .where("tenant_id", "=", config.tenantId)
       .executeTakeFirstOrThrow();
@@ -271,9 +261,7 @@ export async function bootstrapProductionDatabase(
         policy.enabled &&
         policy.maximum_projects === config.maximumProjects &&
         policy.maximum_sessions === config.maximumSessions &&
-        policy.maximum_unsettled_turns === config.maximumUnsettledTurns &&
-        policy.maximum_concurrent_turns === config.maximumConcurrentTurns &&
-        policy.maximum_active_sandboxes === config.maximumActiveSandboxes,
+        policy.maximum_unsettled_turns === config.maximumUnsettledTurns,
       "tenant runtime policy",
     );
 

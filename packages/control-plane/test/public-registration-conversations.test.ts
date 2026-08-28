@@ -79,8 +79,6 @@ beforeAll(async () => {
       maximumProjects: 2,
       maximumSessions: 8,
       maximumUnsettledTurns: 2,
-      maximumConcurrentTurns: 1,
-      maximumActiveSandboxes: 1,
     },
     clock: () => NOW,
   } as const;

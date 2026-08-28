@@ -80,10 +80,6 @@ export function validateDistributedDeploymentValues(values) {
   if (retentionMs < turnMs + 5 * 60_000) {
     throw new Error("Kafka retention can omit a recoverable Run");
   }
-  integer(
-    values.controlPlane?.publicRegistration?.maximumConcurrentTurns,
-    "public tenant concurrency",
-  );
   integer(runtime?.subagents?.maximumConcurrent, "Subagent concurrency");
   const queueWaitMs = integer(
     values.sandboxPlane?.volumeGatewayQueueWaitTimeoutMs,

@@ -118,7 +118,6 @@ export async function transitionCurrentRunAttempt(
       "run.row_version as runVersion",
       "run.current_attempt_id as currentAttemptId",
       "run.workspace_id as workspaceId",
-      "run.workspace_base_version_id as workspaceBaseVersionId",
       "session_row.forked_from_session_id as forkedFromSessionId",
       "session_row.session_kind as sessionKind",
       "subagent_execution.workspace_mode as subagentWorkspaceMode",
@@ -242,7 +241,7 @@ export async function transitionCurrentRunAttempt(
           );
         }
         if (advancesSharedWorkspace) {
-          let workspaceUpdate = transaction
+          const workspaceHead = await transaction
             .updateTable("workspaces")
             .set({
               current_workspace_version_id: version.id,
@@ -250,17 +249,9 @@ export async function transitionCurrentRunAttempt(
               updated_at: now,
             })
             .where("tenant_id", "=", identity.tenantId)
-            .where("id", "=", version.workspace_id);
-          workspaceUpdate =
-            row.workspaceBaseVersionId === null
-              ? workspaceUpdate.where("current_workspace_version_id", "is", null)
-              : workspaceUpdate.where(
-                  "current_workspace_version_id",
-                  "=",
-                  row.workspaceBaseVersionId,
-                );
-          const workspaceHead = await workspaceUpdate.executeTakeFirst();
-          expectOne(workspaceHead.numUpdatedRows, "Advancing the shared Workspace head");
+            .where("id", "=", version.workspace_id)
+            .executeTakeFirst();
+          expectOne(workspaceHead.numUpdatedRows, "Recording the last-settled Workspace version");
 
           await transaction
             .updateTable("sessions")

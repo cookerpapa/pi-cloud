@@ -194,18 +194,6 @@ describe("PostgreSQL Tool Broker ownership", () => {
         valid_until: new Date(Date.now() + 60_000),
       })
       .executeTakeFirstOrThrow();
-    await expect(repository.reserve(activation)).rejects.toMatchObject({
-      code: "state_conflict",
-      message: "Tenant Sandbox policy is unavailable",
-    });
-    await database
-      .insertInto("tenant_runtime_policies")
-      .values({
-        tenant_id: tenantId,
-        default_model_profile_id: profileId,
-        maximum_active_sandboxes: 2,
-      })
-      .execute();
     await expect(
       repository.reserveTerminal({
         terminalId: "20000000-0000-4000-8000-000000000021",
@@ -229,8 +217,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         .select("last_fencing_token")
         .where("id", "=", rootSessionId)
         .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ last_fencing_token: "1" });
-    await expect(repository.reserve(activation)).resolves.toEqual({ status: "busy" });
+    ).resolves.toEqual({ last_fencing_token: "0" });
     await repository.setTerminalState("20000000-0000-4000-8000-000000000021", "released");
     await expect(
       database

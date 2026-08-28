@@ -99,8 +99,6 @@ export class ControlPlaneModule {
                 maximumProjects: 10,
                 maximumSessions: 100,
                 maximumUnsettledTurns: 10,
-                maximumConcurrentTurns: 1,
-                maximumActiveSandboxes: 16,
               },
               ...(options.platformOperatorTenantId === undefined
                 ? {}
@@ -120,8 +118,6 @@ export class ControlPlaneModule {
                 maximumProjects: 10,
                 maximumSessions: 100,
                 maximumUnsettledTurns: 10,
-                maximumConcurrentTurns: 1,
-                maximumActiveSandboxes: 16,
               },
             }),
         },

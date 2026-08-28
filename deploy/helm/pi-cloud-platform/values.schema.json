@@ -84,9 +84,7 @@
         "modelProfileName",
         "maximumProjects",
         "maximumSessions",
-        "maximumUnsettledTurns",
-        "maximumConcurrentTurns",
-        "maximumActiveSandboxes"
+        "maximumUnsettledTurns"
       ],
       "properties": {
         "enabled": { "type": "boolean" },
@@ -99,9 +97,7 @@
         "modelProfileName": { "$ref": "#/$defs/boundedText" },
         "maximumProjects": { "type": "integer", "minimum": 1, "maximum": 1000000 },
         "maximumSessions": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-        "maximumUnsettledTurns": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-        "maximumConcurrentTurns": { "type": "integer", "minimum": 1, "maximum": 256 },
-        "maximumActiveSandboxes": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+        "maximumUnsettledTurns": { "type": "integer", "minimum": 1, "maximum": 1000000 }
       }
     },
     "controlPlane": { "$ref": "#/$defs/httpWorkload" },
@@ -484,18 +480,14 @@
         "maximumTenants",
         "maximumProjects",
         "maximumSessions",
-        "maximumUnsettledTurns",
-        "maximumConcurrentTurns",
-        "maximumActiveSandboxes"
+        "maximumUnsettledTurns"
       ],
       "properties": {
         "enabled": { "type": "boolean" },
         "maximumTenants": { "type": "integer", "minimum": 2, "maximum": 1000000 },
         "maximumProjects": { "type": "integer", "minimum": 1, "maximum": 1000000 },
         "maximumSessions": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-        "maximumUnsettledTurns": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-        "maximumConcurrentTurns": { "type": "integer", "minimum": 1, "maximum": 256 },
-        "maximumActiveSandboxes": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+        "maximumUnsettledTurns": { "type": "integer", "minimum": 1, "maximum": 1000000 }
       }
     },
     "unused": { "type": "null" }

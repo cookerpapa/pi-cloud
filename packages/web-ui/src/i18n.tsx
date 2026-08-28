@@ -292,7 +292,7 @@ const zhCN = {
   "terminal.reconnect": "重新连接",
   "terminal.connect": "连接终端",
   "terminal.elasticBoundary":
-    "连接期间 Agent 不会同时修改此 Workspace；断开后文件仍会保留，但这个临时终端的进程不会保留。",
+    "终端与 Agent 可以同时使用此 Workspace；冲突修改由你自行协调。断开后文件仍会保留，但这个临时终端的进程不会保留。",
   "terminal.exclusiveBoundary":
     "断开只关闭当前 PTY；云端开发机、后台进程与 Workspace 会继续运行，直到暂停或释放。",
   "turn.outputTruncated": "…输出已截断",
@@ -626,7 +626,7 @@ const enUS: Record<UiTextKey, string> = {
   "terminal.reconnect": "Reconnect",
   "terminal.connect": "Connect terminal",
   "terminal.elasticBoundary":
-    "While connected, the Agent cannot modify this Workspace. Files remain after disconnect, but processes in this temporary terminal do not.",
+    "The terminal and Agent may use this Workspace concurrently; coordinate conflicting edits yourself. Files remain after disconnect, but processes in this temporary terminal do not.",
   "terminal.exclusiveBoundary":
     "Disconnect closes only this PTY. The cloud development machine, background processes, and Workspace continue until it is paused or released.",
   "turn.outputTruncated": "…output truncated",

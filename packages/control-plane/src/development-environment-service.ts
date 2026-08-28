@@ -946,7 +946,6 @@ export class DevelopmentEnvironmentService {
             ? safeError.message
             : "Development environment operation was rejected by Tool Broker";
         const code =
-          safeError?.code === "tenant_sandbox_capacity_exhausted" ||
           safeError?.code === "sandbox_domain_capacity_exhausted" ||
           safeError?.code === "sandbox_compute_capacity_exhausted"
             ? "capacity_exhausted"

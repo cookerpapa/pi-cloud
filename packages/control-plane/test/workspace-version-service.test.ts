@@ -89,7 +89,6 @@ async function seed(): Promise<void> {
       maximum_projects: 10,
       maximum_sessions: 10,
       maximum_unsettled_turns: 10,
-      maximum_concurrent_turns: 2,
     })
     .execute();
   await database

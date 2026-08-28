@@ -97,14 +97,13 @@ export class SshAccessTicketService {
       .where("workspace.deleted_at", "is", null)
       .where("development.owner_user_id", "=", identity.userId)
       .where("development.state", "=", "running")
-      .where("development.agent_activation_id", "is", null)
       .where("development.terminal_active", "=", false)
       .orderBy("development.updated_at", "desc")
       .executeTakeFirst();
     if (environment === undefined) {
       throw new ControlPlaneStoreError(
         "conflict",
-        "SSH requires a running exclusive environment with no active Agent or terminal",
+        "SSH requires a running exclusive environment with no other human terminal",
       );
     }
     await this.#database

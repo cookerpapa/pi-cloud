@@ -44,8 +44,8 @@ head.
 | cross-tenant Workspace access | stable tenant/Workspace Volume identity and broker checks |
 | browser forges terminal identity | Control Plane derives tenant/Workspace/Session; browser frames carry only input/resize/control |
 | user enumerates another user's development environment | every list, lifecycle and Terminal lookup binds tenant plus authenticated owner user; no Cube ID is public |
-| terminal races an Agent writer | PostgreSQL-backed human-terminal lease and shared Workspace writer exclusion |
-| exclusive environment races an Agent writer | durable `terminal_active`/`agent_activation_id` CAS plus Tool Broker authority handoff |
+| terminal and Agent race on user files | explicitly user-managed POSIX concurrency; each external authority remains scoped and cross-tenant mounts stay impossible |
+| two Agents contend for one exclusive environment | durable `agent_activation_id` CAS permits one Agent authority; a human terminal is independent |
 | exclusive owner has root inside its own VM | KVM is the tenant boundary; the guest contains no platform/model/database credentials and the external Tool Broker still validates every Run fence |
 | user invokes or tampers with envd inside their own VM | envd is credential-free tenant-local transport; Cube traffic/envd tokens, operation admission and every cross-resource authority remain outside the VM |
 | Broker replacement loses, pauses or swaps an exclusive VM | shutdown leaves physical state unchanged; encrypted reconnect capsule plus PostgreSQL owner CAS and Cube physical metadata/runtime identity validation before adoption |

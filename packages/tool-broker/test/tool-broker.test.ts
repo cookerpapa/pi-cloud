@@ -460,9 +460,22 @@ describe("provider-backed Tool Tool Broker", () => {
         tenantId: assignment.tenantId,
         userId: "77777777-7777-4777-8777-777777777777",
         path: "/home/user",
-        name: "blocked",
+        name: "created-concurrently",
       }),
-    ).rejects.toMatchObject({ code: "development_environment_directory_busy" });
+    ).resolves.toMatchObject({
+      type: "development_environment.directory",
+      entries: [{ name: "created-concurrently", kind: "directory" }],
+    });
+    const concurrentTerminal = await manager.openDevelopmentEnvironmentTerminal({
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment_terminal.open",
+      requestId: "22222222-2222-4222-8222-222222222222",
+      environmentId: ACTIVATION_ID,
+      tenantId: assignment.tenantId,
+      userId: "77777777-7777-4777-8777-777777777777",
+      rows: 24,
+      cols: 100,
+    });
     await manager.execute(secondAssignment.executionLease, {
       ...operation("21111111-1111-4111-8111-111111111118"),
       activationId: secondAgent.activationId,
@@ -483,17 +496,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     expect(fixture.createCount).toBe(1);
     expect(fixture.rebind).toHaveBeenCalledTimes(4);
-    const terminal = await manager.openDevelopmentEnvironmentTerminal({
-      developmentEnvironmentProtocolVersion: 1,
-      type: "development_environment_terminal.open",
-      requestId: "22222222-2222-4222-8222-222222222222",
-      environmentId: ACTIVATION_ID,
-      tenantId: assignment.tenantId,
-      userId: "77777777-7777-4777-8777-777777777777",
-      rows: 24,
-      cols: 100,
-    });
-    await terminal.close();
+    await concurrentTerminal.close();
     expect(fixture.destroyed).toBe(false);
     await manager.developmentEnvironmentLifecycle({
       developmentEnvironmentProtocolVersion: 1,
@@ -709,11 +712,12 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
-  it("opens a separate human terminal authority and excludes Agent writers", async () => {
+  it("lets a human terminal and an Agent use the same elastic Workspace", async () => {
     const fixture = providerFixture();
+    const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
     const manager = new ToolBroker({
       provider: fixture.provider,
-      idGenerator: () => ACTIVATION_ID,
+      idGenerator: () => activationIds.shift()!,
     });
     const terminal = await manager.openTerminal({
       tenantId: assignment.tenantId,
@@ -730,15 +734,12 @@ describe("provider-backed Tool Tool Broker", () => {
     await terminal.resize({ rows: 40, cols: 120 });
     expect(fixture.terminalInput).toHaveBeenCalledWith(Buffer.from("pwd\r"));
     expect(fixture.terminalResize).toHaveBeenCalledWith({ rows: 40, cols: 120 });
-    await expect(manager.create(createRequest)).rejects.toMatchObject({
-      code: "tool_sandbox_workspace_busy",
+    await expect(manager.create(createRequest)).resolves.toMatchObject({
+      activationId: SECOND_ACTIVATION_ID,
     });
     await terminal.close();
     expect(fixture.destroyed).toBe(true);
-    await expect(manager.create(createRequest)).resolves.toMatchObject({
-      activationId: ACTIVATION_ID,
-    });
-    await manager.stop(ACTIVATION_ID, assignment);
+    await manager.stop(SECOND_ACTIVATION_ID, assignment);
     await manager.close();
   });
 
@@ -952,21 +953,21 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
-  it("rejects a new activation when the tenant holds its active Sandbox quota", async () => {
-    class TenantCapacityRepository extends InMemorySandboxActivationStateRepository {
+  it("rejects a new activation when the Sandbox Domain is at capacity", async () => {
+    class DomainCapacityRepository extends InMemorySandboxActivationStateRepository {
       override async reserve() {
-        return { status: "tenant_capacity" as const };
+        return { status: "capacity" as const };
       }
     }
     const fixture = providerFixture();
     const manager = new ToolBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
-      stateRepository: new TenantCapacityRepository(),
+      stateRepository: new DomainCapacityRepository(),
     });
 
     await expect(manager.create(createRequest)).rejects.toMatchObject({
-      code: "tenant_sandbox_capacity_exhausted",
+      code: "sandbox_domain_capacity_exhausted",
       retryable: true,
     });
     expect(fixture.createCount).toBe(0);
@@ -1485,7 +1486,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.stopped).toBe(true);
   });
 
-  it("releases the durable reservation before moving an ordinary warm Workspace", async () => {
+  it("keeps ordinary warm runtimes scoped to their Session", async () => {
     class TrackingStateRepository extends InMemorySandboxActivationStateRepository {
       readonly released: string[] = [];
 
@@ -1537,11 +1538,12 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceRevision: "1".repeat(64),
     });
 
-    expect(fixture.stopped).toBe(true);
-    expect(stateRepository.released).toContain(first.activationId);
+    expect(fixture.stopped).toBe(false);
+    expect(stateRepository.released).not.toContain(first.activationId);
     expect(second.activationId).toBe(SECOND_ACTIVATION_ID);
     expect(second.continuity).toBe("cold_restore");
     await manager.stop(second.activationId, nextAssignment);
+    await manager.close();
   });
 
   it("bounds every warm process world with one shared LRU limit", async () => {
@@ -1649,7 +1651,7 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.stop(demand.activationId, demandAssignment);
   });
 
-  it("destroys a warm process world before another Session uses the same Workspace", async () => {
+  it("keeps separate warm process worlds for different Sessions on one Workspace", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
     const manager = new ToolBroker({
@@ -1690,7 +1692,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     expect(second.continuity).toBe("cold_restore");
     expect(second.activationId).toBe(SECOND_ACTIVATION_ID);
-    expect(fixture.stopped).toBe(true);
+    expect(fixture.stopped).toBe(false);
     await manager.execute(siblingSession.executionLease, {
       ...operation("60000000-0000-4000-8000-000000000016"),
       activationId: second.activationId,
@@ -1698,6 +1700,49 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.createCount).toBe(2);
     expect(fixture.rebind).not.toHaveBeenCalled();
     await manager.stop(second.activationId, siblingSession);
+    await manager.close();
+  });
+
+  it("runs two ordinary Sessions concurrently against one Workspace", async () => {
+    const fixture = providerFixture();
+    const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
+    const manager = new ToolBroker({
+      provider: fixture.provider,
+      idGenerator: () => activationIds.shift()!,
+      maximumActiveSandboxes: 2,
+    });
+    const first = await manager.create(createRequest);
+    const siblingAssignment = {
+      ...assignment,
+      commandId: "command-provider-test-concurrent-sibling",
+      sessionId: "session-provider-test-concurrent-sibling",
+      turnId: "turn-provider-test-concurrent-sibling",
+      executionLease: createExecutionLease(
+        "61000000-0000-4000-8000-000000000001",
+        "61000000-0000-4000-8000-000000000001",
+        6,
+      ),
+    };
+    const second = await manager.create({
+      ...createRequest,
+      requestId: "61000000-0000-4000-8000-000000000002",
+      assignment: siblingAssignment,
+    });
+
+    expect(first.activationId).toBe(ACTIVATION_ID);
+    expect(second.activationId).toBe(SECOND_ACTIVATION_ID);
+    await manager.execute(
+      assignment.executionLease,
+      operation("61000000-0000-4000-8000-000000000003"),
+    );
+    await manager.execute(siblingAssignment.executionLease, {
+      ...operation("61000000-0000-4000-8000-000000000004"),
+      activationId: second.activationId,
+    });
+    expect(fixture.createCount).toBe(2);
+    await manager.stop(first.activationId, assignment);
+    await manager.stop(second.activationId, siblingAssignment);
+    await manager.close();
   });
 
   it("evicts the least-recently-used warm runtime when new demand reaches admission capacity", async () => {

@@ -69,8 +69,9 @@ conversation.
 
 ## Consequences
 
-- Subagent Runs consume the same tenant quota and Worker capacity as ordinary
-  Runs and can scale by adding Agent Host replicas.
+- Subagent Runs consume the same Worker capacity as ordinary Runs and can scale
+  by adding Agent Host replicas. Their root-tree depth/node/concurrency budget
+  remains the bounded orchestration admission rule.
 - Worker admission reserves a child lane so waiting parents cannot consume
   every local slot. A future durable parent-wait boundary may reclaim the
   waiting slot as an optimization, but correctness does not depend on it.

@@ -174,8 +174,6 @@ beforeAll(async () => {
       maximumProjects: 4,
       maximumSessions: 16,
       maximumUnsettledTurns: 16,
-      maximumConcurrentTurns: 4,
-      maximumActiveSandboxes: 4,
     },
   });
   const otherUserId = "88888888-8888-4888-8888-888888888888";
@@ -283,9 +281,9 @@ describe("user-owned development environments", () => {
     expect(running.ipAddress).toBe("169.254.68.4");
     await expect(store.listWorkspaces()).resolves.toEqual({ workspaces: [], truncated: false });
     await database
-      .updateTable("tenant_runtime_policies")
+      .updateTable("sandbox_domains")
       .set({ maximum_active_sandboxes: 1 })
-      .where("tenant_id", "=", identity.tenantId)
+      .where("id", "=", DOMAIN_ID)
       .executeTakeFirstOrThrow();
     await expect(
       service.create(identity, "capacity-rejected-machine", {
@@ -317,8 +315,13 @@ describe("user-owned development environments", () => {
       deletedAt: expect.any(Date),
     });
     await database
+      .updateTable("sandbox_domains")
+      .set({ maximum_active_sandboxes: 8 })
+      .where("id", "=", DOMAIN_ID)
+      .executeTakeFirstOrThrow();
+    await database
       .updateTable("tenant_runtime_policies")
-      .set({ maximum_active_sandboxes: 4, maximum_projects: 1 })
+      .set({ maximum_projects: 1 })
       .where("tenant_id", "=", identity.tenantId)
       .executeTakeFirstOrThrow();
     await expect(

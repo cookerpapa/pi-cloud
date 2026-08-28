@@ -35,7 +35,6 @@ export type SandboxActivationReservationResult =
   | { status: "development_environment"; environmentId: string }
   | { status: "redirect"; ownerBaseUrl: string }
   | { status: "busy" }
-  | { status: "tenant_capacity" }
   | { status: "capacity" };
 
 export type SandboxOrphanedActivation = Readonly<{
@@ -61,7 +60,6 @@ export type WorkspaceTerminalReservationResult =
     }
   | { status: "redirect"; ownerBaseUrl: string }
   | { status: "busy" }
-  | { status: "tenant_capacity" }
   | { status: "capacity" };
 
 export type OrphanedWorkspaceTerminal = WorkspaceTerminalReservation &
@@ -82,7 +80,6 @@ export type DevelopmentEnvironmentReservationResult =
   | { status: "reserved" }
   | { status: "redirect"; ownerBaseUrl: string }
   | { status: "busy" }
-  | { status: "tenant_capacity" }
   | { status: "capacity" };
 
 export type DevelopmentEnvironmentOwnerResult =
@@ -209,11 +206,6 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
   assertLocalOwnership(): void {}
   async reserve(input: SandboxActivationReservation): Promise<SandboxActivationReservationResult> {
     if (
-      [...this.#terminals.values()].some(
-        (terminal) =>
-          terminal.tenantId === input.assignment.tenantId &&
-          terminal.workspaceId === input.assignment.workspaceId,
-      ) ||
       [...this.#developmentEnvironments.values()].some(
         ({ reservation: environment, state }) =>
           environment.tenantId === input.assignment.tenantId &&
@@ -248,11 +240,6 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
     input: WorkspaceTerminalReservation,
   ): Promise<WorkspaceTerminalReservationResult> {
     if (
-      [...this.#activations.values()].some(
-        (activation) =>
-          activation.assignment.tenantId === input.tenantId &&
-          activation.assignment.workspaceId === input.workspaceId,
-      ) ||
       [...this.#terminals.values()].some(
         (terminal) =>
           terminal.tenantId === input.tenantId && terminal.workspaceId === input.workspaceId,
@@ -649,14 +636,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "Workspace is not assigned to this Sandbox Domain",
         );
       }
-      const liveTerminal = await transaction
-        .selectFrom("workspace_terminal_sessions")
-        .select("terminal_id")
-        .where("tenant_id", "=", input.assignment.tenantId)
-        .where("workspace_id", "=", input.assignment.workspaceId)
-        .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
-        .executeTakeFirst();
-      if (liveTerminal !== undefined) return { status: "busy" };
       const liveDevelopmentEnvironment = await transaction
         .selectFrom("development_environments")
         .select([
@@ -690,7 +669,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           liveDevelopmentEnvironment.owner_instance_id !== this.#instanceId ||
           liveDevelopmentEnvironment.state !== "running" ||
           liveDevelopmentEnvironment.agent_activation_id !== null ||
-          liveDevelopmentEnvironment.terminal_active ||
           liveDevelopmentEnvironment.id !== input.activationId
         ) {
           return { status: "busy" };
@@ -731,8 +709,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       const existing = await transaction
         .selectFrom("tool_broker_activations")
         .selectAll()
-        .where("tenant_id", "=", input.assignment.tenantId)
-        .where("workspace_id", "=", input.assignment.workspaceId)
+        .where("activation_id", "=", input.activationId)
         .where("state", "in", [
           "reserved",
           "materializing",
@@ -827,52 +804,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "state_conflict",
           "Sandbox Domain is not active",
         );
-      }
-      const tenantPolicy = await transaction
-        .selectFrom("tenant_runtime_policies")
-        .select("maximum_active_sandboxes")
-        .where("tenant_id", "=", input.assignment.tenantId)
-        .forUpdate()
-        .executeTakeFirst();
-      if (tenantPolicy === undefined) {
-        throw new SandboxActivationStateRepositoryError(
-          "state_conflict",
-          "Tenant Sandbox policy is unavailable",
-        );
-      }
-      const tenantLive = await transaction
-        .selectFrom("tool_broker_activations")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", input.assignment.tenantId)
-        .where("state", "in", [
-          "reserved",
-          "materializing",
-          "active",
-          "warm",
-          "cleaning",
-          "unknown",
-        ])
-        .executeTakeFirstOrThrow();
-      const tenantTerminals = await transaction
-        .selectFrom("workspace_terminal_sessions")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", input.assignment.tenantId)
-        .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
-        .executeTakeFirstOrThrow();
-      const tenantDevelopmentEnvironments = await transaction
-        .selectFrom("development_environments")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", input.assignment.tenantId)
-        .where("state", "in", ["provisioning", "running", "paused", "releasing", "unknown"])
-        .executeTakeFirstOrThrow();
-      if (
-        borrowedDevelopmentEnvironmentId === undefined &&
-        Number(tenantLive.count) +
-          Number(tenantTerminals.count) +
-          Number(tenantDevelopmentEnvironments.count) >=
-          tenantPolicy.maximum_active_sandboxes
-      ) {
-        return { status: "tenant_capacity" };
       }
       const live = await transaction
         .selectFrom("tool_broker_activations")
@@ -1069,14 +1000,8 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         ])
         .where("tenant_id", "=", input.tenantId)
         .where("workspace_id", "=", input.workspaceId)
-        .where("state", "in", [
-          "reserved",
-          "materializing",
-          "active",
-          "warm",
-          "cleaning",
-          "unknown",
-        ])
+        .where("session_id", "=", input.sessionId)
+        .where("state", "=", "warm")
         .executeTakeFirst();
       const developmentEnvironment = await transaction
         .selectFrom("development_environments")
@@ -1093,7 +1018,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         ])
         .executeTakeFirst();
       if (developmentEnvironment !== undefined) return { status: "busy" };
-      if (activation !== undefined && activation.state !== "warm") return { status: "busy" };
       if (
         activation?.owner_instance_id !== undefined &&
         activation.owner_instance_id !== this.#instanceId
@@ -1115,26 +1039,14 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .where("state", "=", "active")
         .forUpdate()
         .executeTakeFirst();
-      const policy = await transaction
-        .selectFrom("tenant_runtime_policies")
-        .select("maximum_active_sandboxes")
-        .where("tenant_id", "=", input.tenantId)
-        .forUpdate()
-        .executeTakeFirst();
-      if (domain === undefined || policy === undefined) {
+      if (domain === undefined) {
         throw new SandboxActivationStateRepositoryError(
           "state_conflict",
-          "Workspace terminal capacity policy was unavailable",
+          "Workspace terminal Sandbox Domain is unavailable",
         );
       }
-      const [tenantReserved, domainReserved] = await Promise.all([
-        this.#tenantReservedSandboxes(transaction, input.tenantId),
-        this.#domainReservedSandboxes(transaction),
-      ]);
+      const domainReserved = await this.#domainReservedSandboxes(transaction);
       const replacedWarmActivation = activation === undefined ? 0 : 1;
-      if (tenantReserved - replacedWarmActivation >= policy.maximum_active_sandboxes) {
-        return { status: "tenant_capacity" };
-      }
       if (domainReserved - replacedWarmActivation >= domain.maximum_active_sandboxes) {
         return { status: "capacity" };
       }
@@ -1147,23 +1059,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         throw new SandboxActivationStateRepositoryError(
           "state_conflict",
           "Workspace terminal fencing token is exhausted",
-        );
-      }
-      const sessionFence = await transaction
-        .updateTable("sessions")
-        .set({
-          last_fencing_token: generation,
-          row_version: sql<string>`${sql.ref("row_version")} + 1`,
-          updated_at: now,
-        })
-        .where("tenant_id", "=", input.tenantId)
-        .where("id", "=", input.sessionId)
-        .where("last_fencing_token", "=", session.last_fencing_token)
-        .executeTakeFirst();
-      if (sessionFence.numUpdatedRows !== 1n) {
-        throw new SandboxActivationStateRepositoryError(
-          "state_conflict",
-          "Workspace terminal fencing token could not advance",
         );
       }
       await transaction
@@ -1321,21 +1216,11 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .where("state", "=", "active")
         .forUpdate()
         .executeTakeFirst();
-      const policy = await transaction
-        .selectFrom("tenant_runtime_policies")
-        .select("maximum_active_sandboxes")
-        .where("tenant_id", "=", input.tenantId)
-        .forUpdate()
-        .executeTakeFirst();
-      if (domain === undefined || policy === undefined) {
+      if (domain === undefined) {
         throw new SandboxActivationStateRepositoryError(
           "state_conflict",
-          "Development environment capacity policy is unavailable",
+          "Development environment Sandbox Domain is unavailable",
         );
-      }
-      const tenantReserved = await this.#tenantReservedSandboxes(transaction, input.tenantId);
-      if (tenantReserved >= policy.maximum_active_sandboxes) {
-        return { status: "tenant_capacity" };
       }
       const domainReserved = await this.#domainReservedSandboxes(transaction);
       if (domainReserved >= domain.maximum_active_sandboxes) return { status: "capacity" };
@@ -1589,7 +1474,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .updateTable("development_environments")
         .set({
           agent_activation_id: null,
-          terminal_active: false,
           state: outcome,
           runtime_id: outcome === "running" ? (detail.handle?.runtimeId ?? null) : null,
           runtime_name: outcome === "running" ? (detail.handle?.runtimeName ?? null) : null,
@@ -1626,7 +1510,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .where("id", "=", environmentId)
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "=", "running")
-        .where("agent_activation_id", "is", null)
         .where("terminal_active", "=", false)
         .executeTakeFirst();
     });
@@ -2382,40 +2265,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         "Tool Broker database ownership lease is not current",
       );
     }
-  }
-
-  async #tenantReservedSandboxes(
-    transaction: Transaction<Database>,
-    tenantId: string,
-  ): Promise<number> {
-    const [activations, terminals, environments] = await Promise.all([
-      transaction
-        .selectFrom("tool_broker_activations")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", tenantId)
-        .where("state", "in", [
-          "reserved",
-          "materializing",
-          "active",
-          "warm",
-          "cleaning",
-          "unknown",
-        ])
-        .executeTakeFirstOrThrow(),
-      transaction
-        .selectFrom("workspace_terminal_sessions")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", tenantId)
-        .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
-        .executeTakeFirstOrThrow(),
-      transaction
-        .selectFrom("development_environments")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", tenantId)
-        .where("state", "in", ["provisioning", "running", "paused", "releasing", "unknown"])
-        .executeTakeFirstOrThrow(),
-    ]);
-    return Number(activations.count) + Number(terminals.count) + Number(environments.count);
   }
 
   async #domainReservedSandboxes(transaction: Transaction<Database>): Promise<number> {

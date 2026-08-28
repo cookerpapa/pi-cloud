@@ -34,7 +34,6 @@ bootstrap:
   apiCredentialId: 436a766a-345a-420f-af2c-22baa47a8ab1
   credentialBindingId: 5b00f0af-2bad-46b4-999b-42069615e3ef
   defaultModelProfileId: 2320c0e8-bec5-4074-9c85-01e50f26d85f
-  maximumConcurrentTurns: 32
 
 controlPlane:
   platformModelSourceTenantId: 4e0e7b96-4fe4-4f69-aef3-491335662c6f
