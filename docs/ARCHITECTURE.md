@@ -280,7 +280,9 @@ Workspace Volume. Tool Broker therefore queues only the conflicting Tool
 Sandbox reservation, retires or reuses the previous runtime after settlement,
 and then attaches the same Volume. A connected human terminal is the exception:
 the Agent borrows that terminal's already-attached Cube instead of creating a
-second runtime.
+second runtime. The Workspace pointer records the last settled observation,
+while each Session keeps its own checkpoint lineage; one Session never advances
+all siblings' checkpoint bases.
 
 ### Workspace Web Terminal
 

@@ -35,7 +35,9 @@ couples Run admission to optional compute state.
   mutations such as pause and release still require both to settle.
 - The shared Workspace version pointer is last-settled observational metadata,
   not a compare-and-swap writer lock. A concurrent settlement cannot fail an
-  otherwise successful Run merely because another Session settled first.
+  otherwise successful Run merely because another Session settled first. Each
+  Session advances only its own checkpoint pointer; it never rewrites every
+  sibling Session's base revision.
 - Remove per-tenant active-Run and active-Sandbox ceilings. Keep bounded
   project, Session and unsettled-Turn admission to prevent unbounded durable
   metadata, and keep Worker/Cube/Sandbox-Domain capacity as real infrastructure

@@ -252,19 +252,6 @@ export async function transitionCurrentRunAttempt(
             .where("id", "=", version.workspace_id)
             .executeTakeFirst();
           expectOne(workspaceHead.numUpdatedRows, "Recording the last-settled Workspace version");
-
-          await transaction
-            .updateTable("sessions")
-            .set({
-              current_workspace_version_id: version.id,
-              workspace_snapshot_key: workspaceKey,
-              row_version: sql<string>`${sql.ref("row_version")} + 1`,
-              updated_at: now,
-            })
-            .where("tenant_id", "=", identity.tenantId)
-            .where("workspace_id", "=", version.workspace_id)
-            .where("forked_from_session_id", "is", null)
-            .execute();
         }
         const conversationUpdate = await transaction
           .updateTable("sessions")

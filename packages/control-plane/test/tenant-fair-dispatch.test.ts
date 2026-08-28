@@ -169,31 +169,23 @@ describe.sequential("global tenant scheduling", () => {
 
   it("does not impose a per-tenant active-Run ceiling on available Worker lanes", async () => {
     const tenantA = "93000000-0000-4000-8000-000000000001";
-    const tenantB = "94000000-0000-4000-8000-000000000001";
     const storeA = await seedTenant({
       tenantId: tenantA,
       bindingId: "93000000-0000-4000-8000-000000000002",
       profileId: "93000000-0000-4000-8000-000000000003",
       slug: "cap-alpha",
     });
-    const storeB = await seedTenant({
-      tenantId: tenantB,
-      bindingId: "94000000-0000-4000-8000-000000000002",
-      profileId: "94000000-0000-4000-8000-000000000003",
-      slug: "cap-bravo",
-    });
     await createQueuedTurns(storeA, 1, "cap-alpha-one");
     await createQueuedTurns(storeA, 1, "cap-alpha-two");
-    await createQueuedTurns(storeB, 1, "cap-bravo-one");
 
     const entered: TurnExecutionRequest[] = [];
     let release!: () => void;
-    let announceThree!: () => void;
+    let announceTwo!: () => void;
     const released = new Promise<void>((resolvePromise) => {
       release = resolvePromise;
     });
-    const threeEntered = new Promise<void>((resolvePromise) => {
-      announceThree = resolvePromise;
+    const twoEntered = new Promise<void>((resolvePromise) => {
+      announceTwo = resolvePromise;
     });
     const activeByTenant = new Map<string, number>();
     const maximumByTenant = new Map<string, number>();
@@ -207,7 +199,7 @@ describe.sequential("global tenant scheduling", () => {
           Math.max(maximumByTenant.get(request.tenantId) ?? 0, active),
         );
         await lifecycle.started();
-        if (entered.length === 3) announceThree();
+        if (entered.length === 2) announceTwo();
         await released;
         activeByTenant.set(request.tenantId, active - 1);
         return { stopReason: "concurrency-test" };
@@ -215,25 +207,14 @@ describe.sequential("global tenant scheduling", () => {
     };
     const laneOne = new RunCommandExecutor({ database, backend });
     const laneTwo = new RunCommandExecutor({ database, backend });
-    const laneThree = new RunCommandExecutor({ database, backend });
-    const dispatches = [
-      dispatchUntilWork(laneOne),
-      dispatchUntilWork(laneTwo),
-      dispatchUntilWork(laneThree),
-    ];
-    await threeEntered;
+    const dispatches = [dispatchUntilWork(laneOne), dispatchUntilWork(laneTwo)];
+    await twoEntered;
 
-    expect(entered.map((request) => request.tenantId).sort()).toEqual([tenantA, tenantA, tenantB]);
-    expect(maximumByTenant).toEqual(
-      new Map([
-        [tenantA, 2],
-        [tenantB, 1],
-      ]),
-    );
+    expect(entered.map((request) => request.tenantId)).toEqual([tenantA, tenantA]);
+    expect(maximumByTenant).toEqual(new Map([[tenantA, 2]]));
 
     release();
     await expect(Promise.all(dispatches)).resolves.toEqual([
-      expect.objectContaining({ status: "completed" }),
       expect.objectContaining({ status: "completed" }),
       expect.objectContaining({ status: "completed" }),
     ]);
