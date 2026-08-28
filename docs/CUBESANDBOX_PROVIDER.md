@@ -59,11 +59,13 @@ machines use the separate pause/resume/release lifecycle and never enter the
 elastic warm pool.
 
 Cube's absolute timeout is disabled for every Broker-managed activation. The
-Broker is the sole lifecycle authority: an active multi-Turn Session is never
-killed merely because its VM is old, while an idle elastic activation is
-destroyed after `PI_CLOUD_SANDBOX_WARM_TTL_MS`. Broker restart reconciliation
-recovers or retires recorded activations instead of depending on a competing VM
-timer.
+Broker owns elastic lifecycle: an active multi-Turn Session is never killed
+merely because its VM is old, while an idle elastic activation is destroyed
+after `PI_CLOUD_SANDBOX_WARM_TTL_MS`. A user owns an exclusive machine's
+lifecycle through authenticated pause/resume/release operations. Broker restart
+reconciliation detaches and adopts that VM without changing its physical state;
+it recovers or retires recorded elastic activations instead of depending on a
+competing VM timer.
 
 ## Tool and terminal channels
 

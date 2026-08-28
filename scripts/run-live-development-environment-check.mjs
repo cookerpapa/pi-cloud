@@ -460,23 +460,30 @@ await capture(
   5 * 60_000,
 );
 await waitForToolBrokerReady();
-const recoveredAfterBrokerRestart = await waitForEnvironment(development.environmentId, "paused");
+const recoveredAfterBrokerRestart = await waitForEnvironment(development.environmentId, "running");
 assert.equal(
   await psql(
     `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
   ),
   runtimeName,
 );
-const resumedAfterBrokerRestart = await api.developmentEnvironmentAction(
-  development.environmentId,
-  "resume",
-  newIdempotencyKey("environment"),
-);
-assert.equal(resumedAfterBrokerRestart.state, "running");
+assert.equal((await cube.read(runtimeName))?.state, "running");
 await terminalCommand(
   `/v1/development-environments/${development.environmentId}/terminal`,
   'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_BROKER_RECOVERY_OK',
   "EXCLUSIVE_BROKER_RECOVERY_OK",
+);
+const previewAfterBrokerRestart = await fetchFromProduction(
+  `/v1/development-environments/${development.environmentId}/preview/${String(previewPort)}/`,
+  { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
+);
+assert.equal(previewAfterBrokerRestart.status, 200);
+assert.match(await previewAfterBrokerRestart.text(), /PI_CLOUD_PREVIEW_OK/);
+const sshAfterBrokerRestart = await api.issueSshAccessTicket(session.sessionId);
+await sshCommand(
+  sshAfterBrokerRestart,
+  'kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_BROKER_SSH_OK',
+  "EXCLUSIVE_BROKER_SSH_OK",
 );
 
 const paused = await api.developmentEnvironmentAction(
@@ -566,7 +573,7 @@ const report = {
   previewPort,
   rootFilesystemPreserved: true,
   elasticWorkspaceRootAbsent: true,
-  brokerRestartAdoptedSameCube: recoveredAfterBrokerRestart.state === "paused",
+  brokerRestartKeptMachineRunning: recoveredAfterBrokerRestart.state === "running",
   emptyDirectoryBrowsePassed: true,
   archivedSessionDidNotReleaseMachine: true,
   oneTimeSshGatewayPassed: true,

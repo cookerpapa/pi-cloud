@@ -96,6 +96,7 @@ function providerFixture() {
   let createCount = 0;
   let stopped = false;
   let destroyed = false;
+  let runtimeState: "running" | "paused" = "running";
   const terminalInput = vi.fn(async () => undefined);
   const terminalResize = vi.fn(async () => undefined);
   const exec = vi.fn<SandboxProvider["exec"]>(async (_handle, request) => ({
@@ -151,8 +152,24 @@ function providerFixture() {
       sizeBytes: 7,
     }),
   );
-  const pause = vi.fn<NonNullable<SandboxProvider["pause"]>>(async () => undefined);
-  const resume = vi.fn<NonNullable<SandboxProvider["resume"]>>(async (handle) => handle);
+  const pause = vi.fn<NonNullable<SandboxProvider["pause"]>>(async () => {
+    runtimeState = "paused";
+  });
+  const resume = vi.fn<NonNullable<SandboxProvider["resume"]>>(async (handle) => {
+    runtimeState = "running";
+    return handle;
+  });
+  const persistentCapsule = vi.fn<NonNullable<SandboxProvider["persistentCapsule"]>>(
+    async (handle) => ({ handle, capsule: "test-exclusive-machine-capsule" }),
+  );
+  const adoptPersistentCapsule = vi.fn<NonNullable<SandboxProvider["adoptPersistentCapsule"]>>(
+    async () => {
+      throw new Error("Provider fixture has no detached machine to adopt");
+    },
+  );
+  const detachPersistent = vi.fn<NonNullable<SandboxProvider["detachPersistent"]>>(
+    async () => undefined,
+  );
   const previewHttp = vi.fn<NonNullable<SandboxProvider["previewHttp"]>>(async () => ({
     status: 200,
     headers: { "content-type": "text/html; charset=utf-8" },
@@ -218,6 +235,9 @@ function providerFixture() {
     createDirectory,
     pause,
     resume,
+    persistentCapsule,
+    adoptPersistentCapsule,
+    detachPersistent,
     snapshot,
     forkWorkspace,
     materializeFile,
@@ -231,7 +251,7 @@ function providerFixture() {
       return {
         providerApiVersion: 1,
         providerId: "cubesandbox",
-        state: "running",
+        state: runtimeState === "running" ? "running" : "stopped",
         handle,
         effectiveIsolation: {
           isolationBoundary: "microvm",
@@ -272,6 +292,8 @@ function providerFixture() {
     terminalResize,
     pause,
     resume,
+    persistentCapsule,
+    detachPersistent,
     previewHttp,
     listDirectory,
     createDirectory,
@@ -541,6 +563,95 @@ describe("provider-backed Tool Tool Broker", () => {
     ).resolves.toMatchObject({ state: "released" });
     expect(destroyActivation).toHaveBeenCalledOnce();
     await manager.close();
+  });
+
+  it("leaves a running development KVM online while its Tool Broker shuts down", async () => {
+    const fixture = providerFixture();
+    const repository = new InMemorySandboxActivationStateRepository();
+    const manager = new ToolBroker({
+      provider: fixture.provider,
+      stateRepository: repository,
+      idGenerator: () => ACTIVATION_ID,
+    });
+    await manager.provisionDevelopmentEnvironment({
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.provision",
+      requestId: "61111111-1111-4111-8111-111111111111",
+      environmentId: ACTIVATION_ID,
+      tenantId: assignment.tenantId,
+      userId: "77777777-7777-4777-8777-777777777777",
+      projectId: assignment.projectId,
+      workspaceId: assignment.workspaceId,
+      generation: 1,
+      profileKey: "standard",
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+    });
+
+    await manager.close();
+
+    expect(fixture.pause).not.toHaveBeenCalled();
+    expect(fixture.detachPersistent).toHaveBeenCalledOnce();
+    expect(fixture.destroyed).toBe(false);
+    await expect(
+      repository.developmentEnvironmentOwner(
+        assignment.tenantId,
+        "77777777-7777-4777-8777-777777777777",
+        ACTIVATION_ID,
+      ),
+    ).resolves.toMatchObject({ status: "owned", state: "running" });
+  });
+
+  it("returns a borrowed development KVM to machine authority before Broker shutdown", async () => {
+    const fixture = providerFixture();
+    const repository = new InMemorySandboxActivationStateRepository();
+    const manager = new ToolBroker({
+      provider: fixture.provider,
+      stateRepository: repository,
+      idGenerator: () => ACTIVATION_ID,
+    });
+    await manager.provisionDevelopmentEnvironment({
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.provision",
+      requestId: "62111111-1111-4111-8111-111111111111",
+      environmentId: ACTIVATION_ID,
+      tenantId: assignment.tenantId,
+      userId: "77777777-7777-4777-8777-777777777777",
+      projectId: assignment.projectId,
+      workspaceId: assignment.workspaceId,
+      generation: 1,
+      profileKey: "standard",
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+    });
+    const borrowed = await manager.create({
+      ...createRequest,
+      executionMode: "development_environment",
+    });
+    await manager.execute(
+      assignment.executionLease,
+      operation("62111111-1111-4111-8111-111111111112"),
+    );
+
+    await manager.close();
+
+    expect(borrowed.activationId).toBe(ACTIVATION_ID);
+    expect(fixture.rebind).toHaveBeenCalledTimes(2);
+    expect(fixture.rebind).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ supervisorId: "development-environment" }),
+      "/home/user",
+    );
+    expect(fixture.pause).not.toHaveBeenCalled();
+    expect(fixture.detachPersistent).toHaveBeenCalledOnce();
+    expect(fixture.destroyed).toBe(false);
+    await expect(
+      repository.developmentEnvironmentOwner(
+        assignment.tenantId,
+        "77777777-7777-4777-8777-777777777777",
+        ACTIVATION_ID,
+      ),
+    ).resolves.toMatchObject({ status: "owned", state: "running", agentActive: false });
   });
 
   it("rejects a missing exclusive working directory without destroying the user's machine", async () => {

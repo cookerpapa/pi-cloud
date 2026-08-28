@@ -147,6 +147,7 @@ export interface SandboxActivationStateRepository {
   ): Promise<void>;
   claimRecoverableDevelopmentEnvironments(
     limit: number,
+    excludeEnvironmentIds?: readonly string[],
   ): Promise<readonly RecoverableDevelopmentEnvironment[]>;
   claimOrphanedDevelopmentEnvironments(
     limit: number,
@@ -1701,12 +1702,14 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
 
   async claimRecoverableDevelopmentEnvironments(
     limit: number,
+    excludeEnvironmentIds: readonly string[] = [],
   ): Promise<readonly RecoverableDevelopmentEnvironment[]> {
     const boundedLimit = positiveInteger(limit, "development environment recovery limit");
+    const excluded = [...new Set(excludeEnvironmentIds)];
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
-      const rows = await transaction
+      const candidates = transaction
         .selectFrom("development_environments as environment")
         .leftJoin("tool_broker_instances as owner", (join) =>
           join.onRef("owner.instance_id", "=", "environment.owner_instance_id"),
@@ -1737,7 +1740,10 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
             expression("owner.lease_expires_at", "<=", now),
           ]),
         )
-        .orderBy("environment.updated_at", "asc")
+        .orderBy("environment.updated_at", "asc");
+      const rows = await (
+        excluded.length === 0 ? candidates : candidates.where("environment.id", "not in", excluded)
+      )
         .limit(boundedLimit)
         .forUpdate("environment")
         .skipLocked()

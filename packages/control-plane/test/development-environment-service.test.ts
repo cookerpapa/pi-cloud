@@ -131,6 +131,13 @@ function provider(): SandboxProvider {
     },
     pause: pauses,
     resume: resumes,
+    async persistentCapsule(handle) {
+      return { handle, capsule: "c".repeat(64) };
+    },
+    async adoptPersistentCapsule() {
+      throw new Error("test provider has no detached development environment");
+    },
+    async detachPersistent() {},
     async snapshot() {
       throw new Error("not used");
     },

@@ -342,6 +342,7 @@ export class ToolBroker {
   readonly #admitted = new Map<string, ToolSandboxAssignment>();
   readonly #admissionWaiters: AdmissionWaiter[] = [];
   readonly #reaper: NodeJS.Timeout;
+  #developmentEnvironmentRecovery: Promise<number> | undefined;
 
   constructor(options: ToolBrokerOptions) {
     if (!/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/.test(options.provider.providerId)) {
@@ -378,6 +379,7 @@ export class ToolBroker {
         void Promise.all([
           this.reapWarm(),
           this.reapRetiredWarm(),
+          this.recoverPersistentDevelopmentEnvironments(),
           this.#reapOrphanedActivations(),
           this.#reapTerminalRunActivations(),
           this.#reapOrphanedTerminals(),
@@ -418,8 +420,25 @@ export class ToolBroker {
   }
 
   async recoverPersistentDevelopmentEnvironments(): Promise<number> {
+    if (this.#developmentEnvironmentRecovery !== undefined) {
+      return this.#developmentEnvironmentRecovery;
+    }
+    const recovery = this.#recoverPersistentDevelopmentEnvironments();
+    this.#developmentEnvironmentRecovery = recovery;
+    try {
+      return await recovery;
+    } finally {
+      if (this.#developmentEnvironmentRecovery === recovery) {
+        this.#developmentEnvironmentRecovery = undefined;
+      }
+    }
+  }
+
+  async #recoverPersistentDevelopmentEnvironments(): Promise<number> {
     if (this.#provider.adoptPersistentCapsule === undefined) return 0;
-    const recoverable = await this.#stateRepository.claimRecoverableDevelopmentEnvironments(256);
+    const recoverable = await this.#stateRepository.claimRecoverableDevelopmentEnvironments(256, [
+      ...this.#developmentEnvironments.keys(),
+    ]);
     let recovered = 0;
     for (const candidate of recoverable) {
       try {
@@ -494,7 +513,10 @@ export class ToolBroker {
     if (
       this.#provider.openTerminal === undefined ||
       this.#provider.pause === undefined ||
-      this.#provider.resume === undefined
+      this.#provider.resume === undefined ||
+      this.#provider.persistentCapsule === undefined ||
+      this.#provider.adoptPersistentCapsule === undefined ||
+      this.#provider.detachPersistent === undefined
     ) {
       throw new ToolBrokerError(
         "development_environment_unsupported",
@@ -1973,6 +1995,7 @@ export class ToolBroker {
 
   async close(): Promise<void> {
     clearInterval(this.#reaper);
+    await this.#developmentEnvironmentRecovery?.catch(() => undefined);
     await Promise.all(
       [...this.#terminals.entries()].map(([terminalId, terminal]) =>
         this.#closeTerminal(terminalId, terminal).catch(() => undefined),
@@ -1982,35 +2005,73 @@ export class ToolBroker {
       environment.terminal?.disconnect();
       await environment.terminal?.kill().catch(() => undefined);
       let capsule: string | undefined;
+      let detachableHandle = environment.handle;
       try {
-        capsule = await this.#persistentCapsule(environment.handle);
-        if (this.#provider.pause !== undefined) {
-          try {
-            await this.#provider.pause(environment.handle);
-          } catch (error: unknown) {
-            if (
-              !(error instanceof ToolBrokerError) ||
-              error.code !== "development_environment_pause_invalid"
-            ) {
-              throw error;
-            }
+        const activationId = environment.agentActivationId;
+        const activation =
+          activationId === undefined ? undefined : this.#activations.get(activationId);
+        if (activation !== undefined) {
+          detachableHandle =
+            activation.materializing === undefined
+              ? (activation.handle ?? detachableHandle)
+              : ((await activation.materializing.catch(() => undefined)) ?? detachableHandle);
+          if (activation.materializedForCurrentAssignment) {
+            detachableHandle = await this.#provider.rebind(
+              detachableHandle,
+              environment.assignment,
+              DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
+            );
           }
+          environment.handle = detachableHandle;
+          delete environment.agentActivationId;
+          this.#activations.delete(activationId!);
+          capsule = await this.#persistentCapsule(detachableHandle);
+          if (capsule === undefined) {
+            throw new ToolBrokerError(
+              "persistent_machine_recovery_state_unavailable",
+              "Exclusive machine recovery state was unavailable during Tool Broker shutdown",
+              false,
+            );
+          }
+          await this.#stateRepository.returnDevelopmentEnvironment(
+            environmentId,
+            activationId!,
+            "running",
+            { handle: detachableHandle, runtimeCapsule: capsule },
+          );
+        } else {
+          const inspection = await this.#provider.inspect(detachableHandle);
+          if (inspection.state === "absent") {
+            throw new ToolBrokerError(
+              "persistent_machine_disappeared",
+              "Exclusive machine disappeared during Tool Broker shutdown",
+              false,
+            );
+          }
+          capsule = await this.#persistentCapsule(detachableHandle);
+          if (capsule === undefined) {
+            throw new ToolBrokerError(
+              "persistent_machine_recovery_state_unavailable",
+              "Exclusive machine recovery state was unavailable during Tool Broker shutdown",
+              false,
+            );
+          }
+          await this.#stateRepository.setDevelopmentEnvironmentState(
+            environmentId,
+            inspection.state === "running" ? "running" : "paused",
+            { handle: detachableHandle, runtimeCapsule: capsule },
+          );
         }
-        capsule = await this.#persistentCapsule(environment.handle);
-        await this.#stateRepository.setDevelopmentEnvironmentState(environmentId, "paused", {
-          handle: environment.handle,
-          ...(capsule === undefined ? {} : { runtimeCapsule: capsule }),
-        });
-        if (capsule !== undefined) await this.#provider.detachPersistent?.(environment.handle);
+        await this.#provider.detachPersistent?.(detachableHandle);
       } catch (error: unknown) {
         await this.#stateRepository
           .setDevelopmentEnvironmentState(environmentId, "unknown", {
-            handle: environment.handle,
+            handle: detachableHandle,
             failureCode: operationFailureCode(error),
             ...(capsule === undefined ? {} : { runtimeCapsule: capsule }),
           })
           .catch(() => undefined);
-        await this.#provider.detachPersistent?.(environment.handle).catch(() => undefined);
+        await this.#provider.detachPersistent?.(detachableHandle).catch(() => undefined);
       }
       this.#releaseAdmission(environmentId);
     }

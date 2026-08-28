@@ -347,16 +347,26 @@ Workspace single-writer rule. `agent_activation_id` and `terminal_active` are
 durable admission facts. Tool Broker lazily seals and rebinds the same Cube to a
 Run's opaque authority on first Tool use, then captures and returns it to the
 environment authority. Worker scans wait while a human terminal is active. A
-planned Broker shutdown pauses each idle cloud development machine, stores an encrypted
-reconnect capsule in PostgreSQL and leaves the physical VM intact. A replacement
-Broker validates the capsule, PostgreSQL ownership and Cube metadata before it
-adopts the same runtime. The capsule is pinned to the machine's own guest image
-revision, not the deployment's current default template. A template upgrade
-therefore affects only newly created machines; recovery still requires the
-capsule, environment evidence, short-lived Tool Worker report and physical Cube metadata to
-agree on the old machine's exact revision. The Tool report is produced by a
-short-lived uid-1000 worker, not a resident PiCloud daemon. Elastic Cubes retain fail-closed
-orphan cleanup.
+planned Broker shutdown stores an encrypted reconnect capsule, detaches its
+process-local handle and leaves each cloud development machine in its existing
+physical state. It does not pause a running VM. A replacement Broker validates
+the capsule, PostgreSQL ownership and Cube metadata before it adopts the same
+runtime; already-running processes, SSH and Preview therefore do not share the
+Broker process lifetime. Healthy replicas periodically reconcile machines whose
+owner lease ended, so takeover does not require restarting the replacement. An
+explicit user pause remains paused across takeover. The capsule is pinned to
+the machine's own guest image revision, not the deployment's current default
+template. A template upgrade therefore affects only newly created machines;
+recovery still requires the capsule, environment evidence, short-lived Tool
+Worker report and physical Cube metadata to agree on the old machine's exact
+revision. The Tool report is produced by a short-lived uid-1000 worker, not a
+resident PiCloud daemon. Elastic Cubes retain fail-closed orphan cleanup.
+
+Broker replacement is not transparent exactly-once migration for an in-flight
+Tool RPC. The old Run loses its external authority and records an interruption
+or unknown effect, while an already-started guest process may continue as part
+of the user-owned machine. The replacement adopts the VM under machine
+authority before any later Agent or terminal receives a new writer lease.
 
 Pausing a full VM is a long Cube operation. If CubeAPI returns its standard-route
 HTTP 408 while CubeMaster is still snapshotting, Tool Broker treats the response

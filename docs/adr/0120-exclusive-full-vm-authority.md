@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-08-23; amended on 2026-08-25.
+Accepted on 2026-08-23; amended on 2026-08-28.
 
 ## Context
 
@@ -42,15 +42,23 @@ authorization authority for Tool execution or platform access.
 - A conversation attached to an exclusive environment stores a directory
   binding inside that machine. Session lifetime remains independent: archiving
   a Session neither pauses nor releases the environment.
-- Idle exclusive environments use Cube pause/auto-resume instead of destroy.
-  Planned Tool Broker shutdown pauses owned machines and relinquishes control;
-  it never destroys them.
+- Explicit user pause uses Cube pause/resume instead of destroy. A planned Tool
+  Broker shutdown does not change a machine's physical running/paused state. It
+  stores a reconnect capsule, detaches process-local control and relinquishes
+  ownership; an already-running machine and its applications remain online.
 - PostgreSQL stores the logical environment identity, Cube runtime/snapshot
   identity, state generation and an encrypted reconnect capsule. A replacement
-Broker may adopt a machine only after validating tenant/user ownership, Cube
-metadata, physical runtime identity and the newer authority epoch. Adoption
-acquires a fresh external Broker lease before any terminal or Agent Tool call;
-the guest carries no PiCloud ownership secret.
+  Broker may adopt a machine only after validating tenant/user ownership, Cube
+  metadata, physical runtime identity and the newer authority epoch. Adoption
+  acquires a fresh external Broker lease before any terminal or Agent Tool call;
+  the guest carries no PiCloud ownership secret.
+- Recovery runs both at Broker startup and periodically on healthy replicas.
+  Losing or replacing one Broker therefore affects the control path briefly but
+  does not make its exclusive machines depend on that process being restarted.
+- An in-flight Tool RPC is not migrated. Broker replacement revokes its external
+  authority and records an interrupted or unknown effect; a process already
+  started inside the user-owned VM may continue. Later writers are admitted only
+  after the VM has returned to machine authority under the replacement Broker.
 - If adoption cannot be proven, PiCloud reports `recovery_required`; it never
   silently creates an empty replacement and claims the old root filesystem or
   processes survived.
