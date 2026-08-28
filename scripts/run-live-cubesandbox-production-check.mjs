@@ -880,7 +880,7 @@ async function runLatencyEvidence(runId) {
        from runs run cross join timeline
       where run.id = ${sqlLiteral(runId)}`,
   );
-  const [queueToClaimMs, claimToCommandAckMs, commandAckToRunnerMs, runnerToTerminalMs] =
+  const [queueToClaimStartMs, claimStartToCommandAckMs, commandAckToRunnerMs, runnerToTerminalMs] =
     transitionEvidence.split("|").map(Number);
   const modelEvidence = await psql(
     `select count(*)::text || '|' ||
@@ -903,8 +903,8 @@ async function runLatencyEvidence(runId) {
   );
   const [toolOperations, toolTotalMs] = toolEvidence.split("|").map(Number);
   return {
-    queueToClaimMs,
-    claimToCommandAckMs,
+    queueToClaimStartMs,
+    claimStartToCommandAckMs,
     commandAckToRunnerMs,
     runnerToTerminalMs,
     modelRequests,
@@ -1329,12 +1329,12 @@ try {
         `- Checked at: ${report.checkedAt}`,
         `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
         `- Pure-chat first text / settled: ${String(report.pureChat.firstTextMs)} ms / ${String(report.pureChat.settledMs)} ms`,
-        `- Pure-chat queue / preparation / model: ${String(report.pureChat.latency.queueToClaimMs)} / ${String(report.pureChat.latency.claimToCommandAckMs + report.pureChat.latency.commandAckToRunnerMs)} / ${String(report.pureChat.latency.modelTotalMs)} ms`,
+        `- Pure-chat queue-to-claim-start / claim-and-preparation / model: ${String(report.pureChat.latency.queueToClaimStartMs)} / ${String(report.pureChat.latency.claimStartToCommandAckMs + report.pureChat.latency.commandAckToRunnerMs)} / ${String(report.pureChat.latency.modelTotalMs)} ms`,
         `- Pure-chat Tool calls / Cube activations: ${String(report.pureChat.toolCalls)} / ${String(report.pureChat.cubeActivations)}`,
         `- First coding first text / settled: ${String(report.firstCoding.firstTextMs)} ms / ${String(report.firstCoding.settledMs)} ms`,
         `- Follow-up first text / settled: ${String(report.followUpCoding.firstTextMs)} ms / ${String(report.followUpCoding.settledMs)} ms`,
-        `- First coding queue / preparation / model / Tool: ${String(report.firstCoding.latency.queueToClaimMs)} / ${String(report.firstCoding.latency.claimToCommandAckMs + report.firstCoding.latency.commandAckToRunnerMs)} / ${String(report.firstCoding.latency.modelTotalMs)} / ${String(report.firstCoding.latency.toolTotalMs)} ms`,
-        `- Follow-up queue / preparation / model / Tool: ${String(report.followUpCoding.latency.queueToClaimMs)} / ${String(report.followUpCoding.latency.claimToCommandAckMs + report.followUpCoding.latency.commandAckToRunnerMs)} / ${String(report.followUpCoding.latency.modelTotalMs)} / ${String(report.followUpCoding.latency.toolTotalMs)} ms`,
+        `- First coding queue-to-claim-start / claim-and-preparation / model / Tool: ${String(report.firstCoding.latency.queueToClaimStartMs)} / ${String(report.firstCoding.latency.claimStartToCommandAckMs + report.firstCoding.latency.commandAckToRunnerMs)} / ${String(report.firstCoding.latency.modelTotalMs)} / ${String(report.firstCoding.latency.toolTotalMs)} ms`,
+        `- Follow-up queue-to-claim-start / claim-and-preparation / model / Tool: ${String(report.followUpCoding.latency.queueToClaimStartMs)} / ${String(report.followUpCoding.latency.claimStartToCommandAckMs + report.followUpCoding.latency.commandAckToRunnerMs)} / ${String(report.followUpCoding.latency.modelTotalMs)} / ${String(report.followUpCoding.latency.toolTotalMs)} ms`,
         `- Coding Tool calls: ${String(report.firstCoding.toolCalls)} + ${String(report.followUpCoding.toolCalls)}`,
         `- Same running Session Cube KVM guest reused: ${String(report.multiRound.sameCubeMicroVm)}`,
         `- Elastic Sandbox policy / warm archive cleanup: ${String(report.multiRound.elasticSandboxPolicy)} / ${String(report.cleanup.warmArchiveReaped)}`,

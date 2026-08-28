@@ -1,17 +1,28 @@
 {
   "accepted": true,
-  "piCloudRevision": "61ba57ec7528d544356b42285c942447689bb085",
-  "checkedAt": "2026-08-27T11:53:48.042Z",
+  "piCloudRevision": "1a2d481780233cc0a351e0ce98dccac692211973",
+  "checkedAt": "2026-08-28T08:02:27.638Z",
   "upstream": "TencentCloud/CubeSandbox@v0.6.0",
   "model": {
     "provider": "deepseek",
     "modelId": "deepseek-v4-flash"
   },
   "pureChat": {
-    "firstTextMs": 2066,
-    "settledMs": 2414,
+    "acceptedMs": 50,
+    "firstTextMs": 1908,
+    "settledMs": 2405,
     "toolCalls": 0,
     "cubeActivations": 0,
+    "latency": {
+      "queueToClaimStartMs": 40,
+      "claimStartToCommandAckMs": 501,
+      "commandAckToRunnerMs": 173,
+      "runnerToTerminalMs": 1547,
+      "modelRequests": 1,
+      "modelTotalMs": 858,
+      "toolOperations": 0,
+      "toolTotalMs": 0
+    },
     "usage": {
       "requests": 1,
       "inputTokens": 69,
@@ -22,31 +33,53 @@
     }
   },
   "firstCoding": {
-    "firstTextMs": 10042,
-    "settledMs": 11223,
+    "acceptedMs": 38,
+    "firstTextMs": 12306,
+    "settledMs": 13550,
     "toolCalls": 2,
     "cubeActivations": 1,
-    "workspaceFileBytes": 1397,
+    "workspaceFileBytes": 2233,
+    "latency": {
+      "queueToClaimStartMs": 25,
+      "claimStartToCommandAckMs": 428,
+      "commandAckToRunnerMs": 136,
+      "runnerToTerminalMs": 12849,
+      "modelRequests": 3,
+      "modelTotalMs": 7389,
+      "toolOperations": 3,
+      "toolTotalMs": 3833
+    },
     "usage": {
       "requests": 3,
-      "inputTokens": 394,
-      "outputTokens": 634,
-      "cacheReadTokens": 20480,
+      "inputTokens": 289,
+      "outputTokens": 835,
+      "cacheReadTokens": 20992,
       "cacheWriteTokens": 0,
       "costMicrousd": 0
     }
   },
   "followUpCoding": {
-    "firstTextMs": 9006,
-    "settledMs": 10200,
+    "acceptedMs": 42,
+    "firstTextMs": 7931,
+    "settledMs": 10175,
     "toolCalls": 3,
     "cubeActivations": 1,
-    "workspaceFileBytes": 1573,
+    "workspaceFileBytes": 2427,
+    "latency": {
+      "queueToClaimStartMs": 37,
+      "claimStartToCommandAckMs": 371,
+      "commandAckToRunnerMs": 155,
+      "runnerToTerminalMs": 7414,
+      "modelRequests": 4,
+      "modelTotalMs": 3202,
+      "toolOperations": 5,
+      "toolTotalMs": 1437
+    },
     "usage": {
       "requests": 4,
-      "inputTokens": 1271,
-      "outputTokens": 473,
-      "cacheReadTokens": 30464,
+      "inputTokens": 1327,
+      "outputTokens": 380,
+      "cacheReadTokens": 31744,
       "cacheWriteTokens": 0,
       "costMicrousd": 0
     }
@@ -60,10 +93,10 @@
     "authenticatedHttpPreviewPassed": true,
     "workspaceRestored": true,
     "workspaceVersions": 2,
-    "finalWorkspaceFileBytes": 1573
+    "finalWorkspaceFileBytes": 2427
   },
   "workspaceIsolation": {
-    "volumeId": "pcw-0ecc38158c7c308dd5799074219c7fc6e4933fe470d65175",
+    "volumeId": "pcw-051416104a7bdee7a27ff1df225acc1aec43cb108ae0e8ff",
     "trustedMetadataSibling": true,
     "userWorkspaceGitEntryAbsent": true
   },
@@ -73,30 +106,30 @@
   },
   "largeWorkspace": {
     "source": "deterministic 1024-file local fixture",
-    "firstRunId": "8b9ab51f-11a5-4b05-aedf-990b30d535af",
-    "followUpRunId": "1b3eeee1-faad-4a96-95d4-e8a35eb21deb",
+    "firstRunId": "1ce2124e-428e-403d-8866-b57d3c4469da",
+    "followUpRunId": "47c0be80-54f9-410b-9fa3-1ea5aaa20530",
     "firstFileCount": 1025,
-    "restoredFileCount": 1026,
-    "volumeReferenceBytes": 155728,
+    "restoredFileCount": 1025,
+    "volumeReferenceBytes": 154704,
     "sourceSandboxDestroyed": true,
     "persistentVolumeRetained": true,
-    "volumeId": "pcw-d8f8be9dc0ec42aefd2a81a4a72729905e88ad539fe72886",
+    "volumeId": "pcw-4b07619b782ad908cb760eecc5f1ed3bbaec6c7215c8ea0a",
     "restoredFromPersistentVolume": true,
     "freshCubeMicroVm": true,
     "higherGenerationActivation": true,
     "firstUsage": {
       "requests": 2,
-      "inputTokens": 179,
-      "outputTokens": 362,
-      "cacheReadTokens": 13184,
+      "inputTokens": 77,
+      "outputTokens": 364,
+      "cacheReadTokens": 13312,
       "cacheWriteTokens": 0,
       "costMicrousd": 0
     },
     "followUpUsage": {
       "requests": 2,
-      "inputTokens": 310,
-      "outputTokens": 320,
-      "cacheReadTokens": 14208,
+      "inputTokens": 337,
+      "outputTokens": 327,
+      "cacheReadTokens": 14080,
       "cacheWriteTokens": 0,
       "costMicrousd": 0
     }
@@ -104,16 +137,16 @@
   "canonicalConversation": {
     "terminalCount": 3,
     "piEntryCount": 19,
-    "canonicalPayloadBytes": 16385,
-    "terminalThroughSequence": 61
+    "canonicalPayloadBytes": 18338,
+    "terminalThroughSequence": 59
   },
   "eventPlane": {
     "authority": "Kafka acks=all",
     "postgresHotEventTableAbsent": true,
     "projectedSessionMutations": 49,
     "kafka": {
-      "acceptedFacts": 63735,
-      "canonicalHeads": 84
+      "acceptedFacts": 1420,
+      "canonicalHeads": 9
     }
   },
   "scheduler": {
@@ -123,9 +156,9 @@
   },
   "totalUsage": {
     "requests": 12,
-    "inputTokens": 2223,
-    "outputTokens": 1794,
-    "cacheReadTokens": 84736,
+    "inputTokens": 2099,
+    "outputTokens": 1911,
+    "cacheReadTokens": 86528,
     "cacheWriteTokens": 0
   },
   "cleanup": {
