@@ -1880,7 +1880,11 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       await this.#assertCurrentOwner(transaction, now);
       return transaction
         .updateTable("tool_broker_operations")
-        .set({ state, failure_code: failureCode(code), settled_at: now })
+        .set({
+          state,
+          failure_code: failureCode(code),
+          settled_at: sql<Date>`greatest(${sql.ref("started_at")}, ${now})`,
+        })
         .where("operation_id", "=", operationId)
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "=", "running")
