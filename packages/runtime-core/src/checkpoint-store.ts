@@ -644,16 +644,6 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
           .onRef("workspace_row.id", "=", "session_row.workspace_id"),
       )
       .leftJoin(
-        "workspace_versions as workspace_head",
-        "workspace_head.id",
-        "workspace_row.current_workspace_version_id",
-      )
-      .leftJoin(
-        "artifacts as workspace_head_artifact",
-        "workspace_head_artifact.id",
-        "workspace_head.workspace_artifact_id",
-      )
-      .leftJoin(
         "workspace_versions as session_head",
         "session_head.id",
         "session_row.current_workspace_version_id",
@@ -691,16 +681,8 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
         "session_row.project_id as projectId",
         "session_row.workspace_id as workspaceId",
         "session_row.row_version as rowVersion",
-        sql<string | null>`case
-          when ${sql.ref("session_row.forked_from_session_id")} is null
-            then ${sql.ref("workspace_head_artifact.object_key")}
-          else ${sql.ref("session_head_artifact.object_key")}
-        end`.as("workspaceKey"),
-        sql<string | null>`case
-          when ${sql.ref("session_row.forked_from_session_id")} is null
-            then ${sql.ref("workspace_row.current_workspace_version_id")}
-          else ${sql.ref("session_row.current_workspace_version_id")}
-        end`.as("currentVersionId"),
+        "session_head_artifact.object_key as workspaceKey",
+        "session_row.current_workspace_version_id as currentVersionId",
         "session_row.last_fencing_token as sessionExecutionGeneration",
         "session_row.state as sessionState",
         "turn_row.state as turnState",
