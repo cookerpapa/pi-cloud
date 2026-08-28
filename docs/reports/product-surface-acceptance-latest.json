@@ -1,0 +1,26 @@
+{
+  "accepted": true,
+  "piCloudRevision": "6be50b5542aed817bc8080b6427d5c43c95a1541",
+  "checkedAt": "2026-08-28T06:21:51.454Z",
+  "browserCookieAuth": true,
+  "latencyMs": {
+    "pureChat": {
+      "accepted": 40,
+      "firstVisibleText": 1816,
+      "settled": 2264
+    },
+    "coding": {
+      "accepted": 35,
+      "firstVisibleText": 6574,
+      "settled": 7604
+    }
+  },
+  "treeForkPrune": true,
+  "workspaceFiles": 1,
+  "terminal": true,
+  "steer": true,
+  "cancelAndRecover": true,
+  "workspaceRebind": true,
+  "tenantIsolation": true,
+  "deletion": "pending"
+}
