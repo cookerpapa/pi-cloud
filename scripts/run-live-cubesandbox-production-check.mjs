@@ -753,6 +753,7 @@ async function runTurn(sessionId, prompt, expectTools) {
   const observer = observeCubeSession(sessionId);
   const submittedAt = performance.now();
   const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("turn"), "off");
+  const acceptedAt = performance.now();
   const controller = new AbortController();
   let timeoutFailure;
   const timer = setTimeout(() => {
@@ -834,6 +835,7 @@ async function runTurn(sessionId, prompt, expectTools) {
       terminal,
       toolCalls,
       activations,
+      acceptedMs: Math.round(acceptedAt - submittedAt),
       firstTextMs: Math.round(firstTextAt - submittedAt),
       settledMs: Math.round(performance.now() - submittedAt),
     };
@@ -860,6 +862,56 @@ async function runTurn(sessionId, prompt, expectTools) {
       controller.abort();
     }
   }
+}
+
+async function runLatencyEvidence(runId) {
+  const transitionEvidence = await psql(
+    `with timeline as (
+       select min(transition.occurred_at) filter (where transition.to_state = 'claimed') as claimed_at,
+              min(transition.occurred_at) filter (where transition.to_state = 'provisioning') as acknowledged_at,
+              min(transition.occurred_at) filter (where transition.to_state = 'running') as runner_at
+         from run_attempt_transitions transition
+        where transition.run_id = ${sqlLiteral(runId)}
+     )
+     select round(extract(epoch from (timeline.claimed_at - run.queued_at)) * 1000)::text || '|' ||
+            round(extract(epoch from (timeline.acknowledged_at - timeline.claimed_at)) * 1000)::text || '|' ||
+            round(extract(epoch from (timeline.runner_at - timeline.acknowledged_at)) * 1000)::text || '|' ||
+            round(extract(epoch from (run.settled_at - timeline.runner_at)) * 1000)::text
+       from runs run cross join timeline
+      where run.id = ${sqlLiteral(runId)}`,
+  );
+  const [queueToClaimMs, claimToCommandAckMs, commandAckToRunnerMs, runnerToTerminalMs] =
+    transitionEvidence.split("|").map(Number);
+  const modelEvidence = await psql(
+    `select count(*)::text || '|' ||
+            coalesce(round(sum(extract(epoch from (settled_at - started_at)) * 1000)), 0)::text
+       from model_requests
+      where run_id = ${sqlLiteral(runId)}`,
+  );
+  const [modelRequests, modelTotalMs] = modelEvidence.split("|").map(Number);
+  const toolEvidence = await psql(
+    `select count(operation.operation_id)::text || '|' ||
+            coalesce(round(sum(extract(epoch from (operation.settled_at - operation.started_at)) * 1000)), 0)::text
+       from runs run
+       join tool_broker_activations activation
+         on activation.attempt_id = run.current_attempt_id
+       join tool_broker_operations operation
+         on operation.activation_id = activation.activation_id
+      where run.id = ${sqlLiteral(runId)}
+        and operation.started_at >= run.started_at
+        and operation.started_at <= run.settled_at`,
+  );
+  const [toolOperations, toolTotalMs] = toolEvidence.split("|").map(Number);
+  return {
+    queueToClaimMs,
+    claimToCommandAckMs,
+    commandAckToRunnerMs,
+    runnerToTerminalMs,
+    modelRequests,
+    modelTotalMs,
+    toolOperations,
+    toolTotalMs,
+  };
 }
 
 function totalUsage(...usage) {
@@ -924,6 +976,7 @@ try {
   progress("pure chat completed without a Cube activation");
   assert.equal(chat.activations.length, 0, "Pure chat created a Cube microVM");
   const chatUsage = await runUsageEvidence(chat.accepted.runId);
+  const chatLatency = await runLatencyEvidence(chat.accepted.runId);
   assert(chatUsage.requests > 0 && chatUsage.outputTokens > 0);
 
   const firstCoding = await runTurn(
@@ -945,6 +998,7 @@ try {
     "First coding Run did not use exactly one Cube VM",
   );
   const firstUsage = await runUsageEvidence(firstCoding.accepted.runId);
+  const firstCodingLatency = await runLatencyEvidence(firstCoding.accepted.runId);
   assert(firstUsage.requests > 0 && firstUsage.outputTokens > 0);
   const firstVersions = await api.listWorkspaceVersions(session.sessionId);
   assert(firstVersions.currentVersionId !== undefined, "First coding Run did not commit Workspace");
@@ -1006,6 +1060,7 @@ try {
     "Two coding Runs did not reuse the same Cube native sandbox",
   );
   const followUpUsage = await runUsageEvidence(followUp.accepted.runId);
+  const followUpLatency = await runLatencyEvidence(followUp.accepted.runId);
   assert(followUpUsage.requests > 0 && followUpUsage.outputTokens > 0);
   await terminalCommand(
     `/v1/conversations/${session.sessionId}/terminal`,
@@ -1159,26 +1214,32 @@ try {
     upstream: "TencentCloud/CubeSandbox@v0.6.0",
     model: { provider: model.provider, modelId: model.modelId },
     pureChat: {
+      acceptedMs: chat.acceptedMs,
       firstTextMs: chat.firstTextMs,
       settledMs: chat.settledMs,
       toolCalls: chat.toolCalls,
       cubeActivations: chat.activations.length,
+      latency: chatLatency,
       usage: chatUsage,
     },
     firstCoding: {
+      acceptedMs: firstCoding.acceptedMs,
       firstTextMs: firstCoding.firstTextMs,
       settledMs: firstCoding.settledMs,
       toolCalls: firstCoding.toolCalls,
       cubeActivations: firstCoding.activations.length,
       workspaceFileBytes: Buffer.byteLength(firstSource, "utf8"),
+      latency: firstCodingLatency,
       usage: firstUsage,
     },
     followUpCoding: {
+      acceptedMs: followUp.acceptedMs,
       firstTextMs: followUp.firstTextMs,
       settledMs: followUp.settledMs,
       toolCalls: followUp.toolCalls,
       cubeActivations: followUp.activations.length,
       workspaceFileBytes: Buffer.byteLength(finalSource, "utf8"),
+      latency: followUpLatency,
       usage: followUpUsage,
     },
     multiRound: {
@@ -1268,9 +1329,12 @@ try {
         `- Checked at: ${report.checkedAt}`,
         `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
         `- Pure-chat first text / settled: ${String(report.pureChat.firstTextMs)} ms / ${String(report.pureChat.settledMs)} ms`,
+        `- Pure-chat queue / preparation / model: ${String(report.pureChat.latency.queueToClaimMs)} / ${String(report.pureChat.latency.claimToCommandAckMs + report.pureChat.latency.commandAckToRunnerMs)} / ${String(report.pureChat.latency.modelTotalMs)} ms`,
         `- Pure-chat Tool calls / Cube activations: ${String(report.pureChat.toolCalls)} / ${String(report.pureChat.cubeActivations)}`,
         `- First coding first text / settled: ${String(report.firstCoding.firstTextMs)} ms / ${String(report.firstCoding.settledMs)} ms`,
         `- Follow-up first text / settled: ${String(report.followUpCoding.firstTextMs)} ms / ${String(report.followUpCoding.settledMs)} ms`,
+        `- First coding queue / preparation / model / Tool: ${String(report.firstCoding.latency.queueToClaimMs)} / ${String(report.firstCoding.latency.claimToCommandAckMs + report.firstCoding.latency.commandAckToRunnerMs)} / ${String(report.firstCoding.latency.modelTotalMs)} / ${String(report.firstCoding.latency.toolTotalMs)} ms`,
+        `- Follow-up queue / preparation / model / Tool: ${String(report.followUpCoding.latency.queueToClaimMs)} / ${String(report.followUpCoding.latency.claimToCommandAckMs + report.followUpCoding.latency.commandAckToRunnerMs)} / ${String(report.followUpCoding.latency.modelTotalMs)} / ${String(report.followUpCoding.latency.toolTotalMs)} ms`,
         `- Coding Tool calls: ${String(report.firstCoding.toolCalls)} + ${String(report.followUpCoding.toolCalls)}`,
         `- Same running Session Cube KVM guest reused: ${String(report.multiRound.sameCubeMicroVm)}`,
         `- Elastic Sandbox policy / warm archive cleanup: ${String(report.multiRound.elasticSandboxPolicy)} / ${String(report.cleanup.warmArchiveReaped)}`,

@@ -48,6 +48,7 @@ import {
 } from "./management-server.ts";
 import { TenantModelGateway } from "./model-gateway.ts";
 import { PostgresSubagentJobProvider } from "./postgres-subagent-job-provider.ts";
+import { RunClaimReadinessMonitor } from "./run-claim-readiness.ts";
 import {
   PostgresSubagentSupervisorChannel,
   createCloudContactSupervisorTool,
@@ -214,6 +215,7 @@ export class PiWorkerRuntime {
   #managementServer: SupervisorManagementServer | undefined;
   #modelGateway: TenantModelGateway | undefined;
   #runWorker: SupervisorRunWorker | undefined;
+  #runClaimReadiness: RunClaimReadinessMonitor | undefined;
   #subagentPreparationReaper: NodeJS.Timeout | undefined;
   #closing: Promise<void> | undefined;
   #ownerStopSettled = false;
@@ -439,6 +441,13 @@ export class PiWorkerRuntime {
       this.#ownsSessionMutationProducer = this.#configuredSessionMutationProducer === undefined;
       await sessionMutationProducer.checkHealth();
       this.#sessionMutationProducer = sessionMutationProducer;
+      const runClaimReadiness = new RunClaimReadinessMonitor({
+        check: async () => {
+          await Promise.all([factChannels.checkHealth?.(), this.#toolBroker.checkHealth()]);
+        },
+      });
+      await runClaimReadiness.start();
+      this.#runClaimReadiness = runClaimReadiness;
       const sessionEntryPayloadCache = new PostgresPiSessionEntryPayloadCache();
       const subagentJobs = new PostgresSubagentJobProvider({
         database: this.#database,
@@ -688,16 +697,7 @@ export class PiWorkerRuntime {
         identity: runWorkerIdentity,
         maximumConcurrentRuns: this.#config.maxConcurrentSessions,
         canClaimRuns: () => this.#state === "ready" && client?.state === "connected",
-        admitRunClaims: async () => {
-          try {
-            await factChannels.checkHealth?.();
-            await sessionMutationProducer.checkHealth();
-            await this.#toolBroker.checkHealth();
-            return true;
-          } catch {
-            return false;
-          }
-        },
+        admitRunClaims: async () => runClaimReadiness.ready,
         commandExecutor: new RunCommandExecutor({
           database: this.#database,
           backend: runBackend,
@@ -757,6 +757,8 @@ export class PiWorkerRuntime {
   async #close(): Promise<void> {
     if (this.#state !== "failed") this.#state = "draining";
     this.#client?.setAcceptingAssignments(false);
+    this.#runClaimReadiness?.close();
+    this.#runClaimReadiness = undefined;
     if (this.#subagentPreparationReaper !== undefined) {
       clearInterval(this.#subagentPreparationReaper);
       this.#subagentPreparationReaper = undefined;

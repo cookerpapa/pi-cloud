@@ -48,12 +48,18 @@ transaction. It enforces tenant quota and same-Session serialization.
 Ready command Outbox rows are the Worker queue. All Pi Workers query the same
 queue. `FOR UPDATE`/transactional state transitions in `RunCommandExecutor`
 make competing scans and duplicate wakeups harmless. `LISTEN/NOTIFY` is a
-best-effort wakeup hint with periodic polling as the correctness fallback.
+best-effort wakeup hint with periodic polling as the correctness fallback. A
+monotonic process-local notification generation covers the scan-to-wait race:
+a notification received before the waiter is installed forces an immediate
+rescan instead of falling through to the one-second poll.
 
 A Worker with a disconnected ownership channel does not scan, and a Worker
-that finds candidate work checks Tool Broker readiness before claiming it. A
-short execution-plane outage therefore leaves the Run queued without creating
-an Attempt or starting a model call.
+maintains Fact/Kafka and Tool Broker readiness in a one-second background
+monitor. Claim admission reads that local fail-closed state without issuing
+duplicate synchronous health requests for every Run. A short execution-plane
+outage therefore leaves the Run queued without creating an Attempt or starting
+a model call; the ExecutionLease, Fact Stream open and Tool Broker effect
+boundary remain authoritative even within one monitor interval.
 
 The queue retains the existing domain protocol:
 
@@ -85,6 +91,11 @@ the Worker-local pool after settlement, while additional slots are created
 lazily if configured Worker concurrency exceeds the prewarmed capacity. This
 moves module/provider initialization out of user-visible first-token latency
 without making Session affinity part of correctness.
+
+For an accepted Run, Pi Session open and Model Runtime acquisition begin
+concurrently because neither consumes the other's state. World State capture
+still follows Session open, and Pi execution still waits for both preparations;
+no durability or authority boundary is removed for latency.
 
 Pi 0.84's official `SessionStorage` interface is implemented by
 `@pi-cloud/pi-session-postgres`. It stores Pi entries, lanes, records, labels

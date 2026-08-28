@@ -6,6 +6,7 @@
 - PostgreSQL Run/Attempt authority, same-Session ordering and shared Worker queue;
 - Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with native Compaction;
 - one multiplexed Fact connection per Worker, logical per-Run Streams and a PostgreSQL Authority Gate;
+- lossless PostgreSQL queue wake-up and background fail-closed execution-plane readiness;
 - Kafka `acks=all` AcceptedFact log keyed by Session;
 - rebuildable Gateway live tails and cursor-free snapshot-first SSE;
 - CubeSandbox KVM-only Tool execution and persistent Workspace Volumes;

@@ -308,6 +308,7 @@ describe("PiWorkerRuntime", () => {
       expect(runWorkerOptions.map((options) => options.canClaimRuns?.())).toEqual([false, true]);
       await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
       toolBrokerHealthy = false;
+      await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 1_100));
       await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(false);
 
       const ledger = JSON.parse(await readFile(join(root, "boot", "boot-ledger.json"), "utf8")) as {
@@ -323,5 +324,5 @@ describe("PiWorkerRuntime", () => {
       await server.close();
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, 10_000);
 });

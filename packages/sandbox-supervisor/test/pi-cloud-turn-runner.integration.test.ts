@@ -82,6 +82,14 @@ class TestAuthority implements CloudAgentExecutionAuthority {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve } as const;
+}
+
 describe("PiCloudTurnRunner integration", () => {
   it("reuses an idle ModelRuntime without sharing one between active Runs", async () => {
     const pool = new PiModelRuntimePool(1);
@@ -127,16 +135,26 @@ describe("PiCloudTurnRunner integration", () => {
     let authorityWasActiveAtSettlement = false;
     let receivedSystemPrompt = "";
     const sourceEvents: string[] = [];
+    const modelPreparationStarted = deferred<void>();
+    const sessionPreparationStarted = deferred<void>();
     const runner = new PiCloudTurnRunner({
-      resolveModelRuntime: () => ({
-        provider: "pi-cloud-fake",
-        modelId: "pi-cloud-fake",
-        baseUrl: fake.baseUrl,
-        api: "openai-completions",
-        apiKey: FAKE_MODEL_API_KEY,
-        contextWindow: 131_072,
-      }),
-      openSession: async () => ({ session, authority }),
+      resolveModelRuntime: async () => {
+        modelPreparationStarted.resolve(undefined);
+        await sessionPreparationStarted.promise;
+        return {
+          provider: "pi-cloud-fake",
+          modelId: "pi-cloud-fake",
+          baseUrl: fake.baseUrl,
+          api: "openai-completions",
+          apiKey: FAKE_MODEL_API_KEY,
+          contextWindow: 131_072,
+        };
+      },
+      openSession: async () => {
+        sessionPreparationStarted.resolve(undefined);
+        await modelPreparationStarted.promise;
+        return { session, authority };
+      },
       sandboxContinuity: {
         continuityId: "88888888-8888-4888-8888-888888888888",
         continuity: "cold_restore",

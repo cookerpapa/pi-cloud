@@ -374,30 +374,41 @@ export class PiCloudTurnRunner {
         false,
       );
     }
-    const modelRuntimeStartedAt = performance.now();
-    const config = validateRuntimeConfig(
-      command,
-      await this.#options.resolveModelRuntime(command.payload.model),
+    const modelPreparation = this.#measurePreparation("pi_model_runtime", async () => {
+      const config = validateRuntimeConfig(
+        command,
+        await this.#options.resolveModelRuntime(command.payload.model),
+      );
+      const lease =
+        this.#options.modelRuntimePool === undefined
+          ? { runtime: await createModelRuntime(config), release: () => undefined }
+          : await this.#options.modelRuntimePool.acquire(config);
+      return { config, lease };
+    });
+    const sessionPreparation = this.#measurePreparation("pi_session_open", () =>
+      this.#options.openSession(command),
     );
-    const modelRuntimeLease =
-      this.#options.modelRuntimePool === undefined
-        ? { runtime: await createModelRuntime(config), release: () => undefined }
-        : await this.#options.modelRuntimePool.acquire(config);
-    this.#options.metrics?.runPreparationDuration.observe(
-      { stage: "pi_model_runtime", outcome: "completed" },
-      (performance.now() - modelRuntimeStartedAt) / 1_000,
-    );
+    const [modelPrepared, sessionPrepared] = await Promise.allSettled([
+      modelPreparation,
+      sessionPreparation,
+    ]);
+    if (modelPrepared.status === "rejected") {
+      if (sessionPrepared.status === "fulfilled") {
+        await sessionPrepared.value.authority.close().catch(() => undefined);
+      }
+      throw modelPrepared.reason;
+    }
+    if (sessionPrepared.status === "rejected") {
+      modelPrepared.value.lease.release();
+      throw sessionPrepared.reason;
+    }
+    const { config, lease: modelRuntimeLease } = modelPrepared.value;
+    const sessionHandle = sessionPrepared.value;
     try {
       const modelRuntime = modelRuntimeLease.runtime;
       const model = modelRuntime.getModel(config.provider, config.modelId);
       if (model === undefined)
         throw new PiTurnError("invalid_model_runtime", "Configured model is unavailable", false);
-      const sessionStartedAt = performance.now();
-      const sessionHandle = await this.#options.openSession(command);
-      this.#options.metrics?.runPreparationDuration.observe(
-        { stage: "pi_session_open", outcome: "completed" },
-        (performance.now() - sessionStartedAt) / 1_000,
-      );
       let toolOutputDirectoryForCleanup: string | undefined;
 
       try {
@@ -751,6 +762,24 @@ export class PiCloudTurnRunner {
       }
     } finally {
       modelRuntimeLease.release();
+    }
+  }
+
+  async #measurePreparation<T>(stage: string, operation: () => Promise<T>): Promise<T> {
+    const startedAt = performance.now();
+    try {
+      const result = await operation();
+      this.#options.metrics?.runPreparationDuration.observe(
+        { stage, outcome: "completed" },
+        (performance.now() - startedAt) / 1_000,
+      );
+      return result;
+    } catch (error: unknown) {
+      this.#options.metrics?.runPreparationDuration.observe(
+        { stage, outcome: "failed" },
+        (performance.now() - startedAt) / 1_000,
+      );
+      throw error;
     }
   }
 

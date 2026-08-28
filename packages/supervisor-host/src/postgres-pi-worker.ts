@@ -59,6 +59,42 @@ type CancellationReference = {
   targetCommandId: string;
 };
 
+export class PostgresQueueWake {
+  #generation = 0;
+  #wake: (() => void) | undefined;
+
+  get generation(): number {
+    return this.#generation;
+  }
+
+  notify(): void {
+    this.#generation += 1;
+    this.#wake?.();
+  }
+
+  wait(observedGeneration: number, timeoutMs: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted || this.#generation !== observedGeneration) return Promise.resolve();
+    return new Promise<void>((resolvePromise) => {
+      let settled = false;
+      const timer = setTimeout(settle, timeoutMs);
+      timer.unref();
+      const onAbort = (): void => settle();
+      this.#wake = settle;
+      if (this.#generation !== observedGeneration) settle();
+      function settle(): void {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        resolvePromise();
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }).finally(() => {
+      this.#wake = undefined;
+    });
+  }
+}
+
 export type PostgresPiWorkerOptions = {
   database: Kysely<Database>;
   notificationConnectionString: string;
@@ -122,7 +158,7 @@ export class PostgresPiWorker {
   #controller: AbortController | undefined;
   #listener: Client | undefined;
   #loop: Promise<void> | undefined;
-  #wake: (() => void) | undefined;
+  readonly #queueWake = new PostgresQueueWake();
 
   constructor(options: PostgresPiWorkerOptions) {
     this.#database = options.database;
@@ -176,7 +212,7 @@ export class PostgresPiWorker {
     if (this.#state === "stopped") return;
     this.#state = "stopping";
     this.#controller?.abort();
-    this.#wake?.();
+    this.#queueWake.notify();
     await this.#loop;
     await Promise.allSettled([...this.#activeCommands.values()].map((entry) => entry.execution));
     await this.#listener?.end().catch(() => undefined);
@@ -201,7 +237,7 @@ export class PostgresPiWorker {
       await this.#execute({ commandId, subagent: true });
     })().finally(() => {
       this.#activeCommands.delete(commandId);
-      this.#wake?.();
+      this.#queueWake.notify();
     });
     this.#activeCommands.set(commandId, { execution, subagent: true });
     return true;
@@ -213,7 +249,7 @@ export class PostgresPiWorker {
       application_name: `${this.#identity}-run-queue`,
     });
     listener.on("notification", (message) => {
-      if (message.channel === "pi_cloud_run_queue") this.#wake?.();
+      if (message.channel === "pi_cloud_run_queue") this.#queueWake.notify();
     });
     listener.on("error", (error) => this.#observeFailure("listen", error));
     await listener.connect();
@@ -223,13 +259,14 @@ export class PostgresPiWorker {
 
   async #run(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
+      const observedGeneration = this.#queueWake.generation;
       try {
         await this.#dispatchCancellations();
         await this.#fillCapacity();
       } catch (error: unknown) {
         this.#observeFailure("scan", error);
       }
-      await this.#waitForWake(signal);
+      await this.#queueWake.wait(observedGeneration, this.#pollIntervalMs, signal);
     }
   }
 
@@ -252,7 +289,7 @@ export class PostgresPiWorker {
     for (const reference of selected) {
       const execution = this.#execute(reference).finally(() => {
         this.#activeCommands.delete(reference.commandId);
-        this.#wake?.();
+        this.#queueWake.notify();
       });
       this.#activeCommands.set(reference.commandId, { execution, subagent: reference.subagent });
     }
@@ -398,28 +435,6 @@ export class PostgresPiWorker {
       .where("attempt.state", "in", ["provisioning", "restoring", "running", "checkpointing"])
       .limit(this.#maximumConcurrentRuns)
       .execute();
-  }
-
-  #waitForWake(signal: AbortSignal): Promise<void> {
-    if (signal.aborted) return Promise.resolve();
-    return new Promise<void>((resolvePromise) => {
-      let settled = false;
-      const timer = setTimeout(settle, this.#pollIntervalMs);
-      timer.unref();
-      const onAbort = (): void => settle();
-      const wake = (): void => settle();
-      this.#wake = wake;
-      function settle(): void {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        signal.removeEventListener("abort", onAbort);
-        resolvePromise();
-      }
-      signal.addEventListener("abort", onAbort, { once: true });
-    }).finally(() => {
-      this.#wake = undefined;
-    });
   }
 
   #observeFailure(operation: "listen" | "scan" | "execute" | "cancel", error: unknown): void {
