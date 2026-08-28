@@ -74,15 +74,15 @@ describe("current PiCloud schema", () => {
       `.execute(database);
       expect(activationIndexes.rows).toEqual([
         expect.objectContaining({
-          indexname: "tool_broker_workspace_live_idx",
-          indexdef: expect.not.stringContaining("UNIQUE"),
+          indexname: "tool_broker_workspace_live_unique",
+          indexdef: expect.stringContaining("UNIQUE"),
         }),
       ]);
 
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("101_user_managed_workspace_concurrency");
+      expect(applied.rows.at(-1)?.name).toBe("102_workspace_tool_runtime_slot");
 
       const legacyFunctions = await sql<{ proname: string }>`
         select proname

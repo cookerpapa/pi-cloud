@@ -11,7 +11,7 @@
 - rebuildable Gateway live tails and cursor-free snapshot-first SSE;
 - CubeSandbox KVM-only Tool execution and persistent Workspace Volumes;
 - bounded-warm elastic Cubes and user-owned development machines with SSH;
-- same-Session FIFO with user-managed cross-Session/terminal Workspace concurrency;
+- same-Session FIFO, concurrent cross-Session Agent Loops and a Workspace-scoped Tool slot;
 - Broker-independent development-machine runtime with running-state-preserving takeover;
 - conversation trees, Fork, Steer, recursive Subagents and Workspace rebinding;
 - Compose one-host deployment and Kubernetes/KEDA manifests.

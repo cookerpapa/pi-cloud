@@ -1446,7 +1446,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.stopped).toBe(true);
   });
 
-  it("keeps ordinary warm runtimes scoped to their Session", async () => {
+  it("retires another Session's warm runtime before attaching the shared Volume", async () => {
     class TrackingStateRepository extends InMemorySandboxActivationStateRepository {
       readonly released: string[] = [];
 
@@ -1498,8 +1498,8 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceRevision: "1".repeat(64),
     });
 
-    expect(fixture.stopped).toBe(false);
-    expect(stateRepository.released).not.toContain(first.activationId);
+    expect(fixture.stopped).toBe(true);
+    expect(stateRepository.released).toContain(first.activationId);
     expect(second.activationId).toBe(SECOND_ACTIVATION_ID);
     expect(second.continuity).toBe("cold_restore");
     await manager.stop(second.activationId, nextAssignment);
@@ -1611,59 +1611,7 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.stop(demand.activationId, demandAssignment);
   });
 
-  it("keeps separate warm process worlds for different Sessions on one Workspace", async () => {
-    const fixture = providerFixture();
-    const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const manager = new ToolBroker({
-      provider: fixture.provider,
-      idGenerator: () => activationIds.shift()!,
-    });
-    const first = await manager.create(createRequest);
-    await manager.execute(
-      assignment.executionLease,
-      operation("60000000-0000-4000-8000-000000000012"),
-    );
-    await manager.release({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.release",
-      requestId: "60000000-0000-4000-8000-000000000013",
-      activationId: first.activationId,
-      assignment,
-      disposition: "keep_warm",
-      workspaceRevision: "d".repeat(64),
-    });
-
-    const siblingSession = {
-      ...assignment,
-      commandId: "command-provider-test-sibling-session",
-      sessionId: "session-provider-test-sibling",
-      turnId: "turn-provider-test-sibling",
-      executionLease: createExecutionLease(
-        "60000000-0000-4000-8000-000000000014",
-        "60000000-0000-4000-8000-000000000014",
-        6,
-      ),
-    };
-    const second = await manager.create({
-      ...createRequest,
-      requestId: "60000000-0000-4000-8000-000000000015",
-      assignment: siblingSession,
-      workspaceRevision: "d".repeat(64),
-    });
-    expect(second.continuity).toBe("cold_restore");
-    expect(second.activationId).toBe(SECOND_ACTIVATION_ID);
-    expect(fixture.stopped).toBe(false);
-    await manager.execute(siblingSession.executionLease, {
-      ...operation("60000000-0000-4000-8000-000000000016"),
-      activationId: second.activationId,
-    });
-    expect(fixture.createCount).toBe(2);
-    expect(fixture.rebind).not.toHaveBeenCalled();
-    await manager.stop(second.activationId, siblingSession);
-    await manager.close();
-  });
-
-  it("runs two ordinary Sessions concurrently against one Workspace", async () => {
+  it("queues a second Session's Tool Sandbox without serializing its Agent Run", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
     const manager = new ToolBroker({
@@ -1683,18 +1631,35 @@ describe("provider-backed Tool Tool Broker", () => {
         6,
       ),
     };
-    const second = await manager.create({
-      ...createRequest,
-      requestId: "61000000-0000-4000-8000-000000000002",
-      assignment: siblingAssignment,
-    });
-
-    expect(first.activationId).toBe(ACTIVATION_ID);
-    expect(second.activationId).toBe(SECOND_ACTIVATION_ID);
     await manager.execute(
       assignment.executionLease,
       operation("61000000-0000-4000-8000-000000000003"),
     );
+    let secondResolved = false;
+    const secondPromise = manager
+      .create({
+        ...createRequest,
+        requestId: "61000000-0000-4000-8000-000000000002",
+        assignment: siblingAssignment,
+      })
+      .then((created) => {
+        secondResolved = true;
+        return created;
+      });
+    expect(first.activationId).toBe(ACTIVATION_ID);
+    await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 75));
+    expect(secondResolved).toBe(false);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: "61000000-0000-4000-8000-000000000005",
+      activationId: first.activationId,
+      assignment,
+      disposition: "keep_warm",
+      workspaceRevision: "d".repeat(64),
+    });
+    const second = await secondPromise;
+    expect(second.activationId).toBe(SECOND_ACTIVATION_ID);
     await manager.execute(siblingAssignment.executionLease, {
       ...operation("61000000-0000-4000-8000-000000000004"),
       activationId: second.activationId,

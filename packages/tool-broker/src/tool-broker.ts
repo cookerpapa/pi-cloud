@@ -336,6 +336,7 @@ export class ToolBroker {
   readonly #terminals = new Map<string, ManagedWorkspaceTerminal>();
   readonly #developmentEnvironments = new Map<string, ManagedDevelopmentEnvironment>();
   readonly #admitted = new Map<string, ToolSandboxAssignment>();
+  readonly #settlingWorkspaces = new Set<string>();
   readonly #admissionWaiters: AdmissionWaiter[] = [];
   readonly #reaper: NodeJS.Timeout;
   #developmentEnvironmentRecovery: Promise<number> | undefined;
@@ -1185,6 +1186,7 @@ export class ToolBroker {
       );
     }
     const key = runtimeKey(request.assignment);
+    await this.#waitForWorkspaceSlot(request.assignment);
     let delegatedParent: ManagedActivation | undefined;
     for (const [activeId, active] of this.#activations) {
       if (workspaceIdentityKey(active.assignment) !== workspaceIdentityKey(request.assignment)) {
@@ -1241,6 +1243,7 @@ export class ToolBroker {
           inherited = candidate;
           break;
         }
+        await this.#discardWarm(candidateKey, candidate);
       }
     }
     if (
@@ -1629,6 +1632,18 @@ export class ToolBroker {
   }
 
   async release(request: ToolSandboxReleaseRequest): Promise<ToolSandboxReleaseResponse> {
+    const key = workspaceIdentityKey(request.assignment);
+    this.#settlingWorkspaces.add(key);
+    try {
+      return await this.#releaseActivation(request);
+    } finally {
+      this.#settlingWorkspaces.delete(key);
+    }
+  }
+
+  async #releaseActivation(
+    request: ToolSandboxReleaseRequest,
+  ): Promise<ToolSandboxReleaseResponse> {
     const activation = this.#owned(request.activationId, request.assignment);
     let retained = false;
     let handle = activation.handle;
@@ -1808,6 +1823,16 @@ export class ToolBroker {
   }
 
   async stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
+    const key = workspaceIdentityKey(assignment);
+    this.#settlingWorkspaces.add(key);
+    try {
+      await this.#stopActivation(activationId, assignment);
+    } finally {
+      this.#settlingWorkspaces.delete(key);
+    }
+  }
+
+  async #stopActivation(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
     const activation = this.#activations.get(activationId);
     if (activation === undefined) {
       await this.#provider.destroyActivation(activationId, assignment);
@@ -2561,6 +2586,43 @@ export class ToolBroker {
       .catch(() => undefined);
     this.#releaseAdmission(warm.handle.activationId);
     await this.#stateRepository.setActivationState(warm.handle.activationId, "released");
+  }
+
+  async #waitForWorkspaceSlot(assignment: ToolSandboxAssignment): Promise<void> {
+    const key = workspaceIdentityKey(assignment);
+    const deadline = this.#now() + 300_000;
+    const ordinaryOwners = new Set<string>();
+    for (;;) {
+      let ordinaryOwner = this.#settlingWorkspaces.has(key);
+      for (const [activationId, activation] of this.#activations) {
+        if (workspaceIdentityKey(activation.assignment) !== key) continue;
+        if (ordinaryOwners.has(activationId)) {
+          ordinaryOwner = true;
+          continue;
+        }
+        if (
+          await this.#stateRepository.allowsDelegatedSandboxHandoff({
+            tenantId: assignment.tenantId,
+            workspaceId: assignment.workspaceId,
+            currentSessionId: activation.assignment.sessionId,
+            nextSessionId: assignment.sessionId,
+          })
+        ) {
+          return;
+        }
+        ordinaryOwners.add(activationId);
+        ordinaryOwner = true;
+      }
+      if (!ordinaryOwner) return;
+      if (this.#now() >= deadline) {
+        throw new ToolBrokerError(
+          "tool_sandbox_workspace_busy",
+          "Workspace Tool execution did not become available before its deadline",
+          true,
+        );
+      }
+      await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
+    }
   }
 
   #releaseAdmission(activationId: string): void {

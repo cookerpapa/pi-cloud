@@ -21,9 +21,11 @@ couples Run admission to optional compute state.
 
 - Same-Session Runs remain FIFO and non-overlapping. RunAttempt leases and
   fences remain unchanged.
-- Different Sessions may run concurrently against the same elastic Workspace.
-  Each Session receives its own Cube process world; both mount the same
-  persistent Volume. Conflicting edits are the user's responsibility.
+- Different Sessions may run their model/Agent Loops concurrently against the
+  same elastic Workspace. Cube's Volume contract permits one attached Tool
+  runtime, so Tool Broker queues only their Tool-Sandbox phase and switches the
+  Volume after the prior activation settles. This physical slot is not a Run
+  Claim or model-admission lock.
 - A human terminal no longer blocks Run claim. It owns one elastic Cube; an
   Agent that starts while the terminal is connected borrows that same physical
   Cube under its own external lease, avoiding an unsupported second Volume
@@ -49,10 +51,11 @@ Pure chat and model generation do not wait for a terminal or Cube state.
 Operators scale Worker and Cube capacity globally instead of assigning each
 tenant an arbitrary active ceiling.
 
-Two conversations or a terminal and Agent can race on the same files and
-process-visible resources. PiCloud records independent Run/Attempt evidence,
-but it does not promise merge semantics or restore a lost update. The UI and
-documentation describe this as user-managed concurrency.
+A terminal and Agent sharing one Cube can race on files and process-visible
+resources. Different Sessions can reason concurrently, but their elastic Tool
+effects use the Workspace's one physical runtime slot. PiCloud records
+independent Run/Attempt evidence and does not promise merge semantics or restore
+a lost update caused by terminal/external edits.
 
 An exclusive machine still has only one Agent activation because all Agent
 operations share one physical Cube authority. Supporting multiple simultaneous

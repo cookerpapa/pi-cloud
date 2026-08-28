@@ -274,6 +274,14 @@ guest contains normal development tools but no platform credential. The trusted
 Volume envelope holds generation and Git baseline metadata outside the guest's
 view.
 
+Run Claim does not lock a Workspace. Different Sessions may execute their Pi
+loops concurrently, but Cube permits one live attachment for an elastic
+Workspace Volume. Tool Broker therefore queues only the conflicting Tool
+Sandbox reservation, retires or reuses the previous runtime after settlement,
+and then attaches the same Volume. A connected human terminal is the exception:
+the Agent borrows that terminal's already-attached Cube instead of creating a
+second runtime.
+
 ### Workspace Web Terminal
 
 The authenticated public path

@@ -719,7 +719,8 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       const existing = await transaction
         .selectFrom("tool_broker_activations")
         .selectAll()
-        .where("activation_id", "=", input.activationId)
+        .where("tenant_id", "=", input.assignment.tenantId)
+        .where("workspace_id", "=", input.assignment.workspaceId)
         .where("state", "in", [
           "reserved",
           "materializing",
