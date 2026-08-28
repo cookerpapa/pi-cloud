@@ -208,7 +208,7 @@ async function expectApiStatus(operation, status) {
   );
 }
 
-async function openTerminal(sessionId, cookieHeader) {
+async function openHeldTerminal(sessionId, cookieHeader) {
   const url = new URL(`/v1/conversations/${encodeURIComponent(sessionId)}/terminal`, baseUrl);
   url.protocol = "ws:";
   const socket = new WebSocket(url, { headers: { cookie: cookieHeader } });
@@ -249,14 +249,8 @@ async function openTerminal(sessionId, cookieHeader) {
         if (frame.type === "workspace_terminal.output") {
           output += Buffer.from(frame.data, "base64").toString("utf8");
           if (output.includes("TERMINAL-SURFACE-OK")) {
-            socket.send(
-              JSON.stringify({
-                workspaceTerminalProtocolVersion: 1,
-                type: "workspace_terminal.close",
-              }),
-            );
             clearTimeout(timer);
-            resolvePromise({ ready, output });
+            resolvePromise();
           }
         }
       } catch (error) {
@@ -265,10 +259,31 @@ async function openTerminal(sessionId, cookieHeader) {
       }
     });
   });
+  await terminal;
+  return {
+    ready,
+    output: () => output,
+    close: async () => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(
+          JSON.stringify({
+            workspaceTerminalProtocolVersion: 1,
+            type: "workspace_terminal.close",
+          }),
+        );
+        await wait(50);
+      }
+      socket.close();
+    },
+  };
+}
+
+async function openTerminal(sessionId, cookieHeader) {
+  const terminal = await openHeldTerminal(sessionId, cookieHeader);
   try {
-    return await terminal;
+    return { ready: terminal.ready, output: terminal.output() };
   } finally {
-    socket.close();
+    await terminal.close();
   }
 }
 
@@ -396,6 +411,53 @@ try {
   assert.equal(terminal.ready, true);
   assert(terminal.output.includes("TERMINAL-SURFACE-OK"));
   progress("authenticated Workspace terminal passed");
+
+  const heldTerminal = await openHeldTerminal(session.sessionId, browser.cookieHeader);
+  try {
+    await runTurn({
+      api,
+      browser,
+      sessionId: session.sessionId,
+      prompt: [
+        "Use tools while the human Workspace terminal remains connected.",
+        "Create terminal_concurrency.txt containing exactly TERMINAL-AGENT-CONCURRENCY-OK.",
+        "Read it back, then reply exactly TERMINAL-AGENT-CONCURRENCY-OK.",
+      ].join(" "),
+      expectTools: true,
+    });
+  } finally {
+    await heldTerminal.close();
+  }
+  progress("Workspace terminal and Agent concurrency passed");
+
+  const siblingSession = await api.createSession(
+    project.projectId,
+    project.workspaceId,
+    `Product surface sibling ${suffix}`,
+    "elastic",
+    "starter",
+  );
+  createdSessionIds.add(siblingSession.sessionId);
+  const concurrentRuns = await Promise.all([
+    runTurn({
+      api,
+      browser,
+      sessionId: session.sessionId,
+      prompt:
+        "Use tools. Create concurrent_session_a.txt containing exactly SESSION-A-OK, read it back, then reply exactly SESSION-A-OK.",
+      expectTools: true,
+    }),
+    runTurn({
+      api,
+      browser,
+      sessionId: siblingSession.sessionId,
+      prompt:
+        "Use tools. Create concurrent_session_b.txt containing exactly SESSION-B-OK, read it back, then reply exactly SESSION-B-OK.",
+      expectTools: true,
+    }),
+  ]);
+  assert(concurrentRuns.every((run) => run.events.some((event) => event.type === "tool.started")));
+  progress("two Sessions sharing one Workspace ran concurrently");
 
   let steerAccepted = false;
   const steered = await runTurn({
@@ -541,6 +603,8 @@ try {
     treeForkPrune: true,
     workspaceFiles: files.files.length,
     terminal: true,
+    terminalAgentConcurrency: true,
+    sharedWorkspaceConcurrentSessions: true,
     steer: true,
     cancelAndRecover: true,
     workspaceRebind: true,
