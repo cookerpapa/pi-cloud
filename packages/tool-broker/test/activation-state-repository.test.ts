@@ -498,6 +498,14 @@ describe("PostgreSQL Tool Broker ownership", () => {
       ),
     ).resolves.toBe("started");
     await repository.settleOperation("20000000-0000-4000-8000-000000000039", "succeeded");
+    const operationTiming = await database
+      .selectFrom("tool_broker_operations")
+      .select(["started_at", "settled_at"])
+      .where("operation_id", "=", "20000000-0000-4000-8000-000000000039")
+      .executeTakeFirstOrThrow();
+    expect(operationTiming.settled_at!.valueOf()).toBeGreaterThanOrEqual(
+      operationTiming.started_at.valueOf(),
+    );
     await database
       .deleteFrom("session_leases")
       .where("lease_id", "=", "20000000-0000-4000-8000-000000000009")

@@ -905,7 +905,8 @@ async function runLatencyEvidence(runId) {
   const [modelRequests, modelTotalMs] = modelEvidence.split("|").map(Number);
   const toolEvidence = await psql(
     `select count(operation.operation_id)::text || '|' ||
-            coalesce(round(sum(extract(epoch from (operation.settled_at - operation.started_at)) * 1000)), 0)::text
+            coalesce(round(sum(extract(epoch from (operation.settled_at - operation.started_at)) * 1000)), 0)::text || '|' ||
+            count(*) filter (where operation.settled_at < operation.started_at)::text
        from runs run
        join tool_broker_activations activation
          on activation.attempt_id = run.current_attempt_id
@@ -915,7 +916,8 @@ async function runLatencyEvidence(runId) {
         and operation.started_at >= run.started_at
         and operation.started_at <= run.settled_at`,
   );
-  const [toolOperations, toolTotalMs] = toolEvidence.split("|").map(Number);
+  const [toolOperations, toolTotalMs, negativeToolDurations] = toolEvidence.split("|").map(Number);
+  assert.equal(negativeToolDurations, 0, "Tool operation timestamps used inconsistent clocks");
   return {
     queueToClaimStartMs,
     claimStartToCommandAckMs,

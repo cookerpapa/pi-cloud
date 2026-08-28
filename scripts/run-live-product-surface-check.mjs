@@ -169,7 +169,9 @@ async function runTurn({
     assert(terminal, "Turn did not publish a terminal event");
     assert.equal(terminal.type, expectedTerminal, JSON.stringify(terminal.payload));
     assert(firstDurableActivityAt !== undefined, "Turn did not publish a durable Agent activity");
-    assert(firstAssistantTextAt !== undefined, "Turn did not stream assistant text");
+    if (expectedTerminal === "turn.completed") {
+      assert(firstAssistantTextAt !== undefined, "Completed Turn did not stream assistant text");
+    }
     const toolCalls = events.filter(
       (event) => event.turnId === accepted.turnId && event.type === "tool.started",
     ).length;

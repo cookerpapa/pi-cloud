@@ -1967,6 +1967,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           request_sha256: requestSha256,
           state: "running",
           failure_code: null,
+          started_at: now,
           settled_at: null,
         })
         .executeTakeFirstOrThrow();
