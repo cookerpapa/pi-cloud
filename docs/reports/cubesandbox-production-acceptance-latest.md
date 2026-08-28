@@ -1,24 +1,24 @@
 # CubeSandbox production acceptance
 
-- Checked at: 2026-08-28T08:02:27.638Z
+- Checked at: 2026-08-28T09:00:34.148Z
 - Provider/model: deepseek / deepseek-v4-flash
-- Pure-chat first text / settled: 1908 ms / 2405 ms
-- Pure-chat queue-to-claim-start / claim-and-preparation / model: 40 / 674 / 858 ms
+- Pure-chat first activity / assistant text / settled: 2198 / 2198 / 2647 ms
+- Pure-chat queue-to-claim-start / claim-and-preparation / model: 39 / 701 / 1052 ms
 - Pure-chat Tool calls / Cube activations: 0 / 0
-- First coding first text / settled: 12306 ms / 13550 ms
-- Follow-up first text / settled: 7931 ms / 10175 ms
-- First coding queue-to-claim-start / claim-and-preparation / model / Tool: 25 / 564 / 7389 / 3833 ms
-- Follow-up queue-to-claim-start / claim-and-preparation / model / Tool: 37 / 526 / 3202 / 1437 ms
+- First coding first activity / Tool / assistant text / settled: 1673 / 6798 / 1673 / 14402 ms
+- Follow-up first activity / Tool / assistant text / settled: 2177 / 2177 / 3349 / 10220 ms
+- First coding queue-to-claim-start / claim-and-preparation / model / Tool: 45 / 468 / 8496 / 3268 ms
+- Follow-up queue-to-claim-start / claim-and-preparation / model / Tool: 31 / 664 / 5549 / 1731 ms
 - Coding Tool calls: 2 + 3
 - Same running Session Cube KVM guest reused: true
 - Elastic Sandbox policy / warm archive cleanup: true / true
 - Workspace restored across Runs: true
 - Trusted Git metadata sibling / user .git absent: true / true
-- Large Workspace files / Volume reference: 1025 / 154704 bytes
+- Large Workspace files / Volume reference: 1025 / 147449 bytes
 - Large Workspace fresh-VM cold restore: true
-- Real input/output/cache-read tokens: 2099 / 1911 / 86528
-- Canonical conversation: 3 terminal Turns / 19 Pi entries / 18338 bytes
-- Kafka AcceptedFacts / canonical Session heads: 1420 / 9
+- Real input/output/cache-read tokens: 2519 / 2502 / 96384
+- Canonical conversation: 3 terminal Turns / 19 Pi entries / 21562 bytes
+- Kafka AcceptedFacts / canonical Session heads: 2654 / 23
 - PostgreSQL hot-event table absent / projected Session mutations: true / 49
 - Scheduler / Worker pool: PostgreSQL / shared
 - Cross-tenant conversation hidden: true

@@ -78,7 +78,7 @@
   ],
   "clickedControlCount": 71,
   "latencyMs": {
-    "userSubmitToFirstVisibleText": 1871,
+    "userSubmitToFirstAssistantText": 1871,
     "userSubmitToCompleteReply": 1976
   },
   "screenshotCaptured": true,
