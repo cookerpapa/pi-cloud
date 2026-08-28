@@ -67,7 +67,7 @@ export type CloudAttemptContext = Readonly<{
   schemaVersion: typeof CLOUD_ATTEMPT_CONTEXT_SCHEMA_VERSION;
   turnContextSha256: string;
   identity: Readonly<{
-    commandId: string;
+    runId: string;
     idempotencyKey: string;
     executionLeaseSha256: string;
     supervisorId: string;
@@ -198,7 +198,7 @@ export function createCloudAttemptContext(input: {
     schemaVersion: CLOUD_ATTEMPT_CONTEXT_SCHEMA_VERSION,
     turnContextSha256: validSha256(input.turnContextSha256, "Cloud Turn context"),
     identity: {
-      commandId: payload.commandId,
+      runId: payload.runId,
       idempotencyKey: payload.idempotencyKey,
       executionLeaseSha256: sha256(payload.executionLease),
       supervisorId: input.runtimeIdentity.supervisorId,

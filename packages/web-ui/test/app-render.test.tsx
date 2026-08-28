@@ -17,7 +17,6 @@ function turn(turnId: string, prompt: string): TurnView {
   return {
     runId: null,
     turnId,
-    commandId: null,
     mailboxPosition: null,
     prompt,
     acceptedAt: null,

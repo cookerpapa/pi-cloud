@@ -38,12 +38,11 @@ couples Run admission to optional compute state.
   otherwise successful Run merely because another Session settled first. Each
   Session advances only its own checkpoint pointer; it never rewrites every
   sibling Session's base revision.
-- Remove per-tenant active-Run and active-Sandbox ceilings. Keep bounded
-  project, Session and unsettled-Turn admission to prevent unbounded durable
-  metadata, and keep Worker/Cube/Sandbox-Domain capacity as real infrastructure
-  admission.
-- Tenant scheduling timestamps remain a fairness hint; they are not a hard
-  quota.
+- Remove per-tenant active-Run, unsettled-Turn and active-Sandbox ceilings.
+  Project and Session limits bound long-lived product resources, while
+  Worker/Cube/Sandbox-Domain capacity remains real infrastructure admission.
+- The Run queue does not claim tenant fairness without a measured starvation
+  problem and an explicit policy.
 - Explicit `shared_serialized` Subagent handoff remains serialized because it
   is a parent/child workflow contract, not an ordinary user concurrency policy.
 

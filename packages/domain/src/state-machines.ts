@@ -5,7 +5,6 @@ export type SessionState = Static<typeof SessionStateSchema>;
 
 export const TurnStateSchema = Type.Union([
   Type.Literal("queued"),
-  Type.Literal("dispatching"),
   Type.Literal("running"),
   Type.Literal("cancelling"),
   Type.Literal("completed"),
@@ -22,7 +21,7 @@ export const SandboxStateSchema = Type.Union([
   Type.Literal("terminated"),
 ]);
 
-export const CommandStateSchema = Type.Union([
+export const TurnControlRequestStateSchema = Type.Union([
   Type.Literal("pending"),
   Type.Literal("dispatched"),
   Type.Literal("acknowledged"),
@@ -61,11 +60,12 @@ export const RunAttemptStateSchema = Type.Union([
 
 export type TurnState = Static<typeof TurnStateSchema>;
 export type SandboxState = Static<typeof SandboxStateSchema>;
-export type CommandState = Static<typeof CommandStateSchema>;
+export type TurnControlRequestState = Static<typeof TurnControlRequestStateSchema>;
 export type RunState = Static<typeof RunStateSchema>;
 export type RunAttemptState = Static<typeof RunAttemptStateSchema>;
 
-export type DomainEntityKind = "session" | "turn" | "sandbox" | "command" | "run" | "run_attempt";
+export type DomainEntityKind =
+  "session" | "turn" | "sandbox" | "control_request" | "run" | "run_attempt";
 
 type TransitionTable<State extends string> = Readonly<Record<State, readonly State[]>>;
 
@@ -81,8 +81,7 @@ const sessionTransitions = {
 } as const satisfies TransitionTable<SessionState>;
 
 const turnTransitions = {
-  queued: ["dispatching", "cancelling"],
-  dispatching: ["queued", "running", "cancelling", "failed"],
+  queued: ["running", "cancelling", "failed"],
   running: ["cancelling", "completed", "failed"],
   cancelling: ["cancelled", "failed"],
   completed: [],
@@ -99,13 +98,13 @@ const sandboxTransitions = {
   terminated: [],
 } as const satisfies TransitionTable<SandboxState>;
 
-const commandTransitions = {
+const controlRequestTransitions = {
   pending: ["dispatched", "failed"],
   dispatched: ["pending", "acknowledged", "failed"],
   acknowledged: ["completed", "failed"],
   completed: [],
   failed: [],
-} as const satisfies TransitionTable<CommandState>;
+} as const satisfies TransitionTable<TurnControlRequestState>;
 
 const runTransitions = {
   queued: ["claimed", "cancel_requested", "failed"],
@@ -202,12 +201,18 @@ export function transitionSandbox(from: SandboxState, to: SandboxState): Sandbox
   return transition("sandbox", sandboxTransitions, from, to);
 }
 
-export function canTransitionCommand(from: CommandState, to: CommandState): boolean {
-  return canTransition(commandTransitions, from, to);
+export function canTransitionTurnControlRequest(
+  from: TurnControlRequestState,
+  to: TurnControlRequestState,
+): boolean {
+  return canTransition(controlRequestTransitions, from, to);
 }
 
-export function transitionCommand(from: CommandState, to: CommandState): CommandState {
-  return transition("command", commandTransitions, from, to);
+export function transitionTurnControlRequest(
+  from: TurnControlRequestState,
+  to: TurnControlRequestState,
+): TurnControlRequestState {
+  return transition("control_request", controlRequestTransitions, from, to);
 }
 
 export function canTransitionRun(from: RunState, to: RunState): boolean {
@@ -234,7 +239,7 @@ export function isTerminalSandboxState(state: SandboxState): boolean {
   return state === "terminated";
 }
 
-export function isTerminalCommandState(state: CommandState): boolean {
+export function isTerminalTurnControlRequestState(state: TurnControlRequestState): boolean {
   return state === "completed" || state === "failed";
 }
 

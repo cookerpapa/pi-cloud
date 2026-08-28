@@ -38,8 +38,6 @@ import {
   parseEnvironmentRecipe,
   parseEnvironmentValidationReport,
   parseCloudToolCapabilitySnapshot,
-  TURN_CANCELLATION_OUTBOX_TOPIC,
-  TURN_COMMAND_OUTBOX_TOPIC,
 } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { readCanonicalPiTurnTranscripts } from "@pi-cloud/runtime-core/canonical-pi-conversation";
@@ -76,20 +74,20 @@ export class ControlPlaneStoreError extends Error {
 
 type AcceptedTurnRow = {
   runId: string;
-  commandId: string;
   mailboxPosition: string;
   turnId: string;
   sessionId: string;
-  commandCreatedAt: Date | string;
-  commandPayload: Record<string, unknown>;
+  acceptedAt: Date | string;
+  requestSha256: string;
 };
 
 type AcceptedTurnCancellationRow = {
-  commandId: string;
+  controlRequestId: string;
+  targetRunId: string;
   turnId: string;
   sessionId: string;
-  commandCreatedAt: Date | string;
-  commandPayload: Record<string, unknown>;
+  acceptedAt: Date | string;
+  requestSha256: string;
 };
 
 type ConversationLineageNode = {
@@ -105,7 +103,6 @@ type ConversationHistoryRow = {
   inputKind: string;
   prompt: string | null;
   turnState: ConversationTurnState;
-  commandId: string;
   mailboxPosition: string | null;
   acceptedAt: Date | string;
 };
@@ -127,7 +124,6 @@ type TenantRuntimePolicy = {
   defaultModelProfileId: string;
   maximumProjects: number;
   maximumSessions: number;
-  maximumUnsettledTurns: number;
 };
 
 type AssignedSandboxDomain = {
@@ -286,9 +282,8 @@ function cancellationRequestFingerprint(gracePeriodMs: number): string {
     .digest("hex");
 }
 
-function parseRequestHash(payload: Record<string, unknown>): string {
-  const requestHash = payload.requestHash;
-  if (typeof requestHash !== "string" || !/^[0-9a-f]{64}$/.test(requestHash)) {
+function parseRequestHash(requestHash: string): string {
+  if (!/^[0-9a-f]{64}$/.test(requestHash)) {
     throw new ControlPlaneStoreError(
       "control_plane_misconfigured",
       "Stored turn command has an invalid request fingerprint",
@@ -302,7 +297,7 @@ function acceptedTurnResource(
   expectedRequestHash: string,
   replayed: boolean,
 ): AcceptedTurnResource {
-  if (parseRequestHash(row.commandPayload) !== expectedRequestHash) {
+  if (parseRequestHash(row.requestSha256) !== expectedRequestHash) {
     throw new ControlPlaneStoreError(
       "idempotency_conflict",
       "Idempotency-Key was already used for a different turn request",
@@ -312,27 +307,11 @@ function acceptedTurnResource(
     runId: row.runId,
     turnId: row.turnId,
     sessionId: row.sessionId,
-    commandId: row.commandId,
     mailboxPosition: positiveSafeInteger(row.mailboxPosition, "Mailbox position"),
     state: "queued",
-    acceptedAt: isoTimestamp(row.commandCreatedAt),
+    acceptedAt: isoTimestamp(row.acceptedAt),
     replayed,
   };
-}
-
-function payloadString(
-  payload: Record<string, unknown>,
-  property: string,
-  description: string,
-): string {
-  const value = payload[property];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new ControlPlaneStoreError(
-      "control_plane_misconfigured",
-      `Stored cancellation command has an invalid ${description}`,
-    );
-  }
-  return value;
 }
 
 function acceptedTurnCancellationResource(
@@ -340,19 +319,19 @@ function acceptedTurnCancellationResource(
   expectedRequestHash: string,
   replayed: boolean,
 ): AcceptedTurnCancellationResource {
-  if (parseRequestHash(row.commandPayload) !== expectedRequestHash) {
+  if (parseRequestHash(row.requestSha256) !== expectedRequestHash) {
     throw new ControlPlaneStoreError(
       "idempotency_conflict",
       "Idempotency-Key was already used for a different cancellation request",
     );
   }
   return {
-    commandId: row.commandId,
-    targetCommandId: payloadString(row.commandPayload, "targetCommandId", "target command ID"),
+    controlRequestId: row.controlRequestId,
+    targetRunId: row.targetRunId,
     turnId: row.turnId,
     sessionId: row.sessionId,
     state: "pending",
-    acceptedAt: isoTimestamp(row.commandCreatedAt),
+    acceptedAt: isoTimestamp(row.acceptedAt),
     replayed,
   };
 }
@@ -844,7 +823,7 @@ export class ControlPlaneStore {
             .select("turn.id")
             .where("turn.tenant_id", "=", this.#tenantId)
             .where("session_row.workspace_id", "=", workspaceId)
-            .where("turn.state", "in", ["queued", "dispatching", "running", "cancelling"])
+            .where("turn.state", "in", ["queued", "running", "cancelling"])
             .limit(1)
             .executeTakeFirst();
           if (activeTurn !== undefined) {
@@ -1110,7 +1089,7 @@ export class ControlPlaneStore {
         .select("id")
         .where("tenant_id", "=", this.#tenantId)
         .where("session_id", "=", sessionId)
-        .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
+        .where("state", "in", ["queued", "running", "cancelling"])
         .limit(1)
         .executeTakeFirst();
       if (activeTurn !== undefined) {
@@ -1350,12 +1329,11 @@ export class ControlPlaneStore {
         child?.forkTurnId === null || child?.forkTurnId === undefined
           ? null
           : await this.#database
-              .selectFrom("commands")
+              .selectFrom("runs")
               .select("mailbox_position")
               .where("tenant_id", "=", this.#tenantId)
               .where("session_id", "=", node.sessionId)
               .where("turn_id", "=", child.forkTurnId)
-              .where("kind", "=", "turn.execute")
               .executeTakeFirst();
       if (
         child?.forkTurnId !== null &&
@@ -1368,39 +1346,29 @@ export class ControlPlaneStore {
         );
       }
       const newestRows = await this.#database
-        .selectFrom("commands as command")
+        .selectFrom("runs as run")
         .innerJoin("turns as turn", (join) =>
-          join
-            .onRef("turn.tenant_id", "=", "command.tenant_id")
-            .onRef("turn.id", "=", "command.turn_id"),
-        )
-        .innerJoin("runs as run", (join) =>
-          join
-            .onRef("run.tenant_id", "=", "command.tenant_id")
-            .onRef("run.turn_id", "=", "turn.id")
-            .onRef("run.command_id", "=", "command.id"),
+          join.onRef("turn.tenant_id", "=", "run.tenant_id").onRef("turn.id", "=", "run.turn_id"),
         )
         .select([
-          "command.session_id as originSessionId",
+          "run.session_id as originSessionId",
           "run.id as runId",
           "turn.id as turnId",
           "turn.input_kind as inputKind",
           "turn.input_text as prompt",
           "turn.state as turnState",
-          "command.id as commandId",
-          "command.mailbox_position as mailboxPosition",
-          "command.created_at as acceptedAt",
+          "run.mailbox_position as mailboxPosition",
+          "run.created_at as acceptedAt",
         ])
-        .where("command.tenant_id", "=", this.#tenantId)
-        .where("command.session_id", "=", node.sessionId)
-        .where("command.kind", "=", "turn.execute")
+        .where("run.tenant_id", "=", this.#tenantId)
+        .where("run.session_id", "=", node.sessionId)
         .where("turn.pruned_at", "is", null)
-        .where("command.mailbox_position", "is not", null)
+        .where("run.mailbox_position", "is not", null)
         .$if(forkMailboxPosition !== null && forkMailboxPosition !== undefined, (query) =>
-          query.where("command.mailbox_position", "<=", forkMailboxPosition!.mailbox_position!),
+          query.where("run.mailbox_position", "<=", forkMailboxPosition!.mailbox_position!),
         )
-        .orderBy("command.mailbox_position", "desc")
-        .orderBy("command.id", "desc")
+        .orderBy("run.mailbox_position", "desc")
+        .orderBy("run.id", "desc")
         .limit(MAX_CONVERSATION_TURNS + 1)
         .execute();
       lineageTurnRows.push(...newestRows.reverse());
@@ -1429,7 +1397,6 @@ export class ControlPlaneStore {
       return {
         runId: row.runId,
         turnId: row.turnId,
-        commandId: row.commandId,
         mailboxPosition: positiveSafeInteger(row.mailboxPosition, "Conversation mailbox position"),
         prompt: row.prompt,
         state: row.turnState,
@@ -1623,22 +1590,17 @@ export class ControlPlaneStore {
     let outcome = "accepted";
     try {
       const fingerprint = turnRequestFingerprint(request);
-      const existing = await this.#findAcceptedTurn(sessionId, idempotencyKey);
-      if (existing) {
-        outcome = "replayed";
-        return acceptedTurnResource(existing, fingerprint, true);
-      }
       try {
         return await this.#acceptNewTurn(sessionId, idempotencyKey, request, fingerprint);
       } catch (error) {
-        if (!isPostgresConstraint(error, "commands_session_idempotency_unique")) {
+        if (!isPostgresConstraint(error, "runs_session_idempotency_unique")) {
           throw error;
         }
         const concurrentWinner = await this.#findAcceptedTurn(sessionId, idempotencyKey);
         if (!concurrentWinner) {
           throw new ControlPlaneStoreError(
             "control_plane_misconfigured",
-            "Idempotent command exists without its accepted turn",
+            "Idempotent Run exists without its accepted Turn",
           );
         }
         outcome = "replayed";
@@ -1735,7 +1697,6 @@ export class ControlPlaneStore {
       workspaceId: run.workspace_id,
       sessionId: run.session_id,
       turnId: run.turn_id,
-      commandId: run.command_id,
       environment: environmentSnapshot(run),
       state: run.state,
       traceId: run.trace_id,
@@ -1831,7 +1792,6 @@ export class ControlPlaneStore {
       }
       return acceptedTurnCancellationResource(existing, fingerprint, true);
     }
-
     try {
       return await this.#acceptNewTurnCancellation(
         sessionId,
@@ -1841,12 +1801,14 @@ export class ControlPlaneStore {
         fingerprint,
       );
     } catch (error) {
-      if (!isPostgresConstraint(error, "commands_session_idempotency_unique")) throw error;
+      if (!isPostgresConstraint(error, "turn_control_requests_session_idempotency_unique")) {
+        throw error;
+      }
       const concurrentWinner = await this.#findAcceptedTurnCancellation(sessionId, idempotencyKey);
       if (concurrentWinner === undefined || concurrentWinner.turnId !== turnId) {
         throw new ControlPlaneStoreError(
           "idempotency_conflict",
-          "Idempotency-Key was already used for a different command",
+          "Idempotency-Key was already used for a different control request",
         );
       }
       return acceptedTurnCancellationResource(concurrentWinner, fingerprint, true);
@@ -1861,35 +1823,43 @@ export class ControlPlaneStore {
     validation?: { environmentVersionId: string; actorUserId: string },
   ): Promise<AcceptedTurnResource> {
     const turnId = this.#idGenerator();
-    const commandId = this.#idGenerator();
-    const outboxId = this.#idGenerator();
     const runId = this.#idGenerator();
     return this.#database.transaction().execute(async (transaction) => {
-      const policy = await this.#lockTenantPolicy(transaction);
       const session = await transaction
-        .selectFrom("sessions")
+        .selectFrom("sessions as session_row")
+        .leftJoin("runs as replay_run", (join) =>
+          join
+            .onRef("replay_run.tenant_id", "=", "session_row.tenant_id")
+            .onRef("replay_run.session_id", "=", "session_row.id")
+            .on("replay_run.idempotency_key", "=", idempotencyKey),
+        )
         .select([
-          "id",
-          "project_id",
-          "workspace_id",
-          "desired_model_profile_id",
-          "session_kind",
-          "state",
-          "execution_mode",
-          "development_environment_id",
-          "working_directory",
-          "sandbox_profile_key",
-          "next_event_seq",
-          "next_mailbox_position",
-          "current_workspace_version_id",
-          "workspace_snapshot_key",
-          "forked_from_session_id",
-          "tool_capabilities",
-          "archived_at",
+          "session_row.id",
+          "session_row.project_id",
+          "session_row.workspace_id",
+          "session_row.desired_model_profile_id",
+          "session_row.session_kind",
+          "session_row.state",
+          "session_row.execution_mode",
+          "session_row.development_environment_id",
+          "session_row.working_directory",
+          "session_row.sandbox_profile_key",
+          "session_row.next_event_seq",
+          "session_row.next_mailbox_position",
+          "session_row.current_workspace_version_id",
+          "session_row.workspace_snapshot_key",
+          "session_row.forked_from_session_id",
+          "session_row.tool_capabilities",
+          "session_row.archived_at",
+          "replay_run.id as replayRunId",
+          "replay_run.turn_id as replayTurnId",
+          "replay_run.mailbox_position as replayMailboxPosition",
+          "replay_run.created_at as replayAcceptedAt",
+          "replay_run.request_sha256 as replayRequestSha256",
         ])
-        .where("tenant_id", "=", this.#tenantId)
-        .where("id", "=", sessionId)
-        .forUpdate()
+        .where("session_row.tenant_id", "=", this.#tenantId)
+        .where("session_row.id", "=", sessionId)
+        .forUpdate("session_row")
         .executeTakeFirst();
       if (!session) {
         throw new ControlPlaneStoreError("not_found", "Session was not found");
@@ -1898,6 +1868,31 @@ export class ControlPlaneStore {
         throw new ControlPlaneStoreError(
           "conflict",
           "Delegated Sessions are read-only from the human conversation API",
+        );
+      }
+      if (session.replayRunId !== null) {
+        if (
+          session.replayTurnId === null ||
+          session.replayMailboxPosition === null ||
+          session.replayAcceptedAt === null ||
+          session.replayRequestSha256 === null
+        ) {
+          throw new ControlPlaneStoreError(
+            "control_plane_misconfigured",
+            "Idempotent Run metadata is incomplete",
+          );
+        }
+        return acceptedTurnResource(
+          {
+            runId: session.replayRunId,
+            turnId: session.replayTurnId,
+            sessionId: session.id,
+            mailboxPosition: session.replayMailboxPosition,
+            acceptedAt: session.replayAcceptedAt,
+            requestSha256: session.replayRequestSha256,
+          },
+          fingerprint,
+          true,
         );
       }
       const workspace = await transaction
@@ -1919,7 +1914,6 @@ export class ControlPlaneStore {
         .where("workspace.tenant_id", "=", this.#tenantId)
         .where("workspace.id", "=", session.workspace_id)
         .where("workspace.deleted_at", "is", null)
-        .forUpdate("workspace")
         .executeTakeFirst();
       if (workspace === undefined) {
         throw new ControlPlaneStoreError(
@@ -1943,7 +1937,6 @@ export class ControlPlaneStore {
           .where("tenant_id", "=", this.#tenantId)
           .where("id", "=", session.development_environment_id)
           .where("workspace_id", "=", session.workspace_id)
-          .forShare()
           .executeTakeFirst();
         if (developmentEnvironment?.state !== "running") {
           throw new ControlPlaneStoreError(
@@ -1983,21 +1976,6 @@ export class ControlPlaneStore {
         throw new ControlPlaneStoreError(
           "conflict",
           `Session cannot accept a queued follow-up while it is ${session.state}`,
-        );
-      }
-      const unsettled = await transaction
-        .selectFrom("turns")
-        .select((expression) => expression.fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", this.#tenantId)
-        .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
-        .executeTakeFirstOrThrow();
-      if (
-        nonNegativeSafeInteger(unsettled.count, "Tenant unsettled-turn count") >=
-        policy.maximumUnsettledTurns
-      ) {
-        throw new ControlPlaneStoreError(
-          "tenant_quota_exceeded",
-          "Tenant unsettled-turn quota has been reached",
         );
       }
       const mailboxPosition = positiveSafeInteger(
@@ -2044,26 +2022,6 @@ export class ControlPlaneStore {
         })
         .executeTakeFirstOrThrow();
 
-      const command = await transaction
-        .insertInto("commands")
-        .values({
-          id: commandId,
-          tenant_id: this.#tenantId,
-          session_id: session.id,
-          turn_id: turnId,
-          idempotency_key: idempotencyKey,
-          kind: "turn.execute",
-          state: "pending",
-          mailbox_position: mailboxPosition,
-          payload: { schemaVersion: 1, requestHash: fingerprint },
-          dispatched_at: null,
-          acknowledged_at: null,
-          completed_at: null,
-          failure_code: null,
-        })
-        .returning(["id", "created_at", "payload"])
-        .executeTakeFirstOrThrow();
-
       if (validation !== undefined) {
         const active = await transaction
           .selectFrom("environment_versions")
@@ -2088,7 +2046,7 @@ export class ControlPlaneStore {
           .executeTakeFirstOrThrow();
       }
 
-      await transaction
+      const run = await transaction
         .insertInto("runs")
         .values({
           id: runId,
@@ -2102,7 +2060,9 @@ export class ControlPlaneStore {
           workspace_id: session.workspace_id,
           session_id: session.id,
           turn_id: turnId,
-          command_id: command.id,
+          mailbox_position: mailboxPosition,
+          request_sha256: fingerprint,
+          available_at: sql<Date>`now()`,
           environment_version_id: environment.environmentVersionId,
           working_directory: session.working_directory,
           sandbox_profile_key: session.sandbox_profile_key,
@@ -2123,26 +2083,7 @@ export class ControlPlaneStore {
           started_at: null,
           settled_at: null,
         })
-        .executeTakeFirstOrThrow();
-
-      await transaction
-        .insertInto("outbox")
-        .values({
-          id: outboxId,
-          tenant_id: this.#tenantId,
-          aggregate_type: "session",
-          aggregate_id: session.id,
-          topic: TURN_COMMAND_OUTBOX_TOPIC,
-          payload: {
-            schemaVersion: 1,
-            commandId: command.id,
-            sessionId: session.id,
-            turnId,
-            kind: "turn.execute",
-          },
-          published_at: null,
-          last_error: null,
-        })
+        .returning(["id", "created_at", "request_sha256"])
         .executeTakeFirstOrThrow();
 
       const sessionUpdate = await transaction
@@ -2167,13 +2108,12 @@ export class ControlPlaneStore {
 
       return acceptedTurnResource(
         {
-          runId,
-          commandId: command.id,
+          runId: run.id,
           mailboxPosition: String(mailboxPosition),
           turnId,
           sessionId: session.id,
-          commandCreatedAt: command.created_at,
-          commandPayload: command.payload,
+          acceptedAt: run.created_at,
+          requestSha256: run.request_sha256,
         },
         fingerprint,
         false,
@@ -2186,37 +2126,21 @@ export class ControlPlaneStore {
     idempotencyKey: string,
   ): Promise<AcceptedTurnRow | undefined> {
     const row = await this.#database
-      .selectFrom("commands as command")
-      .innerJoin("turns as turn", "turn.id", "command.turn_id")
-      .innerJoin("runs as run", (join) =>
-        join
-          .onRef("run.tenant_id", "=", "command.tenant_id")
-          .onRef("run.turn_id", "=", "turn.id")
-          .onRef("run.command_id", "=", "command.id"),
-      )
+      .selectFrom("runs as run")
+      .innerJoin("turns as turn", "turn.id", "run.turn_id")
       .select([
         "run.id as runId",
-        "command.id as commandId",
-        "command.mailbox_position as mailboxPosition",
-        "command.created_at as commandCreatedAt",
-        "command.payload as commandPayload",
+        "run.mailbox_position as mailboxPosition",
+        "run.created_at as acceptedAt",
+        "run.request_sha256 as requestSha256",
         "turn.id as turnId",
         "turn.session_id as sessionId",
       ])
-      .where("command.tenant_id", "=", this.#tenantId)
-      .where("command.session_id", "=", sessionId)
-      .where("command.idempotency_key", "=", idempotencyKey)
-      .where("command.kind", "=", "turn.execute")
-      .where("command.mailbox_position", "is not", null)
+      .where("run.tenant_id", "=", this.#tenantId)
+      .where("run.session_id", "=", sessionId)
+      .where("run.idempotency_key", "=", idempotencyKey)
       .executeTakeFirst();
-    if (row === undefined) return undefined;
-    if (row.mailboxPosition === null) {
-      throw new ControlPlaneStoreError(
-        "control_plane_misconfigured",
-        "Stored turn command has no mailbox position",
-      );
-    }
-    return { ...row, mailboxPosition: row.mailboxPosition };
+    return row;
   }
 
   async #acceptNewTurnCancellation(
@@ -2226,8 +2150,7 @@ export class ControlPlaneStore {
     gracePeriodMs: number,
     fingerprint: string,
   ): Promise<AcceptedTurnCancellationResource> {
-    const commandId = this.#idGenerator();
-    const outboxId = this.#idGenerator();
+    const controlRequestId = this.#idGenerator();
     return this.#database.transaction().execute(async (transaction) => {
       const lifecycle = await transaction
         .selectFrom("turns as turn")
@@ -2259,87 +2182,71 @@ export class ControlPlaneStore {
       }
 
       const target = await transaction
-        .selectFrom("commands")
+        .selectFrom("runs")
         .select(["id", "state"])
         .where("tenant_id", "=", this.#tenantId)
         .where("session_id", "=", sessionId)
         .where("turn_id", "=", turnId)
-        .where("kind", "=", "turn.execute")
         .forUpdate()
         .executeTakeFirst();
-      if (target === undefined || target.state !== "acknowledged") {
+      if (
+        target === undefined ||
+        !["provisioning", "restoring", "running", "checkpointing"].includes(target.state)
+      ) {
         throw new ControlPlaneStoreError(
           "conflict",
-          "Turn does not have one acknowledged execution to cancel",
+          "Turn does not have one running Run to cancel",
         );
       }
 
       const activeCancellation = await transaction
-        .selectFrom("commands")
+        .selectFrom("turn_control_requests")
         .select("id")
         .where("tenant_id", "=", this.#tenantId)
         .where("session_id", "=", sessionId)
         .where("turn_id", "=", turnId)
-        .where("kind", "=", "turn.cancel")
+        .where("kind", "=", "cancel")
         .where("state", "in", ["pending", "dispatched", "acknowledged"])
         .executeTakeFirst();
       if (activeCancellation !== undefined) {
         throw new ControlPlaneStoreError("conflict", "Turn cancellation is already in progress");
       }
 
-      const command = await transaction
-        .insertInto("commands")
+      const controlRequest = await transaction
+        .insertInto("turn_control_requests")
         .values({
-          id: commandId,
+          id: controlRequestId,
           tenant_id: this.#tenantId,
           session_id: sessionId,
           turn_id: turnId,
+          target_run_id: target.id,
           idempotency_key: idempotencyKey,
-          kind: "turn.cancel",
+          kind: "cancel",
           state: "pending",
+          request_sha256: fingerprint,
           payload: {
             schemaVersion: 1,
-            requestHash: fingerprint,
-            targetCommandId: target.id,
             reason: "user_request",
             gracePeriodMs,
           },
+          attempts: 0,
+          available_at: sql<Date>`now()`,
           dispatched_at: null,
           acknowledged_at: null,
           completed_at: null,
           failure_code: null,
         })
-        .returning(["id", "created_at", "payload"])
-        .executeTakeFirstOrThrow();
-
-      await transaction
-        .insertInto("outbox")
-        .values({
-          id: outboxId,
-          tenant_id: this.#tenantId,
-          aggregate_type: "session",
-          aggregate_id: sessionId,
-          topic: TURN_CANCELLATION_OUTBOX_TOPIC,
-          payload: {
-            schemaVersion: 1,
-            commandId: command.id,
-            targetCommandId: target.id,
-            sessionId,
-            turnId,
-            kind: "turn.cancel",
-          },
-          published_at: null,
-          last_error: null,
-        })
+        .returning(["id", "target_run_id", "created_at", "request_sha256"])
         .executeTakeFirstOrThrow();
 
       return acceptedTurnCancellationResource(
         {
-          commandId: command.id,
+          controlRequestId: controlRequest.id,
+          targetRunId: controlRequest.target_run_id,
           turnId,
           sessionId,
-          commandCreatedAt: command.created_at,
-          commandPayload: command.payload,
+          acceptedAt: controlRequest.created_at,
+          requestSha256: controlRequest.request_sha256,
         },
         fingerprint,
         false,
@@ -2352,19 +2259,20 @@ export class ControlPlaneStore {
     idempotencyKey: string,
   ): Promise<AcceptedTurnCancellationRow | undefined> {
     return this.#database
-      .selectFrom("commands as command")
-      .innerJoin("turns as turn", "turn.id", "command.turn_id")
+      .selectFrom("turn_control_requests as request")
+      .innerJoin("turns as turn", "turn.id", "request.turn_id")
       .select([
-        "command.id as commandId",
-        "command.created_at as commandCreatedAt",
-        "command.payload as commandPayload",
+        "request.id as controlRequestId",
+        "request.target_run_id as targetRunId",
+        "request.created_at as acceptedAt",
+        "request.request_sha256 as requestSha256",
         "turn.id as turnId",
         "turn.session_id as sessionId",
       ])
-      .where("command.tenant_id", "=", this.#tenantId)
-      .where("command.session_id", "=", sessionId)
-      .where("command.idempotency_key", "=", idempotencyKey)
-      .where("command.kind", "=", "turn.cancel")
+      .where("request.tenant_id", "=", this.#tenantId)
+      .where("request.session_id", "=", sessionId)
+      .where("request.idempotency_key", "=", idempotencyKey)
+      .where("request.kind", "=", "cancel")
       .executeTakeFirst();
   }
 
@@ -2645,7 +2553,6 @@ export class ControlPlaneStore {
         "enabled",
         "maximum_projects as maximumProjects",
         "maximum_sessions as maximumSessions",
-        "maximum_unsettled_turns as maximumUnsettledTurns",
       ])
       .where("tenant_id", "=", this.#tenantId)
       .forUpdate()
@@ -2669,10 +2576,6 @@ export class ControlPlaneStore {
       defaultModelProfileId: policy.defaultModelProfileId,
       maximumProjects: positiveSafeInteger(String(policy.maximumProjects), "Project quota"),
       maximumSessions: positiveSafeInteger(String(policy.maximumSessions), "Session quota"),
-      maximumUnsettledTurns: positiveSafeInteger(
-        String(policy.maximumUnsettledTurns),
-        "Unsettled-turn quota",
-      ),
     };
   }
 }

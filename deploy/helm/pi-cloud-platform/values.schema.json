@@ -83,8 +83,7 @@
         "defaultModelProfileId",
         "modelProfileName",
         "maximumProjects",
-        "maximumSessions",
-        "maximumUnsettledTurns"
+        "maximumSessions"
       ],
       "properties": {
         "enabled": { "type": "boolean" },
@@ -96,8 +95,7 @@
         "defaultModelProfileId": { "$ref": "#/$defs/uuid" },
         "modelProfileName": { "$ref": "#/$defs/boundedText" },
         "maximumProjects": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-        "maximumSessions": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-        "maximumUnsettledTurns": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+        "maximumSessions": { "type": "integer", "minimum": 1, "maximum": 1000000 }
       }
     },
     "controlPlane": { "$ref": "#/$defs/httpWorkload" },
@@ -475,19 +473,12 @@
     "publicRegistration": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "enabled",
-        "maximumTenants",
-        "maximumProjects",
-        "maximumSessions",
-        "maximumUnsettledTurns"
-      ],
+      "required": ["enabled", "maximumTenants", "maximumProjects", "maximumSessions"],
       "properties": {
         "enabled": { "type": "boolean" },
         "maximumTenants": { "type": "integer", "minimum": 2, "maximum": 1000000 },
         "maximumProjects": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-        "maximumSessions": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-        "maximumUnsettledTurns": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+        "maximumSessions": { "type": "integer", "minimum": 1, "maximum": 1000000 }
       }
     },
     "unused": { "type": "null" }

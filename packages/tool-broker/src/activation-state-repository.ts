@@ -692,8 +692,8 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "project_id",
           "workspace_id",
           "session_id",
+          "run_id",
           "turn_id",
-          "command_id",
           "sandbox_id",
         ])
         .where("lease_id", "=", execution.leaseId)
@@ -707,8 +707,8 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         authority.project_id !== input.assignment.projectId ||
         authority.workspace_id !== input.assignment.workspaceId ||
         authority.session_id !== input.assignment.sessionId ||
+        authority.run_id !== input.assignment.runId ||
         authority.turn_id !== input.assignment.turnId ||
-        authority.command_id !== input.assignment.commandId ||
         authority.sandbox_id !== input.assignment.sandboxId
       ) {
         throw new SandboxActivationStateRepositoryError(
@@ -785,7 +785,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
             supervisor_id: input.assignment.supervisorId,
             boot_id: input.assignment.bootId,
             sandbox_id: input.assignment.sandboxId,
-            command_id: input.assignment.commandId,
+            run_id: input.assignment.runId,
             session_id: input.assignment.sessionId,
             turn_id: input.assignment.turnId,
             attempt_id: execution.attemptId,
@@ -873,7 +873,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         supervisor_id: input.assignment.supervisorId,
         boot_id: input.assignment.bootId,
         sandbox_id: input.assignment.sandboxId,
-        command_id: input.assignment.commandId,
+        run_id: input.assignment.runId,
         session_id: input.assignment.sessionId,
         turn_id: input.assignment.turnId,
         attempt_id: execution.attemptId,
@@ -921,7 +921,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
             supervisor_id: input.assignment.supervisorId,
             boot_id: input.assignment.bootId,
             sandbox_id: input.assignment.sandboxId,
-            command_id: input.assignment.commandId,
+            run_id: input.assignment.runId,
             session_id: input.assignment.sessionId,
             turn_id: input.assignment.turnId,
             attempt_id: execution.attemptId,
@@ -1002,7 +1002,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "supervisor_id",
           "boot_id",
           "sandbox_id",
-          "command_id",
+          "run_id",
           "session_id",
           "turn_id",
           "attempt_id",
@@ -1128,7 +1128,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
             supervisorId: activation.supervisor_id,
             bootId: activation.boot_id,
             sandboxId: activation.sandbox_id,
-            commandId: activation.command_id,
+            runId: activation.run_id,
             sessionId: activation.session_id,
             turnId: activation.turn_id,
             executionLease: createExecutionLease(
@@ -1913,7 +1913,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "supervisor_id",
           "boot_id",
           "sandbox_id",
-          "command_id",
+          "run_id",
           "session_id",
           "turn_id",
           "attempt_id",
@@ -1949,7 +1949,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           supervisorId: row.supervisor_id,
           bootId: row.boot_id,
           sandboxId: row.sandbox_id,
-          commandId: row.command_id,
+          runId: row.run_id,
           sessionId: row.session_id,
           turnId: row.turn_id,
           executionLease: createExecutionLease(
@@ -2004,7 +2004,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "activation.supervisor_id",
           "activation.boot_id",
           "activation.sandbox_id",
-          "activation.command_id",
+          "activation.run_id",
           "activation.session_id",
           "activation.turn_id",
           "activation.attempt_id",
@@ -2081,7 +2081,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           supervisorId: row.supervisor_id,
           bootId: row.boot_id,
           sandboxId: row.sandbox_id,
-          commandId: row.command_id,
+          runId: row.run_id,
           sessionId: row.session_id,
           turnId: row.turn_id,
           executionLease: createExecutionLease(
@@ -2123,7 +2123,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         "supervisor_id",
         "boot_id",
         "sandbox_id",
-        "command_id",
+        "run_id",
         "workspace_id",
         "session_id",
         "turn_id",
@@ -2146,7 +2146,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       supervisorId: row.supervisor_id,
       bootId: row.boot_id,
       sandboxId: row.sandbox_id,
-      commandId: row.command_id,
+      runId: row.run_id,
       workspaceId: row.workspace_id,
       sessionId: row.session_id,
       turnId: row.turn_id,
@@ -2166,7 +2166,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .where("supervisor_id", "=", assignment.supervisorId)
         .where("boot_id", "=", assignment.bootId)
         .where("sandbox_id", "=", assignment.sandboxId)
-        .where("command_id", "=", assignment.commandId)
+        .where("run_id", "=", assignment.runId)
         .where("workspace_id", "=", assignment.workspaceId)
         .where("session_id", "=", assignment.sessionId)
         .where("turn_id", "=", assignment.turnId)

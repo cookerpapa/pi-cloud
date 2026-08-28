@@ -1,6 +1,5 @@
 import type { Database } from "@pi-cloud/database";
 import {
-  transitionCommand,
   transitionRun,
   transitionRunAttempt,
   transitionSandbox,
@@ -28,8 +27,7 @@ const ASSIGNMENT_LOST_MESSAGE =
 const DEFAULT_RECONCILIATION_LIMIT = 100;
 
 const ACTIVE_SESSION_STATES = new Set(["starting", "running", "cancelling"]);
-const ACTIVE_TURN_STATES = new Set(["dispatching", "running", "cancelling"]);
-const NONTERMINAL_COMMAND_STATES = new Set(["pending", "dispatched", "acknowledged"]);
+const ACTIVE_TURN_STATES = new Set(["running", "cancelling"]);
 
 export type AssignmentReconcilerOptions = {
   database: Kysely<Database>;
@@ -67,8 +65,8 @@ type DurableAssignment = {
   sessionId: string;
   executionLease: string;
   validUntil: Date;
-  commandId: string | null;
-  turnId: string | null;
+  runId: string;
+  turnId: string;
 };
 
 type Finalization = "settled" | "requeued" | "released" | "skipped";
@@ -109,9 +107,8 @@ function sameLease(runtime: SandboxRuntimeAssignment, durable: DurableAssignment
 function sameAssignment(runtime: SandboxRuntimeAssignment, durable: DurableAssignment): boolean {
   return (
     sameLease(runtime, durable) &&
-    durable.commandId !== null &&
-    durable.turnId !== null &&
-    runtime.commandId === durable.commandId &&
+    durable.runId.length > 0 &&
+    runtime.runId === durable.runId &&
     runtime.turnId === durable.turnId
   );
 }
@@ -298,7 +295,7 @@ export class AssignmentReconciler {
         "attempt_id",
         "fencing_token",
         "valid_until",
-        "command_id",
+        "run_id",
         "turn_id",
       ])
       .where("sandbox_id", "=", this.#sandboxId)
@@ -312,7 +309,7 @@ export class AssignmentReconciler {
         safeInteger(grant.fencing_token, "fencing token"),
       ),
       validUntil: new Date(grant.valid_until),
-      commandId: grant.command_id,
+      runId: grant.run_id,
       turnId: grant.turn_id,
     }));
   }
@@ -351,7 +348,8 @@ export class AssignmentReconciler {
       .selectFrom("turns")
       .select(["id", "state"])
       .where("session_id", "=", candidate.sessionId)
-      .where("state", "in", ["dispatching", "running", "cancelling"])
+      .where("id", "=", candidate.turnId)
+      .where("state", "in", ["queued", "running", "cancelling"])
       .forUpdate()
       .execute();
     if (turns.length > 1) {
@@ -374,30 +372,6 @@ export class AssignmentReconciler {
       return "released";
     }
 
-    const commands = await transaction
-      .selectFrom("commands")
-      .select(["id", "kind", "state"])
-      .where("session_id", "=", candidate.sessionId)
-      .where("turn_id", "=", turn.id)
-      .where("state", "in", ["pending", "dispatched", "acknowledged"])
-      .forUpdate()
-      .execute();
-    const executeCommands = commands.filter((command) => command.kind === "turn.execute");
-    if (executeCommands.length !== 1) {
-      throw new AssignmentReconcilerError(
-        "assignment_invariant",
-        "Active turn did not have exactly one active execution command",
-        false,
-      );
-    }
-    const executeCommand = executeCommands[0]!;
-    const executeOutbox = await transaction
-      .selectFrom("outbox")
-      .select(["id", "published_at"])
-      .where("tenant_id", "=", session.tenant_id)
-      .where(sql<boolean>`${sql.ref("payload")} ->> 'commandId' = ${executeCommand.id}`)
-      .forUpdate()
-      .executeTakeFirstOrThrow();
     const run = await transaction
       .selectFrom("runs as run")
       .innerJoin("run_attempts as attempt", (join) =>
@@ -415,7 +389,7 @@ export class AssignmentReconciler {
       .where("run.tenant_id", "=", session.tenant_id)
       .where("run.session_id", "=", candidate.sessionId)
       .where("run.turn_id", "=", turn.id)
-      .where("run.command_id", "=", executeCommand.id)
+      .where("run.id", "=", candidate.runId)
       .forUpdate(["run", "attempt"])
       .executeTakeFirstOrThrow();
     if (run.attemptId === null) {
@@ -427,11 +401,11 @@ export class AssignmentReconciler {
     }
 
     const safelyUnacknowledged =
-      executeCommand.state === "dispatched" &&
-      turn.state === "dispatching" &&
+      run.runState === "claimed" &&
+      run.attemptState === "claimed" &&
+      turn.state === "queued" &&
       (session.state === "cold" || session.state === "idle") &&
-      executeOutbox.published_at === null &&
-      commands.length === 1;
+      candidate.runId === run.runId;
     if (safelyUnacknowledged) {
       const failedAttemptState = transitionRunAttempt(run.attemptState, "failed");
       await transaction
@@ -471,6 +445,7 @@ export class AssignmentReconciler {
           failure_message: null,
           failure_retryable: null,
           settled_at: null,
+          available_at: now,
           row_version: sql<string>`${sql.ref("row_version")} + 1`,
           updated_at: now,
         })
@@ -479,27 +454,6 @@ export class AssignmentReconciler {
         .where("current_attempt_id", "=", run.attemptId)
         .where("state", "=", run.runState)
         .where("row_version", "=", run.runVersion)
-        .executeTakeFirstOrThrow();
-      await transaction
-        .updateTable("commands")
-        .set({
-          state: transitionCommand(executeCommand.state, "pending"),
-          failure_code: null,
-        })
-        .where("id", "=", executeCommand.id)
-        .where("state", "=", executeCommand.state)
-        .executeTakeFirstOrThrow();
-      await transaction
-        .updateTable("turns")
-        .set({ state: transitionTurn(turn.state, "queued") })
-        .where("id", "=", turn.id)
-        .where("state", "=", turn.state)
-        .executeTakeFirstOrThrow();
-      await transaction
-        .updateTable("outbox")
-        .set({ available_at: now, last_error: ASSIGNMENT_LOST })
-        .where("id", "=", executeOutbox.id)
-        .where("published_at", "is", null)
         .executeTakeFirstOrThrow();
       await this.#deleteLease(transaction, candidate, now);
       return "requeued";
@@ -544,28 +498,13 @@ export class AssignmentReconciler {
       .where("attempt_id", "=", run.attemptId)
       .where("state", "=", "reserved")
       .execute();
-    for (const command of commands) {
-      if (!NONTERMINAL_COMMAND_STATES.has(command.state)) continue;
-      await transaction
-        .updateTable("commands")
-        .set({
-          state: transitionCommand(command.state, "failed"),
-          completed_at: now,
-          failure_code: ASSIGNMENT_LOST,
-        })
-        .where("id", "=", command.id)
-        .where("state", "=", command.state)
-        .executeTakeFirstOrThrow();
-      await transaction
-        .updateTable("outbox")
-        .set({
-          published_at: sql<Date>`coalesce(${sql.ref("published_at")}, ${now})`,
-          last_error: ASSIGNMENT_LOST,
-        })
-        .where("tenant_id", "=", session.tenant_id)
-        .where(sql<boolean>`${sql.ref("payload")} ->> 'commandId' = ${command.id}`)
-        .execute();
-    }
+    await transaction
+      .updateTable("turn_control_requests")
+      .set({ state: "failed", completed_at: now, failure_code: ASSIGNMENT_LOST })
+      .where("tenant_id", "=", session.tenant_id)
+      .where("target_run_id", "=", run.runId)
+      .where("state", "in", ["pending", "dispatched", "acknowledged"])
+      .execute();
     await transaction
       .updateTable("turns")
       .set({
@@ -604,7 +543,7 @@ export class AssignmentReconciler {
         tenantId: session.tenant_id,
         sessionId: candidate.sessionId,
         turnId: turn.id,
-        commandId: executeCommand.id,
+        runId: run.runId,
         agentId: "root",
         body: terminalBody,
         eventId: terminalEventId,
@@ -618,7 +557,7 @@ export class AssignmentReconciler {
       tenantId: session.tenant_id,
       sessionId: candidate.sessionId,
       turnId: turn.id,
-      commandId: executeCommand.id,
+      runId: run.runId,
       agentId: "root",
       body: terminalBody,
       now,

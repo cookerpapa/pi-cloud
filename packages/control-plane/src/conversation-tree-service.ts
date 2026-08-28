@@ -236,25 +236,21 @@ async function completedTurns(
 ): Promise<Map<string, CompletedTurnRow[]>> {
   if (sessionIds.length === 0) return new Map();
   const rows = await database
-    .selectFrom("commands as command")
+    .selectFrom("runs as run")
     .innerJoin("turns as turn", (join) =>
-      join
-        .onRef("turn.tenant_id", "=", "command.tenant_id")
-        .onRef("turn.id", "=", "command.turn_id"),
+      join.onRef("turn.tenant_id", "=", "run.tenant_id").onRef("turn.id", "=", "run.turn_id"),
     )
     .select([
-      "command.session_id as sessionId",
+      "run.session_id as sessionId",
       "turn.id as turnId",
-      "command.mailbox_position as mailboxPosition",
+      "run.mailbox_position as mailboxPosition",
     ])
-    .where("command.tenant_id", "=", tenantId)
-    .where("command.session_id", "in", sessionIds)
-    .where("command.kind", "=", "turn.execute")
+    .where("run.tenant_id", "=", tenantId)
+    .where("run.session_id", "in", sessionIds)
     .where("turn.pruned_at", "is", null)
-    .where("command.mailbox_position", "is not", null)
     .where("turn.state", "=", "completed")
-    .orderBy("command.session_id")
-    .orderBy("command.mailbox_position")
+    .orderBy("run.session_id")
+    .orderBy("run.mailbox_position")
     .execute();
   const grouped = new Map<string, CompletedTurnRow[]>();
   for (const row of rows) {
@@ -674,7 +670,7 @@ export class ConversationTreeService {
           .where("tenant_id", "=", tenantId)
           .where("session_id", "=", sessionId)
           .where("pruned_at", "is", null)
-          .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
+          .where("state", "in", ["queued", "running", "cancelling"])
           .limit(1)
           .executeTakeFirst();
         if (unsettled !== undefined) {
@@ -705,33 +701,23 @@ export class ConversationTreeService {
             "Conversation prune target is not an owned completed final response",
           );
         }
-        const anchorCommand = await transaction
-          .selectFrom("commands")
+        const anchorRun = await transaction
+          .selectFrom("runs")
           .select("mailbox_position as mailboxPosition")
           .where("tenant_id", "=", tenantId)
           .where("session_id", "=", sessionId)
           .where("turn_id", "=", request.turnId)
-          .where("kind", "=", "turn.execute")
           .executeTakeFirstOrThrow();
-        if (anchorCommand.mailboxPosition === null) {
-          throw new ControlPlaneStoreError(
-            "control_plane_misconfigured",
-            "Conversation prune anchor has no mailbox position",
-          );
-        }
 
         const prunedTurns = await transaction
-          .selectFrom("commands as command")
+          .selectFrom("runs as run")
           .innerJoin("turns as turn", (join) =>
-            join
-              .onRef("turn.tenant_id", "=", "command.tenant_id")
-              .onRef("turn.id", "=", "command.turn_id"),
+            join.onRef("turn.tenant_id", "=", "run.tenant_id").onRef("turn.id", "=", "run.turn_id"),
           )
           .select("turn.id")
-          .where("command.tenant_id", "=", tenantId)
-          .where("command.session_id", "=", sessionId)
-          .where("command.kind", "=", "turn.execute")
-          .where("command.mailbox_position", ">", anchorCommand.mailboxPosition)
+          .where("run.tenant_id", "=", tenantId)
+          .where("run.session_id", "=", sessionId)
+          .where("run.mailbox_position", ">", anchorRun.mailboxPosition)
           .where("turn.pruned_at", "is", null)
           .execute();
         const prunedTurnIds = prunedTurns.map((turn) => turn.id);
@@ -740,16 +726,15 @@ export class ConversationTreeService {
           with recursive descendants as (
             select child.id
               from sessions child
-              join commands anchor
+              join runs anchor
                 on anchor.tenant_id = child.tenant_id
                and anchor.session_id = child.conversation_parent_session_id
                and anchor.turn_id = child.conversation_fork_turn_id
-               and anchor.kind = 'turn.execute'
              where child.tenant_id = ${tenantId}::uuid
                and child.conversation_parent_session_id = ${sessionId}::uuid
                and child.session_kind = 'conversation'
                and child.archived_at is null
-               and anchor.mailbox_position >= ${anchorCommand.mailboxPosition}::bigint
+               and anchor.mailbox_position >= ${anchorRun.mailboxPosition}::bigint
             union
             select child.id
               from sessions child
@@ -776,7 +761,7 @@ export class ConversationTreeService {
             .where("tenant_id", "=", tenantId)
             .where("session_id", "in", descendantIds)
             .where("pruned_at", "is", null)
-            .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
+            .where("state", "in", ["queued", "running", "cancelling"])
             .limit(1)
             .executeTakeFirst();
           if (activeDescendant !== undefined || unsettledDescendant !== undefined) {
@@ -1033,7 +1018,7 @@ export class ConversationTreeService {
           .select("id")
           .where("tenant_id", "=", tenantId)
           .where("session_id", "=", sourceSessionId)
-          .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
+          .where("state", "in", ["queued", "running", "cancelling"])
           .executeTakeFirst();
         if (unsettled !== undefined) {
           throw new ControlPlaneStoreError(

@@ -44,7 +44,7 @@ const assignment: ToolSandboxAssignment = {
   supervisorId: "supervisor-manager-test",
   bootId: "10000000-0000-4000-8000-000000000001",
   sandboxId: "10000000-0000-4000-8000-000000000002",
-  commandId: "command-manager-test",
+  runId: "command-manager-test",
   sessionId: "session-manager-test",
   turnId: "turn-manager-test",
   executionLease: createExecutionLease(
@@ -59,7 +59,7 @@ const runtimeAssignment: SupervisorRuntimeAssignment = {
   supervisorId: assignment.supervisorId,
   bootId: assignment.bootId,
   sandboxId: assignment.sandboxId,
-  commandId: assignment.commandId,
+  runId: assignment.runId,
   workspaceId: assignment.workspaceId,
   sessionId: assignment.sessionId,
   turnId: assignment.turnId,
@@ -472,7 +472,7 @@ describe("Tool Broker authenticated RPC", () => {
     };
     const childAssignment: ToolSandboxAssignment = {
       ...assignment,
-      commandId: "delegated-command",
+      runId: "delegated-command",
       sessionId: "delegated-session",
       turnId: "delegated-turn",
       executionLease: createExecutionLease(

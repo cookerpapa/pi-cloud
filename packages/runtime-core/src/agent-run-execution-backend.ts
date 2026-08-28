@@ -28,7 +28,7 @@ import {
   type TurnExecutionLifecycle,
   type TurnExecutionRequest,
   type TurnExecutionResult,
-} from "./run-command-executor.ts";
+} from "./run-executor.ts";
 import {
   DurableEventStoreError,
   type FactChannel,
@@ -191,7 +191,7 @@ function validateAck(
     );
   }
   if (
-    parsed.payload.commandId !== request.commandId ||
+    parsed.payload.requestId !== request.runId ||
     parsed.payload.sessionId !== request.sessionId ||
     parsed.payload.turnId !== request.turnId ||
     parsed.payload.executionLease !== command.payload.executionLease
@@ -219,7 +219,7 @@ function validateCancellationAck(
     );
   }
   if (
-    parsed.payload.commandId !== request.commandId ||
+    parsed.payload.requestId !== request.controlRequestId ||
     parsed.payload.sessionId !== request.target.sessionId ||
     parsed.payload.turnId !== request.target.turnId ||
     parsed.payload.executionLease !== command.payload.executionLease
@@ -291,7 +291,6 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         sentAt: validDate(this.#clock).toISOString(),
         type: "command.turn.execute",
         payload: {
-          commandId: request.commandId,
           idempotencyKey: request.idempotencyKey,
           tenantId: request.tenantId,
           projectId: request.projectId,
@@ -451,8 +450,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         sentAt: validDate(this.#clock).toISOString(),
         type: "command.turn.cancel",
         payload: {
-          commandId: request.commandId,
-          targetCommandId: request.target.commandId,
+          controlRequestId: request.controlRequestId,
+          targetRunId: request.target.runId,
           idempotencyKey: request.idempotencyKey,
           tenantId: request.target.tenantId,
           projectId: request.target.projectId,

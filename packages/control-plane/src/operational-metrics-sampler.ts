@@ -1,8 +1,8 @@
 import type { Database } from "@pi-cloud/database";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
-import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC, TURN_COMMAND_OUTBOX_TOPIC } from "@pi-cloud/protocol";
+import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC } from "@pi-cloud/protocol";
 import type { KafkaEventRuntime } from "@pi-cloud/runtime-core/kafka-event-runtime";
-import { sql, type Kysely } from "kysely";
+import type { Kysely } from "kysely";
 
 const DEFAULT_SAMPLE_INTERVAL_MS = 10_000;
 
@@ -71,28 +71,10 @@ export class OperationalMetricsSampler {
     try {
       const now = new Date();
       const queued = await this.#database
-        .selectFrom("outbox")
-        .innerJoin("commands as command", (join) =>
-          join
-            .onRef("command.tenant_id", "=", "outbox.tenant_id")
-            .on(
-              sql<boolean>`${sql.ref("command.id")}::text = ${sql.ref(
-                "outbox.payload",
-              )} ->> 'commandId'`,
-            ),
-        )
-        .innerJoin("turns as turn", (join) =>
-          join
-            .onRef("turn.tenant_id", "=", "command.tenant_id")
-            .onRef("turn.session_id", "=", "command.session_id")
-            .onRef("turn.id", "=", "command.turn_id"),
-        )
+        .selectFrom("runs")
         .select((expression) => expression.fn.countAll<string>().as("count"))
-        .where("outbox.topic", "=", TURN_COMMAND_OUTBOX_TOPIC)
-        .where("outbox.published_at", "is", null)
-        .where("outbox.available_at", "<=", now)
-        .where("command.state", "=", "pending")
-        .where("turn.state", "=", "queued")
+        .where("available_at", "<=", now)
+        .where("state", "=", "queued")
         .executeTakeFirstOrThrow();
       const terminalEvents = await this.#database
         .selectFrom("outbox")

@@ -1,5 +1,5 @@
 import type {
-  CommandState as DomainCommandState,
+  TurnControlRequestState as DomainTurnControlRequestState,
   ModelThinkingLevel,
   RunAttemptState,
   RunState,
@@ -50,8 +50,8 @@ type GeneratedJsonArray = JSONColumnType<unknown[], unknown[] | undefined, unkno
 export type CredentialBindingStatus = "active" | "disabled" | "revoked";
 export type CredentialKind = "oauth" | "api_key" | "brokered";
 export type TurnInputKind = "prompt";
-export type CommandKind = "turn.execute" | "turn.cancel" | "turn.steer";
-export type CommandState = DomainCommandState;
+export type TurnControlRequestKind = "cancel" | "steer";
+export type TurnControlRequestState = DomainTurnControlRequestState;
 export type ArtifactKind =
   "workspace_snapshot" | "tool_output" | "patch" | "report" | "crash_bundle";
 export type SupervisorConnectionState = "active" | "superseded" | "fenced";
@@ -128,7 +128,7 @@ export interface ToolBrokerActivationTable {
   supervisor_id: string;
   boot_id: string;
   sandbox_id: string;
-  command_id: string;
+  run_id: string;
   session_id: string;
   turn_id: string;
   attempt_id: string;
@@ -284,7 +284,6 @@ export interface TenantRuntimePolicyTable {
   enabled: GeneratedBoolean;
   maximum_projects: GeneratedInteger;
   maximum_sessions: GeneratedInteger;
-  maximum_unsettled_turns: GeneratedInteger;
   maximum_model_requests_per_run: GeneratedInteger;
   maximum_cost_microusd_per_run: GeneratedInt8;
   daily_token_budget: GeneratedInt8;
@@ -294,7 +293,6 @@ export interface TenantRuntimePolicyTable {
   maximum_run_duration_ms: GeneratedInteger;
   compaction_reserve_tokens: GeneratedInteger;
   compaction_keep_recent_tokens: GeneratedInteger;
-  last_scheduled_at: GeneratedTimestamp;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
 }
@@ -584,7 +582,6 @@ export interface RunTable {
   workspace_id: string;
   session_id: string;
   turn_id: string;
-  command_id: string;
   environment_version_id: string;
   working_directory: Generated<string>;
   sandbox_profile_key: Generated<SandboxProfileKey>;
@@ -593,6 +590,9 @@ export interface RunTable {
   conversation_base_seq: GeneratedInt8;
   workspace_base_version_id: GeneratedNullable<string>;
   idempotency_key: string;
+  mailbox_position: Int8;
+  request_sha256: string;
+  available_at: Timestamp;
   trace_id: Generated<string>;
   state: RunState;
   current_attempt_id: string | null;
@@ -669,7 +669,6 @@ export interface SessionLeaseTable {
   workspace_id: string;
   run_id: string;
   turn_id: string;
-  command_id: string;
   attempt_id: string;
   last_event_seq: GeneratedInt8;
   fact_channel_connection_id: GeneratedNullable<string>;
@@ -754,16 +753,19 @@ export interface SandboxRetirementTable {
   completed_at: NullableTimestamp;
 }
 
-export interface CommandTable {
+export interface TurnControlRequestTable {
   id: string;
   tenant_id: string;
   session_id: string;
   turn_id: string;
+  target_run_id: string;
   idempotency_key: string;
-  kind: CommandKind;
-  state: CommandState;
-  mailbox_position: NullableInt8;
+  kind: TurnControlRequestKind;
+  state: TurnControlRequestState;
+  request_sha256: string;
   payload: JsonObject;
+  attempts: GeneratedInteger;
+  available_at: GeneratedTimestamp;
   created_at: GeneratedTimestamp;
   dispatched_at: NullableTimestamp;
   acknowledged_at: NullableTimestamp;
@@ -777,7 +779,7 @@ export interface SessionTerminalEventTable {
   session_id: string;
   turn_id: string;
   agent_id: string;
-  command_id: string;
+  run_id: string;
   seq: Int8;
   schema_version: number;
   type: "turn.completed" | "turn.failed" | "turn.cancelled";
@@ -1095,7 +1097,7 @@ export interface Database {
   sandbox_retirements: SandboxRetirementTable;
   session_leases: SessionLeaseTable;
   session_kafka_heads: SessionKafkaHeadTable;
-  commands: CommandTable;
+  turn_control_requests: TurnControlRequestTable;
   conversation_fork_operations: ConversationForkOperationTable;
   session_terminal_events: SessionTerminalEventTable;
   outbox: OutboxTable;

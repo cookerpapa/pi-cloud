@@ -175,20 +175,20 @@ export {
   type SupervisorMaintenanceRunner,
 } from "./supervisor-maintenance-runtime.ts";
 export {
-  RunCommandExecutor,
-  RunCommandExecutorInvariantError,
-  RunCommandExecutorStaleClaimError,
+  RunExecutor,
+  RunExecutorInvariantError,
+  RunExecutorStaleClaimError,
   TurnExecutionBackendError,
   TurnExecutionCancelledError,
-  type RunCommandExecutionResult,
-  type RunCommandExecutorOptions,
+  type RunExecutionResult,
+  type RunExecutorOptions,
   type TurnExecutionBackend,
   type TurnExecutionAuthority,
   type TurnExecutionLease,
   type TurnExecutionLifecycle,
   type TurnExecutionRequest,
   type TurnExecutionResult,
-} from "@pi-cloud/runtime-core/run-command-executor";
+} from "@pi-cloud/runtime-core/run-executor";
 export {
   SessionLeaseCoordinator,
   SessionLeaseCoordinatorError,

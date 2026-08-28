@@ -24,8 +24,8 @@ export class TurnSteeringError extends Error {
 }
 
 type StoredSteer = {
-  commandId: string;
-  targetCommandId: string;
+  controlRequestId: string;
+  targetRunId: string;
   tenantId: string;
   projectId: string;
   workspaceId: string;
@@ -59,7 +59,7 @@ function fingerprint(text: string): string {
 function payloadString(payload: Record<string, unknown>, property: string): string {
   const value = payload[property];
   if (typeof value !== "string" || value.length === 0) {
-    throw new TurnSteeringError("steer_transport_unavailable", "Stored steer command is invalid");
+    throw new TurnSteeringError("steer_transport_unavailable", "Stored steer request is invalid");
   }
   return value;
 }
@@ -72,8 +72,8 @@ function resource(row: StoredSteer, replayed: boolean): TurnSteerResource {
     );
   }
   return {
-    commandId: row.commandId,
-    targetCommandId: row.targetCommandId,
+    controlRequestId: row.controlRequestId,
+    targetRunId: row.targetRunId,
     turnId: row.turnId,
     sessionId: row.sessionId,
     state: "delivered",
@@ -141,17 +141,17 @@ export class TurnSteeringService {
       );
     }
 
-    const inflight = this.#inflight.get(stored.commandId);
+    const inflight = this.#inflight.get(stored.controlRequestId);
     if (inflight !== undefined) {
       return { ...(await inflight), replayed: true };
     }
     const delivery = this.#deliverStored(stored, replayed);
-    this.#inflight.set(stored.commandId, delivery);
+    this.#inflight.set(stored.controlRequestId, delivery);
     try {
       return await delivery;
     } finally {
-      if (this.#inflight.get(stored.commandId) === delivery) {
-        this.#inflight.delete(stored.commandId);
+      if (this.#inflight.get(stored.controlRequestId) === delivery) {
+        this.#inflight.delete(stored.controlRequestId);
       }
     }
   }
@@ -169,11 +169,10 @@ export class TurnSteeringService {
         ? this.#gateway!.createRemoteSteerBackend(stored.sandboxId)
         : await this.#backendFactory(stored.sandboxId);
     const delivery: TurnSteerRequest = {
-      commandId: stored.commandId,
+      controlRequestId: stored.controlRequestId,
       idempotencyKey: stored.idempotencyKey,
       text: stored.text,
       target: {
-        commandId: stored.targetCommandId,
         tenantId: stored.tenantId,
         projectId: stored.projectId,
         workspaceId: stored.workspaceId,
@@ -202,7 +201,7 @@ export class TurnSteeringService {
         ].includes(error.code)
           ? "conflict"
           : "steer_transport_unavailable";
-      await this.#markFailed(stored.commandId, error).catch(() => undefined);
+      await this.#markFailed(stored.controlRequestId, error).catch(() => undefined);
       throw new TurnSteeringError(
         code,
         code === "conflict"
@@ -212,7 +211,7 @@ export class TurnSteeringService {
     }
     const deliveredAt = this.#clock();
     await this.#database
-      .updateTable("commands")
+      .updateTable("turn_control_requests")
       .set({
         state: "completed",
         acknowledged_at: deliveredAt,
@@ -220,7 +219,7 @@ export class TurnSteeringService {
         failure_code: null,
       })
       .where("tenant_id", "=", stored.tenantId)
-      .where("id", "=", stored.commandId)
+      .where("id", "=", stored.controlRequestId)
       .where("state", "in", ["pending", "dispatched", "acknowledged"])
       .executeTakeFirstOrThrow();
     return resource({ ...stored, state: "completed", completedAt: deliveredAt }, replayed);
@@ -237,22 +236,21 @@ export class TurnSteeringService {
     try {
       return await this.#database.transaction().execute(async (transaction) => {
         const target = await this.#activeTarget(transaction, tenantId, sessionId, turnId);
-        const commandId = this.#idGenerator();
+        const controlRequestId = this.#idGenerator();
         const inserted = await transaction
-          .insertInto("commands")
+          .insertInto("turn_control_requests")
           .values({
-            id: commandId,
+            id: controlRequestId,
             tenant_id: tenantId,
             session_id: sessionId,
             turn_id: turnId,
+            target_run_id: target.runId,
             idempotency_key: idempotencyKey,
-            kind: "turn.steer",
+            kind: "steer",
             state: "pending",
-            mailbox_position: null,
+            request_sha256: requestHash,
             payload: {
               schemaVersion: 1,
-              requestHash,
-              targetCommandId: target.targetCommandId,
               projectId: target.projectId,
               workspaceId: target.workspaceId,
               runId: target.runId,
@@ -260,6 +258,8 @@ export class TurnSteeringService {
               sandboxId: target.sandboxId,
               text,
             },
+            attempts: 0,
+            available_at: this.#clock(),
             dispatched_at: null,
             acknowledged_at: null,
             completed_at: null,
@@ -268,8 +268,8 @@ export class TurnSteeringService {
           .returning("created_at")
           .executeTakeFirstOrThrow();
         return {
-          commandId,
-          targetCommandId: target.targetCommandId,
+          controlRequestId,
+          targetRunId: target.runId,
           tenantId,
           projectId: target.projectId,
           workspaceId: target.workspaceId,
@@ -292,7 +292,7 @@ export class TurnSteeringService {
         if (concurrent.turnId !== turnId || concurrent.requestHash !== requestHash) {
           throw new TurnSteeringError(
             "idempotency_conflict",
-            "Idempotency-Key was already used for a different command",
+            "Idempotency-Key was already used for a different control request",
           );
         }
         return concurrent;
@@ -307,7 +307,6 @@ export class TurnSteeringService {
     sessionId: string,
     turnId: string,
   ): Promise<{
-    targetCommandId: string;
     projectId: string;
     workspaceId: string;
     runId: string;
@@ -321,19 +320,11 @@ export class TurnSteeringService {
           .onRef("session_row.tenant_id", "=", "turn.tenant_id")
           .onRef("session_row.id", "=", "turn.session_id"),
       )
-      .innerJoin("commands as target", (join) =>
-        join
-          .onRef("target.tenant_id", "=", "turn.tenant_id")
-          .onRef("target.session_id", "=", "turn.session_id")
-          .onRef("target.turn_id", "=", "turn.id")
-          .on("target.kind", "=", "turn.execute"),
-      )
       .innerJoin("runs as run", (join) =>
         join
           .onRef("run.tenant_id", "=", "turn.tenant_id")
           .onRef("run.session_id", "=", "turn.session_id")
-          .onRef("run.turn_id", "=", "turn.id")
-          .onRef("run.command_id", "=", "target.id"),
+          .onRef("run.turn_id", "=", "turn.id"),
       )
       .innerJoin("run_attempts as attempt", (join) =>
         join
@@ -346,8 +337,6 @@ export class TurnSteeringService {
         "session_row.state as sessionState",
         "session_row.project_id as projectId",
         "session_row.workspace_id as workspaceId",
-        "target.id as targetCommandId",
-        "target.state as targetCommandState",
         "run.id as runId",
         "run.state as runState",
         "attempt.id as attemptId",
@@ -358,7 +347,7 @@ export class TurnSteeringService {
       .where("turn.tenant_id", "=", tenantId)
       .where("turn.session_id", "=", sessionId)
       .where("turn.id", "=", turnId)
-      .forUpdate(["turn", "session_row", "target", "run", "attempt", "lease"])
+      .forUpdate(["turn", "session_row", "run", "attempt", "lease"])
       .executeTakeFirst();
     if (row === undefined) {
       throw new TurnSteeringError("not_found", "Active Turn was not found");
@@ -366,8 +355,7 @@ export class TurnSteeringService {
     if (
       row.turnState !== "running" ||
       row.sessionState !== "running" ||
-      row.targetCommandState !== "acknowledged" ||
-      !["claimed", "provisioning", "restoring", "running"].includes(row.runState) ||
+      !["provisioning", "restoring", "running"].includes(row.runState) ||
       !["claimed", "provisioning", "restoring", "running"].includes(row.attemptState) ||
       row.attemptSandboxId === null ||
       row.attemptSandboxId !== row.leaseSandboxId
@@ -378,7 +366,6 @@ export class TurnSteeringService {
       );
     }
     return {
-      targetCommandId: row.targetCommandId,
       projectId: row.projectId,
       workspaceId: row.workspaceId,
       runId: row.runId,
@@ -392,14 +379,16 @@ export class TurnSteeringService {
     sessionId: string,
     idempotencyKey: string,
   ): Promise<StoredSteer | undefined> {
-    const command = await this.#database
-      .selectFrom("commands")
+    const controlRequest = await this.#database
+      .selectFrom("turn_control_requests")
       .select([
         "id",
         "turn_id",
+        "target_run_id",
         "idempotency_key",
         "kind",
         "state",
+        "request_sha256",
         "payload",
         "created_at",
         "completed_at",
@@ -408,61 +397,60 @@ export class TurnSteeringService {
       .where("session_id", "=", sessionId)
       .where("idempotency_key", "=", idempotencyKey)
       .executeTakeFirst();
-    if (command === undefined) return undefined;
-    if (command.kind !== "turn.steer") {
+    if (controlRequest === undefined) return undefined;
+    if (controlRequest.kind !== "steer") {
       throw new TurnSteeringError(
         "idempotency_conflict",
-        "Idempotency-Key was already used for a different command",
+        "Idempotency-Key was already used for a different control request",
       );
     }
-    const targetCommandId = payloadString(command.payload, "targetCommandId");
-    const text = payloadString(command.payload, "text");
-    const requestHash = payloadString(command.payload, "requestHash");
+    const text = payloadString(controlRequest.payload, "text");
+    const requestHash = controlRequest.request_sha256;
     return {
-      commandId: command.id,
-      targetCommandId,
+      controlRequestId: controlRequest.id,
+      targetRunId: controlRequest.target_run_id,
       tenantId,
-      projectId: payloadString(command.payload, "projectId"),
-      workspaceId: payloadString(command.payload, "workspaceId"),
+      projectId: payloadString(controlRequest.payload, "projectId"),
+      workspaceId: payloadString(controlRequest.payload, "workspaceId"),
       sessionId,
-      runId: payloadString(command.payload, "runId"),
-      turnId: command.turn_id,
-      attemptId: payloadString(command.payload, "attemptId"),
-      idempotencyKey: command.idempotency_key,
+      runId: controlRequest.target_run_id,
+      turnId: controlRequest.turn_id,
+      attemptId: payloadString(controlRequest.payload, "attemptId"),
+      idempotencyKey: controlRequest.idempotency_key,
       text,
       requestHash,
-      state: command.state,
-      sandboxId: payloadString(command.payload, "sandboxId"),
-      acceptedAt: command.created_at,
-      completedAt: command.completed_at,
+      state: controlRequest.state,
+      sandboxId: payloadString(controlRequest.payload, "sandboxId"),
+      acceptedAt: controlRequest.created_at,
+      completedAt: controlRequest.completed_at,
     };
   }
 
   async #markDispatched(stored: StoredSteer): Promise<void> {
     if (stored.state !== "pending") return;
     await this.#database
-      .updateTable("commands")
+      .updateTable("turn_control_requests")
       .set({ state: "dispatched", dispatched_at: this.#clock() })
       .where("tenant_id", "=", stored.tenantId)
-      .where("id", "=", stored.commandId)
+      .where("id", "=", stored.controlRequestId)
       .where("state", "=", "pending")
       .executeTakeFirstOrThrow();
     stored.state = "dispatched";
   }
 
-  async #markFailed(storedCommandId: string, error: unknown): Promise<void> {
+  async #markFailed(controlRequestId: string, error: unknown): Promise<void> {
     const failureCode =
       error instanceof TurnSteerBackendError && /^[a-z][a-z0-9_]{0,127}$/.test(error.code)
         ? error.code
         : "steer_delivery_failed";
     await this.#database
-      .updateTable("commands")
+      .updateTable("turn_control_requests")
       .set({
         state: "failed",
         completed_at: this.#clock(),
         failure_code: failureCode,
       })
-      .where("id", "=", storedCommandId)
+      .where("id", "=", controlRequestId)
       .where("state", "in", ["pending", "dispatched", "acknowledged"])
       .executeTakeFirstOrThrow();
   }

@@ -5,8 +5,8 @@ import {
   createPrivateTenant,
 } from "@pi-cloud/control-plane";
 import { PostgresPiSessionRepository } from "@pi-cloud/pi-session-postgres";
-import { createExecutionLease, TURN_COMMAND_OUTBOX_TOPIC } from "@pi-cloud/protocol";
-import { RunCommandExecutor } from "@pi-cloud/runtime-core/run-command-executor";
+import { createExecutionLease } from "@pi-cloud/protocol";
+import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -60,7 +60,7 @@ async function activateChildRun(
   const grantId = crypto.randomUUID();
   const run = await database
     .selectFrom("runs")
-    .select(["turn_id", "command_id"])
+    .select("turn_id")
     .where("tenant_id", "=", tenantId)
     .where("id", "=", childRunId)
     .executeTakeFirstOrThrow();
@@ -99,12 +99,6 @@ async function activateChildRun(
       .where("id", "=", run.turn_id)
       .executeTakeFirstOrThrow();
     await transaction
-      .updateTable("commands")
-      .set({ state: "acknowledged", acknowledged_at: new Date() })
-      .where("tenant_id", "=", tenantId)
-      .where("id", "=", run.command_id)
-      .executeTakeFirstOrThrow();
-    await transaction
       .updateTable("sessions")
       .set({ state: "running" })
       .where("tenant_id", "=", tenantId)
@@ -135,7 +129,6 @@ beforeAll(async () => {
     quotas: {
       maximumProjects: 8,
       maximumSessions: 32,
-      maximumUnsettledTurns: 32,
     },
   });
   tenantId = tenant.tenantId;
@@ -215,7 +208,7 @@ beforeAll(async () => {
     .executeTakeFirstOrThrow();
   const run = await database
     .selectFrom("runs")
-    .select(["turn_id", "command_id"])
+    .select("turn_id")
     .where("tenant_id", "=", tenantId)
     .where("id", "=", parentRunId)
     .executeTakeFirstOrThrow();
@@ -239,11 +232,6 @@ beforeAll(async () => {
       .updateTable("sessions")
       .set({ state: "running" })
       .where("id", "=", parentSessionId)
-      .executeTakeFirstOrThrow();
-    await transaction
-      .updateTable("commands")
-      .set({ state: "acknowledged", acknowledged_at: new Date() })
-      .where("id", "=", run.command_id)
       .executeTakeFirstOrThrow();
   });
 }, 30_000);
@@ -285,7 +273,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         "child.execution_mode as executionMode",
         "child.tool_capabilities as sessionTools",
         "child_run.tool_capability_snapshot as runTools",
-        "child_run.command_id as commandId",
+        "child_run.id as runId",
       ])
       .where("execution.id", "=", started.executionId)
       .executeTakeFirstOrThrow();
@@ -294,7 +282,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       executionMode: "elastic",
       sessionTools: [],
       runTools: [],
-      commandId: persisted.commandId,
+      runId: persisted.runId,
     });
     const piSession = await database
       .selectFrom("pi_sessions")
@@ -303,15 +291,14 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       .where("id", "=", started.childSessionId)
       .executeTakeFirstOrThrow();
     expect(piSession.parent_session_id).toBe(parentSessionId);
-    const outbox = await database
-      .selectFrom("outbox")
-      .select(["topic", "created_at as createdAt", "available_at as availableAt"])
-      .where("aggregate_id", "=", started.childSessionId)
+    const queuedRun = await database
+      .selectFrom("runs")
+      .select(["created_at as createdAt", "available_at as availableAt"])
+      .where("id", "=", started.childRunId)
       .executeTakeFirstOrThrow();
-    expect(outbox.topic).toBe(TURN_COMMAND_OUTBOX_TOPIC);
-    expect(outbox.availableAt.valueOf()).toBeGreaterThan(outbox.createdAt.valueOf());
+    expect(queuedRun.availableAt.valueOf()).toBeGreaterThan(queuedRun.createdAt.valueOf());
     const dispatched: string[] = [];
-    const dispatcher = new RunCommandExecutor({
+    const dispatcher = new RunExecutor({
       database,
       backend: {
         async execute(request, lifecycle) {
@@ -322,7 +309,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       },
     });
     await new Promise((resolve) => setTimeout(resolve, 100));
-    await dispatcher.dispatchCommand(persisted.commandId);
+    await dispatcher.dispatchRun(persisted.runId);
     expect(dispatched).toEqual([started.childRunId]);
   });
 
@@ -362,14 +349,14 @@ describe.sequential("PostgresSubagentJobProvider", () => {
 
     const child = await database
       .selectFrom("runs")
-      .select(["turn_id", "command_id", "tool_capability_snapshot", "agent_system_prompt"])
+      .select(["turn_id", "id", "tool_capability_snapshot", "agent_system_prompt"])
       .where("id", "=", started.childRunId)
       .executeTakeFirstOrThrow();
     expect(child.tool_capability_snapshot).toEqual(["read", "bash"]);
     expect(child.agent_system_prompt).toContain("You are a deployment-owned scout profile.");
     expect(child.agent_system_prompt).toContain("PiCloud delegated execution boundary");
     const dispatched: string[] = [];
-    const dispatcher = new RunCommandExecutor({
+    const dispatcher = new RunExecutor({
       database,
       backend: {
         async execute(request, lifecycle) {
@@ -380,7 +367,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       },
     });
     await new Promise((resolve) => setTimeout(resolve, 100));
-    await dispatcher.dispatchCommand(child.command_id);
+    await dispatcher.dispatchRun(child.id);
     expect(dispatched).toEqual([started.childRunId]);
     await childPi.appendMessage(assistant("Subagent result from PostgreSQL"));
 
@@ -418,7 +405,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
   it("prepares an isolated internal Workspace before dispatching the Child Run", async () => {
     const parent = await database
       .selectFrom("runs")
-      .select(["project_id", "workspace_id", "turn_id", "command_id"])
+      .select(["project_id", "workspace_id", "turn_id", "id"])
       .where("id", "=", parentRunId)
       .executeTakeFirstOrThrow();
     const requests: Array<{ targetWorkspaceId: string; targetSessionId: string }> = [];
@@ -462,7 +449,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           supervisorId: "test-worker",
           bootId: crypto.randomUUID(),
           sandboxId: parentSandboxId,
-          commandId: parent.command_id,
+          runId: parent.id,
           sessionId: parentSessionId,
           turnId: parent.turn_id,
           executionLease: parentExecutionLease(),
@@ -499,7 +486,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         .select(({ fn }) => fn.countAll<string>().as("count"))
         .where("aggregate_id", "=", started.childSessionId)
         .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ count: "1" });
+    ).resolves.toEqual({ count: "0" });
   });
 
   it("cancels a queued Child Run durably before it consumes a Worker slot", async () => {
@@ -747,11 +734,11 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     ).rejects.toMatchObject({ code: "subagent_tree_depth_exhausted" });
     await provider.cancel(tenantId, child.executionId);
     const recursiveCancellations = await database
-      .selectFrom("commands")
+      .selectFrom("turn_control_requests")
       .select("session_id")
       .where("tenant_id", "=", tenantId)
       .where("session_id", "in", [child.childSessionId, grandchild.childSessionId])
-      .where("kind", "=", "turn.cancel")
+      .where("kind", "=", "cancel")
       .execute();
     expect(new Set(recursiveCancellations.map((command) => command.session_id))).toEqual(
       new Set([child.childSessionId, grandchild.childSessionId]),

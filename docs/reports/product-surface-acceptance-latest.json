@@ -1,22 +1,22 @@
 {
   "accepted": true,
-  "piCloudRevision": "2f5a943587a15b2902e379840cbe4a79ab32aefe",
-  "checkedAt": "2026-08-28T11:27:32.577Z",
+  "piCloudRevision": "a1710e95e0481cc409e105202d695790b4674bfa",
+  "checkedAt": "2026-08-28T17:09:52.774Z",
   "browserCookieAuth": true,
   "latencyMs": {
     "pureChat": {
-      "accepted": 34,
-      "firstDurableActivity": 1677,
+      "accepted": 24,
+      "firstDurableActivity": 1130,
       "firstToolStarted": null,
-      "firstAssistantText": 1677,
-      "settled": 2138
+      "firstAssistantText": 1130,
+      "settled": 1497
     },
     "coding": {
-      "accepted": 40,
-      "firstDurableActivity": 3118,
-      "firstToolStarted": 3118,
-      "firstAssistantText": 8661,
-      "settled": 9800
+      "accepted": 18,
+      "firstDurableActivity": 1521,
+      "firstToolStarted": 1521,
+      "firstAssistantText": 7730,
+      "settled": 8530
     }
   },
   "treeForkPrune": true,

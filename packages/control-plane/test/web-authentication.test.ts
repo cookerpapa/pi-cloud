@@ -72,7 +72,6 @@ beforeAll(async () => {
     tenantQuotas: {
       maximumProjects: 10,
       maximumSessions: 100,
-      maximumUnsettledTurns: 10,
     },
     initialModel: () => resolvePlatformInitialModel(database, vault, platform.tenantId),
   });

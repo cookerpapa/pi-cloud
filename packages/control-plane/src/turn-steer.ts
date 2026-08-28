@@ -1,5 +1,4 @@
 export type TurnSteerTarget = {
-  commandId: string;
   tenantId: string;
   projectId: string;
   workspaceId: string;
@@ -10,7 +9,7 @@ export type TurnSteerTarget = {
 };
 
 export type TurnSteerRequest = {
-  commandId: string;
+  controlRequestId: string;
   idempotencyKey: string;
   target: TurnSteerTarget;
   text: string;

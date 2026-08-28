@@ -101,6 +101,7 @@ import * as removeDormantApprovalGraph from "./099_remove_dormant_approval_graph
 import * as removeLegacyDatabaseFunctions from "./100_remove_legacy_database_functions.ts";
 import * as userManagedWorkspaceConcurrency from "./101_user_managed_workspace_concurrency.ts";
 import * as workspaceToolRuntimeSlot from "./102_workspace_tool_runtime_slot.ts";
+import * as runQueueAuthority from "./103_run_queue_authority.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -207,6 +208,7 @@ export const migrationProvider: MigrationProvider = {
       "100_remove_legacy_database_functions": removeLegacyDatabaseFunctions,
       "101_user_managed_workspace_concurrency": userManagedWorkspaceConcurrency,
       "102_workspace_tool_runtime_slot": workspaceToolRuntimeSlot,
+      "103_run_queue_authority": runQueueAuthority,
     };
   },
 };

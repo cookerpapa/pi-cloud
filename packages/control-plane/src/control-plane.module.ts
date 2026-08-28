@@ -98,7 +98,6 @@ export class ControlPlaneModule {
               tenantQuotas: {
                 maximumProjects: 10,
                 maximumSessions: 100,
-                maximumUnsettledTurns: 10,
               },
               ...(options.platformOperatorTenantId === undefined
                 ? {}
@@ -117,7 +116,6 @@ export class ControlPlaneModule {
               tenantQuotas: {
                 maximumProjects: 10,
                 maximumSessions: 100,
-                maximumUnsettledTurns: 10,
               },
             }),
         },

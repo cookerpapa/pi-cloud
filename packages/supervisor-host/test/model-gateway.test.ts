@@ -161,23 +161,6 @@ beforeAll(async () => {
       created_at: now,
     })
     .executeTakeFirstOrThrow();
-  await database
-    .insertInto("commands")
-    .values({
-      id: IDS.command,
-      tenant_id: tenant.tenantId,
-      session_id: IDS.session,
-      turn_id: IDS.turn,
-      idempotency_key: "gateway-live-1",
-      kind: "turn.execute",
-      state: "acknowledged",
-      mailbox_position: 1,
-      payload: {},
-      created_at: now,
-      dispatched_at: now,
-      acknowledged_at: now,
-    })
-    .executeTakeFirstOrThrow();
   const runId = "60000000-0000-4000-8000-000000000001";
   const attemptId = "70000000-0000-4000-8000-000000000001";
   await database
@@ -189,7 +172,9 @@ beforeAll(async () => {
       workspace_id: IDS.workspace,
       session_id: IDS.session,
       turn_id: IDS.turn,
-      command_id: IDS.command,
+      mailbox_position: 1,
+      request_sha256: "a".repeat(64),
+      available_at: now,
       environment_version_id: IDS.environment,
       idempotency_key: "gateway-live-1",
       state: "queued",
@@ -233,7 +218,6 @@ beforeAll(async () => {
     sentAt: now.toISOString(),
     type: "command.turn.execute",
     payload: {
-      commandId: IDS.command,
       idempotencyKey: "gateway-live-1",
       tenantId: tenant.tenantId,
       projectId: IDS.project,

@@ -30,7 +30,6 @@ const WireEnvelopeProperties = {
 };
 
 const CommandIdentityProperties = {
-  commandId: UuidSchema,
   idempotencyKey: Type.String({ minLength: 1, maxLength: 256 }),
   tenantId: OpaqueIdSchema,
   projectId: OpaqueIdSchema,
@@ -195,7 +194,8 @@ export const CancelTurnCommandMessageSchema = Type.Object(
     payload: Type.Object(
       {
         ...CommandIdentityProperties,
-        targetCommandId: UuidSchema,
+        controlRequestId: UuidSchema,
+        targetRunId: UuidSchema,
         reason: TurnCancellationReasonSchema,
         gracePeriodMs: Type.Optional(NonNegativeSafeIntegerSchema),
       },
@@ -212,7 +212,8 @@ export const SteerTurnCommandMessageSchema = Type.Object(
     payload: Type.Object(
       {
         ...CommandIdentityProperties,
-        targetCommandId: UuidSchema,
+        controlRequestId: UuidSchema,
+        targetRunId: UuidSchema,
         text: Type.String({ minLength: 1, maxLength: 100_000 }),
       },
       { additionalProperties: false },
@@ -222,7 +223,7 @@ export const SteerTurnCommandMessageSchema = Type.Object(
 );
 
 const CommandAckIdentityProperties = {
-  commandId: UuidSchema,
+  requestId: UuidSchema,
   sessionId: OpaqueIdSchema,
   turnId: OpaqueIdSchema,
   executionLease: ExecutionLeaseSchema,

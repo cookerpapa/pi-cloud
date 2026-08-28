@@ -33,7 +33,6 @@ type ModelUsage = Readonly<{
 
 type ActiveCapability = {
   tokenDigest: string;
-  commandId: string;
   tenantId: string;
   sessionId: string;
   turnId: string;
@@ -560,7 +559,6 @@ export class TenantModelGateway {
     }
     const active: ActiveCapability = {
       tokenDigest: digest,
-      commandId: command.payload.commandId,
       tenantId: command.payload.tenantId,
       sessionId: command.payload.sessionId,
       turnId: command.payload.turnId,

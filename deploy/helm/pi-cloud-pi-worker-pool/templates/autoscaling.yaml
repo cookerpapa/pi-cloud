@@ -52,11 +52,14 @@ spec:
         name: {{ include "pi-cloud-pi-worker-pool.name" . }}-postgres
       metadata:
         query: >-
-          SELECT COUNT(*)::double precision
-          FROM outbox
-          WHERE topic IN ('control.command.pending.v1', 'control.command.cancel.pending.v1')
-            AND published_at IS NULL
-            AND available_at <= now()
+          SELECT (
+            (SELECT COUNT(*) FROM runs
+              WHERE state IN ('queued', 'claimed') AND available_at <= now())
+            +
+            (SELECT COUNT(*) FROM turn_control_requests
+              WHERE kind = 'cancel' AND state IN ('pending', 'dispatched')
+                AND available_at <= now())
+          )::double precision
         targetQueryValue: {{ .Values.autoscaling.targetQueuedRunsPerReplica | quote }}
         activationTargetQueryValue: "0"
 {{- end }}

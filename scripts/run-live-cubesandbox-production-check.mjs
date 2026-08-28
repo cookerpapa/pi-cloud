@@ -643,7 +643,7 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
               'supervisorId', supervisor_id,
               'bootId', boot_id,
               'sandboxId', sandbox_id,
-              'commandId', command_id,
+              'runId', run_id,
               'workspaceId', workspace_id,
               'sessionId', session_id,
               'turnId', turn_id,
@@ -1039,18 +1039,24 @@ try {
     "Broker-owned warm Cube leaked into expired Supervisor inventory",
   );
 
-  await terminalCommand(
-    `/v1/conversations/${session.sessionId}/terminal`,
-    "printf '<!doctype html><html><body>PI_CLOUD_PERSISTENT_PREVIEW_OK</body></html>\\n' > /workspace/index.html; setsid sh -c 'while true; do date +%s > /workspace/persistent-heartbeat; sleep 1; done' </dev/null >/tmp/persistent-heartbeat.log 2>&1 & echo $! > /workspace/persistent-heartbeat.pid; setsid python3 -m http.server 8000 --bind 0.0.0.0 --directory /workspace </dev/null >/tmp/persistent-preview.log 2>&1 & echo PERSISTENT_TERMINAL_OK",
-    "PERSISTENT_TERMINAL_OK",
+  const previewRun = await runTurn(
+    session.sessionId,
+    [
+      "Use the existing Workspace and Tools.",
+      "Create /workspace/index.html containing exactly PI_CLOUD_PERSISTENT_PREVIEW_OK in the body.",
+      "Start a detached background heartbeat loop that writes the current epoch to /workspace/persistent-heartbeat once per second, and store its PID in /workspace/persistent-heartbeat.pid.",
+      "Start a background HTTP server on 0.0.0.0:8000 serving /workspace.",
+      "Verify the listener, then call the preview Tool for port 8000.",
+      "Do not stop the server before finishing.",
+    ].join(" "),
+    true,
   );
+  const previewUsage = await runUsageEvidence(previewRun.accepted.runId);
   await waitForPreview(
     `/v1/conversations/${session.sessionId}/preview/8000/`,
     "PI_CLOUD_PERSISTENT_PREVIEW_OK",
   );
-  progress(
-    "owner terminal rebound the warm Cube and authenticated preview reached its HTTP service",
-  );
+  progress("Agent preview Tool published an authenticated route to its warm Cube HTTP service");
 
   const followUp = await runTurn(
     session.sessionId,
@@ -1078,13 +1084,25 @@ try {
   const followUpUsage = await runUsageEvidence(followUp.accepted.runId);
   const followUpLatency = await runLatencyEvidence(followUp.accepted.runId);
   assert(followUpUsage.requests > 0 && followUpUsage.outputTokens > 0);
-  await terminalCommand(
-    `/v1/conversations/${session.sessionId}/terminal`,
-    'kill -0 "$(cat /workspace/persistent-heartbeat.pid)" && test -s /workspace/persistent-heartbeat && echo PERSISTENT_PROCESS_SURVIVED_OK',
-    "PERSISTENT_PROCESS_SURVIVED_OK",
+  const processCheck = await runTurn(
+    session.sessionId,
+    [
+      "Use bash to verify the existing detached heartbeat process without replacing or restarting it.",
+      "Read /workspace/persistent-heartbeat, wait two seconds, and read it again.",
+      "Fail the command if either value is empty or they are equal.",
+      "On success output exactly PERSISTENT_PROCESS_SURVIVED_OK.",
+    ].join(" "),
+    true,
   );
+  assert(
+    processCheck.events.some((event) =>
+      JSON.stringify(event.payload).includes("PERSISTENT_PROCESS_SURVIVED_OK"),
+    ),
+    "Background process did not survive the warm Cube handoff",
+  );
+  const processCheckUsage = await runUsageEvidence(processCheck.accepted.runId);
   await waitForRunningCubeSession(session.sessionId);
-  progress("background process survived terminal handoff and the following real Agent Run");
+  progress("background process survived repeated warm-Cube Agent handoffs");
   const finalVersions = await api.listWorkspaceVersions(session.sessionId);
   assert(finalVersions.currentVersionId !== undefined);
   assert.notEqual(finalVersions.currentVersionId, firstVersionId);
@@ -1106,7 +1124,7 @@ try {
   );
 
   const conversation = await api.getConversation(session.sessionId);
-  assert.equal(conversation.turns.length, 3);
+  assert.equal(conversation.turns.length, 5);
   assert(conversation.turns.every((turn) => turn.transcript !== undefined));
 
   const canonicalEvidence = await psql(
@@ -1120,10 +1138,10 @@ try {
   );
   const [terminalCount, piEntryCount, terminalThroughSequence, canonicalPayloadBytes] =
     canonicalEvidence.split("|").map(Number);
-  assert.equal(terminalCount, 3);
+  assert.equal(terminalCount, 5);
   assert(piEntryCount > terminalCount);
   assert(canonicalPayloadBytes > 0);
-  assert(terminalThroughSequence <= followUp.throughSequence);
+  assert(terminalThroughSequence <= processCheck.throughSequence);
   const eventPlaneEvidence = await psql(
     `select (to_regclass('public.session_events') is null)::int || '|' ||
             count(*)
@@ -1219,7 +1237,9 @@ try {
   const usage = totalUsage(
     chatUsage,
     firstUsage,
+    previewUsage,
     followUpUsage,
+    processCheckUsage,
     largeFirstUsage,
     largeFollowUpUsage,
   );
@@ -1268,7 +1288,7 @@ try {
       sameCubeMicroVm: true,
       runningSessionReuse: true,
       elasticSandboxPolicy: session.executionMode === "elastic",
-      ownerTerminalReusedCube: true,
+      agentPreviewPublished: true,
       backgroundProcessSurvived: true,
       authenticatedHttpPreviewPassed: true,
       workspaceRestored: true,
@@ -1314,7 +1334,7 @@ try {
     },
     scheduler: {
       authority: "PostgreSQL",
-      queue: "outbox",
+      queue: "runs",
       workerPool: "shared",
     },
     totalUsage: usage,
@@ -1359,6 +1379,7 @@ try {
         `- Follow-up queue-to-claim-start / claim-and-preparation / model / Tool: ${String(report.followUpCoding.latency.queueToClaimStartMs)} / ${String(report.followUpCoding.latency.claimStartToCommandAckMs + report.followUpCoding.latency.commandAckToRunnerMs)} / ${String(report.followUpCoding.latency.modelTotalMs)} / ${String(report.followUpCoding.latency.toolTotalMs)} ms`,
         `- Coding Tool calls: ${String(report.firstCoding.toolCalls)} + ${String(report.followUpCoding.toolCalls)}`,
         `- Same running Session Cube KVM guest reused: ${String(report.multiRound.sameCubeMicroVm)}`,
+        `- Agent Preview / background process survived repeated Run handoffs: ${String(report.multiRound.agentPreviewPublished)} / ${String(report.multiRound.backgroundProcessSurvived)}`,
         `- Elastic Sandbox policy / warm archive cleanup: ${String(report.multiRound.elasticSandboxPolicy)} / ${String(report.cleanup.warmArchiveReaped)}`,
         `- Workspace restored across Runs: ${String(report.multiRound.workspaceRestored)}`,
         `- Trusted Git metadata sibling / user .git absent: ${String(report.workspaceIsolation.trustedMetadataSibling)} / ${String(report.workspaceIsolation.userWorkspaceGitEntryAbsent)}`,

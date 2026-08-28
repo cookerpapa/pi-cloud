@@ -126,7 +126,6 @@ describe("control-plane public API schemas", () => {
         runId: "50000000-0000-4000-8000-000000000010",
         turnId: "50000000-0000-4000-8000-000000000001",
         sessionId: "30000000-0000-4000-8000-000000000001",
-        commandId: "60000000-0000-4000-8000-000000000001",
         mailboxPosition: 1,
         state: "queued",
         acceptedAt: createdAt,
@@ -135,8 +134,8 @@ describe("control-plane public API schemas", () => {
     ).toMatchObject({ state: "queued" });
     expect(
       parseAcceptedTurnCancellationResource({
-        commandId: "70000000-0000-4000-8000-000000000001",
-        targetCommandId: "60000000-0000-4000-8000-000000000001",
+        controlRequestId: "70000000-0000-4000-8000-000000000001",
+        targetRunId: "50000000-0000-4000-8000-000000000010",
         turnId: "50000000-0000-4000-8000-000000000001",
         sessionId: "30000000-0000-4000-8000-000000000001",
         state: "pending",
@@ -229,7 +228,6 @@ describe("control-plane public API schemas", () => {
           {
             runId: "50000000-0000-4000-8000-000000000010",
             turnId: "50000000-0000-4000-8000-000000000001",
-            commandId: "60000000-0000-4000-8000-000000000001",
             mailboxPosition: 1,
             prompt: "repair it",
             state: "running",
@@ -273,7 +271,6 @@ describe("control-plane public API schemas", () => {
         workspaceId: "20000000-0000-4000-8000-000000000001",
         sessionId: "30000000-0000-4000-8000-000000000001",
         turnId: "50000000-0000-4000-8000-000000000001",
-        commandId: "60000000-0000-4000-8000-000000000001",
         state: "running",
         environment: ENVIRONMENT_SNAPSHOT,
         attemptCount: 1,
@@ -304,7 +301,7 @@ describe("control-plane public API schemas", () => {
               {
                 fromState: "claimed",
                 toState: "provisioning",
-                reason: "command_acknowledged",
+                reason: "run_started",
                 occurredAt: createdAt,
               },
               {
@@ -332,7 +329,6 @@ describe("control-plane public API schemas", () => {
         runId: "50000000-0000-4000-8000-000000000010",
         turnId: "50000000-0000-4000-8000-000000000001",
         sessionId: "30000000-0000-4000-8000-000000000001",
-        commandId: "60000000-0000-4000-8000-000000000001",
         mailboxPosition: 0,
         state: "queued",
         acceptedAt: "2026-07-19T00:00:00.000Z",

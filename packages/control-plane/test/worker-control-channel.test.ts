@@ -33,8 +33,8 @@ function command(): SteerTurnCommandMessage {
     sentAt: SENT_AT,
     type: "command.turn.steer",
     payload: {
-      commandId: IDS.command,
-      targetCommandId: "10000000-0000-4000-8000-000000000013",
+      controlRequestId: IDS.command,
+      targetRunId: IDS.run,
       idempotencyKey: "request-1",
       tenantId: "tenant-1",
       projectId: "project-1",
@@ -85,7 +85,7 @@ describe("Worker control channel", () => {
       sentAt: SENT_AT,
       type: "command.ack",
       payload: {
-        commandId: IDS.command,
+        requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
         executionLease: EXECUTION_GRANT,
@@ -104,7 +104,7 @@ describe("Worker control channel", () => {
       sentAt: SENT_AT,
       type: "command.commit",
       payload: {
-        commandId: IDS.command,
+        requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
         executionLease: EXECUTION_GRANT,
@@ -120,7 +120,7 @@ describe("Worker control channel", () => {
       sentAt: SENT_AT,
       type: "command.result",
       payload: {
-        commandId: IDS.command,
+        requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
         executionLease: EXECUTION_GRANT,
@@ -163,7 +163,7 @@ describe("Worker control channel", () => {
       sentAt: SENT_AT,
       type: "command.ack",
       payload: {
-        commandId: IDS.command,
+        requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
         executionLease: createExecutionLease(IDS.lease, IDS.attempt, 2),

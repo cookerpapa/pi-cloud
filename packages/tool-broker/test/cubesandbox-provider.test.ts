@@ -35,7 +35,7 @@ const assignment: ToolSandboxAssignment = {
   supervisorId: "supervisor-cube-test",
   bootId: "10000000-0000-4000-8000-000000000001",
   sandboxId: "10000000-0000-4000-8000-000000000002",
-  commandId: "command-cube-test",
+  runId: "command-cube-test",
   sessionId: "session-cube-test",
   turnId: "turn-cube-test",
   executionLease: createExecutionLease(
@@ -719,7 +719,7 @@ describe("CubeSandbox Provider contract", () => {
 
     const idleAssignment: ToolSandboxAssignment = {
       ...assignment,
-      commandId: "command-cube-test-idle",
+      runId: "command-cube-test-idle",
       turnId: "turn-cube-test-idle",
       executionLease: createExecutionLease(
         "10000000-0000-4000-8000-000000000029",
@@ -761,7 +761,7 @@ describe("CubeSandbox Provider contract", () => {
       supervisorId: "supervisor-cube-test-next",
       bootId: "20000000-0000-4000-8000-000000000030",
       sandboxId: "20000000-0000-4000-8000-000000000031",
-      commandId: "command-cube-test-2",
+      runId: "command-cube-test-2",
       turnId: "turn-cube-test-2",
       executionLease: createExecutionLease(
         "10000000-0000-4000-8000-000000000031",
@@ -794,7 +794,7 @@ describe("CubeSandbox Provider contract", () => {
     expect(runtime.instances.get("cube-sandbox-1")?.state).toBe("running");
     expect(await manager.listAssignments(nextAssignment.sandboxId)).toEqual([
       expect.objectContaining({
-        commandId: nextAssignment.commandId,
+        runId: nextAssignment.runId,
         executionLease: nextAssignment.executionLease,
       }),
     ]);
@@ -843,7 +843,7 @@ describe("CubeSandbox Provider contract", () => {
       supervisorId: "supervisor-cube-restore",
       bootId: "20000000-0000-4000-8000-000000000042",
       sandboxId: "20000000-0000-4000-8000-000000000043",
-      commandId: "command-cube-restore",
+      runId: "command-cube-restore",
       turnId: "turn-cube-restore",
       // Fencing tokens are monotonic within a Session. Another Session in the
       // same Workspace has an independent fence sequence and may legitimately
@@ -929,7 +929,7 @@ describe("CubeSandbox Provider contract", () => {
     const childAssignment: ToolSandboxAssignment = {
       ...assignment,
       sessionId: "session-cube-subagent",
-      commandId: "command-cube-subagent",
+      runId: "command-cube-subagent",
       turnId: "turn-cube-subagent",
       executionLease: createExecutionLease(
         "20000000-0000-4000-8000-000000000053",

@@ -25,7 +25,7 @@ export interface SupervisorTurnRunner {
     publishEvent: PiEventPublisher,
     signal: AbortSignal,
   ): Promise<PiTurnResult>;
-  steer?(targetCommandId: string, text: string): Promise<void>;
+  steer?(targetRunId: string, text: string): Promise<void>;
 }
 
 export type PreparedTurnExecution = {
@@ -158,9 +158,9 @@ export class AgentRunSupervisor {
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
   readonly #currentBySession = new Map<string, Assignment>();
-  readonly #byCommand = new Map<string, Assignment>();
-  readonly #cancellationsByCommand = new Map<string, Cancellation>();
-  readonly #steersByCommand = new Map<string, Steer>();
+  readonly #byRun = new Map<string, Assignment>();
+  readonly #cancellationsByRequest = new Map<string, Cancellation>();
+  readonly #steersByRequest = new Map<string, Steer>();
   readonly #highestGenerationBySession = new Map<string, number>();
   constructor(options: AgentRunSupervisorOptions) {
     this.#runner = options.runner;
@@ -197,12 +197,12 @@ export class AgentRunSupervisor {
     let releasedCancellations = 0;
     let releasedSteers = 0;
     let revokedExecutions = 0;
-    for (const steer of this.#steersByCommand.values()) {
+    for (const steer of this.#steersByRequest.values()) {
       if (steer.state !== "prepared") continue;
       this.#releaseSteerBeforeStart(steer);
       releasedSteers += 1;
     }
-    for (const cancellation of this.#cancellationsByCommand.values()) {
+    for (const cancellation of this.#cancellationsByRequest.values()) {
       if (cancellation.state !== "prepared") continue;
       this.#releaseCancellationBeforeStart(cancellation);
       releasedCancellations += 1;
@@ -316,7 +316,7 @@ export class AgentRunSupervisor {
       );
     }
     const command = parsed;
-    const duplicate = this.#byCommand.get(command.payload.commandId);
+    const duplicate = this.#byRun.get(command.payload.runId);
     if (duplicate !== undefined) {
       if (!sameIdentity(duplicate.command, command)) {
         return this.#rejected(command, "invalid_command", "Command identity changed", false);
@@ -354,7 +354,7 @@ export class AgentRunSupervisor {
     };
     this.#highestGenerationBySession.set(command.payload.sessionId, generation);
     this.#currentBySession.set(command.payload.sessionId, assignment);
-    this.#byCommand.set(command.payload.commandId, assignment);
+    this.#byRun.set(command.payload.runId, assignment);
     return this.#prepared(assignment, "accepted");
   }
 
@@ -367,7 +367,7 @@ export class AgentRunSupervisor {
       );
     }
     const command = parsed;
-    const duplicate = this.#cancellationsByCommand.get(command.payload.commandId);
+    const duplicate = this.#cancellationsByRequest.get(command.payload.controlRequestId);
     if (duplicate !== undefined) {
       if (!sameCancellationIdentity(duplicate.command, command)) {
         return this.#rejectedCancellation(
@@ -380,7 +380,7 @@ export class AgentRunSupervisor {
       return this.#preparedCancellation(duplicate, "duplicate");
     }
 
-    const assignment = this.#byCommand.get(command.payload.targetCommandId);
+    const assignment = this.#byRun.get(command.payload.targetRunId);
     const current = this.#currentBySession.get(command.payload.sessionId);
     if (
       assignment === undefined ||
@@ -397,7 +397,7 @@ export class AgentRunSupervisor {
     }
     const target = assignment.command.payload;
     if (
-      command.payload.commandId === command.payload.targetCommandId ||
+      command.payload.runId !== command.payload.targetRunId ||
       command.payload.tenantId !== target.tenantId ||
       command.payload.projectId !== target.projectId ||
       command.payload.workspaceId !== target.workspaceId ||
@@ -415,7 +415,7 @@ export class AgentRunSupervisor {
     }
 
     const cancellation: Cancellation = { command, assignment, state: "prepared" };
-    this.#cancellationsByCommand.set(command.payload.commandId, cancellation);
+    this.#cancellationsByRequest.set(command.payload.controlRequestId, cancellation);
     return this.#preparedCancellation(cancellation, "accepted");
   }
 
@@ -428,7 +428,7 @@ export class AgentRunSupervisor {
       );
     }
     const command = parsed;
-    const duplicate = this.#steersByCommand.get(command.payload.commandId);
+    const duplicate = this.#steersByRequest.get(command.payload.controlRequestId);
     if (duplicate !== undefined) {
       if (!sameSteerIdentity(duplicate.command, command)) {
         return this.#rejectedSteer(
@@ -441,7 +441,7 @@ export class AgentRunSupervisor {
       return this.#preparedSteer(duplicate, "duplicate");
     }
 
-    const assignment = this.#byCommand.get(command.payload.targetCommandId);
+    const assignment = this.#byRun.get(command.payload.targetRunId);
     const current = this.#currentBySession.get(command.payload.sessionId);
     if (
       assignment === undefined ||
@@ -458,7 +458,7 @@ export class AgentRunSupervisor {
     }
     const target = assignment.command.payload;
     if (
-      command.payload.commandId === command.payload.targetCommandId ||
+      command.payload.runId !== command.payload.targetRunId ||
       command.payload.tenantId !== target.tenantId ||
       command.payload.projectId !== target.projectId ||
       command.payload.workspaceId !== target.workspaceId ||
@@ -477,7 +477,7 @@ export class AgentRunSupervisor {
     }
 
     const steer: Steer = { command, assignment, state: "prepared" };
-    this.#steersByCommand.set(command.payload.commandId, steer);
+    this.#steersByRequest.set(command.payload.controlRequestId, steer);
     return this.#preparedSteer(steer, "accepted");
   }
 
@@ -574,7 +574,10 @@ export class AgentRunSupervisor {
       sentAt: validDate(this.#clock).toISOString(),
       type: "command.ack",
       payload: {
-        commandId: command.payload.commandId,
+        requestId:
+          command.type === "command.turn.execute"
+            ? command.payload.runId
+            : command.payload.controlRequestId,
         sessionId: command.payload.sessionId,
         turnId: command.payload.turnId,
         executionLease: command.payload.executionLease,
@@ -790,7 +793,7 @@ export class AgentRunSupervisor {
       );
     }
     steer.runPromise = deliver
-      .call(this.#runner, steer.command.payload.targetCommandId, steer.command.payload.text)
+      .call(this.#runner, steer.command.payload.targetRunId, steer.command.payload.text)
       .then(
         () => {
           steer.state = "completed";
@@ -808,19 +811,19 @@ export class AgentRunSupervisor {
     if (this.#currentBySession.get(assignment.command.payload.sessionId) === assignment) {
       this.#currentBySession.delete(assignment.command.payload.sessionId);
     }
-    this.#byCommand.delete(assignment.command.payload.commandId);
+    this.#byRun.delete(assignment.command.payload.runId);
     assignment.state = "failed";
   }
 
   #releaseCancellationBeforeStart(cancellation: Cancellation): void {
     if (cancellation.state !== "prepared") return;
-    this.#cancellationsByCommand.delete(cancellation.command.payload.commandId);
+    this.#cancellationsByRequest.delete(cancellation.command.payload.controlRequestId);
     cancellation.state = "failed";
   }
 
   #releaseSteerBeforeStart(steer: Steer): void {
     if (steer.state !== "prepared") return;
-    this.#steersByCommand.delete(steer.command.payload.commandId);
+    this.#steersByRequest.delete(steer.command.payload.controlRequestId);
     steer.state = "failed";
   }
 }

@@ -152,7 +152,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         supervisorId: "supervisor-reservation",
         bootId: "20000000-0000-4000-8000-000000000006",
         sandboxId: "20000000-0000-4000-8000-000000000007",
-        commandId: "20000000-0000-4000-8000-000000000031",
+        runId: "20000000-0000-4000-8000-000000000032",
         sessionId: rootSessionId,
         turnId: forkTurnId,
         executionLease: createExecutionLease(
@@ -186,9 +186,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
         tenant_id: tenantId,
         project_id: projectId,
         workspace_id: workspaceId,
-        run_id: "20000000-0000-4000-8000-000000000030",
+        run_id: activation.assignment.runId,
         turn_id: forkTurnId,
-        command_id: activation.assignment.commandId,
         attempt_id: activationAttemptId,
         last_event_seq: 0,
         valid_until: new Date(Date.now() + 60_000),
@@ -229,10 +228,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
 
     const delegatedSessionId = "20000000-0000-4000-8000-000000000017";
     const environmentId = "20000000-0000-4000-8000-000000000030";
-    const parentCommandId = "20000000-0000-4000-8000-000000000031";
     const parentRunId = "20000000-0000-4000-8000-000000000032";
     const childTurnId = "20000000-0000-4000-8000-000000000033";
-    const childCommandId = "20000000-0000-4000-8000-000000000034";
     const childRunId = "20000000-0000-4000-8000-000000000035";
     const childAttemptId = "20000000-0000-4000-8000-000000000037";
     await database
@@ -283,37 +280,6 @@ describe("PostgreSQL Tool Broker ownership", () => {
       })
       .executeTakeFirstOrThrow();
     await database
-      .insertInto("commands")
-      .values([
-        {
-          id: parentCommandId,
-          tenant_id: tenantId,
-          session_id: rootSessionId,
-          turn_id: forkTurnId,
-          idempotency_key: "delegated-parent",
-          kind: "turn.execute" as const,
-          state: "acknowledged" as const,
-          mailbox_position: 1,
-          payload: {},
-          dispatched_at: new Date(),
-          acknowledged_at: new Date(),
-        },
-        {
-          id: childCommandId,
-          tenant_id: tenantId,
-          session_id: delegatedSessionId,
-          turn_id: childTurnId,
-          idempotency_key: "delegated-child",
-          kind: "turn.execute" as const,
-          state: "acknowledged" as const,
-          mailbox_position: 1,
-          payload: {},
-          dispatched_at: new Date(),
-          acknowledged_at: new Date(),
-        },
-      ])
-      .executeTakeFirstOrThrow();
-    await database
       .insertInto("runs")
       .values([
         {
@@ -323,7 +289,9 @@ describe("PostgreSQL Tool Broker ownership", () => {
           workspace_id: workspaceId,
           session_id: rootSessionId,
           turn_id: forkTurnId,
-          command_id: parentCommandId,
+          mailbox_position: 1,
+          request_sha256: "a".repeat(64),
+          available_at: new Date(),
           environment_version_id: environmentId,
           idempotency_key: "delegated-parent",
           state: "running" as const,
@@ -338,7 +306,9 @@ describe("PostgreSQL Tool Broker ownership", () => {
           workspace_id: workspaceId,
           session_id: delegatedSessionId,
           turn_id: childTurnId,
-          command_id: childCommandId,
+          mailbox_position: 1,
+          request_sha256: "b".repeat(64),
+          available_at: new Date(),
           environment_version_id: environmentId,
           idempotency_key: "delegated-child",
           state: "queued" as const,
@@ -418,6 +388,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       ...activation,
       assignment: {
         ...activation.assignment,
+        runId: childRunId,
         sessionId: delegatedSessionId,
         turnId: childTurnId,
         executionLease: createExecutionLease(
@@ -460,7 +431,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         session_id: rootSessionId,
         lease_id: "20000000-0000-4000-8000-000000000009",
         fencing_token: 1,
-        run_id: "20000000-0000-4000-8000-000000000030",
+        run_id: activation.assignment.runId,
         turn_id: forkTurnId,
         attempt_id: activationAttemptId,
       })

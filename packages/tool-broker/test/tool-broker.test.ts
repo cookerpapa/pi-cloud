@@ -36,7 +36,7 @@ const assignment: ToolSandboxAssignment = {
   supervisorId: "supervisor-provider-test",
   bootId: "10000000-0000-4000-8000-000000000001",
   sandboxId: "10000000-0000-4000-8000-000000000002",
-  commandId: "command-provider-test",
+  runId: "command-provider-test",
   sessionId: "session-provider-test",
   turnId: "turn-provider-test",
   executionLease: createExecutionLease(
@@ -433,7 +433,7 @@ describe("provider-backed Tool Tool Broker", () => {
     const secondAssignment = {
       ...assignment,
       turnId: "21111111-1111-4111-8111-111111111114",
-      commandId: "second-development-environment-run",
+      runId: "second-development-environment-run",
       executionLease: createExecutionLease(
         "21111111-1111-4111-8111-111111111116",
         "21111111-1111-4111-8111-111111111115",
@@ -1100,7 +1100,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const secondAssignment = {
       ...assignment,
-      commandId: "command-provider-test-second",
+      runId: "command-provider-test-second",
       workspaceId: "workspace-provider-test-second",
       sessionId: "session-provider-test-second",
       turnId: "turn-provider-test-second",
@@ -1187,7 +1187,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const secondAssignment = {
       ...assignment,
-      commandId: "command-provider-test-aborted",
+      runId: "command-provider-test-aborted",
       workspaceId: "workspace-provider-test-aborted",
       sessionId: "session-provider-test-aborted",
       turnId: "turn-provider-test-aborted",
@@ -1253,7 +1253,7 @@ describe("provider-backed Tool Tool Broker", () => {
       supervisorId: "supervisor-provider-test-next",
       bootId: "20000000-0000-4000-8000-000000000020",
       sandboxId: "20000000-0000-4000-8000-000000000021",
-      commandId: "command-provider-test-next",
+      runId: "command-provider-test-next",
       turnId: "turn-provider-test-next",
       executionLease: createExecutionLease(
         "10000000-0000-4000-8000-000000000020",
@@ -1298,7 +1298,7 @@ describe("provider-backed Tool Tool Broker", () => {
     const childAssignment = {
       ...assignment,
       sessionId: "session-provider-test-subagent",
-      commandId: "command-provider-test-subagent",
+      runId: "command-provider-test-subagent",
       turnId: "turn-provider-test-subagent",
       executionLease: createExecutionLease(
         "73300000-0000-4000-8000-000000000002",
@@ -1483,7 +1483,7 @@ describe("provider-backed Tool Tool Broker", () => {
     const nextAssignment = {
       ...assignment,
       sessionId: "session-provider-test-conversation-child",
-      commandId: "command-provider-test-conversation-child",
+      runId: "command-provider-test-conversation-child",
       turnId: "turn-provider-test-conversation-child",
       executionLease: createExecutionLease(
         "73500000-0000-4000-8000-000000000003",
@@ -1539,7 +1539,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...assignment,
       workspaceId: "workspace-provider-test-ordinary",
       sessionId: "session-provider-test-ordinary",
-      commandId: "command-provider-test-ordinary",
+      runId: "command-provider-test-ordinary",
       turnId: "turn-provider-test-ordinary",
       executionLease: createExecutionLease(
         "74000000-0000-4000-8000-000000000003",
@@ -1571,7 +1571,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...ordinaryAssignment,
       workspaceId: "workspace-provider-test-new-demand",
       sessionId: "session-provider-test-new-demand",
-      commandId: "command-provider-test-new-demand",
+      runId: "command-provider-test-new-demand",
       turnId: "turn-provider-test-new-demand",
       executionLease: createExecutionLease(
         "74000000-0000-4000-8000-000000000007",
@@ -1592,7 +1592,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
     const persistentNextAssignment: ToolSandboxAssignment = {
       ...assignment,
-      commandId: "command-provider-test-persistent-after-pressure",
+      runId: "command-provider-test-persistent-after-pressure",
       turnId: "turn-provider-test-persistent-after-pressure",
       executionLease: createExecutionLease(
         "74000000-0000-4000-8000-000000000010",
@@ -1622,7 +1622,7 @@ describe("provider-backed Tool Tool Broker", () => {
     const first = await manager.create(createRequest);
     const siblingAssignment = {
       ...assignment,
-      commandId: "command-provider-test-concurrent-sibling",
+      runId: "command-provider-test-concurrent-sibling",
       sessionId: "session-provider-test-concurrent-sibling",
       turnId: "turn-provider-test-concurrent-sibling",
       executionLease: createExecutionLease(
@@ -1698,7 +1698,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
     const nextAssignment: ToolSandboxAssignment = {
       ...assignment,
-      commandId: "command-provider-test-capacity-eviction",
+      runId: "command-provider-test-capacity-eviction",
       workspaceId: "workspace-provider-test-capacity-eviction",
       sessionId: "session-provider-test-capacity-eviction",
       turnId: "turn-provider-test-capacity-eviction",
@@ -1764,7 +1764,7 @@ describe("provider-backed Tool Tool Broker", () => {
       supervisorId: assignment.supervisorId,
       bootId: assignment.bootId,
       sandboxId: assignment.sandboxId,
-      commandId: "command-provider-test-advanced",
+      runId: "command-provider-test-advanced",
       workspaceId: assignment.workspaceId,
       sessionId: assignment.sessionId,
       turnId: "turn-provider-test-advanced",
@@ -1777,7 +1777,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(manager.activeCount).toBe(1);
     await manager.terminateAndConfirmAbsent({
       ...advancedInventoryAssignment,
-      commandId: assignment.commandId,
+      runId: assignment.runId,
       turnId: assignment.turnId,
       executionLease: brokerGrant!,
     });
@@ -1795,7 +1795,7 @@ describe("provider-backed Tool Tool Broker", () => {
       supervisorId: assignment.supervisorId,
       bootId: assignment.bootId,
       sandboxId: assignment.sandboxId,
-      commandId: assignment.commandId,
+      runId: assignment.runId,
       workspaceId: assignment.workspaceId,
       sessionId: assignment.sessionId,
       turnId: assignment.turnId,

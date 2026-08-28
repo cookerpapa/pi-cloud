@@ -13,7 +13,6 @@ import type { TenantModelCredentialVault } from "@pi-cloud/runtime-core/model-cr
 export type TenantQuotaConfiguration = Readonly<{
   maximumProjects: number;
   maximumSessions: number;
-  maximumUnsettledTurns: number;
 }>;
 
 export type PrivateTenantInitialModel = Readonly<{
@@ -69,7 +68,6 @@ export type TenantCredentialMetadata = Readonly<{
 const DEFAULT_QUOTAS: TenantQuotaConfiguration = {
   maximumProjects: 100,
   maximumSessions: 1_000,
-  maximumUnsettledTurns: 100,
 };
 
 export class TenantAdministrationError extends Error {
@@ -127,11 +125,6 @@ function quotaConfiguration(
     maximumSessions: positiveInteger(
       value.maximumSessions ?? DEFAULT_QUOTAS.maximumSessions,
       "maximumSessions",
-      1_000_000,
-    ),
-    maximumUnsettledTurns: positiveInteger(
-      value.maximumUnsettledTurns ?? DEFAULT_QUOTAS.maximumUnsettledTurns,
-      "maximumUnsettledTurns",
       1_000_000,
     ),
   };
@@ -337,7 +330,6 @@ export async function createPrivateTenant(
           enabled: true,
           maximum_projects: quotas.maximumProjects,
           maximum_sessions: quotas.maximumSessions,
-          maximum_unsettled_turns: quotas.maximumUnsettledTurns,
           created_at: now,
           updated_at: now,
         })

@@ -38,9 +38,8 @@ function envelope(messageId = IDS.message) {
   } as const;
 }
 
-function commandIdentity() {
+function executionIdentity() {
   return {
-    commandId: IDS.command,
     idempotencyKey: "request-1",
     tenantId: "tenant-1",
     projectId: "project-1",
@@ -79,7 +78,7 @@ function environmentSnapshot() {
 
 function commandResultIdentity() {
   return {
-    commandId: IDS.command,
+    requestId: IDS.command,
     sessionId: "session-1",
     turnId: "turn-1",
     executionLease: EXECUTION_GRANT,
@@ -166,7 +165,7 @@ describe("supervisor/control-plane wire protocol", () => {
       ...envelope(),
       type: "command.turn.execute",
       payload: {
-        ...commandIdentity(),
+        ...executionIdentity(),
         nextEventSeq: 11,
         input: { kind: "prompt", text: "Fix the failing test" },
         executionMode: "elastic",
@@ -185,8 +184,9 @@ describe("supervisor/control-plane wire protocol", () => {
       ...envelope(IDS.message2),
       type: "command.turn.cancel",
       payload: {
-        ...commandIdentity(),
-        targetCommandId: IDS.targetCommand,
+        ...executionIdentity(),
+        controlRequestId: IDS.targetCommand,
+        targetRunId: IDS.run,
         reason: "user_request",
         gracePeriodMs: 2_000,
       },
@@ -195,9 +195,9 @@ describe("supervisor/control-plane wire protocol", () => {
       ...envelope("44444444-1111-4111-8111-444444444444"),
       type: "command.turn.steer",
       payload: {
-        ...commandIdentity(),
-        commandId: "55555555-1111-4111-8111-555555555555",
-        targetCommandId: IDS.targetCommand,
+        ...executionIdentity(),
+        controlRequestId: "55555555-1111-4111-8111-555555555555",
+        targetRunId: IDS.run,
         text: "Focus on the failing integration test.",
       },
     } as const;
@@ -353,7 +353,7 @@ describe("supervisor/control-plane wire protocol", () => {
       ...envelope(),
       type: "command.ack",
       payload: {
-        commandId: IDS.command,
+        requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
         executionLease: EXECUTION_GRANT,
@@ -370,7 +370,7 @@ describe("supervisor/control-plane wire protocol", () => {
       ...envelope(IDS.commit),
       type: "command.commit",
       payload: {
-        commandId: IDS.command,
+        requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
         executionLease: EXECUTION_GRANT,

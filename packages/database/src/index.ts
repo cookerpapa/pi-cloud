@@ -2,8 +2,8 @@ export { createDatabase, type CreateDatabaseOptions } from "./client.ts";
 
 export {
   type ArtifactKind,
-  type CommandKind,
-  type CommandState,
+  type TurnControlRequestKind,
+  type TurnControlRequestState,
   type ConversationPruneOperationTable,
   type CredentialBindingStatus,
   type CredentialKind,

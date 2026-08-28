@@ -3,60 +3,44 @@ import {
   type RunCancellationExecutionResult,
   RunCancellationExecutor,
 } from "@pi-cloud/runtime-core/run-cancellation-executor";
-import {
-  type RunCommandExecutionResult,
-  RunCommandExecutor,
-} from "@pi-cloud/runtime-core/run-command-executor";
-import { TURN_CANCELLATION_OUTBOX_TOPIC, TURN_COMMAND_OUTBOX_TOPIC } from "@pi-cloud/protocol";
+import { type RunExecutionResult, RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import type { Kysely } from "kysely";
-import { sql } from "kysely";
 import { Client } from "pg";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
-const DEFAULT_SCAN_MULTIPLIER = 4;
 const LOCAL_SUBAGENT_PRIORITY_DELAY_MS = 25;
 
 type ExecutionReference = {
-  commandId: string;
+  runId: string;
   subagent: boolean;
 };
 
-export function selectPiWorkerExecutionReferences(
-  candidates: readonly ExecutionReference[],
+export function selectPiWorkerSlotKinds(
   active: readonly ExecutionReference[],
   maximumConcurrentRuns: number,
-): ExecutionReference[] {
+): boolean[] {
   positiveInteger(maximumConcurrentRuns, "maximumConcurrentRuns");
-  let activeCount = active.length;
-  let activeParents = active.filter((entry) => !entry.subagent).length;
-  const activeIds = new Set(active.map((entry) => entry.commandId));
+  const activeParents = active.filter((entry) => !entry.subagent).length;
   const maximumParents = maximumConcurrentRuns < 2 ? 1 : maximumConcurrentRuns - 1;
-  const selected: ExecutionReference[] = [];
-  for (const candidate of candidates) {
-    if (activeCount >= maximumConcurrentRuns) break;
-    if (activeIds.has(candidate.commandId)) continue;
-    if (!candidate.subagent && activeParents >= maximumParents) continue;
-    selected.push(candidate);
-    activeIds.add(candidate.commandId);
-    activeCount += 1;
-    if (!candidate.subagent) activeParents += 1;
-  }
-  return selected;
+  const available = Math.max(0, maximumConcurrentRuns - active.length);
+  const parentSlots = Math.min(available, Math.max(0, maximumParents - activeParents));
+  return [
+    ...Array.from({ length: parentSlots }, () => false),
+    ...Array.from({ length: available - parentSlots }, () => true),
+  ];
 }
 
 export function canPrioritizeLocalSubagent(
-  commandId: string,
+  runId: string,
   active: readonly ExecutionReference[],
   maximumConcurrentRuns: number,
 ): boolean {
   positiveInteger(maximumConcurrentRuns, "maximumConcurrentRuns");
-  return (
-    !active.some((entry) => entry.commandId === commandId) && active.length < maximumConcurrentRuns
-  );
+  return !active.some((entry) => entry.runId === runId) && active.length < maximumConcurrentRuns;
 }
 
 type CancellationReference = {
-  targetCommandId: string;
+  targetRunId: string;
 };
 
 export class PostgresQueueWake {
@@ -101,7 +85,7 @@ export type PostgresPiWorkerOptions = {
   identity: string;
   maximumConcurrentRuns: number;
   pollIntervalMs?: number;
-  commandExecutor: RunCommandExecutor;
+  runExecutor: RunExecutor;
   cancellationExecutor: RunCancellationExecutor;
   /**
    * A Worker may claim new Runs only while its control-channel ownership is
@@ -111,7 +95,7 @@ export type PostgresPiWorkerOptions = {
   canClaimRuns?: () => boolean;
   /** Checks external execution-plane readiness only when claimable work exists. */
   admitRunClaims?: () => Promise<boolean>;
-  onFailure?: (operation: "listen" | "scan" | "execute" | "cancel", error: unknown) => void;
+  onFailure?: (operation: "listen" | "claim" | "execute" | "cancel", error: unknown) => void;
 };
 
 export type PostgresPiWorkerState = "idle" | "starting" | "running" | "stopping" | "stopped";
@@ -135,7 +119,7 @@ function bounded(value: string, name: string, maximum: number): string {
  *
  * PostgreSQL owns the queue and the exact Run/Attempt lifecycle. LISTEN/NOTIFY
  * only removes idle polling latency; every wake-up is followed by a fresh
- * authoritative query. RunCommandExecutor remains the transactional claimant,
+ * authoritative query. RunExecutor remains the transactional claimant,
  * so duplicate notifications and competing Workers are harmless.
  */
 export class PostgresPiWorker {
@@ -144,13 +128,13 @@ export class PostgresPiWorker {
   readonly #identity: string;
   readonly #maximumConcurrentRuns: number;
   readonly #pollIntervalMs: number;
-  readonly #commandExecutor: RunCommandExecutor;
+  readonly #runExecutor: RunExecutor;
   readonly #cancellationExecutor: RunCancellationExecutor;
   readonly #canClaimRuns: () => boolean;
   readonly #admitRunClaims: () => Promise<boolean>;
   readonly #onFailure:
-    ((operation: "listen" | "scan" | "execute" | "cancel", error: unknown) => void) | undefined;
-  readonly #activeCommands = new Map<
+    ((operation: "listen" | "claim" | "execute" | "cancel", error: unknown) => void) | undefined;
+  readonly #activeRuns = new Map<
     string,
     Readonly<{ execution: Promise<void>; subagent: boolean }>
   >();
@@ -176,7 +160,7 @@ export class PostgresPiWorker {
       options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
       "pollIntervalMs",
     );
-    this.#commandExecutor = options.commandExecutor;
+    this.#runExecutor = options.runExecutor;
     this.#cancellationExecutor = options.cancellationExecutor;
     this.#canClaimRuns = options.canClaimRuns ?? (() => true);
     this.#admitRunClaims = options.admitRunClaims ?? (() => Promise.resolve(true));
@@ -214,19 +198,19 @@ export class PostgresPiWorker {
     this.#controller?.abort();
     this.#queueWake.notify();
     await this.#loop;
-    await Promise.allSettled([...this.#activeCommands.values()].map((entry) => entry.execution));
+    await Promise.allSettled([...this.#activeRuns.values()].map((entry) => entry.execution));
     await this.#listener?.end().catch(() => undefined);
     this.#state = "stopped";
   }
 
-  prioritizeSubagent(commandId: string): boolean {
-    bounded(commandId, "Subagent commandId", 256);
+  prioritizeSubagent(runId: string): boolean {
+    bounded(runId, "Subagent runId", 256);
     if (this.#state !== "running" || !this.#canClaimRuns()) return false;
-    const active = [...this.#activeCommands.entries()].map(([activeCommandId, entry]) => ({
-      commandId: activeCommandId,
+    const active = [...this.#activeRuns.entries()].map(([activeRunId, entry]) => ({
+      runId: activeRunId,
       subagent: entry.subagent,
     }));
-    if (!canPrioritizeLocalSubagent(commandId, active, this.#maximumConcurrentRuns)) return false;
+    if (!canPrioritizeLocalSubagent(runId, active, this.#maximumConcurrentRuns)) return false;
     const execution = (async () => {
       await new Promise<void>((resolvePromise) => {
         const timer = setTimeout(resolvePromise, LOCAL_SUBAGENT_PRIORITY_DELAY_MS);
@@ -234,12 +218,12 @@ export class PostgresPiWorker {
       });
       if (this.#state !== "running" || !this.#canClaimRuns()) return;
       if (!(await this.#admitRunClaims())) return;
-      await this.#execute({ commandId, subagent: true });
+      await this.#executeRun(runId);
     })().finally(() => {
-      this.#activeCommands.delete(commandId);
+      this.#activeRuns.delete(runId);
       this.#queueWake.notify();
     });
-    this.#activeCommands.set(commandId, { execution, subagent: true });
+    this.#activeRuns.set(runId, { execution, subagent: true });
     return true;
   }
 
@@ -264,7 +248,7 @@ export class PostgresPiWorker {
         await this.#dispatchCancellations();
         await this.#fillCapacity();
       } catch (error: unknown) {
-        this.#observeFailure("scan", error);
+        this.#observeFailure("claim", error);
       }
       await this.#queueWake.wait(observedGeneration, this.#pollIntervalMs, signal);
     }
@@ -272,36 +256,36 @@ export class PostgresPiWorker {
 
   async #fillCapacity(): Promise<void> {
     if (!this.#canClaimRuns()) return;
-    const available = this.#maximumConcurrentRuns - this.#activeCommands.size;
-    if (available < 1) return;
-    const references = await this.#executionReferences(
-      Math.max(available, available * DEFAULT_SCAN_MULTIPLIER),
-    );
-    const selected = selectPiWorkerExecutionReferences(
-      references,
-      [...this.#activeCommands.entries()].map(([commandId, entry]) => ({
-        commandId,
+    const slots = selectPiWorkerSlotKinds(
+      [...this.#activeRuns.entries()].map(([runId, entry]) => ({
+        runId,
         subagent: entry.subagent,
       })),
       this.#maximumConcurrentRuns,
     );
-    if (selected.length === 0 || !(await this.#admitRunClaims())) return;
-    for (const reference of selected) {
-      const execution = this.#execute(reference).finally(() => {
-        this.#activeCommands.delete(reference.commandId);
-        this.#queueWake.notify();
-      });
-      this.#activeCommands.set(reference.commandId, { execution, subagent: reference.subagent });
+    if (slots.length === 0 || !(await this.#admitRunClaims())) return;
+    for (const subagent of slots) {
+      const slotId = `slot:${globalThis.crypto.randomUUID()}`;
+      let claimed = false;
+      const execution = this.#executeNext(subagent)
+        .then((value) => {
+          claimed = value;
+        })
+        .finally(() => {
+          this.#activeRuns.delete(slotId);
+          if (claimed) this.#queueWake.notify();
+        });
+      this.#activeRuns.set(slotId, { execution, subagent });
     }
   }
 
   async #dispatchCancellations(): Promise<void> {
-    if (this.#activeCommands.size === 0) return;
+    if (this.#activeRuns.size === 0) return;
     const references = await this.#cancellationReferences();
     await Promise.all(
       references.map(async (reference) => {
         try {
-          await this.#cancellationExecutor.dispatchTargetCommand(reference.targetCommandId);
+          await this.#cancellationExecutor.dispatchTargetRun(reference.targetRunId);
         } catch (error: unknown) {
           this.#observeFailure("cancel", error);
         }
@@ -309,97 +293,48 @@ export class PostgresPiWorker {
     );
   }
 
-  async #execute(reference: ExecutionReference): Promise<void> {
+  async #executeRun(runId: string): Promise<void> {
     try {
-      const result = await this.#commandExecutor.dispatchCommand(reference.commandId);
+      const result = await this.#runExecutor.dispatchRun(runId);
       await this.#settleDispatchResult(result);
     } catch (error: unknown) {
       this.#observeFailure("execute", error);
     }
   }
 
-  async #settleDispatchResult(_result: RunCommandExecutionResult): Promise<void> {
-    // RunCommandExecutor owns every durable transition. The queue only needs
-    // another scan: completed work is published, while a deferred/retryable
-    // record carries its next available_at timestamp.
+  async #executeNext(subagent: boolean): Promise<boolean> {
+    try {
+      const result = await this.#runExecutor.dispatchNext(subagent ? "subagent" : "conversation");
+      await this.#settleDispatchResult(result);
+      return result.status !== "idle";
+    } catch (error: unknown) {
+      this.#observeFailure("execute", error);
+      return false;
+    }
   }
 
-  async #executionReferences(limit: number): Promise<ExecutionReference[]> {
-    const now = new Date();
-    return this.#database
-      .selectFrom("outbox")
-      .innerJoin("commands as command", (join) =>
-        join
-          .onRef("command.tenant_id", "=", "outbox.tenant_id")
-          .on(
-            sql<boolean>`${sql.ref("command.id")}::text = ${sql.ref("outbox.payload")} ->> 'commandId'`,
-          ),
-      )
-      .innerJoin("runs as run", (join) =>
-        join
-          .onRef("run.tenant_id", "=", "command.tenant_id")
-          .onRef("run.command_id", "=", "command.id"),
-      )
-      .innerJoin("tenant_runtime_policies as policy", "policy.tenant_id", "command.tenant_id")
-      .innerJoin("sessions as session_row", (join) =>
-        join
-          .onRef("session_row.tenant_id", "=", "command.tenant_id")
-          .onRef("session_row.id", "=", "command.session_id"),
-      )
-      .select(["command.id as commandId", "session_row.session_kind as sessionKind"])
-      .where("outbox.topic", "=", TURN_COMMAND_OUTBOX_TOPIC)
-      .where("outbox.published_at", "is", null)
-      .where("outbox.available_at", "<=", now)
-      .where("command.kind", "=", "turn.execute")
-      .where("command.state", "in", ["pending", "dispatched"])
-      .where("run.state", "in", ["queued", "claimed"])
-      .where("policy.enabled", "=", true)
-      .orderBy(
-        sql<number>`case when ${sql.ref("session_row.session_kind")} = 'subagent' then 0 else 1 end`,
-        "asc",
-      )
-      .orderBy("policy.last_scheduled_at", "asc")
-      .orderBy("outbox.available_at", "asc")
-      .orderBy("outbox.created_at", "asc")
-      .limit(positiveInteger(limit, "limit"))
-      .execute()
-      .then((rows) =>
-        rows.map((row) => ({ commandId: row.commandId, subagent: row.sessionKind === "subagent" })),
-      );
+  async #settleDispatchResult(_result: RunExecutionResult): Promise<void> {
+    // RunExecutor owns every durable transition. The queue only needs
+    // another claim: completed work is published, while a deferred/retryable
+    // record carries its next available_at timestamp.
   }
 
   async #cancellationReferences(): Promise<CancellationReference[]> {
     return this.#database
-      .selectFrom("outbox")
-      .innerJoin("commands as cancellation", (join) =>
-        join
-          .onRef("cancellation.tenant_id", "=", "outbox.tenant_id")
-          .on(
-            sql<boolean>`${sql.ref("cancellation.id")}::text = ${sql.ref("outbox.payload")} ->> 'commandId'`,
-          ),
-      )
-      .innerJoin("commands as target", (join) =>
-        join
-          .onRef("target.tenant_id", "=", "cancellation.tenant_id")
-          .on(
-            sql<boolean>`${sql.ref("target.id")}::text = ${sql.ref("outbox.payload")} ->> 'targetCommandId'`,
-          ),
-      )
+      .selectFrom("turn_control_requests as cancellation")
       .innerJoin("runs as run", (join) =>
         join
-          .onRef("run.tenant_id", "=", "target.tenant_id")
-          .onRef("run.command_id", "=", "target.id"),
+          .onRef("run.tenant_id", "=", "cancellation.tenant_id")
+          .onRef("run.id", "=", "cancellation.target_run_id"),
       )
       .innerJoin("run_attempts as attempt", (join) =>
         join
           .onRef("attempt.run_id", "=", "run.id")
           .onRef("attempt.id", "=", "run.current_attempt_id"),
       )
-      .select("target.id as targetCommandId")
-      .where("outbox.topic", "=", TURN_CANCELLATION_OUTBOX_TOPIC)
-      .where("outbox.published_at", "is", null)
-      .where("outbox.available_at", "<=", new Date())
-      .where("cancellation.kind", "=", "turn.cancel")
+      .select("run.id as targetRunId")
+      .where("cancellation.available_at", "<=", new Date())
+      .where("cancellation.kind", "=", "cancel")
       .where("cancellation.state", "in", ["pending", "dispatched"])
       .where("attempt.claim_owner_id", "=", this.#identity)
       .where("attempt.state", "in", ["provisioning", "restoring", "running", "checkpointing"])
@@ -407,7 +342,7 @@ export class PostgresPiWorker {
       .execute();
   }
 
-  #observeFailure(operation: "listen" | "scan" | "execute" | "cancel", error: unknown): void {
+  #observeFailure(operation: "listen" | "claim" | "execute" | "cancel", error: unknown): void {
     try {
       this.#onFailure?.(operation, error);
     } catch {

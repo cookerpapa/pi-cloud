@@ -4,7 +4,7 @@ import {
   type TurnExecutionLifecycle,
   type TurnExecutionRequest,
   type TurnExecutionResult,
-} from "@pi-cloud/runtime-core/run-command-executor";
+} from "@pi-cloud/runtime-core/run-executor";
 
 export type DeterministicExecutionOutcome =
   | { kind: "complete"; stopReason?: string }
@@ -22,7 +22,7 @@ export type DeterministicExecutionOutcome =
     };
 
 export type DeterministicExecutionRecord = {
-  commandId: string;
+  runId: string;
   sessionId: string;
   turnId: string;
   outcome: DeterministicExecutionOutcome["kind"];
@@ -46,7 +46,7 @@ export class DeterministicExecutionBackend implements TurnExecutionBackend {
   ): Promise<TurnExecutionResult> {
     const outcome = this.#outcomes.shift() ?? { kind: "complete" };
     this.#records.push({
-      commandId: request.commandId,
+      runId: request.runId,
       sessionId: request.sessionId,
       turnId: request.turnId,
       outcome: outcome.kind,

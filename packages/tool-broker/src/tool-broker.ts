@@ -217,7 +217,7 @@ function sameAssignment(left: ToolSandboxAssignment, right: ToolSandboxAssignmen
     left.supervisorId === right.supervisorId &&
     left.bootId === right.bootId &&
     left.sandboxId === right.sandboxId &&
-    left.commandId === right.commandId &&
+    left.runId === right.runId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
     left.executionLease === right.executionLease
@@ -269,7 +269,7 @@ function sameSupervisorAssignment(
     left.supervisorId === right.supervisorId &&
     left.bootId === right.bootId &&
     left.sandboxId === right.sandboxId &&
-    left.commandId === right.commandId &&
+    left.runId === right.runId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
     left.executionLease === right.executionLease
@@ -288,7 +288,7 @@ function terminalAssignment(
     supervisorId: "workspace-terminal",
     bootId: terminalId,
     sandboxId: terminalId,
-    commandId: terminalId,
+    runId: terminalId,
     sessionId: input.sessionId,
     turnId: terminalId,
     executionLease,
@@ -308,7 +308,7 @@ function developmentEnvironmentAssignment(
     supervisorId: "development-environment",
     bootId: input.environmentId,
     sandboxId: input.environmentId,
-    commandId: input.environmentId,
+    runId: input.environmentId,
     sessionId: input.environmentId,
     turnId: input.environmentId,
     executionLease: createExecutionLease(
@@ -2592,6 +2592,7 @@ export class ToolBroker {
     const key = workspaceIdentityKey(assignment);
     const deadline = this.#now() + 300_000;
     const ordinaryOwners = new Set<string>();
+    let reconciledTerminalOwner = false;
     for (;;) {
       let ordinaryOwner = this.#settlingWorkspaces.has(key);
       for (const [activationId, activation] of this.#activations) {
@@ -2614,6 +2615,12 @@ export class ToolBroker {
         ordinaryOwner = true;
       }
       if (!ordinaryOwner) return;
+      if (!reconciledTerminalOwner) {
+        reconciledTerminalOwner = true;
+        await this.#reapTerminalRunActivations(0);
+        ordinaryOwners.clear();
+        continue;
+      }
       if (this.#now() >= deadline) {
         throw new ToolBrokerError(
           "tool_sandbox_workspace_busy",

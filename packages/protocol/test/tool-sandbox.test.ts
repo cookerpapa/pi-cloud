@@ -32,7 +32,7 @@ const assignment = {
   supervisorId: "supervisor-tool-protocol",
   bootId: "10000000-0000-4000-8000-000000000001",
   sandboxId: "10000000-0000-4000-8000-000000000002",
-  commandId: "command-tool-protocol",
+  runId: "run-tool-protocol",
   sessionId: "session-tool-protocol",
   turnId: "turn-tool-protocol",
   executionLease: createExecutionLease(

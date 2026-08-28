@@ -12,8 +12,6 @@ import {
 import {
   parseCloudToolCapabilitySnapshot,
   parseExecutionLease,
-  TURN_CANCELLATION_OUTBOX_TOPIC,
-  TURN_COMMAND_OUTBOX_TOPIC,
   type CloudToolCapabilitySnapshot,
   type ToolBrokerWorkspaceForkRequest,
   type ToolBrokerWorkspaceForkResponse,
@@ -46,7 +44,6 @@ export type CloudSubagentJobHandle = Readonly<{
   executionId: string;
   childSessionId: string;
   childRunId: string;
-  childCommandId: string;
   state: SubagentExecutionState;
 }>;
 
@@ -280,7 +277,6 @@ export class PostgresSubagentJobProvider {
           "execution.child_run_id",
           "execution.state",
           "execution.request_sha256",
-          "child_run.command_id as childCommandId",
         ])
         .where("execution.tenant_id", "=", input.tenantId)
         .where("execution.parent_run_id", "=", input.parentRunId)
@@ -367,7 +363,6 @@ export class PostgresSubagentJobProvider {
           executionId: replay.id,
           childSessionId: replay.child_session_id,
           childRunId: replay.child_run_id,
-          childCommandId: replay.childCommandId,
           state: replay.state,
           prepareIsolated: replay.state === "preparing",
         };
@@ -467,7 +462,7 @@ export class PostgresSubagentJobProvider {
 
       const policy = await transaction
         .selectFrom("tenant_runtime_policies")
-        .select(["maximum_sessions", "maximum_unsettled_turns"])
+        .select("maximum_sessions")
         .where("tenant_id", "=", input.tenantId)
         .forUpdate()
         .executeTakeFirstOrThrow();
@@ -476,29 +471,16 @@ export class PostgresSubagentJobProvider {
         .select(({ fn }) => fn.countAll<string>().as("count"))
         .where("tenant_id", "=", input.tenantId)
         .executeTakeFirstOrThrow();
-      const unsettledTurnCount = await transaction
-        .selectFrom("turns")
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("tenant_id", "=", input.tenantId)
-        .where("state", "in", ["queued", "dispatching", "running", "cancelling"])
-        .executeTakeFirstOrThrow();
       if (Number(sessionCount.count) >= policy.maximum_sessions) {
         throw new PostgresSubagentJobError(
           "tenant_session_quota",
           "Tenant Session quota does not have capacity for a Subagent",
         );
       }
-      if (Number(unsettledTurnCount.count) >= policy.maximum_unsettled_turns) {
-        throw new PostgresSubagentJobError(
-          "tenant_run_quota",
-          "Tenant unsettled Run quota does not have capacity for a Subagent",
-        );
-      }
 
       const executionId = this.#id();
       const childSessionId = this.#id();
       const childTurnId = this.#id();
-      const childCommandId = this.#id();
       const childRunId = this.#id();
       const childWorkspaceId = input.workspaceMode === "isolated" ? this.#id() : parent.workspaceId;
       const idempotencyKey = `subagent:${executionId}`;
@@ -654,26 +636,7 @@ export class PostgresSubagentJobProvider {
           failure_retryable: null,
         })
         .executeTakeFirstOrThrow();
-      const command = await transaction
-        .insertInto("commands")
-        .values({
-          id: childCommandId,
-          tenant_id: input.tenantId,
-          session_id: childSessionId,
-          turn_id: childTurnId,
-          idempotency_key: idempotencyKey,
-          kind: "turn.execute",
-          state: "pending",
-          mailbox_position: 1,
-          payload: { schemaVersion: 1, requestHash: fingerprint },
-          dispatched_at: null,
-          acknowledged_at: null,
-          completed_at: null,
-          failure_code: null,
-        })
-        .returning("created_at")
-        .executeTakeFirstOrThrow();
-      await transaction
+      const childRun = await transaction
         .insertInto("runs")
         .values({
           id: childRunId,
@@ -683,7 +646,12 @@ export class PostgresSubagentJobProvider {
           workspace_id: childWorkspaceId,
           session_id: childSessionId,
           turn_id: childTurnId,
-          command_id: childCommandId,
+          mailbox_position: 1,
+          request_sha256: fingerprint,
+          available_at:
+            input.workspaceMode === "isolated"
+              ? new Date("9999-12-31T23:59:59.999Z")
+              : new Date(Date.now() + LOCAL_CHILD_CLAIM_GRACE_MS),
           environment_version_id: parent.environmentVersionId,
           agent_system_prompt: childSystemPrompt(
             input.systemPrompt,
@@ -703,36 +671,11 @@ export class PostgresSubagentJobProvider {
           started_at: null,
           settled_at: null,
         })
+        .returning("created_at")
         .executeTakeFirstOrThrow();
-      if (input.workspaceMode !== "isolated") {
-        await transaction
-          .insertInto("outbox")
-          .values({
-            id: this.#id(),
-            tenant_id: input.tenantId,
-            aggregate_type: "session",
-            aggregate_id: childSessionId,
-            topic: TURN_COMMAND_OUTBOX_TOPIC,
-            payload: {
-              schemaVersion: 1,
-              commandId: childCommandId,
-              sessionId: childSessionId,
-              turnId: childTurnId,
-              kind: "turn.execute",
-            },
-            // The creating Worker may immediately claim this durable Child by
-            // command ID when its reserved Child lane is free. The shared
-            // queue becomes eligible shortly afterwards, so locality never
-            // turns into a persistent affinity or capacity wait.
-            available_at: new Date(Date.now() + LOCAL_CHILD_CLAIM_GRACE_MS),
-            published_at: null,
-            last_error: null,
-          })
-          .executeTakeFirstOrThrow();
-      }
       await transaction
         .updateTable("sessions")
-        .set({ next_mailbox_position: 2, updated_at: command.created_at })
+        .set({ next_mailbox_position: 2, updated_at: childRun.created_at })
         .where("tenant_id", "=", input.tenantId)
         .where("id", "=", childSessionId)
         .executeTakeFirstOrThrow();
@@ -770,7 +713,6 @@ export class PostgresSubagentJobProvider {
         executionId,
         childSessionId,
         childRunId,
-        childCommandId,
         state: input.workspaceMode === "isolated" ? ("preparing" as const) : ("queued" as const),
         prepareIsolated: input.workspaceMode === "isolated",
       };
@@ -881,34 +823,11 @@ export class PostgresSubagentJobProvider {
           );
         }
         await transaction
-          .insertInto("outbox")
-          .values({
-            id: this.#id(),
-            tenant_id: input.tenantId,
-            aggregate_type: "session",
-            aggregate_id: execution.child_session_id,
-            topic: TURN_COMMAND_OUTBOX_TOPIC,
-            payload: {
-              schemaVersion: 1,
-              commandId: await transaction
-                .selectFrom("runs")
-                .select("command_id")
-                .where("id", "=", execution.child_run_id)
-                .executeTakeFirstOrThrow()
-                .then((run) => run.command_id),
-              sessionId: execution.child_session_id,
-              turnId: await transaction
-                .selectFrom("runs")
-                .select("turn_id")
-                .where("id", "=", execution.child_run_id)
-                .executeTakeFirstOrThrow()
-                .then((run) => run.turn_id),
-              kind: "turn.execute",
-            },
-            available_at: new Date(Date.now() + LOCAL_CHILD_CLAIM_GRACE_MS),
-            published_at: null,
-            last_error: null,
-          })
+          .updateTable("runs")
+          .set({ available_at: new Date(Date.now() + LOCAL_CHILD_CLAIM_GRACE_MS) })
+          .where("tenant_id", "=", input.tenantId)
+          .where("id", "=", execution.child_run_id)
+          .where("state", "=", "queued")
           .executeTakeFirstOrThrow();
         await transaction
           .updateTable("subagent_executions")
@@ -944,7 +863,7 @@ export class PostgresSubagentJobProvider {
       if (execution === undefined || execution.state !== "preparing") return;
       const run = await transaction
         .selectFrom("runs")
-        .select(["turn_id", "command_id"])
+        .select("turn_id")
         .where("tenant_id", "=", tenantId)
         .where("id", "=", execution.child_run_id)
         .executeTakeFirstOrThrow();
@@ -984,12 +903,6 @@ export class PostgresSubagentJobProvider {
         })
         .where("tenant_id", "=", tenantId)
         .where("id", "=", run.turn_id)
-        .executeTakeFirstOrThrow();
-      await transaction
-        .updateTable("commands")
-        .set({ state: "failed", failure_code: failureCode, completed_at: now })
-        .where("tenant_id", "=", tenantId)
-        .where("id", "=", run.command_id)
         .executeTakeFirstOrThrow();
       await transaction
         .updateTable("sessions")
@@ -1032,7 +945,6 @@ export class PostgresSubagentJobProvider {
         "execution.id as executionId",
         "execution.child_session_id as childSessionId",
         "execution.child_run_id as childRunId",
-        "child_run.command_id as childCommandId",
         "execution.child_workspace_id as childWorkspaceId",
         "execution.workspace_mode as workspaceMode",
         "execution.state as executionState",
@@ -1051,7 +963,6 @@ export class PostgresSubagentJobProvider {
         executionId: row.executionId,
         childSessionId: row.childSessionId,
         childRunId: row.childRunId,
-        childCommandId: row.childCommandId,
         state: "preparing",
       };
     }
@@ -1095,7 +1006,6 @@ export class PostgresSubagentJobProvider {
       executionId: row.executionId,
       childSessionId: row.childSessionId,
       childRunId: row.childRunId,
-      childCommandId: row.childCommandId,
       state,
       ...(row.failureCode === null ? {} : { failureCode: row.failureCode }),
       ...(row.failureMessage === null ? {} : { failureMessage: row.failureMessage }),
@@ -1207,46 +1117,23 @@ export class PostgresSubagentJobProvider {
             .onRef("run.tenant_id", "=", "execution.tenant_id")
             .onRef("run.id", "=", "execution.child_run_id"),
         )
-        .innerJoin("commands as target", (join) =>
-          join
-            .onRef("target.tenant_id", "=", "run.tenant_id")
-            .onRef("target.id", "=", "run.command_id"),
-        )
         .select([
           "execution.state as executionState",
           "execution.child_session_id as sessionId",
           "execution.child_run_id as runId",
           "run.state as runState",
           "run.turn_id as turnId",
-          "target.id as targetCommandId",
-          "target.state as targetCommandState",
         ])
         .where("execution.tenant_id", "=", tenantId)
         .where("execution.id", "=", executionId)
-        .forUpdate(["execution", "run", "target"])
+        .forUpdate(["execution", "run"])
         .executeTakeFirst();
       if (row === undefined) {
         throw new PostgresSubagentJobError("not_found", "Subagent execution was not found");
       }
       if (["completed", "failed", "cancelled", "unknown"].includes(row.executionState)) return;
       const now = new Date();
-      if (
-        row.executionState === "preparing" ||
-        (row.runState === "queued" && row.targetCommandState !== "acknowledged")
-      ) {
-        await transaction
-          .updateTable("outbox")
-          .set({ published_at: now, last_error: "subagent_cancelled_before_start" })
-          .where("tenant_id", "=", tenantId)
-          .where("aggregate_id", "=", row.sessionId)
-          .where("published_at", "is", null)
-          .execute();
-        await transaction
-          .updateTable("commands")
-          .set({ state: "failed", failure_code: "subagent_cancelled", completed_at: now })
-          .where("tenant_id", "=", tenantId)
-          .where("id", "=", row.targetCommandId)
-          .executeTakeFirstOrThrow();
+      if (row.executionState === "preparing" || row.runState === "queued") {
         await transaction
           .updateTable("runs")
           .set({ state: "cancelled", settled_at: now, updated_at: now })
@@ -1268,57 +1155,42 @@ export class PostgresSubagentJobProvider {
         return;
       }
       const existing = await transaction
-        .selectFrom("commands")
+        .selectFrom("turn_control_requests")
         .select("id")
         .where("tenant_id", "=", tenantId)
         .where("session_id", "=", row.sessionId)
         .where("turn_id", "=", row.turnId)
-        .where("kind", "=", "turn.cancel")
+        .where("kind", "=", "cancel")
         .where("state", "in", ["pending", "dispatched", "acknowledged"])
         .executeTakeFirst();
       if (existing !== undefined) return;
-      const commandId = this.#id();
+      const controlRequestId = this.#id();
+      const requestSha256 = createHash("sha256")
+        .update(`pi-cloud.subagent-cancel.v1\0${executionId}`, "utf8")
+        .digest("hex");
       await transaction
-        .insertInto("commands")
+        .insertInto("turn_control_requests")
         .values({
-          id: commandId,
+          id: controlRequestId,
           tenant_id: tenantId,
           session_id: row.sessionId,
           turn_id: row.turnId,
+          target_run_id: row.runId,
           idempotency_key: `subagent-cancel:${executionId}`,
-          kind: "turn.cancel",
+          kind: "cancel",
           state: "pending",
-          mailbox_position: null,
+          request_sha256: requestSha256,
           payload: {
             schemaVersion: 1,
-            targetCommandId: row.targetCommandId,
             reason: "user_request",
             gracePeriodMs: 2_000,
           },
+          attempts: 0,
+          available_at: now,
           dispatched_at: null,
           acknowledged_at: null,
           completed_at: null,
           failure_code: null,
-        })
-        .executeTakeFirstOrThrow();
-      await transaction
-        .insertInto("outbox")
-        .values({
-          id: this.#id(),
-          tenant_id: tenantId,
-          aggregate_type: "session",
-          aggregate_id: row.sessionId,
-          topic: TURN_CANCELLATION_OUTBOX_TOPIC,
-          payload: {
-            schemaVersion: 1,
-            commandId,
-            targetCommandId: row.targetCommandId,
-            sessionId: row.sessionId,
-            turnId: row.turnId,
-            kind: "turn.cancel",
-          },
-          published_at: null,
-          last_error: null,
         })
         .executeTakeFirstOrThrow();
     });
@@ -1385,13 +1257,6 @@ export class PostgresSubagentJobProvider {
           executionId: row.id,
           childSessionId: row.childSessionId,
           childRunId: row.childRunId,
-          childCommandId: await this.#database
-            .selectFrom("runs")
-            .select("command_id")
-            .where("tenant_id", "=", row.tenantId)
-            .where("id", "=", row.childRunId)
-            .executeTakeFirstOrThrow()
-            .then((run) => run.command_id),
           state: row.state,
         },
         "workspace_fork_abandoned",

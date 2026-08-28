@@ -96,11 +96,9 @@ export async function runTenantAdministration(
         "--credential-label",
         "--maximum-projects",
         "--maximum-sessions",
-        "--maximum-unsettled-turns",
       ]);
       const maximumProjects = optionalInteger(flags, "--maximum-projects", 1_000_000);
       const maximumSessions = optionalInteger(flags, "--maximum-sessions", 1_000_000);
-      const maximumUnsettledTurns = optionalInteger(flags, "--maximum-unsettled-turns", 1_000_000);
       const created = await createPrivateTenant(database, {
         slug: required(flags, "--slug"),
         ownerDisplayName: required(flags, "--display-name"),
@@ -110,7 +108,6 @@ export async function runTenantAdministration(
         quotas: {
           ...(maximumProjects === undefined ? {} : { maximumProjects }),
           ...(maximumSessions === undefined ? {} : { maximumSessions }),
-          ...(maximumUnsettledTurns === undefined ? {} : { maximumUnsettledTurns }),
         },
       });
       const { credential: generatedCredential, ...tenant } = created;

@@ -12,7 +12,7 @@ export type PrepareTerminalTurnProjectionInput = Readonly<{
   tenantId: string;
   sessionId: string;
   turnId: string;
-  commandId: string;
+  runId: string;
   agentId: string;
   body: TerminalEventBody;
   eventId: string;

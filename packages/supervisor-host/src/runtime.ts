@@ -14,7 +14,7 @@ import {
   PostgresTenantModelCredentialResolver,
   TenantModelCredentialVault,
 } from "@pi-cloud/runtime-core/model-credential-runtime";
-import { RunCommandExecutor } from "@pi-cloud/runtime-core/run-command-executor";
+import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { PostgresRunAttemptPhaseObserver } from "@pi-cloud/runtime-core/run-attempt-runtime";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { createDatabase, type Database } from "@pi-cloud/database";
@@ -90,7 +90,7 @@ export type SupervisorRunWorker = {
   readonly state: PostgresPiWorkerState;
   start(): Promise<void>;
   stop(): Promise<void>;
-  prioritizeSubagent?(commandId: string): boolean;
+  prioritizeSubagent?(runId: string): boolean;
 };
 
 function factChannelResolver(value: FactChannelFactory): ActiveFactChannelResolver {
@@ -575,7 +575,7 @@ export class PiWorkerRuntime {
                     ? {}
                     : { parentActivation: orchestrationContext.activation }),
                 });
-                this.#runWorker?.prioritizeSubagent?.(child.childCommandId);
+                this.#runWorker?.prioritizeSubagent?.(child.childRunId);
                 return {
                   providerJobId: child.executionId,
                   state: subagentExternalState(child.state),
@@ -698,7 +698,7 @@ export class PiWorkerRuntime {
         maximumConcurrentRuns: this.#config.maxConcurrentSessions,
         canClaimRuns: () => this.#state === "ready" && client?.state === "connected",
         admitRunClaims: async () => runClaimReadiness.ready,
-        commandExecutor: new RunCommandExecutor({
+        runExecutor: new RunExecutor({
           database: this.#database,
           backend: runBackend,
           executionAuthority: leaseCoordinator,

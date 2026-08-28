@@ -171,14 +171,14 @@ function retryableWebSocketClose(code: number): boolean {
 function sameCommandIdentity(
   command: SteerTurnCommandMessage,
   value: {
-    commandId: string;
+    requestId: string;
     sessionId: string;
     turnId: string;
     executionLease: string;
   },
 ): boolean {
   return (
-    value.commandId === command.payload.commandId &&
+    value.requestId === command.payload.controlRequestId &&
     value.sessionId === command.payload.sessionId &&
     value.turnId === command.payload.turnId &&
     value.executionLease === command.payload.executionLease
@@ -604,7 +604,7 @@ export class SupervisorWebSocketClient {
   }
 
   async #prepareCommand(command: SteerTurnCommandMessage): Promise<void> {
-    if (this.#preparedCommands.has(command.payload.commandId)) {
+    if (this.#preparedCommands.has(command.payload.controlRequestId)) {
       throw new SupervisorWebSocketClientError(
         "command_exchange_conflict",
         "Supervisor command already has an active exchange",
@@ -621,14 +621,14 @@ export class SupervisorWebSocketClient {
       committed: false,
     };
     if (entry.acknowledgement.payload.status !== "rejected") {
-      this.#preparedCommands.set(command.payload.commandId, entry);
+      this.#preparedCommands.set(command.payload.controlRequestId, entry);
     }
     try {
       await this.#send(entry.acknowledgement);
     } catch (error: unknown) {
       if (entry.acknowledgement.payload.status !== "rejected") {
         entry.prepared.releaseBeforeStart();
-        this.#preparedCommands.delete(command.payload.commandId);
+        this.#preparedCommands.delete(command.payload.controlRequestId);
       }
       throw error;
     }
@@ -653,7 +653,7 @@ export class SupervisorWebSocketClient {
   }
 
   #commitCommand(commit: CommandCommitMessage): void {
-    const entry = this.#preparedCommands.get(commit.payload.commandId);
+    const entry = this.#preparedCommands.get(commit.payload.requestId);
     if (
       entry === undefined ||
       entry.committed ||
@@ -677,7 +677,7 @@ export class SupervisorWebSocketClient {
         }
       })
       .finally(() => {
-        this.#preparedCommands.delete(entry.command.payload.commandId);
+        this.#preparedCommands.delete(entry.command.payload.controlRequestId);
         this.#commandTasks.delete(task);
       });
     this.#commandTasks.add(task);
@@ -706,7 +706,7 @@ export class SupervisorWebSocketClient {
     outcome: { status: "completed" } | ({ status: "failed" } & SafeCommandFailure),
   ): CommandResultMessage {
     const identity = {
-      commandId: entry.command.payload.commandId,
+      requestId: entry.command.payload.controlRequestId,
       sessionId: entry.command.payload.sessionId,
       turnId: entry.command.payload.turnId,
       executionLease: entry.command.payload.executionLease,
@@ -731,7 +731,7 @@ export class SupervisorWebSocketClient {
   }
 
   #releaseCommand(release: CommandReleaseMessage): void {
-    const entry = this.#preparedCommands.get(release.payload.commandId);
+    const entry = this.#preparedCommands.get(release.payload.requestId);
     if (
       entry === undefined ||
       entry.committed ||
@@ -745,7 +745,7 @@ export class SupervisorWebSocketClient {
       );
     }
     entry.prepared.releaseBeforeStart();
-    this.#preparedCommands.delete(release.payload.commandId);
+    this.#preparedCommands.delete(release.payload.requestId);
   }
 
   #scheduleHeartbeat(delayMs: number): void {

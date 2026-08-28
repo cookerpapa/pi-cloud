@@ -30,7 +30,7 @@
     "./run-attempt-runtime": "./src/run-attempt-runtime.ts",
     "./run-attempt-state": "./src/run-attempt-state.ts",
     "./run-cancellation-executor": "./src/run-cancellation-executor.ts",
-    "./run-command-executor": "./src/run-command-executor.ts",
+    "./run-executor": "./src/run-executor.ts",
     "./session-event-hub": "./src/session-event-hub.ts",
     "./session-event-stream": "./src/session-event-stream.ts",
     "./session-lease-coordinator": "./src/session-lease-coordinator.ts",

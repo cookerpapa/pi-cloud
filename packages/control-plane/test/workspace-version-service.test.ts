@@ -88,7 +88,6 @@ async function seed(): Promise<void> {
       default_model_profile_id: IDS.profile,
       maximum_projects: 10,
       maximum_sessions: 10,
-      maximum_unsettled_turns: 10,
     })
     .execute();
   await database

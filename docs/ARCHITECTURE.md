@@ -40,22 +40,25 @@ focused or whole-tree navigation, conversation forks, recursive subtree
 deletion, settled-message tail pruning, named Workspaces, snapshot-first output,
 file browsing, user-owned full-VM development environments, authenticated service
 previews, one-time SSH access, Workspace rebinding and administrator settings. The Control Plane
-commits each idempotent message and its Run command in one PostgreSQL
-transaction. It enforces bounded durable-resource admission and same-Session
+commits each idempotent message and its Run in one PostgreSQL transaction. It
+enforces durable-resource admission and same-Session
 serialization. Different Sessions may intentionally share a Workspace without
 becoming scheduler locks for one another.
 
 ### PostgreSQL Run queue
 
-Ready command Outbox rows are the Worker queue. All Pi Workers query the same
-queue. `FOR UPDATE`/transactional state transitions in `RunCommandExecutor`
-make competing scans and duplicate wakeups harmless. `LISTEN/NOTIFY` is a
+Ready `runs` rows are the sole Worker queue. All Pi Workers query that table
+directly. A lightweight indexed `FOR UPDATE SKIP LOCKED` query locks one Run
+before its immutable execution snapshot is loaded; Attempt creation, its first
+transition and the Run update are then one CTE statement in the same
+transaction. There is no separate read-then-claim dispatcher. `RunExecutor`
+make competing claims and duplicate wakeups harmless. `LISTEN/NOTIFY` is a
 best-effort wakeup hint with periodic polling as the correctness fallback. A
-monotonic process-local notification generation covers the scan-to-wait race:
+monotonic process-local notification generation covers the claim-to-wait race:
 a notification received before the waiter is installed forces an immediate
-rescan instead of falling through to the one-second poll.
+new claim instead of falling through to the one-second poll.
 
-A Worker with a disconnected ownership channel does not scan, and a Worker
+A Worker with a disconnected ownership channel does not claim, and a Worker
 maintains Fact/Kafka and Tool Broker readiness in a one-second background
 monitor. Claim admission reads that local fail-closed state without issuing
 duplicate synchronous health requests for every Run. A short execution-plane
@@ -69,9 +72,11 @@ The queue retains the existing domain protocol:
 Run -> RunAttempt -> claim lease -> execution authority/fence -> terminal commit
 ```
 
-Tenant scheduling timestamps order the bounded candidate scan so one tenant
-cannot permanently occupy every free Worker slot. KEDA uses only the count of
-ready queue rows to scale Workers; it does not own delivery semantics.
+KEDA uses only the count of ready Run and cancellation-control rows to scale
+Workers; it does not own delivery semantics. Execution commands and their
+historical queue Outbox no longer exist. The remaining Outbox is reserved for
+terminal PostgreSQL-to-Kafka publication, where a transactional handoff is
+actually required.
 
 ### Trusted Pi Worker pool
 

@@ -34,7 +34,7 @@ export class TerminalTurnProjectionGateway {
             typeof input.tenantId !== "string" ||
             typeof input.sessionId !== "string" ||
             typeof input.turnId !== "string" ||
-            typeof input.commandId !== "string" ||
+            typeof input.runId !== "string" ||
             typeof input.eventId !== "string" ||
             typeof input.occurredAt !== "string" ||
             typeof input.body !== "object" ||

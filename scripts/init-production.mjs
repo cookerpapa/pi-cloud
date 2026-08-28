@@ -496,12 +496,6 @@ const publicTenantMaximumSessions = integerEnvironmentValue(
   1,
   1_000_000,
 );
-const publicTenantMaximumUnsettledTurns = integerEnvironmentValue(
-  "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS",
-  10,
-  1,
-  1_000_000,
-);
 
 await writePrivateFile(resolve(secretsDirectory, "postgres-password"), `${postgresPassword}\n`);
 await writePrivateFile(
@@ -593,7 +587,6 @@ const environment = [
   `PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS=${publicRegistrationMaximumTenants}`,
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS=${publicTenantMaximumProjects}`,
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS=${publicTenantMaximumSessions}`,
-  `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS=${publicTenantMaximumUnsettledTurns}`,
   "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS=7200000",
   "PI_CLOUD_KAFKA_PARTITIONS=32",
   "PI_CLOUD_FACT_CHANNEL_LEASE_MS=9000",

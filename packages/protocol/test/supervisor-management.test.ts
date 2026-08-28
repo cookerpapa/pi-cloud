@@ -58,7 +58,7 @@ describe("Supervisor internal management protocol", () => {
       supervisorId: "supervisor-host-1",
       bootId: IDS.boot,
       sandboxId: IDS.sandbox,
-      commandId: IDS.credential,
+      runId: IDS.credential,
       workspaceId: IDS.request,
       sessionId: IDS.request,
       turnId: IDS.boot,

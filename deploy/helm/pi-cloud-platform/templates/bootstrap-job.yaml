@@ -57,7 +57,6 @@ spec:
             - { name: PI_CLOUD_MODEL_PROFILE_NAME, value: {{ .Values.bootstrap.modelProfileName | quote }} }
             - { name: PI_CLOUD_TENANT_MAXIMUM_PROJECTS, value: {{ .Values.bootstrap.maximumProjects | quote }} }
             - { name: PI_CLOUD_TENANT_MAXIMUM_SESSIONS, value: {{ .Values.bootstrap.maximumSessions | quote }} }
-            - { name: PI_CLOUD_TENANT_MAXIMUM_UNSETTLED_TURNS, value: {{ .Values.bootstrap.maximumUnsettledTurns | quote }} }
             - { name: PI_CLOUD_SANDBOX_DOMAINS_JSON, value: {{ toJson .Values.sandboxDomains | quote }} }
           securityContext:
             allowPrivilegeEscalation: false

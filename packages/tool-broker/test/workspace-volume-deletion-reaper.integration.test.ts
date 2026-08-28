@@ -110,7 +110,7 @@ describe("WorkspaceVolumeDeletionReaper", () => {
           supervisor_id: IDS.supervisor,
           boot_id: IDS.boot,
           sandbox_id: IDS.sandbox,
-          command_id: IDS.command,
+          run_id: IDS.command,
           session_id: IDS.session,
           turn_id: IDS.turn,
           attempt_id: IDS.attempt,

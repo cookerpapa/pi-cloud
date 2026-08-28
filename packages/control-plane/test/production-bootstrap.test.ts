@@ -24,7 +24,6 @@ const CONFIG: ProductionBootstrapConfig = {
   modelProfileName: "deterministic-production",
   maximumProjects: 100,
   maximumSessions: 1_000,
-  maximumUnsettledTurns: 100,
   sandboxDomains: [
     {
       id: "sandbox-domain-bootstrap",
@@ -280,7 +279,6 @@ describe.sequential("production bootstrap and configuration", () => {
         tenantQuotas: {
           maximumProjects: 10,
           maximumSessions: 100,
-          maximumUnsettledTurns: 10,
         },
       },
     });

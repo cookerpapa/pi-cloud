@@ -68,7 +68,6 @@ export type TranscriptItem =
 export type TurnView = {
   runId: string | null;
   turnId: string;
-  commandId: string | null;
   mailboxPosition: number | null;
   prompt: string;
   acceptedAt: string | null;
@@ -140,7 +139,6 @@ function unknownTurn(turnId: string): TurnView {
   return {
     runId: null,
     turnId,
-    commandId: null,
     mailboxPosition: null,
     prompt: "Input was accepted before this browser connected.",
     acceptedAt: null,
@@ -490,11 +488,10 @@ export function sessionViewReducer(
             }),
         runId: turn.runId,
         turnId: turn.turnId,
-        commandId: turn.commandId,
         mailboxPosition: turn.mailboxPosition,
         prompt: turn.prompt,
         acceptedAt: turn.acceptedAt,
-        status: turn.state === "queued" || turn.state === "dispatching" ? "queued" : turn.state,
+        status: turn.state,
       })),
       historyTruncated: action.conversation.historyTruncated,
       connection: { phase: "offline", attempt: 0, message: "Opening durable event stream" },
@@ -519,7 +516,6 @@ export function sessionViewReducer(
     const turns = updateTurn(state.turns, action.accepted.turnId, (turn) => ({
       ...turn,
       runId: action.accepted.runId,
-      commandId: action.accepted.commandId,
       mailboxPosition: action.accepted.mailboxPosition,
       prompt: action.prompt,
       acceptedAt: action.accepted.acceptedAt,

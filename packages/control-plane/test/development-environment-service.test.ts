@@ -173,7 +173,6 @@ beforeAll(async () => {
     quotas: {
       maximumProjects: 4,
       maximumSessions: 16,
-      maximumUnsettledTurns: 16,
     },
   });
   const otherUserId = "88888888-8888-4888-8888-888888888888";
@@ -399,7 +398,7 @@ describe("user-owned development environments", () => {
           supervisorId: "worker",
           bootId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           sandboxId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-          commandId: "command",
+          runId: "run",
           sessionId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
           turnId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
           executionLease: createExecutionLease(

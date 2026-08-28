@@ -290,7 +290,7 @@ export class SupervisorManagementServer {
         protocolVersion: 1,
         type: "turn.steered",
         requestId: message.requestId,
-        commandId: message.command.payload.commandId,
+        controlRequestId: message.command.payload.controlRequestId,
       };
     }
 

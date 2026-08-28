@@ -104,14 +104,14 @@ function positiveInteger(value: number, name: string): number {
 function sameCommandIdentity(
   command: WorkerControlCommand,
   value: {
-    commandId: string;
+    requestId: string;
     sessionId: string;
     turnId: string;
     executionLease: string;
   },
 ): boolean {
   return (
-    value.commandId === command.payload.commandId &&
+    value.requestId === command.payload.controlRequestId &&
     value.sessionId === command.payload.sessionId &&
     value.turnId === command.payload.turnId &&
     value.executionLease === command.payload.executionLease
@@ -249,11 +249,11 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
         false,
       );
     }
-    const commandId = parsed.payload.commandId;
+    const requestId = parsed.payload.controlRequestId;
     if (
-      state.pendingAcknowledgements.has(commandId) ||
-      state.preparedCommands.has(commandId) ||
-      state.pendingResults.has(commandId)
+      state.pendingAcknowledgements.has(requestId) ||
+      state.preparedCommands.has(requestId) ||
+      state.pendingResults.has(requestId)
     ) {
       throw transportError(
         "command_exchange_conflict",
@@ -272,8 +272,8 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
     let pending!: PendingAcknowledgement;
     const acknowledgement = new Promise<CommandAckMessage>((resolvePromise, rejectPromise) => {
       const timer = setTimeout(() => {
-        if (state.pendingAcknowledgements.get(commandId) !== pending) return;
-        state.pendingAcknowledgements.delete(commandId);
+        if (state.pendingAcknowledgements.get(requestId) !== pending) return;
+        state.pendingAcknowledgements.delete(requestId);
         rejectPromise(
           transportError(
             "command_ack_timeout",
@@ -289,15 +289,15 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
         reject: rejectPromise,
         timer,
       };
-      state.pendingAcknowledgements.set(commandId, pending);
+      state.pendingAcknowledgements.set(requestId, pending);
     });
 
     try {
       await state.connection.send(parsed);
     } catch {
-      if (state.pendingAcknowledgements.get(commandId) === pending) {
+      if (state.pendingAcknowledgements.get(requestId) === pending) {
         clearTimeout(pending.timer);
-        state.pendingAcknowledgements.delete(commandId);
+        state.pendingAcknowledgements.delete(requestId);
         pending.reject(
           transportError("command_send_failed", "Supervisor command could not be sent", true),
         );
@@ -319,7 +319,7 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
       throw transportError("invalid_commit", "Remote command commit was invalid", false, true);
     }
     const state = this.#connection(sandboxId, true);
-    const prepared = state.preparedCommands.get(command.payload.commandId);
+    const prepared = state.preparedCommands.get(command.payload.controlRequestId);
     if (
       prepared === undefined ||
       prepared.command.messageId !== command.messageId ||
@@ -335,7 +335,7 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
         true,
       );
     }
-    if (state.pendingResults.has(command.payload.commandId)) {
+    if (state.pendingResults.has(command.payload.controlRequestId)) {
       throw transportError(
         "command_exchange_conflict",
         "Command result is already pending",
@@ -347,8 +347,8 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
     let pending!: PendingResult;
     const result = new Promise<CommandResultMessage>((resolvePromise, rejectPromise) => {
       const timer = setTimeout(() => {
-        if (state.pendingResults.get(command.payload.commandId) !== pending) return;
-        state.pendingResults.delete(command.payload.commandId);
+        if (state.pendingResults.get(command.payload.controlRequestId) !== pending) return;
+        state.pendingResults.delete(command.payload.controlRequestId);
         rejectPromise(
           transportError(
             "command_result_timeout",
@@ -367,16 +367,16 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
         reject: rejectPromise,
         timer,
       };
-      state.preparedCommands.delete(command.payload.commandId);
-      state.pendingResults.set(command.payload.commandId, pending);
+      state.preparedCommands.delete(command.payload.controlRequestId);
+      state.pendingResults.set(command.payload.controlRequestId, pending);
     });
 
     try {
       await state.connection.send(commit);
     } catch {
-      if (state.pendingResults.get(command.payload.commandId) === pending) {
+      if (state.pendingResults.get(command.payload.controlRequestId) === pending) {
         clearTimeout(pending.timer);
-        state.pendingResults.delete(command.payload.commandId);
+        state.pendingResults.delete(command.payload.controlRequestId);
         pending.reject(
           transportError(
             "command_commit_send_failed",
@@ -403,7 +403,7 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
       throw transportError("invalid_release", "Remote command release was invalid", false);
     }
     const state = this.#connection(sandboxId, false);
-    const prepared = state.preparedCommands.get(command.payload.commandId);
+    const prepared = state.preparedCommands.get(command.payload.controlRequestId);
     if (
       prepared === undefined ||
       prepared.command.messageId !== command.messageId ||
@@ -419,7 +419,7 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
       );
     }
     await state.connection.send(release);
-    state.preparedCommands.delete(command.payload.commandId);
+    state.preparedCommands.delete(command.payload.controlRequestId);
   }
 
   #connection(sandboxId: string, ambiguous: boolean): ConnectionState {
@@ -464,7 +464,7 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
   }
 
   #acceptAcknowledgement(state: ConnectionState, message: CommandAckMessage): void {
-    const pending = state.pendingAcknowledgements.get(message.payload.commandId);
+    const pending = state.pendingAcknowledgements.get(message.payload.requestId);
     if (pending === undefined) {
       throw transportError(
         "unexpected_command_ack",
@@ -480,9 +480,9 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
       );
     }
     clearTimeout(pending.timer);
-    state.pendingAcknowledgements.delete(message.payload.commandId);
+    state.pendingAcknowledgements.delete(message.payload.requestId);
     if (message.payload.status !== "rejected") {
-      state.preparedCommands.set(message.payload.commandId, {
+      state.preparedCommands.set(message.payload.requestId, {
         command: pending.command,
         acknowledgement: message,
       });
@@ -491,7 +491,7 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
   }
 
   #acceptResult(state: ConnectionState, message: CommandResultMessage): void {
-    const pending = state.pendingResults.get(message.payload.commandId);
+    const pending = state.pendingResults.get(message.payload.requestId);
     if (pending === undefined) {
       throw transportError(
         "unexpected_command_result",
@@ -513,7 +513,7 @@ export class WorkerControlChannelRouter implements RemoteWorkerControlTransport 
       );
     }
     clearTimeout(pending.timer);
-    state.pendingResults.delete(message.payload.commandId);
+    state.pendingResults.delete(message.payload.requestId);
     pending.resolve(message);
   }
 

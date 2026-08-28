@@ -32,7 +32,6 @@ const command: ExecuteTurnCommandMessage = {
   sentAt: "2026-08-14T08:00:00.000Z",
   type: "command.turn.execute",
   payload: {
-    commandId: "22222222-2222-4222-8222-222222222222",
     idempotencyKey: "cloud-runner-integration",
     tenantId: "tenant-1",
     projectId: "project-1",

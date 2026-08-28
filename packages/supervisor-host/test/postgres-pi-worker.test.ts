@@ -2,53 +2,39 @@ import { describe, expect, it } from "vitest";
 import {
   PostgresQueueWake,
   canPrioritizeLocalSubagent,
-  selectPiWorkerExecutionReferences,
+  selectPiWorkerSlotKinds,
 } from "../src/postgres-pi-worker.ts";
 
 describe("PostgreSQL Pi Worker admission", () => {
   it("reserves one multi-slot Worker lane for durable Subagent children", () => {
-    const parents = [1, 2, 3, 4].map((index) => ({
-      commandId: `parent-${index}`,
+    const parents = [1, 2, 3].map((index) => ({
+      runId: `parent-${index}`,
       subagent: false,
     }));
-    expect(selectPiWorkerExecutionReferences(parents, [], 4)).toEqual(parents.slice(0, 3));
-    expect(
-      selectPiWorkerExecutionReferences(
-        [{ commandId: "child-1", subagent: true }, ...parents],
-        parents.slice(0, 3),
-        4,
-      ),
-    ).toEqual([{ commandId: "child-1", subagent: true }]);
+    expect(selectPiWorkerSlotKinds([], 4)).toEqual([false, false, false, true]);
+    expect(selectPiWorkerSlotKinds(parents, 4)).toEqual([true]);
   });
 
   it("uses the full pool when children are already running and keeps single-slot mode valid", () => {
-    expect(
-      selectPiWorkerExecutionReferences(
-        [{ commandId: "parent", subagent: false }],
-        [{ commandId: "child", subagent: true }],
-        2,
-      ),
-    ).toEqual([{ commandId: "parent", subagent: false }]);
-    expect(
-      selectPiWorkerExecutionReferences([{ commandId: "parent", subagent: false }], [], 1),
-    ).toEqual([{ commandId: "parent", subagent: false }]);
+    expect(selectPiWorkerSlotKinds([{ runId: "child", subagent: true }], 2)).toEqual([false]);
+    expect(selectPiWorkerSlotKinds([], 1)).toEqual([false]);
   });
 
   it("offers local Child work only while this Worker has immediate capacity", () => {
-    expect(canPrioritizeLocalSubagent("child", [{ commandId: "parent", subagent: false }], 2)).toBe(
+    expect(canPrioritizeLocalSubagent("child", [{ runId: "parent", subagent: false }], 2)).toBe(
       true,
     );
     expect(
       canPrioritizeLocalSubagent(
         "child",
         [
-          { commandId: "parent", subagent: false },
-          { commandId: "other-child", subagent: true },
+          { runId: "parent", subagent: false },
+          { runId: "other-child", subagent: true },
         ],
         2,
       ),
     ).toBe(false);
-    expect(canPrioritizeLocalSubagent("child", [{ commandId: "child", subagent: true }], 2)).toBe(
+    expect(canPrioritizeLocalSubagent("child", [{ runId: "child", subagent: true }], 2)).toBe(
       false,
     );
   });

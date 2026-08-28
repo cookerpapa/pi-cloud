@@ -66,7 +66,6 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
         workspace_id uuid not null,
         run_id uuid not null,
         turn_id uuid not null,
-        command_id uuid not null,
         attempt_id uuid unique not null,
         last_event_seq bigint not null default 0,
         fact_channel_connection_id uuid,
@@ -80,10 +79,10 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
     await sql`
       insert into session_leases(
         session_id, lease_id, sandbox_id, fencing_token, tenant_id, project_id, workspace_id,
-        run_id, turn_id, command_id, attempt_id, valid_until, acquired_at, renewed_at
+        run_id, turn_id, attempt_id, valid_until, acquired_at, renewed_at
       ) values (
         ${SESSION_ID}, ${GRANT_ID}, ${SESSION_ID}, 1, ${SESSION_ID}, ${SESSION_ID},
-        ${SESSION_ID}, ${SESSION_ID}, ${TURN_ID}, ${TURN_ID}, ${EXECUTION_ID},
+        ${SESSION_ID}, ${SESSION_ID}, ${TURN_ID}, ${EXECUTION_ID},
         '2026-08-26T00:01:00.000Z', '2026-08-26T00:00:00.000Z',
         '2026-08-26T00:00:00.000Z'
       )

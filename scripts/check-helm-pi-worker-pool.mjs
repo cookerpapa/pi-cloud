@@ -51,6 +51,7 @@ assert.equal(environment.PI_CLOUD_SUPERVISOR_CAPACITY, "4");
 const scaler = find("ScaledObject");
 assert(scaler);
 assert.equal(scaler.spec.triggers[0].type, "postgresql");
-assert.match(scaler.spec.triggers[0].metadata.query, /FROM outbox/);
+assert.match(scaler.spec.triggers[0].metadata.query, /FROM runs/i);
+assert.match(scaler.spec.triggers[0].metadata.query, /turn_control_requests/);
 assert(find("TriggerAuthentication"));
 process.stdout.write("Pi Worker Helm chart uses the shared PostgreSQL queue and passed.\n");

@@ -34,7 +34,6 @@ describe("UI internationalization", () => {
     const turn: TurnView = {
       runId: null,
       turnId: "turn-i18n",
-      commandId: null,
       mailboxPosition: null,
       prompt: "用户原始消息",
       acceptedAt: null,

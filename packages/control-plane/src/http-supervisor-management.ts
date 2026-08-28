@@ -90,7 +90,7 @@ function protocolAssignment(value: SandboxRuntimeAssignment): SupervisorRuntimeA
     supervisorId: value.supervisorId,
     bootId: value.bootId,
     sandboxId: value.sandboxId,
-    commandId: value.commandId,
+    runId: value.runId,
     workspaceId: value.workspaceId,
     sessionId: value.sessionId,
     turnId: value.turnId,
@@ -105,7 +105,7 @@ function runtimeAssignment(value: SupervisorRuntimeAssignment): SandboxRuntimeAs
     supervisorId: value.supervisorId,
     bootId: value.bootId,
     sandboxId: value.sandboxId,
-    commandId: value.commandId,
+    runId: value.runId,
     workspaceId: value.workspaceId,
     sessionId: value.sessionId,
     turnId: value.turnId,
@@ -258,7 +258,7 @@ export class HttpSupervisorManagementClient {
       });
     } catch (first: unknown) {
       if (!(first instanceof HttpSupervisorManagementError) || !first.retryable) throw first;
-      // The Worker deduplicates by commandId, so retrying the same command is
+      // The Worker deduplicates by controlRequestId, so retrying the same request is
       // safe even when the first HTTP response was lost after delivery.
       response = await this.request({
         protocolVersion: 1,
@@ -277,7 +277,7 @@ export class HttpSupervisorManagementClient {
     if (
       response.type !== "turn.steered" ||
       response.requestId !== requestId ||
-      response.commandId !== command.payload.commandId
+      response.controlRequestId !== command.payload.controlRequestId
     ) {
       throw new TurnSteerBackendError(
         "backend_protocol_violation",
@@ -317,8 +317,8 @@ export class HttpSupervisorSteerBackend implements TurnSteerBackend {
       sentAt: sentAt.toISOString(),
       type: "command.turn.steer",
       payload: {
-        commandId: request.commandId,
-        targetCommandId: request.target.commandId,
+        controlRequestId: request.controlRequestId,
+        targetRunId: request.target.runId,
         idempotencyKey: request.idempotencyKey,
         tenantId: request.target.tenantId,
         projectId: request.target.projectId,

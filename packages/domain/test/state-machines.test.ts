@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   DomainTransitionError,
-  canTransitionCommand,
+  canTransitionTurnControlRequest,
   canTransitionTurn,
-  isTerminalCommandState,
+  isTerminalTurnControlRequestState,
   isTerminalSandboxState,
   isTerminalTurnState,
-  transitionCommand,
+  transitionTurnControlRequest,
   transitionRun,
   transitionRunAttempt,
   transitionSandbox,
@@ -55,44 +55,53 @@ describe("domain state machines", () => {
     );
   });
 
-  it("walks a turn through dispatch and completion", () => {
-    const state = walkTurn("queued", ["dispatching", "running", "completed"]);
+  it("walks a turn through execution and completion", () => {
+    const state = walkTurn("queued", ["running", "completed"]);
     expect(state).toBe("completed");
     expect(isTerminalTurnState(state)).toBe(true);
     expect(() => transitionTurn("completed", "running")).toThrow(DomainTransitionError);
   });
 
-  it.each(["queued", "dispatching", "running"] as const)(
+  it.each(["queued", "running"] as const)(
     "cancels a %s turn through an explicit cancelling state",
     (from) => {
       expect(transitionTurn(transitionTurn(from, "cancelling"), "cancelled")).toBe("cancelled");
     },
   );
 
-  it("requeues only before execution has started after runner loss", () => {
-    expect(canTransitionTurn("dispatching", "queued")).toBe(true);
-    expect(transitionTurn("dispatching", "queued")).toBe("queued");
+  it("does not requeue a Turn after execution has started", () => {
     expect(canTransitionTurn("running", "queued")).toBe(false);
     expect(() => transitionTurn("running", "queued")).toThrow(DomainTransitionError);
     expect(transitionTurn("running", "failed")).toBe("failed");
   });
 
-  it("retries commands only before acknowledgement", () => {
-    expect(transitionCommand("pending", "dispatched")).toBe("dispatched");
-    expect(transitionCommand("dispatched", "pending")).toBe("pending");
-    expect(canTransitionCommand("acknowledged", "pending")).toBe(false);
-    expect(() => transitionCommand("acknowledged", "pending")).toThrow(DomainTransitionError);
+  it("retries control requests only before acknowledgement", () => {
+    expect(transitionTurnControlRequest("pending", "dispatched")).toBe("dispatched");
+    expect(transitionTurnControlRequest("dispatched", "pending")).toBe("pending");
+    expect(canTransitionTurnControlRequest("acknowledged", "pending")).toBe(false);
+    expect(() => transitionTurnControlRequest("acknowledged", "pending")).toThrow(
+      DomainTransitionError,
+    );
   });
 
   it("makes completed and failed commands terminal", () => {
     expect(
-      isTerminalCommandState(
-        transitionCommand(transitionCommand("pending", "dispatched"), "acknowledged"),
+      isTerminalTurnControlRequestState(
+        transitionTurnControlRequest(
+          transitionTurnControlRequest("pending", "dispatched"),
+          "acknowledged",
+        ),
       ),
     ).toBe(false);
-    expect(isTerminalCommandState(transitionCommand("acknowledged", "completed"))).toBe(true);
-    expect(isTerminalCommandState(transitionCommand("dispatched", "failed"))).toBe(true);
-    expect(() => transitionCommand("completed", "failed")).toThrow(DomainTransitionError);
+    expect(
+      isTerminalTurnControlRequestState(transitionTurnControlRequest("acknowledged", "completed")),
+    ).toBe(true);
+    expect(
+      isTerminalTurnControlRequestState(transitionTurnControlRequest("dispatched", "failed")),
+    ).toBe(true);
+    expect(() => transitionTurnControlRequest("completed", "failed")).toThrow(
+      DomainTransitionError,
+    );
   });
 
   it("leases, drains, and permanently terminates a sandbox", () => {

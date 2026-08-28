@@ -129,7 +129,7 @@ const METADATA = Object.freeze({
   supervisorId: "picloud.supervisor_id",
   bootId: "picloud.boot_id",
   sandboxId: "picloud.sandbox_id",
-  commandId: "picloud.command_id",
+  runId: "picloud.run_id",
   sessionId: "picloud.session_id",
   turnId: "picloud.turn_id",
   leaseId: "picloud.lease_id",
@@ -153,7 +153,7 @@ type CubeAssignmentMetadata = Readonly<{
   supervisorId: string;
   bootId: string;
   sandboxId: string;
-  commandId: string;
+  runId: string;
   sessionId: string;
   turnId: string;
   leaseId: string;
@@ -441,7 +441,7 @@ function assignmentMetadata(
     supervisorId: assignment.supervisorId,
     bootId: assignment.bootId,
     sandboxId: assignment.sandboxId,
-    commandId: assignment.commandId,
+    runId: assignment.runId,
     sessionId: assignment.sessionId,
     turnId: assignment.turnId,
     leaseId: execution.leaseId,
@@ -461,7 +461,7 @@ function assignmentMetadata(
     [METADATA.supervisorId]: assignment.supervisorId,
     [METADATA.bootId]: assignment.bootId,
     [METADATA.sandboxId]: assignment.sandboxId,
-    [METADATA.commandId]: assignment.commandId,
+    [METADATA.runId]: assignment.runId,
     [METADATA.sessionId]: assignment.sessionId,
     [METADATA.turnId]: assignment.turnId,
     [METADATA.leaseId]: execution.leaseId,
@@ -485,7 +485,7 @@ function sameAssignment(left: ToolSandboxAssignment, right: ToolSandboxAssignmen
     left.supervisorId === right.supervisorId &&
     left.bootId === right.bootId &&
     left.sandboxId === right.sandboxId &&
-    left.commandId === right.commandId &&
+    left.runId === right.runId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
     left.executionLease === right.executionLease
@@ -546,7 +546,7 @@ function currentAssignmentMetadata(
         "supervisorId",
         "bootId",
         "sandboxId",
-        "commandId",
+        "runId",
         "sessionId",
         "turnId",
         "leaseId",
@@ -628,7 +628,7 @@ function assignmentFromMetadata(
     supervisorId: current.supervisorId,
     bootId: current.bootId,
     sandboxId: current.sandboxId,
-    commandId: current.commandId,
+    runId: current.runId,
     sessionId: current.sessionId,
     turnId: current.turnId,
     executionLease: createExecutionLease(current.leaseId, current.attemptId, current.fencingToken),
@@ -656,7 +656,7 @@ function supervisorAssignment(
     supervisorId: assignment.supervisorId,
     bootId: assignment.bootId,
     sandboxId: assignment.sandboxId,
-    commandId: assignment.commandId,
+    runId: assignment.runId,
     workspaceId: assignment.workspaceId,
     sessionId: assignment.sessionId,
     turnId: assignment.turnId,
@@ -676,7 +676,7 @@ function sameRuntimeAssignment(
     actual.supervisorId === expected.supervisorId &&
     actual.bootId === expected.bootId &&
     actual.sandboxId === expected.sandboxId &&
-    actual.commandId === expected.commandId &&
+    actual.runId === expected.runId &&
     actual.workspaceId === expected.workspaceId &&
     actual.sessionId === expected.sessionId &&
     actual.turnId === expected.turnId &&

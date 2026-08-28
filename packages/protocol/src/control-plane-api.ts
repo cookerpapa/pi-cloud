@@ -272,7 +272,6 @@ export const SessionResourceSchema = Type.Object(
 
 export const ConversationTurnStateSchema = Type.Union([
   Type.Literal("queued"),
-  Type.Literal("dispatching"),
   Type.Literal("running"),
   Type.Literal("cancelling"),
   Type.Literal("completed"),
@@ -634,7 +633,6 @@ export const ConversationTurnResourceSchema = Type.Object(
   {
     runId: UuidSchema,
     turnId: UuidSchema,
-    commandId: UuidSchema,
     mailboxPosition: PositiveSafeIntegerSchema,
     prompt: Type.String({ minLength: 1, maxLength: 100_000 }),
     state: ConversationTurnStateSchema,
@@ -775,7 +773,6 @@ export const AcceptedTurnResourceSchema = Type.Object(
     runId: UuidSchema,
     turnId: UuidSchema,
     sessionId: UuidSchema,
-    commandId: UuidSchema,
     mailboxPosition: PositiveSafeIntegerSchema,
     state: Type.Literal("queued"),
     acceptedAt: UtcTimestampSchema,
@@ -864,7 +861,6 @@ export const RunResourceSchema = Type.Object(
     workspaceId: UuidSchema,
     sessionId: UuidSchema,
     turnId: UuidSchema,
-    commandId: UuidSchema,
     environment: EnvironmentRuntimeSnapshotSchema,
     state: RunStateSchema,
     attemptCount: NonNegativeSafeIntegerSchema,
@@ -962,8 +958,8 @@ export const CreateTurnCancellationRequestSchema = Type.Object(
 
 export const AcceptedTurnCancellationResourceSchema = Type.Object(
   {
-    commandId: UuidSchema,
-    targetCommandId: UuidSchema,
+    controlRequestId: UuidSchema,
+    targetRunId: UuidSchema,
     turnId: UuidSchema,
     sessionId: UuidSchema,
     state: Type.Literal("pending"),
@@ -982,8 +978,8 @@ export const CreateTurnSteerRequestSchema = Type.Object(
 
 export const TurnSteerResourceSchema = Type.Object(
   {
-    commandId: UuidSchema,
-    targetCommandId: UuidSchema,
+    controlRequestId: UuidSchema,
+    targetRunId: UuidSchema,
     turnId: UuidSchema,
     sessionId: UuidSchema,
     state: Type.Literal("delivered"),

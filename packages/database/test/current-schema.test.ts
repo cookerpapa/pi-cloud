@@ -29,6 +29,7 @@ describe("current PiCloud schema", () => {
       for (const required of [
         "runs",
         "run_attempts",
+        "turn_control_requests",
         "session_leases",
         "session_kafka_heads",
         "pi_sessions",
@@ -49,6 +50,7 @@ describe("current PiCloud schema", () => {
         "approvals",
         "agent_nodes",
         "test_results",
+        "commands",
       ]) {
         expect(names.has(retired), `retired table ${retired} survived`).toBe(false);
       }
@@ -63,8 +65,14 @@ describe("current PiCloud schema", () => {
       expect(keys.has("workspaces.seed_kind")).toBe(true);
       expect(keys.has("workspaces.object_snapshot_key")).toBe(false);
       expect(keys.has("runs.source_set_snapshot")).toBe(false);
+      expect(keys.has("runs.mailbox_position")).toBe(true);
+      expect(keys.has("runs.request_sha256")).toBe(true);
+      expect(keys.has("runs.available_at")).toBe(true);
+      expect(keys.has("runs.command_id")).toBe(false);
       expect(keys.has("tenant_runtime_policies.maximum_concurrent_turns")).toBe(false);
       expect(keys.has("tenant_runtime_policies.maximum_active_sandboxes")).toBe(false);
+      expect(keys.has("tenant_runtime_policies.last_scheduled_at")).toBe(false);
+      expect(keys.has("tenant_runtime_policies.maximum_unsettled_turns")).toBe(false);
 
       const activationIndexes = await sql<{ indexname: string; indexdef: string }>`
         select indexname, indexdef
@@ -82,7 +90,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("102_workspace_tool_runtime_slot");
+      expect(applied.rows.at(-1)?.name).toBe("103_run_queue_authority");
 
       const legacyFunctions = await sql<{ proname: string }>`
         select proname

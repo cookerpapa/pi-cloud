@@ -78,7 +78,6 @@ beforeAll(async () => {
     tenantQuotas: {
       maximumProjects: 2,
       maximumSessions: 8,
-      maximumUnsettledTurns: 2,
     },
     clock: () => NOW,
   } as const;
@@ -283,7 +282,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
       turns: [
         {
           turnId: alphaTurn.turnId,
-          commandId: alphaTurn.commandId,
+          runId: alphaTurn.runId,
           mailboxPosition: 1,
           prompt: "alpha private prompt",
           state: "queued",
@@ -603,12 +602,6 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     const assistantEntryId = "10000000-0000-4000-8000-000000000002";
     await database.transaction().execute(async (transaction) => {
       await transaction
-        .updateTable("commands")
-        .set({ state: "completed" })
-        .where("tenant_id", "=", alpha.tenantId)
-        .where("id", "=", alphaTurn.commandId)
-        .executeTakeFirstOrThrow();
-      await transaction
         .updateTable("turns")
         .set({ state: "completed", stop_reason: "stop", settled_at: NOW })
         .where("tenant_id", "=", alpha.tenantId)
@@ -634,7 +627,7 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
           session_id: alphaSession.sessionId,
           turn_id: alphaTurn.turnId,
           agent_id: "root",
-          command_id: alphaTurn.commandId,
+          run_id: alphaTurn.runId,
           seq: 1,
           schema_version: 1,
           type: "turn.completed",
@@ -874,12 +867,6 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     const laterUserEntryId = "10000000-0000-4000-8000-000000000003";
     const laterAssistantEntryId = "10000000-0000-4000-8000-000000000004";
     await database.transaction().execute(async (transaction) => {
-      await transaction
-        .updateTable("commands")
-        .set({ state: "completed" })
-        .where("tenant_id", "=", alpha.tenantId)
-        .where("id", "=", laterTurn.commandId)
-        .executeTakeFirstOrThrow();
       await transaction
         .updateTable("turns")
         .set({ state: "completed", stop_reason: "stop", settled_at: NOW })

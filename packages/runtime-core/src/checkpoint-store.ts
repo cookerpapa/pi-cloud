@@ -658,18 +658,11 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
           .onRef("turn_row.tenant_id", "=", "session_row.tenant_id")
           .onRef("turn_row.session_id", "=", "session_row.id"),
       )
-      .innerJoin("commands as command_row", (join) =>
-        join
-          .onRef("command_row.tenant_id", "=", "turn_row.tenant_id")
-          .onRef("command_row.session_id", "=", "turn_row.session_id")
-          .onRef("command_row.turn_id", "=", "turn_row.id"),
-      )
       .innerJoin("runs as run_row", (join) =>
         join
-          .onRef("run_row.tenant_id", "=", "command_row.tenant_id")
-          .onRef("run_row.session_id", "=", "command_row.session_id")
-          .onRef("run_row.turn_id", "=", "command_row.turn_id")
-          .onRef("run_row.command_id", "=", "command_row.id"),
+          .onRef("run_row.tenant_id", "=", "turn_row.tenant_id")
+          .onRef("run_row.session_id", "=", "turn_row.session_id")
+          .onRef("run_row.turn_id", "=", "turn_row.id"),
       )
       .innerJoin("run_attempts as attempt_row", (join) =>
         join
@@ -686,8 +679,6 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
         "session_row.last_fencing_token as sessionExecutionGeneration",
         "session_row.state as sessionState",
         "turn_row.state as turnState",
-        "command_row.kind as commandKind",
-        "command_row.state as commandState",
         "run_row.id as runId",
         "run_row.state as runState",
         "run_row.current_attempt_id as currentAttemptId",
@@ -705,7 +696,6 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       .where("workspace_row.deleted_at", "is", null)
       .where("session_row.id", "=", command.payload.sessionId)
       .where("turn_row.id", "=", command.payload.turnId)
-      .where("command_row.id", "=", command.payload.commandId)
       .where("run_row.id", "=", command.payload.runId)
       .where("attempt_row.id", "=", execution.attemptId)
       .where("grant.lease_id", "=", execution.leaseId);
@@ -722,8 +712,6 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       Number(row.sessionExecutionGeneration) !== execution.fencingToken ||
       row.sessionState !== "running" ||
       row.turnState !== "running" ||
-      row.commandKind !== "turn.execute" ||
-      row.commandState !== "acknowledged" ||
       row.runId !== command.payload.runId ||
       row.currentAttemptId !== execution.attemptId ||
       row.attemptId !== execution.attemptId ||

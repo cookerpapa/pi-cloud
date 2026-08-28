@@ -1,20 +1,16 @@
 import type { Database } from "@pi-cloud/database";
 import {
   isTerminalRunAttemptState,
-  transitionCommand,
   transitionRun,
   transitionRunAttempt,
   transitionSession,
   transitionTurn,
-  type CommandState,
   type SessionState,
   type TurnState,
 } from "@pi-cloud/domain";
 import {
-  TURN_COMMAND_OUTBOX_TOPIC,
   parseCloudToolCapabilitySnapshot,
   parseEnvironmentRuntimeSnapshot,
-  parseTurnCommandOutboxPayload,
 } from "@pi-cloud/protocol";
 import type {
   CancelTurnCommandMessage,
@@ -45,7 +41,6 @@ export type TurnExecutionRequest = {
   turnId: string;
   attemptId: string;
   attemptNumber: number;
-  commandId: string;
   idempotencyKey: string;
   nextEventSeq: string;
   input: {
@@ -158,39 +153,39 @@ export class TurnExecutionCancelledError extends TurnExecutionBackendError {
   }
 }
 
-export class RunCommandExecutorInvariantError extends Error {
+export class RunExecutorInvariantError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "RunCommandExecutorInvariantError";
+    this.name = "RunExecutorInvariantError";
   }
 }
 
-export class RunCommandExecutorStaleClaimError extends Error {
+export class RunExecutorStaleClaimError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "RunCommandExecutorStaleClaimError";
+    this.name = "RunExecutorStaleClaimError";
   }
 }
 
-export type RunCommandExecutionResult =
+export type RunExecutionResult =
   | { status: "idle" }
   | {
       status: "cancellation_pending" | "cancelled";
-      commandId: string;
+      runId: string;
       sessionId: string;
       turnId: string;
       attempt: number;
     }
   | {
       status: "completed";
-      commandId: string;
+      runId: string;
       sessionId: string;
       turnId: string;
       attempt: number;
     }
   | {
       status: "retry_scheduled";
-      commandId: string;
+      runId: string;
       sessionId: string;
       turnId: string;
       attempt: number;
@@ -198,7 +193,7 @@ export type RunCommandExecutionResult =
     }
   | {
       status: "failed";
-      commandId: string;
+      runId: string;
       sessionId: string;
       turnId: string;
       attempt: number;
@@ -206,7 +201,7 @@ export type RunCommandExecutionResult =
       failureCode: string;
     };
 
-export type RunCommandExecutorOptions = {
+export type RunExecutorOptions = {
   database: Kysely<Database>;
   backend: TurnExecutionBackend;
   clock?: () => Date;
@@ -220,21 +215,18 @@ export type RunCommandExecutorOptions = {
 };
 
 type ClaimedTurn = {
-  outboxId: string;
   attempt: number;
   request: TurnExecutionRequest;
   queuedAt: Date;
 };
 
 type LifecycleRows = {
-  commandState: CommandState;
-  commandFailureCode: string | null;
   turnState: TurnState;
   sessionState: SessionState;
-  outboxAttempts: number;
-  outboxPublishedAt: Date | string | null;
   runState: import("@pi-cloud/domain").RunState;
+  runFailureCode: string | null;
   runVersion: string;
+  runAttemptCount: number;
   currentAttemptId: string | null;
   runAttemptState: import("@pi-cloud/domain").RunAttemptState;
 };
@@ -257,7 +249,7 @@ function positiveInteger(value: number, name: string): number {
 function safeMailboxPosition(value: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 1) {
-    throw new RunCommandExecutorInvariantError(
+    throw new RunExecutorInvariantError(
       "The v1 turn dispatcher requires a positive mailbox position",
     );
   }
@@ -267,7 +259,7 @@ function safeMailboxPosition(value: string): number {
 function safeNonNegativeInteger(value: number | string, name: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw new RunCommandExecutorInvariantError(`${name} must be a non-negative safe integer`);
+    throw new RunExecutorInvariantError(`${name} must be a non-negative safe integer`);
   }
   return parsed;
 }
@@ -324,11 +316,11 @@ function normalizeFailure(error: unknown): ExecutionFailure {
 
 function expectOne(updatedRows: bigint, description: string): void {
   if (updatedRows !== 1n) {
-    throw new RunCommandExecutorInvariantError(`${description} changed ${updatedRows} rows`);
+    throw new RunExecutorInvariantError(`${description} changed ${updatedRows} rows`);
   }
 }
 
-export class RunCommandExecutor {
+export class RunExecutor {
   readonly #database: Kysely<Database>;
   readonly #backend: TurnExecutionBackend;
   readonly #clock: () => Date;
@@ -340,7 +332,7 @@ export class RunCommandExecutor {
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #terminalTurnProjectionSource: TerminalTurnProjectionSource | undefined;
 
-  constructor(options: RunCommandExecutorOptions) {
+  constructor(options: RunExecutorOptions) {
     this.#database = options.database;
     this.#backend = options.backend;
     this.#clock = options.clock ?? (() => new Date());
@@ -364,21 +356,40 @@ export class RunCommandExecutor {
   }
 
   /**
-   * Executes exactly one durable command selected by the PostgreSQL Worker queue. This component
+   * Executes one durable Run selected by the PostgreSQL Worker queue. This component
    * owns transactional admission and lifecycle commits; it never chooses
    * between tenants, Sessions, or Runs.
    */
-  async dispatchCommand(commandId: string): Promise<RunCommandExecutionResult> {
-    if (
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(commandId)
-    ) {
-      throw new TypeError("commandId must be a UUID");
+  async dispatchRun(runId: string): Promise<RunExecutionResult> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(runId)) {
+      throw new TypeError("runId must be a UUID");
     }
-    return this.#dispatch(commandId.toLowerCase());
+    return this.#dispatch(runId.toLowerCase());
   }
 
-  async #dispatch(commandId: string): Promise<RunCommandExecutionResult> {
-    const claim = await this.#claimNext(commandId);
+  async dispatchNext(sessionKind: "conversation" | "subagent"): Promise<RunExecutionResult> {
+    return this.#dispatch(undefined, sessionKind);
+  }
+
+  async #dispatch(
+    runId?: string,
+    sessionKind?: "conversation" | "subagent",
+  ): Promise<RunExecutionResult> {
+    const claimStartedAt = performance.now();
+    let claim: ClaimedTurn | undefined;
+    try {
+      claim = await this.#claimNext(runId, sessionKind);
+      this.#metrics?.runClaimDuration.observe(
+        { outcome: claim === undefined ? "idle" : "claimed" },
+        (performance.now() - claimStartedAt) / 1_000,
+      );
+    } catch (error: unknown) {
+      this.#metrics?.runClaimDuration.observe(
+        { outcome: "failed" },
+        (performance.now() - claimStartedAt) / 1_000,
+      );
+      throw error;
+    }
     if (!claim) return { status: "idle" };
 
     const observedAt = safeDate(this.#clock).valueOf();
@@ -386,7 +397,7 @@ export class RunCommandExecutor {
     this.#metrics?.activeRuns.inc();
     const executionStartedAt = performance.now();
     try {
-      const result = await withSpan<RunCommandExecutionResult>({
+      const result = await withSpan<RunExecutionResult>({
         serviceName: "pi-cloud-control-plane",
         name: "run.dispatch",
         ...(claim.request.traceContext === undefined ? {} : { parent: claim.request.traceContext }),
@@ -404,7 +415,7 @@ export class RunCommandExecutor {
             started: (candidate) => {
               if (this.#executionAuthority !== undefined && candidate === undefined) {
                 return Promise.reject(
-                  new RunCommandExecutorInvariantError(
+                  new RunExecutorInvariantError(
                     "A fenced execution acknowledgement is required by the configured lease manager",
                   ),
                 );
@@ -414,9 +425,7 @@ export class RunCommandExecutor {
                 candidate?.executionLease !== acknowledgement?.executionLease
               ) {
                 return Promise.reject(
-                  new RunCommandExecutorInvariantError(
-                    "Execution acknowledgement changed after start",
-                  ),
+                  new RunExecutorInvariantError("Execution acknowledgement changed after start"),
                 );
               }
               acknowledgement = candidate;
@@ -440,7 +449,7 @@ export class RunCommandExecutor {
             if (!started) {
               throw new TurnExecutionBackendError(
                 "backend_protocol_violation",
-                "Execution backend returned before acknowledging the command",
+                "Execution backend returned before acknowledging the Run",
                 false,
               );
             }
@@ -468,7 +477,7 @@ export class RunCommandExecutor {
               const externallySettled = await this.#observeCancellation(claim);
               if (externallySettled !== undefined) return externallySettled;
               if (error instanceof TurnExecutionCancelledError && error.reason === "user_request") {
-                throw new RunCommandExecutorInvariantError(
+                throw new RunExecutorInvariantError(
                   "Cancellation confirmation arrived before its durable lifecycle",
                 );
               }
@@ -479,7 +488,7 @@ export class RunCommandExecutor {
           await this.#complete(claim, executionResult, acknowledgement);
           return {
             status: "completed",
-            commandId: claim.request.commandId,
+            runId: claim.request.runId,
             sessionId: claim.request.sessionId,
             turnId: claim.request.turnId,
             attempt: claim.attempt,
@@ -504,93 +513,131 @@ export class RunCommandExecutor {
     }
   }
 
-  async #observeCancellation(claim: ClaimedTurn): Promise<RunCommandExecutionResult | undefined> {
+  async #observeCancellation(claim: ClaimedTurn): Promise<RunExecutionResult | undefined> {
     return this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
       if (
-        rows.commandState === "acknowledged" &&
+        rows.runState === "cancel_requested" &&
         rows.turnState === "cancelling" &&
-        rows.sessionState === "cancelling" &&
-        rows.outboxPublishedAt !== null
+        rows.sessionState === "cancelling"
       ) {
         return {
           status: "cancellation_pending",
-          commandId: claim.request.commandId,
+          runId: claim.request.runId,
           sessionId: claim.request.sessionId,
           turnId: claim.request.turnId,
           attempt: claim.attempt,
         };
       }
       if (
-        rows.commandState === "completed" &&
+        rows.runState === "cancelled" &&
         rows.turnState === "cancelled" &&
-        rows.sessionState === "idle" &&
-        rows.outboxPublishedAt !== null
+        rows.sessionState === "idle"
       ) {
         return {
           status: "cancelled",
-          commandId: claim.request.commandId,
+          runId: claim.request.runId,
           sessionId: claim.request.sessionId,
           turnId: claim.request.turnId,
           attempt: claim.attempt,
         };
       }
       if (
-        rows.commandState === "failed" &&
+        rows.runState === "failed" &&
         rows.turnState === "failed" &&
-        rows.sessionState === "failed" &&
-        rows.outboxPublishedAt !== null
+        rows.sessionState === "failed"
       ) {
         return {
           status: "failed",
-          commandId: claim.request.commandId,
+          runId: claim.request.runId,
           sessionId: claim.request.sessionId,
           turnId: claim.request.turnId,
           attempt: claim.attempt,
           phase: "after_start",
-          failureCode: rows.commandFailureCode ?? "cancellation_failed",
+          failureCode: rows.runFailureCode ?? "cancellation_failed",
         };
       }
       return undefined;
     });
   }
 
-  async #claimNext(commandId: string): Promise<ClaimedTurn | undefined> {
+  async #claimNext(
+    runId?: string,
+    sessionKind?: "conversation" | "subagent",
+  ): Promise<ClaimedTurn | undefined> {
     const now = safeDate(this.#clock);
     const leaseUntil = new Date(now.valueOf() + this.#claimLeaseMs);
 
     return this.#database.transaction().execute(async (transaction) => {
+      let selectedRunId = runId;
+      if (selectedRunId === undefined) {
+        const candidate = await transaction
+          .selectFrom("runs as candidate")
+          .innerJoin("sessions as candidate_session", (join) =>
+            join
+              .onRef("candidate_session.tenant_id", "=", "candidate.tenant_id")
+              .onRef("candidate_session.id", "=", "candidate.session_id"),
+          )
+          .innerJoin(
+            "tenant_runtime_policies as candidate_policy",
+            "candidate_policy.tenant_id",
+            "candidate.tenant_id",
+          )
+          .select("candidate.id")
+          .where("candidate.available_at", "<=", now)
+          .where("candidate.state", "in", ["queued", "claimed"])
+          .where("candidate_session.state", "in", ["cold", "idle"])
+          .where("candidate_session.session_kind", "=", sessionKind!)
+          .where("candidate_policy.enabled", "=", true)
+          .where(
+            sql<boolean>`not exists (
+              select 1
+              from runs as active_run
+              where active_run.tenant_id = ${sql.ref("candidate.tenant_id")}
+                and active_run.session_id = ${sql.ref("candidate.session_id")}
+                and active_run.id <> ${sql.ref("candidate.id")}
+                and active_run.state in (
+                  'claimed', 'provisioning', 'restoring', 'running', 'checkpointing', 'cancel_requested'
+                )
+            )`,
+          )
+          .where(
+            sql<boolean>`not exists (
+              select 1
+              from runs as earlier_run
+              where earlier_run.tenant_id = ${sql.ref("candidate.tenant_id")}
+                and earlier_run.session_id = ${sql.ref("candidate.session_id")}
+                and earlier_run.state not in ('completed', 'failed', 'cancelled', 'timed_out', 'superseded')
+                and earlier_run.mailbox_position < ${sql.ref("candidate.mailbox_position")}
+            )`,
+          )
+          .orderBy("candidate.available_at", "asc")
+          .orderBy("candidate.queued_at", "asc")
+          .orderBy("candidate.id", "asc")
+          .limit(1)
+          .forUpdate("candidate")
+          .skipLocked()
+          .executeTakeFirst();
+        if (candidate === undefined) return undefined;
+        selectedRunId = candidate.id;
+      }
       const row = await transaction
-        .selectFrom("outbox")
-        .innerJoin("commands as command", (join) =>
-          join
-            .onRef("command.tenant_id", "=", "outbox.tenant_id")
-            .on(
-              sql<boolean>`${sql.ref("command.id")}::text = ${sql.ref("outbox.payload")} ->> 'commandId'`,
-            ),
-        )
+        .selectFrom("runs as run")
         .innerJoin("turns as turn", (join) =>
           join
-            .onRef("turn.tenant_id", "=", "command.tenant_id")
-            .onRef("turn.session_id", "=", "command.session_id")
-            .onRef("turn.id", "=", "command.turn_id"),
+            .onRef("turn.tenant_id", "=", "run.tenant_id")
+            .onRef("turn.session_id", "=", "run.session_id")
+            .onRef("turn.id", "=", "run.turn_id"),
         )
         .innerJoin("sessions as session_row", (join) =>
           join
-            .onRef("session_row.tenant_id", "=", "command.tenant_id")
-            .onRef("session_row.id", "=", "command.session_id"),
+            .onRef("session_row.tenant_id", "=", "run.tenant_id")
+            .onRef("session_row.id", "=", "run.session_id"),
         )
         .innerJoin("workspaces as workspace_row", (join) =>
           join
             .onRef("workspace_row.tenant_id", "=", "session_row.tenant_id")
             .onRef("workspace_row.id", "=", "session_row.workspace_id"),
-        )
-        .innerJoin("runs as run", (join) =>
-          join
-            .onRef("run.tenant_id", "=", "command.tenant_id")
-            .onRef("run.session_id", "=", "command.session_id")
-            .onRef("run.turn_id", "=", "turn.id")
-            .onRef("run.command_id", "=", "command.id"),
         )
         .innerJoin("environment_versions as environment", (join) =>
           join
@@ -598,16 +645,11 @@ export class RunCommandExecutor {
             .onRef("environment.project_id", "=", "run.project_id")
             .onRef("environment.id", "=", "run.environment_version_id"),
         )
-        .innerJoin("tenant_runtime_policies as policy", "policy.tenant_id", "command.tenant_id")
+        .innerJoin("tenant_runtime_policies as policy", "policy.tenant_id", "run.tenant_id")
         .select([
-          "outbox.id as outboxId",
-          "outbox.payload as outboxPayload",
-          "outbox.attempts as attempts",
-          "command.tenant_id as tenantId",
-          "command.id as commandId",
-          "command.idempotency_key as idempotencyKey",
-          "command.mailbox_position as mailboxPosition",
-          "command.state as commandState",
+          "run.tenant_id as tenantId",
+          "run.idempotency_key as idempotencyKey",
+          "run.mailbox_position as mailboxPosition",
           "turn.id as turnId",
           "turn.state as turnState",
           "turn.input_kind as inputKind",
@@ -659,67 +701,49 @@ export class RunCommandExecutor {
         ])
         .where("workspace_row.deleted_at", "is", null)
         .where("policy.enabled", "=", true)
-        .where("outbox.topic", "=", TURN_COMMAND_OUTBOX_TOPIC)
-        .where("outbox.published_at", "is", null)
-        .where("outbox.available_at", "<=", now)
-        .where("command.kind", "=", "turn.execute")
-        .where("command.id", "=", commandId)
+        .where("run.available_at", "<=", now)
+        .where("run.id", "=", selectedRunId)
+        .$if(sessionKind !== undefined, (query) =>
+          query.where("session_row.session_kind", "=", sessionKind!),
+        )
+        .where("run.state", "in", ["queued", "claimed"])
+        .where("turn.state", "=", "queued")
         .where(
-          sql<boolean>`(
-            (
-              ${sql.ref("command.state")} = 'pending'
-              and ${sql.ref("turn.state")} = 'queued'
-              and not exists (
-                select 1
-                from turns as active_turn
-                where active_turn.tenant_id = ${sql.ref("command.tenant_id")}
-                  and active_turn.session_id = ${sql.ref("command.session_id")}
-                  and active_turn.state in ('dispatching', 'running', 'cancelling')
+          sql<boolean>`not exists (
+            select 1
+            from runs as active_run
+            where active_run.tenant_id = ${sql.ref("run.tenant_id")}
+              and active_run.session_id = ${sql.ref("run.session_id")}
+              and active_run.id <> ${sql.ref("run.id")}
+              and active_run.state in (
+                'claimed', 'provisioning', 'restoring', 'running', 'checkpointing', 'cancel_requested'
               )
-            )
-            or (
-              ${sql.ref("command.state")} = 'dispatched'
-              and ${sql.ref("turn.state")} = 'dispatching'
-            )
           )`,
         )
         .where(
           sql<boolean>`not exists (
             select 1
-            from commands as earlier_command
-            where earlier_command.tenant_id = ${sql.ref("command.tenant_id")}
-              and earlier_command.session_id = ${sql.ref("command.session_id")}
-              and earlier_command.kind = 'turn.execute'
-              and earlier_command.state in ('pending', 'dispatched', 'acknowledged')
-              and earlier_command.mailbox_position < ${sql.ref("command.mailbox_position")}
+            from runs as earlier_run
+            where earlier_run.tenant_id = ${sql.ref("run.tenant_id")}
+              and earlier_run.session_id = ${sql.ref("run.session_id")}
+              and earlier_run.state not in ('completed', 'failed', 'cancelled', 'timed_out', 'superseded')
+              and earlier_run.mailbox_position < ${sql.ref("run.mailbox_position")}
           )`,
         )
         .where("session_row.state", "in", ["cold", "idle"])
+        .orderBy("run.available_at", "asc")
+        .orderBy("run.queued_at", "asc")
+        .orderBy("run.id", "asc")
         .limit(1)
-        .forUpdate(["outbox", "session_row", "run"])
+        .forUpdate("run")
         .skipLocked()
         .executeTakeFirst();
 
       if (!row) return undefined;
 
-      const payload = parseTurnCommandOutboxPayload(row.outboxPayload);
-      if (
-        payload.commandId !== row.commandId ||
-        payload.sessionId !== row.sessionId ||
-        payload.turnId !== row.turnId
-      ) {
-        throw new RunCommandExecutorInvariantError(
-          "Turn-command outbox identity does not match its durable command",
-        );
-      }
       if (row.inputKind !== "prompt" || row.inputText === null) {
-        throw new RunCommandExecutorInvariantError(
+        throw new RunExecutorInvariantError(
           "The v1 turn dispatcher only accepts durable prompt turns",
-        );
-      }
-      if (row.mailboxPosition === null) {
-        throw new RunCommandExecutorInvariantError(
-          "The v1 turn dispatcher requires a positive mailbox position",
         );
       }
       safeMailboxPosition(row.mailboxPosition);
@@ -732,12 +756,7 @@ export class RunCommandExecutor {
       const remainingToolCalls = maximumToolCalls;
       const toolCapabilities = parseCloudToolCapabilitySnapshot(row.toolCapabilitySnapshot);
 
-      const attemptNumber = row.attempts + 1;
-      if (row.runAttemptCount !== row.attempts) {
-        throw new RunCommandExecutorInvariantError(
-          "Run attempt count does not match its durable outbox",
-        );
-      }
+      const attemptNumber = row.runAttemptCount + 1;
       if (row.currentAttemptId !== null) {
         const previous = await transaction
           .selectFrom("run_attempts")
@@ -748,7 +767,7 @@ export class RunCommandExecutor {
           .forUpdate()
           .executeTakeFirst();
         if (previous === undefined) {
-          throw new RunCommandExecutorInvariantError("Current run attempt is missing");
+          throw new RunExecutorInvariantError("Current run attempt is missing");
         }
         if (!isTerminalRunAttemptState(previous.state)) {
           const superseded = await transaction
@@ -769,123 +788,75 @@ export class RunCommandExecutor {
               attempt_id: row.currentAttemptId,
               from_state: previous.state,
               to_state: "superseded",
-              reason: "outbox_claim_expired",
+              reason: "run_claim_expired",
               occurred_at: now,
             })
             .executeTakeFirstOrThrow();
         }
       }
       const attemptId = this.#idGenerator();
-      await transaction
-        .insertInto("run_attempts")
-        .values({
-          id: attemptId,
-          tenant_id: row.tenantId,
-          run_id: row.runId,
-          attempt_number: attemptNumber,
-          state: "claimed",
-          claim_owner_id: this.#claimOwnerId,
-          claim_expires_at: leaseUntil,
-          sandbox_id: null,
-          lease_id: null,
-          fencing_token: null,
-          checkpoint_revision: null,
-          failure_code: null,
-          failure_message: null,
-          failure_retryable: null,
-          provisioning_at: null,
-          restoring_at: null,
-          running_at: null,
-          checkpointing_at: null,
-          last_heartbeat_at: null,
-          last_event_seq: Math.max(0, Number(row.nextEventSeq) - 1),
-          settled_at: null,
-          claimed_at: now,
-          created_at: now,
-          updated_at: now,
-        })
-        .executeTakeFirstOrThrow();
-      await transaction
-        .insertInto("run_attempt_transitions")
-        .values({
-          id: this.#idGenerator(),
-          tenant_id: row.tenantId,
-          run_id: row.runId,
-          attempt_id: attemptId,
-          from_state: null,
-          to_state: "claimed",
-          reason: "outbox_claimed",
-          occurred_at: now,
-        })
-        .executeTakeFirstOrThrow();
-      const runUpdate = await transaction
-        .updateTable("runs")
-        .set({
-          state: "claimed",
-          current_attempt_id: attemptId,
-          attempt_count: attemptNumber,
-          workspace_base_version_id:
-            row.forkedFromSessionId === null
-              ? row.currentWorkspaceVersionId
-              : row.sessionWorkspaceVersionId,
-          stop_reason: null,
-          failure_code: null,
-          failure_message: null,
-          failure_retryable: null,
-          settled_at: null,
-          row_version: sql<string>`${sql.ref("row_version")} + 1`,
-          updated_at: now,
-        })
-        .where("tenant_id", "=", row.tenantId)
-        .where("id", "=", row.runId)
-        .where("row_version", "=", row.runVersion)
-        .where("attempt_count", "=", row.runAttemptCount)
-        .executeTakeFirst();
-      expectOne(runUpdate.numUpdatedRows, "claiming a run");
-
-      if (row.commandState === "pending" && row.turnState === "queued") {
-        const commandUpdate = await transaction
-          .updateTable("commands")
-          .set({
-            state: transitionCommand(row.commandState, "dispatched"),
-            dispatched_at: now,
-            failure_code: null,
-          })
-          .where("tenant_id", "=", row.tenantId)
-          .where("id", "=", row.commandId)
-          .where("state", "=", row.commandState)
-          .executeTakeFirst();
-        expectOne(commandUpdate.numUpdatedRows, "claiming a command");
-
-        const turnUpdate = await transaction
-          .updateTable("turns")
-          .set({ state: transitionTurn(row.turnState, "dispatching") })
-          .where("tenant_id", "=", row.tenantId)
-          .where("id", "=", row.turnId)
-          .where("state", "=", row.turnState)
-          .executeTakeFirst();
-        expectOne(turnUpdate.numUpdatedRows, "claiming a turn");
-      } else if (row.commandState !== "dispatched" || row.turnState !== "dispatching") {
-        throw new RunCommandExecutorInvariantError(
-          `Claimed command and turn states do not match (${row.commandState}/${row.turnState})`,
-        );
+      const transitionId = this.#idGenerator();
+      const workspaceBaseVersionId =
+        row.forkedFromSessionId === null
+          ? row.currentWorkspaceVersionId
+          : row.sessionWorkspaceVersionId;
+      const claimed = await sql<{
+        attemptCount: number;
+        transitionCount: number;
+        runCount: number;
+      }>`
+        with inserted_attempt as (
+          insert into run_attempts (
+            id, tenant_id, run_id, attempt_number, state, claim_owner_id,
+            claim_expires_at, last_event_seq, claimed_at, created_at, updated_at
+          ) values (
+            ${attemptId}::uuid, ${row.tenantId}::uuid, ${row.runId}::uuid,
+            ${attemptNumber}, 'claimed', ${this.#claimOwnerId}, ${leaseUntil},
+            ${Math.max(0, Number(row.nextEventSeq) - 1)}::bigint, ${now}, ${now}, ${now}
+          )
+          returning id
+        ), inserted_transition as (
+          insert into run_attempt_transitions (
+            id, tenant_id, run_id, attempt_id, from_state, to_state, reason, occurred_at
+          )
+          select ${transitionId}::uuid, ${row.tenantId}::uuid, ${row.runId}::uuid,
+                 id, null, 'claimed', 'run_claimed', ${now}
+            from inserted_attempt
+          returning id
+        ), updated_run as (
+          update runs
+             set state = 'claimed',
+                 available_at = ${leaseUntil},
+                 current_attempt_id = ${attemptId}::uuid,
+                 attempt_count = ${attemptNumber},
+                 workspace_base_version_id = ${workspaceBaseVersionId}::uuid,
+                 stop_reason = null,
+                 failure_code = null,
+                 failure_message = null,
+                 failure_retryable = null,
+                 settled_at = null,
+                 row_version = row_version + 1,
+                 updated_at = ${now}
+           where tenant_id = ${row.tenantId}::uuid
+             and id = ${row.runId}::uuid
+             and row_version = ${row.runVersion}::bigint
+             and attempt_count = ${row.runAttemptCount}
+          returning id
+        )
+        select (select count(*)::int from inserted_attempt) as "attemptCount",
+               (select count(*)::int from inserted_transition) as "transitionCount",
+               (select count(*)::int from updated_run) as "runCount"
+      `.execute(transaction);
+      const claimCounts = claimed.rows[0];
+      if (
+        claimCounts?.attemptCount !== 1 ||
+        claimCounts.transitionCount !== 1 ||
+        claimCounts.runCount !== 1
+      ) {
+        throw new RunExecutorInvariantError("Run claim did not commit one atomic lifecycle");
       }
 
-      const outboxUpdate = await transaction
-        .updateTable("outbox")
-        .set({
-          attempts: sql<number>`${sql.ref("attempts")} + 1`,
-          available_at: leaseUntil,
-          last_error: null,
-        })
-        .where("tenant_id", "=", row.tenantId)
-        .where("id", "=", row.outboxId)
-        .where("published_at", "is", null)
-        .executeTakeFirst();
-      expectOne(outboxUpdate.numUpdatedRows, "leasing an outbox record");
-
       return {
-        outboxId: row.outboxId,
         attempt: attemptNumber,
         queuedAt: new Date(row.runQueuedAt),
         request: {
@@ -897,7 +868,6 @@ export class RunCommandExecutor {
           turnId: row.turnId,
           attemptId,
           attemptNumber,
-          commandId: row.commandId,
           idempotencyKey: row.idempotencyKey,
           nextEventSeq: row.nextEventSeq,
           input: { kind: "prompt", prompt: row.inputText },
@@ -970,15 +940,8 @@ export class RunCommandExecutor {
     const now = safeDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
-      if (rows.commandState !== "dispatched" || rows.turnState !== "dispatching") {
-        throw new RunCommandExecutorInvariantError(
-          "Only a dispatched command and turn can be acknowledged",
-        );
-      }
-      if (rows.outboxPublishedAt !== null) {
-        throw new RunCommandExecutorInvariantError(
-          "An unpublished outbox record is required before command acknowledgement",
-        );
+      if (rows.runState !== "claimed" || rows.turnState !== "queued") {
+        throw new RunExecutorInvariantError("Only a claimed Run with a queued Turn can start");
       }
       if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
         await this.#executionAuthority.assertCurrent(
@@ -998,7 +961,7 @@ export class RunCommandExecutor {
         {
           runState: "provisioning",
           attemptState: "provisioning",
-          reason: "command_acknowledged",
+          reason: "run_started",
           now,
           heartbeat: true,
           transitionId: this.#idGenerator(),
@@ -1013,22 +976,10 @@ export class RunCommandExecutor {
       } else if (rows.sessionState === "idle") {
         nextSessionState = transitionSession(rows.sessionState, "running");
       } else {
-        throw new RunCommandExecutorInvariantError(
+        throw new RunExecutorInvariantError(
           `Session cannot start a turn from ${rows.sessionState}`,
         );
       }
-
-      const commandUpdate = await transaction
-        .updateTable("commands")
-        .set({
-          state: transitionCommand(rows.commandState, "acknowledged"),
-          acknowledged_at: now,
-        })
-        .where("tenant_id", "=", claim.request.tenantId)
-        .where("id", "=", claim.request.commandId)
-        .where("state", "=", rows.commandState)
-        .executeTakeFirst();
-      expectOne(commandUpdate.numUpdatedRows, "acknowledging a command");
 
       const turnUpdate = await transaction
         .updateTable("turns")
@@ -1055,15 +1006,6 @@ export class RunCommandExecutor {
         .where("state", "=", rows.sessionState)
         .executeTakeFirst();
       expectOne(sessionUpdate.numUpdatedRows, "starting a session");
-
-      const outboxUpdate = await transaction
-        .updateTable("outbox")
-        .set({ published_at: now, last_error: null })
-        .where("tenant_id", "=", claim.request.tenantId)
-        .where("id", "=", claim.outboxId)
-        .where("published_at", "is", null)
-        .executeTakeFirst();
-      expectOne(outboxUpdate.numUpdatedRows, "publishing an acknowledged outbox record");
     });
   }
 
@@ -1084,14 +1026,11 @@ export class RunCommandExecutor {
     await this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
       if (
-        rows.commandState !== "acknowledged" ||
+        !["provisioning", "restoring", "running", "checkpointing"].includes(rows.runState) ||
         rows.turnState !== "running" ||
-        rows.sessionState !== "running" ||
-        rows.outboxPublishedAt === null
+        rows.sessionState !== "running"
       ) {
-        throw new RunCommandExecutorInvariantError(
-          "Only an acknowledged running command can complete",
-        );
+        throw new RunExecutorInvariantError("Only a running Run can complete");
       }
 
       if (this.#executionAuthority !== undefined && acknowledgement !== undefined) {
@@ -1142,19 +1081,6 @@ export class RunCommandExecutor {
         },
       );
 
-      const commandUpdate = await transaction
-        .updateTable("commands")
-        .set({
-          state: transitionCommand(rows.commandState, "completed"),
-          completed_at: now,
-          failure_code: null,
-        })
-        .where("tenant_id", "=", claim.request.tenantId)
-        .where("id", "=", claim.request.commandId)
-        .where("state", "=", rows.commandState)
-        .executeTakeFirst();
-      expectOne(commandUpdate.numUpdatedRows, "completing a command");
-
       const turnUpdate = await transaction
         .updateTable("turns")
         .set({
@@ -1185,7 +1111,7 @@ export class RunCommandExecutor {
         tenantId: claim.request.tenantId,
         sessionId: claim.request.sessionId,
         turnId: claim.request.turnId,
-        commandId: claim.request.commandId,
+        runId: claim.request.runId,
         agentId: "root",
         body: terminalBody,
         now,
@@ -1207,7 +1133,7 @@ export class RunCommandExecutor {
     started: boolean,
     failure: ExecutionFailure,
     acknowledgement: TurnExecutionLease | undefined,
-  ): Promise<RunCommandExecutionResult> {
+  ): Promise<RunExecutionResult> {
     const now = safeDate(this.#clock);
     const shouldRetry = !started && failure.retryable && claim.attempt < this.#maxAttempts;
     const terminalEventId = this.#idGenerator();
@@ -1229,7 +1155,7 @@ export class RunCommandExecutor {
           tenantId: claim.request.tenantId,
           sessionId: claim.request.sessionId,
           turnId: claim.request.turnId,
-          commandId: claim.request.commandId,
+          runId: claim.request.runId,
           agentId: "root",
           body: terminalBody,
           eventId: terminalEventId,
@@ -1246,12 +1172,12 @@ export class RunCommandExecutor {
 
       if (shouldRetry) {
         if (
-          rows.commandState !== "dispatched" ||
-          rows.turnState !== "dispatching" ||
-          rows.outboxPublishedAt !== null
+          rows.runState !== "claimed" ||
+          rows.turnState !== "queued" ||
+          !["cold", "idle"].includes(rows.sessionState)
         ) {
-          throw new RunCommandExecutorInvariantError(
-            "Only an unacknowledged command can return to the mailbox",
+          throw new RunExecutorInvariantError(
+            "Only an unstarted Run can return to the Session mailbox",
           );
         }
         const attemptState = transitionRunAttempt(rows.runAttemptState, "failed");
@@ -1288,6 +1214,7 @@ export class RunCommandExecutor {
           .updateTable("runs")
           .set({
             state: transitionRun(rows.runState, "queued"),
+            available_at: now,
             stop_reason: null,
             failure_code: null,
             failure_message: null,
@@ -1304,50 +1231,13 @@ export class RunCommandExecutor {
           .executeTakeFirst();
         expectOne(runUpdate.numUpdatedRows, "requeueing a run");
 
-        const commandUpdate = await transaction
-          .updateTable("commands")
-          .set({ state: transitionCommand(rows.commandState, "pending") })
-          .where("tenant_id", "=", claim.request.tenantId)
-          .where("id", "=", claim.request.commandId)
-          .where("state", "=", rows.commandState)
-          .executeTakeFirst();
-        expectOne(commandUpdate.numUpdatedRows, "requeueing a command");
-
-        const turnUpdate = await transaction
-          .updateTable("turns")
-          .set({ state: transitionTurn(rows.turnState, "queued") })
-          .where("tenant_id", "=", claim.request.tenantId)
-          .where("id", "=", claim.request.turnId)
-          .where("state", "=", rows.turnState)
-          .executeTakeFirst();
-        expectOne(turnUpdate.numUpdatedRows, "requeueing a turn");
-
-        const outboxUpdate = await transaction
-          .updateTable("outbox")
-          .set({
-            // PostgreSQL owns the retry timestamp. The durable command becomes
-            // eligible after available_at, when any Worker may claim it.
-            available_at: now,
-            last_error: failure.code,
-          })
-          .where("tenant_id", "=", claim.request.tenantId)
-          .where("id", "=", claim.outboxId)
-          .where("published_at", "is", null)
-          .executeTakeFirst();
-        expectOne(outboxUpdate.numUpdatedRows, "scheduling an outbox retry");
         return;
       }
 
-      const expectedCommandState = started ? "acknowledged" : "dispatched";
-      const expectedTurnState = started ? "running" : "dispatching";
-      if (rows.commandState !== expectedCommandState || rows.turnState !== expectedTurnState) {
-        throw new RunCommandExecutorInvariantError(
-          "Command lifecycle does not match the reported execution phase",
-        );
-      }
-      if (started !== (rows.outboxPublishedAt !== null)) {
-        throw new RunCommandExecutorInvariantError(
-          "Outbox publication does not match the reported execution phase",
+      const expectedTurnState = started ? "running" : "queued";
+      if (rows.turnState !== expectedTurnState) {
+        throw new RunExecutorInvariantError(
+          "Turn lifecycle does not match the reported execution phase",
         );
       }
 
@@ -1429,19 +1319,6 @@ export class RunCommandExecutor {
         },
       );
 
-      const commandUpdate = await transaction
-        .updateTable("commands")
-        .set({
-          state: transitionCommand(rows.commandState, "failed"),
-          completed_at: now,
-          failure_code: failure.code,
-        })
-        .where("tenant_id", "=", claim.request.tenantId)
-        .where("id", "=", claim.request.commandId)
-        .where("state", "=", rows.commandState)
-        .executeTakeFirst();
-      expectOne(commandUpdate.numUpdatedRows, "failing a command");
-
       const turnUpdate = await transaction
         .updateTable("turns")
         .set({
@@ -1460,7 +1337,7 @@ export class RunCommandExecutor {
         tenantId: claim.request.tenantId,
         sessionId: claim.request.sessionId,
         turnId: claim.request.turnId,
-        commandId: claim.request.commandId,
+        runId: claim.request.runId,
         agentId: "root",
         body: terminalBody,
         now,
@@ -1470,9 +1347,7 @@ export class RunCommandExecutor {
 
       if (started) {
         if (rows.sessionState !== "running") {
-          throw new RunCommandExecutorInvariantError(
-            "A started execution must own a running session",
-          );
+          throw new RunExecutorInvariantError("A started execution must own a running session");
         }
         const nextSessionState = failure.quarantineSession
           ? transitionSession(rows.sessionState, "failed")
@@ -1499,23 +1374,12 @@ export class RunCommandExecutor {
           );
         }
       }
-
-      if (!started) {
-        const outboxUpdate = await transaction
-          .updateTable("outbox")
-          .set({ published_at: now, last_error: failure.code })
-          .where("tenant_id", "=", claim.request.tenantId)
-          .where("id", "=", claim.outboxId)
-          .where("published_at", "is", null)
-          .executeTakeFirst();
-        expectOne(outboxUpdate.numUpdatedRows, "publishing a rejected outbox record");
-      }
     });
 
     if (shouldRetry) {
       return {
         status: "retry_scheduled",
-        commandId: claim.request.commandId,
+        runId: claim.request.runId,
         sessionId: claim.request.sessionId,
         turnId: claim.request.turnId,
         attempt: claim.attempt,
@@ -1524,7 +1388,7 @@ export class RunCommandExecutor {
     }
     return {
       status: "failed",
-      commandId: claim.request.commandId,
+      runId: claim.request.runId,
       sessionId: claim.request.sessionId,
       turnId: claim.request.turnId,
       attempt: claim.attempt,
@@ -1541,7 +1405,7 @@ export class RunCommandExecutor {
   ): Promise<void> {
     const minimum = Number(claim.request.nextEventSeq) - 1;
     if (!Number.isSafeInteger(sequence) || sequence < minimum) {
-      throw new RunCommandExecutorInvariantError("Run event boundary is invalid");
+      throw new RunExecutorInvariantError("Run event boundary is invalid");
     }
     const updated = await transaction
       .updateTable("run_attempts")
@@ -1560,9 +1424,7 @@ export class RunCommandExecutor {
       .where("id", "=", claim.request.attemptId)
       .executeTakeFirst();
     if (existing === undefined || Number(existing.last_event_seq) < sequence) {
-      throw new RunCommandExecutorInvariantError(
-        "Run event boundary could not be advanced or confirmed",
-      );
+      throw new RunExecutorInvariantError("Run event boundary could not be advanced or confirmed");
     }
   }
 
@@ -1571,28 +1433,17 @@ export class RunCommandExecutor {
     claim: ClaimedTurn,
   ): Promise<LifecycleRows> {
     const row = await transaction
-      .selectFrom("commands as command")
+      .selectFrom("runs as run")
       .innerJoin("turns as turn", (join) =>
         join
-          .onRef("turn.tenant_id", "=", "command.tenant_id")
-          .onRef("turn.session_id", "=", "command.session_id")
-          .onRef("turn.id", "=", "command.turn_id"),
+          .onRef("turn.tenant_id", "=", "run.tenant_id")
+          .onRef("turn.session_id", "=", "run.session_id")
+          .onRef("turn.id", "=", "run.turn_id"),
       )
       .innerJoin("sessions as session_row", (join) =>
         join
-          .onRef("session_row.tenant_id", "=", "command.tenant_id")
-          .onRef("session_row.id", "=", "command.session_id"),
-      )
-      .innerJoin("outbox", (join) =>
-        join
-          .onRef("outbox.tenant_id", "=", "command.tenant_id")
-          .on("outbox.id", "=", claim.outboxId),
-      )
-      .innerJoin("runs as run", (join) =>
-        join
-          .onRef("run.tenant_id", "=", "command.tenant_id")
-          .onRef("run.turn_id", "=", "turn.id")
-          .onRef("run.command_id", "=", "command.id"),
+          .onRef("session_row.tenant_id", "=", "run.tenant_id")
+          .onRef("session_row.id", "=", "run.session_id"),
       )
       .innerJoin("run_attempts as run_attempt", (join) =>
         join
@@ -1600,55 +1451,50 @@ export class RunCommandExecutor {
           .onRef("run_attempt.id", "=", "run.current_attempt_id"),
       )
       .select([
-        "command.state as commandState",
-        "command.failure_code as commandFailureCode",
         "turn.state as turnState",
         "session_row.state as sessionState",
-        "outbox.attempts as outboxAttempts",
-        "outbox.published_at as outboxPublishedAt",
         "run.state as runState",
+        "run.failure_code as runFailureCode",
         "run.row_version as runVersion",
+        "run.attempt_count as runAttemptCount",
         "run.current_attempt_id as currentAttemptId",
         "run_attempt.state as runAttemptState",
       ])
-      .where("command.tenant_id", "=", claim.request.tenantId)
-      .where("command.id", "=", claim.request.commandId)
+      .where("run.tenant_id", "=", claim.request.tenantId)
       .where("turn.id", "=", claim.request.turnId)
       .where("session_row.id", "=", claim.request.sessionId)
       .where("run.id", "=", claim.request.runId)
       .where("run_attempt.id", "=", claim.request.attemptId)
-      .forUpdate(["command", "turn", "session_row", "outbox", "run", "run_attempt"])
+      .forUpdate(["turn", "session_row", "run", "run_attempt"])
       .executeTakeFirst();
 
     if (!row) {
       const authority = await transaction
-        .selectFrom("outbox")
-        .innerJoin("runs as run", (join) =>
-          join
-            .onRef("run.tenant_id", "=", "outbox.tenant_id")
-            .on("run.id", "=", claim.request.runId),
-        )
-        .select(["outbox.attempts as outboxAttempts", "run.current_attempt_id as attemptId"])
-        .where("outbox.id", "=", claim.outboxId)
-        .where("outbox.tenant_id", "=", claim.request.tenantId)
-        .forUpdate(["outbox", "run"])
+        .selectFrom("runs")
+        .select(["attempt_count as attemptCount", "current_attempt_id as attemptId"])
+        .where("id", "=", claim.request.runId)
+        .where("tenant_id", "=", claim.request.tenantId)
+        .forUpdate()
         .executeTakeFirst();
       if (
         authority !== undefined &&
-        (authority.outboxAttempts !== claim.attempt ||
+        (authority.attemptCount !== claim.attempt ||
           authority.attemptId !== claim.request.attemptId)
       ) {
-        throw new RunCommandExecutorStaleClaimError("Run attempt was superseded");
+        throw new RunExecutorStaleClaimError("Run attempt was superseded");
       }
-      throw new RunCommandExecutorInvariantError("Claimed command lifecycle rows are missing");
+      throw new RunExecutorInvariantError("Claimed Run lifecycle rows are missing");
     }
-    if (row.outboxAttempts !== claim.attempt) {
-      throw new RunCommandExecutorStaleClaimError(
-        `Outbox claim attempt ${claim.attempt} was superseded by attempt ${row.outboxAttempts}`,
+    if (Number(row.runVersion) < 1 || claim.attempt < 1) {
+      throw new RunExecutorInvariantError("Claimed Run version is invalid");
+    }
+    if (row.runAttemptCount !== claim.attempt) {
+      throw new RunExecutorStaleClaimError(
+        `Run claim attempt ${claim.attempt} was superseded by attempt ${row.runAttemptCount}`,
       );
     }
     if (row.currentAttemptId !== claim.request.attemptId) {
-      throw new RunCommandExecutorStaleClaimError("Run attempt was superseded");
+      throw new RunExecutorStaleClaimError("Run attempt was superseded");
     }
     return row;
   }

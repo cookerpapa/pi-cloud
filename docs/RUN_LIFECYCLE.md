@@ -3,20 +3,20 @@
 ## Admission
 
 `POST /sessions/{id}/messages` authenticates tenant ownership and writes the
-user message, Turn, Run, command and Run-queue Outbox row in one PostgreSQL
-transaction. The idempotency key prevents a retry from creating another Run.
-Same-Session Runs remain serialized. Project, Session and unsettled-Turn limits
-bound durable metadata; they do not cap active Runs or Cubes per tenant.
+user message, Turn and ready Run row in one PostgreSQL transaction. The Run's
+unique Session/idempotency key prevents a retry from creating another Run.
+Same-Session Runs remain serialized by mailbox position.
 
 ## Claim and execution
 
-All Pi Workers scan the same ready Outbox. PostgreSQL sends a notification to
-reduce idle latency, but a one-second poll is the recovery path. Candidate rows
-are ordered by tenant scheduling time, availability and creation time.
+All Pi Workers claim directly from the same ready `runs` rows. PostgreSQL sends
+a notification to reduce idle latency, but a one-second poll is the recovery
+path. A narrow indexed query locks one candidate with `SKIP LOCKED`; only that
+Worker loads the Run snapshot and creates its Attempt.
 
-`RunCommandExecutor` transactionally rechecks:
+`RunExecutor` transactionally rechecks:
 
-- the command and Run are still eligible;
+- the Run is still eligible;
 - this is the Session's next runnable message;
 - cancellation has not won;
 - no current Attempt already owns the Run.
@@ -100,7 +100,7 @@ capacity.
 ## Delivery semantics
 
 ```text
-Run queue              at-least-once wakeup + transactional claim
+Run table queue        at-least-once wakeup + transactional claim
 Pi Session mutation    Authority Gate + Kafka + idempotent PostgreSQL projection
 Tool start              no blind retry; UNKNOWN if ambiguous
 Workspace revision      fenced last-settled observation; persistent Volume owns bytes

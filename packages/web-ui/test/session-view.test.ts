@@ -60,7 +60,6 @@ const accepted: AcceptedTurnResource = {
   turnId: TURN_ID,
   sessionId: SESSION_ID,
   runId: "50000000-0000-4000-8000-000000000002",
-  commandId: "60000000-0000-4000-8000-000000000001",
   mailboxPosition: 1,
   state: "queued",
   acceptedAt: CREATED_AT,
@@ -109,7 +108,6 @@ describe("session transcript reducer", () => {
       accepted: {
         ...accepted,
         turnId: "20000000-0000-4000-8000-000000000002",
-        commandId: "60000000-0000-4000-8000-000000000002",
         mailboxPosition: 2,
       },
       prompt: "Run the follow-up checks",
@@ -136,7 +134,6 @@ describe("session transcript reducer", () => {
         {
           turnId: TURN_ID,
           runId: accepted.runId,
-          commandId: accepted.commandId,
           mailboxPosition: 8,
           prompt: "Historical private prompt",
           state: "running",
@@ -177,7 +174,6 @@ describe("session transcript reducer", () => {
         {
           turnId: TURN_ID,
           runId: accepted.runId,
-          commandId: accepted.commandId,
           mailboxPosition: 1,
           prompt: "Long-running repair",
           state: "running",
@@ -260,7 +256,6 @@ describe("session transcript reducer", () => {
         {
           turnId: TURN_ID,
           runId: accepted.runId,
-          commandId: accepted.commandId,
           mailboxPosition: 1,
           prompt: "Historical projected prompt",
           state: "completed",

@@ -46,7 +46,6 @@ function command(tenantId: string = IDS.tenant): ExecuteTurnCommandMessage {
     sentAt: "2026-07-19T00:00:00.000Z",
     type: "command.turn.execute",
     payload: {
-      commandId: IDS.command,
       idempotencyKey: "workspace-seed-1",
       tenantId,
       projectId: IDS.project,
@@ -186,22 +185,6 @@ async function fixture(seedKind: WorkspaceSeedKind): Promise<Fixture> {
     })
     .execute();
   await database
-    .insertInto("commands")
-    .values({
-      id: IDS.command,
-      tenant_id: IDS.tenant,
-      session_id: IDS.session,
-      turn_id: IDS.turn,
-      idempotency_key: "workspace-seed-1",
-      kind: "turn.execute",
-      state: "acknowledged",
-      mailbox_position: 1,
-      payload: {},
-      dispatched_at: new Date(),
-      acknowledged_at: new Date(),
-    })
-    .execute();
-  await database
     .insertInto("runs")
     .values({
       id: IDS.run,
@@ -210,7 +193,9 @@ async function fixture(seedKind: WorkspaceSeedKind): Promise<Fixture> {
       workspace_id: IDS.workspace,
       session_id: IDS.session,
       turn_id: IDS.turn,
-      command_id: IDS.command,
+      mailbox_position: 1,
+      request_sha256: "a".repeat(64),
+      available_at: new Date(),
       environment_version_id: IDS.environment,
       idempotency_key: "workspace-seed-1",
       state: "queued",

@@ -12,7 +12,7 @@ import type {
   TurnExecutionLease,
   TurnExecutionAuthority,
   TurnExecutionRequest,
-} from "./run-command-executor.ts";
+} from "./run-executor.ts";
 
 const DEFAULT_LEASE_DURATION_MS = 60_000;
 
@@ -97,14 +97,7 @@ function requireUuid(value: string, name: string): string {
 const ACTIVE_SESSION_STATES = new Set(["running", "cancelling"]);
 type CurrentAssignmentRequest = Pick<
   TurnExecutionRequest,
-  | "tenantId"
-  | "projectId"
-  | "workspaceId"
-  | "sessionId"
-  | "runId"
-  | "turnId"
-  | "attemptId"
-  | "commandId"
+  "tenantId" | "projectId" | "workspaceId" | "sessionId" | "runId" | "turnId" | "attemptId"
 >;
 
 export class SessionLeaseCoordinator implements TurnExecutionAuthority {
@@ -506,7 +499,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         .where("run.id", "=", request.runId)
         .where("run.session_id", "=", request.sessionId)
         .where("run.turn_id", "=", request.turnId)
-        .where("run.command_id", "=", request.commandId)
         .where("attempt.id", "=", request.attemptId)
         .forUpdate(["run", "attempt"])
         .executeTakeFirst();
@@ -633,7 +625,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           workspace_id: request.workspaceId,
           run_id: request.runId,
           turn_id: request.turnId,
-          command_id: request.commandId,
           attempt_id: request.attemptId,
           last_event_seq: lastEventSeq,
           valid_until: validUntil,
@@ -752,7 +743,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         grant.workspace_id !== request.workspaceId ||
         grant.run_id !== request.runId ||
         grant.turn_id !== request.turnId ||
-        grant.command_id !== request.commandId ||
         grant.attempt_id !== request.attemptId ||
         new Date(grant.valid_until).valueOf() <= now.valueOf() ||
         generation !== safeInteger(session.last_fencing_token, "Session execution generation")
@@ -827,7 +817,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       grant.workspace_id !== request.workspaceId ||
       grant.run_id !== request.runId ||
       grant.turn_id !== request.turnId ||
-      grant.command_id !== request.commandId ||
       grant.attempt_id !== request.attemptId ||
       grant.sandbox_id !== this.#sandboxId ||
       (requireUnexpired && new Date(grant.valid_until).valueOf() <= now.valueOf())

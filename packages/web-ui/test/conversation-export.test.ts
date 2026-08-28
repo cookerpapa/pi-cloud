@@ -30,7 +30,6 @@ const conversation = {
     {
       runId: "10000000-0000-4000-8000-000000000004",
       turnId: "10000000-0000-4000-8000-000000000005",
-      commandId: "10000000-0000-4000-8000-000000000006",
       mailboxPosition: 1,
       prompt: "写一个服务",
       state: "completed",
@@ -67,7 +66,6 @@ const conversation = {
     {
       runId: "10000000-0000-4000-8000-000000000007",
       turnId: "10000000-0000-4000-8000-000000000008",
-      commandId: "10000000-0000-4000-8000-000000000009",
       mailboxPosition: 2,
       prompt: "尚未完成的消息",
       state: "running",

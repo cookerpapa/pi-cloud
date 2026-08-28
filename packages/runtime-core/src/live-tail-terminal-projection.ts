@@ -36,7 +36,7 @@ export class LiveTailTerminalTurnProjectionSource implements TerminalTurnProject
       .where("run.tenant_id", "=", input.tenantId)
       .where("run.session_id", "=", input.sessionId)
       .where("run.turn_id", "=", input.turnId)
-      .where("run.command_id", "=", input.commandId)
+      .where("run.id", "=", input.runId)
       .executeTakeFirst();
     if (boundary === undefined) throw new Error("Terminal projection RunAttempt is unavailable");
     const expectedSequence = Number(boundary.lastEventSequence);

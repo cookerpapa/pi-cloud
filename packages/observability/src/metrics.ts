@@ -20,6 +20,7 @@ export class PiCloudMetrics {
   readonly checkpointCacheBytes: Gauge;
   readonly cancellationDuration: Histogram<"outcome">;
   readonly turnAdmissionDuration: Histogram<"outcome">;
+  readonly runClaimDuration: Histogram<"outcome">;
   readonly tenantAdmissionLockWait: Histogram;
   readonly activeRuns: Gauge;
   readonly queuedRuns: Gauge;
@@ -149,6 +150,13 @@ export class PiCloudMetrics {
     this.turnAdmissionDuration = new Histogram({
       name: "pi_cloud_turn_admission_seconds",
       help: "Time to idempotently admit or reject a user Turn",
+      labelNames: ["outcome"],
+      buckets: DURATION_BUCKETS,
+      registers: [this.registry],
+    });
+    this.runClaimDuration = new Histogram({
+      name: "pi_cloud_run_claim_seconds",
+      help: "Time to transactionally claim one exact Run",
       labelNames: ["outcome"],
       buckets: DURATION_BUCKETS,
       registers: [this.registry],

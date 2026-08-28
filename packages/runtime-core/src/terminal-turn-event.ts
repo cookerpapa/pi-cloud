@@ -18,7 +18,7 @@ export type CommitTerminalTurnEventInput = {
   tenantId: string;
   sessionId: string;
   turnId: string;
-  commandId: string;
+  runId: string;
   agentId: string;
   body: TerminalEventBody;
   now: Date;
@@ -77,7 +77,7 @@ export async function commitTerminalTurnEvent(
     .where("run.tenant_id", "=", input.tenantId)
     .where("run.session_id", "=", input.sessionId)
     .where("run.turn_id", "=", input.turnId)
-    .where("run.command_id", "=", input.commandId)
+    .where("run.id", "=", input.runId)
     .executeTakeFirst();
   if (session === undefined || execution === undefined) {
     throw new Error("Terminal event stream is missing");
@@ -134,7 +134,7 @@ export async function commitTerminalTurnEvent(
       session_id: input.sessionId,
       turn_id: input.turnId,
       agent_id: input.agentId,
-      command_id: input.commandId,
+      run_id: input.runId,
       seq: sequence,
       schema_version: event.schemaVersion,
       type: event.type,

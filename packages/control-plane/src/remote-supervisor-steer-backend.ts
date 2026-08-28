@@ -57,14 +57,14 @@ function validDate(clock: () => Date): Date {
 function sameCommandIdentity(
   command: SteerTurnCommandMessage,
   value: {
-    commandId: string;
+    requestId: string;
     sessionId: string;
     turnId: string;
     executionLease: string;
   },
 ): boolean {
   return (
-    value.commandId === command.payload.commandId &&
+    value.requestId === command.payload.controlRequestId &&
     value.sessionId === command.payload.sessionId &&
     value.turnId === command.payload.turnId &&
     value.executionLease === command.payload.executionLease
@@ -217,8 +217,8 @@ export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
       sentAt: validDate(this.#clock).toISOString(),
       type: "command.turn.steer",
       payload: {
-        commandId: request.commandId,
-        targetCommandId: request.target.commandId,
+        controlRequestId: request.controlRequestId,
+        targetRunId: request.target.runId,
         idempotencyKey: request.idempotencyKey,
         tenantId: request.target.tenantId,
         projectId: request.target.projectId,
@@ -264,7 +264,7 @@ export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
       sentAt: validDate(this.#clock).toISOString(),
       type,
       payload: {
-        commandId: command.payload.commandId,
+        requestId: command.payload.controlRequestId,
         sessionId: command.payload.sessionId,
         turnId: command.payload.turnId,
         executionLease: command.payload.executionLease,

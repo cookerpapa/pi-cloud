@@ -86,7 +86,6 @@ beforeAll(async () => {
     quotas: {
       maximumProjects: 1,
       maximumSessions: 2,
-      maximumUnsettledTurns: 1,
     },
     idGenerator: sequence(TENANT_A_IDS),
     randomSecret: () => "a".repeat(43),
@@ -285,7 +284,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     }
   });
 
-  it("enforces tenant-local quotas after returning idempotent acceptance replays", async () => {
+  it("keeps project quotas separate from an unbounded durable Run mailbox", async () => {
     const projectLimit = await http.inject({
       method: "POST",
       url: "/v1/projects",
@@ -305,7 +304,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       payload: { prompt: "tenant-private prompt" },
     });
     expect(replay.statusCode).toBe(202);
-    expect(replay.json()).toMatchObject({ commandId: turnA.commandId, replayed: true });
+    expect(replay.json()).toMatchObject({ runId: turnA.runId, replayed: true });
 
     const newTurn = await http.inject({
       method: "POST",
@@ -316,8 +315,8 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       },
       payload: { prompt: "second unsettled turn" },
     });
-    expect(newTurn.statusCode).toBe(429);
-    expect(newTurn.json()).toMatchObject({ error: { code: "tenant_quota_exceeded" } });
+    expect(newTurn.statusCode).toBe(202);
+    expect(newTurn.json()).toMatchObject({ mailboxPosition: 2, replayed: false });
   });
 
   it("invalidates a revoked tenant credential without affecting another tenant", async () => {

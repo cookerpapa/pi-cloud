@@ -151,7 +151,7 @@ function assignment(testRun: string, index: number): ToolSandboxAssignment {
     supervisorId: `cube-live-${testRun}-supervisor`,
     bootId: randomUUID(),
     sandboxId: randomUUID(),
-    commandId: `cube-live-${testRun}-command-${String(index)}`,
+    runId: `cube-live-${testRun}-command-${String(index)}`,
     sessionId: `cube-live-${testRun}-session-${String(index)}`,
     turnId: `cube-live-${testRun}-turn-${String(index)}`,
     executionLease: createExecutionLease(randomUUID(), randomUUID(), index),
@@ -606,7 +606,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           supervisorId: `cube-live-${testRun}-supervisor-restored`,
           bootId: randomUUID(),
           sandboxId: randomUUID(),
-          commandId: `cube-live-${testRun}-command-restored`,
+          runId: `cube-live-${testRun}-command-restored`,
           turnId: `cube-live-${testRun}-turn-restored`,
           executionLease: createExecutionLease(
             randomUUID(),
@@ -694,7 +694,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           supervisorId: `cube-live-${testRun}-supervisor-rebound`,
           bootId: randomUUID(),
           sandboxId: randomUUID(),
-          commandId: `cube-live-${testRun}-command-rebound`,
+          runId: `cube-live-${testRun}-command-rebound`,
           turnId: `cube-live-${testRun}-turn-rebound`,
           executionLease: createExecutionLease(
             randomUUID(),

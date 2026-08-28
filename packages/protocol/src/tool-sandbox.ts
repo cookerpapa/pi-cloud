@@ -115,7 +115,7 @@ export const ToolSandboxAssignmentSchema = Type.Object(
     supervisorId: OpaqueIdSchema,
     bootId: UuidSchema,
     sandboxId: UuidSchema,
-    commandId: OpaqueIdSchema,
+    runId: OpaqueIdSchema,
     sessionId: OpaqueIdSchema,
     turnId: OpaqueIdSchema,
     executionLease: ExecutionLeaseSchema,

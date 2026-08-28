@@ -126,7 +126,7 @@ function assignment(
     projectId: command.payload.projectId,
     workspaceId: command.payload.workspaceId,
     ...runtimeIdentity,
-    commandId: command.payload.commandId,
+    runId: command.payload.runId,
     sessionId: command.payload.sessionId,
     turnId: command.payload.turnId,
     executionLease: command.payload.executionLease,
@@ -205,10 +205,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     publishEvent: PiEventPublisher,
     signal: AbortSignal,
   ): Promise<PiTurnResult> {
-    if (this.#activePiRunners.has(command.payload.commandId)) {
+    if (this.#activePiRunners.has(command.payload.runId)) {
       throw new PiTurnError(
         "pi_runtime_overlap",
-        "Pi Runtime is already active for this command",
+        "Pi Runtime is already active for this Run",
         false,
       );
     }
@@ -220,7 +220,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     });
     void ready.catch(() => undefined);
     const slot = { ready, resolve: resolveRunner, reject: rejectRunner };
-    this.#activePiRunners.set(command.payload.commandId, slot);
+    this.#activePiRunners.set(command.payload.runId, slot);
     try {
       return await withSpan({
         serviceName: "pi-cloud-trusted-runner",
@@ -236,8 +236,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         run: () => this.#run(command, publishEvent, signal, slot.resolve),
       });
     } finally {
-      if (this.#activePiRunners.get(command.payload.commandId) === slot) {
-        this.#activePiRunners.delete(command.payload.commandId);
+      if (this.#activePiRunners.get(command.payload.runId) === slot) {
+        this.#activePiRunners.delete(command.payload.runId);
       }
       slot.reject(
         new PiTurnError(
@@ -249,8 +249,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
   }
 
-  async steer(targetCommandId: string, text: string): Promise<void> {
-    const slot = this.#activePiRunners.get(targetCommandId);
+  async steer(targetRunId: string, text: string): Promise<void> {
+    const slot = this.#activePiRunners.get(targetRunId);
     if (slot === undefined) {
       throw new PiTurnError(
         "steer_target_unavailable",
@@ -259,7 +259,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       );
     }
     const runner = await slot.ready;
-    if (this.#activePiRunners.get(targetCommandId) !== slot) {
+    if (this.#activePiRunners.get(targetRunId) !== slot) {
       throw new PiTurnError(
         "steer_target_unavailable",
         "Pi Run ended before the steer could be delivered",

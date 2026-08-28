@@ -20,7 +20,7 @@ export * from "./model-credential-runtime.ts";
 export * from "./run-attempt-runtime.ts";
 export * from "./run-attempt-state.ts";
 export * from "./run-cancellation-executor.ts";
-export * from "./run-command-executor.ts";
+export * from "./run-executor.ts";
 export * from "./session-event-hub.ts";
 export * from "./session-lease-coordinator.ts";
 export * from "./structured-test-command.ts";

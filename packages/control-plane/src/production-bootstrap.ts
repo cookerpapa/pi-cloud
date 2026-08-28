@@ -241,27 +241,19 @@ export async function bootstrapProductionDatabase(
         enabled: true,
         maximum_projects: config.maximumProjects,
         maximum_sessions: config.maximumSessions,
-        maximum_unsettled_turns: config.maximumUnsettledTurns,
       })
       .onConflict((conflict) => conflict.column("tenant_id").doNothing())
       .executeTakeFirst();
     const policy = await transaction
       .selectFrom("tenant_runtime_policies")
-      .select([
-        "default_model_profile_id",
-        "enabled",
-        "maximum_projects",
-        "maximum_sessions",
-        "maximum_unsettled_turns",
-      ])
+      .select(["default_model_profile_id", "enabled", "maximum_projects", "maximum_sessions"])
       .where("tenant_id", "=", config.tenantId)
       .executeTakeFirstOrThrow();
     exact(
       policy.default_model_profile_id === config.modelProfileId &&
         policy.enabled &&
         policy.maximum_projects === config.maximumProjects &&
-        policy.maximum_sessions === config.maximumSessions &&
-        policy.maximum_unsettled_turns === config.maximumUnsettledTurns,
+        policy.maximum_sessions === config.maximumSessions,
       "tenant runtime policy",
     );
 

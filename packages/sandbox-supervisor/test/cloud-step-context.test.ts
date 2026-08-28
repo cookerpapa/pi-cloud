@@ -17,7 +17,6 @@ const command: ExecuteTurnCommandMessage = {
   sentAt: "2026-08-04T00:00:00.000Z",
   type: "command.turn.execute",
   payload: {
-    commandId: "10000000-0000-4000-8000-000000000002",
     idempotencyKey: "frozen-step",
     tenantId: "tenant-step",
     projectId: "project-step",
@@ -81,7 +80,6 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
       messageId: "20000000-0000-4000-8000-000000000001",
       payload: {
         ...command.payload,
-        commandId: "20000000-0000-4000-8000-000000000002",
         idempotencyKey: "frozen-step-retry",
         executionLease: createExecutionLease(
           "20000000-0000-4000-8000-000000000005",

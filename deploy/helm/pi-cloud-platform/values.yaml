@@ -48,7 +48,6 @@ bootstrap:
   modelProfileName: pi-cloud-default
   maximumProjects: 100
   maximumSessions: 1000
-  maximumUnsettledTurns: 100
 
 controlPlane:
   replicas: 3
@@ -64,7 +63,6 @@ controlPlane:
     maximumTenants: 32
     maximumProjects: 10
     maximumSessions: 100
-    maximumUnsettledTurns: 10
   supervisorIdPrefix: pi-cloud-pi-worker-
   resources:
     requests: { cpu: 500m, memory: 1Gi }

@@ -58,7 +58,6 @@ export type ProductionBootstrapConfig = {
   modelProfileName: string;
   maximumProjects: number;
   maximumSessions: number;
-  maximumUnsettledTurns: number;
   sandboxDomains: readonly ProductionSandboxDomainConfig[];
 };
 
@@ -308,13 +307,6 @@ export async function loadProductionControlPlaneConfig(
     environment,
     "PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP",
   );
-  const publicTenantMaximumUnsettledTurns = integerValue(
-    environment,
-    "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS",
-    10,
-    1,
-    1_000_000,
-  );
   const platformModelSourceTenantId = parseUuidPathParameter(
     required(environment, "PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID"),
     "PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID",
@@ -476,7 +468,6 @@ export async function loadProductionControlPlaneConfig(
           1,
           1_000_000,
         ),
-        maximumUnsettledTurns: publicTenantMaximumUnsettledTurns,
       },
     },
   };
@@ -543,13 +534,6 @@ export function loadProductionBootstrapConfig(
       environment,
       "PI_CLOUD_TENANT_MAXIMUM_SESSIONS",
       1_000,
-      1,
-      1_000_000,
-    ),
-    maximumUnsettledTurns: integerValue(
-      environment,
-      "PI_CLOUD_TENANT_MAXIMUM_UNSETTLED_TURNS",
-      100,
       1,
       1_000_000,
     ),

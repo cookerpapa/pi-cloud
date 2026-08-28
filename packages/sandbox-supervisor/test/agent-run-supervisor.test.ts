@@ -32,7 +32,7 @@ const IDS = {
 
 function command(
   overrides: {
-    commandId?: string;
+    runId?: string;
     grantId?: string;
     generation?: number;
     sessionId?: string;
@@ -44,13 +44,12 @@ function command(
     sentAt: "2026-07-18T08:00:00.000Z",
     type: "command.turn.execute",
     payload: {
-      commandId: overrides.commandId ?? IDS.command,
       idempotencyKey: "request-1",
       tenantId: "tenant-1",
       projectId: "project-1",
       workspaceId: "workspace-1",
       sessionId: overrides.sessionId ?? "session-1",
-      runId: "40000000-0000-4000-8000-000000000001",
+      runId: overrides.runId ?? "40000000-0000-4000-8000-000000000001",
       turnId: "turn-1",
       agentId: "root",
       executionLease: createExecutionLease(
@@ -93,8 +92,8 @@ function cancellation(target: ExecuteTurnCommandMessage = command()): CancelTurn
     sentAt: "2026-07-18T08:00:01.000Z",
     type: "command.turn.cancel",
     payload: {
-      commandId: IDS.cancellation,
-      targetCommandId: target.payload.commandId,
+      controlRequestId: IDS.cancellation,
+      targetRunId: target.payload.runId,
       idempotencyKey: "cancel-1",
       tenantId: target.payload.tenantId,
       projectId: target.payload.projectId,
@@ -117,8 +116,8 @@ function steer(target: ExecuteTurnCommandMessage = command()): SteerTurnCommandM
     sentAt: "2026-07-18T08:00:01.000Z",
     type: "command.turn.steer",
     payload: {
-      commandId: IDS.steer,
-      targetCommandId: target.payload.commandId,
+      controlRequestId: IDS.steer,
+      targetRunId: target.payload.runId,
       idempotencyKey: "steer-1",
       tenantId: target.payload.tenantId,
       projectId: target.payload.projectId,
@@ -212,7 +211,7 @@ describe("AgentRunSupervisor", () => {
     supervisor.prepare(command(), rejectUnexpectedEvent);
     const overflow = supervisor.prepare(
       command({
-        commandId: IDS.command2,
+        runId: IDS.command2,
         grantId: IDS.lease2,
         sessionId: "session-2",
       }),
@@ -345,7 +344,7 @@ describe("AgentRunSupervisor", () => {
 
   it("delivers a fenced steer only to the exact running assignment", async () => {
     let settle!: () => void;
-    const observed: Array<{ targetCommandId: string; text: string }> = [];
+    const observed: Array<{ targetRunId: string; text: string }> = [];
     const steeringRunner: SupervisorTurnRunner = {
       async run() {
         await new Promise<void>((resolvePromise) => {
@@ -353,8 +352,8 @@ describe("AgentRunSupervisor", () => {
         });
         return { stopReason: "stop" };
       },
-      async steer(targetCommandId, text) {
-        observed.push({ targetCommandId, text });
+      async steer(targetRunId, text) {
+        observed.push({ targetRunId, text });
       },
     };
     const supervisor = new AgentRunSupervisor({ runner: steeringRunner });
@@ -367,7 +366,7 @@ describe("AgentRunSupervisor", () => {
     await expect(preparedSteer.run()).resolves.toBeUndefined();
     expect(observed).toEqual([
       {
-        targetCommandId: execute.payload.commandId,
+        targetRunId: execute.payload.runId,
         text: "Inspect the boundary condition first.",
       },
     ]);
@@ -463,7 +462,7 @@ describe("AgentRunSupervisor", () => {
     const first = supervisor.prepare(command(), rejectUnexpectedEvent);
     const second = supervisor.prepare(
       command({
-        commandId: IDS.command2,
+        runId: IDS.command2,
         grantId: IDS.lease2,
         generation: 2,
         sessionId: "session-2",

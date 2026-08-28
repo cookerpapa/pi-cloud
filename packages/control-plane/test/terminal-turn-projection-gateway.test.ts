@@ -58,7 +58,7 @@ describe("TerminalTurnProjectionGateway", () => {
         tenantId: IDS.tenant,
         sessionId: IDS.session,
         turnId: IDS.turn,
-        commandId: IDS.command,
+        runId: IDS.command,
         agentId: "root",
         body: {
           type: "turn.failed" as const,

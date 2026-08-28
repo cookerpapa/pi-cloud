@@ -60,7 +60,6 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS` | `1000` | maximum public tenants |
 | `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS` | `10` | projects per public tenant |
 | `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS` | `100` | Sessions per public tenant |
-| `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_UNSETTLED_TURNS` | `10` | queued/running Turns per tenant |
 | `PI_CLOUD_WEB_SESSION_TTL_MS` | `2592000000` | browser login lifetime (30 days) |
 | `PI_CLOUD_WEB_SESSION_COOKIE_SECURE` | `false` | set `true` when the public endpoint is HTTPS |
 
