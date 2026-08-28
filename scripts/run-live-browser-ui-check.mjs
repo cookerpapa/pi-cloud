@@ -104,6 +104,8 @@ function selectorExpression(selector) {
 }
 
 let acceptanceError;
+let chatFirstVisibleMs;
+let chatCompleteVisibleMs;
 try {
   await withChromePage(
     { profilePrefix: "pi-cloud-browser-ui-", width: 1_440, height: 960 },
@@ -221,11 +223,18 @@ try {
         "Do not call tools. Reply with exactly BROWSER-UI-CHAT-OK.",
       );
       await page.waitFor('!document.querySelector(".product-send-button").disabled');
+      const chatSubmittedAt = performance.now();
       await click(".product-send-button", "composer.send");
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.trim().length>0)',
+        180_000,
+      );
+      chatFirstVisibleMs = Math.round(performance.now() - chatSubmittedAt);
       await page.waitFor(
         '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-CHAT-OK"))',
         180_000,
       );
+      chatCompleteVisibleMs = Math.round(performance.now() - chatSubmittedAt);
       const elasticConversation = await waitFor(
         async () =>
           (await api.listConversations()).conversations.find(
@@ -564,6 +573,10 @@ const report = {
   account: username,
   clickedControls: clicked,
   clickedControlCount: clicked.length,
+  latencyMs: {
+    userSubmitToFirstVisibleText: chatFirstVisibleMs,
+    userSubmitToCompleteReply: chatCompleteVisibleMs,
+  },
   screenshotCaptured: true,
   cleanupCompleted: true,
 };

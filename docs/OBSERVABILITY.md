@@ -42,7 +42,7 @@ user-visible Run:
 - Tool failures and Cube lifecycle/admission capacity;
 - Workspace Volume Gateway queue, latency, rejection and cleanup backlog;
 - Kafka consumer health and Gateway incomplete-tail sessions/events/bytes;
-- FactChannel active/limit utilization and channel-lease renewal failures;
+- logical Fact Stream utilization and Stream-lease renewal failures;
 - settled terminal events still waiting to reach Kafka.
 
 The Control Plane samples PostgreSQL and Kafka/Gateway state every ten seconds. These

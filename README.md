@@ -46,7 +46,8 @@ Browser ── REST ──▶ Web ingress ──▶ Control Plane ──┐
                                 durable event plane
 
 Pi Worker CandidateFacts
-          │ one ordered FactChannel per Session Lease
+          │ one multiplexed Fact connection per Worker
+          │ one logical Stream per Session Lease
           ▼
 Control Plane Authority Gate ── PostgreSQL validates Lease/Fence once
           │ lease-free AcceptedFacts

@@ -53,14 +53,15 @@ result is `UNKNOWN`.
 
 ## Events and terminal commit
 
-The Worker opens one short-leased FactChannel for its opaque
-ExecutionLease before Pi starts. Assistant text deltas cross that channel
+The Worker opens one short-leased logical Fact Stream for its opaque
+ExecutionLease before Pi starts. Streams from all active Runs in that Worker
+share one physical Fact WebSocket. Assistant text deltas cross their Stream
 without an intentional batching delay; one lease remains ordered while
 different leases publish concurrently. Tool arguments and Tool results enter
 the same stream only as complete Items. Each event's Kafka `acks=all` receipt is the
 visibility boundary. Event ordering and duplicate handling belong to the
-Kafka/downstream adapter rather than the Authority Gate. Channel close
-flushes the post-PubAck event progress and releases short channel ownership
+Kafka/downstream adapter rather than the Authority Gate. Stream close flushes
+the post-PubAck event progress and releases short channel ownership
 before terminal settlement releases the lease. Terminal sequence allocation
 uses the maximum of Attempt progress and the separately projected channel
 progress, so a lagging projection cannot move the Session stream backwards.

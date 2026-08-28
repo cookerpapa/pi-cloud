@@ -21,9 +21,11 @@ therefore required changes on both sides of the Authority boundary.
 
 ## Decision
 
-One active Run owns one service-authenticated `FactChannel`. It carries both
-browser-facing Agent events and complete Pi Session mutations. The channel is
-opened under the current PostgreSQL Session lease.
+One active Run owns one logical `FactChannel`. It carries both browser-facing
+Agent events and complete Pi Session mutations and is opened under the current
+PostgreSQL Session lease. ADR-0129 multiplexes these logical channels over one
+service-authenticated physical connection per Worker without changing their
+authority semantics.
 
 The pipeline has four independent roles:
 
@@ -88,8 +90,9 @@ defense policy requires separate product evidence.
 
 ## Consequences
 
-The Worker has one FactChannel instead of separate Event and Session-mutation
-ingress clients. The Gate depends on PostgreSQL Authority only. Kafka is
+Each Run has one logical FactChannel instead of separate Event and
+Session-mutation ingress clients. One Worker transport multiplexes those
+channels. The Gate depends on PostgreSQL Authority only. Kafka is
 selected behind the `AcceptedFactBus` adapter and can be replaced
 without changing Gate semantics.
 

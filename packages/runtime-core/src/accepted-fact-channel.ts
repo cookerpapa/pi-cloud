@@ -518,6 +518,49 @@ function remoteTextFrame(data: RawData): string {
   return data.toString("utf8");
 }
 
+export type FactTransportEnvelope = Readonly<{
+  protocolVersion: 1;
+  streamId: string;
+  payload: unknown;
+}>;
+
+export type FactStreamFailureFrame = Readonly<{
+  protocolVersion: 1;
+  messageId: string;
+  sentAt: string;
+  type: "fact.stream.failed";
+  payload: Readonly<{ code: string; message: string; retryable: boolean }>;
+}>;
+
+export function factTransportEnvelope(streamId: string, payload: unknown): FactTransportEnvelope {
+  return { protocolVersion: 1, streamId, payload };
+}
+
+export function parseFactTransportEnvelope(value: unknown): FactTransportEnvelope {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    (value as { protocolVersion?: unknown }).protocolVersion !== 1 ||
+    typeof (value as { streamId?: unknown }).streamId !== "string" ||
+    (value as { streamId: string }).streamId.length === 0 ||
+    (value as { payload?: unknown }).payload === undefined
+  ) {
+    throw new DurableEventStoreError("invalid_event", "Multiplexed Fact frame is invalid");
+  }
+  return value as FactTransportEnvelope;
+}
+
+export function factStreamFailureFrame(error: unknown): FactStreamFailureFrame {
+  const failure = factChannelError(error);
+  return {
+    protocolVersion: 1,
+    messageId: globalThis.crypto.randomUUID(),
+    sentAt: new Date().toISOString(),
+    type: "fact.stream.failed",
+    payload: { code: failure.code, message: failure.message, retryable: failure.retryable },
+  };
+}
+
 type PendingRemoteExchange = {
   expectedType:
     | "fact.channel.ready"
@@ -531,235 +574,80 @@ type PendingRemoteExchange = {
 type RemoteFactChannelResponse =
   ReturnType<typeof parseControlToSupervisorMessage> | PiSessionMutationAcceptedFrame;
 
-class RemoteFactChannel implements FactChannel {
+function remoteFactResponse(value: unknown): RemoteFactChannelResponse | FactStreamFailureFrame {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { type?: unknown }).type === "fact.stream.failed"
+  ) {
+    const frame = value as FactStreamFailureFrame;
+    if (
+      typeof frame.payload?.code !== "string" ||
+      typeof frame.payload.message !== "string" ||
+      typeof frame.payload.retryable !== "boolean"
+    ) {
+      throw new Error("Fact Stream failure frame is invalid");
+    }
+    return frame;
+  }
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { type?: unknown }).type === "fact.pi_session_mutation.accepted"
+  ) {
+    return value as PiSessionMutationAcceptedFrame;
+  }
+  return parseControlToSupervisorMessage(value);
+}
+
+function remoteStreamError(frame: FactStreamFailureFrame): DurableEventStoreError {
+  const code = [
+    "not_found",
+    "invalid_event",
+    "event_conflict",
+    "sequence_gap",
+    "stale_session_lease",
+    "event_store_invariant",
+  ].includes(frame.payload.code)
+    ? (frame.payload.code as ConstructorParameters<typeof DurableEventStoreError>[0])
+    : "event_store_invariant";
+  return new DurableEventStoreError(code, frame.payload.message, frame.payload.retryable);
+}
+
+class WorkerFactTransport {
   readonly #url: URL;
   readonly #authorization: string;
-  readonly #request: FactChannelOpenRequest;
-  readonly #onClose: () => void;
+  readonly #pending = new Map<string, PendingRemoteExchange>();
+  readonly #streamFailures = new Map<string, (error: DurableEventStoreError) => void>();
   #socket: WebSocket | undefined;
-  #pending: PendingRemoteExchange | undefined;
-  #connecting: Promise<boolean> | undefined;
-  #operationTail = Promise.resolve();
-  #acknowledgedThroughSeq: number;
+  #connecting: Promise<number | undefined> | undefined;
+  #generation = 0;
   #closed = false;
 
-  constructor(options: {
-    url: URL;
-    authorization: string;
-    request: FactChannelOpenRequest;
-    onClose: () => void;
-  }) {
+  constructor(options: { url: URL; authorization: string }) {
     this.#url = options.url;
     this.#authorization = options.authorization;
-    this.#request = options.request;
-    this.#onClose = options.onClose;
-    this.#acknowledgedThroughSeq = options.request.nextEventSeq - 1;
   }
 
-  get acknowledgedThroughSeq(): number {
-    return this.#acknowledgedThroughSeq;
-  }
-
-  async open(): Promise<void> {
-    const deadline = Date.now() + 60_000;
-    while (Date.now() < deadline) {
-      if (await this.#ensureConnected(deadline)) return;
-      this.#resetSocket(new Error("FactChannel open will retry"));
-      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  register(streamId: string, onFailure: (error: DurableEventStoreError) => void): void {
+    if (this.#closed || this.#streamFailures.has(streamId)) {
+      throw new Error("Fact Stream identity is unavailable");
     }
-    throw new DurableEventStoreError(
-      "event_store_invariant",
-      "FactChannel could not open its transport",
-      true,
-    );
+    this.#streamFailures.set(streamId, onFailure);
   }
 
-  mutate(
-    mutation: CandidatePiSessionMutationFact,
-  ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
-    return this.#serialize(() => this.#mutate(mutation));
+  unregister(streamId: string): void {
+    this.#streamFailures.delete(streamId);
+    const pending = this.#pending.get(streamId);
+    if (pending === undefined) return;
+    clearTimeout(pending.timer);
+    this.#pending.delete(streamId);
+    pending.settle({ error: new Error("Fact Stream closed") });
   }
 
-  async #mutate(
-    mutation: CandidatePiSessionMutationFact,
-  ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
-    if (this.#closed) throw new DurableEventStoreError("invalid_event", "FactChannel is closed");
-    const frame: PiSessionMutationPublishFrame = {
-      protocolVersion: 1,
-      messageId: globalThis.crypto.randomUUID(),
-      sentAt: new Date().toISOString(),
-      type: "fact.pi_session_mutation.publish",
-      payload: mutation,
-    };
-    const deadline = Date.now() + 120_000;
-    while (Date.now() < deadline) {
-      if (!(await this.#ensureConnected(deadline))) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 100));
-        continue;
-      }
-      const exchanged = await this.#exchange(frame, "fact.pi_session_mutation.accepted", deadline);
-      if ("error" in exchanged) {
-        this.#resetSocket(exchanged.error);
-        if (Date.now() < deadline) await new Promise<void>((resolve) => setTimeout(resolve, 100));
-        continue;
-      }
-      const response = exchanged.message;
-      if (
-        response.type === "fact.pi_session_mutation.accepted" &&
-        response.payload.acknowledgedMessageId === frame.messageId &&
-        response.payload.mutationId === mutation.mutationId &&
-        response.payload.accepted
-      ) {
-        return { mutationId: mutation.mutationId, accepted: true };
-      }
-      this.#resetSocket(new Error("FactChannel mutation acknowledgement is unrelated"));
-    }
-    throw new DurableEventStoreError(
-      "event_store_invariant",
-      "FactChannel mutation acceptance timed out",
-      true,
-    );
-  }
-
-  abort(): void {
-    if (this.#closed) return;
-    this.#closed = true;
-    this.#resetSocket(new Error("FactChannel aborted"));
-    this.#onClose();
-  }
-
-  ingest(value: unknown): Promise<EventAckMessage> {
-    return this.#serialize(() => this.#ingest(value));
-  }
-
-  async #ingest(value: unknown): Promise<EventAckMessage> {
-    if (this.#closed) throw new DurableEventStoreError("invalid_event", "Event channel is closed");
-    const message = parseSupervisorToControlMessage(value);
-    if (
-      message.type !== "event.publish" ||
-      message.payload.executionLease !== this.#request.executionLease ||
-      message.payload.event.sessionId !== this.#request.sessionId ||
-      message.payload.event.turnId !== this.#request.turnId
-    ) {
-      throw new DurableEventStoreError(
-        "invalid_event",
-        "Event publication does not match its remote channel",
-      );
-    }
-    const deadline = Date.now() + 60_000;
-    while (Date.now() < deadline) {
-      try {
-        if (!(await this.#ensureConnected(deadline))) {
-          await new Promise<void>((resolve) => setTimeout(resolve, 100));
-          continue;
-        }
-        const exchanged = await this.#exchange(message, "event.ack", deadline);
-        if ("error" in exchanged) {
-          this.#resetSocket(exchanged.error);
-          if (Date.now() < deadline) {
-            await new Promise<void>((resolve) => setTimeout(resolve, 100));
-          }
-          continue;
-        }
-        const response = exchanged.message;
-        if (
-          response.type !== "event.ack" ||
-          response.payload.executionLease !== this.#request.executionLease ||
-          response.payload.sessionId !== this.#request.sessionId ||
-          response.payload.acknowledgedThroughSeq !== message.payload.event.seq
-        ) {
-          throw new DurableEventStoreError(
-            "invalid_event",
-            "Remote Agent event ACK does not match its publication",
-          );
-        }
-        this.#acknowledgedThroughSeq = response.payload.acknowledgedThroughSeq;
-        return response;
-      } catch (error: unknown) {
-        this.#resetSocket(
-          error instanceof Error ? error : new Error("FactChannel transport failed"),
-        );
-        if (error instanceof DurableEventStoreError && !error.retryable) throw error;
-        if (Date.now() >= deadline) break;
-        await new Promise<void>((resolve) => setTimeout(resolve, 100));
-      }
-    }
-    throw new DurableEventStoreError("event_store_invariant", "FactChannel is unavailable", true);
-  }
-
-  async close(): Promise<void> {
-    if (this.#closed) return;
-    await this.#operationTail;
-    const deadline = Date.now() + 30_000;
-    let failure: unknown;
-    try {
-      while (Date.now() < deadline) {
-        try {
-          if (!(await this.#ensureConnected(deadline))) {
-            await new Promise<void>((resolve) => setTimeout(resolve, 100));
-            continue;
-          }
-          const closeMessage = parseSupervisorToControlMessage({
-            protocolVersion: 1,
-            messageId: globalThis.crypto.randomUUID(),
-            sentAt: new Date().toISOString(),
-            type: "fact.channel.close",
-            payload: {
-              executionLease: this.#request.executionLease,
-              acknowledgedThroughSeq: this.#acknowledgedThroughSeq,
-            },
-          });
-          const exchanged = await this.#exchange(closeMessage, "fact.channel.closed", deadline);
-          if ("error" in exchanged) {
-            failure = exchanged.error;
-            this.#resetSocket(exchanged.error);
-            if (Date.now() < deadline) {
-              await new Promise<void>((resolve) => setTimeout(resolve, 100));
-            }
-            continue;
-          }
-          const response = exchanged.message;
-          if (
-            response.type !== "fact.channel.closed" ||
-            response.payload.acknowledgedMessageId !== closeMessage.messageId ||
-            response.payload.executionLease !== this.#request.executionLease ||
-            response.payload.acknowledgedThroughSeq !== this.#acknowledgedThroughSeq
-          ) {
-            throw new DurableEventStoreError(
-              "invalid_event",
-              "Remote FactChannel close ACK is invalid",
-            );
-          }
-          failure = undefined;
-          return;
-        } catch (error: unknown) {
-          failure = error;
-          this.#resetSocket(error instanceof Error ? error : new Error("FactChannel close failed"));
-          if (Date.now() < deadline) {
-            await new Promise<void>((resolve) => setTimeout(resolve, 100));
-          }
-        }
-      }
-      throw factChannelError(failure);
-    } finally {
-      this.#closed = true;
-      this.#resetSocket(new Error("FactChannel closed"));
-      this.#onClose();
-    }
-  }
-
-  #serialize<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.#operationTail.then(operation, operation);
-    this.#operationTail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
-  }
-
-  async #ensureConnected(deadline: number): Promise<boolean> {
-    if (this.#closed) return false;
-    if (this.#socket?.readyState === WebSocket.OPEN) return true;
+  async ensureConnected(deadline: number): Promise<number | undefined> {
+    if (this.#closed) return undefined;
+    if (this.#socket?.readyState === WebSocket.OPEN) return this.#generation;
     if (this.#connecting === undefined) {
       const connecting = this.#connect(deadline).finally(() => {
         if (this.#connecting === connecting) this.#connecting = undefined;
@@ -770,7 +658,52 @@ class RemoteFactChannel implements FactChannel {
     return this.#connecting;
   }
 
-  async #connect(deadline: number): Promise<boolean> {
+  exchange(
+    streamId: string,
+    message: unknown,
+    expectedType: PendingRemoteExchange["expectedType"],
+    deadline: number,
+  ): Promise<{ message: RemoteFactChannelResponse } | { error: Error }> {
+    if (this.#pending.has(streamId)) {
+      return Promise.resolve({
+        error: new DurableEventStoreError(
+          "event_conflict",
+          "Fact Stream already has an in-flight frame",
+          true,
+        ),
+      });
+    }
+    const socket = this.#socket;
+    if (socket?.readyState !== WebSocket.OPEN) {
+      return Promise.resolve({ error: new Error("Worker Fact connection is not open") });
+    }
+    return new Promise<{ message: RemoteFactChannelResponse } | { error: Error }>((settle) => {
+      const timer = setTimeout(
+        () => {
+          if (this.#pending.get(streamId)?.timer !== timer) return;
+          this.#pending.delete(streamId);
+          settle({ error: new Error("Fact Stream frame timed out") });
+        },
+        Math.max(1, Math.min(60_000, deadline - Date.now())),
+      );
+      this.#pending.set(streamId, { expectedType, settle, timer });
+      socket.send(JSON.stringify(factTransportEnvelope(streamId, message)), (error) => {
+        if (error == null || this.#pending.get(streamId)?.timer !== timer) return;
+        clearTimeout(timer);
+        this.#pending.delete(streamId);
+        settle({ error });
+      });
+    });
+  }
+
+  close(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#resetSocket(new Error("Worker Fact connection closed"));
+    this.#streamFailures.clear();
+  }
+
+  async #connect(deadline: number): Promise<number | undefined> {
     const socket = new WebSocket(this.#url, {
       headers: { authorization: this.#authorization },
       perMessageDeflate: false,
@@ -799,27 +732,306 @@ class RemoteFactChannel implements FactChannel {
     if (!opened) {
       if (this.#socket === socket) this.#socket = undefined;
       if (socket.readyState !== WebSocket.CLOSED) socket.terminate();
-      return false;
+      return undefined;
     }
     socket.on("message", (data, isBinary) => this.#receive(data, isBinary));
     socket.once("close", () => {
-      if (this.#socket === socket) {
-        try {
-          this.#resetSocket(new Error("FactChannel disconnected"));
-        } catch {
-          this.#socket = undefined;
-        }
-      }
+      if (this.#socket === socket) this.#resetSocket(new Error("Worker Fact connection closed"));
     });
     socket.once("error", (error) => {
-      if (this.#socket === socket) {
-        try {
-          this.#resetSocket(error);
-        } catch {
-          this.#socket = undefined;
-        }
-      }
+      if (this.#socket === socket) this.#resetSocket(error);
     });
+    this.#generation += 1;
+    return this.#generation;
+  }
+
+  #receive(data: RawData, isBinary: boolean): void {
+    if (isBinary) {
+      this.#resetSocket(new Error("Worker Fact connection received a binary frame"));
+      return;
+    }
+    let envelope: FactTransportEnvelope;
+    let response: RemoteFactChannelResponse | FactStreamFailureFrame;
+    try {
+      envelope = parseFactTransportEnvelope(JSON.parse(remoteTextFrame(data)));
+      response = remoteFactResponse(envelope.payload);
+    } catch (error: unknown) {
+      this.#resetSocket(
+        error instanceof Error ? error : new Error("Invalid multiplexed Fact frame"),
+      );
+      return;
+    }
+    const pending = this.#pending.get(envelope.streamId);
+    if (response.type === "fact.stream.failed") {
+      const failure = remoteStreamError(response);
+      if (pending !== undefined) {
+        clearTimeout(pending.timer);
+        this.#pending.delete(envelope.streamId);
+        pending.settle({ error: failure });
+      }
+      this.#streamFailures.get(envelope.streamId)?.(failure);
+      return;
+    }
+    if (pending === undefined) return;
+    if (response.type !== pending.expectedType) {
+      clearTimeout(pending.timer);
+      this.#pending.delete(envelope.streamId);
+      pending.settle({ error: new Error("Fact Stream response type is invalid") });
+      return;
+    }
+    clearTimeout(pending.timer);
+    this.#pending.delete(envelope.streamId);
+    pending.settle({ message: response });
+  }
+
+  #resetSocket(error: Error): void {
+    for (const pending of this.#pending.values()) {
+      clearTimeout(pending.timer);
+      pending.settle({ error });
+    }
+    this.#pending.clear();
+    const socket = this.#socket;
+    this.#socket = undefined;
+    if (socket !== undefined && socket.readyState !== WebSocket.CLOSED) socket.terminate();
+  }
+}
+
+class RemoteFactChannel implements FactChannel {
+  readonly #transport: WorkerFactTransport;
+  readonly #streamId: string;
+  readonly #request: FactChannelOpenRequest;
+  readonly #onClose: () => void;
+  #operationTail = Promise.resolve();
+  #acknowledgedThroughSeq: number;
+  #openedGeneration = 0;
+  #failure: DurableEventStoreError | undefined;
+  #closed = false;
+
+  constructor(options: {
+    transport: WorkerFactTransport;
+    streamId: string;
+    request: FactChannelOpenRequest;
+    onClose: () => void;
+  }) {
+    this.#transport = options.transport;
+    this.#streamId = options.streamId;
+    this.#request = options.request;
+    this.#onClose = options.onClose;
+    this.#acknowledgedThroughSeq = options.request.nextEventSeq - 1;
+    this.#transport.register(this.#streamId, (error) => {
+      this.#openedGeneration = 0;
+      if (!error.retryable) this.#failure = error;
+    });
+  }
+
+  get acknowledgedThroughSeq(): number {
+    return this.#acknowledgedThroughSeq;
+  }
+
+  async open(): Promise<void> {
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      if (await this.#ensureOpened(deadline)) return;
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    }
+    throw new DurableEventStoreError(
+      "event_store_invariant",
+      "Fact Stream could not open its transport",
+      true,
+    );
+  }
+
+  mutate(
+    mutation: CandidatePiSessionMutationFact,
+  ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
+    return this.#serialize(() => this.#mutate(mutation));
+  }
+
+  async #mutate(
+    mutation: CandidatePiSessionMutationFact,
+  ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
+    this.#assertOpen();
+    const frame: PiSessionMutationPublishFrame = {
+      protocolVersion: 1,
+      messageId: globalThis.crypto.randomUUID(),
+      sentAt: new Date().toISOString(),
+      type: "fact.pi_session_mutation.publish",
+      payload: mutation,
+    };
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      if (!(await this.#ensureOpened(deadline))) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+      const exchanged = await this.#transport.exchange(
+        this.#streamId,
+        frame,
+        "fact.pi_session_mutation.accepted",
+        deadline,
+      );
+      if ("error" in exchanged) {
+        this.#openedGeneration = 0;
+        if (exchanged.error instanceof DurableEventStoreError && !exchanged.error.retryable) {
+          throw exchanged.error;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+      const response = exchanged.message;
+      if (
+        response.type === "fact.pi_session_mutation.accepted" &&
+        response.payload.acknowledgedMessageId === frame.messageId &&
+        response.payload.mutationId === mutation.mutationId &&
+        response.payload.accepted
+      ) {
+        return { mutationId: mutation.mutationId, accepted: true };
+      }
+      this.#openedGeneration = 0;
+    }
+    throw new DurableEventStoreError(
+      "event_store_invariant",
+      "Fact Stream mutation acceptance timed out",
+      true,
+    );
+  }
+
+  ingest(value: unknown): Promise<EventAckMessage> {
+    return this.#serialize(() => this.#ingest(value));
+  }
+
+  async #ingest(value: unknown): Promise<EventAckMessage> {
+    this.#assertOpen();
+    const message = parseSupervisorToControlMessage(value);
+    if (
+      message.type !== "event.publish" ||
+      message.payload.executionLease !== this.#request.executionLease ||
+      message.payload.event.sessionId !== this.#request.sessionId ||
+      message.payload.event.turnId !== this.#request.turnId
+    ) {
+      throw new DurableEventStoreError(
+        "invalid_event",
+        "Event publication does not match its remote Fact Stream",
+      );
+    }
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      if (!(await this.#ensureOpened(deadline))) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+      const exchanged = await this.#transport.exchange(
+        this.#streamId,
+        message,
+        "event.ack",
+        deadline,
+      );
+      if ("error" in exchanged) {
+        this.#openedGeneration = 0;
+        if (exchanged.error instanceof DurableEventStoreError && !exchanged.error.retryable) {
+          throw exchanged.error;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+      const response = exchanged.message;
+      if (
+        response.type !== "event.ack" ||
+        response.payload.executionLease !== this.#request.executionLease ||
+        response.payload.sessionId !== this.#request.sessionId ||
+        response.payload.acknowledgedThroughSeq !== message.payload.event.seq
+      ) {
+        throw new DurableEventStoreError(
+          "invalid_event",
+          "Remote Agent event ACK does not match its publication",
+        );
+      }
+      this.#acknowledgedThroughSeq = response.payload.acknowledgedThroughSeq;
+      return response;
+    }
+    throw new DurableEventStoreError("event_store_invariant", "Fact Stream is unavailable", true);
+  }
+
+  async close(): Promise<void> {
+    if (this.#closed) return;
+    await this.#operationTail;
+    const deadline = Date.now() + 30_000;
+    let failure: unknown;
+    try {
+      while (Date.now() < deadline) {
+        if (!(await this.#ensureOpened(deadline))) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 100));
+          continue;
+        }
+        const closeMessage = parseSupervisorToControlMessage({
+          protocolVersion: 1,
+          messageId: globalThis.crypto.randomUUID(),
+          sentAt: new Date().toISOString(),
+          type: "fact.channel.close",
+          payload: {
+            executionLease: this.#request.executionLease,
+            acknowledgedThroughSeq: this.#acknowledgedThroughSeq,
+          },
+        });
+        const exchanged = await this.#transport.exchange(
+          this.#streamId,
+          closeMessage,
+          "fact.channel.closed",
+          deadline,
+        );
+        if ("error" in exchanged) {
+          failure = exchanged.error;
+          this.#openedGeneration = 0;
+          if (exchanged.error instanceof DurableEventStoreError && !exchanged.error.retryable) {
+            throw exchanged.error;
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 100));
+          continue;
+        }
+        const response = exchanged.message;
+        if (
+          response.type !== "fact.channel.closed" ||
+          response.payload.acknowledgedMessageId !== closeMessage.messageId ||
+          response.payload.executionLease !== this.#request.executionLease ||
+          response.payload.acknowledgedThroughSeq !== this.#acknowledgedThroughSeq
+        ) {
+          throw new DurableEventStoreError(
+            "invalid_event",
+            "Remote Fact Stream close ACK is invalid",
+          );
+        }
+        failure = undefined;
+        return;
+      }
+      throw factChannelError(failure);
+    } finally {
+      this.#closed = true;
+      this.#transport.unregister(this.#streamId);
+      this.#onClose();
+    }
+  }
+
+  abort(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#transport.unregister(this.#streamId);
+    this.#onClose();
+  }
+
+  #serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.#operationTail.then(operation, operation);
+    this.#operationTail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  async #ensureOpened(deadline: number): Promise<boolean> {
+    this.#assertOpen();
+    const generation = await this.#transport.ensureConnected(deadline);
+    if (generation === undefined) return false;
+    if (this.#openedGeneration === generation) return true;
     const openMessage = parseSupervisorToControlMessage({
       protocolVersion: 1,
       messageId: globalThis.crypto.randomUUID(),
@@ -827,8 +1039,18 @@ class RemoteFactChannel implements FactChannel {
       type: "fact.channel.open",
       payload: this.#request,
     });
-    const exchanged = await this.#exchange(openMessage, "fact.channel.ready", deadline);
-    if ("error" in exchanged) return false;
+    const exchanged = await this.#transport.exchange(
+      this.#streamId,
+      openMessage,
+      "fact.channel.ready",
+      deadline,
+    );
+    if ("error" in exchanged) {
+      if (exchanged.error instanceof DurableEventStoreError && !exchanged.error.retryable) {
+        throw exchanged.error;
+      }
+      return false;
+    }
     const response = exchanged.message;
     if (
       response.type !== "fact.channel.ready" ||
@@ -843,110 +1065,43 @@ class RemoteFactChannel implements FactChannel {
       this.#acknowledgedThroughSeq,
       response.payload.acknowledgedThroughSeq,
     );
+    this.#openedGeneration = generation;
     return true;
   }
 
-  #exchange(
-    message: unknown,
-    expectedType: PendingRemoteExchange["expectedType"],
-    deadline: number,
-  ): Promise<{ message: RemoteFactChannelResponse } | { error: Error }> {
-    if (this.#pending !== undefined) {
-      return Promise.resolve({
-        error: new DurableEventStoreError(
-          "event_conflict",
-          "FactChannel already has an in-flight frame",
-          true,
-        ),
-      });
-    }
-    const socket = this.#socket;
-    if (socket?.readyState !== WebSocket.OPEN) {
-      return Promise.resolve({ error: new Error("FactChannel socket is not open") });
-    }
-    return new Promise<{ message: RemoteFactChannelResponse } | { error: Error }>((settle) => {
-      const timer = setTimeout(
-        () => {
-          if (this.#pending?.timer !== timer) return;
-          this.#pending = undefined;
-          settle({ error: new Error("FactChannel frame timed out") });
-        },
-        Math.max(1, Math.min(60_000, deadline - Date.now())),
-      );
-      this.#pending = { expectedType, settle, timer };
-      socket.send(JSON.stringify(message), (error) => {
-        if (error == null || this.#pending?.timer !== timer) return;
-        clearTimeout(timer);
-        this.#pending = undefined;
-        settle({ error });
-      });
-    });
-  }
-
-  #receive(data: RawData, isBinary: boolean): void {
-    const pending = this.#pending;
-    if (pending === undefined) return;
-    if (isBinary) {
-      this.#resetSocket(new Error("FactChannel received a binary frame"));
-      return;
-    }
-    let response: RemoteFactChannelResponse;
-    try {
-      const value = JSON.parse(remoteTextFrame(data)) as RemoteFactChannelResponse;
-      response =
-        value.type === "fact.pi_session_mutation.accepted"
-          ? value
-          : parseControlToSupervisorMessage(value);
-    } catch (error: unknown) {
-      this.#resetSocket(error instanceof Error ? error : new Error("Invalid FactChannel frame"));
-      return;
-    }
-    if (response.type !== pending.expectedType) {
-      this.#resetSocket(new Error("FactChannel response type is invalid"));
-      return;
-    }
-    clearTimeout(pending.timer);
-    this.#pending = undefined;
-    pending.settle({ message: response });
-  }
-
-  #resetSocket(error: Error): void {
-    const pending = this.#pending;
-    this.#pending = undefined;
-    if (pending !== undefined) {
-      clearTimeout(pending.timer);
-      pending.settle({ error });
-    }
-    const socket = this.#socket;
-    this.#socket = undefined;
-    if (socket !== undefined && socket.readyState !== WebSocket.CLOSED) socket.terminate();
+  #assertOpen(): void {
+    if (this.#failure !== undefined) throw this.#failure;
+    if (this.#closed) throw new DurableEventStoreError("invalid_event", "Fact Stream is closed");
   }
 }
 
 export class WebSocketAcceptedFactIngestor
   implements FactChannelFactory, ActiveFactChannelResolver
 {
-  readonly #url: URL;
   readonly #authorization: string;
   readonly #healthUrl: URL;
+  readonly #transport: WorkerFactTransport;
   readonly #channels = new Map<string, RemoteFactChannel>();
   #closed = false;
 
   constructor(options: { baseUrl: string; serviceToken: string; allowInsecureHttp: boolean }) {
-    this.#url = factChannelUrl(options.baseUrl, options.allowInsecureHttp);
-    this.#healthUrl = new URL(`${ACCEPTED_FACT_INGEST_PATH}/health`, options.baseUrl);
     this.#authorization = `Bearer ${options.serviceToken}`;
+    this.#healthUrl = new URL(`${ACCEPTED_FACT_INGEST_PATH}/health`, options.baseUrl);
+    this.#transport = new WorkerFactTransport({
+      url: factChannelUrl(options.baseUrl, options.allowInsecureHttp),
+      authorization: this.#authorization,
+    });
   }
 
   async open(request: FactChannelOpenRequest): Promise<FactChannel> {
     if (this.#closed) throw new Error("Agent event ingestor is closed");
     if (this.#channels.has(request.executionLease)) {
-      throw new Error("ExecutionLease already has an open FactChannel");
+      throw new Error("ExecutionLease already has an open Fact Stream");
     }
     let channel!: RemoteFactChannel;
     channel = new RemoteFactChannel({
-      url: this.#url,
-      authorization: this.#authorization,
+      transport: this.#transport,
+      streamId: globalThis.crypto.randomUUID(),
       request,
       onClose: () => this.#channels.delete(request.executionLease),
     });
@@ -976,5 +1131,6 @@ export class WebSocketAcceptedFactIngestor
     if (this.#closed) return;
     this.#closed = true;
     await Promise.allSettled([...this.#channels.values()].map((channel) => channel.close()));
+    this.#transport.close();
   }
 }

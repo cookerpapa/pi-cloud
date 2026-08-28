@@ -1,6 +1,9 @@
 import {
   ACCEPTED_FACT_INGEST_PATH,
   FACT_CHANNEL_PATH,
+  factStreamFailureFrame,
+  factTransportEnvelope,
+  parseFactTransportEnvelope,
   type AcceptedFactChannelSession,
 } from "@pi-cloud/runtime-core/accepted-fact-channel";
 import {
@@ -15,14 +18,22 @@ import type {
   PiSessionMutationAcceptedFrame,
 } from "@pi-cloud/runtime-core/accepted-fact";
 
-const MAXIMUM_PENDING_FRAMES = 8;
+const MAXIMUM_PENDING_CONNECTION_FRAMES = 1_024;
+const MAXIMUM_PENDING_STREAM_FRAMES = 8;
 
-type ChannelContext = {
-  socket: WebSocket;
-  connectionId: string;
+type StreamContext = {
+  streamId: string;
+  authorityConnectionId: string;
   channel: AcceptedFactChannelSession | undefined;
   pendingFrames: number;
   processing: Promise<void>;
+  closed: boolean;
+};
+
+type ConnectionContext = {
+  socket: WebSocket;
+  streams: Map<string, StreamContext>;
+  pendingFrames: number;
   closed: boolean;
 };
 
@@ -42,9 +53,11 @@ function textFrame(data: RawData): string {
   return data.toString("utf8");
 }
 
-function send(socket: WebSocket, value: unknown): Promise<void> {
+function send(socket: WebSocket, streamId: string, payload: unknown): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    socket.send(JSON.stringify(value), (error) => (error == null ? resolve() : reject(error)));
+    socket.send(JSON.stringify(factTransportEnvelope(streamId, payload)), (error) =>
+      error == null ? resolve() : reject(error),
+    );
   });
 }
 
@@ -56,7 +69,7 @@ function closeSocket(socket: WebSocket, code: number, reason: string): void {
 export class AcceptedFactIngestGateway {
   readonly #channels: FactChannelServicePort;
   readonly #authorization: string;
-  readonly #contexts = new Set<ChannelContext>();
+  readonly #contexts = new Set<ConnectionContext>();
   #installed = false;
 
   constructor(options: { channels: FactChannelServicePort; serviceToken: string }) {
@@ -77,7 +90,11 @@ export class AcceptedFactIngestGateway {
       }
       try {
         await this.#channels.checkHealth();
-        await reply.code(200).send({ status: "ready", ...this.#channels.statistics() });
+        await reply.code(200).send({
+          status: "ready",
+          ...this.#channels.statistics(),
+          activeConnections: this.#contexts.size,
+        });
       } catch {
         await reply.code(503).send({ status: "not_ready" });
       }
@@ -93,71 +110,77 @@ export class AcceptedFactIngestGateway {
   }
 
   #accept(socket: WebSocket): void {
-    const context: ChannelContext = {
+    const context: ConnectionContext = {
       socket,
-      connectionId: globalThis.crypto.randomUUID(),
-      channel: undefined,
+      streams: new Map(),
       pendingFrames: 0,
-      processing: Promise.resolve(),
       closed: false,
     };
     this.#contexts.add(context);
     socket.on("message", (data, isBinary) => {
       if (context.closed) return;
-      context.pendingFrames += 1;
-      if (context.pendingFrames > MAXIMUM_PENDING_FRAMES) {
-        context.pendingFrames -= 1;
-        this.#close(context, 1_013, "FactChannel overloaded");
+      if (isBinary) {
+        this.#closeConnection(context, 1_003, "binary Fact frames unsupported");
         return;
       }
-      context.processing = context.processing
+      let envelope;
+      try {
+        envelope = parseFactTransportEnvelope(JSON.parse(textFrame(data)));
+      } catch {
+        this.#closeConnection(context, 1_002, "invalid multiplexed Fact frame");
+        return;
+      }
+      let stream = context.streams.get(envelope.streamId);
+      if (stream === undefined) {
+        stream = {
+          streamId: envelope.streamId,
+          authorityConnectionId: globalThis.crypto.randomUUID(),
+          channel: undefined,
+          pendingFrames: 0,
+          processing: Promise.resolve(),
+          closed: false,
+        };
+        context.streams.set(envelope.streamId, stream);
+      }
+      context.pendingFrames += 1;
+      stream.pendingFrames += 1;
+      if (
+        context.pendingFrames > MAXIMUM_PENDING_CONNECTION_FRAMES ||
+        stream.pendingFrames > MAXIMUM_PENDING_STREAM_FRAMES
+      ) {
+        context.pendingFrames -= 1;
+        stream.pendingFrames -= 1;
+        this.#failStream(context, stream, new Error("Fact Stream overloaded"));
+        return;
+      }
+      const activeStream = stream;
+      stream.processing = stream.processing
         .then(async () => {
-          if (!context.closed) await this.#process(context, data, isBinary);
+          if (!context.closed && !activeStream.closed) {
+            await this.#process(context, activeStream, envelope.payload);
+          }
         })
-        .catch((error: unknown) => {
-          const code =
-            typeof error === "object" &&
-            error !== null &&
-            "code" in error &&
-            error.code === "stale_session_lease"
-              ? 1_008
-              : 1_011;
-          this.#close(context, code, "FactChannel failed");
-        })
+        .catch((error: unknown) => this.#failStream(context, activeStream, error))
         .finally(() => {
           context.pendingFrames -= 1;
+          activeStream.pendingFrames -= 1;
         });
     });
     socket.once("close", () => this.#cleanup(context));
-    socket.once("error", () => this.#close(context, 1_011, "FactChannel transport failed"));
+    socket.once("error", () =>
+      this.#closeConnection(context, 1_011, "Worker Fact connection failed"),
+    );
   }
 
-  async #process(context: ChannelContext, data: RawData, isBinary: boolean): Promise<void> {
-    if (isBinary) {
-      this.#close(context, 1_003, "binary FactChannel frames unsupported");
-      return;
-    }
-    let value: unknown;
-    try {
-      value = JSON.parse(textFrame(data));
-    } catch {
-      this.#close(context, 1_002, "invalid FactChannel json");
-      return;
-    }
+  async #process(context: ConnectionContext, stream: StreamContext, value: unknown): Promise<void> {
     if (
       typeof value === "object" &&
       value !== null &&
       (value as { type?: unknown }).type === "fact.pi_session_mutation.publish"
     ) {
-      if (context.channel === undefined) {
-        this.#close(context, 1_002, "FactChannel must open first");
-        return;
-      }
-      const frame = value as {
-        messageId: string;
-        payload: CandidatePiSessionMutationFact;
-      };
-      const accepted = await context.channel.mutate(frame.payload);
+      if (stream.channel === undefined) throw new Error("Fact Stream must open first");
+      const frame = value as { messageId: string; payload: CandidatePiSessionMutationFact };
+      const accepted = await stream.channel.mutate(frame.payload);
       const acknowledgement: PiSessionMutationAcceptedFrame = {
         protocolVersion: 1,
         messageId: globalThis.crypto.randomUUID(),
@@ -169,30 +192,26 @@ export class AcceptedFactIngestGateway {
           accepted: true,
         },
       };
-      await send(context.socket, acknowledgement);
+      await send(context.socket, stream.streamId, acknowledgement);
       return;
     }
     const message = parseSupervisorToControlMessage(value);
-    if (context.channel === undefined) {
-      if (message.type !== "fact.channel.open") {
-        this.#close(context, 1_002, "FactChannel must open first");
-        return;
-      }
-      await this.#open(context, message);
+    if (stream.channel === undefined) {
+      if (message.type !== "fact.channel.open") throw new Error("Fact Stream must open first");
+      await this.#open(context, stream, message);
       return;
     }
     if (message.type === "event.publish") {
-      await send(context.socket, await context.channel.ingest(message));
+      await send(context.socket, stream.streamId, await stream.channel.ingest(message));
       return;
     }
     if (message.type === "fact.channel.close") {
-      const channel = context.channel;
+      const channel = stream.channel;
       if (
         message.payload.executionLease !== channel.executionLease ||
         message.payload.acknowledgedThroughSeq !== channel.acknowledgedThroughSeq
       ) {
-        this.#close(context, 1_002, "FactChannel close watermark mismatch");
-        return;
+        throw new Error("Fact Stream close watermark mismatch");
       }
       await channel.close();
       const closed = parseControlToSupervisorMessage({
@@ -206,17 +225,20 @@ export class AcceptedFactIngestGateway {
           acknowledgedThroughSeq: channel.acknowledgedThroughSeq,
         },
       });
-      await send(context.socket, closed);
-      context.channel = undefined;
-      this.#close(context, 1_000, "FactChannel closed");
+      await send(context.socket, stream.streamId, closed);
+      this.#removeStream(context, stream);
       return;
     }
-    this.#close(context, 1_002, "unexpected FactChannel frame");
+    throw new Error("Unexpected Fact Stream frame");
   }
 
-  async #open(context: ChannelContext, message: FactChannelOpenMessage): Promise<void> {
-    context.channel = await this.#channels.open(message, context.connectionId, () => {
-      this.#close(context, 1_008, "FactChannel lease expired");
+  async #open(
+    context: ConnectionContext,
+    stream: StreamContext,
+    message: FactChannelOpenMessage,
+  ): Promise<void> {
+    stream.channel = await this.#channels.open(message, stream.authorityConnectionId, (error) => {
+      this.#failStream(context, stream, error);
     });
     const ready = parseControlToSupervisorMessage({
       protocolVersion: 1,
@@ -225,27 +247,50 @@ export class AcceptedFactIngestGateway {
       type: "fact.channel.ready",
       payload: {
         acknowledgedMessageId: message.messageId,
-        executionLease: context.channel.executionLease,
-        sessionId: context.channel.sessionId,
-        turnId: context.channel.turnId,
-        acknowledgedThroughSeq: context.channel.acknowledgedThroughSeq,
-        leaseDurationMs: context.channel.leaseDurationMs,
+        executionLease: stream.channel.executionLease,
+        sessionId: stream.channel.sessionId,
+        turnId: stream.channel.turnId,
+        acknowledgedThroughSeq: stream.channel.acknowledgedThroughSeq,
+        leaseDurationMs: stream.channel.leaseDurationMs,
       },
     });
-    await send(context.socket, ready);
+    await send(context.socket, stream.streamId, ready);
   }
 
-  #close(context: ChannelContext, code: number, reason: string): void {
+  #failStream(context: ConnectionContext, stream: StreamContext, error: unknown): void {
+    if (stream.closed) return;
+    const channel = stream.channel;
+    this.#removeStream(context, stream);
+    void channel?.close().catch(() => undefined);
+    if (context.socket.readyState === context.socket.OPEN) {
+      void send(context.socket, stream.streamId, factStreamFailureFrame(error)).catch(() => {
+        this.#closeConnection(context, 1_011, "Worker Fact connection send failed");
+      });
+    }
+  }
+
+  #removeStream(context: ConnectionContext, stream: StreamContext): void {
+    stream.closed = true;
+    stream.channel = undefined;
+    context.streams.delete(stream.streamId);
+  }
+
+  #closeConnection(context: ConnectionContext, code: number, reason: string): void {
     if (context.closed) return;
     context.closed = true;
     closeSocket(context.socket, code, reason);
-    void this.#cleanup(context);
+    this.#cleanup(context);
   }
 
-  #cleanup(context: ChannelContext): void {
+  #cleanup(context: ConnectionContext): void {
     if (!this.#contexts.delete(context)) return;
     context.closed = true;
-    void context.channel?.close().catch(() => undefined);
+    const streams = [...context.streams.values()];
+    context.streams.clear();
+    for (const stream of streams) {
+      stream.closed = true;
+      void stream.channel?.close().catch(() => undefined);
+    }
   }
 
   #authorized(request: FastifyRequest): boolean {

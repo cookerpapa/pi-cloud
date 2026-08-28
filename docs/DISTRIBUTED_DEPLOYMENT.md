@@ -32,7 +32,7 @@ Ingress -> Web / Control Plane
                          │
               persistent Workspace storage
 
-Worker facts -> per-Lease FactChannel -> PostgreSQL Authority Gate -> AcceptedFactBus
+Worker facts -> multiplexed Worker connection / per-Lease Stream -> PostgreSQL Authority Gate -> AcceptedFactBus
 AcceptedFacts -> Kafka keyed by Session
               ├-> Gateway soft tail -> snapshot-first SSE
               └-> canonical consumer group -> PostgreSQL SessionStorage

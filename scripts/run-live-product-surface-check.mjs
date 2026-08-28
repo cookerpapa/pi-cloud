@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -119,6 +119,7 @@ async function runTurn({
 }) {
   const submittedAt = performance.now();
   const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("turn"), "off");
+  const acceptedAt = performance.now();
   const controller = new AbortController();
   const events = [];
   let terminal;
@@ -165,6 +166,7 @@ async function runTurn({
     return {
       accepted,
       events,
+      acceptedMs: Math.round(acceptedAt - submittedAt),
       firstTextMs: firstTextAt === undefined ? undefined : Math.round(firstTextAt - submittedAt),
       settledMs: Math.round(performance.now() - submittedAt),
     };
@@ -490,25 +492,39 @@ try {
   );
   progress("conversation preservation, Workspace rebind, and deletion passed");
 
-  process.stdout.write(
-    `${JSON.stringify({
-      accepted: true,
-      piCloudRevision: testedRevision,
-      checkedAt: new Date().toISOString(),
-      browserCookieAuth: true,
-      pureChatFirstTextMs: chat.firstTextMs,
-      codingFirstTextMs: coding.firstTextMs,
-      codingSettledMs: coding.settledMs,
-      treeForkPrune: true,
-      workspaceFiles: files.files.length,
-      terminal: true,
-      steer: true,
-      cancelAndRecover: true,
-      workspaceRebind: true,
-      tenantIsolation: true,
-      deletion: deletion.storageState,
-    })}\n`,
+  const report = {
+    accepted: true,
+    piCloudRevision: testedRevision,
+    checkedAt: new Date().toISOString(),
+    browserCookieAuth: true,
+    latencyMs: {
+      pureChat: {
+        accepted: chat.acceptedMs,
+        firstVisibleText: chat.firstTextMs,
+        settled: chat.settledMs,
+      },
+      coding: {
+        accepted: coding.acceptedMs,
+        firstVisibleText: coding.firstTextMs,
+        settled: coding.settledMs,
+      },
+    },
+    treeForkPrune: true,
+    workspaceFiles: files.files.length,
+    terminal: true,
+    steer: true,
+    cancelAndRecover: true,
+    workspaceRebind: true,
+    tenantIsolation: true,
+    deletion: deletion.storageState,
+  };
+  await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
+  await writeFile(
+    resolve(repositoryRoot, "docs/reports/product-surface-acceptance-latest.json"),
+    `${JSON.stringify(report, null, 2)}\n`,
+    "utf8",
   );
+  process.stdout.write(`${JSON.stringify(report)}\n`);
 } finally {
   for (const sessionId of createdSessionIds) {
     await api.deleteConversation(sessionId, newIdempotencyKey("delete")).catch(() => undefined);

@@ -5,7 +5,7 @@
 - multi-tenant Web Coding Agent using Pi SDK;
 - PostgreSQL Run/Attempt authority, same-Session ordering and shared Worker queue;
 - Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with native Compaction;
-- one FactChannel and PostgreSQL Authority Gate for Agent events and Pi mutations;
+- one multiplexed Fact connection per Worker, logical per-Run Streams and a PostgreSQL Authority Gate;
 - Kafka `acks=all` AcceptedFact log keyed by Session;
 - rebuildable Gateway live tails and cursor-free snapshot-first SSE;
 - CubeSandbox KVM-only Tool execution and persistent Workspace Volumes;

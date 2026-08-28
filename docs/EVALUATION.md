@@ -38,7 +38,7 @@ The production stream is:
 
 ```text
 Pi event ─┐
-          ├-> short-leased FactChannel -> Authority Gate -> AcceptedFactBus
+          ├-> per-Run Fact Stream / multiplexed Worker connection -> Authority Gate -> AcceptedFactBus
 Pi entry ─┘                                      ├-> Gateway live tail -> snapshot-first SSE
                                                  └-> Kafka consumer group -> PostgreSQL SessionStorage
 ```

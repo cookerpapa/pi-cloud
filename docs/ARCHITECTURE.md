@@ -475,19 +475,21 @@ events. The public adapter intentionally ignores thinking fragments, streamed
 Tool-call JSON and partial Tool stdout. It publishes Assistant text deltas,
 complete Tool start/result Items and low-frequency lifecycle boundaries.
 
-After PostgreSQL issues the current Session lease, the Worker opens one
-service-authenticated FactChannel bound to that lease, Session and Turn.
-The Gateway records a short channel lease on the same Session lease row. Both Agent
-events and complete Pi Session mutations cross that long-lived WebSocket. A
-single PostgreSQL Authority Gate binds canonical scope and removes the lease;
+After PostgreSQL issues the current Session lease, the Worker opens one logical
+Fact Stream bound to that lease, Session and Turn. All active Streams in one
+Worker share one service-authenticated WebSocket to the ingest Gateway. The
+Gateway records a distinct short channel lease for every logical Stream on its
+Session lease row. Both Agent events and complete Pi Session mutations cross
+that multiplexed Worker connection. A single PostgreSQL Authority Gate binds
+canonical scope and removes the lease;
 the resulting AcceptedFact is appended through a broker-neutral bus. The
 Kafka adapter keys every Fact by Session ID and uses `acks=all`. Different
-Session leases publish concurrently, while one channel
-keeps one Fact in flight. Channel ownership renews set-wise outside the Fact hot
+Session leases publish concurrently, while one logical Stream keeps one Fact
+in flight. Stream ownership renews set-wise outside the Fact hot
 path. After PubAck, a separate progress store checkpoints the acknowledged
-Agent-event sequence set-wise and flushes it on normal channel close; this is a
+Agent-event sequence set-wise and flushes it on normal Stream close; this is a
 terminal-stream boundary, not an admission decision. Normal settlement closes
-the channel before releasing the lease; crash recovery waits for its short
+the Stream before releasing the lease; crash recovery waits for its short
 lease rather than admitting overlapping generations. Workers have no Kafka
 credentials or network route.
 

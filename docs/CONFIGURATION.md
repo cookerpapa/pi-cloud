@@ -93,8 +93,8 @@ combinations.
 | `PI_CLOUD_ACCEPTED_FACT_RETENTION_MS` | `7200000` | Kafka AcceptedFact retention (2 hours) |
 | `PI_CLOUD_KAFKA_PARTITIONS` | `32` | Session-keyed AcceptedFact partitions |
 | `PI_CLOUD_KAFKA_REPLICAS` | `3` | Kafka Topic replication factor |
-| `PI_CLOUD_FACT_CHANNEL_LEASE_MS` | `9000` | short PostgreSQL ownership lease for one active accepted-Fact channel |
-| `PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE` | `128` | bounded active FactChannels per Control Plane replica |
+| `PI_CLOUD_FACT_CHANNEL_LEASE_MS` | `9000` | short PostgreSQL ownership lease for one active logical Fact Stream |
+| `PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE` | `128` | bounded active logical Fact Streams per Control Plane replica |
 | `PI_CLOUD_PREVIEW_ORIGIN_BASE_URL` | `http://preview.localhost:8080` | isolated application Preview base domain |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS` | `2` | trusted Volume operations in flight |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_QUEUED_OPERATIONS` | `32` | bounded Volume wait queue |

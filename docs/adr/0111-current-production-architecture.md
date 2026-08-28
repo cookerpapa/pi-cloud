@@ -73,9 +73,9 @@ execution path and failure semantics.
 
 ### Event and recovery semantics
 
-- Each active ExecutionLease owns one short PostgreSQL-leased
-  FactChannel. Assistant text events and complete Pi Session mutations cross
-  its long-lived WebSocket
+- Each active ExecutionLease owns one short PostgreSQL-leased logical Fact
+  Stream. A Worker multiplexes all of its Streams over one long-lived WebSocket.
+  Assistant text events and complete Pi Session mutations cross that connection
   without an intentional application batch and receive one R=3 PubAck each.
   Independent leases publish concurrently; one lease is ordered. Provider
   Tool-call JSON, thinking deltas and partial Tool output are not public events.
