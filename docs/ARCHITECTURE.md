@@ -292,13 +292,14 @@ and operation idempotency remain in PostgreSQL and the external Tool Broker.
 
 Human terminal authority is deliberately separate from an Agent ExecutionLease
 and Tool policy snapshot. It does not advance or revoke the Session's Agent
-fence. If that Session has an idle warm Cube, the terminal may reuse it;
-otherwise it receives a separate Cube that mounts the same persistent Volume.
-An Agent Run and terminal may therefore coexist, with ordinary POSIX conflict
-semantics and user-managed coordination. No in-guest secret is an ownership
-authority. Warm runtimes are Broker-owned and excluded from expired Supervisor
-inventory, preventing a stale Run reconciler from deleting them. Input, output
-and resize frames are bounded; terminal transcripts are not persisted.
+fence. Opening a terminal retires an idle warm Cube and creates one terminal
+runtime. If an Agent starts while that terminal is connected, Tool Broker lends
+the same physical Cube to the Agent's independently fenced activation; it does
+not attach the Volume to a second Cube. The PTY remains usable, and settlement
+returns runtime ownership to the terminal. Conflicting file/process operations
+use ordinary user-managed Linux semantics. No in-guest secret is an ownership
+authority. Input, output and resize frames are bounded; terminal transcripts
+are not persisted.
 
 ### User-owned development environments
 

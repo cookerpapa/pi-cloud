@@ -93,6 +93,7 @@ type ManagedActivation = {
   >;
   seenCaptureIds: Set<string>;
   developmentEnvironmentId?: string;
+  workspaceTerminalId?: string;
 };
 
 type WarmActivation = {
@@ -133,12 +134,6 @@ type ManagedWorkspaceTerminal = {
   assignment: ToolSandboxAssignment;
   handle: SandboxHandle;
   session: SandboxTerminalSession;
-  retainedWarm?: {
-    key: string;
-    activationId: string;
-    workspaceRevision: string;
-    environment: EnvironmentRuntimeSnapshot;
-  };
   closing?: Promise<void>;
 };
 
@@ -1023,7 +1018,6 @@ export class ToolBroker {
     let admitted = false;
     let handle: SandboxHandle | undefined;
     let terminal: SandboxTerminalSession | undefined;
-    let retainedWarm: ManagedWorkspaceTerminal["retainedWarm"];
     try {
       if (reservation.retiredActivation !== undefined) {
         const retired = reservation.retiredActivation;
@@ -1037,42 +1031,26 @@ export class ToolBroker {
             false,
           );
         }
-        if (
-          warmEntry !== undefined &&
-          warmEntry[1].handle.assignment.sessionId === input.sessionId
-        ) {
-          this.#warm.delete(warmEntry[0]);
-          handle = await this.#provider.rebind(warmEntry[1].handle, assignment, "/workspace");
-          retainedWarm = {
-            key: warmEntry[0],
-            activationId: retired.activationId,
-            workspaceRevision: warmEntry[1].workspaceRevision,
-            environment: warmEntry[1].environment,
-          };
-        } else if (warmEntry === undefined) {
-          await this.#provider.destroyActivation(retired.activationId, retired.assignment);
-        } else {
+        if (warmEntry !== undefined) {
           this.#warm.delete(warmEntry[0]);
           await this.#provider.stop(warmEntry[1].handle);
           this.#releaseAdmission(retired.activationId);
+        } else if (warmEntry === undefined) {
+          await this.#provider.destroyActivation(retired.activationId, retired.assignment);
         }
-        if (retainedWarm === undefined) {
-          await this.#stateRepository.setActivationState(retired.activationId, "released");
-        }
+        await this.#stateRepository.setActivationState(retired.activationId, "released");
       }
       await this.#stateRepository.setTerminalState(terminalId, "materializing");
-      if (retainedWarm === undefined) {
-        await this.#acquireAdmission(terminalId, assignment);
-        admitted = true;
-        handle = await this.#provider.create({
-          activationId: terminalId,
-          assignment,
-          environment: input.environment,
-          workspaceSeed: input.workspaceSeed,
-          policy: this.#provider.defaultPolicy,
-          toolRoot: "/workspace",
-        });
-      }
+      await this.#acquireAdmission(terminalId, assignment);
+      admitted = true;
+      handle = await this.#provider.create({
+        activationId: terminalId,
+        assignment,
+        environment: input.environment,
+        workspaceSeed: input.workspaceSeed,
+        policy: this.#provider.defaultPolicy,
+        toolRoot: "/workspace",
+      });
       if (handle === undefined) {
         throw new ToolBrokerError(
           "workspace_terminal_runtime_unavailable",
@@ -1086,7 +1064,6 @@ export class ToolBroker {
         assignment,
         handle,
         session: activeTerminal,
-        ...(retainedWarm === undefined ? {} : { retainedWarm }),
       };
       await this.#stateRepository.setTerminalState(terminalId, "active", { handle });
       this.#terminals.set(terminalId, managed);
@@ -1111,12 +1088,6 @@ export class ToolBroker {
       await terminal?.kill().catch(() => undefined);
       if (handle !== undefined) await this.#provider.destroy(handle).catch(() => undefined);
       if (admitted) this.#releaseAdmission(terminalId);
-      if (retainedWarm !== undefined) {
-        this.#releaseAdmission(retainedWarm.activationId);
-        await this.#stateRepository
-          .setActivationState(retainedWarm.activationId, "released")
-          .catch(() => undefined);
-      }
       await this.#stateRepository
         .setTerminalState(terminalId, "unknown", { failureCode: operationFailureCode(error) })
         .catch(() => undefined);
@@ -1325,9 +1296,19 @@ export class ToolBroker {
     if (developmentEnvironment !== undefined) {
       await this.#validateDevelopmentToolRoot(developmentEnvironment.handle, request.toolRoot);
     }
+    const workspaceTerminal =
+      request.executionMode === "elastic"
+        ? [...this.#terminals.entries()].find(
+            ([, terminal]) =>
+              terminal.assignment.tenantId === request.assignment.tenantId &&
+              terminal.assignment.projectId === request.assignment.projectId &&
+              terminal.assignment.workspaceId === request.assignment.workspaceId,
+          )
+        : undefined;
 
     const activationId = validActivationId(
       developmentEnvironment?.reservation.environmentId ??
+        workspaceTerminal?.[0] ??
         delegatedParent?.spec.activationId ??
         inherited?.handle.activationId ??
         this.#idGenerator(),
@@ -1428,9 +1409,11 @@ export class ToolBroker {
       ...(developmentEnvironment !== undefined
         ? { handle: developmentEnvironment.handle, developmentEnvironmentId: activationId }
         : delegatedParent?.handle === undefined
-          ? inherited === undefined
-            ? {}
-            : { handle: inherited.handle }
+          ? workspaceTerminal === undefined
+            ? inherited === undefined
+              ? {}
+              : { handle: inherited.handle }
+            : { handle: workspaceTerminal[1].handle, workspaceTerminalId: workspaceTerminal[0] }
           : { handle: delegatedParent.handle }),
       materializedForCurrentAssignment: false,
       activeOperations: 0,
@@ -1449,7 +1432,8 @@ export class ToolBroker {
       continuity:
         developmentEnvironment === undefined &&
         delegatedParent === undefined &&
-        inherited === undefined
+        inherited === undefined &&
+        workspaceTerminal === undefined
           ? "cold_restore"
           : "warm_reuse",
       continuityId: developmentEnvironment?.handle.runtimeId ?? activationId,
@@ -1646,12 +1630,37 @@ export class ToolBroker {
 
   async release(request: ToolSandboxReleaseRequest): Promise<ToolSandboxReleaseResponse> {
     const activation = this.#owned(request.activationId, request.assignment);
-    this.#revoke(request.activationId);
     let retained = false;
     let handle = activation.handle;
     if (activation.materializing !== undefined) {
       handle = await activation.materializing.catch(() => undefined);
     }
+    const workspaceTerminalId = activation.workspaceTerminalId;
+    const workspaceTerminal =
+      workspaceTerminalId === undefined ? undefined : this.#terminals.get(workspaceTerminalId);
+    if (
+      workspaceTerminalId !== undefined &&
+      workspaceTerminal !== undefined &&
+      handle !== undefined
+    ) {
+      if (this.#terminals.get(workspaceTerminalId) === workspaceTerminal) {
+        workspaceTerminal.handle = handle;
+        this.#revoke(request.activationId);
+        if (this.#admitted.delete(request.activationId)) {
+          this.#admitted.set(workspaceTerminalId, workspaceTerminal.assignment);
+        }
+        await this.#stateRepository.setActivationState(request.activationId, "released");
+        return {
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.released",
+          requestId: request.requestId,
+          activationId: request.activationId,
+          retained: true,
+        };
+      }
+      delete activation.workspaceTerminalId;
+    }
+    this.#revoke(request.activationId);
     if (activation.developmentEnvironmentId !== undefined) {
       const environment = this.#developmentEnvironments.get(activation.developmentEnvironmentId);
       if (environment === undefined || environment.agentActivationId !== request.activationId) {
@@ -1697,7 +1706,7 @@ export class ToolBroker {
           retained: true,
         };
       } catch (error: unknown) {
-        if (handle !== undefined) {
+        if (handle !== undefined && workspaceTerminal === undefined) {
           await this.#provider.stop(handle).catch(() => undefined);
           await this.#endHttpServices(activation, handle).catch(() => undefined);
         }
@@ -1838,11 +1847,30 @@ export class ToolBroker {
       }
       return;
     }
-    this.#revoke(activationId);
-    const handle =
+    let handle =
       activation.materializing === undefined
         ? activation.handle
         : await activation.materializing.catch(() => undefined);
+    const workspaceTerminalId = activation.workspaceTerminalId;
+    const workspaceTerminal =
+      workspaceTerminalId === undefined ? undefined : this.#terminals.get(workspaceTerminalId);
+    if (
+      workspaceTerminalId !== undefined &&
+      workspaceTerminal !== undefined &&
+      handle !== undefined
+    ) {
+      if (this.#terminals.get(workspaceTerminalId) === workspaceTerminal) {
+        workspaceTerminal.handle = handle;
+        this.#revoke(activationId);
+        if (this.#admitted.delete(activationId)) {
+          this.#admitted.set(workspaceTerminalId, workspaceTerminal.assignment);
+        }
+        await this.#stateRepository.setActivationState(activationId, "released");
+        return;
+      }
+      delete activation.workspaceTerminalId;
+    }
+    this.#revoke(activationId);
     const key = runtimeKey(assignment);
     if (this.#suspended.has(key)) {
       if (handle !== undefined) await this.#provider.stop(handle).catch(() => undefined);
@@ -2162,8 +2190,17 @@ export class ToolBroker {
     if (activation.materializing !== undefined) return activation.materializing;
     const materializing = (async (): Promise<SandboxHandle> => {
       await this.#stateRepository.setActivationState(activationId, "materializing");
-      if (activation.developmentEnvironmentId === undefined) {
+      const workspaceTerminal =
+        activation.workspaceTerminalId === undefined
+          ? undefined
+          : this.#terminals.get(activation.workspaceTerminalId);
+      if (activation.developmentEnvironmentId === undefined && workspaceTerminal === undefined) {
         await this.#acquireAdmission(activationId, activation.assignment, signal);
+      } else if (
+        workspaceTerminal !== undefined &&
+        this.#admitted.delete(activation.workspaceTerminalId!)
+      ) {
+        this.#admitted.set(activationId, activation.assignment);
       }
       let releaseAdmissionOnFailure = true;
       try {
@@ -2189,6 +2226,12 @@ export class ToolBroker {
               activation.spec.toolRoot,
             );
           } catch (error: unknown) {
+            if (workspaceTerminal !== undefined) {
+              if (this.#admitted.delete(activationId)) {
+                this.#admitted.set(activation.workspaceTerminalId!, workspaceTerminal.assignment);
+              }
+              throw error;
+            }
             try {
               await this.#provider.stop(handle);
               delete activation.handle;
@@ -2209,16 +2252,23 @@ export class ToolBroker {
             false,
           );
         }
-        if (
-          !handleMatches(
-            handle,
-            this.#provider,
-            activationId,
-            activation.assignment,
-            activation.spec.environment,
-            activation.spec.toolRoot ?? "/workspace",
-          )
-        ) {
+        const validHandle =
+          workspaceTerminal === undefined
+            ? handleMatches(
+                handle,
+                this.#provider,
+                activationId,
+                activation.assignment,
+                activation.spec.environment,
+                activation.spec.toolRoot ?? "/workspace",
+              )
+            : handle.activationId === activationId &&
+              handle.assignment.tenantId === activation.assignment.tenantId &&
+              handle.assignment.projectId === activation.assignment.projectId &&
+              handle.assignment.workspaceId === activation.assignment.workspaceId &&
+              sameEnvironment(handle.environment, activation.spec.environment) &&
+              handle.workspaceRoot === (activation.spec.toolRoot ?? "/workspace");
+        if (!validHandle) {
           try {
             await this.#provider.destroy(handle);
           } catch (cleanupError: unknown) {
@@ -2233,11 +2283,16 @@ export class ToolBroker {
           );
         }
         activation.handle = handle;
+        if (workspaceTerminal !== undefined) workspaceTerminal.handle = handle;
         activation.materializedForCurrentAssignment = true;
         await this.#stateRepository.setActivationState(activationId, "active", { handle });
         return handle;
       } catch (error: unknown) {
-        if (releaseAdmissionOnFailure && activation.developmentEnvironmentId === undefined) {
+        if (
+          releaseAdmissionOnFailure &&
+          activation.developmentEnvironmentId === undefined &&
+          workspaceTerminal === undefined
+        ) {
           this.#releaseAdmission(activationId);
         }
         await this.#stateRepository
@@ -2411,45 +2466,17 @@ export class ToolBroker {
       await this.#stateRepository.setTerminalState(terminalId, "cleaning").catch(() => undefined);
       terminal.session.disconnect();
       await terminal.session.kill().catch(() => undefined);
-      if (terminal.retainedWarm !== undefined) {
-        const retained = terminal.retainedWarm;
-        try {
-          await this.#provider.snapshot(terminal.handle, terminalId);
-          const brokerGrant = await this.#stateRepository.advanceWarmGrant(
-            retained.activationId,
-            terminal.handle.assignment,
-          );
-          const brokerAssignment = {
-            ...terminal.handle.assignment,
-            executionLease: brokerGrant,
-          };
-          const handle = await this.#provider.retainForWarm(terminal.handle, brokerAssignment);
-          this.#warm.set(retained.key, {
-            handle,
-            workspaceRevision: retained.workspaceRevision,
-            environment: retained.environment,
-            lastUsedAt: this.#now(),
-            expiresAt: this.#now() + this.#warmTtlMs,
-          });
-          await this.#stateRepository.setActivationState(retained.activationId, "warm", {
-            handle,
-            workspaceRevision: retained.workspaceRevision,
-          });
-          await this.#stateRepository.setTerminalState(terminalId, "released");
-          return;
-        } catch (error: unknown) {
-          await this.#provider.destroy(terminal.handle).catch(() => undefined);
-          this.#releaseAdmission(retained.activationId);
-          await this.#stateRepository
-            .setActivationState(retained.activationId, "released")
-            .catch(() => undefined);
-          await this.#stateRepository
-            .setTerminalState(terminalId, "unknown", {
-              failureCode: operationFailureCode(error),
-            })
-            .catch(() => undefined);
-          throw error;
+      const borrower = [...this.#activations.entries()].find(
+        ([, activation]) => activation.workspaceTerminalId === terminalId,
+      );
+      if (borrower !== undefined) {
+        const [activationId, activation] = borrower;
+        if (this.#admitted.delete(terminalId)) {
+          this.#admitted.set(activationId, activation.assignment);
         }
+        delete activation.workspaceTerminalId;
+        await this.#stateRepository.setTerminalState(terminalId, "released");
+        return;
       }
       try {
         await this.#provider.destroy(terminal.handle);

@@ -6,7 +6,6 @@ import type {
 } from "@pi-cloud/protocol";
 import {
   createExecutionLease,
-  parseExecutionLease,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
@@ -734,12 +733,24 @@ describe("provider-backed Tool Tool Broker", () => {
     await terminal.resize({ rows: 40, cols: 120 });
     expect(fixture.terminalInput).toHaveBeenCalledWith(Buffer.from("pwd\r"));
     expect(fixture.terminalResize).toHaveBeenCalledWith({ rows: 40, cols: 120 });
-    await expect(manager.create(createRequest)).resolves.toMatchObject({
-      activationId: SECOND_ACTIVATION_ID,
+    const agent = await manager.create(createRequest);
+    expect(agent.activationId).toBe(ACTIVATION_ID);
+    await manager.execute(
+      assignment.executionLease,
+      operation("21500000-0000-4000-8000-000000000001"),
+    );
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: "21500000-0000-4000-8000-000000000002",
+      activationId: agent.activationId,
+      assignment,
+      disposition: "keep_warm",
+      workspaceRevision: "1".repeat(64),
     });
+    expect(fixture.createCount).toBe(1);
     await terminal.close();
     expect(fixture.destroyed).toBe(true);
-    await manager.stop(SECOND_ACTIVATION_ID, assignment);
     await manager.close();
   });
 
@@ -756,48 +767,28 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
-  it("hands an idle warm Cube to the human terminal without replacing its process world", async () => {
-    class PersistentTerminalRepository extends InMemorySandboxActivationStateRepository {
+  it("retires an idle warm Cube before starting a user-managed terminal runtime", async () => {
+    class RetiringTerminalRepository extends InMemorySandboxActivationStateRepository {
       override async reserveTerminal(input: { terminalId: string }) {
-        const execution = parseExecutionLease(assignment.executionLease);
         return {
           status: "reserved" as const,
           executionLease: createExecutionLease(
             input.terminalId,
-            execution.attemptId,
-            execution.fencingToken + 2,
+            "30000000-0000-4000-8000-000000000001",
+            2,
           ),
           retiredActivation: {
             activationId: ACTIVATION_ID,
             workspaceRevision: "1".repeat(64),
-            assignment: {
-              ...assignment,
-              executionLease: createExecutionLease(
-                "30000000-0000-4000-8000-000000000001",
-                parseExecutionLease(assignment.executionLease).attemptId,
-                parseExecutionLease(assignment.executionLease).fencingToken + 1,
-              ),
-            },
+            assignment,
           },
         };
-      }
-
-      override async advanceWarmGrant(
-        _activationId: string,
-        currentAssignment: ToolSandboxAssignment,
-      ) {
-        const current = parseExecutionLease(currentAssignment.executionLease);
-        return createExecutionLease(
-          "30000000-0000-4000-8000-000000000002",
-          current.attemptId,
-          current.fencingToken + 1,
-        );
       }
     }
     const fixture = providerFixture();
     const manager = new ToolBroker({
       provider: fixture.provider,
-      stateRepository: new PersistentTerminalRepository(),
+      stateRepository: new RetiringTerminalRepository(),
       idGenerator: (() => {
         const ids = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
         return () => ids.shift()!;
@@ -828,44 +819,13 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceSeed: { kind: "sample_java" },
       size: { rows: 24, cols: 100 },
     });
-    expect(fixture.createCount).toBe(1);
+    expect(fixture.createCount).toBe(2);
     expect(manager.warmCount).toBe(0);
-    expect(fixture.rebind).toHaveBeenCalledOnce();
+    expect(fixture.stopped).toBe(true);
 
     await terminal.close();
-    expect(fixture.destroyed).toBe(false);
-    expect(fixture.stopped).toBe(false);
-    expect(fixture.snapshot).toHaveBeenCalledOnce();
-    expect(manager.warmCount).toBe(1);
-
-    const next = await manager.create({
-      ...createRequest,
-      requestId: "31000000-0000-4000-8000-000000000003",
-      assignment: {
-        ...assignment,
-        executionLease: createExecutionLease(
-          "30000000-0000-4000-8000-000000000003",
-          parseExecutionLease(assignment.executionLease).attemptId,
-          9,
-        ),
-      },
-      workspaceRevision: "1".repeat(64),
-    });
-    expect(next.continuity).toBe("warm_reuse");
-    expect(fixture.createCount).toBe(1);
-    await manager.execute(next.executionLease, {
-      ...operation("31000000-0000-4000-8000-000000000004"),
-      activationId: next.activationId,
-    });
-    expect(fixture.rebind).toHaveBeenCalledTimes(2);
-    await manager.stop(next.activationId, {
-      ...assignment,
-      executionLease: createExecutionLease(
-        "30000000-0000-4000-8000-000000000003",
-        parseExecutionLease(assignment.executionLease).attemptId,
-        9,
-      ),
-    });
+    expect(fixture.destroyed).toBe(true);
+    expect(manager.warmCount).toBe(0);
     await manager.close();
   });
 

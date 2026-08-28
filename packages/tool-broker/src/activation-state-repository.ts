@@ -636,6 +636,16 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           "Workspace is not assigned to this Sandbox Domain",
         );
       }
+      const liveTerminal = await transaction
+        .selectFrom("workspace_terminal_sessions")
+        .select(["owner_instance_id", "owner_base_url"])
+        .where("tenant_id", "=", input.assignment.tenantId)
+        .where("workspace_id", "=", input.assignment.workspaceId)
+        .where("state", "in", ["reserved", "materializing", "active", "cleaning", "unknown"])
+        .executeTakeFirst();
+      if (liveTerminal !== undefined && liveTerminal.owner_instance_id !== this.#instanceId) {
+        return { status: "redirect", ownerBaseUrl: liveTerminal.owner_base_url };
+      }
       const liveDevelopmentEnvironment = await transaction
         .selectFrom("development_environments")
         .select([
@@ -832,6 +842,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .executeTakeFirstOrThrow();
       if (
         borrowedDevelopmentEnvironmentId === undefined &&
+        liveTerminal === undefined &&
         Number(live.count) +
           Number(terminalLive.count) +
           Number(domainDevelopmentEnvironments.count) >=

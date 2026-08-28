@@ -24,8 +24,10 @@ couples Run admission to optional compute state.
 - Different Sessions may run concurrently against the same elastic Workspace.
   Each Session receives its own Cube process world; both mount the same
   persistent Volume. Conflicting edits are the user's responsibility.
-- A human terminal no longer blocks Run claim. For an elastic Workspace it
-  uses a separate Cube unless it can reuse that Session's idle warm Cube.
+- A human terminal no longer blocks Run claim. It owns one elastic Cube; an
+  Agent that starts while the terminal is connected borrows that same physical
+  Cube under its own external lease, avoiding an unsupported second Volume
+  attachment.
 - A cloud development machine may have one active Agent authority and one
   human terminal/SSH session at the same time inside the same Cube. Lifecycle
   mutations such as pause and release still require both to settle.
