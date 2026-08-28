@@ -138,12 +138,23 @@ async function runCodingTurn(api, browser, sessionId) {
   );
   const events = [];
   let terminal;
-  let firstTextAt;
+  let firstDurableActivityAt;
+  let firstToolStartedAt;
+  let firstAssistantTextAt;
   const observeEvent = (event) => {
     if (event.turnId !== accepted.turnId) return;
     if (events.some((candidate) => candidate.eventId === event.eventId)) return;
     events.push(event);
-    if (event.type === "assistant.text.delta") firstTextAt ??= performance.now();
+    if (event.type === "assistant.text.delta") {
+      const observedAt = performance.now();
+      firstDurableActivityAt ??= observedAt;
+      firstAssistantTextAt ??= observedAt;
+    }
+    if (event.type === "tool.started") {
+      const observedAt = performance.now();
+      firstDurableActivityAt ??= observedAt;
+      firstToolStartedAt ??= observedAt;
+    }
     if (
       event.type === "turn.completed" ||
       event.type === "turn.failed" ||
@@ -170,6 +181,9 @@ async function runCodingTurn(api, browser, sessionId) {
     const run = await waitForRun(api, accepted.runId);
     const toolStarts = events.filter((event) => event.type === "tool.started").length;
     assert(toolStarts >= 3, "Snake coding Run did not exercise the Tool path");
+    assert(firstDurableActivityAt !== undefined);
+    assert(firstToolStartedAt !== undefined);
+    assert(firstAssistantTextAt !== undefined);
     const previewToolUsed = events.some(
       (event) => event.type === "tool.started" && event.payload.toolName === "preview",
     );
@@ -179,7 +193,9 @@ async function runCodingTurn(api, browser, sessionId) {
       throughSequence: Math.max(0, ...events.map((event) => event.seq)),
       events,
       run,
-      firstTextMs: firstTextAt === undefined ? null : Math.round(firstTextAt - startedAt),
+      firstDurableActivityMs: Math.round(firstDurableActivityAt - startedAt),
+      firstToolStartedMs: Math.round(firstToolStartedAt - startedAt),
+      firstAssistantTextMs: Math.round(firstAssistantTextAt - startedAt),
       settledMs: Math.round(performance.now() - startedAt),
       toolStarts,
       previewToolUsed,
@@ -347,7 +363,9 @@ if (reusedSessionId === undefined) {
   coding = {
     accepted: { runId: latest.runId },
     toolStarts: latest.transcript.items.filter((item) => item.kind === "tool").length,
-    firstTextMs: null,
+    firstDurableActivityMs: null,
+    firstToolStartedMs: null,
+    firstAssistantTextMs: null,
     settledMs: null,
   };
 }
@@ -388,7 +406,9 @@ const report = {
   runId: coding.accepted.runId,
   toolCalls: coding.toolStarts,
   previewToolUsed: coding.previewToolUsed,
-  firstTextMs: coding.firstTextMs,
+  firstDurableActivityMs: coding.firstDurableActivityMs,
+  firstToolStartedMs: coding.firstToolStartedMs,
+  firstAssistantTextMs: coding.firstAssistantTextMs,
   settledMs: coding.settledMs,
   hostPreviewStatus: 200,
   previewOrigin: previewUrl.origin,

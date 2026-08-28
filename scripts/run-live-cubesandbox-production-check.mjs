@@ -761,7 +761,9 @@ async function runTurn(sessionId, prompt, expectTools) {
     controller.abort(timeoutFailure);
   }, 10 * 60_000);
   const events = [];
-  let firstTextAt;
+  let firstDurableActivityAt;
+  let firstToolStartedAt;
+  let firstAssistantTextAt;
   let terminal;
   let failedRun;
   let monitorFailure;
@@ -810,10 +812,12 @@ async function runTurn(sessionId, prompt, expectTools) {
     }
     assert(terminal, "Turn did not publish a terminal event");
     assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
-    assert(firstTextAt !== undefined, "Turn did not stream assistant text");
+    assert(firstDurableActivityAt !== undefined, "Turn did not publish a durable Agent activity");
+    assert(firstAssistantTextAt !== undefined, "Turn did not stream assistant text");
     const toolCalls = events.filter((event) => event.type === "tool.started").length;
     if (expectTools) {
       assert(toolCalls > 0, "Coding turn did not execute a Tool operation");
+      assert(firstToolStartedAt !== undefined, "Coding turn did not publish its first Tool start");
       assert(
         events.some((event) => event.type === "tool.completed"),
         "Coding turn did not complete a Tool operation",
@@ -836,7 +840,10 @@ async function runTurn(sessionId, prompt, expectTools) {
       toolCalls,
       activations,
       acceptedMs: Math.round(acceptedAt - submittedAt),
-      firstTextMs: Math.round(firstTextAt - submittedAt),
+      firstDurableActivityMs: Math.round(firstDurableActivityAt - submittedAt),
+      firstToolStartedMs:
+        firstToolStartedAt === undefined ? null : Math.round(firstToolStartedAt - submittedAt),
+      firstAssistantTextMs: Math.round(firstAssistantTextAt - submittedAt),
       settledMs: Math.round(performance.now() - submittedAt),
     };
   } finally {
@@ -850,7 +857,14 @@ async function runTurn(sessionId, prompt, expectTools) {
     if (events.some((candidate) => candidate.eventId === event.eventId)) return;
     events.push(event);
     if (event.turnId === accepted.turnId && event.type === "assistant.text.delta") {
-      firstTextAt ??= performance.now();
+      const observedAt = performance.now();
+      firstDurableActivityAt ??= observedAt;
+      firstAssistantTextAt ??= observedAt;
+    }
+    if (event.turnId === accepted.turnId && event.type === "tool.started") {
+      const observedAt = performance.now();
+      firstDurableActivityAt ??= observedAt;
+      firstToolStartedAt ??= observedAt;
     }
     if (
       event.turnId === accepted.turnId &&
@@ -1215,7 +1229,9 @@ try {
     model: { provider: model.provider, modelId: model.modelId },
     pureChat: {
       acceptedMs: chat.acceptedMs,
-      firstTextMs: chat.firstTextMs,
+      firstDurableActivityMs: chat.firstDurableActivityMs,
+      firstToolStartedMs: chat.firstToolStartedMs,
+      firstAssistantTextMs: chat.firstAssistantTextMs,
       settledMs: chat.settledMs,
       toolCalls: chat.toolCalls,
       cubeActivations: chat.activations.length,
@@ -1224,7 +1240,9 @@ try {
     },
     firstCoding: {
       acceptedMs: firstCoding.acceptedMs,
-      firstTextMs: firstCoding.firstTextMs,
+      firstDurableActivityMs: firstCoding.firstDurableActivityMs,
+      firstToolStartedMs: firstCoding.firstToolStartedMs,
+      firstAssistantTextMs: firstCoding.firstAssistantTextMs,
       settledMs: firstCoding.settledMs,
       toolCalls: firstCoding.toolCalls,
       cubeActivations: firstCoding.activations.length,
@@ -1234,7 +1252,9 @@ try {
     },
     followUpCoding: {
       acceptedMs: followUp.acceptedMs,
-      firstTextMs: followUp.firstTextMs,
+      firstDurableActivityMs: followUp.firstDurableActivityMs,
+      firstToolStartedMs: followUp.firstToolStartedMs,
+      firstAssistantTextMs: followUp.firstAssistantTextMs,
       settledMs: followUp.settledMs,
       toolCalls: followUp.toolCalls,
       cubeActivations: followUp.activations.length,
@@ -1328,11 +1348,11 @@ try {
         "",
         `- Checked at: ${report.checkedAt}`,
         `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
-        `- Pure-chat first text / settled: ${String(report.pureChat.firstTextMs)} ms / ${String(report.pureChat.settledMs)} ms`,
+        `- Pure-chat first activity / assistant text / settled: ${String(report.pureChat.firstDurableActivityMs)} / ${String(report.pureChat.firstAssistantTextMs)} / ${String(report.pureChat.settledMs)} ms`,
         `- Pure-chat queue-to-claim-start / claim-and-preparation / model: ${String(report.pureChat.latency.queueToClaimStartMs)} / ${String(report.pureChat.latency.claimStartToCommandAckMs + report.pureChat.latency.commandAckToRunnerMs)} / ${String(report.pureChat.latency.modelTotalMs)} ms`,
         `- Pure-chat Tool calls / Cube activations: ${String(report.pureChat.toolCalls)} / ${String(report.pureChat.cubeActivations)}`,
-        `- First coding first text / settled: ${String(report.firstCoding.firstTextMs)} ms / ${String(report.firstCoding.settledMs)} ms`,
-        `- Follow-up first text / settled: ${String(report.followUpCoding.firstTextMs)} ms / ${String(report.followUpCoding.settledMs)} ms`,
+        `- First coding first activity / Tool / assistant text / settled: ${String(report.firstCoding.firstDurableActivityMs)} / ${String(report.firstCoding.firstToolStartedMs)} / ${String(report.firstCoding.firstAssistantTextMs)} / ${String(report.firstCoding.settledMs)} ms`,
+        `- Follow-up first activity / Tool / assistant text / settled: ${String(report.followUpCoding.firstDurableActivityMs)} / ${String(report.followUpCoding.firstToolStartedMs)} / ${String(report.followUpCoding.firstAssistantTextMs)} / ${String(report.followUpCoding.settledMs)} ms`,
         `- First coding queue-to-claim-start / claim-and-preparation / model / Tool: ${String(report.firstCoding.latency.queueToClaimStartMs)} / ${String(report.firstCoding.latency.claimStartToCommandAckMs + report.firstCoding.latency.commandAckToRunnerMs)} / ${String(report.firstCoding.latency.modelTotalMs)} / ${String(report.firstCoding.latency.toolTotalMs)} ms`,
         `- Follow-up queue-to-claim-start / claim-and-preparation / model / Tool: ${String(report.followUpCoding.latency.queueToClaimStartMs)} / ${String(report.followUpCoding.latency.claimStartToCommandAckMs + report.followUpCoding.latency.commandAckToRunnerMs)} / ${String(report.followUpCoding.latency.modelTotalMs)} / ${String(report.followUpCoding.latency.toolTotalMs)} ms`,
         `- Coding Tool calls: ${String(report.firstCoding.toolCalls)} + ${String(report.followUpCoding.toolCalls)}`,

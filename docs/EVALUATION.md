@@ -49,6 +49,20 @@ PostgreSQL stores Pi-native complete messages once. The two checks separately
 measure Kafka/Gateway ordering and PostgreSQL complete-message projection
 latency/WAL, so token fragments never masquerade as canonical database state.
 
+Interactive latency reports use distinct boundaries:
+
+- `firstDurableActivityMs` is the first Kafka-acknowledged
+  `assistant.text.delta` or complete `tool.started` event for the Turn;
+- `firstToolStartedMs` is the first durable Tool start and is `null` for a
+  Tool-free Turn;
+- `firstAssistantTextMs` is literally the first Assistant text delta. A model
+  may emit Tool Calls without text, so this can occur only after several Tools;
+- `settledMs` ends at the durable terminal event and committed Run state.
+
+Reports must not call `firstAssistantTextMs` generic "time to first response"
+for coding tasks. Local optimistic UI states such as “thinking” are not durable
+Agent activity and are measured separately by browser interaction checks.
+
 Current evidence:
 
 - [PostgreSQL Session projection](reports/postgres-session-projection-latest.md)

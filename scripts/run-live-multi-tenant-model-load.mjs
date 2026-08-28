@@ -279,13 +279,15 @@ async function runTurn(lane, prompt, round) {
     10 * 60_000,
   );
   const text = [];
-  let firstTextMs;
+  let firstAssistantTextMs;
   let terminal;
   let toolEvents = 0;
   const observeEvent = (event) => {
     if (event.turnId !== accepted.turnId) return;
     if (event.type === "assistant.text.delta") {
-      if (firstTextMs === undefined) firstTextMs = Math.round(performance.now() - submittedAt);
+      if (firstAssistantTextMs === undefined) {
+        firstAssistantTextMs = Math.round(performance.now() - submittedAt);
+      }
       text.push(event.payload.text);
     }
     if (event.type.startsWith("tool.")) toolEvents += 1;
@@ -327,7 +329,7 @@ async function runTurn(lane, prompt, round) {
       round,
       text: text.join(""),
       acceptedMs: Math.round(acceptedAt - submittedAt),
-      firstTextMs,
+      firstAssistantTextMs,
       settledMs: Math.round(performance.now() - submittedAt),
       usage,
       attemptCount: run.attempts.length,
@@ -466,10 +468,10 @@ const report = {
   },
   latencyMs: {
     acceptance: distribution(allResults.map((result) => result.acceptedMs)),
-    firstText: distribution(
+    firstAssistantText: distribution(
       allResults.map((result) => {
-        assert.notEqual(result.firstTextMs, undefined);
-        return result.firstTextMs;
+        assert.notEqual(result.firstAssistantTextMs, undefined);
+        return result.firstAssistantTextMs;
       }),
     ),
     settled: distribution(allResults.map((result) => result.settledMs)),
@@ -516,7 +518,7 @@ await writeFile(
       .map(([worker, count]) => `${worker}=${String(count)}`)
       .join(", ")}`,
     `- Acceptance p50/p95: ${String(report.latencyMs.acceptance.p50)} / ${String(report.latencyMs.acceptance.p95)} ms`,
-    `- First text p50/p95: ${String(report.latencyMs.firstText.p50)} / ${String(report.latencyMs.firstText.p95)} ms`,
+    `- First assistant text p50/p95: ${String(report.latencyMs.firstAssistantText.p50)} / ${String(report.latencyMs.firstAssistantText.p95)} ms`,
     `- Settled p50/p95: ${String(report.latencyMs.settled.p50)} / ${String(report.latencyMs.settled.p95)} ms`,
     `- Queue wait p50/p95: ${String(report.latencyMs.queueWait.p50)} / ${String(report.latencyMs.queueWait.p95)} ms`,
     `- Terminal Turns / Pi entries / complete messages: ${String(report.streaming.terminalCount)} / ${String(report.streaming.piEntryCount)} / ${String(report.streaming.messageCount)}`,

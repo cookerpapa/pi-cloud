@@ -104,7 +104,7 @@ function selectorExpression(selector) {
 }
 
 let acceptanceError;
-let chatFirstVisibleMs;
+let chatFirstAssistantTextMs;
 let chatCompleteVisibleMs;
 try {
   await withChromePage(
@@ -229,7 +229,7 @@ try {
         '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.trim().length>0)',
         180_000,
       );
-      chatFirstVisibleMs = Math.round(performance.now() - chatSubmittedAt);
+      chatFirstAssistantTextMs = Math.round(performance.now() - chatSubmittedAt);
       await page.waitFor(
         '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-CHAT-OK"))',
         180_000,
@@ -574,7 +574,7 @@ const report = {
   clickedControls: clicked,
   clickedControlCount: clicked.length,
   latencyMs: {
-    userSubmitToFirstVisibleText: chatFirstVisibleMs,
+    userSubmitToFirstAssistantText: chatFirstAssistantTextMs,
     userSubmitToCompleteReply: chatCompleteVisibleMs,
   },
   screenshotCaptured: true,

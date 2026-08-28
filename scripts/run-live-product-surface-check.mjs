@@ -123,13 +123,24 @@ async function runTurn({
   const controller = new AbortController();
   const events = [];
   let terminal;
-  let firstTextAt;
+  let firstDurableActivityAt;
+  let firstToolStartedAt;
+  let firstAssistantTextAt;
   let intervention;
   const observeEvent = (event) => {
     if (events.some((candidate) => candidate.eventId === event.eventId)) return;
     events.push(event);
     if (event.turnId !== accepted.turnId) return;
-    if (event.type === "assistant.text.delta") firstTextAt ??= performance.now();
+    if (event.type === "assistant.text.delta") {
+      const observedAt = performance.now();
+      firstDurableActivityAt ??= observedAt;
+      firstAssistantTextAt ??= observedAt;
+    }
+    if (event.type === "tool.started") {
+      const observedAt = performance.now();
+      firstDurableActivityAt ??= observedAt;
+      firstToolStartedAt ??= observedAt;
+    }
     if (event.type === "tool.started" && intervention === undefined && onToolStarted) {
       intervention = Promise.resolve(onToolStarted(accepted));
     }
@@ -157,17 +168,29 @@ async function runTurn({
     await intervention;
     assert(terminal, "Turn did not publish a terminal event");
     assert.equal(terminal.type, expectedTerminal, JSON.stringify(terminal.payload));
+    assert(firstDurableActivityAt !== undefined, "Turn did not publish a durable Agent activity");
+    assert(firstAssistantTextAt !== undefined, "Turn did not stream assistant text");
     const toolCalls = events.filter(
       (event) => event.turnId === accepted.turnId && event.type === "tool.started",
     ).length;
     assert.equal(toolCalls > 0, expectTools, "Turn Tool behavior did not match its contract");
+    if (expectTools) assert(firstToolStartedAt !== undefined, "Coding turn had no Tool start");
     const expectedRunState = expectedTerminal === "turn.cancelled" ? "cancelled" : "completed";
     await waitForRun(api, accepted.runId, [expectedRunState]);
     return {
       accepted,
       events,
       acceptedMs: Math.round(acceptedAt - submittedAt),
-      firstTextMs: firstTextAt === undefined ? undefined : Math.round(firstTextAt - submittedAt),
+      firstDurableActivityMs:
+        firstDurableActivityAt === undefined
+          ? undefined
+          : Math.round(firstDurableActivityAt - submittedAt),
+      firstToolStartedMs:
+        firstToolStartedAt === undefined ? null : Math.round(firstToolStartedAt - submittedAt),
+      firstAssistantTextMs:
+        firstAssistantTextAt === undefined
+          ? undefined
+          : Math.round(firstAssistantTextAt - submittedAt),
       settledMs: Math.round(performance.now() - submittedAt),
     };
   } finally {
@@ -500,12 +523,16 @@ try {
     latencyMs: {
       pureChat: {
         accepted: chat.acceptedMs,
-        firstVisibleText: chat.firstTextMs,
+        firstDurableActivity: chat.firstDurableActivityMs,
+        firstToolStarted: chat.firstToolStartedMs,
+        firstAssistantText: chat.firstAssistantTextMs,
         settled: chat.settledMs,
       },
       coding: {
         accepted: coding.acceptedMs,
-        firstVisibleText: coding.firstTextMs,
+        firstDurableActivity: coding.firstDurableActivityMs,
+        firstToolStarted: coding.firstToolStartedMs,
+        firstAssistantText: coding.firstAssistantTextMs,
         settled: coding.settledMs,
       },
     },
