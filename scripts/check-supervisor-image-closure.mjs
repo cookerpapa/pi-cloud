@@ -73,11 +73,19 @@ assert(
   ),
   "Control Plane image must include the Session mutation projector dependency",
 );
-assert(
-  dockerfile.includes(
-    "COPY --from=dependencies /app/packages/tool-broker/node_modules /app/packages/tool-broker/node_modules",
+const [controlPlanePackage, toolBrokerPackage] = await Promise.all(
+  ["control-plane", "tool-broker"].map(async (name) =>
+    JSON.parse(await readFile(resolve(packagesDirectory, name, "package.json"), "utf8")),
   ),
-  "Supervisor image must preserve Tool Broker's version-isolated undici dependency",
+);
+assert.equal(
+  controlPlanePackage.dependencies.undici,
+  toolBrokerPackage.dependencies.undici,
+  "Control Plane and Tool Broker must share one root-resolvable trusted undici version",
+);
+assert(
+  !dockerfile.includes("/app/packages/tool-broker/node_modules"),
+  "Supervisor image must not depend on an npm-hoisting-specific Tool Broker node_modules path",
 );
 assert(
   dockerfile.includes("await import('pi-subagents')") &&
