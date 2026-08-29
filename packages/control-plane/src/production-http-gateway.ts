@@ -10,6 +10,8 @@ export const ACCOUNT_REGISTRATION_PATH = "/v1/auth/register";
 export const ACCOUNT_LOGIN_PATH = "/v1/auth/login";
 export const AUTHENTICATION_PROVIDERS_PATH = "/v1/auth/providers";
 const OIDC_AUTHENTICATION_PREFIX = "/v1/auth/oidc/";
+export const GITLAB_GIT_AUTHORIZATION_CALLBACK_PATH =
+  "/v1/source-control/gitlab/authorization/callback";
 const CUBE_EGRESS_CONFIGURATION_INTERNAL_PATH = "/v1/internal/cube-egress-configuration";
 const GITHUB_WEBHOOK_PATH = "/v1/source-control/github/webhook";
 const GITLAB_WEBHOOK_PATH = "/v1/source-control/gitlab/webhook";
@@ -52,7 +54,9 @@ export class ProductionHttpGateway {
       if (isPreviewAccessPath(path)) return;
       if (
         request.method === "GET" &&
-        (path === AUTHENTICATION_PROVIDERS_PATH || path.startsWith(OIDC_AUTHENTICATION_PREFIX))
+        (path === AUTHENTICATION_PROVIDERS_PATH ||
+          path.startsWith(OIDC_AUTHENTICATION_PREFIX) ||
+          path === GITLAB_GIT_AUTHORIZATION_CALLBACK_PATH)
       )
         return;
       // GitHub App Webhooks carry their own HMAC-SHA256 request authority.

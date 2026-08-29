@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   CONTROL_PLANE_LIVE_PATH,
   CONTROL_PLANE_READY_PATH,
+  GITLAB_GIT_AUTHORIZATION_CALLBACK_PATH,
   ProductionHttpGateway,
   TENANT_REGISTRATION_PATH,
   tenantRequestIdentity,
@@ -37,6 +38,7 @@ describe("ProductionHttpGateway", () => {
     server.get("/v1/auth/providers", async () => ({ local: true }));
     server.get("/v1/auth/oidc/gitlab", async () => ({ redirect: true }));
     server.get("/v1/auth/oidc/gitlab/callback", async () => ({ callback: true }));
+    server.get(GITLAB_GIT_AUTHORIZATION_CALLBACK_PATH, async () => ({ gitAuthorized: true }));
     const address = await server.listen({ host: "127.0.0.1", port: 0 });
     try {
       const unauthorized = await fetch(`${address}/v1/test`);
@@ -76,6 +78,18 @@ describe("ProductionHttpGateway", () => {
       expect((await fetch(`${address}/v1/auth/providers`)).status).toBe(200);
       expect((await fetch(`${address}/v1/auth/oidc/gitlab`)).status).toBe(200);
       expect((await fetch(`${address}/v1/auth/oidc/gitlab/callback?code=a`)).status).toBe(200);
+      const gitAuthorizationCallback = await fetch(
+        `${address}${GITLAB_GIT_AUTHORIZATION_CALLBACK_PATH}?code=a&state=b`,
+      );
+      expect(gitAuthorizationCallback.status).toBe(200);
+      await expect(gitAuthorizationCallback.json()).resolves.toEqual({ gitAuthorized: true });
+      expect(
+        (
+          await fetch(`${address}${GITLAB_GIT_AUTHORIZATION_CALLBACK_PATH}`, {
+            method: "POST",
+          })
+        ).status,
+      ).toBe(401);
 
       expect((await fetch(`${address}${CONTROL_PLANE_LIVE_PATH}`)).status).toBe(200);
       const unavailable = await fetch(`${address}${CONTROL_PLANE_READY_PATH}`);
