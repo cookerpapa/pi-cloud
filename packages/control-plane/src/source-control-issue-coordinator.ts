@@ -77,7 +77,6 @@ export class SourceControlIssueCoordinator {
   readonly #sourceControl: SourceControlService;
   readonly #instanceId: string;
   readonly #environmentImageRevision: string;
-  readonly #publicOrigin: string;
   readonly #clock: () => Date;
   #timer: NodeJS.Timeout | undefined;
   #running = false;
@@ -88,25 +87,12 @@ export class SourceControlIssueCoordinator {
     sourceControl: SourceControlService;
     instanceId: string;
     environmentImageRevision: string;
-    publicOrigin: string;
     clock?: () => Date;
   }) {
     this.#database = options.database;
     this.#sourceControl = options.sourceControl;
     this.#instanceId = options.instanceId;
     this.#environmentImageRevision = options.environmentImageRevision;
-    const origin = new URL(options.publicOrigin);
-    if (
-      (origin.protocol !== "http:" && origin.protocol !== "https:") ||
-      origin.username ||
-      origin.password ||
-      origin.pathname !== "/" ||
-      origin.search ||
-      origin.hash
-    ) {
-      throw new TypeError("Issue automation public origin is invalid");
-    }
-    this.#publicOrigin = origin.toString();
     this.#clock = options.clock ?? (() => new Date());
   }
 
@@ -127,7 +113,7 @@ export class SourceControlIssueCoordinator {
         .set({ lease_expires_at: new Date(now.valueOf() + JOB_LEASE_MS), updated_at: now })
         .where("id", "=", job.id)
         .where("owner_id", "=", this.#instanceId)
-        .where("state", "in", ["received", "provisioning", "queued", "running", "publishing"])
+        .where("state", "in", ["received", "provisioning", "queued", "running"])
         .execute()
         .catch(() => undefined);
     }, JOB_HEARTBEAT_MS);
@@ -171,7 +157,7 @@ export class SourceControlIssueCoordinator {
       const candidate = await transaction
         .selectFrom("source_control_issue_jobs")
         .select("id")
-        .where("state", "in", ["received", "provisioning", "queued", "running", "publishing"])
+        .where("state", "in", ["received", "provisioning", "queued", "running"])
         .where("available_at", "<=", now)
         .where((expression) =>
           expression.or([
@@ -217,10 +203,6 @@ export class SourceControlIssueCoordinator {
     }
     if (job.state === "queued" || job.state === "running") {
       await this.#observeRun(job);
-      return;
-    }
-    if (job.state === "publishing") {
-      await this.#publish(job);
       return;
     }
     throw new SourceControlServiceError(
@@ -323,13 +305,16 @@ export class SourceControlIssueCoordinator {
         branchName: job.branch_name,
         workTreePath,
       });
+    } else {
+      await this.#prepareElasticWorkspace(
+        job,
+        workspaceId!,
+        workTreePath,
+        repository.default_branch,
+      );
     }
 
-    const sessionTitle =
-      `${repository.full_name} #${String(job.issue_number)} ${job.issue_title} · ${job.id.slice(0, 8)}`.slice(
-        0,
-        256,
-      );
+    const sessionTitle = job.session_title;
     let sessionId = job.session_id;
     if (sessionId === null) {
       const existing = await this.#database
@@ -356,9 +341,9 @@ export class SourceControlIssueCoordinator {
     const prompt = [
       `Resolve ${repository.provider === "gitlab" ? "GitLab" : "GitHub"} Issue #${String(job.issue_number)} in ${repository.full_name}.`,
       "Inspect the repository, implement the smallest complete fix, and run relevant tests.",
-      `This is a normal Git worktree on branch ${job.branch_name}; Git metadata and repository credentials are available in the Workspace.`,
-      "Before your final answer, inspect the changes, commit them, and push the current branch to origin.",
-      "Do not create a Merge Request or Pull Request; PiCloud will open it from the branch you pushed.",
+      `This is a normal Git worktree; ${job.branch_name} is the suggested task branch. Inspect the current Git state before editing.`,
+      "Do not commit, push, create a Merge/Pull Request, comment on the Issue, or change its state during this initial Run.",
+      "Leave those delivery decisions to a later explicit user instruction in this conversation.",
       "",
       `Issue title: ${job.issue_title}`,
       "Issue body:",
@@ -397,12 +382,7 @@ export class SourceControlIssueCoordinator {
       );
     }
     if (run.state === "completed") {
-      await this.#updateOwned(job.id, {
-        state: "publishing",
-        owner_id: null,
-        lease_expires_at: null,
-        available_at: this.#clock(),
-      });
+      await this.#complete(job);
       return;
     }
     if (["failed", "cancelled", "timed_out", "superseded"].includes(run.state)) {
@@ -421,73 +401,13 @@ export class SourceControlIssueCoordinator {
     });
   }
 
-  async #publish(job: NonNullable<ClaimedJob>): Promise<void> {
-    if (job.workspace_id === null || job.session_id === null) {
-      throw new SourceControlServiceError(
-        "source_control_operation_failed",
-        "Issue automation Workspace is missing",
-      );
-    }
-    const repository = await this.#sourceControl.repositoryForJob(job.repository_id);
-    if (repository === undefined) {
-      throw new SourceControlServiceError(
-        "source_control_not_found",
-        "Issue repository was not found",
-      );
-    }
-    let changeRequest =
-      job.change_request_number === null || job.change_request_url === null
-        ? await this.#sourceControl.findChangeRequest({
-            repositoryId: job.repository_id,
-            sourceBranch: job.branch_name,
-          })
-        : { number: job.change_request_number, url: job.change_request_url };
-    if (changeRequest === undefined) {
-      changeRequest = await this.#sourceControl.createChangeRequest({
-        repositoryId: job.repository_id,
-        issueNumber: job.issue_number,
-        issueTitle: job.issue_title,
-        sourceBranch: job.branch_name,
-        description: [
-          `Closes #${String(job.issue_number)}`,
-          "",
-          "Implemented and tested by PiCloud.",
-          `[Open the PiCloud session](${new URL(`?session=${job.session_id}`, this.#publicOrigin).toString()})`,
-        ].join("\n"),
-      });
-      await this.#updateOwned(job.id, {
-        state: "publishing",
-        change_request_number: changeRequest.number,
-        change_request_url: changeRequest.url,
-      });
-    }
-    const marker = `<!-- picloud-issue-job:${job.id} -->`;
-    let comment =
-      job.issue_comment_id === null
-        ? await this.#sourceControl.findIssueDeliveryComment({
-            repositoryId: job.repository_id,
-            issueNumber: job.issue_number,
-            marker,
-          })
-        : { id: job.issue_comment_id };
-    if (comment === undefined) {
-      comment = await this.#sourceControl.createIssueDeliveryComment({
-        repositoryId: job.repository_id,
-        issueNumber: job.issue_number,
-        body: [
-          marker,
-          `PiCloud completed the task and opened ${changeRequest.url}.`,
-          `[Open the PiCloud session](${new URL(`?session=${job.session_id}`, this.#publicOrigin).toString()})`,
-        ].join("\n\n"),
-      });
-    }
+  async #complete(job: NonNullable<ClaimedJob>): Promise<void> {
     const now = this.#clock();
     await this.#database.transaction().execute(async (transaction) => {
       await transaction
         .updateTable("source_control_issue_jobs")
         .set({
           state: "completed",
-          issue_comment_id: comment!.id,
           owner_id: null,
           lease_expires_at: null,
           updated_at: now,
@@ -510,39 +430,6 @@ export class SourceControlIssueCoordinator {
     failure: { code: string; message: string; retryable: boolean },
   ): Promise<void> {
     const now = this.#clock();
-    let issueCommentId = job.issue_comment_id;
-    if (issueCommentId === null) {
-      try {
-        const repository = await this.#sourceControl.repositoryForJob(job.repository_id);
-        if (repository !== undefined) {
-          const marker = `<!-- picloud-issue-job:${job.id} -->`;
-          const existing = await this.#sourceControl.findIssueDeliveryComment({
-            repositoryId: job.repository_id,
-            issueNumber: job.issue_number,
-            marker,
-          });
-          issueCommentId =
-            existing?.id ??
-            (
-              await this.#sourceControl.createIssueDeliveryComment({
-                repositoryId: job.repository_id,
-                issueNumber: job.issue_number,
-                body: [
-                  marker,
-                  `PiCloud could not complete this task: ${failure.message.slice(0, 512)}`,
-                  ...(job.session_id === null
-                    ? []
-                    : [
-                        `[Open the PiCloud session](${new URL(`?session=${job.session_id}`, this.#publicOrigin).toString()})`,
-                      ]),
-                ].join("\n\n"),
-              })
-            ).id;
-        }
-      } catch {
-        // The terminal database state remains authoritative if the provider is down.
-      }
-    }
     await this.#database.transaction().execute(async (transaction) => {
       await transaction
         .updateTable("source_control_issue_jobs")
@@ -550,7 +437,6 @@ export class SourceControlIssueCoordinator {
           state: "failed",
           failure_code: failure.code.slice(0, 128),
           failure_message: failure.message.slice(0, 1_024),
-          issue_comment_id: issueCommentId,
           owner_id: null,
           lease_expires_at: null,
           updated_at: now,
@@ -651,6 +537,64 @@ export class SourceControlIssueCoordinator {
     };
   }
 
+  async #prepareElasticWorkspace(
+    job: NonNullable<ClaimedJob>,
+    workspaceId: string,
+    workTreePath: string,
+    baseRef: string,
+  ): Promise<void> {
+    const source = await this.#database
+      .selectFrom("workspace_source_repositories")
+      .select(["repository_id", "checkout_state"])
+      .where("tenant_id", "=", job.tenant_id)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    if (source !== undefined && source.repository_id !== job.repository_id) {
+      throw new SourceControlServiceError(
+        "source_control_conflict",
+        "Selected Workspace belongs to another source repository",
+      );
+    }
+    if (source === undefined) {
+      await this.#database
+        .insertInto("workspace_source_repositories")
+        .values({
+          tenant_id: job.tenant_id,
+          workspace_id: workspaceId,
+          repository_id: job.repository_id,
+          base_ref: baseRef,
+          base_sha: null,
+          checkout_state: "provisioning",
+          failure_code: null,
+          created_at: this.#clock(),
+          updated_at: this.#clock(),
+        })
+        .executeTakeFirstOrThrow();
+    }
+    try {
+      const baseSha = await this.#sourceControl.checkoutIssueWorkspace({
+        tenantId: job.tenant_id,
+        repositoryId: job.repository_id,
+        workspaceId,
+        branchName: job.branch_name,
+        workTreePath,
+      });
+      await this.#markCheckoutReady(job.tenant_id, workspaceId, baseSha);
+    } catch (error: unknown) {
+      await this.#database
+        .updateTable("workspace_source_repositories")
+        .set({
+          checkout_state: "failed",
+          failure_code: "checkout_failed",
+          updated_at: this.#clock(),
+        })
+        .where("tenant_id", "=", job.tenant_id)
+        .where("workspace_id", "=", workspaceId)
+        .execute();
+      throw error;
+    }
+  }
+
   async #markCheckoutReady(tenantId: string, workspaceId: string, baseSha: string): Promise<void> {
     await this.#database
       .updateTable("workspace_source_repositories")
@@ -673,8 +617,6 @@ export class SourceControlIssueCoordinator {
       workspace_id: string;
       session_id: string;
       run_id: string;
-      change_request_number: number;
-      change_request_url: string;
       owner_id: string | null;
       lease_expires_at: Date | null;
       available_at: Date;

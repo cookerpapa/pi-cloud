@@ -175,7 +175,6 @@ describe.sequential("source-control App boundary", () => {
       sourceControl: service,
       instanceId: "gitlab-pending-coordinator",
       environmentImageRevision: "test",
-      publicOrigin: "https://picloud.example.com/",
     });
     await expect(pendingCoordinator.claimNext()).resolves.toBeUndefined();
     await pendingCoordinator.close();
@@ -287,16 +286,46 @@ describe.sequential("source-control App boundary", () => {
     await expect(
       service.startIssueJob(claimant, pendingJob.jobId, {
         executionMode: "development_environment",
+        sessionTitle: "Invalid Issue Session",
         developmentEnvironmentId: randomUUID(),
         workingDirectory: "/etc/project",
       }),
     ).rejects.toMatchObject({ code: "source_control_conflict" });
+    await database
+      .insertInto("sandbox_domains")
+      .values({
+        id: "sandbox-domain-gitlab-workspace",
+        display_name: "GitLab Workspace Test",
+        state: "active",
+        tool_broker_base_url: "http://tool-broker.invalid:4301",
+        workspace_storage_key: "gitlab-workspace-test",
+        maximum_active_sandboxes: 8,
+      })
+      .executeTakeFirstOrThrow();
+    const selectedWorkspace = await new ControlPlaneStore({
+      database,
+      tenantId: tenant.tenantId,
+      defaultModelProfileId: tenant.defaultModelProfileId,
+    }).createProject({ name: "Existing GitLab Issue Workspace", source: { kind: "empty" } });
     await expect(
       service.startIssueJob(claimant, pendingJob.jobId, {
         executionMode: "elastic",
+        sessionTitle: "Counting sort repair",
         sandboxProfileKey: "starter",
+        workspaceId: selectedWorkspace.workspaceId,
       }),
     ).resolves.toMatchObject({ state: "received" });
+    await expect(
+      database
+        .selectFrom("source_control_issue_jobs")
+        .select(["session_title", "project_id", "workspace_id"])
+        .where("id", "=", pendingJob.jobId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({
+      session_title: "Counting sort repair",
+      project_id: selectedWorkspace.projectId,
+      workspace_id: selectedWorkspace.workspaceId,
+    });
     await expect(service.unclaimIssueJob(claimant, pendingJob.jobId)).rejects.toMatchObject({
       code: "source_control_conflict",
     });
@@ -469,14 +498,12 @@ describe.sequential("source-control App boundary", () => {
       sourceControl: service,
       instanceId: "issue-coordinator-a",
       environmentImageRevision: "test",
-      publicOrigin: "https://picloud.example.com/",
     });
     const coordinatorB = new SourceControlIssueCoordinator({
       database,
       sourceControl: service,
       instanceId: "issue-coordinator-b",
       environmentImageRevision: "test",
-      publicOrigin: "https://picloud.example.com/",
     });
     const claimed = await Promise.all([coordinatorA.claimNext(), coordinatorB.claimNext()]);
     expect(claimed.filter((value) => value !== undefined)).toHaveLength(1);
@@ -534,24 +561,13 @@ describe.sequential("source-control App boundary", () => {
         };
       },
     );
-    const findChangeRequest = vi.spyOn(service, "findChangeRequest").mockResolvedValue(undefined);
-    const createChangeRequest = vi.spyOn(service, "createChangeRequest").mockResolvedValue({
-      number: 9,
-      url: "https://github.com/example/private-repo/pull/9",
-    });
-    const findIssueComment = vi
-      .spyOn(service, "findIssueDeliveryComment")
-      .mockResolvedValue(undefined);
-    const createIssueComment = vi
-      .spyOn(service, "createIssueDeliveryComment")
-      .mockResolvedValue({ id: "9001" });
+    vi.spyOn(service, "checkoutIssueWorkspace").mockResolvedValue("a".repeat(40));
 
     const coordinator = new SourceControlIssueCoordinator({
       database,
       sourceControl: service,
       instanceId: "issue-coordinator-flow",
       environmentImageRevision: "test",
-      publicOrigin: "https://picloud.example.com/",
     });
     await expect(coordinator.reconcileOnce()).resolves.toBe(true);
     const queued = await database
@@ -590,27 +606,16 @@ describe.sequential("source-control App boundary", () => {
         .executeTakeFirstOrThrow();
     });
     await expect(coordinator.reconcileOnce()).resolves.toBe(true);
-    await database
-      .updateTable("source_control_issue_jobs")
-      .set({ available_at: new Date() })
-      .where("id", "=", queued.id)
-      .executeTakeFirstOrThrow();
-    await expect(coordinator.reconcileOnce()).resolves.toBe(true);
     await expect(
       database
         .selectFrom("source_control_issue_jobs")
-        .select(["state", "change_request_url", "issue_comment_id"])
+        .select(["state", "session_title"])
         .where("id", "=", queued.id)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({
       state: "completed",
-      change_request_url: "https://github.com/example/private-repo/pull/9",
-      issue_comment_id: "9001",
+      session_title: "Fix the insertion sort edge case",
     });
-    expect(findChangeRequest).toHaveBeenCalledOnce();
-    expect(createChangeRequest).toHaveBeenCalledOnce();
-    expect(findIssueComment).toHaveBeenCalledOnce();
-    expect(createIssueComment).toHaveBeenCalledOnce();
     await coordinator.close();
   });
 });

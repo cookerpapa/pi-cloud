@@ -75,6 +75,8 @@ export function ResourceManagementPage({
   >("elastic");
   const [issueProfileKey, setIssueProfileKey] =
     useState<DevelopmentEnvironmentProfileKey>("standard");
+  const [issueSessionTitle, setIssueSessionTitle] = useState("");
+  const [issueWorkspaceId, setIssueWorkspaceId] = useState("");
   const [issueEnvironmentId, setIssueEnvironmentId] = useState("");
   const [issueWorkingDirectory, setIssueWorkingDirectory] = useState("/home/user");
   const [issueDirectoryPickerOpen, setIssueDirectoryPickerOpen] = useState(false);
@@ -354,6 +356,10 @@ export function ResourceManagementPage({
                               setIssueStartJobId(job.jobId);
                               setIssueExecutionMode("elastic");
                               setIssueProfileKey("standard");
+                              setIssueSessionTitle(
+                                `#${String(job.issueNumber)} ${job.issueTitle}`.slice(0, 256),
+                              );
+                              setIssueWorkspaceId("");
                               setIssueEnvironmentId(liveEnvironments[0]?.environmentId ?? "");
                               setIssueWorkingDirectory("/home/user");
                             }}
@@ -365,11 +371,6 @@ export function ResourceManagementPage({
                         <a href={job.issueUrl} rel="noreferrer" target="_blank">
                           Issue ↗
                         </a>
-                        {job.changeRequestUrl === undefined ? null : (
-                          <a href={job.changeRequestUrl} rel="noreferrer" target="_blank">
-                            MR ↗
-                          </a>
-                        )}
                       </div>
                     </article>
                   ))}
@@ -604,10 +605,13 @@ export function ResourceManagementPage({
                   issueExecutionMode === "elastic"
                     ? {
                         executionMode: "elastic",
+                        sessionTitle: issueSessionTitle,
                         sandboxProfileKey: issueProfileKey,
+                        ...(issueWorkspaceId.length === 0 ? {} : { workspaceId: issueWorkspaceId }),
                       }
                     : {
                         executionMode: "development_environment",
+                        sessionTitle: issueSessionTitle,
                         developmentEnvironmentId: issueEnvironmentId,
                         workingDirectory: issueWorkingDirectory,
                       },
@@ -629,6 +633,15 @@ export function ResourceManagementPage({
               </button>
             </header>
             <label>
+              <span>{t("sourceControl.sessionTitle")}</span>
+              <input
+                maxLength={256}
+                onChange={(event) => setIssueSessionTitle(event.target.value)}
+                required
+                value={issueSessionTitle}
+              />
+            </label>
+            <label>
               <span>{t("sourceControl.executionMode")}</span>
               <select
                 onChange={(event) =>
@@ -641,21 +654,39 @@ export function ResourceManagementPage({
               </select>
             </label>
             {issueExecutionMode === "elastic" ? (
-              <label>
-                <span>{t("sourceControl.profile")}</span>
-                <select
-                  onChange={(event) =>
-                    setIssueProfileKey(event.target.value as DevelopmentEnvironmentProfileKey)
-                  }
-                  value={issueProfileKey}
-                >
-                  {profiles.map((profile) => (
-                    <option key={profile.key} value={profile.key}>
-                      {profile.label} · {String(profile.cpuCount)}C · {String(profile.memoryMiB)}MiB
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <>
+                <label>
+                  <span>Workspace</span>
+                  <select
+                    onChange={(event) => setIssueWorkspaceId(event.target.value)}
+                    value={issueWorkspaceId}
+                  >
+                    <option value="">{t("sourceControl.newWorkspace")}</option>
+                    {elasticWorkspaces.map((workspace) => (
+                      <option key={workspace.workspaceId} value={workspace.workspaceId}>
+                        {workspace.name}
+                      </option>
+                    ))}
+                  </select>
+                  <small>{t("sourceControl.workspaceHelp")}</small>
+                </label>
+                <label>
+                  <span>{t("sourceControl.profile")}</span>
+                  <select
+                    onChange={(event) =>
+                      setIssueProfileKey(event.target.value as DevelopmentEnvironmentProfileKey)
+                    }
+                    value={issueProfileKey}
+                  >
+                    {profiles.map((profile) => (
+                      <option key={profile.key} value={profile.key}>
+                        {profile.label} · {String(profile.cpuCount)}C · {String(profile.memoryMiB)}
+                        MiB
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
             ) : (
               <>
                 <label>
@@ -699,6 +730,7 @@ export function ResourceManagementPage({
                 className="product-primary-button"
                 disabled={
                   busy ||
+                  issueSessionTitle.trim().length === 0 ||
                   (issueExecutionMode === "development_environment" &&
                     (issueEnvironmentId.length === 0 ||
                       !issueWorkingDirectory.startsWith("/home/user/")))

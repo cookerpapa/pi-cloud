@@ -244,7 +244,10 @@ const zhCN = {
   "sourceControl.gitlabLoginRequired": "使用对应 GitLab 账号登录后可以认领",
   "sourceControl.start": "开始处理",
   "sourceControl.startTitle": "选择 Issue 执行资源",
+  "sourceControl.sessionTitle": "会话名称",
   "sourceControl.executionMode": "执行方式",
+  "sourceControl.newWorkspace": "新建 Issue 专用 Workspace",
+  "sourceControl.workspaceHelp": "也可以继续使用已有 Workspace；如果其中是其他仓库，启动会被拒绝。",
   "sourceControl.profile": "弹性规格",
   "sourceControl.workingDirectory": "工作目录",
   "sourceControl.workingDirectoryHelp":
@@ -593,7 +596,11 @@ const enUS: Record<UiTextKey, string> = {
   "sourceControl.gitlabLoginRequired": "Sign in with the matching GitLab account to claim",
   "sourceControl.start": "Start work",
   "sourceControl.startTitle": "Choose Issue execution resources",
+  "sourceControl.sessionTitle": "Conversation name",
   "sourceControl.executionMode": "Execution mode",
+  "sourceControl.newWorkspace": "Create a dedicated Issue Workspace",
+  "sourceControl.workspaceHelp":
+    "You may reuse an existing Workspace; startup is rejected if it belongs to another repository.",
   "sourceControl.profile": "Elastic profile",
   "sourceControl.workingDirectory": "Working directory",
   "sourceControl.workingDirectoryHelp":

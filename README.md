@@ -11,7 +11,7 @@ shell operations run in CubeSandbox KVM microVMs.
 - multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
-- self-managed GitLab public/private project connection and explicit Issue-to-Run-to-MR automation;
+- self-managed GitLab public/private project connection and explicit Issue-to-Run automation;
 - elastic Sandboxes or user-owned full-VM Cube environments with root SSH/terminal access;
 - snapshot-first SSE whose visible bytes were acknowledged by Kafka first;
 - horizontally replaceable Pi Workers and Kubernetes/KEDA deployment support.
@@ -119,9 +119,11 @@ repository. Adding the configured `picloud` label to an Issue,
 or posting `/picloud solve`, creates a pending request without spending model
 quota. A user signed in through the matching optional GitLab OIDC provider and
 holding Developer access may claim it, select elastic compute or an owned
-development-machine directory, and start the ordinary Session/Run. The Agent
-commits and pushes the job-scoped branch with ordinary Git; PiCloud only opens
-the Merge Request with `Closes #N` after that Run completes. The repository
+development-machine directory, choose a conversation name, and start the
+ordinary Session/Run in a new or compatible existing Workspace. The initial
+Run implements and tests the change but does not commit, push, create an MR,
+comment on or close the Issue. Delivery remains an explicit later user/Agent
+action. The repository
 token is intentionally available to Git inside that Workspace, while the OIDC
 login token is discarded after login and neither credential enters Pi context
 or Kafka. Run the

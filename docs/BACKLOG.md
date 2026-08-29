@@ -29,10 +29,10 @@ Volume architecture. Historical experiments remain in Git history.
 - [ ] Add deployment-specific Kafka TLS/SASL/ACL examples.
 - [ ] Validate backup/restore and retention changes with active Runs.
 - [ ] Replace placeholder Alertmanager delivery with the operator's on-call system.
-- [ ] Run live GitHub App installation/private-clone/Issue-to-PR acceptance on
+- [ ] Run live GitHub App installation/private-clone/Issue-to-Run acceptance on
       a public HTTPS deployment; deterministic tests use a fake GitHub API and
       local trusted Git remote.
-- [ ] Repeat GitLab project-token/private-clone/Issue-to-MR acceptance against
+- [ ] Repeat GitLab project-token/private-clone/Issue-to-Run acceptance against
       an external TLS-enabled self-managed instance after the local CE gate.
 - [ ] Validate GitLab OIDC login, multi-user non-exclusive Issue claims and
       both elastic and owned-machine Issue execution against that instance.

@@ -168,7 +168,6 @@ function issueJobResource(
     state: SourceControlIssueJobState;
     session_id: string | null;
     run_id: string | null;
-    change_request_url: string | null;
     failure_message: string | null;
     created_at: Date | string;
     updated_at: Date | string;
@@ -200,7 +199,6 @@ function issueJobResource(
     })),
     ...(row.session_id === null ? {} : { sessionId: row.session_id }),
     ...(row.run_id === null ? {} : { runId: row.run_id }),
-    ...(row.change_request_url === null ? {} : { changeRequestUrl: row.change_request_url }),
     ...(row.failure_message === null ? {} : { failure: row.failure_message }),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
@@ -852,7 +850,7 @@ export class SourceControlService {
     await this.#database.transaction().execute(async (transaction) => {
       const job = await transaction
         .selectFrom("source_control_issue_jobs")
-        .select("state")
+        .select(["state", "repository_id"])
         .where("tenant_id", "=", identity.tenantId)
         .where("id", "=", jobId)
         .forUpdate()
@@ -883,6 +881,39 @@ export class SourceControlService {
       let workingDirectory = "/workspace";
       if (request.executionMode === "elastic") {
         profileKey = request.sandboxProfileKey;
+        if (request.workspaceId !== undefined) {
+          const workspace = await transaction
+            .selectFrom("workspaces as workspace")
+            .leftJoin(
+              "workspace_source_repositories as source",
+              "source.workspace_id",
+              "workspace.id",
+            )
+            .select([
+              "workspace.project_id as projectId",
+              "workspace.workspace_kind as workspaceKind",
+              "source.repository_id as repositoryId",
+            ])
+            .where("workspace.tenant_id", "=", identity.tenantId)
+            .where("workspace.id", "=", request.workspaceId)
+            .where("workspace.deleted_at", "is", null)
+            .forUpdate("workspace")
+            .executeTakeFirst();
+          if (workspace === undefined || workspace.workspaceKind !== "user") {
+            throw new SourceControlServiceError(
+              "source_control_conflict",
+              "Selected elastic Workspace is unavailable",
+            );
+          }
+          if (workspace.repositoryId !== null && workspace.repositoryId !== job.repository_id) {
+            throw new SourceControlServiceError(
+              "source_control_conflict",
+              "Selected Workspace belongs to another source repository",
+            );
+          }
+          projectId = workspace.projectId;
+          workspaceId = request.workspaceId;
+        }
       } else {
         if (
           !request.workingDirectory.startsWith("/home/user/") ||
@@ -931,6 +962,7 @@ export class SourceControlService {
         .updateTable("source_control_issue_jobs")
         .set({
           state: "received",
+          session_title: request.sessionTitle,
           started_by_user_id: identity.userId,
           execution_mode: request.executionMode,
           sandbox_profile_key: profileKey,
@@ -1359,7 +1391,6 @@ export class SourceControlService {
         "provisioning",
         "queued",
         "running",
-        "publishing",
         "completed",
       ])
       .limit(1)
@@ -1402,7 +1433,6 @@ export class SourceControlService {
           "provisioning",
           "queued",
           "running",
-          "publishing",
           "completed",
         ])
         .limit(1)
@@ -1455,6 +1485,7 @@ export class SourceControlService {
           repository_id: repository.id,
           issue_number: trigger.issueNumber,
           issue_title: trigger.title,
+          session_title: trigger.title.slice(0, 256),
           issue_body: trigger.body,
           issue_url: trigger.url,
           trigger_kind: trigger.kind,
@@ -1465,9 +1496,6 @@ export class SourceControlService {
           session_id: null,
           run_id: null,
           branch_name: branchName,
-          change_request_number: null,
-          change_request_url: null,
-          issue_comment_id: null,
           owner_id: null,
           lease_expires_at: null,
           claim_sync_pending: input.provider === "gitlab",
@@ -1504,135 +1532,6 @@ export class SourceControlService {
   }): Promise<string> {
     const repository = await this.#repository(input.tenantId, input.repositoryId);
     return this.#checkout(repository, input.workspaceId, input.branchName, input.workTreePath);
-  }
-
-  async findChangeRequest(input: {
-    repositoryId: string;
-    sourceBranch: string;
-  }): Promise<{ number: number; url: string } | undefined> {
-    const repository = await this.repositoryForJob(input.repositoryId);
-    if (repository === undefined) return undefined;
-    if (repository.provider === "github") {
-      return this.#requireGitHub().client.findPullRequest({
-        installationId: repository.provider_installation_id,
-        repositoryId: repository.provider_repository_id,
-        owner: repository.owner,
-        repository: repository.name,
-        head: input.sourceBranch,
-      });
-    }
-    return (
-      await this.#gitlabClientByInternalInstallation(
-        repository.tenant_id,
-        repository.installation_id,
-      )
-    ).client.findMergeRequest({
-      projectId: repository.provider_repository_id,
-      sourceBranch: input.sourceBranch,
-    });
-  }
-
-  async createChangeRequest(input: {
-    repositoryId: string;
-    issueNumber: number;
-    issueTitle: string;
-    sourceBranch: string;
-    description: string;
-  }): Promise<{ number: number; url: string }> {
-    const repository = await this.repositoryForJob(input.repositoryId);
-    if (repository === undefined) {
-      throw new SourceControlServiceError(
-        "source_control_not_found",
-        "Issue source repository is no longer connected",
-      );
-    }
-    if (repository.provider === "github") {
-      return this.#requireGitHub().client.createPullRequest({
-        installationId: repository.provider_installation_id,
-        repositoryId: repository.provider_repository_id,
-        owner: repository.owner,
-        repository: repository.name,
-        title: `Resolve #${String(input.issueNumber)}: ${input.issueTitle}`.slice(0, 256),
-        body: input.description,
-        head: input.sourceBranch,
-        base: repository.default_branch,
-      });
-    }
-    return (
-      await this.#gitlabClientByInternalInstallation(
-        repository.tenant_id,
-        repository.installation_id,
-      )
-    ).client.createMergeRequest({
-      projectId: repository.provider_repository_id,
-      title: `Resolve #${String(input.issueNumber)}: ${input.issueTitle}`.slice(0, 256),
-      description: input.description,
-      sourceBranch: input.sourceBranch,
-      targetBranch: repository.default_branch,
-    });
-  }
-
-  async findIssueDeliveryComment(input: {
-    repositoryId: string;
-    issueNumber: number;
-    marker: string;
-  }): Promise<{ id: string } | undefined> {
-    const repository = await this.repositoryForJob(input.repositoryId);
-    if (repository === undefined) return undefined;
-    if (repository.provider === "github") {
-      return this.#requireGitHub().client.findIssueComment({
-        installationId: repository.provider_installation_id,
-        repositoryId: repository.provider_repository_id,
-        owner: repository.owner,
-        repository: repository.name,
-        issueNumber: input.issueNumber,
-        marker: input.marker,
-      });
-    }
-    return (
-      await this.#gitlabClientByInternalInstallation(
-        repository.tenant_id,
-        repository.installation_id,
-      )
-    ).client.findIssueNote({
-      projectId: repository.provider_repository_id,
-      issueNumber: input.issueNumber,
-      marker: input.marker,
-    });
-  }
-
-  async createIssueDeliveryComment(input: {
-    repositoryId: string;
-    issueNumber: number;
-    body: string;
-  }): Promise<{ id: string }> {
-    const repository = await this.repositoryForJob(input.repositoryId);
-    if (repository === undefined) {
-      throw new SourceControlServiceError(
-        "source_control_not_found",
-        "Issue source repository is no longer connected",
-      );
-    }
-    if (repository.provider === "github") {
-      return this.#requireGitHub().client.createIssueComment({
-        installationId: repository.provider_installation_id,
-        repositoryId: repository.provider_repository_id,
-        owner: repository.owner,
-        repository: repository.name,
-        issueNumber: input.issueNumber,
-        body: input.body,
-      });
-    }
-    return (
-      await this.#gitlabClientByInternalInstallation(
-        repository.tenant_id,
-        repository.installation_id,
-      )
-    ).client.createIssueNote({
-      projectId: repository.provider_repository_id,
-      issueNumber: input.issueNumber,
-      body: input.body,
-    });
   }
 
   async repositoryForJob(repositoryId: string) {

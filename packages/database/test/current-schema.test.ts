@@ -103,7 +103,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("109_remove_legacy_workspace_patch_outbox_payloads");
+      expect(applied.rows.at(-1)?.name).toBe("110_user_directed_issue_sessions");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name
@@ -111,7 +111,9 @@ describe("current PiCloud schema", () => {
          where table_schema = 'public'
            and (
              (table_name = 'workspace_versions' and column_name = 'patch_artifact_id')
-             or (table_name = 'source_control_issue_jobs' and column_name = 'commit_sha')
+             or (table_name = 'source_control_issue_jobs' and column_name in (
+               'commit_sha', 'change_request_number', 'change_request_url', 'issue_comment_id'
+             ))
            )
       `.execute(database);
       expect(retiredGitColumns.rows).toEqual([]);

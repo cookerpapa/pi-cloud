@@ -29,13 +29,13 @@ Browser -> GitHub App install -> PiCloud installation/repository grants
 GitHub Webhook -> HMAC gate -> idempotent Issue Job
        -> ordinary Project / Workspace / Session / Run
        -> standard .git checkout -> Pi Worker -> Cube Git/Tools
-       -> Agent commit/push -> GitHub Pull Request / Issue comment
+       -> uncommitted tested Workspace -> later user-directed delivery
 
 GitLab project token -> encrypted project connection -> signed Project Webhook
        -> pending Issue request
 GitLab OIDC user -> non-exclusive claim -> explicit execution selection
        -> ordinary Project / Workspace / Session / Run
-       -> Agent commit/push -> GitLab Merge Request / Issue note
+       -> uncommitted tested Workspace -> later user-directed delivery
 ```
 
 The platform GitHub App private key and Webhook secret are deployment secrets.
@@ -50,9 +50,8 @@ can read and exfiltrate it from the Workspace.
 Issue execution is explicit. A repository may opt into a deployment-owned
 label (default `picloud`) and trusted collaborators may use the exact comment
 command `/picloud solve`. Merely opening an Issue never consumes model quota.
-GitHub delivery IDs are unique input keys. Branch, Pull Request and comment
-effects have stable job identities and are reconciled after uncertain network
-outcomes instead of being blindly repeated.
+GitHub delivery IDs are unique input keys. Provider output is not a side effect
+of the initial Agent Run.
 
 GitLab uses a project access token with `api`, `read_repository` and
 `write_repository` scopes. PiCloud encrypts it with a source-control credential
@@ -74,16 +73,16 @@ A GitLab Webhook creates an `awaiting_claim` Issue request and never starts a
 model call. Any matching GitLab user with current Developer-or-higher project
 membership may add or remove a non-exclusive human claim. Claims are an
 idempotent expression of intent, not a scheduler lock and not an Agent
-ExecutionLease. A claimant explicitly starts the request by choosing either a
-new Issue-dedicated elastic Workspace/profile or an empty directory under
-`/home/user` in one owned running cloud development machine.
+ExecutionLease. A claimant explicitly starts the request by choosing a new
+Issue-dedicated elastic Workspace/profile, a compatible existing Workspace, or
+a directory under `/home/user` in one owned running cloud development machine.
+The claimant also names the conversation.
 
 Each selected directory is a normal repository. One owned development machine
 may hold several independent `.git` directories. The resulting Session records
-its initiating PiCloud user. The Agent must commit and push the job branch
-before settling. PiCloud then creates a Merge/Pull Request containing
-`Closes #N` from that already-pushed branch without reading a Diff or creating
-a commit.
+its initiating PiCloud user. The initial Agent Run implements and tests without
+committing, pushing, creating a Merge/Pull Request, commenting on or closing the
+Issue. A later explicit user instruction owns those decisions.
 
 The Issue coordinator is not a scheduler. It creates and observes ordinary
 PiCloud Runs; the shared PostgreSQL Run queue remains the only Agent execution

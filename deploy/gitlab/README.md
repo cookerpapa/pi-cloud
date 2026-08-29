@@ -42,9 +42,9 @@ The connector registers a signed Issue/Note Webhook automatically. Add the
 PiCloud records a pending Issue request. A user authenticated through this
 GitLab instance and holding Developer access may claim it, choose elastic or
 owned-machine execution, and start the ordinary Session/Run. The resulting
-Workspace contains a normal authenticated Git worktree. The Agent commits and
-pushes the job branch, after which PiCloud opens a Merge Request with
-`Closes #N`.
+Workspace contains a normal authenticated Git worktree. The initial Run changes
+and tests files only; commit, push, Merge Request and Issue state remain explicit
+later user actions.
 
 GitLab state and its generated root password live under ignored
 `deploy/gitlab/runtime/`. Stop it with `npm run gitlab:down`.

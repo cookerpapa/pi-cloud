@@ -89,7 +89,6 @@ export type SourceControlIssueJobState =
   | "provisioning"
   | "queued"
   | "running"
-  | "publishing"
   | "completed"
   | "failed"
   | "cancelled";
@@ -193,6 +192,7 @@ export interface SourceControlIssueJobTable {
   repository_id: string;
   issue_number: number;
   issue_title: string;
+  session_title: string;
   issue_body: string;
   issue_url: string;
   trigger_kind: "label" | "comment";
@@ -203,9 +203,6 @@ export interface SourceControlIssueJobTable {
   session_id: string | null;
   run_id: string | null;
   branch_name: string;
-  change_request_number: number | null;
-  change_request_url: string | null;
-  issue_comment_id: string | null;
   owner_id: string | null;
   lease_expires_at: NullableTimestamp;
   claim_sync_pending: GeneratedBoolean;

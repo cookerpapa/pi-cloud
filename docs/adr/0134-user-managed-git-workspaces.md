@@ -39,11 +39,10 @@ preserved in the Volume but omitted from that catalog and browser listing.
 
 An optional repository bootstrap may clone a connected repository into an
 empty Workspace. It leaves a standard `.git` directory and a usable remote in
-the guest. This is initialization, not a second Git authority. Background
-Issue Runs receive an ordinary branch and must commit and push it themselves.
-After the Run settles, the trusted provider adapter may create a Merge/Pull
-Request from that already-pushed branch; it never inspects Workspace changes or
-creates a commit.
+the guest. This is initialization, not a second Git authority. Background Issue
+Runs receive an ordinary worktree but leave commit, push, provider delivery and
+Issue state to a later explicit user instruction. The platform never inspects
+Workspace changes or creates a commit.
 
 ## Consequences
 

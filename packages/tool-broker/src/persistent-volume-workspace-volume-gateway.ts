@@ -496,6 +496,15 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
             false,
           );
         }
+        await this.#git(
+          [
+            "remote",
+            "set-url",
+            "origin",
+            credentialCloneUrl(input.provider, input.userCloneUrl, input.accessToken),
+          ],
+          { cwd: workspace },
+        );
         return { baseSha };
       }
       await this.#git(

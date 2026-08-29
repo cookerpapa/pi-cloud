@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseConnectGitLabProjectRequest,
+  parseStartSourceControlIssueJobRequest,
   parseSourceControlWorkspaceCheckoutRequest,
 } from "../src/index.ts";
 
@@ -35,5 +36,21 @@ describe("source-control protocol", () => {
         accessToken: "glpat-project-scoped-token",
       }),
     ).toMatchObject({ provider: "gitlab", sourceControlProtocolVersion: 4 });
+  });
+
+  it("accepts a named Issue Session with an optional existing Workspace", () => {
+    expect(
+      parseStartSourceControlIssueJobRequest({
+        executionMode: "elastic",
+        sessionTitle: "  Repair private sorting Issue  ",
+        sandboxProfileKey: "standard",
+        workspaceId: "10000000-0000-4000-8000-000000000004",
+      }),
+    ).toEqual({
+      executionMode: "elastic",
+      sessionTitle: "Repair private sorting Issue",
+      sandboxProfileKey: "standard",
+      workspaceId: "10000000-0000-4000-8000-000000000004",
+    });
   });
 });

@@ -154,11 +154,13 @@ creates that application and prints the corresponding private `.env` entries.
 An Issue label or command only creates a pending request. A user signed in
 through the matching GitLab instance and holding Developer access claims it and
 chooses elastic compute or an empty directory under `/home/user` in an owned
-cloud development machine. The OAuth token is discarded after login; project
+cloud development machine. Elastic execution may create a dedicated Workspace
+or reuse a compatible existing one, and the user names the conversation. The
+OAuth token is discarded after login; project
 checkout places the separately encrypted project token in the imported
 worktree's authenticated Git remote, where the Agent can use ordinary Git
-commands to commit and push. PiCloud does not inspect changes or push; after the
-Run it only opens the Merge Request from the already-pushed branch.
+commands after an explicit user instruction. The initial Run does not commit,
+push, open a Merge Request, comment on or close the Issue.
 When an internal base URL is set, OIDC/Webhook identity still uses the public
 origin while trusted API and Git traffic uses the internal origin. Both must
 identify the same GitLab instance.

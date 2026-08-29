@@ -295,16 +295,16 @@ delivery IDs are idempotency keys. Only the configured label or exact
 OIDC is an optional login provider; it maps one provider subject to one internal
 PiCloud user and discards its OAuth token after login. A matching Developer may
 record a non-exclusive claim, then explicitly choose elastic compute or an
-empty `/home/user` directory in an owned development machine. The coordinator
+existing compatible Workspace, or a directory in an owned development machine.
+The user also names the resulting conversation. The coordinator
 provisions an ordinary Project/Workspace when needed, then creates one Session
 and Run under that user's identity and observes the existing PostgreSQL Run
-queue. It is not a second scheduler. Unique branch
-names, Pull/Merge Request lookup and marker comments reconcile uncertain
-provider responses without blindly duplicating external effects.
+queue. It is not a second scheduler.
 
-Issue prompts require the Agent to test, commit and push the assigned branch.
-The provider adapter creates a Merge/Pull Request with `Closes #N` only from
-that already-pushed branch; merging it closes the Issue.
+The initial Issue prompt requires implementation and tests but explicitly
+forbids commit, push, Merge/Pull Request creation, Issue comments and state
+changes. Run completion settles only the PiCloud execution record. Git and
+provider delivery remain user-directed actions in a later conversation Turn.
 
 ### Tool Broker and Cube
 

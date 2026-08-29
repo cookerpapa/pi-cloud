@@ -97,7 +97,6 @@ export const SourceControlIssueJobResourceSchema = Type.Object(
       Type.Literal("provisioning"),
       Type.Literal("queued"),
       Type.Literal("running"),
-      Type.Literal("publishing"),
       Type.Literal("completed"),
       Type.Literal("failed"),
       Type.Literal("cancelled"),
@@ -118,7 +117,6 @@ export const SourceControlIssueJobResourceSchema = Type.Object(
     ),
     sessionId: Type.Optional(UuidSchema),
     runId: Type.Optional(UuidSchema),
-    changeRequestUrl: Type.Optional(Type.String({ minLength: 8, maxLength: 2_048 })),
     failure: Type.Optional(Type.String({ minLength: 1, maxLength: 1_024 })),
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,
@@ -130,17 +128,20 @@ export const StartSourceControlIssueJobRequestSchema = Type.Union([
   Type.Object(
     {
       executionMode: Type.Literal("elastic"),
+      sessionTitle: Type.String({ minLength: 1, maxLength: 256 }),
       sandboxProfileKey: Type.Union([
         Type.Literal("starter"),
         Type.Literal("standard"),
         Type.Literal("performance"),
       ]),
+      workspaceId: Type.Optional(UuidSchema),
     },
     { additionalProperties: false },
   ),
   Type.Object(
     {
       executionMode: Type.Literal("development_environment"),
+      sessionTitle: Type.String({ minLength: 1, maxLength: 256 }),
       developmentEnvironmentId: UuidSchema,
       workingDirectory: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     },
@@ -262,12 +263,22 @@ export const parseSourceControlIssueJobResource = (value: unknown) =>
     value,
     "source-control Issue Job resource",
   );
-export const parseStartSourceControlIssueJobRequest = (value: unknown) =>
-  parse<StartSourceControlIssueJobRequest>(
+export const parseStartSourceControlIssueJobRequest = (
+  value: unknown,
+): StartSourceControlIssueJobRequest => {
+  const request = parse<StartSourceControlIssueJobRequest>(
     StartSourceControlIssueJobRequestSchema,
     value,
     "start source-control Issue Job request",
   );
+  const sessionTitle = request.sessionTitle.trim();
+  if (sessionTitle.length === 0) {
+    throw new SourceControlProtocolError(
+      "start source-control Issue Job request failed validation at /sessionTitle",
+    );
+  }
+  return { ...request, sessionTitle };
+};
 export const parseConnectGitLabProjectRequest = (value: unknown) =>
   parse<ConnectGitLabProjectRequest>(
     ConnectGitLabProjectRequestSchema,

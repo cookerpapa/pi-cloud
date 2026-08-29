@@ -374,7 +374,6 @@ export async function startControlPlane(): Promise<void> {
         sourceControl: sourceControlService,
         instanceId: controlPlaneInstanceId,
         environmentImageRevision: config.environmentImageRevision,
-        publicOrigin: config.publicOriginBaseUrl,
       });
       issueCoordinator.start();
     }

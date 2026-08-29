@@ -108,6 +108,7 @@ import * as gitlabProjectConnections from "./106_gitlab_project_connections.ts";
 import * as oidcIdentityAndIssueClaims from "./107_oidc_identity_and_issue_claims.ts";
 import * as removePlatformGitChangeTracking from "./108_remove_platform_git_change_tracking.ts";
 import * as removeLegacyWorkspacePatchOutboxPayloads from "./109_remove_legacy_workspace_patch_outbox_payloads.ts";
+import * as userDirectedIssueSessions from "./110_user_directed_issue_sessions.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -221,6 +222,7 @@ export const migrationProvider: MigrationProvider = {
       "107_oidc_identity_and_issue_claims": oidcIdentityAndIssueClaims,
       "108_remove_platform_git_change_tracking": removePlatformGitChangeTracking,
       "109_remove_legacy_workspace_patch_outbox_payloads": removeLegacyWorkspacePatchOutboxPayloads,
+      "110_user_directed_issue_sessions": userDirectedIssueSessions,
     };
   },
 };
