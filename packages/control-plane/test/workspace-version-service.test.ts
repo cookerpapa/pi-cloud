@@ -174,7 +174,6 @@ async function seed(): Promise<void> {
         attempt_id: null,
         turn_id: null,
         workspace_artifact_id: IDS.workspace1,
-        patch_artifact_id: null,
         revision: hash(first),
         file_count: 2,
         state: "settled",
@@ -193,7 +192,6 @@ async function seed(): Promise<void> {
         attempt_id: null,
         turn_id: null,
         workspace_artifact_id: IDS.workspace2,
-        patch_artifact_id: null,
         revision: hash(second),
         file_count: 2,
         state: "settled",
@@ -360,7 +358,6 @@ describe.sequential("versioned Workspace service", () => {
       fencingToken: 3,
       imageRevision: "development",
       environmentSpecSha256: "b".repeat(64),
-      gitBaselineCommit: "c".repeat(40),
       files: [
         {
           path: "README.md",
@@ -403,7 +400,6 @@ describe.sequential("versioned Workspace service", () => {
         attempt_id: null,
         turn_id: null,
         workspace_artifact_id: IDS.workspace3,
-        patch_artifact_id: null,
         revision: hash(checkpoint),
         file_count: 1,
         state: "settled",

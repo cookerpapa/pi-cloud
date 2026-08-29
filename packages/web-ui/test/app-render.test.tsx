@@ -27,7 +27,6 @@ function turn(turnId: string, prompt: string): TurnView {
     stopReason: "stop",
     failure: null,
     cancellation: null,
-    workspacePatch: null,
   };
 }
 
@@ -322,21 +321,6 @@ describe("product chat experience", () => {
     expect(markup).toContain("scout");
     expect(markup).toContain("独立上下文");
     expect(markup).toContain("无工具");
-  });
-
-  it("does not render the removed per-turn patch viewer", () => {
-    const renderedTurn = {
-      ...turn("10000000-0000-4000-8000-000000000013", "修改代码"),
-      workspacePatch: {
-        format: "unified_diff" as const,
-        patch: "diff --git a/secret.ts b/secret.ts\n",
-        truncated: false,
-      },
-    };
-    const markup = renderToStaticMarkup(<ConversationTurn turn={renderedTurn} />);
-    expect(markup).toContain("修改代码");
-    expect(markup).not.toContain("查看本轮代码修改");
-    expect(markup).not.toContain("secret.ts");
   });
 
   it("renders an active Snapshot prefix immediately instead of replaying it from empty", () => {

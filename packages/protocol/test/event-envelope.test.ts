@@ -110,47 +110,19 @@ describe("PiCloudEventSchema", () => {
     ).toThrow(PiCloudProtocolError);
   });
 
-  it("accepts a bounded final workspace patch on turn completion", () => {
+  it("keeps turn completion free of platform-generated workspace changes", () => {
     const completion = createFactory().next({
       type: "turn.completed",
-      payload: {
-        stopReason: "stop",
-        workspacePatch: {
-          format: "unified_diff",
-          patch: "diff --git a/src/App.java b/src/App.java\n",
-          truncated: false,
-        },
-      },
+      payload: { stopReason: "stop" },
     });
     expect(parsePiCloudEvent(completion)).toEqual(completion);
 
     expect(() =>
-      createFactory().next({
-        type: "turn.completed",
-        payload: {
-          stopReason: "stop",
-          workspacePatch: {
-            format: "unified_diff",
-            patch: "x".repeat(65_537),
-            truncated: true,
-          },
-        },
+      parsePiCloudEvent({
+        ...completion,
+        payload: { stopReason: "stop", workspacePatch: { patch: "legacy" } },
       }),
     ).toThrow(PiCloudProtocolError);
-
-    expect(() =>
-      createFactory().next({
-        type: "turn.completed",
-        payload: {
-          stopReason: "stop",
-          workspacePatch: {
-            format: "unified_diff",
-            patch: "界".repeat(21_846),
-            truncated: true,
-          },
-        },
-      }),
-    ).toThrow("UTF-8 content exceeds 65536 bytes");
   });
 
   it("rejects an invalid initial sequence", () => {

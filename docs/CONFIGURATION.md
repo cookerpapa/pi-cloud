@@ -152,7 +152,10 @@ An Issue label or command only creates a pending request. A user signed in
 through the matching GitLab instance and holding Developer access claims it and
 chooses elastic compute or an empty directory under `/home/user` in an owned
 cloud development machine. The OAuth token is discarded after login; project
-checkout and Merge Request delivery use the separately encrypted project token.
+checkout places the separately encrypted project token in the imported
+worktree's authenticated Git remote, where the Agent can use ordinary Git
+commands to commit and push. PiCloud does not inspect changes or push; after the
+Run it only opens the Merge Request from the already-pushed branch.
 When an internal base URL is set, OIDC/Webhook identity still uses the public
 origin while trusted API and Git traffic uses the internal origin. Both must
 identify the same GitLab instance.
@@ -191,8 +194,10 @@ proxy plus NetworkPolicy allow those two hosts. The current Web resource page
 does not expose this provider; installation and callback endpoints remain for
 deployments that operate the GitHub adapter directly.
 
-GitHub tokens are never valid configuration values: PiCloud mints them from the
-App installation when needed and does not persist them.
+GitHub tokens are never valid configuration values: PiCloud mints a short-lived
+installation token when needed. An imported worktree receives that token in its
+authenticated Git remote so the Agent can push; reconnecting is required after
+the token expires.
 
 ### SSH and optional profiles
 
@@ -270,4 +275,7 @@ generated private files or Kubernetes Secrets. Cube receives none of them.
 When GitHub integration is enabled, the App private key and Webhook secret are
 also deployment Secrets; installation access tokens are generated at runtime
 and must never be copied into configuration. GitLab project tokens are
-encrypted in PostgreSQL and only unsealed inside trusted API/Git processes.
+encrypted at rest in PostgreSQL and copied only into the selected user
+worktree's authenticated Git remote. They are therefore visible to code in that
+Workspace and must be scoped to the least repository permissions the workflow
+needs.

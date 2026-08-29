@@ -42,7 +42,6 @@ const conversation = {
         stopReason: "stop",
         failure: null,
         cancellation: null,
-        workspacePatch: null,
         items: [
           { kind: "text", text: "完成。", firstSequence: 1, lastSequence: 1 },
           {

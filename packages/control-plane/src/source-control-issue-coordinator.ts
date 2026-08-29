@@ -356,8 +356,9 @@ export class SourceControlIssueCoordinator {
     const prompt = [
       `Resolve ${repository.provider === "gitlab" ? "GitLab" : "GitHub"} Issue #${String(job.issue_number)} in ${repository.full_name}.`,
       "Inspect the repository, implement the smallest complete fix, and run relevant tests.",
-      "PiCloud keeps Git metadata outside the sandbox; edit and test files without invoking git commands.",
-      "Do not publish, push, or create a change request; PiCloud will handle delivery after this Run settles.",
+      `This is a normal Git worktree on branch ${job.branch_name}; Git metadata and repository credentials are available in the Workspace.`,
+      "Before your final answer, inspect the changes, commit them, and push the current branch to origin.",
+      "Do not create a Merge Request or Pull Request; PiCloud will open it from the branch you pushed.",
       "",
       `Issue title: ${job.issue_title}`,
       "Issue body:",
@@ -421,12 +422,7 @@ export class SourceControlIssueCoordinator {
   }
 
   async #publish(job: NonNullable<ClaimedJob>): Promise<void> {
-    if (
-      job.workspace_id === null ||
-      job.session_id === null ||
-      job.execution_mode === null ||
-      job.working_directory === null
-    ) {
+    if (job.workspace_id === null || job.session_id === null) {
       throw new SourceControlServiceError(
         "source_control_operation_failed",
         "Issue automation Workspace is missing",
@@ -439,20 +435,6 @@ export class SourceControlIssueCoordinator {
         "Issue repository was not found",
       );
     }
-    const published =
-      job.commit_sha === null
-        ? await this.#sourceControl.publishIssueWorkspace({
-            tenantId: job.tenant_id,
-            repositoryId: job.repository_id,
-            workspaceId: job.workspace_id,
-            branchName: job.branch_name,
-            workTreePath: volumeWorkTreePath(job.execution_mode, job.working_directory),
-            commitMessage: `Fix #${String(job.issue_number)}: ${job.issue_title}`.slice(0, 1_024),
-          })
-        : { changed: true as const, commitSha: job.commit_sha };
-    if (published.commitSha !== undefined && job.commit_sha === null) {
-      await this.#updateOwned(job.id, { state: "publishing", commit_sha: published.commitSha });
-    }
     let changeRequest =
       job.change_request_number === null || job.change_request_url === null
         ? await this.#sourceControl.findChangeRequest({
@@ -460,7 +442,7 @@ export class SourceControlIssueCoordinator {
             sourceBranch: job.branch_name,
           })
         : { number: job.change_request_number, url: job.change_request_url };
-    if (published.changed && changeRequest === undefined) {
+    if (changeRequest === undefined) {
       changeRequest = await this.#sourceControl.createChangeRequest({
         repositoryId: job.repository_id,
         issueNumber: job.issue_number,
@@ -494,9 +476,7 @@ export class SourceControlIssueCoordinator {
         issueNumber: job.issue_number,
         body: [
           marker,
-          published.changed && changeRequest !== undefined
-            ? `PiCloud completed the task and opened ${changeRequest.url}.`
-            : "PiCloud completed the task; the Workspace contained no repository changes.",
+          `PiCloud completed the task and opened ${changeRequest.url}.`,
           `[Open the PiCloud session](${new URL(`?session=${job.session_id}`, this.#publicOrigin).toString()})`,
         ].join("\n\n"),
       });
@@ -693,7 +673,6 @@ export class SourceControlIssueCoordinator {
       workspace_id: string;
       session_id: string;
       run_id: string;
-      commit_sha: string;
       change_request_number: number;
       change_request_url: string;
       owner_id: string | null;

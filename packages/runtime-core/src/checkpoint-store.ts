@@ -2,7 +2,6 @@ import type { Database } from "@pi-cloud/database";
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 import {
   MAX_TOOL_OUTPUT_BYTES,
-  MAX_WORKSPACE_PATCH_BYTES,
   MAX_WORKSPACE_SNAPSHOT_BYTES,
   parseEnvironmentValidationReport,
   parseExecutionLease,
@@ -320,13 +319,6 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
     }
     validateWorkspaceSnapshot(checkpoint.workspace);
     const workspaceArtifactId = this.#idGenerator();
-    const rawPatchBytes =
-      checkpoint.workspacePatch === undefined
-        ? undefined
-        : Buffer.from(checkpoint.workspacePatch.patch, "utf8");
-    const patchBytes =
-      rawPatchBytes === undefined || rawPatchBytes.byteLength === 0 ? undefined : rawPatchBytes;
-    const patchArtifactId = patchBytes === undefined ? undefined : this.#idGenerator();
     const versionId = this.#idGenerator();
     const environmentValidationId = this.#idGenerator();
     const prefix = [
@@ -340,38 +332,13 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       sha256: sha256(checkpoint.workspace),
       sizeBytes: checkpoint.workspace.byteLength,
     };
-    if (patchBytes !== undefined && patchBytes.byteLength > MAX_WORKSPACE_PATCH_BYTES) {
-      throw new SandboxCheckpointStoreError(
-        "checkpoint_patch_invalid",
-        "Workspace patch exceeds its byte limit",
-        false,
-      );
-    }
-    const patchReference =
-      patchBytes === undefined || patchArtifactId === undefined
-        ? undefined
-        : {
-            objectKey: `${prefix.join("/")}/${patchArtifactId}-patch-${sha256(patchBytes)}.diff`,
-            sha256: sha256(patchBytes),
-            sizeBytes: patchBytes.byteLength,
-          };
     validateCheckpointObjectKey(workspaceReference.objectKey);
-    if (patchReference !== undefined) validateCheckpointObjectKey(patchReference.objectKey);
 
     try {
       await this.#objectStore.put(workspaceReference.objectKey, checkpoint.workspace);
     } catch (error: unknown) {
       throw error;
     }
-    if (patchReference !== undefined && patchBytes !== undefined) {
-      try {
-        await this.#objectStore.put(patchReference.objectKey, patchBytes);
-      } catch (error: unknown) {
-        await Promise.allSettled([this.#objectStore.delete(workspaceReference.objectKey)]);
-        throw error;
-      }
-    }
-
     try {
       await this.#database.transaction().execute(async (transaction) => {
         const now = validDate(this.#clock);
@@ -386,39 +353,22 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
           );
         }
         const revision = revisionFor(workspaceReference.objectKey);
-        const artifacts = [
-          {
+        await transaction
+          .insertInto("artifacts")
+          .values({
             id: workspaceArtifactId,
             tenant_id: command.payload.tenantId,
             session_id: command.payload.sessionId,
             turn_id: command.payload.turnId,
             run_id: command.payload.runId,
-            kind: "workspace_snapshot" as const,
+            kind: "workspace_snapshot",
             object_key: workspaceReference.objectKey,
             sha256: workspaceReference.sha256,
             size_bytes: workspaceReference.sizeBytes,
             file_name: "workspace.json",
             media_type: "application/vnd.pi-cloud.workspace+json",
-          },
-          ...(patchReference === undefined || patchArtifactId === undefined
-            ? []
-            : [
-                {
-                  id: patchArtifactId,
-                  tenant_id: command.payload.tenantId,
-                  session_id: command.payload.sessionId,
-                  turn_id: command.payload.turnId,
-                  run_id: command.payload.runId,
-                  kind: "patch" as const,
-                  object_key: patchReference.objectKey,
-                  sha256: patchReference.sha256,
-                  size_bytes: patchReference.sizeBytes,
-                  file_name: "workspace.diff",
-                  media_type: "text/x-diff; charset=utf-8",
-                },
-              ]),
-        ];
-        await transaction.insertInto("artifacts").values(artifacts).execute();
+          })
+          .execute();
         await transaction
           .insertInto("environment_validations")
           .values({
@@ -481,7 +431,6 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
             attempt_id: execution.attemptId,
             turn_id: command.payload.turnId,
             workspace_artifact_id: workspaceArtifactId,
-            patch_artifact_id: patchArtifactId ?? null,
             revision,
             file_count: workspaceSnapshotFileCount(checkpoint.workspace),
             state: "staged",
@@ -509,12 +458,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
         }
       });
     } catch (error: unknown) {
-      await Promise.allSettled([
-        this.#objectStore.delete(workspaceReference.objectKey),
-        ...(patchReference === undefined
-          ? []
-          : [this.#objectStore.delete(patchReference.objectKey)]),
-      ]);
+      await Promise.allSettled([this.#objectStore.delete(workspaceReference.objectKey)]);
       throw error;
     }
 

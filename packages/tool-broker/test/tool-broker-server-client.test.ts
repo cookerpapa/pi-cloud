@@ -161,23 +161,12 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
     },
     async checkoutSource(request) {
       return {
-        sourceControlProtocolVersion: 3,
+        sourceControlProtocolVersion: 4,
         type: "source_control.workspace_checked_out",
         requestId: request.requestId,
         workspaceId: request.workspaceId,
         repositoryId: request.repositoryId,
         baseSha: "a".repeat(40),
-      };
-    },
-    async publishSource(request) {
-      return {
-        sourceControlProtocolVersion: 3,
-        type: "source_control.workspace_published",
-        requestId: request.requestId,
-        workspaceId: request.workspaceId,
-        repositoryId: request.repositoryId,
-        changed: true,
-        commitSha: "b".repeat(40),
       };
     },
     async listAssignments(sandboxId) {
@@ -190,7 +179,7 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
 }
 
 describe("Tool Broker authenticated RPC", () => {
-  it("routes trusted source checkout and publish through the materializer credential", async () => {
+  it("routes user-managed repository initialization through the materializer credential", async () => {
     const server = new ToolBrokerServer({
       host: "127.0.0.1",
       port: 0,
@@ -206,7 +195,7 @@ describe("Tool Broker authenticated RPC", () => {
       allowInsecureHttp: true,
     });
     const common = {
-      sourceControlProtocolVersion: 3 as const,
+      sourceControlProtocolVersion: 4 as const,
       requestId: "30000000-0000-4000-8000-000000000001",
       tenantId: "tenant-source-control",
       workspaceId: "30000000-0000-4000-8000-000000000002",
@@ -215,6 +204,7 @@ describe("Tool Broker authenticated RPC", () => {
       providerInstallationId: "77",
       providerRepositoryId: "123456",
       cloneUrl: "https://github.com/example/private-repo.git",
+      userCloneUrl: "https://github.com/example/private-repo.git",
       baseRef: "main",
       branchName: "picloud/issue-1-test",
       workTreePath: ".",
@@ -223,16 +213,6 @@ describe("Tool Broker authenticated RPC", () => {
     await expect(
       client.checkoutSource({ ...common, type: "source_control.workspace_checkout" }),
     ).resolves.toMatchObject({ baseSha: "a".repeat(40) });
-    await expect(
-      client.publishSource({
-        ...common,
-        requestId: "30000000-0000-4000-8000-000000000004",
-        type: "source_control.workspace_publish",
-        commitMessage: "Fix issue",
-        authorName: "PiCloud Agent",
-        authorEmail: "picloud@example.com",
-      }),
-    ).resolves.toMatchObject({ changed: true, commitSha: "b".repeat(40) });
   });
 
   it("bridges an authenticated WebSocket to one bounded human PTY session", async () => {

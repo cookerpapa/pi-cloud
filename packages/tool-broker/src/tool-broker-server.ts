@@ -13,7 +13,6 @@ import {
   parseToolSandboxOperationRequest,
   parseSandboxPreviewRequest,
   parseSourceControlWorkspaceCheckoutRequest,
-  parseSourceControlWorkspacePublishRequest,
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
   type InternalServiceError,
   type SupervisorManagementResponse,
@@ -81,7 +80,6 @@ export type ToolBrokerBackend = Pick<
       | "openDevelopmentEnvironmentTerminal"
       | "preview"
       | "checkoutSource"
-      | "publishSource"
     >
   >;
 
@@ -594,44 +592,22 @@ export class ToolBrokerServer {
         return;
       }
       try {
-        const body = request.body as Record<string, unknown> | undefined;
-        if (body?.type === "source_control.workspace_checkout") {
-          const checkoutSource = this.#broker.checkoutSource;
-          if (checkoutSource === undefined) {
-            throw new ToolBrokerError(
-              "source_control_checkout_unavailable",
-              "Source-control checkout is unavailable",
-              false,
-            );
-          }
-          const message = parseSourceControlWorkspaceCheckoutRequest(body);
-          await reply.code(200).send(
-            await this.#observed({
-              request,
-              spanName: "source_control.checkout",
-              operation: "source_checkout",
-              kind: "sandbox",
-              run: () => checkoutSource.call(this.#broker, message),
-            }),
-          );
-          return;
-        }
-        const publishSource = this.#broker.publishSource;
-        if (publishSource === undefined) {
+        const checkoutSource = this.#broker.checkoutSource;
+        if (checkoutSource === undefined) {
           throw new ToolBrokerError(
-            "source_control_publish_unavailable",
-            "Source-control publish is unavailable",
+            "source_control_checkout_unavailable",
+            "Source-control checkout is unavailable",
             false,
           );
         }
-        const message = parseSourceControlWorkspacePublishRequest(body);
+        const message = parseSourceControlWorkspaceCheckoutRequest(request.body);
         await reply.code(200).send(
           await this.#observed({
             request,
-            spanName: "source_control.publish",
-            operation: "source_publish",
+            spanName: "source_control.checkout",
+            operation: "source_checkout",
             kind: "sandbox",
-            run: () => publishSource.call(this.#broker, message),
+            run: () => checkoutSource.call(this.#broker, message),
           }),
         );
       } catch (error: unknown) {

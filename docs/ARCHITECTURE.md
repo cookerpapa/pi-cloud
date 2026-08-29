@@ -236,10 +236,11 @@ Workspace modes are explicit:
 - upstream `worktree:true` maps to `isolated`: Tool Broker quiesces the parent,
   the trusted Volume gateway makes an idempotent revision-bound internal
   Workspace copy, and the child keeps its resolved `fresh` or `fork` Pi context
-  while running concurrently in another Cube. Its settled
-  patch is returned to the parent, while the internal Workspace is hidden from
-  product lists and retired after terminal settlement. Child Sandbox retention
-  is always ephemeral even when the parent conversation is persistent.
+  while running concurrently in another Cube. Its semantic result is returned
+  to the parent; Git branches or explicit file operations are user-managed.
+  The internal Workspace is hidden from product lists and retired after
+  terminal settlement. Child Sandbox retention is always ephemeral even when
+  the parent conversation is persistent.
 
 For `context=fork`, PiCloud forks the native Pi branch immediately before the
 current parent prompt that requested delegation, then appends the deployment-
@@ -279,11 +280,11 @@ Webhook HMAC secret remain deployment secrets, while one-repository
 installation access tokens exist only for the duration of an API or Git child
 process.
 
-Private checkout and publish run in the trusted Workspace Volume Gateway
-against the external Git directory. Cube sees normal source files but neither
-`.git` platform metadata nor credentials. The Control Plane routes the request
-to the Tool Broker for the Workspace's recorded Sandbox Domain; the Broker
-quiesces any warm runtime before publish, so Git cannot race an Agent writer.
+Repository initialization runs through the Workspace Volume Gateway only to
+populate an empty directory. It leaves an ordinary `.git` directory and an
+authenticated remote inside the user Workspace. Cube and the Agent can inspect,
+change and use both. PiCloud does not generate a Diff, commit or push after a
+Run.
 
 GitLab Project Webhooks use a Standard Webhooks HMAC signing token and stable
 `webhook-id`; project access tokens are encrypted in PostgreSQL and only
@@ -301,11 +302,9 @@ queue. It is not a second scheduler. Unique branch
 names, Pull/Merge Request lookup and marker comments reconcile uncertain
 provider responses without blindly duplicating external effects.
 
-The trusted Volume envelope stores one root source binding for elastic
-Workspaces and directory-scoped bindings for cloud development machines. Git
-credentials and external metadata remain outside the mounted guest subtree.
-Successful delivery creates a Merge Request with `Closes #N`; merging it, not
-an Agent Bash command, closes the Issue.
+Issue prompts require the Agent to test, commit and push the assigned branch.
+The provider adapter creates a Merge/Pull Request with `Closes #N` only from
+that already-pushed branch; merging it closes the Issue.
 
 ### Tool Broker and Cube
 
@@ -323,9 +322,12 @@ from the Run/Attempt settlement timestamp, not from activation creation, so a
 normal post-settlement checkpoint/release cannot race orphan cleanup.
 
 Cube mounts only the `workspace/` child of a trusted persistent Volume. The
-guest contains normal development tools but no platform credential. The trusted
-Volume envelope holds generation and Git baseline metadata outside the guest's
-view.
+guest contains normal development tools but no model, database, Kafka or Cube
+control credential. Repository credentials deliberately belong to the user
+worktree: an imported repository is an ordinary `.git` checkout and its remote
+credential is visible to the Agent just as it would be after `glab auth login`.
+The trusted Volume envelope holds only identity, generation and optional fork
+origin metadata; it does not track Git state or file changes.
 
 Run Claim does not lock a Workspace. Different Sessions may execute their Pi
 loops concurrently, but Cube permits one live attachment for an elastic
@@ -510,7 +512,7 @@ copy Workspaces to Kopia or object storage. It:
 - prepares and verifies the stable tenant/Workspace Volume identity;
 - initializes an empty/imported Workspace once;
 - deletes Workspace file bytes only when asked by the Tool Broker deletion coordinator;
-- captures a bounded file/hash index and external Git patch;
+- captures a bounded file/hash catalog for checkpoint identity and source browsing;
 - reads selected current files for the UI without following symlink escapes;
 - serializes operations with a process lock and PostgreSQL advisory lock;
 - creates revision-bound internal Volume copies for isolated Subagent lanes.
@@ -605,7 +607,8 @@ preserve a visible prefix that never reached `message_end`.
 | elastic Workspace bytes | persistent Cube Volume |
 | cloud development machine guest root, memory and processes | one Cube pause snapshot on its compute node |
 | encrypted machine reconnect capsule | PostgreSQL; key held only by Tool Broker |
-| Workspace revision/reference and Git baseline | PostgreSQL + trusted Volume envelope |
+| Workspace revision/reference | PostgreSQL + trusted Volume envelope |
+| user Git metadata and repository credentials | ordinary Workspace bytes visible to Cube/Agent |
 | live process tree | one Cube KVM only |
 | active in-memory `messages[]` | Pi SDK for one active Run |
 | development-environment ownership/lifecycle | PostgreSQL |
@@ -614,7 +617,7 @@ preserve a visible prefix that never reached `message_end`.
 | source-control connections/repository grants and Issue Jobs | PostgreSQL |
 | GitLab project token and Webhook signing token | encrypted PostgreSQL credential row |
 | GitHub App private key and Webhook secret | deployment Secret files |
-| provider API/Git token plaintext | ephemeral trusted API/Git process memory only |
+| provider token plaintext | ephemeral trusted API memory plus the explicitly initialized user Git worktree |
 
 ## First and later messages
 

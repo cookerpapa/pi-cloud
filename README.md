@@ -109,15 +109,21 @@ After deployment:
    chooser can create a user-writable directory before selection.
 
 Optional **开发资源 → GitLab** connects one public or private project with a project
-access token scoped to that repository. PiCloud encrypts the token and uses it
-only in trusted API/Git child processes. A new elastic Workspace can start from
-the connected repository. Adding the configured `picloud` label to an Issue,
+access token scoped to that repository. PiCloud encrypts the connection copy,
+then creates a normal `.git` checkout whose authenticated `origin` is visible
+inside the selected Workspace. From that point Git is user/Agent-managed; the
+platform does not maintain a hidden baseline, inspect file changes, generate a
+Patch, commit or push. A new elastic Workspace can start from the connected
+repository. Adding the configured `picloud` label to an Issue,
 or posting `/picloud solve`, creates a pending request without spending model
 quota. A user signed in through the matching optional GitLab OIDC provider and
 holding Developer access may claim it, select elastic compute or an owned
-development-machine directory, and start the ordinary Session/Run. A successful
-change is delivered on a job-scoped branch and Merge Request with `Closes #N`.
-Neither the project token nor the login token enters Cube, Pi context or Kafka. Run the
+development-machine directory, and start the ordinary Session/Run. The Agent
+commits and pushes the job-scoped branch with ordinary Git; PiCloud only opens
+the Merge Request with `Closes #N` after that Run completes. The repository
+token is intentionally available to Git inside that Workspace, while the OIDC
+login token is discarded after login and neither credential enters Pi context
+or Kafka. Run the
 optional local acceptance instance with `npm run gitlab:up`; see
 [its README](deploy/gitlab/README.md).
 

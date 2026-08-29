@@ -18,7 +18,6 @@ import type {
   CancelTurnCommandMessage,
   CloudToolCapabilitySnapshot,
   TurnBudgetSnapshot,
-  WorkspacePatch,
 } from "@pi-cloud/protocol";
 import type { EnvironmentRuntimeSnapshot, TraceContext } from "@pi-cloud/protocol";
 import { virtualRunTraceCarrier, withSpan } from "@pi-cloud/observability";
@@ -78,7 +77,6 @@ export type TurnExecutionLifecycle = {
 
 export type TurnExecutionResult = {
   stopReason: string;
-  workspacePatch?: WorkspacePatch;
   lastEventSeq?: number;
 };
 
@@ -1058,7 +1056,6 @@ export class RunExecutor {
       type: "turn.completed",
       payload: {
         stopReason: result.stopReason,
-        ...(result.workspacePatch === undefined ? {} : { workspacePatch: result.workspacePatch }),
       },
     } as const;
     await this.#database.transaction().execute(async (transaction) => {

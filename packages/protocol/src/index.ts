@@ -25,10 +25,8 @@ export {
 export {
   PiCloudEventSchema,
   PiCloudProtocolError,
-  MAX_WORKSPACE_PATCH_BYTES,
   SessionStateSchema,
   TurnCancellationReasonSchema,
-  WorkspacePatchSchema,
   createPiCloudEventFactory,
   parsePiCloudEvent,
   type PiCloudEvent,
@@ -38,7 +36,6 @@ export {
   type PiCloudEventIdentity,
   type PiCloudEventType,
   type SessionState,
-  type WorkspacePatch,
 } from "./event-envelope.ts";
 
 export {
@@ -61,8 +58,6 @@ export {
   ConnectGitLabProjectRequestSchema,
   SourceControlWorkspaceCheckoutRequestSchema,
   SourceControlWorkspaceCheckoutResponseSchema,
-  SourceControlWorkspacePublishRequestSchema,
-  SourceControlWorkspacePublishResponseSchema,
   SourceControlProtocolError,
   parseSourceControlConfigurationResource,
   parseSourceControlInstallLinkResource,
@@ -72,8 +67,6 @@ export {
   parseConnectGitLabProjectRequest,
   parseSourceControlWorkspaceCheckoutRequest,
   parseSourceControlWorkspaceCheckoutResponse,
-  parseSourceControlWorkspacePublishRequest,
-  parseSourceControlWorkspacePublishResponse,
   type SourceControlRepositoryResource,
   type SourceControlInstallationResource,
   type SourceControlConfigurationResource,
@@ -84,8 +77,6 @@ export {
   type ConnectGitLabProjectRequest,
   type SourceControlWorkspaceCheckoutRequest,
   type SourceControlWorkspaceCheckoutResponse,
-  type SourceControlWorkspacePublishRequest,
-  type SourceControlWorkspacePublishResponse,
 } from "./source-control.ts";
 
 export {

@@ -74,6 +74,14 @@ function internalGitLabCloneUrl(cloneUrl: string, internalBaseUrl: string | unde
   return target.toString();
 }
 
+function cloneUrlAtOrigin(cloneUrl: string, origin: string): string {
+  const source = new URL(cloneUrl);
+  const target = new URL(origin);
+  target.pathname = source.pathname;
+  target.search = source.search;
+  return target.toString();
+}
+
 type ConnectedRepository = Readonly<{
   id: string;
   installation_id: string;
@@ -1456,7 +1464,6 @@ export class SourceControlService {
           session_id: null,
           run_id: null,
           branch_name: branchName,
-          commit_sha: null,
           change_request_number: null,
           change_request_url: null,
           issue_comment_id: null,
@@ -1496,43 +1503,6 @@ export class SourceControlService {
   }): Promise<string> {
     const repository = await this.#repository(input.tenantId, input.repositoryId);
     return this.#checkout(repository, input.workspaceId, input.branchName, input.workTreePath);
-  }
-
-  async publishIssueWorkspace(input: {
-    tenantId: string;
-    repositoryId: string;
-    workspaceId: string;
-    branchName: string;
-    workTreePath: string;
-    commitMessage: string;
-  }): Promise<{ changed: boolean; commitSha?: string }> {
-    const repository = await this.#repository(input.tenantId, input.repositoryId);
-    const accessToken = await this.#repositoryAccessToken(repository, "write");
-    const client = this.#toolBroker(
-      await this.#workspaceToolBroker(input.tenantId, input.workspaceId),
-    );
-    const response = await client.publishSource({
-      sourceControlProtocolVersion: 3,
-      type: "source_control.workspace_publish",
-      requestId: this.#idGenerator(),
-      tenantId: input.tenantId,
-      workspaceId: input.workspaceId,
-      repositoryId: repository.id,
-      provider: repository.provider,
-      providerInstallationId: repository.provider_installation_id,
-      providerRepositoryId: repository.provider_repository_id,
-      cloneUrl: repository.clone_url,
-      baseRef: repository.default_branch,
-      branchName: input.branchName,
-      workTreePath: input.workTreePath,
-      commitMessage: input.commitMessage,
-      authorName: "PiCloud Agent",
-      authorEmail: "picloud-agent@users.noreply.local",
-      accessToken,
-    });
-    return response.changed
-      ? { changed: true, commitSha: response.commitSha! }
-      : { changed: false };
   }
 
   async findChangeRequest(input: {
@@ -1697,11 +1667,11 @@ export class SourceControlService {
     branchName: string,
     workTreePath = ".",
   ): Promise<string> {
-    const accessToken = await this.#repositoryAccessToken(repository, "read");
+    const accessToken = await this.#repositoryAccessToken(repository, "write");
     const response = await this.#toolBroker(
       await this.#workspaceToolBroker(repository.tenant_id, workspaceId),
     ).checkoutSource({
-      sourceControlProtocolVersion: 3,
+      sourceControlProtocolVersion: 4,
       type: "source_control.workspace_checkout",
       requestId: this.#idGenerator(),
       tenantId: repository.tenant_id,
@@ -1711,6 +1681,7 @@ export class SourceControlService {
       providerInstallationId: repository.provider_installation_id,
       providerRepositoryId: repository.provider_repository_id,
       cloneUrl: repository.clone_url,
+      userCloneUrl: cloneUrlAtOrigin(repository.clone_url, repository.provider_base_url),
       baseRef: repository.default_branch,
       branchName,
       workTreePath,

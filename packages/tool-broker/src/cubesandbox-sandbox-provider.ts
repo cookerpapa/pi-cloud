@@ -21,8 +21,6 @@ import {
   type DevelopmentEnvironmentProfileKey,
   type SourceControlWorkspaceCheckoutRequest,
   type SourceControlWorkspaceCheckoutResponse,
-  type SourceControlWorkspacePublishRequest,
-  type SourceControlWorkspacePublishResponse,
 } from "@pi-cloud/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { isIPv4 } from "node:net";
@@ -1044,14 +1042,6 @@ export class CubeSandboxProvider implements SandboxProvider {
           false,
         );
       }
-      if (!prepared.attached) {
-        await this.#workspaceVolumeGateway.initializeBaseline({
-          tenantId: spec.assignment.tenantId,
-          workspaceId: spec.assignment.workspaceId,
-          sessionId: spec.assignment.sessionId,
-          volumeId,
-        });
-      }
       const environmentValidation: EnvironmentValidationReport = {
         ...toolchain,
         isolationBoundary: "microvm",
@@ -1791,7 +1781,6 @@ export class CubeSandboxProvider implements SandboxProvider {
           fencingToken: fencingToken(handle.assignment),
           imageRevision: this.#imageRevision,
           environmentSpecSha256: handle.environment.specSha256,
-          gitBaselineCommit: volume.gitBaselineCommit,
           files: volume.files,
           recipeCommands: activation.toolchain.recipeCommands,
         }),
@@ -1802,7 +1791,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         requestId,
         activationId: handle.activationId,
         workspace,
-        workspacePatch: volume.workspacePatch,
         environment: handle.environmentValidation,
       });
       if (parsed.type !== "tool_sandbox.captured") {
@@ -2097,59 +2085,19 @@ export class CubeSandboxProvider implements SandboxProvider {
       providerInstallationId: request.providerInstallationId,
       providerRepositoryId: request.providerRepositoryId,
       cloneUrl: request.cloneUrl,
+      userCloneUrl: request.userCloneUrl,
       baseRef: request.baseRef,
       branchName: request.branchName,
       workTreePath: request.workTreePath,
       accessToken: request.accessToken,
     });
     return {
-      sourceControlProtocolVersion: 3,
+      sourceControlProtocolVersion: 4,
       type: "source_control.workspace_checked_out",
       requestId: request.requestId,
       workspaceId: request.workspaceId,
       repositoryId: request.repositoryId,
       baseSha: checkedOut.baseSha,
-    };
-  }
-
-  async publishSource(
-    request: SourceControlWorkspacePublishRequest,
-  ): Promise<SourceControlWorkspacePublishResponse> {
-    if (this.#workspaceVolumeGateway.publishSource === undefined) {
-      throw new ToolBrokerError(
-        "source_control_publish_unavailable",
-        "Workspace Volume Gateway cannot publish source repositories",
-        false,
-      );
-    }
-    const volumeId = workspaceVolumeId(request);
-    const published = await this.#workspaceVolumeGateway.publishSource({
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-      sessionId: request.requestId,
-      volumeId,
-      requestId: request.requestId,
-      repositoryId: request.repositoryId,
-      provider: request.provider,
-      providerInstallationId: request.providerInstallationId,
-      providerRepositoryId: request.providerRepositoryId,
-      cloneUrl: request.cloneUrl,
-      baseRef: request.baseRef,
-      branchName: request.branchName,
-      workTreePath: request.workTreePath,
-      commitMessage: request.commitMessage,
-      authorName: request.authorName,
-      authorEmail: request.authorEmail,
-      accessToken: request.accessToken,
-    });
-    return {
-      sourceControlProtocolVersion: 3,
-      type: "source_control.workspace_published",
-      requestId: request.requestId,
-      workspaceId: request.workspaceId,
-      repositoryId: request.repositoryId,
-      changed: published.changed,
-      ...(published.commitSha === undefined ? {} : { commitSha: published.commitSha }),
     };
   }
 

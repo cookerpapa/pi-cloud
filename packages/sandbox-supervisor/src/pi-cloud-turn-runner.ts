@@ -5,7 +5,6 @@ import {
   type PiCloudEvent,
   type EventPublishMessage,
   type ExecuteTurnCommandMessage,
-  type WorkspacePatch,
 } from "@pi-cloud/protocol";
 import {
   CloudAgentRuntime,
@@ -64,7 +63,6 @@ export type PiCloudTurnRunnerOptions = Readonly<{
     ) => Promise<PiSamplingStepCapture>;
   }) => TrustedRemoteAgentTools;
   sandboxContinuity: PiSandboxContinuity;
-  collectWorkspacePatch?: () => Promise<WorkspacePatch | undefined> | WorkspacePatch | undefined;
   onSettled?: (session: Session) => Promise<void> | void;
   persistToolOutputArtifact?: (output: PiToolOutputCapture) => Promise<PiToolOutputArtifact>;
   observeEvent?: (event: CloudAgentRuntimeEvent) => void;
@@ -730,10 +728,8 @@ export class PiCloudTurnRunner {
               settled.result.message,
               settled.result.retryable,
             );
-          const workspacePatch = await this.#options.collectWorkspacePatch?.();
           return {
             stopReason: settled.result.stopReason,
-            ...(workspacePatch === undefined ? {} : { workspacePatch }),
           };
         } catch (error: unknown) {
           if (toolStarted) await worldState.recordUnavailable().catch(() => undefined);

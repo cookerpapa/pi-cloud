@@ -1,6 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
-import { MAX_WORKSPACE_PATCH_BYTES, type WorkspacePatch } from "@pi-cloud/protocol";
 import {
   validateWorkspaceFileList,
   type WorkspaceSnapshotFileMetadata,
@@ -12,27 +11,22 @@ import {
   MAXIMUM_REQUEST_BYTES,
   MAXIMUM_RESPONSE_BYTES,
   TOKEN_PATTERN,
-  WORKSPACE_VOLUME_GATEWAY_INITIALIZE_BASELINE_PATH,
   WORKSPACE_VOLUME_GATEWAY_FORK_PATH,
   WORKSPACE_VOLUME_GATEWAY_MATERIALIZE_PATH,
   WORKSPACE_VOLUME_GATEWAY_DELETE_PATH,
   WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CHECKOUT_PATH,
-  WORKSPACE_VOLUME_GATEWAY_SOURCE_PUBLISH_PATH,
   WorkspaceVolumeGatewayError,
   digest,
   isRecord,
-  validatedGitBaselineCommit,
   type WorkspaceVolumeGateway,
-  type WorkspaceVolumeGatewayInitializeBaselineInput,
   type WorkspaceVolumeGatewayMaterializeInput,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayForkInput,
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewaySnapshotInput,
   type WorkspaceVolumeGatewaySourceCheckoutInput,
-  type WorkspaceVolumeGatewaySourcePublishInput,
 } from "./workspace-volume-gateway-contract.ts";
 
 export type WorkspaceVolumeGatewayServerOptions = Readonly<{
@@ -47,14 +41,7 @@ export type WorkspaceVolumeGatewayServerOptions = Readonly<{
 }>;
 
 type WorkspaceVolumeGatewayOperation =
-  | "prepare"
-  | "initialize_baseline"
-  | "snapshot"
-  | "fork"
-  | "materialize"
-  | "delete"
-  | "source_checkout"
-  | "source_publish";
+  "prepare" | "snapshot" | "fork" | "materialize" | "delete" | "source_checkout";
 
 function boundedInteger(value: number, name: string, minimum: number, maximum: number): number {
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
@@ -162,17 +149,6 @@ export class WorkspaceVolumeGatewayServer {
         return this.#failure(reply, error);
       }
     });
-    this.#server.post(WORKSPACE_VOLUME_GATEWAY_INITIALIZE_BASELINE_PATH, async (request, reply) => {
-      try {
-        return await this.#run("initialize_baseline", () =>
-          this.#gateway.initializeBaseline(
-            request.body as WorkspaceVolumeGatewayInitializeBaselineInput,
-          ),
-        );
-      } catch (error: unknown) {
-        return this.#failure(reply, error);
-      }
-    });
     this.#server.post(WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH, async (request, reply) => {
       try {
         return await this.#run("snapshot", () =>
@@ -227,26 +203,6 @@ export class WorkspaceVolumeGatewayServer {
           checkoutSource.call(
             this.#gateway,
             request.body as WorkspaceVolumeGatewaySourceCheckoutInput,
-          ),
-        );
-      } catch (error: unknown) {
-        return this.#failure(reply, error);
-      }
-    });
-    this.#server.post(WORKSPACE_VOLUME_GATEWAY_SOURCE_PUBLISH_PATH, async (request, reply) => {
-      try {
-        const publishSource = this.#gateway.publishSource;
-        if (publishSource === undefined) {
-          throw new WorkspaceVolumeGatewayError(
-            "source_control_publish_unavailable",
-            "Workspace source publish is unavailable",
-            false,
-          );
-        }
-        return await this.#run("source_publish", () =>
-          publishSource.call(
-            this.#gateway,
-            request.body as WorkspaceVolumeGatewaySourcePublishInput,
           ),
         );
       } catch (error: unknown) {
@@ -423,45 +379,16 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     }>;
   }
 
-  async initializeBaseline(
-    input: WorkspaceVolumeGatewayInitializeBaselineInput,
-  ): Promise<{ gitBaselineCommit: string }> {
-    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_INITIALIZE_BASELINE_PATH, input);
-    if (
-      !isRecord(response) ||
-      Object.keys(response).length !== 1 ||
-      typeof response.gitBaselineCommit !== "string"
-    ) {
-      throw new WorkspaceVolumeGatewayError(
-        "workspace_volume_gateway_response_invalid",
-        "Workspace Volume Gateway response was invalid",
-        false,
-      );
-    }
-    return { gitBaselineCommit: validatedGitBaselineCommit(response.gitBaselineCommit) };
-  }
-
   async snapshot(input: WorkspaceVolumeGatewaySnapshotInput): Promise<{
     volumeRevision: string;
-    gitBaselineCommit: string;
-    workspacePatch: WorkspacePatch;
     files: readonly WorkspaceSnapshotFileMetadata[];
   }> {
     const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH, input);
     if (
       !isRecord(response) ||
-      Object.keys(response).sort().join("\0") !==
-        ["files", "gitBaselineCommit", "volumeRevision", "workspacePatch"].sort().join("\0") ||
+      Object.keys(response).sort().join("\0") !== ["files", "volumeRevision"].sort().join("\0") ||
       typeof response.volumeRevision !== "string" ||
-      !/^[0-9a-f]{64}$/.test(response.volumeRevision) ||
-      typeof response.gitBaselineCommit !== "string" ||
-      !isRecord(response.workspacePatch) ||
-      Object.keys(response.workspacePatch).sort().join("\0") !==
-        ["format", "patch", "truncated"].sort().join("\0") ||
-      response.workspacePatch.format !== "unified_diff" ||
-      typeof response.workspacePatch.patch !== "string" ||
-      Buffer.byteLength(response.workspacePatch.patch, "utf8") > MAX_WORKSPACE_PATCH_BYTES ||
-      typeof response.workspacePatch.truncated !== "boolean"
+      !/^[0-9a-f]{64}$/.test(response.volumeRevision)
     ) {
       throw new WorkspaceVolumeGatewayError(
         "workspace_volume_gateway_response_invalid",
@@ -471,32 +398,24 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     }
     return {
       volumeRevision: response.volumeRevision,
-      gitBaselineCommit: validatedGitBaselineCommit(response.gitBaselineCommit),
       files: validateWorkspaceFileList(response.files),
-      workspacePatch: {
-        format: "unified_diff",
-        patch: response.workspacePatch.patch,
-        truncated: response.workspacePatch.truncated,
-      },
     };
   }
 
   async fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
     sourceRevision: string;
     volumeRevision: string;
-    gitBaselineCommit: string;
     files: readonly WorkspaceSnapshotFileMetadata[];
   }> {
     const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_FORK_PATH, input);
     if (
       !isRecord(response) ||
       Object.keys(response).sort().join("\0") !==
-        ["files", "gitBaselineCommit", "sourceRevision", "volumeRevision"].sort().join("\0") ||
+        ["files", "sourceRevision", "volumeRevision"].sort().join("\0") ||
       typeof response.sourceRevision !== "string" ||
       !/^[0-9a-f]{64}$/.test(response.sourceRevision) ||
       typeof response.volumeRevision !== "string" ||
-      !/^[0-9a-f]{64}$/.test(response.volumeRevision) ||
-      typeof response.gitBaselineCommit !== "string"
+      !/^[0-9a-f]{64}$/.test(response.volumeRevision)
     ) {
       throw new WorkspaceVolumeGatewayError(
         "workspace_volume_gateway_response_invalid",
@@ -507,7 +426,6 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     return {
       sourceRevision: response.sourceRevision,
       volumeRevision: response.volumeRevision,
-      gitBaselineCommit: validatedGitBaselineCommit(response.gitBaselineCommit),
       files: validateWorkspaceFileList(response.files),
     };
   }
@@ -626,30 +544,6 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
       );
     }
     return { baseSha: response.baseSha };
-  }
-
-  async publishSource(
-    input: WorkspaceVolumeGatewaySourcePublishInput,
-  ): Promise<{ changed: boolean; commitSha?: string }> {
-    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_SOURCE_PUBLISH_PATH, input);
-    if (
-      !isRecord(response) ||
-      typeof response.changed !== "boolean" ||
-      (response.changed
-        ? typeof response.commitSha !== "string" || !/^[0-9a-f]{40}$/.test(response.commitSha)
-        : response.commitSha !== undefined) ||
-      Object.keys(response).sort().join("\0") !==
-        (response.changed ? ["changed", "commitSha"] : ["changed"]).sort().join("\0")
-    ) {
-      throw new WorkspaceVolumeGatewayError(
-        "workspace_volume_gateway_response_invalid",
-        "Workspace Volume Gateway response was invalid",
-        false,
-      );
-    }
-    return response.changed
-      ? { changed: true, commitSha: response.commitSha as string }
-      : { changed: false };
   }
 
   async close(): Promise<void> {}

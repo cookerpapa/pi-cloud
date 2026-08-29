@@ -164,7 +164,7 @@ export const SourceControlIssueJobListResourceSchema = Type.Object(
 
 export const SourceControlWorkspaceCheckoutRequestSchema = Type.Object(
   {
-    sourceControlProtocolVersion: Type.Literal(3),
+    sourceControlProtocolVersion: Type.Literal(4),
     type: Type.Literal("source_control.workspace_checkout"),
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
@@ -174,6 +174,7 @@ export const SourceControlWorkspaceCheckoutRequestSchema = Type.Object(
     providerInstallationId: ProviderNumericIdSchema,
     providerRepositoryId: ProviderNumericIdSchema,
     cloneUrl: CloneUrlSchema,
+    userCloneUrl: CloneUrlSchema,
     baseRef: GitRefSchema,
     branchName: GitRefSchema,
     workTreePath: VolumeWorkTreePathSchema,
@@ -184,48 +185,12 @@ export const SourceControlWorkspaceCheckoutRequestSchema = Type.Object(
 
 export const SourceControlWorkspaceCheckoutResponseSchema = Type.Object(
   {
-    sourceControlProtocolVersion: Type.Literal(3),
+    sourceControlProtocolVersion: Type.Literal(4),
     type: Type.Literal("source_control.workspace_checked_out"),
     requestId: UuidSchema,
     workspaceId: UuidSchema,
     repositoryId: UuidSchema,
     baseSha: GitShaSchema,
-  },
-  { additionalProperties: false },
-);
-
-export const SourceControlWorkspacePublishRequestSchema = Type.Object(
-  {
-    sourceControlProtocolVersion: Type.Literal(3),
-    type: Type.Literal("source_control.workspace_publish"),
-    requestId: UuidSchema,
-    tenantId: OpaqueIdSchema,
-    workspaceId: UuidSchema,
-    repositoryId: UuidSchema,
-    provider: ProviderSchema,
-    providerInstallationId: ProviderNumericIdSchema,
-    providerRepositoryId: ProviderNumericIdSchema,
-    cloneUrl: CloneUrlSchema,
-    baseRef: GitRefSchema,
-    branchName: GitRefSchema,
-    workTreePath: VolumeWorkTreePathSchema,
-    commitMessage: Type.String({ minLength: 1, maxLength: 1_024 }),
-    authorName: Type.String({ minLength: 1, maxLength: 128 }),
-    authorEmail: Type.String({ minLength: 3, maxLength: 254, pattern: "^[^@\\s]+@[^@\\s]+$" }),
-    accessToken: SourceControlTokenSchema,
-  },
-  { additionalProperties: false },
-);
-
-export const SourceControlWorkspacePublishResponseSchema = Type.Object(
-  {
-    sourceControlProtocolVersion: Type.Literal(3),
-    type: Type.Literal("source_control.workspace_published"),
-    requestId: UuidSchema,
-    workspaceId: UuidSchema,
-    repositoryId: UuidSchema,
-    changed: Type.Boolean(),
-    commitSha: Type.Optional(GitShaSchema),
   },
   { additionalProperties: false },
 );
@@ -253,12 +218,6 @@ export type SourceControlWorkspaceCheckoutRequest = Static<
 >;
 export type SourceControlWorkspaceCheckoutResponse = Static<
   typeof SourceControlWorkspaceCheckoutResponseSchema
->;
-export type SourceControlWorkspacePublishRequest = Static<
-  typeof SourceControlWorkspacePublishRequestSchema
->;
-export type SourceControlWorkspacePublishResponse = Static<
-  typeof SourceControlWorkspacePublishResponseSchema
 >;
 
 export class SourceControlProtocolError extends Error {
@@ -326,16 +285,4 @@ export const parseSourceControlWorkspaceCheckoutResponse = (value: unknown) =>
     SourceControlWorkspaceCheckoutResponseSchema,
     value,
     "source-control checkout response",
-  );
-export const parseSourceControlWorkspacePublishRequest = (value: unknown) =>
-  parse<SourceControlWorkspacePublishRequest>(
-    SourceControlWorkspacePublishRequestSchema,
-    value,
-    "source-control publish request",
-  );
-export const parseSourceControlWorkspacePublishResponse = (value: unknown) =>
-  parse<SourceControlWorkspacePublishResponse>(
-    SourceControlWorkspacePublishResponseSchema,
-    value,
-    "source-control publish response",
   );

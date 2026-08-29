@@ -12,12 +12,7 @@ export const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_as
 type JsonRecord = Record<string, unknown>;
 type TerminalProjectionMetadata = Pick<
   ConversationTurnTranscriptResource,
-  | "throughSequence"
-  | "terminalSequence"
-  | "stopReason"
-  | "failure"
-  | "cancellation"
-  | "workspacePatch"
+  "throughSequence" | "terminalSequence" | "stopReason" | "failure" | "cancellation"
 > & { occurredAt: string };
 type DraftItem =
   | { kind: "text"; text: string }
@@ -133,8 +128,6 @@ function terminalMetadata(row: {
       stopReason: typeof payload.stopReason === "string" ? payload.stopReason : "stop",
       failure: null,
       cancellation: null,
-      workspacePatch: (payload.workspacePatch ??
-        null) as ConversationTurnTranscriptResource["workspacePatch"],
       occurredAt: timestamp(row.occurred_at),
     };
   }
@@ -149,7 +142,6 @@ function terminalMetadata(row: {
         retryable: payload.retryable === true,
       },
       cancellation: null,
-      workspacePatch: null,
       occurredAt: timestamp(row.occurred_at),
     };
   }
@@ -162,7 +154,6 @@ function terminalMetadata(row: {
       reason: typeof payload.reason === "string" ? payload.reason : "user_request",
       forced: payload.forced === true,
     } as ConversationTurnTranscriptResource["cancellation"],
-    workspacePatch: null,
     occurredAt: timestamp(row.occurred_at),
   };
 }

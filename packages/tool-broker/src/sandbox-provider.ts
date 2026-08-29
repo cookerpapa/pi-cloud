@@ -13,8 +13,6 @@ import type {
   ToolBrokerWorkspaceForkRequest,
   SourceControlWorkspaceCheckoutRequest,
   SourceControlWorkspaceCheckoutResponse,
-  SourceControlWorkspacePublishRequest,
-  SourceControlWorkspacePublishResponse,
 } from "@pi-cloud/protocol";
 
 export const SANDBOX_PROVIDER_API_VERSION = 1 as const;
@@ -283,9 +281,6 @@ export interface SandboxProvider {
   checkoutSource?(
     request: SourceControlWorkspaceCheckoutRequest,
   ): Promise<SourceControlWorkspaceCheckoutResponse>;
-  publishSource?(
-    request: SourceControlWorkspacePublishRequest,
-  ): Promise<SourceControlWorkspacePublishResponse>;
   /** Used only when the Tool Broker restarted before it could reconstruct a handle. */
   destroyActivation(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
 

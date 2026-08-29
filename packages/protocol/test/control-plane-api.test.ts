@@ -248,7 +248,6 @@ describe("control-plane public API schemas", () => {
               stopReason: "stop",
               failure: null,
               cancellation: null,
-              workspacePatch: null,
             },
             acceptedAt: createdAt,
           },

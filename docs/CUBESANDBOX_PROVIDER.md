@@ -42,12 +42,12 @@ credential.
 
 One tenant Workspace maps to one stable persistent Cube Volume. Only the
 `workspace/` child of its trusted Volume envelope is mounted into the guest as
-`/workspace`; platform generation and Git-baseline metadata stay outside the
-guest view.
+`/workspace`; only the platform generation marker stays outside the guest view.
+User-managed `.git` directories remain inside `/workspace`.
 
 At a fenced settlement boundary, the trusted Volume gateway flushes the
-Workspace and records a bounded file/hash/Git revision. PostgreSQL advances the
-Workspace revision with compare-and-swap. This operation does not create a
+Workspace and records a bounded file/hash catalog revision. PostgreSQL advances
+the Workspace revision with compare-and-swap. This operation does not create a
 second archive of all Workspace bytes.
 
 A disposable Cube activation may remain warm for one deployment-bounded TTL.

@@ -10,12 +10,11 @@ import {
 } from "./workspace-index.ts";
 import { WorkspaceRuntimeError } from "./workspace-error.ts";
 
-export const PERSISTENT_VOLUME_REFERENCE_FORMAT = "pi-cloud.workspace-volume-reference.v1";
+export const PERSISTENT_VOLUME_REFERENCE_FORMAT = "pi-cloud.workspace-volume-reference.v2";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OPAQUE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const VOLUME_ID_PATTERN = /^pcw-[0-9a-f]{48}$/;
-const GIT_COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 
 export type PersistentVolumeReference = Readonly<{
   format: typeof PERSISTENT_VOLUME_REFERENCE_FORMAT;
@@ -30,7 +29,6 @@ export type PersistentVolumeReference = Readonly<{
   fencingToken: number;
   imageRevision: string;
   environmentSpecSha256: string;
-  gitBaselineCommit: string;
   totalSizeBytes: number;
   files: readonly WorkspaceSnapshotFileMetadata[];
   recipeCommands: readonly EnvironmentRecipeCommandResult[];
@@ -119,7 +117,6 @@ export function parsePersistentVolumeReference(
       "fencingToken",
       "files",
       "format",
-      "gitBaselineCommit",
       "imageRevision",
       "providerId",
       "recipeCommands",
@@ -153,8 +150,6 @@ export function parsePersistentVolumeReference(
       typeof value.imageRevision !== "string" ||
       typeof value.environmentSpecSha256 !== "string" ||
       !SHA256_PATTERN.test(value.environmentSpecSha256) ||
-      typeof value.gitBaselineCommit !== "string" ||
-      !GIT_COMMIT_PATTERN.test(value.gitBaselineCommit) ||
       !Number.isSafeInteger(value.totalSizeBytes) ||
       (value.totalSizeBytes as number) < 0 ||
       (value.totalSizeBytes as number) > MAX_WORKSPACE_INDEX_TOTAL_BYTES

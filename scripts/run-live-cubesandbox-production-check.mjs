@@ -603,7 +603,7 @@ function workspaceVolumePath(tenant, workspaceId, sessionId) {
   return { volumeId, volumePath, workspacePath: resolve(volumePath, "workspace") };
 }
 
-async function trustedGitPlacementEvidence(tenant, workspaceId, sessionId) {
+async function userManagedGitEvidence(tenant, workspaceId, sessionId) {
   const { volumeId, volumePath, workspacePath } = workspaceVolumePath(
     tenant,
     workspaceId,
@@ -615,23 +615,15 @@ async function trustedGitPlacementEvidence(tenant, workspaceId, sessionId) {
     optionalMetadata(workspacePath),
     optionalMetadata(resolve(workspacePath, ".git")),
   ]);
-  assert(
-    trustedGit?.isDirectory() && !trustedGit.isSymbolicLink(),
-    "Trusted Workspace Git metadata directory was absent",
-  );
+  assert.equal(trustedGit, undefined, "Retired platform Git metadata still exists");
   assert(
     workspace?.isDirectory() && !workspace.isSymbolicLink(),
     "User Workspace directory was absent",
   );
-  assert.equal(workspaceGit, undefined, "Platform Git metadata leaked into the user Workspace");
-  assert.match(
-    (await readFile(resolve(trustedGitPath, "HEAD"), "utf8")).trim(),
-    /^ref: refs\/heads\//,
-  );
   return {
     volumeId,
-    trustedMetadataSibling: true,
-    userWorkspaceGitEntryAbsent: true,
+    platformGitMetadataAbsent: true,
+    userGitPresent: workspaceGit?.isDirectory() === true && !workspaceGit.isSymbolicLink(),
   };
 }
 
@@ -1117,7 +1109,7 @@ try {
       ),
     "Follow-up did not exercise the requested duplicate-negative regression input",
   );
-  const gitPlacement = await trustedGitPlacementEvidence(
+  const gitPlacement = await userManagedGitEvidence(
     tenantId,
     session.workspaceId,
     session.sessionId,
@@ -1382,7 +1374,7 @@ try {
         `- Agent Preview / background process survived repeated Run handoffs: ${String(report.multiRound.agentPreviewPublished)} / ${String(report.multiRound.backgroundProcessSurvived)}`,
         `- Elastic Sandbox policy / warm archive cleanup: ${String(report.multiRound.elasticSandboxPolicy)} / ${String(report.cleanup.warmArchiveReaped)}`,
         `- Workspace restored across Runs: ${String(report.multiRound.workspaceRestored)}`,
-        `- Trusted Git metadata sibling / user .git absent: ${String(report.workspaceIsolation.trustedMetadataSibling)} / ${String(report.workspaceIsolation.userWorkspaceGitEntryAbsent)}`,
+        `- Platform Git metadata absent / user-managed .git present: ${String(report.workspaceIsolation.platformGitMetadataAbsent)} / ${String(report.workspaceIsolation.userGitPresent)}`,
         `- Large Workspace files / Volume reference: ${String(report.largeWorkspace.firstFileCount)} / ${String(report.largeWorkspace.volumeReferenceBytes)} bytes`,
         `- Large Workspace fresh-VM cold restore: ${String(report.largeWorkspace.freshCubeMicroVm)}`,
         `- Real input/output/cache-read tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)}`,
@@ -1393,7 +1385,7 @@ try {
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,
         `- Explicit warm eviction / remaining Cube microVMs: ${String(report.cleanup.explicitWarmEvictionVerified)} / ${String(report.cleanup.retainedRunningSessionMicroVmCount + report.cleanup.foreignSessionMicroVmCount)}`,
         "",
-        "A real-model chat Run completed without touching Cube. Two elastic coding Runs reused one bounded-warm Session Cube with rotated Tool authority and higher-fence rebind; archiving the conversation reaped that Cube. Platform Git metadata was verified in the trusted Volume envelope while the user Workspace contained no platform-created .git entry. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a higher-fence activation. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
+        "A real-model chat Run completed without touching Cube. Two elastic coding Runs reused one bounded-warm Session Cube with rotated Tool authority and higher-fence rebind; archiving the conversation reaped that Cube. The persistent Volume contained no retired platform Git metadata; any ordinary .git directory belongs to the user and Agent. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a higher-fence activation. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
         "",
       ].join("\n"),
       "utf8",

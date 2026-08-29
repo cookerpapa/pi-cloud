@@ -238,15 +238,7 @@ async function executionEvidence(parentRunId) {
           and entry.session_id = execution.child_session_id::text
       ),
       'workspaceKind', child_workspace.workspace_kind,
-      'workspaceDeleted', child_workspace.deleted_at is not null,
-      'patchContainsIsolatedFile', exists (
-        select 1
-        from workspace_versions as version
-        join artifacts as artifact on artifact.id = version.patch_artifact_id
-        join checkpoint_objects as object on object.object_key = artifact.object_key
-        where version.run_id = child_run.id
-          and position('isolated-child-only.txt' in convert_from(object.bytes, 'UTF8')) > 0
-      )
+      'workspaceDeleted', child_workspace.deleted_at is not null
     )::text
     from subagent_executions as execution
     join runs as parent_run on parent_run.id = execution.parent_run_id
@@ -341,7 +333,6 @@ try {
   assert.notEqual(isolatedEvidence.childWorkspaceId, isolatedEvidence.parentWorkspaceId);
   assert.equal(isolatedEvidence.workspaceKind, "subagent_isolated");
   assert.equal(isolatedEvidence.workspaceDeleted, true);
-  assert.equal(isolatedEvidence.patchContainsIsolatedFile, true);
   assert(isolatedEvidence.inheritedReferenceCount > 0);
 
   const nestedTask = [

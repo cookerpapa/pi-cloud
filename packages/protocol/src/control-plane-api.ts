@@ -11,7 +11,6 @@ import {
   PiCloudEventSchema,
   SessionStateSchema,
   TurnCancellationReasonSchema,
-  WorkspacePatchSchema,
 } from "./event-envelope.ts";
 import {
   EnvironmentRuntimeSnapshotSchema,
@@ -688,7 +687,6 @@ export const ConversationTurnTranscriptResourceSchema = Type.Object(
       ),
       Type.Null(),
     ]),
-    workspacePatch: Type.Union([WorkspacePatchSchema, Type.Null()]),
   },
   { additionalProperties: false },
 );

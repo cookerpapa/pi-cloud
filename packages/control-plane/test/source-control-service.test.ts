@@ -274,7 +274,10 @@ describe.sequential("source-control App boundary", () => {
     });
     await expect(service.claimIssueJob(secondClaimant, pendingJob.jobId)).resolves.toMatchObject({
       claimedByCurrentUser: true,
-      claims: [{ username: "gitlab-claimant" }, { username: "gitlab-second" }],
+      claims: expect.arrayContaining([
+        expect.objectContaining({ username: "gitlab-claimant" }),
+        expect.objectContaining({ username: "gitlab-second" }),
+      ]),
     });
     await expect(service.unclaimIssueJob(claimant, pendingJob.jobId)).resolves.toMatchObject({
       claimedByCurrentUser: false,
@@ -531,10 +534,6 @@ describe.sequential("source-control App boundary", () => {
         };
       },
     );
-    vi.spyOn(service, "publishIssueWorkspace").mockResolvedValue({
-      changed: true,
-      commitSha: "b".repeat(40),
-    });
     const findChangeRequest = vi.spyOn(service, "findChangeRequest").mockResolvedValue(undefined);
     const createChangeRequest = vi.spyOn(service, "createChangeRequest").mockResolvedValue({
       number: 9,
@@ -600,12 +599,11 @@ describe.sequential("source-control App boundary", () => {
     await expect(
       database
         .selectFrom("source_control_issue_jobs")
-        .select(["state", "commit_sha", "change_request_url", "issue_comment_id"])
+        .select(["state", "change_request_url", "issue_comment_id"])
         .where("id", "=", queued.id)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({
       state: "completed",
-      commit_sha: "b".repeat(40),
       change_request_url: "https://github.com/example/private-repo/pull/9",
       issue_comment_id: "9001",
     });

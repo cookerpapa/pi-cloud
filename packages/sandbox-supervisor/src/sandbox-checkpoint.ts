@@ -3,7 +3,6 @@ import {
   type ExecuteTurnCommandMessage,
   type EnvironmentValidationReport,
   type SandboxCheckpointBlob,
-  type WorkspacePatch,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { PiTurnError } from "./pi-turn-runtime.ts";
@@ -17,7 +16,6 @@ export type LoadedSandboxCheckpoint = {
 
 export type CapturedSandboxCheckpoint = {
   workspace: Uint8Array;
-  workspacePatch?: WorkspacePatch;
 };
 
 export type CapturedEnvironmentSandboxCheckpoint = CapturedSandboxCheckpoint & {

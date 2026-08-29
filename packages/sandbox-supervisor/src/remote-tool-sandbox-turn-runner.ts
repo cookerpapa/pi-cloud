@@ -9,7 +9,6 @@ import {
   type ToolSandboxCaptureResponse,
   type ToolSandboxCreateRequest,
   type ToolSandboxCreateResponse,
-  type WorkspacePatch,
 } from "@pi-cloud/protocol";
 import {
   decodeWorkspaceSnapshotBlob,
@@ -384,7 +383,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     });
     let activation: ToolSandboxCreateResponse | undefined;
     let fakeModel: FakeModelServer | undefined;
-    let capturedPatch: WorkspacePatch | undefined;
     let retainedWorkspaceRevision: string | undefined;
     let completedSuccessfully = false;
     let stopPromise: Promise<void> | undefined;
@@ -559,12 +557,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               {
                 workspace: decodeWorkspaceSnapshotBlob(captured.workspace),
                 environment: captured.environment,
-                ...(captured.workspacePatch === undefined
-                  ? {}
-                  : { workspacePatch: captured.workspacePatch }),
               },
             );
-            capturedPatch = captured.workspacePatch;
             retainedWorkspaceRevision = saved.workspaceRevision;
             await this.#runAttemptPhaseObserver?.checkpointCommitted(command, saved.revision);
             this.#metrics?.checkpointDuration.observe(
@@ -583,7 +577,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             );
           }
         } else {
-          capturedPatch = captured.workspacePatch;
           retainedWorkspaceRevision = captured.workspace.sha256;
         }
       };
@@ -613,7 +606,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         openSession: this.#openAgentSession,
         modelRuntimePool: this.#modelRuntimePool,
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
-        collectWorkspacePatch: () => capturedPatch,
         ...(this.#checkpointStore?.saveToolOutput === undefined
           ? {}
           : {

@@ -4,7 +4,6 @@ export {
   type PersistentVolumeWorkspaceVolumeGatewayOptions,
   type WorkspaceVolumeGateway,
   type WorkspaceVolumeGatewayIdentity,
-  type WorkspaceVolumeGatewayInitializeBaselineInput,
   type WorkspaceVolumeGatewayMaterializeInput,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayForkInput,
@@ -12,7 +11,6 @@ export {
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewaySnapshotInput,
   type WorkspaceVolumeGatewaySourceCheckoutInput,
-  type WorkspaceVolumeGatewaySourcePublishInput,
   type WorkspaceVolumeGatewayVolumeIdentity,
   type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway-contract.ts";

@@ -24,8 +24,6 @@ import type {
   SandboxPreviewResponse,
   SourceControlWorkspaceCheckoutRequest,
   SourceControlWorkspaceCheckoutResponse,
-  SourceControlWorkspacePublishRequest,
-  SourceControlWorkspacePublishResponse,
 } from "@pi-cloud/protocol";
 import { createExecutionLease, parseCloudToolCapabilitySnapshot } from "@pi-cloud/protocol";
 import {
@@ -2037,51 +2035,6 @@ export class ToolBroker {
       );
     }
     return this.#provider.checkoutSource(request);
-  }
-
-  async publishSource(
-    request: SourceControlWorkspacePublishRequest,
-  ): Promise<SourceControlWorkspacePublishResponse> {
-    if (this.#provider.publishSource === undefined) {
-      throw new ToolBrokerError(
-        "source_control_publish_unavailable",
-        "The configured Sandbox Provider cannot publish source repositories",
-        false,
-      );
-    }
-    for (const activation of this.#activations.values()) {
-      if (
-        activation.assignment.tenantId === request.tenantId &&
-        activation.assignment.workspaceId === request.workspaceId
-      ) {
-        throw new ToolBrokerError(
-          "source_control_workspace_busy",
-          "Workspace still has an active Agent Tool reservation",
-          true,
-        );
-      }
-    }
-    for (const terminal of this.#terminals.values()) {
-      if (
-        terminal.assignment.tenantId === request.tenantId &&
-        terminal.assignment.workspaceId === request.workspaceId
-      ) {
-        throw new ToolBrokerError(
-          "source_control_workspace_busy",
-          "Workspace still has an active terminal",
-          true,
-        );
-      }
-    }
-    for (const [key, warm] of [...this.#warm]) {
-      if (
-        warm.handle.assignment.tenantId === request.tenantId &&
-        warm.handle.assignment.workspaceId === request.workspaceId
-      ) {
-        await this.#discardWarm(key, warm);
-      }
-    }
-    return this.#provider.publishSource(request);
   }
 
   async close(): Promise<void> {

@@ -36,7 +36,6 @@ export function projectConversationTurnTranscript(
   let stopReason: string | null = null;
   let failure: ConversationTurnTranscriptResource["failure"] = null;
   let cancellation: ConversationTurnTranscriptResource["cancellation"] = null;
-  let workspacePatch: ConversationTurnTranscriptResource["workspacePatch"] = null;
 
   for (const event of events) {
     if (
@@ -185,7 +184,6 @@ export function projectConversationTurnTranscript(
     if (event.type === "turn.completed") {
       terminalSequence = event.seq;
       stopReason = event.payload.stopReason;
-      workspacePatch = event.payload.workspacePatch ?? null;
       continue;
     }
     if (event.type === "turn.failed") {
@@ -243,6 +241,5 @@ export function projectConversationTurnTranscript(
     stopReason,
     failure,
     cancellation,
-    workspacePatch,
   });
 }

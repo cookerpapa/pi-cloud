@@ -17,6 +17,8 @@
 - Compose one-host deployment and Kubernetes/KEDA manifests;
 - optional GitLab OIDC, non-exclusive Issue claims, private-project Issue-to-MR
   execution choices and a deployment/API-only GitHub App Issue-to-PR adapter;
+- ordinary user-owned Git worktrees: Agents commit and push while the platform
+  only creates the requested Merge/Pull Request;
 - versioned Agent definitions with Run/Worker routing and Runtime-native Session Storage.
 
 ## Current release gate

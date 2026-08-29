@@ -34,10 +34,3 @@ export {
   type CreatePersistentVolumeReferenceInput,
   type PersistentVolumeReference,
 } from "./persistent-volume-reference.ts";
-
-export {
-  collectExternalGitWorkspacePatch,
-  initializeExternalGitWorkspaceBaseline,
-  inspectExternalGitWorkspaceBaseline,
-  type ExternalGitWorkspace,
-} from "./external-git-workspace.ts";

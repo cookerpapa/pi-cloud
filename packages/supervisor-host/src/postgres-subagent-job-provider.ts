@@ -1069,40 +1069,7 @@ export class PostgresSubagentJobProvider {
       } => entry.type === "message" && entry.message.role === "assistant",
     );
     const assistantOutput = final === undefined ? undefined : assistantText(final.message);
-    const patch = await this.#database
-      .selectFrom("workspace_versions as version")
-      .innerJoin("artifacts as artifact", "artifact.id", "version.patch_artifact_id")
-      .innerJoin("checkpoint_objects as object", "object.object_key", "artifact.object_key")
-      .select(["object.bytes", "object.sha256", "object.size_bytes as sizeBytes"])
-      .where("version.tenant_id", "=", tenantId)
-      .where("version.run_id", "=", status.childRunId)
-      .where("version.state", "=", "settled")
-      .executeTakeFirst();
-    let patchOutput: string | undefined;
-    if (patch !== undefined) {
-      const bytes = Buffer.from(patch.bytes);
-      if (
-        Number(patch.sizeBytes) === bytes.byteLength &&
-        createHash("sha256").update(bytes).digest("hex") === patch.sha256
-      ) {
-        const maximumPatchBytes = 128 * 1_024;
-        const visible = bytes.subarray(0, maximumPatchBytes).toString("utf8");
-        patchOutput = [
-          "Isolated Workspace patch:",
-          "```diff",
-          visible,
-          bytes.byteLength > maximumPatchBytes
-            ? "\n[patch truncated; inspect the child artifact for the complete diff]"
-            : "",
-          "```",
-        ].join("\n");
-      }
-    }
-    const outputParts = [assistantOutput, patchOutput].filter(
-      (value): value is string => value !== undefined,
-    );
-    const output = outputParts.length === 0 ? undefined : outputParts.join("\n\n");
-    return { ...status, ...(output === undefined ? {} : { output }) };
+    return { ...status, ...(assistantOutput === undefined ? {} : { output: assistantOutput }) };
   }
 
   async cancel(tenantId: string, executionId: string): Promise<CloudSubagentJobResult> {

@@ -106,6 +106,7 @@ import * as sourceControlAppAndIssueJobs from "./104_source_control_app_and_issu
 import * as versionedAgentDefinitions from "./105_versioned_agent_definitions.ts";
 import * as gitlabProjectConnections from "./106_gitlab_project_connections.ts";
 import * as oidcIdentityAndIssueClaims from "./107_oidc_identity_and_issue_claims.ts";
+import * as removePlatformGitChangeTracking from "./108_remove_platform_git_change_tracking.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -217,6 +218,7 @@ export const migrationProvider: MigrationProvider = {
       "105_versioned_agent_definitions": versionedAgentDefinitions,
       "106_gitlab_project_connections": gitlabProjectConnections,
       "107_oidc_identity_and_issue_claims": oidcIdentityAndIssueClaims,
+      "108_remove_platform_git_change_tracking": removePlatformGitChangeTracking,
     };
   },
 };

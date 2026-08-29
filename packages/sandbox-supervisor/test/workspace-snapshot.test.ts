@@ -25,9 +25,10 @@ afterEach(async () => {
 });
 
 describe("bounded workspace snapshot", () => {
-  it("restores regular files and executable bits without replacing the Git baseline", async () => {
+  it("round-trips user-owned Git metadata with regular files and executable bits", async () => {
     const source = await temporaryDirectory("pi-cloud-workspace-source-");
     await mkdir(resolve(source, ".git"));
+    await writeFile(resolve(source, ".git/HEAD"), "ref: refs/heads/main\n");
     await mkdir(resolve(source, "src"));
     await writeFile(resolve(source, "src/App.java"), "class App {}\n");
     await writeFile(resolve(source, "test.sh"), "#!/bin/sh\nexit 0\n");
@@ -37,13 +38,11 @@ describe("bounded workspace snapshot", () => {
     validateWorkspaceSnapshot(snapshot);
 
     const target = await temporaryDirectory("pi-cloud-workspace-target-");
-    await mkdir(resolve(target, ".git"));
-    await writeFile(resolve(target, ".git/HEAD"), "fixture-baseline\n");
     await writeFile(resolve(target, "stale.txt"), "remove me");
     await restoreWorkspaceSnapshot(target, snapshot);
 
     await expect(readFile(resolve(target, ".git/HEAD"), "utf8")).resolves.toBe(
-      "fixture-baseline\n",
+      "ref: refs/heads/main\n",
     );
     await expect(readFile(resolve(target, "src/App.java"), "utf8")).resolves.toBe("class App {}\n");
     await expect(readFile(resolve(target, "stale.txt"), "utf8")).rejects.toThrow();

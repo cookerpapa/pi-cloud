@@ -89,7 +89,8 @@ tokens and verifies:
 - multi-round coding uses fenced remote Tools;
 - a warm Cube may be reused under a newer authority;
 - a fresh Cube can attach the same persistent Workspace Volume;
-- the user Workspace does not contain platform-owned Git metadata;
+- the persistent Volume contains no retired external platform Git metadata;
+- any `.git` directory in the Workspace is ordinary user/Agent-managed state;
 - cross-tenant conversation access is denied;
 - retained Cubes are reaped by the declared lifecycle.
 

@@ -6,9 +6,11 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
-1. [ADR-0133](0133-versioned-agent-identity-and-native-session-storage.md) —
+1. [ADR-0134](0134-user-managed-git-workspaces.md) — ordinary user-visible Git
+   state with no platform Diff or post-Run commit/push.
+2. [ADR-0133](0133-versioned-agent-identity-and-native-session-storage.md) —
    explicit Agent Revision routing and Runtime-native Session Storage.
-2. [ADR-0132](0132-source-control-app-and-issue-automation.md) — GitLab/GitHub
+3. [ADR-0132](0132-source-control-app-and-issue-automation.md) — GitLab/GitHub
    repository grants, trusted Git execution and Issue-to-change-request automation.
 3. [ADR-0131](0131-run-table-postgres-queue.md) — Run as the only PostgreSQL
    execution queue, typed Cancel/Steer control requests and terminal-only Outbox.

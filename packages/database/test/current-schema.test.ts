@@ -103,7 +103,18 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("107_oidc_identity_and_issue_claims");
+      expect(applied.rows.at(-1)?.name).toBe("108_remove_platform_git_change_tracking");
+
+      const retiredGitColumns = await sql<{ column_name: string }>`
+        select column_name
+          from information_schema.columns
+         where table_schema = 'public'
+           and (
+             (table_name = 'workspace_versions' and column_name = 'patch_artifact_id')
+             or (table_name = 'source_control_issue_jobs' and column_name = 'commit_sha')
+           )
+      `.execute(database);
+      expect(retiredGitColumns.rows).toEqual([]);
 
       const legacyFunctions = await sql<{ proname: string }>`
         select proname

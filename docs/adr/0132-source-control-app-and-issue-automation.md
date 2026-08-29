@@ -6,12 +6,10 @@ Accepted.
 
 ## Context
 
-PiCloud can execute Git commands inside Cube, but an untrusted Cube must not
-receive a long-lived personal token or a GitHub App installation token. The
-Workspace intentionally exposes no platform-owned `.git` directory: Git
-metadata lives in the trusted Volume envelope. Repository connection and Issue
-automation therefore have to preserve the existing Agent/Tool split instead of
-adding credentials to Bash.
+PiCloud supports repository-backed conversations and unattended Issue Runs.
+ADR-0134 makes Git and its credentials ordinary user-managed Workspace state;
+the platform no longer owns a hidden Git baseline or post-processes file
+changes into commits.
 
 GitHub Apps provide repository-scoped installations, signed Webhooks and
 short-lived installation access tokens. GitLab exposes a similar conceptual
@@ -29,30 +27,24 @@ Browser -> GitHub App install -> PiCloud installation/repository grants
 
 GitHub Webhook -> HMAC gate -> idempotent Issue Job
        -> ordinary Project / Workspace / Session / Run
-       -> trusted Volume checkout -> Pi Worker -> Cube Tools
-       -> trusted Volume commit/push -> GitHub Pull Request / Issue comment
+       -> standard .git checkout -> Pi Worker -> Cube Git/Tools
+       -> Agent commit/push -> GitHub Pull Request / Issue comment
 
 GitLab project token -> encrypted project connection -> signed Project Webhook
        -> pending Issue request
 GitLab OIDC user -> non-exclusive claim -> explicit execution selection
        -> ordinary Project / Workspace / Session / Run
-       -> trusted Volume commit/push -> GitLab Merge Request / Issue note
+       -> Agent commit/push -> GitLab Merge Request / Issue note
 ```
 
 The platform GitHub App private key and Webhook secret are deployment secrets.
-PostgreSQL stores installation and repository identities, never installation
-access tokens. The adapter mints a token for one repository and the minimum
-permissions immediately before an API or Git operation.
-
-Private checkout and push run in the trusted Workspace Volume Gateway against
-the external Git directory. The token is supplied only to that bounded Git
-child process and is absent from:
-
-- Pi model context and SessionStorage;
-- Candidate/Accepted Facts and Kafka;
-- the Workspace file tree;
-- Cube, Tool Worker and general Bash environments;
-- command arguments, Tool output and logs.
+PostgreSQL stores installation and repository identities. The adapter mints or
+decrypts one repository-scoped token during Workspace initialization. The
+initial clone leaves a standard `.git` directory and authenticated remote in
+the selected Workspace directory. That credential is intentionally visible to
+the Agent and can be used by ordinary `git` or `glab` commands. It is not copied
+into Pi SessionStorage or Kafka by the platform, but arbitrary untrusted code
+can read and exfiltrate it from the Workspace.
 
 Issue execution is explicit. A repository may opt into a deployment-owned
 label (default `picloud`) and trusted collaborators may use the exact comment
@@ -65,17 +57,17 @@ GitLab uses a project access token with `api`, `read_repository` and
 `write_repository` scopes. PiCloud encrypts it with a source-control credential
 master key. Connection creates or reconciles one project Webhook using GitLab's
 Standard Webhooks signing-token contract. Comment triggers additionally verify
-that the actor is a Developer or higher. The plaintext token follows the same
-trusted-process-only boundary as a GitHub installation token.
+that the actor is a Developer or higher. The connected project credential is
+also installed into repository Workspaces that the user explicitly creates.
 
 The default login remains PiCloud-local and GitLab is optional. When configured,
 GitLab OpenID Connect is a second authentication provider for one deployment-
 selected PiCloud tenant. The authorization-code flow uses discovery, PKCE,
 nonce and one-use state. The OAuth access token is discarded after resolving
 the GitLab user; PostgreSQL keeps only the provider subject and public profile.
-Deployments with split-horizon networking may configure a distinct trusted
-GitLab API/Git origin. The public provider origin remains the OIDC/Webhook
-identity; only trusted outbound requests and stored clone URLs are rewritten.
+Deployments with split-horizon networking may configure a distinct bootstrap
+GitLab API/Git origin. The remote stored in the user repository still uses the
+public provider origin so it is reachable from Cube.
 
 A GitLab Webhook creates an `awaiting_claim` Issue request and never starts a
 model call. Any matching GitLab user with current Developer-or-higher project
@@ -85,12 +77,12 @@ ExecutionLease. A claimant explicitly starts the request by choosing either a
 new Issue-dedicated elastic Workspace/profile or an empty directory under
 `/home/user` in one owned running cloud development machine.
 
-Trusted Git metadata is keyed by the selected directory inside the persistent
-Volume. This lets one owned development machine hold several repositories
-without exposing `.git` metadata or a GitLab credential to Cube. The resulting
-Session records its initiating PiCloud user. Delivery is always a Merge Request
-containing `Closes #N`; the Agent cannot close the Issue or obtain GitLab API
-authority through Bash.
+Each selected directory is a normal repository. One owned development machine
+may hold several independent `.git` directories. The resulting Session records
+its initiating PiCloud user. The Agent must commit and push the job branch
+before settling. PiCloud then creates a Merge/Pull Request containing
+`Closes #N` from that already-pushed branch without reading a Diff or creating
+a commit.
 
 The Issue coordinator is not a scheduler. It creates and observes ordinary
 PiCloud Runs; the shared PostgreSQL Run queue remains the only Agent execution
@@ -100,10 +92,9 @@ queue.
 
 - A personal access token was rejected because it is user-wide and difficult
   to scope and rotate safely; GitLab uses a project-scoped bot token instead.
-- Passing an installation token through Tool RPC was rejected because a Cube
-  owner can inspect guest process memory and environment.
-- Reintroducing the old repository importer was rejected because it mixed
-  source acquisition, Workspace lifetime and GitHub delivery into one protocol.
+- A trusted-only credential proxy was rejected for interactive Workspaces
+  because it prevents ordinary Git/CLI behavior and no longer matches the
+  accepted threat model.
 - Flattening GitHub App and GitLab project authentication into one token model
   was rejected. The domain is provider-neutral, but each adapter preserves its
   native grant, Webhook and Pull/Merge Request semantics.

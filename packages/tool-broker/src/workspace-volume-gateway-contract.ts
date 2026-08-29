@@ -1,9 +1,6 @@
 import {
-  MAX_WORKSPACE_PATCH_BYTES,
   MAX_WORKSPACE_SNAPSHOT_BYTES,
   type SourceControlWorkspaceCheckoutRequest,
-  type SourceControlWorkspacePublishRequest,
-  type WorkspacePatch,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
@@ -19,24 +16,18 @@ export const GIT_COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 export const VOLUME_METADATA_DIRECTORY = ".pi-cloud-runtime";
 export const VOLUME_WORKSPACE_DIRECTORY = "workspace";
 export const VOLUME_GENERATION_FILE = "generation";
-export const VOLUME_GIT_DIRECTORY = "git";
-export const VOLUME_SOURCE_GIT_DIRECTORY = "source-git";
 export const MAXIMUM_REQUEST_BYTES = 32 * 1_024;
 // A snapshot response carries the bounded persistent-volume reference metadata
-// plus its bounded diff. Workspace file bytes never cross this interface.
-export const MAXIMUM_RESPONSE_BYTES =
-  MAX_WORKSPACE_SNAPSHOT_BYTES + 2 * MAX_WORKSPACE_PATCH_BYTES + MAXIMUM_REQUEST_BYTES;
+// and file catalog. Workspace file bytes never cross this interface.
+export const MAXIMUM_RESPONSE_BYTES = MAX_WORKSPACE_SNAPSHOT_BYTES + MAXIMUM_REQUEST_BYTES;
 
 export const WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH = "/v1/workspaces/prepare";
-export const WORKSPACE_VOLUME_GATEWAY_INITIALIZE_BASELINE_PATH =
-  "/v1/workspaces/initialize-baseline";
 export const WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH = "/v1/workspaces/snapshot";
 export const WORKSPACE_VOLUME_GATEWAY_FORK_PATH = "/v1/workspaces/fork";
 export const WORKSPACE_VOLUME_GATEWAY_MATERIALIZE_PATH = "/v1/workspaces/materialize";
 export const WORKSPACE_VOLUME_GATEWAY_DELETE_PATH = "/v1/workspaces/delete";
 export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CHECKOUT_PATH =
   "/v1/workspaces/source-control/checkout";
-export const WORKSPACE_VOLUME_GATEWAY_SOURCE_PUBLISH_PATH = "/v1/workspaces/source-control/publish";
 
 export type WorkspaceVolumeGatewayVolumeIdentity = Readonly<{
   tenantId: string;
@@ -50,8 +41,6 @@ export type WorkspaceVolumeGatewayIdentity = WorkspaceVolumeGatewayVolumeIdentit
   }>;
 
 export type WorkspaceVolumeGatewayPrepareInput = WorkspaceVolumeGatewayIdentity;
-
-export type WorkspaceVolumeGatewayInitializeBaselineInput = WorkspaceVolumeGatewayIdentity;
 
 export type WorkspaceVolumeGatewaySnapshotInput = WorkspaceVolumeGatewayIdentity &
   Readonly<{
@@ -86,28 +75,16 @@ export type WorkspaceVolumeGatewaySourceCheckoutInput = WorkspaceVolumeGatewayId
     "sourceControlProtocolVersion" | "type" | "tenantId" | "workspaceId"
   >;
 
-export type WorkspaceVolumeGatewaySourcePublishInput = WorkspaceVolumeGatewayIdentity &
-  Omit<
-    SourceControlWorkspacePublishRequest,
-    "sourceControlProtocolVersion" | "type" | "tenantId" | "workspaceId"
-  >;
-
 export interface WorkspaceVolumeGateway {
   checkHealth(): Promise<void>;
   prepare(input: WorkspaceVolumeGatewayPrepareInput): Promise<{ attached: boolean }>;
-  initializeBaseline(
-    input: WorkspaceVolumeGatewayInitializeBaselineInput,
-  ): Promise<{ gitBaselineCommit: string }>;
   snapshot(input: WorkspaceVolumeGatewaySnapshotInput): Promise<{
     volumeRevision: string;
-    gitBaselineCommit: string;
-    workspacePatch: WorkspacePatch;
     files: readonly import("@pi-cloud/workspace-runtime").WorkspaceSnapshotFileMetadata[];
   }>;
   fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
     sourceRevision: string;
     volumeRevision: string;
-    gitBaselineCommit: string;
     files: readonly import("@pi-cloud/workspace-runtime").WorkspaceSnapshotFileMetadata[];
   }>;
   materialize(
@@ -115,10 +92,6 @@ export interface WorkspaceVolumeGateway {
   ): Promise<{ bytes: Uint8Array; sha256: string }>;
   delete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ deleted: boolean }>;
   checkoutSource?(input: WorkspaceVolumeGatewaySourceCheckoutInput): Promise<{ baseSha: string }>;
-  publishSource?(input: WorkspaceVolumeGatewaySourcePublishInput): Promise<{
-    changed: boolean;
-    commitSha?: string;
-  }>;
   close(): Promise<void>;
 }
 
@@ -148,36 +121,12 @@ export type WorkspaceVolumeGitRunner = (
 ) => Promise<{ stdout: string; exitCode: number }>;
 
 export type VolumeState = Readonly<{
-  schemaVersion: 1;
+  schemaVersion: 2;
   tenantId: string;
   workspaceId: string;
   volumeId: string;
   volumeGeneration: string;
-  gitBaselineCommit: string;
   forkedFrom?: Readonly<{ workspaceId: string; volumeRevision: string }>;
-  sourceControl?: Readonly<{
-    provider: "github" | "gitlab";
-    repositoryId: string;
-    providerRepositoryId: string;
-    cloneUrl: string;
-    baseRef: string;
-    branchName: string;
-    baseSha: string;
-  }>;
-  sourceControlDirectories?: Readonly<
-    Record<
-      string,
-      Readonly<{
-        provider: "github" | "gitlab";
-        repositoryId: string;
-        providerRepositoryId: string;
-        cloneUrl: string;
-        baseRef: string;
-        branchName: string;
-        baseSha: string;
-      }>
-    >
-  >;
 }>;
 
 export class WorkspaceVolumeGatewayError extends Error {
@@ -260,17 +209,6 @@ export function validatedVolumeIdentity(
     );
   }
   return identity;
-}
-
-export function validatedGitBaselineCommit(value: string): string {
-  if (!GIT_COMMIT_PATTERN.test(value)) {
-    throw new WorkspaceVolumeGatewayError(
-      "workspace_git_baseline_invalid",
-      "Workspace Git baseline was invalid",
-      false,
-    );
-  }
-  return value;
 }
 
 export function validatedAbsoluteDirectory(value: string, label: string): string {

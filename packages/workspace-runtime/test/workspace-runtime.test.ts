@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -6,13 +5,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   captureWorkspaceSnapshot,
   captureWorkspaceIndex,
-  collectExternalGitWorkspacePatch,
   createPersistentVolumeReference,
   decodeWorkspaceSnapshotBlob,
   encodeWorkspaceSnapshotBlob,
   createWorkspaceSnapshot,
   mergeWorkspaceSnapshots,
-  initializeExternalGitWorkspaceBaseline,
   parseWorkspaceSnapshot,
   parsePersistentVolumeReference,
   restoreWorkspaceSnapshot,
@@ -27,28 +24,6 @@ async function temporaryDirectory(prefix: string): Promise<string> {
   return directory;
 }
 
-function externalGit(
-  workTree: string,
-  gitDirectory: string,
-  args: readonly string[],
-): Promise<string> {
-  return new Promise((resolvePromise, rejectPromise) => {
-    execFile(
-      "git",
-      [...args],
-      {
-        cwd: workTree,
-        encoding: "utf8",
-        env: { ...process.env, GIT_DIR: gitDirectory, GIT_WORK_TREE: workTree },
-      },
-      (error, stdout) => {
-        if (error) rejectPromise(error);
-        else resolvePromise(stdout);
-      },
-    );
-  });
-}
-
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories
@@ -58,9 +33,10 @@ afterEach(async () => {
 });
 
 describe("shared workspace runtime", () => {
-  it("round-trips a bounded snapshot envelope without replacing the Git baseline", async () => {
+  it("round-trips user-owned Git metadata in a bounded snapshot envelope", async () => {
     const source = await temporaryDirectory("pi-cloud-workspace-runtime-source-");
     await mkdir(resolve(source, ".git"));
+    await writeFile(resolve(source, ".git/HEAD"), "ref: refs/heads/main\n");
     await mkdir(resolve(source, "src"));
     await writeFile(resolve(source, "src/App.java"), "class App {}\n");
     await writeFile(resolve(source, "test.sh"), "#!/bin/sh\nexit 0\n");
@@ -71,55 +47,15 @@ describe("shared workspace runtime", () => {
     expect(Buffer.from(restoredEnvelope)).toEqual(Buffer.from(snapshot));
 
     const target = await temporaryDirectory("pi-cloud-workspace-runtime-target-");
-    await mkdir(resolve(target, ".git"));
-    await writeFile(resolve(target, ".git/HEAD"), "fixture-baseline\n");
     await writeFile(resolve(target, "stale.txt"), "remove me");
     await restoreWorkspaceSnapshot(target, restoredEnvelope);
 
     await expect(readFile(resolve(target, ".git/HEAD"), "utf8")).resolves.toBe(
-      "fixture-baseline\n",
+      "ref: refs/heads/main\n",
     );
     await expect(readFile(resolve(target, "src/App.java"), "utf8")).resolves.toBe("class App {}\n");
     await expect(readFile(resolve(target, "stale.txt"), "utf8")).rejects.toThrow();
     expect((await stat(resolve(target, "test.sh"))).mode & 0o111).not.toBe(0);
-  });
-
-  it("keeps the platform baseline outside the user tree while collecting a cumulative patch", async () => {
-    const root = await temporaryDirectory("pi-cloud-workspace-runtime-patch-");
-    const metadata = await temporaryDirectory("pi-cloud-workspace-runtime-metadata-");
-    const gitDirectory = resolve(metadata, "git");
-    await mkdir(resolve(root, "src"));
-    await writeFile(resolve(root, "tracked.txt"), "before\n");
-    await writeFile(resolve(root, "deleted.txt"), "remove me\n");
-    const workspace = { workTree: root, gitDirectory };
-    const baseline = await initializeExternalGitWorkspaceBaseline(workspace);
-
-    await writeFile(resolve(root, "tracked.txt"), "after\n");
-    await rm(resolve(root, "deleted.txt"));
-    await writeFile(resolve(root, "src/New.java"), "class New {}\n");
-    const patch = await collectExternalGitWorkspacePatch(workspace);
-
-    expect(baseline).toMatch(/^[0-9a-f]{40}$/);
-    await expect(stat(resolve(root, ".git"))).rejects.toMatchObject({ code: "ENOENT" });
-    expect(patch.truncated).toBe(false);
-    expect(patch.patch).toContain("diff --git a/tracked.txt b/tracked.txt");
-    expect(patch.patch).toContain("deleted file mode");
-    expect(patch.patch).toContain("diff --git a/src/New.java b/src/New.java");
-    expect(await externalGit(root, gitDirectory, ["diff", "--cached"])).toBe("");
-  });
-
-  it("bounds a multi-megabyte patch without failing Workspace settlement", async () => {
-    const root = await temporaryDirectory("pi-cloud-workspace-runtime-large-patch-");
-    const metadata = await temporaryDirectory("pi-cloud-workspace-runtime-large-metadata-");
-    const workspace = { workTree: root, gitDirectory: resolve(metadata, "git") };
-    await initializeExternalGitWorkspaceBaseline(workspace);
-    await writeFile(resolve(root, "large.txt"), "large-workspace-payload\n".repeat(250_000));
-
-    const patch = await collectExternalGitWorkspacePatch(workspace);
-
-    expect(patch.truncated).toBe(true);
-    expect(Buffer.byteLength(patch.patch, "utf8")).toBeLessThanOrEqual(64 * 1_024);
-    expect(patch.patch).toContain("diff --git a/large.txt b/large.txt");
   });
 
   it("merges exact repository snapshots beneath disjoint normalized roots", () => {
@@ -209,7 +145,6 @@ describe("shared workspace runtime", () => {
       fencingToken: 9,
       imageRevision: "development",
       environmentSpecSha256: "c".repeat(64),
-      gitBaselineCommit: "e".repeat(40),
       files: [
         {
           path: "src/result.txt",

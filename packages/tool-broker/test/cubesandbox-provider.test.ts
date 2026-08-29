@@ -80,10 +80,8 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
       volumes.add(volumeId);
       return { attached };
     }),
-    initializeBaseline: vi.fn(async () => ({ gitBaselineCommit: "b".repeat(40) })),
     snapshot: vi.fn(async () => ({
       volumeRevision: "a".repeat(64),
-      gitBaselineCommit: "b".repeat(40),
       files: [
         {
           path: "result.txt",
@@ -92,16 +90,10 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
           sha256: createHash("sha256").update("cube\n").digest("hex"),
         },
       ],
-      workspacePatch: {
-        format: "unified_diff" as const,
-        patch: "diff --git a/result.txt b/result.txt\n",
-        truncated: false,
-      },
     })),
     fork: vi.fn(async () => ({
       sourceRevision: "a".repeat(64),
       volumeRevision: "c".repeat(64),
-      gitBaselineCommit: "b".repeat(40),
       files: [
         {
           path: "result.txt",
@@ -587,13 +579,6 @@ describe("CubeSandbox Provider contract", () => {
     );
     expect(response).toMatchObject({ operation: "bash.exec", exitCode: 0 });
     expect(runtime.creates[0]?.timeoutSeconds).toBe(-1);
-    expect(workspaceVolumeGateway.initializeBaseline).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tenantId: assignment.tenantId,
-        workspaceId: assignment.workspaceId,
-        sessionId: assignment.sessionId,
-      }),
-    );
     expect(runtime.creates).toHaveLength(1);
     expect(runtime.creates[0]?.metadata).not.toHaveProperty("host-mount");
     const activeAssignments = await manager.listAssignments(assignment.sandboxId);
@@ -633,7 +618,6 @@ describe("CubeSandbox Provider contract", () => {
       fencingToken: parseExecutionLease(assignment.executionLease).fencingToken,
       imageRevision: environment.imageRevision,
       environmentSpecSha256: environment.specSha256,
-      gitBaselineCommit: "b".repeat(40),
       totalSizeBytes: 5,
       files: [
         {
@@ -643,11 +627,6 @@ describe("CubeSandbox Provider contract", () => {
           sha256: createHash("sha256").update("cube\n").digest("hex"),
         },
       ],
-    });
-    expect(captured.workspacePatch).toEqual({
-      format: "unified_diff",
-      patch: "diff --git a/result.txt b/result.txt\n",
-      truncated: false,
     });
     expect(Buffer.from(captured.workspace.data, "base64").toString("utf8")).not.toContain("pcch_");
     const materialized = await manager.materializeFile({

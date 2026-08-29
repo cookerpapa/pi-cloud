@@ -240,17 +240,15 @@ deterministic Workspace-bound physical Volume is a trusted envelope:
 ```text
 picloud-posix-<volume-id>/
 ├── .pi-cloud-runtime/
-│   ├── generation
-│   └── git/
+│   └── generation
 └── workspace/
+    └── .git/ (optional user-managed state)
 ```
 
 Cube mounts only `workspace/` at `/workspace`. The trusted Workspace Volume
 Gateway validates and indexes that persistent Volume in place. PostgreSQL
 Fence/CAS publishes only the current Attempt's revision metadata as the
-Workspace head. The guest cannot
-list or mutate the sibling generation marker or PiCloud's external Git
-baseline.
+Workspace head. The guest cannot list or mutate the sibling generation marker.
 
 The bundled single-node profile maps
 `runtime/state/cube-shared/volume` at `/data/cube-shared/volume`. A multi-node

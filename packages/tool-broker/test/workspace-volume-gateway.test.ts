@@ -55,7 +55,6 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const workspace = join(volumeRoot, "workspace");
     await mkdir(join(workspace, "src"), { recursive: true });
     await writeFile(join(workspace, "src", "answer.txt"), "one\n");
-    await mover.initializeBaseline(first);
     await writeFile(join(workspace, "src", "answer.txt"), "two\n");
 
     const captured = await mover.snapshot({
@@ -68,7 +67,6 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     expect(captured.files).toEqual([
       expect.objectContaining({ path: "src/answer.txt", sizeBytes: 4 }),
     ]);
-    expect(captured.workspacePatch.patch).toContain("two");
 
     const replacement = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const second = identity("session-b");
@@ -103,7 +101,6 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await mover.prepare(source);
     const sourceRoot = join(workspaceRoot, `picloud-posix-${source.volumeId}`, "workspace");
     await writeFile(join(sourceRoot, "answer.txt"), "parent-v1\n");
-    await mover.initializeBaseline(source);
     const captured = await mover.snapshot({
       ...source,
       activationId: randomUUID(),
@@ -179,7 +176,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await expect(mover.delete(first)).resolves.toEqual({ deleted: false });
   });
 
-  it("checks out and publishes through trusted external Git metadata without persisting the token", async () => {
+  it("initializes ordinary user-managed Git repositories with Agent-visible credentials", async () => {
     const workspaceRoot = await root();
     const fixtureRoot = await root();
     const remote = join(fixtureRoot, "remote.git");
@@ -220,6 +217,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       providerInstallationId: "77",
       providerRepositoryId: "123456",
       cloneUrl: "https://github.com/example/private-repo.git",
+      userCloneUrl: "https://github.com/example/private-repo.git",
       baseRef: "main",
       branchName: "picloud/issue-1-test",
       workTreePath: ".",
@@ -229,31 +227,15 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const volumeRoot = join(workspaceRoot, `picloud-posix-${bound.volumeId}`);
     const workspace = join(volumeRoot, "workspace");
     await expect(readFile(join(workspace, "README.md"), "utf8")).resolves.toBe("private source\n");
-    await expect(readdir(workspace)).resolves.not.toContain(".git");
-
-    await writeFile(join(workspace, "answer.txt"), "42\n");
-    const published = await mover.publishSource!({
-      ...bound,
-      requestId: randomUUID(),
-      repositoryId: "90000000-0000-4000-8000-000000000001",
-      provider: "github",
-      providerInstallationId: "77",
-      providerRepositoryId: "123456",
-      cloneUrl: "https://github.com/example/private-repo.git",
-      baseRef: "main",
-      branchName: "picloud/issue-1-test",
-      workTreePath: ".",
-      commitMessage: "Fix issue 1",
-      authorName: "PiCloud Agent",
-      authorEmail: "picloud@example.com",
-      accessToken: "ghs_process_scoped_secret",
-    });
-    expect(published).toMatchObject({
-      changed: true,
-      commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
-    });
+    await expect(readdir(workspace)).resolves.toContain(".git");
+    await expect(readFile(join(workspace, ".git/config"), "utf8")).resolves.toContain(
+      "ghs_process_scoped_secret",
+    );
     await expect(
-      mover.publishSource!({
+      exec("/usr/bin/git", ["status", "--short"], { cwd: workspace }),
+    ).resolves.toMatchObject({ stdout: "" });
+    await expect(
+      mover.checkoutSource!({
         ...bound,
         requestId: randomUUID(),
         repositoryId: "90000000-0000-4000-8000-000000000001",
@@ -261,22 +243,13 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         providerInstallationId: "77",
         providerRepositoryId: "123456",
         cloneUrl: "https://github.com/example/private-repo.git",
+        userCloneUrl: "https://github.com/example/private-repo.git",
         baseRef: "main",
         branchName: "picloud/issue-1-test",
         workTreePath: ".",
-        commitMessage: "Fix issue 1",
-        authorName: "PiCloud Agent",
-        authorEmail: "picloud@example.com",
         accessToken: "ghs_process_scoped_secret",
       }),
-    ).resolves.toEqual(published);
-    const remoteFile = await exec("/usr/bin/git", [
-      "--git-dir",
-      remote,
-      "show",
-      "refs/heads/picloud/issue-1-test:answer.txt",
-    ]);
-    expect(remoteFile.stdout).toBe("42\n");
+    ).resolves.toEqual(checkout);
 
     await mkdir(join(workspace, "second-project"));
     const second = await mover.checkoutSource!({
@@ -287,6 +260,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       providerInstallationId: "77",
       providerRepositoryId: "123456",
       cloneUrl: "https://github.com/example/private-repo.git",
+      userCloneUrl: "https://github.com/example/private-repo.git",
       baseRef: "main",
       branchName: "picloud/issue-2-test",
       workTreePath: "second-project",
@@ -296,25 +270,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await expect(readFile(join(workspace, "second-project/README.md"), "utf8")).resolves.toBe(
       "private source\n",
     );
-    await writeFile(join(workspace, "second-project/second.txt"), "isolated\n");
-    await expect(
-      mover.publishSource!({
-        ...bound,
-        requestId: randomUUID(),
-        repositoryId: "90000000-0000-4000-8000-000000000001",
-        provider: "github",
-        providerInstallationId: "77",
-        providerRepositoryId: "123456",
-        cloneUrl: "https://github.com/example/private-repo.git",
-        baseRef: "main",
-        branchName: "picloud/issue-2-test",
-        workTreePath: "second-project",
-        commitMessage: "Fix issue 2",
-        authorName: "PiCloud Agent",
-        authorEmail: "picloud@example.com",
-        accessToken: "ghs_process_scoped_secret",
-      }),
-    ).resolves.toMatchObject({ changed: true });
+    await expect(readdir(join(workspace, "second-project"))).resolves.toContain(".git");
     await expect(
       mover.checkoutSource!({
         ...bound,
@@ -324,22 +280,14 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         providerInstallationId: "77",
         providerRepositoryId: "123456",
         cloneUrl: "https://github.com/example/private-repo.git",
+        userCloneUrl: "https://github.com/example/private-repo.git",
         baseRef: "main",
         branchName: "picloud/escape",
         workTreePath: "../escape",
         accessToken: "ghs_process_scoped_secret",
       }),
     ).rejects.toMatchObject({ code: "source_control_work_tree_invalid" });
-    expect(observedTokens).toEqual([
-      "ghs_process_scoped_secret",
-      "ghs_process_scoped_secret",
-      "ghs_process_scoped_secret",
-      "ghs_process_scoped_secret",
-      "ghs_process_scoped_secret",
-    ]);
-    expect(
-      await readFile(join(volumeRoot, ".pi-cloud-runtime", "volume-state.json"), "utf8"),
-    ).not.toContain("ghs_process_scoped_secret");
+    expect(observedTokens).toEqual(["ghs_process_scoped_secret", "ghs_process_scoped_secret"]);
   });
 });
 
@@ -356,14 +304,9 @@ describe("HttpWorkspaceVolumeGateway", () => {
       async prepare() {
         return { attached: true };
       },
-      async initializeBaseline() {
-        return { gitBaselineCommit: "1".repeat(40) };
-      },
       async snapshot() {
         return {
           volumeRevision: "2".repeat(64),
-          gitBaselineCommit: "1".repeat(40),
-          workspacePatch: { format: "unified_diff" as const, patch: "", truncated: false },
           files,
         };
       },
@@ -371,7 +314,6 @@ describe("HttpWorkspaceVolumeGateway", () => {
         return {
           sourceRevision: "2".repeat(64),
           volumeRevision: "3".repeat(64),
-          gitBaselineCommit: "1".repeat(40),
           files,
         };
       },

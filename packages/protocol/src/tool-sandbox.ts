@@ -1,6 +1,5 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { WorkspacePatchSchema } from "./event-envelope.ts";
 import { AgentWorkspaceSeedSchema, SandboxCheckpointBlobSchema } from "./agent-runtime.ts";
 import {
   OpaqueIdSchema,
@@ -187,7 +186,6 @@ export const ToolSandboxCaptureResponseSchema = Type.Union([
       requestId: UuidSchema,
       activationId: UuidSchema,
       workspace: SandboxCheckpointBlobSchema,
-      workspacePatch: Type.Optional(WorkspacePatchSchema),
       environment: EnvironmentValidationReportSchema,
     },
     { additionalProperties: false },

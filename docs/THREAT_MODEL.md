@@ -58,7 +58,7 @@ head.
 | infinite output/process/resource use | byte, timeout, PID, CPU, memory and disk limits |
 | browser observes non-durable output | Kafka `acks=all` before Gateway SSE; complete Pi entries remain PostgreSQL canonical state |
 | Cube loss | process world reset marker plus same persistent Workspace Volume |
-| secret leakage in events | bounded schemas and redaction; credentials never enter model context |
+| secret leakage in events | platform protocols do not inject credentials; user/Agent commands can still read and expose Workspace Git credentials, so repository scope is the boundary |
 
 Public network mode can still upload the current tenant's code to public
 destinations. KVM isolation protects the platform and other tenants; it is not
@@ -75,16 +75,17 @@ Terminal output is intentionally not a durable conversation record; Workspace
 files and platform audit metadata remain authoritative.
 
 GitHub App installation tokens are repository-scoped and minted just in time.
-They cross only the authenticated Control Plane → Tool Broker → Workspace
-Volume Gateway path and are supplied to one trusted Git child through its
-environment. They are never written to Workspace bytes, Cube, SessionStorage,
-Kafka, command arguments or logs. GitHub Webhooks are accepted only after
+For a user-authorized repository Workspace, initialization writes a usable
+authenticated Git remote into ordinary `.git` metadata. The Agent can read and
+exfiltrate that token. It is not copied into SessionStorage or Kafka by the
+platform. GitHub Webhooks are accepted only after
 constant-time HMAC-SHA256 verification; their delivery ID is persisted before
 an Issue can create model work.
 
 GitLab project access tokens are limited to one connected project and encrypted
-at rest with a deployment key. They are unsealed only for one trusted API or
-Git child process and follow the same no-Cube/no-Kafka/no-Workspace boundary.
+at rest with a deployment key. They are unsealed for provider API calls and for
+explicit repository initialization. The resulting Git remote is visible in
+Cube and persists with that Workspace until the user changes or deletes it.
 Project Webhooks use GitLab's Standard Webhooks HMAC contract, a recent
 timestamp and stable message ID; a `/picloud solve` comment additionally
 requires Developer-or-higher membership.
@@ -96,6 +97,7 @@ adapter; a human claim is not an Agent execution authority.
 ## Not guaranteed
 
 - exactly-once arbitrary shell or external side effects;
+- confidentiality of credentials that a user installs into an Agent Workspace;
 - process/memory/socket survival after Cube destruction;
 - historical Workspace rollback without a storage-backend snapshot policy;
 - safety from a Cube/KVM/hypervisor escape vulnerability;

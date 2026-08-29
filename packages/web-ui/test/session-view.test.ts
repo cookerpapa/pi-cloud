@@ -287,7 +287,6 @@ describe("session transcript reducer", () => {
             stopReason: "stop",
             failure: null,
             cancellation: null,
-            workspacePatch: null,
           },
           acceptedAt: CREATED_AT,
         },
@@ -311,7 +310,7 @@ describe("session transcript reducer", () => {
     });
   });
 
-  it("keeps ordered text/tool lifecycle and the final bounded patch", () => {
+  it("keeps ordered text/tool lifecycle through terminal completion", () => {
     const events: PiCloudEvent[] = [
       envelope(1, { type: "turn.started", payload: { inputKind: "prompt" } }),
       envelope(2, { type: "assistant.text.delta", payload: { text: "Inspecting " } }),
@@ -326,14 +325,7 @@ describe("session transcript reducer", () => {
       }),
       envelope(6, {
         type: "turn.completed",
-        payload: {
-          stopReason: "stop",
-          workspacePatch: {
-            format: "unified_diff",
-            patch: "diff --git a/App.java b/App.java\n",
-            truncated: false,
-          },
-        },
+        payload: { stopReason: "stop" },
       }),
     ];
     const state = events.reduce(
@@ -345,7 +337,6 @@ describe("session transcript reducer", () => {
     expect(state.turns[0]).toMatchObject({
       status: "completed",
       stopReason: "stop",
-      workspacePatch: { truncated: false },
     });
     expect(state.turns[0]?.items).toEqual([
       expect.objectContaining({

@@ -877,7 +877,7 @@ try {
       "Read algolab/post_compaction_validation.py and the first-round algolab/sorting_elementary.py.",
       "Add a regression proving binary insertion sort preserves the relative order of equal-key records, and update post_compaction_validation.py to report that check.",
       `Also assert that the persisted project invariant is exactly ${marker}.`,
-      "Run the directly affected tests and report the exact commands/results concisely. Do not create Git metadata.",
+      "Run the directly affected tests and report the exact commands/results concisely.",
     ].join(" "),
     true,
   );

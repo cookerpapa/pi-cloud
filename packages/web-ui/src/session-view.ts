@@ -8,7 +8,6 @@ import type {
   RunResource,
   SessionState,
   SessionResource,
-  WorkspacePatch,
 } from "@pi-cloud/protocol";
 import type { SessionStreamStatus } from "./sse.ts";
 
@@ -78,7 +77,6 @@ export type TurnView = {
   stopReason: string | null;
   failure: { code: string; message: string; retryable: boolean } | null;
   cancellation: { reason: string; forced: boolean } | null;
-  workspacePatch: WorkspacePatch | null;
 };
 
 export type ConnectionView =
@@ -149,7 +147,6 @@ function unknownTurn(turnId: string): TurnView {
     stopReason: null,
     failure: null,
     cancellation: null,
-    workspacePatch: null,
   };
 }
 
@@ -372,7 +369,6 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
         status: "completed",
         terminalSequence: event.seq,
         stopReason: event.payload.stopReason,
-        workspacePatch: event.payload.workspacePatch ?? null,
       };
     }
     if (event.type === "turn.failed") {
@@ -475,7 +471,6 @@ export function sessionViewReducer(
                   : null,
               cancellation:
                 turn.state === "cancelled" ? { reason: "cancelled", forced: false } : null,
-              workspacePatch: null,
             }
           : {
               items: turn.transcript.items.map((item) => transcriptItem(item)),
@@ -484,7 +479,6 @@ export function sessionViewReducer(
               stopReason: turn.transcript.stopReason,
               failure: turn.transcript.failure,
               cancellation: turn.transcript.cancellation,
-              workspacePatch: turn.transcript.workspacePatch,
             }),
         runId: turn.runId,
         turnId: turn.turnId,

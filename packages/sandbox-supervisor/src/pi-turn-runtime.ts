@@ -1,8 +1,4 @@
-import type {
-  CancelTurnCommandMessage,
-  EventPublishMessage,
-  WorkspacePatch,
-} from "@pi-cloud/protocol";
+import type { CancelTurnCommandMessage, EventPublishMessage } from "@pi-cloud/protocol";
 
 export type PiModelRuntimeConfig = {
   provider: string;
@@ -28,7 +24,6 @@ export type PiToolOutputArtifact = {
 
 export type PiTurnResult = {
   stopReason: string;
-  workspacePatch?: WorkspacePatch;
   /** Highest Agent event durably acknowledged by the Kafka AcceptedFact authority. */
   lastEventSeq?: number;
 };

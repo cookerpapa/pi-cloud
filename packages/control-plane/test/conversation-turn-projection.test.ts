@@ -64,14 +64,7 @@ describe("conversation turn projection", () => {
         },
         {
           type: "turn.completed",
-          payload: {
-            stopReason: "stop",
-            workspacePatch: {
-              format: "unified_diff",
-              patch: "diff --git a/a b/a\n",
-              truncated: false,
-            },
-          },
+          payload: { stopReason: "stop" },
         },
       ]),
     );
@@ -84,7 +77,6 @@ describe("conversation turn projection", () => {
       stopReason: "stop",
       failure: null,
       cancellation: null,
-      workspacePatch: { truncated: false },
     });
     expect(projected.items).toEqual([
       {

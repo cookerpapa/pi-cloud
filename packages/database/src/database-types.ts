@@ -54,8 +54,7 @@ export type CredentialKind = "oauth" | "api_key" | "brokered";
 export type TurnInputKind = "prompt";
 export type TurnControlRequestKind = "cancel" | "steer";
 export type TurnControlRequestState = DomainTurnControlRequestState;
-export type ArtifactKind =
-  "workspace_snapshot" | "tool_output" | "patch" | "report" | "crash_bundle";
+export type ArtifactKind = "workspace_snapshot" | "tool_output" | "report" | "crash_bundle";
 export type SupervisorConnectionState = "active" | "superseded" | "fenced";
 export type SupervisorConnectionCloseReason = "reconnected" | "heartbeat_timeout" | "new_boot";
 export type SandboxRetirementReason = "heartbeat_timeout" | "new_boot";
@@ -204,7 +203,6 @@ export interface SourceControlIssueJobTable {
   session_id: string | null;
   run_id: string | null;
   branch_name: string;
-  commit_sha: string | null;
   change_request_number: number | null;
   change_request_url: string | null;
   issue_comment_id: string | null;
@@ -1031,7 +1029,6 @@ export interface WorkspaceVersionTable {
   attempt_id: string | null;
   turn_id: string | null;
   workspace_artifact_id: string;
-  patch_artifact_id: string | null;
   revision: string;
   file_count: GeneratedInteger;
   state: "staged" | "settled" | "abandoned";

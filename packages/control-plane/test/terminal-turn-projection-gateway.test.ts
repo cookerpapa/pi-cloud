@@ -46,7 +46,6 @@ describe("TerminalTurnProjectionGateway", () => {
               items: [{ kind: "text", text: "visible prefix", firstSequence: 1, lastSequence: 1 }],
               failure: input.body.payload,
               cancellation: null,
-              workspacePatch: null,
             },
           };
         },

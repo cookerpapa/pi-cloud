@@ -5,7 +5,6 @@ import {
   parseSupervisorManagementResponse,
   parseToolSandboxOperationResponse,
   parseSourceControlWorkspaceCheckoutResponse,
-  parseSourceControlWorkspacePublishResponse,
   type ToolBrokerRequest,
   type ToolBrokerResponse,
   type ToolBrokerMaterializeFileRequest,
@@ -24,8 +23,6 @@ import {
   type ToolSandboxReleaseResponse,
   type SourceControlWorkspaceCheckoutRequest,
   type SourceControlWorkspaceCheckoutResponse,
-  type SourceControlWorkspacePublishRequest,
-  type SourceControlWorkspacePublishResponse,
 } from "@pi-cloud/protocol";
 import { activeTraceCarrier } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
@@ -362,27 +359,6 @@ export class ToolBrokerClient {
     return response;
   }
 
-  async publishSource(
-    request: SourceControlWorkspacePublishRequest,
-    signal?: AbortSignal,
-  ): Promise<SourceControlWorkspacePublishResponse> {
-    const response = parseSourceControlWorkspacePublishResponse(
-      await this.#post(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
-    );
-    if (
-      response.requestId !== request.requestId ||
-      response.workspaceId !== request.workspaceId ||
-      response.repositoryId !== request.repositoryId
-    ) {
-      throw new ToolBrokerClientError(
-        "tool_broker_protocol_error",
-        "Source-control publish response identity did not match",
-        false,
-      );
-    }
-    return response;
-  }
-
   async listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]> {
     const requestId = this.#idGenerator();
     const response = await this.#inventory({
@@ -614,13 +590,6 @@ export class ReplicatedToolBrokerClient {
     signal?: AbortSignal,
   ): Promise<SourceControlWorkspaceCheckoutResponse> {
     return this.#nextReplica().checkoutSource(request, signal);
-  }
-
-  publishSource(
-    request: SourceControlWorkspacePublishRequest,
-    signal?: AbortSignal,
-  ): Promise<SourceControlWorkspacePublishResponse> {
-    return this.#nextReplica().publishSource(request, signal);
   }
 
   async listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]> {
