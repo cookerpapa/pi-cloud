@@ -120,26 +120,26 @@ export function ResourceManagementPage({
   }, [api, t]);
 
   useEffect(() => {
-    if (
-      tab !== "source-control" ||
-      !issueJobs.some((job) => !["completed", "failed", "cancelled"].includes(job.state))
-    ) {
-      return;
-    }
     let cancelled = false;
-    const timer = setInterval(() => {
-      void api
-        .listSourceControlIssueJobs()
-        .then((jobs) => {
-          if (!cancelled) setIssueJobs(jobs.jobs);
-        })
-        .catch(() => undefined);
-    }, 2_000);
+    const active = issueJobs.some(
+      (job) => !["completed", "failed", "cancelled"].includes(job.state),
+    );
+    const timer = setInterval(
+      () => {
+        void api
+          .listSourceControlIssueJobs()
+          .then((jobs) => {
+            if (!cancelled) setIssueJobs(jobs.jobs);
+          })
+          .catch(() => undefined);
+      },
+      active ? 2_000 : 5_000,
+    );
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [api, issueJobs, tab]);
+  }, [api, issueJobs]);
 
   async function mutate(action: () => Promise<unknown>): Promise<void> {
     if (busy) return;
