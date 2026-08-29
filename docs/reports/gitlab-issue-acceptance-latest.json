@@ -1,29 +1,41 @@
 {
   "accepted": true,
-  "piCloudRevision": "6603b5c",
-  "checkedAt": "2026-08-29T13:05:00.000Z",
+  "piCloudRevision": "6d69c0f",
+  "checkedAt": "2026-08-30T00:45:00+08:00",
   "topology": "one-host Compose plus GitLab CE 19.3.0 and CubeSandbox KVM",
   "model": "deepseek/deepseek-v4-flash",
   "issue": {
-    "number": 2,
+    "number": 5,
     "state": "opened",
     "claimedThroughGitLabOidc": true
   },
+  "authorization": {
+    "initialPreflight": "credential_missing",
+    "oauthPkceCompleted": true,
+    "callbackReturnedToResourcePage": true,
+    "authorizedPreflight": true,
+    "credentialStoredInWorkspaceGitHome": true,
+    "credentialVisibleInWorkspaceIndex": false,
+    "postgresTextColumnsScanned": 326,
+    "postgresCredentialMatches": 0
+  },
   "execution": {
     "completed": true,
-    "selectedExistingWorkspace": true,
-    "customConversationTitlePreserved": true,
-    "inputTokens": 3274,
-    "outputTokens": 1471,
-    "cacheReadTokens": 100736,
-    "testsPassed": 2
+    "platformClonedRepository": false,
+    "agentGitCloneObserved": true,
+    "credentialFreeRemote": true,
+    "inputTokens": 5812,
+    "outputTokens": 3094,
+    "cacheReadTokens": 173952,
+    "testsPassed": 9
   },
   "delivery": {
     "uncommittedWorktreePaths": 4,
     "remoteTaskBranches": 0,
-    "mergeRequests": 0,
-    "platformIssueCompletionNotes": 0,
+    "issueSpecificMergeRequests": 0,
     "issueStateChanged": false
   },
+  "legacyAuthenticatedRemotesSanitized": 2,
+  "deploymentProjectTokenRotated": true,
   "acceptanceResourcesRetainedForReview": true
 }
