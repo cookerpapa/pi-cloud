@@ -1,0 +1,43 @@
+{
+  "accepted": true,
+  "piCloudRevision": "869b0bb1670a94b901dfb3c4294bd3dfb2f94353",
+  "checkedAt": "2026-08-29T06:50:44.070Z",
+  "topology": "one-host Compose plus GitLab CE 19.3.0",
+  "model": "deepseek/deepseek-v4-flash",
+  "oidc": {
+    "authorizationCode": true,
+    "pkce": true,
+    "mappedExternalIdentity": true,
+    "oauthTokenPersisted": false
+  },
+  "issueWorkflow": {
+    "webhookCreatesPendingRequest": true,
+    "claimRequiresMatchingGitLabIdentity": true,
+    "projectMembershipRechecked": true,
+    "claimProjectedToGitLab": true,
+    "mergeRequestsCreated": 2,
+    "mergeRequestClosesIssue": true
+  },
+  "elastic": {
+    "completed": true,
+    "jobElapsedMs": 34519,
+    "runElapsedMs": 23556,
+    "inputTokens": 2800,
+    "outputTokens": 1886,
+    "cacheReadTokens": 56320,
+    "trustedPrivateCheckout": true,
+    "cubeToolExecution": true
+  },
+  "developmentEnvironment": {
+    "completed": true,
+    "jobElapsedMs": 28091,
+    "runElapsedMs": 21816,
+    "inputTokens": 8604,
+    "outputTokens": 1597,
+    "cacheReadTokens": 59392,
+    "workingDirectory": "/home/user/issue-counting-sort",
+    "sameOwnedMachineRemainedRunning": true,
+    "directoryScopedTrustedPublish": true
+  },
+  "cleanupCompleted": true
+}
