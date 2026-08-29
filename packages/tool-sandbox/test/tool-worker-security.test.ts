@@ -95,6 +95,7 @@ describe("credential-free Tool Sandbox worker", () => {
         LANG: "C.UTF-8",
         LC_ALL: "C.UTF-8",
         GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: "/workspace/.pi-cloud-home/.gitconfig",
         GIT_CONFIG_COUNT: "1",
         GIT_CONFIG_KEY_0: "safe.directory",
         GIT_CONFIG_VALUE_0: "/workspace",

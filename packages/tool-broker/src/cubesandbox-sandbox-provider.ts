@@ -19,8 +19,9 @@ import {
   type ToolWorkerInput,
   type ToolWebProxyBootstrap,
   type DevelopmentEnvironmentProfileKey,
-  type SourceControlWorkspaceCheckoutRequest,
-  type SourceControlWorkspaceCheckoutResponse,
+  type SourceControlWorkspaceCredentialAuthorizeRequest,
+  type SourceControlWorkspaceCredentialPreflightRequest,
+  type SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { isIPv4 } from "node:net";
@@ -2056,13 +2057,14 @@ export class CubeSandboxProvider implements SandboxProvider {
     );
   }
 
-  async checkoutSource(
-    request: SourceControlWorkspaceCheckoutRequest,
-  ): Promise<SourceControlWorkspaceCheckoutResponse> {
-    if (this.#workspaceVolumeGateway.checkoutSource === undefined) {
+  async authorizeSourceCredential(
+    request: SourceControlWorkspaceCredentialAuthorizeRequest,
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    const authorize = this.#workspaceVolumeGateway.authorizeSourceCredential;
+    if (authorize === undefined) {
       throw new ToolBrokerError(
-        "source_control_checkout_unavailable",
-        "Workspace Volume Gateway cannot prepare source repositories",
+        "source_control_credential_unavailable",
+        "Workspace Git credential authorization is unavailable",
         false,
       );
     }
@@ -2074,7 +2076,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       sessionId: request.requestId,
       volumeId,
     });
-    const checkedOut = await this.#workspaceVolumeGateway.checkoutSource({
+    await authorize.call(this.#workspaceVolumeGateway, {
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
       sessionId: request.requestId,
@@ -2082,22 +2084,58 @@ export class CubeSandboxProvider implements SandboxProvider {
       requestId: request.requestId,
       repositoryId: request.repositoryId,
       provider: request.provider,
-      providerInstallationId: request.providerInstallationId,
-      providerRepositoryId: request.providerRepositoryId,
-      cloneUrl: request.cloneUrl,
       userCloneUrl: request.userCloneUrl,
-      baseRef: request.baseRef,
-      branchName: request.branchName,
-      workTreePath: request.workTreePath,
+      credentialMountPath: request.credentialMountPath,
       accessToken: request.accessToken,
     });
     return {
-      sourceControlProtocolVersion: 4,
-      type: "source_control.workspace_checked_out",
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_result",
       requestId: request.requestId,
       workspaceId: request.workspaceId,
       repositoryId: request.repositoryId,
-      baseSha: checkedOut.baseSha,
+      authorized: true,
+    };
+  }
+
+  async preflightSourceCredential(
+    request: SourceControlWorkspaceCredentialPreflightRequest,
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    const preflight = this.#workspaceVolumeGateway.preflightSourceCredential;
+    if (preflight === undefined) {
+      throw new ToolBrokerError(
+        "source_control_credential_unavailable",
+        "Workspace Git credential preflight is unavailable",
+        false,
+      );
+    }
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#workspaceVolumeGateway.prepare({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+    });
+    const result = await preflight.call(this.#workspaceVolumeGateway, {
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+      requestId: request.requestId,
+      repositoryId: request.repositoryId,
+      provider: request.provider,
+      userCloneUrl: request.userCloneUrl,
+      credentialMountPath: request.credentialMountPath,
+    });
+    return {
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_result",
+      requestId: request.requestId,
+      workspaceId: request.workspaceId,
+      repositoryId: request.repositoryId,
+      authorized: result.authorized,
+      ...(result.reason === undefined ? {} : { reason: result.reason }),
     };
   }
 

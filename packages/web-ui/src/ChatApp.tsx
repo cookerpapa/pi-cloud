@@ -20,7 +20,6 @@ import type {
   SshAccessTicketResource,
   TenantIdentityResource,
   WorkspaceSummaryResource,
-  SourceControlConfigurationResource,
 } from "@pi-cloud/protocol";
 import { DEFAULT_EXCLUSIVE_WORKING_DIRECTORY } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
@@ -159,10 +158,6 @@ export default function ChatApp() {
   const [workspaceChoice, setWorkspaceChoice] = useState<"existing" | "new">("new");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [newWorkspaceRepositoryId, setNewWorkspaceRepositoryId] = useState("");
-  const [sourceControl, setSourceControl] = useState<SourceControlConfigurationResource | null>(
-    null,
-  );
   const [executionMode, setExecutionMode] = useState<ExecutionMode | null>(null);
   const [selectedDevelopmentEnvironmentId, setSelectedDevelopmentEnvironmentId] = useState("");
   const [developmentProfileKey, setDevelopmentProfileKey] =
@@ -199,12 +194,6 @@ export default function ChatApp() {
     ["running", "paused"].includes(environment.state),
   );
   const elasticWorkspaces = workspaces;
-  const connectedRepositories =
-    sourceControl?.installations.flatMap((installation) =>
-      installation.provider === "gitlab" && installation.state === "active"
-        ? installation.repositories.filter((repository) => repository.state === "active")
-        : [],
-    ) ?? [];
   const conversationPanel = useResizablePanel({
     storageKey: "pi-cloud:conversation-list",
     initialWidth: 260,
@@ -314,10 +303,6 @@ export default function ChatApp() {
     );
   }, [api]);
 
-  const refreshSourceControl = useCallback(async (): Promise<void> => {
-    setSourceControl(await api.getSourceControl());
-  }, [api]);
-
   const refreshConversationTree = useCallback(
     async (sessionId: string, view: ConversationTreeView): Promise<void> => {
       setTreeLoading(true);
@@ -401,11 +386,6 @@ export default function ChatApp() {
       update({ type: "api.error", message: errorMessage(error, t) });
     });
   }, [authPhase, identity?.platformAdministrator, identity?.tenantId, refreshWorkspaces, update]);
-
-  useEffect(() => {
-    if (authPhase !== "authenticated" || identity?.platformAdministrator === true) return;
-    void refreshSourceControl().catch(() => undefined);
-  }, [authPhase, identity?.platformAdministrator, identity?.tenantId, refreshSourceControl]);
 
   useEffect(() => {
     if (authPhase !== "authenticated" || identity?.platformAdministrator === true) return;
@@ -738,7 +718,6 @@ export default function ChatApp() {
     setWorkspaceChoice(elasticWorkspaces.length === 0 ? "new" : "existing");
     setSelectedWorkspaceId(elasticWorkspaces[0]?.workspaceId ?? "");
     setNewWorkspaceName("");
-    setNewWorkspaceRepositoryId("");
     setExecutionMode(null);
     setSelectedDevelopmentEnvironmentId(selectableDevelopmentEnvironments[0]?.environmentId ?? "");
     setDevelopmentProfileKey("standard");
@@ -787,12 +766,7 @@ export default function ChatApp() {
       } else if (workspaceChoice === "new") {
         const name = newWorkspaceName.trim();
         if (name.length === 0) return;
-        const created = await api.createProject(
-          name,
-          newWorkspaceRepositoryId === ""
-            ? { kind: "empty" }
-            : { kind: "source_control", repositoryId: newWorkspaceRepositoryId },
-        );
+        const created = await api.createProject(name, { kind: "empty" });
         projectId = created.projectId;
         workspaceId = created.workspaceId;
       } else {
@@ -1178,7 +1152,6 @@ export default function ChatApp() {
             refreshConversations(),
             refreshWorkspaces(),
             refreshDevelopmentEnvironments(),
-            refreshSourceControl(),
           ]);
         }}
         profiles={developmentProfiles}
@@ -1482,28 +1455,6 @@ export default function ChatApp() {
                               value={newWorkspaceName}
                             />
                           </label>
-                          {connectedRepositories.length === 0 ? null : (
-                            <label>
-                              <span>{t("chat.create.workspaceSource")}</span>
-                              <select
-                                onChange={(event) =>
-                                  setNewWorkspaceRepositoryId(event.target.value)
-                                }
-                                value={newWorkspaceRepositoryId}
-                              >
-                                <option value="">{t("chat.create.emptyWorkspace")}</option>
-                                {connectedRepositories.map((repository) => (
-                                  <option
-                                    key={repository.repositoryId}
-                                    value={repository.repositoryId}
-                                  >
-                                    {repository.fullName}
-                                    {repository.private ? " · private" : ""}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          )}
                         </>
                       ) : null}
                       <legend>{t("chat.create.elasticProfile")}</legend>

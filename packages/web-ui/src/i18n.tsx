@@ -256,6 +256,10 @@ const zhCN = {
   "sourceControl.executionMode": "执行方式",
   "sourceControl.newWorkspace": "新建 Issue 专用 Workspace",
   "sourceControl.workspaceHelp": "也可以继续使用已有 Workspace；如果其中是其他仓库，启动会被拒绝。",
+  "sourceControl.git.credential_missing": "当前环境还没有可访问此私有仓库的 GitLab 凭据。",
+  "sourceControl.git.credential_rejected": "当前 GitLab 凭据已失效或没有仓库权限。",
+  "sourceControl.git.gitlab_unreachable": "当前环境无法连接 GitLab。",
+  "sourceControl.git.authorize": "使用 GitLab 登录授权",
   "sourceControl.profile": "弹性规格",
   "sourceControl.workingDirectory": "工作目录",
   "sourceControl.workingDirectoryHelp":
@@ -617,6 +621,12 @@ const enUS: Record<UiTextKey, string> = {
   "sourceControl.newWorkspace": "Create a dedicated Issue Workspace",
   "sourceControl.workspaceHelp":
     "You may reuse an existing Workspace; startup is rejected if it belongs to another repository.",
+  "sourceControl.git.credential_missing":
+    "This environment does not have a GitLab credential for the private repository.",
+  "sourceControl.git.credential_rejected":
+    "The GitLab credential expired or cannot access this repository.",
+  "sourceControl.git.gitlab_unreachable": "This environment cannot reach GitLab.",
+  "sourceControl.git.authorize": "Authorize with GitLab",
   "sourceControl.profile": "Elastic profile",
   "sourceControl.workingDirectory": "Working directory",
   "sourceControl.workingDirectoryHelp":

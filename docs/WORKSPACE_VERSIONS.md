@@ -10,7 +10,8 @@ The trusted Volume envelope is:
 volume root
 ├── platform generation/state
 └── workspace/        <- mounted into Cube as /workspace
-    └── .git/         <- optional user/Agent-managed repository state
+    ├── .pi-cloud-home/ <- hidden persistent Git credential Home
+    └── .git/           <- optional user/Agent-managed repository state
 ```
 
 Multiple conversations may use the same Workspace. Tool Broker serializes

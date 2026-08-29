@@ -242,11 +242,13 @@ picloud-posix-<volume-id>/
 ├── .pi-cloud-runtime/
 │   └── generation
 └── workspace/
-    └── .git/ (optional user-managed state)
+    ├── .pi-cloud-home/ (hidden persistent Git credential Home)
+    └── .git/ (optional user-managed state created by Agent)
 ```
 
 Cube mounts only `workspace/` at `/workspace`. The trusted Workspace Volume
-Gateway validates and indexes that persistent Volume in place. PostgreSQL
+Gateway validates that persistent Volume in place and excludes
+`.pi-cloud-home` from source indexes. PostgreSQL
 Fence/CAS publishes only the current Attempt's revision metadata as the
 Workspace head. The guest cannot list or mutate the sibling generation marker.
 

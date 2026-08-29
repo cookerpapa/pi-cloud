@@ -59,6 +59,37 @@ describe.sequential("source-control App boundary", () => {
     let signingToken = "";
     const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith("/.well-known/openid-configuration")) {
+        return new Response(
+          JSON.stringify({
+            issuer: "https://gitlab.example.com",
+            authorization_endpoint: "https://gitlab.example.com/oauth/authorize",
+            token_endpoint: "https://gitlab.example.com/oauth/token",
+            userinfo_endpoint: "https://gitlab.example.com/oauth/userinfo",
+            jwks_uri: "https://gitlab.example.com/oauth/discovery/keys",
+            response_types_supported: ["code"],
+            subject_types_supported: ["public"],
+            id_token_signing_alg_values_supported: ["RS256"],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/oauth/token")) {
+        return new Response(
+          JSON.stringify({
+            access_token: "glpat-user-workspace-oauth-token",
+            token_type: "Bearer",
+            expires_in: 7_200,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/api/v4/user")) {
+        return new Response(
+          JSON.stringify({ id: 42, username: "gitlab-claimant", name: "GitLab Claimant" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
       if (url.endsWith("/api/v4/projects/group%2Fprivate-repo")) {
         return new Response(
           JSON.stringify({
@@ -103,6 +134,9 @@ describe.sequential("source-control App boundary", () => {
         publicOrigin: "https://picloud.example.com",
         issueLabel: "picloud",
         internalBaseUrl: "https://gitlab.internal.example.com",
+        oauthClientId: "gitlab-oauth-client-id",
+        oauthClientSecret: "gitlab-oauth-client-secret",
+        oauthIssuer: "https://gitlab.example.com",
         fetch: fetchImplementation,
       },
     });
@@ -307,6 +341,61 @@ describe.sequential("source-control App boundary", () => {
       tenantId: tenant.tenantId,
       defaultModelProfileId: tenant.defaultModelProfileId,
     }).createProject({ name: "Existing GitLab Issue Workspace", source: { kind: "empty" } });
+    const authorization = await service.beginIssueGitAuthorization(
+      claimant,
+      pendingJob.jobId,
+      selectedWorkspace.workspaceId,
+    );
+    const authorizationUrl = new URL(authorization.url);
+    expect(authorizationUrl.searchParams.get("scope")).toBe("api read_repository write_repository");
+    await expect(
+      database
+        .selectFrom("workspace_git_oauth_requests")
+        .select(["tenant_id", "user_id", "issue_job_id", "workspace_id", "consumed_at"])
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({
+      tenant_id: tenant.tenantId,
+      user_id: claimant.userId,
+      issue_job_id: pendingJob.jobId,
+      workspace_id: selectedWorkspace.workspaceId,
+      consumed_at: null,
+    });
+    const authorizeCredential = vi.spyOn(service, "authorizeIssueGitCredential").mockResolvedValue({
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_result",
+      requestId: randomUUID(),
+      workspaceId: selectedWorkspace.workspaceId,
+      repositoryId: pendingJob.repositoryId,
+      authorized: true,
+    });
+    await expect(
+      service.completeIssueGitAuthorization(
+        `/v1/source-control/gitlab/authorization/callback?code=oauth-code&state=${encodeURIComponent(
+          authorizationUrl.searchParams.get("state")!,
+        )}`,
+      ),
+    ).resolves.toEqual({ workspaceId: selectedWorkspace.workspaceId });
+    expect(authorizeCredential).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: claimant.userId }),
+      pendingJob.jobId,
+      selectedWorkspace.workspaceId,
+      "glpat-user-workspace-oauth-token",
+    );
+    await expect(
+      database
+        .selectFrom("workspace_git_oauth_requests")
+        .select("consumed_at")
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ consumed_at: expect.any(Date) });
+    authorizeCredential.mockRestore();
+    vi.spyOn(service, "preflightIssueGitCredential").mockResolvedValue({
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_result",
+      requestId: randomUUID(),
+      workspaceId: selectedWorkspace.workspaceId,
+      repositoryId: pendingJob.repositoryId,
+      authorized: true,
+    });
     await expect(
       service.startIssueJob(claimant, pendingJob.jobId, {
         executionMode: "elastic",
@@ -430,14 +519,8 @@ describe.sequential("source-control App boundary", () => {
         database,
         tenantId: other.tenantId,
         defaultModelProfileId: other.defaultModelProfileId,
-      }).createProject({
-        name: "foreign-private-repo",
-        source: {
-          kind: "source_control",
-          repositoryId: configured.installations[0]!.repositories[0]!.repositoryId,
-        },
-      }),
-    ).rejects.toMatchObject({ code: "not_found" });
+      }).createProject({ name: "ordinary-empty-workspace", source: { kind: "empty" } }),
+    ).resolves.toMatchObject({ source: { kind: "empty" } });
 
     const payload = Buffer.from(
       JSON.stringify({
@@ -539,29 +622,14 @@ describe.sequential("source-control App boundary", () => {
       })
       .executeTakeFirstOrThrow();
 
-    vi.spyOn(service, "createRepositoryProject").mockImplementation(
-      async (_identity, store, request) => {
-        const project = await store.createProject(request);
-        await database
-          .updateTable("workspace_source_repositories")
-          .set({ checkout_state: "ready", base_sha: "a".repeat(40), failure_code: null })
-          .where("workspace_id", "=", project.workspaceId)
-          .executeTakeFirstOrThrow();
-        return {
-          ...project,
-          source: {
-            kind: "source_control",
-            status: "ready",
-            repositoryId: request.source.repositoryId,
-            provider: "github",
-            fullName: "example/private-repo",
-            baseRef: "main",
-            baseSha: "a".repeat(40),
-          },
-        };
-      },
-    );
-    vi.spyOn(service, "checkoutIssueWorkspace").mockResolvedValue("a".repeat(40));
+    vi.spyOn(service, "authorizeAutomationGitCredential").mockResolvedValue({
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_result",
+      requestId: randomUUID(),
+      workspaceId: randomUUID(),
+      repositoryId: configured.installations[0]!.repositories[0]!.repositoryId,
+      authorized: true,
+    });
 
     const coordinator = new SourceControlIssueCoordinator({
       database,

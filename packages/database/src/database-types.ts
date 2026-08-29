@@ -80,7 +80,6 @@ export type SubagentSupervisorReason = "need_decision" | "interview_request" | "
 export type SourceControlProvider = "github" | "gitlab";
 export type SourceControlInstallationState = "active" | "suspended" | "deleted";
 export type SourceControlRepositoryState = "active" | "removed";
-export type SourceControlCheckoutState = "provisioning" | "ready" | "failed";
 export type SourceControlWebhookState =
   "received" | "ignored" | "accepted" | "completed" | "failed";
 export type SourceControlIssueJobState =
@@ -157,18 +156,6 @@ export interface SourceControlRepositoryTable {
   updated_at: GeneratedTimestamp;
 }
 
-export interface WorkspaceSourceRepositoryTable {
-  tenant_id: string;
-  workspace_id: string;
-  repository_id: string;
-  base_ref: string;
-  base_sha: string | null;
-  checkout_state: SourceControlCheckoutState;
-  failure_code: string | null;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
-}
-
 export interface SourceControlWebhookDeliveryTable {
   provider: SourceControlProvider;
   delivery_id: string;
@@ -218,6 +205,19 @@ export interface SourceControlIssueJobTable {
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
   settled_at: NullableTimestamp;
+}
+
+export interface WorkspaceGitOauthRequestTable {
+  state_sha256: string;
+  tenant_id: string;
+  user_id: string;
+  issue_job_id: string;
+  workspace_id: string;
+  code_verifier: string;
+  redirect_uri: string;
+  expires_at: Timestamp;
+  consumed_at: NullableTimestamp;
+  created_at: GeneratedTimestamp;
 }
 
 export interface SourceControlIssueClaimTable {
@@ -1255,9 +1255,9 @@ export interface Database {
   source_control_installation_requests: SourceControlInstallationRequestTable;
   source_control_installations: SourceControlInstallationTable;
   source_control_repositories: SourceControlRepositoryTable;
-  workspace_source_repositories: WorkspaceSourceRepositoryTable;
   source_control_webhook_deliveries: SourceControlWebhookDeliveryTable;
   source_control_issue_jobs: SourceControlIssueJobTable;
+  workspace_git_oauth_requests: WorkspaceGitOauthRequestTable;
   source_control_issue_claims: SourceControlIssueClaimTable;
   source_control_credentials: SourceControlCredentialTable;
   sandbox_domains: SandboxDomainTable;

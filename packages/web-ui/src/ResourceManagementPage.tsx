@@ -18,6 +18,48 @@ const ACTIVE_SESSION_STATES = new Set([
   "recovering",
   "evicting",
 ]);
+const ISSUE_GIT_AUTHORIZATION_DRAFT = "pi-cloud.issue-git-authorization-draft.v1";
+
+type IssueGitAuthorizationDraft = Readonly<{
+  jobId: string;
+  executionMode: "elastic" | "development_environment";
+  profileKey: DevelopmentEnvironmentProfileKey;
+  sessionTitle: string;
+  workspaceId: string;
+  environmentId: string;
+  workingDirectory: string;
+}>;
+
+function readIssueGitAuthorizationDraft(): IssueGitAuthorizationDraft | undefined {
+  if (new URLSearchParams(window.location.search).get("gitAuthorization") !== "connected") {
+    return undefined;
+  }
+  try {
+    const value = JSON.parse(
+      window.sessionStorage.getItem(ISSUE_GIT_AUTHORIZATION_DRAFT) ?? "null",
+    ) as Partial<IssueGitAuthorizationDraft> | null;
+    if (
+      value === null ||
+      typeof value.jobId !== "string" ||
+      (value.executionMode !== "elastic" && value.executionMode !== "development_environment") ||
+      !["starter", "standard", "performance"].includes(value.profileKey ?? "") ||
+      typeof value.sessionTitle !== "string" ||
+      typeof value.workspaceId !== "string" ||
+      typeof value.environmentId !== "string" ||
+      typeof value.workingDirectory !== "string"
+    ) {
+      return undefined;
+    }
+    return value as IssueGitAuthorizationDraft;
+  } catch {
+    return undefined;
+  } finally {
+    window.sessionStorage.removeItem(ISSUE_GIT_AUTHORIZATION_DRAFT);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("gitAuthorization");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+}
 
 function associations(
   conversations: readonly ConversationSummaryResource[],
@@ -77,6 +119,9 @@ export function ResourceManagementPage({
     useState<DevelopmentEnvironmentProfileKey>("standard");
   const [issueSessionTitle, setIssueSessionTitle] = useState("");
   const [issueWorkspaceId, setIssueWorkspaceId] = useState("");
+  const [issueGitCredentialReason, setIssueGitCredentialReason] = useState<
+    "credential_missing" | "credential_rejected" | "gitlab_unreachable" | null
+  >(null);
   const [issueEnvironmentId, setIssueEnvironmentId] = useState("");
   const [issueWorkingDirectory, setIssueWorkingDirectory] = useState("/home/user");
   const [issueDirectoryPickerOpen, setIssueDirectoryPickerOpen] = useState(false);
@@ -84,6 +129,20 @@ export function ResourceManagementPage({
   const elasticWorkspaces = workspaces;
   const selectedProfile = profiles.find((candidate) => candidate.key === profileKey) ?? profiles[0];
   const issueStartJob = issueJobs.find((job) => job.jobId === issueStartJobId);
+
+  useEffect(() => {
+    const draft = readIssueGitAuthorizationDraft();
+    if (draft === undefined) return;
+    setTab("source-control");
+    setIssueStartJobId(draft.jobId);
+    setIssueExecutionMode(draft.executionMode);
+    setIssueProfileKey(draft.profileKey);
+    setIssueSessionTitle(draft.sessionTitle);
+    setIssueWorkspaceId(draft.workspaceId);
+    setIssueEnvironmentId(draft.environmentId);
+    setIssueWorkingDirectory(draft.workingDirectory);
+    setIssueGitCredentialReason(null);
+  }, []);
 
   function replaceIssueJob(updated: SourceControlIssueJobResource): void {
     setIssueJobs((current) => current.map((job) => (job.jobId === updated.jobId ? updated : job)));
@@ -362,6 +421,7 @@ export function ResourceManagementPage({
                                 `#${String(job.issueNumber)} ${job.issueTitle}`.slice(0, 256),
                               );
                               setIssueWorkspaceId("");
+                              setIssueGitCredentialReason(null);
                               setIssueEnvironmentId(liveEnvironments[0]?.environmentId ?? "");
                               setIssueWorkingDirectory("/home/user");
                             }}
@@ -602,6 +662,33 @@ export function ResourceManagementPage({
             onSubmit={(event) => {
               event.preventDefault();
               void mutate(async () => {
+                let credentialWorkspaceId =
+                  issueExecutionMode === "elastic"
+                    ? issueWorkspaceId
+                    : (liveEnvironments.find(
+                        (environment) => environment.environmentId === issueEnvironmentId,
+                      )?.workspaceId ?? "");
+                if (issueExecutionMode === "elastic" && credentialWorkspaceId.length === 0) {
+                  const created = await api.createProject(
+                    `Issue ${issueStartJob.repositoryFullName} #${String(issueStartJob.issueNumber)}`.slice(
+                      0,
+                      256,
+                    ),
+                    { kind: "empty" },
+                  );
+                  credentialWorkspaceId = created.workspaceId;
+                  setIssueWorkspaceId(created.workspaceId);
+                  await onRefresh();
+                }
+                const preflight = await api.preflightSourceControlIssueGit(
+                  issueStartJob.jobId,
+                  credentialWorkspaceId,
+                );
+                if (!preflight.authorized) {
+                  setIssueGitCredentialReason(preflight.reason ?? "credential_missing");
+                  return;
+                }
+                setIssueGitCredentialReason(null);
                 const updated = await api.startSourceControlIssueJob(
                   issueStartJob.jobId,
                   issueExecutionMode === "elastic"
@@ -609,7 +696,7 @@ export function ResourceManagementPage({
                         executionMode: "elastic",
                         sessionTitle: issueSessionTitle,
                         sandboxProfileKey: issueProfileKey,
-                        ...(issueWorkspaceId.length === 0 ? {} : { workspaceId: issueWorkspaceId }),
+                        workspaceId: credentialWorkspaceId,
                       }
                     : {
                         executionMode: "development_environment",
@@ -646,9 +733,12 @@ export function ResourceManagementPage({
             <label>
               <span>{t("sourceControl.executionMode")}</span>
               <select
-                onChange={(event) =>
-                  setIssueExecutionMode(event.target.value as "elastic" | "development_environment")
-                }
+                onChange={(event) => {
+                  setIssueExecutionMode(
+                    event.target.value as "elastic" | "development_environment",
+                  );
+                  setIssueGitCredentialReason(null);
+                }}
                 value={issueExecutionMode}
               >
                 <option value="elastic">{t("chat.elastic")}</option>
@@ -660,7 +750,10 @@ export function ResourceManagementPage({
                 <label>
                   <span>Workspace</span>
                   <select
-                    onChange={(event) => setIssueWorkspaceId(event.target.value)}
+                    onChange={(event) => {
+                      setIssueWorkspaceId(event.target.value);
+                      setIssueGitCredentialReason(null);
+                    }}
                     value={issueWorkspaceId}
                   >
                     <option value="">{t("sourceControl.newWorkspace")}</option>
@@ -694,7 +787,10 @@ export function ResourceManagementPage({
                 <label>
                   <span>{t("resource.exclusive")}</span>
                   <select
-                    onChange={(event) => setIssueEnvironmentId(event.target.value)}
+                    onChange={(event) => {
+                      setIssueEnvironmentId(event.target.value);
+                      setIssueGitCredentialReason(null);
+                    }}
                     required
                     value={issueEnvironmentId}
                   >
@@ -723,6 +819,43 @@ export function ResourceManagementPage({
                   <small>{t("sourceControl.workingDirectoryHelp")}</small>
                 </label>
               </>
+            )}
+            {issueGitCredentialReason === null ? null : (
+              <div className="product-form-error">
+                <span>{t(`sourceControl.git.${issueGitCredentialReason}` as const)}</span>
+                <button
+                  onClick={() => {
+                    void mutate(async () => {
+                      const workspaceId =
+                        issueExecutionMode === "elastic"
+                          ? issueWorkspaceId
+                          : (liveEnvironments.find(
+                              (environment) => environment.environmentId === issueEnvironmentId,
+                            )?.workspaceId ?? "");
+                      const authorization = await api.beginSourceControlIssueGitAuthorization(
+                        issueStartJob.jobId,
+                        workspaceId,
+                      );
+                      window.sessionStorage.setItem(
+                        ISSUE_GIT_AUTHORIZATION_DRAFT,
+                        JSON.stringify({
+                          jobId: issueStartJob.jobId,
+                          executionMode: issueExecutionMode,
+                          profileKey: issueProfileKey,
+                          sessionTitle: issueSessionTitle,
+                          workspaceId,
+                          environmentId: issueEnvironmentId,
+                          workingDirectory: issueWorkingDirectory,
+                        } satisfies IssueGitAuthorizationDraft),
+                      );
+                      window.location.assign(authorization.url);
+                    });
+                  }}
+                  type="button"
+                >
+                  {t("sourceControl.git.authorize")}
+                </button>
+              </div>
             )}
             <div className="product-workspace-modal-actions">
               <button onClick={() => setIssueStartJobId(null)} type="button">

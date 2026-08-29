@@ -9,7 +9,6 @@ import {
   mkdir,
   open,
   readFile,
-  realpath,
   readdir,
   rename,
   rm,
@@ -17,17 +16,16 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import {
-  GIT_COMMIT_PATTERN,
   SHA256_PATTERN,
   UUID_PATTERN,
   VOLUME_GENERATION_FILE,
   VOLUME_GENERATION_PATTERN,
   VOLUME_METADATA_DIRECTORY,
   VOLUME_WORKSPACE_DIRECTORY,
+  WORKSPACE_GIT_HOME_DIRECTORY,
   WorkspaceVolumeGatewayError,
   isRecord,
   safeRelativeFile,
-  safeVolumeWorkTreePath,
   validatedAbsoluteDirectory,
   validatedIdentity,
   validatedVolumeIdentity,
@@ -40,7 +38,8 @@ import {
   type WorkspaceVolumeGatewayForkInput,
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewaySnapshotInput,
-  type WorkspaceVolumeGatewaySourceCheckoutInput,
+  type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
+  type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
   type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway-contract.ts";
 
@@ -459,93 +458,87 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     });
   }
 
-  async checkoutSource(
-    input: WorkspaceVolumeGatewaySourceCheckoutInput,
-  ): Promise<{ baseSha: string }> {
+  async authorizeSourceCredential(
+    input: WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
+  ): Promise<{ authorized: true }> {
     const identity = validatedIdentity(input);
     return this.#withVolumeLock(identity.volumeId, async () => {
       const directory = await this.#validatedVolume(identity);
-      const workTreePath = safeVolumeWorkTreePath(input.workTreePath);
-      const workspace = await this.#sourceWorkTree(directory, workTreePath);
-      const entries = await readdir(workspace);
-      if (entries.length !== 0) {
-        if (!entries.includes(".git")) {
-          throw new WorkspaceVolumeGatewayError(
-            "source_control_work_tree_not_empty",
-            "Selected source-control work tree is not empty",
-            false,
-          );
-        }
-        const remote = (
-          await this.#git(["remote", "get-url", "origin"], { cwd: workspace })
-        ).stdout.trim();
-        if (credentialFreeCloneUrl(remote) !== credentialFreeCloneUrl(input.userCloneUrl)) {
-          throw new WorkspaceVolumeGatewayError(
-            "source_control_workspace_conflict",
-            "Workspace Git remote does not match the selected repository",
-            false,
-          );
-        }
-        const baseSha = (
-          await this.#git(["rev-parse", "HEAD^{commit}"], { cwd: workspace })
-        ).stdout.trim();
-        if (!GIT_COMMIT_PATTERN.test(baseSha)) {
-          throw new WorkspaceVolumeGatewayError(
-            "source_control_base_revision_invalid",
-            "Source repository revision was invalid",
-            false,
-          );
-        }
-        await this.#git(
-          [
-            "remote",
-            "set-url",
-            "origin",
-            credentialCloneUrl(input.provider, input.userCloneUrl, input.accessToken),
-          ],
-          { cwd: workspace },
-        );
-        return { baseSha };
-      }
-      await this.#git(
-        ["clone", "--no-tags", "--depth=1", "--branch", input.baseRef, input.cloneUrl, "."],
-        {
-          cwd: workspace,
-          credential: {
-            provider: input.provider,
-            cloneUrl: input.cloneUrl,
-            accessToken: input.accessToken,
-          },
-          retryable: true,
-        },
-      );
-      const baseSha = (
-        await this.#git(["rev-parse", "HEAD^{commit}"], { cwd: workspace })
-      ).stdout.trim();
-      if (!GIT_COMMIT_PATTERN.test(baseSha)) {
+      const workspace = join(directory, VOLUME_WORKSPACE_DIRECTORY);
+      const credentialHome = join(workspace, WORKSPACE_GIT_HOME_DIRECTORY);
+      await mkdir(credentialHome, { mode: 0o700 });
+      const homeMetadata = await lstat(credentialHome);
+      if (!homeMetadata.isDirectory() || homeMetadata.isSymbolicLink()) {
         throw new WorkspaceVolumeGatewayError(
-          "source_control_base_revision_invalid",
-          "Source repository base revision was invalid",
+          "source_control_credential_home_invalid",
+          "Workspace Git credential home was invalid",
           false,
         );
       }
-      await this.#git(["checkout", "--force", "-B", input.branchName, baseSha], {
-        cwd: workspace,
-      });
-      await this.#git(["config", "user.name", "PiCloud Agent"], { cwd: workspace });
-      await this.#git(["config", "user.email", "picloud-agent@users.noreply.local"], {
-        cwd: workspace,
-      });
-      await this.#git(
-        [
-          "remote",
-          "set-url",
-          "origin",
-          credentialCloneUrl(input.provider, input.userCloneUrl, input.accessToken),
-        ],
-        { cwd: workspace },
+      const guestHome = `${input.credentialMountPath}/${WORKSPACE_GIT_HOME_DIRECTORY}`;
+      const credentialUrl = credentialCloneUrl(
+        input.provider,
+        input.userCloneUrl,
+        input.accessToken,
       );
-      return { baseSha };
+      const suffix = randomBytes(12).toString("hex");
+      const configTemporary = join(credentialHome, `.gitconfig-${suffix}.tmp`);
+      const credentialTemporary = join(credentialHome, `.git-credentials-${suffix}.tmp`);
+      await writeFile(
+        configTemporary,
+        `[credential]\n\thelper = store --file=${guestHome}/.git-credentials\n\tuseHttpPath = true\n`,
+        { mode: 0o600, flag: "wx" },
+      );
+      await writeFile(credentialTemporary, `${credentialUrl}\n`, { mode: 0o600, flag: "wx" });
+      await Promise.all([chmod(configTemporary, 0o600), chmod(credentialTemporary, 0o600)]);
+      await rename(configTemporary, join(credentialHome, ".gitconfig"));
+      await rename(credentialTemporary, join(credentialHome, ".git-credentials"));
+      return { authorized: true };
+    });
+  }
+
+  async preflightSourceCredential(
+    input: WorkspaceVolumeGatewaySourceCredentialPreflightInput,
+  ): Promise<{
+    authorized: boolean;
+    reason?: "credential_missing" | "credential_rejected" | "gitlab_unreachable";
+  }> {
+    const identity = validatedIdentity(input);
+    return this.#withVolumeLock(identity.volumeId, async () => {
+      const directory = await this.#validatedVolume(identity);
+      const credentialPath = join(
+        directory,
+        VOLUME_WORKSPACE_DIRECTORY,
+        WORKSPACE_GIT_HOME_DIRECTORY,
+        ".git-credentials",
+      );
+      let credentialUrl: URL;
+      try {
+        credentialUrl = new URL((await readFile(credentialPath, "utf8")).trim());
+      } catch {
+        return { authorized: false, reason: "credential_missing" };
+      }
+      if (
+        credentialUrl.password.length < 16 ||
+        credentialFreeCloneUrl(credentialUrl.toString()) !==
+          credentialFreeCloneUrl(input.userCloneUrl)
+      ) {
+        return { authorized: false, reason: "credential_missing" };
+      }
+      try {
+        await this.#git(["ls-remote", input.userCloneUrl], {
+          cwd: join(directory, VOLUME_WORKSPACE_DIRECTORY),
+          credential: {
+            provider: input.provider,
+            cloneUrl: input.userCloneUrl,
+            accessToken: decodeURIComponent(credentialUrl.password),
+          },
+          retryable: true,
+        });
+        return { authorized: true };
+      } catch {
+        return { authorized: false, reason: "credential_rejected" };
+      }
     });
   }
 
@@ -712,42 +705,6 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     } catch {
       return undefined;
     }
-  }
-
-  async #sourceWorkTree(directory: string, path: string): Promise<string> {
-    const root = resolve(directory, VOLUME_WORKSPACE_DIRECTORY);
-    const candidate = path === "." ? root : resolve(root, path);
-    if (candidate !== root && !candidate.startsWith(`${root}${sep}`)) {
-      throw new WorkspaceVolumeGatewayError(
-        "source_control_work_tree_invalid",
-        "Source-control work tree escaped its persistent Volume",
-        false,
-      );
-    }
-    let rootRealPath: string;
-    let candidateRealPath: string;
-    try {
-      [rootRealPath, candidateRealPath] = await Promise.all([realpath(root), realpath(candidate)]);
-      const metadata = await lstat(candidate);
-      if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error("not a directory");
-    } catch {
-      throw new WorkspaceVolumeGatewayError(
-        "source_control_work_tree_invalid",
-        "Selected source-control work tree is unavailable",
-        false,
-      );
-    }
-    if (
-      candidateRealPath !== rootRealPath &&
-      !candidateRealPath.startsWith(`${rootRealPath}${sep}`)
-    ) {
-      throw new WorkspaceVolumeGatewayError(
-        "source_control_work_tree_invalid",
-        "Source-control work tree escaped its persistent Volume",
-        false,
-      );
-    }
-    return candidateRealPath;
   }
 
   async #withVolumeLock<T>(volumeId: string, operation: () => Promise<T>): Promise<T> {

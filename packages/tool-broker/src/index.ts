@@ -85,7 +85,6 @@ export {
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewaySnapshotInput,
   type WorkspaceVolumeGatewayVolumeIdentity,
-  type WorkspaceVolumeGatewaySourceCheckoutInput,
   type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway.ts";
 export { PostgresWorkspaceVolumeGatewayLock } from "./workspace-volume-gateway.ts";

@@ -28,24 +28,26 @@ Browser -> GitHub App install -> PiCloud installation/repository grants
 
 GitHub Webhook -> HMAC gate -> idempotent Issue Job
        -> ordinary Project / Workspace / Session / Run
-       -> standard .git checkout -> Pi Worker -> Cube Git/Tools
+       -> short-lived App credential in Workspace Git Home
+       -> Pi Worker -> Agent git clone -> Cube Git/Tools
        -> uncommitted tested Workspace -> later user-directed delivery
 
 GitLab project token -> encrypted project connection -> signed Project Webhook
        -> pending Issue request
 GitLab OIDC user -> non-exclusive claim -> explicit execution selection
+       -> OAuth+PKCE credential in selected Workspace Git Home
+       -> Agent git clone
        -> ordinary Project / Workspace / Session / Run
        -> uncommitted tested Workspace -> later user-directed delivery
 ```
 
 The platform GitHub App private key and Webhook secret are deployment secrets.
-PostgreSQL stores installation and repository identities. The adapter mints or
-decrypts one repository-scoped token during Workspace initialization. The
-initial clone leaves a standard `.git` directory and authenticated remote in
-the selected Workspace directory. That credential is intentionally visible to
-the Agent and can be used by ordinary `git` or `glab` commands. It is not copied
-into Pi SessionStorage or Kafka by the platform, but arbitrary untrusted code
-can read and exfiltrate it from the Workspace.
+PostgreSQL stores installation/repository identities and the encrypted
+deployment integration credential used for Webhooks and provider API calls. It
+is never copied into user execution. A separate OAuth+PKCE grant writes the
+user's Git credential directly to `.pi-cloud-home` in the selected persistent
+Workspace. The Agent can read and exfiltrate that credential, but it never
+enters Pi SessionStorage or Kafka.
 
 Issue execution is explicit. A repository may opt into a deployment-owned
 label (default `picloud`) and trusted collaborators may use the exact comment
@@ -58,7 +60,7 @@ GitLab uses a project access token with `api`, `read_repository` and
 master key. Connection creates or reconciles one project Webhook using GitLab's
 Standard Webhooks signing-token contract. Comment triggers additionally verify
 that the actor is a Developer or higher. The connected project credential is
-also installed into repository Workspaces that the user explicitly creates.
+not a user Git credential.
 
 The default login remains PiCloud-local and GitLab is optional. When configured,
 GitLab OpenID Connect is a second authentication provider for one deployment-

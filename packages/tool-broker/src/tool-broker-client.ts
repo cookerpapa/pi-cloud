@@ -4,7 +4,7 @@ import {
   parseToolBrokerResponse,
   parseSupervisorManagementResponse,
   parseToolSandboxOperationResponse,
-  parseSourceControlWorkspaceCheckoutResponse,
+  parseSourceControlWorkspaceCredentialResponse,
   type ToolBrokerRequest,
   type ToolBrokerResponse,
   type ToolBrokerMaterializeFileRequest,
@@ -21,8 +21,9 @@ import {
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
   type ToolSandboxReleaseResponse,
-  type SourceControlWorkspaceCheckoutRequest,
-  type SourceControlWorkspaceCheckoutResponse,
+  type SourceControlWorkspaceCredentialAuthorizeRequest,
+  type SourceControlWorkspaceCredentialPreflightRequest,
+  type SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
 import { activeTraceCarrier } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
@@ -338,11 +339,27 @@ export class ToolBrokerClient {
     return response;
   }
 
-  async checkoutSource(
-    request: SourceControlWorkspaceCheckoutRequest,
+  async authorizeSourceCredential(
+    request: SourceControlWorkspaceCredentialAuthorizeRequest,
     signal?: AbortSignal,
-  ): Promise<SourceControlWorkspaceCheckoutResponse> {
-    const response = parseSourceControlWorkspaceCheckoutResponse(
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    return this.#sourceCredential(request, signal);
+  }
+
+  async preflightSourceCredential(
+    request: SourceControlWorkspaceCredentialPreflightRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    return this.#sourceCredential(request, signal);
+  }
+
+  async #sourceCredential(
+    request:
+      | SourceControlWorkspaceCredentialAuthorizeRequest
+      | SourceControlWorkspaceCredentialPreflightRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    const response = parseSourceControlWorkspaceCredentialResponse(
       await this.#post(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
     );
     if (
@@ -352,7 +369,7 @@ export class ToolBrokerClient {
     ) {
       throw new ToolBrokerClientError(
         "tool_broker_protocol_error",
-        "Source-control checkout response identity did not match",
+        "Source-control credential response identity did not match",
         false,
       );
     }
@@ -585,11 +602,18 @@ export class ReplicatedToolBrokerClient {
     return this.#nextReplica().materializeFile(request, signal);
   }
 
-  checkoutSource(
-    request: SourceControlWorkspaceCheckoutRequest,
+  authorizeSourceCredential(
+    request: SourceControlWorkspaceCredentialAuthorizeRequest,
     signal?: AbortSignal,
-  ): Promise<SourceControlWorkspaceCheckoutResponse> {
-    return this.#nextReplica().checkoutSource(request, signal);
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    return this.#nextReplica().authorizeSourceCredential(request, signal);
+  }
+
+  preflightSourceCredential(
+    request: SourceControlWorkspaceCredentialPreflightRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    return this.#nextReplica().preflightSourceCredential(request, signal);
   }
 
   async listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]> {

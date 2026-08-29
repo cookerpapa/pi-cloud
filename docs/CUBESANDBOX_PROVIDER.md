@@ -43,7 +43,10 @@ credential.
 One tenant Workspace maps to one stable persistent Cube Volume. Only the
 `workspace/` child of its trusted Volume envelope is mounted into the guest as
 `/workspace`; only the platform generation marker stays outside the guest view.
-User-managed `.git` directories remain inside `/workspace`.
+User-managed `.git` directories remain inside `/workspace`. A hidden
+`.pi-cloud-home` stores the selected environment's Git credential helper and is
+excluded from source browsing/checkpoint catalogs while remaining readable to
+untrusted code in that environment.
 
 At a fenced settlement boundary, the trusted Volume gateway flushes the
 Workspace and records a bounded file/hash catalog revision. PostgreSQL advances

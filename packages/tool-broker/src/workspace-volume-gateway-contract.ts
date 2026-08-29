@@ -1,6 +1,7 @@
 import {
   MAX_WORKSPACE_SNAPSHOT_BYTES,
-  type SourceControlWorkspaceCheckoutRequest,
+  type SourceControlWorkspaceCredentialAuthorizeRequest,
+  type SourceControlWorkspaceCredentialPreflightRequest,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
@@ -12,9 +13,9 @@ export const UUID_PATTERN =
 export const TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]{32,4096}$/;
 export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 export const VOLUME_GENERATION_PATTERN = /^[0-9a-f]{64}$/;
-export const GIT_COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 export const VOLUME_METADATA_DIRECTORY = ".pi-cloud-runtime";
 export const VOLUME_WORKSPACE_DIRECTORY = "workspace";
+export const WORKSPACE_GIT_HOME_DIRECTORY = ".pi-cloud-home";
 export const VOLUME_GENERATION_FILE = "generation";
 export const MAXIMUM_REQUEST_BYTES = 32 * 1_024;
 // A snapshot response carries the bounded persistent-volume reference metadata
@@ -26,8 +27,10 @@ export const WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH = "/v1/workspaces/snapshot";
 export const WORKSPACE_VOLUME_GATEWAY_FORK_PATH = "/v1/workspaces/fork";
 export const WORKSPACE_VOLUME_GATEWAY_MATERIALIZE_PATH = "/v1/workspaces/materialize";
 export const WORKSPACE_VOLUME_GATEWAY_DELETE_PATH = "/v1/workspaces/delete";
-export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CHECKOUT_PATH =
-  "/v1/workspaces/source-control/checkout";
+export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH =
+  "/v1/workspaces/source-control/credential/authorize";
+export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_PREFLIGHT_PATH =
+  "/v1/workspaces/source-control/credential/preflight";
 
 export type WorkspaceVolumeGatewayVolumeIdentity = Readonly<{
   tenantId: string;
@@ -69,9 +72,15 @@ export type WorkspaceVolumeGatewayForkInput = Readonly<{
 
 export type WorkspaceVolumeGatewayDeleteInput = WorkspaceVolumeGatewayVolumeIdentity;
 
-export type WorkspaceVolumeGatewaySourceCheckoutInput = WorkspaceVolumeGatewayIdentity &
+export type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput = WorkspaceVolumeGatewayIdentity &
   Omit<
-    SourceControlWorkspaceCheckoutRequest,
+    SourceControlWorkspaceCredentialAuthorizeRequest,
+    "sourceControlProtocolVersion" | "type" | "tenantId" | "workspaceId"
+  >;
+
+export type WorkspaceVolumeGatewaySourceCredentialPreflightInput = WorkspaceVolumeGatewayIdentity &
+  Omit<
+    SourceControlWorkspaceCredentialPreflightRequest,
     "sourceControlProtocolVersion" | "type" | "tenantId" | "workspaceId"
   >;
 
@@ -91,7 +100,13 @@ export interface WorkspaceVolumeGateway {
     input: WorkspaceVolumeGatewayMaterializeInput,
   ): Promise<{ bytes: Uint8Array; sha256: string }>;
   delete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ deleted: boolean }>;
-  checkoutSource?(input: WorkspaceVolumeGatewaySourceCheckoutInput): Promise<{ baseSha: string }>;
+  authorizeSourceCredential?(
+    input: WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
+  ): Promise<{ authorized: true }>;
+  preflightSourceCredential?(input: WorkspaceVolumeGatewaySourceCredentialPreflightInput): Promise<{
+    authorized: boolean;
+    reason?: "credential_missing" | "credential_rejected" | "gitlab_unreachable";
+  }>;
   close(): Promise<void>;
 }
 
@@ -241,32 +256,6 @@ export function safeRelativeFile(value: string): string {
     throw new WorkspaceVolumeGatewayError(
       "workspace_materialize_path_invalid",
       "Workspace materialize path was invalid",
-      false,
-    );
-  }
-  return value;
-}
-
-export function safeVolumeWorkTreePath(value: string): string {
-  if (value === ".") return value;
-  if (
-    value.length < 1 ||
-    value.length > 4_096 ||
-    value.startsWith("/") ||
-    value.includes("\\") ||
-    /[\u0000-\u001f\u007f]/.test(value)
-  ) {
-    throw new WorkspaceVolumeGatewayError(
-      "source_control_work_tree_invalid",
-      "Source-control work tree path was invalid",
-      false,
-    );
-  }
-  const segments = value.split("/");
-  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
-    throw new WorkspaceVolumeGatewayError(
-      "source_control_work_tree_invalid",
-      "Source-control work tree path was invalid",
       false,
     );
   }

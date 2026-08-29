@@ -7,8 +7,6 @@ import type {
 } from "@pi-cloud/database";
 import type {
   ConnectGitLabProjectRequest,
-  CreateProjectRequest,
-  ProjectResource,
   SourceControlConfigurationResource,
   SourceControlInstallLinkResource,
   SourceControlIssueJobListResource,
@@ -19,7 +17,7 @@ import { ToolBrokerClient } from "@pi-cloud/tool-broker/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
-import type { ControlPlaneStore } from "./control-plane-store.ts";
+import * as oidc from "openid-client";
 import { GitHubAppClient, GitHubAppClientError } from "./github-app-client.ts";
 import {
   GitLabProjectClient,
@@ -30,6 +28,7 @@ import { SourceControlCredentialVault } from "./source-control-credential-vault.
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
 const INSTALL_STATE_TTL_MS = 10 * 60_000;
+const GIT_OAUTH_REQUEST_TTL_MS = 10 * 60_000;
 const TRUSTED_ISSUE_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 
 export class SourceControlServiceError extends Error {
@@ -63,6 +62,9 @@ export type GitLabProjectRuntime = Readonly<{
   issueLabel: string;
   internalBaseUrl?: string;
   workspaceBaseUrl?: string;
+  oauthClientId?: string;
+  oauthClientSecret?: string;
+  oauthIssuer?: string;
   fetch?: typeof fetch;
 }>;
 
@@ -213,6 +215,7 @@ export class SourceControlService {
   readonly #allowInsecureInternalHttp: boolean;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
+  #gitOauthConfiguration: Promise<oidc.Configuration> | undefined;
 
   constructor(options: {
     database: Kysely<Database>;
@@ -635,64 +638,6 @@ export class SourceControlService {
     }
   }
 
-  async createRepositoryProject(
-    identity: TenantRequestIdentity,
-    store: ControlPlaneStore,
-    request: CreateProjectRequest & {
-      source: { kind: "source_control"; repositoryId: string };
-    },
-    branchName?: string,
-  ): Promise<ProjectResource> {
-    const repository = await this.#repository(identity.tenantId, request.source.repositoryId);
-    const project = await store.createProject(request);
-    const branch = branchName ?? `picloud/workspace-${project.workspaceId.slice(0, 12)}`;
-    try {
-      const baseSha = await this.#checkout(repository, project.workspaceId, branch);
-      await this.#database
-        .updateTable("workspace_source_repositories")
-        .set({
-          base_sha: baseSha,
-          checkout_state: "ready",
-          failure_code: null,
-          updated_at: this.#clock(),
-        })
-        .where("tenant_id", "=", identity.tenantId)
-        .where("workspace_id", "=", project.workspaceId)
-        .where("checkout_state", "=", "provisioning")
-        .executeTakeFirstOrThrow();
-      return {
-        ...project,
-        source: {
-          kind: "source_control",
-          status: "ready",
-          repositoryId: repository.id,
-          provider: repository.provider,
-          fullName: repository.full_name,
-          baseRef: repository.default_branch,
-          baseSha,
-        },
-      };
-    } catch (error: unknown) {
-      await this.#database
-        .updateTable("workspace_source_repositories")
-        .set({
-          checkout_state: "failed",
-          failure_code:
-            error instanceof GitHubAppClientError || error instanceof GitLabProjectClientError
-              ? error.code
-              : "checkout_failed",
-          updated_at: this.#clock(),
-        })
-        .where("tenant_id", "=", identity.tenantId)
-        .where("workspace_id", "=", project.workspaceId)
-        .execute();
-      await store
-        .deleteWorkspace(project.workspaceId, `source-checkout-failed-${project.workspaceId}`)
-        .catch(() => undefined);
-      throw error instanceof SourceControlServiceError ? error : this.#providerFailure(error);
-    }
-  }
-
   async listIssueJobs(identity: TenantRequestIdentity): Promise<SourceControlIssueJobListResource> {
     const rows = await this.#database
       .selectFrom("source_control_issue_jobs as job")
@@ -846,6 +791,36 @@ export class SourceControlService {
     request: StartSourceControlIssueJobRequest,
   ): Promise<SourceControlIssueJobResource> {
     await this.#assertGitLabClaimIdentity(identity, jobId);
+    const credentialWorkspaceId =
+      request.executionMode === "elastic"
+        ? request.workspaceId
+        : (
+            await this.#database
+              .selectFrom("development_environments")
+              .select("workspace_id")
+              .where("tenant_id", "=", identity.tenantId)
+              .where("id", "=", request.developmentEnvironmentId)
+              .where("owner_user_id", "=", identity.userId)
+              .where("state", "=", "running")
+              .executeTakeFirst()
+          )?.workspace_id;
+    if (credentialWorkspaceId === undefined) {
+      throw new SourceControlServiceError(
+        "source_control_conflict",
+        "Selected Issue execution environment is unavailable",
+      );
+    }
+    const credential = await this.preflightIssueGitCredential(
+      identity,
+      jobId,
+      credentialWorkspaceId,
+    );
+    if (!credential.authorized) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "Selected environment is not authorized to clone the Issue repository",
+      );
+    }
     const now = this.#clock();
     await this.#database.transaction().execute(async (transaction) => {
       const job = await transaction
@@ -881,39 +856,22 @@ export class SourceControlService {
       let workingDirectory = "/workspace";
       if (request.executionMode === "elastic") {
         profileKey = request.sandboxProfileKey;
-        if (request.workspaceId !== undefined) {
-          const workspace = await transaction
-            .selectFrom("workspaces as workspace")
-            .leftJoin(
-              "workspace_source_repositories as source",
-              "source.workspace_id",
-              "workspace.id",
-            )
-            .select([
-              "workspace.project_id as projectId",
-              "workspace.workspace_kind as workspaceKind",
-              "source.repository_id as repositoryId",
-            ])
-            .where("workspace.tenant_id", "=", identity.tenantId)
-            .where("workspace.id", "=", request.workspaceId)
-            .where("workspace.deleted_at", "is", null)
-            .forUpdate("workspace")
-            .executeTakeFirst();
-          if (workspace === undefined || workspace.workspaceKind !== "user") {
-            throw new SourceControlServiceError(
-              "source_control_conflict",
-              "Selected elastic Workspace is unavailable",
-            );
-          }
-          if (workspace.repositoryId !== null && workspace.repositoryId !== job.repository_id) {
-            throw new SourceControlServiceError(
-              "source_control_conflict",
-              "Selected Workspace belongs to another source repository",
-            );
-          }
-          projectId = workspace.projectId;
-          workspaceId = request.workspaceId;
+        const workspace = await transaction
+          .selectFrom("workspaces")
+          .select(["project_id as projectId", "workspace_kind as workspaceKind"])
+          .where("tenant_id", "=", identity.tenantId)
+          .where("id", "=", request.workspaceId)
+          .where("deleted_at", "is", null)
+          .forUpdate()
+          .executeTakeFirst();
+        if (workspace === undefined || workspace.workspaceKind !== "user") {
+          throw new SourceControlServiceError(
+            "source_control_conflict",
+            "Selected elastic Workspace is unavailable",
+          );
         }
+        projectId = workspace.projectId;
+        workspaceId = request.workspaceId;
       } else {
         if (
           !request.workingDirectory.startsWith("/home/user/") ||
@@ -1523,15 +1481,223 @@ export class SourceControlService {
     return { accepted, replayed: false };
   }
 
-  async checkoutIssueWorkspace(input: {
-    tenantId: string;
-    repositoryId: string;
-    workspaceId: string;
-    branchName: string;
-    workTreePath: string;
-  }): Promise<string> {
-    const repository = await this.#repository(input.tenantId, input.repositoryId);
-    return this.#checkout(repository, input.workspaceId, input.branchName, input.workTreePath);
+  async preflightIssueGitCredential(
+    identity: TenantRequestIdentity,
+    jobId: string,
+    workspaceId: string,
+  ) {
+    const context = await this.#issueGitCredentialContext(identity, jobId, workspaceId);
+    return this.#toolBroker(
+      await this.#workspaceToolBroker(identity.tenantId, workspaceId),
+    ).preflightSourceCredential({
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_preflight",
+      requestId: this.#idGenerator(),
+      tenantId: identity.tenantId,
+      workspaceId,
+      repositoryId: context.repository.id,
+      provider: context.repository.provider,
+      userCloneUrl: context.userCloneUrl,
+      credentialMountPath: context.credentialMountPath,
+    });
+  }
+
+  async authorizeIssueGitCredential(
+    identity: TenantRequestIdentity,
+    jobId: string,
+    workspaceId: string,
+    accessToken: string,
+  ) {
+    const context = await this.#issueGitCredentialContext(identity, jobId, workspaceId);
+    const broker = this.#toolBroker(
+      await this.#workspaceToolBroker(identity.tenantId, workspaceId),
+    );
+    await broker.authorizeSourceCredential({
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_authorize",
+      requestId: this.#idGenerator(),
+      tenantId: identity.tenantId,
+      workspaceId,
+      repositoryId: context.repository.id,
+      provider: context.repository.provider,
+      userCloneUrl: context.userCloneUrl,
+      credentialMountPath: context.credentialMountPath,
+      accessToken,
+    });
+    return broker.preflightSourceCredential({
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_preflight",
+      requestId: this.#idGenerator(),
+      tenantId: identity.tenantId,
+      workspaceId,
+      repositoryId: context.repository.id,
+      provider: context.repository.provider,
+      userCloneUrl: context.userCloneUrl,
+      credentialMountPath: context.credentialMountPath,
+    });
+  }
+
+  async authorizeAutomationGitCredential(
+    tenantId: string,
+    repositoryId: string,
+    workspaceId: string,
+    credentialMountPath: "/workspace" | "/home/user",
+  ) {
+    const repository = await this.#repository(tenantId, repositoryId);
+    if (repository.provider !== "github") {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "Interactive GitLab authorization is required",
+      );
+    }
+    const accessToken = await this.#repositoryAccessToken(repository, "write");
+    const broker = this.#toolBroker(await this.#workspaceToolBroker(tenantId, workspaceId));
+    const userCloneUrl = cloneUrlAtOrigin(repository.clone_url, repository.provider_base_url);
+    await broker.authorizeSourceCredential({
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_authorize",
+      requestId: this.#idGenerator(),
+      tenantId,
+      workspaceId,
+      repositoryId,
+      provider: "github",
+      userCloneUrl,
+      credentialMountPath,
+      accessToken,
+    });
+    return broker.preflightSourceCredential({
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_preflight",
+      requestId: this.#idGenerator(),
+      tenantId,
+      workspaceId,
+      repositoryId,
+      provider: "github",
+      userCloneUrl,
+      credentialMountPath,
+    });
+  }
+
+  async beginIssueGitAuthorization(
+    identity: TenantRequestIdentity,
+    jobId: string,
+    workspaceId: string,
+  ): Promise<{ url: string; expiresAt: string }> {
+    const gitlab = this.#requireGitLabGitOauth();
+    await this.#issueGitCredentialContext(identity, jobId, workspaceId);
+    const state = oidc.randomState();
+    const codeVerifier = oidc.randomPKCECodeVerifier();
+    const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
+    const redirectUri = this.#gitAuthorizationRedirectUri(gitlab);
+    const now = this.#clock();
+    const expiresAt = new Date(now.valueOf() + GIT_OAUTH_REQUEST_TTL_MS);
+    await this.#database
+      .deleteFrom("workspace_git_oauth_requests")
+      .where("expires_at", "<", new Date(now.valueOf() - 24 * 60 * 60_000))
+      .execute();
+    await this.#database
+      .insertInto("workspace_git_oauth_requests")
+      .values({
+        state_sha256: stateDigest(state),
+        tenant_id: identity.tenantId,
+        user_id: identity.userId,
+        issue_job_id: jobId,
+        workspace_id: workspaceId,
+        code_verifier: codeVerifier,
+        redirect_uri: redirectUri,
+        expires_at: expiresAt,
+        consumed_at: null,
+        created_at: now,
+      })
+      .executeTakeFirstOrThrow();
+    const url = oidc.buildAuthorizationUrl(await this.#gitOauthClient(gitlab), {
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "api read_repository write_repository",
+      state,
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256",
+    });
+    return { url: url.toString(), expiresAt: expiresAt.toISOString() };
+  }
+
+  async completeIssueGitAuthorization(callbackPath: string): Promise<{ workspaceId: string }> {
+    const gitlab = this.#requireGitLabGitOauth();
+    const callbackUrl = new URL(callbackPath, gitlab.publicOrigin);
+    const state = callbackUrl.searchParams.get("state");
+    if (state === null || state.length < 32 || state.length > 256) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "GitLab repository authorization request is invalid",
+      );
+    }
+    const now = this.#clock();
+    const request = await this.#database.transaction().execute(async (transaction) => {
+      const row = await transaction
+        .selectFrom("workspace_git_oauth_requests")
+        .selectAll()
+        .where("state_sha256", "=", stateDigest(state))
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        row === undefined ||
+        row.consumed_at !== null ||
+        new Date(row.expires_at) <= now ||
+        row.redirect_uri !== this.#gitAuthorizationRedirectUri(gitlab)
+      ) {
+        throw new SourceControlServiceError(
+          "source_control_authorization_denied",
+          "GitLab repository authorization request expired",
+        );
+      }
+      await transaction
+        .updateTable("workspace_git_oauth_requests")
+        .set({ consumed_at: now })
+        .where("state_sha256", "=", row.state_sha256)
+        .executeTakeFirstOrThrow();
+      return row;
+    });
+    let tokens;
+    try {
+      tokens = await oidc.authorizationCodeGrant(await this.#gitOauthClient(gitlab), callbackUrl, {
+        pkceCodeVerifier: request.code_verifier,
+        expectedState: state,
+        idTokenExpected: false,
+      });
+    } catch {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "GitLab repository authorization could not be completed",
+      );
+    }
+    const accessToken = tokens.access_token;
+    if (typeof accessToken !== "string" || accessToken.length < 16) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "GitLab repository authorization did not return a credential",
+      );
+    }
+    const identity = await this.#gitOauthIdentity(gitlab, request.tenant_id, request.user_id);
+    const profile = await this.#gitOauthProfile(gitlab, accessToken);
+    if (String(profile.id) !== identity.externalIdentity?.providerUserId) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "GitLab repository authorization identity did not match the claimant",
+      );
+    }
+    const authorized = await this.authorizeIssueGitCredential(
+      identity,
+      request.issue_job_id,
+      request.workspace_id,
+      accessToken,
+    );
+    if (!authorized.authorized) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "GitLab repository credential could not access the selected project",
+      );
+    }
+    return { workspaceId: request.workspace_id };
   }
 
   async repositoryForJob(repositoryId: string) {
@@ -1551,6 +1717,7 @@ export class SourceControlService {
         "repository.owner",
         "repository.name",
         "repository.full_name",
+        "repository.clone_url",
         "repository.default_branch",
         "repository.provider_repository_id",
         "installation.provider_installation_id",
@@ -1561,38 +1728,84 @@ export class SourceControlService {
       .executeTakeFirst();
   }
 
-  async #checkout(
-    repository: ConnectedRepository,
+  async workspaceCloneUrlForJob(repositoryId: string): Promise<string> {
+    const repository = await this.repositoryForJob(repositoryId);
+    if (repository === undefined) {
+      throw new SourceControlServiceError(
+        "source_control_not_found",
+        "Issue source repository is no longer connected",
+      );
+    }
+    return cloneUrlAtOrigin(
+      repository.clone_url,
+      repository.provider === "gitlab"
+        ? (this.#gitlab?.workspaceBaseUrl ?? repository.provider_base_url)
+        : repository.provider_base_url,
+    );
+  }
+
+  async #issueGitCredentialContext(
+    identity: TenantRequestIdentity,
+    jobId: string,
     workspaceId: string,
-    branchName: string,
-    workTreePath = ".",
-  ): Promise<string> {
-    const accessToken = await this.#repositoryAccessToken(repository, "write");
-    const response = await this.#toolBroker(
-      await this.#workspaceToolBroker(repository.tenant_id, workspaceId),
-    ).checkoutSource({
-      sourceControlProtocolVersion: 4,
-      type: "source_control.workspace_checkout",
-      requestId: this.#idGenerator(),
-      tenantId: repository.tenant_id,
-      workspaceId,
-      repositoryId: repository.id,
-      provider: repository.provider,
-      providerInstallationId: repository.provider_installation_id,
-      providerRepositoryId: repository.provider_repository_id,
-      cloneUrl: repository.clone_url,
+  ) {
+    if (identity.externalIdentity?.providerKey !== "gitlab") {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "GitLab login is required to authorize repository access",
+      );
+    }
+    const row = await this.#database
+      .selectFrom("source_control_issue_jobs as job")
+      .innerJoin("source_control_repositories as repository", (join) =>
+        join
+          .onRef("repository.tenant_id", "=", "job.tenant_id")
+          .onRef("repository.id", "=", "job.repository_id"),
+      )
+      .innerJoin("workspaces as workspace", (join) =>
+        join
+          .onRef("workspace.tenant_id", "=", "job.tenant_id")
+          .on("workspace.id", "=", workspaceId),
+      )
+      .innerJoin("source_control_issue_claims as claim", (join) =>
+        join
+          .onRef("claim.tenant_id", "=", "job.tenant_id")
+          .onRef("claim.issue_job_id", "=", "job.id")
+          .on("claim.user_id", "=", identity.userId),
+      )
+      .select([
+        "repository.id",
+        "repository.provider",
+        "repository.provider_base_url",
+        "repository.clone_url",
+        "workspace.workspace_kind as workspaceKind",
+      ])
+      .where("job.tenant_id", "=", identity.tenantId)
+      .where("job.id", "=", jobId)
+      .where("job.state", "in", ["awaiting_claim", "received", "provisioning"])
+      .where("workspace.deleted_at", "is", null)
+      .executeTakeFirst();
+    if (
+      row === undefined ||
+      row.provider !== "gitlab" ||
+      identity.externalIdentity.issuer !== row.provider_base_url
+    ) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "Selected Workspace cannot be authorized for this Issue repository",
+      );
+    }
+    return {
+      repository: row,
       userCloneUrl: cloneUrlAtOrigin(
-        repository.clone_url,
-        repository.provider === "gitlab"
-          ? (this.#gitlab?.workspaceBaseUrl ?? repository.provider_base_url)
-          : repository.provider_base_url,
+        row.clone_url,
+        this.#gitlab?.workspaceBaseUrl ?? row.provider_base_url,
       ),
-      baseRef: repository.default_branch,
-      branchName,
-      workTreePath,
-      accessToken,
-    });
-    return response.baseSha;
+      credentialMountPath:
+        row.workspaceKind === "development_environment"
+          ? ("/home/user" as const)
+          : ("/workspace" as const),
+    };
   }
 
   async #repository(tenantId: string, repositoryId: string) {
@@ -2138,6 +2351,161 @@ export class SourceControlService {
         body,
       });
     }
+  }
+
+  #requireGitLabGitOauth(): GitLabProjectRuntime & {
+    oauthClientId: string;
+    oauthClientSecret: string;
+    oauthIssuer: string;
+  } {
+    const gitlab = this.#requireGitLab();
+    if (
+      gitlab.oauthClientId === undefined ||
+      gitlab.oauthClientSecret === undefined ||
+      gitlab.oauthIssuer === undefined
+    ) {
+      throw new SourceControlServiceError(
+        "source_control_unavailable",
+        "GitLab repository OAuth is not configured",
+      );
+    }
+    return gitlab as GitLabProjectRuntime & {
+      oauthClientId: string;
+      oauthClientSecret: string;
+      oauthIssuer: string;
+    };
+  }
+
+  #gitOauthClient(
+    gitlab: GitLabProjectRuntime & {
+      oauthClientId: string;
+      oauthClientSecret: string;
+      oauthIssuer: string;
+    },
+  ): Promise<oidc.Configuration> {
+    if (this.#gitOauthConfiguration === undefined) {
+      const options: oidc.DiscoveryRequestOptions = {};
+      if (gitlab.fetch !== undefined) {
+        options[oidc.customFetch] = (url, init) =>
+          gitlab.fetch!(url, init as unknown as RequestInit);
+      }
+      if (this.#allowInsecureInternalHttp) options.execute = [oidc.allowInsecureRequests];
+      this.#gitOauthConfiguration = oidc
+        .discovery(
+          new URL(gitlab.oauthIssuer),
+          gitlab.oauthClientId,
+          gitlab.oauthClientSecret,
+          undefined,
+          options,
+        )
+        .catch(() => {
+          this.#gitOauthConfiguration = undefined;
+          throw new SourceControlServiceError(
+            "source_control_unavailable",
+            "GitLab repository OAuth metadata is unavailable",
+            true,
+          );
+        });
+    }
+    return this.#gitOauthConfiguration;
+  }
+
+  async #gitOauthProfile(
+    gitlab: GitLabProjectRuntime & { oauthIssuer: string },
+    accessToken: string,
+  ): Promise<Record<string, unknown>> {
+    let response: Response;
+    try {
+      response = await (gitlab.fetch ?? globalThis.fetch)(
+        new URL("/api/v4/user", gitlab.oauthIssuer),
+        {
+          headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
+          signal: AbortSignal.timeout(30_000),
+        },
+      );
+    } catch {
+      throw new SourceControlServiceError(
+        "source_control_unavailable",
+        "GitLab repository OAuth identity endpoint is unavailable",
+        true,
+      );
+    }
+    if (!response.ok) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "GitLab repository OAuth identity is invalid",
+      );
+    }
+    const value = (await response.json()) as unknown;
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "GitLab repository OAuth profile is invalid",
+      );
+    }
+    return value as Record<string, unknown>;
+  }
+
+  async #gitOauthIdentity(
+    gitlab: GitLabProjectRuntime & { oauthIssuer: string },
+    tenantId: string,
+    userId: string,
+  ): Promise<TenantRequestIdentity> {
+    const row = await this.#database
+      .selectFrom("users as user_row")
+      .innerJoin("tenants as tenant", "tenant.id", "user_row.tenant_id")
+      .innerJoin("tenant_runtime_policies as policy", "policy.tenant_id", "tenant.id")
+      .innerJoin("external_identities as external", (join) =>
+        join
+          .onRef("external.tenant_id", "=", "user_row.tenant_id")
+          .onRef("external.user_id", "=", "user_row.id"),
+      )
+      .select([
+        "tenant.slug as tenantSlug",
+        "policy.default_model_profile_id as defaultModelProfileId",
+        "user_row.display_name as displayName",
+        "external.id as externalIdentityId",
+        "external.subject",
+        "external.provider_user_id as providerUserId",
+        "external.username",
+      ])
+      .where("user_row.tenant_id", "=", tenantId)
+      .where("user_row.id", "=", userId)
+      .where("external.provider_key", "=", "gitlab")
+      .where("external.issuer", "=", gitlab.oauthIssuer)
+      .executeTakeFirst();
+    if (row === undefined) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "GitLab repository OAuth claimant was not found",
+      );
+    }
+    return {
+      credentialId: `oidc:${row.externalIdentityId}`,
+      tenantId,
+      tenantSlug: row.tenantSlug,
+      userId,
+      username: row.username,
+      displayName: row.displayName,
+      role: "member",
+      defaultModelProfileId: row.defaultModelProfileId,
+      authenticationKind: "oidc",
+      externalIdentity: {
+        id: row.externalIdentityId,
+        providerKey: "gitlab",
+        issuer: gitlab.oauthIssuer,
+        subject: row.subject,
+        providerUserId: row.providerUserId,
+        username: row.username,
+      },
+    };
+  }
+
+  #gitAuthorizationRedirectUri(gitlab: GitLabProjectRuntime): string {
+    return new URL(
+      "/v1/source-control/gitlab/authorization/callback",
+      gitlab.publicOrigin,
+    ).toString();
   }
 
   #requireGitHub(): GitHubAppRuntime {

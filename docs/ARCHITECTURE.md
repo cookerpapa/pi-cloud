@@ -277,18 +277,19 @@ it outside the current Web surface. A GitHub installation callback is bound
 to the logged-in tenant by a one-use state value; PostgreSQL stores the
 installation and selected repository identities. The App private key and
 Webhook HMAC secret remain deployment secrets, while one-repository
-installation access tokens exist only for the duration of an API or Git child
-process.
+installation access tokens exist only for the duration of trusted API work.
 
-Repository initialization runs through the Workspace Volume Gateway only to
-populate an empty directory. It leaves an ordinary `.git` directory and an
-authenticated remote inside the user Workspace. Cube and the Agent can inspect,
-change and use both. PiCloud does not generate a Diff, commit or push after a
-Run.
+PiCloud never clones a repository or creates a Git branch. A selected execution
+environment must pass `git ls-remote` before its Issue Run starts. A separate
+GitLab OAuth+PKCE authorization stores the user's OAuth credential in the
+Workspace Volume's hidden `.pi-cloud-home`; PostgreSQL keeps only one-use OAuth
+state and verifier. Tool processes load that Home through `GIT_CONFIG_GLOBAL`,
+and the Agent performs ordinary visible `git clone` and branch commands.
 
 GitLab Project Webhooks use a Standard Webhooks HMAC signing token and stable
-`webhook-id`; project access tokens are encrypted in PostgreSQL and only
-unsealed for trusted GitLab API or Git processes. GitHub Issue and
+`webhook-id`; deployment project access tokens are encrypted in PostgreSQL and
+only unsealed for trusted GitLab API work. They are distinct from user Git OAuth
+credentials. GitHub Issue and
 Issue-comment Webhooks enter through their native raw-body HMAC gate. Provider
 delivery IDs are idempotency keys. Only the configured label or exact
 `/picloud solve` collaborator command creates a pending Issue request. GitLab
@@ -323,9 +324,9 @@ normal post-settlement checkpoint/release cannot race orphan cleanup.
 
 Cube mounts only the `workspace/` child of a trusted persistent Volume. The
 guest contains normal development tools but no model, database, Kafka or Cube
-control credential. Repository credentials deliberately belong to the user
-worktree: an imported repository is an ordinary `.git` checkout and its remote
-credential is visible to the Agent just as it would be after `glab auth login`.
+control credential. Repository credentials deliberately belong to the selected
+execution environment's hidden Git Home and are visible to its Agent just as
+they would be after `glab auth login`; the Agent owns the resulting `.git` tree.
 The trusted Volume envelope holds only identity, generation and optional fork
 origin metadata; it does not track Git state or file changes.
 
@@ -608,7 +609,7 @@ preserve a visible prefix that never reached `message_end`.
 | cloud development machine guest root, memory and processes | one Cube pause snapshot on its compute node |
 | encrypted machine reconnect capsule | PostgreSQL; key held only by Tool Broker |
 | Workspace revision/reference | PostgreSQL + trusted Volume envelope |
-| user Git metadata and repository credentials | ordinary Workspace bytes visible to Cube/Agent |
+| user Git metadata and OAuth credentials | persistent Workspace bytes under `.git` and hidden `.pi-cloud-home`, visible to Cube/Agent |
 | live process tree | one Cube KVM only |
 | active in-memory `messages[]` | Pi SDK for one active Run |
 | development-environment ownership/lifecycle | PostgreSQL |
@@ -617,7 +618,7 @@ preserve a visible prefix that never reached `message_end`.
 | source-control connections/repository grants and Issue Jobs | PostgreSQL |
 | GitLab project token and Webhook signing token | encrypted PostgreSQL credential row |
 | GitHub App private key and Webhook secret | deployment Secret files |
-| provider token plaintext | ephemeral trusted API memory plus the explicitly initialized user Git worktree |
+| deployment provider token plaintext | ephemeral trusted API memory only |
 
 ## First and later messages
 

@@ -20,7 +20,8 @@ credential helpers or `glab` against the repository it was editing.
 
 Git is user-managed state inside the Workspace. A repository-backed Workspace
 contains its ordinary `.git` directory and any credentials configured by the
-user or source bootstrap. The Agent may inspect, change, print or remove them.
+user or the explicit Workspace authorization flow. The Agent may inspect,
+change, print or remove them.
 PiCloud does not claim that a Workspace protects its own credentials from the
 Agent.
 
@@ -37,22 +38,21 @@ file/hash catalog exists only to support checkpoint identity and the source
 browser; it is not compared into a user-visible change set. Root `.git` is
 preserved in the Volume but omitted from that catalog and browser listing.
 
-An optional repository bootstrap may clone a connected repository into an
-empty Workspace. It leaves a standard `.git` directory and a usable remote in
-the guest. This is initialization, not a second Git authority. Background Issue
-Runs receive an ordinary worktree but leave commit, push, provider delivery and
-Issue state to a later explicit user instruction. The platform never inspects
+PiCloud never bootstraps a repository. A selected environment must pass a
+credential preflight; the Agent then performs ordinary `git clone` and branch
+commands. Background Issue Runs leave commit, push, provider delivery and Issue
+state to a later explicit user instruction. The platform never inspects
 Workspace changes or creates a commit.
 
 ## Consequences
 
 - Agent behavior matches a normal Linux development machine.
-- Credentials stored by `glab`, Git or the bootstrap are intentionally visible
+- Credentials stored by GitLab OAuth, `glab` or Git are intentionally visible
   to untrusted code and disappear only with their configured environment or
   Workspace lifetime.
 - Prompt injection can exfiltrate repository credentials; deployments must
   treat this as an explicit user-authorized risk.
-- A background Issue Run fails delivery if the Agent does not produce and push
-  a branch.
+- The initial Issue Run produces only Workspace changes and test evidence;
+  commit, push and provider delivery require a later explicit instruction.
 - Isolated Subagents return their semantic result and independent Workspace;
   users or Agents coordinate Git branches instead of receiving a platform Diff.

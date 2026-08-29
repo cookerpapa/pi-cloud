@@ -57,7 +57,8 @@ function validRelativePath(value: string): boolean {
   const segments = value.split("/");
   return (
     segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..") &&
-    segments[0] !== ".git"
+    segments[0] !== ".git" &&
+    segments[0] !== ".pi-cloud-home"
   );
 }
 
@@ -194,7 +195,10 @@ async function collectMetadata(
   for (const entry of entries.sort((left, right) => comparePaths(left.name, right.name))) {
     const relativePath =
       relativeDirectory.length === 0 ? entry.name : `${relativeDirectory}/${entry.name}`;
-    if (relativeDirectory.length === 0 && entry.name === ".git") {
+    if (
+      relativeDirectory.length === 0 &&
+      (entry.name === ".git" || entry.name === ".pi-cloud-home")
+    ) {
       continue;
     }
     if (!validRelativePath(relativePath)) {

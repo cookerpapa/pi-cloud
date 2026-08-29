@@ -28,9 +28,10 @@ import {
   parseWorkspaceVersionListResource,
   parseConversationWorkspaceBindingResource,
   parseSshAccessTicketResource,
-  parseSourceControlConfigurationResource,
   parseSourceControlIssueJobListResource,
   parseSourceControlIssueJobResource,
+  parseSourceControlIssueGitCredentialResource,
+  parseSourceControlIssueGitAuthorizationLinkResource,
   type ConversationDetailResource,
   type AuthSessionResource,
   type AuthenticationConfigurationResource,
@@ -65,10 +66,11 @@ import {
   type WorkspaceVersionListResource,
   type ConversationWorkspaceBindingResource,
   type SshAccessTicketResource,
-  type SourceControlConfigurationResource,
   type SourceControlIssueJobListResource,
   type SourceControlIssueJobResource,
   type StartSourceControlIssueJobRequest,
+  type SourceControlIssueGitCredentialResource,
+  type SourceControlIssueGitAuthorizationLinkResource,
 } from "@pi-cloud/protocol";
 
 export class PiCloudApiError extends Error {
@@ -313,12 +315,6 @@ export class PiCloudApi {
     );
   }
 
-  async getSourceControl(): Promise<SourceControlConfigurationResource> {
-    return parseSourceControlConfigurationResource(
-      await request(this.#fetch, "/v1/source-control", { method: "GET" }, this.#authorizationToken),
-    );
-  }
-
   async listSourceControlIssueJobs(): Promise<SourceControlIssueJobListResource> {
     return parseSourceControlIssueJobListResource(
       await request(
@@ -361,6 +357,34 @@ export class PiCloudApi {
         this.#fetch,
         `/v1/source-control/issue-jobs/${encodeURIComponent(jobId)}/start`,
         jsonRequest(input),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async preflightSourceControlIssueGit(
+    jobId: string,
+    workspaceId: string,
+  ): Promise<SourceControlIssueGitCredentialResource> {
+    return parseSourceControlIssueGitCredentialResource(
+      await request(
+        this.#fetch,
+        `/v1/source-control/issue-jobs/${encodeURIComponent(jobId)}/git-preflight`,
+        jsonRequest({ workspaceId }),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async beginSourceControlIssueGitAuthorization(
+    jobId: string,
+    workspaceId: string,
+  ): Promise<SourceControlIssueGitAuthorizationLinkResource> {
+    return parseSourceControlIssueGitAuthorizationLinkResource(
+      await request(
+        this.#fetch,
+        `/v1/source-control/issue-jobs/${encodeURIComponent(jobId)}/git-authorization`,
+        jsonRequest({ workspaceId }),
         this.#authorizationToken,
       ),
     );

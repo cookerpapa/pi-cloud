@@ -11,8 +11,9 @@ import type {
   ToolSandboxOperationRequest,
   ToolSandboxOperationResponse,
   ToolBrokerWorkspaceForkRequest,
-  SourceControlWorkspaceCheckoutRequest,
-  SourceControlWorkspaceCheckoutResponse,
+  SourceControlWorkspaceCredentialAuthorizeRequest,
+  SourceControlWorkspaceCredentialPreflightRequest,
+  SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
 
 export const SANDBOX_PROVIDER_API_VERSION = 1 as const;
@@ -278,9 +279,12 @@ export interface SandboxProvider {
     request: ToolBrokerMaterializeFileRequest,
     signal?: AbortSignal,
   ): Promise<ToolBrokerMaterializeFileResponse>;
-  checkoutSource?(
-    request: SourceControlWorkspaceCheckoutRequest,
-  ): Promise<SourceControlWorkspaceCheckoutResponse>;
+  authorizeSourceCredential?(
+    request: SourceControlWorkspaceCredentialAuthorizeRequest,
+  ): Promise<SourceControlWorkspaceCredentialResponse>;
+  preflightSourceCredential?(
+    request: SourceControlWorkspaceCredentialPreflightRequest,
+  ): Promise<SourceControlWorkspaceCredentialResponse>;
   /** Used only when the Tool Broker restarted before it could reconstruct a handle. */
   destroyActivation(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
 

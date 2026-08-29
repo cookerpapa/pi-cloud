@@ -10,7 +10,8 @@ export {
   type WorkspaceVolumeGatewayLock,
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewaySnapshotInput,
-  type WorkspaceVolumeGatewaySourceCheckoutInput,
+  type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
+  type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
   type WorkspaceVolumeGatewayVolumeIdentity,
   type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway-contract.ts";

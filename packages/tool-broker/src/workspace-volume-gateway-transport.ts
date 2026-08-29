@@ -16,7 +16,8 @@ import {
   WORKSPACE_VOLUME_GATEWAY_DELETE_PATH,
   WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH,
-  WORKSPACE_VOLUME_GATEWAY_SOURCE_CHECKOUT_PATH,
+  WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH,
+  WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_PREFLIGHT_PATH,
   WorkspaceVolumeGatewayError,
   digest,
   isRecord,
@@ -26,7 +27,8 @@ import {
   type WorkspaceVolumeGatewayForkInput,
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewaySnapshotInput,
-  type WorkspaceVolumeGatewaySourceCheckoutInput,
+  type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
+  type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
 } from "./workspace-volume-gateway-contract.ts";
 
 export type WorkspaceVolumeGatewayServerOptions = Readonly<{
@@ -41,7 +43,13 @@ export type WorkspaceVolumeGatewayServerOptions = Readonly<{
 }>;
 
 type WorkspaceVolumeGatewayOperation =
-  "prepare" | "snapshot" | "fork" | "materialize" | "delete" | "source_checkout";
+  | "prepare"
+  | "snapshot"
+  | "fork"
+  | "materialize"
+  | "delete"
+  | "source_credential_authorize"
+  | "source_credential_preflight";
 
 function boundedInteger(value: number, name: string, minimum: number, maximum: number): number {
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
@@ -189,26 +197,52 @@ export class WorkspaceVolumeGatewayServer {
         return this.#failure(reply, error);
       }
     });
-    this.#server.post(WORKSPACE_VOLUME_GATEWAY_SOURCE_CHECKOUT_PATH, async (request, reply) => {
-      try {
-        const checkoutSource = this.#gateway.checkoutSource;
-        if (checkoutSource === undefined) {
-          throw new WorkspaceVolumeGatewayError(
-            "source_control_checkout_unavailable",
-            "Workspace source checkout is unavailable",
-            false,
+    this.#server.post(
+      WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH,
+      async (request, reply) => {
+        try {
+          const authorize = this.#gateway.authorizeSourceCredential;
+          if (authorize === undefined) {
+            throw new WorkspaceVolumeGatewayError(
+              "source_control_credential_unavailable",
+              "Workspace Git credential authorization is unavailable",
+              false,
+            );
+          }
+          return await this.#run("source_credential_authorize", () =>
+            authorize.call(
+              this.#gateway,
+              request.body as WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
+            ),
           );
+        } catch (error: unknown) {
+          return this.#failure(reply, error);
         }
-        return await this.#run("source_checkout", () =>
-          checkoutSource.call(
-            this.#gateway,
-            request.body as WorkspaceVolumeGatewaySourceCheckoutInput,
-          ),
-        );
-      } catch (error: unknown) {
-        return this.#failure(reply, error);
-      }
-    });
+      },
+    );
+    this.#server.post(
+      WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_PREFLIGHT_PATH,
+      async (request, reply) => {
+        try {
+          const preflight = this.#gateway.preflightSourceCredential;
+          if (preflight === undefined) {
+            throw new WorkspaceVolumeGatewayError(
+              "source_control_credential_unavailable",
+              "Workspace Git credential preflight is unavailable",
+              false,
+            );
+          }
+          return await this.#run("source_credential_preflight", () =>
+            preflight.call(
+              this.#gateway,
+              request.body as WorkspaceVolumeGatewaySourceCredentialPreflightInput,
+            ),
+          );
+        } catch (error: unknown) {
+          return this.#failure(reply, error);
+        }
+      },
+    );
   }
 
   async #run<T>(operation: WorkspaceVolumeGatewayOperation, run: () => Promise<T>): Promise<T> {
@@ -527,15 +561,40 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     return { deleted: response.deleted };
   }
 
-  async checkoutSource(
-    input: WorkspaceVolumeGatewaySourceCheckoutInput,
-  ): Promise<{ baseSha: string }> {
-    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_SOURCE_CHECKOUT_PATH, input);
+  async authorizeSourceCredential(
+    input: WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
+  ): Promise<{ authorized: true }> {
+    const response = await this.#request(
+      WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH,
+      input,
+    );
+    if (!isRecord(response) || response.authorized !== true) {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_volume_gateway_response_invalid",
+        "Workspace Volume Gateway response was invalid",
+        false,
+      );
+    }
+    return { authorized: true };
+  }
+
+  async preflightSourceCredential(
+    input: WorkspaceVolumeGatewaySourceCredentialPreflightInput,
+  ): Promise<{
+    authorized: boolean;
+    reason?: "credential_missing" | "credential_rejected" | "gitlab_unreachable";
+  }> {
+    const response = await this.#request(
+      WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_PREFLIGHT_PATH,
+      input,
+    );
     if (
       !isRecord(response) ||
-      Object.keys(response).length !== 1 ||
-      typeof response.baseSha !== "string" ||
-      !/^[0-9a-f]{40}$/.test(response.baseSha)
+      typeof response.authorized !== "boolean" ||
+      (response.reason !== undefined &&
+        !["credential_missing", "credential_rejected", "gitlab_unreachable"].includes(
+          String(response.reason),
+        ))
     ) {
       throw new WorkspaceVolumeGatewayError(
         "workspace_volume_gateway_response_invalid",
@@ -543,7 +602,15 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
         false,
       );
     }
-    return { baseSha: response.baseSha };
+    return {
+      authorized: response.authorized,
+      ...(response.reason === undefined
+        ? {}
+        : {
+            reason: response.reason as
+              "credential_missing" | "credential_rejected" | "gitlab_unreachable",
+          }),
+    };
   }
 
   async close(): Promise<void> {}

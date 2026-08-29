@@ -3,17 +3,10 @@ import { Value } from "typebox/value";
 import { OpaqueIdSchema, UtcTimestampSchema, UuidSchema } from "./protocol-primitives.ts";
 
 const ProviderSchema = Type.Union([Type.Literal("github"), Type.Literal("gitlab")]);
-const ProviderNumericIdSchema = Type.String({ pattern: "^[1-9][0-9]{0,30}$" });
 const SourceControlTokenSchema = Type.String({
   minLength: 16,
   maxLength: 4_096,
   pattern: "^[^\\r\\n\\u0000]+$",
-});
-const GitShaSchema = Type.String({ pattern: "^[0-9a-f]{40}$" });
-const GitRefSchema = Type.String({
-  minLength: 1,
-  maxLength: 255,
-  pattern: "^[^\\u0000-\\u001f\\u007f ~^:?*\\[\\\\]+$",
 });
 const ProviderBaseUrlSchema = Type.String({
   minLength: 8,
@@ -24,11 +17,6 @@ const CloneUrlSchema = Type.String({
   minLength: 12,
   maxLength: 2_048,
   pattern: "^https?://[^/@\\s]+/.+\\.git$",
-});
-const VolumeWorkTreePathSchema = Type.String({
-  minLength: 1,
-  maxLength: 4_096,
-  pattern: "^(?:\\.|[^/\\u0000-\\u001f\\u007f][^\\u0000-\\u001f\\u007f]*)$",
 });
 
 export const SourceControlRepositoryResourceSchema = Type.Object(
@@ -134,7 +122,7 @@ export const StartSourceControlIssueJobRequestSchema = Type.Union([
         Type.Literal("standard"),
         Type.Literal("performance"),
       ]),
-      workspaceId: Type.Optional(UuidSchema),
+      workspaceId: UuidSchema,
     },
     { additionalProperties: false },
   ),
@@ -163,35 +151,84 @@ export const SourceControlIssueJobListResourceSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SourceControlWorkspaceCheckoutRequestSchema = Type.Object(
+export const SourceControlIssueGitCredentialRequestSchema = Type.Object(
+  { workspaceId: UuidSchema },
+  { additionalProperties: false },
+);
+
+export const SourceControlIssueGitCredentialResourceSchema = Type.Object(
   {
-    sourceControlProtocolVersion: Type.Literal(4),
-    type: Type.Literal("source_control.workspace_checkout"),
+    authorized: Type.Boolean(),
+    reason: Type.Optional(
+      Type.Union([
+        Type.Literal("credential_missing"),
+        Type.Literal("credential_rejected"),
+        Type.Literal("gitlab_unreachable"),
+      ]),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export const SourceControlIssueGitAuthorizationLinkResourceSchema = Type.Object(
+  {
+    url: Type.String({ minLength: 8, maxLength: 4_096 }),
+    expiresAt: UtcTimestampSchema,
+  },
+  { additionalProperties: false },
+);
+
+const GitCredentialMountPathSchema = Type.Union([
+  Type.Literal("/workspace"),
+  Type.Literal("/home/user"),
+]);
+
+export const SourceControlWorkspaceCredentialAuthorizeRequestSchema = Type.Object(
+  {
+    sourceControlProtocolVersion: Type.Literal(1),
+    type: Type.Literal("source_control.workspace_credential_authorize"),
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
     workspaceId: UuidSchema,
     repositoryId: UuidSchema,
     provider: ProviderSchema,
-    providerInstallationId: ProviderNumericIdSchema,
-    providerRepositoryId: ProviderNumericIdSchema,
-    cloneUrl: CloneUrlSchema,
     userCloneUrl: CloneUrlSchema,
-    baseRef: GitRefSchema,
-    branchName: GitRefSchema,
-    workTreePath: VolumeWorkTreePathSchema,
+    credentialMountPath: GitCredentialMountPathSchema,
     accessToken: SourceControlTokenSchema,
   },
   { additionalProperties: false },
 );
 
-export const SourceControlWorkspaceCheckoutResponseSchema = Type.Object(
+export const SourceControlWorkspaceCredentialPreflightRequestSchema = Type.Object(
   {
-    sourceControlProtocolVersion: Type.Literal(4),
-    type: Type.Literal("source_control.workspace_checked_out"),
+    sourceControlProtocolVersion: Type.Literal(1),
+    type: Type.Literal("source_control.workspace_credential_preflight"),
+    requestId: UuidSchema,
+    tenantId: OpaqueIdSchema,
+    workspaceId: UuidSchema,
+    repositoryId: UuidSchema,
+    provider: ProviderSchema,
+    userCloneUrl: CloneUrlSchema,
+    credentialMountPath: GitCredentialMountPathSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const SourceControlWorkspaceCredentialResponseSchema = Type.Object(
+  {
+    sourceControlProtocolVersion: Type.Literal(1),
+    type: Type.Literal("source_control.workspace_credential_result"),
     requestId: UuidSchema,
     workspaceId: UuidSchema,
     repositoryId: UuidSchema,
-    baseSha: GitShaSchema,
+    authorized: Type.Boolean(),
+    reason: Type.Optional(
+      Type.Union([
+        Type.Literal("credential_missing"),
+        Type.Literal("credential_rejected"),
+        Type.Literal("gitlab_unreachable"),
+      ]),
+    ),
   },
   { additionalProperties: false },
 );
@@ -213,12 +250,24 @@ export type StartSourceControlIssueJobRequest = Static<
 export type SourceControlIssueJobListResource = Static<
   typeof SourceControlIssueJobListResourceSchema
 >;
-export type ConnectGitLabProjectRequest = Static<typeof ConnectGitLabProjectRequestSchema>;
-export type SourceControlWorkspaceCheckoutRequest = Static<
-  typeof SourceControlWorkspaceCheckoutRequestSchema
+export type SourceControlIssueGitCredentialRequest = Static<
+  typeof SourceControlIssueGitCredentialRequestSchema
 >;
-export type SourceControlWorkspaceCheckoutResponse = Static<
-  typeof SourceControlWorkspaceCheckoutResponseSchema
+export type SourceControlIssueGitCredentialResource = Static<
+  typeof SourceControlIssueGitCredentialResourceSchema
+>;
+export type SourceControlIssueGitAuthorizationLinkResource = Static<
+  typeof SourceControlIssueGitAuthorizationLinkResourceSchema
+>;
+export type ConnectGitLabProjectRequest = Static<typeof ConnectGitLabProjectRequestSchema>;
+export type SourceControlWorkspaceCredentialAuthorizeRequest = Static<
+  typeof SourceControlWorkspaceCredentialAuthorizeRequestSchema
+>;
+export type SourceControlWorkspaceCredentialPreflightRequest = Static<
+  typeof SourceControlWorkspaceCredentialPreflightRequestSchema
+>;
+export type SourceControlWorkspaceCredentialResponse = Static<
+  typeof SourceControlWorkspaceCredentialResponseSchema
 >;
 
 export class SourceControlProtocolError extends Error {
@@ -263,6 +312,24 @@ export const parseSourceControlIssueJobResource = (value: unknown) =>
     value,
     "source-control Issue Job resource",
   );
+export const parseSourceControlIssueGitCredentialRequest = (value: unknown) =>
+  parse<SourceControlIssueGitCredentialRequest>(
+    SourceControlIssueGitCredentialRequestSchema,
+    value,
+    "source-control Issue Git credential request",
+  );
+export const parseSourceControlIssueGitCredentialResource = (value: unknown) =>
+  parse<SourceControlIssueGitCredentialResource>(
+    SourceControlIssueGitCredentialResourceSchema,
+    value,
+    "source-control Issue Git credential resource",
+  );
+export const parseSourceControlIssueGitAuthorizationLinkResource = (value: unknown) =>
+  parse<SourceControlIssueGitAuthorizationLinkResource>(
+    SourceControlIssueGitAuthorizationLinkResourceSchema,
+    value,
+    "source-control Issue Git authorization link resource",
+  );
 export const parseStartSourceControlIssueJobRequest = (
   value: unknown,
 ): StartSourceControlIssueJobRequest => {
@@ -285,15 +352,28 @@ export const parseConnectGitLabProjectRequest = (value: unknown) =>
     value,
     "connect GitLab project request",
   );
-export const parseSourceControlWorkspaceCheckoutRequest = (value: unknown) =>
-  parse<SourceControlWorkspaceCheckoutRequest>(
-    SourceControlWorkspaceCheckoutRequestSchema,
+export const parseSourceControlWorkspaceCredentialRequest = (value: unknown) => {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "source_control.workspace_credential_authorize"
+  ) {
+    return parse<SourceControlWorkspaceCredentialAuthorizeRequest>(
+      SourceControlWorkspaceCredentialAuthorizeRequestSchema,
+      value,
+      "source-control Workspace credential authorization request",
+    );
+  }
+  return parse<SourceControlWorkspaceCredentialPreflightRequest>(
+    SourceControlWorkspaceCredentialPreflightRequestSchema,
     value,
-    "source-control checkout request",
+    "source-control Workspace credential preflight request",
   );
-export const parseSourceControlWorkspaceCheckoutResponse = (value: unknown) =>
-  parse<SourceControlWorkspaceCheckoutResponse>(
-    SourceControlWorkspaceCheckoutResponseSchema,
+};
+export const parseSourceControlWorkspaceCredentialResponse = (value: unknown) =>
+  parse<SourceControlWorkspaceCredentialResponse>(
+    SourceControlWorkspaceCredentialResponseSchema,
     value,
-    "source-control checkout response",
+    "source-control Workspace credential response",
   );

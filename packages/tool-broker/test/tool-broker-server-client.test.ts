@@ -159,14 +159,24 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         sizeBytes: content.byteLength,
       };
     },
-    async checkoutSource(request) {
+    async authorizeSourceCredential(request) {
       return {
-        sourceControlProtocolVersion: 4,
-        type: "source_control.workspace_checked_out",
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_credential_result",
         requestId: request.requestId,
         workspaceId: request.workspaceId,
         repositoryId: request.repositoryId,
-        baseSha: "a".repeat(40),
+        authorized: true,
+      };
+    },
+    async preflightSourceCredential(request) {
+      return {
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_credential_result",
+        requestId: request.requestId,
+        workspaceId: request.workspaceId,
+        repositoryId: request.repositoryId,
+        authorized: true,
       };
     },
     async listAssignments(sandboxId) {
@@ -179,7 +189,7 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
 }
 
 describe("Tool Broker authenticated RPC", () => {
-  it("routes user-managed repository initialization through the materializer credential", async () => {
+  it("routes Workspace-owned Git credential authorization without cloning", async () => {
     const server = new ToolBrokerServer({
       host: "127.0.0.1",
       port: 0,
@@ -195,24 +205,29 @@ describe("Tool Broker authenticated RPC", () => {
       allowInsecureHttp: true,
     });
     const common = {
-      sourceControlProtocolVersion: 4 as const,
+      sourceControlProtocolVersion: 1 as const,
       requestId: "30000000-0000-4000-8000-000000000001",
       tenantId: "tenant-source-control",
       workspaceId: "30000000-0000-4000-8000-000000000002",
       repositoryId: "30000000-0000-4000-8000-000000000003",
       provider: "github" as const,
-      providerInstallationId: "77",
-      providerRepositoryId: "123456",
-      cloneUrl: "https://github.com/example/private-repo.git",
       userCloneUrl: "https://github.com/example/private-repo.git",
-      baseRef: "main",
-      branchName: "picloud/issue-1-test",
-      workTreePath: ".",
+      credentialMountPath: "/workspace" as const,
       accessToken: "ghs_process_scoped_test_token",
     };
     await expect(
-      client.checkoutSource({ ...common, type: "source_control.workspace_checkout" }),
-    ).resolves.toMatchObject({ baseSha: "a".repeat(40) });
+      client.authorizeSourceCredential({
+        ...common,
+        type: "source_control.workspace_credential_authorize",
+      }),
+    ).resolves.toMatchObject({ authorized: true });
+    const { accessToken: _accessToken, ...preflight } = common;
+    await expect(
+      client.preflightSourceCredential({
+        ...preflight,
+        type: "source_control.workspace_credential_preflight",
+      }),
+    ).resolves.toMatchObject({ authorized: true });
   });
 
   it("bridges an authenticated WebSocket to one bounded human PTY session", async () => {

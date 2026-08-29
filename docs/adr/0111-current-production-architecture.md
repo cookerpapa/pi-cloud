@@ -26,7 +26,8 @@ execution path and failure semantics.
   tenants, Sessions, Attempts, leases, fences, canonical completed Turns and
   Pi's native SessionStorage records.
 - One persistent Cube Volume is the byte authority for a Workspace. PostgreSQL
-  stores bounded revision, file-index and trusted Git-baseline metadata.
+  stores only its bounded revision and file-index metadata; user Git state
+  remains inside the Volume.
 - Kafka is the bounded AcceptedFact authority refined by ADR-0128. It is
   neither a second conversation transcript nor a Run scheduler.
 - A live process tree exists only inside one Cube KVM. Process memory, sockets,

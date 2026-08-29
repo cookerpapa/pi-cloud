@@ -70,7 +70,10 @@ function validRelativePath(value: string): boolean {
     return false;
   }
   const segments = value.split("/");
-  return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+  return (
+    segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..") &&
+    segments[0] !== ".pi-cloud-home"
+  );
 }
 
 function decodeCanonicalBase64(value: string): Buffer {
@@ -94,6 +97,7 @@ async function collectFiles(
   for (const entry of entries.sort((left, right) => comparePaths(left.name, right.name))) {
     const relativePath =
       relativeDirectory.length === 0 ? entry.name : `${relativeDirectory}/${entry.name}`;
+    if (relativeDirectory.length === 0 && entry.name === ".pi-cloud-home") continue;
     if (!validRelativePath(relativePath)) {
       throw snapshotError("Workspace contains an unsupported path");
     }
@@ -301,6 +305,7 @@ export async function restoreWorkspaceSnapshot(
 ): Promise<void> {
   const restored = parseWorkspaceSnapshot(snapshot);
   for (const entry of await readdir(workspaceDirectory)) {
+    if (entry === ".pi-cloud-home") continue;
     await rm(resolve(workspaceDirectory, entry), { recursive: true, force: true });
   }
   for (const file of restored) {

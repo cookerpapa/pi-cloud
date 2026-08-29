@@ -75,22 +75,23 @@ Terminal output is intentionally not a durable conversation record; Workspace
 files and platform audit metadata remain authoritative.
 
 GitHub App installation tokens are repository-scoped and minted just in time.
-For a user-authorized repository Workspace, initialization writes a usable
-authenticated Git remote into ordinary `.git` metadata. The Agent can read and
-exfiltrate that token. It is not copied into SessionStorage or Kafka by the
-platform. GitHub Webhooks are accepted only after
+For unattended GitHub execution, a short-lived token is written to the selected
+Workspace Git Home rather than PostgreSQL or model context. The Agent can read
+and exfiltrate it. GitHub Webhooks are accepted only after
 constant-time HMAC-SHA256 verification; their delivery ID is persisted before
 an Issue can create model work.
 
 GitLab project access tokens are limited to one connected project and encrypted
-at rest with a deployment key. They are unsealed for provider API calls and for
-explicit repository initialization. The resulting Git remote is visible in
-Cube and persists with that Workspace until the user changes or deletes it.
+at rest with a deployment key. They are unsealed only for trusted provider API
+calls and are never copied into user execution. A separate user OAuth+PKCE flow
+writes its Git credential directly to the selected Workspace's hidden
+`.pi-cloud-home`; PostgreSQL stores only one-use state/verifier rows.
 Project Webhooks use GitLab's Standard Webhooks HMAC contract, a recent
 timestamp and stable message ID; a `/picloud solve` comment additionally
 requires Developer-or-higher membership.
 Optional GitLab login uses authorization code, PKCE, nonce and a one-use state.
-The OAuth access token is discarded after resolving the external identity.
+The login OAuth access token is discarded after resolving the external identity;
+repository authorization is a distinct OAuth grant.
 Claim and start recheck live project membership through the trusted project
 adapter; a human claim is not an Agent execution authority.
 

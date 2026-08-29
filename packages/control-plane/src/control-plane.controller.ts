@@ -28,6 +28,7 @@ import {
   parseCreateDevelopmentEnvironmentDirectoryRequest,
   parseConnectGitLabProjectRequest,
   parseStartSourceControlIssueJobRequest,
+  parseSourceControlIssueGitCredentialRequest,
   parseDevelopmentEnvironmentActionRequest,
   parseRebindConversationWorkspaceRequest,
   parseConversationTreeView,
@@ -68,6 +69,8 @@ import {
   type SourceControlInstallLinkResource,
   type SourceControlIssueJobListResource,
   type SourceControlIssueJobResource,
+  type SourceControlIssueGitCredentialResource,
+  type SourceControlIssueGitAuthorizationLinkResource,
   type AuthenticationConfigurationResource,
 } from "@pi-cloud/protocol";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -255,13 +258,6 @@ export class ControlPlaneController {
   ): Promise<ProjectResource> {
     const request = parseCreateProjectRequest(body);
     const identity = this.tenantRequestContext.requireMutation(httpRequest);
-    if (request.source?.kind === "source_control") {
-      return this.sourceControl.createRepositoryProject(
-        identity,
-        this.controlPlaneStores.forIdentity(identity),
-        { ...request, source: request.source },
-      );
-    }
     return this.controlPlaneStores.forIdentity(identity).createProject(request);
   }
 
@@ -367,6 +363,45 @@ export class ControlPlaneController {
       parseUuidPathParameter(jobIdValue, "jobId"),
       parseStartSourceControlIssueJobRequest(body),
     );
+  }
+
+  @Post("source-control/issue-jobs/:jobId/git-preflight")
+  @HttpCode(200)
+  async preflightSourceControlIssueGit(
+    @Req() request: FastifyRequest,
+    @Param("jobId") jobIdValue: unknown,
+    @Body() body: unknown,
+  ): Promise<SourceControlIssueGitCredentialResource> {
+    const input = parseSourceControlIssueGitCredentialRequest(body);
+    return this.sourceControl.preflightIssueGitCredential(
+      this.tenantRequestContext.requireMutation(request),
+      parseUuidPathParameter(jobIdValue, "jobId"),
+      input.workspaceId,
+    );
+  }
+
+  @Post("source-control/issue-jobs/:jobId/git-authorization")
+  @HttpCode(200)
+  async beginSourceControlIssueGitAuthorization(
+    @Req() request: FastifyRequest,
+    @Param("jobId") jobIdValue: unknown,
+    @Body() body: unknown,
+  ): Promise<SourceControlIssueGitAuthorizationLinkResource> {
+    const input = parseSourceControlIssueGitCredentialRequest(body);
+    return this.sourceControl.beginIssueGitAuthorization(
+      this.tenantRequestContext.requireMutation(request),
+      parseUuidPathParameter(jobIdValue, "jobId"),
+      input.workspaceId,
+    );
+  }
+
+  @Get("source-control/gitlab/authorization/callback")
+  async completeSourceControlIssueGitAuthorization(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    await this.sourceControl.completeIssueGitAuthorization(request.url);
+    reply.redirect("/?resource=source-control&gitAuthorization=connected");
   }
 
   @Post("source-control/github/webhook")

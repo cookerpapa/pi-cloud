@@ -138,8 +138,10 @@ Webhook; the Web UI only surfaces Issue tasks after they exist.
 
 GitLab OIDC is independently optional. Register one confidential OAuth
 application with callback
-`https://<picloud-host>/v1/auth/oidc/gitlab/callback` and scopes `openid`,
-`profile`, `email`, `read_user`. The local lab command `npm run gitlab:oauth`
+`https://<picloud-host>/v1/auth/oidc/gitlab/callback` plus
+`https://<picloud-host>/v1/source-control/gitlab/authorization/callback`, and
+scopes `openid`, `profile`, `email`, `read_user`, `api`, `read_repository`,
+`write_repository`. The local lab command `npm run gitlab:oauth`
 creates that application and prints the corresponding private `.env` entries.
 
 | Variable | Default | Meaning |
@@ -156,10 +158,11 @@ through the matching GitLab instance and holding Developer access claims it and
 chooses elastic compute or an empty directory under `/home/user` in an owned
 cloud development machine. Elastic execution may create a dedicated Workspace
 or reuse a compatible existing one, and the user names the conversation. The
-OAuth token is discarded after login; project
-checkout places the separately encrypted project token in the imported
-worktree's authenticated Git remote, where the Agent can use ordinary Git
-commands after an explicit user instruction. The initial Run does not commit,
+OAuth token is discarded after login. Before a private-repository Run starts,
+PiCloud checks the selected environment with `git ls-remote`. A separate OAuth
+authorization writes the user token directly to the Workspace's persistent
+`.pi-cloud-home`; PostgreSQL retains only the one-use state/PKCE request. The
+Agent performs `git clone` itself. The initial Run does not commit,
 push, open a Merge Request, comment on or close the Issue.
 When an internal base URL is set, OIDC/Webhook identity still uses the public
 origin while trusted API and Git traffic uses the internal origin. Both must
@@ -200,9 +203,10 @@ does not expose this provider; installation and callback endpoints remain for
 deployments that operate the GitHub adapter directly.
 
 GitHub tokens are never valid configuration values: PiCloud mints a short-lived
-installation token when needed. An imported worktree receives that token in its
-authenticated Git remote so the Agent can push; reconnecting is required after
-the token expires.
+installation token when needed. For an enabled unattended GitHub Issue Run, the
+token is written to that Workspace's hidden Git Home and the Agent performs the
+ordinary clone. Later delivery needs a fresh user-directed authorization after
+the installation token expires.
 
 ### SSH and optional profiles
 
@@ -279,8 +283,8 @@ Kafka TLS/SASL material and source-control credential master key in the
 generated private files or Kubernetes Secrets. Cube receives none of them.
 When GitHub integration is enabled, the App private key and Webhook secret are
 also deployment Secrets; installation access tokens are generated at runtime
-and must never be copied into configuration. GitLab project tokens are
-encrypted at rest in PostgreSQL and copied only into the selected user
-worktree's authenticated Git remote. They are therefore visible to code in that
-Workspace and must be scoped to the least repository permissions the workflow
-needs.
+and must never be copied into configuration. GitLab project tokens stay
+encrypted in PostgreSQL for trusted Webhook, membership and provider API work.
+The separate user OAuth token is written only to the selected Workspace Git
+Home, is deliberately visible to its Agent and must use the least repository
+scope the workflow needs.

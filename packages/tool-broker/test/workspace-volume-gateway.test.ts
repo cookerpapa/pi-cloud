@@ -176,7 +176,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await expect(mover.delete(first)).resolves.toEqual({ deleted: false });
   });
 
-  it("initializes ordinary user-managed Git repositories with Agent-visible credentials", async () => {
+  it("stores a user Git credential without cloning or exposing it to the Workspace index", async () => {
     const workspaceRoot = await root();
     const fixtureRoot = await root();
     const remote = join(fixtureRoot, "remote.git");
@@ -209,85 +209,54 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     });
     const bound = identity("source-control-request");
     await mover.prepare(bound);
-    const checkout = await mover.checkoutSource!({
-      ...bound,
-      requestId: randomUUID(),
-      repositoryId: "90000000-0000-4000-8000-000000000001",
-      provider: "github",
-      providerInstallationId: "77",
-      providerRepositoryId: "123456",
-      cloneUrl: "https://github.com/example/private-repo.git",
-      userCloneUrl: "https://github.com/example/private-repo.git",
-      baseRef: "main",
-      branchName: "picloud/issue-1-test",
-      workTreePath: ".",
-      accessToken: "ghs_process_scoped_secret",
-    });
-    expect(checkout.baseSha).toMatch(/^[0-9a-f]{40}$/);
+    await expect(
+      mover.preflightSourceCredential!({
+        ...bound,
+        requestId: randomUUID(),
+        repositoryId: "90000000-0000-4000-8000-000000000001",
+        provider: "github",
+        userCloneUrl: "https://github.com/example/private-repo.git",
+        credentialMountPath: "/workspace",
+      }),
+    ).resolves.toEqual({ authorized: false, reason: "credential_missing" });
+    await expect(
+      mover.authorizeSourceCredential!({
+        ...bound,
+        requestId: randomUUID(),
+        repositoryId: "90000000-0000-4000-8000-000000000001",
+        provider: "github",
+        userCloneUrl: "https://github.com/example/private-repo.git",
+        credentialMountPath: "/workspace",
+        accessToken: "ghs_process_scoped_secret",
+      }),
+    ).resolves.toEqual({ authorized: true });
     const volumeRoot = join(workspaceRoot, `picloud-posix-${bound.volumeId}`);
     const workspace = join(volumeRoot, "workspace");
-    await expect(readFile(join(workspace, "README.md"), "utf8")).resolves.toBe("private source\n");
-    await expect(readdir(workspace)).resolves.toContain(".git");
-    await expect(readFile(join(workspace, ".git/config"), "utf8")).resolves.toContain(
-      "ghs_process_scoped_secret",
+    await expect(readdir(workspace)).resolves.toEqual([".pi-cloud-home"]);
+    await expect(
+      readFile(join(workspace, ".pi-cloud-home/.git-credentials"), "utf8"),
+    ).resolves.toContain("ghs_process_scoped_secret");
+    await expect(readFile(join(workspace, ".pi-cloud-home/.gitconfig"), "utf8")).resolves.toContain(
+      "/workspace/.pi-cloud-home/.git-credentials",
     );
     await expect(
-      exec("/usr/bin/git", ["status", "--short"], { cwd: workspace }),
-    ).resolves.toMatchObject({ stdout: "" });
-    await expect(
-      mover.checkoutSource!({
+      mover.preflightSourceCredential!({
         ...bound,
         requestId: randomUUID(),
         repositoryId: "90000000-0000-4000-8000-000000000001",
         provider: "github",
-        providerInstallationId: "77",
-        providerRepositoryId: "123456",
-        cloneUrl: "https://github.com/example/private-repo.git",
         userCloneUrl: "https://github.com/example/private-repo.git",
-        baseRef: "main",
-        branchName: "picloud/issue-1-test",
-        workTreePath: ".",
-        accessToken: "ghs_process_scoped_secret",
+        credentialMountPath: "/workspace",
       }),
-    ).resolves.toEqual(checkout);
-
-    await mkdir(join(workspace, "second-project"));
-    const second = await mover.checkoutSource!({
+    ).resolves.toEqual({ authorized: true });
+    const snapshot = await mover.snapshot({
       ...bound,
-      requestId: randomUUID(),
-      repositoryId: "90000000-0000-4000-8000-000000000001",
-      provider: "github",
-      providerInstallationId: "77",
-      providerRepositoryId: "123456",
-      cloneUrl: "https://github.com/example/private-repo.git",
-      userCloneUrl: "https://github.com/example/private-repo.git",
-      baseRef: "main",
-      branchName: "picloud/issue-2-test",
-      workTreePath: "second-project",
-      accessToken: "ghs_process_scoped_secret",
+      activationId: randomUUID(),
+      fencingToken: 1,
+      bindingSha256: "a".repeat(64),
     });
-    expect(second.baseSha).toMatch(/^[0-9a-f]{40}$/);
-    await expect(readFile(join(workspace, "second-project/README.md"), "utf8")).resolves.toBe(
-      "private source\n",
-    );
-    await expect(readdir(join(workspace, "second-project"))).resolves.toContain(".git");
-    await expect(
-      mover.checkoutSource!({
-        ...bound,
-        requestId: randomUUID(),
-        repositoryId: "90000000-0000-4000-8000-000000000001",
-        provider: "github",
-        providerInstallationId: "77",
-        providerRepositoryId: "123456",
-        cloneUrl: "https://github.com/example/private-repo.git",
-        userCloneUrl: "https://github.com/example/private-repo.git",
-        baseRef: "main",
-        branchName: "picloud/escape",
-        workTreePath: "../escape",
-        accessToken: "ghs_process_scoped_secret",
-      }),
-    ).rejects.toMatchObject({ code: "source_control_work_tree_invalid" });
-    expect(observedTokens).toEqual(["ghs_process_scoped_secret", "ghs_process_scoped_secret"]);
+    expect(snapshot.files).toEqual([]);
+    expect(observedTokens).toEqual(["ghs_process_scoped_secret"]);
   });
 });
 

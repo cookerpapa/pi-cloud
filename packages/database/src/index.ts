@@ -44,7 +44,6 @@ export {
   type SourceControlProvider,
   type SourceControlInstallationState,
   type SourceControlRepositoryState,
-  type SourceControlCheckoutState,
   type SourceControlWebhookState,
   type SourceControlIssueJobState,
   type SourceControlInstallationTable,

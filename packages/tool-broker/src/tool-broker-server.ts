@@ -12,7 +12,7 @@ import {
   parseSupervisorManagementRequest,
   parseToolSandboxOperationRequest,
   parseSandboxPreviewRequest,
-  parseSourceControlWorkspaceCheckoutRequest,
+  parseSourceControlWorkspaceCredentialRequest,
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
   type InternalServiceError,
   type SupervisorManagementResponse,
@@ -79,7 +79,8 @@ export type ToolBrokerBackend = Pick<
       | "browseDevelopmentEnvironment"
       | "openDevelopmentEnvironmentTerminal"
       | "preview"
-      | "checkoutSource"
+      | "authorizeSourceCredential"
+      | "preflightSourceCredential"
     >
   >;
 
@@ -592,23 +593,53 @@ export class ToolBrokerServer {
         return;
       }
       try {
-        const checkoutSource = this.#broker.checkoutSource;
-        if (checkoutSource === undefined) {
-          throw new ToolBrokerError(
-            "source_control_checkout_unavailable",
-            "Source-control checkout is unavailable",
-            false,
+        if (
+          typeof request.body === "object" &&
+          request.body !== null &&
+          "type" in request.body &&
+          (request.body.type === "source_control.workspace_credential_authorize" ||
+            request.body.type === "source_control.workspace_credential_preflight")
+        ) {
+          const message = parseSourceControlWorkspaceCredentialRequest(request.body);
+          await reply.code(200).send(
+            await this.#observed({
+              request,
+              spanName: "source_control.credential",
+              operation:
+                message.type === "source_control.workspace_credential_authorize"
+                  ? "source_credential_authorize"
+                  : "source_credential_preflight",
+              kind: "sandbox",
+              run: async () => {
+                if (message.type === "source_control.workspace_credential_authorize") {
+                  const authorize = this.#broker.authorizeSourceCredential;
+                  if (authorize === undefined) {
+                    throw new ToolBrokerError(
+                      "source_control_credential_unavailable",
+                      "Source-control credential authorization is unavailable",
+                      false,
+                    );
+                  }
+                  return authorize.call(this.#broker, message);
+                }
+                const preflight = this.#broker.preflightSourceCredential;
+                if (preflight === undefined) {
+                  throw new ToolBrokerError(
+                    "source_control_credential_unavailable",
+                    "Source-control credential preflight is unavailable",
+                    false,
+                  );
+                }
+                return preflight.call(this.#broker, message);
+              },
+            }),
           );
+          return;
         }
-        const message = parseSourceControlWorkspaceCheckoutRequest(request.body);
-        await reply.code(200).send(
-          await this.#observed({
-            request,
-            spanName: "source_control.checkout",
-            operation: "source_checkout",
-            kind: "sandbox",
-            run: () => checkoutSource.call(this.#broker, message),
-          }),
+        throw new ToolBrokerError(
+          "source_control_request_invalid",
+          "Source-control Workspace request is invalid",
+          false,
         );
       } catch (error: unknown) {
         await this.#failure(reply, error);

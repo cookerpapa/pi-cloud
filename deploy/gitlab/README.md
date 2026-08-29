@@ -11,7 +11,7 @@ npm run gitlab:oauth
 ```
 
 `gitlab:oauth` creates a local OIDC application and prints the private-runtime
-variables needed for the project connector, Webhook route, trusted Git origin
+variables needed for the project connector, Webhook route, Agent-visible Git origin
 and **Continue with GitLab** login button.
 Copy them into the ignored `deploy/production/runtime/.env`, set
 `PI_CLOUD_OIDC_GITLAB_TENANT_ID` to the PiCloud tenant that owns the connected
@@ -41,10 +41,12 @@ The connector registers a signed Issue/Note Webhook automatically. Add the
 `picloud` label to an Issue or post `/picloud solve` as a Developer or higher;
 PiCloud records a pending Issue request. A user authenticated through this
 GitLab instance and holding Developer access may claim it, choose elastic or
-owned-machine execution, and start the ordinary Session/Run. The resulting
-Workspace contains a normal authenticated Git worktree. The initial Run changes
-and tests files only; commit, push, Merge Request and Issue state remain explicit
-later user actions.
+owned-machine execution, and name the Session. PiCloud checks the selected
+environment with `git ls-remote`; missing credentials trigger a separate
+OAuth+PKCE repository authorization. The user token is written directly to that
+Workspace's `.pi-cloud-home`, and the Agent performs `git clone`. The initial
+Run changes and tests files only; commit, push, Merge Request and Issue state
+remain explicit later user actions.
 
 GitLab state and its generated root password live under ignored
 `deploy/gitlab/runtime/`. Stop it with `npm run gitlab:down`.

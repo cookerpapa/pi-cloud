@@ -39,7 +39,6 @@ describe("current PiCloud schema", () => {
         "development_environments",
         "source_control_installations",
         "source_control_repositories",
-        "workspace_source_repositories",
         "source_control_webhook_deliveries",
         "source_control_issue_jobs",
         "source_control_credentials",
@@ -48,6 +47,7 @@ describe("current PiCloud schema", () => {
         "external_identities",
         "oidc_authentication_requests",
         "source_control_issue_claims",
+        "workspace_git_oauth_requests",
       ]) {
         expect(names.has(required), `missing current table ${required}`).toBe(true);
       }
@@ -103,7 +103,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("110_user_directed_issue_sessions");
+      expect(applied.rows.at(-1)?.name).toBe("111_workspace_git_oauth_requests");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

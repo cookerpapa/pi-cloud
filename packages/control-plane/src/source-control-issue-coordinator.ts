@@ -11,33 +11,6 @@ const JOB_LEASE_MS = 2 * 60_000;
 const JOB_HEARTBEAT_MS = 30_000;
 const MAXIMUM_ATTEMPTS = 8;
 
-function volumeWorkTreePath(executionMode: string, workingDirectory: string): string {
-  if (executionMode === "elastic") {
-    if (workingDirectory !== "/workspace") {
-      throw new SourceControlServiceError(
-        "source_control_operation_failed",
-        "Elastic Issue Workspace must use /workspace",
-      );
-    }
-    return ".";
-  }
-  if (executionMode !== "development_environment") {
-    throw new SourceControlServiceError(
-      "source_control_operation_failed",
-      "Issue execution mode is invalid",
-    );
-  }
-  if (workingDirectory === "/home/user") return ".";
-  const prefix = "/home/user/";
-  if (!workingDirectory.startsWith(prefix)) {
-    throw new SourceControlServiceError(
-      "source_control_operation_failed",
-      "Cloud development machine Issue directories must be inside /home/user",
-    );
-  }
-  return workingDirectory.slice(prefix.length);
-}
-
 type ClaimedJob = Awaited<ReturnType<SourceControlIssueCoordinator["claimNext"]>>;
 
 function safeFailure(error: unknown): { code: string; message: string; retryable: boolean } {
@@ -224,7 +197,6 @@ export class SourceControlIssueCoordinator {
       );
     }
     const identity = await this.#identity(job);
-    const workTreePath = volumeWorkTreePath(job.execution_mode, job.working_directory);
     const store = new ControlPlaneStore({
       database: this.#database,
       tenantId: identity.tenantId,
@@ -249,44 +221,16 @@ export class SourceControlIssueCoordinator {
             .onRef("workspace.tenant_id", "=", "project.tenant_id")
             .onRef("workspace.project_id", "=", "project.id"),
         )
-        .innerJoin("workspace_source_repositories as source", (join) =>
-          join
-            .onRef("source.tenant_id", "=", "workspace.tenant_id")
-            .onRef("source.workspace_id", "=", "workspace.id"),
-        )
-        .select([
-          "project.id as projectId",
-          "workspace.id as workspaceId",
-          "source.checkout_state as checkoutState",
-        ])
+        .select(["project.id as projectId", "workspace.id as workspaceId"])
         .where("project.tenant_id", "=", job.tenant_id)
         .where("project.name", "=", projectName)
         .where("project.deleted_at", "is", null)
-        .where("source.repository_id", "=", job.repository_id)
         .executeTakeFirst();
       if (existing !== undefined) {
         projectId = existing.projectId;
         workspaceId = existing.workspaceId;
-        if (existing.checkoutState !== "ready") {
-          const baseSha = await this.#sourceControl.checkoutIssueWorkspace({
-            tenantId: job.tenant_id,
-            repositoryId: job.repository_id,
-            workspaceId,
-            branchName: job.branch_name,
-            workTreePath,
-          });
-          await this.#markCheckoutReady(job.tenant_id, workspaceId, baseSha);
-        }
       } else {
-        const created = await this.#sourceControl.createRepositoryProject(
-          identity,
-          store,
-          {
-            name: projectName,
-            source: { kind: "source_control", repositoryId: job.repository_id },
-          },
-          job.branch_name,
-        );
+        const created = await store.createProject({ name: projectName, source: { kind: "empty" } });
         projectId = created.projectId;
         workspaceId = created.workspaceId;
       }
@@ -297,20 +241,19 @@ export class SourceControlIssueCoordinator {
       });
     }
 
-    if (job.execution_mode === "development_environment") {
-      await this.#sourceControl.checkoutIssueWorkspace({
-        tenantId: job.tenant_id,
-        repositoryId: job.repository_id,
-        workspaceId: workspaceId!,
-        branchName: job.branch_name,
-        workTreePath,
-      });
-    } else {
-      await this.#prepareElasticWorkspace(
-        job,
-        workspaceId!,
-        workTreePath,
-        repository.default_branch,
+    const credential =
+      repository.provider === "github"
+        ? await this.#sourceControl.authorizeAutomationGitCredential(
+            job.tenant_id,
+            job.repository_id,
+            workspaceId!,
+            job.execution_mode === "development_environment" ? "/home/user" : "/workspace",
+          )
+        : await this.#sourceControl.preflightIssueGitCredential(identity, job.id, workspaceId!);
+    if (!credential.authorized) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "Selected environment is not authorized to clone the Issue repository",
       );
     }
 
@@ -340,8 +283,10 @@ export class SourceControlIssueCoordinator {
 
     const prompt = [
       `Resolve ${repository.provider === "gitlab" ? "GitLab" : "GitHub"} Issue #${String(job.issue_number)} in ${repository.full_name}.`,
-      "Inspect the repository, implement the smallest complete fix, and run relevant tests.",
-      `This is a normal Git worktree; ${job.branch_name} is the suggested task branch. Inspect the current Git state before editing.`,
+      `Repository clone URL: ${await this.#sourceControl.workspaceCloneUrlForJob(job.repository_id)}`,
+      `Working directory: ${job.working_directory}`,
+      "No repository was cloned by PiCloud. Inspect the selected directory first. Reuse the repository if it is already present; otherwise clone it into a sensibly named child directory with ordinary git clone.",
+      `Use ${job.branch_name} as the suggested task branch, then implement the smallest complete fix and run relevant tests.`,
       "Do not commit, push, create a Merge/Pull Request, comment on the Issue, or change its state during this initial Run.",
       "Leave those delivery decisions to a later explicit user instruction in this conversation.",
       "",
@@ -535,78 +480,6 @@ export class SourceControlIssueCoordinator {
             },
           }),
     };
-  }
-
-  async #prepareElasticWorkspace(
-    job: NonNullable<ClaimedJob>,
-    workspaceId: string,
-    workTreePath: string,
-    baseRef: string,
-  ): Promise<void> {
-    const source = await this.#database
-      .selectFrom("workspace_source_repositories")
-      .select(["repository_id", "checkout_state"])
-      .where("tenant_id", "=", job.tenant_id)
-      .where("workspace_id", "=", workspaceId)
-      .executeTakeFirst();
-    if (source !== undefined && source.repository_id !== job.repository_id) {
-      throw new SourceControlServiceError(
-        "source_control_conflict",
-        "Selected Workspace belongs to another source repository",
-      );
-    }
-    if (source === undefined) {
-      await this.#database
-        .insertInto("workspace_source_repositories")
-        .values({
-          tenant_id: job.tenant_id,
-          workspace_id: workspaceId,
-          repository_id: job.repository_id,
-          base_ref: baseRef,
-          base_sha: null,
-          checkout_state: "provisioning",
-          failure_code: null,
-          created_at: this.#clock(),
-          updated_at: this.#clock(),
-        })
-        .executeTakeFirstOrThrow();
-    }
-    try {
-      const baseSha = await this.#sourceControl.checkoutIssueWorkspace({
-        tenantId: job.tenant_id,
-        repositoryId: job.repository_id,
-        workspaceId,
-        branchName: job.branch_name,
-        workTreePath,
-      });
-      await this.#markCheckoutReady(job.tenant_id, workspaceId, baseSha);
-    } catch (error: unknown) {
-      await this.#database
-        .updateTable("workspace_source_repositories")
-        .set({
-          checkout_state: "failed",
-          failure_code: "checkout_failed",
-          updated_at: this.#clock(),
-        })
-        .where("tenant_id", "=", job.tenant_id)
-        .where("workspace_id", "=", workspaceId)
-        .execute();
-      throw error;
-    }
-  }
-
-  async #markCheckoutReady(tenantId: string, workspaceId: string, baseSha: string): Promise<void> {
-    await this.#database
-      .updateTable("workspace_source_repositories")
-      .set({
-        checkout_state: "ready",
-        base_sha: baseSha,
-        failure_code: null,
-        updated_at: this.#clock(),
-      })
-      .where("tenant_id", "=", tenantId)
-      .where("workspace_id", "=", workspaceId)
-      .executeTakeFirstOrThrow();
   }
 
   async #updateOwned(

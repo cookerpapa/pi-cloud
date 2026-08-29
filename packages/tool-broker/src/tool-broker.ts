@@ -22,8 +22,9 @@ import type {
   CloudToolName,
   SandboxPreviewRequest,
   SandboxPreviewResponse,
-  SourceControlWorkspaceCheckoutRequest,
-  SourceControlWorkspaceCheckoutResponse,
+  SourceControlWorkspaceCredentialAuthorizeRequest,
+  SourceControlWorkspaceCredentialPreflightRequest,
+  SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
 import { createExecutionLease, parseCloudToolCapabilitySnapshot } from "@pi-cloud/protocol";
 import {
@@ -2024,17 +2025,30 @@ export class ToolBroker {
     return this.#provider.materializeFile(request, signal);
   }
 
-  async checkoutSource(
-    request: SourceControlWorkspaceCheckoutRequest,
-  ): Promise<SourceControlWorkspaceCheckoutResponse> {
-    if (this.#provider.checkoutSource === undefined) {
+  async authorizeSourceCredential(
+    request: SourceControlWorkspaceCredentialAuthorizeRequest,
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    if (this.#provider.authorizeSourceCredential === undefined) {
       throw new ToolBrokerError(
-        "source_control_checkout_unavailable",
-        "The configured Sandbox Provider cannot prepare source repositories",
+        "source_control_credential_unavailable",
+        "The configured Sandbox Provider cannot store Workspace Git credentials",
         false,
       );
     }
-    return this.#provider.checkoutSource(request);
+    return this.#provider.authorizeSourceCredential(request);
+  }
+
+  async preflightSourceCredential(
+    request: SourceControlWorkspaceCredentialPreflightRequest,
+  ): Promise<SourceControlWorkspaceCredentialResponse> {
+    if (this.#provider.preflightSourceCredential === undefined) {
+      throw new ToolBrokerError(
+        "source_control_credential_unavailable",
+        "The configured Sandbox Provider cannot verify Workspace Git credentials",
+        false,
+      );
+    }
+    return this.#provider.preflightSourceCredential(request);
   }
 
   async close(): Promise<void> {

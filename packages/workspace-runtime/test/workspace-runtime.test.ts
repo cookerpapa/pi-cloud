@@ -37,6 +37,8 @@ describe("shared workspace runtime", () => {
     const source = await temporaryDirectory("pi-cloud-workspace-runtime-source-");
     await mkdir(resolve(source, ".git"));
     await writeFile(resolve(source, ".git/HEAD"), "ref: refs/heads/main\n");
+    await mkdir(resolve(source, ".pi-cloud-home"));
+    await writeFile(resolve(source, ".pi-cloud-home/.git-credentials"), "source-secret\n");
     await mkdir(resolve(source, "src"));
     await writeFile(resolve(source, "src/App.java"), "class App {}\n");
     await writeFile(resolve(source, "test.sh"), "#!/bin/sh\nexit 0\n");
@@ -47,6 +49,8 @@ describe("shared workspace runtime", () => {
     expect(Buffer.from(restoredEnvelope)).toEqual(Buffer.from(snapshot));
 
     const target = await temporaryDirectory("pi-cloud-workspace-runtime-target-");
+    await mkdir(resolve(target, ".pi-cloud-home"));
+    await writeFile(resolve(target, ".pi-cloud-home/.git-credentials"), "target-secret\n");
     await writeFile(resolve(target, "stale.txt"), "remove me");
     await restoreWorkspaceSnapshot(target, restoredEnvelope);
 
@@ -54,6 +58,9 @@ describe("shared workspace runtime", () => {
       "ref: refs/heads/main\n",
     );
     await expect(readFile(resolve(target, "src/App.java"), "utf8")).resolves.toBe("class App {}\n");
+    await expect(
+      readFile(resolve(target, ".pi-cloud-home/.git-credentials"), "utf8"),
+    ).resolves.toBe("target-secret\n");
     await expect(readFile(resolve(target, "stale.txt"), "utf8")).rejects.toThrow();
     expect((await stat(resolve(target, "test.sh"))).mode & 0o111).not.toBe(0);
   });
@@ -99,6 +106,8 @@ describe("shared workspace runtime", () => {
     const root = await temporaryDirectory("pi-cloud-cube-workspace-index-");
     await mkdir(resolve(root, ".git"));
     await writeFile(resolve(root, ".git/HEAD"), "ref: refs/heads/main\n");
+    await mkdir(resolve(root, ".pi-cloud-home"));
+    await writeFile(resolve(root, ".pi-cloud-home/.git-credentials"), "secret\n");
     await mkdir(resolve(root, "nested/.git"), { recursive: true });
     await writeFile(resolve(root, "nested/.git/config"), "[core]\n");
     await mkdir(resolve(root, "src"));
@@ -114,6 +123,7 @@ describe("shared workspace runtime", () => {
     expect(files).toHaveLength(601);
     expect(files[0]?.path).toBe("nested/.git/config");
     expect(files.some((file) => file.path === ".git/HEAD")).toBe(false);
+    expect(files.some((file) => file.path.startsWith(".pi-cloud-home/"))).toBe(false);
   });
 
   it("indexes symlinks without following them", async () => {

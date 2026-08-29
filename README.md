@@ -110,23 +110,22 @@ After deployment:
 
 The optional deployment-controlled GitLab adapter connects one public or
 private project through the source-control API with a project access token
-scoped to that repository. PiCloud encrypts the connection copy,
-then creates a normal `.git` checkout whose authenticated `origin` is visible
-inside the selected Workspace. From that point Git is user/Agent-managed; the
-platform does not maintain a hidden baseline, inspect file changes, generate a
-Patch, commit or push. A new elastic Workspace can start from the connected
-repository. Adding the configured `picloud` label to an Issue,
+scoped to that repository. PiCloud encrypts this deployment integration
+credential for Webhooks and membership checks; it never copies it into a user
+Workspace. Adding the configured `picloud` label to an Issue,
 or posting `/picloud solve`, creates a pending request without spending model
 quota. A user signed in through the matching optional GitLab OIDC provider and
 holding Developer access may claim it, select elastic compute or an owned
 development-machine directory, choose a conversation name, and start the
 ordinary Session/Run in a new or compatible existing Workspace. The initial
-Run implements and tests the change but does not commit, push, create an MR,
+start performs a real `git ls-remote` preflight. If the selected environment has
+no credential, a separate GitLab OAuth+PKCE flow writes the user token directly
+to that Workspace's hidden persistent Git Home, never PostgreSQL or model
+context. The Agent then performs the visible `git clone` itself. The initial Run
+implements and tests the change but does not commit, push, create an MR,
 comment on or close the Issue. Delivery remains an explicit later user/Agent
-action. The repository
-token is intentionally available to Git inside that Workspace, while the OIDC
-login token is discarded after login and neither credential enters Pi context
-or Kafka. Run the
+action. Neither the login token nor repository OAuth token enters Pi context or
+Kafka. Run the
 optional local acceptance instance with `npm run gitlab:up`; see
 [its README](deploy/gitlab/README.md).
 
