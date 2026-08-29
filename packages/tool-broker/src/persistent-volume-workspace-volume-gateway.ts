@@ -15,6 +15,7 @@ import {
   mkdir,
   open,
   readFile,
+  realpath,
   readdir,
   rename,
   rm,
@@ -29,10 +30,12 @@ import {
   VOLUME_GENERATION_PATTERN,
   VOLUME_GIT_DIRECTORY,
   VOLUME_METADATA_DIRECTORY,
+  VOLUME_SOURCE_GIT_DIRECTORY,
   VOLUME_WORKSPACE_DIRECTORY,
   WorkspaceVolumeGatewayError,
   isRecord,
   safeRelativeFile,
+  safeVolumeWorkTreePath,
   validatedAbsoluteDirectory,
   validatedGitBaselineCommit,
   validatedIdentity,
@@ -54,7 +57,46 @@ import {
 
 const GIT_TIMEOUT_MS = 5 * 60_000;
 
-function trustedGitEnvironment(accessToken?: string): NodeJS.ProcessEnv {
+type SourceControlBinding = NonNullable<VolumeState["sourceControl"]>;
+
+function sourceBindingMatches(
+  binding: SourceControlBinding,
+  input: WorkspaceVolumeGatewaySourceCheckoutInput | WorkspaceVolumeGatewaySourcePublishInput,
+): boolean {
+  return (
+    binding.provider === input.provider &&
+    binding.repositoryId === input.repositoryId &&
+    binding.providerRepositoryId === input.providerRepositoryId &&
+    binding.cloneUrl === input.cloneUrl &&
+    binding.baseRef === input.baseRef &&
+    binding.branchName === input.branchName
+  );
+}
+
+function sourceBindingValid(value: unknown): value is SourceControlBinding {
+  return (
+    isRecord(value) &&
+    (value.provider === "github" || value.provider === "gitlab") &&
+    typeof value.repositoryId === "string" &&
+    UUID_PATTERN.test(value.repositoryId) &&
+    typeof value.providerRepositoryId === "string" &&
+    /^[1-9][0-9]{0,30}$/.test(value.providerRepositoryId) &&
+    typeof value.cloneUrl === "string" &&
+    /^https?:\/\/[^/@\s]+\/.+\.git$/.test(value.cloneUrl) &&
+    typeof value.baseRef === "string" &&
+    typeof value.branchName === "string" &&
+    typeof value.baseSha === "string" &&
+    GIT_COMMIT_PATTERN.test(value.baseSha)
+  );
+}
+
+function trustedGitEnvironment(
+  credential?: Readonly<{
+    provider: "github" | "gitlab";
+    cloneUrl: string;
+    accessToken: string;
+  }>,
+): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
     HOME: "/tmp",
@@ -74,11 +116,13 @@ function trustedGitEnvironment(accessToken?: string): NodeJS.ProcessEnv {
     const value = process.env[name];
     if (value !== undefined) environment[name] = value;
   }
-  if (accessToken !== undefined) {
+  if (credential !== undefined) {
+    const origin = new URL(credential.cloneUrl).origin;
+    const username = credential.provider === "github" ? "x-access-token" : "oauth2";
     environment.GIT_CONFIG_COUNT = "2";
-    environment.GIT_CONFIG_KEY_0 = "http.https://github.com/.extraheader";
+    environment.GIT_CONFIG_KEY_0 = `http.${origin}/.extraheader`;
     environment.GIT_CONFIG_VALUE_0 = `AUTHORIZATION: basic ${Buffer.from(
-      `x-access-token:${accessToken}`,
+      `${username}:${credential.accessToken}`,
       "utf8",
     ).toString("base64")}`;
     environment.GIT_CONFIG_KEY_1 = "credential.helper";
@@ -91,7 +135,11 @@ export function runTrustedWorkspaceGit(
   args: readonly string[],
   options: {
     cwd: string;
-    accessToken?: string;
+    credential?: Readonly<{
+      provider: "github" | "gitlab";
+      cloneUrl: string;
+      accessToken: string;
+    }>;
     allowedExitCodes?: readonly number[];
     retryable?: boolean;
   },
@@ -102,7 +150,7 @@ export function runTrustedWorkspaceGit(
       [...args],
       {
         cwd: options.cwd,
-        env: trustedGitEnvironment(options.accessToken),
+        env: trustedGitEnvironment(options.credential),
         encoding: "utf8",
         maxBuffer: 2 * 1_024 * 1_024,
         timeout: GIT_TIMEOUT_MS,
@@ -482,15 +530,11 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     return this.#withVolumeLock(identity.volumeId, async () => {
       const directory = await this.#validatedVolume(identity);
       const state = (await this.#readState(directory))!;
-      const existing = state.sourceControl;
+      const workTreePath = safeVolumeWorkTreePath(input.workTreePath);
+      const existing =
+        workTreePath === "." ? state.sourceControl : state.sourceControlDirectories?.[workTreePath];
       if (existing !== undefined) {
-        if (
-          existing.repositoryId !== input.repositoryId ||
-          existing.providerRepositoryId !== input.providerRepositoryId ||
-          existing.cloneUrl !== input.cloneUrl ||
-          existing.baseRef !== input.baseRef ||
-          existing.branchName !== input.branchName
-        ) {
+        if (!sourceBindingMatches(existing, input)) {
           throw new WorkspaceVolumeGatewayError(
             "source_control_workspace_conflict",
             "Workspace is already bound to another source repository",
@@ -500,11 +544,16 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         return { baseSha: existing.baseSha };
       }
 
-      const workspace = join(directory, VOLUME_WORKSPACE_DIRECTORY);
-      const gitDirectory = join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_GIT_DIRECTORY);
-      await rm(workspace, { recursive: true, force: true });
+      const workspace = await this.#sourceWorkTree(directory, workTreePath);
+      if ((await readdir(workspace)).length !== 0) {
+        throw new WorkspaceVolumeGatewayError(
+          "source_control_work_tree_not_empty",
+          "Selected source-control work tree is not empty",
+          false,
+        );
+      }
+      const gitDirectory = this.#sourceGitDirectory(directory, workTreePath);
       await rm(gitDirectory, { recursive: true, force: true });
-      await mkdir(workspace, { recursive: true, mode: 0o700 });
       await mkdir(gitDirectory, { recursive: true, mode: 0o700 });
       await this.#git(["--git-dir", gitDirectory, "init", "--bare"], { cwd: workspace });
       await this.#git(["--git-dir", gitDirectory, "remote", "add", "origin", input.cloneUrl], {
@@ -521,7 +570,15 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
           "origin",
           `+refs/heads/${input.baseRef}:refs/remotes/origin/${input.baseRef}`,
         ],
-        { cwd: workspace, accessToken: input.accessToken, retryable: true },
+        {
+          cwd: workspace,
+          credential: {
+            provider: input.provider,
+            cloneUrl: input.cloneUrl,
+            accessToken: input.accessToken,
+          },
+          retryable: true,
+        },
       );
       const baseSha = (
         await this.#git(
@@ -549,18 +606,26 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         ],
         { cwd: workspace },
       );
+      const binding = {
+        provider: input.provider,
+        repositoryId: input.repositoryId,
+        providerRepositoryId: input.providerRepositoryId,
+        cloneUrl: input.cloneUrl,
+        baseRef: input.baseRef,
+        branchName: input.branchName,
+        baseSha,
+      } satisfies SourceControlBinding;
       await this.#writeState(directory, {
         ...state,
-        gitBaselineCommit: baseSha,
-        sourceControl: {
-          provider: "github",
-          repositoryId: input.repositoryId,
-          providerRepositoryId: input.providerRepositoryId,
-          cloneUrl: input.cloneUrl,
-          baseRef: input.baseRef,
-          branchName: input.branchName,
-          baseSha,
-        },
+        ...(workTreePath === "." ? { gitBaselineCommit: baseSha, sourceControl: binding } : {}),
+        ...(workTreePath === "."
+          ? {}
+          : {
+              sourceControlDirectories: {
+                ...state.sourceControlDirectories,
+                [workTreePath]: binding,
+              },
+            }),
       });
       return { baseSha };
     });
@@ -573,43 +638,39 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     return this.#withVolumeLock(identity.volumeId, async () => {
       const directory = await this.#validatedVolume(identity);
       const state = (await this.#readState(directory))!;
-      const source = state.sourceControl;
-      if (
-        source === undefined ||
-        source.repositoryId !== input.repositoryId ||
-        source.providerRepositoryId !== input.providerRepositoryId ||
-        source.cloneUrl !== input.cloneUrl ||
-        source.baseRef !== input.baseRef ||
-        source.branchName !== input.branchName
-      ) {
+      const workTreePath = safeVolumeWorkTreePath(input.workTreePath);
+      const source =
+        workTreePath === "." ? state.sourceControl : state.sourceControlDirectories?.[workTreePath];
+      if (source === undefined || !sourceBindingMatches(source, input)) {
         throw new WorkspaceVolumeGatewayError(
           "source_control_workspace_conflict",
           "Workspace source repository identity did not match",
           false,
         );
       }
-      const workspace = join(directory, VOLUME_WORKSPACE_DIRECTORY);
-      const gitDirectory = join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_GIT_DIRECTORY);
+      const workspace = await this.#sourceWorkTree(directory, workTreePath);
+      const gitDirectory = this.#sourceGitDirectory(directory, workTreePath);
       const common = ["--git-dir", gitDirectory, `--work-tree=${workspace}`] as const;
       await this.#git([...common, "add", "--all"], { cwd: workspace });
       const diff = await this.#git([...common, "diff", "--cached", "--quiet"], {
         cwd: workspace,
         allowedExitCodes: [1],
       });
-      if (diff.exitCode === 0) return { changed: false };
-      await this.#git(
-        [
-          ...common,
-          "-c",
-          `user.name=${input.authorName}`,
-          "-c",
-          `user.email=${input.authorEmail}`,
-          "commit",
-          "--message",
-          input.commitMessage,
-        ],
-        { cwd: workspace },
-      );
+      if (diff.exitCode !== 0) {
+        await this.#git(
+          [
+            ...common,
+            "-c",
+            `user.name=${input.authorName}`,
+            "-c",
+            `user.email=${input.authorEmail}`,
+            "commit",
+            "--message",
+            input.commitMessage,
+          ],
+          { cwd: workspace },
+        );
+      }
       const commitSha = (
         await this.#git([...common, "rev-parse", "HEAD"], { cwd: workspace })
       ).stdout.trim();
@@ -620,6 +681,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
           false,
         );
       }
+      if (commitSha === source.baseSha) return { changed: false };
       await this.#git(
         [
           "--git-dir",
@@ -628,7 +690,15 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
           "origin",
           `${commitSha}:refs/heads/${input.branchName}`,
         ],
-        { cwd: workspace, accessToken: input.accessToken, retryable: true },
+        {
+          cwd: workspace,
+          credential: {
+            provider: input.provider,
+            cloneUrl: input.cloneUrl,
+            accessToken: input.accessToken,
+          },
+          retryable: true,
+        },
       );
       return { changed: true, commitSha };
     });
@@ -803,28 +873,70 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
           !SHA256_PATTERN.test(value.forkedFrom.volumeRevision))
       )
         return undefined;
-      if (
-        value.sourceControl !== undefined &&
-        (!isRecord(value.sourceControl) ||
-          value.sourceControl.provider !== "github" ||
-          typeof value.sourceControl.repositoryId !== "string" ||
-          !UUID_PATTERN.test(value.sourceControl.repositoryId) ||
-          typeof value.sourceControl.providerRepositoryId !== "string" ||
-          !/^[1-9][0-9]{0,30}$/.test(value.sourceControl.providerRepositoryId) ||
-          typeof value.sourceControl.cloneUrl !== "string" ||
-          !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git$/.test(
-            value.sourceControl.cloneUrl,
-          ) ||
-          typeof value.sourceControl.baseRef !== "string" ||
-          typeof value.sourceControl.branchName !== "string" ||
-          typeof value.sourceControl.baseSha !== "string" ||
-          !GIT_COMMIT_PATTERN.test(value.sourceControl.baseSha))
-      )
+      if (value.sourceControl !== undefined && !sourceBindingValid(value.sourceControl))
         return undefined;
+      if (value.sourceControlDirectories !== undefined) {
+        if (!isRecord(value.sourceControlDirectories)) return undefined;
+        const entries = Object.entries(value.sourceControlDirectories);
+        if (
+          entries.length > 1_000 ||
+          entries.some(([path, binding]) => {
+            try {
+              safeVolumeWorkTreePath(path);
+            } catch {
+              return true;
+            }
+            return path === "." || !sourceBindingValid(binding);
+          })
+        )
+          return undefined;
+      }
       return value as unknown as VolumeState;
     } catch {
       return undefined;
     }
+  }
+
+  async #sourceWorkTree(directory: string, path: string): Promise<string> {
+    const root = resolve(directory, VOLUME_WORKSPACE_DIRECTORY);
+    const candidate = path === "." ? root : resolve(root, path);
+    if (candidate !== root && !candidate.startsWith(`${root}${sep}`)) {
+      throw new WorkspaceVolumeGatewayError(
+        "source_control_work_tree_invalid",
+        "Source-control work tree escaped its persistent Volume",
+        false,
+      );
+    }
+    let rootRealPath: string;
+    let candidateRealPath: string;
+    try {
+      [rootRealPath, candidateRealPath] = await Promise.all([realpath(root), realpath(candidate)]);
+      const metadata = await lstat(candidate);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error("not a directory");
+    } catch {
+      throw new WorkspaceVolumeGatewayError(
+        "source_control_work_tree_invalid",
+        "Selected source-control work tree is unavailable",
+        false,
+      );
+    }
+    if (
+      candidateRealPath !== rootRealPath &&
+      !candidateRealPath.startsWith(`${rootRealPath}${sep}`)
+    ) {
+      throw new WorkspaceVolumeGatewayError(
+        "source_control_work_tree_invalid",
+        "Source-control work tree escaped its persistent Volume",
+        false,
+      );
+    }
+    return candidateRealPath;
+  }
+
+  #sourceGitDirectory(directory: string, path: string): string {
+    if (path === ".") return join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_GIT_DIRECTORY);
+    const key = createHash("sha256").update(path, "utf8").digest("hex");
+    return join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_SOURCE_GIT_DIRECTORY, key);
   }
 
   async #withVolumeLock<T>(volumeId: string, operation: () => Promise<T>): Promise<T> {

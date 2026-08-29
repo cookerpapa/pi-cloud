@@ -2,6 +2,7 @@ import type { Database, SourceControlIssueJobState } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
 import { ControlPlaneStore, ControlPlaneStoreError } from "./control-plane-store.ts";
 import { GitHubAppClientError } from "./github-app-client.ts";
+import { GitLabProjectClientError } from "./gitlab-project-client.ts";
 import { SourceControlService, SourceControlServiceError } from "./source-control-service.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
@@ -10,10 +11,41 @@ const JOB_LEASE_MS = 2 * 60_000;
 const JOB_HEARTBEAT_MS = 30_000;
 const MAXIMUM_ATTEMPTS = 8;
 
+function volumeWorkTreePath(executionMode: string, workingDirectory: string): string {
+  if (executionMode === "elastic") {
+    if (workingDirectory !== "/workspace") {
+      throw new SourceControlServiceError(
+        "source_control_operation_failed",
+        "Elastic Issue Workspace must use /workspace",
+      );
+    }
+    return ".";
+  }
+  if (executionMode !== "development_environment") {
+    throw new SourceControlServiceError(
+      "source_control_operation_failed",
+      "Issue execution mode is invalid",
+    );
+  }
+  if (workingDirectory === "/home/user") return ".";
+  const prefix = "/home/user/";
+  if (!workingDirectory.startsWith(prefix)) {
+    throw new SourceControlServiceError(
+      "source_control_operation_failed",
+      "Cloud development machine Issue directories must be inside /home/user",
+    );
+  }
+  return workingDirectory.slice(prefix.length);
+}
+
 type ClaimedJob = Awaited<ReturnType<SourceControlIssueCoordinator["claimNext"]>>;
 
 function safeFailure(error: unknown): { code: string; message: string; retryable: boolean } {
-  if (error instanceof SourceControlServiceError || error instanceof GitHubAppClientError) {
+  if (
+    error instanceof SourceControlServiceError ||
+    error instanceof GitHubAppClientError ||
+    error instanceof GitLabProjectClientError
+  ) {
     return { code: error.code, message: error.message, retryable: error.retryable };
   }
   if (error instanceof ControlPlaneStoreError) {
@@ -95,7 +127,7 @@ export class SourceControlIssueCoordinator {
         .set({ lease_expires_at: new Date(now.valueOf() + JOB_LEASE_MS), updated_at: now })
         .where("id", "=", job.id)
         .where("owner_id", "=", this.#instanceId)
-        .where("state", "not in", ["completed", "failed", "cancelled"])
+        .where("state", "in", ["received", "provisioning", "queued", "running", "publishing"])
         .execute()
         .catch(() => undefined);
     }, JOB_HEARTBEAT_MS);
@@ -139,7 +171,7 @@ export class SourceControlIssueCoordinator {
       const candidate = await transaction
         .selectFrom("source_control_issue_jobs")
         .select("id")
-        .where("state", "not in", ["completed", "failed", "cancelled"])
+        .where("state", "in", ["received", "provisioning", "queued", "running", "publishing"])
         .where("available_at", "<=", now)
         .where((expression) =>
           expression.or([
@@ -171,6 +203,7 @@ export class SourceControlIssueCoordinator {
     if (this.#closed || this.#running || !this.#sourceControl.configured) return;
     this.#running = true;
     try {
+      await this.#sourceControl.reconcileNextClaimSync().catch(() => false);
       await this.reconcileOnce();
     } finally {
       this.#running = false;
@@ -197,7 +230,19 @@ export class SourceControlIssueCoordinator {
   }
 
   async #provision(job: NonNullable<ClaimedJob>): Promise<void> {
+    if (
+      job.execution_mode === null ||
+      job.sandbox_profile_key === null ||
+      job.working_directory === null ||
+      job.started_by_user_id === null
+    ) {
+      throw new SourceControlServiceError(
+        "source_control_operation_failed",
+        "Issue execution selection is incomplete",
+      );
+    }
     const identity = await this.#identity(job);
+    const workTreePath = volumeWorkTreePath(job.execution_mode, job.working_directory);
     const store = new ControlPlaneStore({
       database: this.#database,
       tenantId: identity.tenantId,
@@ -246,6 +291,7 @@ export class SourceControlIssueCoordinator {
             repositoryId: job.repository_id,
             workspaceId,
             branchName: job.branch_name,
+            workTreePath,
           });
           await this.#markCheckoutReady(job.tenant_id, workspaceId, baseSha);
         }
@@ -255,7 +301,7 @@ export class SourceControlIssueCoordinator {
           store,
           {
             name: projectName,
-            source: { kind: "github", repositoryId: job.repository_id },
+            source: { kind: "source_control", repositoryId: job.repository_id },
           },
           job.branch_name,
         );
@@ -269,7 +315,21 @@ export class SourceControlIssueCoordinator {
       });
     }
 
-    const sessionTitle = `#${String(job.issue_number)} ${job.issue_title}`.slice(0, 256);
+    if (job.execution_mode === "development_environment") {
+      await this.#sourceControl.checkoutIssueWorkspace({
+        tenantId: job.tenant_id,
+        repositoryId: job.repository_id,
+        workspaceId: workspaceId!,
+        branchName: job.branch_name,
+        workTreePath,
+      });
+    }
+
+    const sessionTitle =
+      `${repository.full_name} #${String(job.issue_number)} ${job.issue_title} · ${job.id.slice(0, 8)}`.slice(
+        0,
+        256,
+      );
     let sessionId = job.session_id;
     if (sessionId === null) {
       const existing = await this.#database
@@ -284,9 +344,9 @@ export class SourceControlIssueCoordinator {
       sessionId =
         existing?.id ??
         (
-          await store.createSession(projectId, workspaceId, sessionTitle, "elastic", {
-            sandboxProfileKey: "standard",
-            workingDirectory: "/workspace",
+          await store.createSession(projectId, workspaceId, sessionTitle, job.execution_mode, {
+            sandboxProfileKey: job.sandbox_profile_key,
+            workingDirectory: job.working_directory,
             ownerUserId: identity.userId,
           })
         ).sessionId;
@@ -294,10 +354,10 @@ export class SourceControlIssueCoordinator {
     }
 
     const prompt = [
-      `Resolve GitHub Issue #${String(job.issue_number)} in ${repository.full_name}.`,
+      `Resolve ${repository.provider === "gitlab" ? "GitLab" : "GitHub"} Issue #${String(job.issue_number)} in ${repository.full_name}.`,
       "Inspect the repository, implement the smallest complete fix, and run relevant tests.",
       "PiCloud keeps Git metadata outside the sandbox; edit and test files without invoking git commands.",
-      "Do not publish, push, or create a pull request; PiCloud will handle delivery after this Run settles.",
+      "Do not publish, push, or create a change request; PiCloud will handle delivery after this Run settles.",
       "",
       `Issue title: ${job.issue_title}`,
       "Issue body:",
@@ -361,7 +421,12 @@ export class SourceControlIssueCoordinator {
   }
 
   async #publish(job: NonNullable<ClaimedJob>): Promise<void> {
-    if (job.workspace_id === null || job.session_id === null) {
+    if (
+      job.workspace_id === null ||
+      job.session_id === null ||
+      job.execution_mode === null ||
+      job.working_directory === null
+    ) {
       throw new SourceControlServiceError(
         "source_control_operation_failed",
         "Issue automation Workspace is missing",
@@ -381,67 +446,56 @@ export class SourceControlIssueCoordinator {
             repositoryId: job.repository_id,
             workspaceId: job.workspace_id,
             branchName: job.branch_name,
+            workTreePath: volumeWorkTreePath(job.execution_mode, job.working_directory),
             commitMessage: `Fix #${String(job.issue_number)}: ${job.issue_title}`.slice(0, 1_024),
           })
         : { changed: true as const, commitSha: job.commit_sha };
     if (published.commitSha !== undefined && job.commit_sha === null) {
       await this.#updateOwned(job.id, { state: "publishing", commit_sha: published.commitSha });
     }
-    let pullRequest =
-      job.pull_request_number === null || job.pull_request_url === null
-        ? await this.#sourceControl.githubClient().findPullRequest({
-            installationId: repository.provider_installation_id,
-            repositoryId: repository.provider_repository_id,
-            owner: repository.owner,
-            repository: repository.name,
-            head: job.branch_name,
+    let changeRequest =
+      job.change_request_number === null || job.change_request_url === null
+        ? await this.#sourceControl.findChangeRequest({
+            repositoryId: job.repository_id,
+            sourceBranch: job.branch_name,
           })
-        : { number: job.pull_request_number, url: job.pull_request_url };
-    if (published.changed && pullRequest === undefined) {
-      pullRequest = await this.#sourceControl.githubClient().createPullRequest({
-        installationId: repository.provider_installation_id,
-        repositoryId: repository.provider_repository_id,
-        owner: repository.owner,
-        repository: repository.name,
-        title: `Fix #${String(job.issue_number)}: ${job.issue_title}`.slice(0, 256),
-        body: [
-          `Fixes #${String(job.issue_number)}`,
+        : { number: job.change_request_number, url: job.change_request_url };
+    if (published.changed && changeRequest === undefined) {
+      changeRequest = await this.#sourceControl.createChangeRequest({
+        repositoryId: job.repository_id,
+        issueNumber: job.issue_number,
+        issueTitle: job.issue_title,
+        sourceBranch: job.branch_name,
+        description: [
+          `Closes #${String(job.issue_number)}`,
           "",
           "Implemented and tested by PiCloud.",
           `[Open the PiCloud session](${new URL(`?session=${job.session_id}`, this.#publicOrigin).toString()})`,
         ].join("\n"),
-        head: job.branch_name,
-        base: repository.default_branch,
       });
       await this.#updateOwned(job.id, {
         state: "publishing",
-        pull_request_number: pullRequest.number,
-        pull_request_url: pullRequest.url,
+        change_request_number: changeRequest.number,
+        change_request_url: changeRequest.url,
       });
     }
     const marker = `<!-- picloud-issue-job:${job.id} -->`;
     let comment =
       job.issue_comment_id === null
-        ? await this.#sourceControl.githubClient().findIssueComment({
-            installationId: repository.provider_installation_id,
-            repositoryId: repository.provider_repository_id,
-            owner: repository.owner,
-            repository: repository.name,
+        ? await this.#sourceControl.findIssueDeliveryComment({
+            repositoryId: job.repository_id,
             issueNumber: job.issue_number,
             marker,
           })
         : { id: job.issue_comment_id };
     if (comment === undefined) {
-      comment = await this.#sourceControl.githubClient().createIssueComment({
-        installationId: repository.provider_installation_id,
-        repositoryId: repository.provider_repository_id,
-        owner: repository.owner,
-        repository: repository.name,
+      comment = await this.#sourceControl.createIssueDeliveryComment({
+        repositoryId: job.repository_id,
         issueNumber: job.issue_number,
         body: [
           marker,
-          published.changed && pullRequest !== undefined
-            ? `PiCloud completed the task and opened ${pullRequest.url}.`
+          published.changed && changeRequest !== undefined
+            ? `PiCloud completed the task and opened ${changeRequest.url}.`
             : "PiCloud completed the task; the Workspace contained no repository changes.",
           `[Open the PiCloud session](${new URL(`?session=${job.session_id}`, this.#publicOrigin).toString()})`,
         ].join("\n\n"),
@@ -465,7 +519,7 @@ export class SourceControlIssueCoordinator {
       await transaction
         .updateTable("source_control_webhook_deliveries")
         .set({ state: "completed", settled_at: now })
-        .where("provider", "=", "github")
+        .where("provider", "=", job.provider)
         .where("delivery_id", "=", job.webhook_delivery_id)
         .executeTakeFirstOrThrow();
     });
@@ -482,22 +536,16 @@ export class SourceControlIssueCoordinator {
         const repository = await this.#sourceControl.repositoryForJob(job.repository_id);
         if (repository !== undefined) {
           const marker = `<!-- picloud-issue-job:${job.id} -->`;
-          const existing = await this.#sourceControl.githubClient().findIssueComment({
-            installationId: repository.provider_installation_id,
-            repositoryId: repository.provider_repository_id,
-            owner: repository.owner,
-            repository: repository.name,
+          const existing = await this.#sourceControl.findIssueDeliveryComment({
+            repositoryId: job.repository_id,
             issueNumber: job.issue_number,
             marker,
           });
           issueCommentId =
             existing?.id ??
             (
-              await this.#sourceControl.githubClient().createIssueComment({
-                installationId: repository.provider_installation_id,
-                repositoryId: repository.provider_repository_id,
-                owner: repository.owner,
-                repository: repository.name,
+              await this.#sourceControl.createIssueDeliveryComment({
+                repositoryId: job.repository_id,
                 issueNumber: job.issue_number,
                 body: [
                   marker,
@@ -512,7 +560,7 @@ export class SourceControlIssueCoordinator {
             ).id;
         }
       } catch {
-        // The terminal database state remains authoritative if GitHub is down.
+        // The terminal database state remains authoritative if the provider is down.
       }
     }
     await this.#database.transaction().execute(async (transaction) => {
@@ -534,30 +582,37 @@ export class SourceControlIssueCoordinator {
       await transaction
         .updateTable("source_control_webhook_deliveries")
         .set({ state: "failed", failure_code: failure.code.slice(0, 128), settled_at: now })
-        .where("provider", "=", "github")
+        .where("provider", "=", job.provider)
         .where("delivery_id", "=", job.webhook_delivery_id)
         .execute();
     });
   }
 
   async #identity(job: NonNullable<ClaimedJob>): Promise<TenantRequestIdentity> {
+    if (job.started_by_user_id === null) {
+      throw new SourceControlServiceError(
+        "source_control_operation_failed",
+        "Issue starter identity is missing",
+      );
+    }
     const row = await this.#database
       .selectFrom("source_control_repositories as repository")
-      .innerJoin("source_control_installations as installation", (join) =>
-        join
-          .onRef("installation.tenant_id", "=", "repository.tenant_id")
-          .onRef("installation.id", "=", "repository.installation_id"),
-      )
       .innerJoin("tenants as tenant", "tenant.id", "repository.tenant_id")
       .innerJoin("users as user_row", (join) =>
         join
-          .onRef("user_row.tenant_id", "=", "installation.tenant_id")
-          .onRef("user_row.id", "=", "installation.connected_by_user_id"),
+          .onRef("user_row.tenant_id", "=", "repository.tenant_id")
+          .on("user_row.id", "=", job.started_by_user_id!),
       )
-      .innerJoin("user_password_credentials as credential", (join) =>
+      .leftJoin("user_password_credentials as credential", (join) =>
         join
           .onRef("credential.tenant_id", "=", "user_row.tenant_id")
           .onRef("credential.user_id", "=", "user_row.id"),
+      )
+      .leftJoin("external_identities as external", (join) =>
+        join
+          .onRef("external.tenant_id", "=", "user_row.tenant_id")
+          .onRef("external.user_id", "=", "user_row.id")
+          .on("external.provider_key", "=", "gitlab"),
       )
       .innerJoin("tenant_runtime_policies as policy", "policy.tenant_id", "tenant.id")
       .select([
@@ -565,8 +620,13 @@ export class SourceControlIssueCoordinator {
         "tenant.slug as tenantSlug",
         "user_row.id as userId",
         "user_row.display_name as displayName",
-        "credential.username",
-        "credential.role",
+        "credential.username as localUsername",
+        "credential.role as localRole",
+        "external.id as externalIdentityId",
+        "external.issuer as externalIssuer",
+        "external.subject as externalSubject",
+        "external.provider_user_id as externalProviderUserId",
+        "external.username as externalUsername",
         "policy.default_model_profile_id as defaultModelProfileId",
       ])
       .where("repository.id", "=", job.repository_id)
@@ -583,10 +643,31 @@ export class SourceControlIssueCoordinator {
       tenantId: row.tenantId,
       tenantSlug: row.tenantSlug,
       userId: row.userId,
-      username: row.username,
+      ...(row.externalUsername === null
+        ? row.localUsername === null
+          ? {}
+          : { username: row.localUsername }
+        : { username: row.externalUsername }),
       displayName: row.displayName,
-      role: row.role,
+      role: row.localRole ?? "member",
       defaultModelProfileId: row.defaultModelProfileId,
+      authenticationKind: row.externalIdentityId === null ? "system" : "oidc",
+      ...(row.externalIdentityId === null ||
+      row.externalIssuer === null ||
+      row.externalSubject === null ||
+      row.externalProviderUserId === null ||
+      row.externalUsername === null
+        ? {}
+        : {
+            externalIdentity: {
+              id: row.externalIdentityId,
+              providerKey: "gitlab",
+              issuer: row.externalIssuer,
+              subject: row.externalSubject,
+              providerUserId: row.externalProviderUserId,
+              username: row.externalUsername,
+            },
+          }),
     };
   }
 
@@ -613,8 +694,8 @@ export class SourceControlIssueCoordinator {
       session_id: string;
       run_id: string;
       commit_sha: string;
-      pull_request_number: number;
-      pull_request_url: string;
+      change_request_number: number;
+      change_request_url: string;
       owner_id: string | null;
       lease_expires_at: Date | null;
       available_at: Date;

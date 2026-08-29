@@ -128,6 +128,7 @@ describe("tenant-aware browser API", () => {
       username: "alice",
       displayName: "Alice",
       role: "owner" as const,
+      authenticationKind: "local" as const,
       platformAdministrator: false,
     };
     const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
@@ -373,6 +374,7 @@ describe("tenant-aware browser API", () => {
           userId: "10000000-0000-4000-8000-000000000003",
           displayName: "Alpha Operator",
           role: "viewer",
+          authenticationKind: "api",
           platformAdministrator: false,
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -386,6 +388,7 @@ describe("tenant-aware browser API", () => {
       userId: "10000000-0000-4000-8000-000000000003",
       displayName: "Alpha Operator",
       role: "viewer",
+      authenticationKind: "api",
       platformAdministrator: false,
     });
     expect(fetchImplementation).toHaveBeenCalledWith(

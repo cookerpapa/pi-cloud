@@ -32,3 +32,7 @@ Volume architecture. Historical experiments remain in Git history.
 - [ ] Run live GitHub App installation/private-clone/Issue-to-PR acceptance on
       a public HTTPS deployment; deterministic tests use a fake GitHub API and
       local trusted Git remote.
+- [ ] Repeat GitLab project-token/private-clone/Issue-to-MR acceptance against
+      an external TLS-enabled self-managed instance after the local CE gate.
+- [ ] Validate GitLab OIDC login, multi-user non-exclusive Issue claims and
+      both elastic and owned-machine Issue execution against that instance.

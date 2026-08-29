@@ -23,6 +23,7 @@ import type { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import type { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import type { AcceptedFactIngestGateway } from "./accepted-fact-ingest-gateway.ts";
 import type { SourceControlService } from "./source-control-service.ts";
+import type { OidcAuthenticationService } from "./oidc-authentication.ts";
 
 export type ControlPlaneApplicationOptions = Omit<
   ControlPlaneStoreOptions,
@@ -51,6 +52,8 @@ export type ControlPlaneApplicationOptions = Omit<
   sshAccessTicketService?: SshAccessTicketService;
   acceptedFactIngestGateway?: AcceptedFactIngestGateway;
   sourceControlService?: SourceControlService;
+  oidcAuthenticationService?: OidcAuthenticationService;
+  publicOriginBaseUrl?: string;
 };
 
 export async function createControlPlaneApplication(

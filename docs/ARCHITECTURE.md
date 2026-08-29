@@ -90,6 +90,14 @@ capability and Tool set from the accepted Run. Process-wide registries contain
 trusted definitions only and never imply that every Agent runtime can see or
 execute every definition.
 
+Every Session pins one immutable, deployment-owned `AgentRevision`; every Run
+copies that Revision as its routing snapshot. The Revision independently names
+the Runtime, Harness version and native Session Storage contract. Model choice
+remains a Turn snapshot. The Pi Worker queue only claims `pi_sdk` Revisions and
+the Runner rejects a non-Pi Session Storage contract, so another Agent family
+may share product tables or the PostgreSQL cluster without reinterpreting
+`pi_session_*` rows.
+
 Before a Worker becomes Ready it preloads the governed `pi-subagents` Tool
 contract and two empty Pi `ModelRuntime` slots. An active Run exclusively owns
 one slot and injects its short-lived Model Gateway capability only after
@@ -259,12 +267,12 @@ The model gateway is local to the trusted Worker boundary. It injects provider
 credentials, binds model requests to Run/Step identity and records usage. Cube
 cannot reach or authenticate to it.
 
-### Tool Broker and Cube
-
 ### Source-control App and Issue automation
 
 Source control is an optional trusted-plane adapter, not a Tool exposed to the
-model. The current provider is a GitHub App. An installation callback is bound
+model. The current user-facing provider is a self-managed GitLab project
+connection; a GitHub App adapter remains available to deployments that enable
+it outside the current Web surface. A GitHub installation callback is bound
 to the logged-in tenant by a one-use state value; PostgreSQL stores the
 installation and selected repository identities. The App private key and
 Webhook HMAC secret remain deployment secrets, while one-repository
@@ -277,13 +285,27 @@ against the external Git directory. Cube sees normal source files but neither
 to the Tool Broker for the Workspace's recorded Sandbox Domain; the Broker
 quiesces any warm runtime before publish, so Git cannot race an Agent writer.
 
-GitHub Issue and Issue-comment Webhooks enter through a raw-body HMAC gate and
-the globally unique delivery ID is the idempotency key. Only the configured
-label or exact `/picloud solve` collaborator command creates an Issue Job. The
-coordinator provisions an ordinary Project, Workspace, Session and Run, then
-observes the existing PostgreSQL Run queue. It is not a second scheduler.
-Unique branch names, PR lookup and marker comments reconcile uncertain GitHub
-responses without blindly duplicating external effects.
+GitLab Project Webhooks use a Standard Webhooks HMAC signing token and stable
+`webhook-id`; project access tokens are encrypted in PostgreSQL and only
+unsealed for trusted GitLab API or Git processes. GitHub Issue and
+Issue-comment Webhooks enter through their native raw-body HMAC gate. Provider
+delivery IDs are idempotency keys. Only the configured label or exact
+`/picloud solve` collaborator command creates a pending Issue request. GitLab
+OIDC is an optional login provider; it maps one provider subject to one internal
+PiCloud user and discards its OAuth token after login. A matching Developer may
+record a non-exclusive claim, then explicitly choose elastic compute or an
+empty `/home/user` directory in an owned development machine. The coordinator
+provisions an ordinary Project/Workspace when needed, then creates one Session
+and Run under that user's identity and observes the existing PostgreSQL Run
+queue. It is not a second scheduler. Unique branch
+names, Pull/Merge Request lookup and marker comments reconcile uncertain
+provider responses without blindly duplicating external effects.
+
+The trusted Volume envelope stores one root source binding for elastic
+Workspaces and directory-scoped bindings for cloud development machines. Git
+credentials and external metadata remain outside the mounted guest subtree.
+Successful delivery creates a Merge Request with `Closes #N`; merging it, not
+an Agent Bash command, closes the Issue.
 
 ### Tool Broker and Cube
 
@@ -572,6 +594,7 @@ preserve a visible prefix that never reached `message_end`.
 | State | Authority |
 | --- | --- |
 | tenants, users, sessions, durable-resource admission | PostgreSQL |
+| local/GitLab identity mappings and non-exclusive Issue claims | PostgreSQL |
 | Runs, Attempts, leases, fences, ready queue | PostgreSQL |
 | Pi Session entries/compaction/operation records | PostgreSQL SessionStorage |
 | Session Tool grants and immutable Run capability snapshots | PostgreSQL |
@@ -587,9 +610,11 @@ preserve a visible prefix that never reached `message_end`.
 | active in-memory `messages[]` | Pi SDK for one active Run |
 | development-environment ownership/lifecycle | PostgreSQL |
 | development-environment process/memory/rootfs state | one node-affine Cube KVM snapshot |
-| source-control installations/repository grants and Issue Jobs | PostgreSQL |
+| Agent definitions, immutable revisions and Session/Run routing | PostgreSQL |
+| source-control connections/repository grants and Issue Jobs | PostgreSQL |
+| GitLab project token and Webhook signing token | encrypted PostgreSQL credential row |
 | GitHub App private key and Webhook secret | deployment Secret files |
-| GitHub installation token | ephemeral trusted API/Git process memory only |
+| provider API/Git token plaintext | ephemeral trusted API/Git process memory only |
 
 ## First and later messages
 

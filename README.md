@@ -6,12 +6,12 @@ shell operations run in CubeSandbox KVM microVMs.
 
 ## What you get
 
-- browser registration/login and tenant-isolated conversations;
+- browser registration/login, optional GitLab OIDC and tenant-isolated conversations;
 - per-browser Chinese/English UI selection without translating prompts, Tool output or model replies;
 - multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
-- optional GitHub App repository connection and explicit Issue-to-Run-to-PR automation;
+- self-managed GitLab public/private project connection and explicit Issue-to-Run-to-MR automation;
 - elastic Sandboxes or user-owned full-VM Cube environments with root SSH/terminal access;
 - snapshot-first SSE whose visible bytes were acknowledged by Kafka first;
 - horizontally replaceable Pi Workers and Kubernetes/KEDA deployment support.
@@ -108,13 +108,18 @@ After deployment:
      directory from its complete guest filesystem; its GNOME-style folder
    chooser can create a user-writable directory before selection.
 
-When the deployment configures a GitHub App, **开发资源 → GitHub** lets a user
-install it on selected repositories. A new elastic Workspace can then start
-from an authorized public or private repository. Adding the configured
-`picloud` label to an Issue, or posting `/picloud solve` as a trusted repository
-collaborator, creates a normal PiCloud Session and Run; a successful change is
-delivered on a job-scoped branch and Pull Request. Installation tokens are
-minted just in time and never enter Cube, Pi context or Kafka.
+Optional **开发资源 → GitLab** connects one public or private project with a project
+access token scoped to that repository. PiCloud encrypts the token and uses it
+only in trusted API/Git child processes. A new elastic Workspace can start from
+the connected repository. Adding the configured `picloud` label to an Issue,
+or posting `/picloud solve`, creates a pending request without spending model
+quota. A user signed in through the matching optional GitLab OIDC provider and
+holding Developer access may claim it, select elastic compute or an owned
+development-machine directory, and start the ordinary Session/Run. A successful
+change is delivered on a job-scoped branch and Merge Request with `Closes #N`.
+Neither the project token nor the login token enters Cube, Pi context or Kafka. Run the
+optional local acceptance instance with `npm run gitlab:up`; see
+[its README](deploy/gitlab/README.md).
 
 An elastic Workspace is durable storage, not reserved compute: Cube capacity is
 admitted when a Tool-using Run starts. Creating a cloud development machine is

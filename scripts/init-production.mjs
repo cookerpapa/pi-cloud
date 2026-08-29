@@ -96,6 +96,23 @@ async function ensureModelCredentialMasterKey(runtimeDirectory) {
   return true;
 }
 
+async function ensureSourceControlCredentialMasterKey(runtimeDirectory) {
+  const path = resolve(runtimeDirectory, "secrets/source-control-credential-master-key");
+  try {
+    const existing = (await readPrivateFile(path)).trim();
+    if (!/^[A-Za-z0-9_-]{43}$/.test(existing) || Buffer.from(existing, "base64url").length !== 32) {
+      throw new Error("Production source-control credential master key is invalid");
+    }
+    return false;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  await writePrivateFile(path, `${randomBytes(32).toString("base64url")}\n`);
+  const application = applicationIdentity();
+  if (application.changeOwnership) await chown(path, application.uid, application.gid);
+  return true;
+}
+
 async function ensureCubePersistentStateKey(runtimeDirectory) {
   const path = resolve(runtimeDirectory, "secrets/cube-persistent-state-key");
   try {
@@ -404,6 +421,8 @@ await assertPrivateDirectory(runtimeDirectory);
 
 if (await validateExisting(runtimeDirectory)) {
   const modelCredentialMasterKeyCreated = await ensureModelCredentialMasterKey(runtimeDirectory);
+  const sourceControlCredentialMasterKeyCreated =
+    await ensureSourceControlCredentialMasterKey(runtimeDirectory);
   const cubePersistentStateKeyCreated = await ensureCubePersistentStateKey(runtimeDirectory);
   const toolBrokerTokenCreated = await ensureToolBrokerToken(runtimeDirectory);
   const workerEventIngestTokenCreated = await ensureWorkerEventIngestToken(runtimeDirectory);
@@ -420,6 +439,7 @@ if (await validateExisting(runtimeDirectory)) {
       initialized: true,
       reused: true,
       modelCredentialMasterKeyCreated,
+      sourceControlCredentialMasterKeyCreated,
       cubePersistentStateKeyCreated,
       toolBrokerTokenCreated,
       workerEventIngestTokenCreated,
@@ -508,6 +528,10 @@ await writePrivateFile(
   `${randomBytes(32).toString("base64url")}\n`,
 );
 await writePrivateFile(
+  resolve(secretsDirectory, "source-control-credential-master-key"),
+  `${randomBytes(32).toString("base64url")}\n`,
+);
+await writePrivateFile(
   resolve(secretsDirectory, "cube-persistent-state-key"),
   `${randomBytes(32).toString("base64url")}\n`,
 );
@@ -583,6 +607,10 @@ const environment = [
   "PI_CLOUD_WEB_SESSION_COOKIE_SECURE=false",
   "PI_CLOUD_WEB_SESSION_TTL_MS=2592000000",
   "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL=http://preview.localhost:8080",
+  "PI_CLOUD_GITLAB_ENABLED=false",
+  "PI_CLOUD_GITLAB_WEBHOOK_URL=http://host.docker.internal:8080/v1/source-control/gitlab/webhook",
+  "PI_CLOUD_GITLAB_ISSUE_LABEL=picloud",
+  "PI_CLOUD_OIDC_GITLAB_ENABLED=false",
   `PI_CLOUD_PUBLIC_REGISTRATION_ENABLED=${publicRegistrationEnabled}`,
   `PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS=${publicRegistrationMaximumTenants}`,
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS=${publicTenantMaximumProjects}`,

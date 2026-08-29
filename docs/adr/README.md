@@ -6,9 +6,11 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
-1. [ADR-0132](0132-source-control-app-and-issue-automation.md) — GitHub App
-   repository grants, trusted Git execution and Issue-to-Run-to-PR automation.
-2. [ADR-0131](0131-run-table-postgres-queue.md) — Run as the only PostgreSQL
+1. [ADR-0133](0133-versioned-agent-identity-and-native-session-storage.md) —
+   explicit Agent Revision routing and Runtime-native Session Storage.
+2. [ADR-0132](0132-source-control-app-and-issue-automation.md) — GitLab/GitHub
+   repository grants, trusted Git execution and Issue-to-change-request automation.
+3. [ADR-0131](0131-run-table-postgres-queue.md) — Run as the only PostgreSQL
    execution queue, typed Cancel/Steer control requests and terminal-only Outbox.
 3. [ADR-0130](0130-user-managed-workspace-concurrency.md) — same-Session FIFO
    with user-managed concurrency across Sessions, terminals and shared files.

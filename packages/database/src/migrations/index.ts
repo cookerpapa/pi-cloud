@@ -103,6 +103,9 @@ import * as userManagedWorkspaceConcurrency from "./101_user_managed_workspace_c
 import * as workspaceToolRuntimeSlot from "./102_workspace_tool_runtime_slot.ts";
 import * as runQueueAuthority from "./103_run_queue_authority.ts";
 import * as sourceControlAppAndIssueJobs from "./104_source_control_app_and_issue_jobs.ts";
+import * as versionedAgentDefinitions from "./105_versioned_agent_definitions.ts";
+import * as gitlabProjectConnections from "./106_gitlab_project_connections.ts";
+import * as oidcIdentityAndIssueClaims from "./107_oidc_identity_and_issue_claims.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -211,6 +214,9 @@ export const migrationProvider: MigrationProvider = {
       "102_workspace_tool_runtime_slot": workspaceToolRuntimeSlot,
       "103_run_queue_authority": runQueueAuthority,
       "104_source_control_app_and_issue_jobs": sourceControlAppAndIssueJobs,
+      "105_versioned_agent_definitions": versionedAgentDefinitions,
+      "106_gitlab_project_connections": gitlabProjectConnections,
+      "107_oidc_identity_and_issue_claims": oidcIdentityAndIssueClaims,
     };
   },
 };

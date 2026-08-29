@@ -42,6 +42,12 @@ describe("current PiCloud schema", () => {
         "workspace_source_repositories",
         "source_control_webhook_deliveries",
         "source_control_issue_jobs",
+        "source_control_credentials",
+        "agent_definitions",
+        "agent_revisions",
+        "external_identities",
+        "oidc_authentication_requests",
+        "source_control_issue_claims",
       ]) {
         expect(names.has(required), `missing current table ${required}`).toBe(true);
       }
@@ -64,7 +70,7 @@ describe("current PiCloud schema", () => {
         select table_name, column_name
           from information_schema.columns
          where table_schema = 'public'
-           and table_name in ('workspaces', 'runs', 'tenant_runtime_policies')
+           and table_name in ('workspaces', 'sessions', 'runs', 'tenant_runtime_policies')
       `.execute(database);
       const keys = new Set(columns.rows.map((row) => `${row.table_name}.${row.column_name}`));
       expect(keys.has("workspaces.seed_kind")).toBe(true);
@@ -73,6 +79,8 @@ describe("current PiCloud schema", () => {
       expect(keys.has("runs.mailbox_position")).toBe(true);
       expect(keys.has("runs.request_sha256")).toBe(true);
       expect(keys.has("runs.available_at")).toBe(true);
+      expect(keys.has("sessions.agent_revision_id")).toBe(true);
+      expect(keys.has("runs.agent_revision_id")).toBe(true);
       expect(keys.has("runs.command_id")).toBe(false);
       expect(keys.has("tenant_runtime_policies.maximum_concurrent_turns")).toBe(false);
       expect(keys.has("tenant_runtime_policies.maximum_active_sandboxes")).toBe(false);
@@ -95,7 +103,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("104_source_control_app_and_issue_jobs");
+      expect(applied.rows.at(-1)?.name).toBe("107_oidc_identity_and_issue_claims");
 
       const legacyFunctions = await sql<{ proname: string }>`
         select proname

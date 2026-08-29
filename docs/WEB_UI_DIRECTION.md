@@ -81,7 +81,7 @@ live directory anywhere in its persisted guest filesystem. Applying for that env
 requires only CPU, memory and disk selectors; it never consumes a pre-existing
 elastic Workspace. Workspace deletion and cloud-development-machine lifecycle
 actions live on a separate resource page, where associated conversations and
-active-Run deletion locks are visible. GitHub App repositories are selected
+active-Run deletion locks are visible. Connected GitLab projects are selected
 through the trusted source-control resource surface; the browser has no generic
 repository-import workflow. No API token, provider key, model profile, or model picker is shown to
 an ordinary user.

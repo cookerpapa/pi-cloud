@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import {
   DomainModelValidationError,
+  PI_CODING_AGENT_REVISION_ID,
   resolveTurnModel,
   type ModelProfile,
   type ModelThinkingLevel,
@@ -177,6 +178,7 @@ function workspaceSourceResource(
   seedKind: string,
   repository?: Readonly<{
     repositoryId: string | null;
+    provider: "github" | "gitlab" | null;
     fullName: string | null;
     baseRef: string | null;
     baseSha: string | null;
@@ -185,6 +187,7 @@ function workspaceSourceResource(
 ): WorkspaceSourceResource {
   if (repository?.repositoryId !== null && repository?.repositoryId !== undefined) {
     if (
+      repository.provider === null ||
       repository.fullName === null ||
       repository.baseRef === null ||
       (repository.checkoutState !== "provisioning" &&
@@ -197,9 +200,10 @@ function workspaceSourceResource(
       );
     }
     return {
-      kind: "github",
+      kind: "source_control",
       status: repository.checkoutState,
       repositoryId: repository.repositoryId,
+      provider: repository.provider,
       fullName: repository.fullName,
       baseRef: repository.baseRef,
       ...(repository.baseSha === null ? {} : { baseSha: repository.baseSha }),
@@ -419,11 +423,17 @@ export class ControlPlaneStore {
           .executeTakeFirstOrThrow();
         const sandboxDomain = await this.#assignSandboxDomain(transaction);
         let repositorySource:
-          Readonly<{ repositoryId: string; fullName: string; baseRef: string }> | undefined;
-        if (source.kind === "github") {
+          | Readonly<{
+              repositoryId: string;
+              provider: "github" | "gitlab";
+              fullName: string;
+              baseRef: string;
+            }>
+          | undefined;
+        if (source.kind === "source_control") {
           const repository = await transaction
             .selectFrom("source_control_repositories")
-            .select(["id", "full_name", "default_branch"])
+            .select(["id", "provider", "full_name", "default_branch"])
             .where("tenant_id", "=", this.#tenantId)
             .where("id", "=", source.repositoryId)
             .where("state", "=", "active")
@@ -436,6 +446,7 @@ export class ControlPlaneStore {
           }
           repositorySource = {
             repositoryId: repository.id,
+            provider: repository.provider,
             fullName: repository.full_name,
             baseRef: repository.default_branch,
           };
@@ -447,7 +458,7 @@ export class ControlPlaneStore {
             tenant_id: this.#tenantId,
             project_id: project.id,
             sandbox_domain_id: sandboxDomain.id,
-            seed_kind: source.kind === "github" ? "empty" : source.kind,
+            seed_kind: source.kind === "source_control" ? "empty" : source.kind,
           })
           .executeTakeFirstOrThrow();
         if (repositorySource !== undefined) {
@@ -495,6 +506,7 @@ export class ControlPlaneStore {
               ? workspaceSourceResource(source.kind)
               : workspaceSourceResource("empty", {
                   repositoryId: repositorySource.repositoryId,
+                  provider: repositorySource.provider,
                   fullName: repositorySource.fullName,
                   baseRef: repositorySource.baseRef,
                   baseSha: null,
@@ -712,6 +724,8 @@ export class ControlPlaneStore {
           workspace_id: workspace.id,
           development_environment_id: developmentEnvironment?.id ?? null,
           desired_model_profile_id: policy.defaultModelProfileId,
+          agent_revision_id: PI_CODING_AGENT_REVISION_ID,
+          created_by_user_id: execution.ownerUserId ?? null,
           state: "cold",
           execution_mode: executionMode,
           sandbox_profile_key: sandboxProfileKey,
@@ -1428,6 +1442,7 @@ export class ControlPlaneStore {
         "source_repository.base_sha as sourceBaseSha",
         "source_repository.checkout_state as sourceCheckoutState",
         "connected_repository.full_name as sourceRepositoryFullName",
+        "connected_repository.provider as sourceRepositoryProvider",
         "session_row.next_event_seq as nextEventSequence",
       ])
       .where("session_row.tenant_id", "=", this.#tenantId)
@@ -1543,6 +1558,7 @@ export class ControlPlaneStore {
         createdAt: isoTimestamp(conversation.projectCreatedAt),
         source: workspaceSourceResource(conversation.workspaceSeedKind, {
           repositoryId: conversation.sourceRepositoryId,
+          provider: conversation.sourceRepositoryProvider,
           fullName: conversation.sourceRepositoryFullName,
           baseRef: conversation.sourceBaseRef,
           baseSha: conversation.sourceBaseSha,
@@ -1965,6 +1981,7 @@ export class ControlPlaneStore {
           "session_row.project_id",
           "session_row.workspace_id",
           "session_row.desired_model_profile_id",
+          "session_row.agent_revision_id",
           "session_row.session_kind",
           "session_row.state",
           "session_row.execution_mode",
@@ -2187,6 +2204,7 @@ export class ControlPlaneStore {
           workspace_id: session.workspace_id,
           session_id: session.id,
           turn_id: turnId,
+          agent_revision_id: session.agent_revision_id,
           mailbox_position: mailboxPosition,
           request_sha256: fingerprint,
           available_at: sql<Date>`now()`,

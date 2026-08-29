@@ -19,6 +19,7 @@ import { EnvironmentRuntimeSnapshotSchema } from "./environment.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
 import { CloudToolCapabilitySnapshotSchema } from "./tool-capabilities.ts";
 import { ExecutionLeaseSchema } from "./execution-lease.ts";
+import { AgentRevisionSnapshotSchema } from "./agent-runtime.ts";
 
 export const TWO_PHASE_COMMAND_CAPABILITY = "command.two_phase.v1";
 export const PI_STEER_CAPABILITY = "pi.steer.v1";
@@ -166,6 +167,7 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
       {
         ...CommandIdentityProperties,
         nextEventSeq: PositiveSafeIntegerSchema,
+        agent: AgentRevisionSnapshotSchema,
         input: PromptInputSchema,
         executionMode: ExecutionModeSchema,
         sandboxProfileKey: DevelopmentEnvironmentProfileKeySchema,

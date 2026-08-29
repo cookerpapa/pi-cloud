@@ -348,6 +348,16 @@ export class RunCancellationExecutor {
             .onRef("run.turn_id", "=", "cancellation.turn_id")
             .onRef("run.id", "=", "cancellation.target_run_id"),
         )
+        .innerJoin(
+          "agent_revisions as agent_revision",
+          "agent_revision.id",
+          "run.agent_revision_id",
+        )
+        .innerJoin(
+          "agent_definitions as agent_definition",
+          "agent_definition.id",
+          "agent_revision.definition_id",
+        )
         .innerJoin("run_attempts as run_attempt", (join) =>
           join
             .onRef("run_attempt.run_id", "=", "run.id")
@@ -367,6 +377,12 @@ export class RunCancellationExecutor {
           "cancellation.state as cancellationTurnControlRequestState",
           "cancellation.attempts as attempts",
           "run.idempotency_key as targetIdempotencyKey",
+          "run.agent_revision_id as agentRevisionId",
+          "agent_definition.key as agentDefinitionKey",
+          "agent_revision.runtime_kind as agentRuntimeKind",
+          "agent_revision.runtime_version as agentRuntimeVersion",
+          "agent_revision.harness_version as agentHarnessVersion",
+          "agent_revision.session_storage_kind as agentSessionStorageKind",
           "turn.id as turnId",
           "turn.input_kind as inputKind",
           "turn.input_text as inputText",
@@ -463,6 +479,14 @@ export class RunCancellationExecutor {
             turnId: row.turnId,
             attemptId: row.runAttemptId,
             attemptNumber: row.runAttemptNumber,
+            agent: {
+              revisionId: row.agentRevisionId,
+              definitionKey: row.agentDefinitionKey,
+              runtimeKind: row.agentRuntimeKind,
+              runtimeVersion: row.agentRuntimeVersion,
+              harnessVersion: row.agentHarnessVersion,
+              sessionStorageKind: row.agentSessionStorageKind,
+            },
             idempotencyKey: row.targetIdempotencyKey,
             nextEventSeq: row.nextEventSeq,
             input: { kind: "prompt", prompt: row.inputText },

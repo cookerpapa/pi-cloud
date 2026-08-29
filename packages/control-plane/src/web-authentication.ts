@@ -131,6 +131,17 @@ function identityResource(
     ...(identity.username === undefined ? {} : { username: identity.username }),
     displayName: identity.displayName,
     role: identity.role,
+    authenticationKind: identity.authenticationKind ?? "local",
+    ...(identity.externalIdentity === undefined
+      ? {}
+      : {
+          externalIdentity: {
+            providerKey: identity.externalIdentity.providerKey,
+            issuer: identity.externalIdentity.issuer,
+            providerUserId: identity.externalIdentity.providerUserId,
+            username: identity.externalIdentity.username,
+          },
+        }),
     platformAdministrator:
       identity.role === "owner" &&
       platformOperatorTenantId !== undefined &&
@@ -198,6 +209,14 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
     return this.#options.secureCookie ?? false;
   }
 
+  get localLoginEnabled(): boolean {
+    return true;
+  }
+
+  get registrationEnabled(): boolean {
+    return this.#options.enabled;
+  }
+
   async register(request: RegisterAccountRequest): Promise<IssuedWebSession> {
     if (!this.#options.enabled) {
       throw new WebAuthenticationError(
@@ -253,6 +272,7 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
         displayName: request.displayName,
         role: "owner",
         defaultModelProfileId: created.defaultModelProfileId,
+        authenticationKind: "local",
       });
     } catch (error: unknown) {
       if (error instanceof TenantAdministrationError) {
@@ -319,7 +339,15 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
       displayName: row.displayName,
       role: row.role,
       defaultModelProfileId: row.defaultModelProfileId,
+      authenticationKind: "local",
     });
+  }
+
+  issueOidc(identity: TenantRequestIdentity): Promise<IssuedWebSession> {
+    if (identity.authenticationKind !== "oidc" || identity.externalIdentity === undefined) {
+      throw new TypeError("OIDC Web Session identity is invalid");
+    }
+    return this.#issue(identity);
   }
 
   async authenticate(token: string): Promise<TenantRequestIdentity | undefined> {
@@ -337,16 +365,29 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
           .onRef("credential.tenant_id", "=", "session.tenant_id")
           .onRef("credential.user_id", "=", "session.user_id"),
       )
+      .leftJoin("external_identities as external_identity", (join) =>
+        join
+          .onRef("external_identity.tenant_id", "=", "session.tenant_id")
+          .onRef("external_identity.user_id", "=", "session.user_id")
+          .onRef("external_identity.id", "=", "session.external_identity_id"),
+      )
       .innerJoin("tenant_runtime_policies as policy", "policy.tenant_id", "session.tenant_id")
       .select([
         "session.session_id as sessionId",
         "session.tenant_id as tenantId",
         "session.user_id as userId",
         "session.role",
+        "session.authentication_kind as authenticationKind",
+        "session.external_identity_id as externalIdentityId",
         "session.secret_sha256 as secretSha256",
         "session.expires_at as expiresAt",
         "session.revoked_at as revokedAt",
         "credential.username",
+        "external_identity.provider_key as externalProviderKey",
+        "external_identity.issuer as externalIssuer",
+        "external_identity.subject as externalSubject",
+        "external_identity.provider_user_id as externalProviderUserId",
+        "external_identity.username as externalUsername",
         "user_row.display_name as displayName",
         "tenant.slug as tenantSlug",
         "policy.default_model_profile_id as defaultModelProfileId",
@@ -356,12 +397,21 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
       .executeTakeFirst();
     const now = validDate((this.#options.clock ?? (() => new Date()))(), "web session clock");
     const expiresAt = row === undefined ? undefined : new Date(row.expiresAt);
+    const invalidExternalIdentity =
+      row?.authenticationKind === "oidc" &&
+      (row.externalIdentityId === null ||
+        row.externalProviderKey === null ||
+        row.externalIssuer === null ||
+        row.externalSubject === null ||
+        row.externalProviderUserId === null ||
+        row.externalUsername === null);
     if (
       !candidate.bounded ||
       row === undefined ||
       !timingSafeEqual(candidate.digest, digestBuffer(row.secretSha256)) ||
       row.revokedAt !== null ||
       !row.enabled ||
+      invalidExternalIdentity ||
       expiresAt === undefined ||
       !Number.isFinite(expiresAt.valueOf()) ||
       expiresAt <= now
@@ -386,10 +436,35 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
       tenantId: row.tenantId,
       tenantSlug: row.tenantSlug,
       userId: row.userId,
-      ...(row.username === null ? {} : { username: row.username }),
+      ...(row.authenticationKind === "oidc"
+        ? row.externalUsername === null
+          ? {}
+          : { username: row.externalUsername }
+        : row.username === null
+          ? {}
+          : { username: row.username }),
       displayName: row.displayName,
       role: row.role,
       defaultModelProfileId: row.defaultModelProfileId,
+      authenticationKind: row.authenticationKind,
+      ...(row.authenticationKind !== "oidc" ||
+      row.externalIdentityId === null ||
+      row.externalProviderKey === null ||
+      row.externalIssuer === null ||
+      row.externalSubject === null ||
+      row.externalProviderUserId === null ||
+      row.externalUsername === null
+        ? {}
+        : {
+            externalIdentity: {
+              id: row.externalIdentityId,
+              providerKey: row.externalProviderKey,
+              issuer: row.externalIssuer,
+              subject: row.externalSubject,
+              providerUserId: row.externalProviderUserId,
+              username: row.externalUsername,
+            },
+          }),
     };
   }
 
@@ -454,6 +529,8 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
           tenant_id: identity.tenantId,
           user_id: identity.userId,
           role: identity.role as TenantApiCredentialRole,
+          authentication_kind: identity.authenticationKind === "oidc" ? "oidc" : "local",
+          external_identity_id: identity.externalIdentity?.id ?? null,
           secret_sha256: sha256(token),
           created_at: now,
           expires_at: expiresAt,

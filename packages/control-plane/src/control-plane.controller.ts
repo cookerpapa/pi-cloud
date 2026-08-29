@@ -26,6 +26,8 @@ import {
   parseCreateConversationPruneRequest,
   parseCreateDevelopmentEnvironmentRequest,
   parseCreateDevelopmentEnvironmentDirectoryRequest,
+  parseConnectGitLabProjectRequest,
+  parseStartSourceControlIssueJobRequest,
   parseDevelopmentEnvironmentActionRequest,
   parseRebindConversationWorkspaceRequest,
   parseConversationTreeView,
@@ -65,6 +67,8 @@ import {
   type SourceControlConfigurationResource,
   type SourceControlInstallLinkResource,
   type SourceControlIssueJobListResource,
+  type SourceControlIssueJobResource,
+  type AuthenticationConfigurationResource,
 } from "@pi-cloud/protocol";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ControlPlaneStoreFactory } from "./control-plane-store-factory.ts";
@@ -80,6 +84,7 @@ import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import { SourceControlService } from "./source-control-service.ts";
+import { OidcAuthenticationService } from "./oidc-authentication.ts";
 
 @Controller("v1")
 export class ControlPlaneController {
@@ -106,7 +111,39 @@ export class ControlPlaneController {
     @Inject(SshAccessTicketService)
     private readonly sshAccessTickets: SshAccessTicketService,
     @Inject(SourceControlService) private readonly sourceControl: SourceControlService,
+    @Inject(OidcAuthenticationService)
+    private readonly oidcAuthentication: OidcAuthenticationService,
   ) {}
+
+  @Get("auth/providers")
+  authenticationProviders(): AuthenticationConfigurationResource {
+    return this.oidcAuthentication.configuration();
+  }
+
+  @Get("auth/oidc/:providerKey")
+  async beginOidcLogin(
+    @Param("providerKey") providerKey: string,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    reply
+      .code(302)
+      .header("location", (await this.oidcAuthentication.begin(providerKey)).toString())
+      .send();
+  }
+
+  @Get("auth/oidc/:providerKey/callback")
+  async completeOidcLogin(
+    @Req() request: FastifyRequest,
+    @Param("providerKey") providerKey: string,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    const issued = await this.oidcAuthentication.complete(providerKey, request.raw.url ?? "");
+    reply
+      .code(303)
+      .header("set-cookie", this.webAuthentication.cookie(issued))
+      .header("location", "/")
+      .send();
+  }
 
   @Post("auth/register")
   async registerAccount(
@@ -155,6 +192,17 @@ export class ControlPlaneController {
       ...(identity.username === undefined ? {} : { username: identity.username }),
       displayName: identity.displayName,
       role: identity.role,
+      authenticationKind: identity.authenticationKind ?? "local",
+      ...(identity.externalIdentity === undefined
+        ? {}
+        : {
+            externalIdentity: {
+              providerKey: identity.externalIdentity.providerKey,
+              issuer: identity.externalIdentity.issuer,
+              providerUserId: identity.externalIdentity.providerUserId,
+              username: identity.externalIdentity.username,
+            },
+          }),
       platformAdministrator: this.platformRuntimeSettings.isPlatformAdministrator(identity),
     };
   }
@@ -207,7 +255,7 @@ export class ControlPlaneController {
   ): Promise<ProjectResource> {
     const request = parseCreateProjectRequest(body);
     const identity = this.tenantRequestContext.requireMutation(httpRequest);
-    if (request.source?.kind === "github") {
+    if (request.source?.kind === "source_control") {
       return this.sourceControl.createRepositoryProject(
         identity,
         this.controlPlaneStores.forIdentity(identity),
@@ -265,11 +313,60 @@ export class ControlPlaneController {
     return this.sourceControl.configuration(identity);
   }
 
+  @Post("source-control/gitlab/projects")
+  @HttpCode(201)
+  async connectGitLabProject(
+    @Req() request: FastifyRequest,
+    @Body() body: unknown,
+  ): Promise<SourceControlConfigurationResource> {
+    return this.sourceControl.connectGitLabProject(
+      this.tenantRequestContext.requireMutation(request),
+      parseConnectGitLabProjectRequest(body),
+    );
+  }
+
   @Get("source-control/issue-jobs")
   async sourceControlIssueJobs(
     @Req() request: FastifyRequest,
   ): Promise<SourceControlIssueJobListResource> {
     return this.sourceControl.listIssueJobs(this.tenantRequestContext.resolve(request));
+  }
+
+  @Post("source-control/issue-jobs/:jobId/claims")
+  @HttpCode(200)
+  async claimSourceControlIssueJob(
+    @Req() request: FastifyRequest,
+    @Param("jobId") jobIdValue: unknown,
+  ): Promise<SourceControlIssueJobResource> {
+    return this.sourceControl.claimIssueJob(
+      this.tenantRequestContext.requireMutation(request),
+      parseUuidPathParameter(jobIdValue, "jobId"),
+    );
+  }
+
+  @Delete("source-control/issue-jobs/:jobId/claims")
+  async unclaimSourceControlIssueJob(
+    @Req() request: FastifyRequest,
+    @Param("jobId") jobIdValue: unknown,
+  ): Promise<SourceControlIssueJobResource> {
+    return this.sourceControl.unclaimIssueJob(
+      this.tenantRequestContext.requireMutation(request),
+      parseUuidPathParameter(jobIdValue, "jobId"),
+    );
+  }
+
+  @Post("source-control/issue-jobs/:jobId/start")
+  @HttpCode(202)
+  async startSourceControlIssueJob(
+    @Req() request: FastifyRequest,
+    @Param("jobId") jobIdValue: unknown,
+    @Body() body: unknown,
+  ): Promise<SourceControlIssueJobResource> {
+    return this.sourceControl.startIssueJob(
+      this.tenantRequestContext.requireMutation(request),
+      parseUuidPathParameter(jobIdValue, "jobId"),
+      parseStartSourceControlIssueJobRequest(body),
+    );
   }
 
   @Post("source-control/github/webhook")
@@ -284,6 +381,27 @@ export class ControlPlaneController {
     return this.sourceControl.acceptGitHubWebhook({
       deliveryId,
       eventName,
+      signature,
+      rawBody: request.rawBody,
+    });
+  }
+
+  @Post("source-control/gitlab/webhook")
+  @HttpCode(202)
+  async gitlabWebhook(
+    @Req() request: FastifyRequest & { rawBody?: Buffer },
+    @Headers("webhook-id") deliveryId: string | undefined,
+    @Headers("x-gitlab-event") eventName: string | undefined,
+    @Headers("x-gitlab-instance") instance: string | undefined,
+    @Headers("webhook-timestamp") timestamp: string | undefined,
+    @Headers("webhook-signature") signature: string | undefined,
+  ): Promise<{ accepted: boolean; replayed: boolean }> {
+    if (request.rawBody === undefined) throw new TypeError("GitLab Webhook body is unavailable");
+    return this.sourceControl.acceptGitLabWebhook({
+      deliveryId,
+      eventName,
+      instance,
+      timestamp,
       signature,
       rawBody: request.rawBody,
     });

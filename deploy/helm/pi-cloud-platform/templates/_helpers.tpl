@@ -50,6 +50,12 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
   mountPath: /run/pi-cloud-secrets/metrics-token
   subPath: metrics-token
   readOnly: true
+{{- if .Values.controlPlane.authentication.gitlab.enabled }}
+- name: platform-secrets
+  mountPath: /run/pi-cloud-secrets/gitlab-oidc-client-secret
+  subPath: {{ .Values.controlPlane.authentication.gitlab.clientSecretSecretKey }}
+  readOnly: true
+{{- end }}
 {{- if .Values.controlPlane.sourceControl.github.enabled }}
 - name: platform-secrets
   mountPath: /run/pi-cloud-secrets/github-app-private-key.pem
@@ -58,6 +64,12 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
 - name: platform-secrets
   mountPath: /run/pi-cloud-secrets/github-webhook-secret
   subPath: {{ .Values.controlPlane.sourceControl.github.webhookSecretKey }}
+  readOnly: true
+{{- end }}
+{{- if .Values.controlPlane.sourceControl.gitlab.enabled }}
+- name: platform-secrets
+  mountPath: /run/pi-cloud-secrets/source-control-credential-master-key
+  subPath: {{ .Values.controlPlane.sourceControl.gitlab.credentialMasterKeySecretKey }}
   readOnly: true
 {{- end }}
 {{- end -}}

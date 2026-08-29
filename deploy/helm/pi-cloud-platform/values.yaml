@@ -65,6 +65,14 @@ controlPlane:
     maximumSessions: 100
   supervisorIdPrefix: pi-cloud-pi-worker-
   publicOriginBaseUrl: https://pi-cloud.example.com
+  authentication:
+    gitlab:
+      enabled: false
+      issuer: https://gitlab.example.com
+      clientId: ""
+      clientSecretSecretKey: gitlab-oidc-client-secret
+      label: GitLab
+      tenantId: "00000000-0000-4000-8000-000000000001"
   sourceControl:
     github:
       enabled: false
@@ -73,6 +81,12 @@ controlPlane:
       issueLabel: picloud
       privateKeySecretKey: github-app-private-key.pem
       webhookSecretKey: github-webhook-secret
+    gitlab:
+      enabled: false
+      webhookUrl: https://pi-cloud.example.com/v1/source-control/gitlab/webhook
+      internalBaseUrl: ""
+      issueLabel: picloud
+      credentialMasterKeySecretKey: source-control-credential-master-key
   resources:
     requests: { cpu: 500m, memory: 1Gi }
     limits: { cpu: "2", memory: 4Gi }

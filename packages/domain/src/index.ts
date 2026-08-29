@@ -1,4 +1,12 @@
 export {
+  PI_CODING_AGENT_DEFINITION_ID,
+  PI_CODING_AGENT_REVISION_ID,
+  type AgentRevisionSnapshot,
+  type AgentRuntimeKind,
+  type SessionStorageKind,
+} from "./agent-definition.ts";
+
+export {
   DomainModelValidationError,
   ModelProfileSchema,
   ModelThinkingLevelSchema,

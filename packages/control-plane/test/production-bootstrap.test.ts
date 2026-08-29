@@ -310,6 +310,44 @@ describe.sequential("production bootstrap and configuration", () => {
       webhookSecret: "github-webhook-secret-with-at-least-32-bytes",
     });
     expect(githubRuntime.githubApp?.privateKeyPem).toContain("PRIVATE KEY");
+    const gitlabRuntime = await loadProductionControlPlaneConfig({
+      ...environment,
+      PI_CLOUD_GITLAB_ENABLED: "true",
+      PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE: await secret(
+        root,
+        "source-control-master-key",
+        Buffer.alloc(32, 6).toString("base64url"),
+      ),
+      PI_CLOUD_GITLAB_WEBHOOK_URL: "https://picloud.example.com/v1/source-control/gitlab/webhook",
+      PI_CLOUD_GITLAB_INTERNAL_BASE_URL: "https://gitlab.internal.example.com",
+    });
+    expect(gitlabRuntime.gitlabProject).toEqual({
+      credentialMasterKey: Buffer.alloc(32, 6).toString("base64url"),
+      webhookUrl: "https://picloud.example.com/v1/source-control/gitlab/webhook",
+      issueLabel: "picloud",
+      internalBaseUrl: "https://gitlab.internal.example.com/",
+    });
+    const gitlabOidcRuntime = await loadProductionControlPlaneConfig({
+      ...environment,
+      PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true",
+      PI_CLOUD_OIDC_GITLAB_ENABLED: "true",
+      PI_CLOUD_OIDC_GITLAB_ISSUER: "http://gitlab.localhost:8929",
+      PI_CLOUD_OIDC_GITLAB_CLIENT_ID: "gitlab-oidc-client-id",
+      PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_FILE: await secret(
+        root,
+        "gitlab-oidc-client-secret",
+        "gitlab-oidc-client-secret-value",
+      ),
+      PI_CLOUD_OIDC_GITLAB_TENANT_ID: CONFIG.tenantId,
+    });
+    expect(gitlabOidcRuntime.gitlabOidc).toEqual({
+      issuer: "http://gitlab.localhost:8929",
+      clientId: "gitlab-oidc-client-id",
+      clientSecret: "gitlab-oidc-client-secret-value",
+      label: "GitLab",
+      tenantId: CONFIG.tenantId,
+      allowInsecureHttp: true,
+    });
     await expect(loadProductionApiToken(environment)).resolves.toBe(
       `pck_40000000-0000-4000-8000-000000000003.${"a".repeat(43)}`,
     );

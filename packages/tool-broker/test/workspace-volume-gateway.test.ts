@@ -200,8 +200,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const mover = new PersistentVolumeWorkspaceVolumeGateway({
       workspaceRoot,
       gitRunner: (args, options) => {
-        if (options.accessToken !== undefined) observedTokens.push(options.accessToken);
-        const { accessToken: _accessToken, ...trustedOptions } = options;
+        if (options.credential !== undefined) observedTokens.push(options.credential.accessToken);
+        const { credential: _credential, ...trustedOptions } = options;
         return runTrustedWorkspaceGit(
           args.map((argument) =>
             argument === "https://github.com/example/private-repo.git" ? remote : argument,
@@ -216,11 +216,13 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       ...bound,
       requestId: randomUUID(),
       repositoryId: "90000000-0000-4000-8000-000000000001",
+      provider: "github",
       providerInstallationId: "77",
       providerRepositoryId: "123456",
       cloneUrl: "https://github.com/example/private-repo.git",
       baseRef: "main",
       branchName: "picloud/issue-1-test",
+      workTreePath: ".",
       accessToken: "ghs_process_scoped_secret",
     });
     expect(checkout.baseSha).toMatch(/^[0-9a-f]{40}$/);
@@ -234,11 +236,13 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       ...bound,
       requestId: randomUUID(),
       repositoryId: "90000000-0000-4000-8000-000000000001",
+      provider: "github",
       providerInstallationId: "77",
       providerRepositoryId: "123456",
       cloneUrl: "https://github.com/example/private-repo.git",
       baseRef: "main",
       branchName: "picloud/issue-1-test",
+      workTreePath: ".",
       commitMessage: "Fix issue 1",
       authorName: "PiCloud Agent",
       authorEmail: "picloud@example.com",
@@ -248,6 +252,24 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       changed: true,
       commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
     });
+    await expect(
+      mover.publishSource!({
+        ...bound,
+        requestId: randomUUID(),
+        repositoryId: "90000000-0000-4000-8000-000000000001",
+        provider: "github",
+        providerInstallationId: "77",
+        providerRepositoryId: "123456",
+        cloneUrl: "https://github.com/example/private-repo.git",
+        baseRef: "main",
+        branchName: "picloud/issue-1-test",
+        workTreePath: ".",
+        commitMessage: "Fix issue 1",
+        authorName: "PiCloud Agent",
+        authorEmail: "picloud@example.com",
+        accessToken: "ghs_process_scoped_secret",
+      }),
+    ).resolves.toEqual(published);
     const remoteFile = await exec("/usr/bin/git", [
       "--git-dir",
       remote,
@@ -255,7 +277,66 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       "refs/heads/picloud/issue-1-test:answer.txt",
     ]);
     expect(remoteFile.stdout).toBe("42\n");
-    expect(observedTokens).toEqual(["ghs_process_scoped_secret", "ghs_process_scoped_secret"]);
+
+    await mkdir(join(workspace, "second-project"));
+    const second = await mover.checkoutSource!({
+      ...bound,
+      requestId: randomUUID(),
+      repositoryId: "90000000-0000-4000-8000-000000000001",
+      provider: "github",
+      providerInstallationId: "77",
+      providerRepositoryId: "123456",
+      cloneUrl: "https://github.com/example/private-repo.git",
+      baseRef: "main",
+      branchName: "picloud/issue-2-test",
+      workTreePath: "second-project",
+      accessToken: "ghs_process_scoped_secret",
+    });
+    expect(second.baseSha).toMatch(/^[0-9a-f]{40}$/);
+    await expect(readFile(join(workspace, "second-project/README.md"), "utf8")).resolves.toBe(
+      "private source\n",
+    );
+    await writeFile(join(workspace, "second-project/second.txt"), "isolated\n");
+    await expect(
+      mover.publishSource!({
+        ...bound,
+        requestId: randomUUID(),
+        repositoryId: "90000000-0000-4000-8000-000000000001",
+        provider: "github",
+        providerInstallationId: "77",
+        providerRepositoryId: "123456",
+        cloneUrl: "https://github.com/example/private-repo.git",
+        baseRef: "main",
+        branchName: "picloud/issue-2-test",
+        workTreePath: "second-project",
+        commitMessage: "Fix issue 2",
+        authorName: "PiCloud Agent",
+        authorEmail: "picloud@example.com",
+        accessToken: "ghs_process_scoped_secret",
+      }),
+    ).resolves.toMatchObject({ changed: true });
+    await expect(
+      mover.checkoutSource!({
+        ...bound,
+        requestId: randomUUID(),
+        repositoryId: "90000000-0000-4000-8000-000000000001",
+        provider: "github",
+        providerInstallationId: "77",
+        providerRepositoryId: "123456",
+        cloneUrl: "https://github.com/example/private-repo.git",
+        baseRef: "main",
+        branchName: "picloud/escape",
+        workTreePath: "../escape",
+        accessToken: "ghs_process_scoped_secret",
+      }),
+    ).rejects.toMatchObject({ code: "source_control_work_tree_invalid" });
+    expect(observedTokens).toEqual([
+      "ghs_process_scoped_secret",
+      "ghs_process_scoped_secret",
+      "ghs_process_scoped_secret",
+      "ghs_process_scoped_secret",
+      "ghs_process_scoped_secret",
+    ]);
     expect(
       await readFile(join(volumeRoot, ".pi-cloud-runtime", "volume-state.json"), "utf8"),
     ).not.toContain("ghs_process_scoped_secret");

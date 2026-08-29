@@ -161,7 +161,7 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
     },
     async checkoutSource(request) {
       return {
-        sourceControlProtocolVersion: 1,
+        sourceControlProtocolVersion: 3,
         type: "source_control.workspace_checked_out",
         requestId: request.requestId,
         workspaceId: request.workspaceId,
@@ -171,7 +171,7 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
     },
     async publishSource(request) {
       return {
-        sourceControlProtocolVersion: 1,
+        sourceControlProtocolVersion: 3,
         type: "source_control.workspace_published",
         requestId: request.requestId,
         workspaceId: request.workspaceId,
@@ -206,16 +206,18 @@ describe("Tool Broker authenticated RPC", () => {
       allowInsecureHttp: true,
     });
     const common = {
-      sourceControlProtocolVersion: 1 as const,
+      sourceControlProtocolVersion: 3 as const,
       requestId: "30000000-0000-4000-8000-000000000001",
       tenantId: "tenant-source-control",
       workspaceId: "30000000-0000-4000-8000-000000000002",
       repositoryId: "30000000-0000-4000-8000-000000000003",
+      provider: "github" as const,
       providerInstallationId: "77",
       providerRepositoryId: "123456",
       cloneUrl: "https://github.com/example/private-repo.git",
       baseRef: "main",
       branchName: "picloud/issue-1-test",
+      workTreePath: ".",
       accessToken: "ghs_process_scoped_test_token",
     };
     await expect(

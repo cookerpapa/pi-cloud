@@ -47,6 +47,8 @@ export {
   type SourceControlCheckoutState,
   type SourceControlWebhookState,
   type SourceControlIssueJobState,
+  type SourceControlInstallationTable,
+  type SourceControlRepositoryTable,
 } from "./database-types.ts";
 
 export {

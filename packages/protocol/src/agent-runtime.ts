@@ -1,5 +1,6 @@
 import { Type, type Static } from "typebox";
 import { DeepSeekModelIdSchema } from "./control-plane-api.ts";
+import { UuidSchema } from "./protocol-primitives.ts";
 
 // Provider-native Workspace checkpoints carry a bounded file index and an
 // encrypted recovery reference. Large filesystem bytes remain in the Provider
@@ -9,6 +10,21 @@ export const MAX_WORKSPACE_SNAPSHOT_BYTES = 32 * 1_024 * 1_024;
 const MAX_BASE64_SNAPSHOT_LENGTH = Math.ceil(MAX_WORKSPACE_SNAPSHOT_BYTES / 3) * 4;
 
 const Sha256Schema = Type.String({ pattern: "^[0-9a-f]{64}$" });
+
+export const AgentRuntimeKindSchema = Type.Union([Type.Literal("pi_sdk")]);
+export const SessionStorageKindSchema = Type.Union([Type.Literal("pi_session_storage_v1")]);
+
+export const AgentRevisionSnapshotSchema = Type.Object(
+  {
+    revisionId: UuidSchema,
+    definitionKey: Type.String({ pattern: "^[a-z][a-z0-9-]{0,62}$" }),
+    runtimeKind: AgentRuntimeKindSchema,
+    runtimeVersion: Type.String({ minLength: 1, maxLength: 128 }),
+    harnessVersion: Type.String({ minLength: 1, maxLength: 128 }),
+    sessionStorageKind: SessionStorageKindSchema,
+  },
+  { additionalProperties: false },
+);
 
 export const AgentModelRuntimeSchema = Type.Object(
   {
@@ -48,5 +64,8 @@ export const AgentWorkspaceSeedSchema = Type.Union([
 ]);
 
 export type AgentModelRuntime = Static<typeof AgentModelRuntimeSchema>;
+export type AgentRevisionSnapshot = Static<typeof AgentRevisionSnapshotSchema>;
+export type AgentRuntimeKind = Static<typeof AgentRuntimeKindSchema>;
+export type SessionStorageKind = Static<typeof SessionStorageKindSchema>;
 export type AgentWorkspaceSeed = Static<typeof AgentWorkspaceSeedSchema>;
 export type SandboxCheckpointBlob = Static<typeof SandboxCheckpointBlobSchema>;

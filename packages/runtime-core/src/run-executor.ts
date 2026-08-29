@@ -13,6 +13,8 @@ import {
   parseEnvironmentRuntimeSnapshot,
 } from "@pi-cloud/protocol";
 import type {
+  AgentRevisionSnapshot,
+  AgentRuntimeKind,
   CancelTurnCommandMessage,
   CloudToolCapabilitySnapshot,
   TurnBudgetSnapshot,
@@ -41,6 +43,7 @@ export type TurnExecutionRequest = {
   turnId: string;
   attemptId: string;
   attemptNumber: number;
+  agent: AgentRevisionSnapshot;
   idempotencyKey: string;
   nextEventSeq: string;
   input: {
@@ -212,6 +215,7 @@ export type RunExecutorOptions = {
   executionAuthority?: TurnExecutionAuthority;
   metrics?: PiCloudMetrics;
   terminalTurnProjectionSource?: TerminalTurnProjectionSource;
+  agentRuntimeKind?: AgentRuntimeKind;
 };
 
 type ClaimedTurn = {
@@ -331,6 +335,7 @@ export class RunExecutor {
   readonly #executionAuthority: TurnExecutionAuthority | undefined;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #terminalTurnProjectionSource: TerminalTurnProjectionSource | undefined;
+  readonly #agentRuntimeKind: AgentRuntimeKind;
 
   constructor(options: RunExecutorOptions) {
     this.#database = options.database;
@@ -353,6 +358,7 @@ export class RunExecutor {
     this.#executionAuthority = options.executionAuthority;
     this.#metrics = options.metrics;
     this.#terminalTurnProjectionSource = options.terminalTurnProjectionSource;
+    this.#agentRuntimeKind = options.agentRuntimeKind ?? "pi_sdk";
   }
 
   /**
@@ -573,6 +579,11 @@ export class RunExecutor {
       if (selectedRunId === undefined) {
         const candidate = await transaction
           .selectFrom("runs as candidate")
+          .innerJoin(
+            "agent_revisions as candidate_agent",
+            "candidate_agent.id",
+            "candidate.agent_revision_id",
+          )
           .innerJoin("sessions as candidate_session", (join) =>
             join
               .onRef("candidate_session.tenant_id", "=", "candidate.tenant_id")
@@ -589,6 +600,7 @@ export class RunExecutor {
           .where("candidate_session.state", "in", ["cold", "idle"])
           .where("candidate_session.session_kind", "=", sessionKind!)
           .where("candidate_policy.enabled", "=", true)
+          .where("candidate_agent.runtime_kind", "=", this.#agentRuntimeKind)
           .where(
             sql<boolean>`not exists (
               select 1
@@ -623,6 +635,16 @@ export class RunExecutor {
       }
       const row = await transaction
         .selectFrom("runs as run")
+        .innerJoin(
+          "agent_revisions as agent_revision",
+          "agent_revision.id",
+          "run.agent_revision_id",
+        )
+        .innerJoin(
+          "agent_definitions as agent_definition",
+          "agent_definition.id",
+          "agent_revision.definition_id",
+        )
         .innerJoin("turns as turn", (join) =>
           join
             .onRef("turn.tenant_id", "=", "run.tenant_id")
@@ -648,6 +670,12 @@ export class RunExecutor {
         .innerJoin("tenant_runtime_policies as policy", "policy.tenant_id", "run.tenant_id")
         .select([
           "run.tenant_id as tenantId",
+          "run.agent_revision_id as agentRevisionId",
+          "agent_definition.key as agentDefinitionKey",
+          "agent_revision.runtime_kind as agentRuntimeKind",
+          "agent_revision.runtime_version as agentRuntimeVersion",
+          "agent_revision.harness_version as agentHarnessVersion",
+          "agent_revision.session_storage_kind as agentSessionStorageKind",
           "run.idempotency_key as idempotencyKey",
           "run.mailbox_position as mailboxPosition",
           "turn.id as turnId",
@@ -700,6 +728,8 @@ export class RunExecutor {
           "policy.compaction_keep_recent_tokens as compactionKeepRecentTokens",
         ])
         .where("workspace_row.deleted_at", "is", null)
+        .where("agent_revision.runtime_kind", "=", this.#agentRuntimeKind)
+        .whereRef("session_row.agent_revision_id", "=", "run.agent_revision_id")
         .where("policy.enabled", "=", true)
         .where("run.available_at", "<=", now)
         .where("run.id", "=", selectedRunId)
@@ -868,6 +898,14 @@ export class RunExecutor {
           turnId: row.turnId,
           attemptId,
           attemptNumber,
+          agent: {
+            revisionId: row.agentRevisionId,
+            definitionKey: row.agentDefinitionKey,
+            runtimeKind: row.agentRuntimeKind,
+            runtimeVersion: row.agentRuntimeVersion,
+            harnessVersion: row.agentHarnessVersion,
+            sessionStorageKind: row.agentSessionStorageKind,
+          },
           idempotencyKey: row.idempotencyKey,
           nextEventSeq: row.nextEventSeq,
           input: { kind: "prompt", prompt: row.inputText },

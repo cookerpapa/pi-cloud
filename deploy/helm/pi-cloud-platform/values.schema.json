@@ -472,7 +472,7 @@
         "sourceControl": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["github"],
+          "required": ["github", "gitlab"],
           "properties": {
             "github": {
               "type": "object",
@@ -492,6 +492,51 @@
                 "issueLabel": { "type": "string", "minLength": 1, "maxLength": 50 },
                 "privateKeySecretKey": { "$ref": "#/$defs/secretKey" },
                 "webhookSecretKey": { "$ref": "#/$defs/secretKey" }
+              }
+            },
+            "gitlab": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "enabled",
+                "webhookUrl",
+                "internalBaseUrl",
+                "issueLabel",
+                "credentialMasterKeySecretKey"
+              ],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "webhookUrl": { "$ref": "#/$defs/httpUrl" },
+                "internalBaseUrl": { "$ref": "#/$defs/optionalHttpUrl" },
+                "issueLabel": { "type": "string", "minLength": 1, "maxLength": 50 },
+                "credentialMasterKeySecretKey": { "$ref": "#/$defs/secretKey" }
+              }
+            }
+          }
+        },
+        "authentication": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["gitlab"],
+          "properties": {
+            "gitlab": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "enabled",
+                "issuer",
+                "clientId",
+                "clientSecretSecretKey",
+                "label",
+                "tenantId"
+              ],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "issuer": { "$ref": "#/$defs/httpUrl" },
+                "clientId": { "type": "string", "maxLength": 256 },
+                "clientSecretSecretKey": { "$ref": "#/$defs/secretKey" },
+                "label": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "tenantId": { "$ref": "#/$defs/uuid" }
               }
             }
           }

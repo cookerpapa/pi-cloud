@@ -36,6 +36,8 @@ import { OperationalMetricsSampler } from "./operational-metrics-sampler.ts";
 import { GitHubAppClient } from "./github-app-client.ts";
 import { SourceControlService } from "./source-control-service.ts";
 import { SourceControlIssueCoordinator } from "./source-control-issue-coordinator.ts";
+import { SourceControlCredentialVault } from "./source-control-credential-vault.ts";
+import { OidcAuthenticationService } from "./oidc-authentication.ts";
 import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 
 async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Promise<void> {
@@ -69,7 +71,7 @@ export async function startControlPlane(): Promise<void> {
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let issueCoordinator: SourceControlIssueCoordinator | undefined;
-  let githubDispatcher: EnvHttpProxyAgent | undefined;
+  let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
   let closing = false;
   try {
     agentEvents = new KafkaEventRuntime({
@@ -227,9 +229,15 @@ export async function startControlPlane(): Promise<void> {
       ticketTtlMs: config.sshTicketTtlMs,
     });
     let githubRuntime;
+    if (
+      config.githubApp !== undefined ||
+      config.gitlabProject !== undefined ||
+      config.gitlabOidc !== undefined
+    ) {
+      sourceControlDispatcher = new EnvHttpProxyAgent();
+    }
     if (config.githubApp !== undefined) {
-      githubDispatcher = new EnvHttpProxyAgent();
-      const dispatcher = githubDispatcher;
+      const dispatcher = sourceControlDispatcher!;
       githubRuntime = {
         appSlug: config.githubApp.appSlug,
         issueLabel: config.githubApp.issueLabel,
@@ -245,11 +253,55 @@ export async function startControlPlane(): Promise<void> {
         }),
       };
     }
+    const gitlabRuntime =
+      config.gitlabProject === undefined
+        ? undefined
+        : {
+            vault: new SourceControlCredentialVault(config.gitlabProject.credentialMasterKey),
+            webhookUrl: config.gitlabProject.webhookUrl,
+            publicOrigin: config.publicOriginBaseUrl,
+            issueLabel: config.gitlabProject.issueLabel,
+            ...(config.gitlabProject.internalBaseUrl === undefined
+              ? {}
+              : { internalBaseUrl: config.gitlabProject.internalBaseUrl }),
+            fetch: (input: string | URL | Request, init?: RequestInit) =>
+              undiciFetch(input as Parameters<typeof undiciFetch>[0], {
+                ...(init as Parameters<typeof undiciFetch>[1]),
+                dispatcher: sourceControlDispatcher!,
+              }) as unknown as Promise<Response>,
+          };
     const sourceControlService = new SourceControlService({
       database,
       materializerToken: config.sandboxMaterializerToken,
       allowInsecureInternalHttp: config.allowInsecureInternalHttp,
       ...(githubRuntime === undefined ? {} : { github: githubRuntime }),
+      ...(gitlabRuntime === undefined ? {} : { gitlab: gitlabRuntime }),
+    });
+    const oidcAuthenticationService = new OidcAuthenticationService({
+      database,
+      webAuthentication,
+      publicOrigin: config.publicOriginBaseUrl,
+      providers:
+        config.gitlabOidc === undefined
+          ? []
+          : [
+              {
+                key: "gitlab",
+                label: config.gitlabOidc.label,
+                issuer: config.gitlabOidc.issuer,
+                clientId: config.gitlabOidc.clientId,
+                clientSecret: config.gitlabOidc.clientSecret,
+                tenantId: config.gitlabOidc.tenantId,
+                defaultRole: "member",
+                kind: "gitlab",
+                allowInsecureHttp: config.gitlabOidc.allowInsecureHttp,
+                fetch: (input: string | URL | Request, init?: RequestInit) =>
+                  undiciFetch(input as Parameters<typeof undiciFetch>[0], {
+                    ...(init as Parameters<typeof undiciFetch>[1]),
+                    dispatcher: sourceControlDispatcher!,
+                  }) as unknown as Promise<Response>,
+              },
+            ],
     });
     runtime = await createControlPlaneRuntime({
       database,
@@ -279,6 +331,8 @@ export async function startControlPlane(): Promise<void> {
       workspaceTerminalGateway,
       sandboxPreviewGateway,
       sourceControlService,
+      oidcAuthenticationService,
+      publicOriginBaseUrl: config.publicOriginBaseUrl,
       environmentImageRevision: config.environmentImageRevision,
       metrics: observability.metrics,
       artifactReader: { get: (objectKey) => objectStore.get(objectKey) },
@@ -333,7 +387,7 @@ export async function startControlPlane(): Promise<void> {
       await developmentEnvironmentService?.close();
       await operationalMetrics?.close();
       await activeAgentEvents.close();
-      await githubDispatcher?.close();
+      await sourceControlDispatcher?.close();
       objectStore.destroy();
       await database.destroy();
       await observability.close();
@@ -352,7 +406,7 @@ export async function startControlPlane(): Promise<void> {
     await developmentEnvironmentService?.close().catch(() => undefined);
     await operationalMetrics?.close().catch(() => undefined);
     await agentEvents?.close().catch(() => undefined);
-    await githubDispatcher?.close().catch(() => undefined);
+    await sourceControlDispatcher?.close().catch(() => undefined);
     objectStore.destroy();
     await database.destroy();
     await observability.close().catch(() => undefined);

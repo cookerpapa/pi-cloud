@@ -3,6 +3,7 @@ import {
   parseAcceptedTurnResource,
   parseTurnSteerResource,
   parseAuthSessionResource,
+  parseAuthenticationConfigurationResource,
   parseConversationDetailResource,
   parseConversationListResource,
   parseConversationTreeResource,
@@ -28,10 +29,11 @@ import {
   parseConversationWorkspaceBindingResource,
   parseSshAccessTicketResource,
   parseSourceControlConfigurationResource,
-  parseSourceControlInstallLinkResource,
   parseSourceControlIssueJobListResource,
+  parseSourceControlIssueJobResource,
   type ConversationDetailResource,
   type AuthSessionResource,
+  type AuthenticationConfigurationResource,
   type ConversationListResource,
   type ConversationTreeResource,
   type ConversationTreeView,
@@ -64,8 +66,9 @@ import {
   type ConversationWorkspaceBindingResource,
   type SshAccessTicketResource,
   type SourceControlConfigurationResource,
-  type SourceControlInstallLinkResource,
   type SourceControlIssueJobListResource,
+  type SourceControlIssueJobResource,
+  type StartSourceControlIssueJobRequest,
 } from "@pi-cloud/protocol";
 
 export class PiCloudApiError extends Error {
@@ -203,6 +206,12 @@ export class PiCloudApi {
     this.#authorizationToken = authorizationToken;
   }
 
+  async getAuthenticationConfiguration(): Promise<AuthenticationConfigurationResource> {
+    return parseAuthenticationConfigurationResource(
+      await request(this.#fetch, "/v1/auth/providers", { method: "GET" }),
+    );
+  }
+
   async getIdentity(): Promise<TenantIdentityResource> {
     return parseTenantIdentityResource(
       await request(this.#fetch, "/v1/identity", { method: "GET" }, this.#authorizationToken),
@@ -310,12 +319,16 @@ export class PiCloudApi {
     );
   }
 
-  async beginGitHubInstallation(): Promise<SourceControlInstallLinkResource> {
-    return parseSourceControlInstallLinkResource(
+  async connectGitLabProject(input: {
+    baseUrl: string;
+    project: string;
+    accessToken: string;
+  }): Promise<SourceControlConfigurationResource> {
+    return parseSourceControlConfigurationResource(
       await request(
         this.#fetch,
-        "/v1/source-control/github/installations",
-        jsonRequest({}),
+        "/v1/source-control/gitlab/projects",
+        jsonRequest(input),
         this.#authorizationToken,
       ),
     );
@@ -340,6 +353,42 @@ export class PiCloudApi {
         this.#fetch,
         "/v1/source-control/issue-jobs",
         { method: "GET" },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async claimSourceControlIssueJob(jobId: string): Promise<SourceControlIssueJobResource> {
+    return parseSourceControlIssueJobResource(
+      await request(
+        this.#fetch,
+        `/v1/source-control/issue-jobs/${encodeURIComponent(jobId)}/claims`,
+        jsonRequest({}),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async unclaimSourceControlIssueJob(jobId: string): Promise<SourceControlIssueJobResource> {
+    return parseSourceControlIssueJobResource(
+      await request(
+        this.#fetch,
+        `/v1/source-control/issue-jobs/${encodeURIComponent(jobId)}/claims`,
+        { method: "DELETE" },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async startSourceControlIssueJob(
+    jobId: string,
+    input: StartSourceControlIssueJobRequest,
+  ): Promise<SourceControlIssueJobResource> {
+    return parseSourceControlIssueJobResource(
+      await request(
+        this.#fetch,
+        `/v1/source-control/issue-jobs/${encodeURIComponent(jobId)}/start`,
+        jsonRequest(input),
         this.#authorizationToken,
       ),
     );

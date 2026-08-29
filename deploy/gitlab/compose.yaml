@@ -1,0 +1,51 @@
+name: pi-cloud-gitlab
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:19.3.0-ce.0
+    hostname: gitlab.localhost
+    restart: unless-stopped
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://gitlab.localhost:8929'
+        gitlab_rails['gitlab_shell_ssh_port'] = 2224
+        gitlab_rails['initial_root_password'] = File.read('/run/pi-cloud-gitlab-secrets/root-password').strip
+        puma['worker_processes'] = 0
+        sidekiq['concurrency'] = 10
+        alertmanager['enable'] = false
+        gitlab_exporter['enable'] = false
+        gitlab_kas['enable'] = false
+        node_exporter['enable'] = false
+        postgres_exporter['enable'] = false
+        prometheus_monitoring['enable'] = false
+        prometheus['enable'] = false
+        puma['exporter_enabled'] = false
+        redis_exporter['enable'] = false
+        sidekiq['metrics_enabled'] = false
+    ports:
+      - 127.0.0.1:8929:8929
+      - 127.0.0.1:2224:22
+    volumes:
+      - ${PI_CLOUD_GITLAB_RUNTIME_DIRECTORY:?run npm run gitlab:init first}/config:/etc/gitlab
+      - ${PI_CLOUD_GITLAB_RUNTIME_DIRECTORY:?run npm run gitlab:init first}/logs:/var/log/gitlab
+      - ${PI_CLOUD_GITLAB_RUNTIME_DIRECTORY:?run npm run gitlab:init first}/data:/var/opt/gitlab
+      - type: bind
+        source: ${PI_CLOUD_GITLAB_RUNTIME_DIRECTORY:?run npm run gitlab:init first}/secrets/root-password
+        target: /run/pi-cloud-gitlab-secrets/root-password
+        read_only: true
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    shm_size: 256m
+    mem_limit: 6g
+    cpus: 6.0
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8929/-/health]
+      interval: 15s
+      timeout: 5s
+      retries: 80
+      start_period: 5m
+    logging:
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 20m

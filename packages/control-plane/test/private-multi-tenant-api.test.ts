@@ -154,6 +154,7 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       userId: tenantA.ownerUserId,
       displayName: "Alpha Owner",
       role: "member",
+      authenticationKind: "api",
       platformAdministrator: false,
     });
     const bravo = await http.inject({

@@ -124,15 +124,59 @@ export const AccountUsernameSchema = Type.String({
   pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{2,47}$",
 });
 
+const IdentityUsernameSchema = Type.String({
+  minLength: 1,
+  maxLength: 255,
+  pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$",
+});
+
 export const TenantIdentityResourceSchema = Type.Object(
   {
     tenantId: UuidSchema,
     tenantSlug: Type.String({ minLength: 1, maxLength: 256 }),
     userId: UuidSchema,
-    username: Type.Optional(AccountUsernameSchema),
+    username: Type.Optional(IdentityUsernameSchema),
     displayName: Type.String({ minLength: 1, maxLength: 256 }),
     role: TenantApiRoleSchema,
+    authenticationKind: Type.Union([
+      Type.Literal("local"),
+      Type.Literal("oidc"),
+      Type.Literal("api"),
+      Type.Literal("system"),
+    ]),
+    externalIdentity: Type.Optional(
+      Type.Object(
+        {
+          providerKey: Type.String({ pattern: "^[a-z][a-z0-9-]{0,62}$" }),
+          issuer: Type.String({ minLength: 8, maxLength: 2_048 }),
+          providerUserId: Type.String({ minLength: 1, maxLength: 128 }),
+          username: Type.String({ minLength: 1, maxLength: 255 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     platformAdministrator: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
+export const AuthenticationConfigurationResourceSchema = Type.Object(
+  {
+    local: Type.Object(
+      { login: Type.Boolean(), registration: Type.Boolean() },
+      { additionalProperties: false },
+    ),
+    oidc: Type.Array(
+      Type.Object(
+        {
+          providerKey: Type.String({ pattern: "^[a-z][a-z0-9-]{0,62}$" }),
+          label: Type.String({ minLength: 1, maxLength: 128 }),
+          loginPath: Type.String({ pattern: "^/v1/auth/oidc/[a-z][a-z0-9-]{0,62}$" }),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 16 },
+    ),
   },
   { additionalProperties: false },
 );
@@ -198,7 +242,7 @@ export const WorkspaceSourceRequestSchema = Type.Union([
   Type.Object({ kind: Type.Literal("empty") }, { additionalProperties: false }),
   Type.Object({ kind: Type.Literal("sample_java") }, { additionalProperties: false }),
   Type.Object(
-    { kind: Type.Literal("github"), repositoryId: UuidSchema },
+    { kind: Type.Literal("source_control"), repositoryId: UuidSchema },
     { additionalProperties: false },
   ),
 ]);
@@ -214,13 +258,14 @@ export const WorkspaceSourceResourceSchema = Type.Union([
   ),
   Type.Object(
     {
-      kind: Type.Literal("github"),
+      kind: Type.Literal("source_control"),
       status: Type.Union([
         Type.Literal("provisioning"),
         Type.Literal("ready"),
         Type.Literal("failed"),
       ]),
       repositoryId: UuidSchema,
+      provider: Type.Union([Type.Literal("github"), Type.Literal("gitlab")]),
       fullName: Type.String({ minLength: 3, maxLength: 511 }),
       baseRef: Type.String({ minLength: 1, maxLength: 255 }),
       baseSha: Type.Optional(Type.String({ pattern: "^[0-9a-f]{40}$" })),
@@ -1025,6 +1070,9 @@ export const ControlPlaneApiErrorSchema = Type.Object(
 export type TurnThinkingLevel = Static<typeof TurnThinkingLevelSchema>;
 export type TenantApiRole = Static<typeof TenantApiRoleSchema>;
 export type TenantIdentityResource = Static<typeof TenantIdentityResourceSchema>;
+export type AuthenticationConfigurationResource = Static<
+  typeof AuthenticationConfigurationResourceSchema
+>;
 export type RegisterAccountRequest = Static<typeof RegisterAccountRequestSchema>;
 export type LoginAccountRequest = Static<typeof LoginAccountRequestSchema>;
 export type AuthSessionResource = Static<typeof AuthSessionResourceSchema>;
@@ -1156,6 +1204,16 @@ export function parseCreateProjectRequest(value: unknown): CreateProjectRequest 
 
 export function parseTenantIdentityResource(value: unknown): TenantIdentityResource {
   return parseSchema(TenantIdentityResourceSchema, value, "tenant identity resource");
+}
+
+export function parseAuthenticationConfigurationResource(
+  value: unknown,
+): AuthenticationConfigurationResource {
+  return parseSchema(
+    AuthenticationConfigurationResourceSchema,
+    value,
+    "authentication configuration resource",
+  );
 }
 
 function normalizedAccountPassword(value: string): string {

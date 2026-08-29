@@ -20,6 +20,7 @@ export const VOLUME_METADATA_DIRECTORY = ".pi-cloud-runtime";
 export const VOLUME_WORKSPACE_DIRECTORY = "workspace";
 export const VOLUME_GENERATION_FILE = "generation";
 export const VOLUME_GIT_DIRECTORY = "git";
+export const VOLUME_SOURCE_GIT_DIRECTORY = "source-git";
 export const MAXIMUM_REQUEST_BYTES = 32 * 1_024;
 // A snapshot response carries the bounded persistent-volume reference metadata
 // plus its bounded diff. Workspace file bytes never cross this interface.
@@ -136,7 +137,11 @@ export type WorkspaceVolumeGitRunner = (
   args: readonly string[],
   options: {
     cwd: string;
-    accessToken?: string;
+    credential?: Readonly<{
+      provider: "github" | "gitlab";
+      cloneUrl: string;
+      accessToken: string;
+    }>;
     allowedExitCodes?: readonly number[];
     retryable?: boolean;
   },
@@ -151,7 +156,7 @@ export type VolumeState = Readonly<{
   gitBaselineCommit: string;
   forkedFrom?: Readonly<{ workspaceId: string; volumeRevision: string }>;
   sourceControl?: Readonly<{
-    provider: "github";
+    provider: "github" | "gitlab";
     repositoryId: string;
     providerRepositoryId: string;
     cloneUrl: string;
@@ -159,6 +164,20 @@ export type VolumeState = Readonly<{
     branchName: string;
     baseSha: string;
   }>;
+  sourceControlDirectories?: Readonly<
+    Record<
+      string,
+      Readonly<{
+        provider: "github" | "gitlab";
+        repositoryId: string;
+        providerRepositoryId: string;
+        cloneUrl: string;
+        baseRef: string;
+        branchName: string;
+        baseSha: string;
+      }>
+    >
+  >;
 }>;
 
 export class WorkspaceVolumeGatewayError extends Error {
@@ -284,6 +303,32 @@ export function safeRelativeFile(value: string): string {
     throw new WorkspaceVolumeGatewayError(
       "workspace_materialize_path_invalid",
       "Workspace materialize path was invalid",
+      false,
+    );
+  }
+  return value;
+}
+
+export function safeVolumeWorkTreePath(value: string): string {
+  if (value === ".") return value;
+  if (
+    value.length < 1 ||
+    value.length > 4_096 ||
+    value.startsWith("/") ||
+    value.includes("\\") ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new WorkspaceVolumeGatewayError(
+      "source_control_work_tree_invalid",
+      "Source-control work tree path was invalid",
+      false,
+    );
+  }
+  const segments = value.split("/");
+  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
+    throw new WorkspaceVolumeGatewayError(
+      "source_control_work_tree_invalid",
+      "Source-control work tree path was invalid",
       false,
     );
   }

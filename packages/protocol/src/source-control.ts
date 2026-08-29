@@ -2,9 +2,9 @@ import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { OpaqueIdSchema, UtcTimestampSchema, UuidSchema } from "./protocol-primitives.ts";
 
-const ProviderSchema = Type.Literal("github");
-const GitHubInstallationIdSchema = Type.String({ pattern: "^[1-9][0-9]{0,30}$" });
-const GitHubTokenSchema = Type.String({
+const ProviderSchema = Type.Union([Type.Literal("github"), Type.Literal("gitlab")]);
+const ProviderNumericIdSchema = Type.String({ pattern: "^[1-9][0-9]{0,30}$" });
+const SourceControlTokenSchema = Type.String({
   minLength: 16,
   maxLength: 4_096,
   pattern: "^[^\\r\\n\\u0000]+$",
@@ -15,12 +15,28 @@ const GitRefSchema = Type.String({
   maxLength: 255,
   pattern: "^[^\\u0000-\\u001f\\u007f ~^:?*\\[\\\\]+$",
 });
+const ProviderBaseUrlSchema = Type.String({
+  minLength: 8,
+  maxLength: 2_048,
+  pattern: "^https?://[^/@\\s]+$",
+});
+const CloneUrlSchema = Type.String({
+  minLength: 12,
+  maxLength: 2_048,
+  pattern: "^https?://[^/@\\s]+/.+\\.git$",
+});
+const VolumeWorkTreePathSchema = Type.String({
+  minLength: 1,
+  maxLength: 4_096,
+  pattern: "^(?:\\.|[^/\\u0000-\\u001f\\u007f][^\\u0000-\\u001f\\u007f]*)$",
+});
 
 export const SourceControlRepositoryResourceSchema = Type.Object(
   {
     repositoryId: UuidSchema,
     installationId: UuidSchema,
     provider: ProviderSchema,
+    providerBaseUrl: ProviderBaseUrlSchema,
     fullName: Type.String({ minLength: 3, maxLength: 511 }),
     private: Type.Boolean(),
     defaultBranch: Type.String({ minLength: 1, maxLength: 255 }),
@@ -33,6 +49,7 @@ export const SourceControlInstallationResourceSchema = Type.Object(
   {
     installationId: UuidSchema,
     provider: ProviderSchema,
+    providerBaseUrl: ProviderBaseUrlSchema,
     accountLogin: Type.String({ minLength: 1, maxLength: 255 }),
     accountType: Type.Union([
       Type.Literal("User"),
@@ -51,6 +68,7 @@ export const SourceControlInstallationResourceSchema = Type.Object(
 export const SourceControlConfigurationResourceSchema = Type.Object(
   {
     githubConfigured: Type.Boolean(),
+    gitlabConfigured: Type.Boolean(),
     installations: Type.Array(SourceControlInstallationResourceSchema, { maxItems: 100 }),
   },
   { additionalProperties: false },
@@ -74,6 +92,7 @@ export const SourceControlIssueJobResourceSchema = Type.Object(
     issueTitle: Type.String({ minLength: 1, maxLength: 512 }),
     issueUrl: Type.String({ minLength: 8, maxLength: 2_048 }),
     state: Type.Union([
+      Type.Literal("awaiting_claim"),
       Type.Literal("received"),
       Type.Literal("provisioning"),
       Type.Literal("queued"),
@@ -83,12 +102,57 @@ export const SourceControlIssueJobResourceSchema = Type.Object(
       Type.Literal("failed"),
       Type.Literal("cancelled"),
     ]),
+    claimEligible: Type.Boolean(),
+    claimedByCurrentUser: Type.Boolean(),
+    claims: Type.Array(
+      Type.Object(
+        {
+          userId: UuidSchema,
+          username: Type.String({ minLength: 1, maxLength: 255 }),
+          displayName: Type.String({ minLength: 1, maxLength: 256 }),
+          claimedAt: UtcTimestampSchema,
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 1_000 },
+    ),
     sessionId: Type.Optional(UuidSchema),
     runId: Type.Optional(UuidSchema),
-    pullRequestUrl: Type.Optional(Type.String({ minLength: 8, maxLength: 2_048 })),
+    changeRequestUrl: Type.Optional(Type.String({ minLength: 8, maxLength: 2_048 })),
     failure: Type.Optional(Type.String({ minLength: 1, maxLength: 1_024 })),
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const StartSourceControlIssueJobRequestSchema = Type.Union([
+  Type.Object(
+    {
+      executionMode: Type.Literal("elastic"),
+      sandboxProfileKey: Type.Union([
+        Type.Literal("starter"),
+        Type.Literal("standard"),
+        Type.Literal("performance"),
+      ]),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      executionMode: Type.Literal("development_environment"),
+      developmentEnvironmentId: UuidSchema,
+      workingDirectory: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
+export const ConnectGitLabProjectRequestSchema = Type.Object(
+  {
+    baseUrl: ProviderBaseUrlSchema,
+    project: Type.String({ minLength: 1, maxLength: 511 }),
+    accessToken: SourceControlTokenSchema,
   },
   { additionalProperties: false },
 );
@@ -100,29 +164,27 @@ export const SourceControlIssueJobListResourceSchema = Type.Object(
 
 export const SourceControlWorkspaceCheckoutRequestSchema = Type.Object(
   {
-    sourceControlProtocolVersion: Type.Literal(1),
+    sourceControlProtocolVersion: Type.Literal(3),
     type: Type.Literal("source_control.workspace_checkout"),
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
     workspaceId: UuidSchema,
     repositoryId: UuidSchema,
-    providerInstallationId: GitHubInstallationIdSchema,
-    providerRepositoryId: GitHubInstallationIdSchema,
-    cloneUrl: Type.String({
-      minLength: 20,
-      maxLength: 2_048,
-      pattern: "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\\.git$",
-    }),
+    provider: ProviderSchema,
+    providerInstallationId: ProviderNumericIdSchema,
+    providerRepositoryId: ProviderNumericIdSchema,
+    cloneUrl: CloneUrlSchema,
     baseRef: GitRefSchema,
     branchName: GitRefSchema,
-    accessToken: GitHubTokenSchema,
+    workTreePath: VolumeWorkTreePathSchema,
+    accessToken: SourceControlTokenSchema,
   },
   { additionalProperties: false },
 );
 
 export const SourceControlWorkspaceCheckoutResponseSchema = Type.Object(
   {
-    sourceControlProtocolVersion: Type.Literal(1),
+    sourceControlProtocolVersion: Type.Literal(3),
     type: Type.Literal("source_control.workspace_checked_out"),
     requestId: UuidSchema,
     workspaceId: UuidSchema,
@@ -134,32 +196,30 @@ export const SourceControlWorkspaceCheckoutResponseSchema = Type.Object(
 
 export const SourceControlWorkspacePublishRequestSchema = Type.Object(
   {
-    sourceControlProtocolVersion: Type.Literal(1),
+    sourceControlProtocolVersion: Type.Literal(3),
     type: Type.Literal("source_control.workspace_publish"),
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
     workspaceId: UuidSchema,
     repositoryId: UuidSchema,
-    providerInstallationId: GitHubInstallationIdSchema,
-    providerRepositoryId: GitHubInstallationIdSchema,
-    cloneUrl: Type.String({
-      minLength: 20,
-      maxLength: 2_048,
-      pattern: "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\\.git$",
-    }),
+    provider: ProviderSchema,
+    providerInstallationId: ProviderNumericIdSchema,
+    providerRepositoryId: ProviderNumericIdSchema,
+    cloneUrl: CloneUrlSchema,
     baseRef: GitRefSchema,
     branchName: GitRefSchema,
+    workTreePath: VolumeWorkTreePathSchema,
     commitMessage: Type.String({ minLength: 1, maxLength: 1_024 }),
     authorName: Type.String({ minLength: 1, maxLength: 128 }),
     authorEmail: Type.String({ minLength: 3, maxLength: 254, pattern: "^[^@\\s]+@[^@\\s]+$" }),
-    accessToken: GitHubTokenSchema,
+    accessToken: SourceControlTokenSchema,
   },
   { additionalProperties: false },
 );
 
 export const SourceControlWorkspacePublishResponseSchema = Type.Object(
   {
-    sourceControlProtocolVersion: Type.Literal(1),
+    sourceControlProtocolVersion: Type.Literal(3),
     type: Type.Literal("source_control.workspace_published"),
     requestId: UuidSchema,
     workspaceId: UuidSchema,
@@ -181,9 +241,13 @@ export type SourceControlInstallLinkResource = Static<
   typeof SourceControlInstallLinkResourceSchema
 >;
 export type SourceControlIssueJobResource = Static<typeof SourceControlIssueJobResourceSchema>;
+export type StartSourceControlIssueJobRequest = Static<
+  typeof StartSourceControlIssueJobRequestSchema
+>;
 export type SourceControlIssueJobListResource = Static<
   typeof SourceControlIssueJobListResourceSchema
 >;
+export type ConnectGitLabProjectRequest = Static<typeof ConnectGitLabProjectRequestSchema>;
 export type SourceControlWorkspaceCheckoutRequest = Static<
   typeof SourceControlWorkspaceCheckoutRequestSchema
 >;
@@ -232,6 +296,24 @@ export const parseSourceControlIssueJobListResource = (value: unknown) =>
     SourceControlIssueJobListResourceSchema,
     value,
     "source-control issue-job-list resource",
+  );
+export const parseSourceControlIssueJobResource = (value: unknown) =>
+  parse<SourceControlIssueJobResource>(
+    SourceControlIssueJobResourceSchema,
+    value,
+    "source-control Issue Job resource",
+  );
+export const parseStartSourceControlIssueJobRequest = (value: unknown) =>
+  parse<StartSourceControlIssueJobRequest>(
+    StartSourceControlIssueJobRequestSchema,
+    value,
+    "start source-control Issue Job request",
+  );
+export const parseConnectGitLabProjectRequest = (value: unknown) =>
+  parse<ConnectGitLabProjectRequest>(
+    ConnectGitLabProjectRequestSchema,
+    value,
+    "connect GitLab project request",
   );
 export const parseSourceControlWorkspaceCheckoutRequest = (value: unknown) =>
   parse<SourceControlWorkspaceCheckoutRequest>(

@@ -32,6 +32,7 @@ import { DevelopmentEnvironmentService } from "./development-environment-service
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import type { TerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
 import { SourceControlService } from "./source-control-service.ts";
+import { OidcAuthenticationService } from "./oidc-authentication.ts";
 
 export type ControlPlaneModuleOptions = Omit<
   ControlPlaneStoreOptions,
@@ -53,6 +54,8 @@ export type ControlPlaneModuleOptions = Omit<
   developmentEnvironmentService?: DevelopmentEnvironmentService;
   sshAccessTicketService?: SshAccessTicketService;
   sourceControlService?: SourceControlService;
+  oidcAuthenticationService?: OidcAuthenticationService;
+  publicOriginBaseUrl?: string;
 };
 
 export type ControlPlaneEventRuntime = {
@@ -82,6 +85,24 @@ export class ControlPlaneModule {
         : { environmentImageRevision: options.environmentImageRevision }),
       ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
     });
+    const webAuthentication =
+      options.webAuthentication ??
+      new WebAuthenticationService({
+        database: options.database,
+        enabled: false,
+        maximumTenants: 2,
+        tenantQuotas: {
+          maximumProjects: 10,
+          maximumSessions: 100,
+        },
+      });
+    const oidcAuthentication =
+      options.oidcAuthenticationService ??
+      new OidcAuthenticationService({
+        database: options.database,
+        webAuthentication,
+        publicOrigin: options.publicOriginBaseUrl ?? "http://127.0.0.1/",
+      });
     return {
       module: ControlPlaneModule,
       controllers: [ControlPlaneController],
@@ -109,17 +130,11 @@ export class ControlPlaneModule {
         },
         {
           provide: WebAuthenticationService,
-          useValue:
-            options.webAuthentication ??
-            new WebAuthenticationService({
-              database: options.database,
-              enabled: false,
-              maximumTenants: 2,
-              tenantQuotas: {
-                maximumProjects: 10,
-                maximumSessions: 100,
-              },
-            }),
+          useValue: webAuthentication,
+        },
+        {
+          provide: OidcAuthenticationService,
+          useValue: oidcAuthentication,
         },
         {
           provide: TenantRequestContext,

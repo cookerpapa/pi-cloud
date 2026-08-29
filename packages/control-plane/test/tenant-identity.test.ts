@@ -110,6 +110,7 @@ describe.sequential("tenant API identity", () => {
       userId: IDS.user,
       displayName: "Alpha Owner",
       role: "owner",
+      authenticationKind: "api",
       defaultModelProfileId: IDS.profile,
     });
     await expect(

@@ -301,6 +301,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           agentId: "root",
           executionLease: acknowledgement.executionLease,
           nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
+          agent: request.agent,
           input: { kind: "prompt", text: request.input.prompt },
           executionMode: request.executionMode,
           sandboxProfileKey: request.sandboxProfileKey,

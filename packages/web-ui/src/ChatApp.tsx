@@ -141,7 +141,12 @@ export default function ChatApp() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorRefreshSignal, setInspectorRefreshSignal] = useState(0);
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
-  const [resourcePageOpen, setResourcePageOpen] = useState(false);
+  const initialResourceTab =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("resource") === "source-control"
+      ? "source-control"
+      : "workspaces";
+  const [resourcePageOpen, setResourcePageOpen] = useState(initialResourceTab === "source-control");
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
   const [workspaceRebindOpen, setWorkspaceRebindOpen] = useState(false);
   const [rebindWorkspaceChoice, setRebindWorkspaceChoice] = useState<"existing" | "new">(
@@ -196,7 +201,7 @@ export default function ChatApp() {
   const elasticWorkspaces = workspaces;
   const connectedRepositories =
     sourceControl?.installations.flatMap((installation) =>
-      installation.state === "active"
+      installation.provider === "gitlab" && installation.state === "active"
         ? installation.repositories.filter((repository) => repository.state === "active")
         : [],
     ) ?? [];
@@ -786,7 +791,7 @@ export default function ChatApp() {
           name,
           newWorkspaceRepositoryId === ""
             ? { kind: "empty" }
-            : { kind: "github", repositoryId: newWorkspaceRepositoryId },
+            : { kind: "source_control", repositoryId: newWorkspaceRepositoryId },
         );
         projectId = created.projectId;
         workspaceId = created.workspaceId;
@@ -1166,6 +1171,7 @@ export default function ChatApp() {
         api={api}
         conversations={conversations}
         environments={developmentEnvironments}
+        initialTab={initialResourceTab}
         onClose={() => setResourcePageOpen(false)}
         onRefresh={async () => {
           await Promise.all([

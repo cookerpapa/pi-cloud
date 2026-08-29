@@ -275,6 +275,16 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     signal: AbortSignal,
     onPiRunnerReady: (runner: PiCloudTurnRunner) => void,
   ): Promise<PiTurnResult> {
+    if (
+      command.payload.agent.runtimeKind !== "pi_sdk" ||
+      command.payload.agent.sessionStorageKind !== "pi_session_storage_v1"
+    ) {
+      throw new PiTurnError(
+        "agent_runtime_unsupported",
+        "This Worker cannot execute the Session's Agent revision",
+        false,
+      );
+    }
     const downstreamTrace = activeTraceCarrier() ?? command.payload.traceContext;
     const trustedWorkspace = await stat(this.#trustedWorkspaceDirectory).catch(() => undefined);
     if (!trustedWorkspace?.isDirectory()) {

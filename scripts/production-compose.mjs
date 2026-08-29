@@ -77,6 +77,7 @@ const applicationSecretNames = [
   "grafana-admin-password",
   "metrics-token",
   "model-credential-master-key",
+  "source-control-credential-master-key",
   "tool-broker-token",
   "worker-event-ingest-token",
   "sandbox-materializer-token",

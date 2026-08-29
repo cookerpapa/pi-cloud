@@ -525,7 +525,25 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
       signal: AbortSignal.timeout(this.#requestTimeoutMs),
     });
     if (!response.ok) {
-      await response.body?.cancel();
+      let upstream: unknown;
+      try {
+        upstream = await response.json();
+      } catch {
+        upstream = undefined;
+      }
+      if (
+        isRecord(upstream) &&
+        isRecord(upstream.error) &&
+        typeof upstream.error.code === "string" &&
+        typeof upstream.error.message === "string" &&
+        typeof upstream.error.retryable === "boolean"
+      ) {
+        throw new WorkspaceVolumeGatewayError(
+          upstream.error.code,
+          upstream.error.message,
+          upstream.error.retryable,
+        );
+      }
       throw new WorkspaceVolumeGatewayError(
         "workspace_volume_gateway_request_failed",
         "Workspace Volume Gateway request failed",
@@ -647,7 +665,25 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
       signal: AbortSignal.timeout(this.#requestTimeoutMs),
     });
     if (!response.ok) {
-      await response.body?.cancel();
+      let upstream: unknown;
+      try {
+        upstream = await response.json();
+      } catch {
+        upstream = undefined;
+      }
+      if (
+        isRecord(upstream) &&
+        isRecord(upstream.error) &&
+        typeof upstream.error.code === "string" &&
+        typeof upstream.error.message === "string" &&
+        typeof upstream.error.retryable === "boolean"
+      ) {
+        throw new WorkspaceVolumeGatewayError(
+          upstream.error.code,
+          upstream.error.message,
+          upstream.error.retryable,
+        );
+      }
       throw new WorkspaceVolumeGatewayError(
         "workspace_volume_gateway_request_failed",
         "Workspace Volume Gateway request failed",

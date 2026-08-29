@@ -233,6 +233,12 @@ export async function createControlPlaneRuntime(
       ...(options.sourceControlService === undefined
         ? {}
         : { sourceControlService: options.sourceControlService }),
+      ...(options.oidcAuthenticationService === undefined
+        ? {}
+        : { oidcAuthenticationService: options.oidcAuthenticationService }),
+      ...(options.publicOriginBaseUrl === undefined
+        ? {}
+        : { publicOriginBaseUrl: options.publicOriginBaseUrl }),
       eventRuntime: {
         ...(options.eventRuntime ?? {}),
         eventHub,

@@ -167,6 +167,14 @@ describe("supervisor/control-plane wire protocol", () => {
       payload: {
         ...executionIdentity(),
         nextEventSeq: 11,
+        agent: {
+          revisionId: "84041f7b-5052-4abf-8bfd-16adf083c67e",
+          definitionKey: "pi-coding",
+          runtimeKind: "pi_sdk",
+          runtimeVersion: "0.84.1",
+          harnessVersion: "pi-cloud-harness-v1",
+          sessionStorageKind: "pi_session_storage_v1",
+        },
         input: { kind: "prompt", text: "Fix the failing test" },
         executionMode: "elastic",
         sandboxProfileKey: "standard",

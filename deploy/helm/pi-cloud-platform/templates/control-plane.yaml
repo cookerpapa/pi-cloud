@@ -76,12 +76,29 @@ spec:
             - { name: NODE_USE_ENV_PROXY, value: "1" }
             - { name: HTTPS_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
             - { name: HTTP_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
+            {{- if .Values.controlPlane.authentication.gitlab.enabled }}
+            - { name: PI_CLOUD_OIDC_GITLAB_ENABLED, value: "true" }
+            - { name: PI_CLOUD_OIDC_GITLAB_ISSUER, value: {{ .Values.controlPlane.authentication.gitlab.issuer | quote }} }
+            - { name: PI_CLOUD_OIDC_GITLAB_CLIENT_ID, value: {{ .Values.controlPlane.authentication.gitlab.clientId | quote }} }
+            - { name: PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_FILE, value: /run/pi-cloud-secrets/gitlab-oidc-client-secret }
+            - { name: PI_CLOUD_OIDC_GITLAB_LABEL, value: {{ .Values.controlPlane.authentication.gitlab.label | quote }} }
+            - { name: PI_CLOUD_OIDC_GITLAB_TENANT_ID, value: {{ .Values.controlPlane.authentication.gitlab.tenantId | quote }} }
+            {{- end }}
             {{- if .Values.controlPlane.sourceControl.github.enabled }}
             - { name: PI_CLOUD_GITHUB_APP_ID, value: {{ .Values.controlPlane.sourceControl.github.appId | quote }} }
             - { name: PI_CLOUD_GITHUB_APP_SLUG, value: {{ .Values.controlPlane.sourceControl.github.appSlug | quote }} }
             - { name: PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE, value: /run/pi-cloud-secrets/github-app-private-key.pem }
             - { name: PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE, value: /run/pi-cloud-secrets/github-webhook-secret }
             - { name: PI_CLOUD_GITHUB_ISSUE_LABEL, value: {{ .Values.controlPlane.sourceControl.github.issueLabel | quote }} }
+            {{- end }}
+            {{- if .Values.controlPlane.sourceControl.gitlab.enabled }}
+            - { name: PI_CLOUD_GITLAB_ENABLED, value: "true" }
+            - { name: PI_CLOUD_GITLAB_WEBHOOK_URL, value: {{ .Values.controlPlane.sourceControl.gitlab.webhookUrl | quote }} }
+            {{- if .Values.controlPlane.sourceControl.gitlab.internalBaseUrl }}
+            - { name: PI_CLOUD_GITLAB_INTERNAL_BASE_URL, value: {{ .Values.controlPlane.sourceControl.gitlab.internalBaseUrl | quote }} }
+            {{- end }}
+            - { name: PI_CLOUD_GITLAB_ISSUE_LABEL, value: {{ .Values.controlPlane.sourceControl.gitlab.issueLabel | quote }} }
+            - { name: PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE, value: /run/pi-cloud-secrets/source-control-credential-master-key }
             {{- end }}
             - { name: PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-enrollment-token }
             - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-management-token }

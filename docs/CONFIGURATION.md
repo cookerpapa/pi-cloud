@@ -117,7 +117,54 @@ Existing warm or exclusive Cubes must be recreated to
 pick up a changed list. This grants guest-initiated outbound access only; it
 does not expose Sandbox ports to the private network.
 
-### Optional GitHub App
+### Optional GitLab login and project connections
+
+The default quick start requires no GitLab. To enable the project adapter,
+start the optional acceptance instance with `npm run gitlab:up`, create a
+project access token with Maintainer role and `api`, `read_repository`,
+`write_repository` scopes, then connect the project from **开发资源 → GitLab**.
+PiCloud registers the signed project Webhook.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PI_CLOUD_GITLAB_ENABLED` | `false` | expose GitLab project connections |
+| `PI_CLOUD_GITLAB_WEBHOOK_URL` | local host-gateway endpoint | URL registered on connected projects |
+| `PI_CLOUD_GITLAB_INTERNAL_BASE_URL` | empty | optional trusted-plane API/Git origin for split-horizon networking |
+| `PI_CLOUD_GITLAB_ISSUE_LABEL` | `picloud` | explicit Issue automation label |
+| `PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE` | generated private file | AES-GCM key for project tokens and signing tokens |
+
+GitLab OIDC is independently optional. Register one confidential OAuth
+application with callback
+`https://<picloud-host>/v1/auth/oidc/gitlab/callback` and scopes `openid`,
+`profile`, `email`, `read_user`. The local lab command `npm run gitlab:oauth`
+creates that application and prints the corresponding private `.env` entries.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PI_CLOUD_OIDC_GITLAB_ENABLED` | `false` | show **Continue with GitLab** on the login page |
+| `PI_CLOUD_OIDC_GITLAB_ISSUER` | empty | exact GitLab origin |
+| `PI_CLOUD_OIDC_GITLAB_CLIENT_ID` | empty | OAuth application ID |
+| `PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_PATH` | empty | host path to the private client-secret file |
+| `PI_CLOUD_OIDC_GITLAB_LABEL` | `GitLab` | login-button label |
+| `PI_CLOUD_OIDC_GITLAB_TENANT_ID` | platform operator tenant | internal tenant receiving mapped GitLab users |
+
+An Issue label or command only creates a pending request. A user signed in
+through the matching GitLab instance and holding Developer access claims it and
+chooses elastic compute or an empty directory under `/home/user` in an owned
+cloud development machine. The OAuth token is discarded after login; project
+checkout and Merge Request delivery use the separately encrypted project token.
+When an internal base URL is set, OIDC/Webhook identity still uses the public
+origin while trusted API and Git traffic uses the internal origin. Both must
+identify the same GitLab instance.
+
+For a public deployment, replace the local Webhook URL with the public HTTPS
+PiCloud endpoint. In Kubernetes enable `controlPlane.sourceControl.gitlab`, set
+its Webhook URL and put the configured credential-master-key entry in
+`global.existingSecret`. Optional login is configured separately under
+`controlPlane.authentication.gitlab`; its client-secret key also lives in that
+Secret.
+
+### Optional GitHub App backend
 
 Register one GitHub App for the PiCloud deployment. Configure its Setup URL as
 `https://<picloud-host>/v1/source-control/github/callback` and Webhook URL as
@@ -140,8 +187,9 @@ The Compose deployment routes `api.github.com` and `github.com` through the
 same bounded trusted egress relay used by model providers. In Kubernetes,
 enable `controlPlane.sourceControl.github`, place the private-key and Webhook
 secret entries in `global.existingSecret`, and ensure the configured provider
-proxy plus NetworkPolicy allow those two hosts. App installation remains a
-user/organization-owner action in the Web resource page.
+proxy plus NetworkPolicy allow those two hosts. The current Web resource page
+does not expose this provider; installation and callback endpoints remain for
+deployments that operate the GitHub adapter directly.
 
 GitHub tokens are never valid configuration values: PiCloud mints them from the
 App installation when needed and does not persist them.
@@ -217,8 +265,9 @@ validates cross-service concurrency, lease, retention and timeout relations.
 
 Keep database URLs, model encryption key, Worker enrollment/management tokens,
 Tool Broker token, Worker Event Ingest token, Cube API key, SSH host key and
-Kafka TLS/SASL material in the
+Kafka TLS/SASL material and source-control credential master key in the
 generated private files or Kubernetes Secrets. Cube receives none of them.
 When GitHub integration is enabled, the App private key and Webhook secret are
 also deployment Secrets; installation access tokens are generated at runtime
-and must never be copied into configuration.
+and must never be copied into configuration. GitLab project tokens are
+encrypted in PostgreSQL and only unsealed inside trusted API/Git processes.

@@ -1,4 +1,6 @@
 import type {
+  AgentRuntimeKind,
+  SessionStorageKind,
   TurnControlRequestState as DomainTurnControlRequestState,
   ModelThinkingLevel,
   RunAttemptState,
@@ -76,13 +78,14 @@ export type SubagentWorkspaceMode = "none" | "shared_serialized" | "isolated";
 export type SubagentExecutionState =
   "preparing" | "queued" | "running" | "completed" | "failed" | "cancelled" | "unknown";
 export type SubagentSupervisorReason = "need_decision" | "interview_request" | "progress_update";
-export type SourceControlProvider = "github";
+export type SourceControlProvider = "github" | "gitlab";
 export type SourceControlInstallationState = "active" | "suspended" | "deleted";
 export type SourceControlRepositoryState = "active" | "removed";
 export type SourceControlCheckoutState = "provisioning" | "ready" | "failed";
 export type SourceControlWebhookState =
   "received" | "ignored" | "accepted" | "completed" | "failed";
 export type SourceControlIssueJobState =
+  | "awaiting_claim"
   | "received"
   | "provisioning"
   | "queued"
@@ -91,6 +94,25 @@ export type SourceControlIssueJobState =
   | "completed"
   | "failed"
   | "cancelled";
+
+export interface AgentDefinitionTable {
+  id: string;
+  key: string;
+  display_name: string;
+  created_at: GeneratedTimestamp;
+}
+
+export interface AgentRevisionTable {
+  id: string;
+  definition_id: string;
+  revision_number: number;
+  runtime_kind: AgentRuntimeKind;
+  runtime_version: string;
+  harness_version: string;
+  session_storage_kind: SessionStorageKind;
+  state: "active" | "retired";
+  created_at: GeneratedTimestamp;
+}
 
 export interface SourceControlInstallationRequestTable {
   state_sha256: string;
@@ -107,6 +129,7 @@ export interface SourceControlInstallationTable {
   tenant_id: string;
   connected_by_user_id: string;
   provider: SourceControlProvider;
+  provider_base_url: string;
   provider_installation_id: string;
   account_id: string;
   account_login: string;
@@ -123,6 +146,7 @@ export interface SourceControlRepositoryTable {
   tenant_id: string;
   installation_id: string;
   provider: SourceControlProvider;
+  provider_base_url: string;
   provider_repository_id: string;
   owner: string;
   name: string;
@@ -181,11 +205,17 @@ export interface SourceControlIssueJobTable {
   run_id: string | null;
   branch_name: string;
   commit_sha: string | null;
-  pull_request_number: number | null;
-  pull_request_url: string | null;
+  change_request_number: number | null;
+  change_request_url: string | null;
   issue_comment_id: string | null;
   owner_id: string | null;
   lease_expires_at: NullableTimestamp;
+  claim_sync_pending: GeneratedBoolean;
+  started_by_user_id: GeneratedNullable<string>;
+  execution_mode: GeneratedNullable<ExecutionMode>;
+  sandbox_profile_key: GeneratedNullable<SandboxProfileKey>;
+  development_environment_id: GeneratedNullable<string>;
+  working_directory: GeneratedNullable<string>;
   attempt_count: GeneratedInteger;
   failure_code: string | null;
   failure_message: string | null;
@@ -193,6 +223,28 @@ export interface SourceControlIssueJobTable {
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
   settled_at: NullableTimestamp;
+}
+
+export interface SourceControlIssueClaimTable {
+  tenant_id: string;
+  issue_job_id: string;
+  user_id: string;
+  external_identity_id: string;
+  claimed_at: GeneratedTimestamp;
+}
+
+export interface SourceControlCredentialTable {
+  tenant_id: string;
+  installation_id: string;
+  provider: "gitlab";
+  version: number;
+  key_version: number;
+  nonce: string;
+  ciphertext: string;
+  auth_tag: string;
+  secret_sha256: string;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
 }
 
 export interface SandboxDomainTable {
@@ -447,11 +499,39 @@ export interface WebSessionTable {
   tenant_id: string;
   user_id: string;
   role: TenantApiCredentialRole;
+  authentication_kind: Generated<"local" | "oidc">;
+  external_identity_id: GeneratedNullable<string>;
   secret_sha256: string;
   created_at: GeneratedTimestamp;
   expires_at: Timestamp;
   revoked_at: NullableTimestamp;
   last_used_at: NullableTimestamp;
+}
+
+export interface ExternalIdentityTable {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  provider_key: string;
+  issuer: string;
+  subject: string;
+  provider_user_id: string;
+  username: string;
+  display_name: string;
+  last_authenticated_at: Timestamp;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+export interface OidcAuthenticationRequestTable {
+  state_sha256: string;
+  provider_key: string;
+  code_verifier: string;
+  nonce: string;
+  redirect_uri: string;
+  expires_at: Timestamp;
+  consumed_at: NullableTimestamp;
+  created_at: GeneratedTimestamp;
 }
 
 export interface ProjectTable {
@@ -582,6 +662,8 @@ export interface SessionTable {
   workspace_id: string;
   development_environment_id: GeneratedNullable<string>;
   desired_model_profile_id: string;
+  agent_revision_id: Generated<string>;
+  created_by_user_id: GeneratedNullable<string>;
   state: SessionState;
   execution_mode: Generated<ExecutionMode>;
   working_directory: Generated<string>;
@@ -700,6 +782,7 @@ export interface RunTable {
   workspace_id: string;
   session_id: string;
   turn_id: string;
+  agent_revision_id: Generated<string>;
   environment_version_id: string;
   working_directory: Generated<string>;
   sandbox_profile_key: Generated<SandboxProfileKey>;
@@ -1173,12 +1256,16 @@ export interface CheckpointObjectTable {
 }
 
 export interface Database {
+  agent_definitions: AgentDefinitionTable;
+  agent_revisions: AgentRevisionTable;
   source_control_installation_requests: SourceControlInstallationRequestTable;
   source_control_installations: SourceControlInstallationTable;
   source_control_repositories: SourceControlRepositoryTable;
   workspace_source_repositories: WorkspaceSourceRepositoryTable;
   source_control_webhook_deliveries: SourceControlWebhookDeliveryTable;
   source_control_issue_jobs: SourceControlIssueJobTable;
+  source_control_issue_claims: SourceControlIssueClaimTable;
+  source_control_credentials: SourceControlCredentialTable;
   sandbox_domains: SandboxDomainTable;
   tool_broker_instances: ToolBrokerInstanceTable;
   tool_broker_activations: ToolBrokerActivationTable;
@@ -1195,6 +1282,8 @@ export interface Database {
   tenant_api_credentials: TenantApiCredentialTable;
   user_password_credentials: UserPasswordCredentialTable;
   web_sessions: WebSessionTable;
+  external_identities: ExternalIdentityTable;
+  oidc_authentication_requests: OidcAuthenticationRequestTable;
   projects: ProjectTable;
   environment_versions: EnvironmentVersionTable;
   environment_validations: EnvironmentValidationTable;

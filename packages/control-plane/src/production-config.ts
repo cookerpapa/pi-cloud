@@ -54,6 +54,20 @@ export type ProductionControlPlaneConfig = {
     webhookSecret: string;
     issueLabel: string;
   };
+  gitlabProject?: {
+    credentialMasterKey: string;
+    webhookUrl: string;
+    issueLabel: string;
+    internalBaseUrl?: string;
+  };
+  gitlabOidc?: {
+    issuer: string;
+    clientId: string;
+    clientSecret: string;
+    label: string;
+    tenantId: string;
+    allowInsecureHttp: boolean;
+  };
 };
 
 export type ProductionBootstrapConfig = {
@@ -224,6 +238,24 @@ function managementUrl(value: string, allowInsecure: boolean): string {
   return parsed.toString();
 }
 
+function oidcIssuer(value: string, allowInsecure: boolean): string {
+  const parsed = new URL(value);
+  if (
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    (parsed.pathname !== "/" && parsed.pathname !== "")
+  ) {
+    throw new TypeError("OIDC issuer must be an HTTP(S) origin");
+  }
+  if (parsed.protocol === "http:" && !allowInsecure) {
+    throw new TypeError("Plain HTTP OIDC requires explicit internal-HTTP opt-in");
+  }
+  return parsed.origin;
+}
+
 function managementUrls(value: string, allowInsecure: boolean): string[] {
   const values = value.split(",");
   if (values.length < 1 || values.length > 256 || values.some((entry) => entry.trim() !== entry)) {
@@ -236,6 +268,24 @@ function managementUrls(value: string, allowInsecure: boolean): string[] {
     throw new TypeError("PI_CLOUD_TOOL_BROKER_URLS must contain unique URLs");
   }
   return parsed;
+}
+
+function gitlabWebhookUrl(value: string, allowInsecure: boolean): string {
+  const parsed = new URL(value);
+  if (
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    parsed.pathname !== "/v1/source-control/gitlab/webhook"
+  ) {
+    throw new TypeError("PI_CLOUD_GITLAB_WEBHOOK_URL is invalid");
+  }
+  if (parsed.protocol === "http:" && !allowInsecure) {
+    throw new TypeError("Plain HTTP GitLab Webhook URL requires explicit opt-in");
+  }
+  return parsed.toString();
 }
 
 function managementUrlTemplates(value: string, allowInsecure: boolean): string[] {
@@ -380,6 +430,12 @@ export async function loadProductionControlPlaneConfig(
     required(environment, "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL"),
     true,
   );
+  const publicOriginBaseUrl = managementUrl(
+    environment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL ?? previewPublicOriginBaseUrl,
+    true,
+  );
+  const gitlabEnabled = booleanValue(environment, "PI_CLOUD_GITLAB_ENABLED");
+  const gitlabOidcEnabled = booleanValue(environment, "PI_CLOUD_OIDC_GITLAB_ENABLED");
   return {
     databaseUrl,
     databaseNotificationUrl,
@@ -450,10 +506,7 @@ export async function loadProductionControlPlaneConfig(
       allowInlineSecrets,
     ),
     previewPublicOriginBaseUrl,
-    publicOriginBaseUrl: managementUrl(
-      environment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL ?? previewPublicOriginBaseUrl,
-      true,
-    ),
+    publicOriginBaseUrl,
     sshGatewayEnabled: booleanValue(environment, "PI_CLOUD_SSH_GATEWAY_ENABLED"),
     sshAdvertisedHost: bounded(
       environment.PI_CLOUD_SSH_ADVERTISED_HOST ?? "127.0.0.1",
@@ -548,6 +601,66 @@ export async function loadProductionControlPlaneConfig(
               "PI_CLOUD_GITHUB_ISSUE_LABEL",
               50,
             ),
+          },
+        }
+      : {}),
+    ...(gitlabEnabled
+      ? {
+          gitlabProject: {
+            credentialMasterKey: await secret(
+              environment,
+              "PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY",
+              allowInlineSecrets,
+            ),
+            webhookUrl: gitlabWebhookUrl(
+              environment.PI_CLOUD_GITLAB_WEBHOOK_URL ??
+                new URL("v1/source-control/gitlab/webhook", publicOriginBaseUrl).toString(),
+              true,
+            ),
+            issueLabel: bounded(
+              environment.PI_CLOUD_GITLAB_ISSUE_LABEL ?? "picloud",
+              "PI_CLOUD_GITLAB_ISSUE_LABEL",
+              50,
+            ),
+            ...(environment.PI_CLOUD_GITLAB_INTERNAL_BASE_URL === undefined ||
+            environment.PI_CLOUD_GITLAB_INTERNAL_BASE_URL.length === 0
+              ? {}
+              : {
+                  internalBaseUrl: managementUrl(
+                    environment.PI_CLOUD_GITLAB_INTERNAL_BASE_URL,
+                    allowInsecureInternalHttp,
+                  ),
+                }),
+          },
+        }
+      : {}),
+    ...(gitlabOidcEnabled
+      ? {
+          gitlabOidc: {
+            issuer: oidcIssuer(
+              required(environment, "PI_CLOUD_OIDC_GITLAB_ISSUER"),
+              allowInsecureInternalHttp,
+            ),
+            clientId: bounded(
+              required(environment, "PI_CLOUD_OIDC_GITLAB_CLIENT_ID"),
+              "PI_CLOUD_OIDC_GITLAB_CLIENT_ID",
+              256,
+            ),
+            clientSecret: await secret(
+              environment,
+              "PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET",
+              allowInlineSecrets,
+            ),
+            label: bounded(
+              environment.PI_CLOUD_OIDC_GITLAB_LABEL ?? "GitLab",
+              "PI_CLOUD_OIDC_GITLAB_LABEL",
+              128,
+            ),
+            tenantId: parseUuidPathParameter(
+              environment.PI_CLOUD_OIDC_GITLAB_TENANT_ID ?? platformOperatorTenantId,
+              "PI_CLOUD_OIDC_GITLAB_TENANT_ID",
+            ),
+            allowInsecureHttp: allowInsecureInternalHttp,
           },
         }
       : {}),

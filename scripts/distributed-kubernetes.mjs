@@ -143,6 +143,9 @@ function preflight(namespace, values) {
     "supervisor-management-token",
     "workspace-volume-gateway-token",
   ];
+  if (values.controlPlane?.sourceControl?.gitlab?.enabled === true) {
+    requiredSecretKeys.push(values.controlPlane.sourceControl.gitlab.credentialMasterKeySecretKey);
+  }
   for (const key of requiredSecretKeys) {
     if (typeof secret.data?.[key] !== "string") fail(`Secret ${secretName} is missing key ${key}`);
   }

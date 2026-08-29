@@ -33,6 +33,10 @@ describe("ProductionHttpGateway", () => {
     server.get("/v1/test", async (request) => ({ identity: tenantRequestIdentity(request) }));
     server.post(TENANT_REGISTRATION_PATH, async () => ({ registered: true }));
     server.post("/v1/source-control/github/webhook", async () => ({ webhook: true }));
+    server.post("/v1/source-control/gitlab/webhook", async () => ({ webhook: true }));
+    server.get("/v1/auth/providers", async () => ({ local: true }));
+    server.get("/v1/auth/oidc/gitlab", async () => ({ redirect: true }));
+    server.get("/v1/auth/oidc/gitlab/callback", async () => ({ callback: true }));
     const address = await server.listen({ host: "127.0.0.1", port: 0 });
     try {
       const unauthorized = await fetch(`${address}/v1/test`);
@@ -62,6 +66,16 @@ describe("ProductionHttpGateway", () => {
       expect(webhook.status).toBe(200);
       await expect(webhook.json()).resolves.toEqual({ webhook: true });
       expect((await fetch(`${address}/v1/source-control/github/webhook`)).status).toBe(401);
+      expect(
+        (
+          await fetch(`${address}/v1/source-control/gitlab/webhook`, {
+            method: "POST",
+          })
+        ).status,
+      ).toBe(200);
+      expect((await fetch(`${address}/v1/auth/providers`)).status).toBe(200);
+      expect((await fetch(`${address}/v1/auth/oidc/gitlab`)).status).toBe(200);
+      expect((await fetch(`${address}/v1/auth/oidc/gitlab/callback?code=a`)).status).toBe(200);
 
       expect((await fetch(`${address}${CONTROL_PLANE_LIVE_PATH}`)).status).toBe(200);
       const unavailable = await fetch(`${address}${CONTROL_PLANE_READY_PATH}`);

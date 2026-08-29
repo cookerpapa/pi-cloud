@@ -106,6 +106,7 @@ describe("product chat experience", () => {
           userId: "10000000-0000-4000-8000-000000000002",
           displayName: "Platform Admin",
           role: "owner",
+          authenticationKind: "local",
           platformAdministrator: true,
         }}
         onLogout={() => undefined}

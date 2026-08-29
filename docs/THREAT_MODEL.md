@@ -82,6 +82,17 @@ Kafka, command arguments or logs. GitHub Webhooks are accepted only after
 constant-time HMAC-SHA256 verification; their delivery ID is persisted before
 an Issue can create model work.
 
+GitLab project access tokens are limited to one connected project and encrypted
+at rest with a deployment key. They are unsealed only for one trusted API or
+Git child process and follow the same no-Cube/no-Kafka/no-Workspace boundary.
+Project Webhooks use GitLab's Standard Webhooks HMAC contract, a recent
+timestamp and stable message ID; a `/picloud solve` comment additionally
+requires Developer-or-higher membership.
+Optional GitLab login uses authorization code, PKCE, nonce and a one-use state.
+The OAuth access token is discarded after resolving the external identity.
+Claim and start recheck live project membership through the trusted project
+adapter; a human claim is not an Agent execution authority.
+
 ## Not guaranteed
 
 - exactly-once arbitrary shell or external side effects;

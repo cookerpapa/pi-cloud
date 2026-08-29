@@ -156,6 +156,7 @@ describe("control-plane public API schemas", () => {
         username: "alpha.operator",
         displayName: "Alpha Operator",
         role: "member",
+        authenticationKind: "local",
         platformAdministrator: false,
       }),
     ).toMatchObject({ username: "alpha.operator", tenantSlug: "private-alpha", role: "member" });

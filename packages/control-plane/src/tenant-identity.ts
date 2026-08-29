@@ -20,6 +20,15 @@ export type TenantRequestIdentity = Readonly<{
   displayName: string;
   role: TenantApiCredentialRole;
   defaultModelProfileId: string;
+  authenticationKind?: "local" | "oidc" | "api" | "system";
+  externalIdentity?: Readonly<{
+    id: string;
+    providerKey: string;
+    issuer: string;
+    subject: string;
+    providerUserId: string;
+    username: string;
+  }>;
 }>;
 
 export type GeneratedTenantApiCredential = Readonly<{
@@ -207,6 +216,7 @@ export class PostgresTenantApiAuthenticator implements TenantApiAuthenticator {
       displayName: row.displayName,
       role: row.role,
       defaultModelProfileId: row.defaultModelProfileId,
+      authenticationKind: "api",
     };
   }
 }

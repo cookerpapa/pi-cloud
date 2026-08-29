@@ -14,8 +14,10 @@
 - same-Session FIFO, concurrent cross-Session Agent Loops and a Workspace-scoped Tool slot;
 - Broker-independent development-machine runtime with running-state-preserving takeover;
 - conversation trees, Fork, Steer, recursive Subagents and Workspace rebinding;
-- Compose one-host deployment and Kubernetes/KEDA manifests.
-- optional GitHub App private-repository connection and Issue-to-PR automation.
+- Compose one-host deployment and Kubernetes/KEDA manifests;
+- optional GitLab OIDC, non-exclusive Issue claims, private-project Issue-to-MR
+  execution choices and a deployment/API-only GitHub App Issue-to-PR adapter;
+- versioned Agent definitions with Run/Worker routing and Runtime-native Session Storage.
 
 ## Current release gate
 

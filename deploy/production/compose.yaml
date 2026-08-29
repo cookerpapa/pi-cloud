@@ -27,7 +27,7 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   NODE_USE_ENV_PROXY: "1"
   HTTP_PROXY: http://provider-egress-relay:3129
   HTTPS_PROXY: http://provider-egress-relay:3129
-  NO_PROXY: 127.0.0.1,localhost,postgres,control-plane,tool-broker,kafka-1,kafka-2,kafka-3
+  NO_PROXY: 127.0.0.1,localhost,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,control-plane,tool-broker,kafka-1,kafka-2,kafka-3
   PI_CLOUD_IMAGE_REVISION: ${PI_CLOUD_IMAGE_REVISION:-unknown}
   HOST: 0.0.0.0
   PORT: "3000"
@@ -35,6 +35,17 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE: /run/pi-cloud-secrets/supervisor-enrollment-token
   PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE: /run/pi-cloud-secrets/supervisor-management-token
   PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE: /run/pi-cloud-secrets/model-credential-master-key
+  PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE: /run/pi-cloud-secrets/source-control-credential-master-key
+  PI_CLOUD_GITLAB_ENABLED: ${PI_CLOUD_GITLAB_ENABLED:-false}
+  PI_CLOUD_GITLAB_WEBHOOK_URL: ${PI_CLOUD_GITLAB_WEBHOOK_URL:-http://host.docker.internal:8080/v1/source-control/gitlab/webhook}
+  PI_CLOUD_GITLAB_ISSUE_LABEL: ${PI_CLOUD_GITLAB_ISSUE_LABEL:-picloud}
+  PI_CLOUD_GITLAB_INTERNAL_BASE_URL: ${PI_CLOUD_GITLAB_INTERNAL_BASE_URL:-}
+  PI_CLOUD_OIDC_GITLAB_ENABLED: ${PI_CLOUD_OIDC_GITLAB_ENABLED:-false}
+  PI_CLOUD_OIDC_GITLAB_ISSUER: ${PI_CLOUD_OIDC_GITLAB_ISSUER:-}
+  PI_CLOUD_OIDC_GITLAB_CLIENT_ID: ${PI_CLOUD_OIDC_GITLAB_CLIENT_ID:-}
+  PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_FILE: ${PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_PATH:+/run/pi-cloud-secrets/gitlab-oidc-client-secret}
+  PI_CLOUD_OIDC_GITLAB_LABEL: ${PI_CLOUD_OIDC_GITLAB_LABEL:-GitLab}
+  PI_CLOUD_OIDC_GITLAB_TENANT_ID: ${PI_CLOUD_OIDC_GITLAB_TENANT_ID:-}
   PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE: /run/pi-cloud-secrets/cube-egress-config-token
   PI_CLOUD_KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
   PI_CLOUD_KAFKA_PARTITIONS: ${PI_CLOUD_KAFKA_PARTITIONS:-32}
@@ -108,6 +119,10 @@ x-control-plane-runtime-secrets: &control-plane-runtime-secrets
     target: /run/pi-cloud-secrets/model-credential-master-key
     read_only: true
   - type: bind
+    source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/source-control-credential-master-key
+    target: /run/pi-cloud-secrets/source-control-credential-master-key
+    read_only: true
+  - type: bind
     source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/cube-egress-config-token
     target: /run/pi-cloud-secrets/cube-egress-config-token
     read_only: true
@@ -134,6 +149,10 @@ x-control-plane-runtime-secrets: &control-plane-runtime-secrets
   - type: bind
     source: ${PI_CLOUD_GITHUB_WEBHOOK_SECRET_PATH:-/dev/null}
     target: /run/pi-cloud-secrets/github-webhook-secret
+    read_only: true
+  - type: bind
+    source: ${PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_PATH:-/dev/null}
+    target: /run/pi-cloud-secrets/gitlab-oidc-client-secret
     read_only: true
 
 x-bootstrap-secrets: &bootstrap-secrets
@@ -314,14 +333,18 @@ services:
     environment: *control-plane-runtime-environment
     user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
     volumes: *control-plane-runtime-secrets
+    extra_hosts:
+      - host.docker.internal:host-gateway
     networks:
-      - api
-      - database
-      - management
-      - sandbox-control
-      - observability
-      - event-log
-      - model-egress
+      api: {}
+      database: {}
+      management: {}
+      sandbox-control: {}
+      observability: {}
+      event-log: {}
+      model-egress:
+        aliases:
+          - control-plane.internal
     healthcheck:
       test:
         [
@@ -693,7 +716,7 @@ services:
       NODE_ENV: production
       HTTP_PROXY: http://provider-egress-relay:3129
       HTTPS_PROXY: http://provider-egress-relay:3129
-      NO_PROXY: 127.0.0.1,localhost,postgres,tool-broker
+      NO_PROXY: 127.0.0.1,localhost,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,tool-broker
       DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
       PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_HOST: 0.0.0.0
       PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_PORT: "4500"
@@ -721,6 +744,8 @@ services:
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/metrics-token
         target: /run/pi-cloud-secrets/metrics-token
         read_only: true
+    extra_hosts:
+      - host.docker.internal:host-gateway
     networks:
       - sandbox-control
       - database
