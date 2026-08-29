@@ -194,14 +194,18 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await exec("/usr/bin/git", ["push", "origin", "main"], { cwd: seed });
 
     const observedTokens: string[] = [];
+    const observedVerificationUrls: string[] = [];
     const mover = new PersistentVolumeWorkspaceVolumeGateway({
       workspaceRoot,
       gitRunner: (args, options) => {
         if (options.credential !== undefined) observedTokens.push(options.credential.accessToken);
+        if (args[0] === "ls-remote" && args[1] !== undefined) {
+          observedVerificationUrls.push(args[1]);
+        }
         const { credential: _credential, ...trustedOptions } = options;
         return runTrustedWorkspaceGit(
           args.map((argument) =>
-            argument === "https://github.com/example/private-repo.git" ? remote : argument,
+            argument === "https://git.internal.example/private-repo.git" ? remote : argument,
           ),
           trustedOptions,
         );
@@ -216,6 +220,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         repositoryId: "90000000-0000-4000-8000-000000000001",
         provider: "github",
         userCloneUrl: "https://github.com/example/private-repo.git",
+        verificationCloneUrl: "https://git.internal.example/private-repo.git",
         credentialMountPath: "/workspace",
       }),
     ).resolves.toEqual({ authorized: false, reason: "credential_missing" });
@@ -226,6 +231,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         repositoryId: "90000000-0000-4000-8000-000000000001",
         provider: "github",
         userCloneUrl: "https://github.com/example/private-repo.git",
+        verificationCloneUrl: "https://git.internal.example/private-repo.git",
         credentialMountPath: "/workspace",
         accessToken: "ghs_process_scoped_secret",
       }),
@@ -246,6 +252,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         repositoryId: "90000000-0000-4000-8000-000000000001",
         provider: "github",
         userCloneUrl: "https://github.com/example/private-repo.git",
+        verificationCloneUrl: "https://git.internal.example/private-repo.git",
         credentialMountPath: "/workspace",
       }),
     ).resolves.toEqual({ authorized: true });
@@ -257,6 +264,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     });
     expect(snapshot.files).toEqual([]);
     expect(observedTokens).toEqual(["ghs_process_scoped_secret"]);
+    expect(observedVerificationUrls).toEqual(["https://git.internal.example/private-repo.git"]);
   });
 });
 

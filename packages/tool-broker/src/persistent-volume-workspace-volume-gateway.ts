@@ -556,11 +556,11 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         return { authorized: false, reason: "credential_missing" };
       }
       try {
-        await this.#git(["ls-remote", input.userCloneUrl], {
+        await this.#git(["ls-remote", input.verificationCloneUrl], {
           cwd: join(directory, VOLUME_WORKSPACE_DIRECTORY),
           credential: {
             provider: input.provider,
-            cloneUrl: input.userCloneUrl,
+            cloneUrl: input.verificationCloneUrl,
             accessToken: decodeURIComponent(credentialUrl.password),
           },
           retryable: true,

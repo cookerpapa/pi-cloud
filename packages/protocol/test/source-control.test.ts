@@ -27,6 +27,7 @@ describe("source-control protocol", () => {
         repositoryId: "10000000-0000-4000-8000-000000000003",
         provider: "gitlab",
         userCloneUrl: "http://gitlab.localhost:8929/team/private-repository.git",
+        verificationCloneUrl: "http://gitlab.internal:8929/team/private-repository.git",
         credentialMountPath: "/workspace",
         accessToken: "glpat-project-scoped-token",
       }),

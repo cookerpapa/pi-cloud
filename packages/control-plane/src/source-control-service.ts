@@ -1498,6 +1498,7 @@ export class SourceControlService {
       repositoryId: context.repository.id,
       provider: context.repository.provider,
       userCloneUrl: context.userCloneUrl,
+      verificationCloneUrl: context.verificationCloneUrl,
       credentialMountPath: context.credentialMountPath,
     });
   }
@@ -1521,6 +1522,7 @@ export class SourceControlService {
       repositoryId: context.repository.id,
       provider: context.repository.provider,
       userCloneUrl: context.userCloneUrl,
+      verificationCloneUrl: context.verificationCloneUrl,
       credentialMountPath: context.credentialMountPath,
       accessToken,
     });
@@ -1533,6 +1535,7 @@ export class SourceControlService {
       repositoryId: context.repository.id,
       provider: context.repository.provider,
       userCloneUrl: context.userCloneUrl,
+      verificationCloneUrl: context.verificationCloneUrl,
       credentialMountPath: context.credentialMountPath,
     });
   }
@@ -1562,6 +1565,7 @@ export class SourceControlService {
       repositoryId,
       provider: "github",
       userCloneUrl,
+      verificationCloneUrl: userCloneUrl,
       credentialMountPath,
       accessToken,
     });
@@ -1574,6 +1578,7 @@ export class SourceControlService {
       repositoryId,
       provider: "github",
       userCloneUrl,
+      verificationCloneUrl: userCloneUrl,
       credentialMountPath,
     });
   }
@@ -1801,6 +1806,7 @@ export class SourceControlService {
         row.clone_url,
         this.#gitlab?.workspaceBaseUrl ?? row.provider_base_url,
       ),
+      verificationCloneUrl: row.clone_url,
       credentialMountPath:
         row.workspaceKind === "development_environment"
           ? ("/home/user" as const)

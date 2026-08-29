@@ -2085,6 +2085,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       repositoryId: request.repositoryId,
       provider: request.provider,
       userCloneUrl: request.userCloneUrl,
+      verificationCloneUrl: request.verificationCloneUrl,
       credentialMountPath: request.credentialMountPath,
       accessToken: request.accessToken,
     });
@@ -2126,6 +2127,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       repositoryId: request.repositoryId,
       provider: request.provider,
       userCloneUrl: request.userCloneUrl,
+      verificationCloneUrl: request.verificationCloneUrl,
       credentialMountPath: request.credentialMountPath,
     });
     return {

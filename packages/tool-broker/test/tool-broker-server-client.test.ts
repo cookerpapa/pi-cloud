@@ -212,6 +212,7 @@ describe("Tool Broker authenticated RPC", () => {
       repositoryId: "30000000-0000-4000-8000-000000000003",
       provider: "github" as const,
       userCloneUrl: "https://github.com/example/private-repo.git",
+      verificationCloneUrl: "https://github.com/example/private-repo.git",
       credentialMountPath: "/workspace" as const,
       accessToken: "ghs_process_scoped_test_token",
     };
