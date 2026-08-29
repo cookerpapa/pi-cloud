@@ -15,6 +15,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
+import { isIPv4 } from "node:net";
 import {
   SHA256_PATTERN,
   UUID_PATTERN,
@@ -45,6 +46,23 @@ import {
 
 const GIT_TIMEOUT_MS = 5 * 60_000;
 
+function privateGitHost(hostname: string): boolean {
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".internal")
+  ) {
+    return true;
+  }
+  if (!isIPv4(hostname)) return false;
+  const [first, second] = hostname.split(".").map(Number);
+  return (
+    first === 10 ||
+    (first === 172 && second !== undefined && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
+}
+
 function trustedGitEnvironment(
   credential?: Readonly<{
     provider: "github" | "gitlab";
@@ -72,7 +90,19 @@ function trustedGitEnvironment(
     if (value !== undefined) environment[name] = value;
   }
   if (credential !== undefined) {
-    const origin = new URL(credential.cloneUrl).origin;
+    const cloneUrl = new URL(credential.cloneUrl);
+    const origin = cloneUrl.origin;
+    if (privateGitHost(cloneUrl.hostname)) {
+      const noProxy = new Set(
+        (environment.NO_PROXY ?? environment.no_proxy ?? "")
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      );
+      noProxy.add(cloneUrl.hostname);
+      environment.NO_PROXY = [...noProxy].join(",");
+      environment.no_proxy = environment.NO_PROXY;
+    }
     const username = credential.provider === "github" ? "x-access-token" : "oauth2";
     environment.GIT_CONFIG_COUNT = "2";
     environment.GIT_CONFIG_KEY_0 = `http.${origin}/.extraheader`;
