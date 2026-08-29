@@ -176,7 +176,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await expect(mover.delete(first)).resolves.toEqual({ deleted: false });
   });
 
-  it("stores a user Git credential without cloning or exposing it to the Workspace index", async () => {
+  it("stores and revalidates a Git-normalized credential without exposing it to the Workspace index", async () => {
     const workspaceRoot = await root();
     const fixtureRoot = await root();
     const remote = join(fixtureRoot, "remote.git");
@@ -219,7 +219,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         requestId: randomUUID(),
         repositoryId: "90000000-0000-4000-8000-000000000001",
         provider: "github",
-        userCloneUrl: "https://github.com/example/private-repo.git",
+        userCloneUrl: "https://github.com:8443/example/private-repo.git",
         verificationCloneUrl: "https://git.internal.example/private-repo.git",
         credentialMountPath: "/workspace",
       }),
@@ -230,7 +230,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         requestId: randomUUID(),
         repositoryId: "90000000-0000-4000-8000-000000000001",
         provider: "github",
-        userCloneUrl: "https://github.com/example/private-repo.git",
+        userCloneUrl: "https://github.com:8443/example/private-repo.git",
         verificationCloneUrl: "https://git.internal.example/private-repo.git",
         credentialMountPath: "/workspace",
         accessToken: "ghs_process_scoped_secret",
@@ -239,9 +239,10 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const volumeRoot = join(workspaceRoot, `picloud-posix-${bound.volumeId}`);
     const workspace = join(volumeRoot, "workspace");
     await expect(readdir(workspace)).resolves.toEqual([".pi-cloud-home"]);
-    await expect(
-      readFile(join(workspace, ".pi-cloud-home/.git-credentials"), "utf8"),
-    ).resolves.toContain("ghs_process_scoped_secret");
+    const credentialPath = join(workspace, ".pi-cloud-home/.git-credentials");
+    const storedCredential = await readFile(credentialPath, "utf8");
+    expect(storedCredential).toContain("ghs_process_scoped_secret");
+    await writeFile(credentialPath, storedCredential.replace(":8443", "%3a8443"));
     await expect(readFile(join(workspace, ".pi-cloud-home/.gitconfig"), "utf8")).resolves.toContain(
       "/workspace/.pi-cloud-home/.git-credentials",
     );
@@ -251,7 +252,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         requestId: randomUUID(),
         repositoryId: "90000000-0000-4000-8000-000000000001",
         provider: "github",
-        userCloneUrl: "https://github.com/example/private-repo.git",
+        userCloneUrl: "https://github.com:8443/example/private-repo.git",
         verificationCloneUrl: "https://git.internal.example/private-repo.git",
         credentialMountPath: "/workspace",
       }),

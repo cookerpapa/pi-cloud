@@ -134,6 +134,21 @@ function credentialFreeCloneUrl(value: string): string {
   return url.toString();
 }
 
+function storedCredentialUrl(value: string): URL {
+  const schemeEnd = value.indexOf("://");
+  const authorityEnd = schemeEnd < 0 ? -1 : value.indexOf("/", schemeEnd + 3);
+  if (authorityEnd < 0) return new URL(value);
+  const authority = value.slice(schemeEnd + 3, authorityEnd);
+  const userInfoEnd = authority.lastIndexOf("@");
+  if (userInfoEnd < 0) return new URL(value);
+  const normalizedAuthority = `${authority.slice(0, userInfoEnd + 1)}${authority
+    .slice(userInfoEnd + 1)
+    .replace(/%3a/giu, ":")}`;
+  return new URL(
+    `${value.slice(0, schemeEnd + 3)}${normalizedAuthority}${value.slice(authorityEnd)}`,
+  );
+}
+
 export function runTrustedWorkspaceGit(
   args: readonly string[],
   options: {
@@ -544,7 +559,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       );
       let credentialUrl: URL;
       try {
-        credentialUrl = new URL((await readFile(credentialPath, "utf8")).trim());
+        credentialUrl = storedCredentialUrl((await readFile(credentialPath, "utf8")).trim());
       } catch {
         return { authorized: false, reason: "credential_missing" };
       }
