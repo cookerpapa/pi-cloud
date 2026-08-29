@@ -1,27 +1,33 @@
-# GitLab OIDC and Issue workflow acceptance
+# User-managed Git and GitLab Issue delivery acceptance
 
-- Revision: `869b0bb1670a94b901dfb3c4294bd3dfb2f94353`
-- Checked at: 2026-08-29T06:50:44.070Z
+- Application revision: `63ee2892526b2baf675a1622aa87d5113eb97ae8`
+- Schema cleanup revision: `ca0ba41`
+- Checked at: 2026-08-29
 - Topology: one-host PiCloud Compose, GitLab CE 19.3.0, CubeSandbox KVM
 - Model: DeepSeek `deepseek-v4-flash`
 
-The real browser-facing OIDC flow completed through GitLab authorization code,
-PKCE, nonce and one-use state. The resulting PiCloud identity retained the
-GitLab subject/user ID but no OAuth access token. A private project was connected
-with an encrypted project token and its signed Webhook created an
-`awaiting_claim` request without starting a Run. The matching GitLab user
-claimed it after a live project-membership check; the claim was projected back
-to the GitLab Issue.
+A private GitLab project was connected to tuhao and initialized as an ordinary
+Workspace Git worktree. The root `.git` directory and authenticated `origin`
+were visible inside Cube. The first real-model Run modified `README.md`, ran a
+verification, executed ordinary `git status/add/commit/push`, and settled with a
+clean worktree. The remote branch SHA exactly matched the Workspace HEAD.
 
-Two token-consuming coding tasks completed end to end:
+A second real-model Run used the unattended Issue coordinator. The Agent again
+created and pushed its own commit. Only after the Run completed did PiCloud
+create Merge Request `!1` from the already-pushed branch. The branch SHA matched
+the Workspace HEAD, and no platform Patch artifact or commit identity was
+created.
 
-| Mode | Job elapsed | Run elapsed | Input / output / cache-read tokens | Result |
-| --- | ---: | ---: | ---: | --- |
-| Elastic Workspace (`starter`) | 34.519 s | 23.556 s | 2,800 / 1,886 / 56,320 | private checkout, Cube tests, branch and MR |
-| Owned development machine | 28.091 s | 21.816 s | 8,604 / 1,597 / 59,392 | directory checkout at `/home/user/issue-counting-sort`, Cube tests, branch and MR |
+| Path | Input / output / cache-read tokens | Result |
+| --- | ---: | --- |
+| repository-backed conversation | 2,792 / 786 / 54,272 | Agent commit and push succeeded |
+| background Issue Run | 1,429 / 988 / 58,368 | Agent push followed by platform MR |
 
-Both Merge Requests contained `Closes #N`. Git metadata and credentials stayed
-in the trusted Volume/API boundary. The owned machine remained running after
-the Agent Run, and its selected directory contained the repository and generated
-tests. The acceptance project, Issue jobs, temporary Workspaces, machine,
+Migration 109 left zero `workspacePatch` fields in terminal/outbox payloads,
+zero Patch artifacts, and no `patch_artifact_id` or `commit_sha` columns. The
+acceptance project, Issue/MR, repository connection, temporary Workspaces,
 Volumes and plaintext test credentials were removed after evidence capture.
+
+The GitLab OIDC authorization-code/PKCE/claim path was not rerun for this Git
+ownership change; its most recent independent acceptance remains in Git
+history at revision `869b0bb`.
