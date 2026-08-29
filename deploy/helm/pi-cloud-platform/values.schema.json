@@ -501,6 +501,7 @@
                 "enabled",
                 "webhookUrl",
                 "internalBaseUrl",
+                "workspaceBaseUrl",
                 "issueLabel",
                 "credentialMasterKeySecretKey"
               ],
@@ -508,6 +509,7 @@
                 "enabled": { "type": "boolean" },
                 "webhookUrl": { "$ref": "#/$defs/httpUrl" },
                 "internalBaseUrl": { "$ref": "#/$defs/optionalHttpUrl" },
+                "workspaceBaseUrl": { "$ref": "#/$defs/optionalHttpUrl" },
                 "issueLabel": { "type": "string", "minLength": 1, "maxLength": 50 },
                 "credentialMasterKeySecretKey": { "$ref": "#/$defs/secretKey" }
               }

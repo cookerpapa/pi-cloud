@@ -610,6 +610,7 @@ const environment = [
   "PI_CLOUD_GITLAB_ENABLED=false",
   "PI_CLOUD_GITLAB_WEBHOOK_URL=http://host.docker.internal:8080/v1/source-control/gitlab/webhook",
   "PI_CLOUD_GITLAB_ISSUE_LABEL=picloud",
+  "PI_CLOUD_GITLAB_WORKSPACE_BASE_URL=",
   "PI_CLOUD_OIDC_GITLAB_ENABLED=false",
   `PI_CLOUD_PUBLIC_REGISTRATION_ENABLED=${publicRegistrationEnabled}`,
   `PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS=${publicRegistrationMaximumTenants}`,

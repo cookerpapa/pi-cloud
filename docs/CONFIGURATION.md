@@ -130,6 +130,7 @@ PiCloud registers the signed project Webhook.
 | `PI_CLOUD_GITLAB_ENABLED` | `false` | expose GitLab project connections |
 | `PI_CLOUD_GITLAB_WEBHOOK_URL` | local host-gateway endpoint | URL registered on connected projects |
 | `PI_CLOUD_GITLAB_INTERNAL_BASE_URL` | empty | optional trusted-plane API/Git origin for split-horizon networking |
+| `PI_CLOUD_GITLAB_WORKSPACE_BASE_URL` | empty | optional Git origin reachable from Cube; defaults to the public provider origin |
 | `PI_CLOUD_GITLAB_ISSUE_LABEL` | `picloud` | explicit Issue automation label |
 | `PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE` | generated private file | AES-GCM key for project tokens and signing tokens |
 

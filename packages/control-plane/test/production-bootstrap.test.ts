@@ -320,12 +320,14 @@ describe.sequential("production bootstrap and configuration", () => {
       ),
       PI_CLOUD_GITLAB_WEBHOOK_URL: "https://picloud.example.com/v1/source-control/gitlab/webhook",
       PI_CLOUD_GITLAB_INTERNAL_BASE_URL: "https://gitlab.internal.example.com",
+      PI_CLOUD_GITLAB_WORKSPACE_BASE_URL: "https://gitlab-workspace.example.com",
     });
     expect(gitlabRuntime.gitlabProject).toEqual({
       credentialMasterKey: Buffer.alloc(32, 6).toString("base64url"),
       webhookUrl: "https://picloud.example.com/v1/source-control/gitlab/webhook",
       issueLabel: "picloud",
       internalBaseUrl: "https://gitlab.internal.example.com/",
+      workspaceBaseUrl: "https://gitlab-workspace.example.com/",
     });
     const gitlabOidcRuntime = await loadProductionControlPlaneConfig({
       ...environment,

@@ -62,6 +62,7 @@ export type GitLabProjectRuntime = Readonly<{
   publicOrigin: string;
   issueLabel: string;
   internalBaseUrl?: string;
+  workspaceBaseUrl?: string;
   fetch?: typeof fetch;
 }>;
 
@@ -1681,7 +1682,12 @@ export class SourceControlService {
       providerInstallationId: repository.provider_installation_id,
       providerRepositoryId: repository.provider_repository_id,
       cloneUrl: repository.clone_url,
-      userCloneUrl: cloneUrlAtOrigin(repository.clone_url, repository.provider_base_url),
+      userCloneUrl: cloneUrlAtOrigin(
+        repository.clone_url,
+        repository.provider === "gitlab"
+          ? (this.#gitlab?.workspaceBaseUrl ?? repository.provider_base_url)
+          : repository.provider_base_url,
+      ),
       baseRef: repository.default_branch,
       branchName,
       workTreePath,

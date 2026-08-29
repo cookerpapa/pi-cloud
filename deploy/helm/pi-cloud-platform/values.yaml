@@ -85,6 +85,7 @@ controlPlane:
       enabled: false
       webhookUrl: https://pi-cloud.example.com/v1/source-control/gitlab/webhook
       internalBaseUrl: ""
+      workspaceBaseUrl: ""
       issueLabel: picloud
       credentialMasterKeySecretKey: source-control-credential-master-key
   resources:

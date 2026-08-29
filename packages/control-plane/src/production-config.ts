@@ -59,6 +59,7 @@ export type ProductionControlPlaneConfig = {
     webhookUrl: string;
     issueLabel: string;
     internalBaseUrl?: string;
+    workspaceBaseUrl?: string;
   };
   gitlabOidc?: {
     issuer: string;
@@ -628,6 +629,15 @@ export async function loadProductionControlPlaneConfig(
               : {
                   internalBaseUrl: managementUrl(
                     environment.PI_CLOUD_GITLAB_INTERNAL_BASE_URL,
+                    allowInsecureInternalHttp,
+                  ),
+                }),
+            ...(environment.PI_CLOUD_GITLAB_WORKSPACE_BASE_URL === undefined ||
+            environment.PI_CLOUD_GITLAB_WORKSPACE_BASE_URL.length === 0
+              ? {}
+              : {
+                  workspaceBaseUrl: managementUrl(
+                    environment.PI_CLOUD_GITLAB_WORKSPACE_BASE_URL,
                     allowInsecureInternalHttp,
                   ),
                 }),

@@ -23,7 +23,7 @@ services:
         redis_exporter['enable'] = false
         sidekiq['metrics_enabled'] = false
     ports:
-      - 127.0.0.1:8929:8929
+      - ${PI_CLOUD_GITLAB_BIND_ADDRESS:-127.0.0.1}:8929:8929
       - 127.0.0.1:2224:22
     volumes:
       - ${PI_CLOUD_GITLAB_RUNTIME_DIRECTORY:?run npm run gitlab:init first}/config:/etc/gitlab

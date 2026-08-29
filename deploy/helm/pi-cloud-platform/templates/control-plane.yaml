@@ -97,6 +97,9 @@ spec:
             {{- if .Values.controlPlane.sourceControl.gitlab.internalBaseUrl }}
             - { name: PI_CLOUD_GITLAB_INTERNAL_BASE_URL, value: {{ .Values.controlPlane.sourceControl.gitlab.internalBaseUrl | quote }} }
             {{- end }}
+            {{- if .Values.controlPlane.sourceControl.gitlab.workspaceBaseUrl }}
+            - { name: PI_CLOUD_GITLAB_WORKSPACE_BASE_URL, value: {{ .Values.controlPlane.sourceControl.gitlab.workspaceBaseUrl | quote }} }
+            {{- end }}
             - { name: PI_CLOUD_GITLAB_ISSUE_LABEL, value: {{ .Values.controlPlane.sourceControl.gitlab.issueLabel | quote }} }
             - { name: PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE, value: /run/pi-cloud-secrets/source-control-credential-master-key }
             {{- end }}

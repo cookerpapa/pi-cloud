@@ -24,6 +24,12 @@ public proxy; production deployments use their normal routable GitLab origin.
 The local PiCloud runtime exposes `control-plane.internal` on that network for
 Webhook delivery; it is not a public deployment name.
 
+When testing Agent-side push from Cube, bind this lab to a deployment-owned
+private address and set `PI_CLOUD_GITLAB_WORKSPACE_BASE_URL` to that address.
+The matching `/24` must be present in
+`PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS`. This split route is only for the
+local lab; a production GitLab URL should already be reachable from Cube.
+
 Open `http://gitlab.localhost:8929` and sign in as `root`. Create a public or
 private project, then create a project access token with Maintainer role and
 the `api`, `read_repository` and `write_repository` scopes. In PiCloud, open

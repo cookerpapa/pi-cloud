@@ -264,6 +264,9 @@ export async function startControlPlane(): Promise<void> {
             ...(config.gitlabProject.internalBaseUrl === undefined
               ? {}
               : { internalBaseUrl: config.gitlabProject.internalBaseUrl }),
+            ...(config.gitlabProject.workspaceBaseUrl === undefined
+              ? {}
+              : { workspaceBaseUrl: config.gitlabProject.workspaceBaseUrl }),
             fetch: (input: string | URL | Request, init?: RequestInit) =>
               undiciFetch(input as Parameters<typeof undiciFetch>[0], {
                 ...(init as Parameters<typeof undiciFetch>[1]),
