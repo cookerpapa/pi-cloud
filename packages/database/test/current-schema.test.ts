@@ -103,7 +103,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("108_remove_platform_git_change_tracking");
+      expect(applied.rows.at(-1)?.name).toBe("109_remove_legacy_workspace_patch_outbox_payloads");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name
