@@ -197,6 +197,10 @@ export const TenantRegistrationResourceSchema = Type.Object(
 export const WorkspaceSourceRequestSchema = Type.Union([
   Type.Object({ kind: Type.Literal("empty") }, { additionalProperties: false }),
   Type.Object({ kind: Type.Literal("sample_java") }, { additionalProperties: false }),
+  Type.Object(
+    { kind: Type.Literal("github"), repositoryId: UuidSchema },
+    { additionalProperties: false },
+  ),
 ]);
 
 export const WorkspaceSourceResourceSchema = Type.Union([
@@ -206,6 +210,21 @@ export const WorkspaceSourceResourceSchema = Type.Union([
   ),
   Type.Object(
     { kind: Type.Literal("sample_java"), status: Type.Literal("ready") },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("github"),
+      status: Type.Union([
+        Type.Literal("provisioning"),
+        Type.Literal("ready"),
+        Type.Literal("failed"),
+      ]),
+      repositoryId: UuidSchema,
+      fullName: Type.String({ minLength: 3, maxLength: 511 }),
+      baseRef: Type.String({ minLength: 1, maxLength: 255 }),
+      baseSha: Type.Optional(Type.String({ pattern: "^[0-9a-f]{40}$" })),
+    },
     { additionalProperties: false },
   ),
 ]);

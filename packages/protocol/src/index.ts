@@ -51,6 +51,37 @@ export {
 } from "./model-sampling.ts";
 
 export {
+  SourceControlRepositoryResourceSchema,
+  SourceControlInstallationResourceSchema,
+  SourceControlConfigurationResourceSchema,
+  SourceControlInstallLinkResourceSchema,
+  SourceControlIssueJobResourceSchema,
+  SourceControlIssueJobListResourceSchema,
+  SourceControlWorkspaceCheckoutRequestSchema,
+  SourceControlWorkspaceCheckoutResponseSchema,
+  SourceControlWorkspacePublishRequestSchema,
+  SourceControlWorkspacePublishResponseSchema,
+  SourceControlProtocolError,
+  parseSourceControlConfigurationResource,
+  parseSourceControlInstallLinkResource,
+  parseSourceControlIssueJobListResource,
+  parseSourceControlWorkspaceCheckoutRequest,
+  parseSourceControlWorkspaceCheckoutResponse,
+  parseSourceControlWorkspacePublishRequest,
+  parseSourceControlWorkspacePublishResponse,
+  type SourceControlRepositoryResource,
+  type SourceControlInstallationResource,
+  type SourceControlConfigurationResource,
+  type SourceControlInstallLinkResource,
+  type SourceControlIssueJobResource,
+  type SourceControlIssueJobListResource,
+  type SourceControlWorkspaceCheckoutRequest,
+  type SourceControlWorkspaceCheckoutResponse,
+  type SourceControlWorkspacePublishRequest,
+  type SourceControlWorkspacePublishResponse,
+} from "./source-control.ts";
+
+export {
   AgentModelRuntimeSchema,
   AgentWorkspaceSeedSchema,
   MAX_WORKSPACE_SNAPSHOT_BYTES,

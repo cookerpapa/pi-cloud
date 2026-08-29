@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,10 +10,12 @@ import {
   PersistentVolumeWorkspaceVolumeGateway,
   WorkspaceVolumeGatewayServer,
   workspaceVolumeId,
+  runTrustedWorkspaceGit,
   type WorkspaceVolumeGateway,
 } from "../src/index.ts";
 
 const roots: string[] = [];
+const exec = promisify(execFile);
 
 async function root(): Promise<string> {
   const value = await mkdtemp(join(tmpdir(), "pi-cloud-volume-"));
@@ -173,6 +177,88 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await expect(mover.delete(first)).resolves.toEqual({ deleted: true });
     await expect(lstat(volumeRoot)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(mover.delete(first)).resolves.toEqual({ deleted: false });
+  });
+
+  it("checks out and publishes through trusted external Git metadata without persisting the token", async () => {
+    const workspaceRoot = await root();
+    const fixtureRoot = await root();
+    const remote = join(fixtureRoot, "remote.git");
+    const seed = join(fixtureRoot, "seed");
+    await exec("/usr/bin/git", ["init", "--bare", remote]);
+    await mkdir(seed);
+    await exec("/usr/bin/git", ["init"], { cwd: seed });
+    await exec("/usr/bin/git", ["config", "user.name", "Test"], { cwd: seed });
+    await exec("/usr/bin/git", ["config", "user.email", "test@example.com"], { cwd: seed });
+    await writeFile(join(seed, "README.md"), "private source\n");
+    await exec("/usr/bin/git", ["add", "README.md"], { cwd: seed });
+    await exec("/usr/bin/git", ["commit", "-m", "initial"], { cwd: seed });
+    await exec("/usr/bin/git", ["branch", "-M", "main"], { cwd: seed });
+    await exec("/usr/bin/git", ["remote", "add", "origin", remote], { cwd: seed });
+    await exec("/usr/bin/git", ["push", "origin", "main"], { cwd: seed });
+
+    const observedTokens: string[] = [];
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({
+      workspaceRoot,
+      gitRunner: (args, options) => {
+        if (options.accessToken !== undefined) observedTokens.push(options.accessToken);
+        const { accessToken: _accessToken, ...trustedOptions } = options;
+        return runTrustedWorkspaceGit(
+          args.map((argument) =>
+            argument === "https://github.com/example/private-repo.git" ? remote : argument,
+          ),
+          trustedOptions,
+        );
+      },
+    });
+    const bound = identity("source-control-request");
+    await mover.prepare(bound);
+    const checkout = await mover.checkoutSource!({
+      ...bound,
+      requestId: randomUUID(),
+      repositoryId: "90000000-0000-4000-8000-000000000001",
+      providerInstallationId: "77",
+      providerRepositoryId: "123456",
+      cloneUrl: "https://github.com/example/private-repo.git",
+      baseRef: "main",
+      branchName: "picloud/issue-1-test",
+      accessToken: "ghs_process_scoped_secret",
+    });
+    expect(checkout.baseSha).toMatch(/^[0-9a-f]{40}$/);
+    const volumeRoot = join(workspaceRoot, `picloud-posix-${bound.volumeId}`);
+    const workspace = join(volumeRoot, "workspace");
+    await expect(readFile(join(workspace, "README.md"), "utf8")).resolves.toBe("private source\n");
+    await expect(readdir(workspace)).resolves.not.toContain(".git");
+
+    await writeFile(join(workspace, "answer.txt"), "42\n");
+    const published = await mover.publishSource!({
+      ...bound,
+      requestId: randomUUID(),
+      repositoryId: "90000000-0000-4000-8000-000000000001",
+      providerInstallationId: "77",
+      providerRepositoryId: "123456",
+      cloneUrl: "https://github.com/example/private-repo.git",
+      baseRef: "main",
+      branchName: "picloud/issue-1-test",
+      commitMessage: "Fix issue 1",
+      authorName: "PiCloud Agent",
+      authorEmail: "picloud@example.com",
+      accessToken: "ghs_process_scoped_secret",
+    });
+    expect(published).toMatchObject({
+      changed: true,
+      commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+    });
+    const remoteFile = await exec("/usr/bin/git", [
+      "--git-dir",
+      remote,
+      "show",
+      "refs/heads/picloud/issue-1-test:answer.txt",
+    ]);
+    expect(remoteFile.stdout).toBe("42\n");
+    expect(observedTokens).toEqual(["ghs_process_scoped_secret", "ghs_process_scoped_secret"]);
+    expect(
+      await readFile(join(volumeRoot, ".pi-cloud-runtime", "volume-state.json"), "utf8"),
+    ).not.toContain("ghs_process_scoped_secret");
   });
 });
 

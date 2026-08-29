@@ -193,6 +193,8 @@ spec:
             - { name: metrics, containerPort: 9469 }
           env:
             - { name: NODE_ENV, value: production }
+            - { name: HTTPS_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
+            - { name: HTTP_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
             - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_HOST, value: 0.0.0.0 }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_PORT, value: "4500" }

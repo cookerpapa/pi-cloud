@@ -31,6 +31,7 @@ import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import type { TerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
+import { SourceControlService } from "./source-control-service.ts";
 
 export type ControlPlaneModuleOptions = Omit<
   ControlPlaneStoreOptions,
@@ -51,6 +52,7 @@ export type ControlPlaneModuleOptions = Omit<
   turnSteerBackendFactory?: (sandboxId: string) => Promise<TurnSteerBackend>;
   developmentEnvironmentService?: DevelopmentEnvironmentService;
   sshAccessTicketService?: SshAccessTicketService;
+  sourceControlService?: SourceControlService;
 };
 
 export type ControlPlaneEventRuntime = {
@@ -187,6 +189,12 @@ export class ControlPlaneModule {
           useValue:
             options.sshAccessTicketService ??
             new SshAccessTicketService({ database: options.database, enabled: false }),
+        },
+        {
+          provide: SourceControlService,
+          useValue:
+            options.sourceControlService ??
+            new SourceControlService({ database: options.database }),
         },
         {
           provide: WorkspaceVersionService,

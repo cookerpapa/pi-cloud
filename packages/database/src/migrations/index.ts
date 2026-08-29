@@ -102,6 +102,7 @@ import * as removeLegacyDatabaseFunctions from "./100_remove_legacy_database_fun
 import * as userManagedWorkspaceConcurrency from "./101_user_managed_workspace_concurrency.ts";
 import * as workspaceToolRuntimeSlot from "./102_workspace_tool_runtime_slot.ts";
 import * as runQueueAuthority from "./103_run_queue_authority.ts";
+import * as sourceControlAppAndIssueJobs from "./104_source_control_app_and_issue_jobs.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -209,6 +210,7 @@ export const migrationProvider: MigrationProvider = {
       "101_user_managed_workspace_concurrency": userManagedWorkspaceConcurrency,
       "102_workspace_tool_runtime_slot": workspaceToolRuntimeSlot,
       "103_run_queue_authority": runQueueAuthority,
+      "104_source_control_app_and_issue_jobs": sourceControlAppAndIssueJobs,
     };
   },
 };

@@ -159,6 +159,27 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         sizeBytes: content.byteLength,
       };
     },
+    async checkoutSource(request) {
+      return {
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_checked_out",
+        requestId: request.requestId,
+        workspaceId: request.workspaceId,
+        repositoryId: request.repositoryId,
+        baseSha: "a".repeat(40),
+      };
+    },
+    async publishSource(request) {
+      return {
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_published",
+        requestId: request.requestId,
+        workspaceId: request.workspaceId,
+        repositoryId: request.repositoryId,
+        changed: true,
+        commitSha: "b".repeat(40),
+      };
+    },
     async listAssignments(sandboxId) {
       return sandboxId === runtimeAssignment.sandboxId ? [runtimeAssignment] : [];
     },
@@ -169,6 +190,49 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
 }
 
 describe("Tool Broker authenticated RPC", () => {
+  it("routes trusted source checkout and publish through the materializer credential", async () => {
+    const server = new ToolBrokerServer({
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      materializerToken: MATERIALIZER_TOKEN,
+      broker: backend(),
+    });
+    servers.push(server);
+    const address = await server.listen();
+    const client = new ToolBrokerClient({
+      baseUrl: address,
+      serviceToken: MATERIALIZER_TOKEN,
+      allowInsecureHttp: true,
+    });
+    const common = {
+      sourceControlProtocolVersion: 1 as const,
+      requestId: "30000000-0000-4000-8000-000000000001",
+      tenantId: "tenant-source-control",
+      workspaceId: "30000000-0000-4000-8000-000000000002",
+      repositoryId: "30000000-0000-4000-8000-000000000003",
+      providerInstallationId: "77",
+      providerRepositoryId: "123456",
+      cloneUrl: "https://github.com/example/private-repo.git",
+      baseRef: "main",
+      branchName: "picloud/issue-1-test",
+      accessToken: "ghs_process_scoped_test_token",
+    };
+    await expect(
+      client.checkoutSource({ ...common, type: "source_control.workspace_checkout" }),
+    ).resolves.toMatchObject({ baseSha: "a".repeat(40) });
+    await expect(
+      client.publishSource({
+        ...common,
+        requestId: "30000000-0000-4000-8000-000000000004",
+        type: "source_control.workspace_publish",
+        commitMessage: "Fix issue",
+        authorName: "PiCloud Agent",
+        authorEmail: "picloud@example.com",
+      }),
+    ).resolves.toMatchObject({ changed: true, commitSha: "b".repeat(40) });
+  });
+
   it("bridges an authenticated WebSocket to one bounded human PTY session", async () => {
     const terminalId = "10000000-0000-4000-8000-000000000080";
     const sendInput = vi.fn(async () => undefined);

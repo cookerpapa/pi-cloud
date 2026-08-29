@@ -75,6 +75,7 @@ export {
   PersistentVolumeWorkspaceVolumeGateway,
   WorkspaceVolumeGatewayError,
   WorkspaceVolumeGatewayServer,
+  runTrustedWorkspaceGit,
   workspaceVolumeId,
   type WorkspaceVolumeGateway,
   type WorkspaceVolumeGatewayIdentity,
@@ -85,6 +86,9 @@ export {
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewaySnapshotInput,
   type WorkspaceVolumeGatewayVolumeIdentity,
+  type WorkspaceVolumeGatewaySourceCheckoutInput,
+  type WorkspaceVolumeGatewaySourcePublishInput,
+  type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway.ts";
 export { PostgresWorkspaceVolumeGatewayLock } from "./workspace-volume-gateway.ts";
 export {

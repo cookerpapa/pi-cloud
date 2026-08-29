@@ -37,6 +37,11 @@ describe("current PiCloud schema", () => {
         "tool_broker_activations",
         "workspaces",
         "development_environments",
+        "source_control_installations",
+        "source_control_repositories",
+        "workspace_source_repositories",
+        "source_control_webhook_deliveries",
+        "source_control_issue_jobs",
       ]) {
         expect(names.has(required), `missing current table ${required}`).toBe(true);
       }
@@ -90,7 +95,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("103_run_queue_authority");
+      expect(applied.rows.at(-1)?.name).toBe("104_source_control_app_and_issue_jobs");
 
       const legacyFunctions = await sql<{ proname: string }>`
         select proname

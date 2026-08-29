@@ -51,7 +51,7 @@ must never appear in the DOM or browser developer logs.
 ## Deliberately omitted behavior
 
 The current product does not expose structured Diff, Artifact or test-result
-navigation, Workspace rollback, GitHub App/PR delivery, or
+navigation, Workspace rollback, arbitrary provider delivery, or
 organization, RBAC and audit-search pages. Their unfinished routes and browser
 client methods were removed rather than presented as a partial product.
 Conversation forks, recursive tree deletion, tail pruning, Workspace browsing,
@@ -81,8 +81,9 @@ live directory anywhere in its persisted guest filesystem. Applying for that env
 requires only CPU, memory and disk selectors; it never consumes a pre-existing
 elastic Workspace. Workspace deletion and cloud-development-machine lifecycle
 actions live on a separate resource page, where associated conversations and
-active-Run deletion locks are visible. The browser has no repository-import
-workflow. No API token, provider key, model profile, or model picker is shown to
+active-Run deletion locks are visible. GitHub App repositories are selected
+through the trusted source-control resource surface; the browser has no generic
+repository-import workflow. No API token, provider key, model profile, or model picker is shown to
 an ordinary user.
 
 The resource page does not create Workspaces. Its Workspace tab lists only

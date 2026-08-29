@@ -27,6 +27,9 @@ import {
   parseWorkspaceVersionListResource,
   parseConversationWorkspaceBindingResource,
   parseSshAccessTicketResource,
+  parseSourceControlConfigurationResource,
+  parseSourceControlInstallLinkResource,
+  parseSourceControlIssueJobListResource,
   type ConversationDetailResource,
   type AuthSessionResource,
   type ConversationListResource,
@@ -60,6 +63,9 @@ import {
   type WorkspaceVersionListResource,
   type ConversationWorkspaceBindingResource,
   type SshAccessTicketResource,
+  type SourceControlConfigurationResource,
+  type SourceControlInstallLinkResource,
+  type SourceControlIssueJobListResource,
 } from "@pi-cloud/protocol";
 
 export class PiCloudApiError extends Error {
@@ -295,6 +301,47 @@ export class PiCloudApi {
   async listWorkspaces(): Promise<WorkspaceListResource> {
     return parseWorkspaceListResource(
       await request(this.#fetch, "/v1/workspaces", { method: "GET" }, this.#authorizationToken),
+    );
+  }
+
+  async getSourceControl(): Promise<SourceControlConfigurationResource> {
+    return parseSourceControlConfigurationResource(
+      await request(this.#fetch, "/v1/source-control", { method: "GET" }, this.#authorizationToken),
+    );
+  }
+
+  async beginGitHubInstallation(): Promise<SourceControlInstallLinkResource> {
+    return parseSourceControlInstallLinkResource(
+      await request(
+        this.#fetch,
+        "/v1/source-control/github/installations",
+        jsonRequest({}),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async refreshSourceControlInstallation(
+    installationId: string,
+  ): Promise<SourceControlConfigurationResource> {
+    return parseSourceControlConfigurationResource(
+      await request(
+        this.#fetch,
+        `/v1/source-control/installations/${encodeURIComponent(installationId)}/refresh`,
+        jsonRequest({}),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async listSourceControlIssueJobs(): Promise<SourceControlIssueJobListResource> {
+    return parseSourceControlIssueJobListResource(
+      await request(
+        this.#fetch,
+        "/v1/source-control/issue-jobs",
+        { method: "GET" },
+        this.#authorizationToken,
+      ),
     );
   }
 

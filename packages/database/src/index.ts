@@ -41,6 +41,12 @@ export {
   type WorkspaceKind,
   type WorkspaceSeedKind,
   type WorkspaceTerminalState,
+  type SourceControlProvider,
+  type SourceControlInstallationState,
+  type SourceControlRepositoryState,
+  type SourceControlCheckoutState,
+  type SourceControlWebhookState,
+  type SourceControlIssueJobState,
 } from "./database-types.ts";
 
 export {

@@ -18,6 +18,8 @@ import {
   WORKSPACE_VOLUME_GATEWAY_DELETE_PATH,
   WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH,
+  WORKSPACE_VOLUME_GATEWAY_SOURCE_CHECKOUT_PATH,
+  WORKSPACE_VOLUME_GATEWAY_SOURCE_PUBLISH_PATH,
   WorkspaceVolumeGatewayError,
   digest,
   isRecord,
@@ -29,6 +31,8 @@ import {
   type WorkspaceVolumeGatewayForkInput,
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewaySnapshotInput,
+  type WorkspaceVolumeGatewaySourceCheckoutInput,
+  type WorkspaceVolumeGatewaySourcePublishInput,
 } from "./workspace-volume-gateway-contract.ts";
 
 export type WorkspaceVolumeGatewayServerOptions = Readonly<{
@@ -43,7 +47,14 @@ export type WorkspaceVolumeGatewayServerOptions = Readonly<{
 }>;
 
 type WorkspaceVolumeGatewayOperation =
-  "prepare" | "initialize_baseline" | "snapshot" | "fork" | "materialize" | "delete";
+  | "prepare"
+  | "initialize_baseline"
+  | "snapshot"
+  | "fork"
+  | "materialize"
+  | "delete"
+  | "source_checkout"
+  | "source_publish";
 
 function boundedInteger(value: number, name: string, minimum: number, maximum: number): number {
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
@@ -197,6 +208,46 @@ export class WorkspaceVolumeGatewayServer {
       try {
         return await this.#run("delete", () =>
           this.#gateway.delete(request.body as WorkspaceVolumeGatewayDeleteInput),
+        );
+      } catch (error: unknown) {
+        return this.#failure(reply, error);
+      }
+    });
+    this.#server.post(WORKSPACE_VOLUME_GATEWAY_SOURCE_CHECKOUT_PATH, async (request, reply) => {
+      try {
+        const checkoutSource = this.#gateway.checkoutSource;
+        if (checkoutSource === undefined) {
+          throw new WorkspaceVolumeGatewayError(
+            "source_control_checkout_unavailable",
+            "Workspace source checkout is unavailable",
+            false,
+          );
+        }
+        return await this.#run("source_checkout", () =>
+          checkoutSource.call(
+            this.#gateway,
+            request.body as WorkspaceVolumeGatewaySourceCheckoutInput,
+          ),
+        );
+      } catch (error: unknown) {
+        return this.#failure(reply, error);
+      }
+    });
+    this.#server.post(WORKSPACE_VOLUME_GATEWAY_SOURCE_PUBLISH_PATH, async (request, reply) => {
+      try {
+        const publishSource = this.#gateway.publishSource;
+        if (publishSource === undefined) {
+          throw new WorkspaceVolumeGatewayError(
+            "source_control_publish_unavailable",
+            "Workspace source publish is unavailable",
+            false,
+          );
+        }
+        return await this.#run("source_publish", () =>
+          publishSource.call(
+            this.#gateway,
+            request.body as WorkspaceVolumeGatewaySourcePublishInput,
+          ),
         );
       } catch (error: unknown) {
         return this.#failure(reply, error);
@@ -538,6 +589,49 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
       );
     }
     return { deleted: response.deleted };
+  }
+
+  async checkoutSource(
+    input: WorkspaceVolumeGatewaySourceCheckoutInput,
+  ): Promise<{ baseSha: string }> {
+    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_SOURCE_CHECKOUT_PATH, input);
+    if (
+      !isRecord(response) ||
+      Object.keys(response).length !== 1 ||
+      typeof response.baseSha !== "string" ||
+      !/^[0-9a-f]{40}$/.test(response.baseSha)
+    ) {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_volume_gateway_response_invalid",
+        "Workspace Volume Gateway response was invalid",
+        false,
+      );
+    }
+    return { baseSha: response.baseSha };
+  }
+
+  async publishSource(
+    input: WorkspaceVolumeGatewaySourcePublishInput,
+  ): Promise<{ changed: boolean; commitSha?: string }> {
+    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_SOURCE_PUBLISH_PATH, input);
+    if (
+      !isRecord(response) ||
+      typeof response.changed !== "boolean" ||
+      (response.changed
+        ? typeof response.commitSha !== "string" || !/^[0-9a-f]{40}$/.test(response.commitSha)
+        : response.commitSha !== undefined) ||
+      Object.keys(response).sort().join("\0") !==
+        (response.changed ? ["changed", "commitSha"] : ["changed"]).sort().join("\0")
+    ) {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_volume_gateway_response_invalid",
+        "Workspace Volume Gateway response was invalid",
+        false,
+      );
+    }
+    return response.changed
+      ? { changed: true, commitSha: response.commitSha as string }
+      : { changed: false };
   }
 
   async close(): Promise<void> {}

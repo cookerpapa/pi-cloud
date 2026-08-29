@@ -15,6 +15,7 @@
 - Broker-independent development-machine runtime with running-state-preserving takeover;
 - conversation trees, Fork, Steer, recursive Subagents and Workspace rebinding;
 - Compose one-host deployment and Kubernetes/KEDA manifests.
+- optional GitHub App private-repository connection and Issue-to-PR automation.
 
 ## Current release gate
 

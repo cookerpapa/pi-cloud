@@ -261,6 +261,32 @@ cannot reach or authenticate to it.
 
 ### Tool Broker and Cube
 
+### Source-control App and Issue automation
+
+Source control is an optional trusted-plane adapter, not a Tool exposed to the
+model. The current provider is a GitHub App. An installation callback is bound
+to the logged-in tenant by a one-use state value; PostgreSQL stores the
+installation and selected repository identities. The App private key and
+Webhook HMAC secret remain deployment secrets, while one-repository
+installation access tokens exist only for the duration of an API or Git child
+process.
+
+Private checkout and publish run in the trusted Workspace Volume Gateway
+against the external Git directory. Cube sees normal source files but neither
+`.git` platform metadata nor credentials. The Control Plane routes the request
+to the Tool Broker for the Workspace's recorded Sandbox Domain; the Broker
+quiesces any warm runtime before publish, so Git cannot race an Agent writer.
+
+GitHub Issue and Issue-comment Webhooks enter through a raw-body HMAC gate and
+the globally unique delivery ID is the idempotency key. Only the configured
+label or exact `/picloud solve` collaborator command creates an Issue Job. The
+coordinator provisions an ordinary Project, Workspace, Session and Run, then
+observes the existing PostgreSQL Run queue. It is not a second scheduler.
+Unique branch names, PR lookup and marker comments reconcile uncertain GitHub
+responses without blindly duplicating external effects.
+
+### Tool Broker and Cube
+
 The Broker validates opaque Tool authority, resolves a Workspace's Sandbox
 Domain and reconciles Cube lifecycle. Pi cannot choose a Sandbox ID, image,
 mount, runtime class, resource limit or network policy.
@@ -561,6 +587,9 @@ preserve a visible prefix that never reached `message_end`.
 | active in-memory `messages[]` | Pi SDK for one active Run |
 | development-environment ownership/lifecycle | PostgreSQL |
 | development-environment process/memory/rootfs state | one node-affine Cube KVM snapshot |
+| source-control installations/repository grants and Issue Jobs | PostgreSQL |
+| GitHub App private key and Webhook secret | deployment Secret files |
+| GitHub installation token | ephemeral trusted API/Git process memory only |
 
 ## First and later messages
 

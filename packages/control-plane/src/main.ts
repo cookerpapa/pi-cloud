@@ -33,6 +33,10 @@ import { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import { AcceptedFactIngestGateway } from "./accepted-fact-ingest-gateway.ts";
 import { OperationalMetricsSampler } from "./operational-metrics-sampler.ts";
+import { GitHubAppClient } from "./github-app-client.ts";
+import { SourceControlService } from "./source-control-service.ts";
+import { SourceControlIssueCoordinator } from "./source-control-issue-coordinator.ts";
+import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 
 async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Promise<void> {
   const profile = await database
@@ -64,6 +68,8 @@ export async function startControlPlane(): Promise<void> {
   let runtime: ControlPlaneRuntime | undefined;
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
+  let issueCoordinator: SourceControlIssueCoordinator | undefined;
+  let githubDispatcher: EnvHttpProxyAgent | undefined;
   let closing = false;
   try {
     agentEvents = new KafkaEventRuntime({
@@ -220,6 +226,31 @@ export async function startControlPlane(): Promise<void> {
       advertisedPort: config.sshAdvertisedPort,
       ticketTtlMs: config.sshTicketTtlMs,
     });
+    let githubRuntime;
+    if (config.githubApp !== undefined) {
+      githubDispatcher = new EnvHttpProxyAgent();
+      const dispatcher = githubDispatcher;
+      githubRuntime = {
+        appSlug: config.githubApp.appSlug,
+        issueLabel: config.githubApp.issueLabel,
+        client: new GitHubAppClient({
+          appId: config.githubApp.appId,
+          privateKeyPem: config.githubApp.privateKeyPem,
+          webhookSecret: config.githubApp.webhookSecret,
+          fetch: (input, init) =>
+            undiciFetch(input as Parameters<typeof undiciFetch>[0], {
+              ...(init as Parameters<typeof undiciFetch>[1]),
+              dispatcher,
+            }) as unknown as Promise<Response>,
+        }),
+      };
+    }
+    const sourceControlService = new SourceControlService({
+      database,
+      materializerToken: config.sandboxMaterializerToken,
+      allowInsecureInternalHttp: config.allowInsecureInternalHttp,
+      ...(githubRuntime === undefined ? {} : { github: githubRuntime }),
+    });
     runtime = await createControlPlaneRuntime({
       database,
       controlPlaneInstanceId,
@@ -247,6 +278,7 @@ export async function startControlPlane(): Promise<void> {
       cubeEgressConfigToken: config.cubeEgressConfigToken,
       workspaceTerminalGateway,
       sandboxPreviewGateway,
+      sourceControlService,
       environmentImageRevision: config.environmentImageRevision,
       metrics: observability.metrics,
       artifactReader: { get: (objectKey) => objectStore.get(objectKey) },
@@ -279,6 +311,16 @@ export async function startControlPlane(): Promise<void> {
       },
     });
     await runtime.listen(config.port, config.host);
+    if (sourceControlService.configured) {
+      issueCoordinator = new SourceControlIssueCoordinator({
+        database,
+        sourceControl: sourceControlService,
+        instanceId: controlPlaneInstanceId,
+        environmentImageRevision: config.environmentImageRevision,
+        publicOrigin: config.publicOriginBaseUrl,
+      });
+      issueCoordinator.start();
+    }
     process.stdout.write(
       `PiCloud production control plane listening on ${config.host}:${String(config.port)}\n`,
     );
@@ -286,10 +328,12 @@ export async function startControlPlane(): Promise<void> {
     const close = async (): Promise<void> => {
       if (closing) return;
       closing = true;
+      await issueCoordinator?.close();
       await runtime?.close();
       await developmentEnvironmentService?.close();
       await operationalMetrics?.close();
       await activeAgentEvents.close();
+      await githubDispatcher?.close();
       objectStore.destroy();
       await database.destroy();
       await observability.close();
@@ -303,10 +347,12 @@ export async function startControlPlane(): Promise<void> {
     process.once("SIGTERM", closeAfterSignal);
   } catch (error: unknown) {
     closing = true;
+    await issueCoordinator?.close().catch(() => undefined);
     await runtime?.close().catch(() => undefined);
     await developmentEnvironmentService?.close().catch(() => undefined);
     await operationalMetrics?.close().catch(() => undefined);
     await agentEvents?.close().catch(() => undefined);
+    await githubDispatcher?.close().catch(() => undefined);
     objectStore.destroy();
     await database.destroy();
     await observability.close().catch(() => undefined);

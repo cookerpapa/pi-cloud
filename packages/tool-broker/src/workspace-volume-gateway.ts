@@ -11,9 +11,15 @@ export {
   type WorkspaceVolumeGatewayLock,
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewaySnapshotInput,
+  type WorkspaceVolumeGatewaySourceCheckoutInput,
+  type WorkspaceVolumeGatewaySourcePublishInput,
   type WorkspaceVolumeGatewayVolumeIdentity,
+  type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway-contract.ts";
-export { PersistentVolumeWorkspaceVolumeGateway } from "./persistent-volume-workspace-volume-gateway.ts";
+export {
+  PersistentVolumeWorkspaceVolumeGateway,
+  runTrustedWorkspaceGit,
+} from "./persistent-volume-workspace-volume-gateway.ts";
 export { PostgresWorkspaceVolumeGatewayLock } from "./postgres-workspace-volume-gateway-lock.ts";
 export {
   HttpWorkspaceVolumeGateway,

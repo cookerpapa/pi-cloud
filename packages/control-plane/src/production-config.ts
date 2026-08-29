@@ -46,6 +46,14 @@ export type ProductionControlPlaneConfig = {
     maximumTenants: number;
     tenantQuotas: TenantQuotaConfiguration;
   };
+  publicOriginBaseUrl: string;
+  githubApp?: {
+    appId: string;
+    appSlug: string;
+    privateKeyPem: string;
+    webhookSecret: string;
+    issueLabel: string;
+  };
 };
 
 export type ProductionBootstrapConfig = {
@@ -148,6 +156,13 @@ function required(environment: ProductionControlPlaneEnvironment, name: string):
 function bounded(value: string, name: string, maximum = 256): string {
   if (value.length < 1 || value.length > maximum || /[\u0000-\u001f\u007f]/.test(value)) {
     throw new TypeError(`${name} is invalid`);
+  }
+  return value;
+}
+
+function githubAppSlug(value: string): string {
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/.test(value)) {
+    throw new TypeError("PI_CLOUD_GITHUB_APP_SLUG is invalid");
   }
   return value;
 }
@@ -299,6 +314,30 @@ async function secret(
   throw new TypeError(`Required secret file ${name}_FILE is missing`);
 }
 
+async function privatePem(path: string): Promise<string> {
+  if (!isAbsolute(path) || path.includes("\0")) {
+    throw new TypeError("PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE must be an absolute path");
+  }
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile() || (metadata.mode & 0o077) !== 0 || metadata.size > 64 * 1_024) {
+      throw new TypeError("GitHub App private key file is invalid");
+    }
+    const value = await handle.readFile("utf8");
+    if (
+      !value.startsWith("-----BEGIN ") ||
+      !value.includes("PRIVATE KEY-----") ||
+      !value.trimEnd().endsWith("-----")
+    ) {
+      throw new TypeError("GitHub App private key file is invalid");
+    }
+    return value;
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function loadProductionControlPlaneConfig(
   environment: ProductionControlPlaneEnvironment = process.env,
 ): Promise<ProductionControlPlaneConfig> {
@@ -325,6 +364,22 @@ export async function loadProductionControlPlaneConfig(
     environment.PI_CLOUD_DATABASE_NOTIFICATION_URL === undefined
       ? databaseUrl
       : await secret(environment, "PI_CLOUD_DATABASE_NOTIFICATION_URL", allowInlineSecrets);
+  const githubFields = [
+    environment.PI_CLOUD_GITHUB_APP_ID,
+    environment.PI_CLOUD_GITHUB_APP_SLUG,
+    environment.PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE,
+    environment.PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE,
+  ];
+  const githubConfigured = githubFields.some((value) => value !== undefined && value.length > 0);
+  if (githubConfigured && githubFields.some((value) => value === undefined || value.length === 0)) {
+    throw new TypeError(
+      "GitHub App configuration must provide ID, slug, private key and Webhook secret",
+    );
+  }
+  const previewPublicOriginBaseUrl = managementUrl(
+    required(environment, "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL"),
+    true,
+  );
   return {
     databaseUrl,
     databaseNotificationUrl,
@@ -394,8 +449,9 @@ export async function loadProductionControlPlaneConfig(
       "PI_CLOUD_WORKSPACE_TERMINAL_TOKEN",
       allowInlineSecrets,
     ),
-    previewPublicOriginBaseUrl: managementUrl(
-      required(environment, "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL"),
+    previewPublicOriginBaseUrl,
+    publicOriginBaseUrl: managementUrl(
+      environment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL ?? previewPublicOriginBaseUrl,
       true,
     ),
     sshGatewayEnabled: booleanValue(environment, "PI_CLOUD_SSH_GATEWAY_ENABLED"),
@@ -470,6 +526,31 @@ export async function loadProductionControlPlaneConfig(
         ),
       },
     },
+    ...(githubConfigured
+      ? {
+          githubApp: {
+            appId: bounded(
+              required(environment, "PI_CLOUD_GITHUB_APP_ID"),
+              "PI_CLOUD_GITHUB_APP_ID",
+              31,
+            ),
+            appSlug: githubAppSlug(required(environment, "PI_CLOUD_GITHUB_APP_SLUG")),
+            privateKeyPem: await privatePem(
+              required(environment, "PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE"),
+            ),
+            webhookSecret: await secret(
+              environment,
+              "PI_CLOUD_GITHUB_WEBHOOK_SECRET",
+              allowInlineSecrets,
+            ),
+            issueLabel: bounded(
+              environment.PI_CLOUD_GITHUB_ISSUE_LABEL ?? "picloud",
+              "PI_CLOUD_GITHUB_ISSUE_LABEL",
+              50,
+            ),
+          },
+        }
+      : {}),
   };
 }
 

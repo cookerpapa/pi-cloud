@@ -173,7 +173,38 @@ function environmentSnapshot(row: EnvironmentVersionRow): EnvironmentRuntimeSnap
   };
 }
 
-function workspaceSourceResource(seedKind: string): WorkspaceSourceResource {
+function workspaceSourceResource(
+  seedKind: string,
+  repository?: Readonly<{
+    repositoryId: string | null;
+    fullName: string | null;
+    baseRef: string | null;
+    baseSha: string | null;
+    checkoutState: string | null;
+  }>,
+): WorkspaceSourceResource {
+  if (repository?.repositoryId !== null && repository?.repositoryId !== undefined) {
+    if (
+      repository.fullName === null ||
+      repository.baseRef === null ||
+      (repository.checkoutState !== "provisioning" &&
+        repository.checkoutState !== "ready" &&
+        repository.checkoutState !== "failed")
+    ) {
+      throw new ControlPlaneStoreError(
+        "control_plane_misconfigured",
+        "Workspace source repository is invalid",
+      );
+    }
+    return {
+      kind: "github",
+      status: repository.checkoutState,
+      repositoryId: repository.repositoryId,
+      fullName: repository.fullName,
+      baseRef: repository.baseRef,
+      ...(repository.baseSha === null ? {} : { baseSha: repository.baseSha }),
+    };
+  }
   if (seedKind === "empty" || seedKind === "sample_java") {
     return { kind: seedKind, status: "ready" };
   }
@@ -387,6 +418,28 @@ export class ControlPlaneStore {
           .returning(["id", "name", "created_at"])
           .executeTakeFirstOrThrow();
         const sandboxDomain = await this.#assignSandboxDomain(transaction);
+        let repositorySource:
+          Readonly<{ repositoryId: string; fullName: string; baseRef: string }> | undefined;
+        if (source.kind === "github") {
+          const repository = await transaction
+            .selectFrom("source_control_repositories")
+            .select(["id", "full_name", "default_branch"])
+            .where("tenant_id", "=", this.#tenantId)
+            .where("id", "=", source.repositoryId)
+            .where("state", "=", "active")
+            .executeTakeFirst();
+          if (repository === undefined) {
+            throw new ControlPlaneStoreError(
+              "not_found",
+              "Connected source repository was not found",
+            );
+          }
+          repositorySource = {
+            repositoryId: repository.id,
+            fullName: repository.full_name,
+            baseRef: repository.default_branch,
+          };
+        }
         await transaction
           .insertInto("workspaces")
           .values({
@@ -394,9 +447,23 @@ export class ControlPlaneStore {
             tenant_id: this.#tenantId,
             project_id: project.id,
             sandbox_domain_id: sandboxDomain.id,
-            seed_kind: source.kind,
+            seed_kind: source.kind === "github" ? "empty" : source.kind,
           })
           .executeTakeFirstOrThrow();
+        if (repositorySource !== undefined) {
+          await transaction
+            .insertInto("workspace_source_repositories")
+            .values({
+              tenant_id: this.#tenantId,
+              workspace_id: workspaceId,
+              repository_id: repositorySource.repositoryId,
+              base_ref: repositorySource.baseRef,
+              base_sha: null,
+              checkout_state: "provisioning",
+              failure_code: null,
+            })
+            .executeTakeFirstOrThrow();
+        }
         const environment = await transaction
           .insertInto("environment_versions")
           .values({
@@ -423,7 +490,16 @@ export class ControlPlaneStore {
           workspaceId,
           name: project.name,
           createdAt: isoTimestamp(project.created_at),
-          source: workspaceSourceResource(source.kind),
+          source:
+            repositorySource === undefined
+              ? workspaceSourceResource(source.kind)
+              : workspaceSourceResource("empty", {
+                  repositoryId: repositorySource.repositoryId,
+                  fullName: repositorySource.fullName,
+                  baseRef: repositorySource.baseRef,
+                  baseSha: null,
+                  checkoutState: "provisioning",
+                }),
           environment: {
             environmentVersionId: environment.id,
             versionNumber: environment.version_number,
@@ -890,6 +966,36 @@ export class ControlPlaneStore {
             );
           }
 
+          const sourceCheckout = await transaction
+            .selectFrom("workspace_source_repositories")
+            .select("workspace_id")
+            .where("tenant_id", "=", this.#tenantId)
+            .where("workspace_id", "=", workspaceId)
+            .where("checkout_state", "=", "provisioning")
+            .where("updated_at", ">", sql<Date>`now() - interval '15 minutes'`)
+            .executeTakeFirst();
+          if (sourceCheckout !== undefined) {
+            throw new ControlPlaneStoreError(
+              "conflict",
+              "Wait for source repository checkout to finish before deleting the Workspace",
+            );
+          }
+
+          const issueDelivery = await transaction
+            .selectFrom("source_control_issue_jobs")
+            .select("id")
+            .where("tenant_id", "=", this.#tenantId)
+            .where("workspace_id", "=", workspaceId)
+            .where("state", "not in", ["completed", "failed", "cancelled"])
+            .limit(1)
+            .executeTakeFirst();
+          if (issueDelivery !== undefined) {
+            throw new ControlPlaneStoreError(
+              "conflict",
+              "Wait for Issue delivery to finish before deleting the Workspace",
+            );
+          }
+
           const detached = await transaction
             .selectFrom("sessions")
             .select(({ fn }) => fn.countAll<string>().as("count"))
@@ -1287,6 +1393,16 @@ export class ControlPlaneStore {
           .onRef("workspace.tenant_id", "=", "session_row.tenant_id")
           .onRef("workspace.id", "=", "session_row.workspace_id"),
       )
+      .leftJoin("workspace_source_repositories as source_repository", (join) =>
+        join
+          .onRef("source_repository.tenant_id", "=", "workspace.tenant_id")
+          .onRef("source_repository.workspace_id", "=", "workspace.id"),
+      )
+      .leftJoin("source_control_repositories as connected_repository", (join) =>
+        join
+          .onRef("connected_repository.tenant_id", "=", "source_repository.tenant_id")
+          .onRef("connected_repository.id", "=", "source_repository.repository_id"),
+      )
       .select([
         "session_row.id as sessionId",
         "session_row.session_kind as sessionKind",
@@ -1307,6 +1423,11 @@ export class ControlPlaneStore {
         "project.created_at as projectCreatedAt",
         "workspace.deleted_at as workspaceDeletedAt",
         "workspace.seed_kind as workspaceSeedKind",
+        "source_repository.repository_id as sourceRepositoryId",
+        "source_repository.base_ref as sourceBaseRef",
+        "source_repository.base_sha as sourceBaseSha",
+        "source_repository.checkout_state as sourceCheckoutState",
+        "connected_repository.full_name as sourceRepositoryFullName",
         "session_row.next_event_seq as nextEventSequence",
       ])
       .where("session_row.tenant_id", "=", this.#tenantId)
@@ -1420,7 +1541,13 @@ export class ControlPlaneStore {
         workspaceId: conversation.workspaceId,
         name: conversation.projectName,
         createdAt: isoTimestamp(conversation.projectCreatedAt),
-        source: workspaceSourceResource(conversation.workspaceSeedKind),
+        source: workspaceSourceResource(conversation.workspaceSeedKind, {
+          repositoryId: conversation.sourceRepositoryId,
+          fullName: conversation.sourceRepositoryFullName,
+          baseRef: conversation.sourceBaseRef,
+          baseSha: conversation.sourceBaseSha,
+          checkoutState: conversation.sourceCheckoutState,
+        }),
         environment,
       },
       session: {

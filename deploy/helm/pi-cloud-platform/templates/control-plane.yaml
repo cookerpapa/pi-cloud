@@ -72,6 +72,17 @@ spec:
             - { name: PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE, value: {{ .Values.external.kafka.maximumActiveFactChannelsPerGateway | quote }} }
             - { name: PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE, value: /run/pi-cloud-secrets/worker-event-ingest-token }
             - { name: PI_CLOUD_PREVIEW_ORIGIN_BASE_URL, value: {{ printf "https://preview.%s" .Values.web.ingress.host | quote }} }
+            - { name: PI_CLOUD_PUBLIC_ORIGIN_BASE_URL, value: {{ .Values.controlPlane.publicOriginBaseUrl | quote }} }
+            - { name: NODE_USE_ENV_PROXY, value: "1" }
+            - { name: HTTPS_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
+            - { name: HTTP_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
+            {{- if .Values.controlPlane.sourceControl.github.enabled }}
+            - { name: PI_CLOUD_GITHUB_APP_ID, value: {{ .Values.controlPlane.sourceControl.github.appId | quote }} }
+            - { name: PI_CLOUD_GITHUB_APP_SLUG, value: {{ .Values.controlPlane.sourceControl.github.appSlug | quote }} }
+            - { name: PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE, value: /run/pi-cloud-secrets/github-app-private-key.pem }
+            - { name: PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE, value: /run/pi-cloud-secrets/github-webhook-secret }
+            - { name: PI_CLOUD_GITHUB_ISSUE_LABEL, value: {{ .Values.controlPlane.sourceControl.github.issueLabel | quote }} }
+            {{- end }}
             - { name: PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-enrollment-token }
             - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-management-token }
             - { name: PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE, value: /run/pi-cloud-secrets/model-credential-master-key }

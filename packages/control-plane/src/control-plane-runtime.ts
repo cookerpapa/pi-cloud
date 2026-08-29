@@ -230,6 +230,9 @@ export async function createControlPlaneRuntime(
       ...(options.acceptedFactIngestGateway === undefined
         ? {}
         : { acceptedFactIngestGateway: options.acceptedFactIngestGateway }),
+      ...(options.sourceControlService === undefined
+        ? {}
+        : { sourceControlService: options.sourceControlService }),
       eventRuntime: {
         ...(options.eventRuntime ?? {}),
         eventHub,

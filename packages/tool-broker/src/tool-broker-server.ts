@@ -12,6 +12,8 @@ import {
   parseSupervisorManagementRequest,
   parseToolSandboxOperationRequest,
   parseSandboxPreviewRequest,
+  parseSourceControlWorkspaceCheckoutRequest,
+  parseSourceControlWorkspacePublishRequest,
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
   type InternalServiceError,
   type SupervisorManagementResponse,
@@ -28,6 +30,7 @@ import {
   TOOL_BROKER_OPERATION_PATH,
   TOOL_BROKER_READY_PATH,
   TOOL_BROKER_SERVICE_PATH,
+  TOOL_BROKER_SOURCE_CONTROL_PATH,
 } from "./tool-broker-client.ts";
 import { ToolBrokerError } from "./sandbox-provider.ts";
 import { ToolBrokerOwnerRedirectError, type ToolBroker } from "./tool-broker.ts";
@@ -77,6 +80,8 @@ export type ToolBrokerBackend = Pick<
       | "browseDevelopmentEnvironment"
       | "openDevelopmentEnvironmentTerminal"
       | "preview"
+      | "checkoutSource"
+      | "publishSource"
     >
   >;
 
@@ -570,6 +575,63 @@ export class ToolBrokerServer {
             operation: "materialize_file",
             kind: "sandbox",
             run: () => this.#broker.materializeFile(message),
+          }),
+        );
+      } catch (error: unknown) {
+        await this.#failure(reply, error);
+      }
+    });
+
+    this.#server.post(TOOL_BROKER_SOURCE_CONTROL_PATH, async (request, reply) => {
+      if (!this.#materializerAuthorized(request.headers.authorization)) {
+        await reply.code(401).send({
+          error: {
+            code: "invalid_source_control_credential",
+            message: "Source-control Workspace request is not authorized",
+            retryable: false,
+          },
+        } satisfies InternalServiceError);
+        return;
+      }
+      try {
+        const body = request.body as Record<string, unknown> | undefined;
+        if (body?.type === "source_control.workspace_checkout") {
+          const checkoutSource = this.#broker.checkoutSource;
+          if (checkoutSource === undefined) {
+            throw new ToolBrokerError(
+              "source_control_checkout_unavailable",
+              "Source-control checkout is unavailable",
+              false,
+            );
+          }
+          const message = parseSourceControlWorkspaceCheckoutRequest(body);
+          await reply.code(200).send(
+            await this.#observed({
+              request,
+              spanName: "source_control.checkout",
+              operation: "source_checkout",
+              kind: "sandbox",
+              run: () => checkoutSource.call(this.#broker, message),
+            }),
+          );
+          return;
+        }
+        const publishSource = this.#broker.publishSource;
+        if (publishSource === undefined) {
+          throw new ToolBrokerError(
+            "source_control_publish_unavailable",
+            "Source-control publish is unavailable",
+            false,
+          );
+        }
+        const message = parseSourceControlWorkspacePublishRequest(body);
+        await reply.code(200).send(
+          await this.#observed({
+            request,
+            spanName: "source_control.publish",
+            operation: "source_publish",
+            kind: "sandbox",
+            run: () => publishSource.call(this.#broker, message),
           }),
         );
       } catch (error: unknown) {

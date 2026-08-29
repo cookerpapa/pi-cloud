@@ -24,6 +24,10 @@ x-application-security: &application-security
 
 x-control-plane-runtime-environment: &control-plane-runtime-environment
   NODE_ENV: production
+  NODE_USE_ENV_PROXY: "1"
+  HTTP_PROXY: http://provider-egress-relay:3129
+  HTTPS_PROXY: http://provider-egress-relay:3129
+  NO_PROXY: 127.0.0.1,localhost,postgres,control-plane,tool-broker,kafka-1,kafka-2,kafka-3
   PI_CLOUD_IMAGE_REVISION: ${PI_CLOUD_IMAGE_REVISION:-unknown}
   HOST: 0.0.0.0
   PORT: "3000"
@@ -43,6 +47,12 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE: /run/pi-cloud-secrets/sandbox-materializer-token
   PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: /run/pi-cloud-secrets/workspace-terminal-token
   PI_CLOUD_PREVIEW_ORIGIN_BASE_URL: ${PI_CLOUD_PREVIEW_ORIGIN_BASE_URL:-http://preview.localhost:8080}
+  PI_CLOUD_PUBLIC_ORIGIN_BASE_URL: ${PI_CLOUD_PUBLIC_ORIGIN_BASE_URL:-http://127.0.0.1:8080}
+  PI_CLOUD_GITHUB_APP_ID: ${PI_CLOUD_GITHUB_APP_ID:-}
+  PI_CLOUD_GITHUB_APP_SLUG: ${PI_CLOUD_GITHUB_APP_SLUG:-}
+  PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE: ${PI_CLOUD_GITHUB_APP_ID:+/run/pi-cloud-secrets/github-app-private-key.pem}
+  PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE: ${PI_CLOUD_GITHUB_APP_ID:+/run/pi-cloud-secrets/github-webhook-secret}
+  PI_CLOUD_GITHUB_ISSUE_LABEL: ${PI_CLOUD_GITHUB_ISSUE_LABEL:-picloud}
   PI_CLOUD_SSH_GATEWAY_ENABLED: ${PI_CLOUD_SSH_GATEWAY_ENABLED:-true}
   PI_CLOUD_SSH_ADVERTISED_HOST: ${PI_CLOUD_SSH_ADVERTISED_HOST:-127.0.0.1}
   PI_CLOUD_SSH_ADVERTISED_PORT: ${PI_CLOUD_SSH_PORT:-2222}
@@ -116,6 +126,14 @@ x-control-plane-runtime-secrets: &control-plane-runtime-secrets
   - type: bind
     source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/metrics-token
     target: /run/pi-cloud-secrets/metrics-token
+    read_only: true
+  - type: bind
+    source: ${PI_CLOUD_GITHUB_APP_PRIVATE_KEY_PATH:-/dev/null}
+    target: /run/pi-cloud-secrets/github-app-private-key.pem
+    read_only: true
+  - type: bind
+    source: ${PI_CLOUD_GITHUB_WEBHOOK_SECRET_PATH:-/dev/null}
+    target: /run/pi-cloud-secrets/github-webhook-secret
     read_only: true
 
 x-bootstrap-secrets: &bootstrap-secrets
@@ -291,6 +309,8 @@ services:
         condition: service_healthy
       kafka-3:
         condition: service_healthy
+      provider-egress-relay:
+        condition: service_healthy
     environment: *control-plane-runtime-environment
     user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
     volumes: *control-plane-runtime-secrets
@@ -301,6 +321,7 @@ services:
       - sandbox-control
       - observability
       - event-log
+      - model-egress
     healthcheck:
       test:
         [
@@ -420,7 +441,7 @@ services:
     environment:
       PI_CLOUD_PROVIDER_RELAY_MODE: host
       PI_CLOUD_PROVIDER_RELAY_SOCKET: /run/pi-cloud-provider-relay/provider-egress.sock
-      PI_CLOUD_PROVIDER_RELAY_ALLOWED_HOSTS: api.deepseek.com
+      PI_CLOUD_PROVIDER_RELAY_ALLOWED_HOSTS: api.deepseek.com,api.github.com,github.com
       PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: ${HTTPS_PROXY:-}
     volumes:
       - provider-relay:/run/pi-cloud-provider-relay
@@ -665,9 +686,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      provider-egress-relay:
+        condition: service_healthy
     command: [/app/packages/tool-broker/src/workspace-volume-gateway-main.ts]
     environment:
       NODE_ENV: production
+      HTTP_PROXY: http://provider-egress-relay:3129
+      HTTPS_PROXY: http://provider-egress-relay:3129
+      NO_PROXY: 127.0.0.1,localhost,postgres,tool-broker
       DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
       PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_HOST: 0.0.0.0
       PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_PORT: "4500"
@@ -699,6 +725,7 @@ services:
       - sandbox-control
       - database
       - observability
+      - model-egress
     healthcheck:
       test:
         [

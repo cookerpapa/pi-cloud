@@ -62,6 +62,9 @@ import {
   type DevelopmentEnvironmentResource,
   type DevelopmentEnvironmentDirectoryResource,
   type SshAccessTicketResource,
+  type SourceControlConfigurationResource,
+  type SourceControlInstallLinkResource,
+  type SourceControlIssueJobListResource,
 } from "@pi-cloud/protocol";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ControlPlaneStoreFactory } from "./control-plane-store-factory.ts";
@@ -76,6 +79,7 @@ import { TurnSteeringService } from "./turn-steering-service.ts";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
+import { SourceControlService } from "./source-control-service.ts";
 
 @Controller("v1")
 export class ControlPlaneController {
@@ -101,6 +105,7 @@ export class ControlPlaneController {
     private readonly developmentEnvironments: DevelopmentEnvironmentService,
     @Inject(SshAccessTicketService)
     private readonly sshAccessTickets: SshAccessTicketService,
+    @Inject(SourceControlService) private readonly sourceControl: SourceControlService,
   ) {}
 
   @Post("auth/register")
@@ -202,7 +207,86 @@ export class ControlPlaneController {
   ): Promise<ProjectResource> {
     const request = parseCreateProjectRequest(body);
     const identity = this.tenantRequestContext.requireMutation(httpRequest);
+    if (request.source?.kind === "github") {
+      return this.sourceControl.createRepositoryProject(
+        identity,
+        this.controlPlaneStores.forIdentity(identity),
+        { ...request, source: request.source },
+      );
+    }
     return this.controlPlaneStores.forIdentity(identity).createProject(request);
+  }
+
+  @Get("source-control")
+  async sourceControlConfiguration(
+    @Req() request: FastifyRequest,
+  ): Promise<SourceControlConfigurationResource> {
+    return this.sourceControl.configuration(this.tenantRequestContext.resolve(request));
+  }
+
+  @Post("source-control/github/installations")
+  async beginGitHubInstallation(
+    @Req() request: FastifyRequest,
+  ): Promise<SourceControlInstallLinkResource> {
+    return this.sourceControl.beginGitHubInstall(
+      this.tenantRequestContext.requireMutation(request),
+    );
+  }
+
+  @Get("source-control/github/callback")
+  async completeGitHubInstallation(
+    @Req() request: FastifyRequest,
+    @Query("state") state: unknown,
+    @Query("installation_id") installationId: unknown,
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    if (typeof state !== "string" || typeof installationId !== "string") {
+      throw new TypeError("GitHub installation callback is invalid");
+    }
+    await this.sourceControl.completeGitHubInstall(
+      this.tenantRequestContext.requireMutation(request),
+      state,
+      installationId,
+    );
+    reply.redirect("/?sourceControl=connected");
+  }
+
+  @Post("source-control/installations/:installationId/refresh")
+  @HttpCode(200)
+  async refreshSourceControlInstallation(
+    @Req() request: FastifyRequest,
+    @Param("installationId") installationIdValue: unknown,
+  ): Promise<SourceControlConfigurationResource> {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    await this.sourceControl.refreshInstallation(
+      identity,
+      parseUuidPathParameter(installationIdValue, "installationId"),
+    );
+    return this.sourceControl.configuration(identity);
+  }
+
+  @Get("source-control/issue-jobs")
+  async sourceControlIssueJobs(
+    @Req() request: FastifyRequest,
+  ): Promise<SourceControlIssueJobListResource> {
+    return this.sourceControl.listIssueJobs(this.tenantRequestContext.resolve(request));
+  }
+
+  @Post("source-control/github/webhook")
+  @HttpCode(202)
+  async githubWebhook(
+    @Req() request: FastifyRequest & { rawBody?: Buffer },
+    @Headers("x-github-delivery") deliveryId: string | undefined,
+    @Headers("x-github-event") eventName: string | undefined,
+    @Headers("x-hub-signature-256") signature: string | undefined,
+  ): Promise<{ accepted: boolean; replayed: boolean }> {
+    if (request.rawBody === undefined) throw new TypeError("GitHub Webhook body is unavailable");
+    return this.sourceControl.acceptGitHubWebhook({
+      deliveryId,
+      eventName,
+      signature,
+      rawBody: request.rawBody,
+    });
   }
 
   @Get("conversations")

@@ -2,6 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { generateKeyPairSync } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Kysely } from "kysely";
@@ -285,6 +286,30 @@ describe.sequential("production bootstrap and configuration", () => {
     expect(runtime).not.toHaveProperty("tenantId");
     expect(runtime).not.toHaveProperty("defaultModelProfileId");
     expect(runtime).not.toHaveProperty("apiToken");
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const githubPrivateKeyPath = join(root, "github-app-private-key.pem");
+    await writeFile(githubPrivateKeyPath, privateKey.export({ type: "pkcs8", format: "pem" }), {
+      mode: 0o600,
+    });
+    const githubRuntime = await loadProductionControlPlaneConfig({
+      ...environment,
+      PI_CLOUD_PUBLIC_ORIGIN_BASE_URL: "https://picloud.example.com",
+      PI_CLOUD_GITHUB_APP_ID: "12345",
+      PI_CLOUD_GITHUB_APP_SLUG: "picloud-test",
+      PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE: githubPrivateKeyPath,
+      PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE: await secret(
+        root,
+        "github-webhook-secret",
+        "github-webhook-secret-with-at-least-32-bytes",
+      ),
+    });
+    expect(githubRuntime.githubApp).toMatchObject({
+      appId: "12345",
+      appSlug: "picloud-test",
+      issueLabel: "picloud",
+      webhookSecret: "github-webhook-secret-with-at-least-32-bytes",
+    });
+    expect(githubRuntime.githubApp?.privateKeyPem).toContain("PRIVATE KEY");
     await expect(loadProductionApiToken(environment)).resolves.toBe(
       `pck_40000000-0000-4000-8000-000000000003.${"a".repeat(43)}`,
     );

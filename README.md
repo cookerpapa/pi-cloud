@@ -11,6 +11,7 @@ shell operations run in CubeSandbox KVM microVMs.
 - multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
+- optional GitHub App repository connection and explicit Issue-to-Run-to-PR automation;
 - elastic Sandboxes or user-owned full-VM Cube environments with root SSH/terminal access;
 - snapshot-first SSE whose visible bytes were acknowledged by Kafka first;
 - horizontally replaceable Pi Workers and Kubernetes/KEDA deployment support.
@@ -105,7 +106,15 @@ After deployment:
    - **Elastic execution** selects/creates a Workspace and chooses a deployment-owned size;
    - **Cloud development machine** selects a running user-owned Cube and a live
      directory from its complete guest filesystem; its GNOME-style folder
-     chooser can create a user-writable directory before selection.
+   chooser can create a user-writable directory before selection.
+
+When the deployment configures a GitHub App, **开发资源 → GitHub** lets a user
+install it on selected repositories. A new elastic Workspace can then start
+from an authorized public or private repository. Adding the configured
+`picloud` label to an Issue, or posting `/picloud solve` as a trusted repository
+collaborator, creates a normal PiCloud Session and Run; a successful change is
+delivered on a job-scoped branch and Pull Request. Installation tokens are
+minted just in time and never enter Cube, Pi context or Kafka.
 
 An elastic Workspace is durable storage, not reserved compute: Cube capacity is
 admitted when a Tool-using Run starts. Creating a cloud development machine is

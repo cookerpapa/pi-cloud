@@ -64,6 +64,15 @@ controlPlane:
     maximumProjects: 10
     maximumSessions: 100
   supervisorIdPrefix: pi-cloud-pi-worker-
+  publicOriginBaseUrl: https://pi-cloud.example.com
+  sourceControl:
+    github:
+      enabled: false
+      appId: ""
+      appSlug: ""
+      issueLabel: picloud
+      privateKeySecretKey: github-app-private-key.pem
+      webhookSecretKey: github-webhook-secret
   resources:
     requests: { cpu: 500m, memory: 1Gi }
     limits: { cpu: "2", memory: 4Gi }

@@ -117,6 +117,35 @@ Existing warm or exclusive Cubes must be recreated to
 pick up a changed list. This grants guest-initiated outbound access only; it
 does not expose Sandbox ports to the private network.
 
+### Optional GitHub App
+
+Register one GitHub App for the PiCloud deployment. Configure its Setup URL as
+`https://<picloud-host>/v1/source-control/github/callback` and Webhook URL as
+`https://<picloud-host>/v1/source-control/github/webhook`. Grant repository
+permissions `Metadata: read`, `Contents: read & write`, `Issues: read & write`
+and `Pull requests: read & write`; subscribe to Issue and Issue-comment events.
+Generate a private key and a high-entropy Webhook secret, then add these
+restart-bound settings to the private runtime `.env`:
+
+| Variable | Meaning |
+| --- | --- |
+| `PI_CLOUD_PUBLIC_ORIGIN_BASE_URL` | public PiCloud origin used in Issue/PR links |
+| `PI_CLOUD_GITHUB_APP_ID` | numeric App ID |
+| `PI_CLOUD_GITHUB_APP_SLUG` | App slug from its public page URL |
+| `PI_CLOUD_GITHUB_APP_PRIVATE_KEY_PATH` | host path to the mode-0600 PEM file |
+| `PI_CLOUD_GITHUB_WEBHOOK_SECRET_PATH` | host path to the mode-0600 Webhook-secret file |
+| `PI_CLOUD_GITHUB_ISSUE_LABEL` | explicit automation label, default `picloud` |
+
+The Compose deployment routes `api.github.com` and `github.com` through the
+same bounded trusted egress relay used by model providers. In Kubernetes,
+enable `controlPlane.sourceControl.github`, place the private-key and Webhook
+secret entries in `global.existingSecret`, and ensure the configured provider
+proxy plus NetworkPolicy allow those two hosts. App installation remains a
+user/organization-owner action in the Web resource page.
+
+GitHub tokens are never valid configuration values: PiCloud mints them from the
+App installation when needed and does not persist them.
+
 ### SSH and optional profiles
 
 | Variable | Default | Meaning |
@@ -190,3 +219,6 @@ Keep database URLs, model encryption key, Worker enrollment/management tokens,
 Tool Broker token, Worker Event Ingest token, Cube API key, SSH host key and
 Kafka TLS/SASL material in the
 generated private files or Kubernetes Secrets. Cube receives none of them.
+When GitHub integration is enabled, the App private key and Webhook secret are
+also deployment Secrets; installation access tokens are generated at runtime
+and must never be copied into configuration.

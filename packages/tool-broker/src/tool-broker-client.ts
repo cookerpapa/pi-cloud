@@ -4,6 +4,8 @@ import {
   parseToolBrokerResponse,
   parseSupervisorManagementResponse,
   parseToolSandboxOperationResponse,
+  parseSourceControlWorkspaceCheckoutResponse,
+  parseSourceControlWorkspacePublishResponse,
   type ToolBrokerRequest,
   type ToolBrokerResponse,
   type ToolBrokerMaterializeFileRequest,
@@ -20,6 +22,10 @@ import {
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
   type ToolSandboxReleaseResponse,
+  type SourceControlWorkspaceCheckoutRequest,
+  type SourceControlWorkspaceCheckoutResponse,
+  type SourceControlWorkspacePublishRequest,
+  type SourceControlWorkspacePublishResponse,
 } from "@pi-cloud/protocol";
 import { activeTraceCarrier } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
@@ -28,6 +34,7 @@ export const TOOL_BROKER_SERVICE_PATH = "/internal/v1/tool-broker";
 export const TOOL_BROKER_OPERATION_PATH = "/internal/v1/tool-operation";
 export const TOOL_BROKER_INVENTORY_PATH = "/internal/v1/sandbox-inventory";
 export const TOOL_BROKER_MATERIALIZER_PATH = "/internal/v1/workspace-materializer";
+export const TOOL_BROKER_SOURCE_CONTROL_PATH = "/internal/v1/source-control";
 export const TOOL_BROKER_LIVE_PATH = "/health/live";
 export const TOOL_BROKER_READY_PATH = "/health/ready";
 
@@ -334,6 +341,48 @@ export class ToolBrokerClient {
     return response;
   }
 
+  async checkoutSource(
+    request: SourceControlWorkspaceCheckoutRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspaceCheckoutResponse> {
+    const response = parseSourceControlWorkspaceCheckoutResponse(
+      await this.#post(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
+    );
+    if (
+      response.requestId !== request.requestId ||
+      response.workspaceId !== request.workspaceId ||
+      response.repositoryId !== request.repositoryId
+    ) {
+      throw new ToolBrokerClientError(
+        "tool_broker_protocol_error",
+        "Source-control checkout response identity did not match",
+        false,
+      );
+    }
+    return response;
+  }
+
+  async publishSource(
+    request: SourceControlWorkspacePublishRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspacePublishResponse> {
+    const response = parseSourceControlWorkspacePublishResponse(
+      await this.#post(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
+    );
+    if (
+      response.requestId !== request.requestId ||
+      response.workspaceId !== request.workspaceId ||
+      response.repositoryId !== request.repositoryId
+    ) {
+      throw new ToolBrokerClientError(
+        "tool_broker_protocol_error",
+        "Source-control publish response identity did not match",
+        false,
+      );
+    }
+    return response;
+  }
+
   async listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]> {
     const requestId = this.#idGenerator();
     const response = await this.#inventory({
@@ -558,6 +607,20 @@ export class ReplicatedToolBrokerClient {
     signal?: AbortSignal,
   ): Promise<ToolBrokerMaterializeFileResponse> {
     return this.#nextReplica().materializeFile(request, signal);
+  }
+
+  checkoutSource(
+    request: SourceControlWorkspaceCheckoutRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspaceCheckoutResponse> {
+    return this.#nextReplica().checkoutSource(request, signal);
+  }
+
+  publishSource(
+    request: SourceControlWorkspacePublishRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspacePublishResponse> {
+    return this.#nextReplica().publishSource(request, signal);
   }
 
   async listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]> {

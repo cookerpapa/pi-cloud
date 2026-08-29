@@ -29,3 +29,6 @@ Volume architecture. Historical experiments remain in Git history.
 - [ ] Add deployment-specific Kafka TLS/SASL/ACL examples.
 - [ ] Validate backup/restore and retention changes with active Runs.
 - [ ] Replace placeholder Alertmanager delivery with the operator's on-call system.
+- [ ] Run live GitHub App installation/private-clone/Issue-to-PR acceptance on
+      a public HTTPS deployment; deterministic tests use a fake GitHub API and
+      local trusted Git remote.

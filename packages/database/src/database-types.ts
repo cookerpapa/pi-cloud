@@ -76,6 +76,124 @@ export type SubagentWorkspaceMode = "none" | "shared_serialized" | "isolated";
 export type SubagentExecutionState =
   "preparing" | "queued" | "running" | "completed" | "failed" | "cancelled" | "unknown";
 export type SubagentSupervisorReason = "need_decision" | "interview_request" | "progress_update";
+export type SourceControlProvider = "github";
+export type SourceControlInstallationState = "active" | "suspended" | "deleted";
+export type SourceControlRepositoryState = "active" | "removed";
+export type SourceControlCheckoutState = "provisioning" | "ready" | "failed";
+export type SourceControlWebhookState =
+  "received" | "ignored" | "accepted" | "completed" | "failed";
+export type SourceControlIssueJobState =
+  | "received"
+  | "provisioning"
+  | "queued"
+  | "running"
+  | "publishing"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface SourceControlInstallationRequestTable {
+  state_sha256: string;
+  tenant_id: string;
+  user_id: string;
+  provider: SourceControlProvider;
+  expires_at: Timestamp;
+  consumed_at: NullableTimestamp;
+  created_at: GeneratedTimestamp;
+}
+
+export interface SourceControlInstallationTable {
+  id: string;
+  tenant_id: string;
+  connected_by_user_id: string;
+  provider: SourceControlProvider;
+  provider_installation_id: string;
+  account_id: string;
+  account_login: string;
+  account_type: "User" | "Organization" | "Enterprise";
+  repository_selection: "all" | "selected";
+  state: SourceControlInstallationState;
+  suspended_at: NullableTimestamp;
+  installed_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+export interface SourceControlRepositoryTable {
+  id: string;
+  tenant_id: string;
+  installation_id: string;
+  provider: SourceControlProvider;
+  provider_repository_id: string;
+  owner: string;
+  name: string;
+  full_name: string;
+  private: boolean;
+  default_branch: string;
+  clone_url: string;
+  state: SourceControlRepositoryState;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+export interface WorkspaceSourceRepositoryTable {
+  tenant_id: string;
+  workspace_id: string;
+  repository_id: string;
+  base_ref: string;
+  base_sha: string | null;
+  checkout_state: SourceControlCheckoutState;
+  failure_code: string | null;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
+export interface SourceControlWebhookDeliveryTable {
+  provider: SourceControlProvider;
+  delivery_id: string;
+  event_name: string;
+  action: string | null;
+  payload_sha256: string;
+  installation_id: string | null;
+  repository_id: string | null;
+  state: SourceControlWebhookState;
+  issue_job_id: string | null;
+  failure_code: string | null;
+  received_at: GeneratedTimestamp;
+  settled_at: NullableTimestamp;
+}
+
+export interface SourceControlIssueJobTable {
+  id: string;
+  tenant_id: string;
+  provider: SourceControlProvider;
+  webhook_delivery_id: string;
+  repository_id: string;
+  issue_number: number;
+  issue_title: string;
+  issue_body: string;
+  issue_url: string;
+  trigger_kind: "label" | "comment";
+  trigger_actor: string;
+  state: SourceControlIssueJobState;
+  project_id: string | null;
+  workspace_id: string | null;
+  session_id: string | null;
+  run_id: string | null;
+  branch_name: string;
+  commit_sha: string | null;
+  pull_request_number: number | null;
+  pull_request_url: string | null;
+  issue_comment_id: string | null;
+  owner_id: string | null;
+  lease_expires_at: NullableTimestamp;
+  attempt_count: GeneratedInteger;
+  failure_code: string | null;
+  failure_message: string | null;
+  available_at: Timestamp;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+  settled_at: NullableTimestamp;
+}
 
 export interface SandboxDomainTable {
   id: string;
@@ -1055,6 +1173,12 @@ export interface CheckpointObjectTable {
 }
 
 export interface Database {
+  source_control_installation_requests: SourceControlInstallationRequestTable;
+  source_control_installations: SourceControlInstallationTable;
+  source_control_repositories: SourceControlRepositoryTable;
+  workspace_source_repositories: WorkspaceSourceRepositoryTable;
+  source_control_webhook_deliveries: SourceControlWebhookDeliveryTable;
+  source_control_issue_jobs: SourceControlIssueJobTable;
   sandbox_domains: SandboxDomainTable;
   tool_broker_instances: ToolBrokerInstanceTable;
   tool_broker_activations: ToolBrokerActivationTable;

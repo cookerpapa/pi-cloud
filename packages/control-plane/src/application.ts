@@ -22,6 +22,7 @@ import type { TerminalTurnProjectionGateway } from "./terminal-turn-projection-g
 import type { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import type { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import type { AcceptedFactIngestGateway } from "./accepted-fact-ingest-gateway.ts";
+import type { SourceControlService } from "./source-control-service.ts";
 
 export type ControlPlaneApplicationOptions = Omit<
   ControlPlaneStoreOptions,
@@ -49,6 +50,7 @@ export type ControlPlaneApplicationOptions = Omit<
   sandboxPreviewGateway?: SandboxPreviewGateway;
   sshAccessTicketService?: SshAccessTicketService;
   acceptedFactIngestGateway?: AcceptedFactIngestGateway;
+  sourceControlService?: SourceControlService;
 };
 
 export async function createControlPlaneApplication(
@@ -85,7 +87,7 @@ export async function createControlPlaneApplication(
       ...(staticRequestIdentity === undefined ? {} : { staticRequestIdentity }),
     }),
     adapter,
-    { logger: false },
+    { logger: false, rawBody: true },
   );
   application.useGlobalFilters(new ApiExceptionFilter());
   await application.init();

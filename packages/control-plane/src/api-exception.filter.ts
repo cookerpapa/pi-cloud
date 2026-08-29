@@ -10,6 +10,7 @@ import { WorkspaceVersionError } from "./workspace-version-service.ts";
 import { WebAuthenticationError } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsError } from "./platform-runtime-settings.ts";
 import { TurnSteeringError } from "./turn-steering-service.ts";
+import { SourceControlServiceError } from "./source-control-service.ts";
 
 type ErrorResponse = {
   status: number;
@@ -42,6 +43,18 @@ export function mappedError(error: unknown): ErrorResponse {
         : error.code === "cube_proxy_configuration_invalid"
           ? 400
           : 503;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
+  if (error instanceof SourceControlServiceError) {
+    const status =
+      error.code === "source_control_authorization_denied" ||
+      error.code === "source_control_webhook_invalid"
+        ? 403
+        : error.code === "source_control_not_found"
+          ? 404
+          : error.code === "source_control_conflict"
+            ? 409
+            : 503;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof PublicTenantRegistrationError) {

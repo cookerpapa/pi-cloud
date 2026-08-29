@@ -50,4 +50,14 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
   mountPath: /run/pi-cloud-secrets/metrics-token
   subPath: metrics-token
   readOnly: true
+{{- if .Values.controlPlane.sourceControl.github.enabled }}
+- name: platform-secrets
+  mountPath: /run/pi-cloud-secrets/github-app-private-key.pem
+  subPath: {{ .Values.controlPlane.sourceControl.github.privateKeySecretKey }}
+  readOnly: true
+- name: platform-secrets
+  mountPath: /run/pi-cloud-secrets/github-webhook-secret
+  subPath: {{ .Values.controlPlane.sourceControl.github.webhookSecretKey }}
+  readOnly: true
+{{- end }}
 {{- end -}}

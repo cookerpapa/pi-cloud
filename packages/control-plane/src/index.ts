@@ -314,3 +314,16 @@ export {
   WorkspaceTerminalGateway,
   type WorkspaceTerminalGatewayOptions,
 } from "./workspace-terminal-gateway.ts";
+export {
+  GitHubAppClient,
+  GitHubAppClientError,
+  type GitHubAppInstallation,
+  type GitHubRepository,
+  type GitHubInstallationToken,
+} from "./github-app-client.ts";
+export {
+  SourceControlService,
+  SourceControlServiceError,
+  type GitHubAppRuntime,
+} from "./source-control-service.ts";
+export { SourceControlIssueCoordinator } from "./source-control-issue-coordinator.ts";

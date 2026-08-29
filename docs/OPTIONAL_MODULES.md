@@ -25,7 +25,7 @@ npm run production:up:observability
 
 The following unfinished product workflows are not part of either core or the
 advanced Web product: structured Diff, Artifact download,
-test-result navigation, Workspace rollback, repository-import/GitHub delivery, and
+test-result navigation, Workspace rollback, generic repository import, and
 organization, RBAC or audit-search pages. Conversation forks, recursive tree
 deletion and conversation-tail pruning are current core features; none of them
 pretends to roll back Workspace bytes. Reintroducing a removed workflow

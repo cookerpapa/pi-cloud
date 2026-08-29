@@ -74,6 +74,14 @@ CubeAPI/envd/model credentials.
 Terminal output is intentionally not a durable conversation record; Workspace
 files and platform audit metadata remain authoritative.
 
+GitHub App installation tokens are repository-scoped and minted just in time.
+They cross only the authenticated Control Plane → Tool Broker → Workspace
+Volume Gateway path and are supplied to one trusted Git child through its
+environment. They are never written to Workspace bytes, Cube, SessionStorage,
+Kafka, command arguments or logs. GitHub Webhooks are accepted only after
+constant-time HMAC-SHA256 verification; their delivery ID is persisted before
+an Issue can create model work.
+
 ## Not guaranteed
 
 - exactly-once arbitrary shell or external side effects;

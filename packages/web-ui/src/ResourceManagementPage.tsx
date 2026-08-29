@@ -5,6 +5,8 @@ import type {
   DevelopmentEnvironmentProfileKey,
   DevelopmentEnvironmentResource,
   WorkspaceSummaryResource,
+  SourceControlConfigurationResource,
+  SourceControlIssueJobResource,
 } from "@pi-cloud/protocol";
 import { newIdempotencyKey, PiCloudApi, PiCloudApiError } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
@@ -59,11 +61,15 @@ export function ResourceManagementPage({
   workspaces: readonly WorkspaceSummaryResource[];
 }) {
   const { t } = useI18n();
-  const [tab, setTab] = useState<"workspaces" | "environments">("workspaces");
+  const [tab, setTab] = useState<"workspaces" | "environments" | "source-control">("workspaces");
   const [profileKey, setProfileKey] = useState<DevelopmentEnvironmentProfileKey>("standard");
   const [machineName, setMachineName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sourceControl, setSourceControl] = useState<SourceControlConfigurationResource | null>(
+    null,
+  );
+  const [issueJobs, setIssueJobs] = useState<readonly SourceControlIssueJobResource[]>([]);
   const liveEnvironments = environments;
   const elasticWorkspaces = workspaces;
   const selectedProfile = profiles.find((candidate) => candidate.key === profileKey) ?? profiles[0];
@@ -82,6 +88,45 @@ export function ResourceManagementPage({
       if (timer !== undefined) clearTimeout(timer);
     };
   }, [environments, onRefresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([api.getSourceControl(), api.listSourceControlIssueJobs()])
+      .then(([configuration, jobs]) => {
+        if (cancelled) return;
+        setSourceControl(configuration);
+        setIssueJobs(jobs.jobs);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled)
+          setError(reason instanceof Error ? reason.message : t("resource.operationFailed"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, t]);
+
+  useEffect(() => {
+    if (
+      tab !== "source-control" ||
+      !issueJobs.some((job) => !["completed", "failed", "cancelled"].includes(job.state))
+    ) {
+      return;
+    }
+    let cancelled = false;
+    const timer = setInterval(() => {
+      void api
+        .listSourceControlIssueJobs()
+        .then((jobs) => {
+          if (!cancelled) setIssueJobs(jobs.jobs);
+        })
+        .catch(() => undefined);
+    }, 2_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [api, issueJobs, tab]);
 
   async function mutate(action: () => Promise<unknown>): Promise<void> {
     if (busy) return;
@@ -137,6 +182,13 @@ export function ResourceManagementPage({
             type="button"
           >
             {t("resource.exclusive")} <span>{String(liveEnvironments.length)}</span>
+          </button>
+          <button
+            className={tab === "source-control" ? "active" : ""}
+            onClick={() => setTab("source-control")}
+            type="button"
+          >
+            GitHub <span>{String(sourceControl?.installations.length ?? 0)}</span>
           </button>
         </nav>
         {error === null ? null : <div className="product-form-error">{error}</div>}
@@ -222,6 +274,114 @@ export function ResourceManagementPage({
                     </article>
                   );
                 })}
+              </div>
+            )}
+          </section>
+        ) : tab === "source-control" ? (
+          <section className="product-resource-section product-source-control-section">
+            <div className="product-resource-provisioner">
+              <header>
+                <h2>{t("sourceControl.title")}</h2>
+                <span>{t("sourceControl.githubApp")}</span>
+              </header>
+              <div className="product-resource-actions">
+                <button
+                  className="product-primary-button"
+                  disabled={busy || sourceControl?.githubConfigured !== true}
+                  onClick={() => {
+                    void mutate(async () => {
+                      const link = await api.beginGitHubInstallation();
+                      window.location.assign(link.url);
+                    });
+                  }}
+                  type="button"
+                >
+                  {t("sourceControl.connect")}
+                </button>
+                {sourceControl?.githubConfigured === false ? (
+                  <small>{t("sourceControl.notConfigured")}</small>
+                ) : null}
+              </div>
+            </div>
+            {(sourceControl?.installations.length ?? 0) === 0 ? (
+              <div className="product-resource-empty">{t("sourceControl.empty")}</div>
+            ) : (
+              <div className="product-resource-grid">
+                {sourceControl!.installations.map((installation) => (
+                  <article className="product-resource-card" key={installation.installationId}>
+                    <header>
+                      <div className="product-resource-card-title">
+                        <span className="product-resource-kind">GH</span>
+                        <div>
+                          <h3>{installation.accountLogin}</h3>
+                          <span>{installation.accountType}</span>
+                        </div>
+                      </div>
+                      <span
+                        className={`product-resource-status${installation.state === "active" ? " active" : ""}`}
+                      >
+                        {installation.state}
+                      </span>
+                    </header>
+                    <div className="product-resource-links">
+                      <span className="product-resource-links-label">
+                        {t("sourceControl.repositories", {
+                          count: installation.repositories.filter(
+                            (repository) => repository.state === "active",
+                          ).length,
+                        })}
+                      </span>
+                      {installation.repositories
+                        .filter((repository) => repository.state === "active")
+                        .map((repository) => (
+                          <span key={repository.repositoryId}>
+                            {repository.fullName}
+                            {repository.private ? " · private" : ""}
+                          </span>
+                        ))}
+                    </div>
+                    <div className="product-resource-actions">
+                      <button
+                        disabled={busy}
+                        onClick={() => {
+                          void mutate(async () => {
+                            setSourceControl(
+                              await api.refreshSourceControlInstallation(
+                                installation.installationId,
+                              ),
+                            );
+                          });
+                        }}
+                        type="button"
+                      >
+                        {t("sourceControl.refresh")}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+            {issueJobs.length === 0 ? null : (
+              <div className="product-resource-provisioner product-issue-jobs">
+                <header>
+                  <h2>{t("sourceControl.issueJobs")}</h2>
+                </header>
+                <div className="product-resource-links">
+                  {issueJobs.map((job) => (
+                    <span key={job.jobId}>
+                      {job.repositoryFullName} #{String(job.issueNumber)} · {job.state}
+                      {job.pullRequestUrl === undefined ? null : (
+                        <>
+                          {" "}
+                          ·{" "}
+                          <a href={job.pullRequestUrl} rel="noreferrer" target="_blank">
+                            PR
+                          </a>
+                        </>
+                      )}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
           </section>

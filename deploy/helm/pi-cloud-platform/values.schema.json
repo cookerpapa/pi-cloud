@@ -467,7 +467,35 @@
         "platformModelSourceTenantId": { "$ref": "#/$defs/uuid" },
         "platformOperatorTenantId": { "$ref": "#/$defs/uuid" },
         "publicRegistration": { "$ref": "#/$defs/publicRegistration" },
-        "supervisorIdPrefix": { "type": "string", "minLength": 1, "maxLength": 48 }
+        "supervisorIdPrefix": { "type": "string", "minLength": 1, "maxLength": 48 },
+        "publicOriginBaseUrl": { "$ref": "#/$defs/httpUrl" },
+        "sourceControl": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["github"],
+          "properties": {
+            "github": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "enabled",
+                "appId",
+                "appSlug",
+                "issueLabel",
+                "privateKeySecretKey",
+                "webhookSecretKey"
+              ],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "appId": { "type": "string", "maxLength": 31 },
+                "appSlug": { "type": "string", "maxLength": 100 },
+                "issueLabel": { "type": "string", "minLength": 1, "maxLength": 50 },
+                "privateKeySecretKey": { "$ref": "#/$defs/secretKey" },
+                "webhookSecretKey": { "$ref": "#/$defs/secretKey" }
+              }
+            }
+          }
+        }
       }
     },
     "publicRegistration": {
