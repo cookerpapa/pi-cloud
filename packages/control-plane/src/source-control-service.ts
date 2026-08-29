@@ -1513,7 +1513,7 @@ export class SourceControlService {
     const broker = this.#toolBroker(
       await this.#workspaceToolBroker(identity.tenantId, workspaceId),
     );
-    await broker.authorizeSourceCredential({
+    return broker.authorizeSourceCredential({
       sourceControlProtocolVersion: 1,
       type: "source_control.workspace_credential_authorize",
       requestId: this.#idGenerator(),
@@ -1525,18 +1525,6 @@ export class SourceControlService {
       verificationCloneUrl: context.verificationCloneUrl,
       credentialMountPath: context.credentialMountPath,
       accessToken,
-    });
-    return broker.preflightSourceCredential({
-      sourceControlProtocolVersion: 1,
-      type: "source_control.workspace_credential_preflight",
-      requestId: this.#idGenerator(),
-      tenantId: identity.tenantId,
-      workspaceId,
-      repositoryId: context.repository.id,
-      provider: context.repository.provider,
-      userCloneUrl: context.userCloneUrl,
-      verificationCloneUrl: context.verificationCloneUrl,
-      credentialMountPath: context.credentialMountPath,
     });
   }
 
@@ -1690,18 +1678,12 @@ export class SourceControlService {
         "GitLab repository authorization identity did not match the claimant",
       );
     }
-    const authorized = await this.authorizeIssueGitCredential(
+    await this.authorizeIssueGitCredential(
       identity,
       request.issue_job_id,
       request.workspace_id,
       accessToken,
     );
-    if (!authorized.authorized) {
-      throw new SourceControlServiceError(
-        "source_control_authorization_denied",
-        "GitLab repository credential could not access the selected project",
-      );
-    }
     return { workspaceId: request.workspace_id };
   }
 
