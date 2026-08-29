@@ -319,34 +319,6 @@ export class PiCloudApi {
     );
   }
 
-  async connectGitLabProject(input: {
-    baseUrl: string;
-    project: string;
-    accessToken: string;
-  }): Promise<SourceControlConfigurationResource> {
-    return parseSourceControlConfigurationResource(
-      await request(
-        this.#fetch,
-        "/v1/source-control/gitlab/projects",
-        jsonRequest(input),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async refreshSourceControlInstallation(
-    installationId: string,
-  ): Promise<SourceControlConfigurationResource> {
-    return parseSourceControlConfigurationResource(
-      await request(
-        this.#fetch,
-        `/v1/source-control/installations/${encodeURIComponent(installationId)}/refresh`,
-        jsonRequest({}),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
   async listSourceControlIssueJobs(): Promise<SourceControlIssueJobListResource> {
     return parseSourceControlIssueJobListResource(
       await request(

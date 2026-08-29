@@ -32,9 +32,10 @@ local lab; a production GitLab URL should already be reachable from Cube.
 
 Open `http://gitlab.localhost:8929` and sign in as `root`. Create a public or
 private project, then create a project access token with Maintainer role and
-the `api`, `read_repository` and `write_repository` scopes. In PiCloud, open
-**开发资源 → GitLab** and connect the project using that URL, project path and
-token.
+the `api`, `read_repository` and `write_repository` scopes. Connect it through
+`POST /v1/source-control/gitlab/projects` under the intended PiCloud tenant.
+The resource page intentionally has no project-token form; it only shows Issue
+tasks created by configured Webhooks.
 
 The connector registers a signed Issue/Note Webhook automatically. Add the
 `picloud` label to an Issue or post `/picloud solve` as a Developer or higher;

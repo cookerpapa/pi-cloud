@@ -108,8 +108,9 @@ After deployment:
      directory from its complete guest filesystem; its GNOME-style folder
    chooser can create a user-writable directory before selection.
 
-Optional **开发资源 → GitLab** connects one public or private project with a project
-access token scoped to that repository. PiCloud encrypts the connection copy,
+The optional deployment-controlled GitLab adapter connects one public or
+private project through the source-control API with a project access token
+scoped to that repository. PiCloud encrypts the connection copy,
 then creates a normal `.git` checkout whose authenticated `origin` is visible
 inside the selected Workspace. From that point Git is user/Agent-managed; the
 platform does not maintain a hidden baseline, inspect file changes, generate a

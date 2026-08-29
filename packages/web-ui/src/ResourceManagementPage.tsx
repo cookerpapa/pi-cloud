@@ -4,9 +4,8 @@ import type {
   DevelopmentEnvironmentListResource,
   DevelopmentEnvironmentProfileKey,
   DevelopmentEnvironmentResource,
-  WorkspaceSummaryResource,
-  SourceControlConfigurationResource,
   SourceControlIssueJobResource,
+  WorkspaceSummaryResource,
 } from "@pi-cloud/protocol";
 import { newIdempotencyKey, PiCloudApi, PiCloudApiError } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
@@ -67,14 +66,8 @@ export function ResourceManagementPage({
   const [tab, setTab] = useState<"workspaces" | "environments" | "source-control">(initialTab);
   const [profileKey, setProfileKey] = useState<DevelopmentEnvironmentProfileKey>("standard");
   const [machineName, setMachineName] = useState("");
-  const [gitlabBaseUrl, setGitlabBaseUrl] = useState("http://gitlab.localhost:8929");
-  const [gitlabProject, setGitlabProject] = useState("");
-  const [gitlabToken, setGitlabToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sourceControl, setSourceControl] = useState<SourceControlConfigurationResource | null>(
-    null,
-  );
   const [issueJobs, setIssueJobs] = useState<readonly SourceControlIssueJobResource[]>([]);
   const [issueStartJobId, setIssueStartJobId] = useState<string | null>(null);
   const [issueExecutionMode, setIssueExecutionMode] = useState<
@@ -111,10 +104,10 @@ export function ResourceManagementPage({
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([api.getSourceControl(), api.listSourceControlIssueJobs()])
-      .then(([configuration, jobs]) => {
+    void api
+      .listSourceControlIssueJobs()
+      .then((jobs) => {
         if (cancelled) return;
-        setSourceControl(configuration);
         setIssueJobs(jobs.jobs);
       })
       .catch((reason: unknown) => {
@@ -203,20 +196,15 @@ export function ResourceManagementPage({
           >
             {t("resource.exclusive")} <span>{String(liveEnvironments.length)}</span>
           </button>
-          <button
-            className={tab === "source-control" ? "active" : ""}
-            onClick={() => setTab("source-control")}
-            type="button"
-          >
-            GitLab{" "}
-            <span>
-              {String(
-                sourceControl?.installations.filter(
-                  (installation) => installation.provider === "gitlab",
-                ).length ?? 0,
-              )}
-            </span>
-          </button>
+          {issueJobs.length === 0 && initialTab !== "source-control" ? null : (
+            <button
+              className={tab === "source-control" ? "active" : ""}
+              onClick={() => setTab("source-control")}
+              type="button"
+            >
+              {t("sourceControl.issueJobs")} <span>{String(issueJobs.length)}</span>
+            </button>
+          )}
         </nav>
         {error === null ? null : <div className="product-form-error">{error}</div>}
 
@@ -306,130 +294,9 @@ export function ResourceManagementPage({
           </section>
         ) : tab === "source-control" ? (
           <section className="product-resource-section product-source-control-section">
-            <div className="product-resource-provisioner">
-              <header>
-                <h2>{t("sourceControl.title")}</h2>
-                <span>{t("sourceControl.gitlabProject")}</span>
-              </header>
-              <form
-                className="product-resource-create"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void mutate(async () => {
-                    setSourceControl(
-                      await api.connectGitLabProject({
-                        baseUrl: gitlabBaseUrl,
-                        project: gitlabProject,
-                        accessToken: gitlabToken,
-                      }),
-                    );
-                    setGitlabToken("");
-                  });
-                }}
-              >
-                <label>
-                  <span>{t("sourceControl.gitlabUrl")}</span>
-                  <input
-                    onChange={(event) => setGitlabBaseUrl(event.target.value)}
-                    required
-                    type="url"
-                    value={gitlabBaseUrl}
-                  />
-                </label>
-                <label>
-                  <span>{t("sourceControl.gitlabProjectPath")}</span>
-                  <input
-                    onChange={(event) => setGitlabProject(event.target.value)}
-                    placeholder="group/project"
-                    required
-                    value={gitlabProject}
-                  />
-                </label>
-                <label>
-                  <span>{t("sourceControl.gitlabToken")}</span>
-                  <input
-                    autoComplete="off"
-                    onChange={(event) => setGitlabToken(event.target.value)}
-                    required
-                    type="password"
-                    value={gitlabToken}
-                  />
-                </label>
-                <button
-                  className="product-primary-button"
-                  disabled={busy || sourceControl?.gitlabConfigured !== true}
-                  type="submit"
-                >
-                  {t("sourceControl.connect")}
-                </button>
-                {sourceControl?.gitlabConfigured === false ? (
-                  <small>{t("sourceControl.notConfigured")}</small>
-                ) : null}
-              </form>
-            </div>
-            {(sourceControl?.installations.filter(
-              (installation) => installation.provider === "gitlab",
-            ).length ?? 0) === 0 ? (
+            {issueJobs.length === 0 ? (
               <div className="product-resource-empty">{t("sourceControl.empty")}</div>
             ) : (
-              <div className="product-resource-grid">
-                {sourceControl!.installations
-                  .filter((installation) => installation.provider === "gitlab")
-                  .map((installation) => (
-                    <article className="product-resource-card" key={installation.installationId}>
-                      <header>
-                        <div className="product-resource-card-title">
-                          <span className="product-resource-kind">GL</span>
-                          <div>
-                            <h3>{installation.accountLogin}</h3>
-                            <span>{installation.accountType}</span>
-                          </div>
-                        </div>
-                        <span
-                          className={`product-resource-status${installation.state === "active" ? " active" : ""}`}
-                        >
-                          {installation.state}
-                        </span>
-                      </header>
-                      <div className="product-resource-links">
-                        <span className="product-resource-links-label">
-                          {t("sourceControl.repositories", {
-                            count: installation.repositories.filter(
-                              (repository) => repository.state === "active",
-                            ).length,
-                          })}
-                        </span>
-                        {installation.repositories
-                          .filter((repository) => repository.state === "active")
-                          .map((repository) => (
-                            <span key={repository.repositoryId}>
-                              {repository.fullName}
-                              {repository.private ? " · private" : ""}
-                            </span>
-                          ))}
-                      </div>
-                      <div className="product-resource-actions">
-                        <button
-                          disabled={busy}
-                          onClick={() => {
-                            void mutate(async () => {
-                              setSourceControl(
-                                await api.refreshSourceControlInstallation(
-                                  installation.installationId,
-                                ),
-                              );
-                            });
-                          }}
-                          type="button"
-                        >
-                          {t("sourceControl.refresh")}
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-              </div>
-            )}
-            {issueJobs.length === 0 ? null : (
               <div className="product-resource-provisioner product-issue-jobs">
                 <header>
                   <h2>{t("sourceControl.issueJobs")}</h2>

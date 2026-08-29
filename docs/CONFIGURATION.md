@@ -122,12 +122,14 @@ does not expose Sandbox ports to the private network.
 The default quick start requires no GitLab. To enable the project adapter,
 start the optional acceptance instance with `npm run gitlab:up`, create a
 project access token with Maintainer role and `api`, `read_repository`,
-`write_repository` scopes, then connect the project from **开发资源 → GitLab**.
-PiCloud registers the signed project Webhook.
+`write_repository` scopes, then connect the project through
+`POST /v1/source-control/gitlab/projects`. This is a deployment/API operation,
+not a resource-page credential form. PiCloud registers the signed project
+Webhook; the Web UI only surfaces Issue tasks after they exist.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `PI_CLOUD_GITLAB_ENABLED` | `false` | expose GitLab project connections |
+| `PI_CLOUD_GITLAB_ENABLED` | `false` | enable the GitLab provider API and Issue workflow |
 | `PI_CLOUD_GITLAB_WEBHOOK_URL` | local host-gateway endpoint | URL registered on connected projects |
 | `PI_CLOUD_GITLAB_INTERNAL_BASE_URL` | empty | optional trusted-plane API/Git origin for split-horizon networking |
 | `PI_CLOUD_GITLAB_WORKSPACE_BASE_URL` | empty | optional Git origin reachable from Cube; defaults to the public provider origin |

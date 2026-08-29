@@ -164,6 +164,29 @@ describe("product chat experience", () => {
     expect(markup).not.toContain("新建 Workspace");
     expect(markup).toContain("云端开发机");
     expect(markup).toContain("> 对话</button>");
+    expect(markup).not.toContain("GitLab 项目接入");
+    expect(markup).not.toContain("项目 Access Token");
+    expect(markup).not.toContain(">GitLab ");
+  });
+
+  it("keeps deployment GitLab credentials out of the Issue task surface", () => {
+    const markup = renderToStaticMarkup(
+      <ResourceManagementPage
+        api={new PiCloudApi(async () => new Response(null, { status: 500 }))}
+        conversations={[]}
+        environments={[]}
+        initialTab="source-control"
+        onClose={() => undefined}
+        onRefresh={async () => undefined}
+        profiles={[]}
+        workspaces={[]}
+      />,
+    );
+    expect(markup).toContain("暂无待处理的 Issue 任务");
+    expect(markup).not.toContain("GitLab 地址");
+    expect(markup).not.toContain("项目路径或 ID");
+    expect(markup).not.toContain("项目 Access Token");
+    expect(markup).not.toContain("连接项目");
   });
 
   it("presents an exclusive environment directory as an Explorer-style persisted root", () => {

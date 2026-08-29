@@ -19,8 +19,9 @@ the two authentication protocols are not interchangeable.
 ## Decision
 
 PiCloud owns a provider-neutral source-control domain. It ships a GitHub App
-adapter and a self-managed GitLab project adapter; the Web product currently
-exposes GitLab while the GitHub adapter remains deployment/API-only.
+adapter and a self-managed GitLab project adapter. Provider connection is a
+deployment/API concern; the Web product exposes only GitLab Issue tasks,
+claims and execution selection after a configured Webhook creates them.
 
 ```text
 Browser -> GitHub App install -> PiCloud installation/repository grants
