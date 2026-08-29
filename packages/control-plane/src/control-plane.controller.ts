@@ -292,7 +292,7 @@ export class ControlPlaneController {
       state,
       installationId,
     );
-    reply.redirect("/?sourceControl=connected");
+    reply.code(303).header("location", "/?sourceControl=connected").send();
   }
 
   @Post("source-control/installations/:installationId/refresh")
@@ -401,7 +401,10 @@ export class ControlPlaneController {
     @Res() reply: FastifyReply,
   ): Promise<void> {
     await this.sourceControl.completeIssueGitAuthorization(request.url);
-    reply.redirect("/?resource=source-control&gitAuthorization=connected");
+    reply
+      .code(303)
+      .header("location", "/?resource=source-control&gitAuthorization=connected")
+      .send();
   }
 
   @Post("source-control/github/webhook")
