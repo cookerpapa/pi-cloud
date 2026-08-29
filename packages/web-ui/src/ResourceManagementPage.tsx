@@ -313,7 +313,9 @@ export function ResourceManagementPage({
                           </strong>
                           <span>{job.issueTitle}</span>
                         </div>
-                        <span className="product-resource-status">{job.state}</span>
+                        <span className="product-resource-status">
+                          {t(`sourceControl.state.${job.state}` as const)}
+                        </span>
                       </header>
                       <div className="product-issue-claims">
                         <small>{t("sourceControl.claims")}</small>

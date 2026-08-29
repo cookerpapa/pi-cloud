@@ -1,41 +1,29 @@
 {
   "accepted": true,
-  "piCloudRevision": "63ee2892526b2baf675a1622aa87d5113eb97ae8",
-  "schemaCleanupRevision": "ca0ba41",
-  "checkedAt": "2026-08-29T10:40:00.000Z",
+  "piCloudRevision": "6603b5c",
+  "checkedAt": "2026-08-29T13:05:00.000Z",
   "topology": "one-host Compose plus GitLab CE 19.3.0 and CubeSandbox KVM",
   "model": "deepseek/deepseek-v4-flash",
-  "workspaceConversation": {
+  "issue": {
+    "number": 2,
+    "state": "opened",
+    "claimedThroughGitLabOidc": true
+  },
+  "execution": {
     "completed": true,
-    "ordinaryGitDirectoryVisible": true,
-    "agentCredentialAvailable": true,
-    "agentCommit": true,
-    "agentPush": true,
-    "cleanWorktree": true,
-    "remoteHeadMatched": true,
-    "inputTokens": 2792,
-    "outputTokens": 786,
-    "cacheReadTokens": 54272
+    "selectedExistingWorkspace": true,
+    "customConversationTitlePreserved": true,
+    "inputTokens": 3274,
+    "outputTokens": 1471,
+    "cacheReadTokens": 100736,
+    "testsPassed": 2
   },
-  "issueWorkflow": {
-    "completed": true,
-    "agentCommit": true,
-    "agentPush": true,
-    "platformCreatedMergeRequestAfterRun": true,
-    "mergeRequestsCreated": 1,
-    "cleanWorktree": true,
-    "remoteHeadMatched": true,
-    "inputTokens": 1429,
-    "outputTokens": 988,
-    "cacheReadTokens": 58368
+  "delivery": {
+    "uncommittedWorktreePaths": 4,
+    "remoteTaskBranches": 0,
+    "mergeRequests": 0,
+    "platformIssueCompletionNotes": 0,
+    "issueStateChanged": false
   },
-  "retiredProtocol": {
-    "terminalWorkspacePatchPayloads": 0,
-    "outboxWorkspacePatchPayloads": 0,
-    "patchArtifacts": 0,
-    "patchArtifactColumnPresent": false,
-    "issueCommitShaColumnPresent": false
-  },
-  "oidcClaimPathRerun": false,
-  "cleanupCompleted": true
+  "acceptanceResourcesRetainedForReview": true
 }
