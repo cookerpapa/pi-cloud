@@ -44,6 +44,7 @@ let TOOL_WORKSPACE_DIRECTORY = "/workspace";
 const SAMPLE_JAVA_FIXTURE = "/opt/pi-cloud/sample-java-repair";
 const TOOL_IMAGE_REVISION_FILE = "/opt/pi-cloud/image-revision";
 const SHELL_EXIT_STDIO_GRACE_MS = 100;
+const TOOLCHAIN_PROBE_TIMEOUT_MS = 30_000;
 
 export class ToolWorkerError extends Error {
   readonly code: string;
@@ -57,7 +58,11 @@ export class ToolWorkerError extends Error {
   }
 }
 
-function probeVersion(file: string, args: readonly string[]): Promise<string> {
+function probeVersion(
+  name: EnvironmentToolName,
+  file: string,
+  args: readonly string[],
+): Promise<string> {
   return new Promise<string>((resolvePromise, rejectPromise) => {
     execFile(
       file,
@@ -66,16 +71,19 @@ function probeVersion(file: string, args: readonly string[]): Promise<string> {
         cwd: TOOL_WORKSPACE_DIRECTORY,
         encoding: "utf8",
         maxBuffer: 8 * 1_024,
-        timeout: 5_000,
+        timeout: TOOLCHAIN_PROBE_TIMEOUT_MS,
         env: safeToolEnvironment(),
       },
       (error, stdout, stderr) => {
         if (error) {
+          const timedOut = error.killed === true && error.signal !== null;
           rejectPromise(
             new ToolWorkerError(
               "environment_preflight_failed",
-              "Tool Sandbox environment preflight failed",
-              false,
+              timedOut
+                ? `Tool Sandbox ${name} preflight timed out`
+                : `Tool Sandbox ${name} preflight failed`,
+              timedOut,
             ),
           );
           return;
@@ -85,7 +93,7 @@ function probeVersion(file: string, args: readonly string[]): Promise<string> {
           rejectPromise(
             new ToolWorkerError(
               "environment_preflight_failed",
-              "Tool Sandbox environment preflight failed",
+              `Tool Sandbox ${name} preflight returned invalid evidence`,
               false,
             ),
           );
@@ -159,7 +167,10 @@ export async function validateToolEnvironment(
     ["git", "/usr/bin/git", ["--version"]],
   ];
   const tools = await Promise.all(
-    probes.map(async ([name, file, args]) => ({ name, version: await probeVersion(file, args) })),
+    probes.map(async ([name, file, args]) => ({
+      name,
+      version: await probeVersion(name, file, args),
+    })),
   );
   const report: EnvironmentToolchainReport = {
     profileKey: environment.profileKey,

@@ -121,5 +121,4 @@ try {
     `[envd-tool-exec] ${error instanceof Error ? error.message : String(error)}\n`,
   );
   process.stdout.write(`${JSON.stringify(output)}\n`);
-  process.exitCode = 1;
 }

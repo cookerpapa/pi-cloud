@@ -232,7 +232,7 @@ services:
           "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1",
         ]
       interval: 5s
-      timeout: 5s
+      timeout: 15s
       retries: 45
       start_period: 20s
     mem_limit: 2g
@@ -256,7 +256,7 @@ services:
           "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1",
         ]
       interval: 5s
-      timeout: 5s
+      timeout: 15s
       retries: 45
       start_period: 20s
     mem_limit: 2g
@@ -280,7 +280,7 @@ services:
           "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1",
         ]
       interval: 5s
-      timeout: 5s
+      timeout: 15s
       retries: 45
       start_period: 20s
     mem_limit: 2g
