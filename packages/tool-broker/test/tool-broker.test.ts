@@ -1799,7 +1799,6 @@ describe("provider-backed Tool Tool Broker", () => {
     await operationStarted;
     await expect(manager.stop(created.activationId, assignment)).resolves.toBeUndefined();
     expect(fixture.stopped).toBe(false);
-    controller.abort();
     await expect(executing).rejects.toMatchObject({ code: "tool_cancelled" });
     expect(manager.admittedCount).toBe(0);
     await manager.close();

@@ -99,7 +99,11 @@ type ManagedToolBinding = {
   exclusiveOperation: boolean;
   operations: Map<
     string,
-    Readonly<{ requestSha256: string; result: Promise<ToolSandboxOperationResponse> }>
+    Readonly<{
+      requestSha256: string;
+      result: Promise<ToolSandboxOperationResponse>;
+      controller: AbortController;
+    }>
   >;
   seenCaptureIds: Set<string>;
   elasticRuntime?: ManagedElasticRuntime;
@@ -1585,6 +1589,11 @@ export class ToolBroker {
         false,
       );
     }
+    const operationController = new AbortController();
+    const operationSignal =
+      signal === undefined
+        ? operationController.signal
+        : AbortSignal.any([signal, operationController.signal]);
     const durable = (async (): Promise<ToolSandboxOperationResponse> => {
       activation.activeOperations += 1;
       if (elasticRuntime !== undefined) elasticRuntime.activeOperations += 1;
@@ -1603,10 +1612,15 @@ export class ToolBroker {
             false,
           );
         }
-        const handle = await this.#materialize(request.activationId, activation, signal);
+        const handle = await this.#materialize(request.activationId, activation, operationSignal);
         let response: ToolSandboxOperationResponse;
         try {
-          response = await this.#provider.exec(handle, request, signal, activation.spec.toolRoot);
+          response = await this.#provider.exec(
+            handle,
+            request,
+            operationSignal,
+            activation.spec.toolRoot,
+          );
         } catch (error: unknown) {
           if (elasticRuntime !== undefined) {
             await this.#markElasticRuntimeLost(elasticRuntime, error);
@@ -1618,7 +1632,7 @@ export class ToolBroker {
           this.#provider.discoverHttpServices !== undefined
         ) {
           const discovery = await this.#provider
-            .discoverHttpServices(handle, signal)
+            .discoverHttpServices(handle, operationSignal)
             .catch(() => undefined);
           if (discovery !== undefined) {
             await this.#observeHttpServices(
@@ -1635,7 +1649,7 @@ export class ToolBroker {
         await this.#stateRepository
           .settleOperation(
             request.operationId,
-            signal?.aborted ? "cancelled" : "failed",
+            operationSignal.aborted ? "cancelled" : "failed",
             operationFailureCode(error),
           )
           .catch(() => undefined);
@@ -1645,7 +1659,11 @@ export class ToolBroker {
         if (elasticRuntime !== undefined) elasticRuntime.activeOperations -= 1;
       }
     })();
-    activation.operations.set(request.operationId, { requestSha256, result: durable });
+    activation.operations.set(request.operationId, {
+      requestSha256,
+      result: durable,
+      controller: operationController,
+    });
     return durable;
   }
 
@@ -1935,11 +1953,11 @@ export class ToolBroker {
   async #stopElasticBinding(activationId: string, activation: ManagedToolBinding): Promise<void> {
     const runtime = activation.elasticRuntime!;
     if (runtime.materializing !== undefined) await runtime.materializing.catch(() => undefined);
+    const operations = [...activation.operations.values()];
+    for (const operation of operations) operation.controller.abort();
+    await Promise.allSettled(operations.map((operation) => operation.result));
     this.#revokeBinding(activationId);
     runtime.bindingIds.delete(activationId);
-    // The operation owns its abort signal and provider-side process cleanup.
-    // Do not race a second physical destroy against that in-flight RPC.
-    if (runtime.activeOperations > 0) return;
     if (runtime.bindingIds.size > 0) return;
     if (runtime.workspaceTerminalId !== undefined) {
       const terminal = this.#terminals.get(runtime.workspaceTerminalId);
