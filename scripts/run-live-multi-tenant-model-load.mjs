@@ -394,140 +394,154 @@ const lanes = await Promise.all(
   Array.from({ length: tenantCount }, (_, index) => registerTenant(index, suffix)),
 );
 
-for (let index = 0; index < lanes.length; index += 1) {
-  const current = lanes[index];
-  const foreign = lanes[(index + 1) % lanes.length];
-  await assert.rejects(
-    current.api.getConversation(foreign.session.sessionId),
-    (error) => error instanceof PiCloudApiError && error.status === 404,
-  );
-}
-
-const firstRound = await Promise.all(
-  lanes.map((lane) =>
-    runTurn(
-      lane,
-      `Remember this exact marker for the next turn: ${lane.marker}. Do not call tools. Reply with ACK and the exact marker only.`,
-      1,
-    ),
-  ),
-);
-for (const [index, result] of firstRound.entries()) {
-  assert(result.text.includes(lanes[index].marker), `${result.tenantSlug} omitted its own marker`);
-}
-
-const secondRound = await Promise.all(
-  lanes.map((lane) =>
-    runTurn(
-      lane,
-      [
-        "Do not call tools.",
-        `Begin with the exact marker I asked you to remember in the prior turn.`,
-        "Then write eight concise numbered Chinese sentences explaining why a durable Worker pool can move a Session between Workers.",
-      ].join(" "),
-      2,
-    ),
-  ),
-);
-for (const [index, result] of secondRound.entries()) {
-  assert(
-    result.text.includes(lanes[index].marker),
-    `${result.tenantSlug} restored the wrong marker`,
-  );
-  for (const foreign of lanes) {
-    if (foreign === lanes[index]) continue;
-    assert(
-      !result.text.includes(foreign.marker),
-      `${result.tenantSlug} leaked another tenant's marker`,
+try {
+  for (let index = 0; index < lanes.length; index += 1) {
+    const current = lanes[index];
+    const foreign = lanes[(index + 1) % lanes.length];
+    await assert.rejects(
+      current.api.getConversation(foreign.session.sessionId),
+      (error) => error instanceof PiCloudApiError && error.status === 404,
     );
   }
+
+  const firstRound = await Promise.all(
+    lanes.map((lane) =>
+      runTurn(
+        lane,
+        `Remember this exact marker for the next turn: ${lane.marker}. Do not call tools. Reply with ACK and the exact marker only.`,
+        1,
+      ),
+    ),
+  );
+  for (const [index, result] of firstRound.entries()) {
+    assert(
+      result.text.includes(lanes[index].marker),
+      `${result.tenantSlug} omitted its own marker`,
+    );
+  }
+
+  const secondRound = await Promise.all(
+    lanes.map((lane) =>
+      runTurn(
+        lane,
+        [
+          "Do not call tools.",
+          `Begin with the exact marker I asked you to remember in the prior turn.`,
+          "Then write eight concise numbered Chinese sentences explaining why a durable Worker pool can move a Session between Workers.",
+        ].join(" "),
+        2,
+      ),
+    ),
+  );
+  for (const [index, result] of secondRound.entries()) {
+    assert(
+      result.text.includes(lanes[index].marker),
+      `${result.tenantSlug} restored the wrong marker`,
+    );
+    for (const foreign of lanes) {
+      if (foreign === lanes[index]) continue;
+      assert(
+        !result.text.includes(foreign.marker),
+        `${result.tenantSlug} leaked another tenant's marker`,
+      );
+    }
+  }
+
+  const allResults = [...firstRound, ...secondRound];
+  const evidence = await Promise.all(allResults.map(({ runId }) => runEvidence(runId)));
+  const totalUsage = sumUsage(allResults);
+  const streaming = await readStreamEvidence(allResults.map(({ runId }) => runId));
+  const report = {
+    accepted: true,
+    piCloudRevision: testedRevision,
+    checkedAt: new Date().toISOString(),
+    tenants: tenantCount,
+    runs: allResults.length,
+    model: {
+      provider: lanes[0].model.provider,
+      modelId: lanes[0].model.modelId,
+    },
+    correctness: {
+      completedRuns: allResults.length,
+      failedRuns: 0,
+      markerRestores: secondRound.length,
+      crossTenantApiDenials: lanes.length,
+      crossTenantMarkerLeaks: 0,
+      unexpectedToolEvents: 0,
+      maximumAttemptCount: Math.max(...allResults.map((result) => result.attemptCount)),
+    },
+    latencyMs: {
+      acceptance: distribution(allResults.map((result) => result.acceptedMs)),
+      firstAssistantText: distribution(
+        allResults.map((result) => {
+          assert.notEqual(result.firstAssistantTextMs, undefined);
+          return result.firstAssistantTextMs;
+        }),
+      ),
+      settled: distribution(allResults.map((result) => result.settledMs)),
+      queueWait: distribution(evidence.map((item) => item.queueWaitMs)),
+    },
+    workers: {
+      distinct: [...new Set(evidence.map((item) => item.supervisorId))],
+      assignments: Object.fromEntries(
+        [...new Set(evidence.map((item) => item.supervisorId))].map((worker) => [
+          worker,
+          evidence.filter((item) => item.supervisorId === worker).length,
+        ]),
+      ),
+    },
+    streaming,
+    usage: totalUsage,
+  };
+
+  assert.equal(report.correctness.maximumAttemptCount, 1);
+  assert.equal(report.workers.distinct.length, 2);
+  assert.equal(report.streaming.terminalCount, allResults.length);
+  assert(report.streaming.piEntryCount >= report.streaming.messageCount);
+  assert(totalUsage.requests >= allResults.length);
+  assert(totalUsage.inputTokens > 0 && totalUsage.outputTokens > 0);
+
+  const reportDirectory = resolve(repositoryRoot, "docs/reports");
+  await mkdir(reportDirectory, { recursive: true });
+  await writeFile(
+    resolve(reportDirectory, "multi-tenant-model-load-latest.json"),
+    await format(JSON.stringify(report), { parser: "json" }),
+    "utf8",
+  );
+  await writeFile(
+    resolve(reportDirectory, "multi-tenant-model-load-latest.md"),
+    [
+      "# Multi-tenant real-model load acceptance",
+      "",
+      `- Checked at: ${report.checkedAt}`,
+      `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
+      `- Tenants / Runs: ${String(report.tenants)} / ${String(report.runs)}`,
+      `- Completed / failed: ${String(report.correctness.completedRuns)} / ${String(report.correctness.failedRuns)}`,
+      `- Marker restores / cross-tenant leaks: ${String(report.correctness.markerRestores)} / ${String(report.correctness.crossTenantMarkerLeaks)}`,
+      `- Worker assignments: ${Object.entries(report.workers.assignments)
+        .map(([worker, count]) => `${worker}=${String(count)}`)
+        .join(", ")}`,
+      `- Acceptance p50/p95: ${String(report.latencyMs.acceptance.p50)} / ${String(report.latencyMs.acceptance.p95)} ms`,
+      `- First assistant text p50/p95: ${String(report.latencyMs.firstAssistantText.p50)} / ${String(report.latencyMs.firstAssistantText.p95)} ms`,
+      `- Settled p50/p95: ${String(report.latencyMs.settled.p50)} / ${String(report.latencyMs.settled.p95)} ms`,
+      `- Queue wait p50/p95: ${String(report.latencyMs.queueWait.p50)} / ${String(report.latencyMs.queueWait.p95)} ms`,
+      `- Terminal Turns / Pi entries / complete messages: ${String(report.streaming.terminalCount)} / ${String(report.streaming.piEntryCount)} / ${String(report.streaming.messageCount)}`,
+      `- Pi entries per Run / canonical payload bytes: ${String(report.streaming.entriesPerRun)} / ${String(report.streaming.canonicalPayloadBytes)}`,
+      `- Real requests/input/output/cache-read tokens: ${String(report.usage.requests)} / ${String(report.usage.inputTokens)} / ${String(report.usage.outputTokens)} / ${String(report.usage.cacheReadTokens)}`,
+      "",
+      "Every tenant used an independent API credential, Project, Workspace and Pi SessionStorage state. All first and follow-up Runs were submitted concurrently through the shared PostgreSQL queue and two capacity-one Pi Workers. The follow-up restored only its own marker, foreign Session reads returned 404, no Tool Sandbox was activated, and every Run completed with one Attempt.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  process.stdout.write(`${JSON.stringify(report)}\n`);
+} finally {
+  for (const lane of lanes) {
+    await lane.api
+      .deleteConversation(lane.session.sessionId, newIdempotencyKey("cleanup-conversation"))
+      .catch(() => undefined);
+    await lane.api
+      .deleteWorkspace(lane.session.workspaceId, newIdempotencyKey("cleanup-workspace"))
+      .catch(() => undefined);
+  }
 }
-
-const allResults = [...firstRound, ...secondRound];
-const evidence = await Promise.all(allResults.map(({ runId }) => runEvidence(runId)));
-const totalUsage = sumUsage(allResults);
-const streaming = await readStreamEvidence(allResults.map(({ runId }) => runId));
-const report = {
-  accepted: true,
-  piCloudRevision: testedRevision,
-  checkedAt: new Date().toISOString(),
-  tenants: tenantCount,
-  runs: allResults.length,
-  model: {
-    provider: lanes[0].model.provider,
-    modelId: lanes[0].model.modelId,
-  },
-  correctness: {
-    completedRuns: allResults.length,
-    failedRuns: 0,
-    markerRestores: secondRound.length,
-    crossTenantApiDenials: lanes.length,
-    crossTenantMarkerLeaks: 0,
-    unexpectedToolEvents: 0,
-    maximumAttemptCount: Math.max(...allResults.map((result) => result.attemptCount)),
-  },
-  latencyMs: {
-    acceptance: distribution(allResults.map((result) => result.acceptedMs)),
-    firstAssistantText: distribution(
-      allResults.map((result) => {
-        assert.notEqual(result.firstAssistantTextMs, undefined);
-        return result.firstAssistantTextMs;
-      }),
-    ),
-    settled: distribution(allResults.map((result) => result.settledMs)),
-    queueWait: distribution(evidence.map((item) => item.queueWaitMs)),
-  },
-  workers: {
-    distinct: [...new Set(evidence.map((item) => item.supervisorId))],
-    assignments: Object.fromEntries(
-      [...new Set(evidence.map((item) => item.supervisorId))].map((worker) => [
-        worker,
-        evidence.filter((item) => item.supervisorId === worker).length,
-      ]),
-    ),
-  },
-  streaming,
-  usage: totalUsage,
-};
-
-assert.equal(report.correctness.maximumAttemptCount, 1);
-assert.equal(report.workers.distinct.length, 2);
-assert.equal(report.streaming.terminalCount, allResults.length);
-assert(report.streaming.piEntryCount >= report.streaming.messageCount);
-assert(totalUsage.requests >= allResults.length);
-assert(totalUsage.inputTokens > 0 && totalUsage.outputTokens > 0);
-
-const reportDirectory = resolve(repositoryRoot, "docs/reports");
-await mkdir(reportDirectory, { recursive: true });
-await writeFile(
-  resolve(reportDirectory, "multi-tenant-model-load-latest.json"),
-  await format(JSON.stringify(report), { parser: "json" }),
-  "utf8",
-);
-await writeFile(
-  resolve(reportDirectory, "multi-tenant-model-load-latest.md"),
-  [
-    "# Multi-tenant real-model load acceptance",
-    "",
-    `- Checked at: ${report.checkedAt}`,
-    `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
-    `- Tenants / Runs: ${String(report.tenants)} / ${String(report.runs)}`,
-    `- Completed / failed: ${String(report.correctness.completedRuns)} / ${String(report.correctness.failedRuns)}`,
-    `- Marker restores / cross-tenant leaks: ${String(report.correctness.markerRestores)} / ${String(report.correctness.crossTenantMarkerLeaks)}`,
-    `- Worker assignments: ${Object.entries(report.workers.assignments)
-      .map(([worker, count]) => `${worker}=${String(count)}`)
-      .join(", ")}`,
-    `- Acceptance p50/p95: ${String(report.latencyMs.acceptance.p50)} / ${String(report.latencyMs.acceptance.p95)} ms`,
-    `- First assistant text p50/p95: ${String(report.latencyMs.firstAssistantText.p50)} / ${String(report.latencyMs.firstAssistantText.p95)} ms`,
-    `- Settled p50/p95: ${String(report.latencyMs.settled.p50)} / ${String(report.latencyMs.settled.p95)} ms`,
-    `- Queue wait p50/p95: ${String(report.latencyMs.queueWait.p50)} / ${String(report.latencyMs.queueWait.p95)} ms`,
-    `- Terminal Turns / Pi entries / complete messages: ${String(report.streaming.terminalCount)} / ${String(report.streaming.piEntryCount)} / ${String(report.streaming.messageCount)}`,
-    `- Pi entries per Run / canonical payload bytes: ${String(report.streaming.entriesPerRun)} / ${String(report.streaming.canonicalPayloadBytes)}`,
-    `- Real requests/input/output/cache-read tokens: ${String(report.usage.requests)} / ${String(report.usage.inputTokens)} / ${String(report.usage.outputTokens)} / ${String(report.usage.cacheReadTokens)}`,
-    "",
-    "Every tenant used an independent API credential, Project, Workspace and Pi SessionStorage state. All first and follow-up Runs were submitted concurrently through the shared PostgreSQL queue and two capacity-one Pi Workers. The follow-up restored only its own marker, foreign Session reads returned 404, no Tool Sandbox was activated, and every Run completed with one Attempt.",
-    "",
-  ].join("\n"),
-  "utf8",
-);
-process.stdout.write(`${JSON.stringify(report)}\n`);

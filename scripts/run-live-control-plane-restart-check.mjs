@@ -287,4 +287,10 @@ try {
   clearTimeout(deadline);
   controller.abort();
   await replacement?.catch(() => undefined);
+  await api
+    .deleteConversation(session.sessionId, newIdempotencyKey("cleanup-conversation"))
+    .catch(() => undefined);
+  await api
+    .deleteWorkspace(session.workspaceId, newIdempotencyKey("cleanup-workspace"))
+    .catch(() => undefined);
 }

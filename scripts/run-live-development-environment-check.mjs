@@ -548,6 +548,10 @@ const deletedVolume = await fetch(
   { headers: { authorization: `Bearer ${cubeApiKey}` }, signal: AbortSignal.timeout(30_000) },
 );
 await deletedVolume.body?.cancel();
+await api.deleteConversation(
+  replacementSession.sessionId,
+  newIdempotencyKey("delete-replacement-conversation"),
+);
 assert.equal(deletedVolume.status, 404, "Released machine retained Cube Volume metadata");
 
 const report = {

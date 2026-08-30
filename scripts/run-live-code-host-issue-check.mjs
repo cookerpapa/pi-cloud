@@ -258,7 +258,12 @@ try {
       "pi_cloud",
       "--data-only",
     ],
-    { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1_024 * 1_024 },
+    {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      maxBuffer: 64 * 1_024 * 1_024,
+      stdio: ["ignore", "pipe", "ignore"],
+    },
   );
   const tokenOffset = postgresDump.indexOf(accessToken);
   if (tokenOffset >= 0) {
