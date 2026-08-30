@@ -678,7 +678,7 @@ async function main(): Promise<void> {
     rmSync(directories.agentDir, { recursive: true, force: true });
     rmSync(directories.stateDir, { recursive: true, force: true });
   }
-  parentPort.postMessage({ type: "result", result });
+  parentPort!.postMessage({ type: "result", result });
 }
 
 void main().catch((error: unknown) => {
