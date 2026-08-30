@@ -1238,7 +1238,11 @@ try {
     "Large Workspace cold restore reused stale physical authority",
   );
 
-  await waitForRunningCubeSession(session.sessionId);
+  const retainedMainSessionCubes = managedForSession(await cube.list(), session.sessionId);
+  assert(
+    retainedMainSessionCubes.length <= 1,
+    "Cube inventory retained more than one exact-Session microVM",
+  );
   await waitForNoCubeSession(foreignSession.sessionId);
   const usage = totalUsage(
     chatUsage,
@@ -1345,7 +1349,7 @@ try {
     },
     totalUsage: usage,
     cleanup: {
-      retainedRunningSessionMicroVmCount: 1,
+      retainedRunningSessionMicroVmCount: retainedMainSessionCubes.length,
       foreignSessionMicroVmCount: 0,
       warmArchiveReaped: false,
       explicitWarmEvictionVerified: false,
@@ -1355,7 +1359,7 @@ try {
   await api.deleteConversation(session.sessionId, newIdempotencyKey("archive-warm"));
   await waitForNoCubeSession(session.sessionId);
   report.cleanup.warmArchiveReaped = true;
-  progress("Session archive reaped its bounded-warm Cube KVM");
+  progress("Session archive left no bounded-warm Cube KVM");
   await terminateWarmCubeSession(largeFollowUp.accepted.runId, largeSession.sessionId);
   await waitForNoCubeSession(largeSession.sessionId);
   report.cleanup.explicitWarmEvictionVerified = true;
@@ -1399,7 +1403,7 @@ try {
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,
         `- Explicit warm eviction / remaining Cube microVMs: ${String(report.cleanup.explicitWarmEvictionVerified)} / ${String(report.cleanup.retainedRunningSessionMicroVmCount + report.cleanup.foreignSessionMicroVmCount)}`,
         "",
-        "A real-model chat Run completed without touching Cube. Two elastic coding Runs reused one bounded-warm Session Cube with rotated Tool authority and higher-fence rebind; archiving the conversation reaped that Cube. The persistent Volume contained no retired platform Git metadata; any ordinary .git directory belongs to the user and Agent. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a higher-fence activation. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
+        "A real-model chat Run completed without touching Cube. Two elastic coding Runs reused one bounded-warm Session Cube with rotated Tool authority and higher-fence rebind; that warm optimization could later be capacity-evicted, and archiving the conversation left no Cube. The persistent Volume contained no retired platform Git metadata; any ordinary .git directory belongs to the user and Agent. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a higher-fence activation. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
         "",
       ].join("\n"),
       "utf8",
