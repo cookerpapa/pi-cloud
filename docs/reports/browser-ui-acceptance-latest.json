@@ -1,9 +1,10 @@
 {
   "accepted": true,
-  "piCloudRevision": "f9c785776f60d45e673e6463be4fe3041b4a3ebd",
-  "checkedAt": "2026-08-30T10:43:36.407Z",
-  "account": "browser.acceptance.mtfoksnh",
+  "piCloudRevision": "0079a3c66547ca21af223251013d907cbba5159f",
+  "checkedAt": "2026-08-30T12:08:04.075Z",
+  "account": "browser.acceptance.mtfrl6p4",
   "clickedControls": [
+    "auth.localOnly",
     "auth.registerTab",
     "auth.loginTab",
     "auth.login",
@@ -78,10 +79,10 @@
     "account.menuOpenForLogout",
     "account.logout"
   ],
-  "clickedControlCount": 73,
+  "clickedControlCount": 74,
   "latencyMs": {
-    "userSubmitToFirstAssistantText": 1147,
-    "userSubmitToCompleteReply": 1252
+    "userSubmitToFirstAssistantText": 1438,
+    "userSubmitToCompleteReply": 1541
   },
   "screenshotCaptured": true,
   "cleanupCompleted": true
