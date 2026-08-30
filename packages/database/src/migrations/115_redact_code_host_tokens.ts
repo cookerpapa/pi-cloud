@@ -15,13 +15,13 @@ export async function up(db: Kysely<unknown>): Promise<void> {
            '[PI_CLOUD_REDACTED]',
            'g'
          ),
-         '(https?://[^[:space:]/:@]+:)[^[:space:]@/]+(@[^[:space:]]+)',
-         $$\1[PI_CLOUD_REDACTED]\2$$,
+         'gh[pousr]_[A-Za-z0-9]{8,}',
+         '[PI_CLOUD_REDACTED]',
          'g'
        )::jsonb
      where payload::text ~ '(glpat|gldt|glcbt|glptt)-[A-Za-z0-9._~-]{8,}'
         or payload::text ~ 'github_pat_[A-Za-z0-9_]{8,}'
-        or payload::text ~ 'https?://[^[:space:]/:@]+:[^[:space:]@/]+@';
+        or payload::text ~ 'gh[pousr]_[A-Za-z0-9]{8,}';
   `.execute(db);
 }
 
