@@ -335,6 +335,20 @@ export async function startControlPlane(): Promise<void> {
             attributes: {
               source,
               name: error instanceof Error ? error.name : "UnknownError",
+              code:
+                typeof error === "object" &&
+                error !== null &&
+                "code" in error &&
+                typeof error.code === "string"
+                  ? error.code
+                  : "unknown",
+              retryable:
+                typeof error === "object" &&
+                error !== null &&
+                "retryable" in error &&
+                typeof error.retryable === "boolean"
+                  ? error.retryable
+                  : false,
             },
           }),
       });
