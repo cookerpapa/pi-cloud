@@ -125,6 +125,7 @@ async function runCodingTurn(api, browser, sessionId) {
     "The page must contain #game-canvas, #start-button, #pause-button, #reset-button and #score.",
     "Keyboard arrow keys and WASD must control the snake.",
     "Expose window.__snakeTestState() returning an object with headX, headY, score, running and tick.",
+    "tick must be a non-negative integer that increases on every game-loop step; running must be true only while steps are advancing, false initially, false after Pause and false after Reset.",
     "Serve the directory on 0.0.0.0:4173 and keep the server running after this task finishes.",
     "Use tools to inspect the files, run JavaScript syntax checks, start the server and fetch the page locally.",
     "After all checks pass, call the preview Tool for port 4173. Do not print a localhost or guessed public URL.",
@@ -273,6 +274,8 @@ async function exerciseGame({ username, password, previewPath, screenshotPath })
         'document.querySelector("#game-canvas") && document.querySelector("#start-button") && typeof window.__snakeTestState === "function"',
       );
       const before = await page.evaluate("window.__snakeTestState()");
+      assert.equal(Number.isSafeInteger(before.tick), true, "Snake tick was not an integer");
+      assert.equal(before.running, false, "Snake started before the Start button was pressed");
       await page.evaluate('document.querySelector("#start-button").click()');
       await page.send("Input.dispatchKeyEvent", {
         type: "keyDown",
@@ -287,12 +290,15 @@ async function exerciseGame({ username, password, previewPath, screenshotPath })
       await page.wait(650);
       const after = await page.evaluate("window.__snakeTestState()");
       assert.equal(after.running, true, "Snake did not enter its running state");
+      assert.equal(Number.isSafeInteger(after.tick), true, "Snake tick stopped being an integer");
+      assert(after.tick > before.tick, "Snake game loop did not advance after starting");
       assert(
-        after.tick > before.tick || after.headX !== before.headX || after.headY !== before.headY,
+        after.headX !== before.headX || after.headY !== before.headY,
         "Snake head did not move after starting the game",
       );
       await page.evaluate('document.querySelector("#pause-button").click()');
       const paused = await page.evaluate("window.__snakeTestState()");
+      assert.equal(paused.running, false, "Pause button did not clear the running state");
       await page.wait(450);
       const pausedAfterWait = await page.evaluate("window.__snakeTestState()");
       assert.equal(pausedAfterWait.tick, paused.tick, "Pause button did not stop the game loop");
@@ -301,6 +307,8 @@ async function exerciseGame({ username, password, previewPath, screenshotPath })
       await page.evaluate('document.querySelector("#reset-button").click()');
       const reset = await page.evaluate("window.__snakeTestState()");
       assert.equal(reset.score, 0, "Reset button did not reset the score");
+      assert.equal(reset.running, false, "Reset button did not clear the running state");
+      assert.equal(reset.tick, 0, "Reset button did not reset the game-loop tick");
       await page.screenshot(screenshotPath);
       return { before, after, paused, pausedAfterWait, reset };
     },
