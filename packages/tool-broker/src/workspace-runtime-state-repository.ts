@@ -1998,6 +1998,17 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("state", "in", ["reserved", "materializing", "active", "warm", "cleaning"])
         .execute();
       await transaction
+        .updateTable("workspace_terminal_sessions")
+        .set({
+          state: "unknown",
+          failure_code: "tool_broker_stopped",
+          lease_expires_at: now,
+          updated_at: now,
+        })
+        .where("owner_instance_id", "=", this.#instanceId)
+        .where("state", "in", ["reserved", "materializing", "active", "cleaning"])
+        .execute();
+      await transaction
         .updateTable("development_environments")
         .set({
           state: "unknown",

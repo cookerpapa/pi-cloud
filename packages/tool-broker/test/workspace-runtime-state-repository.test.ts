@@ -522,6 +522,19 @@ describe("PostgreSQL Tool Broker ownership", () => {
         .where("workspace_runtime_id", "=", activation.activationId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({ state: "cleaning", failure_code: "workspace_runtime_unbound" });
+    await database
+      .updateTable("workspace_terminal_sessions")
+      .set({ state: "cleaning" })
+      .where("terminal_id", "=", "20000000-0000-4000-8000-000000000021")
+      .executeTakeFirstOrThrow();
+    await repository.close();
+    await expect(
+      database
+        .selectFrom("workspace_terminal_sessions")
+        .select(["state", "failure_code"])
+        .where("terminal_id", "=", "20000000-0000-4000-8000-000000000021")
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ state: "unknown", failure_code: "tool_broker_stopped" });
   }, 30_000);
 
   it("fences an expired replica before a surviving owner stays Ready", async () => {
