@@ -55,6 +55,8 @@ export class SourceControlIssueCoordinator {
   #timer: NodeJS.Timeout | undefined;
   #running = false;
   #closed = false;
+  #claimSyncRetryAt = 0;
+  #claimSyncRetryDelayMs = POLL_INTERVAL_MS;
 
   constructor(options: {
     database: Kysely<Database>;
@@ -165,9 +167,18 @@ export class SourceControlIssueCoordinator {
     if (this.#closed || this.#running || !this.#sourceControl.configured) return;
     this.#running = true;
     try {
-      await this.#sourceControl
-        .reconcileNextClaimSync()
-        .catch((error: unknown) => this.#onError?.("claim_sync", error));
+      const now = this.#clock().valueOf();
+      if (now >= this.#claimSyncRetryAt) {
+        try {
+          await this.#sourceControl.reconcileNextClaimSync();
+          this.#claimSyncRetryAt = 0;
+          this.#claimSyncRetryDelayMs = POLL_INTERVAL_MS;
+        } catch (error: unknown) {
+          this.#onError?.("claim_sync", error);
+          this.#claimSyncRetryAt = now + this.#claimSyncRetryDelayMs;
+          this.#claimSyncRetryDelayMs = Math.min(60_000, this.#claimSyncRetryDelayMs * 2);
+        }
+      }
       await this.reconcileOnce();
     } catch (error: unknown) {
       this.#onError?.("issue_job", error);
