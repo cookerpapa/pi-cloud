@@ -202,14 +202,18 @@ try {
   const authorized = await api.preflightSourceControlIssueGit(job.jobId, workspaceId);
   assert.equal(authorized.authorized, true);
 
-  const started = await api.startSourceControlIssueJob(job.jobId, {
+  await api.startSourceControlIssueJob(job.jobId, {
     executionMode: "elastic",
     sessionTitle: `Insertion sort Issue ${suffix}`,
     sandboxProfileKey: "standard",
     workspaceId,
   });
+  const started = await waitFor(async () => {
+    const jobs = await api.listSourceControlIssueJobs();
+    const current = jobs.jobs.find((candidate) => candidate.jobId === job.jobId);
+    return current?.sessionId !== undefined && current.runId !== undefined ? current : undefined;
+  }, "Issue coordinator start");
   sessionId = started.sessionId;
-  assert(sessionId !== undefined && started.runId !== undefined);
   const run = await waitFor(
     async () => {
       const current = await api.getRun(started.runId);
