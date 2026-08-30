@@ -941,9 +941,10 @@ export class SourceControlService {
     try {
       await this.#syncGitLabIssueClaims(jobId);
     } catch (error: unknown) {
+      const retryable = !(error instanceof GitLabProjectClientError) || error.retryable;
       await this.#database
         .updateTable("source_control_issue_jobs")
-        .set({ claim_sync_pending: true, updated_at: this.#clock() })
+        .set({ claim_sync_pending: retryable, updated_at: this.#clock() })
         .where("id", "=", jobId)
         .execute()
         .catch(() => undefined);

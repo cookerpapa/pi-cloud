@@ -59,6 +59,7 @@ describe.sequential("source-control App boundary", () => {
       ownerDisplayName: "GitLab Source Control Owner",
     });
     let signingToken = "";
+    let rejectClaimNotes = false;
     const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/api/v4/projects/group%2Fprivate-repo")) {
@@ -82,6 +83,9 @@ describe.sequential("source-control App boundary", () => {
       if (url.endsWith("/api/v4/projects/501/hooks") && init?.method === "POST") {
         signingToken = (JSON.parse(String(init.body)) as { signing_token: string }).signing_token;
         return new Response(JSON.stringify({ id: 91 }), { status: 201 });
+      }
+      if (url.includes("/api/v4/projects/501/issues/12/notes") && rejectClaimNotes) {
+        return new Response("{}", { status: 404 });
       }
       if (url.includes("/api/v4/projects/501/issues/12/notes") && init?.method === undefined) {
         return new Response("[]", { status: 200 });
@@ -258,6 +262,24 @@ describe.sequential("source-control App boundary", () => {
     await expect(service.unclaimIssueJob(claimant, pendingJob.jobId)).rejects.toMatchObject({
       code: "source_control_conflict",
     });
+    await expect(service.reconcileNextClaimSync()).resolves.toBe(true);
+    rejectClaimNotes = true;
+    await database
+      .updateTable("source_control_issue_jobs")
+      .set({ claim_sync_pending: true, updated_at: new Date() })
+      .where("id", "=", pendingJob.jobId)
+      .executeTakeFirstOrThrow();
+    await expect(service.reconcileNextClaimSync()).rejects.toMatchObject({
+      code: "gitlab_resource_not_found",
+      retryable: false,
+    });
+    await expect(
+      database
+        .selectFrom("source_control_issue_jobs")
+        .select("claim_sync_pending")
+        .where("id", "=", pendingJob.jobId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ claim_sync_pending: false });
     await database
       .updateTable("source_control_issue_jobs")
       .set({ state: "cancelled", settled_at: new Date(), updated_at: new Date() })
