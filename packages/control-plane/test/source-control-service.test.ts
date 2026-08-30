@@ -234,11 +234,6 @@ describe.sequential("source-control App boundary", () => {
       defaultModelProfileId: tenant.defaultModelProfileId,
     }).createProject({ name: "Existing GitLab Issue Workspace", source: { kind: "empty" } });
     vi.spyOn(service, "preflightIssueGitCredential").mockResolvedValue({
-      sourceControlProtocolVersion: 1,
-      type: "source_control.workspace_credential_result",
-      requestId: randomUUID(),
-      workspaceId: selectedWorkspace.workspaceId,
-      origin: "https://gitlab.example.com",
       authorized: true,
     });
     await expect(
@@ -457,11 +452,6 @@ describe.sequential("source-control App boundary", () => {
       jobs.jobs[0]!.jobId,
     );
     vi.spyOn(service, "preflightIssueGitCredential").mockResolvedValue({
-      sourceControlProtocolVersion: 1,
-      type: "source_control.workspace_credential_result",
-      requestId: randomUUID(),
-      workspaceId: selectedWorkspace.workspaceId,
-      origin: "https://github.com",
       authorized: true,
     });
     await service.startIssueJob(

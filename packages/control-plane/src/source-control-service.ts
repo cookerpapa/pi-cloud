@@ -1462,7 +1462,7 @@ export class SourceControlService {
     workspaceId: string,
   ) {
     const context = await this.#issueGitCredentialContext(identity, jobId, workspaceId);
-    return this.#toolBroker(
+    const result = await this.#toolBroker(
       await this.#workspaceToolBroker(identity.tenantId, workspaceId),
     ).preflightSourceCredential({
       sourceControlProtocolVersion: 1,
@@ -1475,6 +1475,10 @@ export class SourceControlService {
       verificationCloneUrl: context.verificationCloneUrl,
       credentialMountPath: context.credentialMountPath,
     });
+    return {
+      authorized: result.authorized,
+      ...(result.reason === undefined ? {} : { reason: result.reason }),
+    };
   }
 
   async authorizeIssueGitCredential(

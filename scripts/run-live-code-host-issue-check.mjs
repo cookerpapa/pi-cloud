@@ -76,7 +76,15 @@ function gitlabRails(ruby) {
       "production",
       ruby,
     ],
-    { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 4 * 1_024 * 1_024 },
+    {
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        PI_CLOUD_GITLAB_RUNTIME_DIRECTORY: resolve(repositoryRoot, "deploy/gitlab/runtime"),
+      },
+      encoding: "utf8",
+      maxBuffer: 4 * 1_024 * 1_024,
+    },
   );
   if (result.status !== 0) throw new Error(result.stderr.trim() || "GitLab Rails command failed");
   return result.stdout.trim().split("\n").at(-1)?.trim() ?? "";
@@ -113,7 +121,8 @@ const accessToken = gitlabRails(
     "user = User.find_by_username!('root')",
     `name = '${tokenName}'`,
     "user.personal_access_tokens.where(name: name).delete_all",
-    "response = PersonalAccessTokens::CreateService.new(current_user: user, target_user: user, params: { name: name, scopes: [:api, :write_repository], expires_at: Date.today + 1 }).execute",
+    "organization = Organizations::Organization.default_organization",
+    "response = PersonalAccessTokens::CreateService.new(current_user: user, target_user: user, organization_id: organization.id, params: { name: name, scopes: [:api, :write_repository], expires_at: Date.today + 1 }).execute",
     "raise response.message unless response.success?",
     "puts response.payload[:personal_access_token].token",
   ].join("; "),
