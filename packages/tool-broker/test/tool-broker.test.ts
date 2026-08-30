@@ -856,6 +856,37 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(manager.warmCount).toBe(0);
     expect(fixture.stopped).toBe(false);
 
+    const terminalRunAssignment = {
+      ...assignment,
+      runId: "command-provider-test-terminal-shared",
+      turnId: "turn-provider-test-terminal-shared",
+      executionLease: createExecutionLease(
+        "31000000-0000-4000-8000-000000000003",
+        "31000000-0000-4000-8000-000000000003",
+        7,
+      ),
+    };
+    const terminalRun = await manager.create({
+      ...createRequest,
+      requestId: "31000000-0000-4000-8000-000000000004",
+      assignment: terminalRunAssignment,
+      workspaceRevision: "1".repeat(64),
+    });
+    await manager.execute(terminalRunAssignment.executionLease, {
+      ...operation("31000000-0000-4000-8000-000000000005"),
+      activationId: terminalRun.activationId,
+    });
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: "31000000-0000-4000-8000-000000000006",
+      activationId: terminalRun.activationId,
+      assignment: terminalRunAssignment,
+      disposition: "keep_warm",
+      workspaceRevision: "2".repeat(64),
+    });
+    expect(fixture.createCount).toBe(1);
+
     await terminal.close();
     expect(fixture.destroyed).toBe(false);
     expect(manager.warmCount).toBe(1);

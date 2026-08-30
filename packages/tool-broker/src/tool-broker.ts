@@ -1264,6 +1264,13 @@ export class ToolBroker {
       (activation) => activation.elasticRuntime?.workspaceKey === workspaceKey,
     )?.elasticRuntime;
     runtime ??= this.#warm.get(workspaceKey);
+    const workspaceTerminal = [...this.#terminals.entries()].find(
+      ([, terminal]) =>
+        terminal.assignment.tenantId === request.assignment.tenantId &&
+        terminal.assignment.projectId === request.assignment.projectId &&
+        terminal.assignment.workspaceId === request.assignment.workspaceId,
+    );
+    runtime ??= workspaceTerminal?.[1].workspaceRuntime;
     if (
       runtime !== undefined &&
       (!sameEnvironment(runtime.environment, request.environment) ||
@@ -1280,13 +1287,6 @@ export class ToolBroker {
       runtime = undefined;
     }
     if (runtime !== undefined) this.#warm.delete(workspaceKey);
-
-    const workspaceTerminal = [...this.#terminals.entries()].find(
-      ([, terminal]) =>
-        terminal.assignment.tenantId === request.assignment.tenantId &&
-        terminal.assignment.projectId === request.assignment.projectId &&
-        terminal.assignment.workspaceId === request.assignment.workspaceId,
-    );
     if (runtime === undefined) {
       const physicalActivationId = validActivationId(workspaceTerminal?.[0] ?? this.#idGenerator());
       runtime = {
