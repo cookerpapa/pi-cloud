@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { tmpdir } from "node:os";
@@ -100,6 +100,37 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
 
     await expect(mover.prepare(first)).resolves.toEqual({ attached: false });
     await expect(mover.prepare(first)).resolves.toEqual({ attached: true });
+  });
+
+  it("hides platform and Git metadata and rejects a symlink escape", async () => {
+    const workspaceRoot = await root();
+    const outside = await root();
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const first = identity("session-browser-boundary");
+    await mover.prepare(first);
+    const workspace = join(workspaceRoot, `picloud-posix-${first.volumeId}`, "workspace");
+    await Promise.all([
+      mkdir(join(workspace, ".git")),
+      mkdir(join(workspace, ".pi-cloud-home")),
+      writeFile(join(workspace, "visible.txt"), "visible\n"),
+      writeFile(join(outside, "secret.txt"), "outside\n"),
+    ]);
+    await symlink(join(outside, "secret.txt"), join(workspace, "escape.txt"));
+
+    await expect(mover.listDirectory({ ...first, rootPath: "", path: "" })).resolves.toMatchObject({
+      entries: [
+        { name: "escape.txt", kind: "symlink" },
+        { name: "visible.txt", kind: "file" },
+      ],
+    });
+    await expect(
+      mover.readFile({
+        ...first,
+        rootPath: "",
+        path: "escape.txt",
+        maximumBytes: 64,
+      }),
+    ).rejects.toMatchObject({ code: "workspace_path_escape" });
   });
 
   it("creates an idempotent isolated Volume copy that no longer follows the parent", async () => {

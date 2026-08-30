@@ -1,26 +1,26 @@
 {
   "accepted": true,
-  "piCloudRevision": "7e9155d664876c12eb0c85133ff20834b6e1715b",
-  "checkedAt": "2026-08-28T17:09:52.774Z",
+  "piCloudRevision": "a2b58ab3348965579707554b3e53b09ca41f6071",
+  "checkedAt": "2026-08-30T02:12:18.568Z",
   "browserCookieAuth": true,
   "latencyMs": {
     "pureChat": {
-      "accepted": 24,
-      "firstDurableActivity": 1130,
+      "accepted": 38,
+      "firstDurableActivity": 2061,
       "firstToolStarted": null,
-      "firstAssistantText": 1130,
-      "settled": 1497
+      "firstAssistantText": 2061,
+      "settled": 2516
     },
     "coding": {
-      "accepted": 18,
-      "firstDurableActivity": 1521,
-      "firstToolStarted": 1521,
-      "firstAssistantText": 7730,
-      "settled": 8530
+      "accepted": 28,
+      "firstDurableActivity": 2586,
+      "firstToolStarted": 2586,
+      "firstAssistantText": 8953,
+      "settled": 9764
     }
   },
   "treeForkPrune": true,
-  "workspaceFiles": 1,
+  "workspaceBrowserEntries": 1,
   "terminal": true,
   "terminalAgentConcurrency": true,
   "sharedWorkspaceConcurrentSessions": true,
