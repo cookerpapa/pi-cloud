@@ -539,7 +539,7 @@ try {
   const cancelled = await runTurn({
     api,
     browser,
-    sessionId: session.sessionId,
+    sessionId: siblingSession.sessionId,
     prompt: "Use bash exactly once to run sleep 60, then report completion.",
     expectTools: true,
     expectedTerminal: "turn.cancelled",
@@ -552,7 +552,7 @@ try {
   const recovery = await runTurn({
     api,
     browser,
-    sessionId: session.sessionId,
+    sessionId: siblingSession.sessionId,
     prompt: "Do not call tools. Reply with exactly PRODUCT-SURFACE-RECOVERY-OK.",
     expectTools: false,
   });
