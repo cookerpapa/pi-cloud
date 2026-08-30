@@ -342,6 +342,7 @@ export class ToolBroker {
   readonly #developmentEnvironments = new Map<string, ManagedDevelopmentEnvironment>();
   readonly #admitted = new Map<string, ToolSandboxAssignment>();
   readonly #settlingWorkspaces = new Set<string>();
+  readonly #workspaceReservationTails = new Map<string, Promise<void>>();
   readonly #admissionWaiters: AdmissionWaiter[] = [];
   readonly #reaper: NodeJS.Timeout;
   #developmentEnvironmentRecovery: Promise<number> | undefined;
@@ -1175,6 +1176,14 @@ export class ToolBroker {
   }
 
   async create(request: ToolSandboxCreateRequest): Promise<ToolSandboxCreateResponse> {
+    return this.#serializeWorkspaceReservation(request.assignment, () =>
+      this.#createAfterWorkspaceReservation(request),
+    );
+  }
+
+  async #createAfterWorkspaceReservation(
+    request: ToolSandboxCreateRequest,
+  ): Promise<ToolSandboxCreateResponse> {
     if (
       request.environment.profileKey !== DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY ||
       request.environment.profileVersion !== DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION ||
@@ -2669,6 +2678,29 @@ export class ToolBroker {
         );
       }
       await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
+    }
+  }
+
+  async #serializeWorkspaceReservation<T>(
+    assignment: ToolSandboxAssignment,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const key = workspaceIdentityKey(assignment);
+    const previous = this.#workspaceReservationTails.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolvePromise) => {
+      release = resolvePromise;
+    });
+    const tail = previous.then(() => current);
+    this.#workspaceReservationTails.set(key, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.#workspaceReservationTails.get(key) === tail) {
+        this.#workspaceReservationTails.delete(key);
+      }
     }
   }
 

@@ -1101,6 +1101,12 @@ try {
   );
   assert(finalSettlementId.length > 0);
   assert.notEqual(finalSettlementId, firstSettlementId);
+  const workspaceSettlementCount = Number(
+    await psql(
+      `select count(*)::text from workspace_settlements where session_id = ${sqlLiteral(session.sessionId)}`,
+    ),
+  );
+  assert(Number.isSafeInteger(workspaceSettlementCount) && workspaceSettlementCount >= 2);
   const finalSource = await readFile(resolve(workspacePath, "counting_sort.py"), "utf8");
   assert(finalSource.includes("counting_sort"));
   assert(
@@ -1287,7 +1293,7 @@ try {
       backgroundProcessSurvived: true,
       authenticatedHttpPreviewPassed: true,
       workspaceRestored: true,
-      workspaceSettlements: finalVersions.versions.length,
+      workspaceSettlements: workspaceSettlementCount,
       finalWorkspaceFileBytes: Buffer.byteLength(finalSource, "utf8"),
     },
     workspaceIsolation: gitPlacement,

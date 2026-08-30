@@ -597,7 +597,7 @@ try {
       },
     },
     treeForkPrune: true,
-    workspaceFiles: files.files.length,
+    workspaceBrowserEntries: directory.entries.length,
     terminal: true,
     terminalAgentConcurrency: true,
     sharedWorkspaceConcurrentSessions: true,

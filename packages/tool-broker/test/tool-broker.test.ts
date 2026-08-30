@@ -369,6 +369,49 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
+  it("serializes simultaneous reservations for two Sessions sharing one Workspace", async () => {
+    const fixture = providerFixture();
+    const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
+    const manager = new ToolBroker({
+      provider: fixture.provider,
+      idGenerator: () => activationIds.shift()!,
+    });
+    const siblingAssignment: ToolSandboxAssignment = {
+      ...assignment,
+      sandboxId: "20000000-0000-4000-8000-000000000021",
+      runId: "second-shared-workspace-run",
+      sessionId: "second-shared-workspace-session",
+      turnId: "second-shared-workspace-turn",
+      executionLease: createExecutionLease(
+        "20000000-0000-4000-8000-000000000022",
+        "20000000-0000-4000-8000-000000000023",
+        6,
+      ),
+    };
+
+    const firstReservation = manager.create(createRequest);
+    let secondResolved = false;
+    const secondReservation = manager
+      .create({
+        ...createRequest,
+        requestId: "20000000-0000-4000-8000-000000000024",
+        assignment: siblingAssignment,
+      })
+      .then((result) => {
+        secondResolved = true;
+        return result;
+      });
+
+    await expect(firstReservation).resolves.toMatchObject({ activationId: ACTIVATION_ID });
+    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
+    expect(secondResolved).toBe(false);
+
+    await manager.stop(ACTIVATION_ID, assignment);
+    await expect(secondReservation).resolves.toMatchObject({ activationId: SECOND_ACTIVATION_ID });
+    await manager.stop(SECOND_ACTIVATION_ID, siblingAssignment);
+    await manager.close();
+  });
+
   it("keeps a user-owned development KVM across PTY disconnect and supports pause/resume", async () => {
     const fixture = providerFixture();
     const manager = new ToolBroker({
