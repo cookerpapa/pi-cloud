@@ -352,7 +352,7 @@ async function runEvidence(runId) {
   const row = await psql(
     `select sandbox.supervisor_id || '|' ||
             coalesce(attempt.sandbox_id::text, '') || '|' ||
-            coalesce(activation.activation_id::text, '') || '|' ||
+            coalesce(activation.workspace_runtime_id::text, '') || '|' ||
             coalesce(activation.runtime_id, '') || '|' ||
             coalesce(pi.total_bytes, 0) || '|' ||
             coalesce(pi.total_entries, 0) || '|' ||
@@ -361,9 +361,10 @@ async function runEvidence(runId) {
        from runs run
        join run_attempts attempt on attempt.id = run.current_attempt_id
        join sandboxes sandbox on sandbox.id = attempt.sandbox_id
-       left join tool_broker_activations activation
-        on activation.attempt_id = attempt.id
-        and activation.session_id = run.session_id
+       left join tool_broker_workspace_runtimes activation
+        on activation.tenant_id = run.tenant_id
+        and activation.workspace_id = run.workspace_id
+        and activation.state in ('reserved', 'materializing', 'active', 'warm', 'cleaning')
        left join lateral (
          select coalesce(sum(pg_column_size(entry.payload)), 0)::bigint as total_bytes,
                 count(*)::bigint as total_entries,
@@ -391,7 +392,7 @@ async function runEvidence(runId) {
   const [
     supervisorId,
     sandboxId,
-    activationId,
+    workspaceRuntimeId,
     runtimeId,
     sessionBytes,
     sessionEntries,
@@ -402,7 +403,7 @@ async function runEvidence(runId) {
   return {
     supervisorId,
     sandboxId: sandboxId || undefined,
-    activationId: activationId || undefined,
+    workspaceRuntimeId: workspaceRuntimeId || undefined,
     runtimeId: runtimeId || undefined,
     sessionBytes: Number(sessionBytes),
     sessionEntries: Number(sessionEntries),
@@ -887,7 +888,7 @@ try {
   assert.equal(
     crossWorkerEvidence.runtimeId,
     postCompactionEvidence.runtimeId,
-    "Cross-Worker continuation did not rebind the same bounded-warm Cube runtime",
+    "Cross-Worker continuation did not share the same bounded-warm Workspace runtime",
   );
   progress(
     `cross-Worker compacted recovery succeeded: ${postCompactionEvidence.supervisorId} -> ${crossWorkerEvidence.supervisorId}`,
@@ -1049,7 +1050,7 @@ try {
         `- Final Pi SessionStorage bytes/entries: ${String(report.postCompaction.crossWorker.sessionBytes)} / ${String(report.postCompaction.crossWorker.sessionEntries)}`,
         `- Final active context bytes/entries: ${String(report.postCompaction.crossWorker.activeContextBytes)} / ${String(report.postCompaction.crossWorker.activeContextEntries)}`,
         "",
-        "The workload used real multi-round Python coding tasks, remote Tool calls, deterministic tests and a bounded-warm CubeSandbox KVM over a persistent Workspace Volume. Pi completed two native threshold/overflow Compactions, retained an early conversation invariant, continued coding afterward, and restored the compacted native Session on a different Worker while rebinding the same warm Cube runtime.",
+        "The workload used real multi-round Python coding tasks, remote Tool calls, deterministic tests and a bounded-warm CubeSandbox KVM over a persistent Workspace Volume. Pi completed two native threshold/overflow Compactions, retained an early conversation invariant, continued coding afterward, and restored the compacted native Session on a different Worker while sharing the same warm Workspace runtime through a new Tool binding.",
         "",
       ].join("\n"),
       "utf8",

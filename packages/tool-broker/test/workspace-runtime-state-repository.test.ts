@@ -3,7 +3,7 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
 import { createExecutionLease } from "@pi-cloud/protocol";
 import { afterEach, describe, expect, it } from "vitest";
-import { PostgresSandboxActivationStateRepository } from "../src/index.ts";
+import { PostgresWorkspaceRuntimeStateRepository } from "../src/index.ts";
 
 const resources: Array<() => Promise<void>> = [];
 
@@ -133,7 +133,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       })
       .execute();
 
-    const repository = new PostgresSandboxActivationStateRepository({
+    const repository = new PostgresWorkspaceRuntimeStateRepository({
       database,
       sandboxDomainId: "sandbox-domain-0001",
       instanceId: "20000000-0000-4000-8000-000000000004",
@@ -377,13 +377,13 @@ describe("PostgreSQL Tool Broker ownership", () => {
         child_run_id: childRunId,
         agent_name: "scout",
         context_mode: "fork",
-        workspace_mode: "shared_serialized",
+        workspace_mode: "shared",
         state: "queued",
       })
       .executeTakeFirstOrThrow();
 
     await expect(repository.reserve(activation)).resolves.toEqual({ status: "reserved" });
-    await repository.setActivationState(activation.activationId, "active");
+    await repository.setWorkspaceRuntimeState(activation.activationId, "active");
     const childActivation = {
       ...activation,
       assignment: {
@@ -415,16 +415,26 @@ describe("PostgreSQL Tool Broker ownership", () => {
     await expect(repository.reserve(childActivation)).resolves.toEqual({ status: "reserved" });
     await expect(
       database
-        .selectFrom("tool_broker_activations")
-        .select(["activation_id", "session_id", "state"])
-        .where("activation_id", "=", activation.activationId)
+        .selectFrom("tool_broker_workspace_runtimes")
+        .select(["workspace_runtime_id", "session_id", "state"])
+        .where("workspace_runtime_id", "=", activation.activationId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({
-      activation_id: activation.activationId,
-      session_id: delegatedSessionId,
-      state: "reserved",
+      workspace_runtime_id: activation.activationId,
+      session_id: rootSessionId,
+      state: "active",
     });
-    await repository.setActivationState(activation.activationId, "active");
+    await expect(
+      repository.beginOperation(
+        activation.activationId,
+        "20000000-0000-4000-8000-000000000042",
+        childActivation.assignment,
+        "20000000-0000-4000-8000-000000000041",
+        "6".repeat(64),
+      ),
+    ).resolves.toBe("started");
+    await repository.settleOperation("20000000-0000-4000-8000-000000000041", "succeeded");
+    await repository.setWorkspaceRuntimeState(activation.activationId, "active");
     await database
       .updateTable("session_leases")
       .set({
@@ -440,17 +450,19 @@ describe("PostgreSQL Tool Broker ownership", () => {
     await expect(repository.reserve(activation)).resolves.toEqual({ status: "reserved" });
     await expect(
       database
-        .selectFrom("tool_broker_activations")
+        .selectFrom("tool_broker_workspace_runtimes")
         .select(["session_id", "state"])
-        .where("activation_id", "=", activation.activationId)
+        .where("workspace_runtime_id", "=", activation.activationId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({
       session_id: rootSessionId,
-      state: "reserved",
+      state: "active",
     });
     await expect(
       repository.beginOperation(
         activation.activationId,
+        activation.activationId,
+        activation.assignment,
         "20000000-0000-4000-8000-000000000039",
         "4".repeat(64),
       ),
@@ -471,6 +483,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
     await expect(
       repository.beginOperation(
         activation.activationId,
+        activation.activationId,
+        activation.assignment,
         "20000000-0000-4000-8000-000000000040",
         "5".repeat(64),
       ),
@@ -497,17 +511,17 @@ describe("PostgreSQL Tool Broker ownership", () => {
       })
       .where("id", "=", parentRunId)
       .executeTakeFirstOrThrow();
-    await expect(repository.claimTerminalRunActivations(16)).resolves.toEqual([]);
-    await expect(repository.claimTerminalRunActivations(16, 0)).resolves.toEqual([
+    await expect(repository.claimUnboundWorkspaceRuntimes(16)).resolves.toEqual([]);
+    await expect(repository.claimUnboundWorkspaceRuntimes(16, 0)).resolves.toEqual([
       expect.objectContaining({ activationId: activation.activationId }),
     ]);
     await expect(
       database
-        .selectFrom("tool_broker_activations")
+        .selectFrom("tool_broker_workspace_runtimes")
         .select(["state", "failure_code"])
-        .where("activation_id", "=", activation.activationId)
+        .where("workspace_runtime_id", "=", activation.activationId)
         .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ state: "cleaning", failure_code: "terminal_run_orphan" });
+    ).resolves.toEqual({ state: "cleaning", failure_code: "workspace_runtime_unbound" });
   }, 30_000);
 
   it("fences an expired replica before a surviving owner stays Ready", async () => {
@@ -524,7 +538,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
     await runMigrations(database, "up");
 
     let now = new Date("2026-08-09T00:00:00.000Z");
-    const first = new PostgresSandboxActivationStateRepository({
+    const first = new PostgresWorkspaceRuntimeStateRepository({
       database,
       sandboxDomainId: "sandbox-domain-0001",
       instanceId: "10000000-0000-4000-8000-000000000101",
@@ -542,7 +556,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
     expect(() => first.assertLocalOwnership()).toThrowError(
       "Tool Broker locally confirmed ownership lease expired",
     );
-    const second = new PostgresSandboxActivationStateRepository({
+    const second = new PostgresWorkspaceRuntimeStateRepository({
       database,
       sandboxDomainId: "sandbox-domain-0001",
       instanceId: "10000000-0000-4000-8000-000000000102",
@@ -613,7 +627,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .where("instance_id", "=", priorInstanceId)
       .executeTakeFirstOrThrow();
 
-    const replacement = new PostgresSandboxActivationStateRepository({
+    const replacement = new PostgresWorkspaceRuntimeStateRepository({
       database,
       sandboxDomainId: "sandbox-domain-0001",
       instanceId: replacementInstanceId,

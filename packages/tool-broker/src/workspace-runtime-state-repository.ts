@@ -1,7 +1,7 @@
 import type {
   Database,
   DevelopmentEnvironmentState,
-  ToolBrokerActivationState,
+  ToolBrokerWorkspaceRuntimeState,
   ToolBrokerOperationState,
   WorkspaceTerminalState,
 } from "@pi-cloud/database";
@@ -17,7 +17,7 @@ import type { SandboxHandle } from "./sandbox-provider.ts";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { setTimeout as delay } from "node:timers/promises";
 
-export type SandboxActivationReservation = {
+export type WorkspaceRuntimeReservation = {
   activationId: string;
   assignment: ToolSandboxAssignment;
   turnContextSha256: string;
@@ -30,14 +30,14 @@ function executionIdentity(assignment: ToolSandboxAssignment | SupervisorRuntime
   return parseExecutionLease(assignment.executionLease);
 }
 
-export type SandboxActivationReservationResult =
+export type WorkspaceRuntimeReservationResult =
   | { status: "reserved" }
   | { status: "development_environment"; environmentId: string }
   | { status: "redirect"; ownerBaseUrl: string }
   | { status: "busy" }
   | { status: "capacity" };
 
-export type SandboxOrphanedActivation = Readonly<{
+export type OrphanedWorkspaceRuntime = Readonly<{
   activationId: string;
   assignment: ToolSandboxAssignment;
   workspaceRevision?: string;
@@ -56,7 +56,7 @@ export type WorkspaceTerminalReservationResult =
   | {
       status: "reserved";
       executionLease: string;
-      retiredActivation?: SandboxOrphanedActivation;
+      workspaceRuntimeId?: string;
     }
   | { status: "redirect"; ownerBaseUrl: string }
   | { status: "busy" }
@@ -100,20 +100,15 @@ export type RecoverableDevelopmentEnvironment = Readonly<{
 }>;
 
 export type SandboxPreviewOwnerResult =
-  { status: "owned" } | { status: "redirect"; ownerBaseUrl: string } | { status: "unavailable" };
+  | { status: "owned"; workspaceId?: string; runtimeId?: string }
+  | { status: "redirect"; ownerBaseUrl: string }
+  | { status: "unavailable" };
 
-export type SandboxSessionHandoff = Readonly<{
-  tenantId: string;
-  workspaceId: string;
-  currentSessionId: string;
-  nextSessionId: string;
-}>;
-
-export interface SandboxActivationStateRepository {
+export interface WorkspaceRuntimeStateRepository {
   start(): Promise<void>;
   checkHealth(): Promise<void>;
   assertLocalOwnership(): void;
-  reserve(input: SandboxActivationReservation): Promise<SandboxActivationReservationResult>;
+  reserve(input: WorkspaceRuntimeReservation): Promise<WorkspaceRuntimeReservationResult>;
   returnDevelopmentEnvironment(
     environmentId: string,
     activationId: string,
@@ -126,7 +121,6 @@ export interface SandboxActivationStateRepository {
   reserveDevelopmentEnvironment(
     input: DevelopmentEnvironmentReservation,
   ): Promise<DevelopmentEnvironmentReservationResult>;
-  advanceWarmGrant(activationId: string, assignment: ToolSandboxAssignment): Promise<string>;
   developmentEnvironmentOwner(
     tenantId: string,
     userId: string,
@@ -155,14 +149,15 @@ export interface SandboxActivationStateRepository {
     detail?: { handle?: SandboxHandle; failureCode?: string },
   ): Promise<void>;
   claimOrphanedTerminals(limit: number): Promise<readonly OrphanedWorkspaceTerminal[]>;
-  allowsDelegatedSandboxHandoff(input: SandboxSessionHandoff): Promise<boolean>;
-  setActivationState(
+  setWorkspaceRuntimeState(
     activationId: string,
-    state: ToolBrokerActivationState,
+    state: ToolBrokerWorkspaceRuntimeState,
     detail?: { handle?: SandboxHandle; workspaceRevision?: string; failureCode?: string },
   ): Promise<void>;
   beginOperation(
-    activationId: string,
+    workspaceRuntimeId: string,
+    toolBindingId: string,
+    assignment: ToolSandboxAssignment,
     operationId: string,
     requestSha256: string,
   ): Promise<"started" | "unknown">;
@@ -171,31 +166,31 @@ export interface SandboxActivationStateRepository {
     state: Exclude<ToolBrokerOperationState, "running">,
     failureCode?: string,
   ): Promise<void>;
-  claimOrphanedActivations(limit: number): Promise<readonly SandboxOrphanedActivation[]>;
-  claimTerminalRunActivations(
+  claimOrphanedWorkspaceRuntimes(limit: number): Promise<readonly OrphanedWorkspaceRuntime[]>;
+  claimUnboundWorkspaceRuntimes(
     limit: number,
-    minimumTerminalAgeMs?: number,
-  ): Promise<readonly SandboxOrphanedActivation[]>;
-  listRetiredWarmActivationIds(): Promise<readonly string[]>;
+    minimumUnboundAgeMs?: number,
+  ): Promise<readonly OrphanedWorkspaceRuntime[]>;
+  listRetiredWarmWorkspaceRuntimeIds(): Promise<readonly string[]>;
   listRuntimeAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]>;
   releaseRuntimeAssignment(assignment: SupervisorRuntimeAssignment): Promise<void>;
   close(): Promise<void>;
 }
 
-export class SandboxActivationStateRepositoryError extends Error {
+export class WorkspaceRuntimeStateRepositoryError extends Error {
   readonly code: "ownership_lost" | "state_conflict" | "unavailable";
 
-  constructor(code: SandboxActivationStateRepositoryError["code"], message: string) {
+  constructor(code: WorkspaceRuntimeStateRepositoryError["code"], message: string) {
     super(message);
-    this.name = "SandboxActivationStateRepositoryError";
+    this.name = "WorkspaceRuntimeStateRepositoryError";
     this.code = code;
   }
 }
 
-export class InMemorySandboxActivationStateRepository implements SandboxActivationStateRepository {
+export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntimeStateRepository {
   readonly #operations = new Map<string, string>();
   readonly #terminals = new Map<string, OrphanedWorkspaceTerminal>();
-  readonly #activations = new Map<string, SandboxActivationReservation>();
+  readonly #activations = new Map<string, WorkspaceRuntimeReservation>();
   readonly #developmentEnvironments = new Map<
     string,
     { reservation: DevelopmentEnvironmentReservation; state: DevelopmentEnvironmentState }
@@ -204,7 +199,7 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
   async start(): Promise<void> {}
   async checkHealth(): Promise<void> {}
   assertLocalOwnership(): void {}
-  async reserve(input: SandboxActivationReservation): Promise<SandboxActivationReservationResult> {
+  async reserve(input: WorkspaceRuntimeReservation): Promise<WorkspaceRuntimeReservationResult> {
     if (
       [...this.#developmentEnvironments.values()].some(
         ({ reservation: environment, state }) =>
@@ -273,7 +268,13 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
         : executionIdentity(currentActivation.assignment).attemptId;
     const executionLease = createExecutionLease(input.terminalId, executionId, generation);
     this.#terminals.set(input.terminalId, { ...input, fencingToken: generation });
-    return { status: "reserved", executionLease };
+    return {
+      status: "reserved",
+      executionLease,
+      ...(currentActivation === undefined
+        ? {}
+        : { workspaceRuntimeId: currentActivation.activationId }),
+    };
   }
   async reserveDevelopmentEnvironment(
     input: DevelopmentEnvironmentReservation,
@@ -302,33 +303,6 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
       state: "running",
     });
     return { status: "reserved" };
-  }
-  async advanceWarmGrant(activationId: string, assignment: ToolSandboxAssignment): Promise<string> {
-    const activation = this.#activations.get(activationId);
-    const execution = executionIdentity(assignment);
-    if (
-      activation === undefined ||
-      activation.assignment.executionLease !== assignment.executionLease
-    ) {
-      throw new SandboxActivationStateRepositoryError(
-        "ownership_lost",
-        "Warm Sandbox authority is no longer current",
-      );
-    }
-    const generation = execution.fencingToken + 1;
-    const executionLease = createExecutionLease(
-      globalThis.crypto.randomUUID(),
-      execution.attemptId,
-      generation,
-    );
-    this.#activations.set(activationId, {
-      ...activation,
-      assignment: {
-        ...assignment,
-        executionLease,
-      },
-    });
-    return executionLease;
   }
   async developmentEnvironmentOwner(
     _tenantId: string,
@@ -389,18 +363,17 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
   async claimOrphanedTerminals(): Promise<readonly OrphanedWorkspaceTerminal[]> {
     return [];
   }
-  async allowsDelegatedSandboxHandoff(): Promise<boolean> {
-    return false;
-  }
-  async setActivationState(
+  async setWorkspaceRuntimeState(
     activationId: string,
-    state: ToolBrokerActivationState,
+    state: ToolBrokerWorkspaceRuntimeState,
     _detail?: { handle?: SandboxHandle; workspaceRevision?: string; failureCode?: string },
   ): Promise<void> {
     if (state === "released") this.#activations.delete(activationId);
   }
   async beginOperation(
     _activationId: string,
+    _toolBindingId: string,
+    _assignment: ToolSandboxAssignment,
     operationId: string,
     requestSha256: string,
   ): Promise<"started" | "unknown"> {
@@ -410,13 +383,13 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
     return "started";
   }
   async settleOperation(): Promise<void> {}
-  async claimOrphanedActivations(): Promise<readonly SandboxOrphanedActivation[]> {
+  async claimOrphanedWorkspaceRuntimes(): Promise<readonly OrphanedWorkspaceRuntime[]> {
     return [];
   }
-  async claimTerminalRunActivations(): Promise<readonly SandboxOrphanedActivation[]> {
+  async claimUnboundWorkspaceRuntimes(): Promise<readonly OrphanedWorkspaceRuntime[]> {
     return [];
   }
-  async listRetiredWarmActivationIds(): Promise<readonly string[]> {
+  async listRetiredWarmWorkspaceRuntimeIds(): Promise<readonly string[]> {
     return [];
   }
   async listRuntimeAssignments(): Promise<readonly SupervisorRuntimeAssignment[]> {
@@ -426,7 +399,7 @@ export class InMemorySandboxActivationStateRepository implements SandboxActivati
   async close(): Promise<void> {}
 }
 
-export type PostgresSandboxActivationStateRepositoryOptions = {
+export type PostgresWorkspaceRuntimeStateRepositoryOptions = {
   database: Kysely<Database>;
   sandboxDomainId: string;
   instanceId: string;
@@ -473,7 +446,7 @@ function readyOwnerUrlConflict(error: unknown): boolean {
 function developmentProfileKey(value: string): DevelopmentEnvironmentProfileKey {
   const profile = DEVELOPMENT_ENVIRONMENT_PROFILES.find((candidate) => candidate.key === value);
   if (profile === undefined) {
-    throw new SandboxActivationStateRepositoryError(
+    throw new WorkspaceRuntimeStateRepositoryError(
       "state_conflict",
       "Development environment profile is invalid",
     );
@@ -481,7 +454,7 @@ function developmentProfileKey(value: string): DevelopmentEnvironmentProfileKey 
   return profile.key;
 }
 
-export class PostgresSandboxActivationStateRepository implements SandboxActivationStateRepository {
+export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntimeStateRepository {
   readonly #database: Kysely<Database>;
   readonly #sandboxDomainId: string;
   readonly #instanceId: string;
@@ -493,7 +466,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
   #closed = false;
   #confirmedLeaseExpiresAt = 0;
 
-  constructor(options: PostgresSandboxActivationStateRepositoryOptions) {
+  constructor(options: PostgresWorkspaceRuntimeStateRepositoryOptions) {
     this.#database = options.database;
     this.#sandboxDomainId = options.sandboxDomainId;
     this.#instanceId = options.instanceId;
@@ -528,7 +501,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           : timestampValue(currentOwner.lease_expires_at, "Tool Broker owner lease");
       if (currentOwnerLease !== undefined && currentOwnerLease > now.valueOf()) {
         if (Date.now() >= startupDeadline) {
-          throw new SandboxActivationStateRepositoryError(
+          throw new WorkspaceRuntimeStateRepositoryError(
             "ownership_lost",
             "Tool Broker owner URL is still leased by another instance",
           );
@@ -596,7 +569,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       .where("lease_expires_at", ">", now)
       .executeTakeFirst();
     if (row === undefined) {
-      throw new SandboxActivationStateRepositoryError(
+      throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Tool Broker database ownership lease is not current",
       );
@@ -610,14 +583,14 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
   assertLocalOwnership(): void {
     const now = validDate(this.#clock);
     if (this.#closed || now.valueOf() >= this.#confirmedLeaseExpiresAt) {
-      throw new SandboxActivationStateRepositoryError(
+      throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Tool Broker locally confirmed ownership lease expired",
       );
     }
   }
 
-  async reserve(input: SandboxActivationReservation): Promise<SandboxActivationReservationResult> {
+  async reserve(input: WorkspaceRuntimeReservation): Promise<WorkspaceRuntimeReservationResult> {
     const now = validDate(this.#clock);
     const execution = executionIdentity(input.assignment);
     return this.#database.transaction().execute(async (transaction) => {
@@ -631,7 +604,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .forUpdate()
         .executeTakeFirst();
       if (workspace?.sandbox_domain_id !== this.#sandboxDomainId) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Workspace is not assigned to this Sandbox Domain",
         );
@@ -711,13 +684,13 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         authority.turn_id !== input.assignment.turnId ||
         authority.sandbox_id !== input.assignment.sandboxId
       ) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "ownership_lost",
-          "Tool Sandbox create used a stale ExecutionLease",
+          "Tool binding reserve used a stale ExecutionLease",
         );
       }
       const existing = await transaction
-        .selectFrom("tool_broker_activations")
+        .selectFrom("tool_broker_workspace_runtimes")
         .selectAll()
         .where("tenant_id", "=", input.assignment.tenantId)
         .where("workspace_id", "=", input.assignment.workspaceId)
@@ -734,70 +707,21 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         if (existing.owner_instance_id !== this.#instanceId) {
           return { status: "redirect", ownerBaseUrl: existing.owner_base_url };
         }
-        const delegatedHandoff =
-          existing.session_id === input.assignment.sessionId
-            ? undefined
-            : await transaction
-                .selectFrom("subagent_executions")
-                .select("id")
-                .where("tenant_id", "=", input.assignment.tenantId)
-                .where("workspace_mode", "=", "shared_serialized")
-                .where((expression) =>
-                  expression.or([
-                    expression.and([
-                      expression("parent_session_id", "=", existing.session_id),
-                      expression("child_session_id", "=", input.assignment.sessionId),
-                    ]),
-                    expression.and([
-                      expression("parent_session_id", "=", input.assignment.sessionId),
-                      expression("child_session_id", "=", existing.session_id),
-                    ]),
-                  ]),
-                )
-                .executeTakeFirst();
-        const activeOperation = await transaction
-          .selectFrom("tool_broker_operations")
-          .select("operation_id")
-          .where("activation_id", "=", existing.activation_id)
-          .where("state", "=", "running")
-          .executeTakeFirst();
-        const ordinaryWarmReuse =
-          existing.state === "warm" &&
-          existing.session_id === input.assignment.sessionId &&
-          existing.workspace_revision === (input.workspaceRevision ?? null) &&
-          existing.environment_sha256 === input.environmentSha256;
-        const delegatedReuse =
-          delegatedHandoff !== undefined &&
-          ["reserved", "materializing", "active", "warm"].includes(existing.state) &&
-          activeOperation === undefined &&
-          existing.environment_sha256 === input.environmentSha256;
-        const reusable = ordinaryWarmReuse || delegatedReuse;
-        if (!reusable) return { status: "busy" };
-        if (existing.activation_id !== input.activationId) {
-          throw new SandboxActivationStateRepositoryError(
-            "state_conflict",
-            "Delegated activation identity changed inside one owner",
-          );
+        if (
+          existing.workspace_runtime_id !== input.activationId ||
+          existing.environment_sha256 !== input.environmentSha256 ||
+          !["reserved", "materializing", "active", "warm"].includes(existing.state)
+        ) {
+          return { status: "busy" };
         }
         await transaction
-          .updateTable("tool_broker_activations")
+          .updateTable("tool_broker_workspace_runtimes")
           .set({
-            supervisor_id: input.assignment.supervisorId,
-            boot_id: input.assignment.bootId,
-            sandbox_id: input.assignment.sandboxId,
-            run_id: input.assignment.runId,
-            session_id: input.assignment.sessionId,
-            turn_id: input.assignment.turnId,
-            attempt_id: execution.attemptId,
-            lease_id: execution.leaseId,
-            fencing_token: execution.fencingToken,
-            turn_context_sha256: input.turnContextSha256,
-            attempt_context_sha256: input.attemptContextSha256,
-            state: "reserved",
+            state: existing.state === "warm" ? "reserved" : existing.state,
             failure_code: null,
             updated_at: now,
           })
-          .where("activation_id", "=", input.activationId)
+          .where("workspace_runtime_id", "=", input.activationId)
           .where("owner_instance_id", "=", this.#instanceId)
           .where("state", "=", existing.state)
           .executeTakeFirstOrThrow();
@@ -811,13 +735,13 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .forUpdate()
         .executeTakeFirst();
       if (domain === undefined) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Sandbox Domain is not active",
         );
       }
       const live = await transaction
-        .selectFrom("tool_broker_activations")
+        .selectFrom("tool_broker_workspace_runtimes")
         .select(({ fn }) => fn.countAll<string>().as("count"))
         .where("sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("state", "in", [
@@ -863,7 +787,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         if (lent.numUpdatedRows !== 1n) return { status: "busy" };
       }
       const activationValues = {
-        activation_id: input.activationId,
+        workspace_runtime_id: input.activationId,
         sandbox_domain_id: this.#sandboxDomainId,
         owner_instance_id: this.#instanceId,
         owner_base_url: this.#ownerBaseUrl,
@@ -890,14 +814,14 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         updated_at: now,
       } as const;
       const retiredActivation = await transaction
-        .selectFrom("tool_broker_activations")
+        .selectFrom("tool_broker_workspace_runtimes")
         .select(["tenant_id", "project_id", "workspace_id", "state"])
-        .where("activation_id", "=", input.activationId)
+        .where("workspace_runtime_id", "=", input.activationId)
         .forUpdate()
         .executeTakeFirst();
       if (retiredActivation === undefined) {
         await transaction
-          .insertInto("tool_broker_activations")
+          .insertInto("tool_broker_workspace_runtimes")
           .values(activationValues)
           .executeTakeFirstOrThrow();
       } else {
@@ -908,13 +832,13 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           retiredActivation.workspace_id !== input.assignment.workspaceId ||
           retiredActivation.state !== "released"
         ) {
-          throw new SandboxActivationStateRepositoryError(
+          throw new WorkspaceRuntimeStateRepositoryError(
             "state_conflict",
-            "Tool Sandbox activation identity was already used by another resource",
+            "Workspace runtime identity was already used by another resource",
           );
         }
         await transaction
-          .updateTable("tool_broker_activations")
+          .updateTable("tool_broker_workspace_runtimes")
           .set({
             owner_instance_id: this.#instanceId,
             owner_base_url: this.#ownerBaseUrl,
@@ -937,7 +861,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
             failure_code: null,
             updated_at: now,
           })
-          .where("activation_id", "=", input.activationId)
+          .where("workspace_runtime_id", "=", input.activationId)
           .where("state", "=", "released")
           .executeTakeFirstOrThrow();
       }
@@ -969,7 +893,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         workspace?.sandbox_domain_id !== this.#sandboxDomainId ||
         workspace.project_id !== input.projectId
       ) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Workspace terminal identity did not match this Sandbox Domain",
         );
@@ -984,15 +908,15 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .forUpdate()
         .executeTakeFirst();
       if (session === undefined) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Workspace terminal Session was unavailable",
         );
       }
       const activation = await transaction
-        .selectFrom("tool_broker_activations")
+        .selectFrom("tool_broker_workspace_runtimes")
         .select([
-          "activation_id",
+          "workspace_runtime_id",
           "owner_instance_id",
           "owner_base_url",
           "state",
@@ -1012,8 +936,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         ])
         .where("tenant_id", "=", input.tenantId)
         .where("workspace_id", "=", input.workspaceId)
-        .where("session_id", "=", input.sessionId)
-        .where("state", "=", "warm")
+        .where("state", "in", ["reserved", "materializing", "active", "warm"])
         .executeTakeFirst();
       const developmentEnvironment = await transaction
         .selectFrom("development_environments")
@@ -1052,14 +975,14 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .forUpdate()
         .executeTakeFirst();
       if (domain === undefined) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Workspace terminal Sandbox Domain is unavailable",
         );
       }
       const domainReserved = await this.#domainReservedSandboxes(transaction);
-      const replacedWarmActivation = activation === undefined ? 0 : 1;
-      if (domainReserved - replacedWarmActivation >= domain.maximum_active_sandboxes) {
+      const existingWorkspaceRuntime = activation === undefined ? 0 : 1;
+      if (domainReserved - existingWorkspaceRuntime >= domain.maximum_active_sandboxes) {
         return { status: "capacity" };
       }
       const currentFence = Math.max(
@@ -1068,7 +991,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       );
       const generation = currentFence + 1;
       if (!Number.isSafeInteger(generation) || generation < 1) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Workspace terminal fencing token is exhausted",
         );
@@ -1100,44 +1023,12 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         activation?.attempt_id ?? input.terminalId,
         generation,
       );
-      if (activation === undefined) return { status: "reserved", executionLease };
-      await transaction
-        .updateTable("tool_broker_activations")
-        .set({
-          state: "cleaning",
-          lease_id: input.terminalId,
-          fencing_token: generation,
-          updated_at: now,
-        })
-        .where("activation_id", "=", activation.activation_id)
-        .where("owner_instance_id", "=", this.#instanceId)
-        .where("state", "=", "warm")
-        .executeTakeFirstOrThrow();
       return {
         status: "reserved",
         executionLease,
-        retiredActivation: {
-          activationId: activation.activation_id,
-          ...(activation.workspace_revision === null
-            ? {}
-            : { workspaceRevision: activation.workspace_revision }),
-          assignment: {
-            tenantId: activation.tenant_id,
-            projectId: activation.project_id,
-            workspaceId: activation.workspace_id,
-            supervisorId: activation.supervisor_id,
-            bootId: activation.boot_id,
-            sandboxId: activation.sandbox_id,
-            runId: activation.run_id,
-            sessionId: activation.session_id,
-            turnId: activation.turn_id,
-            executionLease: createExecutionLease(
-              activation.lease_id,
-              activation.attempt_id,
-              Number(activation.fencing_token),
-            ),
-          },
-        },
+        ...(activation === undefined
+          ? {}
+          : { workspaceRuntimeId: activation.workspace_runtime_id }),
       };
     });
   }
@@ -1163,7 +1054,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         environment.sandbox_domain_id !== this.#sandboxDomainId ||
         environment.profile_key !== input.profileKey
       ) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Development environment identity did not match this Sandbox Domain",
         );
@@ -1192,14 +1083,14 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         workspace.project_id !== input.projectId ||
         workspace.sandbox_domain_id !== this.#sandboxDomainId
       ) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Development environment Workspace is unavailable",
         );
       }
       const activeActivation = await transaction
-        .selectFrom("tool_broker_activations")
-        .select("activation_id")
+        .selectFrom("tool_broker_workspace_runtimes")
+        .select("workspace_runtime_id")
         .where("tenant_id", "=", input.tenantId)
         .where("workspace_id", "=", input.workspaceId)
         .where("state", "in", [
@@ -1229,7 +1120,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .forUpdate()
         .executeTakeFirst();
       if (domain === undefined) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Development environment Sandbox Domain is unavailable",
         );
@@ -1253,84 +1144,6 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .where("state", "=", environment.state)
         .executeTakeFirstOrThrow();
       return { status: "reserved" };
-    });
-  }
-
-  async advanceWarmGrant(activationId: string, assignment: ToolSandboxAssignment): Promise<string> {
-    const now = validDate(this.#clock);
-    const currentExecution = executionIdentity(assignment);
-    return this.#database.transaction().execute(async (transaction) => {
-      await this.#assertCurrentOwner(transaction, now);
-      const activation = await transaction
-        .selectFrom("tool_broker_activations")
-        .select(["session_id", "attempt_id", "lease_id", "fencing_token", "state"])
-        .where("activation_id", "=", activationId)
-        .where("owner_instance_id", "=", this.#instanceId)
-        .where("tenant_id", "=", assignment.tenantId)
-        .where("project_id", "=", assignment.projectId)
-        .where("workspace_id", "=", assignment.workspaceId)
-        .where("session_id", "=", assignment.sessionId)
-        .where("lease_id", "=", currentExecution.leaseId)
-        .where("fencing_token", "=", String(currentExecution.fencingToken))
-        .where("state", "in", ["reserved", "materializing", "active", "cleaning"])
-        .forUpdate()
-        .executeTakeFirst();
-      if (activation === undefined) {
-        throw new SandboxActivationStateRepositoryError(
-          "ownership_lost",
-          "Warm Sandbox authority is no longer current",
-        );
-      }
-      const session = await transaction
-        .selectFrom("sessions")
-        .select("last_fencing_token")
-        .where("tenant_id", "=", assignment.tenantId)
-        .where("id", "=", activation.session_id)
-        .forUpdate()
-        .executeTakeFirst();
-      if (session === undefined) {
-        throw new SandboxActivationStateRepositoryError(
-          "state_conflict",
-          "Warm Sandbox Session was unavailable",
-        );
-      }
-      const generation =
-        Math.max(Number(session.last_fencing_token), Number(activation.fencing_token)) + 1;
-      if (!Number.isSafeInteger(generation)) {
-        throw new SandboxActivationStateRepositoryError(
-          "state_conflict",
-          "Warm Sandbox fencing token is exhausted",
-        );
-      }
-      const grantId = globalThis.crypto.randomUUID();
-      const executionLease = createExecutionLease(grantId, activation.attempt_id, generation);
-      const sessionUpdate = await transaction
-        .updateTable("sessions")
-        .set({
-          last_fencing_token: generation,
-          row_version: sql<string>`${sql.ref("row_version")} + 1`,
-          updated_at: now,
-        })
-        .where("tenant_id", "=", assignment.tenantId)
-        .where("id", "=", activation.session_id)
-        .where("last_fencing_token", "=", session.last_fencing_token)
-        .executeTakeFirst();
-      const activationUpdate = await transaction
-        .updateTable("tool_broker_activations")
-        .set({ lease_id: grantId, fencing_token: generation, updated_at: now })
-        .where("activation_id", "=", activationId)
-        .where("owner_instance_id", "=", this.#instanceId)
-        .where("lease_id", "=", activation.lease_id)
-        .where("fencing_token", "=", activation.fencing_token)
-        .where("state", "=", activation.state)
-        .executeTakeFirst();
-      if (sessionUpdate.numUpdatedRows !== 1n || activationUpdate.numUpdatedRows !== 1n) {
-        throw new SandboxActivationStateRepositoryError(
-          "ownership_lost",
-          "Warm Sandbox fence could not advance",
-        );
-      }
-      return executionLease;
     });
   }
 
@@ -1410,22 +1223,39 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       return owner.state === "running" ? { status: "owned" } : { status: "unavailable" };
     }
     const activation = await this.#database
-      .selectFrom("tool_broker_activations as activation")
+      .selectFrom("sandbox_http_services as service")
+      .innerJoin("tool_broker_workspace_runtimes as activation", (join) =>
+        join
+          .onRef("activation.tenant_id", "=", "service.tenant_id")
+          .onRef("activation.workspace_id", "=", "service.workspace_id")
+          .onRef("activation.runtime_id", "=", "service.runtime_id"),
+      )
       .innerJoin("sessions as session_row", (join) =>
         join
-          .onRef("session_row.tenant_id", "=", "activation.tenant_id")
-          .onRef("session_row.id", "=", "activation.session_id"),
+          .onRef("session_row.tenant_id", "=", "service.tenant_id")
+          .onRef("session_row.id", "=", "service.session_id"),
       )
-      .select(["activation.owner_instance_id", "activation.owner_base_url"])
-      .where("activation.tenant_id", "=", tenantId)
-      .where("activation.session_id", "=", target.sessionId)
+      .select([
+        "activation.owner_instance_id",
+        "activation.owner_base_url",
+        "activation.workspace_id",
+        "activation.runtime_id",
+      ])
+      .where("service.tenant_id", "=", tenantId)
+      .where("service.target_kind", "=", "conversation")
+      .where("service.target_id", "=", target.sessionId)
+      .where("service.state", "=", "active")
       .where("activation.state", "in", ["materializing", "active", "warm", "cleaning"])
       .where("session_row.archived_at", "is", null)
-      .orderBy("activation.updated_at", "desc")
+      .orderBy("service.last_seen_at", "desc")
       .executeTakeFirst();
     if (activation === undefined) return { status: "unavailable" };
     return activation.owner_instance_id === this.#instanceId
-      ? { status: "owned" }
+      ? {
+          status: "owned",
+          workspaceId: activation.workspace_id,
+          ...(activation.runtime_id === null ? {} : { runtimeId: activation.runtime_id }),
+        }
       : { status: "redirect", ownerBaseUrl: activation.owner_base_url };
   }
 
@@ -1466,7 +1296,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .executeTakeFirst();
     });
     if (updated.numUpdatedRows !== 1n) {
-      throw new SandboxActivationStateRepositoryError(
+      throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Development environment ownership is no longer current",
       );
@@ -1498,15 +1328,15 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .where("agent_activation_id", "=", activationId)
         .executeTakeFirst();
       if (returned.numUpdatedRows !== 1n) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "ownership_lost",
-          "Development environment Agent handoff is no longer current",
+          "Development environment Agent binding is no longer current",
         );
       }
       await transaction
-        .updateTable("tool_broker_activations")
+        .updateTable("tool_broker_workspace_runtimes")
         .set({ state: "released", runtime_id: null, runtime_name: null, updated_at: now })
-        .where("activation_id", "=", activationId)
+        .where("workspace_runtime_id", "=", activationId)
         .where("owner_instance_id", "=", this.#instanceId)
         .executeTakeFirstOrThrow();
     });
@@ -1701,7 +1531,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .executeTakeFirst();
     });
     if (updated.numUpdatedRows !== 1n) {
-      throw new SandboxActivationStateRepositoryError(
+      throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Workspace terminal ownership is no longer current",
       );
@@ -1758,39 +1588,16 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     });
   }
 
-  async allowsDelegatedSandboxHandoff(input: SandboxSessionHandoff): Promise<boolean> {
-    if (input.currentSessionId === input.nextSessionId) return false;
-    const delegated = await this.#database
-      .selectFrom("subagent_executions")
-      .select("id")
-      .where("tenant_id", "=", input.tenantId)
-      .where("workspace_mode", "=", "shared_serialized")
-      .where((expression) =>
-        expression.or([
-          expression.and([
-            expression("parent_session_id", "=", input.currentSessionId),
-            expression("child_session_id", "=", input.nextSessionId),
-          ]),
-          expression.and([
-            expression("parent_session_id", "=", input.nextSessionId),
-            expression("child_session_id", "=", input.currentSessionId),
-          ]),
-        ]),
-      )
-      .executeTakeFirst();
-    return delegated !== undefined;
-  }
-
-  async setActivationState(
+  async setWorkspaceRuntimeState(
     activationId: string,
-    state: ToolBrokerActivationState,
+    state: ToolBrokerWorkspaceRuntimeState,
     detail: { handle?: SandboxHandle; workspaceRevision?: string; failureCode?: string } = {},
   ): Promise<void> {
     const now = validDate(this.#clock);
     const updated = await this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
       return transaction
-        .updateTable("tool_broker_activations")
+        .updateTable("tool_broker_workspace_runtimes")
         .set({
           state,
           runtime_id: detail.handle?.runtimeId ?? null,
@@ -1801,50 +1608,56 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
           failure_code: failureCode(detail.failureCode),
           updated_at: now,
         })
-        .where("activation_id", "=", activationId)
+        .where("workspace_runtime_id", "=", activationId)
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "!=", "released")
         .executeTakeFirst();
     });
     if (updated.numUpdatedRows !== 1n) {
-      throw new SandboxActivationStateRepositoryError(
+      throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
-        "Sandbox activation ownership is no longer current",
+        "Workspace runtime ownership is no longer current",
       );
     }
   }
 
   async beginOperation(
-    activationId: string,
+    workspaceRuntimeId: string,
+    toolBindingId: string,
+    assignment: ToolSandboxAssignment,
     operationId: string,
     requestSha256: string,
   ): Promise<"started" | "unknown"> {
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
+      const execution = executionIdentity(assignment);
       const activation = await transaction
-        .selectFrom("tool_broker_activations as activation")
+        .selectFrom("tool_broker_workspace_runtimes as activation")
         .innerJoin("session_leases as authority", (join) =>
           join
-            .onRef("authority.lease_id", "=", "activation.lease_id")
-            .onRef("authority.attempt_id", "=", "activation.attempt_id")
-            .onRef("authority.fencing_token", "=", "activation.fencing_token")
             .onRef("authority.tenant_id", "=", "activation.tenant_id")
             .onRef("authority.project_id", "=", "activation.project_id")
-            .onRef("authority.workspace_id", "=", "activation.workspace_id")
-            .onRef("authority.sandbox_id", "=", "activation.sandbox_id"),
+            .onRef("authority.workspace_id", "=", "activation.workspace_id"),
         )
-        .select("activation.activation_id")
-        .where("activation.activation_id", "=", activationId)
+        .select("activation.workspace_runtime_id")
+        .where("activation.workspace_runtime_id", "=", workspaceRuntimeId)
         .where("activation.owner_instance_id", "=", this.#instanceId)
         .where("activation.state", "in", ["reserved", "materializing", "active"])
+        .where("authority.lease_id", "=", execution.leaseId)
+        .where("authority.attempt_id", "=", execution.attemptId)
+        .where("authority.fencing_token", "=", String(execution.fencingToken))
+        .where("authority.session_id", "=", assignment.sessionId)
+        .where("authority.run_id", "=", assignment.runId)
+        .where("authority.turn_id", "=", assignment.turnId)
+        .where("authority.sandbox_id", "=", assignment.sandboxId)
         .where("authority.valid_until", ">", now)
         .forUpdate()
         .executeTakeFirst();
       if (activation === undefined) {
-        throw new SandboxActivationStateRepositoryError(
+        throw new WorkspaceRuntimeStateRepositoryError(
           "ownership_lost",
-          "Sandbox activation is not executable by this owner",
+          "Workspace runtime is not executable by this owner",
         );
       }
       const existing = await transaction
@@ -1857,7 +1670,14 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .insertInto("tool_broker_operations")
         .values({
           operation_id: operationId,
-          activation_id: activationId,
+          workspace_runtime_id: workspaceRuntimeId,
+          tool_binding_id: toolBindingId,
+          tenant_id: assignment.tenantId,
+          session_id: assignment.sessionId,
+          run_id: assignment.runId,
+          attempt_id: execution.attemptId,
+          lease_id: execution.leaseId,
+          fencing_token: execution.fencingToken,
           owner_instance_id: this.#instanceId,
           request_sha256: requestSha256,
           state: "running",
@@ -1891,22 +1711,24 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .executeTakeFirst();
     });
     if (settled.numUpdatedRows !== 1n) {
-      throw new SandboxActivationStateRepositoryError(
+      throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Sandbox operation ownership is no longer current",
       );
     }
   }
 
-  async claimOrphanedActivations(limit: number): Promise<readonly SandboxOrphanedActivation[]> {
+  async claimOrphanedWorkspaceRuntimes(
+    limit: number,
+  ): Promise<readonly OrphanedWorkspaceRuntime[]> {
     const boundedLimit = positiveInteger(limit, "orphan cleanup limit");
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
       const rows = await transaction
-        .selectFrom("tool_broker_activations")
+        .selectFrom("tool_broker_workspace_runtimes")
         .select([
-          "activation_id",
+          "workspace_runtime_id",
           "tenant_id",
           "project_id",
           "workspace_id",
@@ -1929,19 +1751,19 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .execute();
       for (const row of rows) {
         await transaction
-          .updateTable("tool_broker_activations")
+          .updateTable("tool_broker_workspace_runtimes")
           .set({
             owner_instance_id: this.#instanceId,
             owner_base_url: this.#ownerBaseUrl,
             state: "cleaning",
             updated_at: now,
           })
-          .where("activation_id", "=", row.activation_id)
+          .where("workspace_runtime_id", "=", row.workspace_runtime_id)
           .where("state", "=", "unknown")
           .executeTakeFirstOrThrow();
       }
       return rows.map((row) => ({
-        activationId: row.activation_id,
+        activationId: row.workspace_runtime_id,
         assignment: {
           tenantId: row.tenant_id,
           projectId: row.project_id,
@@ -1962,42 +1784,29 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     });
   }
 
-  async claimTerminalRunActivations(
+  async claimUnboundWorkspaceRuntimes(
     limit: number,
-    minimumTerminalAgeMs = Math.max(this.#leaseMs * 2, 30_000),
-  ): Promise<readonly SandboxOrphanedActivation[]> {
-    const boundedLimit = positiveInteger(limit, "terminal Run activation cleanup limit");
+    minimumUnboundAgeMs = Math.max(this.#leaseMs * 2, 30_000),
+  ): Promise<readonly OrphanedWorkspaceRuntime[]> {
+    const boundedLimit = positiveInteger(limit, "unbound Workspace runtime cleanup limit");
     if (
-      !Number.isSafeInteger(minimumTerminalAgeMs) ||
-      minimumTerminalAgeMs < 0 ||
-      minimumTerminalAgeMs > 300_000
+      !Number.isSafeInteger(minimumUnboundAgeMs) ||
+      minimumUnboundAgeMs < 0 ||
+      minimumUnboundAgeMs > 300_000
     ) {
-      throw new TypeError("terminal Run activation cleanup age is invalid");
+      throw new TypeError("unbound Workspace runtime cleanup age is invalid");
     }
     const now = validDate(this.#clock);
-    // Run settlement and Tool Broker release are separate network operations.
-    // A terminal Run in PostgreSQL is not proof that the trusted Runner has
-    // finished settling/revoking its physical Cube yet. Give that normal
-    // background handoff at least two Broker lease windows. A newly admitted
-    // writer passes zero only after the old Run is terminal and fenced, because
-    // waiting for this grace period would strand the Workspace behind dead code.
-    const orphanedBefore = new Date(now.valueOf() - minimumTerminalAgeMs);
+    // Binding release and lease expiry are separate network events. Wait at
+    // least two Broker lease windows before treating a runtime with no live
+    // Workspace lease as orphaned.
+    const orphanedBefore = new Date(now.valueOf() - minimumUnboundAgeMs);
     return this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
       const rows = await transaction
-        .selectFrom("tool_broker_activations as activation")
-        .innerJoin("run_attempts as attempt", (join) =>
-          join
-            .onRef("attempt.tenant_id", "=", "activation.tenant_id")
-            .onRef("attempt.id", "=", "activation.attempt_id"),
-        )
-        .innerJoin("runs as run", (join) =>
-          join
-            .onRef("run.tenant_id", "=", "attempt.tenant_id")
-            .onRef("run.id", "=", "attempt.run_id"),
-        )
+        .selectFrom("tool_broker_workspace_runtimes as activation")
         .select([
-          "activation.activation_id",
+          "activation.workspace_runtime_id",
           "activation.tenant_id",
           "activation.project_id",
           "activation.workspace_id",
@@ -2013,67 +1822,48 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         ])
         .where("activation.sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("activation.state", "in", ["reserved", "materializing", "active"])
-        .where((expression) =>
-          expression.or([
-            expression.and([
-              expression("run.state", "in", [
-                "completed",
-                "failed",
-                "cancelled",
-                "timed_out",
-                "superseded",
-              ]),
-              expression("run.settled_at", "<", orphanedBefore),
-            ]),
-            expression.and([
-              expression("attempt.state", "in", [
-                "completed",
-                "failed",
-                "cancelled",
-                "timed_out",
-                "superseded",
-              ]),
-              expression("attempt.settled_at", "<", orphanedBefore),
-            ]),
-            expression.and([
-              sql<boolean>`${sql.ref("run.current_attempt_id")} is distinct from ${sql.ref(
-                "activation.attempt_id",
-              )}`,
-              expression("attempt.updated_at", "<", orphanedBefore),
-            ]),
-          ]),
+        .where("activation.updated_at", "<", orphanedBefore)
+        .where(
+          sql<boolean>`not exists (
+            select 1
+              from session_leases authority
+             where authority.tenant_id = ${sql.ref("activation.tenant_id")}
+               and authority.project_id = ${sql.ref("activation.project_id")}
+               and authority.workspace_id = ${sql.ref("activation.workspace_id")}
+               and authority.valid_until > ${now}
+          )`,
         )
         .orderBy("activation.updated_at", "asc")
         .limit(boundedLimit)
         .forUpdate("activation")
         .skipLocked()
         .execute();
-      const activationIds = rows.map((row) => row.activation_id);
+      const activationIds = rows.map((row) => row.workspace_runtime_id);
       if (activationIds.length > 0) {
         await transaction
-          .updateTable("tool_broker_activations")
+          .updateTable("tool_broker_workspace_runtimes")
           .set({
             owner_instance_id: this.#instanceId,
             owner_base_url: this.#ownerBaseUrl,
             state: "cleaning",
-            failure_code: "terminal_run_orphan",
+            failure_code: "workspace_runtime_unbound",
             updated_at: now,
           })
-          .where("activation_id", "in", activationIds)
+          .where("workspace_runtime_id", "in", activationIds)
           .execute();
         await transaction
           .updateTable("tool_broker_operations")
           .set({
             state: "failed",
-            failure_code: "terminal_run_orphan",
+            failure_code: "workspace_runtime_unbound",
             settled_at: now,
           })
-          .where("activation_id", "in", activationIds)
+          .where("workspace_runtime_id", "in", activationIds)
           .where("state", "=", "running")
           .execute();
       }
       return rows.map((row) => ({
-        activationId: row.activation_id,
+        activationId: row.workspace_runtime_id,
         assignment: {
           tenantId: row.tenant_id,
           projectId: row.project_id,
@@ -2094,21 +1884,21 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     });
   }
 
-  async listRetiredWarmActivationIds(): Promise<readonly string[]> {
+  async listRetiredWarmWorkspaceRuntimeIds(): Promise<readonly string[]> {
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
       const rows = await transaction
-        .selectFrom("tool_broker_activations as activation")
-        .innerJoin("sessions as session_row", (join) =>
+        .selectFrom("tool_broker_workspace_runtimes as activation")
+        .innerJoin("workspaces as workspace", (join) =>
           join
-            .onRef("session_row.tenant_id", "=", "activation.tenant_id")
-            .onRef("session_row.id", "=", "activation.session_id"),
+            .onRef("workspace.tenant_id", "=", "activation.tenant_id")
+            .onRef("workspace.id", "=", "activation.workspace_id"),
         )
-        .select("activation.activation_id as activationId")
+        .select("activation.workspace_runtime_id as activationId")
         .where("activation.owner_instance_id", "=", this.#instanceId)
         .where("activation.state", "=", "warm")
-        .where("session_row.archived_at", "is not", null)
+        .where("workspace.deleted_at", "is not", null)
         .execute();
       return rows.map((row) => row.activationId);
     });
@@ -2116,7 +1906,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
 
   async listRuntimeAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]> {
     const rows = await this.#database
-      .selectFrom("tool_broker_activations")
+      .selectFrom("tool_broker_workspace_runtimes")
       .select([
         "runtime_id",
         "runtime_name",
@@ -2160,7 +1950,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     await this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
       await transaction
-        .updateTable("tool_broker_activations")
+        .updateTable("tool_broker_workspace_runtimes")
         .set({ state: "released", failure_code: null, updated_at: now })
         .where("sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("supervisor_id", "=", assignment.supervisorId)
@@ -2202,7 +1992,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
         .where("state", "=", "running")
         .execute();
       await transaction
-        .updateTable("tool_broker_activations")
+        .updateTable("tool_broker_workspace_runtimes")
         .set({ state: "unknown", failure_code: "tool_broker_stopped", updated_at: now })
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "in", ["reserved", "materializing", "active", "warm", "cleaning"])
@@ -2259,7 +2049,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       return owner;
     });
     if (renewed.numUpdatedRows !== 1n) {
-      throw new SandboxActivationStateRepositoryError(
+      throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Tool Broker ownership heartbeat was fenced",
       );
@@ -2276,7 +2066,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       .where("lease_expires_at", ">", now)
       .executeTakeFirst();
     if (owner === undefined) {
-      throw new SandboxActivationStateRepositoryError(
+      throw new WorkspaceRuntimeStateRepositoryError(
         "ownership_lost",
         "Tool Broker database ownership lease is not current",
       );
@@ -2286,7 +2076,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
   async #domainReservedSandboxes(transaction: Transaction<Database>): Promise<number> {
     const [activations, terminals, environments] = await Promise.all([
       transaction
-        .selectFrom("tool_broker_activations")
+        .selectFrom("tool_broker_workspace_runtimes")
         .select(({ fn }) => fn.countAll<string>().as("count"))
         .where("sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("state", "in", [
@@ -2332,7 +2122,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
       .where("state", "=", "running")
       .execute();
     await transaction
-      .updateTable("tool_broker_activations")
+      .updateTable("tool_broker_workspace_runtimes")
       .set({ state: "unknown", failure_code: "tool_broker_owner_lost", updated_at: now })
       .where("owner_instance_id", "in", lostIds)
       .where("state", "in", ["reserved", "materializing", "active", "warm", "cleaning"])

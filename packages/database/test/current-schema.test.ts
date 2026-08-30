@@ -34,7 +34,7 @@ describe("current PiCloud schema", () => {
         "session_kafka_heads",
         "pi_sessions",
         "pi_session_entries",
-        "tool_broker_activations",
+        "tool_broker_workspace_runtimes",
         "workspaces",
         "development_environments",
         "source_control_installations",
@@ -66,6 +66,7 @@ describe("current PiCloud schema", () => {
         "commands",
         "workspace_versions",
         "checkpoint_objects",
+        "tool_broker_activations",
       ]) {
         expect(names.has(retired), `retired table ${retired} survived`).toBe(false);
       }
@@ -95,11 +96,15 @@ describe("current PiCloud schema", () => {
         select indexname, indexdef
           from pg_indexes
          where schemaname = 'public'
-           and indexname in ('tool_broker_workspace_live_unique', 'tool_broker_workspace_live_idx')
+           and indexname in (
+             'tool_broker_workspace_runtime_live_unique',
+             'tool_broker_workspace_live_unique',
+             'tool_broker_workspace_live_idx'
+           )
       `.execute(database);
       expect(activationIndexes.rows).toEqual([
         expect.objectContaining({
-          indexname: "tool_broker_workspace_live_unique",
+          indexname: "tool_broker_workspace_runtime_live_unique",
           indexdef: expect.stringContaining("UNIQUE"),
         }),
       ]);
@@ -107,7 +112,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("112_live_workspace_settlement");
+      expect(applied.rows.at(-1)?.name).toBe("113_workspace_owned_tool_runtime");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

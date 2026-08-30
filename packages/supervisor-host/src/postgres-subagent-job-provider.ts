@@ -251,7 +251,7 @@ export class PostgresSubagentJobProvider {
     }
     if (
       input.workspaceMode !== "none" &&
-      input.workspaceMode !== "shared_serialized" &&
+      input.workspaceMode !== "shared" &&
       input.workspaceMode !== "isolated"
     ) {
       throw new TypeError("Subagent Workspace mode is invalid");

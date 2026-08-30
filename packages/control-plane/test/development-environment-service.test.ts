@@ -10,7 +10,7 @@ import {
   type EnvironmentValidationReport,
 } from "@pi-cloud/protocol";
 import {
-  PostgresSandboxActivationStateRepository,
+  PostgresWorkspaceRuntimeStateRepository,
   CUBESANDBOX_TOOL_POLICY,
   ToolBroker,
   ToolBrokerServer,
@@ -34,7 +34,7 @@ let socket: PGLiteSocketServer;
 let database: Kysely<Database>;
 let server: ToolBrokerServer;
 let service: DevelopmentEnvironmentService;
-let stateRepository: PostgresSandboxActivationStateRepository;
+let stateRepository: PostgresWorkspaceRuntimeStateRepository;
 let store: ControlPlaneStore;
 let identity: TenantRequestIdentity;
 let otherIdentity: TenantRequestIdentity;
@@ -81,12 +81,6 @@ function provider(): SandboxProvider {
         environment: spec.environment,
         environmentValidation: validation,
       };
-    },
-    async rebind(handle, assignment, toolRoot) {
-      return { ...handle, assignment, workspaceRoot: toolRoot ?? handle.workspaceRoot };
-    },
-    async retainForWarm(handle, assignment) {
-      return { ...handle, assignment };
     },
     async exec() {
       throw new Error("not used");
@@ -148,7 +142,7 @@ function provider(): SandboxProvider {
     async inspect(handle) {
       return { providerApiVersion: 1, providerId: "cubesandbox", state: "absent", handle };
     },
-    async destroyActivation() {},
+    async destroyRuntime() {},
     async listAssignments() {
       return [];
     },
@@ -213,7 +207,7 @@ beforeAll(async () => {
   };
   otherIdentity = { ...identity, userId: otherUserId, displayName: "Other User", role: "member" };
   const ownerBaseUrl = "http://127.0.0.1:4300";
-  stateRepository = new PostgresSandboxActivationStateRepository({
+  stateRepository = new PostgresWorkspaceRuntimeStateRepository({
     database,
     sandboxDomainId: DOMAIN_ID,
     instanceId: "99999999-9999-4999-8999-999999999999",

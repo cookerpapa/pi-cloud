@@ -28,7 +28,11 @@ import type {
   SourceControlWorkspaceCredentialPreflightRequest,
   SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
-import { createExecutionLease, parseCloudToolCapabilitySnapshot } from "@pi-cloud/protocol";
+import {
+  createExecutionLease,
+  parseCloudToolCapabilitySnapshot,
+  parseExecutionLease,
+} from "@pi-cloud/protocol";
 import {
   canonicalEnvironmentRecipeJson,
   DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
@@ -46,11 +50,11 @@ import {
   type SandboxTerminalSize,
 } from "./sandbox-provider.ts";
 import {
-  InMemorySandboxActivationStateRepository,
-  type SandboxActivationReservation,
-  type SandboxActivationStateRepository,
+  InMemoryWorkspaceRuntimeStateRepository,
+  type WorkspaceRuntimeReservation,
+  type WorkspaceRuntimeStateRepository,
   type DevelopmentEnvironmentReservation,
-} from "./activation-state-repository.ts";
+} from "./workspace-runtime-state-repository.ts";
 import type {
   SandboxHttpServiceRegistry,
   SandboxHttpServiceTarget,
@@ -59,11 +63,11 @@ import type {
 export type ToolBrokerOptions = {
   provider: SandboxProvider;
   ownerBaseUrl?: string;
-  stateRepository?: SandboxActivationStateRepository;
+  stateRepository?: WorkspaceRuntimeStateRepository;
   idGenerator?: () => string;
   maximumActiveSandboxes?: number;
   warmTtlMs?: number;
-  maximumWarmActivations?: number;
+  maximumWarmWorkspaceRuntimes?: number;
   clock?: () => number;
   imageRevision?: string;
   serviceRegistry?: SandboxHttpServiceRegistry;
@@ -73,23 +77,24 @@ export class ToolBrokerOwnerRedirectError extends Error {
   readonly ownerBaseUrl: string;
 
   constructor(ownerBaseUrl: string) {
-    super("Tool Sandbox activation is owned by another Tool Broker replica");
+    super("Tool binding is owned by another Tool Broker replica");
     this.name = "ToolBrokerOwnerRedirectError";
     this.ownerBaseUrl = ownerBaseUrl;
   }
 }
 
-type ManagedActivation = {
+type ManagedToolBinding = {
+  activationId: string;
   assignment: ToolSandboxAssignment;
   turnContextSha256: string;
   attemptContextSha256: string;
   currentStep?: Readonly<{ sequence: number; sha256: string }>;
   allowedTools: ReadonlySet<CloudToolName>;
   spec: Parameters<SandboxProvider["create"]>[0];
-  reservation: SandboxActivationReservation;
+  reservation: WorkspaceRuntimeReservation;
   handle?: SandboxHandle;
   materializing?: Promise<SandboxHandle>;
-  materializedForCurrentAssignment: boolean;
+  usedPhysicalRuntime: boolean;
   activeOperations: number;
   exclusiveOperation: boolean;
   operations: Map<
@@ -97,22 +102,28 @@ type ManagedActivation = {
     Readonly<{ requestSha256: string; result: Promise<ToolSandboxOperationResponse> }>
   >;
   seenCaptureIds: Set<string>;
+  elasticRuntime?: ManagedElasticRuntime;
   developmentEnvironmentId?: string;
-  workspaceTerminalId?: string;
 };
 
-type WarmActivation = {
-  handle: SandboxHandle;
+type ManagedElasticRuntime = {
+  physicalActivationId: string;
+  workspaceKey: string;
+  spec: Parameters<SandboxProvider["create"]>[0];
+  handle?: SandboxHandle;
+  materializing?: Promise<SandboxHandle>;
+  bindingIds: Set<string>;
+  initialBindingIssued: boolean;
+  activeOperations: number;
+  exclusiveOperation: boolean;
   workspaceRevision: string;
   environment: EnvironmentRuntimeSnapshot;
+  sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
   expiresAt: number;
   lastUsedAt: number;
+  workspaceTerminalId?: string;
+  failure?: ToolBrokerError;
 };
-
-type SuspendedActivation = Readonly<{
-  activation: ManagedActivation;
-  reservation: SandboxActivationReservation;
-}>;
 
 export type WorkspaceTerminalOpenInput = Readonly<{
   tenantId: string;
@@ -139,6 +150,7 @@ type ManagedWorkspaceTerminal = {
   assignment: ToolSandboxAssignment;
   handle: SandboxHandle;
   session: SandboxTerminalSession;
+  workspaceRuntime?: ManagedElasticRuntime;
   closing?: Promise<void>;
 };
 
@@ -160,7 +172,7 @@ type AdmissionWaiter = {
 };
 
 const DEFAULT_WARM_TTL_MS = 15 * 60_000;
-const DEFAULT_MAXIMUM_WARM_ACTIVATIONS = 4;
+const DEFAULT_MAXIMUM_WARM_WORKSPACE_RUNTIMES = 4;
 const DEFAULT_MAXIMUM_ACTIVE_SANDBOXES = 2;
 
 function positiveInteger(value: number, name: string, maximum: number): number {
@@ -172,10 +184,6 @@ function positiveInteger(value: number, name: string, maximum: number): number {
 
 function workspaceIdentityKey(assignment: ToolSandboxAssignment): string {
   return [assignment.tenantId, assignment.projectId, assignment.workspaceId].join("\0");
-}
-
-function runtimeKey(assignment: ToolSandboxAssignment): string {
-  return [workspaceIdentityKey(assignment), assignment.sessionId].join("\0");
 }
 
 function operationFailureCode(error: unknown): string {
@@ -327,22 +335,20 @@ function developmentEnvironmentAssignment(
 export class ToolBroker {
   readonly #provider: SandboxProvider;
   readonly #ownerBaseUrl: string;
-  readonly #stateRepository: SandboxActivationStateRepository;
+  readonly #stateRepository: WorkspaceRuntimeStateRepository;
   readonly #serviceRegistry: SandboxHttpServiceRegistry | undefined;
   readonly #idGenerator: () => string;
   readonly #maximumActiveSandboxes: number;
   readonly #warmTtlMs: number;
-  readonly #maximumWarmActivations: number;
+  readonly #maximumWarmWorkspaceRuntimes: number;
   readonly #clock: () => number;
   readonly #imageRevision: string;
-  readonly #activations = new Map<string, ManagedActivation>();
-  readonly #warm = new Map<string, WarmActivation>();
-  readonly #suspended = new Map<string, SuspendedActivation>();
+  readonly #toolBindings = new Map<string, ManagedToolBinding>();
+  readonly #warm = new Map<string, ManagedElasticRuntime>();
   readonly #terminals = new Map<string, ManagedWorkspaceTerminal>();
   readonly #developmentEnvironments = new Map<string, ManagedDevelopmentEnvironment>();
   readonly #admitted = new Map<string, ToolSandboxAssignment>();
-  readonly #settlingWorkspaces = new Set<string>();
-  readonly #workspaceReservationTails = new Map<string, Promise<void>>();
+  readonly #workspaceRuntimeProvisioningTails = new Map<string, Promise<void>>();
   readonly #admissionWaiters: AdmissionWaiter[] = [];
   readonly #reaper: NodeJS.Timeout;
   #developmentEnvironmentRecovery: Promise<number> | undefined;
@@ -354,7 +360,7 @@ export class ToolBroker {
     this.#provider = options.provider;
     this.#ownerBaseUrl = new URL(options.ownerBaseUrl ?? "http://tool-broker.invalid").toString();
     this.#stateRepository =
-      options.stateRepository ?? new InMemorySandboxActivationStateRepository();
+      options.stateRepository ?? new InMemoryWorkspaceRuntimeStateRepository();
     this.#serviceRegistry = options.serviceRegistry;
     this.#idGenerator = options.idGenerator ?? randomUUID;
     this.#maximumActiveSandboxes = positiveInteger(
@@ -367,15 +373,15 @@ export class ToolBroker {
       "warmTtlMs",
       24 * 60 * 60_000,
     );
-    this.#maximumWarmActivations = positiveInteger(
-      options.maximumWarmActivations ?? DEFAULT_MAXIMUM_WARM_ACTIVATIONS,
-      "maximumWarmActivations",
+    this.#maximumWarmWorkspaceRuntimes = positiveInteger(
+      options.maximumWarmWorkspaceRuntimes ?? DEFAULT_MAXIMUM_WARM_WORKSPACE_RUNTIMES,
+      "maximumWarmWorkspaceRuntimes",
       1_000,
     );
     this.#clock = options.clock ?? Date.now;
     this.#imageRevision = options.imageRevision ?? "development";
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(this.#imageRevision)) {
-      throw new TypeError("Tool Sandbox image revision is invalid");
+      throw new TypeError("Workspace runtime image revision is invalid");
     }
     this.#reaper = setInterval(
       () =>
@@ -383,8 +389,8 @@ export class ToolBroker {
           this.reapWarm(),
           this.reapRetiredWarm(),
           this.recoverPersistentDevelopmentEnvironments(),
-          this.#reapOrphanedActivations(),
-          this.#reapTerminalRunActivations(),
+          this.#reapOrphanedWorkspaceRuntimes(),
+          this.#reapUnboundWorkspaceRuntimes(),
           this.#reapOrphanedTerminals(),
           this.#reapOrphanedDevelopmentEnvironments(),
         ]).catch(() => undefined),
@@ -398,12 +404,19 @@ export class ToolBroker {
   }
 
   get activeCount(): number {
-    const activeHandles = [...this.#activations.values()].filter(
-      (activation) => activation.handle !== undefined || activation.materializing !== undefined,
-    ).length;
-    return (
-      activeHandles + this.#warm.size + this.#terminals.size + this.#developmentEnvironments.size
-    );
+    const runtimeIds = new Set<string>();
+    for (const activation of this.#toolBindings.values()) {
+      const handle = activation.elasticRuntime?.handle ?? activation.handle;
+      if (handle !== undefined) runtimeIds.add(handle.runtimeId);
+    }
+    for (const runtime of this.#warm.values()) {
+      if (runtime.handle !== undefined) runtimeIds.add(runtime.handle.runtimeId);
+    }
+    for (const terminal of this.#terminals.values()) runtimeIds.add(terminal.handle.runtimeId);
+    for (const environment of this.#developmentEnvironments.values()) {
+      runtimeIds.add(environment.handle.runtimeId);
+    }
+    return runtimeIds.size;
   }
 
   get admittedCount(): number {
@@ -419,7 +432,7 @@ export class ToolBroker {
   }
 
   get reservedCount(): number {
-    return this.#activations.size;
+    return this.#toolBindings.size;
   }
 
   async recoverPersistentDevelopmentEnvironments(): Promise<number> {
@@ -675,7 +688,7 @@ export class ToolBroker {
         generation: ownership.reservation.generation,
       });
       try {
-        await this.#provider.destroyActivation(request.environmentId, assignment);
+        await this.#provider.destroyRuntime(request.environmentId, assignment);
       } catch (error: unknown) {
         await this.#stateRepository
           .setDevelopmentEnvironmentState(request.environmentId, "unknown", {
@@ -926,7 +939,7 @@ export class ToolBroker {
     const agentActivation =
       environment.agentActivationId === undefined
         ? undefined
-        : this.#activations.get(environment.agentActivationId);
+        : this.#toolBindings.get(environment.agentActivationId);
     const terminalHandle =
       agentActivation?.materializing === undefined
         ? (agentActivation?.handle ?? environment.handle)
@@ -969,8 +982,8 @@ export class ToolBroker {
     await Promise.all([
       this.reapWarm(),
       this.reapRetiredWarm(),
-      this.#reapOrphanedActivations(),
-      this.#reapTerminalRunActivations(0),
+      this.#reapOrphanedWorkspaceRuntimes(),
+      this.#reapUnboundWorkspaceRuntimes(0),
       this.#reapOrphanedTerminals(),
     ]);
     if (this.#provider.openTerminal === undefined) {
@@ -1025,39 +1038,47 @@ export class ToolBroker {
     let admitted = false;
     let handle: SandboxHandle | undefined;
     let terminal: SandboxTerminalSession | undefined;
+    let workspaceRuntime: ManagedElasticRuntime | undefined;
     try {
-      if (reservation.retiredActivation !== undefined) {
-        const retired = reservation.retiredActivation;
-        const retiredKey = runtimeKey(retired.assignment);
-        const warm = this.#warm.get(retiredKey);
-        const warmEntry = warm === undefined ? undefined : ([retiredKey, warm] as const);
-        if (warmEntry !== undefined && warmEntry[1].handle.activationId !== retired.activationId) {
-          throw new ToolBrokerError(
-            "warm_sandbox_identity_mismatch",
-            "Warm Sandbox memory and durable ownership did not match",
-            false,
-          );
-        }
-        if (warmEntry !== undefined) {
-          this.#warm.delete(warmEntry[0]);
-          await this.#provider.stop(warmEntry[1].handle);
-          this.#releaseAdmission(retired.activationId);
-        } else if (warmEntry === undefined) {
-          await this.#provider.destroyActivation(retired.activationId, retired.assignment);
-        }
-        await this.#stateRepository.setActivationState(retired.activationId, "released");
+      workspaceRuntime =
+        reservation.workspaceRuntimeId === undefined
+          ? undefined
+          : ([...this.#toolBindings.values()].find(
+              (activation) =>
+                activation.elasticRuntime?.physicalActivationId === reservation.workspaceRuntimeId,
+            )?.elasticRuntime ??
+            [...this.#warm.values()].find(
+              (runtime) => runtime.physicalActivationId === reservation.workspaceRuntimeId,
+            ));
+      if (reservation.workspaceRuntimeId !== undefined && workspaceRuntime === undefined) {
+        throw new ToolBrokerError(
+          "workspace_runtime_unavailable",
+          "Workspace runtime is not attached to its owning Tool Broker",
+          true,
+        );
       }
       await this.#stateRepository.setTerminalState(terminalId, "materializing");
-      await this.#acquireAdmission(terminalId, assignment);
-      admitted = true;
-      handle = await this.#provider.create({
-        activationId: terminalId,
-        assignment,
-        environment: input.environment,
-        workspaceSeed: input.workspaceSeed,
-        policy: this.#provider.defaultPolicy,
-        toolRoot: "/workspace",
-      });
+      if (workspaceRuntime === undefined) {
+        await this.#acquireAdmission(terminalId, assignment);
+        admitted = true;
+        handle = await this.#provider.create({
+          activationId: terminalId,
+          assignment,
+          environment: input.environment,
+          workspaceSeed: input.workspaceSeed,
+          policy: this.#provider.defaultPolicy,
+          toolRoot: "/workspace",
+        });
+      } else {
+        this.#warm.delete(workspaceRuntime.workspaceKey);
+        handle = await this.#materializeElasticRuntime(workspaceRuntime);
+        workspaceRuntime.workspaceTerminalId = terminalId;
+        await this.#stateRepository.setWorkspaceRuntimeState(
+          workspaceRuntime.physicalActivationId,
+          "active",
+          { handle },
+        );
+      }
       if (handle === undefined) {
         throw new ToolBrokerError(
           "workspace_terminal_runtime_unavailable",
@@ -1071,6 +1092,7 @@ export class ToolBroker {
         assignment,
         handle,
         session: activeTerminal,
+        ...(workspaceRuntime === undefined ? {} : { workspaceRuntime }),
       };
       await this.#stateRepository.setTerminalState(terminalId, "active", { handle });
       this.#terminals.set(terminalId, managed);
@@ -1093,7 +1115,17 @@ export class ToolBroker {
       this.#terminals.delete(terminalId);
       terminal?.disconnect();
       await terminal?.kill().catch(() => undefined);
-      if (handle !== undefined) await this.#provider.destroy(handle).catch(() => undefined);
+      if (workspaceRuntime !== undefined) {
+        delete workspaceRuntime.workspaceTerminalId;
+        if (workspaceRuntime.bindingIds.size === 0 && workspaceRuntime.handle !== undefined) {
+          const now = this.#now();
+          workspaceRuntime.lastUsedAt = now;
+          workspaceRuntime.expiresAt = now + this.#warmTtlMs;
+          this.#warm.set(workspaceRuntime.workspaceKey, workspaceRuntime);
+        }
+      } else if (handle !== undefined) {
+        await this.#provider.destroy(handle).catch(() => undefined);
+      }
       if (admitted) this.#releaseAdmission(terminalId);
       await this.#stateRepository
         .setTerminalState(terminalId, "unknown", { failureCode: operationFailureCode(error) })
@@ -1130,15 +1162,24 @@ export class ToolBroker {
       handle = this.#developmentEnvironments.get(request.target.environmentId)?.handle;
     } else {
       const sessionId = request.target.sessionId;
-      // A running Agent still owns the Workspace writer. Preview admission is
-      // delayed until the bounded-warm Cube is idle (or explicitly handed to a
-      // human terminal) so an application request cannot race Agent Tools.
-      handle = [...this.#warm.values()].find(
-        (candidate) => candidate.handle.assignment.sessionId === sessionId,
+      const runtimeId = ownership.runtimeId;
+      handle = [...this.#toolBindings.values()].find(
+        (candidate) => candidate.elasticRuntime?.handle?.runtimeId === runtimeId,
+      )?.elasticRuntime?.handle;
+      handle ??= [...this.#warm.values()].find(
+        (candidate) => candidate.handle?.runtimeId === runtimeId,
       )?.handle;
       handle ??= [...this.#terminals.values()].find(
-        (candidate) => candidate.assignment.sessionId === sessionId,
+        (candidate) => candidate.handle.runtimeId === runtimeId,
       )?.handle;
+      if (handle === undefined && runtimeId === undefined) {
+        handle = [...this.#toolBindings.values()].find(
+          (candidate) => candidate.assignment.sessionId === sessionId,
+        )?.elasticRuntime?.handle;
+        handle ??= [...this.#warm.values()].find(
+          (candidate) => candidate.spec.assignment.sessionId === sessionId,
+        )?.handle;
+      }
     }
     if (handle === undefined) {
       throw new ToolBrokerError(
@@ -1176,14 +1217,15 @@ export class ToolBroker {
   }
 
   async create(request: ToolSandboxCreateRequest): Promise<ToolSandboxCreateResponse> {
-    return this.#serializeWorkspaceReservation(request.assignment, () =>
-      this.#createAfterWorkspaceReservation(request),
-    );
+    this.#assertCreateEnvironment(request);
+    return request.executionMode === "elastic"
+      ? this.#serializeWorkspaceRuntimeProvisioning(request.assignment, () =>
+          this.#createElasticBinding(request),
+        )
+      : this.#createDevelopmentEnvironmentBinding(request);
   }
 
-  async #createAfterWorkspaceReservation(
-    request: ToolSandboxCreateRequest,
-  ): Promise<ToolSandboxCreateResponse> {
+  #assertCreateEnvironment(request: ToolSandboxCreateRequest): void {
     if (
       request.environment.profileKey !== DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY ||
       request.environment.profileVersion !== DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION ||
@@ -1199,86 +1241,18 @@ export class ToolBroker {
         false,
       );
     }
-    const key = runtimeKey(request.assignment);
-    await this.#waitForWorkspaceSlot(request.assignment);
-    let delegatedParent: ManagedActivation | undefined;
-    for (const [activeId, active] of this.#activations) {
-      if (workspaceIdentityKey(active.assignment) !== workspaceIdentityKey(request.assignment)) {
-        continue;
-      }
-      const delegated = await this.#stateRepository.allowsDelegatedSandboxHandoff({
-        tenantId: request.assignment.tenantId,
-        workspaceId: request.assignment.workspaceId,
-        currentSessionId: active.assignment.sessionId,
-        nextSessionId: request.assignment.sessionId,
-      });
-      if (delegated) {
-        if (
-          active.activeOperations !== 0 ||
-          active.exclusiveOperation ||
-          active.materializing !== undefined
-        ) {
-          throw new ToolBrokerError(
-            "tool_sandbox_workspace_busy",
-            "Delegated Workspace handoff is waiting for an active Tool operation",
-            true,
-          );
-        }
-        if (active.handle !== undefined && active.materializedForCurrentAssignment) {
-          await this.#provider.settle(active.handle, request.requestId);
-          active.materializedForCurrentAssignment = false;
-        }
-        delegatedParent = active;
-        this.#activations.delete(activeId);
-        if (this.#admitted.has(activeId)) this.#admitted.set(activeId, request.assignment);
-        this.#suspended.set(key, { activation: active, reservation: active.reservation });
-        break;
-      }
-    }
+  }
 
-    let inheritedKey = key;
-    let inherited = this.#warm.get(inheritedKey);
-    if (inherited === undefined) {
-      for (const [candidateKey, candidate] of this.#warm) {
-        if (
-          workspaceIdentityKey(candidate.handle.assignment) !==
-          workspaceIdentityKey(request.assignment)
-        ) {
-          continue;
-        }
-        const delegated = await this.#stateRepository.allowsDelegatedSandboxHandoff({
-          tenantId: request.assignment.tenantId,
-          workspaceId: request.assignment.workspaceId,
-          currentSessionId: candidate.handle.assignment.sessionId,
-          nextSessionId: request.assignment.sessionId,
-        });
-        if (delegated) {
-          inheritedKey = candidateKey;
-          inherited = candidate;
-          break;
-        }
-        await this.#discardWarm(candidateKey, candidate);
-      }
-    }
+  async #createElasticBinding(
+    request: ToolSandboxCreateRequest,
+  ): Promise<ToolSandboxCreateResponse> {
+    const workspaceKey = workspaceIdentityKey(request.assignment);
     if (
-      inherited !== undefined &&
-      (request.workspaceRevision === undefined ||
-        request.workspaceRevision !== inherited.workspaceRevision ||
-        !sameEnvironment(request.environment, inherited.environment))
-    ) {
-      await this.#discardWarm(inheritedKey, inherited);
-      inherited = undefined;
-    }
-    if (inherited !== undefined) this.#warm.delete(inheritedKey);
-
-    const developmentEnvironment = [...this.#developmentEnvironments.values()].find(
-      (environment) =>
-        environment.reservation.tenantId === request.assignment.tenantId &&
-        environment.reservation.workspaceId === request.assignment.workspaceId,
-    );
-    if (
-      developmentEnvironment !== undefined &&
-      request.executionMode !== "development_environment"
+      [...this.#developmentEnvironments.values()].some(
+        (environment) =>
+          environment.reservation.tenantId === request.assignment.tenantId &&
+          environment.reservation.workspaceId === request.assignment.workspaceId,
+      )
     ) {
       throw new ToolBrokerError(
         "development_environment_execution_mode_mismatch",
@@ -1286,72 +1260,80 @@ export class ToolBroker {
         false,
       );
     }
-    if (developmentEnvironment === undefined && request.executionMode !== "elastic") {
-      throw new ToolBrokerError(
-        "elastic_execution_mode_mismatch",
-        "Elastic Workspace requires elastic execution mode",
-        false,
-      );
-    }
+    let runtime = [...this.#toolBindings.values()].find(
+      (activation) => activation.elasticRuntime?.workspaceKey === workspaceKey,
+    )?.elasticRuntime;
+    runtime ??= this.#warm.get(workspaceKey);
     if (
-      developmentEnvironment !== undefined &&
-      developmentEnvironment.reservation.profileKey !== request.sandboxProfileKey
+      runtime !== undefined &&
+      (!sameEnvironment(runtime.environment, request.environment) ||
+        runtime.sandboxProfileKey !== request.sandboxProfileKey)
     ) {
-      throw new ToolBrokerError(
-        "development_environment_profile_mismatch",
-        "Conversation Sandbox profile does not match its exclusive environment",
-        false,
-      );
+      if (runtime.bindingIds.size > 0) {
+        throw new ToolBrokerError(
+          "workspace_runtime_profile_conflict",
+          "Workspace already has an active Cube with a different environment profile",
+          true,
+        );
+      }
+      await this.#discardWarm(workspaceKey, runtime);
+      runtime = undefined;
     }
-    if (developmentEnvironment?.agentActivationId !== undefined) {
-      throw new ToolBrokerError(
-        "development_environment_workspace_busy",
-        "Exclusive development environment already has an active Agent Run",
-        true,
-      );
+    if (runtime !== undefined) this.#warm.delete(workspaceKey);
+
+    const workspaceTerminal = [...this.#terminals.entries()].find(
+      ([, terminal]) =>
+        terminal.assignment.tenantId === request.assignment.tenantId &&
+        terminal.assignment.projectId === request.assignment.projectId &&
+        terminal.assignment.workspaceId === request.assignment.workspaceId,
+    );
+    if (runtime === undefined) {
+      const physicalActivationId = validActivationId(workspaceTerminal?.[0] ?? this.#idGenerator());
+      runtime = {
+        physicalActivationId,
+        workspaceKey,
+        spec: {
+          activationId: physicalActivationId,
+          assignment: request.assignment,
+          environment: request.environment,
+          workspaceSeed: request.workspaceSeed,
+          ...(request.workspaceSettlement === undefined
+            ? {}
+            : { workspaceSettlement: request.workspaceSettlement }),
+          policy: this.#provider.defaultPolicy,
+          toolRoot: request.toolRoot,
+          sandboxProfileKey: request.sandboxProfileKey,
+        },
+        ...(workspaceTerminal === undefined ? {} : { handle: workspaceTerminal[1].handle }),
+        bindingIds: new Set(),
+        initialBindingIssued: false,
+        activeOperations: 0,
+        exclusiveOperation: false,
+        workspaceRevision: request.workspaceRevision ?? "0".repeat(64),
+        environment: request.environment,
+        sandboxProfileKey: request.sandboxProfileKey,
+        expiresAt: Number.POSITIVE_INFINITY,
+        lastUsedAt: this.#now(),
+        ...(workspaceTerminal === undefined ? {} : { workspaceTerminalId: workspaceTerminal[0] }),
+      };
+      if (workspaceTerminal !== undefined) workspaceTerminal[1].workspaceRuntime = runtime;
     }
-    if (developmentEnvironment !== undefined) {
-      await this.#validateDevelopmentToolRoot(developmentEnvironment.handle, request.toolRoot);
-    }
-    const workspaceTerminal =
-      request.executionMode === "elastic"
-        ? [...this.#terminals.entries()].find(
-            ([, terminal]) =>
-              terminal.assignment.tenantId === request.assignment.tenantId &&
-              terminal.assignment.projectId === request.assignment.projectId &&
-              terminal.assignment.workspaceId === request.assignment.workspaceId,
-          )
-        : undefined;
 
     const activationId = validActivationId(
-      developmentEnvironment?.reservation.environmentId ??
-        workspaceTerminal?.[0] ??
-        delegatedParent?.spec.activationId ??
-        inherited?.handle.activationId ??
-        this.#idGenerator(),
+      runtime.initialBindingIssued
+        ? parseExecutionLease(request.assignment.executionLease).attemptId
+        : runtime.physicalActivationId,
     );
-    if (this.#activations.has(activationId)) {
+    if (this.#toolBindings.has(activationId) || runtime.bindingIds.has(activationId)) {
       throw new ToolBrokerError(
-        "tool_sandbox_identity_collision",
-        "Tool Sandbox activation identity collided",
+        "tool_binding_identity_collision",
+        "Tool binding identity collided",
         false,
       );
     }
     const allowedTools = parseCloudToolCapabilitySnapshot(request.allowedTools);
-    const spec = {
-      activationId,
-      assignment: request.assignment,
-      environment: request.environment,
-      workspaceSeed: request.workspaceSeed,
-      ...(request.workspaceSettlement === undefined
-        ? {}
-        : { workspaceSettlement: request.workspaceSettlement }),
-      policy: this.#provider.defaultPolicy,
-      toolRoot: request.toolRoot,
-      sandboxProfileKey: request.sandboxProfileKey,
-    } as const;
-    const reservationInput: SandboxActivationReservation = {
-      activationId,
+    const reservationInput: WorkspaceRuntimeReservation = {
+      activationId: runtime.physicalActivationId,
       assignment: request.assignment,
       turnContextSha256: request.turnContextSha256,
       attemptContextSha256: request.attemptContextSha256,
@@ -1361,6 +1343,7 @@ export class ToolBroker {
             environmentVersionId: request.environment.environmentVersionId,
             specSha256: request.environment.specSha256,
             recipeSha256: request.environment.recipeSha256,
+            sandboxProfileKey: request.sandboxProfileKey,
           }),
         )
         .digest("hex"),
@@ -1368,30 +1351,14 @@ export class ToolBroker {
         ? {}
         : { workspaceRevision: request.workspaceRevision }),
     };
-    const reservation = await this.#stateRepository.reserve(reservationInput).catch((error) => {
-      if (delegatedParent !== undefined) {
-        this.#suspended.delete(key);
-        this.#activations.set(delegatedParent.spec.activationId, delegatedParent);
-        if (this.#admitted.has(delegatedParent.spec.activationId)) {
-          this.#admitted.set(delegatedParent.spec.activationId, delegatedParent.assignment);
-        }
-      }
-      throw error;
-    });
-    if (reservation.status !== "reserved" && delegatedParent !== undefined) {
-      this.#suspended.delete(key);
-      this.#activations.set(delegatedParent.spec.activationId, delegatedParent);
-      if (this.#admitted.has(delegatedParent.spec.activationId)) {
-        this.#admitted.set(delegatedParent.spec.activationId, delegatedParent.assignment);
-      }
-    }
+    const reservation = await this.#stateRepository.reserve(reservationInput);
     if (reservation.status === "redirect") {
       throw new ToolBrokerOwnerRedirectError(reservation.ownerBaseUrl);
     }
     if (reservation.status === "busy") {
       throw new ToolBrokerError(
-        "tool_sandbox_workspace_busy",
-        "Workspace already has a Tool Sandbox reservation",
+        "workspace_runtime_busy",
+        "Workspace runtime is temporarily unavailable",
         true,
       );
     }
@@ -1402,41 +1369,138 @@ export class ToolBroker {
         true,
       );
     }
-    if (
-      reservation.status === "development_environment" &&
-      (developmentEnvironment === undefined ||
-        reservation.environmentId !== developmentEnvironment.reservation.environmentId)
-    ) {
+    if (reservation.status === "development_environment") {
       throw new ToolBrokerError(
-        "development_environment_identity_conflict",
-        "Development environment handoff identity did not match",
+        "elastic_execution_mode_mismatch",
+        "Elastic Workspace unexpectedly resolved to a development environment",
         false,
       );
     }
-    if (reservation.status === "development_environment") {
-      developmentEnvironment!.agentActivationId = activationId;
-    }
-    this.#activations.set(activationId, {
+    runtime.bindingIds.add(activationId);
+    runtime.initialBindingIssued = true;
+    this.#toolBindings.set(activationId, {
+      activationId,
       assignment: request.assignment,
       turnContextSha256: request.turnContextSha256,
       attemptContextSha256: request.attemptContextSha256,
       allowedTools: new Set(allowedTools),
-      spec,
+      spec: { ...runtime.spec, assignment: request.assignment },
       reservation: reservationInput,
-      ...(developmentEnvironment !== undefined
-        ? { handle: developmentEnvironment.handle, developmentEnvironmentId: activationId }
-        : delegatedParent?.handle === undefined
-          ? workspaceTerminal === undefined
-            ? inherited === undefined
-              ? {}
-              : { handle: inherited.handle }
-            : { handle: workspaceTerminal[1].handle, workspaceTerminalId: workspaceTerminal[0] }
-          : { handle: delegatedParent.handle }),
-      materializedForCurrentAssignment: false,
+      elasticRuntime: runtime,
+      usedPhysicalRuntime: false,
       activeOperations: 0,
       exclusiveOperation: false,
       operations: new Map(),
       seenCaptureIds: new Set(),
+    });
+    if (runtime.handle !== undefined) {
+      await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "active", {
+        handle: runtime.handle,
+      });
+    }
+    return {
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.reserved",
+      requestId: request.requestId,
+      activationId,
+      executionLease: request.assignment.executionLease,
+      ownerBaseUrl: this.#ownerBaseUrl,
+      workspaceRoot: request.toolRoot,
+      continuity: runtime.handle === undefined ? "cold_restore" : "warm_reuse",
+      continuityId: runtime.handle?.runtimeId ?? runtime.physicalActivationId,
+    };
+  }
+
+  async #createDevelopmentEnvironmentBinding(
+    request: ToolSandboxCreateRequest,
+  ): Promise<ToolSandboxCreateResponse> {
+    const environment = [...this.#developmentEnvironments.values()].find(
+      (candidate) =>
+        candidate.reservation.tenantId === request.assignment.tenantId &&
+        candidate.reservation.workspaceId === request.assignment.workspaceId,
+    );
+    if (environment === undefined) {
+      throw new ToolBrokerError(
+        "elastic_execution_mode_mismatch",
+        "Development-environment execution requires an owned machine",
+        false,
+      );
+    }
+    if (environment.reservation.profileKey !== request.sandboxProfileKey) {
+      throw new ToolBrokerError(
+        "development_environment_profile_mismatch",
+        "Conversation Sandbox profile does not match its exclusive environment",
+        false,
+      );
+    }
+    if (environment.agentActivationId !== undefined) {
+      throw new ToolBrokerError(
+        "development_environment_workspace_busy",
+        "Exclusive development environment already has an active Agent Run",
+        true,
+      );
+    }
+    await this.#validateDevelopmentToolRoot(environment.handle, request.toolRoot);
+    const activationId = validActivationId(environment.reservation.environmentId);
+    const reservationInput: WorkspaceRuntimeReservation = {
+      activationId,
+      assignment: request.assignment,
+      turnContextSha256: request.turnContextSha256,
+      attemptContextSha256: request.attemptContextSha256,
+      environmentSha256: createHash("sha256")
+        .update(
+          JSON.stringify({
+            environmentVersionId: request.environment.environmentVersionId,
+            specSha256: request.environment.specSha256,
+            recipeSha256: request.environment.recipeSha256,
+            sandboxProfileKey: request.sandboxProfileKey,
+          }),
+        )
+        .digest("hex"),
+      ...(request.workspaceRevision === undefined
+        ? {}
+        : { workspaceRevision: request.workspaceRevision }),
+    };
+    const reservation = await this.#stateRepository.reserve(reservationInput);
+    if (reservation.status === "redirect")
+      throw new ToolBrokerOwnerRedirectError(reservation.ownerBaseUrl);
+    if (
+      reservation.status !== "development_environment" ||
+      reservation.environmentId !== environment.reservation.environmentId
+    ) {
+      throw new ToolBrokerError(
+        "development_environment_workspace_busy",
+        "Development environment could not grant Agent Tool authority",
+        true,
+      );
+    }
+    environment.agentActivationId = activationId;
+    this.#toolBindings.set(activationId, {
+      activationId,
+      assignment: request.assignment,
+      turnContextSha256: request.turnContextSha256,
+      attemptContextSha256: request.attemptContextSha256,
+      allowedTools: new Set(parseCloudToolCapabilitySnapshot(request.allowedTools)),
+      spec: {
+        activationId,
+        assignment: request.assignment,
+        environment: request.environment,
+        workspaceSeed: request.workspaceSeed,
+        ...(request.workspaceSettlement === undefined
+          ? {}
+          : { workspaceSettlement: request.workspaceSettlement }),
+        policy: this.#provider.defaultPolicy,
+        toolRoot: request.toolRoot,
+        sandboxProfileKey: request.sandboxProfileKey,
+      },
+      reservation: reservationInput,
+      handle: environment.handle,
+      usedPhysicalRuntime: false,
+      activeOperations: 0,
+      exclusiveOperation: false,
+      operations: new Map(),
+      seenCaptureIds: new Set(),
+      developmentEnvironmentId: activationId,
     });
     return {
       toolBrokerProtocolVersion: 1,
@@ -1446,14 +1510,8 @@ export class ToolBroker {
       executionLease: request.assignment.executionLease,
       ownerBaseUrl: this.#ownerBaseUrl,
       workspaceRoot: request.toolRoot,
-      continuity:
-        developmentEnvironment === undefined &&
-        delegatedParent === undefined &&
-        inherited === undefined &&
-        workspaceTerminal === undefined
-          ? "cold_restore"
-          : "warm_reuse",
-      continuityId: developmentEnvironment?.handle.runtimeId ?? activationId,
+      continuity: "warm_reuse",
+      continuityId: environment.handle.runtimeId,
     };
   }
 
@@ -1462,10 +1520,11 @@ export class ToolBroker {
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
-    const activation = this.#authorized(request.activationId, executionLease);
-    if (activation.exclusiveOperation) {
+    const activation = this.#authorizedBinding(request.activationId, executionLease);
+    const elasticRuntime = activation.elasticRuntime;
+    if (activation.exclusiveOperation || elasticRuntime?.exclusiveOperation) {
       throw new ToolBrokerError(
-        "tool_sandbox_workspace_busy",
+        "workspace_runtime_busy",
         "Workspace is establishing an isolated Subagent fork",
         true,
       );
@@ -1528,9 +1587,12 @@ export class ToolBroker {
     }
     const durable = (async (): Promise<ToolSandboxOperationResponse> => {
       activation.activeOperations += 1;
+      if (elasticRuntime !== undefined) elasticRuntime.activeOperations += 1;
       try {
         const started = await this.#stateRepository.beginOperation(
+          elasticRuntime?.physicalActivationId ?? request.activationId,
           request.activationId,
+          activation.assignment,
           request.operationId,
           requestSha256,
         );
@@ -1542,7 +1604,15 @@ export class ToolBroker {
           );
         }
         const handle = await this.#materialize(request.activationId, activation, signal);
-        const response = await this.#provider.exec(handle, request, signal);
+        let response: ToolSandboxOperationResponse;
+        try {
+          response = await this.#provider.exec(handle, request, signal, activation.spec.toolRoot);
+        } catch (error: unknown) {
+          if (elasticRuntime !== undefined) {
+            await this.#markElasticRuntimeLost(elasticRuntime, error);
+          }
+          throw error;
+        }
         if (
           request.operation === "bash.exec" &&
           this.#provider.discoverHttpServices !== undefined
@@ -1572,6 +1642,7 @@ export class ToolBroker {
         throw error;
       } finally {
         activation.activeOperations -= 1;
+        if (elasticRuntime !== undefined) elasticRuntime.activeOperations -= 1;
       }
     })();
     activation.operations.set(request.operationId, { requestSha256, result: durable });
@@ -1583,16 +1654,16 @@ export class ToolBroker {
     assignment: ToolSandboxAssignment,
     requestId: string,
   ): Promise<ToolSandboxCaptureResponse> {
-    const activation = this.#owned(activationId, assignment);
+    const activation = this.#ownedBinding(activationId, assignment);
     if (activation.seenCaptureIds.has(requestId)) {
       throw new ToolBrokerError(
         "tool_capture_replay",
-        "Tool Sandbox capture ID was already used",
+        "Tool binding settlement ID was already used",
         false,
       );
     }
     activation.seenCaptureIds.add(requestId);
-    if (!activation.materializedForCurrentAssignment) {
+    if (!activation.usedPhysicalRuntime) {
       return {
         toolBrokerProtocolVersion: 1,
         type: "tool_sandbox.unused",
@@ -1600,7 +1671,10 @@ export class ToolBroker {
         activationId,
       };
     }
-    return this.#provider.settle(await this.#materialize(activationId, activation), requestId);
+    return this.#provider.settle(await this.#materialize(activationId, activation), requestId, {
+      activationId,
+      assignment,
+    });
   }
 
   async forkWorkspace(
@@ -1613,24 +1687,30 @@ export class ToolBroker {
         false,
       );
     }
-    const activation = this.#owned(request.sourceActivationId, request.sourceAssignment);
+    const activation = this.#ownedBinding(request.sourceActivationId, request.sourceAssignment);
+    const elasticRuntime = activation.elasticRuntime;
     if (
       activation.exclusiveOperation ||
       activation.activeOperations !== 0 ||
-      activation.materializing !== undefined
+      activation.materializing !== undefined ||
+      elasticRuntime?.exclusiveOperation ||
+      (elasticRuntime?.activeOperations ?? 0) !== 0 ||
+      elasticRuntime?.materializing !== undefined
     ) {
       throw new ToolBrokerError(
-        "tool_sandbox_workspace_busy",
+        "workspace_runtime_busy",
         "Parent Workspace is busy and cannot be isolated",
         true,
       );
     }
     activation.exclusiveOperation = true;
+    if (elasticRuntime !== undefined) elasticRuntime.exclusiveOperation = true;
     try {
       const handle = await this.#materialize(request.sourceActivationId, activation);
       const forked = await this.#provider.forkWorkspace(handle, request);
-      activation.handle = forked.sourceHandle;
-      activation.materializedForCurrentAssignment = true;
+      if (elasticRuntime === undefined) activation.handle = forked.sourceHandle;
+      else elasticRuntime.handle = forked.sourceHandle;
+      activation.usedPhysicalRuntime = true;
       return {
         toolBrokerProtocolVersion: 1,
         type: "workspace.forked",
@@ -1642,189 +1722,145 @@ export class ToolBroker {
       };
     } finally {
       activation.exclusiveOperation = false;
+      if (elasticRuntime !== undefined) elasticRuntime.exclusiveOperation = false;
     }
   }
 
   async release(request: ToolSandboxReleaseRequest): Promise<ToolSandboxReleaseResponse> {
-    const key = workspaceIdentityKey(request.assignment);
-    this.#settlingWorkspaces.add(key);
-    try {
-      return await this.#releaseActivation(request);
-    } finally {
-      this.#settlingWorkspaces.delete(key);
-    }
+    return this.#releaseActivation(request);
   }
 
   async #releaseActivation(
     request: ToolSandboxReleaseRequest,
   ): Promise<ToolSandboxReleaseResponse> {
-    const activation = this.#owned(request.activationId, request.assignment);
-    let retained = false;
+    const activation = this.#ownedBinding(request.activationId, request.assignment);
+    if (activation.elasticRuntime !== undefined) {
+      return this.#releaseElasticBinding(request, activation);
+    }
     let handle = activation.handle;
     if (activation.materializing !== undefined) {
       handle = await activation.materializing.catch(() => undefined);
     }
-    const workspaceTerminalId = activation.workspaceTerminalId;
-    const workspaceTerminal =
-      workspaceTerminalId === undefined ? undefined : this.#terminals.get(workspaceTerminalId);
-    if (
-      workspaceTerminalId !== undefined &&
-      workspaceTerminal !== undefined &&
-      handle !== undefined
-    ) {
-      if (this.#terminals.get(workspaceTerminalId) === workspaceTerminal) {
-        workspaceTerminal.handle = handle;
-        this.#revoke(request.activationId);
-        if (this.#admitted.delete(request.activationId)) {
-          this.#admitted.set(workspaceTerminalId, workspaceTerminal.assignment);
-        }
-        await this.#stateRepository.setActivationState(request.activationId, "released");
-        return {
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.released",
-          requestId: request.requestId,
-          activationId: request.activationId,
-          retained: true,
-        };
-      }
-      delete activation.workspaceTerminalId;
+    this.#revokeBinding(request.activationId);
+    const environmentId = activation.developmentEnvironmentId;
+    const environment =
+      environmentId === undefined ? undefined : this.#developmentEnvironments.get(environmentId);
+    if (environment === undefined || environment.agentActivationId !== request.activationId) {
+      throw new ToolBrokerError(
+        "development_environment_identity_conflict",
+        "Development environment Agent binding was lost",
+        false,
+      );
     }
-    this.#revoke(request.activationId);
-    if (activation.developmentEnvironmentId !== undefined) {
-      const environment = this.#developmentEnvironments.get(activation.developmentEnvironmentId);
-      if (environment === undefined || environment.agentActivationId !== request.activationId) {
+    try {
+      if (handle === undefined) {
         throw new ToolBrokerError(
-          "development_environment_identity_conflict",
-          "Development environment Agent handoff was lost",
-          false,
+          "development_environment_unavailable",
+          "Development environment runtime was unavailable after Agent execution",
+          true,
         );
       }
-      try {
-        if (handle === undefined) {
-          throw new ToolBrokerError(
-            "development_environment_unavailable",
-            "Development environment runtime was unavailable after Agent execution",
-            true,
-          );
-        }
-        if (activation.materializedForCurrentAssignment) {
-          handle = await this.#provider.rebind(
-            handle,
-            environment.assignment,
-            DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
-          );
-        }
-        environment.handle = handle;
-        delete environment.agentActivationId;
-        this.#activations.delete(request.activationId);
-        const runtimeCapsule = await this.#persistentCapsule(handle);
-        await this.#stateRepository.returnDevelopmentEnvironment(
-          environment.reservation.environmentId,
-          request.activationId,
-          "running",
-          {
-            handle,
-            ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
-          },
-        );
-        return {
-          toolBrokerProtocolVersion: 1,
-          type: "tool_sandbox.released",
-          requestId: request.requestId,
-          activationId: request.activationId,
-          retained: true,
-        };
-      } catch (error: unknown) {
-        if (handle !== undefined && workspaceTerminal === undefined) {
-          await this.#provider.stop(handle).catch(() => undefined);
-          await this.#endHttpServices(activation, handle).catch(() => undefined);
-        }
-        delete environment.agentActivationId;
-        this.#developmentEnvironments.delete(environment.reservation.environmentId);
-        this.#activations.delete(request.activationId);
-        this.#releaseAdmission(environment.reservation.environmentId);
-        await this.#stateRepository
-          .returnDevelopmentEnvironment(
-            environment.reservation.environmentId,
-            request.activationId,
-            "failed",
-            { failureCode: operationFailureCode(error) },
-          )
-          .catch(() => undefined);
-        throw error;
-      }
-    }
-    const retainRequested = request.disposition !== "destroy";
-    if (retainRequested && handle !== undefined && this.#provider.supportsWarmRebind !== false) {
-      try {
-        const brokerGrant = await this.#stateRepository.advanceWarmGrant(
-          request.activationId,
-          request.assignment,
-        );
-        handle = await this.#provider.retainForWarm(handle, {
-          ...handle.assignment,
-          executionLease: brokerGrant,
-        });
-      } catch (error: unknown) {
-        await this.#provider.stop(handle).catch(() => undefined);
-        this.#releaseAdmission(handle.activationId);
-        handle = undefined;
-        // A stale idle runtime can disappear before this Run ever invokes a
-        // Tool. The Runner distinguishes that unused handoff from a runtime it
-        // actually materialized: only the latter may fail the Run's process-
-        // retention guarantee. Either way the durable Workspace remains the
-        // recovery authority.
-      }
-    }
-    const key = runtimeKey(request.assignment);
-    if (this.#suspended.has(key)) {
-      if (!retainRequested && handle !== undefined) {
-        await this.#provider.stop(handle).catch(() => undefined);
-        handle = undefined;
-      }
-      await this.#restoreSuspended(key, handle);
+      environment.handle = handle;
+      delete environment.agentActivationId;
+      const runtimeCapsule = await this.#persistentCapsule(handle);
+      await this.#stateRepository.returnDevelopmentEnvironment(
+        environment.reservation.environmentId,
+        request.activationId,
+        "running",
+        { handle, ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }) },
+      );
       return {
         toolBrokerProtocolVersion: 1,
         type: "tool_sandbox.released",
         requestId: request.requestId,
         activationId: request.activationId,
-        retained: handle !== undefined,
+        retained: true,
+      };
+    } catch (error: unknown) {
+      if (handle !== undefined) {
+        await this.#provider.stop(handle).catch(() => undefined);
+        await this.#endHttpServices(activation, handle).catch(() => undefined);
+      }
+      delete environment.agentActivationId;
+      this.#developmentEnvironments.delete(environment.reservation.environmentId);
+      this.#releaseAdmission(environment.reservation.environmentId);
+      await this.#stateRepository
+        .returnDevelopmentEnvironment(
+          environment.reservation.environmentId,
+          request.activationId,
+          "failed",
+          { failureCode: operationFailureCode(error) },
+        )
+        .catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async #releaseElasticBinding(
+    request: ToolSandboxReleaseRequest,
+    activation: ManagedToolBinding,
+  ): Promise<ToolSandboxReleaseResponse> {
+    const runtime = activation.elasticRuntime!;
+    if (runtime.materializing !== undefined) {
+      await runtime.materializing.catch(() => undefined);
+    }
+    this.#revokeBinding(request.activationId);
+    runtime.bindingIds.delete(request.activationId);
+    if ("workspaceRevision" in request) runtime.workspaceRevision = request.workspaceRevision;
+    runtime.lastUsedAt = this.#now();
+    if (runtime.bindingIds.size > 0) {
+      return {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.released",
+        requestId: request.requestId,
+        activationId: request.activationId,
+        retained: runtime.handle !== undefined,
       };
     }
-    if (retainRequested && handle !== undefined && this.#provider.supportsWarmRebind !== false) {
-      const previous = this.#warm.get(key);
-      if (previous !== undefined && previous.handle.runtimeId !== handle.runtimeId) {
-        await this.#discardWarm(key, previous);
-      }
+
+    if (runtime.workspaceTerminalId !== undefined) {
+      const terminal = this.#terminals.get(runtime.workspaceTerminalId);
+      if (terminal !== undefined && runtime.handle !== undefined) terminal.handle = runtime.handle;
+      return {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.released",
+        requestId: request.requestId,
+        activationId: request.activationId,
+        retained: runtime.handle !== undefined,
+      };
+    }
+
+    if (request.disposition !== "destroy" && runtime.handle !== undefined) {
       const now = this.#now();
-      this.#warm.set(key, {
-        handle,
-        workspaceRevision: request.workspaceRevision,
-        environment: activation.spec.environment,
-        lastUsedAt: now,
-        expiresAt: now + this.#warmTtlMs,
-      });
-      retained = true;
-      await this.#stateRepository.setActivationState(request.activationId, "warm", {
-        handle,
-        workspaceRevision: request.workspaceRevision,
+      runtime.lastUsedAt = now;
+      runtime.expiresAt = now + this.#warmTtlMs;
+      this.#warm.set(runtime.workspaceKey, runtime);
+      await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "warm", {
+        handle: runtime.handle,
+        workspaceRevision: runtime.workspaceRevision,
       });
       await this.#enforceWarmLimit();
-    } else if (handle !== undefined) {
-      await this.#provider.stop(handle);
-      await this.#endHttpServices(activation, handle).catch(() => undefined);
-      this.#releaseAdmission(handle.activationId);
-      await this.#stateRepository.setActivationState(request.activationId, "released");
-    } else {
-      this.#releaseAdmission(request.activationId);
-      await this.#stateRepository.setActivationState(request.activationId, "released");
+      return {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.released",
+        requestId: request.requestId,
+        activationId: request.activationId,
+        retained: true,
+      };
     }
+
+    if (runtime.handle !== undefined) {
+      await this.#provider.stop(runtime.handle);
+      await this.#serviceRegistry?.endRuntime(runtime.handle.runtimeId).catch(() => undefined);
+    }
+    this.#releaseAdmission(runtime.physicalActivationId);
+    await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "released");
     return {
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.released",
       requestId: request.requestId,
       activationId: request.activationId,
-      retained,
+      retained: false,
     };
   }
 
@@ -1832,33 +1868,36 @@ export class ToolBroker {
     activationId: string,
     assignment: ToolSandboxAssignment,
   ): Promise<SandboxInspection> {
-    const activation = this.#owned(activationId, assignment);
+    const activation = this.#ownedBinding(activationId, assignment);
     return this.#provider.inspect(await this.#materialize(activationId, activation));
   }
 
   async stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
-    const key = workspaceIdentityKey(assignment);
-    this.#settlingWorkspaces.add(key);
-    try {
-      await this.#stopActivation(activationId, assignment);
-    } finally {
-      this.#settlingWorkspaces.delete(key);
-    }
+    await this.#stopActivation(activationId, assignment);
   }
 
   async #stopActivation(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
-    const activation = this.#activations.get(activationId);
+    const activation = this.#toolBindings.get(activationId);
     if (activation === undefined) {
-      await this.#provider.destroyActivation(activationId, assignment);
-      this.#releaseAdmission(activationId);
+      if (this.#admitted.has(activationId)) {
+        await this.#provider.destroyRuntime(activationId, assignment);
+        this.#releaseAdmission(activationId);
+        await this.#stateRepository
+          .setWorkspaceRuntimeState(activationId, "released")
+          .catch(() => undefined);
+      }
       return;
     }
     if (!sameAssignment(activation.assignment, assignment)) {
       throw new ToolBrokerError(
-        "tool_sandbox_identity_mismatch",
-        "Tool Sandbox assignment identity did not match",
+        "tool_binding_identity_mismatch",
+        "Tool binding assignment identity did not match",
         false,
       );
+    }
+    if (activation.elasticRuntime !== undefined) {
+      await this.#stopElasticBinding(activationId, activation);
+      return;
     }
     if (activation.developmentEnvironmentId !== undefined) {
       const environment = this.#developmentEnvironments.get(activation.developmentEnvironmentId);
@@ -1870,7 +1909,7 @@ export class ToolBroker {
         await this.#provider.stop(handle).catch(() => undefined);
         await this.#endHttpServices(activation, handle).catch(() => undefined);
       }
-      this.#activations.delete(activationId);
+      this.#toolBindings.delete(activationId);
       if (environment !== undefined) {
         delete environment.agentActivationId;
         this.#developmentEnvironments.delete(environment.reservation.environmentId);
@@ -1886,47 +1925,33 @@ export class ToolBroker {
       }
       return;
     }
-    let handle =
-      activation.materializing === undefined
-        ? activation.handle
-        : await activation.materializing.catch(() => undefined);
-    const workspaceTerminalId = activation.workspaceTerminalId;
-    const workspaceTerminal =
-      workspaceTerminalId === undefined ? undefined : this.#terminals.get(workspaceTerminalId);
-    if (
-      workspaceTerminalId !== undefined &&
-      workspaceTerminal !== undefined &&
-      handle !== undefined
-    ) {
-      if (this.#terminals.get(workspaceTerminalId) === workspaceTerminal) {
-        workspaceTerminal.handle = handle;
-        this.#revoke(activationId);
-        if (this.#admitted.delete(activationId)) {
-          this.#admitted.set(workspaceTerminalId, workspaceTerminal.assignment);
-        }
-        await this.#stateRepository.setActivationState(activationId, "released");
-        return;
-      }
-      delete activation.workspaceTerminalId;
-    }
-    this.#revoke(activationId);
-    const key = runtimeKey(assignment);
-    if (this.#suspended.has(key)) {
-      if (handle !== undefined) await this.#provider.stop(handle).catch(() => undefined);
-      await this.#restoreSuspended(key, undefined);
-      return;
-    }
-    if (handle !== undefined) {
-      await this.#provider.stop(handle);
-      await this.#endHttpServices(activation, handle).catch(() => undefined);
-      this.#releaseAdmission(handle.activationId);
-    } else {
-      this.#releaseAdmission(activationId);
-    }
-    await this.#stateRepository.setActivationState(activationId, "released");
+    throw new ToolBrokerError(
+      "tool_binding_identity_invalid",
+      "Tool binding was not attached to a Workspace runtime or development environment",
+      false,
+    );
   }
 
-  #httpServiceTarget(activation: ManagedActivation): SandboxHttpServiceTarget {
+  async #stopElasticBinding(activationId: string, activation: ManagedToolBinding): Promise<void> {
+    const runtime = activation.elasticRuntime!;
+    if (runtime.materializing !== undefined) await runtime.materializing.catch(() => undefined);
+    this.#revokeBinding(activationId);
+    runtime.bindingIds.delete(activationId);
+    if (runtime.bindingIds.size > 0) return;
+    if (runtime.workspaceTerminalId !== undefined) {
+      const terminal = this.#terminals.get(runtime.workspaceTerminalId);
+      if (terminal !== undefined && runtime.handle !== undefined) terminal.handle = runtime.handle;
+      return;
+    }
+    if (runtime.handle !== undefined) {
+      await this.#provider.stop(runtime.handle);
+      await this.#serviceRegistry?.endRuntime(runtime.handle.runtimeId).catch(() => undefined);
+    }
+    this.#releaseAdmission(runtime.physicalActivationId);
+    await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "released");
+  }
+
+  #httpServiceTarget(activation: ManagedToolBinding): SandboxHttpServiceTarget {
     return activation.developmentEnvironmentId === undefined
       ? this.#conversationHttpServiceTarget(activation.assignment)
       : {
@@ -1952,7 +1977,7 @@ export class ToolBroker {
   }
 
   async #observeHttpServices(
-    activation: ManagedActivation,
+    activation: ManagedToolBinding,
     handle: SandboxHandle,
     operationId: string,
     discovery: import("./sandbox-provider.ts").SandboxHttpServiceDiscovery,
@@ -1967,7 +1992,7 @@ export class ToolBroker {
     });
   }
 
-  async #endHttpServices(activation: ManagedActivation, handle: SandboxHandle): Promise<void> {
+  async #endHttpServices(activation: ManagedToolBinding, handle: SandboxHandle): Promise<void> {
     await this.#serviceRegistry?.end(this.#httpServiceTarget(activation), handle.runtimeId);
   }
 
@@ -1976,9 +2001,14 @@ export class ToolBroker {
       this.#provider.listAssignments(sandboxId),
       this.#stateRepository.listRuntimeAssignments(sandboxId),
     ]);
-    const retainedRuntimeIds = new Set(
-      [...this.#warm.values()].map((warm) => warm.handle.runtimeId),
-    );
+    const retainedRuntimeIds = new Set<string>();
+    for (const activation of this.#toolBindings.values()) {
+      const runtimeId = activation.elasticRuntime?.handle?.runtimeId;
+      if (runtimeId !== undefined) retainedRuntimeIds.add(runtimeId);
+    }
+    for (const warm of this.#warm.values()) {
+      if (warm.handle !== undefined) retainedRuntimeIds.add(warm.handle.runtimeId);
+    }
     const assignments = new Map<string, SupervisorRuntimeAssignment>();
     for (const assignment of [...providerAssignments, ...durableAssignments].filter(
       (candidate) => !retainedRuntimeIds.has(candidate.containerId),
@@ -1989,10 +2019,21 @@ export class ToolBroker {
   }
 
   async terminateAndConfirmAbsent(assignment: SupervisorRuntimeAssignment): Promise<void> {
-    const managed = [...this.#activations.entries()].filter(([, activation]) =>
+    const elasticBindings = [...this.#toolBindings.entries()].filter(
+      ([, activation]) =>
+        activation.elasticRuntime !== undefined &&
+        sameSupervisorAssignment(activation.assignment, assignment),
+    );
+    if (elasticBindings.length > 0) {
+      for (const [activationId, activation] of elasticBindings) {
+        await this.#stopElasticBinding(activationId, activation);
+      }
+      return;
+    }
+    const managed = [...this.#toolBindings.entries()].filter(([, activation]) =>
       activation.handle === undefined ? false : samePhysicalRuntime(activation.handle, assignment),
     );
-    for (const [activationId] of managed) this.#revoke(activationId);
+    for (const [activationId] of managed) this.#revokeBinding(activationId);
     const terminatedActivationIds = new Set(
       [...this.#admitted.entries()]
         .filter(([, admittedAssignment]) =>
@@ -2002,9 +2043,9 @@ export class ToolBroker {
     );
     for (const [activationId] of managed) terminatedActivationIds.add(activationId);
     for (const [key, warm] of this.#warm) {
-      if (samePhysicalRuntime(warm.handle, assignment)) {
+      if (warm.handle !== undefined && samePhysicalRuntime(warm.handle, assignment)) {
         this.#warm.delete(key);
-        terminatedActivationIds.add(warm.handle.activationId);
+        terminatedActivationIds.add(warm.physicalActivationId);
       }
     }
     await this.#provider.terminateAndConfirmAbsent(assignment);
@@ -2087,22 +2128,15 @@ export class ToolBroker {
       try {
         const activationId = environment.agentActivationId;
         const activation =
-          activationId === undefined ? undefined : this.#activations.get(activationId);
+          activationId === undefined ? undefined : this.#toolBindings.get(activationId);
         if (activation !== undefined) {
           detachableHandle =
             activation.materializing === undefined
               ? (activation.handle ?? detachableHandle)
               : ((await activation.materializing.catch(() => undefined)) ?? detachableHandle);
-          if (activation.materializedForCurrentAssignment) {
-            detachableHandle = await this.#provider.rebind(
-              detachableHandle,
-              environment.assignment,
-              DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
-            );
-          }
           environment.handle = detachableHandle;
           delete environment.agentActivationId;
-          this.#activations.delete(activationId!);
+          this.#toolBindings.delete(activationId!);
           capsule = await this.#persistentCapsule(detachableHandle);
           if (capsule === undefined) {
             throw new ToolBrokerError(
@@ -2154,25 +2188,28 @@ export class ToolBroker {
       this.#releaseAdmission(environmentId);
     }
     this.#developmentEnvironments.clear();
-    const ownedActivationIds = new Set([
-      ...this.#activations.keys(),
-      ...[...this.#warm.values()].map((warm) => warm.handle.activationId),
-    ]);
-    for (const activationId of this.#activations.keys()) {
-      this.#revoke(activationId);
+    const ownedActivationIds = new Set<string>();
+    for (const [activationId, activation] of this.#toolBindings) {
+      ownedActivationIds.add(activation.elasticRuntime?.physicalActivationId ?? activationId);
+    }
+    for (const warm of this.#warm.values()) {
+      ownedActivationIds.add(warm.physicalActivationId);
+    }
+    for (const activationId of this.#toolBindings.keys()) {
+      this.#revokeBinding(activationId);
     }
     this.#warm.clear();
     for (const waiter of this.#admissionWaiters.splice(0)) {
       this.#removeAbortListener(waiter);
       waiter.reject(
-        new ToolBrokerError("tool_sandbox_admission_closed", "Tool Sandbox admission closed", true),
+        new ToolBrokerError("tool_binding_admission_closed", "Tool binding admission closed", true),
       );
     }
     this.#admitted.clear();
     try {
       await this.#provider.close();
       for (const activationId of ownedActivationIds) {
-        await this.#stateRepository.setActivationState(activationId, "released");
+        await this.#stateRepository.setWorkspaceRuntimeState(activationId, "released");
       }
     } finally {
       await this.#stateRepository.close();
@@ -2203,40 +2240,40 @@ export class ToolBroker {
   }
 
   async reapRetiredWarm(): Promise<void> {
-    const retired = new Set(await this.#stateRepository.listRetiredWarmActivationIds());
+    const retired = new Set(await this.#stateRepository.listRetiredWarmWorkspaceRuntimeIds());
     if (retired.size === 0) return;
     for (const [key, warm] of this.#warm) {
-      if (!retired.has(warm.handle.activationId) || this.#warm.get(key) !== warm) continue;
+      if (!retired.has(warm.physicalActivationId) || this.#warm.get(key) !== warm) continue;
       await this.#discardWarm(key, warm);
     }
   }
 
-  #authorized(activationId: string, executionLease: string): ManagedActivation {
-    const activation = this.#activations.get(activationId);
+  #authorizedBinding(activationId: string, executionLease: string): ManagedToolBinding {
+    const activation = this.#toolBindings.get(activationId);
     if (activation === undefined || activation.assignment.executionLease !== executionLease) {
       throw new ToolBrokerError(
         "stale_session_lease",
-        "Tool Sandbox operation used a stale Session lease",
+        "Tool binding operation used a stale Session lease",
         false,
       );
     }
     return activation;
   }
 
-  #owned(activationId: string, assignment: ToolSandboxAssignment): ManagedActivation {
-    const activation = this.#activations.get(activationId);
+  #ownedBinding(activationId: string, assignment: ToolSandboxAssignment): ManagedToolBinding {
+    const activation = this.#toolBindings.get(activationId);
     if (activation === undefined || !sameAssignment(activation.assignment, assignment)) {
       throw new ToolBrokerError(
-        "tool_sandbox_identity_mismatch",
-        "Tool Sandbox assignment identity did not match",
+        "tool_binding_identity_mismatch",
+        "Tool binding assignment identity did not match",
         false,
       );
     }
     return activation;
   }
 
-  #revoke(activationId: string): void {
-    this.#activations.delete(activationId);
+  #revokeBinding(activationId: string): void {
+    this.#toolBindings.delete(activationId);
     this.#cancelAdmissionWaiter(activationId);
   }
 
@@ -2255,186 +2292,137 @@ export class ToolBroker {
 
   async #materialize(
     activationId: string,
-    activation: ManagedActivation,
+    activation: ManagedToolBinding,
     signal?: AbortSignal,
   ): Promise<SandboxHandle> {
-    if (activation.materializedForCurrentAssignment && activation.handle !== undefined) {
-      return activation.handle;
+    if (activation.elasticRuntime !== undefined) {
+      const handle = await this.#materializeElasticRuntime(activation.elasticRuntime, signal);
+      activation.usedPhysicalRuntime = true;
+      return handle;
     }
-    if (activation.materializing !== undefined) return activation.materializing;
+    const handle = activation.handle;
+    if (activation.developmentEnvironmentId === undefined || handle === undefined) {
+      throw new ToolBrokerError(
+        "development_environment_unavailable",
+        "Development environment runtime is unavailable",
+        true,
+      );
+    }
+    if (signal?.aborted) {
+      throw new ToolBrokerError("tool_operation_cancelled", "Tool operation was cancelled", false);
+    }
+    await this.#validateDevelopmentToolRoot(handle, activation.spec.toolRoot);
+    if (
+      handle.activationId !== activation.spec.activationId ||
+      handle.assignment.tenantId !== activation.assignment.tenantId ||
+      handle.assignment.projectId !== activation.assignment.projectId ||
+      handle.assignment.workspaceId !== activation.assignment.workspaceId ||
+      !sameEnvironment(handle.environment, activation.spec.environment)
+    ) {
+      throw new ToolBrokerError(
+        "sandbox_provider_protocol_error",
+        "Development environment returned a mismatched handle",
+        false,
+      );
+    }
+    activation.usedPhysicalRuntime = true;
+    await this.#stateRepository.setWorkspaceRuntimeState(activationId, "active", { handle });
+    return handle;
+  }
+
+  async #materializeElasticRuntime(
+    runtime: ManagedElasticRuntime,
+    signal?: AbortSignal,
+  ): Promise<SandboxHandle> {
+    if (runtime.failure !== undefined) throw runtime.failure;
+    if (runtime.handle !== undefined) return runtime.handle;
+    if (runtime.materializing !== undefined) return runtime.materializing;
     const materializing = (async (): Promise<SandboxHandle> => {
-      await this.#stateRepository.setActivationState(activationId, "materializing");
-      const workspaceTerminal =
-        activation.workspaceTerminalId === undefined
-          ? undefined
-          : this.#terminals.get(activation.workspaceTerminalId);
-      if (activation.developmentEnvironmentId === undefined && workspaceTerminal === undefined) {
-        await this.#acquireAdmission(activationId, activation.assignment, signal);
-      } else if (
-        workspaceTerminal !== undefined &&
-        this.#admitted.delete(activation.workspaceTerminalId!)
-      ) {
-        this.#admitted.set(activationId, activation.assignment);
-      }
-      let releaseAdmissionOnFailure = true;
+      await this.#stateRepository.setWorkspaceRuntimeState(
+        runtime.physicalActivationId,
+        "materializing",
+      );
+      await this.#acquireAdmission(runtime.physicalActivationId, runtime.spec.assignment, signal);
       try {
-        if (this.#activations.get(activationId) !== activation || signal?.aborted) {
-          throw new ToolBrokerError(
-            "tool_sandbox_admission_cancelled",
-            "Tool Sandbox admission was cancelled",
-            false,
-          );
-        }
-        let handle = activation.handle;
-        if (handle !== undefined && activation.developmentEnvironmentId !== undefined) {
-          await this.#validateDevelopmentToolRoot(handle, activation.spec.toolRoot);
-        }
-        if (handle !== undefined) {
-          try {
-            if (activation.developmentEnvironmentId !== undefined) {
-              await this.#provider.settle(handle, this.#idGenerator());
-            }
-            handle = await this.#provider.rebind(
-              handle,
-              activation.assignment,
-              activation.spec.toolRoot,
-            );
-          } catch (error: unknown) {
-            if (workspaceTerminal !== undefined) {
-              if (this.#admitted.delete(activationId)) {
-                this.#admitted.set(activation.workspaceTerminalId!, workspaceTerminal.assignment);
-              }
-              throw error;
-            }
-            try {
-              await this.#provider.stop(handle);
-              delete activation.handle;
-            } catch (cleanupError: unknown) {
-              releaseAdmissionOnFailure = false;
-              throw cleanupError;
-            }
-            handle = undefined;
-            if (error instanceof ToolBrokerError && !error.retryable) throw error;
-          }
-        }
-        if (handle === undefined) handle = await this.#provider.create(activation.spec);
-        if (this.#activations.get(activationId) !== activation || signal?.aborted) {
+        const handle = await this.#provider.create(runtime.spec);
+        if (
+          !handleMatches(
+            handle,
+            this.#provider,
+            runtime.physicalActivationId,
+            runtime.spec.assignment,
+            runtime.environment,
+            runtime.spec.toolRoot ?? "/workspace",
+          )
+        ) {
           await this.#provider.destroy(handle).catch(() => undefined);
           throw new ToolBrokerError(
-            "tool_sandbox_admission_cancelled",
-            "Tool Sandbox admission was cancelled after provider creation",
-            false,
-          );
-        }
-        const validHandle =
-          workspaceTerminal === undefined
-            ? handleMatches(
-                handle,
-                this.#provider,
-                activationId,
-                activation.assignment,
-                activation.spec.environment,
-                activation.spec.toolRoot ?? "/workspace",
-              )
-            : handle.activationId === activationId &&
-              handle.assignment.tenantId === activation.assignment.tenantId &&
-              handle.assignment.projectId === activation.assignment.projectId &&
-              handle.assignment.workspaceId === activation.assignment.workspaceId &&
-              sameEnvironment(handle.environment, activation.spec.environment) &&
-              handle.workspaceRoot === (activation.spec.toolRoot ?? "/workspace");
-        if (!validHandle) {
-          try {
-            await this.#provider.destroy(handle);
-          } catch (cleanupError: unknown) {
-            activation.handle = handle;
-            releaseAdmissionOnFailure = false;
-            throw cleanupError;
-          }
-          throw new ToolBrokerError(
             "sandbox_provider_protocol_error",
-            "Sandbox Provider returned a mismatched handle",
+            "Sandbox Provider returned a mismatched Workspace runtime handle",
             false,
           );
         }
-        activation.handle = handle;
-        if (workspaceTerminal !== undefined) workspaceTerminal.handle = handle;
-        activation.materializedForCurrentAssignment = true;
-        await this.#stateRepository.setActivationState(activationId, "active", { handle });
+        runtime.handle = handle;
+        await this.#stateRepository.setWorkspaceRuntimeState(
+          runtime.physicalActivationId,
+          "active",
+          {
+            handle,
+          },
+        );
         return handle;
       } catch (error: unknown) {
-        if (
-          releaseAdmissionOnFailure &&
-          activation.developmentEnvironmentId === undefined &&
-          workspaceTerminal === undefined
-        ) {
-          this.#releaseAdmission(activationId);
-        }
+        this.#releaseAdmission(runtime.physicalActivationId);
         await this.#stateRepository
-          .setActivationState(activationId, "unknown", {
+          .setWorkspaceRuntimeState(runtime.physicalActivationId, "unknown", {
             failureCode: operationFailureCode(error),
           })
           .catch(() => undefined);
         throw error;
       }
     })();
-    activation.materializing = materializing;
+    runtime.materializing = materializing;
     try {
       return await materializing;
     } finally {
-      delete activation.materializing;
+      delete runtime.materializing;
     }
   }
 
-  async #restoreSuspended(key: string, handle: SandboxHandle | undefined): Promise<boolean> {
-    const suspended = this.#suspended.get(key);
-    if (suspended === undefined) return false;
-    let restoredHandle: SandboxHandle | undefined;
-    if (handle !== undefined) {
-      try {
-        restoredHandle = await this.#provider.rebind(
-          handle,
-          suspended.activation.assignment,
-          suspended.activation.spec.toolRoot,
-        );
-      } catch {
-        await this.#provider.stop(handle).catch(() => undefined);
-      }
+  async #markElasticRuntimeLost(runtime: ManagedElasticRuntime, error: unknown): Promise<void> {
+    const failure =
+      error instanceof ToolBrokerError
+        ? error
+        : new ToolBrokerError(
+            "workspace_runtime_lost",
+            "Workspace runtime was lost during Tool execution",
+            true,
+            error,
+          );
+    runtime.failure = failure;
+    delete runtime.handle;
+    if (runtime.workspaceTerminalId !== undefined) {
+      const terminal = this.#terminals.get(runtime.workspaceTerminalId);
+      terminal?.session.disconnect();
+      await terminal?.session.kill().catch(() => undefined);
+      this.#terminals.delete(runtime.workspaceTerminalId);
+      await this.#stateRepository
+        .setTerminalState(runtime.workspaceTerminalId, "unknown", {
+          failureCode: failure.code,
+        })
+        .catch(() => undefined);
+      delete runtime.workspaceTerminalId;
     }
-    let reservation: Awaited<ReturnType<SandboxActivationStateRepository["reserve"]>>;
-    try {
-      reservation = await this.#stateRepository.reserve(suspended.reservation);
-    } catch (error: unknown) {
-      if (restoredHandle !== undefined)
-        await this.#provider.stop(restoredHandle).catch(() => undefined);
-      this.#suspended.delete(key);
-      this.#releaseAdmission(suspended.activation.spec.activationId);
-      throw error;
-    }
-    if (reservation.status !== "reserved") {
-      if (restoredHandle !== undefined)
-        await this.#provider.stop(restoredHandle).catch(() => undefined);
-      this.#suspended.delete(key);
-      this.#releaseAdmission(suspended.activation.spec.activationId);
-      throw new ToolBrokerError(
-        "tool_sandbox_parent_restore_failed",
-        "Parent Tool Sandbox authority could not be restored after Subagent execution",
-        true,
-      );
-    }
-    if (restoredHandle === undefined) delete suspended.activation.handle;
-    else suspended.activation.handle = restoredHandle;
-    suspended.activation.materializedForCurrentAssignment = restoredHandle !== undefined;
-    delete suspended.activation.materializing;
-    this.#suspended.delete(key);
-    this.#activations.set(suspended.activation.spec.activationId, suspended.activation);
-    if (this.#admitted.has(suspended.activation.spec.activationId)) {
-      this.#admitted.set(suspended.activation.spec.activationId, suspended.activation.assignment);
-    }
-    return true;
+    this.#releaseAdmission(runtime.physicalActivationId);
+    await this.#stateRepository
+      .setWorkspaceRuntimeState(runtime.physicalActivationId, "unknown", {
+        failureCode: failure.code,
+      })
+      .catch(() => undefined);
   }
 
   async #enforceWarmLimit(): Promise<void> {
-    while (this.#warm.size > this.#maximumWarmActivations) {
+    while (this.#warm.size > this.#maximumWarmWorkspaceRuntimes) {
       const oldest = [...this.#warm.entries()].sort(
         (left, right) => left[1].lastUsedAt - right[1].lastUsedAt,
       )[0];
@@ -2443,15 +2431,15 @@ export class ToolBroker {
     }
   }
 
-  async #reapOrphanedActivations(): Promise<void> {
-    const orphaned = await this.#stateRepository.claimOrphanedActivations(16);
+  async #reapOrphanedWorkspaceRuntimes(): Promise<void> {
+    const orphaned = await this.#stateRepository.claimOrphanedWorkspaceRuntimes(16);
     for (const orphan of orphaned) {
       try {
-        await this.#provider.destroyActivation(orphan.activationId, orphan.assignment);
-        await this.#stateRepository.setActivationState(orphan.activationId, "released");
+        await this.#provider.destroyRuntime(orphan.activationId, orphan.assignment);
+        await this.#stateRepository.setWorkspaceRuntimeState(orphan.activationId, "released");
       } catch (error: unknown) {
         await this.#stateRepository
-          .setActivationState(orphan.activationId, "unknown", {
+          .setWorkspaceRuntimeState(orphan.activationId, "unknown", {
             failureCode: operationFailureCode(error),
           })
           .catch(() => undefined);
@@ -2459,21 +2447,21 @@ export class ToolBroker {
     }
   }
 
-  async #reapTerminalRunActivations(minimumTerminalAgeMs?: number): Promise<void> {
-    const orphaned = await this.#stateRepository.claimTerminalRunActivations(
+  async #reapUnboundWorkspaceRuntimes(minimumUnboundAgeMs?: number): Promise<void> {
+    const orphaned = await this.#stateRepository.claimUnboundWorkspaceRuntimes(
       16,
-      minimumTerminalAgeMs,
+      minimumUnboundAgeMs,
     );
     for (const orphan of orphaned) {
-      const local = this.#activations.get(orphan.activationId);
-      if (local !== undefined) this.#revoke(orphan.activationId);
+      const local = this.#toolBindings.get(orphan.activationId);
+      if (local !== undefined) this.#revokeBinding(orphan.activationId);
       this.#releaseAdmission(orphan.activationId);
       try {
-        await this.#provider.destroyActivation(orphan.activationId, orphan.assignment);
-        await this.#stateRepository.setActivationState(orphan.activationId, "released");
+        await this.#provider.destroyRuntime(orphan.activationId, orphan.assignment);
+        await this.#stateRepository.setWorkspaceRuntimeState(orphan.activationId, "released");
       } catch (error: unknown) {
         await this.#stateRepository
-          .setActivationState(orphan.activationId, "unknown", {
+          .setWorkspaceRuntimeState(orphan.activationId, "unknown", {
             failureCode: operationFailureCode(error),
           })
           .catch(() => undefined);
@@ -2490,7 +2478,7 @@ export class ToolBroker {
         createExecutionLease(terminal.terminalId, terminal.terminalId, terminal.fencingToken),
       );
       try {
-        await this.#provider.destroyActivation(terminal.terminalId, assignment);
+        await this.#provider.destroyRuntime(terminal.terminalId, assignment);
         await this.#stateRepository.setTerminalState(terminal.terminalId, "released");
       } catch (error: unknown) {
         await this.#stateRepository
@@ -2517,7 +2505,7 @@ export class ToolBroker {
         generation: environment.generation,
       });
       try {
-        await this.#provider.destroyActivation(environment.environmentId, assignment);
+        await this.#provider.destroyRuntime(environment.environmentId, assignment);
         this.#releaseAdmission(environment.environmentId);
         await this.#stateRepository.setDevelopmentEnvironmentState(
           environment.environmentId,
@@ -2540,15 +2528,36 @@ export class ToolBroker {
       await this.#stateRepository.setTerminalState(terminalId, "cleaning").catch(() => undefined);
       terminal.session.disconnect();
       await terminal.session.kill().catch(() => undefined);
-      const borrower = [...this.#activations.entries()].find(
-        ([, activation]) => activation.workspaceTerminalId === terminalId,
+      const workspaceRuntime = terminal.workspaceRuntime;
+      if (workspaceRuntime !== undefined) {
+        delete workspaceRuntime.workspaceTerminalId;
+        if (workspaceRuntime.bindingIds.size === 0) {
+          const now = this.#now();
+          workspaceRuntime.lastUsedAt = now;
+          workspaceRuntime.expiresAt = now + this.#warmTtlMs;
+          this.#warm.set(workspaceRuntime.workspaceKey, workspaceRuntime);
+          await this.#stateRepository.setWorkspaceRuntimeState(
+            workspaceRuntime.physicalActivationId,
+            "warm",
+            {
+              ...(workspaceRuntime.handle === undefined ? {} : { handle: workspaceRuntime.handle }),
+              workspaceRevision: workspaceRuntime.workspaceRevision,
+            },
+          );
+        }
+        await this.#stateRepository.setTerminalState(terminalId, "released");
+        return;
+      }
+      const borrower = [...this.#toolBindings.entries()].find(
+        ([, activation]) => activation.elasticRuntime?.workspaceTerminalId === terminalId,
       );
       if (borrower !== undefined) {
         const [activationId, activation] = borrower;
-        if (this.#admitted.delete(terminalId)) {
+        if (activation.elasticRuntime !== undefined) {
+          delete activation.elasticRuntime.workspaceTerminalId;
+        } else if (this.#admitted.delete(terminalId)) {
           this.#admitted.set(activationId, activation.assignment);
         }
-        delete activation.workspaceTerminalId;
         await this.#stateRepository.setTerminalState(terminalId, "released");
         return;
       }
@@ -2576,8 +2585,8 @@ export class ToolBroker {
     if (this.#admitted.has(activationId)) return;
     if (signal?.aborted) {
       throw new ToolBrokerError(
-        "tool_sandbox_admission_cancelled",
-        "Tool Sandbox admission was cancelled",
+        "tool_binding_admission_cancelled",
+        "Tool binding admission was cancelled",
         false,
       );
     }
@@ -2590,8 +2599,8 @@ export class ToolBroker {
       await this.#discardWarm(oldest[0], oldest[1]);
       if (signal?.aborted) {
         throw new ToolBrokerError(
-          "tool_sandbox_admission_cancelled",
-          "Tool Sandbox admission was cancelled",
+          "tool_binding_admission_cancelled",
+          "Tool binding admission was cancelled",
           false,
         );
       }
@@ -2615,8 +2624,8 @@ export class ToolBroker {
           this.#removeAbortListener(waiter);
           rejectPromise(
             new ToolBrokerError(
-              "tool_sandbox_admission_cancelled",
-              "Tool Sandbox admission was cancelled",
+              "tool_binding_admission_cancelled",
+              "Tool binding admission was cancelled",
               false,
             ),
           );
@@ -2627,79 +2636,35 @@ export class ToolBroker {
     });
   }
 
-  async #discardWarm(key: string, warm: WarmActivation): Promise<void> {
+  async #discardWarm(key: string, warm: ManagedElasticRuntime): Promise<void> {
     if (this.#warm.get(key) === warm) this.#warm.delete(key);
-    await this.#provider.stop(warm.handle);
-    await this.#serviceRegistry
-      ?.end(this.#conversationHttpServiceTarget(warm.handle.assignment), warm.handle.runtimeId)
-      .catch(() => undefined);
-    this.#releaseAdmission(warm.handle.activationId);
-    await this.#stateRepository.setActivationState(warm.handle.activationId, "released");
-  }
-
-  async #waitForWorkspaceSlot(assignment: ToolSandboxAssignment): Promise<void> {
-    const key = workspaceIdentityKey(assignment);
-    const deadline = this.#now() + 300_000;
-    const ordinaryOwners = new Set<string>();
-    let reconciledTerminalOwner = false;
-    for (;;) {
-      let ordinaryOwner = this.#settlingWorkspaces.has(key);
-      for (const [activationId, activation] of this.#activations) {
-        if (workspaceIdentityKey(activation.assignment) !== key) continue;
-        if (ordinaryOwners.has(activationId)) {
-          ordinaryOwner = true;
-          continue;
-        }
-        if (
-          await this.#stateRepository.allowsDelegatedSandboxHandoff({
-            tenantId: assignment.tenantId,
-            workspaceId: assignment.workspaceId,
-            currentSessionId: activation.assignment.sessionId,
-            nextSessionId: assignment.sessionId,
-          })
-        ) {
-          return;
-        }
-        ordinaryOwners.add(activationId);
-        ordinaryOwner = true;
-      }
-      if (!ordinaryOwner) return;
-      if (!reconciledTerminalOwner) {
-        reconciledTerminalOwner = true;
-        await this.#reapTerminalRunActivations(0);
-        ordinaryOwners.clear();
-        continue;
-      }
-      if (this.#now() >= deadline) {
-        throw new ToolBrokerError(
-          "tool_sandbox_workspace_busy",
-          "Workspace Tool execution did not become available before its deadline",
-          true,
-        );
-      }
-      await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 50));
+    if (warm.handle !== undefined) {
+      await this.#provider.stop(warm.handle);
+      await this.#serviceRegistry?.endRuntime(warm.handle.runtimeId).catch(() => undefined);
     }
+    this.#releaseAdmission(warm.physicalActivationId);
+    await this.#stateRepository.setWorkspaceRuntimeState(warm.physicalActivationId, "released");
   }
 
-  async #serializeWorkspaceReservation<T>(
+  async #serializeWorkspaceRuntimeProvisioning<T>(
     assignment: ToolSandboxAssignment,
     operation: () => Promise<T>,
   ): Promise<T> {
     const key = workspaceIdentityKey(assignment);
-    const previous = this.#workspaceReservationTails.get(key) ?? Promise.resolve();
+    const previous = this.#workspaceRuntimeProvisioningTails.get(key) ?? Promise.resolve();
     let release!: () => void;
     const current = new Promise<void>((resolvePromise) => {
       release = resolvePromise;
     });
     const tail = previous.then(() => current);
-    this.#workspaceReservationTails.set(key, tail);
+    this.#workspaceRuntimeProvisioningTails.set(key, tail);
     await previous;
     try {
       return await operation();
     } finally {
       release();
-      if (this.#workspaceReservationTails.get(key) === tail) {
-        this.#workspaceReservationTails.delete(key);
+      if (this.#workspaceRuntimeProvisioningTails.get(key) === tail) {
+        this.#workspaceRuntimeProvisioningTails.delete(key);
       }
     }
   }
@@ -2727,8 +2692,8 @@ export class ToolBroker {
     this.#removeAbortListener(waiter);
     waiter.reject(
       new ToolBrokerError(
-        "tool_sandbox_admission_cancelled",
-        "Tool Sandbox admission was cancelled",
+        "tool_binding_admission_cancelled",
+        "Tool binding admission was cancelled",
         false,
       ),
     );

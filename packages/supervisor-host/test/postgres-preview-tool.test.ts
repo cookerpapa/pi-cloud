@@ -94,7 +94,7 @@ describe("trusted Preview Tool", () => {
         session_id: sessionId,
         development_environment_id: null,
         runtime_id: "runtime-preview",
-        activation_id: "50000000-0000-4000-8000-000000000008",
+        tool_binding_id: "50000000-0000-4000-8000-000000000008",
         last_operation_id: "50000000-0000-4000-8000-000000000009",
         port: 3_000,
         protocol: "http",

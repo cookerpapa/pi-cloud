@@ -103,24 +103,11 @@ export async function transitionCurrentRunAttempt(
         .onRef("attempt.run_id", "=", "run.id")
         .onRef("attempt.id", "=", "run.current_attempt_id"),
     )
-    .innerJoin("sessions as session_row", (join) =>
-      join
-        .onRef("session_row.tenant_id", "=", "run.tenant_id")
-        .onRef("session_row.id", "=", "run.session_id"),
-    )
-    .leftJoin("subagent_executions as subagent_execution", (join) =>
-      join
-        .onRef("subagent_execution.tenant_id", "=", "run.tenant_id")
-        .onRef("subagent_execution.child_run_id", "=", "run.id"),
-    )
     .select([
       "run.state as runState",
       "run.row_version as runVersion",
       "run.current_attempt_id as currentAttemptId",
       "run.workspace_id as workspaceId",
-      "session_row.forked_from_session_id as forkedFromSessionId",
-      "session_row.session_kind as sessionKind",
-      "subagent_execution.workspace_mode as subagentWorkspaceMode",
       "attempt.state as attemptState",
       "attempt.lease_id as executionLeaseId",
       "attempt.fencing_token as fencingToken",
@@ -156,9 +143,6 @@ export async function transitionCurrentRunAttempt(
   const terminalRun = isTerminalRunState(runState);
   const terminalAttempt = isTerminalRunAttemptState(attemptState);
   const failureRequired = runState === "failed" || runState === "timed_out";
-  const advancesSharedWorkspace =
-    row.forkedFromSessionId === null &&
-    !(row.sessionKind === "subagent" && row.subagentWorkspaceMode === "shared_serialized");
   if (failureRequired !== (input.failure !== undefined)) {
     throw new TypeError("Run failure metadata does not match its target state");
   }
@@ -240,22 +224,17 @@ export async function transitionCurrentRunAttempt(
             "Settled Workspace settlement artifacts are missing",
           );
         }
-        if (advancesSharedWorkspace) {
-          const workspaceHead = await transaction
-            .updateTable("workspaces")
-            .set({
-              current_workspace_settlement_id: settlement.id,
-              row_version: sql<string>`${sql.ref("row_version")} + 1`,
-              updated_at: now,
-            })
-            .where("tenant_id", "=", identity.tenantId)
-            .where("id", "=", settlement.workspace_id)
-            .executeTakeFirst();
-          expectOne(
-            workspaceHead.numUpdatedRows,
-            "Recording the last-settled Workspace settlement",
-          );
-        }
+        const workspaceHead = await transaction
+          .updateTable("workspaces")
+          .set({
+            current_workspace_settlement_id: settlement.id,
+            row_version: sql<string>`${sql.ref("row_version")} + 1`,
+            updated_at: now,
+          })
+          .where("tenant_id", "=", identity.tenantId)
+          .where("id", "=", settlement.workspace_id)
+          .executeTakeFirst();
+        expectOne(workspaceHead.numUpdatedRows, "Recording the last-settled Workspace settlement");
         const conversationUpdate = await transaction
           .updateTable("sessions")
           .set({

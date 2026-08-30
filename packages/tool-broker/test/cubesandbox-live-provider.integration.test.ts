@@ -361,7 +361,7 @@ async function waitForNoManagedInstances(
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
       const remaining = (await client.list()).filter((instance) =>
-        activationIds.has(instance.metadata["picloud.activation_id"] ?? ""),
+        activationIds.has(instance.metadata["picloud.workspace_runtime_id"] ?? ""),
       );
       if (remaining.length === 0) return;
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));

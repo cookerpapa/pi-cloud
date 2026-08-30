@@ -107,7 +107,7 @@ export class WorkspaceVolumeDeletionReaper {
         and workspace.storage_purged_at is null
         and not exists (
           select 1
-          from tool_broker_activations as activation
+          from tool_broker_workspace_runtimes as activation
           where activation.tenant_id = workspace.tenant_id
             and activation.workspace_id = workspace.id
             and activation.state in (${sql.join(LIVE_ACTIVATION_STATES)})
@@ -144,7 +144,7 @@ export class WorkspaceVolumeDeletionReaper {
           .where(
             sql<boolean>`not exists (
               select 1
-              from tool_broker_activations as activation
+              from tool_broker_workspace_runtimes as activation
               where activation.tenant_id = ${workspace.tenantId}
                 and activation.workspace_id = ${workspace.workspaceId}
                 and activation.state in (${sql.join(LIVE_ACTIVATION_STATES)})

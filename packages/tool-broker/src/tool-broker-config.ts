@@ -18,7 +18,7 @@ export type ToolBrokerConfig = {
   imageRevision: string;
   maximumActiveSandboxes: number;
   warmTtlMs: number;
-  maximumWarmActivations: number;
+  maximumWarmWorkspaceRuntimes: number;
   workspaceDeletionReaperIntervalMs: number;
   workspaceDeletionReaperBatchSize: number;
   cubeSandbox: {
@@ -259,7 +259,12 @@ export async function loadToolBrokerConfig(
       1_000,
       24 * 60 * 60_000,
     ),
-    maximumWarmActivations: integer(environment.PI_CLOUD_MAXIMUM_WARM_SANDBOXES, 4, 1, 1_000),
+    maximumWarmWorkspaceRuntimes: integer(
+      environment.PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES,
+      4,
+      1,
+      1_000,
+    ),
     workspaceDeletionReaperIntervalMs: integer(
       environment.PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS,
       30_000,

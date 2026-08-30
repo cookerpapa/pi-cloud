@@ -351,7 +351,7 @@ export const DelegatedSessionContextModeSchema = Type.Union([
 
 export const DelegatedSessionWorkspaceModeSchema = Type.Union([
   Type.Literal("none"),
-  Type.Literal("shared_serialized"),
+  Type.Literal("shared"),
   Type.Literal("isolated"),
 ]);
 

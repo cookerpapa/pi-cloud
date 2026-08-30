@@ -93,7 +93,7 @@ spec:
             - { name: PI_CLOUD_TOOL_BROKER_PORT, value: "4300" }
             - { name: PI_CLOUD_SANDBOX_WARM_TTL_MS, value: {{ .Values.sandboxPlane.warmTtlMs | quote }} }
             - { name: PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES, value: {{ .Values.sandboxPlane.maximumActivePerReplica | quote }} }
-            - { name: PI_CLOUD_MAXIMUM_WARM_SANDBOXES, value: {{ .Values.sandboxPlane.maximumWarmPerReplica | quote }} }
+            - { name: PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES, value: {{ .Values.sandboxPlane.maximumWarmWorkspaceRuntimesPerReplica | quote }} }
             - { name: PI_CLOUD_TOOL_BROKER_TOKEN_FILE, value: /run/pi-cloud-secrets/tool-broker-token }
             - { name: PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-service-token }
             - { name: PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-terminal-token }

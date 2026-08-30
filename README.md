@@ -12,7 +12,7 @@ shell operations run in CubeSandbox KVM microVMs.
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
 - self-managed GitLab public/private project connection and explicit Issue-to-Run automation;
-- elastic Sandboxes or user-owned full-VM Cube environments with root SSH/terminal access;
+- one elastic Cube runtime per active Workspace, or user-owned full-VM Cube environments with root SSH/terminal access;
 - snapshot-first SSE whose visible bytes were acknowledged by Kafka first;
 - horizontally replaceable Pi Workers and Kubernetes/KEDA deployment support.
 - Worker-ready prewarming for isolated Pi model-runtime slots and the governed Subagent contract.
@@ -130,7 +130,8 @@ optional local acceptance instance with `npm run gitlab:up`; see
 [its README](deploy/gitlab/README.md).
 
 An elastic Workspace is durable storage, not reserved compute: Cube capacity is
-admitted when a Tool-using Run starts. Creating a cloud development machine is
+admitted on its first Tool call, then concurrent Session Tool bindings share
+that Workspace runtime until its bounded idle TTL. Creating a cloud development machine is
 synchronous and succeeds only after durable-resource admission, Sandbox Domain
 capacity and the selected Cube profile have all been admitted.
 

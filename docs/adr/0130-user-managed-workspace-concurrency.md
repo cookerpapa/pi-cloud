@@ -21,11 +21,9 @@ couples Run admission to optional compute state.
 
 - Same-Session Runs remain FIFO and non-overlapping. RunAttempt leases and
   fences remain unchanged.
-- Different Sessions may run their model/Agent Loops concurrently against the
-  same elastic Workspace. Cube's Volume contract permits one attached Tool
-  runtime, so Tool Broker queues only their Tool-Sandbox phase and switches the
-  Volume after the prior activation settles. This physical slot is not a Run
-  Claim or model-admission lock.
+- Different Sessions may run model/Agent Loops and Tool operations concurrently
+  against the same elastic Workspace. They receive independent Tool bindings
+  to one Workspace-owned Cube.
 - A human terminal no longer blocks Run claim. It owns one elastic Cube; an
   Agent that starts while the terminal is connected borrows that same physical
   Cube under its own external lease, avoiding an unsupported second Volume
@@ -36,15 +34,15 @@ couples Run admission to optional compute state.
 - The shared Workspace settlement pointer is last-observed metadata,
   not a compare-and-swap writer lock. A concurrent settlement cannot fail an
   otherwise successful Run merely because another Session settled first. Each
-  Session advances only its own checkpoint pointer; it never rewrites every
+  Session advances only its own settlement pointer; it never rewrites every
   sibling Session's base revision.
 - Remove per-tenant active-Run, unsettled-Turn and active-Sandbox ceilings.
   Project and Session limits bound long-lived product resources, while
   Worker/Cube/Sandbox-Domain capacity remains real infrastructure admission.
 - The Run queue does not claim tenant fairness without a measured starvation
   problem and an explicit policy.
-- Explicit `shared_serialized` Subagent handoff remains serialized because it
-  is a parent/child workflow contract, not an ordinary user concurrency policy.
+- A `shared` Subagent uses the same Workspace runtime and ordinary Linux
+  concurrency. `isolated` remains the explicit separate-Volume/Cube mode.
 
 ## Consequences
 
@@ -52,13 +50,11 @@ Pure chat and model generation do not wait for a terminal or Cube state.
 Operators scale Worker and Cube capacity globally instead of assigning each
 tenant an arbitrary active ceiling.
 
-A terminal and Agent sharing one Cube can race on files and process-visible
-resources. Different Sessions can reason concurrently, but their elastic Tool
-effects use the Workspace's one physical runtime slot. PiCloud records
+A terminal and Agents sharing one Cube can race on files and process-visible
+resources. Different Sessions can reason and execute Tools concurrently in the
+Workspace's one physical runtime. PiCloud records
 independent Run/Attempt evidence and does not promise merge semantics or restore
 a lost update caused by terminal/external edits.
 
-An exclusive machine still has only one Agent activation because all Agent
-operations share one physical Cube authority. Supporting multiple simultaneous
-Agent leases inside one machine would require a distinct in-VM execution
-ownership protocol and is not implied by this decision.
+An exclusive machine currently retains one Agent binding at a time; its
+physical Cube lifecycle remains independent from that temporary binding.

@@ -1867,7 +1867,7 @@ export class SourceControlService {
 
   async #workspaceToolBroker(tenantId: string, workspaceId: string): Promise<string> {
     const activationOwner = await this.#database
-      .selectFrom("tool_broker_activations")
+      .selectFrom("tool_broker_workspace_runtimes")
       .select("owner_base_url as toolBrokerBaseUrl")
       .where("tenant_id", "=", tenantId)
       .where("workspace_id", "=", workspaceId)

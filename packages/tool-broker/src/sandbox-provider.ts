@@ -198,33 +198,13 @@ export interface SandboxProvider {
   readonly cleanPrewarmCount?: number;
   /** Provider-specific policy selected only by trusted deployment config. */
   readonly defaultPolicy: SandboxPolicy;
-  /**
-   * False when the runtime cannot atomically rebind persisted assignment
-   * metadata to a higher fencing token. Such Providers are destroyed at the
-   * Run boundary instead of entering the exact-Session warm pool.
-   */
-  readonly supportsWarmRebind?: boolean;
-
   checkHealth(): Promise<void>;
   create(spec: SandboxCreateSpec): Promise<SandboxHandle>;
-  /**
-   * Revoke the completed Run boundary before an exact-Session runtime enters
-   * the warm pool. A Provider may keep the physical runtime running; this hook
-   * must not preserve the old RunAttempt's Tool authority.
-   */
-  retainForWarm(
-    handle: SandboxHandle,
-    brokerAssignment: ToolSandboxAssignment,
-  ): Promise<SandboxHandle>;
-  rebind(
-    handle: SandboxHandle,
-    assignment: ToolSandboxAssignment,
-    toolRoot?: string,
-  ): Promise<SandboxHandle>;
   exec(
     handle: SandboxHandle,
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
+    toolRoot?: string,
   ): Promise<ToolSandboxOperationResponse>;
   discoverHttpServices?(
     handle: SandboxHandle,
@@ -265,7 +245,11 @@ export interface SandboxProvider {
     path: string,
     name: string,
   ): Promise<SandboxDirectoryListing>;
-  settle(handle: SandboxHandle, requestId: string): Promise<ToolSandboxCaptureResponse>;
+  settle(
+    handle: SandboxHandle,
+    requestId: string,
+    binding?: Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>,
+  ): Promise<ToolSandboxCaptureResponse>;
   forkWorkspace?(
     handle: SandboxHandle,
     request: ToolBrokerWorkspaceForkRequest,
@@ -289,7 +273,7 @@ export interface SandboxProvider {
     request: SourceControlWorkspaceCredentialPreflightRequest,
   ): Promise<SourceControlWorkspaceCredentialResponse>;
   /** Used only when the Tool Broker restarted before it could reconstruct a handle. */
-  destroyActivation(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
+  destroyRuntime(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
 
   listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]>;
   terminateAndConfirmAbsent(assignment: SupervisorRuntimeAssignment): Promise<void>;

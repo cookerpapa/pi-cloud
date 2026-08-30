@@ -12,14 +12,14 @@ export {
   type ReplicatedToolBrokerClientOptions,
 } from "./tool-broker-client.ts";
 export {
-  InMemorySandboxActivationStateRepository,
-  PostgresSandboxActivationStateRepository,
-  SandboxActivationStateRepositoryError,
-  type PostgresSandboxActivationStateRepositoryOptions,
-  type SandboxActivationReservation,
-  type SandboxActivationReservationResult,
-  type SandboxActivationStateRepository,
-} from "./activation-state-repository.ts";
+  InMemoryWorkspaceRuntimeStateRepository,
+  PostgresWorkspaceRuntimeStateRepository,
+  WorkspaceRuntimeStateRepositoryError,
+  type PostgresWorkspaceRuntimeStateRepositoryOptions,
+  type WorkspaceRuntimeReservation,
+  type WorkspaceRuntimeReservationResult,
+  type WorkspaceRuntimeStateRepository,
+} from "./workspace-runtime-state-repository.ts";
 export {
   CUBESANDBOX_PROVIDER_ID,
   CUBESANDBOX_RUNTIME_NAME,

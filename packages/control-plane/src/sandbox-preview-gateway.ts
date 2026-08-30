@@ -461,20 +461,28 @@ export class SandboxPreviewGateway {
           .onRef("workspace.id", "=", "session_row.workspace_id"),
       )
       .innerJoin("sandbox_domains as domain", "domain.id", "workspace.sandbox_domain_id")
-      .leftJoin("tool_broker_activations as activation", (join) =>
+      .leftJoin("sandbox_http_services as service", (join) =>
         join
-          .onRef("activation.tenant_id", "=", "session_row.tenant_id")
-          .onRef("activation.session_id", "=", "session_row.id")
-          .on("activation.state", "in", ["materializing", "active", "warm", "cleaning"]),
+          .onRef("service.tenant_id", "=", "session_row.tenant_id")
+          .onRef("service.session_id", "=", "session_row.id")
+          .on("service.target_kind", "=", "conversation")
+          .on("service.state", "=", "active"),
+      )
+      .leftJoin("tool_broker_workspace_runtimes as runtime", (join) =>
+        join
+          .onRef("runtime.tenant_id", "=", "service.tenant_id")
+          .onRef("runtime.workspace_id", "=", "service.workspace_id")
+          .onRef("runtime.runtime_id", "=", "service.runtime_id")
+          .on("runtime.state", "in", ["materializing", "active", "warm", "cleaning"]),
       )
       .select([
-        "activation.owner_base_url as ownerBaseUrl",
+        "runtime.owner_base_url as ownerBaseUrl",
         "domain.tool_broker_base_url as fallbackBaseUrl",
       ])
       .where("session_row.tenant_id", "=", tenantId)
       .where("session_row.id", "=", target.sessionId)
       .where("session_row.archived_at", "is", null)
-      .orderBy("activation.updated_at", "desc")
+      .orderBy("service.last_seen_at", "desc")
       .executeTakeFirst();
     if (row === undefined) throw new Error("Conversation preview is unavailable");
     return row.ownerBaseUrl ?? row.fallbackBaseUrl;

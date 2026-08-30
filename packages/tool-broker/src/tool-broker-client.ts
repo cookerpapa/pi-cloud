@@ -518,15 +518,15 @@ export type ReplicatedToolBrokerClientOptions = Omit<ToolBrokerClientOptions, "b
 
 /**
  * Balances new reservations across Sandbox-Domain Tool Broker replicas. The durable
- * owner returned by create controls the complete activation. Follow-up Tool
+ * owner returned by create controls the complete Tool binding. Follow-up Tool
  * calls never fail over to another replica because doing so could replay an
  * ambiguous side effect. A warm owner can redirect a later create request back
- * to itself through the PostgreSQL activation directory.
+ * to itself through the Tool Broker owner directory.
  */
 export class ReplicatedToolBrokerClient {
   readonly #clients: readonly ToolBrokerClient[];
   readonly #ownerClients = new Map<string, ToolBrokerClient>();
-  readonly #activationOwners = new Map<
+  readonly #toolBindingOwners = new Map<
     string,
     Readonly<{ client: ToolBrokerClient; holders: Set<string> }>
   >();
@@ -577,7 +577,11 @@ export class ReplicatedToolBrokerClient {
     const client = this.#clients[this.#nextClient % this.#clients.length]!;
     this.#nextClient += 1;
     const response = await client.create(request);
-    this.#rememberActivationOwner(response.activationId, response.ownerBaseUrl, request.assignment);
+    this.#rememberToolBindingOwner(
+      response.activationId,
+      response.ownerBaseUrl,
+      request.assignment,
+    );
     return response;
   }
 
@@ -596,7 +600,7 @@ export class ReplicatedToolBrokerClient {
     try {
       return await this.#ownedClient(activationId).release(activationId, assignment, disposition);
     } finally {
-      this.#forgetActivationOwner(activationId, assignment);
+      this.#forgetToolBindingOwner(activationId, assignment);
     }
   }
 
@@ -604,7 +608,7 @@ export class ReplicatedToolBrokerClient {
     try {
       await this.#ownedClient(activationId).stop(activationId, assignment);
     } finally {
-      this.#forgetActivationOwner(activationId, assignment);
+      this.#forgetToolBindingOwner(activationId, assignment);
     }
   }
 
@@ -668,45 +672,45 @@ export class ReplicatedToolBrokerClient {
   }
 
   #ownedClient(activationId: string): ToolBrokerClient {
-    const owner = this.#activationOwners.get(activationId);
+    const owner = this.#toolBindingOwners.get(activationId);
     if (owner !== undefined) return owner.client;
     throw new ToolBrokerClientError(
       "tool_broker_owner_unknown",
-      "Tool Sandbox activation owner is unavailable",
+      "Tool binding owner is unavailable",
       false,
     );
   }
 
-  #rememberActivationOwner(
+  #rememberToolBindingOwner(
     activationId: string,
     ownerBaseUrl: string,
     assignment: ToolSandboxAssignment,
   ): void {
     const client = this.#ownerClient(ownerBaseUrl);
-    const holder = this.#activationHolder(assignment);
-    const existing = this.#activationOwners.get(activationId);
+    const holder = this.#toolBindingHolder(assignment);
+    const existing = this.#toolBindingOwners.get(activationId);
     if (existing !== undefined) {
       if (existing.client !== client) {
         throw new ToolBrokerClientError(
           "tool_broker_owner_changed",
-          "Tool Sandbox activation owner changed during a delegated handoff",
+          "Tool binding owner changed during a concurrent binding",
           false,
         );
       }
       existing.holders.add(holder);
       return;
     }
-    this.#activationOwners.set(activationId, { client, holders: new Set([holder]) });
+    this.#toolBindingOwners.set(activationId, { client, holders: new Set([holder]) });
   }
 
-  #forgetActivationOwner(activationId: string, assignment: ToolSandboxAssignment): void {
-    const owner = this.#activationOwners.get(activationId);
+  #forgetToolBindingOwner(activationId: string, assignment: ToolSandboxAssignment): void {
+    const owner = this.#toolBindingOwners.get(activationId);
     if (owner === undefined) return;
-    owner.holders.delete(this.#activationHolder(assignment));
-    if (owner.holders.size === 0) this.#activationOwners.delete(activationId);
+    owner.holders.delete(this.#toolBindingHolder(assignment));
+    if (owner.holders.size === 0) this.#toolBindingOwners.delete(activationId);
   }
 
-  #activationHolder(assignment: ToolSandboxAssignment): string {
+  #toolBindingHolder(assignment: ToolSandboxAssignment): string {
     return [
       assignment.tenantId,
       assignment.workspaceId,

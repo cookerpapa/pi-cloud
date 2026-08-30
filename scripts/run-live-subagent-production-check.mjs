@@ -315,7 +315,7 @@ try {
     ].join(" "),
   );
   const sharedEvidence = await executionEvidence(shared.accepted.runId);
-  assert.equal(sharedEvidence.workspaceMode, "shared_serialized");
+  assert.equal(sharedEvidence.workspaceMode, "shared");
   assert.equal(sharedEvidence.childWorkspaceId, sharedEvidence.parentWorkspaceId);
   assert.equal(sharedEvidence.childRunState, "completed");
   assert(sharedEvidence.inheritedReferenceCount > 0);

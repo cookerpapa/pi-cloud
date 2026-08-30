@@ -1,13 +1,8 @@
-import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { chown, lstat, mkdir, open, readFile, readdir, realpath, rmdir } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
-import { promisify } from "node:util";
-
-const exec = promisify(execFile);
 const TOOL_UID = 1_000;
-type ProcessIdentity = Readonly<{ pid: number; startTime: string }>;
 
 async function input(): Promise<Record<string, unknown>> {
   const path = process.argv[2];
@@ -28,114 +23,6 @@ async function input(): Promise<Record<string, unknown>> {
   } finally {
     await handle.close();
   }
-}
-
-async function processStartTime(pid: number): Promise<string | undefined> {
-  const stat = await readFile(`/proc/${String(pid)}/stat`, "utf8").catch(() => undefined);
-  if (stat === undefined) return undefined;
-  const commandEnd = stat.lastIndexOf(")");
-  if (commandEnd < 1) return undefined;
-  const value = stat
-    .slice(commandEnd + 1)
-    .trim()
-    .split(/\s+/u)[19];
-  return value !== undefined && /^[0-9]+$/u.test(value) ? value : undefined;
-}
-
-async function userProcesses(): Promise<ProcessIdentity[]> {
-  return (
-    await Promise.all(
-      (await readdir("/proc"))
-        .filter((entry) => /^[1-9][0-9]*$/u.test(entry))
-        .map(async (entry): Promise<ProcessIdentity | undefined> => {
-          const pid = Number(entry);
-          const status = await readFile(`/proc/${entry}/status`, "utf8").catch(() => undefined);
-          const uid = status?.match(/^Uid:\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)$/mu);
-          if (
-            !Number.isSafeInteger(pid) ||
-            uid?.slice(1).every((value) => Number(value) !== TOOL_UID)
-          ) {
-            return undefined;
-          }
-          const startTime = await processStartTime(pid);
-          return startTime === undefined ? undefined : { pid, startTime };
-        }),
-    )
-  )
-    .filter((entry): entry is ProcessIdentity => entry !== undefined)
-    .sort((left, right) => left.pid - right.pid);
-}
-
-async function freeze(path: string): Promise<ProcessIdentity[]> {
-  const processes = await userProcesses();
-  try {
-    for (const identity of processes) {
-      if ((await processStartTime(identity.pid)) === identity.startTime) {
-        process.kill(identity.pid, "SIGSTOP");
-      }
-    }
-    const deadline = Date.now() + 1_000;
-    for (;;) {
-      const states = await Promise.all(
-        processes.map(async (identity) => {
-          if ((await processStartTime(identity.pid)) !== identity.startTime) return "gone";
-          const status = await readFile(`/proc/${String(identity.pid)}/status`, "utf8").catch(
-            () => "",
-          );
-          if (status === "" || /^State:\s+(?:Z|X|x)\b/mu.test(status)) return "gone";
-          return /^State:\s+(?:T|t)\b/mu.test(status) ? "stopped" : "running";
-        }),
-      );
-      if (states.every((state) => state !== "running")) break;
-      if (Date.now() >= deadline) throw new Error("Guest processes could not be quiesced");
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
-    }
-    await exec("/bin/sync", ["-f", path], { timeout: 10_000 });
-    return processes;
-  } catch (error: unknown) {
-    await thaw(processes).catch(() => undefined);
-    throw error;
-  }
-}
-
-function processList(value: unknown): ProcessIdentity[] {
-  if (!Array.isArray(value) || value.length > 512) throw new Error("Process list was invalid");
-  return value.map((entry) => {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-      throw new Error("Process identity was invalid");
-    }
-    const candidate = entry as Record<string, unknown>;
-    if (
-      !Number.isSafeInteger(candidate.pid) ||
-      (candidate.pid as number) < 1 ||
-      typeof candidate.startTime !== "string" ||
-      !/^[0-9]+$/u.test(candidate.startTime)
-    ) {
-      throw new Error("Process identity was invalid");
-    }
-    return { pid: candidate.pid as number, startTime: candidate.startTime };
-  });
-}
-
-async function thaw(processes: readonly ProcessIdentity[]): Promise<number> {
-  let resumed = 0;
-  for (const identity of processes) {
-    if ((await processStartTime(identity.pid)) !== identity.startTime) continue;
-    try {
-      process.kill(identity.pid, "SIGCONT");
-      resumed++;
-    } catch (error: unknown) {
-      if (
-        typeof error !== "object" ||
-        error === null ||
-        !("code" in error) ||
-        error.code !== "ESRCH"
-      ) {
-        throw error;
-      }
-    }
-  }
-  return resumed;
 }
 
 async function evidence(): Promise<Record<string, unknown>> {
@@ -266,10 +153,6 @@ const request = await input();
 let result: Record<string, unknown>;
 if (request.mode === "evidence" && Object.keys(request).length === 1) {
   result = { evidence: await evidence() };
-} else if (request.mode === "freeze" && Object.keys(request).sort().join(",") === "mode,path") {
-  result = { processes: await freeze(absolutePath(request.path)) };
-} else if (request.mode === "thaw" && Object.keys(request).sort().join(",") === "mode,processes") {
-  result = { resumed: await thaw(processList(request.processes)) };
 } else if (
   request.mode === "list_directory" &&
   Object.keys(request).sort().join(",") === "mode,path"

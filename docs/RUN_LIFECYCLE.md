@@ -41,10 +41,10 @@ same binding do not append another fact, and Compaction retains the newest
 material fact for cross-Worker recovery.
 
 For a Tool call, the Worker presents the same Session lease used by the
-FactChannel. Tool Broker atomically verifies its expiry and fence together with
-the activation, frozen Tool policy and Step context; it then lazily
-creates/rebinds Cube, attaches the stable Workspace Volume and executes exactly
-one admitted operation. No second per-activation bearer is minted.
+FactChannel. Tool Broker verifies its expiry and fence together with the Tool
+binding, frozen Tool policy and Step context. The first binding lazily creates
+the Workspace-owned Cube; later bindings share it without provider rebind.
+Different Sessions may execute Tools concurrently in that Cube.
 
 A Tool transport retry may reattach to the same operation identity. It must not
 start a second arbitrary shell operation. If start/result cannot be proven, the
@@ -92,10 +92,9 @@ Cube loss discards processes, memory, sockets and PTYs. The persistent Workspace
 Volume survives and can attach to a fresh KVM. The next Pi step is told only
 when the execution world materially changed.
 
-If a Worker dies during lazy Cube creation, Tool Broker also reconciles the
-Activation against the authoritative Run/Attempt. A late-created runtime for a
-terminal or superseded Attempt is destroyed and cannot retain scarce admission
-capacity.
+If a Worker dies during lazy Cube creation, its Tool binding expires. A late
+physical runtime with no current Workspace bindings is reconciled and destroyed
+without retaining scarce admission capacity.
 
 ## Delivery semantics
 

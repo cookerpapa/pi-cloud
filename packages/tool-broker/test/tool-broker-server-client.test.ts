@@ -493,7 +493,7 @@ describe("Tool Broker authenticated RPC", () => {
     expect(calls).toEqual([2, 2]);
   });
 
-  it("keeps the parent activation owner while a colocated delegated holder releases", async () => {
+  it("keeps each colocated Tool binding owner independent", async () => {
     let ownerBaseUrl = "http://tool-broker.invalid";
     const server = new ToolBrokerServer({
       host: "127.0.0.1",
@@ -579,7 +579,7 @@ describe("Tool Broker authenticated RPC", () => {
       }),
     ).resolves.toMatchObject({ activationId: parent.activationId });
     expect(() => client.operationUrlFor(parent.activationId)).toThrow(
-      "Tool Sandbox activation owner is unavailable",
+      "Tool binding owner is unavailable",
     );
   });
 

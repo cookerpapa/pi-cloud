@@ -59,7 +59,7 @@ describe("pi-subagents cloud Tool adapter", () => {
     });
     expect(starts.find((start) => start.agent === "scout")?.options).toMatchObject({
       contextMode: "fresh",
-      workspaceMode: "shared_serialized",
+      workspaceMode: "shared",
       requestedToolCapabilities: ["read", "bash"],
     });
     const output = result.content
@@ -165,7 +165,7 @@ describe("pi-subagents cloud Tool adapter", () => {
     expect(starts).toHaveLength(1);
     expect(starts[0]).toMatchObject({
       agent: "worker",
-      options: { contextMode: "fork", workspaceMode: "shared_serialized" },
+      options: { contextMode: "fork", workspaceMode: "shared" },
     });
     expect(starts[0]!.prompt).toContain("Implement insertion sort");
     expect(starts[0]!.prompt).not.toContain("Write your findings to exactly this path");

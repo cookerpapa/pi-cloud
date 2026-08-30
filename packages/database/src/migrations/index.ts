@@ -111,6 +111,7 @@ import * as removeLegacyWorkspacePatchOutboxPayloads from "./109_remove_legacy_w
 import * as userDirectedIssueSessions from "./110_user_directed_issue_sessions.ts";
 import * as workspaceGitOauthRequests from "./111_workspace_git_oauth_requests.ts";
 import * as liveWorkspaceSettlement from "./112_live_workspace_settlement.ts";
+import * as workspaceOwnedToolRuntime from "./113_workspace_owned_tool_runtime.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -227,6 +228,7 @@ export const migrationProvider: MigrationProvider = {
       "110_user_directed_issue_sessions": userDirectedIssueSessions,
       "111_workspace_git_oauth_requests": workspaceGitOauthRequests,
       "112_live_workspace_settlement": liveWorkspaceSettlement,
+      "113_workspace_owned_tool_runtime": workspaceOwnedToolRuntime,
     };
   },
 };

@@ -129,7 +129,7 @@ const METADATA = Object.freeze({
   managed: "picloud.managed",
   provider: "picloud.provider",
   workload: "picloud.workload",
-  activationId: "picloud.activation_id",
+  workspaceRuntimeId: "picloud.workspace_runtime_id",
   tenantId: "picloud.tenant_id",
   projectId: "picloud.project_id",
   workspaceId: "picloud.workspace_id",
@@ -146,14 +146,14 @@ const METADATA = Object.freeze({
   imageRevision: "picloud.image_revision",
 } as const);
 
-const ASSIGNMENT_METADATA_PREFIX = "picloud.assignment.v3.";
+const ASSIGNMENT_METADATA_PREFIX = "picloud.workspace-runtime.v1.";
 
 function fencingToken(assignment: ToolSandboxAssignment): number {
   return parseExecutionLease(assignment.executionLease).fencingToken;
 }
 
 type CubeAssignmentMetadata = Readonly<{
-  activationId: string;
+  workspaceRuntimeId: string;
   tenantId: string;
   projectId: string;
   workspaceId: string;
@@ -417,10 +417,10 @@ function physicalBindingSha256(
   environment: SandboxCreateSpec["environment"],
 ): string {
   return createHash("sha256")
-    .update("pi-cloud.cubesandbox-binding.v2\0")
+    .update("pi-cloud.cubesandbox-workspace-runtime.v1\0")
     .update(
       JSON.stringify({
-        activationId,
+        workspaceRuntimeId: activationId,
         tenantId: assignment.tenantId,
         projectId: assignment.projectId,
         workspaceId: assignment.workspaceId,
@@ -441,7 +441,7 @@ function assignmentMetadata(
 ): Readonly<Record<string, string>> {
   const execution = parseExecutionLease(assignment.executionLease);
   const current: CubeAssignmentMetadata = {
-    activationId,
+    workspaceRuntimeId: activationId,
     tenantId: assignment.tenantId,
     projectId: assignment.projectId,
     workspaceId: assignment.workspaceId,
@@ -460,8 +460,8 @@ function assignmentMetadata(
   return Object.freeze({
     [METADATA.managed]: "true",
     [METADATA.provider]: CUBESANDBOX_PROVIDER_ID,
-    [METADATA.workload]: "tool-sandbox",
-    [METADATA.activationId]: activationId,
+    [METADATA.workload]: "workspace-runtime",
+    [METADATA.workspaceRuntimeId]: activationId,
     [METADATA.tenantId]: assignment.tenantId,
     [METADATA.projectId]: assignment.projectId,
     [METADATA.workspaceId]: assignment.workspaceId,
@@ -510,8 +510,8 @@ function metadataMatchesPhysicalBinding(
   return (
     values[METADATA.managed] === "true" &&
     values[METADATA.provider] === CUBESANDBOX_PROVIDER_ID &&
-    values[METADATA.workload] === "tool-sandbox" &&
-    current?.activationId === activationId &&
+    values[METADATA.workload] === "workspace-runtime" &&
+    current?.workspaceRuntimeId === activationId &&
     current.tenantId === assignment.tenantId &&
     current.projectId === assignment.projectId &&
     current.workspaceId === assignment.workspaceId &&
@@ -528,8 +528,8 @@ function metadataMatchesOrphanIdentity(
   return (
     values[METADATA.managed] === "true" &&
     values[METADATA.provider] === CUBESANDBOX_PROVIDER_ID &&
-    values[METADATA.workload] === "tool-sandbox" &&
-    values[METADATA.activationId] === activationId &&
+    values[METADATA.workload] === "workspace-runtime" &&
+    values[METADATA.workspaceRuntimeId] === activationId &&
     values[METADATA.tenantId] === assignment.tenantId &&
     values[METADATA.projectId] === assignment.projectId &&
     values[METADATA.workspaceId] === assignment.workspaceId
@@ -546,7 +546,7 @@ function currentAssignmentMetadata(
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       const fencingToken = parsed.fencingToken;
       const required = [
-        "activationId",
+        "workspaceRuntimeId",
         "tenantId",
         "projectId",
         "workspaceId",
@@ -607,7 +607,7 @@ function assignmentFromMetadata(
   if (
     values[METADATA.managed] !== "true" ||
     values[METADATA.provider] !== CUBESANDBOX_PROVIDER_ID ||
-    values[METADATA.workload] !== "tool-sandbox"
+    values[METADATA.workload] !== "workspace-runtime"
   ) {
     return undefined;
   }
@@ -628,7 +628,7 @@ function assignmentFromMetadata(
     );
   }
   return {
-    activationId: current.activationId,
+    activationId: current.workspaceRuntimeId,
     tenantId: current.tenantId,
     projectId: current.projectId,
     workspaceId: current.workspaceId,
@@ -717,7 +717,6 @@ function effectiveIsolation(
 export class CubeSandboxProvider implements SandboxProvider {
   readonly providerId = CUBESANDBOX_PROVIDER_ID;
   readonly defaultPolicy = CUBESANDBOX_TOOL_POLICY;
-  readonly supportsWarmRebind = true;
   readonly #templateId: string;
   readonly #developmentTemplateIds: ReadonlyMap<DevelopmentEnvironmentProfileKey, string>;
   readonly #imageRevision: string;
@@ -859,12 +858,14 @@ export class CubeSandboxProvider implements SandboxProvider {
 
   #attachedInitialization(
     activation: CubeActivation,
+    toolBindingId = activation.handle.activationId,
+    toolRoot = activation.toolRoot,
   ): Extract<ToolWorkerInput, { type: "worker.initialize" }> {
     return {
       toolWorkerProtocolVersion: 1,
       type: "worker.initialize",
-      activationId: activation.handle.activationId,
-      toolRoot: activation.toolRoot,
+      activationId: toolBindingId,
+      toolRoot,
       environment: activation.handle.environment,
       workspaceSeed: { kind: "sample_java" },
       workspaceAttach: { recipeCommands: activation.toolchain.recipeCommands },
@@ -1088,90 +1089,13 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
   }
 
-  async retainForWarm(
-    handle: SandboxHandle,
-    brokerAssignment: ToolSandboxAssignment,
-  ): Promise<SandboxHandle> {
-    const activation = await this.#owned(handle);
-    if (activation.state !== "idle") {
-      throw new ToolBrokerError(
-        "cubesandbox_handoff_state_invalid",
-        "CubeSandbox was not detached before warm retention",
-        false,
-      );
-    }
-    const nextAuthorityEpoch = fencingToken(brokerAssignment);
-    if (
-      brokerAssignment.tenantId !== handle.assignment.tenantId ||
-      brokerAssignment.projectId !== handle.assignment.projectId ||
-      brokerAssignment.workspaceId !== handle.assignment.workspaceId ||
-      brokerAssignment.sessionId !== handle.assignment.sessionId ||
-      nextAuthorityEpoch <= activation.authorityEpoch
-    ) {
-      throw new ToolBrokerError(
-        "cubesandbox_rekey_identity_invalid",
-        "CubeSandbox warm Broker authority was invalid",
-        false,
-      );
-    }
-    const retained = Object.freeze({ ...handle, assignment: brokerAssignment });
-    activation.handle = retained;
-    activation.authorityEpoch = nextAuthorityEpoch;
-    activation.state = "idle";
-    activation.seenOperationIds.clear();
-    activation.seenCaptureIds.clear();
-    return retained;
-  }
-
-  async rebind(
-    handle: SandboxHandle,
-    assignment: ToolSandboxAssignment,
-    toolRoot = "/workspace",
-  ): Promise<SandboxHandle> {
-    this.#assertHandle(handle);
-    const activation = this.#activations.get(handle.activationId);
-    if (
-      activation === undefined ||
-      activation.handle.runtimeId !== handle.runtimeId ||
-      activation.state !== "idle" ||
-      assignment.tenantId !== handle.assignment.tenantId ||
-      assignment.projectId !== handle.assignment.projectId ||
-      assignment.workspaceId !== handle.assignment.workspaceId ||
-      activation.authorityEpoch >= Number.MAX_SAFE_INTEGER
-    ) {
-      throw new ToolBrokerError(
-        "cubesandbox_rebind_identity_invalid",
-        "CubeSandbox warm rebind identity was invalid",
-        false,
-      );
-    }
-    const rebound: SandboxHandle = Object.freeze({
-      ...handle,
-      assignment,
-      workspaceRoot: toolRoot,
-    });
-    activation.handle = rebound;
-    activation.authorityEpoch = Math.max(activation.authorityEpoch + 1, fencingToken(assignment));
-    activation.toolRoot = toolRoot;
-    activation.state = "running";
-    activation.seenOperationIds.clear();
-    activation.seenCaptureIds.clear();
-    return rebound;
-  }
-
   async exec(
     handle: SandboxHandle,
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
+    toolRoot = handle.workspaceRoot,
   ): Promise<ToolSandboxOperationResponse> {
     const activation = await this.#owned(handle);
-    if (request.activationId !== handle.activationId) {
-      throw new ToolBrokerError(
-        "tool_sandbox_identity_mismatch",
-        "Tool operation activation identity did not match",
-        false,
-      );
-    }
     if (activation.seenOperationIds.has(request.operationId)) {
       throw new ToolBrokerError(
         "tool_operation_replay",
@@ -1188,7 +1112,11 @@ export class CubeSandboxProvider implements SandboxProvider {
           activation.instance,
           {
             mode: "operation",
-            initialization: this.#attachedInitialization(activation),
+            initialization: this.#attachedInitialization(
+              activation,
+              request.activationId,
+              toolRoot,
+            ),
             operation: request,
           },
           {
@@ -1720,136 +1648,59 @@ export class CubeSandboxProvider implements SandboxProvider {
     this.#activations.delete(handle.activationId);
   }
 
-  async settle(handle: SandboxHandle, requestId: string): Promise<ToolSandboxCaptureResponse> {
+  async settle(
+    handle: SandboxHandle,
+    requestId: string,
+    binding: Readonly<{ activationId: string; assignment: ToolSandboxAssignment }> = {
+      activationId: handle.activationId,
+      assignment: handle.assignment,
+    },
+  ): Promise<ToolSandboxCaptureResponse> {
     const activation = await this.#owned(handle);
     if (activation.seenCaptureIds.has(requestId)) {
       throw new ToolBrokerError("tool_capture_replay", "Tool capture ID was already used", false);
     }
     activation.seenCaptureIds.add(requestId);
-    let frozenToolProcesses: readonly Readonly<{ pid: number; startTime: string }>[] = [];
-    try {
-      const raw = record(
-        await this.#guestJson(
-          activation.instance,
-          { mode: "freeze", path: activation.toolRoot },
-          {
-            program: "control",
-            runAsToolUser: false,
-            timeoutMs: this.#readyTimeoutMs,
-          },
-        ),
-        "CubeSandbox settlement preparation",
-      );
-      activation.state = "quiesced";
-      const processes = raw.processes;
-      if (
-        !Array.isArray(processes) ||
-        processes.some((entry) => {
-          if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return true;
-          const processIdentity = entry as Record<string, unknown>;
-          return (
-            !Number.isSafeInteger(processIdentity.pid) ||
-            (processIdentity.pid as number) < 1 ||
-            typeof processIdentity.startTime !== "string" ||
-            !/^[0-9]+$/.test(processIdentity.startTime)
-          );
-        })
-      ) {
-        throw new ToolBrokerError(
-          "cubesandbox_settlement_prepare_invalid",
-          "CubeSandbox did not prove a quiescent Workspace settlement",
-          false,
-        );
-      }
-      frozenToolProcesses = processes as readonly Readonly<{
-        pid: number;
-        startTime: string;
-      }>[];
-      const volume = await this.#workspaceVolumeGateway.settle({
-        tenantId: handle.assignment.tenantId,
-        workspaceId: handle.assignment.workspaceId,
-        sessionId: handle.assignment.sessionId,
+    const volume = await this.#workspaceVolumeGateway.settle({
+      tenantId: binding.assignment.tenantId,
+      workspaceId: binding.assignment.workspaceId,
+      sessionId: binding.assignment.sessionId,
+      volumeId: activation.volumeId,
+      activationId: handle.activationId,
+      bindingSha256: activation.bindingSha256,
+      fencingToken: fencingToken(binding.assignment),
+    });
+    const settlement = encodeWorkspaceBlob(
+      createWorkspaceVolumeSettlement({
         volumeId: activation.volumeId,
+        settlementRevision: volume.settlementRevision,
         activationId: handle.activationId,
+        tenantId: binding.assignment.tenantId,
+        workspaceId: binding.assignment.workspaceId,
+        sourceSessionId: binding.assignment.sessionId,
         bindingSha256: activation.bindingSha256,
-        fencingToken: fencingToken(handle.assignment),
-      });
-      const settlement = encodeWorkspaceBlob(
-        createWorkspaceVolumeSettlement({
-          volumeId: activation.volumeId,
-          settlementRevision: volume.settlementRevision,
-          activationId: handle.activationId,
-          tenantId: handle.assignment.tenantId,
-          workspaceId: handle.assignment.workspaceId,
-          sourceSessionId: handle.assignment.sessionId,
-          bindingSha256: activation.bindingSha256,
-          fencingToken: fencingToken(handle.assignment),
-          imageRevision: this.#imageRevision,
-          environmentSpecSha256: handle.environment.specSha256,
-          recipeCommands: activation.toolchain.recipeCommands,
-        }),
+        fencingToken: fencingToken(binding.assignment),
+        imageRevision: this.#imageRevision,
+        environmentSpecSha256: handle.environment.specSha256,
+        recipeCommands: activation.toolchain.recipeCommands,
+      }),
+    );
+    const parsed = parseToolBrokerResponse({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.captured",
+      requestId,
+      activationId: binding.activationId,
+      settlement,
+      environment: handle.environmentValidation,
+    });
+    if (parsed.type !== "tool_sandbox.captured") {
+      throw new ToolBrokerError(
+        "cubesandbox_protocol_error",
+        "CubeSandbox returned the wrong persistent Volume reference",
+        false,
       );
-      const parsed = parseToolBrokerResponse({
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.captured",
-        requestId,
-        activationId: handle.activationId,
-        settlement,
-        environment: handle.environmentValidation,
-      });
-      if (parsed.type !== "tool_sandbox.captured") {
-        throw new ToolBrokerError(
-          "cubesandbox_protocol_error",
-          "CubeSandbox returned the wrong persistent Volume reference",
-          false,
-        );
-      }
-      const completed = record(
-        await this.#guestJson(
-          activation.instance,
-          { mode: "thaw", processes: frozenToolProcesses },
-          {
-            program: "control",
-            runAsToolUser: false,
-            timeoutMs: this.#readyTimeoutMs,
-          },
-        ),
-        "CubeSandbox settlement completion",
-      );
-      if (completed.resumed !== frozenToolProcesses.length) {
-        throw new ToolBrokerError(
-          "cubesandbox_settlement_completion_invalid",
-          "CubeSandbox did not resume the settled process boundary",
-          false,
-        );
-      }
-      activation.state = "idle";
-      return parsed;
-    } catch (error: unknown) {
-      if (activation.state === "quiesced") {
-        try {
-          await this.#guestJson(
-            activation.instance,
-            { mode: "thaw", processes: frozenToolProcesses },
-            {
-              program: "control",
-              runAsToolUser: false,
-              timeoutMs: this.#readyTimeoutMs,
-            },
-          );
-          activation.state = "idle";
-        } catch {
-          await this.#client.destroy(activation.instance.sandboxId).catch(() => undefined);
-          this.#activations.delete(handle.activationId);
-          throw new ToolBrokerError(
-            "cubesandbox_settlement_recovery_failed",
-            "CubeSandbox settlement cleanup failed and the VM was destroyed",
-            true,
-          );
-        }
-      }
-      throw error;
     }
+    return parsed;
   }
 
   async forkWorkspace(
@@ -1861,8 +1712,9 @@ export class CubeSandboxProvider implements SandboxProvider {
     targetSettlementRevision: string;
   }> {
     if (
-      request.sourceActivationId !== handle.activationId ||
-      !sameAssignment(request.sourceAssignment, handle.assignment) ||
+      request.sourceAssignment.tenantId !== handle.assignment.tenantId ||
+      request.sourceAssignment.projectId !== handle.assignment.projectId ||
+      request.sourceAssignment.workspaceId !== handle.assignment.workspaceId ||
       request.target.tenantId !== handle.assignment.tenantId ||
       request.target.projectId !== handle.assignment.projectId ||
       request.target.workspaceId === handle.assignment.workspaceId ||
@@ -1874,7 +1726,10 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const captured = await this.settle(handle, request.requestId);
+    const captured = await this.settle(handle, request.requestId, {
+      activationId: request.sourceActivationId,
+      assignment: request.sourceAssignment,
+    });
     if (captured.type !== "tool_sandbox.captured") {
       throw new ToolBrokerError(
         "workspace_fork_capture_invalid",
@@ -1903,17 +1758,12 @@ export class CubeSandboxProvider implements SandboxProvider {
         targetSessionId: request.target.sessionId,
         targetVolumeId,
       });
-      const sourceHandle = await this.rebind(handle, handle.assignment);
       return {
-        sourceHandle,
+        sourceHandle: handle,
         sourceSettlementRevision: forked.sourceSettlementRevision,
         targetSettlementRevision: forked.targetSettlementRevision,
       };
     } catch (error: unknown) {
-      const activation = this.#activations.get(handle.activationId);
-      if (activation?.state === "idle") {
-        await this.rebind(handle, handle.assignment).catch(() => undefined);
-      }
       throw error;
     }
   }
@@ -2151,7 +2001,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     };
   }
 
-  async destroyActivation(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
+  async destroyRuntime(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
     const activation = this.#activations.get(activationId);
     if (activation !== undefined) {
       if (!sameAssignment(activation.handle.assignment, assignment)) {

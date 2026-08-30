@@ -5,14 +5,14 @@ import { CubeSandboxProvider } from "./cubesandbox-sandbox-provider.ts";
 import { ToolBrokerServer } from "./tool-broker-server.ts";
 import { ToolBroker } from "./tool-broker.ts";
 import { HttpWorkspaceVolumeGateway } from "./workspace-volume-gateway.ts";
-import { PostgresSandboxActivationStateRepository } from "./activation-state-repository.ts";
+import { PostgresWorkspaceRuntimeStateRepository } from "./workspace-runtime-state-repository.ts";
 import { randomUUID } from "node:crypto";
 import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
 import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
 
 const config = await loadToolBrokerConfig();
 const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
-const activationState = new PostgresSandboxActivationStateRepository({
+const workspaceRuntimeState = new PostgresWorkspaceRuntimeStateRepository({
   database,
   sandboxDomainId: config.sandboxDomainId,
   instanceId: randomUUID(),
@@ -20,7 +20,7 @@ const activationState = new PostgresSandboxActivationStateRepository({
   leaseMs: config.ownershipLeaseMs,
   heartbeatMs: config.ownershipHeartbeatMs,
 });
-await activationState.start();
+await workspaceRuntimeState.start();
 const observability = await startServiceObservability({
   serviceName: "pi-cloud-tool-broker",
   defaultMetricsPort: 9466,
@@ -65,11 +65,11 @@ const deletionReaper = new WorkspaceVolumeDeletionReaper({
 const broker = new ToolBroker({
   provider,
   ownerBaseUrl: config.advertisedBaseUrl,
-  stateRepository: activationState,
+  stateRepository: workspaceRuntimeState,
   imageRevision: config.imageRevision,
   maximumActiveSandboxes: config.maximumActiveSandboxes,
   warmTtlMs: config.warmTtlMs,
-  maximumWarmActivations: config.maximumWarmActivations,
+  maximumWarmWorkspaceRuntimes: config.maximumWarmWorkspaceRuntimes,
   serviceRegistry: new PostgresSandboxHttpServiceRegistry({ database }),
 });
 const server = new ToolBrokerServer({

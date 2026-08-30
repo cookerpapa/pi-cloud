@@ -73,7 +73,7 @@ export type ExecutionMode = "elastic" | "development_environment";
 export type SessionKind = "conversation" | "subagent";
 export type WorkspaceKind = "user" | "development_environment" | "subagent_isolated";
 export type SubagentContextMode = "fresh" | "fork";
-export type SubagentWorkspaceMode = "none" | "shared_serialized" | "isolated";
+export type SubagentWorkspaceMode = "none" | "shared" | "isolated";
 export type SubagentExecutionState =
   "preparing" | "queued" | "running" | "completed" | "failed" | "cancelled" | "unknown";
 export type SubagentSupervisorReason = "need_decision" | "interview_request" | "progress_update";
@@ -255,7 +255,7 @@ export interface SandboxDomainTable {
 }
 
 export type ToolBrokerInstanceState = "ready" | "stopped" | "lost";
-export type ToolBrokerActivationState =
+export type ToolBrokerWorkspaceRuntimeState =
   "reserved" | "materializing" | "active" | "warm" | "cleaning" | "released" | "unknown";
 export type ToolBrokerOperationState = "running" | "succeeded" | "failed" | "cancelled" | "unknown";
 export type WorkspaceTerminalState =
@@ -282,14 +282,16 @@ export interface ToolBrokerInstanceTable {
   updated_at: GeneratedTimestamp;
 }
 
-export interface ToolBrokerActivationTable {
-  activation_id: string;
+export interface ToolBrokerWorkspaceRuntimeTable {
+  /** Stable physical identity while one elastic Cube exists. */
+  workspace_runtime_id: string;
   sandbox_domain_id: string;
   owner_instance_id: string;
   owner_base_url: string;
   tenant_id: string;
   project_id: string;
   workspace_id: string;
+  /** Bootstrap assignment used only to attest/destroy the physical Cube. */
   supervisor_id: string;
   boot_id: string;
   sandbox_id: string;
@@ -305,7 +307,7 @@ export interface ToolBrokerActivationTable {
   workspace_revision: string | null;
   runtime_id: string | null;
   runtime_name: string | null;
-  state: ToolBrokerActivationState;
+  state: ToolBrokerWorkspaceRuntimeState;
   failure_code: string | null;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
@@ -313,7 +315,14 @@ export interface ToolBrokerActivationTable {
 
 export interface ToolBrokerOperationTable {
   operation_id: string;
-  activation_id: string;
+  workspace_runtime_id: string;
+  tool_binding_id: string;
+  tenant_id: string;
+  session_id: string;
+  run_id: string;
+  attempt_id: string;
+  lease_id: string;
+  fencing_token: Int8;
   owner_instance_id: string;
   request_sha256: string;
   state: ToolBrokerOperationState;
@@ -334,7 +343,7 @@ export interface SandboxHttpServiceTable {
   session_id: string | null;
   development_environment_id: string | null;
   runtime_id: string;
-  activation_id: string;
+  tool_binding_id: string;
   last_operation_id: string;
   port: number;
   protocol: "http";
@@ -1261,7 +1270,7 @@ export interface Database {
   source_control_credentials: SourceControlCredentialTable;
   sandbox_domains: SandboxDomainTable;
   tool_broker_instances: ToolBrokerInstanceTable;
-  tool_broker_activations: ToolBrokerActivationTable;
+  tool_broker_workspace_runtimes: ToolBrokerWorkspaceRuntimeTable;
   tool_broker_operations: ToolBrokerOperationTable;
   sandbox_http_services: SandboxHttpServiceTable;
   workspace_terminal_sessions: WorkspaceTerminalSessionTable;

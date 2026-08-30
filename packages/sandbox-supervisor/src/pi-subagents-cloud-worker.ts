@@ -232,11 +232,7 @@ function parseChildInvocation(value: unknown): ExternalJobStartInput {
     options: {
       contextMode,
       workspaceMode:
-        requestedToolCapabilities.length === 0
-          ? "none"
-          : isolatedWorkspace
-            ? "isolated"
-            : "shared_serialized",
+        requestedToolCapabilities.length === 0 ? "none" : isolatedWorkspace ? "isolated" : "shared",
       requestedToolCapabilities,
       ...(systemPrompt.length === 0 ? {} : { systemPrompt }),
       ...(values.get("--model")?.at(-1) === undefined

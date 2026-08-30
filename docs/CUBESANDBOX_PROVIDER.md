@@ -23,8 +23,8 @@ a supported production runtime menu.
 
 ## Identity and authority
 
-The Tool Broker derives tenant, Workspace, Session, Run, Attempt, fence,
-activation and Cloud Step identity from trusted state. The browser, model and
+The Tool Broker derives tenant, Workspace, Session, Run, Attempt, fence, Tool
+binding and Cloud Step identity from trusted state. The browser, model and
 Tool arguments cannot choose a Sandbox ID, image, mount, resource limit or
 network policy.
 
@@ -53,21 +53,21 @@ Workspace and records only a provider settlement revision. PostgreSQL advances
 the Workspace settlement with compare-and-swap. No file-tree walk or second
 archive of Workspace bytes occurs.
 
-A disposable Cube activation may remain warm for one deployment-bounded TTL.
-Its processes, sockets and PTYs survive only while that exact activation
+A Workspace-owned Cube runtime may remain warm for one deployment-bounded TTL.
+Its processes, sockets and PTYs survive only while that exact runtime
 survives. After destruction or failure, a new KVM reattaches the same Volume and
 recovers files, not RAM or process state. Warm retention is an optimization,
 never a conversation or Workspace durability dependency. User-owned development
 machines use the separate pause/resume/release lifecycle and never enter the
 elastic warm pool.
 
-Cube's absolute timeout is disabled for every Broker-managed activation. The
-Broker owns elastic lifecycle: an active multi-Turn Session is never killed
-merely because its VM is old, while an idle elastic activation is destroyed
+Cube's absolute timeout is disabled for every Broker-managed runtime. The
+Broker owns elastic lifecycle: active Tool bindings keep their Workspace Cube;
+an idle elastic runtime is destroyed
 after `PI_CLOUD_SANDBOX_WARM_TTL_MS`. A user owns an exclusive machine's
 lifecycle through authenticated pause/resume/release operations. Broker restart
 reconciliation detaches and adopts that VM without changing its physical state;
-it recovers or retires recorded elastic activations instead of depending on a
+it retires recorded orphaned elastic runtimes instead of depending on a
 competing VM timer.
 
 ## Tool and terminal channels
@@ -84,11 +84,9 @@ authenticated browser WebSocket
   -> unprivileged PTY in /workspace
 ```
 
-A human terminal and an Agent Run may write the same Workspace at the same
-time. Tool Broker lends the terminal's existing Cube to the Agent rather than
-attaching one Volume to two Cubes; a cloud development machine likewise uses
-one Cube. Different ordinary Sessions without a terminal may use independent
-Cubes over deployment-provided shared Workspace storage. Standard SSH is
+A human terminal and any number of authorized Agent Runs may write the same
+Workspace at the same time. They use one Workspace-owned Cube; a cloud
+development machine likewise uses one Cube. Standard SSH is
 terminated by PiCloud's trusted ticket gateway and translated into this PTY
 protocol; Cube port 22 remains private. Envd is the single generic guest agent
 and holds no PiCloud, model or database credential.
@@ -119,10 +117,10 @@ Pi Session records.
 
 ## Reconciliation and evidence
 
-PostgreSQL records desired activation identity and fenced ownership. Tool
-Broker periodically reconciles that state with Cube inventory. Destruction is
-qualified by both logical activation and physical runtime identity, so an old
-cleanup request cannot delete a newer KVM.
+PostgreSQL records physical Workspace runtime identity and Broker ownership.
+Run Tool bindings are independently fenced and never masquerade as Cube
+identity. Tool Broker periodically reconciles physical runtime state with Cube
+inventory, so an old binding cleanup cannot delete a shared or newer KVM.
 
 Verification includes:
 

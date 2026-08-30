@@ -334,7 +334,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       prompt: "Inspect the repository",
       systemPrompt: "You are a deployment-owned scout profile.",
       contextMode: "fork",
-      workspaceMode: "shared_serialized",
+      workspaceMode: "shared",
       requestedToolCapabilities: ["read", "bash"],
     });
     const repository = new PostgresPiSessionRepository({ database, tenantId });
@@ -392,7 +392,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           current: true,
           agentName: "scout",
           contextMode: "fork",
-          workspaceMode: "shared_serialized",
+          workspaceMode: "shared",
           entries: [
             { role: "user", text: "Earlier context" },
             { role: "assistant", text: "Subagent result from PostgreSQL" },

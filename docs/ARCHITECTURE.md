@@ -186,8 +186,8 @@ instead of replaying arbitrary shell or file mutations.
 
 Session Tool grants are copied into immutable Run capability snapshots during
 admission. The snapshot is part of the frozen Cloud Turn context, selects which
-Pi `AgentTool` proxies enter one runtime, and is carried to Tool Broker when an
-activation is reserved. Each operation then carries its trusted Pi Tool name;
+Pi `AgentTool` proxies enter one runtime, and is carried to Tool Broker when a
+Tool binding is reserved. Each operation then carries its trusted Pi Tool name;
 Broker rejects both ungranted names and invalid Tool/operation combinations.
 Model visibility is therefore an affordance, while Broker authorization is the
 security boundary.
@@ -229,11 +229,11 @@ the task again.
 Workspace modes are explicit:
 
 - `none` creates a Tool-free child and never reserves Cube capacity;
-- `shared_serialized` keeps separate Pi contexts while handing the same Cube
-  and Volume from parent to child under a new external Broker reservation; the parent
-  capability is invalid during the handoff and the parent owns the final
-  shared Workspace-head commit;
-- upstream `worktree:true` maps to `isolated`: Tool Broker quiesces the parent,
+- `shared` keeps separate Pi contexts and gives parent and child independent
+  Tool bindings to the same Workspace runtime; ordinary Linux concurrency
+  governs their files, processes and ports;
+- upstream `worktree:true` maps to `isolated`: Tool Broker briefly excludes new
+  Tool operations while
   the trusted Volume gateway makes an idempotent revision-bound internal
   Workspace copy, and the child keeps its resolved `fresh` or `fork` Pi context
   while running concurrently in another Cube. Its semantic result is returned
@@ -249,7 +249,7 @@ the orchestration request itself is not copied as another executable Child
 instruction.
 
 RunAttempt fences and the Tool Broker operation ledger remain the side-effect
-authority across parent→child→parent handoffs; envd carries no Session identity
+authority across parent and child bindings; envd carries no Session identity
 or ownership secret. Session-local fence numbers are never compared as if they
 were one global sequence. Each Worker Host keeps at least one slot out
 of ordinary-parent admission when subagents are enabled, so parents waiting in
@@ -313,14 +313,11 @@ The Broker validates opaque Tool authority, resolves a Workspace's Sandbox
 Domain and reconciles Cube lifecycle. Pi cannot choose a Sandbox ID, image,
 mount, runtime class, resource limit or network policy.
 
-Broker admission is reconciled against PostgreSQL Run/Attempt state. If a
-Worker disappears while Cube creation is in flight, a runtime that appears
-after the Run or Attempt became terminal is treated as an orphan: the pending
-operation is failed, the runtime is destroyed and the admission slot is
-released. This closes the create-after-caller-death race instead of relying on
-the vanished Worker to call `release()`. Reconciliation starts its grace period
-from the Run/Attempt settlement timestamp, not from activation creation, so a
-normal post-settlement flush/release cannot race orphan cleanup.
+PostgreSQL records one physical Workspace runtime per elastic Workspace. Every
+Run receives a separate in-memory Tool binding whose Lease/Fence is validated
+again when an operation starts. If the Broker disappears, bindings expire with
+their Session leases and an unadopted elastic runtime is destroyed; persistent
+Workspace bytes are unaffected.
 
 Cube mounts only the `workspace/` child of a trusted persistent Volume. The
 guest contains normal development tools but no model, database, Kafka or Cube
@@ -330,15 +327,13 @@ they would be after `glab auth login`; the Agent owns the resulting `.git` tree.
 The trusted Volume envelope holds only identity, generation and optional fork
 origin metadata; it does not track Git state or file changes.
 
-Run Claim does not lock a Workspace. Different Sessions may execute their Pi
-loops concurrently, but Cube permits one live attachment for an elastic
-Workspace Volume. Tool Broker therefore queues only the conflicting Tool
-Sandbox reservation, retires or reuses the previous runtime after settlement,
-and then attaches the same Volume. A connected human terminal is the exception:
-the Agent borrows that terminal's already-attached Cube instead of creating a
-second runtime. The Workspace pointer records the last settled observation,
-while each Session keeps its own settlement lineage; one Session never advances
-all siblings' settlement bases.
+Run Claim does not lock a Workspace. The first Tool operation lazily creates one
+Workspace-owned Cube and attaches its Volume. Different Sessions then use
+independently fenced Tool bindings in that same Cube concurrently. A connected
+human terminal uses the same runtime. File overwrites, process visibility and
+port conflicts are ordinary user-managed Linux behavior. The Workspace pointer
+records the last settled observation, while each Session keeps its own
+settlement lineage.
 
 ### Workspace Web Terminal
 
@@ -356,13 +351,11 @@ API. Cube-agent starts envd through the VM's vsock control path. The generic
 guest agent is transport only: tenant identity, writer admission, ExecutionLease
 and operation idempotency remain in PostgreSQL and the external Tool Broker.
 
-Human terminal authority is deliberately separate from an Agent ExecutionLease
-and Tool policy snapshot. It does not advance or revoke the Session's Agent
-fence. Opening a terminal retires an idle warm Cube and creates one terminal
-runtime. If an Agent starts while that terminal is connected, Tool Broker lends
-the same physical Cube to the Agent's independently fenced activation; it does
-not attach the Volume to a second Cube. The PTY remains usable, and settlement
-returns runtime ownership to the terminal. Conflicting file/process operations
+Human terminal authority is deliberately separate from Agent ExecutionLeases
+and Tool policy snapshots. It does not advance or revoke a Session's Agent
+fence. Opening a terminal reuses the Workspace runtime when it exists, or
+creates that one runtime when it does not. Agent Tool bindings and the PTY may
+remain active together. Conflicting file/process operations
 use ordinary user-managed Linux semantics. No in-guest secret is an ownership
 authority. Input, output and resize frames are bounded; terminal transcripts
 are not persisted.
@@ -419,8 +412,8 @@ different machine. Users create a new machine explicitly after release.
 
 The allocation participates in Sandbox-Domain capacity. `agent_activation_id`
 and `terminal_active` are independent durable ownership facts. Tool Broker
-lazily seals and rebinds the same Cube to a Run's opaque authority on first
-Tool use, then captures and returns it to the environment authority. A
+grants a temporary Agent Tool binding to the existing machine and returns that
+binding without changing the Cube's physical identity. A
 planned Broker shutdown stores an encrypted reconnect capsule, detaches its
 process-local handle and leaves each cloud development machine in its existing
 physical state. It does not pause a running VM. A replacement Broker validates
@@ -520,7 +513,7 @@ copy Workspaces to Kopia or object storage. It:
 - creates revision-bound internal Volume copies for isolated Subagent lanes.
 
 The deletion coordinator runs in Tool Broker because only that service holds
-CubeAPI authority. It waits for both Agent activations and human terminals,
+CubeAPI authority. It waits for the Workspace runtime, Tool bindings and human terminals,
 deletes the POSIX directory through the narrow gateway, deletes the deterministic
 Cube Volume record, and only then commits `storage_purged_at`. Repeated cleanup
 is idempotent; no empty Cube Volume metadata is retained.
@@ -607,6 +600,8 @@ preserve a visible prefix that never reached `message_end`.
 | bounded accepted live facts | Kafka topic keyed by Session ID |
 | incomplete browser view | rebuildable Gateway memory |
 | elastic Workspace bytes | persistent Cube Volume |
+| elastic Workspace runtime identity/owner | PostgreSQL `tool_broker_workspace_runtimes` |
+| active Run Tool bindings | Tool Broker memory + PostgreSQL Session leases/operation rows |
 | cloud development machine guest root, memory and processes | one Cube pause snapshot on its compute node |
 | encrypted machine reconnect capsule | PostgreSQL; key held only by Tool Broker |
 | Workspace settlement/reference | PostgreSQL + trusted Volume envelope |
@@ -631,8 +626,9 @@ Workspace Volume.
 For a later message, any Worker can resume the same Pi Session from PostgreSQL.
 It first crosses the Session mutation projection barrier, rechecks its newer
 fence, then Pi reconstructs the active model context and respects its native
-compaction boundary. If the previous Cube is still warm it is rebound under a newer fence;
-otherwise a new KVM mounts the same persistent Volume. Process state is not
+compaction boundary. If the Workspace Cube is still warm, the Run receives a
+new Tool binding without changing physical identity; otherwise a new KVM mounts
+the same persistent Volume. Process state is not
 claimed as durable. Cube has no competing absolute lifetime: Broker idle TTL is
 the sole elastic-compute expiry policy, so continuously active Sessions are not
 terminated because their VM crosses one Turn's timeout.

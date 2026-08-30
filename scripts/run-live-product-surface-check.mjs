@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { parseWorkspaceTerminalServerFrame } from "../packages/protocol/src/index.ts";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
@@ -11,6 +12,7 @@ import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import WebSocket from "ws";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+const exec = promisify(execFile);
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
@@ -46,6 +48,31 @@ const host =
 const port = environment.PI_CLOUD_HTTP_PORT;
 if (host === undefined || port === undefined) throw new Error("Production endpoint is missing");
 const baseUrl = new URL(`http://${host}:${port}`);
+
+async function psql(query) {
+  const { stdout } = await exec(
+    process.execPath,
+    [
+      "scripts/production-compose.mjs",
+      "exec",
+      "-T",
+      "postgres",
+      "psql",
+      "--username",
+      "pi_cloud",
+      "--dbname",
+      "pi_cloud",
+      "--no-align",
+      "--tuples-only",
+      "--set",
+      "ON_ERROR_STOP=1",
+      "--command",
+      query,
+    ],
+    { cwd: repositoryRoot, timeout: 30_000, maxBuffer: 2 * 1_024 * 1_024 },
+  );
+  return stdout.trim();
+}
 
 function wait(delayMs, signal) {
   if (signal?.aborted) return Promise.resolve();
@@ -440,7 +467,7 @@ try {
       browser,
       sessionId: session.sessionId,
       prompt:
-        "Use tools. Create concurrent_session_a.txt containing exactly SESSION-A-OK, read it back, then reply exactly SESSION-A-OK.",
+        "Use bash exactly once. In that command sleep 3, create concurrent_session_a.txt containing exactly SESSION-A-OK, and read it back. Then reply exactly SESSION-A-OK.",
       expectTools: true,
     }),
     runTurn({
@@ -448,11 +475,28 @@ try {
       browser,
       sessionId: siblingSession.sessionId,
       prompt:
-        "Use tools. Create concurrent_session_b.txt containing exactly SESSION-B-OK, read it back, then reply exactly SESSION-B-OK.",
+        "Use bash exactly once. In that command sleep 3, create concurrent_session_b.txt containing exactly SESSION-B-OK, and read it back. Then reply exactly SESSION-B-OK.",
       expectTools: true,
     }),
   ]);
   assert(concurrentRuns.every((run) => run.events.some((event) => event.type === "tool.started")));
+  const concurrentRuntimeEvidence = await psql(
+    `select count(distinct workspace_runtime_id)::text || '|' ||
+            count(distinct tool_binding_id)::text || '|' ||
+            exists (
+              select 1
+                from tool_broker_operations left_operation
+                join tool_broker_operations right_operation
+                  on left_operation.run_id <> right_operation.run_id
+                 and left_operation.started_at < right_operation.settled_at
+                 and right_operation.started_at < left_operation.settled_at
+               where left_operation.run_id in ('${concurrentRuns[0].accepted.runId}', '${concurrentRuns[1].accepted.runId}')
+                 and right_operation.run_id in ('${concurrentRuns[0].accepted.runId}', '${concurrentRuns[1].accepted.runId}')
+            )::text
+       from tool_broker_operations
+      where run_id in ('${concurrentRuns[0].accepted.runId}', '${concurrentRuns[1].accepted.runId}')`,
+  );
+  assert.equal(concurrentRuntimeEvidence, "1|2|true");
   progress("two Sessions sharing one Workspace ran concurrently");
 
   let steerAccepted = false;
@@ -601,6 +645,7 @@ try {
     terminal: true,
     terminalAgentConcurrency: true,
     sharedWorkspaceConcurrentSessions: true,
+    sharedWorkspaceConcurrentToolBindings: true,
     steer: true,
     cancelAndRecover: true,
     workspaceRebind: true,

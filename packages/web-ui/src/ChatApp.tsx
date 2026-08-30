@@ -74,7 +74,7 @@ function delegatedWorkspaceLabel(
   mode: DelegatedSessionSummaryResource["workspaceMode"],
   t: Translate,
 ): string {
-  if (mode === "shared_serialized") return t("chat.workspace.shared");
+  if (mode === "shared") return t("chat.workspace.shared");
   if (mode === "isolated") return t("chat.workspace.isolated");
   return t("chat.workspace.none");
 }

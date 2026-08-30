@@ -545,7 +545,7 @@ export class PiWorkerRuntime {
                 }
                 if (
                   workspaceMode !== "none" &&
-                  workspaceMode !== "shared_serialized" &&
+                  workspaceMode !== "shared" &&
                   workspaceMode !== "isolated"
                 ) {
                   throw new Error("pi-subagents provided an unsupported Workspace mode");

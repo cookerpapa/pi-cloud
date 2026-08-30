@@ -55,8 +55,8 @@ conversation.
   make a new, concrete delegation through its registered Tool.
 - Support explicit Workspace modes:
   - `none`: no Cube Tool access;
-  - `shared_serialized`: the parent and child use one Workspace and one
-    serialized Tool execution world;
+  - `shared`: the parent and child use one Workspace runtime with independent
+    Tool bindings and ordinary Linux concurrency;
   - `isolated`: the child receives a Volume fork at a declared parent
     Workspace settlement and uses a different Cube.
 - A provider job identity is idempotent across Worker loss. Recovery reattaches
@@ -75,8 +75,8 @@ conversation.
 - Worker admission reserves a child lane so waiting parents cannot consume
   every local slot. A future durable parent-wait boundary may reclaim the
   waiting slot as an optimization, but correctness does not depend on it.
-- Shared mode preserves live files, dependencies and processes but must retain
-  a single writer. Isolated mode permits parallel mutations but requires a
+- Shared mode preserves live files, dependencies and processes and permits
+  user-managed concurrent mutations. Isolated mode requires a
   trusted Volume fork and an explicit result/merge contract. Context mode is
   orthogonal: a trusted worker profile may use either an exact `fork` of the
   parent Pi branch or a `fresh` context in either Workspace mode.

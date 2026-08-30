@@ -397,14 +397,14 @@ function wait(delayMs, signal) {
 function currentCubeAssignment(metadata) {
   const records = [];
   for (const [key, raw] of Object.entries(metadata)) {
-    if (!key.startsWith("picloud.assignment.v3.")) continue;
+    if (!key.startsWith("picloud.workspace-runtime.v1.")) continue;
     try {
       const parsed = JSON.parse(raw);
       if (
         Number.isSafeInteger(parsed?.fencingToken) &&
         parsed.fencingToken > 0 &&
         typeof parsed.sessionId === "string" &&
-        typeof parsed.activationId === "string" &&
+        typeof parsed.workspaceRuntimeId === "string" &&
         typeof parsed.attemptId === "string" &&
         typeof parsed.turnId === "string"
       ) {
@@ -449,7 +449,7 @@ function observeCubeSession(sessionId) {
       try {
         for (const instance of managedForSession(await cube.list(), sessionId)) {
           const assignment = currentCubeAssignment(instance.metadata);
-          const activationId = assignment?.activationId;
+          const activationId = assignment?.workspaceRuntimeId;
           if (activationId !== undefined) {
             observed.set(activationId, {
               activationId,
@@ -494,11 +494,11 @@ async function waitForRunningCubeSession(sessionId) {
     const retained = managedForSession(await cube.list(), sessionId);
     if (retained.length === 1 && retained[0].state === "running") return retained[0];
     if (retained.length > 1) {
-      throw new Error("Cube inventory retained more than one exact-Session microVM");
+      throw new Error("Cube inventory retained more than one Workspace microVM");
     }
     await wait(250);
   }
-  throw new Error("Cube inventory did not retain one running exact-Session microVM");
+  throw new Error("Cube inventory did not retain one running Workspace microVM");
 }
 
 async function destroyCubeSession(sessionId) {
@@ -591,6 +591,32 @@ async function workspaceSettlementEvidence(runId) {
   return { volumeFileCount, artifactBytes };
 }
 
+async function workspaceRuntimeEvidence(workspaceId) {
+  const value = await psql(
+    `select workspace_runtime_id::text || '|' || coalesce(runtime_id, '') || '|' || state
+       from tool_broker_workspace_runtimes
+      where workspace_id = ${sqlLiteral(workspaceId)}
+        and state in ('reserved', 'materializing', 'active', 'warm', 'cleaning', 'unknown')
+      order by updated_at desc
+      limit 1`,
+  );
+  const [workspaceRuntimeId, providerRuntimeId, state] = value.split("|");
+  assert(workspaceRuntimeId && providerRuntimeId && state);
+  return { workspaceRuntimeId, providerRuntimeId, state };
+}
+
+async function toolBindingForRun(runId) {
+  const value = await psql(
+    `select tool_binding_id::text
+       from tool_broker_operations
+      where run_id = ${sqlLiteral(runId)}
+      order by started_at
+      limit 1`,
+  );
+  assert(value.length > 0, `Run ${runId} did not record a Tool binding`);
+  return value;
+}
+
 async function optionalMetadata(path) {
   try {
     return await lstat(path);
@@ -647,9 +673,10 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
               'executionLease', 'pcel1_' || replace(lease_id::text, '-', '') ||
                 '_' || replace(attempt_id::text, '-', '') || '_' || fencing_token::text
             )::text
-       from tool_broker_activations
-      where sandbox_id = ${sqlLiteral(logicalSandboxId)}
-        and session_id = ${sqlLiteral(sessionId)}
+       from tool_broker_workspace_runtimes
+      where workspace_id = (
+              select workspace_id from sessions where id = ${sqlLiteral(sessionId)}
+            )
         and state = 'warm'
         and runtime_id is not null
         and runtime_name is not null`,
@@ -661,13 +688,14 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
   const source = `
     import { readFileSync } from "node:fs";
     import { randomUUID } from "node:crypto";
-    const sandboxId = ${JSON.stringify(logicalSandboxId)};
     const sessionId = ${JSON.stringify(sessionId)};
     const token = readFileSync(
       "/run/pi-cloud-secrets/tool-broker-token",
       "utf8",
     ).trim();
     const endpoint = "http://127.0.0.1:4300/internal/v1/sandbox-inventory";
+    const durableWarm = ${JSON.stringify(durableWarm)};
+    const sandboxId = durableWarm?.sandboxId ?? ${JSON.stringify(logicalSandboxId)};
     const send = async (body) => {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -690,12 +718,11 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
     const visibleAssignments = listed.assignments.filter(
       (assignment) => assignment.sessionId === sessionId,
     );
-    const durableWarm = ${JSON.stringify(durableWarm)};
     const assignments = visibleAssignments.length === 0 && durableWarm !== undefined
       ? [durableWarm]
       : visibleAssignments;
     if (assignments.length > 1 || (${JSON.stringify(required)} && assignments.length !== 1)) {
-      throw new Error("Expected one exact-Session warm assignment, got " + assignments.length);
+      throw new Error("Expected one Workspace runtime assignment, got " + assignments.length);
     }
     if (assignments.length === 0) process.exit(0);
     const assignment = assignments[0];
@@ -905,10 +932,7 @@ async function runLatencyEvidence(runId) {
             coalesce(round(sum(extract(epoch from (operation.settled_at - operation.started_at)) * 1000)), 0)::text || '|' ||
             count(*) filter (where operation.settled_at < operation.started_at)::text
        from runs run
-       join tool_broker_activations activation
-         on activation.attempt_id = run.current_attempt_id
-       join tool_broker_operations operation
-         on operation.activation_id = activation.activation_id
+       join tool_broker_operations operation on operation.run_id = run.id
       where run.id = ${sqlLiteral(runId)}
         and operation.started_at >= run.started_at
         and operation.started_at <= run.settled_at`,
@@ -1011,6 +1035,7 @@ try {
     "First coding Run did not use exactly one Cube VM",
   );
   const firstUsage = await runUsageEvidence(firstCoding.accepted.runId);
+  const firstToolBindingId = await toolBindingForRun(firstCoding.accepted.runId);
   const firstCodingLatency = await runLatencyEvidence(firstCoding.accepted.runId);
   assert(firstUsage.requests > 0 && firstUsage.outputTokens > 0);
   const firstSettlementId = await psql(
@@ -1024,13 +1049,8 @@ try {
     "First persistent Workspace settlement omitted counting_sort.py code",
   );
   progress("first persistent Workspace Volume revision was verified in place");
-  assert.equal(
-    await psql(
-      `select state from tool_broker_activations
-        where activation_id = ${sqlLiteral(firstCoding.activations[0].activationId)}`,
-    ),
-    "warm",
-  );
+  const firstWorkspaceRuntime = await workspaceRuntimeEvidence(session.workspaceId);
+  assert.equal(firstWorkspaceRuntime.state, "warm");
   assert.deepEqual(
     await listLogicalSandboxAssignments(await logicalSandboxIdForRun(firstCoding.accepted.runId)),
     [],
@@ -1069,15 +1089,21 @@ try {
   );
   progress("follow-up coding Run reused the bounded-warm Cube KVM");
   assert.equal(followUp.activations.length, 1, "Follow-up Run did not use exactly one Cube VM");
+  const followUpWorkspaceRuntime = await workspaceRuntimeEvidence(session.workspaceId);
   assert.equal(
-    followUp.activations[0].activationId,
-    firstCoding.activations[0].activationId,
-    "Two coding Runs did not reuse the same sealed Cube activation",
+    followUpWorkspaceRuntime.workspaceRuntimeId,
+    firstWorkspaceRuntime.workspaceRuntimeId,
+    "Two coding Runs did not share one Workspace runtime",
   );
   assert.equal(
-    followUp.activations[0].sandboxId,
-    firstCoding.activations[0].sandboxId,
+    followUpWorkspaceRuntime.providerRuntimeId,
+    firstWorkspaceRuntime.providerRuntimeId,
     "Two coding Runs did not reuse the same Cube native sandbox",
+  );
+  assert.notEqual(
+    await toolBindingForRun(followUp.accepted.runId),
+    firstToolBindingId,
+    "Two coding Runs unexpectedly reused one logical Tool binding",
   );
   const followUpUsage = await runUsageEvidence(followUp.accepted.runId);
   const followUpLatency = await runLatencyEvidence(followUp.accepted.runId);
@@ -1199,6 +1225,7 @@ try {
   progress("large Workspace Run completed and committed its persistent Volume revision");
   const largeFirstUsage = await runUsageEvidence(largeFirst.accepted.runId);
   const largeFirstWorkspace = await workspaceSettlementEvidence(largeFirst.accepted.runId);
+  const largeFirstRuntime = await workspaceRuntimeEvidence(largeSession.workspaceId);
   assert(
     largeFirstWorkspace.volumeFileCount > 512,
     "Large-workspace Run did not create the requested persistent files",
@@ -1224,24 +1251,25 @@ try {
   progress("large persistent Workspace Volume attached to a fresh Cube KVM");
   const largeFollowUpUsage = await runUsageEvidence(largeFollowUp.accepted.runId);
   const largeFollowUpWorkspace = await workspaceSettlementEvidence(largeFollowUp.accepted.runId);
+  const largeFollowUpRuntime = await workspaceRuntimeEvidence(largeSession.workspaceId);
   assert(largeFollowUpWorkspace.volumeFileCount > 512);
   assert.equal(largeFirst.activations.length, 1);
   assert.equal(largeFollowUp.activations.length, 1);
   assert.notEqual(
-    largeFollowUp.activations[0].sandboxId,
-    largeFirst.activations[0].sandboxId,
+    largeFollowUpRuntime.providerRuntimeId,
+    largeFirstRuntime.providerRuntimeId,
     "Large Workspace did not cold-restore into a fresh Cube VM",
   );
   assert.notEqual(
-    largeFollowUp.activations[0].activationId,
-    largeFirst.activations[0].activationId,
-    "Large Workspace cold restore reused stale physical authority",
+    largeFollowUpRuntime.workspaceRuntimeId,
+    largeFirstRuntime.workspaceRuntimeId,
+    "Large Workspace cold restore reused stale physical runtime identity",
   );
 
   const retainedMainSessionCubes = managedForSession(await cube.list(), session.sessionId);
   assert(
     retainedMainSessionCubes.length <= 1,
-    "Cube inventory retained more than one exact-Session microVM",
+    "Cube inventory retained more than one Workspace microVM",
   );
   await waitForNoCubeSession(foreignSession.sessionId);
   const usage = totalUsage(
@@ -1403,7 +1431,7 @@ try {
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,
         `- Explicit warm eviction / remaining Cube microVMs: ${String(report.cleanup.explicitWarmEvictionVerified)} / ${String(report.cleanup.retainedRunningSessionMicroVmCount + report.cleanup.foreignSessionMicroVmCount)}`,
         "",
-        "A real-model chat Run completed without touching Cube. Two elastic coding Runs reused one bounded-warm Session Cube with rotated Tool authority and higher-fence rebind; that warm optimization could later be capacity-evicted, and archiving the conversation left no Cube. The persistent Volume contained no retired platform Git metadata; any ordinary .git directory belongs to the user and Agent. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a higher-fence activation. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
+        "A real-model chat Run completed without touching Cube. Two elastic coding Runs used distinct fenced Tool bindings in one bounded-warm Workspace Cube; that warm optimization could later be capacity-evicted, and archiving the conversation left no Cube. The persistent Volume contained no retired platform Git metadata; any ordinary .git directory belongs to the user and Agent. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a new physical runtime identity. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
         "",
       ].join("\n"),
       "utf8",

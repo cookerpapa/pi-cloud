@@ -66,7 +66,7 @@ still opened on its `main` lane by the existing Worker.
 
 All branches share one logical Workspace. Each ordinary branch keeps a
 Session-scoped Cube process world while sharing the persistent Volume; users
-are responsible for concurrent edits. The explicit `shared_serialized`
+are responsible for concurrent edits. The explicit `shared`
 Subagent mode remains a coordinated handoff rather than ordinary branch
 concurrency.
 

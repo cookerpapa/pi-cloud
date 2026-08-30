@@ -111,7 +111,7 @@ export function validateProductionRuntimeEnvironment(environment) {
     throw new Error("Tool Broker heartbeat must leave lease failure margin");
   }
   integer(environment, "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES", 2, 1, 1_000);
-  integer(environment, "PI_CLOUD_MAXIMUM_WARM_SANDBOXES", 4, 1, 1_000);
+  integer(environment, "PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES", 4, 1, 1_000);
   integer(environment, "PI_CLOUD_SANDBOX_WARM_TTL_MS", 900_000, 1_000, 24 * 60 * 60_000);
   integer(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS", 2, 1, 64);
   integer(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_QUEUED_OPERATIONS", 32, 0, 4_096);

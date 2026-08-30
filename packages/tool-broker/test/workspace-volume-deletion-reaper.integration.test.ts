@@ -96,11 +96,11 @@ describe("WorkspaceVolumeDeletionReaper", () => {
         .execute();
       // This test only needs the activation lifecycle row; its unrelated Run graph is
       // covered by the Tool Broker integration suite.
-      await pglite.exec("alter table tool_broker_activations disable trigger all");
+      await pglite.exec("alter table tool_broker_workspace_runtimes disable trigger all");
       await database
-        .insertInto("tool_broker_activations")
+        .insertInto("tool_broker_workspace_runtimes")
         .values({
-          activation_id: IDS.activation,
+          workspace_runtime_id: IDS.activation,
           sandbox_domain_id: "sandbox-domain-delete",
           owner_instance_id: IDS.broker,
           owner_base_url: "http://broker-delete.invalid",
@@ -126,7 +126,7 @@ describe("WorkspaceVolumeDeletionReaper", () => {
           failure_code: null,
         })
         .execute();
-      await pglite.exec("alter table tool_broker_activations enable trigger all");
+      await pglite.exec("alter table tool_broker_workspace_runtimes enable trigger all");
 
       let failNextMetadataDelete = true;
       const deleteVolumeMetadata = vi.fn(async (_volumeId: string) => {
@@ -143,9 +143,9 @@ describe("WorkspaceVolumeDeletionReaper", () => {
       await expect(reaper.runOnce()).resolves.toBe(0);
       await expect(lstat(volumeRoot)).resolves.toMatchObject({});
       await database
-        .updateTable("tool_broker_activations")
+        .updateTable("tool_broker_workspace_runtimes")
         .set({ state: "released" })
-        .where("activation_id", "=", IDS.activation)
+        .where("workspace_runtime_id", "=", IDS.activation)
         .execute();
       await pglite.exec("alter table workspace_terminal_sessions disable trigger all");
       await database

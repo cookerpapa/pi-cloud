@@ -242,8 +242,6 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
           },
         });
       }
-      if (request.mode === "freeze") return this.#result({ processes: [] });
-      if (request.mode === "thaw") return this.#result({ resumed: 0 });
       if (request.mode === "prepare_exclusive_machine") {
         return this.#result({ home: "/home/user" });
       }
@@ -538,7 +536,7 @@ describe("CubeSandbox Provider contract", () => {
     await replacement.close();
   });
 
-  it("preserves Session lease identity, assignment inventory and content checkpoints", async () => {
+  it("keeps the Workspace runtime outside Supervisor assignment inventory", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const workspaceVolumeGateway = fakeWorkspaceVolumeGateway();
     const provider = new CubeSandboxProvider({
@@ -577,13 +575,7 @@ describe("CubeSandbox Provider contract", () => {
     expect(runtime.creates).toHaveLength(1);
     expect(runtime.creates[0]?.metadata).not.toHaveProperty("host-mount");
     const activeAssignments = await manager.listAssignments(assignment.sandboxId);
-    expect(activeAssignments).toEqual([
-      expect.objectContaining({
-        containerName: "cube-sandbox-1",
-        supervisorId: assignment.supervisorId,
-        executionLease: assignment.executionLease,
-      }),
-    ]);
+    expect(activeAssignments).toEqual([]);
     const captured = await manager.capture(
       reserved.activationId,
       assignment,
@@ -679,9 +671,6 @@ describe("CubeSandbox Provider contract", () => {
     expect(runtime.destroyed).toEqual([]);
     expect(manager.warmCount).toBe(1);
     expect(runtime.instances.get("cube-sandbox-1")?.state).toBe("running");
-    await expect(manager.terminateAndConfirmAbsent(activeAssignments[0]!)).rejects.toMatchObject({
-      code: "cubesandbox_assignment_identity_mismatch",
-    });
     expect(runtime.destroyed).toEqual([]);
 
     const idleAssignment: ToolSandboxAssignment = {
@@ -751,7 +740,8 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       workspaceRevision: "a".repeat(64),
     });
-    expect(next.activationId).toBe(reserved.activationId);
+    expect(next.activationId).toBe(parseExecutionLease(nextAssignment.executionLease).attemptId);
+    expect(next.activationId).not.toBe(reserved.activationId);
     expect(next.continuity).toBe("warm_reuse");
     await manager.execute(nextAssignment.executionLease, {
       ...operation(next.activationId),
@@ -759,12 +749,7 @@ describe("CubeSandbox Provider contract", () => {
     });
     expect(runtime.creates).toHaveLength(1);
     expect(runtime.instances.get("cube-sandbox-1")?.state).toBe("running");
-    expect(await manager.listAssignments(nextAssignment.sandboxId)).toEqual([
-      expect.objectContaining({
-        runId: nextAssignment.runId,
-        executionLease: nextAssignment.executionLease,
-      }),
-    ]);
+    expect(await manager.listAssignments(nextAssignment.sandboxId)).toEqual([]);
     const destroyed = await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -844,7 +829,7 @@ describe("CubeSandbox Provider contract", () => {
     expect(
       Object.entries(runtime.creates[1]!.metadata).some(
         ([key, value]) =>
-          key.startsWith("picloud.assignment.v3.") && value.includes(nextActivationId),
+          key.startsWith("picloud.workspace-runtime.v1.") && value.includes(nextActivationId),
       ),
     ).toBe(true);
     await expect(provider.inspect(restored)).resolves.toMatchObject({ state: "running" });
@@ -868,7 +853,7 @@ describe("CubeSandbox Provider contract", () => {
     await provider.close();
   });
 
-  it("rotates Cube authority across a parent and child Session without comparing Session fences", async () => {
+  it("executes parent and child Tool bindings concurrently in one Workspace Cube", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const provider = new CubeSandboxProvider({
       templateId: "pi-cloud-tool-v1",
@@ -904,24 +889,20 @@ describe("CubeSandbox Provider contract", () => {
         1,
       ),
     };
-    const child = await provider.rebind(parent, childAssignment);
-    await expect(provider.exec(child, operation(ACTIVATION_ID))).resolves.toMatchObject({
+    const childBindingId = "20000000-0000-4000-8000-000000000054";
+    await expect(
+      provider.exec(parent, { ...operation(ACTIVATION_ID), activationId: childBindingId }),
+    ).resolves.toMatchObject({
       type: "tool_sandbox.operation_result",
       exitCode: 0,
     });
-    await provider.settle(child, "10000000-0000-4000-8000-000000000054");
-
-    const restored = await provider.rebind(child, {
-      ...assignment,
-      executionLease: createExecutionLease(
-        "20000000-0000-4000-8000-000000000050",
-        parseExecutionLease(assignment.executionLease).attemptId,
-        41,
-      ),
+    await provider.settle(parent, "10000000-0000-4000-8000-000000000055", {
+      activationId: childBindingId,
+      assignment: childAssignment,
     });
-    await expect(provider.inspect(restored)).resolves.toMatchObject({ state: "running" });
-    expect(restored.assignment.sessionId).toBe(assignment.sessionId);
-    await provider.destroy(restored);
+    await expect(provider.inspect(parent)).resolves.toMatchObject({ state: "running" });
+    expect(runtime.creates).toHaveLength(1);
+    await provider.destroy(parent);
     await provider.close();
   });
 

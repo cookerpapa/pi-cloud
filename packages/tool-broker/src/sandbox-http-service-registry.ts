@@ -33,6 +33,7 @@ export type SandboxHttpServiceObservation = Readonly<{
 export interface SandboxHttpServiceRegistry {
   observe(input: SandboxHttpServiceObservation): Promise<void>;
   end(target: SandboxHttpServiceTarget, runtimeId: string): Promise<void>;
+  endRuntime(runtimeId: string): Promise<void>;
 }
 
 export class PostgresSandboxHttpServiceRegistry implements SandboxHttpServiceRegistry {
@@ -84,7 +85,7 @@ export class PostgresSandboxHttpServiceRegistry implements SandboxHttpServiceReg
                 ? input.target.developmentEnvironmentId
                 : null,
             runtime_id: input.runtimeId,
-            activation_id: input.activationId,
+            tool_binding_id: input.activationId,
             last_operation_id: input.operationId,
             port: service.port,
             protocol: service.protocol,
@@ -103,7 +104,7 @@ export class PostgresSandboxHttpServiceRegistry implements SandboxHttpServiceReg
                   input.target.kind === "development_environment"
                     ? input.target.developmentEnvironmentId
                     : null,
-                activation_id: input.activationId,
+                tool_binding_id: input.activationId,
                 last_operation_id: input.operationId,
                 protocol: service.protocol,
                 state: "active",
@@ -124,6 +125,16 @@ export class PostgresSandboxHttpServiceRegistry implements SandboxHttpServiceReg
       .where("tenant_id", "=", target.tenantId)
       .where("target_kind", "=", target.kind)
       .where("target_id", "=", target.targetId)
+      .where("runtime_id", "=", runtimeId)
+      .where("state", "=", "active")
+      .execute();
+  }
+
+  async endRuntime(runtimeId: string): Promise<void> {
+    const now = this.#clock();
+    await this.#database
+      .updateTable("sandbox_http_services")
+      .set({ state: "ended", ended_at: now, last_seen_at: now })
       .where("runtime_id", "=", runtimeId)
       .where("state", "=", "active")
       .execute();
