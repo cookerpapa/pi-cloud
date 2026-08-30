@@ -16,7 +16,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
            'g'
          ),
          '(https?://[^[:space:]/:@]+:)[^[:space:]@/]+(@[^[:space:]]+)',
-         E'\\1[PI_CLOUD_REDACTED]\\2',
+         $$\1[PI_CLOUD_REDACTED]\2$$,
          'g'
        )::jsonb
      where payload::text ~ '(glpat|gldt|glcbt|glptt)-[A-Za-z0-9._~-]{8,}'
