@@ -821,7 +821,7 @@ export function ResourceManagementPage({
       {issueCodeHostWorkspaceId === null || issueStartJob === undefined ? null : (
         <CodeHostConnectionsModal
           api={api}
-          defaultOrigin={issueStartJob.providerBaseUrl}
+          defaultOrigin={issueStartJob.codeHostOrigin}
           defaultProvider={issueStartJob.repositoryProvider}
           onClose={() => setIssueCodeHostWorkspaceId(null)}
           onConnected={() => {

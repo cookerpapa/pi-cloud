@@ -80,6 +80,7 @@
     "production:browser-ui-check": "node scripts/run-live-browser-ui-check.mjs",
     "production:directory-picker-check": "node scripts/run-live-directory-picker-check.mjs",
     "production:subagents-check": "node scripts/run-live-subagent-production-check.mjs",
+    "production:code-host-check": "node scripts/run-live-code-host-issue-check.mjs",
     "production:development-environment-check": "node scripts/run-live-development-environment-check.mjs",
     "production:semantic-check": "node scripts/run-live-cubesandbox-production-check.mjs",
     "production:worker-pool-check": "node scripts/run-live-pi-worker-pool-check.mjs",

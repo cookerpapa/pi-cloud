@@ -77,6 +77,7 @@ export const SourceControlIssueJobResourceSchema = Type.Object(
     repositoryId: UuidSchema,
     repositoryProvider: ProviderSchema,
     providerBaseUrl: ProviderBaseUrlSchema,
+    codeHostOrigin: ProviderBaseUrlSchema,
     repositoryFullName: Type.String({ minLength: 3, maxLength: 511 }),
     issueNumber: Type.Integer({ minimum: 1 }),
     issueTitle: Type.String({ minLength: 1, maxLength: 512 }),

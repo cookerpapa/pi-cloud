@@ -168,12 +168,14 @@ function issueJobResource(
   }[],
   identity: TenantRequestIdentity,
   claimEligible: boolean,
+  codeHostOrigin: string,
 ) {
   return {
     jobId: row.id,
     repositoryId: row.repository_id,
     repositoryProvider: row.repository_provider,
     providerBaseUrl: row.repository_provider_base_url,
+    codeHostOrigin,
     repositoryFullName: row.repository_full_name,
     issueNumber: row.issue_number,
     issueTitle: row.issue_title,
@@ -670,6 +672,9 @@ export class SourceControlService {
           claims.filter((claim) => claim.issueJobId === row.id),
           identity,
           row.repository_provider === "gitlab" || row.repository_provider === "github",
+          row.repository_provider === "gitlab"
+            ? (this.#gitlab?.workspaceBaseUrl ?? row.repository_provider_base_url)
+            : row.repository_provider_base_url,
         ),
       ),
     };
