@@ -2,45 +2,44 @@ import type { Database } from "@pi-cloud/database";
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 import {
   MAX_TOOL_OUTPUT_BYTES,
-  MAX_WORKSPACE_SNAPSHOT_BYTES,
+  MAX_WORKSPACE_BLOB_BYTES,
   parseEnvironmentValidationReport,
   parseExecutionLease,
 } from "@pi-cloud/protocol";
 import {
-  type CapturedEnvironmentSandboxCheckpoint,
+  type CapturedEnvironmentWorkspaceSettlement,
   type CapturedToolOutput,
-  type LoadedSandboxCheckpoint,
-  type SandboxCheckpointStore,
-  type SavedSandboxCheckpoint,
+  type LoadedWorkspaceSettlement,
+  type WorkspaceSettlementStore,
+  type SavedWorkspaceSettlement,
   type SavedToolOutputArtifact,
-} from "@pi-cloud/sandbox-supervisor/sandbox-checkpoint";
+} from "@pi-cloud/sandbox-supervisor/workspace-settlement";
 import { PiTurnError } from "@pi-cloud/sandbox-supervisor/pi-turn-runtime";
-import { validateWorkspaceSnapshot } from "@pi-cloud/sandbox-supervisor/workspace-snapshot";
+import { validateWorkspacePayload } from "@pi-cloud/sandbox-supervisor/workspace-seed";
 import { createHash, randomUUID } from "node:crypto";
-import { workspaceSnapshotFileCount } from "@pi-cloud/workspace-runtime";
 import { lstat, link, mkdir, open, readFile, rm } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { sql, type Kysely, type Transaction } from "kysely";
 
-// Workspace snapshots and archived Tool output are the largest supported
-// checkpoint objects. Keep one shared guard comfortably above their bounded
+// Workspace settlement references and archived Tool output are bounded runtime objects.
+// runtime objects. Keep one shared guard comfortably above their bounded
 // payloads without permitting unbounded reads.
-export const MAX_CHECKPOINT_OBJECT_BYTES = 136 * 1_024 * 1_024;
+export const MAX_RUNTIME_OBJECT_BYTES = 136 * 1_024 * 1_024;
 
-export interface CheckpointObjectStore {
+export interface RuntimeObjectStore {
   put(objectKey: string, bytes: Uint8Array): Promise<void>;
   get(objectKey: string): Promise<Uint8Array>;
   delete(objectKey: string): Promise<void>;
 }
 
-export type FileCheckpointObjectStoreOptions = {
+export type FileRuntimeObjectStoreOptions = {
   rootDirectory: string;
   idGenerator?: () => string;
 };
 
-export type PostgresSandboxCheckpointStoreOptions = {
+export type PostgresWorkspaceSettlementStoreOptions = {
   database: Kysely<Database>;
-  objectStore: CheckpointObjectStore;
+  objectStore: RuntimeObjectStore;
   clock?: () => Date;
   idGenerator?: () => string;
 };
@@ -51,23 +50,23 @@ type ArtifactReference = {
   sizeBytes: number;
 };
 
-type CheckpointMetadata = {
-  workspace?: ArtifactReference;
+type SettlementMetadata = {
+  reference?: ArtifactReference;
   revision: string;
   workspaceRevision?: string;
 };
 
-export class SandboxCheckpointStoreError extends PiTurnError {
+export class WorkspaceSettlementStoreError extends PiTurnError {
   constructor(code: string, safeMessage: string, retryable: boolean) {
     super(code, safeMessage, retryable);
-    this.name = "SandboxCheckpointStoreError";
+    this.name = "WorkspaceSettlementStoreError";
   }
 }
 
 function validDate(clock: () => Date): Date {
   const value = clock();
   if (!(value instanceof Date) || Number.isNaN(value.valueOf())) {
-    throw new TypeError("checkpoint store clock must return a valid Date");
+    throw new TypeError("settlement store clock must return a valid Date");
   }
   return value;
 }
@@ -79,8 +78,8 @@ function sha256(bytes: Uint8Array): string {
 function safeSize(value: string | number | bigint, maximum: number, description: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maximum) {
-    throw new SandboxCheckpointStoreError(
-      "checkpoint_metadata_invalid",
+    throw new WorkspaceSettlementStoreError(
+      "settlement_metadata_invalid",
       `${description} metadata is invalid`,
       false,
     );
@@ -90,12 +89,12 @@ function safeSize(value: string | number | bigint, maximum: number, description:
 
 function revisionFor(workspaceKey: string): string {
   return createHash("sha256")
-    .update("pi-cloud.workspace-checkpoint-revision.v1\0")
+    .update("pi-cloud.workspace-settlement-revision.v1\0")
     .update(workspaceKey)
     .digest("hex");
 }
 
-export function validateCheckpointObjectKey(value: string): string {
+export function validateRuntimeObjectKey(value: string): string {
   if (
     value.length < 1 ||
     value.length > 2_048 ||
@@ -103,9 +102,9 @@ export function validateCheckpointObjectKey(value: string): string {
     value.includes("\\") ||
     value.includes("\0")
   ) {
-    throw new SandboxCheckpointStoreError(
-      "checkpoint_object_key_invalid",
-      "Checkpoint object key is invalid",
+    throw new WorkspaceSettlementStoreError(
+      "runtime_object_key_invalid",
+      "Runtime object key is invalid",
       false,
     );
   }
@@ -119,20 +118,20 @@ export function validateCheckpointObjectKey(value: string): string {
         !/^[A-Za-z0-9._-]+$/.test(segment),
     )
   ) {
-    throw new SandboxCheckpointStoreError(
-      "checkpoint_object_key_invalid",
-      "Checkpoint object key is invalid",
+    throw new WorkspaceSettlementStoreError(
+      "runtime_object_key_invalid",
+      "Runtime object key is invalid",
       false,
     );
   }
   return value;
 }
 
-export class FileCheckpointObjectStore implements CheckpointObjectStore {
+export class FileRuntimeObjectStore implements RuntimeObjectStore {
   readonly #rootDirectory: string;
   readonly #idGenerator: () => string;
 
-  constructor(options: FileCheckpointObjectStoreOptions) {
+  constructor(options: FileRuntimeObjectStoreOptions) {
     this.#rootDirectory = resolve(options.rootDirectory);
     this.#idGenerator = options.idGenerator ?? randomUUID;
   }
@@ -161,16 +160,16 @@ export class FileCheckpointObjectStore implements CheckpointObjectStore {
     const target = this.#target(objectKey);
     const metadata = await lstat(target);
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      throw new SandboxCheckpointStoreError(
-        "checkpoint_object_invalid",
-        "Checkpoint object is not a regular file",
+      throw new WorkspaceSettlementStoreError(
+        "runtime_object_invalid",
+        "Runtime object is not a regular file",
         false,
       );
     }
-    if (metadata.size < 1 || metadata.size > MAX_CHECKPOINT_OBJECT_BYTES) {
-      throw new SandboxCheckpointStoreError(
-        "checkpoint_object_invalid",
-        "Checkpoint object is outside its byte limit",
+    if (metadata.size < 1 || metadata.size > MAX_RUNTIME_OBJECT_BYTES) {
+      throw new WorkspaceSettlementStoreError(
+        "runtime_object_invalid",
+        "Runtime object is outside its byte limit",
         false,
       );
     }
@@ -182,11 +181,11 @@ export class FileCheckpointObjectStore implements CheckpointObjectStore {
   }
 
   #target(objectKey: string): string {
-    const target = resolve(this.#rootDirectory, validateCheckpointObjectKey(objectKey));
+    const target = resolve(this.#rootDirectory, validateRuntimeObjectKey(objectKey));
     if (target !== this.#rootDirectory && !target.startsWith(`${this.#rootDirectory}${sep}`)) {
-      throw new SandboxCheckpointStoreError(
-        "checkpoint_object_key_invalid",
-        "Checkpoint object key escaped its store",
+      throw new WorkspaceSettlementStoreError(
+        "runtime_object_key_invalid",
+        "Runtime object key escaped its store",
         false,
       );
     }
@@ -194,47 +193,52 @@ export class FileCheckpointObjectStore implements CheckpointObjectStore {
   }
 }
 
-export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
+export class PostgresWorkspaceSettlementStore implements WorkspaceSettlementStore {
   readonly #database: Kysely<Database>;
-  readonly #objectStore: CheckpointObjectStore;
+  readonly #objectStore: RuntimeObjectStore;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
 
-  constructor(options: PostgresSandboxCheckpointStoreOptions) {
+  constructor(options: PostgresWorkspaceSettlementStoreOptions) {
     this.#database = options.database;
     this.#objectStore = options.objectStore;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? randomUUID;
   }
 
-  async load(command: ExecuteTurnCommandMessage): Promise<LoadedSandboxCheckpoint | undefined> {
+  async load(command: ExecuteTurnCommandMessage): Promise<LoadedWorkspaceSettlement | undefined> {
     const metadata = await this.#database.transaction().execute(async (transaction) => {
       return this.#loadMetadata(transaction, command, validDate(this.#clock));
     });
     if (metadata === undefined) return undefined;
 
-    const workspace =
-      metadata.workspace === undefined
+    const reference =
+      metadata.reference === undefined
         ? undefined
-        : await this.#objectStore.get(metadata.workspace.objectKey);
-    if (workspace !== undefined && metadata.workspace !== undefined) {
-      this.#verifyObject(workspace, metadata.workspace, MAX_WORKSPACE_SNAPSHOT_BYTES, "workspace");
+        : await this.#objectStore.get(metadata.reference.objectKey);
+    if (reference !== undefined && metadata.reference !== undefined) {
+      this.#verifyObject(
+        reference,
+        metadata.reference,
+        MAX_WORKSPACE_BLOB_BYTES,
+        "Workspace settlement",
+      );
     }
-    if (workspace !== undefined) validateWorkspaceSnapshot(workspace);
+    if (reference !== undefined) validateWorkspacePayload(reference);
 
     await this.#database.transaction().execute(async (transaction) => {
       const current = await this.#loadMetadata(transaction, command, validDate(this.#clock));
       if (current?.revision !== metadata.revision) {
-        throw new SandboxCheckpointStoreError(
-          "checkpoint_changed",
-          "Settled checkpoint changed while it was loading",
+        throw new WorkspaceSettlementStoreError(
+          "settlement_changed",
+          "Workspace settlement changed while it was loading",
           true,
         );
       }
     });
     return {
       revision: metadata.revision,
-      ...(workspace === undefined ? {} : { workspace }),
+      ...(reference === undefined ? {} : { reference }),
       ...(metadata.workspaceRevision === undefined
         ? {}
         : { workspaceRevision: metadata.workspaceRevision }),
@@ -251,7 +255,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       output.bytes.byteLength < 1 ||
       output.bytes.byteLength > MAX_TOOL_OUTPUT_BYTES
     ) {
-      throw new SandboxCheckpointStoreError(
+      throw new WorkspaceSettlementStoreError(
         "tool_output_invalid",
         "Tool output artifact is outside its identity or byte limit",
         false,
@@ -268,7 +272,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       execution.attemptId,
     ].map((segment) => segment.replace(/[^A-Za-z0-9._-]/g, "-"));
     const objectKey = `${safe.join("/")}/${artifactId}-${digest}.log`;
-    validateCheckpointObjectKey(objectKey);
+    validateRuntimeObjectKey(objectKey);
     await this.#objectStore.put(objectKey, output.bytes);
     try {
       await this.#database.transaction().execute(async (transaction) => {
@@ -300,10 +304,10 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
   async save(
     command: ExecuteTurnCommandMessage,
     baseRevision: string | null,
-    checkpoint: CapturedEnvironmentSandboxCheckpoint,
-  ): Promise<SavedSandboxCheckpoint> {
+    settlement: CapturedEnvironmentWorkspaceSettlement,
+  ): Promise<SavedWorkspaceSettlement> {
     const execution = parseExecutionLease(command.payload.executionLease);
-    const environment = parseEnvironmentValidationReport(checkpoint.environment);
+    const environment = parseEnvironmentValidationReport(settlement.environment);
     if (
       environment.profileKey !== command.payload.environment.profileKey ||
       environment.profileVersion !== command.payload.environment.profileVersion ||
@@ -311,31 +315,31 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       environment.specSha256 !== command.payload.environment.specSha256 ||
       environment.recipeSha256 !== command.payload.environment.recipeSha256
     ) {
-      throw new SandboxCheckpointStoreError(
+      throw new WorkspaceSettlementStoreError(
         "environment_validation_mismatch",
         "Tool Sandbox environment evidence did not match the accepted Run",
         false,
       );
     }
-    validateWorkspaceSnapshot(checkpoint.workspace);
-    const workspaceArtifactId = this.#idGenerator();
-    const versionId = this.#idGenerator();
+    validateWorkspacePayload(settlement.reference);
+    const settlementArtifactId = this.#idGenerator();
+    const settlementId = this.#idGenerator();
     const environmentValidationId = this.#idGenerator();
     const prefix = [
-      "checkpoints",
+      "settlements",
       command.payload.tenantId,
       command.payload.sessionId,
       command.payload.turnId,
     ].map((segment) => segment.replace(/[^A-Za-z0-9._-]/g, "-"));
     const workspaceReference: ArtifactReference = {
-      objectKey: `${prefix.join("/")}/${workspaceArtifactId}-workspace-${sha256(checkpoint.workspace)}.json`,
-      sha256: sha256(checkpoint.workspace),
-      sizeBytes: checkpoint.workspace.byteLength,
+      objectKey: `${prefix.join("/")}/${settlementArtifactId}-${sha256(settlement.reference)}.json`,
+      sha256: sha256(settlement.reference),
+      sizeBytes: settlement.reference.byteLength,
     };
-    validateCheckpointObjectKey(workspaceReference.objectKey);
+    validateRuntimeObjectKey(workspaceReference.objectKey);
 
     try {
-      await this.#objectStore.put(workspaceReference.objectKey, checkpoint.workspace);
+      await this.#objectStore.put(workspaceReference.objectKey, settlement.reference);
     } catch (error: unknown) {
       throw error;
     }
@@ -346,9 +350,9 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
         const settled = await this.#settledMetadata(transaction, command, current);
         const currentRevision = settled?.revision ?? null;
         if (currentRevision !== baseRevision) {
-          throw new SandboxCheckpointStoreError(
-            "checkpoint_conflict",
-            "Settled checkpoint base revision is stale",
+          throw new WorkspaceSettlementStoreError(
+            "settlement_conflict",
+            "Workspace settlement base revision is stale",
             false,
           );
         }
@@ -356,17 +360,17 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
         await transaction
           .insertInto("artifacts")
           .values({
-            id: workspaceArtifactId,
+            id: settlementArtifactId,
             tenant_id: command.payload.tenantId,
             session_id: command.payload.sessionId,
             turn_id: command.payload.turnId,
             run_id: command.payload.runId,
-            kind: "workspace_snapshot",
+            kind: "workspace_settlement",
             object_key: workspaceReference.objectKey,
             sha256: workspaceReference.sha256,
             size_bytes: workspaceReference.sizeBytes,
-            file_name: "workspace.json",
-            media_type: "application/vnd.pi-cloud.workspace+json",
+            file_name: "workspace-settlement.json",
+            media_type: "application/vnd.pi-cloud.workspace-settlement+json",
           })
           .execute();
         await transaction
@@ -402,37 +406,36 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
           .where("recipe_sha256", "=", environment.recipeSha256)
           .executeTakeFirst();
         if (environmentUpdate.numUpdatedRows !== 1n) {
-          throw new SandboxCheckpointStoreError(
+          throw new WorkspaceSettlementStoreError(
             "environment_validation_mismatch",
             "Project environment changed before validation evidence was committed",
             false,
           );
         }
-        const latestVersion = await transaction
-          .selectFrom("workspace_versions")
-          .select(["version_number"])
+        const latestSettlement = await transaction
+          .selectFrom("workspace_settlements")
+          .select(["settlement_number"])
           .where("tenant_id", "=", command.payload.tenantId)
           .where("workspace_id", "=", command.payload.workspaceId)
-          .orderBy("version_number", "desc")
+          .orderBy("settlement_number", "desc")
           .limit(1)
           .executeTakeFirst();
         await transaction
-          .insertInto("workspace_versions")
+          .insertInto("workspace_settlements")
           .values({
-            id: versionId,
+            id: settlementId,
             tenant_id: command.payload.tenantId,
             workspace_id: command.payload.workspaceId,
             session_id: command.payload.sessionId,
-            version_number: (latestVersion?.version_number ?? 0) + 1,
-            parent_version_id: current.currentVersionId,
-            source_version_id: null,
-            origin_kind: "checkpoint",
+            settlement_number: (latestSettlement?.settlement_number ?? 0) + 1,
+            parent_settlement_id: current.currentSettlementId,
+            source_settlement_id: null,
+            origin_kind: "settlement",
             run_id: command.payload.runId,
             attempt_id: execution.attemptId,
             turn_id: command.payload.turnId,
-            workspace_artifact_id: workspaceArtifactId,
+            settlement_artifact_id: settlementArtifactId,
             revision,
-            file_count: workspaceSnapshotFileCount(checkpoint.workspace),
             state: "staged",
             settled_at: null,
           })
@@ -440,7 +443,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
         const updated = await transaction
           .updateTable("sessions")
           .set({
-            workspace_snapshot_key: workspaceReference.objectKey,
+            workspace_settlement_key: workspaceReference.objectKey,
             row_version: sql<string>`${sql.ref("row_version")} + 1`,
             updated_at: now,
             last_active_at: now,
@@ -450,9 +453,9 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
           .where("row_version", "=", current.rowVersion)
           .executeTakeFirst();
         if (updated.numUpdatedRows !== 1n) {
-          throw new SandboxCheckpointStoreError(
-            "checkpoint_conflict",
-            "Session changed before its checkpoint commit",
+          throw new WorkspaceSettlementStoreError(
+            "settlement_conflict",
+            "Session changed before its settlement commit",
             true,
           );
         }
@@ -472,7 +475,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
     transaction: Transaction<Database>,
     command: ExecuteTurnCommandMessage,
     now: Date,
-  ): Promise<CheckpointMetadata | undefined> {
+  ): Promise<SettlementMetadata | undefined> {
     const session = await this.#assertCurrentSession(transaction, command, now, false);
     return this.#settledMetadata(transaction, command, session);
   }
@@ -483,25 +486,25 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
     session: {
       workspaceKey: string | null;
       rowVersion: string;
-      currentVersionId: string | null;
+      currentSettlementId: string | null;
     },
-  ): Promise<CheckpointMetadata | undefined> {
+  ): Promise<SettlementMetadata | undefined> {
     let workspace:
       { object_key: string; sha256: string; size_bytes: string | number | bigint } | undefined;
-    if (session.currentVersionId !== null) {
+    if (session.currentSettlementId !== null) {
       workspace = await transaction
-        .selectFrom("workspace_versions as version")
-        .innerJoin("artifacts as artifact", "artifact.id", "version.workspace_artifact_id")
+        .selectFrom("workspace_settlements as settlement")
+        .innerJoin("artifacts as artifact", "artifact.id", "settlement.settlement_artifact_id")
         .select(["artifact.object_key", "artifact.sha256", "artifact.size_bytes"])
-        .where("version.tenant_id", "=", command.payload.tenantId)
-        .where("version.workspace_id", "=", command.payload.workspaceId)
-        .where("version.id", "=", session.currentVersionId)
-        .where("version.state", "=", "settled")
+        .where("settlement.tenant_id", "=", command.payload.tenantId)
+        .where("settlement.workspace_id", "=", command.payload.workspaceId)
+        .where("settlement.id", "=", session.currentSettlementId)
+        .where("settlement.state", "=", "settled")
         .executeTakeFirst();
       if (workspace === undefined) {
-        throw new SandboxCheckpointStoreError(
-          "checkpoint_metadata_invalid",
-          "Current Workspace version is missing",
+        throw new WorkspaceSettlementStoreError(
+          "settlement_metadata_invalid",
+          "Current Workspace settlement is missing",
           false,
         );
       }
@@ -517,12 +520,12 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
         .select(["artifact.object_key", "artifact.sha256", "artifact.size_bytes"])
         .where("artifact.tenant_id", "=", command.payload.tenantId)
         .where("artifact.session_id", "=", command.payload.sessionId)
-        .where("artifact.kind", "=", "workspace_snapshot")
+        .where("artifact.kind", "=", "workspace_settlement")
         .where("artifact.object_key", "=", session.workspaceKey)
         .where("terminal.type", "=", "turn.completed")
         .executeTakeFirst();
     }
-    if (session.currentVersionId === null && workspace === undefined) {
+    if (session.currentSettlementId === null && workspace === undefined) {
       workspace = await transaction
         .selectFrom("artifacts as artifact")
         .innerJoin("session_terminal_events as terminal", (join) =>
@@ -534,7 +537,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
         .select(["artifact.object_key", "artifact.sha256", "artifact.size_bytes"])
         .where("artifact.tenant_id", "=", command.payload.tenantId)
         .where("artifact.session_id", "=", command.payload.sessionId)
-        .where("artifact.kind", "=", "workspace_snapshot")
+        .where("artifact.kind", "=", "workspace_settlement")
         .where("terminal.type", "=", "turn.completed")
         .orderBy("terminal.seq", "desc")
         .executeTakeFirst();
@@ -548,13 +551,13 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
             sha256: workspace.sha256,
             sizeBytes: safeSize(
               workspace.size_bytes,
-              MAX_WORKSPACE_SNAPSHOT_BYTES,
-              "Workspace checkpoint",
+              MAX_WORKSPACE_BLOB_BYTES,
+              "Workspace settlement",
             ),
           };
     if (workspaceReference === undefined) return undefined;
     return {
-      workspace: workspaceReference,
+      reference: workspaceReference,
       revision: revisionFor(workspaceReference.objectKey),
       workspaceRevision: workspaceReference.sha256,
     };
@@ -576,7 +579,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
   ): Promise<{
     workspaceKey: string | null;
     rowVersion: string;
-    currentVersionId: string | null;
+    currentSettlementId: string | null;
   }> {
     const execution = parseExecutionLease(command.payload.executionLease);
     let query = transaction
@@ -588,14 +591,14 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
           .onRef("workspace_row.id", "=", "session_row.workspace_id"),
       )
       .leftJoin(
-        "workspace_versions as session_head",
+        "workspace_settlements as session_head",
         "session_head.id",
-        "session_row.current_workspace_version_id",
+        "session_row.current_workspace_settlement_id",
       )
       .leftJoin(
         "artifacts as session_head_artifact",
         "session_head_artifact.id",
-        "session_head.workspace_artifact_id",
+        "session_head.settlement_artifact_id",
       )
       .innerJoin("turns as turn_row", (join) =>
         join
@@ -619,7 +622,7 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
         "session_row.workspace_id as workspaceId",
         "session_row.row_version as rowVersion",
         "session_head_artifact.object_key as workspaceKey",
-        "session_row.current_workspace_version_id as currentVersionId",
+        "session_row.current_workspace_settlement_id as currentSettlementId",
         "session_row.last_fencing_token as sessionExecutionGeneration",
         "session_row.state as sessionState",
         "turn_row.state as turnState",
@@ -665,23 +668,23 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       (row.runState !== "provisioning" &&
         row.runState !== "restoring" &&
         row.runState !== "running" &&
-        row.runState !== "checkpointing") ||
+        row.runState !== "settling") ||
       (row.attemptState !== "provisioning" &&
         row.attemptState !== "restoring" &&
         row.attemptState !== "running" &&
-        row.attemptState !== "checkpointing") ||
+        row.attemptState !== "settling") ||
       new Date(row.validUntil).valueOf() <= now.valueOf()
     ) {
-      throw new SandboxCheckpointStoreError(
+      throw new WorkspaceSettlementStoreError(
         "stale_session_lease",
-        "Checkpoint operation does not own the current ExecutionLease",
+        "Settlement operation does not own the current ExecutionLease",
         false,
       );
     }
     return {
       workspaceKey: row.workspaceKey,
       rowVersion: row.rowVersion,
-      currentVersionId: row.currentVersionId,
+      currentSettlementId: row.currentSettlementId,
     };
   }
 
@@ -696,9 +699,9 @@ export class PostgresSandboxCheckpointStore implements SandboxCheckpointStore {
       bytes.byteLength > maxBytes ||
       sha256(bytes) !== reference.sha256
     ) {
-      throw new SandboxCheckpointStoreError(
-        "checkpoint_corrupt",
-        `${description} checkpoint failed integrity validation`,
+      throw new WorkspaceSettlementStoreError(
+        "settlement_corrupt",
+        `${description} settlement failed integrity validation`,
         false,
       );
     }

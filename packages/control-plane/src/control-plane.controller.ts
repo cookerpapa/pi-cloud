@@ -36,7 +36,6 @@ import {
   parseReplaceModelConfigurationRequest,
   parseReplaceCubeProxyConfigurationRequest,
   parseUuidPathParameter,
-  parseWorkspaceFileCursor,
   type AcceptedTurnResource,
   type AuthSessionResource,
   type AcceptedTurnCancellationResource,
@@ -56,9 +55,8 @@ import {
   type TenantIdentityResource,
   type TenantRegistrationResource,
   type LogoutResource,
-  type WorkspaceFileListResource,
+  type WorkspaceDirectoryResource,
   type WorkspaceOperationResource,
-  type WorkspaceVersionListResource,
   type WorkspaceListResource,
   type WorkspaceDeletionResource,
   type DevelopmentEnvironmentListResource,
@@ -79,7 +77,8 @@ import { PublicTenantRegistrationService } from "./public-tenant-registration.ts
 import { SessionEventStream } from "@pi-cloud/runtime-core/session-event-stream";
 import { TenantRequestContext } from "./tenant-request-context.ts";
 import { TenantModelConfigurationService } from "./tenant-model-configuration.ts";
-import { WorkspaceVersionService } from "./workspace-version-service.ts";
+import { ConversationArchiveService } from "./conversation-archive-service.ts";
+import { WorkspaceBrowserService } from "./workspace-browser-service.ts";
 import { readWebSessionCookie, WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import { TurnSteeringService } from "./turn-steering-service.ts";
@@ -99,8 +98,10 @@ export class ControlPlaneController {
     @Inject(SessionEventStream) private readonly sessionEventStream: SessionEventStream,
     @Inject(TenantModelConfigurationService)
     private readonly tenantModelConfiguration: TenantModelConfigurationService,
-    @Inject(WorkspaceVersionService)
-    private readonly workspaceVersions: WorkspaceVersionService,
+    @Inject(ConversationArchiveService)
+    private readonly conversationArchive: ConversationArchiveService,
+    @Inject(WorkspaceBrowserService)
+    private readonly workspaceBrowser: WorkspaceBrowserService,
     @Inject(WebAuthenticationService)
     private readonly webAuthentication: WebAuthenticationService,
     @Inject(PlatformRuntimeSettingsService)
@@ -545,7 +546,7 @@ export class ControlPlaneController {
   ): Promise<WorkspaceOperationResource> {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     const identity = this.tenantRequestContext.requireMutation(request);
-    return this.workspaceVersions.archive(
+    return this.conversationArchive.archive(
       identity.tenantId,
       parseIdempotencyKey(idempotencyKeyValue),
       sessionId,
@@ -651,39 +652,30 @@ export class ControlPlaneController {
     return this.controlPlaneStores.forIdentity(identity).getRun(runId);
   }
 
-  @Get("sessions/:sessionId/workspace-versions")
-  async listWorkspaceVersions(
+  @Get("sessions/:sessionId/workspace/directory")
+  async listWorkspaceDirectory(
     @Req() request: FastifyRequest,
     @Param("sessionId") sessionIdValue: unknown,
-  ): Promise<WorkspaceVersionListResource> {
+    @Query("path") pathValue: unknown,
+  ): Promise<WorkspaceDirectoryResource> {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
+    const path = pathValue === undefined ? "" : pathValue;
+    if (typeof path !== "string") throw new TypeError("Workspace directory path is invalid");
     const identity = this.tenantRequestContext.resolve(request);
-    return this.workspaceVersions.list(identity.tenantId, sessionId);
+    return this.workspaceBrowser.directory(identity.tenantId, sessionId, path);
   }
 
-  @Get("workspace-versions/:versionId/files")
-  async listWorkspaceFiles(
-    @Req() request: FastifyRequest,
-    @Param("versionId") versionIdValue: unknown,
-    @Query("cursor") cursorValue: unknown,
-  ): Promise<WorkspaceFileListResource> {
-    const versionId = parseUuidPathParameter(versionIdValue, "versionId");
-    const cursor = parseWorkspaceFileCursor(cursorValue);
-    const identity = this.tenantRequestContext.resolve(request);
-    return this.workspaceVersions.files(identity.tenantId, versionId, cursor);
-  }
-
-  @Get("workspace-versions/:versionId/file")
+  @Get("sessions/:sessionId/workspace/file")
   async readWorkspaceFile(
     @Req() request: FastifyRequest,
-    @Param("versionId") versionIdValue: unknown,
+    @Param("sessionId") sessionIdValue: unknown,
     @Query("path") path: unknown,
     @Res() reply: FastifyReply,
   ): Promise<void> {
-    const versionId = parseUuidPathParameter(versionIdValue, "versionId");
+    const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     if (typeof path !== "string") throw new TypeError("Workspace file path is required");
     const identity = this.tenantRequestContext.resolve(request);
-    const file = await this.workspaceVersions.file(identity.tenantId, versionId, path);
+    const file = await this.workspaceBrowser.file(identity.tenantId, sessionId, path, 512 * 1_024);
     reply
       .header("cache-control", "private, no-store")
       .header("content-type", "application/octet-stream")

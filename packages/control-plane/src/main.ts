@@ -10,7 +10,7 @@ import {
   RoutedHttpSupervisorOwnerBoundary,
 } from "./http-supervisor-management.ts";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
-import { PostgresCheckpointObjectStore } from "@pi-cloud/runtime-core/postgres-checkpoint-object-store";
+import { PostgresRuntimeObjectStore } from "@pi-cloud/runtime-core/postgres-runtime-object-store";
 import { KafkaEventRuntime } from "@pi-cloud/runtime-core/kafka-event-runtime";
 import {
   PostgresSupervisorCredentialAuthorizer,
@@ -25,7 +25,6 @@ import { resolvePlatformInitialModel } from "./platform-model-configuration.ts";
 import { WebAuthenticationService } from "./web-authentication.ts";
 import { createControlPlaneRuntime, type ControlPlaneRuntime } from "./control-plane-runtime.ts";
 import { ReplicatedToolBrokerClient } from "@pi-cloud/tool-broker/client";
-import { encodeWorkspaceSnapshotBlob } from "@pi-cloud/workspace-runtime";
 import { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gateway.ts";
@@ -64,7 +63,7 @@ export async function startControlPlane(): Promise<void> {
     defaultMetricsPort: 9464,
   });
   const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
-  const objectStore = new PostgresCheckpointObjectStore(database);
+  const objectStore = new PostgresRuntimeObjectStore(database);
   const controlPlaneInstanceId = randomUUID();
   let agentEvents: KafkaEventRuntime | undefined;
   let runtime: ControlPlaneRuntime | undefined;
@@ -168,9 +167,9 @@ export async function startControlPlane(): Promise<void> {
         leaseCoordinator: new SessionLeaseCoordinator({ database, sandboxId }),
       });
     };
-    const snapshotMaterializer = new ReplicatedToolBrokerClient({
+    const workspaceBrowserClient = new ReplicatedToolBrokerClient({
       baseUrls: config.toolBrokerBaseUrls,
-      serviceToken: config.sandboxMaterializerToken,
+      serviceToken: config.workspaceServiceToken,
       allowInsecureHttp: config.allowInsecureInternalHttp,
     });
     const provisioner = new SupervisorBootProvisioner({
@@ -198,7 +197,7 @@ export async function startControlPlane(): Promise<void> {
         await Promise.all([
           activeAgentEvents.checkHealth(),
           sql`select 1`.execute(database),
-          snapshotMaterializer.checkHealth(),
+          workspaceBrowserClient.checkHealth(),
         ]);
         return true;
       },
@@ -282,7 +281,7 @@ export async function startControlPlane(): Promise<void> {
           };
     const sourceControlService = new SourceControlService({
       database,
-      materializerToken: config.sandboxMaterializerToken,
+      workspaceServiceToken: config.workspaceServiceToken,
       allowInsecureInternalHttp: config.allowInsecureInternalHttp,
       ...(githubRuntime === undefined ? {} : { github: githubRuntime }),
       ...(gitlabRuntime === undefined ? {} : { gitlab: gitlabRuntime }),
@@ -345,24 +344,11 @@ export async function startControlPlane(): Promise<void> {
       publicOriginBaseUrl: config.publicOriginBaseUrl,
       environmentImageRevision: config.environmentImageRevision,
       metrics: observability.metrics,
-      artifactReader: { get: (objectKey) => objectStore.get(objectKey) },
-      providerSnapshotReader: {
-        read: async (input) => {
-          const response = await snapshotMaterializer.materializeFile({
-            toolBrokerProtocolVersion: 1,
-            type: "workspace.materialize_file",
-            requestId: randomUUID(),
-            tenantId: input.tenantId,
-            workspaceId: input.workspaceId,
-            snapshot: encodeWorkspaceSnapshotBlob(input.snapshot),
-            path: input.path,
-          });
-          return {
-            bytes: Buffer.from(response.content, "base64"),
-            sha256: response.sha256,
-            executable: response.executable,
-          };
-        },
+      workspaceBrowser: {
+        listWorkspaceDirectory: (request, signal) =>
+          workspaceBrowserClient.listWorkspaceDirectory(request, signal),
+        readWorkspaceFile: (request, signal) =>
+          workspaceBrowserClient.readWorkspaceFile(request, signal),
       },
       maintenance: {
         onActivity: (activity) =>

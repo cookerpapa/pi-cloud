@@ -326,10 +326,10 @@ export class PostgresSubagentJobProvider {
           "parent_session.sandbox_profile_key as sandboxProfileKey",
           "parent_session.working_directory as workingDirectory",
           "parent_session.session_kind as sessionKind",
-          "parent_session.workspace_snapshot_key as workspaceSnapshotKey",
-          "parent_session.current_workspace_version_id as sessionWorkspaceVersionId",
+          "parent_session.workspace_settlement_key as workspaceSettlementKey",
+          "parent_session.current_workspace_settlement_id as sessionWorkspaceSettlementId",
           "parent_session.forked_from_session_id as forkedFromSessionId",
-          "parent_workspace.current_workspace_version_id as workspaceVersionId",
+          "parent_workspace.current_workspace_settlement_id as workspaceSettlementId",
           "parent_workspace.sandbox_domain_id as sandboxDomainId",
           "parent_turn.model_profile_id as turnModelProfileId",
           "parent_turn.input_text as parentPrompt",
@@ -486,12 +486,12 @@ export class PostgresSubagentJobProvider {
       const childRunId = this.#id();
       const childWorkspaceId = input.workspaceMode === "isolated" ? this.#id() : parent.workspaceId;
       const idempotencyKey = `subagent:${executionId}`;
-      const effectiveWorkspaceVersionId =
+      const effectiveWorkspaceSettlementId =
         input.workspaceMode === "isolated"
           ? null
           : parent.forkedFromSessionId === null
-            ? parent.workspaceVersionId
-            : parent.sessionWorkspaceVersionId;
+            ? parent.workspaceSettlementId
+            : parent.sessionWorkspaceSettlementId;
 
       if (input.workspaceMode === "isolated") {
         await transaction
@@ -533,9 +533,9 @@ export class PostgresSubagentJobProvider {
           working_directory: parent.workingDirectory,
           session_kind: "subagent",
           tool_capabilities: sql<unknown[]>`${JSON.stringify(tools)}::jsonb`,
-          workspace_snapshot_key:
-            input.workspaceMode === "isolated" ? null : parent.workspaceSnapshotKey,
-          current_workspace_version_id: effectiveWorkspaceVersionId,
+          workspace_settlement_key:
+            input.workspaceMode === "isolated" ? null : parent.workspaceSettlementKey,
+          current_workspace_settlement_id: effectiveWorkspaceSettlementId,
           forked_from_session_id: null,
           conversation_parent_session_id: null,
           conversation_fork_turn_id: null,
@@ -664,7 +664,7 @@ export class PostgresSubagentJobProvider {
           ),
           tool_capability_snapshot: sql<unknown[]>`${JSON.stringify(tools)}::jsonb`,
           conversation_base_seq: 0,
-          workspace_base_version_id: effectiveWorkspaceVersionId,
+          workspace_base_settlement_id: effectiveWorkspaceSettlementId,
           idempotency_key: idempotencyKey,
           state: "queued",
           current_attempt_id: null,

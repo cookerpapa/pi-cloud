@@ -9,7 +9,7 @@ Supervisor WebSocket transport.
 
 - exact-command Run and cancellation execution;
 - RunAttempt, lease, fence and terminal-state transitions;
-- compact Pi Session references, bounded Workspace revision/index objects and reads;
+- compact Pi Session references and lightweight Workspace settlements;
 - durable event ingestion and cross-replica notifications;
 - conversation projection and terminal-event construction;
 - model credential runtime metadata;

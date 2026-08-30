@@ -116,9 +116,9 @@ describe("Supervisor host production configuration", () => {
       managementAdvertisedBaseUrl: "http://supervisor-production-1:4100/",
       toolBrokerBaseUrls: ["http://tool-broker:4300/"],
       trustedWorkspaceDirectory: "/workspace",
-      checkpointReadCacheTtlMs: 600_000,
-      checkpointReadCacheMaximumEntries: 512,
-      checkpointReadCacheMaximumBytes: 32 * 1_024 * 1_024,
+      runtimeObjectCacheTtlMs: 600_000,
+      runtimeObjectCacheMaximumEntries: 512,
+      runtimeObjectCacheMaximumBytes: 32 * 1_024 * 1_024,
     });
   });
 

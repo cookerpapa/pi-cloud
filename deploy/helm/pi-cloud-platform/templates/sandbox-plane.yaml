@@ -53,7 +53,7 @@ spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       # Tool Broker may be awaiting the bounded 11-minute Volume gateway
-      # request during checkpoint settlement. Keep the Pod alive long enough
+      # request during Workspace settlement. Keep the Pod alive long enough
       # to finish or fail that operation explicitly.
       terminationGracePeriodSeconds: 720
       securityContext:
@@ -95,7 +95,7 @@ spec:
             - { name: PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES, value: {{ .Values.sandboxPlane.maximumActivePerReplica | quote }} }
             - { name: PI_CLOUD_MAXIMUM_WARM_SANDBOXES, value: {{ .Values.sandboxPlane.maximumWarmPerReplica | quote }} }
             - { name: PI_CLOUD_TOOL_BROKER_TOKEN_FILE, value: /run/pi-cloud-secrets/tool-broker-token }
-            - { name: PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE, value: /run/pi-cloud-secrets/sandbox-materializer-token }
+            - { name: PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-service-token }
             - { name: PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-terminal-token }
             - { name: PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE, value: /run/pi-cloud-secrets/cube-persistent-state-key }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL, value: http://workspace-volume-gateway:4500 }
@@ -128,7 +128,7 @@ spec:
           volumeMounts:
             - { name: secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: database-url, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/tool-broker-token, subPath: tool-broker-token, readOnly: true }
-            - { name: secrets, mountPath: /run/pi-cloud-secrets/sandbox-materializer-token, subPath: sandbox-materializer-token, readOnly: true }
+            - { name: secrets, mountPath: /run/pi-cloud-secrets/workspace-service-token, subPath: workspace-service-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/workspace-terminal-token, subPath: workspace-terminal-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/cube-persistent-state-key, subPath: cube-persistent-state-key, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/workspace-volume-gateway-token, subPath: workspace-volume-gateway-token, readOnly: true }

@@ -45,13 +45,13 @@ One tenant Workspace maps to one stable persistent Cube Volume. Only the
 `/workspace`; only the platform generation marker stays outside the guest view.
 User-managed `.git` directories remain inside `/workspace`. A hidden
 `.pi-cloud-home` stores the selected environment's Git credential helper and is
-excluded from source browsing/checkpoint catalogs while remaining readable to
+excluded from product source browsing while remaining readable to
 untrusted code in that environment.
 
 At a fenced settlement boundary, the trusted Volume gateway flushes the
-Workspace and records a bounded file/hash catalog revision. PostgreSQL advances
-the Workspace revision with compare-and-swap. This operation does not create a
-second archive of all Workspace bytes.
+Workspace and records only a provider settlement revision. PostgreSQL advances
+the Workspace settlement with compare-and-swap. No file-tree walk or second
+archive of Workspace bytes occurs.
 
 A disposable Cube activation may remain warm for one deployment-bounded TTL.
 Its processes, sockets and PTYs survive only while that exact activation

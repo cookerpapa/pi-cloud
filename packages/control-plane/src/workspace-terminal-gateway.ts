@@ -10,7 +10,7 @@ import {
   type WorkspaceTerminalOpenRequest,
   type DevelopmentEnvironmentTerminalOpenRequest,
 } from "@pi-cloud/protocol";
-import { createWorkspaceSnapshot, encodeWorkspaceSnapshotBlob } from "@pi-cloud/workspace-runtime";
+import { createWorkspaceSeed, encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Kysely } from "kysely";
 import { randomUUID } from "node:crypto";
@@ -417,7 +417,7 @@ export class WorkspaceTerminalGateway {
     // The persistent Cube Volume is the Workspace authority. This empty seed
     // is used only when that volume has never been initialized; an attached
     // volume ignores it.
-    const workspace = createWorkspaceSnapshot([]);
+    const workspace = createWorkspaceSeed([]);
     return {
       domainId: row.domainId,
       toolBrokerBaseUrl: row.toolBrokerBaseUrl,
@@ -441,7 +441,7 @@ export class WorkspaceTerminalGateway {
           recipe: row.environmentRecipe,
           recipeSha256: row.environmentRecipeSha256,
         }),
-        workspaceSeed: { kind: "snapshot", snapshot: encodeWorkspaceSnapshotBlob(workspace) },
+        workspaceSeed: { kind: "bundle", bundle: encodeWorkspaceBlob(workspace) },
         rows: 24,
         cols: 100,
       },

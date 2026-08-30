@@ -119,26 +119,26 @@ export {
 } from "./run-attempt-phase.ts";
 
 export {
-  decodeWorkspaceSnapshot,
-  encodeWorkspaceSnapshot,
-  validateLoadedCheckpoint,
-  type CapturedSandboxCheckpoint,
-  type CapturedEnvironmentSandboxCheckpoint,
+  decodeWorkspaceSettlement,
+  encodeWorkspaceSettlement,
+  validateLoadedWorkspaceSettlement,
+  type CapturedWorkspaceSettlement,
+  type CapturedEnvironmentWorkspaceSettlement,
   type CapturedToolOutput,
-  type LoadedSandboxCheckpoint,
-  type SandboxCheckpointStore,
-  type SavedSandboxCheckpoint,
+  type LoadedWorkspaceSettlement,
+  type WorkspaceSettlementStore,
+  type SavedWorkspaceSettlement,
   type SavedToolOutputArtifact,
-} from "./sandbox-checkpoint.ts";
+} from "./workspace-settlement.ts";
 
 export {
-  MAX_WORKSPACE_SNAPSHOT_FILES,
-  MAX_WORKSPACE_SNAPSHOT_FILE_BYTES,
-  MAX_WORKSPACE_SNAPSHOT_PATH_BYTES,
-  captureWorkspaceSnapshot,
-  restoreWorkspaceSnapshot,
-  validateWorkspaceSnapshot,
-} from "./workspace-snapshot.ts";
+  MAX_WORKSPACE_SEED_FILES,
+  MAX_WORKSPACE_SEED_FILE_BYTES,
+  MAX_WORKSPACE_SEED_PATH_BYTES,
+  captureWorkspaceSeed,
+  restoreWorkspaceSeed,
+  validateWorkspacePayload,
+} from "./workspace-seed.ts";
 
 export {
   SupervisorWebSocketClient,

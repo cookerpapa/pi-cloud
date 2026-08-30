@@ -829,7 +829,7 @@ export const RunStateSchema = Type.Union([
   Type.Literal("provisioning"),
   Type.Literal("restoring"),
   Type.Literal("running"),
-  Type.Literal("checkpointing"),
+  Type.Literal("settling"),
   Type.Literal("cancel_requested"),
   Type.Literal("completed"),
   Type.Literal("failed"),
@@ -843,7 +843,7 @@ export const RunAttemptStateSchema = Type.Union([
   Type.Literal("provisioning"),
   Type.Literal("restoring"),
   Type.Literal("running"),
-  Type.Literal("checkpointing"),
+  Type.Literal("settling"),
   Type.Literal("cancel_requested"),
   Type.Literal("completed"),
   Type.Literal("failed"),
@@ -881,13 +881,13 @@ export const RunAttemptResourceSchema = Type.Object(
     claimOwnerId: Type.String({ minLength: 1, maxLength: 256 }),
     claimExpiresAt: UtcTimestampSchema,
     sandboxId: Type.Optional(UuidSchema),
-    checkpointRevision: Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })),
+    settlementRevision: Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })),
     failure: Type.Optional(RunFailureResourceSchema),
     claimedAt: UtcTimestampSchema,
     provisioningAt: Type.Optional(UtcTimestampSchema),
     restoringAt: Type.Optional(UtcTimestampSchema),
     runningAt: Type.Optional(UtcTimestampSchema),
-    checkpointingAt: Type.Optional(UtcTimestampSchema),
+    settlingAt: Type.Optional(UtcTimestampSchema),
     lastHeartbeatAt: Type.Optional(UtcTimestampSchema),
     settledAt: Type.Optional(UtcTimestampSchema),
     transitions: Type.Array(RunAttemptTransitionResourceSchema, { maxItems: 128 }),
@@ -918,63 +918,24 @@ export const RunResourceSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const WorkspaceVersionResourceSchema = Type.Object(
+export const WorkspaceDirectoryEntryResourceSchema = Type.Object(
   {
-    versionId: UuidSchema,
-    workspaceId: UuidSchema,
-    sessionId: UuidSchema,
-    versionNumber: PositiveSafeIntegerSchema,
-    parentVersionId: Type.Optional(UuidSchema),
-    sourceVersionId: Type.Optional(UuidSchema),
-    origin: Type.Union([
-      Type.Literal("checkpoint"),
-      Type.Literal("fork"),
-      Type.Literal("migration"),
-      Type.Literal("promotion"),
-    ]),
-    runId: Type.Optional(UuidSchema),
-    attemptId: Type.Optional(UuidSchema),
-    turnId: Type.Optional(UuidSchema),
-    revision: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-    fileCount: NonNegativeSafeIntegerSchema,
-    createdAt: UtcTimestampSchema,
-    settledAt: UtcTimestampSchema,
-  },
-  { additionalProperties: false },
-);
-
-export const WorkspaceVersionListResourceSchema = Type.Object(
-  {
-    sessionId: UuidSchema,
-    currentVersionId: Type.Optional(UuidSchema),
-    archived: Type.Boolean(),
-    versions: Type.Array(WorkspaceVersionResourceSchema, { maxItems: 100 }),
-    truncated: Type.Boolean(),
-  },
-  { additionalProperties: false },
-);
-
-export const WorkspaceFileResourceSchema = Type.Object(
-  {
+    name: Type.String({ minLength: 1, maxLength: 255 }),
     path: Type.String({ minLength: 1, maxLength: 512 }),
-    executable: Type.Boolean(),
-    sizeBytes: NonNegativeSafeIntegerSchema,
-    sha256: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    kind: Type.Union([Type.Literal("directory"), Type.Literal("file"), Type.Literal("symlink")]),
+    sizeBytes: Type.Optional(NonNegativeSafeIntegerSchema),
+    executable: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
 
-export const WorkspaceFileCursorSchema = Type.String({
-  minLength: 1,
-  maxLength: 512,
-});
-
-export const WorkspaceFileListResourceSchema = Type.Object(
+export const WorkspaceDirectoryResourceSchema = Type.Object(
   {
-    versionId: UuidSchema,
-    files: Type.Array(WorkspaceFileResourceSchema, { maxItems: 512 }),
+    sessionId: UuidSchema,
+    workspaceId: UuidSchema,
+    path: Type.String({ minLength: 0, maxLength: 512 }),
+    entries: Type.Array(WorkspaceDirectoryEntryResourceSchema, { maxItems: 4_096 }),
     truncated: Type.Boolean(),
-    nextCursor: Type.Optional(WorkspaceFileCursorSchema),
   },
   { additionalProperties: false },
 );
@@ -984,7 +945,7 @@ export const WorkspaceOperationResourceSchema = Type.Object(
     operationId: UuidSchema,
     kind: Type.Union([Type.Literal("archive"), Type.Literal("unarchive")]),
     sessionId: UuidSchema,
-    versionId: Type.Optional(UuidSchema),
+    settlementId: Type.Optional(UuidSchema),
     replayed: Type.Boolean(),
     createdAt: UtcTimestampSchema,
   },
@@ -1134,10 +1095,8 @@ export type RunAttemptState = Static<typeof RunAttemptStateSchema>;
 export type RunAttemptTransitionResource = Static<typeof RunAttemptTransitionResourceSchema>;
 export type RunAttemptResource = Static<typeof RunAttemptResourceSchema>;
 export type RunResource = Static<typeof RunResourceSchema>;
-export type WorkspaceVersionResource = Static<typeof WorkspaceVersionResourceSchema>;
-export type WorkspaceVersionListResource = Static<typeof WorkspaceVersionListResourceSchema>;
-export type WorkspaceFileResource = Static<typeof WorkspaceFileResourceSchema>;
-export type WorkspaceFileListResource = Static<typeof WorkspaceFileListResourceSchema>;
+export type WorkspaceDirectoryEntryResource = Static<typeof WorkspaceDirectoryEntryResourceSchema>;
+export type WorkspaceDirectoryResource = Static<typeof WorkspaceDirectoryResourceSchema>;
 export type WorkspaceOperationResource = Static<typeof WorkspaceOperationResourceSchema>;
 export type CreateTurnCancellationRequest = Static<typeof CreateTurnCancellationRequestSchema>;
 export type AcceptedTurnCancellationResource = Static<
@@ -1505,17 +1464,8 @@ export function parseRunResource(value: unknown): RunResource {
   return parseSchema(RunResourceSchema, value, "run resource");
 }
 
-export function parseWorkspaceVersionListResource(value: unknown): WorkspaceVersionListResource {
-  return parseSchema(WorkspaceVersionListResourceSchema, value, "workspace-version-list resource");
-}
-
-export function parseWorkspaceFileListResource(value: unknown): WorkspaceFileListResource {
-  return parseSchema(WorkspaceFileListResourceSchema, value, "workspace-file-list resource");
-}
-
-export function parseWorkspaceFileCursor(value: unknown): string | undefined {
-  if (value === undefined) return undefined;
-  return parseSchema(WorkspaceFileCursorSchema, value, "workspace-file cursor");
+export function parseWorkspaceDirectoryResource(value: unknown): WorkspaceDirectoryResource {
+  return parseSchema(WorkspaceDirectoryResourceSchema, value, "Workspace directory resource");
 }
 
 export function parseWorkspaceOperationResource(value: unknown): WorkspaceOperationResource {

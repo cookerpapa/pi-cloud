@@ -15,8 +15,10 @@ import type {
   ToolSandboxOperationResponse,
   ToolSandboxReleaseRequest,
   ToolSandboxReleaseResponse,
-  ToolBrokerMaterializeFileRequest,
-  ToolBrokerMaterializeFileResponse,
+  ToolBrokerListWorkspaceDirectoryRequest,
+  ToolBrokerListWorkspaceDirectoryResponse,
+  ToolBrokerReadWorkspaceFileRequest,
+  ToolBrokerReadWorkspaceFileResponse,
   ToolBrokerWorkspaceForkRequest,
   ToolBrokerWorkspaceForkResponse,
   CloudToolName,
@@ -1214,7 +1216,7 @@ export class ToolBroker {
           );
         }
         if (active.handle !== undefined && active.materializedForCurrentAssignment) {
-          await this.#provider.snapshot(active.handle, request.requestId);
+          await this.#provider.settle(active.handle, request.requestId);
           active.materializedForCurrentAssignment = false;
         }
         delegatedParent = active;
@@ -1332,9 +1334,9 @@ export class ToolBroker {
       assignment: request.assignment,
       environment: request.environment,
       workspaceSeed: request.workspaceSeed,
-      ...(request.workspaceRestore === undefined
+      ...(request.workspaceSettlement === undefined
         ? {}
-        : { workspaceRestore: request.workspaceRestore }),
+        : { workspaceSettlement: request.workspaceSettlement }),
       policy: this.#provider.defaultPolicy,
       toolRoot: request.toolRoot,
       sandboxProfileKey: request.sandboxProfileKey,
@@ -1589,7 +1591,7 @@ export class ToolBroker {
         activationId,
       };
     }
-    return this.#provider.snapshot(await this.#materialize(activationId, activation), requestId);
+    return this.#provider.settle(await this.#materialize(activationId, activation), requestId);
   }
 
   async forkWorkspace(
@@ -1626,8 +1628,8 @@ export class ToolBroker {
         requestId: request.requestId,
         sourceActivationId: request.sourceActivationId,
         targetWorkspaceId: request.target.workspaceId,
-        sourceRevision: forked.sourceRevision,
-        targetRevision: forked.targetRevision,
+        sourceSettlementRevision: forked.sourceSettlementRevision,
+        targetSettlementRevision: forked.targetSettlementRevision,
       };
     } finally {
       activation.exclusiveOperation = false;
@@ -2007,22 +2009,31 @@ export class ToolBroker {
     await this.#provider.confirmAbsent(assignment);
   }
 
-  async materializeFile(
-    request: ToolBrokerMaterializeFileRequest,
-    signal?: AbortSignal,
-  ): Promise<ToolBrokerMaterializeFileResponse> {
-    if (this.#provider.materializeFile === undefined) {
+  async listWorkspaceDirectory(
+    request: ToolBrokerListWorkspaceDirectoryRequest,
+  ): Promise<ToolBrokerListWorkspaceDirectoryResponse> {
+    if (this.#provider.listWorkspaceDirectory === undefined) {
       throw new ToolBrokerError(
-        "snapshot_materializer_unavailable",
-        "The configured Sandbox Provider cannot materialize immutable Workspace files",
+        "workspace_browser_unavailable",
+        "The configured Sandbox Provider cannot list Workspace directories",
         false,
       );
     }
-    // Current Workspace snapshots are persistent-Volume references. Reading
-    // one file is a trusted Volume Gateway operation and must not wait for or
-    // consume a Cube KVM admission slot. The provider still validates tenant,
-    // Workspace, revision, path and content hash before returning bytes.
-    return this.#provider.materializeFile(request, signal);
+    return this.#provider.listWorkspaceDirectory(request);
+  }
+
+  async readWorkspaceFile(
+    request: ToolBrokerReadWorkspaceFileRequest,
+    signal?: AbortSignal,
+  ): Promise<ToolBrokerReadWorkspaceFileResponse> {
+    if (this.#provider.readWorkspaceFile === undefined) {
+      throw new ToolBrokerError(
+        "workspace_browser_unavailable",
+        "The configured Sandbox Provider cannot read Workspace files",
+        false,
+      );
+    }
+    return this.#provider.readWorkspaceFile(request, signal);
   }
 
   async authorizeSourceCredential(
@@ -2272,7 +2283,7 @@ export class ToolBroker {
         if (handle !== undefined) {
           try {
             if (activation.developmentEnvironmentId !== undefined) {
-              await this.#provider.snapshot(handle, this.#idGenerator());
+              await this.#provider.settle(handle, this.#idGenerator());
             }
             handle = await this.#provider.rebind(
               handle,

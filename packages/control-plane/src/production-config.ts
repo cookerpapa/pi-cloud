@@ -23,7 +23,7 @@ export type ProductionControlPlaneConfig = {
   modelCredentialMasterKey: string;
   cubeEgressConfigToken: string;
   toolBrokerBaseUrls: readonly string[];
-  sandboxMaterializerToken: string;
+  workspaceServiceToken: string;
   workspaceTerminalToken: string;
   previewPublicOriginBaseUrl: string;
   sshGatewayEnabled: boolean;
@@ -496,9 +496,9 @@ export async function loadProductionControlPlaneConfig(
       required(environment, "PI_CLOUD_TOOL_BROKER_URLS"),
       allowInsecureInternalHttp,
     ),
-    sandboxMaterializerToken: await secret(
+    workspaceServiceToken: await secret(
       environment,
-      "PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN",
+      "PI_CLOUD_WORKSPACE_SERVICE_TOKEN",
       allowInlineSecrets,
     ),
     workspaceTerminalToken: await secret(

@@ -18,7 +18,7 @@ import {
   type ToolSandboxOperationResponse,
   type ToolWebProxyBootstrap,
 } from "@pi-cloud/protocol";
-import { decodeWorkspaceSnapshotBlob, restoreWorkspaceSnapshot } from "@pi-cloud/workspace-runtime";
+import { decodeWorkspaceBlob, restoreWorkspaceSeed } from "@pi-cloud/workspace-runtime";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
@@ -1155,8 +1155,8 @@ export function toolOperationFailure(
 }
 
 export async function prepareToolWorkspace(
-  workspaceSeed: Parameters<typeof decodeWorkspaceSnapshotBlob>[0] | undefined,
-  workspaceRestore: Parameters<typeof decodeWorkspaceSnapshotBlob>[0] | undefined,
+  workspaceSeed: Parameters<typeof decodeWorkspaceBlob>[0] | undefined,
+  workspaceSettlement: Parameters<typeof decodeWorkspaceBlob>[0] | undefined,
 ): Promise<void> {
   const existing = await readdir(TOOL_WORKSPACE_DIRECTORY);
   if (existing.length !== 0) {
@@ -1170,16 +1170,10 @@ export async function prepareToolWorkspace(
       });
     }
   } else {
-    await restoreWorkspaceSnapshot(
-      TOOL_WORKSPACE_DIRECTORY,
-      decodeWorkspaceSnapshotBlob(workspaceSeed),
-    );
+    await restoreWorkspaceSeed(TOOL_WORKSPACE_DIRECTORY, decodeWorkspaceBlob(workspaceSeed));
   }
-  if (workspaceRestore !== undefined) {
-    await restoreWorkspaceSnapshot(
-      TOOL_WORKSPACE_DIRECTORY,
-      decodeWorkspaceSnapshotBlob(workspaceRestore),
-    );
+  if (workspaceSettlement !== undefined) {
+    await restoreWorkspaceSeed(TOOL_WORKSPACE_DIRECTORY, decodeWorkspaceBlob(workspaceSettlement));
   }
 }
 
@@ -1190,9 +1184,8 @@ export async function initializeToolExecution(
   safeToolEnvironment(undefined, message.webProxy);
   const environment = await validateToolEnvironment(message.environment);
   if (message.workspaceAttach === undefined) {
-    const seed =
-      message.workspaceSeed.kind === "snapshot" ? message.workspaceSeed.snapshot : undefined;
-    await prepareToolWorkspace(seed, message.workspaceRestore);
+    const seed = message.workspaceSeed.kind === "bundle" ? message.workspaceSeed.bundle : undefined;
+    await prepareToolWorkspace(seed, message.workspaceSettlement);
     const recipeWebProxy = dependencyRecipeWebProxy(message.environment, message.webProxy);
     environment.recipeCommands = await executeEnvironmentRecipe(
       message.environment,
@@ -1240,7 +1233,7 @@ function validateAttachedInitialization(
 ): Promise<void> {
   if (
     message.workspaceAttach === undefined ||
-    message.workspaceRestore !== undefined ||
+    message.workspaceSettlement !== undefined ||
     message.dependencyProxy !== undefined ||
     message.environmentStage !== undefined
   ) {

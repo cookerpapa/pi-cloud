@@ -172,12 +172,12 @@ spec:
               value: /workspace
             - name: PI_CLOUD_BOOT_STATE_DIRECTORY
               value: /var/lib/pi-cloud/boot
-            - name: PI_CLOUD_CHECKPOINT_READ_CACHE_TTL_MS
-              value: {{ .Values.runtime.checkpointCache.ttlMs | quote }}
-            - name: PI_CLOUD_CHECKPOINT_READ_CACHE_MAXIMUM_ENTRIES
-              value: {{ .Values.runtime.checkpointCache.maximumEntries | quote }}
-            - name: PI_CLOUD_CHECKPOINT_READ_CACHE_MAXIMUM_BYTES
-              value: {{ .Values.runtime.checkpointCache.maximumBytes | quote }}
+            - name: PI_CLOUD_RUNTIME_OBJECT_CACHE_TTL_MS
+              value: {{ .Values.runtime.runtimeObjectCache.ttlMs | quote }}
+            - name: PI_CLOUD_RUNTIME_OBJECT_CACHE_MAXIMUM_ENTRIES
+              value: {{ .Values.runtime.runtimeObjectCache.maximumEntries | quote }}
+            - name: PI_CLOUD_RUNTIME_OBJECT_CACHE_MAXIMUM_BYTES
+              value: {{ .Values.runtime.runtimeObjectCache.maximumBytes | quote }}
             - name: PI_CLOUD_MODEL_GATEWAY_HOST
               value: 127.0.0.1
             - name: PI_CLOUD_MODEL_GATEWAY_PORT

@@ -18,14 +18,13 @@ import {
   parseSessionResource,
   parseTenantIdentityResource,
   parseTenantRegistrationResource,
-  parseWorkspaceFileListResource,
+  parseWorkspaceDirectoryResource,
   parseWorkspaceDeletionResource,
   parseDevelopmentEnvironmentListResource,
   parseDevelopmentEnvironmentResource,
   parseDevelopmentEnvironmentDirectoryResource,
   parseWorkspaceListResource,
   parseWorkspaceOperationResource,
-  parseWorkspaceVersionListResource,
   parseConversationWorkspaceBindingResource,
   parseSshAccessTicketResource,
   parseSourceControlIssueJobListResource,
@@ -54,7 +53,7 @@ import {
   type TenantIdentityResource,
   type TenantRegistrationResource,
   type TurnThinkingLevel,
-  type WorkspaceFileListResource,
+  type WorkspaceDirectoryResource,
   type WorkspaceDeletionResource,
   type DevelopmentEnvironmentAction,
   type DevelopmentEnvironmentListResource,
@@ -63,7 +62,6 @@ import {
   type WorkspaceListResource,
   type WorkspaceOperationResource,
   type WorkspaceSourceRequest,
-  type WorkspaceVersionListResource,
   type ConversationWorkspaceBindingResource,
   type SshAccessTicketResource,
   type SourceControlIssueJobListResource,
@@ -593,23 +591,12 @@ export class PiCloudApi {
     );
   }
 
-  async listWorkspaceVersions(sessionId: string): Promise<WorkspaceVersionListResource> {
-    return parseWorkspaceVersionListResource(
+  async listWorkspaceDirectory(sessionId: string, path = ""): Promise<WorkspaceDirectoryResource> {
+    const query = path.length === 0 ? "" : `?path=${encodeURIComponent(path)}`;
+    return parseWorkspaceDirectoryResource(
       await request(
         this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/workspace-versions`,
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async listWorkspaceFiles(versionId: string, cursor?: string): Promise<WorkspaceFileListResource> {
-    const query = cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`;
-    return parseWorkspaceFileListResource(
-      await request(
-        this.#fetch,
-        `/v1/workspace-versions/${encodeURIComponent(versionId)}/files${query}`,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/workspace/directory${query}`,
         { method: "GET" },
         this.#authorizationToken,
       ),
@@ -617,12 +604,12 @@ export class PiCloudApi {
   }
 
   readWorkspaceFile(
-    versionId: string,
+    sessionId: string,
     path: string,
   ): Promise<{ bytes: Uint8Array; contentType: string }> {
     return requestBytes(
       this.#fetch,
-      `/v1/workspace-versions/${encodeURIComponent(versionId)}/file?path=${encodeURIComponent(path)}`,
+      `/v1/sessions/${encodeURIComponent(sessionId)}/workspace/file?path=${encodeURIComponent(path)}`,
       this.#authorizationToken,
     );
   }

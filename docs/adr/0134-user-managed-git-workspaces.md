@@ -33,10 +33,10 @@ PiCloud removes:
 - platform post-Run commit and push behavior;
 - isolated-Subagent Patch extraction.
 
-The persistent Cube Volume remains the Workspace byte authority. Its bounded
-file/hash catalog exists only to support checkpoint identity and the source
-browser; it is not compared into a user-visible change set. Root `.git` is
-preserved in the Volume but omitted from that catalog and browser listing.
+The persistent Cube Volume remains the Workspace byte authority. Run settlement
+records only the provider Volume revision; source browsing lists and reads the
+live Volume without building a catalog. Root `.git` is preserved in the Volume
+but omitted from the product browser.
 
 PiCloud never bootstraps a repository. A selected environment must pass a
 credential preflight; the Agent then performs ordinary `git clone` and branch

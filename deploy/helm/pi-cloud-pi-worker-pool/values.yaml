@@ -59,7 +59,7 @@ runtime:
     maximumDepth: 4
     maximumNodes: 32
     maximumConcurrent: 3
-  checkpointCache:
+  runtimeObjectCache:
     ttlMs: 600000
     maximumEntries: 512
     maximumBytes: 33554432

@@ -2,17 +2,17 @@ import type { Database } from "@pi-cloud/database";
 import { createHash } from "node:crypto";
 import type { Kysely } from "kysely";
 import {
-  MAX_CHECKPOINT_OBJECT_BYTES,
-  SandboxCheckpointStoreError,
-  validateCheckpointObjectKey,
-  type CheckpointObjectStore,
-} from "./checkpoint-store.ts";
+  MAX_RUNTIME_OBJECT_BYTES,
+  WorkspaceSettlementStoreError,
+  validateRuntimeObjectKey,
+  type RuntimeObjectStore,
+} from "./workspace-settlement-store.ts";
 
 /**
  * Small immutable Agent artifacts live beside their transactional metadata.
  * Workspace bytes are deliberately excluded: Cube persistent volumes own them.
  */
-export class PostgresCheckpointObjectStore implements CheckpointObjectStore {
+export class PostgresRuntimeObjectStore implements RuntimeObjectStore {
   readonly #database: Kysely<Database>;
 
   constructor(database: Kysely<Database>) {
@@ -20,17 +20,17 @@ export class PostgresCheckpointObjectStore implements CheckpointObjectStore {
   }
 
   async put(objectKey: string, bytes: Uint8Array): Promise<void> {
-    const key = validateCheckpointObjectKey(objectKey);
-    if (bytes.byteLength < 1 || bytes.byteLength > MAX_CHECKPOINT_OBJECT_BYTES) {
-      throw new SandboxCheckpointStoreError(
-        "checkpoint_object_invalid",
-        "Checkpoint object is outside its byte limit",
+    const key = validateRuntimeObjectKey(objectKey);
+    if (bytes.byteLength < 1 || bytes.byteLength > MAX_RUNTIME_OBJECT_BYTES) {
+      throw new WorkspaceSettlementStoreError(
+        "runtime_object_invalid",
+        "Runtime object is outside its byte limit",
         false,
       );
     }
     const digest = createHash("sha256").update(bytes).digest("hex");
     await this.#database
-      .insertInto("checkpoint_objects")
+      .insertInto("runtime_objects")
       .values({
         object_key: key,
         bytes: Buffer.from(bytes),
@@ -40,14 +40,14 @@ export class PostgresCheckpointObjectStore implements CheckpointObjectStore {
       .onConflict((conflict) => conflict.column("object_key").doNothing())
       .executeTakeFirst();
     const stored = await this.#database
-      .selectFrom("checkpoint_objects")
+      .selectFrom("runtime_objects")
       .select(["sha256", "size_bytes"])
       .where("object_key", "=", key)
       .executeTakeFirstOrThrow();
     if (stored.sha256 !== digest || Number(stored.size_bytes) !== bytes.byteLength) {
-      throw new SandboxCheckpointStoreError(
-        "checkpoint_object_conflict",
-        "Checkpoint object key already contains different bytes",
+      throw new WorkspaceSettlementStoreError(
+        "runtime_object_conflict",
+        "Runtime object key already contains different bytes",
         false,
       );
     }
@@ -55,14 +55,14 @@ export class PostgresCheckpointObjectStore implements CheckpointObjectStore {
 
   async get(objectKey: string): Promise<Uint8Array> {
     const row = await this.#database
-      .selectFrom("checkpoint_objects")
+      .selectFrom("runtime_objects")
       .select(["bytes", "sha256", "size_bytes"])
-      .where("object_key", "=", validateCheckpointObjectKey(objectKey))
+      .where("object_key", "=", validateRuntimeObjectKey(objectKey))
       .executeTakeFirst();
     if (row === undefined) {
-      throw new SandboxCheckpointStoreError(
-        "checkpoint_object_not_found",
-        "Checkpoint object was not found",
+      throw new WorkspaceSettlementStoreError(
+        "runtime_object_not_found",
+        "Runtime object was not found",
         false,
       );
     }
@@ -70,13 +70,13 @@ export class PostgresCheckpointObjectStore implements CheckpointObjectStore {
     const digest = createHash("sha256").update(bytes).digest("hex");
     if (
       bytes.byteLength < 1 ||
-      bytes.byteLength > MAX_CHECKPOINT_OBJECT_BYTES ||
+      bytes.byteLength > MAX_RUNTIME_OBJECT_BYTES ||
       Number(row.size_bytes) !== bytes.byteLength ||
       row.sha256 !== digest
     ) {
-      throw new SandboxCheckpointStoreError(
-        "checkpoint_object_invalid",
-        "Checkpoint object failed its integrity check",
+      throw new WorkspaceSettlementStoreError(
+        "runtime_object_invalid",
+        "Runtime object failed its integrity check",
         false,
       );
     }
@@ -85,13 +85,13 @@ export class PostgresCheckpointObjectStore implements CheckpointObjectStore {
 
   async delete(objectKey: string): Promise<void> {
     await this.#database
-      .deleteFrom("checkpoint_objects")
-      .where("object_key", "=", validateCheckpointObjectKey(objectKey))
+      .deleteFrom("runtime_objects")
+      .where("object_key", "=", validateRuntimeObjectKey(objectKey))
       .execute();
   }
 
   async checkHealth(): Promise<void> {
-    await this.#database.selectFrom("checkpoint_objects").select("object_key").limit(1).execute();
+    await this.#database.selectFrom("runtime_objects").select("object_key").limit(1).execute();
   }
 
   destroy(): void {

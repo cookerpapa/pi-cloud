@@ -1,14 +1,17 @@
 import {
   parseInternalServiceError,
-  parseToolBrokerMaterializeFileResponse,
+  parseToolBrokerListWorkspaceDirectoryResponse,
+  parseToolBrokerReadWorkspaceFileResponse,
   parseToolBrokerResponse,
   parseSupervisorManagementResponse,
   parseToolSandboxOperationResponse,
   parseSourceControlWorkspaceCredentialResponse,
   type ToolBrokerRequest,
   type ToolBrokerResponse,
-  type ToolBrokerMaterializeFileRequest,
-  type ToolBrokerMaterializeFileResponse,
+  type ToolBrokerListWorkspaceDirectoryRequest,
+  type ToolBrokerListWorkspaceDirectoryResponse,
+  type ToolBrokerReadWorkspaceFileRequest,
+  type ToolBrokerReadWorkspaceFileResponse,
   type ToolBrokerWorkspaceForkRequest,
   type ToolBrokerWorkspaceForkResponse,
   type SupervisorManagementRequest,
@@ -31,7 +34,7 @@ import { randomUUID } from "node:crypto";
 export const TOOL_BROKER_SERVICE_PATH = "/internal/v1/tool-broker";
 export const TOOL_BROKER_OPERATION_PATH = "/internal/v1/tool-operation";
 export const TOOL_BROKER_INVENTORY_PATH = "/internal/v1/sandbox-inventory";
-export const TOOL_BROKER_MATERIALIZER_PATH = "/internal/v1/workspace-materializer";
+export const TOOL_BROKER_WORKSPACE_BROWSER_PATH = "/internal/v1/workspace-browser";
 export const TOOL_BROKER_SOURCE_CONTROL_PATH = "/internal/v1/source-control";
 export const TOOL_BROKER_LIVE_PATH = "/health/live";
 export const TOOL_BROKER_READY_PATH = "/health/ready";
@@ -317,12 +320,12 @@ export class ToolBrokerClient {
     return response;
   }
 
-  async materializeFile(
-    request: ToolBrokerMaterializeFileRequest,
+  async listWorkspaceDirectory(
+    request: ToolBrokerListWorkspaceDirectoryRequest,
     signal?: AbortSignal,
-  ): Promise<ToolBrokerMaterializeFileResponse> {
-    const response = parseToolBrokerMaterializeFileResponse(
-      await this.#post(TOOL_BROKER_MATERIALIZER_PATH, this.#serviceToken, request, signal),
+  ): Promise<ToolBrokerListWorkspaceDirectoryResponse> {
+    const response = parseToolBrokerListWorkspaceDirectoryResponse(
+      await this.#post(TOOL_BROKER_WORKSPACE_BROWSER_PATH, this.#serviceToken, request, signal),
     );
     if (
       response.requestId !== request.requestId ||
@@ -332,7 +335,29 @@ export class ToolBrokerClient {
     ) {
       throw new ToolBrokerClientError(
         "tool_broker_protocol_error",
-        "Workspace materialization response identity did not match",
+        "Workspace directory response identity did not match",
+        false,
+      );
+    }
+    return response;
+  }
+
+  async readWorkspaceFile(
+    request: ToolBrokerReadWorkspaceFileRequest,
+    signal?: AbortSignal,
+  ): Promise<ToolBrokerReadWorkspaceFileResponse> {
+    const response = parseToolBrokerReadWorkspaceFileResponse(
+      await this.#post(TOOL_BROKER_WORKSPACE_BROWSER_PATH, this.#serviceToken, request, signal),
+    );
+    if (
+      response.requestId !== request.requestId ||
+      response.tenantId !== request.tenantId ||
+      response.workspaceId !== request.workspaceId ||
+      response.path !== request.path
+    ) {
+      throw new ToolBrokerClientError(
+        "tool_broker_protocol_error",
+        "Workspace file response identity did not match",
         false,
       );
     }
@@ -595,11 +620,18 @@ export class ReplicatedToolBrokerClient {
     return this.#ownedClient(request.sourceActivationId).forkWorkspace(request);
   }
 
-  materializeFile(
-    request: ToolBrokerMaterializeFileRequest,
+  listWorkspaceDirectory(
+    request: ToolBrokerListWorkspaceDirectoryRequest,
     signal?: AbortSignal,
-  ): Promise<ToolBrokerMaterializeFileResponse> {
-    return this.#nextReplica().materializeFile(request, signal);
+  ): Promise<ToolBrokerListWorkspaceDirectoryResponse> {
+    return this.#nextReplica().listWorkspaceDirectory(request, signal);
+  }
+
+  readWorkspaceFile(
+    request: ToolBrokerReadWorkspaceFileRequest,
+    signal?: AbortSignal,
+  ): Promise<ToolBrokerReadWorkspaceFileResponse> {
+    return this.#nextReplica().readWorkspaceFile(request, signal);
   }
 
   authorizeSourceCredential(

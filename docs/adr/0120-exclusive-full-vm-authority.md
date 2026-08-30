@@ -10,7 +10,7 @@ PiCloud originally presented an exclusive Cube as a persistent development
 environment while treating only the separately mounted `/workspace` Volume as
 durable. That contract preserved project files across Cube replacement but lost
 guest-root filesystem changes, installed system packages and processes. It also
-made the directory chooser infer folders from a Session's Workspace file index
+made the directory chooser browse the attached Volume one directory at a time
 instead of reading the live machine. Deleting the last Session therefore made
 an otherwise live environment appear empty.
 

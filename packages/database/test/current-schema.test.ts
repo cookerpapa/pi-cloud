@@ -48,6 +48,8 @@ describe("current PiCloud schema", () => {
         "oidc_authentication_requests",
         "source_control_issue_claims",
         "workspace_git_oauth_requests",
+        "workspace_settlements",
+        "runtime_objects",
       ]) {
         expect(names.has(required), `missing current table ${required}`).toBe(true);
       }
@@ -62,6 +64,8 @@ describe("current PiCloud schema", () => {
         "agent_nodes",
         "test_results",
         "commands",
+        "workspace_versions",
+        "checkpoint_objects",
       ]) {
         expect(names.has(retired), `retired table ${retired} survived`).toBe(false);
       }
@@ -103,14 +107,14 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("111_workspace_git_oauth_requests");
+      expect(applied.rows.at(-1)?.name).toBe("112_live_workspace_settlement");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name
           from information_schema.columns
          where table_schema = 'public'
            and (
-             (table_name = 'workspace_versions' and column_name = 'patch_artifact_id')
+             (table_name = 'workspace_settlements' and column_name = 'patch_artifact_id')
              or (table_name = 'source_control_issue_jobs' and column_name in (
                'commit_sha', 'change_request_number', 'change_request_url', 'issue_comment_id'
              ))

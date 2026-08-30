@@ -134,7 +134,7 @@ async function seed(database: Kysely<Database>, toolBrokerBaseUrl: string): Prom
       workspace_id: IDS.workspace,
       desired_model_profile_id: IDS.profile,
       state: "idle",
-      workspace_snapshot_key: null,
+      workspace_settlement_key: null,
     })
     .execute();
   await database
@@ -261,7 +261,7 @@ describe("WorkspaceTerminalGateway", () => {
       projectId: IDS.project,
       workspaceId: IDS.workspace,
       sessionId: IDS.session,
-      workspaceSeed: { kind: "snapshot" },
+      workspaceSeed: { kind: "bundle" },
     });
     browser.send(
       JSON.stringify({

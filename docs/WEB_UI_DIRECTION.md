@@ -128,9 +128,9 @@ credentials never enter browser-visible contracts.
 
 ## Implemented Workspace directory
 
-The responsive right side is a directory view of the current committed
-`/workspace`, not an operations dashboard. It loads only Workspace versions,
-files and the selected file body. Operational Runs, usage and environment
+The responsive right side is a live directory view of the current
+`/workspace`, not an operations dashboard. It lists only the directory a user
+expands and reads only the selected file body. Operational Runs, usage and environment
 diagnostics remain in telemetry/admin APIs, so a denied unrelated request
 cannot blank or repeatedly reload the directory.
 

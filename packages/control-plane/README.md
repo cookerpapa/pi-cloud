@@ -9,11 +9,11 @@ PiCloud.
 - Projects, named Workspaces and named conversations;
 - Run/Attempt admission, idempotency and Session ordering;
 - leases, fencing tokens, heartbeats and terminal commit;
-- canonical Pi Session persistence and resumable SSE cursors;
-- bounded Workspace revision/index references;
+- canonical Pi Session persistence and replacement-snapshot SSE reconnects;
+- lightweight Workspace settlements and live directory/file browsing;
 - PostgreSQL-backed Run queue publication and cancellation;
 - model/proxy configuration and usage;
-- tenant-scoped file/version APIs.
+- tenant-scoped live Workspace browser APIs.
 
 It does not execute user commands and does not control Cube directly.
 
@@ -36,9 +36,8 @@ POST   /v1/sessions/:sessionId/turns
 POST   /v1/sessions/:sessionId/turns/:turnId/cancellation
 GET    /v1/sessions/:sessionId/events
 
-GET    /v1/sessions/:sessionId/workspace-versions
-GET    /v1/workspace-versions/:versionId/files
-GET    /v1/workspace-versions/:versionId/file
+GET    /v1/sessions/:sessionId/workspace/directory
+GET    /v1/sessions/:sessionId/workspace/file
 ```
 
 Mutations use tenant authorization and idempotency keys where they can produce

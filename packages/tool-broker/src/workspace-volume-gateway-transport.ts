@@ -1,9 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
-import {
-  validateWorkspaceFileList,
-  type WorkspaceSnapshotFileMetadata,
-} from "@pi-cloud/workspace-runtime";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import PQueue from "p-queue";
 import { fetch } from "undici";
@@ -12,21 +8,24 @@ import {
   MAXIMUM_RESPONSE_BYTES,
   TOKEN_PATTERN,
   WORKSPACE_VOLUME_GATEWAY_FORK_PATH,
-  WORKSPACE_VOLUME_GATEWAY_MATERIALIZE_PATH,
+  WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH,
+  WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH,
   WORKSPACE_VOLUME_GATEWAY_DELETE_PATH,
   WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH,
-  WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH,
+  WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_PREFLIGHT_PATH,
   WorkspaceVolumeGatewayError,
   digest,
   isRecord,
   type WorkspaceVolumeGateway,
-  type WorkspaceVolumeGatewayMaterializeInput,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayForkInput,
+  type WorkspaceVolumeGatewayPathInput,
   type WorkspaceVolumeGatewayPrepareInput,
-  type WorkspaceVolumeGatewaySnapshotInput,
+  type WorkspaceVolumeGatewayReadFileInput,
+  type WorkspaceVolumeGatewaySettleInput,
+  type WorkspaceVolumeDirectoryEntry,
   type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
   type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
 } from "./workspace-volume-gateway-contract.ts";
@@ -44,9 +43,10 @@ export type WorkspaceVolumeGatewayServerOptions = Readonly<{
 
 type WorkspaceVolumeGatewayOperation =
   | "prepare"
-  | "snapshot"
+  | "settle"
   | "fork"
-  | "materialize"
+  | "list_directory"
+  | "read_file"
   | "delete"
   | "source_credential_authorize"
   | "source_credential_preflight";
@@ -157,10 +157,10 @@ export class WorkspaceVolumeGatewayServer {
         return this.#failure(reply, error);
       }
     });
-    this.#server.post(WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH, async (request, reply) => {
+    this.#server.post(WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH, async (request, reply) => {
       try {
-        return await this.#run("snapshot", () =>
-          this.#gateway.snapshot(request.body as WorkspaceVolumeGatewaySnapshotInput),
+        return await this.#run("settle", () =>
+          this.#gateway.settle(request.body as WorkspaceVolumeGatewaySettleInput),
         );
       } catch (error: unknown) {
         return this.#failure(reply, error);
@@ -175,14 +175,25 @@ export class WorkspaceVolumeGatewayServer {
         return this.#failure(reply, error);
       }
     });
-    this.#server.post(WORKSPACE_VOLUME_GATEWAY_MATERIALIZE_PATH, async (request, reply) => {
+    this.#server.post(WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH, async (request, reply) => {
       try {
-        const result = await this.#run("materialize", () =>
-          this.#gateway.materialize(request.body as WorkspaceVolumeGatewayMaterializeInput),
+        return await this.#run("list_directory", () =>
+          this.#gateway.listDirectory(request.body as WorkspaceVolumeGatewayPathInput),
+        );
+      } catch (error: unknown) {
+        return this.#failure(reply, error);
+      }
+    });
+    this.#server.post(WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH, async (request, reply) => {
+      try {
+        const result = await this.#run("read_file", () =>
+          this.#gateway.readFile(request.body as WorkspaceVolumeGatewayReadFileInput),
         );
         return reply
           .header("content-type", "application/octet-stream")
           .header("content-length", result.bytes.byteLength)
+          .header("x-pi-cloud-sha256", result.sha256)
+          .header("x-pi-cloud-executable", result.executable ? "true" : "false")
           .send(Buffer.from(result.bytes));
       } catch (error: unknown) {
         return this.#failure(reply, error);
@@ -413,16 +424,13 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     }>;
   }
 
-  async snapshot(input: WorkspaceVolumeGatewaySnapshotInput): Promise<{
-    volumeRevision: string;
-    files: readonly WorkspaceSnapshotFileMetadata[];
-  }> {
-    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH, input);
+  async settle(input: WorkspaceVolumeGatewaySettleInput): Promise<{ settlementRevision: string }> {
+    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH, input);
     if (
       !isRecord(response) ||
-      Object.keys(response).sort().join("\0") !== ["files", "volumeRevision"].sort().join("\0") ||
-      typeof response.volumeRevision !== "string" ||
-      !/^[0-9a-f]{64}$/.test(response.volumeRevision)
+      Object.keys(response).length !== 1 ||
+      typeof response.settlementRevision !== "string" ||
+      !/^[0-9a-f]{64}$/.test(response.settlementRevision)
     ) {
       throw new WorkspaceVolumeGatewayError(
         "workspace_volume_gateway_response_invalid",
@@ -430,26 +438,22 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
         false,
       );
     }
-    return {
-      volumeRevision: response.volumeRevision,
-      files: validateWorkspaceFileList(response.files),
-    };
+    return { settlementRevision: response.settlementRevision };
   }
 
   async fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
-    sourceRevision: string;
-    volumeRevision: string;
-    files: readonly WorkspaceSnapshotFileMetadata[];
+    sourceSettlementRevision: string;
+    targetSettlementRevision: string;
   }> {
     const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_FORK_PATH, input);
     if (
       !isRecord(response) ||
       Object.keys(response).sort().join("\0") !==
-        ["files", "sourceRevision", "volumeRevision"].sort().join("\0") ||
-      typeof response.sourceRevision !== "string" ||
-      !/^[0-9a-f]{64}$/.test(response.sourceRevision) ||
-      typeof response.volumeRevision !== "string" ||
-      !/^[0-9a-f]{64}$/.test(response.volumeRevision)
+        ["sourceSettlementRevision", "targetSettlementRevision"].sort().join("\0") ||
+      typeof response.sourceSettlementRevision !== "string" ||
+      !/^[0-9a-f]{64}$/.test(response.sourceSettlementRevision) ||
+      typeof response.targetSettlementRevision !== "string" ||
+      !/^[0-9a-f]{64}$/.test(response.targetSettlementRevision)
     ) {
       throw new WorkspaceVolumeGatewayError(
         "workspace_volume_gateway_response_invalid",
@@ -458,16 +462,60 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
       );
     }
     return {
-      sourceRevision: response.sourceRevision,
-      volumeRevision: response.volumeRevision,
-      files: validateWorkspaceFileList(response.files),
+      sourceSettlementRevision: response.sourceSettlementRevision,
+      targetSettlementRevision: response.targetSettlementRevision,
     };
   }
 
-  async materialize(
-    input: WorkspaceVolumeGatewayMaterializeInput,
-  ): Promise<{ bytes: Uint8Array; sha256: string }> {
-    const response = await fetch(`${this.#baseUrl}${WORKSPACE_VOLUME_GATEWAY_MATERIALIZE_PATH}`, {
+  async listDirectory(input: WorkspaceVolumeGatewayPathInput): Promise<{
+    entries: readonly WorkspaceVolumeDirectoryEntry[];
+    truncated: boolean;
+  }> {
+    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH, input);
+    if (
+      !isRecord(response) ||
+      !Array.isArray(response.entries) ||
+      typeof response.truncated !== "boolean"
+    ) {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_volume_gateway_response_invalid",
+        "Workspace Volume Gateway response was invalid",
+        false,
+      );
+    }
+    const entries = response.entries.map((value) => {
+      if (
+        !isRecord(value) ||
+        typeof value.name !== "string" ||
+        typeof value.path !== "string" ||
+        (value.kind !== "directory" && value.kind !== "file" && value.kind !== "symlink") ||
+        (value.sizeBytes !== undefined &&
+          (!Number.isSafeInteger(value.sizeBytes) || (value.sizeBytes as number) < 0)) ||
+        (value.executable !== undefined && typeof value.executable !== "boolean")
+      ) {
+        throw new WorkspaceVolumeGatewayError(
+          "workspace_volume_gateway_response_invalid",
+          "Workspace Volume Gateway response was invalid",
+          false,
+        );
+      }
+      return {
+        name: value.name,
+        path: value.path,
+        kind: value.kind as WorkspaceVolumeDirectoryEntry["kind"],
+        ...(value.sizeBytes === undefined ? {} : { sizeBytes: value.sizeBytes as number }),
+        ...(value.executable === undefined ? {} : { executable: value.executable }),
+      };
+    });
+    return { entries, truncated: response.truncated };
+  }
+
+  async readFile(input: WorkspaceVolumeGatewayReadFileInput): Promise<{
+    bytes: Uint8Array;
+    sha256: string;
+    executable: boolean;
+  }> {
+    const response = await fetch(`${this.#baseUrl}${WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH}`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${this.#serviceToken}`,
@@ -535,14 +583,16 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     }
     const bytes = Buffer.concat(chunks, totalBytes);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    if (sha256 !== input.expectedSha256) {
+    const expectedSha256 = response.headers.get("x-pi-cloud-sha256");
+    const executable = response.headers.get("x-pi-cloud-executable");
+    if (sha256 !== expectedSha256 || (executable !== "true" && executable !== "false")) {
       throw new WorkspaceVolumeGatewayError(
         "workspace_volume_gateway_response_invalid",
         "Workspace Volume Gateway response was invalid",
         false,
       );
     }
-    return { bytes, sha256 };
+    return { bytes, sha256, executable: executable === "true" };
   }
 
   async delete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ deleted: boolean }> {

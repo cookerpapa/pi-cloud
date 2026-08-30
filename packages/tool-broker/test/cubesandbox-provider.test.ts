@@ -8,10 +8,10 @@ import {
   type ToolSandboxOperationRequest,
 } from "@pi-cloud/protocol";
 import {
-  createWorkspaceSnapshot,
-  decodeWorkspaceSnapshotBlob,
-  encodeWorkspaceSnapshotBlob,
-  parsePersistentVolumeReference,
+  createWorkspaceSeed,
+  decodeWorkspaceBlob,
+  encodeWorkspaceBlob,
+  parseWorkspaceVolumeSettlement,
 } from "@pi-cloud/workspace-runtime";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
@@ -80,34 +80,29 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
       volumes.add(volumeId);
       return { attached };
     }),
-    snapshot: vi.fn(async () => ({
-      volumeRevision: "a".repeat(64),
-      files: [
-        {
-          path: "result.txt",
-          executable: false,
-          sizeBytes: 5,
-          sha256: createHash("sha256").update("cube\n").digest("hex"),
-        },
-      ],
-    })),
+    settle: vi.fn(async () => ({ settlementRevision: "a".repeat(64) })),
     fork: vi.fn(async () => ({
-      sourceRevision: "a".repeat(64),
-      volumeRevision: "c".repeat(64),
-      files: [
+      sourceSettlementRevision: "a".repeat(64),
+      targetSettlementRevision: "c".repeat(64),
+    })),
+    listDirectory: vi.fn(async () => ({
+      entries: [
         {
+          name: "result.txt",
           path: "result.txt",
-          executable: false,
+          kind: "file" as const,
           sizeBytes: 5,
-          sha256: createHash("sha256").update("cube\n").digest("hex"),
+          executable: false,
         },
       ],
+      truncated: false,
     })),
-    materialize: vi.fn(async () => {
+    readFile: vi.fn(async () => {
       const bytes = Buffer.from("cube\n");
       return {
         bytes,
         sha256: createHash("sha256").update(bytes).digest("hex"),
+        executable: false,
       };
     }),
     delete: vi.fn(async ({ volumeId }) => ({ deleted: volumes.delete(volumeId) })),
@@ -459,8 +454,8 @@ describe("CubeSandbox Provider contract", () => {
       assignment,
       environment,
       workspaceSeed: {
-        kind: "snapshot",
-        snapshot: encodeWorkspaceSnapshotBlob(createWorkspaceSnapshot([])),
+        kind: "bundle",
+        bundle: encodeWorkspaceBlob(createWorkspaceSeed([])),
       },
       policy: provider.defaultPolicy,
       lifetime: "development_environment",
@@ -605,12 +600,10 @@ describe("CubeSandbox Provider contract", () => {
     if (captured.type !== "tool_sandbox.captured") {
       throw new Error("CubeSandbox capture response was missing");
     }
-    const checkpoint = parsePersistentVolumeReference(
-      decodeWorkspaceSnapshotBlob(captured.workspace),
-    );
+    const checkpoint = parseWorkspaceVolumeSettlement(decodeWorkspaceBlob(captured.settlement));
     expect(checkpoint).toMatchObject({
       providerId: "cubesandbox",
-      volumeRevision: "a".repeat(64),
+      settlementRevision: "a".repeat(64),
       activationId: reserved.activationId,
       tenantId: assignment.tenantId,
       workspaceId: assignment.workspaceId,
@@ -618,28 +611,21 @@ describe("CubeSandbox Provider contract", () => {
       fencingToken: parseExecutionLease(assignment.executionLease).fencingToken,
       imageRevision: environment.imageRevision,
       environmentSpecSha256: environment.specSha256,
-      totalSizeBytes: 5,
-      files: [
-        {
-          path: "result.txt",
-          executable: false,
-          sizeBytes: 5,
-          sha256: createHash("sha256").update("cube\n").digest("hex"),
-        },
-      ],
     });
-    expect(Buffer.from(captured.workspace.data, "base64").toString("utf8")).not.toContain("pcch_");
-    const materialized = await manager.materializeFile({
+    expect(Buffer.from(captured.settlement.data, "base64").toString("utf8")).not.toContain("pcch_");
+    const materialized = await manager.readWorkspaceFile({
       toolBrokerProtocolVersion: 1,
-      type: "workspace.materialize_file",
+      type: "workspace.read_file",
       requestId: "10000000-0000-4000-8000-000000000023",
       tenantId: assignment.tenantId,
       workspaceId: assignment.workspaceId,
-      snapshot: captured.workspace,
+      sessionId: assignment.sessionId,
+      rootPath: "",
       path: "result.txt",
+      maximumBytes: 512 * 1_024,
     });
     expect(materialized).toMatchObject({
-      type: "workspace.file_materialized",
+      type: "workspace.file_read",
       path: "result.txt",
       content: Buffer.from("cube\n").toString("base64"),
     });
@@ -654,22 +640,24 @@ describe("CubeSandbox Provider contract", () => {
       imageRevision: "next-deployment",
     });
     await expect(
-      upgradedBroker.materializeFile({
+      upgradedBroker.readWorkspaceFile({
         toolBrokerProtocolVersion: 1,
-        type: "workspace.materialize_file",
+        type: "workspace.read_file",
         requestId: "10000000-0000-4000-8000-000000000024",
         tenantId: assignment.tenantId,
         workspaceId: assignment.workspaceId,
-        snapshot: captured.workspace,
+        sessionId: assignment.sessionId,
+        rootPath: "",
         path: "result.txt",
+        maximumBytes: 512 * 1_024,
       }),
     ).resolves.toMatchObject({
-      type: "workspace.file_materialized",
+      type: "workspace.file_read",
       path: "result.txt",
       content: Buffer.from("cube\n").toString("base64"),
     });
     await upgradedBroker.close();
-    expect(workspaceVolumeGateway.materialize).toHaveBeenCalledWith(
+    expect(workspaceVolumeGateway.readFile).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: assignment.sessionId,
         path: "result.txt",
@@ -791,7 +779,7 @@ describe("CubeSandbox Provider contract", () => {
     await manager.close();
   });
 
-  it("cold-restores a shared Workspace checkpoint into another Session with an independent fence", async () => {
+  it("reattaches a settled Workspace Volume to another Session with an independent fence", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const workspaceVolumeGateway = fakeWorkspaceVolumeGateway();
     const provider = new CubeSandboxProvider({
@@ -808,7 +796,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       policy: provider.defaultPolicy,
     });
-    const captured = await provider.snapshot(first, "10000000-0000-4000-8000-000000000040");
+    const captured = await provider.settle(first, "10000000-0000-4000-8000-000000000040");
     expect(captured.type).toBe("tool_sandbox.captured");
     if (captured.type !== "tool_sandbox.captured") {
       throw new Error("CubeSandbox capture response was missing");
@@ -838,7 +826,7 @@ describe("CubeSandbox Provider contract", () => {
       assignment: nextAssignment,
       environment,
       workspaceSeed: { kind: "sample_java" },
-      workspaceRestore: captured.workspace,
+      workspaceSettlement: captured.settlement,
       policy: provider.defaultPolicy,
     });
     expect(runtime.creates).toHaveLength(2);
@@ -903,7 +891,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       policy: provider.defaultPolicy,
     });
-    await provider.snapshot(parent, "10000000-0000-4000-8000-000000000051");
+    await provider.settle(parent, "10000000-0000-4000-8000-000000000051");
 
     const childAssignment: ToolSandboxAssignment = {
       ...assignment,
@@ -921,7 +909,7 @@ describe("CubeSandbox Provider contract", () => {
       type: "tool_sandbox.operation_result",
       exitCode: 0,
     });
-    await provider.snapshot(child, "10000000-0000-4000-8000-000000000054");
+    await provider.settle(child, "10000000-0000-4000-8000-000000000054");
 
     const restored = await provider.rebind(child, {
       ...assignment,
@@ -969,8 +957,8 @@ describe("CubeSandbox Provider contract", () => {
       },
     });
     expect(forked).toMatchObject({
-      sourceRevision: "a".repeat(64),
-      targetRevision: "c".repeat(64),
+      sourceSettlementRevision: "a".repeat(64),
+      targetSettlementRevision: "c".repeat(64),
     });
     expect(gateway.fork).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1002,15 +990,13 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       policy: provider.defaultPolicy,
     });
-    const captured = await provider.snapshot(handle, "10000000-0000-4000-8000-000000000049");
+    const captured = await provider.settle(handle, "10000000-0000-4000-8000-000000000049");
     expect(captured.type).toBe("tool_sandbox.captured");
     if (captured.type !== "tool_sandbox.captured") {
       throw new Error("CubeSandbox capture response was missing");
     }
-    expect(
-      parsePersistentVolumeReference(decodeWorkspaceSnapshotBlob(captured.workspace)),
-    ).toMatchObject({
-      volumeRevision: "a".repeat(64),
+    expect(parseWorkspaceVolumeSettlement(decodeWorkspaceBlob(captured.settlement))).toMatchObject({
+      settlementRevision: "a".repeat(64),
       tenantId: assignment.tenantId,
       workspaceId: assignment.workspaceId,
       sourceSessionId: assignment.sessionId,
@@ -1035,7 +1021,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       policy: provider.defaultPolicy,
     });
-    const captured = await provider.snapshot(handle, "10000000-0000-4000-8000-000000000046");
+    const captured = await provider.settle(handle, "10000000-0000-4000-8000-000000000046");
     expect(captured.type).toBe("tool_sandbox.captured");
     if (captured.type !== "tool_sandbox.captured") {
       throw new Error("CubeSandbox capture response was missing");
@@ -1054,7 +1040,7 @@ describe("CubeSandbox Provider contract", () => {
         },
         environment,
         workspaceSeed: { kind: "sample_java" },
-        workspaceRestore: captured.workspace,
+        workspaceSettlement: captured.settlement,
         policy: provider.defaultPolicy,
       }),
     ).rejects.toMatchObject({ code: "cubesandbox_volume_reference_invalid" });
@@ -1064,7 +1050,7 @@ describe("CubeSandbox Provider contract", () => {
         assignment,
         environment,
         workspaceSeed: { kind: "sample_java" },
-        workspaceRestore: captured.workspace,
+        workspaceSettlement: captured.settlement,
         policy: provider.defaultPolicy,
       }),
     ).rejects.toMatchObject({ code: "cubesandbox_volume_reference_invalid" });
@@ -1088,7 +1074,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       policy: originalProvider.defaultPolicy,
     });
-    const captured = await originalProvider.snapshot(
+    const captured = await originalProvider.settle(
       originalHandle,
       "10000000-0000-4000-8000-000000000049",
     );
@@ -1120,7 +1106,7 @@ describe("CubeSandbox Provider contract", () => {
       assignment: upgradedAssignment,
       environment: { ...environment, imageRevision: "next-deployment" },
       workspaceSeed: { kind: "sample_java" },
-      workspaceRestore: captured.workspace,
+      workspaceSettlement: captured.settlement,
       policy: upgradedProvider.defaultPolicy,
     });
     expect(upgradedDataMover.prepare).toHaveBeenCalledWith(
@@ -1227,7 +1213,7 @@ describe("CubeSandbox Provider contract", () => {
       webProxy: WEB_PROXY,
     });
     expect(initialization).not.toHaveProperty("environmentStage");
-    expect(initialization).not.toHaveProperty("workspaceRestore");
+    expect(initialization).not.toHaveProperty("workspaceSettlement");
     await provider.destroy(handle);
     await provider.close();
   });

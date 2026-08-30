@@ -17,11 +17,11 @@ import type { TenantRequestIdentity } from "./tenant-identity.ts";
 import { TenantRequestContext } from "./tenant-request-context.ts";
 import type { TenantModelCredentialVault } from "@pi-cloud/runtime-core/model-credential-runtime";
 import { TenantModelConfigurationService } from "./tenant-model-configuration.ts";
+import { ConversationArchiveService } from "./conversation-archive-service.ts";
 import {
-  WorkspaceVersionService,
-  type TrustedArtifactReader,
-  type TrustedProviderSnapshotReader,
-} from "./workspace-version-service.ts";
+  WorkspaceBrowserService,
+  type TrustedWorkspaceBrowser,
+} from "./workspace-browser-service.ts";
 import { WebAuthenticationService } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsService } from "./platform-runtime-settings.ts";
 import type { SupervisorWebSocketGateway } from "./supervisor-websocket-gateway.ts";
@@ -43,8 +43,7 @@ export type ControlPlaneModuleOptions = Omit<
   staticRequestIdentity?: TenantRequestIdentity;
   publicRegistration?: PublicTenantRegistrationConfiguration;
   modelCredentialVault?: TenantModelCredentialVault;
-  artifactReader?: TrustedArtifactReader;
-  providerSnapshotReader?: TrustedProviderSnapshotReader;
+  workspaceBrowser?: TrustedWorkspaceBrowser;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
@@ -69,14 +68,21 @@ export class ControlPlaneModule {
   static register(options: ControlPlaneModuleOptions): DynamicModule {
     const eventHub = options.eventRuntime?.eventHub ?? new SessionEventHub();
     const eventStore = options.eventRuntime?.eventStore ?? new DurableEventStore();
-    const workspaceVersions = new WorkspaceVersionService({
+    const conversationArchive = new ConversationArchiveService({
       database: options.database,
-      ...(options.artifactReader === undefined ? {} : { artifactReader: options.artifactReader }),
-      ...(options.providerSnapshotReader === undefined
-        ? {}
-        : { providerSnapshotReader: options.providerSnapshotReader }),
       ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
-      ...(options.metrics === undefined ? {} : { metrics: options.metrics }),
+    });
+    const workspaceBrowser = new WorkspaceBrowserService({
+      database: options.database,
+      browser: options.workspaceBrowser ?? {
+        listWorkspaceDirectory: async () => {
+          throw new Error("Workspace browser is not configured");
+        },
+        readWorkspaceFile: async () => {
+          throw new Error("Workspace browser is not configured");
+        },
+      },
+      ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
     });
     const controlPlaneStores = new ControlPlaneStoreFactory({
       database: options.database,
@@ -212,8 +218,12 @@ export class ControlPlaneModule {
             new SourceControlService({ database: options.database }),
         },
         {
-          provide: WorkspaceVersionService,
-          useValue: workspaceVersions,
+          provide: ConversationArchiveService,
+          useValue: conversationArchive,
+        },
+        {
+          provide: WorkspaceBrowserService,
+          useValue: workspaceBrowser,
         },
         { provide: SessionEventHub, useValue: eventHub },
         { provide: DurableEventStore, useValue: eventStore },
@@ -222,7 +232,13 @@ export class ControlPlaneModule {
           useValue: new SessionEventStream(eventStore, eventHub, options.sessionEventStreamOptions),
         },
       ],
-      exports: [DurableEventStore, SessionEventHub, SessionEventStream, WorkspaceVersionService],
+      exports: [
+        DurableEventStore,
+        SessionEventHub,
+        SessionEventStream,
+        ConversationArchiveService,
+        WorkspaceBrowserService,
+      ],
     };
   }
 }

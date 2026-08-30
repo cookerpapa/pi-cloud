@@ -8,7 +8,8 @@ import {
   parseDevelopmentEnvironmentBrokerRequest,
   parseDevelopmentEnvironmentTerminalOpenRequest,
   parseToolBrokerRequest,
-  parseToolBrokerMaterializeFileRequest,
+  parseToolBrokerListWorkspaceDirectoryRequest,
+  parseToolBrokerReadWorkspaceFileRequest,
   parseSupervisorManagementRequest,
   parseToolSandboxOperationRequest,
   parseSandboxPreviewRequest,
@@ -25,7 +26,7 @@ import type { RawData, WebSocket } from "ws";
 import {
   TOOL_BROKER_INVENTORY_PATH,
   TOOL_BROKER_LIVE_PATH,
-  TOOL_BROKER_MATERIALIZER_PATH,
+  TOOL_BROKER_WORKSPACE_BROWSER_PATH,
   TOOL_BROKER_OPERATION_PATH,
   TOOL_BROKER_READY_PATH,
   TOOL_BROKER_SERVICE_PATH,
@@ -42,7 +43,7 @@ export type ToolBrokerServerOptions = {
   host: string;
   port: number;
   serviceToken: string;
-  materializerToken?: string;
+  workspaceServiceToken?: string;
   terminalToken?: string;
   broker: ToolBrokerBackend;
   bodyLimit?: number;
@@ -58,7 +59,8 @@ export type ToolBrokerBackend = Pick<
   | "release"
   | "stop"
   | "execute"
-  | "materializeFile"
+  | "listWorkspaceDirectory"
+  | "readWorkspaceFile"
   | "listAssignments"
   | "terminateAndConfirmAbsent"
   | "confirmAbsent"
@@ -159,7 +161,7 @@ export class ToolBrokerServer {
   readonly #host: string;
   readonly #port: number;
   readonly #serviceDigest: Buffer;
-  readonly #materializerDigest: Buffer | undefined;
+  readonly #workspaceServiceDigest: Buffer | undefined;
   readonly #terminalDigest: Buffer | undefined;
   readonly #broker: ToolBrokerBackend;
   readonly #server: FastifyInstance;
@@ -176,10 +178,10 @@ export class ToolBrokerServer {
     this.#host = options.host;
     this.#port = options.port;
     this.#serviceDigest = digest(validServiceToken(options.serviceToken));
-    this.#materializerDigest =
-      options.materializerToken === undefined
+    this.#workspaceServiceDigest =
+      options.workspaceServiceToken === undefined
         ? undefined
-        : digest(validServiceToken(options.materializerToken));
+        : digest(validServiceToken(options.workspaceServiceToken));
     this.#terminalDigest =
       options.terminalToken === undefined
         ? undefined
@@ -241,13 +243,13 @@ export class ToolBrokerServer {
     return token !== undefined && timingSafeEqual(this.#serviceDigest, candidate);
   }
 
-  #materializerAuthorized(value: string | undefined): boolean {
+  #workspaceServiceAuthorized(value: string | undefined): boolean {
     const token = bearer(value);
     const candidate = token === undefined ? Buffer.alloc(32) : digest(token);
     return (
       token !== undefined &&
-      this.#materializerDigest !== undefined &&
-      timingSafeEqual(this.#materializerDigest, candidate)
+      this.#workspaceServiceDigest !== undefined &&
+      timingSafeEqual(this.#workspaceServiceDigest, candidate)
     );
   }
 
@@ -554,26 +556,45 @@ export class ToolBrokerServer {
       }
     });
 
-    this.#server.post(TOOL_BROKER_MATERIALIZER_PATH, async (request, reply) => {
-      if (!this.#materializerAuthorized(request.headers.authorization)) {
+    this.#server.post(TOOL_BROKER_WORKSPACE_BROWSER_PATH, async (request, reply) => {
+      if (!this.#workspaceServiceAuthorized(request.headers.authorization)) {
         await reply.code(401).send({
           error: {
-            code: "invalid_snapshot_materializer_credential",
-            message: "Workspace materialization request is not authorized",
+            code: "invalid_workspace_browser_credential",
+            message: "Workspace browser request is not authorized",
             retryable: false,
           },
         } satisfies InternalServiceError);
         return;
       }
       try {
-        const message = parseToolBrokerMaterializeFileRequest(request.body);
+        const list =
+          typeof request.body === "object" &&
+          request.body !== null &&
+          "type" in request.body &&
+          request.body.type === "workspace.list_directory";
+        const message = list
+          ? parseToolBrokerListWorkspaceDirectoryRequest(request.body)
+          : parseToolBrokerReadWorkspaceFileRequest(request.body);
+        if (message.type === "workspace.list_directory") {
+          await reply.code(200).send(
+            await this.#observed({
+              request,
+              spanName: "workspace.list_directory",
+              operation: "list_directory",
+              kind: "sandbox",
+              run: () => this.#broker.listWorkspaceDirectory(message),
+            }),
+          );
+          return;
+        }
         await reply.code(200).send(
           await this.#observed({
             request,
-            spanName: "workspace.materialize_file",
-            operation: "materialize_file",
+            spanName: "workspace.read_file",
+            operation: "read_file",
             kind: "sandbox",
-            run: () => this.#broker.materializeFile(message),
+            run: () => this.#broker.readWorkspaceFile(message),
           }),
         );
       } catch (error: unknown) {
@@ -582,7 +603,7 @@ export class ToolBrokerServer {
     });
 
     this.#server.post(TOOL_BROKER_SOURCE_CONTROL_PATH, async (request, reply) => {
-      if (!this.#materializerAuthorized(request.headers.authorization)) {
+      if (!this.#workspaceServiceAuthorized(request.headers.authorization)) {
         await reply.code(401).send({
           error: {
             code: "invalid_source_control_credential",

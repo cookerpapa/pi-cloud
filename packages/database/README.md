@@ -6,7 +6,7 @@ records; it does not own the Kafka AcceptedFact log or Workspace file bytes.
 
 The current schema enforces tenant-consistent foreign keys, idempotent command
 intake, Session ordering, Run/Attempt leases and fences, Pi SessionStorage,
-Workspace revisions, Tool Broker ownership, Subagent relations and
+Workspace settlements, Tool Broker ownership, Subagent relations and
 administrator/model configuration. Application state machines still own legal
 transition order.
 

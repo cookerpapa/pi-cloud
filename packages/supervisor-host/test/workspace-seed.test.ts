@@ -12,7 +12,7 @@ import {
   createExecutionLease,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
-import { parseWorkspaceSnapshot } from "@pi-cloud/workspace-runtime";
+import { parseWorkspaceSeed } from "@pi-cloud/workspace-runtime";
 import type { Kysely } from "kysely";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PostgresWorkspaceSeedResolver, WorkspaceSeedError } from "../src/index.ts";
@@ -232,7 +232,7 @@ describe("PostgreSQL Workspace seed resolver", () => {
       command(),
       new AbortController().signal,
     );
-    expect(parseWorkspaceSnapshot(bytes!)).toEqual([]);
+    expect(parseWorkspaceSeed(bytes!)).toEqual([]);
   });
 
   it("selects the deterministic Java fixture without serializing it into PostgreSQL", async () => {

@@ -607,7 +607,7 @@ export class RunExecutor {
                 and active_run.session_id = ${sql.ref("candidate.session_id")}
                 and active_run.id <> ${sql.ref("candidate.id")}
                 and active_run.state in (
-                  'claimed', 'provisioning', 'restoring', 'running', 'checkpointing', 'cancel_requested'
+                  'claimed', 'provisioning', 'restoring', 'running', 'settling', 'cancel_requested'
                 )
             )`,
           )
@@ -693,9 +693,9 @@ export class RunExecutor {
           "session_row.project_id as projectId",
           "session_row.workspace_id as workspaceId",
           "session_row.next_event_seq as nextEventSeq",
-          "session_row.current_workspace_version_id as sessionWorkspaceVersionId",
+          "session_row.current_workspace_settlement_id as sessionWorkspaceSettlementId",
           "session_row.forked_from_session_id as forkedFromSessionId",
-          "workspace_row.current_workspace_version_id as currentWorkspaceVersionId",
+          "workspace_row.current_workspace_settlement_id as currentWorkspaceSettlementId",
           "run.id as runId",
           "run.trace_id as traceId",
           "run.tool_capability_snapshot as toolCapabilitySnapshot",
@@ -744,7 +744,7 @@ export class RunExecutor {
               and active_run.session_id = ${sql.ref("run.session_id")}
               and active_run.id <> ${sql.ref("run.id")}
               and active_run.state in (
-                'claimed', 'provisioning', 'restoring', 'running', 'checkpointing', 'cancel_requested'
+                'claimed', 'provisioning', 'restoring', 'running', 'settling', 'cancel_requested'
               )
           )`,
         )
@@ -824,10 +824,10 @@ export class RunExecutor {
       }
       const attemptId = this.#idGenerator();
       const transitionId = this.#idGenerator();
-      const workspaceBaseVersionId =
+      const workspaceBaseSettlementId =
         row.forkedFromSessionId === null
-          ? row.currentWorkspaceVersionId
-          : row.sessionWorkspaceVersionId;
+          ? row.currentWorkspaceSettlementId
+          : row.sessionWorkspaceSettlementId;
       const claimed = await sql<{
         attemptCount: number;
         transitionCount: number;
@@ -857,7 +857,7 @@ export class RunExecutor {
                  available_at = ${leaseUntil},
                  current_attempt_id = ${attemptId}::uuid,
                  attempt_count = ${attemptNumber},
-                 workspace_base_version_id = ${workspaceBaseVersionId}::uuid,
+                 workspace_base_settlement_id = ${workspaceBaseSettlementId}::uuid,
                  stop_reason = null,
                  failure_code = null,
                  failure_message = null,
@@ -1061,7 +1061,7 @@ export class RunExecutor {
     await this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
       if (
-        !["provisioning", "restoring", "running", "checkpointing"].includes(rows.runState) ||
+        !["provisioning", "restoring", "running", "settling"].includes(rows.runState) ||
         rows.turnState !== "running" ||
         rows.sessionState !== "running"
       ) {

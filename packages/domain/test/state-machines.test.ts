@@ -30,8 +30,8 @@ describe("domain state machines", () => {
     expect(transitionRun("claimed", "provisioning")).toBe("provisioning");
     expect(transitionRun("provisioning", "restoring")).toBe("restoring");
     expect(transitionRun("restoring", "running")).toBe("running");
-    expect(transitionRun("running", "checkpointing")).toBe("checkpointing");
-    expect(transitionRun("checkpointing", "completed")).toBe("completed");
+    expect(transitionRun("running", "settling")).toBe("settling");
+    expect(transitionRun("settling", "completed")).toBe("completed");
 
     expect(transitionRunAttempt("claimed", "provisioning")).toBe("provisioning");
     expect(transitionRunAttempt("provisioning", "running")).toBe("running");

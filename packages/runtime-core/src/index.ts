@@ -1,5 +1,5 @@
-export * from "./checkpoint-object-cache.ts";
-export * from "./checkpoint-store.ts";
+export * from "./runtime-object-cache.ts";
+export * from "./workspace-settlement-store.ts";
 export * from "./conversation-turn-projection.ts";
 export * from "./durable-event-store.ts";
 export * from "./session-lease-authority-gate.ts";

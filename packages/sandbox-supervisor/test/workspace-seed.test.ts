@@ -1,7 +1,7 @@
 import {
-  captureWorkspaceSnapshot,
-  restoreWorkspaceSnapshot,
-  validateWorkspaceSnapshot,
+  captureWorkspaceSeed,
+  restoreWorkspaceSeed,
+  validateWorkspacePayload,
 } from "../src/index.ts";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,7 +24,7 @@ afterEach(async () => {
   );
 });
 
-describe("bounded workspace snapshot", () => {
+describe("bounded Workspace seed bundle", () => {
   it("round-trips user-owned Git metadata with regular files and executable bits", async () => {
     const source = await temporaryDirectory("pi-cloud-workspace-source-");
     await mkdir(resolve(source, ".git"));
@@ -34,12 +34,12 @@ describe("bounded workspace snapshot", () => {
     await writeFile(resolve(source, "test.sh"), "#!/bin/sh\nexit 0\n");
     await chmod(resolve(source, "test.sh"), 0o755);
 
-    const snapshot = await captureWorkspaceSnapshot(source);
-    validateWorkspaceSnapshot(snapshot);
+    const snapshot = await captureWorkspaceSeed(source);
+    validateWorkspacePayload(snapshot);
 
     const target = await temporaryDirectory("pi-cloud-workspace-target-");
     await writeFile(resolve(target, "stale.txt"), "remove me");
-    await restoreWorkspaceSnapshot(target, snapshot);
+    await restoreWorkspaceSeed(target, snapshot);
 
     await expect(readFile(resolve(target, ".git/HEAD"), "utf8")).resolves.toBe(
       "ref: refs/heads/main\n",
@@ -52,7 +52,7 @@ describe("bounded workspace snapshot", () => {
   it("validates every path before mutating the destination", async () => {
     const malicious = Buffer.from(
       `${JSON.stringify({
-        format: "pi-cloud.workspace-manifest.v1",
+        format: "pi-cloud.workspace-seed.v1",
         files: [
           {
             path: "../escape",
@@ -66,7 +66,7 @@ describe("bounded workspace snapshot", () => {
     );
     const target = await temporaryDirectory("pi-cloud-workspace-reject-");
     await writeFile(resolve(target, "keep.txt"), "still here");
-    await expect(restoreWorkspaceSnapshot(target, malicious)).rejects.toThrow(/entry|path/i);
+    await expect(restoreWorkspaceSeed(target, malicious)).rejects.toThrow(/entry|path/i);
     await expect(readFile(resolve(target, "keep.txt"), "utf8")).resolves.toBe("still here");
   });
 });

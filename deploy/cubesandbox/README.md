@@ -258,7 +258,7 @@ operator must replace that local path with the same POSIX shared filesystem on
 CubeMaster, every Cubelet and the Volume Gateway. That filesystem must provide
 the replication and backup policy required by the deployment's recovery claim.
 
-Conversation state and content-verified Workspace revision metadata commit
+Conversation state and lightweight Workspace settlement metadata commit
 through PostgreSQL. For an exact Session, the external Tool Broker waits for
 the short-lived Tool Worker to exit, briefly freezes uid-1000 processes through
 envd while the trusted Volume Gateway flushes and indexes `/workspace`, resumes

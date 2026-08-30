@@ -19,7 +19,7 @@ to restore model context and made pure chat perform unnecessary writes.
    and their benchmark.
 3. Remove synthetic Pi artifacts, `pi_session_snapshot_key`, the Run base Pi
    artifact pointer and the Workspace-version Pi artifact foreign key.
-4. The Workspace checkpoint loader restores only filesystem state.
+4. Workspace settlement records identify persistent Volume state; they do not restore process state.
 5. Conversation state never enters the bounded PostgreSQL object rows used for
    Workspace seeds and oversized Tool output. Those objects are separate from
    Pi SessionStorage and from the persistent Workspace Volume authority.
@@ -27,6 +27,6 @@ to restore model context and made pure chat perform unnecessary writes.
 ## Consequences
 
 - Conversation size no longer affects object-store checkpoint traffic.
-- Pure chat does not write a synthetic checkpoint object.
+- Pure chat does not write a synthetic runtime object.
 - Compaction and cross-Worker recovery use Pi-native PostgreSQL entries.
-- Workspace versions model only filesystem state.
+- Workspace settlements model only filesystem continuity.

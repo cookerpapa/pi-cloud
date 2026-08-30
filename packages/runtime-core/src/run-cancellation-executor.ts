@@ -528,7 +528,7 @@ export class RunCancellationExecutor {
       const activePair = rows.turnState === "running" && rows.sessionState === "running";
       if (
         rows.cancellationTurnControlRequestState !== "dispatched" ||
-        !["provisioning", "restoring", "running", "checkpointing"].includes(rows.runState) ||
+        !["provisioning", "restoring", "running", "settling"].includes(rows.runState) ||
         !activePair
       ) {
         throw new TurnCancellationBackendError(

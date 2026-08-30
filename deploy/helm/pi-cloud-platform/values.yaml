@@ -229,7 +229,7 @@ pi-workers:
       maximumDepth: 4
       maximumNodes: 32
       maximumConcurrent: 3
-    checkpointCache: { ttlMs: 600000, maximumEntries: 512, maximumBytes: 33554432 }
+    runtimeObjectCache: { ttlMs: 600000, maximumEntries: 512, maximumBytes: 33554432 }
     timeouts:
       toolBrokerRequestMs: 360000
       modelCapabilityTtlMs: 900000

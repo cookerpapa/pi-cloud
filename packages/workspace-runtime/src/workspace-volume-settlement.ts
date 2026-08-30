@@ -1,26 +1,18 @@
-import {
-  MAX_WORKSPACE_SNAPSHOT_BYTES,
-  type EnvironmentRecipeCommandResult,
-} from "@pi-cloud/protocol";
+import { MAX_WORKSPACE_BLOB_BYTES, type EnvironmentRecipeCommandResult } from "@pi-cloud/protocol";
 import { TextDecoder } from "node:util";
-import {
-  MAX_WORKSPACE_INDEX_TOTAL_BYTES,
-  validateWorkspaceFileList,
-  type WorkspaceSnapshotFileMetadata,
-} from "./workspace-index.ts";
 import { WorkspaceRuntimeError } from "./workspace-error.ts";
 
-export const PERSISTENT_VOLUME_REFERENCE_FORMAT = "pi-cloud.workspace-volume-reference.v2";
+export const WORKSPACE_VOLUME_SETTLEMENT_FORMAT = "pi-cloud.workspace-volume-settlement.v1";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OPAQUE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const VOLUME_ID_PATTERN = /^pcw-[0-9a-f]{48}$/;
 
-export type PersistentVolumeReference = Readonly<{
-  format: typeof PERSISTENT_VOLUME_REFERENCE_FORMAT;
+export type WorkspaceVolumeSettlement = Readonly<{
+  format: typeof WORKSPACE_VOLUME_SETTLEMENT_FORMAT;
   providerId: "cubesandbox";
   volumeId: string;
-  volumeRevision: string;
+  settlementRevision: string;
   activationId: string;
   tenantId: string;
   workspaceId: string;
@@ -29,16 +21,13 @@ export type PersistentVolumeReference = Readonly<{
   fencingToken: number;
   imageRevision: string;
   environmentSpecSha256: string;
-  totalSizeBytes: number;
-  files: readonly WorkspaceSnapshotFileMetadata[];
   recipeCommands: readonly EnvironmentRecipeCommandResult[];
 }>;
 
-export type CreatePersistentVolumeReferenceInput = Omit<
-  PersistentVolumeReference,
-  "format" | "providerId" | "files" | "totalSizeBytes" | "recipeCommands"
+export type CreateWorkspaceVolumeSettlementInput = Omit<
+  WorkspaceVolumeSettlement,
+  "format" | "providerId" | "recipeCommands"
 > & {
-  files: readonly WorkspaceSnapshotFileMetadata[];
   recipeCommands: readonly EnvironmentRecipeCommandResult[];
 };
 
@@ -81,28 +70,25 @@ function recipeCommands(value: unknown): readonly EnvironmentRecipeCommandResult
   );
 }
 
-export function createPersistentVolumeReference(
-  input: CreatePersistentVolumeReferenceInput,
+export function createWorkspaceVolumeSettlement(
+  input: CreateWorkspaceVolumeSettlementInput,
 ): Uint8Array {
-  const files = validateWorkspaceFileList(input.files);
-  const value: PersistentVolumeReference = Object.freeze({
+  const value: WorkspaceVolumeSettlement = Object.freeze({
     ...input,
-    format: PERSISTENT_VOLUME_REFERENCE_FORMAT,
+    format: WORKSPACE_VOLUME_SETTLEMENT_FORMAT,
     providerId: "cubesandbox",
-    files,
-    totalSizeBytes: files.reduce((sum, file) => sum + file.sizeBytes, 0),
     recipeCommands: recipeCommands(input.recipeCommands),
   });
   const encoded = Buffer.from(JSON.stringify(value), "utf8");
-  if (encoded.byteLength > MAX_WORKSPACE_SNAPSHOT_BYTES) fail();
-  parsePersistentVolumeReference(encoded);
+  if (encoded.byteLength > MAX_WORKSPACE_BLOB_BYTES) fail();
+  parseWorkspaceVolumeSettlement(encoded);
   return encoded;
 }
 
-export function parsePersistentVolumeReference(
+export function parseWorkspaceVolumeSettlement(
   bytes: Uint8Array,
-): PersistentVolumeReference | undefined {
-  if (bytes.byteLength < 1 || bytes.byteLength > MAX_WORKSPACE_SNAPSHOT_BYTES) return undefined;
+): WorkspaceVolumeSettlement | undefined {
+  if (bytes.byteLength < 1 || bytes.byteLength > MAX_WORKSPACE_BLOB_BYTES) return undefined;
   let value: Record<string, unknown>;
   try {
     value = record(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
@@ -115,26 +101,24 @@ export function parsePersistentVolumeReference(
       "bindingSha256",
       "environmentSpecSha256",
       "fencingToken",
-      "files",
       "format",
       "imageRevision",
       "providerId",
       "recipeCommands",
       "sourceSessionId",
       "tenantId",
-      "totalSizeBytes",
       "volumeId",
-      "volumeRevision",
+      "settlementRevision",
       "workspaceId",
     ];
     if (Object.keys(value).sort().join("\0") !== expectedKeys.sort().join("\0")) return undefined;
     if (
-      value.format !== PERSISTENT_VOLUME_REFERENCE_FORMAT ||
+      value.format !== WORKSPACE_VOLUME_SETTLEMENT_FORMAT ||
       value.providerId !== "cubesandbox" ||
       typeof value.volumeId !== "string" ||
       !VOLUME_ID_PATTERN.test(value.volumeId) ||
-      typeof value.volumeRevision !== "string" ||
-      !SHA256_PATTERN.test(value.volumeRevision) ||
+      typeof value.settlementRevision !== "string" ||
+      !SHA256_PATTERN.test(value.settlementRevision) ||
       typeof value.activationId !== "string" ||
       !UUID_PATTERN.test(value.activationId) ||
       typeof value.tenantId !== "string" ||
@@ -149,19 +133,11 @@ export function parsePersistentVolumeReference(
       (value.fencingToken as number) < 1 ||
       typeof value.imageRevision !== "string" ||
       typeof value.environmentSpecSha256 !== "string" ||
-      !SHA256_PATTERN.test(value.environmentSpecSha256) ||
-      !Number.isSafeInteger(value.totalSizeBytes) ||
-      (value.totalSizeBytes as number) < 0 ||
-      (value.totalSizeBytes as number) > MAX_WORKSPACE_INDEX_TOTAL_BYTES
+      !SHA256_PATTERN.test(value.environmentSpecSha256)
     )
       return undefined;
-    const files = validateWorkspaceFileList(value.files);
-    if (files.reduce((sum, file) => sum + file.sizeBytes, 0) !== value.totalSizeBytes) {
-      return undefined;
-    }
     return Object.freeze({
-      ...(value as unknown as PersistentVolumeReference),
-      files,
+      ...(value as unknown as WorkspaceVolumeSettlement),
       recipeCommands: recipeCommands(value.recipeCommands),
     });
   } catch {

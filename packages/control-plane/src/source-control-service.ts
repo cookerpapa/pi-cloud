@@ -211,7 +211,7 @@ export class SourceControlService {
   readonly #database: Kysely<Database>;
   readonly #github: GitHubAppRuntime | undefined;
   readonly #gitlab: GitLabProjectRuntime | undefined;
-  readonly #materializerToken: string;
+  readonly #workspaceServiceToken: string;
   readonly #allowInsecureInternalHttp: boolean;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
@@ -221,7 +221,7 @@ export class SourceControlService {
     database: Kysely<Database>;
     github?: GitHubAppRuntime;
     gitlab?: GitLabProjectRuntime;
-    materializerToken?: string;
+    workspaceServiceToken?: string;
     allowInsecureInternalHttp?: boolean;
     clock?: () => Date;
     idGenerator?: () => string;
@@ -229,8 +229,9 @@ export class SourceControlService {
     this.#database = options.database;
     this.#github = options.github;
     this.#gitlab = options.gitlab;
-    this.#materializerToken =
-      options.materializerToken ?? "source-control-disabled-materializer-token-000000000000000";
+    this.#workspaceServiceToken =
+      options.workspaceServiceToken ??
+      "source-control-disabled-workspace-service-token-000000000000000";
     this.#allowInsecureInternalHttp = options.allowInsecureInternalHttp ?? false;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? randomUUID;
@@ -1905,7 +1906,7 @@ export class SourceControlService {
   #toolBroker(baseUrl: string): ToolBrokerClient {
     return new ToolBrokerClient({
       baseUrl,
-      serviceToken: this.#materializerToken,
+      serviceToken: this.#workspaceServiceToken,
       allowInsecureHttp: this.#allowInsecureInternalHttp,
       requestTimeoutMs: 10 * 60_000,
     });

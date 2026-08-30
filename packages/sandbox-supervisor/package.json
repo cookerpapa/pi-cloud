@@ -7,8 +7,8 @@
     ".": "./src/index.ts",
     "./pi-turn-runtime": "./src/pi-turn-runtime.ts",
     "./sandbox-assignment-inventory": "./src/sandbox-assignment-inventory.ts",
-    "./sandbox-checkpoint": "./src/sandbox-checkpoint.ts",
-    "./workspace-snapshot": "./src/workspace-snapshot.ts"
+    "./workspace-settlement": "./src/workspace-settlement.ts",
+    "./workspace-seed": "./src/workspace-seed.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

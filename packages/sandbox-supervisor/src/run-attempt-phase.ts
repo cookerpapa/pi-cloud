@@ -1,6 +1,6 @@
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 
-export type RunAttemptExecutionPhase = "restoring" | "running" | "checkpointing";
+export type RunAttemptExecutionPhase = "restoring" | "running" | "settling";
 
 /**
  * A trusted, fail-closed persistence boundary for execution phases. The tool
@@ -8,5 +8,5 @@ export type RunAttemptExecutionPhase = "restoring" | "running" | "checkpointing"
  */
 export interface RunAttemptPhaseObserver {
   transition(command: ExecuteTurnCommandMessage, phase: RunAttemptExecutionPhase): Promise<void>;
-  checkpointCommitted(command: ExecuteTurnCommandMessage, revision: string): Promise<void>;
+  settlementCommitted(command: ExecuteTurnCommandMessage, revision: string): Promise<void>;
 }

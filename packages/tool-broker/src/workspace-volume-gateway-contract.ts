@@ -1,7 +1,6 @@
-import {
-  MAX_WORKSPACE_SNAPSHOT_BYTES,
-  type SourceControlWorkspaceCredentialAuthorizeRequest,
-  type SourceControlWorkspaceCredentialPreflightRequest,
+import type {
+  SourceControlWorkspaceCredentialAuthorizeRequest,
+  SourceControlWorkspaceCredentialPreflightRequest,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
@@ -17,15 +16,15 @@ export const VOLUME_METADATA_DIRECTORY = ".pi-cloud-runtime";
 export const VOLUME_WORKSPACE_DIRECTORY = "workspace";
 export const WORKSPACE_GIT_HOME_DIRECTORY = ".pi-cloud-home";
 export const VOLUME_GENERATION_FILE = "generation";
+export const VOLUME_SETTLEMENT_FILE = "settlement";
 export const MAXIMUM_REQUEST_BYTES = 32 * 1_024;
-// A snapshot response carries the bounded persistent-volume reference metadata
-// and file catalog. Workspace file bytes never cross this interface.
-export const MAXIMUM_RESPONSE_BYTES = MAX_WORKSPACE_SNAPSHOT_BYTES + MAXIMUM_REQUEST_BYTES;
+export const MAXIMUM_RESPONSE_BYTES = 8 * 1_024 * 1_024;
 
 export const WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH = "/v1/workspaces/prepare";
-export const WORKSPACE_VOLUME_GATEWAY_SNAPSHOT_PATH = "/v1/workspaces/snapshot";
+export const WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH = "/v1/workspaces/settle";
 export const WORKSPACE_VOLUME_GATEWAY_FORK_PATH = "/v1/workspaces/fork";
-export const WORKSPACE_VOLUME_GATEWAY_MATERIALIZE_PATH = "/v1/workspaces/materialize";
+export const WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH = "/v1/workspaces/list-directory";
+export const WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH = "/v1/workspaces/read-file";
 export const WORKSPACE_VOLUME_GATEWAY_DELETE_PATH = "/v1/workspaces/delete";
 export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH =
   "/v1/workspaces/source-control/credential/authorize";
@@ -45,26 +44,38 @@ export type WorkspaceVolumeGatewayIdentity = WorkspaceVolumeGatewayVolumeIdentit
 
 export type WorkspaceVolumeGatewayPrepareInput = WorkspaceVolumeGatewayIdentity;
 
-export type WorkspaceVolumeGatewaySnapshotInput = WorkspaceVolumeGatewayIdentity &
+export type WorkspaceVolumeGatewaySettleInput = WorkspaceVolumeGatewayIdentity &
   Readonly<{
     activationId: string;
     fencingToken: number;
     bindingSha256: string;
   }>;
 
-export type WorkspaceVolumeGatewayMaterializeInput = WorkspaceVolumeGatewayIdentity &
+export type WorkspaceVolumeGatewayPathInput = WorkspaceVolumeGatewayIdentity &
   Readonly<{
+    rootPath: string;
     path: string;
-    expectedSha256: string;
+  }>;
+
+export type WorkspaceVolumeGatewayReadFileInput = WorkspaceVolumeGatewayPathInput &
+  Readonly<{
     maximumBytes: number;
   }>;
+
+export type WorkspaceVolumeDirectoryEntry = Readonly<{
+  name: string;
+  path: string;
+  kind: "directory" | "file" | "symlink";
+  sizeBytes?: number;
+  executable?: boolean;
+}>;
 
 export type WorkspaceVolumeGatewayForkInput = Readonly<{
   tenantId: string;
   sourceWorkspaceId: string;
   sourceSessionId: string;
   sourceVolumeId: string;
-  expectedSourceRevision: string;
+  expectedSourceSettlementRevision: string;
   targetWorkspaceId: string;
   targetSessionId: string;
   targetVolumeId: string;
@@ -87,18 +98,19 @@ export type WorkspaceVolumeGatewaySourceCredentialPreflightInput = WorkspaceVolu
 export interface WorkspaceVolumeGateway {
   checkHealth(): Promise<void>;
   prepare(input: WorkspaceVolumeGatewayPrepareInput): Promise<{ attached: boolean }>;
-  snapshot(input: WorkspaceVolumeGatewaySnapshotInput): Promise<{
-    volumeRevision: string;
-    files: readonly import("@pi-cloud/workspace-runtime").WorkspaceSnapshotFileMetadata[];
-  }>;
+  settle(input: WorkspaceVolumeGatewaySettleInput): Promise<{ settlementRevision: string }>;
   fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
-    sourceRevision: string;
-    volumeRevision: string;
-    files: readonly import("@pi-cloud/workspace-runtime").WorkspaceSnapshotFileMetadata[];
+    sourceSettlementRevision: string;
+    targetSettlementRevision: string;
   }>;
-  materialize(
-    input: WorkspaceVolumeGatewayMaterializeInput,
-  ): Promise<{ bytes: Uint8Array; sha256: string }>;
+  listDirectory(
+    input: WorkspaceVolumeGatewayPathInput,
+  ): Promise<{ entries: readonly WorkspaceVolumeDirectoryEntry[]; truncated: boolean }>;
+  readFile(input: WorkspaceVolumeGatewayReadFileInput): Promise<{
+    bytes: Uint8Array;
+    sha256: string;
+    executable: boolean;
+  }>;
   delete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ deleted: boolean }>;
   authorizeSourceCredential?(
     input: WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
@@ -141,7 +153,7 @@ export type VolumeState = Readonly<{
   workspaceId: string;
   volumeId: string;
   volumeGeneration: string;
-  forkedFrom?: Readonly<{ workspaceId: string; volumeRevision: string }>;
+  forkedFrom?: Readonly<{ workspaceId: string; settlementRevision: string }>;
 }>;
 
 export class WorkspaceVolumeGatewayError extends Error {
@@ -246,16 +258,16 @@ export function safeRelativeFile(value: string): string {
     /[\u0000-\u001f\u007f]/.test(value)
   ) {
     throw new WorkspaceVolumeGatewayError(
-      "workspace_materialize_path_invalid",
-      "Workspace materialize path was invalid",
+      "workspace_browser_path_invalid",
+      "Workspace browser path was invalid",
       false,
     );
   }
   const segments = value.split("/");
   if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
     throw new WorkspaceVolumeGatewayError(
-      "workspace_materialize_path_invalid",
-      "Workspace materialize path was invalid",
+      "workspace_browser_path_invalid",
+      "Workspace browser path was invalid",
       false,
     );
   }

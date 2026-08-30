@@ -164,12 +164,12 @@ async function ensureWorkerEventIngestToken(runtimeDirectory) {
   return true;
 }
 
-async function ensureSandboxMaterializerToken(runtimeDirectory) {
-  const path = resolve(runtimeDirectory, "secrets/sandbox-materializer-token");
+async function ensureWorkspaceServiceToken(runtimeDirectory) {
+  const path = resolve(runtimeDirectory, "secrets/workspace-service-token");
   try {
     const existing = (await readPrivateFile(path)).trim();
     if (!/^[A-Za-z0-9_-]{64}$/.test(existing)) {
-      throw new Error("Production Sandbox materializer token is invalid");
+      throw new Error("Production Workspace service token is invalid");
     }
     return false;
   } catch (error) {
@@ -426,7 +426,7 @@ if (await validateExisting(runtimeDirectory)) {
   const cubePersistentStateKeyCreated = await ensureCubePersistentStateKey(runtimeDirectory);
   const toolBrokerTokenCreated = await ensureToolBrokerToken(runtimeDirectory);
   const workerEventIngestTokenCreated = await ensureWorkerEventIngestToken(runtimeDirectory);
-  const sandboxMaterializerTokenCreated = await ensureSandboxMaterializerToken(runtimeDirectory);
+  const workspaceServiceTokenCreated = await ensureWorkspaceServiceToken(runtimeDirectory);
   const workspaceTerminalTokenCreated = await ensureWorkspaceTerminalToken(runtimeDirectory);
   const sshHostKeyCreated = await ensureSshHostKey(runtimeDirectory);
   await ensureWorkspaceVolumeGatewayState(runtimeDirectory);
@@ -443,7 +443,7 @@ if (await validateExisting(runtimeDirectory)) {
       cubePersistentStateKeyCreated,
       toolBrokerTokenCreated,
       workerEventIngestTokenCreated,
-      sandboxMaterializerTokenCreated,
+      workspaceServiceTokenCreated,
       workspaceTerminalTokenCreated,
       sshHostKeyCreated,
       workspaceVolumeGatewaySecretsCreated,
@@ -548,10 +548,7 @@ await writePrivateFile(
   resolve(secretsDirectory, "worker-event-ingest-token"),
   `${randomSecret()}\n`,
 );
-await writePrivateFile(
-  resolve(secretsDirectory, "sandbox-materializer-token"),
-  `${randomSecret()}\n`,
-);
+await writePrivateFile(resolve(secretsDirectory, "workspace-service-token"), `${randomSecret()}\n`);
 await writePrivateFile(
   resolve(secretsDirectory, "workspace-terminal-token"),
   `${randomSecret()}\n`,

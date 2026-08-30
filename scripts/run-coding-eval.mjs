@@ -125,17 +125,15 @@ async function evaluate(task) {
       202,
     );
     const run = await waitForRun(accepted.runId);
-    const [tests, versions] = await Promise.all([
-      request(`/v1/runs/${encodeURIComponent(accepted.runId)}/test-results`),
-      request(`/v1/sessions/${encodeURIComponent(session.sessionId)}/workspace-versions`),
-    ]);
-    const currentVersionId = versions.currentVersionId;
+    const tests = await request(`/v1/runs/${encodeURIComponent(accepted.runId)}/test-results`);
     let expectedEditPresent = false;
-    if (typeof currentVersionId === "string") {
+    try {
       const source = await request(
-        `/v1/workspace-versions/${encodeURIComponent(currentVersionId)}/file?path=${encodeURIComponent(task.expectedFile)}`,
+        `/v1/sessions/${encodeURIComponent(session.sessionId)}/workspace/file?path=${encodeURIComponent(task.expectedFile)}`,
       );
       expectedEditPresent = source.toString("utf8").includes(task.expectedText);
+    } catch {
+      expectedEditPresent = false;
     }
     const focused = tests.results.filter((result) => result.command === task.testCommand);
     const failedBeforeRepair = focused.some((result) => result.status !== "passed");

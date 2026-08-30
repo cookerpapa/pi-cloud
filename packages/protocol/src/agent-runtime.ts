@@ -2,12 +2,11 @@ import { Type, type Static } from "typebox";
 import { DeepSeekModelIdSchema } from "./control-plane-api.ts";
 import { UuidSchema } from "./protocol-primitives.ts";
 
-// Provider-native Workspace checkpoints carry a bounded file index and an
-// encrypted recovery reference. Large filesystem bytes remain in the Provider
-// snapshot instead of being base64-inlined into this control message.
-export const MAX_WORKSPACE_SNAPSHOT_BYTES = 32 * 1_024 * 1_024;
+// Provider-native Workspace settlements carry only a bounded Volume reference.
+// Workspace bytes remain in the persistent Provider Volume.
+export const MAX_WORKSPACE_BLOB_BYTES = 32 * 1_024 * 1_024;
 
-const MAX_BASE64_SNAPSHOT_LENGTH = Math.ceil(MAX_WORKSPACE_SNAPSHOT_BYTES / 3) * 4;
+const MAX_BASE64_WORKSPACE_BLOB_LENGTH = Math.ceil(MAX_WORKSPACE_BLOB_BYTES / 3) * 4;
 
 const Sha256Schema = Type.String({ pattern: "^[0-9a-f]{64}$" });
 
@@ -42,15 +41,15 @@ export const AgentModelRuntimeSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SandboxCheckpointBlobSchema = Type.Object(
+export const WorkspaceBlobSchema = Type.Object(
   {
     encoding: Type.Literal("base64"),
     sha256: Sha256Schema,
     sizeBytes: Type.Integer({
       minimum: 1,
-      maximum: MAX_WORKSPACE_SNAPSHOT_BYTES,
+      maximum: MAX_WORKSPACE_BLOB_BYTES,
     }),
-    data: Type.String({ minLength: 4, maxLength: MAX_BASE64_SNAPSHOT_LENGTH }),
+    data: Type.String({ minLength: 4, maxLength: MAX_BASE64_WORKSPACE_BLOB_LENGTH }),
   },
   { additionalProperties: false },
 );
@@ -58,7 +57,7 @@ export const SandboxCheckpointBlobSchema = Type.Object(
 export const AgentWorkspaceSeedSchema = Type.Union([
   Type.Object({ kind: Type.Literal("sample_java") }, { additionalProperties: false }),
   Type.Object(
-    { kind: Type.Literal("snapshot"), snapshot: SandboxCheckpointBlobSchema },
+    { kind: Type.Literal("bundle"), bundle: WorkspaceBlobSchema },
     { additionalProperties: false },
   ),
 ]);
@@ -68,4 +67,4 @@ export type AgentRevisionSnapshot = Static<typeof AgentRevisionSnapshotSchema>;
 export type AgentRuntimeKind = Static<typeof AgentRuntimeKindSchema>;
 export type SessionStorageKind = Static<typeof SessionStorageKindSchema>;
 export type AgentWorkspaceSeed = Static<typeof AgentWorkspaceSeedSchema>;
-export type SandboxCheckpointBlob = Static<typeof SandboxCheckpointBlobSchema>;
+export type WorkspaceBlob = Static<typeof WorkspaceBlobSchema>;

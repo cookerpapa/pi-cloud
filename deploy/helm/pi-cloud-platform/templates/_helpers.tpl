@@ -39,8 +39,8 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
   subPath: cube-egress-config-token
   readOnly: true
 - name: platform-secrets
-  mountPath: /run/pi-cloud-secrets/sandbox-materializer-token
-  subPath: sandbox-materializer-token
+  mountPath: /run/pi-cloud-secrets/workspace-service-token
+  subPath: workspace-service-token
   readOnly: true
 - name: platform-secrets
   mountPath: /run/pi-cloud-secrets/workspace-terminal-token

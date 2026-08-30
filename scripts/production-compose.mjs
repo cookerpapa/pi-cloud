@@ -80,7 +80,7 @@ const applicationSecretNames = [
   "source-control-credential-master-key",
   "tool-broker-token",
   "worker-event-ingest-token",
-  "sandbox-materializer-token",
+  "workspace-service-token",
   "workspace-terminal-token",
   "cube-persistent-state-key",
   "ssh-host-key.pem",

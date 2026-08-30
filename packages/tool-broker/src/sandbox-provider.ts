@@ -2,9 +2,11 @@ import type {
   AgentWorkspaceSeed,
   EnvironmentRuntimeSnapshot,
   EnvironmentValidationReport,
-  SandboxCheckpointBlob,
-  ToolBrokerMaterializeFileRequest,
-  ToolBrokerMaterializeFileResponse,
+  WorkspaceBlob,
+  ToolBrokerListWorkspaceDirectoryRequest,
+  ToolBrokerListWorkspaceDirectoryResponse,
+  ToolBrokerReadWorkspaceFileRequest,
+  ToolBrokerReadWorkspaceFileResponse,
   SupervisorRuntimeAssignment,
   ToolSandboxAssignment,
   ToolSandboxCaptureResponse,
@@ -62,7 +64,7 @@ export type SandboxCreateSpec = Readonly<{
   assignment: ToolSandboxAssignment;
   environment: EnvironmentRuntimeSnapshot;
   workspaceSeed: AgentWorkspaceSeed;
-  workspaceRestore?: SandboxCheckpointBlob;
+  workspaceSettlement?: WorkspaceBlob;
   policy: SandboxPolicy;
   toolRoot?: string;
   lifetime?: "development_environment";
@@ -84,8 +86,8 @@ export type SandboxHandle = Readonly<{
 
 export type SandboxWorkspaceForkResult = Readonly<{
   sourceHandle: SandboxHandle;
-  sourceRevision: string;
-  targetRevision: string;
+  sourceSettlementRevision: string;
+  targetSettlementRevision: string;
 }>;
 
 export type SandboxHttpServiceDiscovery = Readonly<{
@@ -255,7 +257,7 @@ export interface SandboxProvider {
   adoptPersistentCapsule?(capsule: string): Promise<SandboxHandle>;
   /** Forget a preserved machine without destroying its physical Cube. */
   detachPersistent?(handle: SandboxHandle): Promise<void>;
-  /** Browse the tenant-owned guest filesystem without a Session checkpoint. */
+  /** Browse the tenant-owned guest filesystem without restoring a Session settlement. */
   listDirectory?(handle: SandboxHandle, path: string): Promise<SandboxDirectoryListing>;
   /** Create one user-owned directory and return its parent listing. */
   createDirectory?(
@@ -263,7 +265,7 @@ export interface SandboxProvider {
     path: string,
     name: string,
   ): Promise<SandboxDirectoryListing>;
-  snapshot(handle: SandboxHandle, requestId: string): Promise<ToolSandboxCaptureResponse>;
+  settle(handle: SandboxHandle, requestId: string): Promise<ToolSandboxCaptureResponse>;
   forkWorkspace?(
     handle: SandboxHandle,
     request: ToolBrokerWorkspaceForkRequest,
@@ -271,14 +273,15 @@ export interface SandboxProvider {
   stop(handle: SandboxHandle): Promise<void>;
   destroy(handle: SandboxHandle): Promise<void>;
   inspect(handle: SandboxHandle): Promise<SandboxInspection>;
-  /**
-   * Read one bounded file from an immutable Provider snapshot without
-   * rebinding the snapshot into a writable Agent execution.
-   */
-  materializeFile?(
-    request: ToolBrokerMaterializeFileRequest,
+  /** List only one current directory from the persistent Workspace Volume. */
+  listWorkspaceDirectory?(
+    request: ToolBrokerListWorkspaceDirectoryRequest,
+  ): Promise<ToolBrokerListWorkspaceDirectoryResponse>;
+  /** Read one current bounded file without creating a Cube. */
+  readWorkspaceFile?(
+    request: ToolBrokerReadWorkspaceFileRequest,
     signal?: AbortSignal,
-  ): Promise<ToolBrokerMaterializeFileResponse>;
+  ): Promise<ToolBrokerReadWorkspaceFileResponse>;
   authorizeSourceCredential?(
     request: SourceControlWorkspaceCredentialAuthorizeRequest,
   ): Promise<SourceControlWorkspaceCredentialResponse>;

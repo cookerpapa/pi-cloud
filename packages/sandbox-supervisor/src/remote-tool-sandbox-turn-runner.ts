@@ -11,10 +11,10 @@ import {
   type ToolSandboxCreateResponse,
 } from "@pi-cloud/protocol";
 import {
-  decodeWorkspaceSnapshotBlob,
-  encodeWorkspaceSnapshotBlob,
-  parsePersistentVolumeReference,
-  parseWorkspaceSnapshot,
+  decodeWorkspaceBlob,
+  encodeWorkspaceBlob,
+  parseWorkspaceVolumeSettlement,
+  parseWorkspaceSeed,
 } from "@pi-cloud/workspace-runtime";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -31,10 +31,10 @@ import {
   settlementGatePolicyFromCommand,
 } from "./pi-settlement-gate.ts";
 import {
-  validateLoadedCheckpoint,
-  type LoadedSandboxCheckpoint,
-  type SandboxCheckpointStore,
-} from "./sandbox-checkpoint.ts";
+  validateLoadedWorkspaceSettlement,
+  type LoadedWorkspaceSettlement,
+  type WorkspaceSettlementStore,
+} from "./workspace-settlement.ts";
 import {
   validateSandboxRuntimeIdentity,
   type SandboxRuntimeIdentity,
@@ -56,17 +56,17 @@ import {
 
 const MAX_PROJECT_INSTRUCTIONS_BYTES = 16 * 1_024;
 
-export function projectInstructionsFromSnapshot(
-  snapshot: Uint8Array | undefined,
+export function projectInstructionsFromWorkspaceSeed(
+  seed: Uint8Array | undefined,
 ): string | undefined {
-  if (snapshot === undefined) return undefined;
-  if (parsePersistentVolumeReference(snapshot) !== undefined) {
-    // The persistent-volume reference contains a bounded file index, not file
-    // bytes. The trusted Runner reads project instructions only after the
-    // volume is attached through the Tool boundary.
+  if (seed === undefined) return undefined;
+  if (parseWorkspaceVolumeSettlement(seed) !== undefined) {
+    // The persistent-volume reference contains no file bytes. The trusted
+    // Runner reads project instructions only after the Volume is attached
+    // through the Tool boundary.
     return undefined;
   }
-  const file = parseWorkspaceSnapshot(snapshot).find((entry) => entry.path === "AGENTS.md");
+  const file = parseWorkspaceSeed(seed).find((entry) => entry.path === "AGENTS.md");
   if (file === undefined) return undefined;
   const bounded = file.content.subarray(0, MAX_PROJECT_INSTRUCTIONS_BYTES);
   let content: string;
@@ -101,7 +101,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   scenario?: AgentTurnScenario | AgentTurnScenarioResolver;
   modelRuntimeLeaseResolver?: TrustedModelRuntimeLeaseResolver;
   workspaceSeedResolver?: AgentWorkspaceSeedResolver;
-  checkpointStore?: SandboxCheckpointStore;
+  settlementStore?: WorkspaceSettlementStore;
   openAgentSession: (command: ExecuteTurnCommandMessage) => Promise<PiCloudSessionHandle>;
   createOrchestrationTools?: (
     command: ExecuteTurnCommandMessage,
@@ -160,7 +160,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #scenario: AgentTurnScenario | AgentTurnScenarioResolver;
   readonly #modelRuntimeLeaseResolver: TrustedModelRuntimeLeaseResolver | undefined;
   readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
-  readonly #checkpointStore: SandboxCheckpointStore | undefined;
+  readonly #settlementStore: WorkspaceSettlementStore | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
   readonly #createOrchestrationTools: RemoteToolSandboxTurnRunnerOptions["createOrchestrationTools"];
   readonly #runAttemptPhaseObserver: RunAttemptPhaseObserver | undefined;
@@ -185,7 +185,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#scenario = options.scenario ?? "java_repair";
     this.#modelRuntimeLeaseResolver = options.modelRuntimeLeaseResolver;
     this.#workspaceSeedResolver = options.workspaceSeedResolver;
-    this.#checkpointStore = options.checkpointStore;
+    this.#settlementStore = options.settlementStore;
     this.#openAgentSession = options.openAgentSession;
     this.#createOrchestrationTools = options.createOrchestrationTools;
     this.#runAttemptPhaseObserver = options.runAttemptPhaseObserver;
@@ -294,28 +294,30 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       );
     }
 
-    let loadedCheckpoint: LoadedSandboxCheckpoint | undefined;
-    if (this.#checkpointStore !== undefined) {
+    let loadedSettlement: LoadedWorkspaceSettlement | undefined;
+    if (this.#settlementStore !== undefined) {
       const restoreStartedAt = performance.now();
       try {
-        loadedCheckpoint = validateLoadedCheckpoint(await this.#checkpointStore.load(command));
-        this.#metrics?.checkpointRestoreDuration.observe(
-          { outcome: loadedCheckpoint === undefined ? "empty" : "completed" },
+        loadedSettlement = validateLoadedWorkspaceSettlement(
+          await this.#settlementStore.load(command),
+        );
+        this.#metrics?.workspaceSettlementRestoreDuration.observe(
+          { outcome: loadedSettlement === undefined ? "empty" : "completed" },
           (performance.now() - restoreStartedAt) / 1_000,
         );
       } catch (error: unknown) {
-        this.#metrics?.checkpointRestoreDuration.observe(
+        this.#metrics?.workspaceSettlementRestoreDuration.observe(
           { outcome: "failed" },
           (performance.now() - restoreStartedAt) / 1_000,
         );
         throw safePiError(
           error,
-          "checkpoint_load_failed",
-          "The settled checkpoint could not be loaded",
+          "settlement_load_failed",
+          "The Workspace settlement could not be loaded",
         );
       }
     }
-    if (loadedCheckpoint !== undefined && this.#runAttemptPhaseObserver !== undefined) {
+    if (loadedSettlement !== undefined && this.#runAttemptPhaseObserver !== undefined) {
       try {
         await this.#runAttemptPhaseObserver.transition(command, "restoring");
       } catch (error: unknown) {
@@ -339,10 +341,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         );
       }
     }
-    const projectInstructions = projectInstructionsFromSnapshot(
-      loadedCheckpoint?.workspace ?? workspaceSeed,
+    const projectInstructions = projectInstructionsFromWorkspaceSeed(
+      loadedSettlement?.reference ?? workspaceSeed,
     );
-    const cloudTurn = createCloudTurnContext(command, loadedCheckpoint?.workspaceRevision);
+    const cloudTurn = createCloudTurnContext(command, loadedSettlement?.workspaceRevision);
     const toolFree = cloudTurn.context.tools.names.length === 0;
 
     const usesEmbeddedFake =
@@ -373,7 +375,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
 
     const scenario =
       typeof this.#scenario === "function"
-        ? this.#scenario({ command, restoring: loadedCheckpoint !== undefined })
+        ? this.#scenario({ command, restoring: loadedSettlement !== undefined })
         : this.#scenario;
     const toolAssignment = assignment(command, this.#runtimeIdentity);
     const cloudAttempt = createCloudAttemptContext({
@@ -428,16 +430,18 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         workspaceSeed:
           workspaceSeed === undefined
             ? { kind: "sample_java" }
-            : { kind: "snapshot", snapshot: encodeWorkspaceSnapshotBlob(workspaceSeed) },
-        ...(loadedCheckpoint === undefined
+            : { kind: "bundle", bundle: encodeWorkspaceBlob(workspaceSeed) },
+        ...(loadedSettlement === undefined
           ? {}
           : {
-              ...(loadedCheckpoint.workspace === undefined
+              ...(loadedSettlement.reference === undefined
                 ? {}
-                : { workspaceRestore: encodeWorkspaceSnapshotBlob(loadedCheckpoint.workspace) }),
-              ...(loadedCheckpoint.workspaceRevision === undefined
+                : {
+                    workspaceSettlement: encodeWorkspaceBlob(loadedSettlement.reference),
+                  }),
+              ...(loadedSettlement.workspaceRevision === undefined
                 ? {}
-                : { workspaceRevision: loadedCheckpoint.workspaceRevision }),
+                : { workspaceRevision: loadedSettlement.workspaceRevision }),
             }),
       };
       if (!toolFree) {
@@ -507,7 +511,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       const onSettled: NonNullable<PiCloudTurnRunnerOptions["onSettled"]> = async () => {
         if (activation === undefined) {
           if (toolFree) {
-            retainedWorkspaceRevision = loadedCheckpoint?.workspaceRevision;
+            retainedWorkspaceRevision = loadedSettlement?.workspaceRevision;
             return;
           }
           throw new PiTurnError(
@@ -516,68 +520,68 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             true,
           );
         }
-        const checkpointStartedAt = performance.now();
+        const settlementStartedAt = performance.now();
         const captured = await this.#broker
           .capture(activation.activationId, toolAssignment)
           .catch((error: unknown) => {
-            this.#metrics?.checkpointDuration.observe(
+            this.#metrics?.workspaceSettlementDuration.observe(
               { outcome: "failed" },
-              (performance.now() - checkpointStartedAt) / 1_000,
+              (performance.now() - settlementStartedAt) / 1_000,
             );
             throw safePiError(
               error,
-              "workspace_checkpoint_capture_failed",
-              "The Tool Workspace checkpoint could not be captured",
+              "workspace_settlement_capture_failed",
+              "The Tool Workspace settlement could not be captured",
             );
           });
         if (captured.type === "tool_sandbox.unused") {
-          retainedWorkspaceRevision = loadedCheckpoint?.workspaceRevision;
-          this.#metrics?.checkpointDuration.observe(
+          retainedWorkspaceRevision = loadedSettlement?.workspaceRevision;
+          this.#metrics?.workspaceSettlementDuration.observe(
             { outcome: "completed" },
-            (performance.now() - checkpointStartedAt) / 1_000,
+            (performance.now() - settlementStartedAt) / 1_000,
           );
           return;
         }
         if (this.#runAttemptPhaseObserver !== undefined) {
           try {
-            await this.#runAttemptPhaseObserver.transition(command, "checkpointing");
+            await this.#runAttemptPhaseObserver.transition(command, "settling");
           } catch (error: unknown) {
             throw safePiError(
               error,
               "run_phase_persist_failed",
-              "Run checkpoint phase could not be persisted",
+              "Run settlement phase could not be persisted",
             );
           }
         }
-        if (this.#checkpointStore !== undefined) {
+        if (this.#settlementStore !== undefined) {
           try {
-            const saved = await this.#checkpointStore.save(
+            const saved = await this.#settlementStore.save(
               command,
-              loadedCheckpoint?.revision ?? null,
+              loadedSettlement?.revision ?? null,
               {
-                workspace: decodeWorkspaceSnapshotBlob(captured.workspace),
+                reference: decodeWorkspaceBlob(captured.settlement),
                 environment: captured.environment,
               },
             );
             retainedWorkspaceRevision = saved.workspaceRevision;
-            await this.#runAttemptPhaseObserver?.checkpointCommitted(command, saved.revision);
-            this.#metrics?.checkpointDuration.observe(
+            await this.#runAttemptPhaseObserver?.settlementCommitted(command, saved.revision);
+            this.#metrics?.workspaceSettlementDuration.observe(
               { outcome: "completed" },
-              (performance.now() - checkpointStartedAt) / 1_000,
+              (performance.now() - settlementStartedAt) / 1_000,
             );
           } catch (error: unknown) {
-            this.#metrics?.checkpointDuration.observe(
+            this.#metrics?.workspaceSettlementDuration.observe(
               { outcome: "failed" },
-              (performance.now() - checkpointStartedAt) / 1_000,
+              (performance.now() - settlementStartedAt) / 1_000,
             );
             throw safePiError(
               error,
-              "checkpoint_save_failed",
-              "The settled checkpoint could not be committed",
+              "settlement_save_failed",
+              "The settled settlement could not be committed",
             );
           }
         } else {
-          retainedWorkspaceRevision = captured.workspace.sha256;
+          retainedWorkspaceRevision = captured.settlement.sha256;
         }
       };
       const activeSandbox = activation;
@@ -606,11 +610,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         openSession: this.#openAgentSession,
         modelRuntimePool: this.#modelRuntimePool,
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
-        ...(this.#checkpointStore?.saveToolOutput === undefined
+        ...(this.#settlementStore?.saveToolOutput === undefined
           ? {}
           : {
               persistToolOutputArtifact: (output: { toolCallId: string; bytes: Uint8Array }) =>
-                this.#checkpointStore!.saveToolOutput!(command, output),
+                this.#settlementStore!.saveToolOutput!(command, output),
             }),
         sandboxContinuity: {
           continuityId:
@@ -619,7 +623,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           continuity: activeSandbox?.continuity ?? "cold_restore",
           environmentSha256: cloudTurn.environmentSha256,
           workspaceBindingSha256: cloudTurn.workspaceBindingSha256,
-          committedWorkspaceRevision: loadedCheckpoint?.workspaceRevision ?? null,
+          committedWorkspaceRevision: loadedSettlement?.workspaceRevision ?? null,
           toolPolicySha256: cloudTurn.toolPolicySha256,
         },
         onSettled,

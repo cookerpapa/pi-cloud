@@ -320,7 +320,7 @@ operation is failed, the runtime is destroyed and the admission slot is
 released. This closes the create-after-caller-death race instead of relying on
 the vanished Worker to call `release()`. Reconciliation starts its grace period
 from the Run/Attempt settlement timestamp, not from activation creation, so a
-normal post-settlement checkpoint/release cannot race orphan cleanup.
+normal post-settlement flush/release cannot race orphan cleanup.
 
 Cube mounts only the `workspace/` child of a trusted persistent Volume. The
 guest contains normal development tools but no model, database, Kafka or Cube
@@ -337,8 +337,8 @@ Sandbox reservation, retires or reuses the previous runtime after settlement,
 and then attaches the same Volume. A connected human terminal is the exception:
 the Agent borrows that terminal's already-attached Cube instead of creating a
 second runtime. The Workspace pointer records the last settled observation,
-while each Session keeps its own checkpoint lineage; one Session never advances
-all siblings' checkpoint bases.
+while each Session keeps its own settlement lineage; one Session never advances
+all siblings' settlement bases.
 
 ### Workspace Web Terminal
 
@@ -513,8 +513,9 @@ copy Workspaces to Kopia or object storage. It:
 - prepares and verifies the stable tenant/Workspace Volume identity;
 - initializes an empty/imported Workspace once;
 - deletes Workspace file bytes only when asked by the Tool Broker deletion coordinator;
-- captures a bounded file/hash catalog for checkpoint identity and source browsing;
-- reads selected current files for the UI without following symlink escapes;
+- records a lightweight provider settlement revision without walking the file tree;
+- lists one current directory or reads one current file for the UI;
+- rejects traversal and symlink escapes and hides platform/Git metadata;
 - serializes operations with a process lock and PostgreSQL advisory lock;
 - creates revision-bound internal Volume copies for isolated Subagent lanes.
 
@@ -537,10 +538,10 @@ Volume belongs to that machine and is deleted on explicit release. Conversation
 history remains independent and reports a missing Workspace until the user
 rebinds it.
 
-Source browsing materializes bounded files directly through the trusted Volume
-gateway. It neither creates a Cube nor consumes Cube admission capacity; the
-stored revision, path, size and SHA-256 are revalidated before bytes reach the
-browser.
+Source browsing lists and reads the current persistent Volume directly through
+the trusted Volume gateway. It neither creates a Cube nor consumes Cube
+admission capacity. Directory expansion performs one bounded directory read;
+opening a file performs one bounded file read and verifies that response.
 
 ### Durable browser stream
 
@@ -608,7 +609,7 @@ preserve a visible prefix that never reached `message_end`.
 | elastic Workspace bytes | persistent Cube Volume |
 | cloud development machine guest root, memory and processes | one Cube pause snapshot on its compute node |
 | encrypted machine reconnect capsule | PostgreSQL; key held only by Tool Broker |
-| Workspace revision/reference | PostgreSQL + trusted Volume envelope |
+| Workspace settlement/reference | PostgreSQL + trusted Volume envelope |
 | user Git metadata and OAuth credentials | persistent Workspace bytes under `.git` and hidden `.pi-cloud-home`, visible to Cube/Agent |
 | live process tree | one Cube KVM only |
 | active in-memory `messages[]` | Pi SDK for one active Run |
@@ -641,7 +642,7 @@ terminated because their VM crosses one Turn's timeout.
 - queue delivery is at-least-once; state commits are idempotent/fenced;
 - arbitrary shell start is not exactly-once and is never blindly replayed;
 - stale Workers cannot mutate Pi SessionStorage, execute Tools, commit a
-  terminal Run or advance a Workspace revision;
+  terminal Run or advance a Workspace settlement;
 - an unreachable Worker endpoint cannot strand a Session after its connection
   and lease expire: logical retirement proceeds under the durable fence, the
   interrupted Run and model reservation fail, terminal Tool ownership is

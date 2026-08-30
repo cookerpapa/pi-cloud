@@ -1,34 +1,34 @@
-import { validateCheckpointObjectKey, type CheckpointObjectStore } from "./checkpoint-store.ts";
+import { validateRuntimeObjectKey, type RuntimeObjectStore } from "./workspace-settlement-store.ts";
 
-export type TtlCheckpointObjectStoreOptions = {
-  objectStore: CheckpointObjectStore;
+export type TtlRuntimeObjectStoreOptions = {
+  objectStore: RuntimeObjectStore;
   ttlMs?: number;
   maximumEntries?: number;
   maximumBytes?: number;
   clock?: () => number;
-  observe?: (event: TtlCheckpointObjectStoreEvent) => void;
+  observe?: (event: TtlRuntimeObjectStoreEvent) => void;
 };
 
-export type TtlCheckpointObjectStoreEvent = {
+export type TtlRuntimeObjectStoreEvent = {
   result: "hit" | "miss" | "coalesced" | "write" | "evicted" | "deleted";
   entries: number;
   bytes: number;
 };
 
-export type TtlCheckpointObjectStoreSnapshot = {
+export type TtlRuntimeObjectStoreSnapshot = {
   entries: number;
   bytes: number;
   pending: number;
 };
 
-type CheckpointCacheEntry = {
+type RuntimeObjectCacheEntry = {
   bytes: Uint8Array;
   expiresAt: number;
 };
 
-const DEFAULT_CHECKPOINT_CACHE_TTL_MS = 10 * 60_000;
-const DEFAULT_CHECKPOINT_CACHE_MAXIMUM_ENTRIES = 512;
-const DEFAULT_CHECKPOINT_CACHE_MAXIMUM_BYTES = 32 * 1_024 * 1_024;
+const DEFAULT_RUNTIME_OBJECT_CACHE_TTL_MS = 10 * 60_000;
+const DEFAULT_RUNTIME_OBJECT_CACHE_MAXIMUM_ENTRIES = 512;
+const DEFAULT_RUNTIME_OBJECT_CACHE_MAXIMUM_BYTES = 32 * 1_024 * 1_024;
 
 function boundedCacheInteger(
   value: number,
@@ -45,56 +45,56 @@ function boundedCacheInteger(
 }
 
 /**
- * A Worker-local, bounded cache for immutable checkpoint objects.
+ * A Worker-local, bounded cache for immutable runtime objects.
  *
- * PostgreSQL still resolves and rechecks the current checkpoint head on every
+ * PostgreSQL still resolves and rechecks the current Workspace settlement head on every
  * Run. This cache only avoids reading an already-selected immutable Workspace,
  * Tool-output, or compact Pi Session-reference object again.
  */
-export class TtlCheckpointObjectStore implements CheckpointObjectStore {
-  readonly #objectStore: CheckpointObjectStore;
+export class TtlRuntimeObjectStore implements RuntimeObjectStore {
+  readonly #objectStore: RuntimeObjectStore;
   readonly #ttlMs: number;
   readonly #maximumEntries: number;
   readonly #maximumBytes: number;
   readonly #clock: () => number;
-  readonly #observe: ((event: TtlCheckpointObjectStoreEvent) => void) | undefined;
-  readonly #entries = new Map<string, CheckpointCacheEntry>();
+  readonly #observe: ((event: TtlRuntimeObjectStoreEvent) => void) | undefined;
+  readonly #entries = new Map<string, RuntimeObjectCacheEntry>();
   readonly #pending = new Map<string, Promise<Uint8Array>>();
   #bytes = 0;
 
-  constructor(options: TtlCheckpointObjectStoreOptions) {
+  constructor(options: TtlRuntimeObjectStoreOptions) {
     this.#objectStore = options.objectStore;
     this.#ttlMs = boundedCacheInteger(
-      options.ttlMs ?? DEFAULT_CHECKPOINT_CACHE_TTL_MS,
+      options.ttlMs ?? DEFAULT_RUNTIME_OBJECT_CACHE_TTL_MS,
       1_000,
       60 * 60_000,
-      "Checkpoint cache TTL",
+      "Runtime object cache TTL",
     );
     this.#maximumEntries = boundedCacheInteger(
-      options.maximumEntries ?? DEFAULT_CHECKPOINT_CACHE_MAXIMUM_ENTRIES,
+      options.maximumEntries ?? DEFAULT_RUNTIME_OBJECT_CACHE_MAXIMUM_ENTRIES,
       1,
       16_384,
-      "Checkpoint cache maximum entries",
+      "Runtime object cache maximum entries",
     );
     this.#maximumBytes = boundedCacheInteger(
-      options.maximumBytes ?? DEFAULT_CHECKPOINT_CACHE_MAXIMUM_BYTES,
+      options.maximumBytes ?? DEFAULT_RUNTIME_OBJECT_CACHE_MAXIMUM_BYTES,
       1_024,
       512 * 1_024 * 1_024,
-      "Checkpoint cache maximum bytes",
+      "Runtime object cache maximum bytes",
     );
     this.#clock = options.clock ?? Date.now;
     this.#observe = options.observe;
   }
 
   async put(objectKey: string, bytes: Uint8Array): Promise<void> {
-    const key = validateCheckpointObjectKey(objectKey);
+    const key = validateRuntimeObjectKey(objectKey);
     await this.#objectStore.put(key, bytes);
     this.#insert(key, bytes, this.#now());
     this.#emit("write");
   }
 
   async get(objectKey: string): Promise<Uint8Array> {
-    const key = validateCheckpointObjectKey(objectKey);
+    const key = validateRuntimeObjectKey(objectKey);
     const now = this.#now();
     this.#evictExpired(now);
     const cached = this.#entries.get(key);
@@ -125,13 +125,13 @@ export class TtlCheckpointObjectStore implements CheckpointObjectStore {
   }
 
   async delete(objectKey: string): Promise<void> {
-    const key = validateCheckpointObjectKey(objectKey);
+    const key = validateRuntimeObjectKey(objectKey);
     await this.#objectStore.delete(key);
     this.#remove(key);
     this.#emit("deleted");
   }
 
-  snapshot(): TtlCheckpointObjectStoreSnapshot {
+  snapshot(): TtlRuntimeObjectStoreSnapshot {
     this.#evictExpired(this.#now());
     return {
       entries: this.#entries.size,
@@ -143,7 +143,7 @@ export class TtlCheckpointObjectStore implements CheckpointObjectStore {
   #now(): number {
     const value = this.#clock();
     if (!Number.isSafeInteger(value) || value < 0) {
-      throw new TypeError("Checkpoint cache clock must return a non-negative integer");
+      throw new TypeError("Runtime object cache clock must return a non-negative integer");
     }
     return value;
   }
@@ -180,7 +180,7 @@ export class TtlCheckpointObjectStore implements CheckpointObjectStore {
     this.#bytes -= existing.bytes.byteLength;
   }
 
-  #emit(result: TtlCheckpointObjectStoreEvent["result"]): void {
+  #emit(result: TtlRuntimeObjectStoreEvent["result"]): void {
     this.#observe?.({
       result,
       entries: this.#entries.size,

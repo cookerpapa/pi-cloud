@@ -337,7 +337,7 @@ export class PostgresPiWorker {
       .where("cancellation.kind", "=", "cancel")
       .where("cancellation.state", "in", ["pending", "dispatched"])
       .where("attempt.claim_owner_id", "=", this.#identity)
-      .where("attempt.state", "in", ["provisioning", "restoring", "running", "checkpointing"])
+      .where("attempt.state", "in", ["provisioning", "restoring", "running", "settling"])
       .limit(this.#maximumConcurrentRuns)
       .execute();
   }

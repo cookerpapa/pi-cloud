@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { WorkspaceFileResource, WorkspaceVersionResource } from "@pi-cloud/protocol";
+import type { WorkspaceDirectoryEntryResource } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError } from "./api.ts";
 import { useI18n, type Translate } from "./i18n.tsx";
 
@@ -10,15 +10,25 @@ const WorkspaceTerminal = lazy(async () => {
 
 export const MAXIMUM_WORKSPACE_PREVIEW_BYTES = 512 * 1_024;
 
-export type DirectoryEntry =
-  | Readonly<{ kind: "directory"; path: string; depth: number; name: string }>
-  | Readonly<{
-      kind: "file";
-      path: string;
-      depth: number;
-      name: string;
-      file: WorkspaceFileResource;
-    }>;
+export type VisibleWorkspaceEntry = WorkspaceDirectoryEntryResource & Readonly<{ depth: number }>;
+
+export function flattenDirectoryEntries(
+  entriesByDirectory: Readonly<Record<string, readonly WorkspaceDirectoryEntryResource[]>>,
+  expandedDirectories: ReadonlySet<string>,
+  directory = "",
+  depth = 0,
+): readonly VisibleWorkspaceEntry[] {
+  const visible: VisibleWorkspaceEntry[] = [];
+  for (const entry of entriesByDirectory[directory] ?? []) {
+    visible.push({ ...entry, depth });
+    if (entry.kind === "directory" && expandedDirectories.has(entry.path)) {
+      visible.push(
+        ...flattenDirectoryEntries(entriesByDirectory, expandedDirectories, entry.path, depth + 1),
+      );
+    }
+  }
+  return visible;
+}
 
 function message(error: unknown, t: Translate): string {
   if (error instanceof PiCloudApiError) return error.message;
@@ -28,66 +38,11 @@ function message(error: unknown, t: Translate): string {
   return t("inspector.unavailable");
 }
 
-export function directoryEntries(
-  files: readonly WorkspaceFileResource[],
-): readonly DirectoryEntry[] {
-  const directories = new Set<string>();
-  for (const file of files) {
-    const parts = file.path.split("/");
-    for (let index = 1; index < parts.length; index += 1) {
-      directories.add(parts.slice(0, index).join("/"));
-    }
-  }
-  return [
-    ...[...directories].map((path) => ({
-      kind: "directory" as const,
-      path,
-      depth: path.split("/").length - 1,
-      name: path.split("/").at(-1) ?? path,
-    })),
-    ...files.map((file) => ({
-      kind: "file" as const,
-      path: file.path,
-      depth: file.path.split("/").length - 1,
-      name: file.path.split("/").at(-1) ?? file.path,
-      file,
-    })),
-  ].sort((left, right) => {
-    const leftParts = left.path.split("/");
-    const rightParts = right.path.split("/");
-    const commonLength = Math.min(leftParts.length, rightParts.length);
-    for (let index = 0; index < commonLength; index += 1) {
-      if (leftParts[index] === rightParts[index]) continue;
-      const leftIsDirectory = index < leftParts.length - 1 || left.kind === "directory";
-      const rightIsDirectory = index < rightParts.length - 1 || right.kind === "directory";
-      if (leftIsDirectory !== rightIsDirectory) return leftIsDirectory ? -1 : 1;
-      return (leftParts[index] ?? "").localeCompare(rightParts[index] ?? "");
-    }
-    return leftParts.length - rightParts.length;
-  });
-}
-
-function parentDirectory(path: string): string | null {
-  const separator = path.lastIndexOf("/");
-  return separator === -1 ? null : path.slice(0, separator);
-}
-
-export function visibleDirectoryEntries(
-  entries: readonly DirectoryEntry[],
-  expandedDirectories: ReadonlySet<string>,
-): readonly DirectoryEntry[] {
-  return entries.filter((entry) => {
-    let parent = parentDirectory(entry.path);
-    while (parent !== null) {
-      if (!expandedDirectories.has(parent)) return false;
-      parent = parentDirectory(parent);
-    }
-    return true;
-  });
-}
-
-export function canPreviewWorkspaceFile(file: WorkspaceFileResource): boolean {
-  return file.sizeBytes <= MAXIMUM_WORKSPACE_PREVIEW_BYTES;
+export function canPreviewWorkspaceFile(file: WorkspaceDirectoryEntryResource): boolean {
+  return (
+    file.kind === "file" &&
+    (file.sizeBytes ?? Number.POSITIVE_INFINITY) <= MAXIMUM_WORKSPACE_PREVIEW_BYTES
+  );
 }
 
 function sizeLabel(bytes: number): string {
@@ -123,43 +78,28 @@ export function WorkspaceInspector({
   workspaceName: string | null;
 }) {
   const { t } = useI18n();
-  const [version, setVersion] = useState<WorkspaceVersionResource | null>(null);
-  const [files, setFiles] = useState<readonly WorkspaceFileResource[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [selectedText, setSelectedText] = useState<string | null>(null);
-  const [selectedBinary, setSelectedBinary] = useState(false);
-  const [selectedTooLarge, setSelectedTooLarge] = useState(false);
-  const [rootExpanded, setRootExpanded] = useState(true);
+  const [entriesByDirectory, setEntriesByDirectory] = useState<
+    Readonly<Record<string, readonly WorkspaceDirectoryEntryResource[]>>
+  >({});
   const [expandedDirectories, setExpandedDirectories] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [loading, setLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<WorkspaceDirectoryEntryResource | null>(null);
+  const [selectedText, setSelectedText] = useState<string | null>(null);
+  const [selectedBinary, setSelectedBinary] = useState(false);
+  const [selectedTooLarge, setSelectedTooLarge] = useState(false);
+  const [loadingDirectories, setLoadingDirectories] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [fileLoading, setFileLoading] = useState(false);
   const [view, setView] = useState<"files" | "terminal">("files");
   const [developmentEnvironmentId, setDevelopmentEnvironmentId] = useState<string | null>(null);
   const onErrorRef = useRef(onError);
-  const directoryLoadGeneration = useRef(0);
-  const fileLoadGeneration = useRef(0);
+  const loadGeneration = useRef(0);
 
   useEffect(() => {
     onErrorRef.current = onError;
   }, [onError]);
-
-  useEffect(() => {
-    directoryLoadGeneration.current += 1;
-    fileLoadGeneration.current += 1;
-    setRootExpanded(true);
-    setExpandedDirectories(new Set());
-    setVersion(null);
-    setFiles([]);
-    setSelectedPath(null);
-    setSelectedText(null);
-    setSelectedBinary(false);
-    setSelectedTooLarge(false);
-    setLoading(false);
-    setFileLoading(false);
-    setView("files");
-  }, [sessionId]);
 
   useEffect(() => {
     if (workspaceId === null) {
@@ -186,115 +126,93 @@ export function WorkspaceInspector({
     };
   }, [api, refreshSignal, workspaceId]);
 
+  const loadDirectory = useCallback(
+    async (path: string, generation: number): Promise<void> => {
+      if (sessionId === null) return;
+      setLoadingDirectories((current) => new Set(current).add(path));
+      try {
+        const listed = await api.listWorkspaceDirectory(sessionId, path);
+        if (generation !== loadGeneration.current) return;
+        setEntriesByDirectory((current) => ({ ...current, [path]: listed.entries }));
+        if (listed.truncated) onErrorRef.current(t("inspector.directoryTruncated"));
+      } catch (error: unknown) {
+        if (generation === loadGeneration.current) onErrorRef.current(message(error, t));
+      } finally {
+        if (generation === loadGeneration.current) {
+          setLoadingDirectories((current) => {
+            const next = new Set(current);
+            next.delete(path);
+            return next;
+          });
+        }
+      }
+    },
+    [api, sessionId, t],
+  );
+
   const refresh = useCallback(async (): Promise<void> => {
-    if (sessionId === null) {
-      setVersion(null);
-      setFiles([]);
-      setSelectedPath(null);
-      setSelectedText(null);
-      return;
-    }
-    const generation = ++directoryLoadGeneration.current;
-    fileLoadGeneration.current += 1;
-    setLoading(true);
-    setFileLoading(false);
-    setSelectedPath(null);
+    const generation = ++loadGeneration.current;
+    setEntriesByDirectory({});
+    setExpandedDirectories(new Set());
+    setSelectedFile(null);
     setSelectedText(null);
     setSelectedBinary(false);
     setSelectedTooLarge(false);
-    try {
-      const versions = await api.listWorkspaceVersions(sessionId);
-      if (generation !== directoryLoadGeneration.current) return;
-      const current =
-        versions.currentVersionId === undefined
-          ? null
-          : (versions.versions.find((item) => item.versionId === versions.currentVersionId) ??
-            null);
-      setVersion(current);
-      if (current === null) {
-        setFiles([]);
-        setSelectedPath(null);
-        setSelectedText(null);
-        return;
-      }
-      const listedFiles: WorkspaceFileResource[] = [];
-      const seenCursors = new Set<string>();
-      let cursor: string | undefined;
-      for (;;) {
-        const listed = await api.listWorkspaceFiles(current.versionId, cursor);
-        if (listed.versionId !== current.versionId) {
-          throw new Error(t("inspector.wrongVersion"));
-        }
-        listedFiles.push(...listed.files);
-        if (!listed.truncated) break;
-        if (listed.nextCursor === undefined || seenCursors.has(listed.nextCursor)) {
-          throw new Error(t("inspector.invalidCursor"));
-        }
-        seenCursors.add(listed.nextCursor);
-        cursor = listed.nextCursor;
-      }
-      if (generation !== directoryLoadGeneration.current) return;
-      setFiles(listedFiles);
-    } catch (error: unknown) {
-      if (generation === directoryLoadGeneration.current) {
-        setVersion(null);
-        setFiles([]);
-        onErrorRef.current(message(error, t));
-      }
-    } finally {
-      if (generation === directoryLoadGeneration.current) setLoading(false);
-    }
-  }, [api, sessionId, t]);
+    setFileLoading(false);
+    if (sessionId !== null) await loadDirectory("", generation);
+  }, [loadDirectory, sessionId]);
 
   useEffect(() => {
+    setView("files");
     void refresh();
     return () => {
-      directoryLoadGeneration.current += 1;
-      fileLoadGeneration.current += 1;
+      loadGeneration.current += 1;
     };
   }, [refresh, refreshSignal]);
 
-  async function openFile(file: WorkspaceFileResource): Promise<void> {
-    if (version === null) return;
-    const generation = ++fileLoadGeneration.current;
+  async function toggleDirectory(path: string): Promise<void> {
+    if (expandedDirectories.has(path)) {
+      setExpandedDirectories((current) => {
+        const next = new Set(current);
+        next.delete(path);
+        return next;
+      });
+      return;
+    }
+    setExpandedDirectories((current) => new Set(current).add(path));
+    if (entriesByDirectory[path] === undefined) {
+      await loadDirectory(path, loadGeneration.current);
+    }
+  }
+
+  async function openFile(file: WorkspaceDirectoryEntryResource): Promise<void> {
+    if (sessionId === null || file.kind !== "file") return;
+    const generation = loadGeneration.current;
     const previewable = canPreviewWorkspaceFile(file);
-    setSelectedPath(file.path);
+    setSelectedFile(file);
     setSelectedText(null);
     setSelectedBinary(false);
     setSelectedTooLarge(!previewable);
-    if (!previewable) {
-      setFileLoading(false);
-      return;
-    }
+    if (!previewable) return;
     setFileLoading(true);
     try {
-      const result = await api.readWorkspaceFile(version.versionId, file.path);
-      if (generation !== fileLoadGeneration.current) return;
+      const result = await api.readWorkspaceFile(sessionId, file.path);
+      if (generation !== loadGeneration.current) return;
       const text = decodedText(result.bytes);
       setSelectedText(text);
       setSelectedBinary(text === null);
     } catch (error: unknown) {
-      if (generation === fileLoadGeneration.current) onErrorRef.current(message(error, t));
+      if (generation === loadGeneration.current) onErrorRef.current(message(error, t));
     } finally {
-      if (generation === fileLoadGeneration.current) setFileLoading(false);
+      if (generation === loadGeneration.current) setFileLoading(false);
     }
   }
 
-  const entries = useMemo(() => directoryEntries(files), [files]);
   const visibleEntries = useMemo(
-    () => (rootExpanded ? visibleDirectoryEntries(entries, expandedDirectories) : []),
-    [entries, expandedDirectories, rootExpanded],
+    () => flattenDirectoryEntries(entriesByDirectory, expandedDirectories),
+    [entriesByDirectory, expandedDirectories],
   );
-  const selectedFile = files.find((file) => file.path === selectedPath) ?? null;
-
-  function toggleDirectory(path: string): void {
-    setExpandedDirectories((current) => {
-      const next = new Set(current);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  }
+  const rootLoading = loadingDirectories.has("");
 
   return (
     <aside className="workspace-directory" aria-label={t("common.workspace")}>
@@ -302,11 +220,11 @@ export function WorkspaceInspector({
         <div>
           <span>WORKSPACE</span>
           <strong>{workspaceName ?? "/workspace"}</strong>
-          <small>/workspace</small>
+          <small>{t("inspector.liveFiles")}</small>
         </div>
         <div>
           <button
-            disabled={loading}
+            disabled={rootLoading}
             onClick={() => void refresh()}
             title={t("inspector.refresh")}
             type="button"
@@ -318,14 +236,6 @@ export function WorkspaceInspector({
           </button>
         </div>
       </header>
-      <div className="workspace-directory-meta">
-        {version === null
-          ? t("inspector.noVersion")
-          : t("inspector.version", {
-              version: version.versionNumber,
-              count: version.fileCount,
-            })}
-      </div>
       <div className="workspace-view-tabs" role="tablist" aria-label={t("inspector.views")}>
         <button
           aria-selected={view === "files"}
@@ -358,18 +268,12 @@ export function WorkspaceInspector({
       ) : (
         <div className="workspace-directory-body">
           <nav className="workspace-file-tree" aria-label={t("inspector.fileTree")}>
-            <button
-              aria-expanded={rootExpanded}
-              className="workspace-root-row"
-              onClick={() => setRootExpanded((expanded) => !expanded)}
-              type="button"
-            >
-              <span>{rootExpanded ? "▾" : "▸"}</span>
+            <div className="workspace-root-row">
               <strong>/workspace</strong>
-            </button>
-            {loading ? (
+            </div>
+            {rootLoading ? (
               <div className="workspace-empty">{t("inspector.loadingDirectory")}</div>
-            ) : entries.length === 0 ? (
+            ) : visibleEntries.length === 0 ? (
               <div className="workspace-empty">{t("inspector.emptyDirectory")}</div>
             ) : (
               visibleEntries.map((entry) =>
@@ -378,26 +282,42 @@ export function WorkspaceInspector({
                     aria-expanded={expandedDirectories.has(entry.path)}
                     className="workspace-tree-directory"
                     key={`directory:${entry.path}`}
-                    onClick={() => toggleDirectory(entry.path)}
+                    onClick={() => void toggleDirectory(entry.path)}
                     style={{ paddingLeft: `${String(16 + entry.depth * 16)}px` }}
                     title={entry.path}
                     type="button"
                   >
-                    <span>{expandedDirectories.has(entry.path) ? "▾" : "▸"}</span>
+                    <span>
+                      {loadingDirectories.has(entry.path)
+                        ? "…"
+                        : expandedDirectories.has(entry.path)
+                          ? "▾"
+                          : "▸"}
+                    </span>
                     <span>{entry.name}</span>
                   </button>
+                ) : entry.kind === "symlink" ? (
+                  <div
+                    className="workspace-tree-file"
+                    key={`symlink:${entry.path}`}
+                    style={{ paddingLeft: `${String(18 + entry.depth * 16)}px` }}
+                    title={entry.path}
+                  >
+                    <span>↗</span>
+                    <span>{entry.name}</span>
+                  </div>
                 ) : (
                   <button
-                    className={`workspace-tree-file${selectedPath === entry.path ? " active" : ""}`}
+                    className={`workspace-tree-file${selectedFile?.path === entry.path ? " active" : ""}`}
                     key={`file:${entry.path}`}
-                    onClick={() => void openFile(entry.file)}
+                    onClick={() => void openFile(entry)}
                     style={{ paddingLeft: `${String(18 + entry.depth * 16)}px` }}
                     title={entry.path}
                     type="button"
                   >
-                    <span>{entry.file.executable ? "◆" : "·"}</span>
+                    <span>{entry.executable ? "◆" : "·"}</span>
                     <span>{entry.name}</span>
-                    <small>{sizeLabel(entry.file.sizeBytes)}</small>
+                    <small>{sizeLabel(entry.sizeBytes ?? 0)}</small>
                   </button>
                 ),
               )
@@ -413,7 +333,7 @@ export function WorkspaceInspector({
               <>
                 <header>
                   <strong>{selectedFile.path}</strong>
-                  <span>{sizeLabel(selectedFile.sizeBytes)}</span>
+                  <span>{sizeLabel(selectedFile.sizeBytes ?? 0)}</span>
                 </header>
                 {fileLoading ? (
                   <div className="workspace-preview-empty">{t("inspector.loadingFile")}</div>

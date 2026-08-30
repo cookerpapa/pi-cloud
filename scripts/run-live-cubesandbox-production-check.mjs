@@ -572,11 +572,11 @@ async function listLogicalSandboxAssignments(logicalSandboxId) {
   );
 }
 
-async function workspaceVersionEvidence(runId) {
+async function workspaceSettlementEvidence(runId) {
   const value = await psql(
     `select v.file_count || '|' || a.size_bytes
-       from workspace_versions v
-       join artifacts a on a.id = v.workspace_artifact_id
+       from workspace_settlements v
+       join artifacts a on a.id = v.settlement_artifact_id
       where v.run_id = ${sqlLiteral(runId)}
         and v.state = 'settled'`,
   );
@@ -1008,14 +1008,15 @@ try {
   const firstUsage = await runUsageEvidence(firstCoding.accepted.runId);
   const firstCodingLatency = await runLatencyEvidence(firstCoding.accepted.runId);
   assert(firstUsage.requests > 0 && firstUsage.outputTokens > 0);
-  const firstVersions = await api.listWorkspaceVersions(session.sessionId);
-  assert(firstVersions.currentVersionId !== undefined, "First coding Run did not commit Workspace");
-  const firstVersionId = firstVersions.currentVersionId;
+  const firstSettlementId = await psql(
+    `select current_workspace_settlement_id::text from sessions where id = ${sqlLiteral(session.sessionId)}`,
+  );
+  assert(firstSettlementId.length > 0, "First coding Run did not settle the Workspace");
   const { workspacePath } = workspaceVolumePath(tenantId, session.workspaceId, session.sessionId);
   const firstSource = await readFile(resolve(workspacePath, "counting_sort.py"), "utf8");
   assert(
     firstSource.includes("def counting_sort") && /negative/u.test(firstSource.toLowerCase()),
-    "First persistent Workspace revision omitted counting_sort.py code",
+    "First persistent Workspace settlement omitted counting_sort.py code",
   );
   progress("first persistent Workspace Volume revision was verified in place");
   assert.equal(
@@ -1095,9 +1096,11 @@ try {
   const processCheckUsage = await runUsageEvidence(processCheck.accepted.runId);
   await waitForRunningCubeSession(session.sessionId);
   progress("background process survived repeated warm-Cube Agent handoffs");
-  const finalVersions = await api.listWorkspaceVersions(session.sessionId);
-  assert(finalVersions.currentVersionId !== undefined);
-  assert.notEqual(finalVersions.currentVersionId, firstVersionId);
+  const finalSettlementId = await psql(
+    `select current_workspace_settlement_id::text from sessions where id = ${sqlLiteral(session.sessionId)}`,
+  );
+  assert(finalSettlementId.length > 0);
+  assert.notEqual(finalSettlementId, firstSettlementId);
   const finalSource = await readFile(resolve(workspacePath, "counting_sort.py"), "utf8");
   assert(finalSource.includes("counting_sort"));
   assert(
@@ -1184,7 +1187,7 @@ try {
   );
   progress("large Workspace Run completed and committed its persistent Volume revision");
   const largeFirstUsage = await runUsageEvidence(largeFirst.accepted.runId);
-  const largeFirstWorkspace = await workspaceVersionEvidence(largeFirst.accepted.runId);
+  const largeFirstWorkspace = await workspaceSettlementEvidence(largeFirst.accepted.runId);
   assert(
     largeFirstWorkspace.fileCount > 512,
     "Large-workspace Run did not cross the bounded revision-reference threshold",
@@ -1209,7 +1212,7 @@ try {
   );
   progress("large persistent Workspace Volume attached to a fresh Cube KVM");
   const largeFollowUpUsage = await runUsageEvidence(largeFollowUp.accepted.runId);
-  const largeFollowUpWorkspace = await workspaceVersionEvidence(largeFollowUp.accepted.runId);
+  const largeFollowUpWorkspace = await workspaceSettlementEvidence(largeFollowUp.accepted.runId);
   assert(largeFollowUpWorkspace.fileCount > 512);
   assert.equal(largeFirst.activations.length, 1);
   assert.equal(largeFollowUp.activations.length, 1);
@@ -1284,7 +1287,7 @@ try {
       backgroundProcessSurvived: true,
       authenticatedHttpPreviewPassed: true,
       workspaceRestored: true,
-      workspaceVersions: finalVersions.versions.length,
+      workspaceSettlements: finalVersions.versions.length,
       finalWorkspaceFileBytes: Buffer.byteLength(finalSource, "utf8"),
     },
     workspaceIsolation: gitPlacement,

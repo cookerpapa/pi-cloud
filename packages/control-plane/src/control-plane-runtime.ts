@@ -247,10 +247,9 @@ export async function createControlPlaneRuntime(
       ...(options.sessionEventStreamOptions === undefined
         ? {}
         : { sessionEventStreamOptions: options.sessionEventStreamOptions }),
-      ...(options.artifactReader === undefined ? {} : { artifactReader: options.artifactReader }),
-      ...(options.providerSnapshotReader === undefined
+      ...(options.workspaceBrowser === undefined
         ? {}
-        : { providerSnapshotReader: options.providerSnapshotReader }),
+        : { workspaceBrowser: options.workspaceBrowser }),
     });
   } catch (error: unknown) {
     gateway.shutdown();

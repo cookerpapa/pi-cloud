@@ -1,7 +1,7 @@
 import type { Database } from "@pi-cloud/database";
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 import { PiTurnError } from "@pi-cloud/sandbox-supervisor";
-import { createWorkspaceSnapshot } from "@pi-cloud/workspace-runtime";
+import { createWorkspaceSeed } from "@pi-cloud/workspace-runtime";
 import type { Kysely } from "kysely";
 
 export type PostgresWorkspaceSeedResolverOptions = {
@@ -55,6 +55,6 @@ export class PostgresWorkspaceSeedResolver {
         false,
       );
     }
-    return workspace.seedKind === "sample_java" ? undefined : createWorkspaceSnapshot([]);
+    return workspace.seedKind === "sample_java" ? undefined : createWorkspaceSeed([]);
   }
 }

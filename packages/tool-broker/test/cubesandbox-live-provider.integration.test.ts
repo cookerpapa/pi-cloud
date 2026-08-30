@@ -8,10 +8,7 @@ import {
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
-import {
-  decodeWorkspaceSnapshotBlob,
-  parsePersistentVolumeReference,
-} from "@pi-cloud/workspace-runtime";
+import { decodeWorkspaceBlob, parseWorkspaceVolumeSettlement } from "@pi-cloud/workspace-runtime";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
@@ -578,18 +575,32 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         if (captured.type !== "tool_sandbox.captured") {
           throw new Error("CubeSandbox live Workspace capture was missing");
         }
-        const checkpoint = parsePersistentVolumeReference(
-          decodeWorkspaceSnapshotBlob(captured.workspace),
-        );
+        const checkpoint = parseWorkspaceVolumeSettlement(decodeWorkspaceBlob(captured.settlement));
         expect(checkpoint).toMatchObject({
           providerId: "cubesandbox",
           tenantId: firstAssignment.tenantId,
           workspaceId: firstAssignment.workspaceId,
           fencingToken: parseExecutionLease(firstAssignment.executionLease).fencingToken,
+          settlementRevision: expect.stringMatching(/^[0-9a-f]{64}$/),
         });
-        expect(checkpoint?.files.length).toBeGreaterThan(512);
-        expect(checkpoint?.files.find((file) => file.path === "tenant-canary")).toMatchObject({
-          sizeBytes: Buffer.byteLength(firstCanary),
+        await expect(
+          manager.listWorkspaceDirectory({
+            toolBrokerProtocolVersion: 1,
+            type: "workspace.list_directory",
+            requestId: randomUUID(),
+            tenantId: firstAssignment.tenantId,
+            workspaceId: firstAssignment.workspaceId,
+            sessionId: firstAssignment.sessionId,
+            rootPath: "",
+            path: "",
+          }),
+        ).resolves.toMatchObject({
+          entries: expect.arrayContaining([
+            expect.objectContaining({
+              path: "tenant-canary",
+              sizeBytes: Buffer.byteLength(firstCanary),
+            }),
+          ]),
         });
         await expect(
           manager.release({
@@ -620,7 +631,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           requestId: randomUUID(),
           assignment: restoredFirstAssignment,
           workspaceSeed: { kind: "sample_java" },
-          workspaceRestore: captured.workspace,
+          workspaceSettlement: captured.settlement,
         });
         activationIds.add(first.activationId);
         expect(

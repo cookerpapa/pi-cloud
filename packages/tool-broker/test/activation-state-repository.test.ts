@@ -90,7 +90,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
           workspace_id: workspaceId,
           desired_model_profile_id: profileId,
           state: "idle" as const,
-          workspace_snapshot_key: null,
+          workspace_settlement_key: null,
         })),
       )
       .execute();
@@ -126,7 +126,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         workspace_id: workspaceId,
         desired_model_profile_id: profileId,
         state: "idle",
-        workspace_snapshot_key: null,
+        workspace_settlement_key: null,
         conversation_parent_session_id: rootSessionId,
         conversation_fork_turn_id: forkTurnId,
         conversation_fork_entry_id: "20000000-0000-4000-8000-000000000016",
@@ -258,7 +258,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         desired_model_profile_id: profileId,
         state: "running",
         session_kind: "subagent",
-        workspace_snapshot_key: null,
+        workspace_settlement_key: null,
       })
       .executeTakeFirstOrThrow();
     await database

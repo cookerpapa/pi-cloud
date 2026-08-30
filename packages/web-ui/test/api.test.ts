@@ -624,11 +624,11 @@ describe("tenant-aware browser API", () => {
   });
 
   it("loads binary Workspace content", async () => {
-    const versionId = "20000000-0000-4000-8000-000000000001";
+    const sessionId = "20000000-0000-4000-8000-000000000001";
     const token = `pck_10000000-0000-4000-8000-000000000001.${"a".repeat(43)}`;
     const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
       expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${token}`);
-      expect(String(input)).toBe(`/v1/workspace-versions/${versionId}/file?path=src%2FMain.java`);
+      expect(String(input)).toBe(`/v1/sessions/${sessionId}/workspace/file?path=src%2FMain.java`);
       return new Response("class Main {}\n", {
         status: 200,
         headers: { "content-type": "application/octet-stream" },
@@ -636,22 +636,24 @@ describe("tenant-aware browser API", () => {
     });
     const api = new PiCloudApi(fetchImplementation, token);
 
-    const file = await api.readWorkspaceFile(versionId, "src/Main.java");
+    const file = await api.readWorkspaceFile(sessionId, "src/Main.java");
     expect(new TextDecoder().decode(file.bytes)).toBe("class Main {}\n");
   });
 
-  it("requests subsequent immutable Workspace file pages with an encoded cursor", async () => {
-    const versionId = "20000000-0000-4000-8000-000000000001";
-    const cursor = "src/目录/Main.java";
+  it("loads one current Workspace directory with an encoded path", async () => {
+    const sessionId = "20000000-0000-4000-8000-000000000001";
+    const path = "src/目录";
     const token = `pck_10000000-0000-4000-8000-000000000001.${"a".repeat(43)}`;
     const fetchImplementation = vi.fn<typeof fetch>(async (input) => {
       expect(String(input)).toBe(
-        `/v1/workspace-versions/${versionId}/files?cursor=${encodeURIComponent(cursor)}`,
+        `/v1/sessions/${sessionId}/workspace/directory?path=${encodeURIComponent(path)}`,
       );
       return new Response(
         JSON.stringify({
-          versionId,
-          files: [],
+          sessionId,
+          workspaceId: "20000000-0000-4000-8000-000000000002",
+          path,
+          entries: [],
           truncated: false,
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -659,9 +661,11 @@ describe("tenant-aware browser API", () => {
     });
     const api = new PiCloudApi(fetchImplementation, token);
 
-    await expect(api.listWorkspaceFiles(versionId, cursor)).resolves.toEqual({
-      versionId,
-      files: [],
+    await expect(api.listWorkspaceDirectory(sessionId, path)).resolves.toEqual({
+      sessionId,
+      workspaceId: "20000000-0000-4000-8000-000000000002",
+      path,
+      entries: [],
       truncated: false,
     });
   });

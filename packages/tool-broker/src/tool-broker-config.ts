@@ -12,7 +12,7 @@ export type ToolBrokerConfig = {
   ownershipLeaseMs: number;
   ownershipHeartbeatMs: number;
   serviceToken: string;
-  materializerToken?: string;
+  workspaceServiceToken?: string;
   terminalToken: string;
   persistentStateKey: Uint8Array;
   imageRevision: string;
@@ -235,10 +235,12 @@ export async function loadToolBrokerConfig(
     persistentStateKey: await readPersistentStateKey(
       required(environment, "PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE"),
     ),
-    ...(environment.PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE === undefined
+    ...(environment.PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE === undefined
       ? {}
       : {
-          materializerToken: await readSecret(environment.PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE),
+          workspaceServiceToken: await readSecret(
+            environment.PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE,
+          ),
         }),
     imageRevision: bounded(
       required(environment, "PI_CLOUD_IMAGE_REVISION"),

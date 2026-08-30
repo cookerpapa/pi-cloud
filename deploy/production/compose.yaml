@@ -56,7 +56,7 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE: ${PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE:-128}
   PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: /run/pi-cloud-secrets/worker-event-ingest-token
   PI_CLOUD_TOOL_BROKER_URLS: http://tool-broker:4300
-  PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE: /run/pi-cloud-secrets/sandbox-materializer-token
+  PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE: /run/pi-cloud-secrets/workspace-service-token
   PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: /run/pi-cloud-secrets/workspace-terminal-token
   PI_CLOUD_PREVIEW_ORIGIN_BASE_URL: ${PI_CLOUD_PREVIEW_ORIGIN_BASE_URL:-http://preview.localhost:8080}
   PI_CLOUD_PUBLIC_ORIGIN_BASE_URL: ${PI_CLOUD_PUBLIC_ORIGIN_BASE_URL:-http://127.0.0.1:8080}
@@ -128,8 +128,8 @@ x-control-plane-runtime-secrets: &control-plane-runtime-secrets
     target: /run/pi-cloud-secrets/cube-egress-config-token
     read_only: true
   - type: bind
-    source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/sandbox-materializer-token
-    target: /run/pi-cloud-secrets/sandbox-materializer-token
+    source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/workspace-service-token
+    target: /run/pi-cloud-secrets/workspace-service-token
     read_only: true
   - type: bind
     source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/workspace-terminal-token
@@ -573,9 +573,9 @@ services:
       PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT: ${PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT:-3}
       PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY: /workspace
       PI_CLOUD_BOOT_STATE_DIRECTORY: /var/lib/pi-cloud/boot-volume/state
-      PI_CLOUD_CHECKPOINT_READ_CACHE_TTL_MS: "600000"
-      PI_CLOUD_CHECKPOINT_READ_CACHE_MAXIMUM_ENTRIES: "512"
-      PI_CLOUD_CHECKPOINT_READ_CACHE_MAXIMUM_BYTES: "33554432"
+      PI_CLOUD_RUNTIME_OBJECT_CACHE_TTL_MS: "600000"
+      PI_CLOUD_RUNTIME_OBJECT_CACHE_MAXIMUM_ENTRIES: "512"
+      PI_CLOUD_RUNTIME_OBJECT_CACHE_MAXIMUM_BYTES: "33554432"
       PI_CLOUD_MODEL_GATEWAY_HOST: 127.0.0.1
       PI_CLOUD_MODEL_GATEWAY_PORT: "4200"
       PI_CLOUD_MODEL_GATEWAY_ADVERTISED_URL: http://127.0.0.1:4200
@@ -800,7 +800,7 @@ services:
       PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS: ${PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS:-15000}
       PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS: ${PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS:-5000}
       PI_CLOUD_TOOL_BROKER_TOKEN_FILE: /run/pi-cloud-secrets/tool-broker-token
-      PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE: /run/pi-cloud-secrets/sandbox-materializer-token
+      PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE: /run/pi-cloud-secrets/workspace-service-token
       PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: /run/pi-cloud-secrets/workspace-terminal-token
       PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE: /run/pi-cloud-secrets/cube-persistent-state-key
       PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL: http://workspace-volume-gateway:4500
@@ -825,8 +825,8 @@ services:
         target: /run/pi-cloud-secrets/tool-broker-token
         read_only: true
       - type: bind
-        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/sandbox-materializer-token
-        target: /run/pi-cloud-secrets/sandbox-materializer-token
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/workspace-service-token
+        target: /run/pi-cloud-secrets/workspace-service-token
         read_only: true
       - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/workspace-terminal-token

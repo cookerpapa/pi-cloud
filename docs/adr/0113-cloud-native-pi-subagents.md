@@ -58,7 +58,7 @@ conversation.
   - `shared_serialized`: the parent and child use one Workspace and one
     serialized Tool execution world;
   - `isolated`: the child receives a Volume fork at a declared parent
-    Workspace revision and uses a different Cube.
+    Workspace settlement and uses a different Cube.
 - A provider job identity is idempotent across Worker loss. Recovery reattaches
   to the same Child Run and never redispatches the prompt merely because a
   parent Worker disappeared.

@@ -256,7 +256,7 @@ describe("trusted Supervisor management boundary", () => {
       });
       expect(unauthorized.status).toBe(401);
       await expect(value.client.readArtifact("../../etc/passwd")).rejects.toMatchObject({
-        code: "checkpoint_object_key_invalid",
+        code: "runtime_object_key_invalid",
       });
     } finally {
       await value.server.close();

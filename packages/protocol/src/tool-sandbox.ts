@@ -1,6 +1,6 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { AgentWorkspaceSeedSchema, SandboxCheckpointBlobSchema } from "./agent-runtime.ts";
+import { AgentWorkspaceSeedSchema, WorkspaceBlobSchema } from "./agent-runtime.ts";
 import {
   OpaqueIdSchema,
   PositiveSafeIntegerSchema,
@@ -136,7 +136,7 @@ export const ToolSandboxCreateRequestSchema = Type.Object(
     toolRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     environment: EnvironmentRuntimeSnapshotSchema,
     workspaceSeed: AgentWorkspaceSeedSchema,
-    workspaceRestore: Type.Optional(SandboxCheckpointBlobSchema),
+    workspaceSettlement: Type.Optional(WorkspaceBlobSchema),
     workspaceRevision: Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })),
   },
   { additionalProperties: false },
@@ -185,7 +185,7 @@ export const ToolSandboxCaptureResponseSchema = Type.Union([
       type: Type.Literal("tool_sandbox.captured"),
       requestId: UuidSchema,
       activationId: UuidSchema,
-      workspace: SandboxCheckpointBlobSchema,
+      settlement: WorkspaceBlobSchema,
       environment: EnvironmentValidationReportSchema,
     },
     { additionalProperties: false },
@@ -228,8 +228,8 @@ export const ToolBrokerWorkspaceForkResponseSchema = Type.Object(
     requestId: UuidSchema,
     sourceActivationId: UuidSchema,
     targetWorkspaceId: UuidSchema,
-    sourceRevision: Sha256Schema,
-    targetRevision: Sha256Schema,
+    sourceSettlementRevision: Sha256Schema,
+    targetSettlementRevision: Sha256Schema,
   },
   { additionalProperties: false },
 );
@@ -292,23 +292,71 @@ export const ToolSandboxStopResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ToolBrokerMaterializeFileRequestSchema = Type.Object(
+const WorkspaceBrowserPathSchema = Type.String({ minLength: 0, maxLength: 512 });
+
+export const ToolBrokerListWorkspaceDirectoryRequestSchema = Type.Object(
   {
     ...ToolSandboxEnvelope,
-    type: Type.Literal("workspace.materialize_file"),
+    type: Type.Literal("workspace.list_directory"),
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
     workspaceId: OpaqueIdSchema,
-    snapshot: SandboxCheckpointBlobSchema,
-    path: Type.String({ minLength: 1, maxLength: 512 }),
+    sessionId: OpaqueIdSchema,
+    rootPath: WorkspaceBrowserPathSchema,
+    path: WorkspaceBrowserPathSchema,
   },
   { additionalProperties: false },
 );
 
-export const ToolBrokerMaterializeFileResponseSchema = Type.Object(
+export const ToolBrokerListWorkspaceDirectoryResponseSchema = Type.Object(
   {
     ...ToolSandboxEnvelope,
-    type: Type.Literal("workspace.file_materialized"),
+    type: Type.Literal("workspace.directory_listed"),
+    requestId: UuidSchema,
+    tenantId: OpaqueIdSchema,
+    workspaceId: OpaqueIdSchema,
+    path: WorkspaceBrowserPathSchema,
+    entries: Type.Array(
+      Type.Object(
+        {
+          name: Type.String({ minLength: 1, maxLength: 255 }),
+          path: Type.String({ minLength: 1, maxLength: 512 }),
+          kind: Type.Union([
+            Type.Literal("directory"),
+            Type.Literal("file"),
+            Type.Literal("symlink"),
+          ]),
+          sizeBytes: Type.Optional(Type.Integer({ minimum: 0 })),
+          executable: Type.Optional(Type.Boolean()),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 4_096 },
+    ),
+    truncated: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
+export const ToolBrokerReadWorkspaceFileRequestSchema = Type.Object(
+  {
+    ...ToolSandboxEnvelope,
+    type: Type.Literal("workspace.read_file"),
+    requestId: UuidSchema,
+    tenantId: OpaqueIdSchema,
+    workspaceId: OpaqueIdSchema,
+    sessionId: OpaqueIdSchema,
+    rootPath: WorkspaceBrowserPathSchema,
+    path: Type.String({ minLength: 1, maxLength: 512 }),
+    maximumBytes: Type.Integer({ minimum: 1, maximum: MAX_TOOL_FILE_BYTES }),
+  },
+  { additionalProperties: false },
+);
+
+export const ToolBrokerReadWorkspaceFileResponseSchema = Type.Object(
+  {
+    ...ToolSandboxEnvelope,
+    type: Type.Literal("workspace.file_read"),
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
     workspaceId: OpaqueIdSchema,
@@ -494,7 +542,7 @@ export const ToolWorkerInputSchema = Type.Union([
       toolRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
       environment: EnvironmentRuntimeSnapshotSchema,
       workspaceSeed: AgentWorkspaceSeedSchema,
-      workspaceRestore: Type.Optional(SandboxCheckpointBlobSchema),
+      workspaceSettlement: Type.Optional(WorkspaceBlobSchema),
       dependencyProxy: Type.Optional(DependencyProxyBootstrapSchema),
       webProxy: Type.Optional(ToolWebProxyBootstrapSchema),
       environmentStage: Type.Optional(ToolWorkerEnvironmentStageSchema),
@@ -575,11 +623,17 @@ export type ToolSandboxStopRequest = Static<typeof ToolSandboxStopRequestSchema>
 export type ToolSandboxStopResponse = Static<typeof ToolSandboxStopResponseSchema>;
 export type ToolBrokerWorkspaceForkRequest = Static<typeof ToolBrokerWorkspaceForkRequestSchema>;
 export type ToolBrokerWorkspaceForkResponse = Static<typeof ToolBrokerWorkspaceForkResponseSchema>;
-export type ToolBrokerMaterializeFileRequest = Static<
-  typeof ToolBrokerMaterializeFileRequestSchema
+export type ToolBrokerListWorkspaceDirectoryRequest = Static<
+  typeof ToolBrokerListWorkspaceDirectoryRequestSchema
 >;
-export type ToolBrokerMaterializeFileResponse = Static<
-  typeof ToolBrokerMaterializeFileResponseSchema
+export type ToolBrokerListWorkspaceDirectoryResponse = Static<
+  typeof ToolBrokerListWorkspaceDirectoryResponseSchema
+>;
+export type ToolBrokerReadWorkspaceFileRequest = Static<
+  typeof ToolBrokerReadWorkspaceFileRequestSchema
+>;
+export type ToolBrokerReadWorkspaceFileResponse = Static<
+  typeof ToolBrokerReadWorkspaceFileResponseSchema
 >;
 export type ToolBrokerRequest = Static<typeof ToolBrokerRequestSchema>;
 export type ToolBrokerResponse = Static<typeof ToolBrokerResponseSchema>;
@@ -617,23 +671,43 @@ export function parseToolBrokerResponse(value: unknown): ToolBrokerResponse {
   return parse(ToolBrokerResponseSchema, value, "Tool Broker response");
 }
 
-export function parseToolBrokerMaterializeFileRequest(
+export function parseToolBrokerReadWorkspaceFileRequest(
   value: unknown,
-): ToolBrokerMaterializeFileRequest {
+): ToolBrokerReadWorkspaceFileRequest {
   return parse(
-    ToolBrokerMaterializeFileRequestSchema,
+    ToolBrokerReadWorkspaceFileRequestSchema,
     value,
-    "Tool Broker materialize file request",
+    "Tool Broker read Workspace file request",
   );
 }
 
-export function parseToolBrokerMaterializeFileResponse(
+export function parseToolBrokerReadWorkspaceFileResponse(
   value: unknown,
-): ToolBrokerMaterializeFileResponse {
+): ToolBrokerReadWorkspaceFileResponse {
   return parse(
-    ToolBrokerMaterializeFileResponseSchema,
+    ToolBrokerReadWorkspaceFileResponseSchema,
     value,
-    "Tool Broker materialize file response",
+    "Tool Broker read Workspace file response",
+  );
+}
+
+export function parseToolBrokerListWorkspaceDirectoryRequest(
+  value: unknown,
+): ToolBrokerListWorkspaceDirectoryRequest {
+  return parse(
+    ToolBrokerListWorkspaceDirectoryRequestSchema,
+    value,
+    "Tool Broker list Workspace directory request",
+  );
+}
+
+export function parseToolBrokerListWorkspaceDirectoryResponse(
+  value: unknown,
+): ToolBrokerListWorkspaceDirectoryResponse {
+  return parse(
+    ToolBrokerListWorkspaceDirectoryResponseSchema,
+    value,
+    "Tool Broker list Workspace directory response",
   );
 }
 

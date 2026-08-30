@@ -138,7 +138,7 @@ function provider(): SandboxProvider {
       throw new Error("test provider has no detached development environment");
     },
     async detachPersistent() {},
-    async snapshot() {
+    async settle() {
       throw new Error("not used");
     },
     async stop(handle) {

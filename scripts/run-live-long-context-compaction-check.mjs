@@ -896,11 +896,20 @@ try {
   await restoreWorker(stoppedWorkerService);
   stoppedWorkerService = undefined;
 
-  const versions = await api.listWorkspaceVersions(session.sessionId);
-  assert(versions.currentVersionId !== undefined);
-  const files = await api.listWorkspaceFiles(versions.currentVersionId);
-  assert(files.files.some((entry) => entry.path === "algolab/post_compaction_validation.py"));
-  assert(files.files.some((entry) => entry.path === "tests/test_sorting_elementary.py"));
+  const [algolabDirectory, testsDirectory] = await Promise.all([
+    api.listWorkspaceDirectory(session.sessionId, "algolab"),
+    api.listWorkspaceDirectory(session.sessionId, "tests"),
+  ]);
+  assert(
+    algolabDirectory.entries.some(
+      (entry) => entry.path === "algolab/post_compaction_validation.py",
+    ),
+  );
+  assert(testsDirectory.entries.some((entry) => entry.path === "tests/test_sorting_elementary.py"));
+  const finalWorkspaceSettlementId = await psql(
+    `select current_workspace_settlement_id::text from sessions where id = '${session.sessionId}'`,
+  );
+  assert(finalWorkspaceSettlementId.length > 0);
   const compactions = rounds.flatMap((round) => round.eventCompactions);
   const totalUsage = [
     ...rounds.map((round) => round.usage),
@@ -952,8 +961,9 @@ try {
       marker,
       codingTurnsUntilRequiredCompactions: rounds.length,
       requiredCompactions,
-      finalWorkspaceVersionId: versions.currentVersionId,
-      visibleFilesOnFirstPage: files.files.length,
+      finalWorkspaceSettlementId,
+      visibleFilesInCheckedDirectories:
+        algolabDirectory.entries.length + testsDirectory.entries.length,
     },
     rounds,
     compactions,

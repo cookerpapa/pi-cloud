@@ -1036,7 +1036,7 @@ export class SupervisorConnectionManager {
         "provisioning",
         "restoring",
         "running",
-        "checkpointing",
+        "settling",
         "cancel_requested",
       ])
       .where("claim_expires_at", ">", now)

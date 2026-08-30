@@ -40,7 +40,7 @@ function expectOne(value: bigint, description: string): void {
 
 /**
  * Writes the only public terminal event for a Turn. Callers must invoke this
- * inside the same transaction that settles the Run and its checkpoint heads.
+ * inside the same transaction that settles the Run and its durable heads.
  */
 export async function commitTerminalTurnEvent(
   transaction: Transaction<Database>,

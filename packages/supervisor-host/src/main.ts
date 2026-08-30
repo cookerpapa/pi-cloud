@@ -1,5 +1,5 @@
 import { createDatabase } from "@pi-cloud/database";
-import { PostgresCheckpointObjectStore } from "@pi-cloud/runtime-core/checkpoint-runtime";
+import { PostgresRuntimeObjectStore } from "@pi-cloud/runtime-core/workspace-settlement-runtime";
 import { startServiceObservability } from "@pi-cloud/observability";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
@@ -39,7 +39,7 @@ export async function startSupervisorHost(): Promise<void> {
     connectionString: config.databaseUrl,
     maxConnections: Math.max(4, config.maxConcurrentSessions * 4),
   });
-  const objectStore = new PostgresCheckpointObjectStore(database);
+  const objectStore = new PostgresRuntimeObjectStore(database);
   const runtime = new PiWorkerRuntime({
     config,
     database,

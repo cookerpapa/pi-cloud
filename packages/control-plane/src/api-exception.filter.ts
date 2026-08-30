@@ -6,7 +6,8 @@ import { DurableEventStoreError } from "@pi-cloud/runtime-core/durable-event-sto
 import { PublicTenantRegistrationError } from "./public-tenant-registration.ts";
 import { TenantRequestContextError } from "./tenant-request-context.ts";
 import { TenantModelConfigurationError } from "./tenant-model-configuration.ts";
-import { WorkspaceVersionError } from "./workspace-version-service.ts";
+import { ConversationArchiveError } from "./conversation-archive-service.ts";
+import { WorkspaceBrowserError } from "./workspace-browser-service.ts";
 import { WebAuthenticationError } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsError } from "./platform-runtime-settings.ts";
 import { TurnSteeringError } from "./turn-steering-service.ts";
@@ -109,15 +110,22 @@ export function mappedError(error: unknown): ErrorResponse {
           : 503;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
-  if (error instanceof WorkspaceVersionError) {
+  if (error instanceof ConversationArchiveError) {
     const status =
       error.code === "not_found"
         ? 404
         : error.code === "conflict" || error.code === "idempotency_conflict"
           ? 409
-          : error.code === "tenant_quota_exceeded"
-            ? 429
-            : 503;
+          : 503;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
+  if (error instanceof WorkspaceBrowserError) {
+    const status =
+      error.code === "not_found"
+        ? 404
+        : error.code === "invalid_path" || error.code === "file_too_large"
+          ? 400
+          : 503;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof DurableEventStoreError) {

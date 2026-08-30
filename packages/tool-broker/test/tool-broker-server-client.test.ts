@@ -32,7 +32,7 @@ import {
 } from "../src/index.ts";
 
 const SERVICE_TOKEN = `service-${"s".repeat(48)}`;
-const MATERIALIZER_TOKEN = `materializer-${"m".repeat(48)}`;
+const WORKSPACE_SERVICE_TOKEN = `workspace-service-${"m".repeat(48)}`;
 const TERMINAL_TOKEN = `terminal-${"t".repeat(48)}`;
 const CAPABILITY = `pcel1_${"1".repeat(32)}_${"2".repeat(32)}_1`;
 const STEP_CONTEXT_SHA256 = "a".repeat(64);
@@ -110,8 +110,8 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         requestId: request.requestId,
         sourceActivationId: request.sourceActivationId,
         targetWorkspaceId: request.target.workspaceId,
-        sourceRevision: "a".repeat(64),
-        targetRevision: "b".repeat(64),
+        sourceSettlementRevision: "a".repeat(64),
+        targetSettlementRevision: "b".repeat(64),
       };
     },
     async release(request) {
@@ -144,11 +144,25 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         outputSha256: createHash("sha256").update("isolated\n").digest("hex"),
       };
     },
-    async materializeFile(request) {
-      const content = Buffer.from("immutable\n");
+    async listWorkspaceDirectory(request) {
       return {
         toolBrokerProtocolVersion: 1,
-        type: "workspace.file_materialized",
+        type: "workspace.directory_listed",
+        requestId: request.requestId,
+        tenantId: request.tenantId,
+        workspaceId: request.workspaceId,
+        path: request.path,
+        entries: [
+          { name: "README.md", path: "README.md", kind: "file", sizeBytes: 8, executable: false },
+        ],
+        truncated: false,
+      };
+    },
+    async readWorkspaceFile(request) {
+      const content = Buffer.from("current\n");
+      return {
+        toolBrokerProtocolVersion: 1,
+        type: "workspace.file_read",
         requestId: request.requestId,
         tenantId: request.tenantId,
         workspaceId: request.workspaceId,
@@ -194,14 +208,14 @@ describe("Tool Broker authenticated RPC", () => {
       host: "127.0.0.1",
       port: 0,
       serviceToken: SERVICE_TOKEN,
-      materializerToken: MATERIALIZER_TOKEN,
+      workspaceServiceToken: WORKSPACE_SERVICE_TOKEN,
       broker: backend(),
     });
     servers.push(server);
     const address = await server.listen();
     const client = new ToolBrokerClient({
       baseUrl: address,
-      serviceToken: MATERIALIZER_TOKEN,
+      serviceToken: WORKSPACE_SERVICE_TOKEN,
       allowInsecureHttp: true,
     });
     const common = {
@@ -629,7 +643,7 @@ describe("Tool Broker authenticated RPC", () => {
       host: "127.0.0.1",
       port: 0,
       serviceToken: SERVICE_TOKEN,
-      materializerToken: MATERIALIZER_TOKEN,
+      workspaceServiceToken: WORKSPACE_SERVICE_TOKEN,
       broker: backend(),
       metrics,
     });
@@ -720,38 +734,46 @@ describe("Tool Broker authenticated RPC", () => {
     ]);
     await expect(client.terminateAndConfirmAbsent(runtimeAssignment)).resolves.toBeUndefined();
 
-    const manifest = Buffer.from('{"format":"pi-cloud.workspace-manifest.v1","files":[]}\n');
-    const materializer = new ToolBrokerClient({
+    const browser = new ToolBrokerClient({
       baseUrl: address,
-      serviceToken: MATERIALIZER_TOKEN,
+      serviceToken: WORKSPACE_SERVICE_TOKEN,
       allowInsecureHttp: true,
     });
     await expect(
-      materializer.materializeFile({
+      browser.listWorkspaceDirectory({
         toolBrokerProtocolVersion: 1,
-        type: "workspace.materialize_file",
+        type: "workspace.list_directory",
+        requestId: "10000000-0000-4000-8000-000000000098",
+        tenantId: assignment.tenantId,
+        workspaceId: assignment.workspaceId,
+        sessionId: assignment.sessionId,
+        rootPath: "",
+        path: "",
+      }),
+    ).resolves.toMatchObject({ entries: [{ path: "README.md" }] });
+    await expect(
+      browser.readWorkspaceFile({
+        toolBrokerProtocolVersion: 1,
+        type: "workspace.read_file",
         requestId: "10000000-0000-4000-8000-000000000099",
         tenantId: assignment.tenantId,
         workspaceId: assignment.workspaceId,
-        snapshot: {
-          encoding: "base64",
-          sha256: createHash("sha256").update(manifest).digest("hex"),
-          sizeBytes: manifest.byteLength,
-          data: manifest.toString("base64"),
-        },
+        sessionId: assignment.sessionId,
+        rootPath: "",
         path: "README.md",
+        maximumBytes: 512 * 1_024,
       }),
     ).resolves.toMatchObject({
       tenantId: assignment.tenantId,
       workspaceId: assignment.workspaceId,
       path: "README.md",
-      content: Buffer.from("immutable\n").toString("base64"),
+      content: Buffer.from("current\n").toString("base64"),
     });
 
     const overPrivileged = await fetch(new URL(TOOL_BROKER_SERVICE_PATH, address), {
       method: "POST",
       headers: {
-        authorization: `Bearer ${MATERIALIZER_TOKEN}`,
+        authorization: `Bearer ${WORKSPACE_SERVICE_TOKEN}`,
         "content-type": "application/json",
       },
       body: JSON.stringify(request),

@@ -107,7 +107,7 @@ spec:
             - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-management-token }
             - { name: PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE, value: /run/pi-cloud-secrets/model-credential-master-key }
             - { name: PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE, value: /run/pi-cloud-secrets/cube-egress-config-token }
-            - { name: PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE, value: /run/pi-cloud-secrets/sandbox-materializer-token }
+            - { name: PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-service-token }
             - { name: PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-terminal-token }
             - { name: PI_CLOUD_SSH_GATEWAY_ENABLED, value: {{ .Values.sshGateway.enabled | quote }} }
             - { name: PI_CLOUD_SSH_ADVERTISED_HOST, value: {{ .Values.sshGateway.advertisedHost | quote }} }

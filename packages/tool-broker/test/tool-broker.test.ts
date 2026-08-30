@@ -116,14 +116,14 @@ function providerFixture() {
     assignment: nextAssignment,
     workspaceRoot: toolRoot ?? handle.workspaceRoot,
   }));
-  const snapshot = vi.fn<SandboxProvider["snapshot"]>(async (handle, requestId) => {
+  const settle = vi.fn<SandboxProvider["settle"]>(async (handle, requestId) => {
     const bytes = Buffer.from("workspace", "utf8");
     return {
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.captured",
       requestId,
       activationId: handle.activationId,
-      workspace: {
+      settlement: {
         encoding: "base64",
         sha256: createHash("sha256").update(bytes).digest("hex"),
         sizeBytes: bytes.byteLength,
@@ -134,13 +134,25 @@ function providerFixture() {
   });
   const forkWorkspace = vi.fn<NonNullable<SandboxProvider["forkWorkspace"]>>(async (handle) => ({
     sourceHandle: handle,
-    sourceRevision: "a".repeat(64),
-    targetRevision: "b".repeat(64),
+    sourceSettlementRevision: "a".repeat(64),
+    targetSettlementRevision: "b".repeat(64),
   }));
-  const materializeFile = vi.fn<NonNullable<SandboxProvider["materializeFile"]>>(
+  const listWorkspaceDirectory = vi.fn<NonNullable<SandboxProvider["listWorkspaceDirectory"]>>(
     async (request) => ({
       toolBrokerProtocolVersion: 1,
-      type: "workspace.file_materialized",
+      type: "workspace.directory_listed",
+      requestId: request.requestId,
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      path: request.path,
+      entries: [],
+      truncated: false,
+    }),
+  );
+  const readWorkspaceFile = vi.fn<NonNullable<SandboxProvider["readWorkspaceFile"]>>(
+    async (request) => ({
+      toolBrokerProtocolVersion: 1,
+      type: "workspace.file_read",
       requestId: request.requestId,
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
@@ -237,9 +249,10 @@ function providerFixture() {
     persistentCapsule,
     adoptPersistentCapsule,
     detachPersistent,
-    snapshot,
+    settle,
     forkWorkspace,
-    materializeFile,
+    listWorkspaceDirectory,
+    readWorkspaceFile,
     async stop() {
       stopped = true;
     },
@@ -284,9 +297,10 @@ function providerFixture() {
     exec,
     rebind,
     discoverHttpServices,
-    snapshot,
+    settle,
     forkWorkspace,
-    materializeFile,
+    listWorkspaceDirectory,
+    readWorkspaceFile,
     terminalInput,
     terminalResize,
     pause,
@@ -409,7 +423,7 @@ describe("provider-backed Tool Tool Broker", () => {
       expect.anything(),
       "/home/user",
     );
-    expect(fixture.snapshot).toHaveBeenCalledTimes(2);
+    expect(fixture.settle).toHaveBeenCalledTimes(2);
     await expect(
       manager.browseDevelopmentEnvironment({
         developmentEnvironmentProtocolVersion: 1,
@@ -693,7 +707,7 @@ describe("provider-backed Tool Tool Broker", () => {
       code: "development_environment_working_directory_unavailable",
       retryable: false,
     });
-    expect(fixture.snapshot).not.toHaveBeenCalled();
+    expect(fixture.settle).not.toHaveBeenCalled();
     expect(fixture.rebind).not.toHaveBeenCalled();
     expect(fixture.stopped).toBe(false);
     expect(fixture.destroyed).toBe(false);
@@ -1137,7 +1151,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(manager.admittedCount).toBe(0);
   });
 
-  it("reads persistent Workspace files without consuming Cube admission capacity", async () => {
+  it("reads current Workspace files without consuming Cube admission capacity", async () => {
     const fixture = providerFixture();
     const manager = new ToolBroker({
       provider: fixture.provider,
@@ -1150,28 +1164,23 @@ describe("provider-backed Tool Tool Broker", () => {
       operation("20000000-0000-4000-8000-000000000050"),
     );
     expect(manager.admittedCount).toBe(1);
-    const snapshot = Buffer.from("persistent-volume-reference", "utf8");
-
     await expect(
-      manager.materializeFile({
+      manager.readWorkspaceFile({
         toolBrokerProtocolVersion: 1,
-        type: "workspace.materialize_file",
+        type: "workspace.read_file",
         requestId: "20000000-0000-4000-8000-000000000051",
         tenantId: assignment.tenantId,
         workspaceId: assignment.workspaceId,
-        snapshot: {
-          encoding: "base64",
-          sha256: createHash("sha256").update(snapshot).digest("hex"),
-          sizeBytes: snapshot.byteLength,
-          data: snapshot.toString("base64"),
-        },
+        sessionId: assignment.sessionId,
+        rootPath: "",
         path: "surface_check.py",
+        maximumBytes: 512 * 1_024,
       }),
     ).resolves.toMatchObject({
-      type: "workspace.file_materialized",
+      type: "workspace.file_read",
       path: "surface_check.py",
     });
-    expect(fixture.materializeFile).toHaveBeenCalledTimes(1);
+    expect(fixture.readWorkspaceFile).toHaveBeenCalledTimes(1);
     expect(manager.admissionWaitingCount).toBe(0);
     expect(manager.admittedCount).toBe(1);
     await manager.stop(active.activationId, assignment);
@@ -1338,7 +1347,7 @@ describe("provider-backed Tool Tool Broker", () => {
       manager.execute(assignment.executionLease, operation("73300000-0000-4000-8000-000000000007")),
     ).resolves.toMatchObject({ operation: "bash.exec" });
     expect(fixture.createCount).toBe(1);
-    expect(fixture.snapshot).toHaveBeenCalledTimes(2);
+    expect(fixture.settle).toHaveBeenCalledTimes(2);
     expect(fixture.rebind).toHaveBeenCalledTimes(2);
     await manager.stop(parent.activationId, assignment);
   });
@@ -1369,8 +1378,8 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     expect(forked).toMatchObject({
       type: "workspace.forked",
-      sourceRevision: "a".repeat(64),
-      targetRevision: "b".repeat(64),
+      sourceSettlementRevision: "a".repeat(64),
+      targetSettlementRevision: "b".repeat(64),
     });
     await expect(
       manager.execute(assignment.executionLease, operation("73400000-0000-4000-8000-000000000005")),

@@ -11,10 +11,7 @@ import type { SupervisorProvisioningGateway } from "./supervisor-boot-provisione
 import type { ProductionHttpGateway } from "./production-http-gateway.ts";
 import type { PublicTenantRegistrationConfiguration } from "./public-tenant-registration.ts";
 import type { TenantModelCredentialVault } from "@pi-cloud/runtime-core/model-credential-runtime";
-import type {
-  TrustedArtifactReader,
-  TrustedProviderSnapshotReader,
-} from "./workspace-version-service.ts";
+import type { TrustedWorkspaceBrowser } from "./workspace-browser-service.ts";
 import type { WebAuthenticationService } from "./web-authentication.ts";
 import type { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
 import type { DevelopmentEnvironmentService } from "./development-environment-service.ts";
@@ -39,8 +36,7 @@ export type ControlPlaneApplicationOptions = Omit<
   eventRuntime?: ControlPlaneEventRuntime;
   publicRegistration?: PublicTenantRegistrationConfiguration;
   modelCredentialVault?: TenantModelCredentialVault;
-  artifactReader?: TrustedArtifactReader;
-  providerSnapshotReader?: TrustedProviderSnapshotReader;
+  workspaceBrowser?: TrustedWorkspaceBrowser;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;

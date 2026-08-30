@@ -509,27 +509,27 @@ export class ControlPlaneStore {
       const workspace = await transaction
         .selectFrom("workspaces as workspace")
         .leftJoin(
-          "workspace_versions as current_version",
-          "current_version.id",
-          "workspace.current_workspace_version_id",
+          "workspace_settlements as current_settlement",
+          "current_settlement.id",
+          "workspace.current_workspace_settlement_id",
         )
         .leftJoin(
-          "artifacts as workspace_artifact",
-          "workspace_artifact.id",
-          "current_version.workspace_artifact_id",
+          "artifacts as settlement_artifact",
+          "settlement_artifact.id",
+          "current_settlement.settlement_artifact_id",
         )
         .leftJoin(
-          "checkpoint_objects as workspace_checkpoint",
-          "workspace_checkpoint.object_key",
-          "workspace_artifact.object_key",
+          "runtime_objects as workspace_settlement",
+          "workspace_settlement.object_key",
+          "settlement_artifact.object_key",
         )
         .select([
           "workspace.id",
           "workspace.project_id",
           "workspace.workspace_kind as workspaceKind",
-          "workspace.current_workspace_version_id as currentVersionId",
-          "workspace_artifact.object_key as workspaceSnapshotKey",
-          "workspace_checkpoint.object_key as durableWorkspaceSnapshotKey",
+          "workspace.current_workspace_settlement_id as currentSettlementId",
+          "settlement_artifact.object_key as workspaceSettlementKey",
+          "workspace_settlement.object_key as durableWorkspaceSettlementKey",
         ])
         .where("workspace.tenant_id", "=", this.#tenantId)
         .where("workspace.project_id", "=", projectId)
@@ -551,7 +551,10 @@ export class ControlPlaneStore {
           "Conversation execution mode does not match the selected storage resource",
         );
       }
-      if (workspace.currentVersionId !== null && workspace.durableWorkspaceSnapshotKey === null) {
+      if (
+        workspace.currentSettlementId !== null &&
+        workspace.durableWorkspaceSettlementKey === null
+      ) {
         throw new ControlPlaneStoreError("not_found", "Project workspace was not found");
       }
       const sessionCount = await transaction
@@ -643,8 +646,8 @@ export class ControlPlaneStore {
           execution_mode: executionMode,
           sandbox_profile_key: sandboxProfileKey,
           working_directory: workingDirectory,
-          workspace_snapshot_key: workspace.workspaceSnapshotKey,
-          current_workspace_version_id: workspace.currentVersionId,
+          workspace_settlement_key: workspace.workspaceSettlementKey,
+          current_workspace_settlement_id: workspace.currentSettlementId,
         })
         .returning([
           "id",
@@ -702,19 +705,19 @@ export class ControlPlaneStore {
           .onRef("project.id", "=", "workspace.project_id"),
       )
       .leftJoin(
-        "workspace_versions as current_version",
-        "current_version.id",
-        "workspace.current_workspace_version_id",
+        "workspace_settlements as current_settlement",
+        "current_settlement.id",
+        "workspace.current_workspace_settlement_id",
       )
       .leftJoin(
-        "artifacts as workspace_artifact",
-        "workspace_artifact.id",
-        "current_version.workspace_artifact_id",
+        "artifacts as settlement_artifact",
+        "settlement_artifact.id",
+        "current_settlement.settlement_artifact_id",
       )
       .leftJoin(
-        "checkpoint_objects as workspace_checkpoint",
-        "workspace_checkpoint.object_key",
-        "workspace_artifact.object_key",
+        "runtime_objects as workspace_settlement",
+        "workspace_settlement.object_key",
+        "settlement_artifact.object_key",
       )
       .leftJoin("sessions as session_row", (join) =>
         join
@@ -740,8 +743,8 @@ export class ControlPlaneStore {
       .where("workspace.deleted_at", "is", null)
       .where((expression) =>
         expression.or([
-          expression("workspace.current_workspace_version_id", "is", null),
-          expression("workspace_checkpoint.object_key", "is not", null),
+          expression("workspace.current_workspace_settlement_id", "is", null),
+          expression("workspace_settlement.object_key", "is not", null),
         ]),
       )
       .groupBy(["workspace.id", "workspace.project_id", "project.name", "project.created_at"])
@@ -1126,7 +1129,7 @@ export class ControlPlaneStore {
         .select([
           "workspace.id",
           "workspace.project_id as projectId",
-          "workspace.current_workspace_version_id as currentVersionId",
+          "workspace.current_workspace_settlement_id as currentSettlementId",
           "project.name as workspaceName",
         ])
         .where("workspace.tenant_id", "=", this.#tenantId)
@@ -1161,8 +1164,8 @@ export class ControlPlaneStore {
         .set({
           project_id: target.projectId,
           workspace_id: target.id,
-          current_workspace_version_id: target.currentVersionId,
-          workspace_snapshot_key: null,
+          current_workspace_settlement_id: target.currentSettlementId,
+          workspace_settlement_key: null,
           execution_mode: "elastic",
           development_environment_id: null,
           working_directory: "/workspace",
@@ -1686,7 +1689,7 @@ export class ControlPlaneStore {
       provisioning: 2,
       restoring: 3,
       running: 4,
-      checkpointing: 5,
+      settling: 5,
       cancel_requested: 6,
       completed: 7,
       failed: 7,
@@ -1749,9 +1752,9 @@ export class ControlPlaneStore {
           claimOwnerId: attempt.claim_owner_id,
           claimExpiresAt: isoTimestamp(attempt.claim_expires_at),
           ...(attempt.sandbox_id === null ? {} : { sandboxId: attempt.sandbox_id }),
-          ...(attempt.checkpoint_revision === null
+          ...(attempt.settlement_revision === null
             ? {}
-            : { checkpointRevision: attempt.checkpoint_revision }),
+            : { settlementRevision: attempt.settlement_revision }),
           ...(attemptFailure === undefined ? {} : { failure: attemptFailure }),
           claimedAt: isoTimestamp(attempt.claimed_at),
           ...(optionalTimestamp(attempt.provisioning_at) === undefined
@@ -1763,9 +1766,9 @@ export class ControlPlaneStore {
           ...(optionalTimestamp(attempt.running_at) === undefined
             ? {}
             : { runningAt: optionalTimestamp(attempt.running_at)! }),
-          ...(optionalTimestamp(attempt.checkpointing_at) === undefined
+          ...(optionalTimestamp(attempt.settling_at) === undefined
             ? {}
-            : { checkpointingAt: optionalTimestamp(attempt.checkpointing_at)! }),
+            : { settlingAt: optionalTimestamp(attempt.settling_at)! }),
           ...(optionalTimestamp(attempt.last_heartbeat_at) === undefined
             ? {}
             : { lastHeartbeatAt: optionalTimestamp(attempt.last_heartbeat_at)! }),
@@ -1865,8 +1868,8 @@ export class ControlPlaneStore {
           "session_row.sandbox_profile_key",
           "session_row.next_event_seq",
           "session_row.next_mailbox_position",
-          "session_row.current_workspace_version_id",
-          "session_row.workspace_snapshot_key",
+          "session_row.current_workspace_settlement_id",
+          "session_row.workspace_settlement_key",
           "session_row.forked_from_session_id",
           "session_row.tool_capabilities",
           "session_row.archived_at",
@@ -1917,18 +1920,18 @@ export class ControlPlaneStore {
       const workspace = await transaction
         .selectFrom("workspaces as workspace")
         .leftJoin(
-          "workspace_versions as current_version",
-          "current_version.id",
-          "workspace.current_workspace_version_id",
+          "workspace_settlements as current_settlement",
+          "current_settlement.id",
+          "workspace.current_workspace_settlement_id",
         )
         .leftJoin(
-          "artifacts as workspace_artifact",
-          "workspace_artifact.id",
-          "current_version.workspace_artifact_id",
+          "artifacts as settlement_artifact",
+          "settlement_artifact.id",
+          "current_settlement.settlement_artifact_id",
         )
         .select([
-          "workspace.current_workspace_version_id as currentVersionId",
-          "workspace_artifact.object_key as workspaceSnapshotKey",
+          "workspace.current_workspace_settlement_id as currentSettlementId",
+          "settlement_artifact.object_key as workspaceSettlementKey",
         ])
         .where("workspace.tenant_id", "=", this.#tenantId)
         .where("workspace.id", "=", session.workspace_id)
@@ -1964,24 +1967,24 @@ export class ControlPlaneStore {
           );
         }
       }
-      const workspaceBaseVersionId =
+      const workspaceBaseSettlementId =
         session.forked_from_session_id === null
-          ? workspace.currentVersionId
-          : session.current_workspace_version_id;
-      const workspaceSnapshotKey =
+          ? workspace.currentSettlementId
+          : session.current_workspace_settlement_id;
+      const workspaceSettlementKey =
         session.forked_from_session_id === null
-          ? workspace.workspaceSnapshotKey
-          : session.workspace_snapshot_key;
-      if (workspaceSnapshotKey !== null) {
-        const durableWorkspaceSnapshot = await transaction
-          .selectFrom("checkpoint_objects")
+          ? workspace.workspaceSettlementKey
+          : session.workspace_settlement_key;
+      if (workspaceSettlementKey !== null) {
+        const durableWorkspaceSettlement = await transaction
+          .selectFrom("runtime_objects")
           .select("object_key")
-          .where("object_key", "=", workspaceSnapshotKey)
+          .where("object_key", "=", workspaceSettlementKey)
           .executeTakeFirst();
-        if (durableWorkspaceSnapshot === undefined) {
+        if (durableWorkspaceSettlement === undefined) {
           throw new ControlPlaneStoreError(
             "conflict",
-            "Workspace checkpoint is unavailable; create a new Workspace",
+            "Workspace settlement is unavailable; create a new Workspace",
           );
         }
       }
@@ -2091,7 +2094,7 @@ export class ControlPlaneStore {
             0,
             positiveSafeInteger(session.next_event_seq, "Next event sequence") - 1,
           ),
-          workspace_base_version_id: workspaceBaseVersionId,
+          workspace_base_settlement_id: workspaceBaseSettlementId,
           idempotency_key: idempotencyKey,
           state: "queued",
           current_attempt_id: null,
@@ -2110,8 +2113,8 @@ export class ControlPlaneStore {
         .updateTable("sessions")
         .set({
           next_mailbox_position: sql<string>`${sql.ref("next_mailbox_position")} + 1`,
-          current_workspace_version_id: workspaceBaseVersionId,
-          workspace_snapshot_key: workspaceSnapshotKey,
+          current_workspace_settlement_id: workspaceBaseSettlementId,
+          workspace_settlement_key: workspaceSettlementKey,
           row_version: sql<string>`${sql.ref("row_version")} + 1`,
           updated_at: sql<Date>`now()`,
         })
@@ -2211,7 +2214,7 @@ export class ControlPlaneStore {
         .executeTakeFirst();
       if (
         target === undefined ||
-        !["provisioning", "restoring", "running", "checkpointing"].includes(target.state)
+        !["provisioning", "restoring", "running", "settling"].includes(target.state)
       ) {
         throw new ControlPlaneStoreError(
           "conflict",

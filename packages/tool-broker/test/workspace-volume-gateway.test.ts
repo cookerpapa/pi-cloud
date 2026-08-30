@@ -45,7 +45,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     expect(identity("session-a").volumeId).toBe(identity("session-b").volumeId);
   });
 
-  it("reattaches files without copying a per-Run Workspace snapshot", async () => {
+  it("reattaches files while Run settlement records only a lightweight revision", async () => {
     const workspaceRoot = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const first = identity("session-a");
@@ -57,26 +57,34 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await writeFile(join(workspace, "src", "answer.txt"), "one\n");
     await writeFile(join(workspace, "src", "answer.txt"), "two\n");
 
-    const captured = await mover.snapshot({
+    const captured = await mover.settle({
       ...first,
       activationId: randomUUID(),
       fencingToken: 1,
       bindingSha256: "a".repeat(64),
     });
-    expect(captured.volumeRevision).toMatch(/^[0-9a-f]{64}$/);
-    expect(captured.files).toEqual([
-      expect.objectContaining({ path: "src/answer.txt", sizeBytes: 4 }),
-    ]);
+    expect(captured.settlementRevision).toMatch(/^[0-9a-f]{64}$/);
 
     const replacement = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const second = identity("session-b");
     await expect(replacement.prepare(second)).resolves.toEqual({ attached: true });
     const expectedSha256 = createHash("sha256").update("two\n").digest("hex");
+    await expect(replacement.listDirectory({ ...second, rootPath: "", path: "" })).resolves.toEqual(
+      {
+        entries: [{ name: "src", path: "src", kind: "directory" }],
+        truncated: false,
+      },
+    );
     await expect(
-      replacement.materialize({
+      replacement.listDirectory({ ...second, rootPath: "", path: "src" }),
+    ).resolves.toMatchObject({
+      entries: [{ path: "src/answer.txt", sizeBytes: 4 }],
+    });
+    await expect(
+      replacement.readFile({
         ...second,
+        rootPath: "",
         path: "src/answer.txt",
-        expectedSha256,
         maximumBytes: 64,
       }),
     ).resolves.toMatchObject({ sha256: expectedSha256 });
@@ -101,7 +109,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await mover.prepare(source);
     const sourceRoot = join(workspaceRoot, `picloud-posix-${source.volumeId}`, "workspace");
     await writeFile(join(sourceRoot, "answer.txt"), "parent-v1\n");
-    const captured = await mover.snapshot({
+    const captured = await mover.settle({
       ...source,
       activationId: randomUUID(),
       fencingToken: 1,
@@ -124,7 +132,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       sourceWorkspaceId: source.workspaceId,
       sourceSessionId: source.sessionId,
       sourceVolumeId: source.volumeId,
-      expectedSourceRevision: captured.volumeRevision,
+      expectedSourceSettlementRevision: captured.settlementRevision,
       targetWorkspaceId: target.workspaceId,
       targetSessionId: target.sessionId,
       targetVolumeId: target.volumeId,
@@ -176,7 +184,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await expect(mover.delete(first)).resolves.toEqual({ deleted: false });
   });
 
-  it("stores and revalidates a Git-normalized credential without exposing it to the Workspace index", async () => {
+  it("stores and revalidates a Git-normalized credential outside the product browser", async () => {
     const workspaceRoot = await root();
     const fixtureRoot = await root();
     const remote = join(fixtureRoot, "remote.git");
@@ -257,46 +265,50 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         credentialMountPath: "/workspace",
       }),
     ).resolves.toEqual({ authorized: true });
-    const snapshot = await mover.snapshot({
+    const settlement = await mover.settle({
       ...bound,
       activationId: randomUUID(),
       fencingToken: 1,
       bindingSha256: "a".repeat(64),
     });
-    expect(snapshot.files).toEqual([]);
+    expect(settlement.settlementRevision).toMatch(/^[0-9a-f]{64}$/);
     expect(observedTokens).toEqual(["ghs_process_scoped_secret"]);
     expect(observedVerificationUrls).toEqual(["https://git.internal.example/private-repo.git"]);
   });
 });
 
 describe("HttpWorkspaceVolumeGateway", () => {
-  it("transports a bounded large Workspace index without copying file bytes", async () => {
-    const files = Array.from({ length: 3_500 }, (_, index) => ({
-      path: `src/generated/file-${index.toString().padStart(5, "0")}.ts`,
-      executable: false,
+  it("transports a bounded current directory without a precomputed catalog", async () => {
+    const entries = Array.from({ length: 3_500 }, (_, index) => ({
+      name: `file-${index.toString().padStart(5, "0")}.ts`,
+      path: `src/file-${index.toString().padStart(5, "0")}.ts`,
+      kind: "file" as const,
       sizeBytes: 16,
-      sha256: index.toString(16).padStart(64, "0"),
+      executable: false,
     }));
     const gateway: WorkspaceVolumeGateway = {
       async checkHealth() {},
       async prepare() {
         return { attached: true };
       },
-      async snapshot() {
-        return {
-          volumeRevision: "2".repeat(64),
-          files,
-        };
+      async settle() {
+        return { settlementRevision: "2".repeat(64) };
       },
       async fork() {
         return {
-          sourceRevision: "2".repeat(64),
-          volumeRevision: "3".repeat(64),
-          files,
+          sourceSettlementRevision: "2".repeat(64),
+          targetSettlementRevision: "3".repeat(64),
         };
       },
-      async materialize() {
-        return { bytes: new Uint8Array(), sha256: createHash("sha256").digest("hex") };
+      async listDirectory() {
+        return { entries, truncated: false };
+      },
+      async readFile() {
+        return {
+          bytes: Buffer.from("current\n"),
+          sha256: createHash("sha256").update("current\n").digest("hex"),
+          executable: false,
+        };
       },
       async delete() {
         return { deleted: true };
@@ -313,13 +325,18 @@ describe("HttpWorkspaceVolumeGateway", () => {
     const address = await server.listen();
     const client = new HttpWorkspaceVolumeGateway({ baseUrl: address, serviceToken });
     try {
-      const snapshot = await client.snapshot({
+      const settlement = await client.settle({
         ...identity("session-large-index"),
         activationId: randomUUID(),
         fencingToken: 1,
         bindingSha256: "3".repeat(64),
       });
-      expect(snapshot.files).toHaveLength(files.length);
+      expect(settlement.settlementRevision).toBe("2".repeat(64));
+      await expect(
+        client.listDirectory({ ...identity("session-large-index"), rootPath: "", path: "src" }),
+      ).resolves.toMatchObject({
+        entries: expect.arrayContaining([expect.objectContaining({ path: "src/file-00000.ts" })]),
+      });
       await expect(client.delete(identity("session-large-index"))).resolves.toEqual({
         deleted: true,
       });

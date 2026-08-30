@@ -1977,7 +1977,7 @@ export class PostgresSandboxActivationStateRepository implements SandboxActivati
     const now = validDate(this.#clock);
     // Run settlement and Tool Broker release are separate network operations.
     // A terminal Run in PostgreSQL is not proof that the trusted Runner has
-    // finished checkpointing/revoking its physical Cube yet. Give that normal
+    // finished settling/revoking its physical Cube yet. Give that normal
     // background handoff at least two Broker lease windows. A newly admitted
     // writer passes zero only after the old Run is terminal and fenced, because
     // waiting for this grace period would strand the Workspace behind dead code.

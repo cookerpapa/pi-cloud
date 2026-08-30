@@ -80,7 +80,7 @@ describe("PostgreSQL Sandbox HTTP service registry", () => {
         workspace_id: workspaceId,
         desired_model_profile_id: profileId,
         state: "idle",
-        workspace_snapshot_key: null,
+        workspace_settlement_key: null,
       })
       .execute();
 

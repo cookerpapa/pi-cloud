@@ -145,7 +145,7 @@
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowInsecureInternalHttp", "subagents", "checkpointCache", "timeouts"],
+      "required": ["allowInsecureInternalHttp", "subagents", "runtimeObjectCache", "timeouts"],
       "properties": {
         "allowInsecureInternalHttp": { "type": "boolean" },
         "subagents": {
@@ -158,7 +158,7 @@
             "maximumConcurrent": { "type": "integer", "minimum": 1, "maximum": 1000 }
           }
         },
-        "checkpointCache": {
+        "runtimeObjectCache": {
           "type": "object",
           "additionalProperties": false,
           "required": ["ttlMs", "maximumEntries", "maximumBytes"],

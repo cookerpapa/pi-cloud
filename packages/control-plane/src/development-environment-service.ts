@@ -18,7 +18,7 @@ import {
   type DevelopmentEnvironmentDirectoryResource,
   type DevelopmentEnvironmentResource,
 } from "@pi-cloud/protocol";
-import { createWorkspaceSnapshot, encodeWorkspaceSnapshotBlob } from "@pi-cloud/workspace-runtime";
+import { createWorkspaceSeed, encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import { sql, type Kysely } from "kysely";
 import { ControlPlaneStoreError } from "./control-plane-store.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
@@ -905,8 +905,8 @@ export class DevelopmentEnvironmentService {
         recipeSha256: row.environmentRecipeSha256,
       }),
       workspaceSeed: {
-        kind: "snapshot" as const,
-        snapshot: encodeWorkspaceSnapshotBlob(createWorkspaceSnapshot([])),
+        kind: "bundle" as const,
+        bundle: encodeWorkspaceBlob(createWorkspaceSeed([])),
       },
     };
   }

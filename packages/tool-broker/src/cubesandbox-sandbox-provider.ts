@@ -3,13 +3,17 @@ import {
   parseEnvironmentToolchainReport,
   createExecutionLease,
   parseExecutionLease,
+  parseToolBrokerListWorkspaceDirectoryResponse,
+  parseToolBrokerReadWorkspaceFileResponse,
   parseToolBrokerResponse,
   parseToolSandboxOperationResponse,
   parseToolWorkerOutput,
   type EnvironmentValidationReport,
   type EnvironmentToolchainReport,
-  type ToolBrokerMaterializeFileRequest,
-  type ToolBrokerMaterializeFileResponse,
+  type ToolBrokerListWorkspaceDirectoryRequest,
+  type ToolBrokerListWorkspaceDirectoryResponse,
+  type ToolBrokerReadWorkspaceFileRequest,
+  type ToolBrokerReadWorkspaceFileResponse,
   type ToolBrokerWorkspaceForkRequest,
   type SupervisorRuntimeAssignment,
   type ToolSandboxAssignment,
@@ -26,10 +30,10 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { isIPv4 } from "node:net";
 import {
-  createPersistentVolumeReference,
-  decodeWorkspaceSnapshotBlob,
-  encodeWorkspaceSnapshotBlob,
-  parsePersistentVolumeReference,
+  createWorkspaceVolumeSettlement,
+  decodeWorkspaceBlob,
+  encodeWorkspaceBlob,
+  parseWorkspaceVolumeSettlement,
 } from "@pi-cloud/workspace-runtime";
 import {
   CubeRuntimeClientError,
@@ -904,11 +908,11 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     const volumeReference =
-      spec.workspaceRestore === undefined
+      spec.workspaceSettlement === undefined
         ? undefined
-        : parsePersistentVolumeReference(decodeWorkspaceSnapshotBlob(spec.workspaceRestore));
+        : parseWorkspaceVolumeSettlement(decodeWorkspaceBlob(spec.workspaceSettlement));
     if (
-      spec.workspaceRestore !== undefined &&
+      spec.workspaceSettlement !== undefined &&
       (volumeReference === undefined ||
         volumeReference.tenantId !== spec.assignment.tenantId ||
         volumeReference.workspaceId !== spec.assignment.workspaceId ||
@@ -1716,7 +1720,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     this.#activations.delete(handle.activationId);
   }
 
-  async snapshot(handle: SandboxHandle, requestId: string): Promise<ToolSandboxCaptureResponse> {
+  async settle(handle: SandboxHandle, requestId: string): Promise<ToolSandboxCaptureResponse> {
     const activation = await this.#owned(handle);
     if (activation.seenCaptureIds.has(requestId)) {
       throw new ToolBrokerError("tool_capture_replay", "Tool capture ID was already used", false);
@@ -1734,7 +1738,7 @@ export class CubeSandboxProvider implements SandboxProvider {
             timeoutMs: this.#readyTimeoutMs,
           },
         ),
-        "CubeSandbox checkpoint preparation",
+        "CubeSandbox settlement preparation",
       );
       activation.state = "quiesced";
       const processes = raw.processes;
@@ -1752,8 +1756,8 @@ export class CubeSandboxProvider implements SandboxProvider {
         })
       ) {
         throw new ToolBrokerError(
-          "cubesandbox_checkpoint_prepare_invalid",
-          "CubeSandbox did not prove a quiescent Workspace checkpoint",
+          "cubesandbox_settlement_prepare_invalid",
+          "CubeSandbox did not prove a quiescent Workspace settlement",
           false,
         );
       }
@@ -1761,7 +1765,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         pid: number;
         startTime: string;
       }>[];
-      const volume = await this.#workspaceVolumeGateway.snapshot({
+      const volume = await this.#workspaceVolumeGateway.settle({
         tenantId: handle.assignment.tenantId,
         workspaceId: handle.assignment.workspaceId,
         sessionId: handle.assignment.sessionId,
@@ -1770,10 +1774,10 @@ export class CubeSandboxProvider implements SandboxProvider {
         bindingSha256: activation.bindingSha256,
         fencingToken: fencingToken(handle.assignment),
       });
-      const workspace = encodeWorkspaceSnapshotBlob(
-        createPersistentVolumeReference({
+      const settlement = encodeWorkspaceBlob(
+        createWorkspaceVolumeSettlement({
           volumeId: activation.volumeId,
-          volumeRevision: volume.volumeRevision,
+          settlementRevision: volume.settlementRevision,
           activationId: handle.activationId,
           tenantId: handle.assignment.tenantId,
           workspaceId: handle.assignment.workspaceId,
@@ -1782,7 +1786,6 @@ export class CubeSandboxProvider implements SandboxProvider {
           fencingToken: fencingToken(handle.assignment),
           imageRevision: this.#imageRevision,
           environmentSpecSha256: handle.environment.specSha256,
-          files: volume.files,
           recipeCommands: activation.toolchain.recipeCommands,
         }),
       );
@@ -1791,7 +1794,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         type: "tool_sandbox.captured",
         requestId,
         activationId: handle.activationId,
-        workspace,
+        settlement,
         environment: handle.environmentValidation,
       });
       if (parsed.type !== "tool_sandbox.captured") {
@@ -1811,12 +1814,12 @@ export class CubeSandboxProvider implements SandboxProvider {
             timeoutMs: this.#readyTimeoutMs,
           },
         ),
-        "CubeSandbox checkpoint completion",
+        "CubeSandbox settlement completion",
       );
       if (completed.resumed !== frozenToolProcesses.length) {
         throw new ToolBrokerError(
-          "cubesandbox_checkpoint_completion_invalid",
-          "CubeSandbox did not resume the checkpointed process boundary",
+          "cubesandbox_settlement_completion_invalid",
+          "CubeSandbox did not resume the settled process boundary",
           false,
         );
       }
@@ -1839,8 +1842,8 @@ export class CubeSandboxProvider implements SandboxProvider {
           await this.#client.destroy(activation.instance.sandboxId).catch(() => undefined);
           this.#activations.delete(handle.activationId);
           throw new ToolBrokerError(
-            "cubesandbox_checkpoint_recovery_failed",
-            "CubeSandbox checkpoint cleanup failed and the VM was destroyed",
+            "cubesandbox_settlement_recovery_failed",
+            "CubeSandbox settlement cleanup failed and the VM was destroyed",
             true,
           );
         }
@@ -1854,8 +1857,8 @@ export class CubeSandboxProvider implements SandboxProvider {
     request: ToolBrokerWorkspaceForkRequest,
   ): Promise<{
     sourceHandle: SandboxHandle;
-    sourceRevision: string;
-    targetRevision: string;
+    sourceSettlementRevision: string;
+    targetSettlementRevision: string;
   }> {
     if (
       request.sourceActivationId !== handle.activationId ||
@@ -1871,7 +1874,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const captured = await this.snapshot(handle, request.requestId);
+    const captured = await this.settle(handle, request.requestId);
     if (captured.type !== "tool_sandbox.captured") {
       throw new ToolBrokerError(
         "workspace_fork_capture_invalid",
@@ -1879,7 +1882,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         true,
       );
     }
-    const source = parsePersistentVolumeReference(decodeWorkspaceSnapshotBlob(captured.workspace));
+    const source = parseWorkspaceVolumeSettlement(decodeWorkspaceBlob(captured.settlement));
     if (source === undefined) {
       throw new ToolBrokerError(
         "workspace_fork_capture_invalid",
@@ -1895,7 +1898,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         sourceWorkspaceId: handle.assignment.workspaceId,
         sourceSessionId: handle.assignment.sessionId,
         sourceVolumeId: source.volumeId,
-        expectedSourceRevision: source.volumeRevision,
+        expectedSourceSettlementRevision: source.settlementRevision,
         targetWorkspaceId: request.target.workspaceId,
         targetSessionId: request.target.sessionId,
         targetVolumeId,
@@ -1903,8 +1906,8 @@ export class CubeSandboxProvider implements SandboxProvider {
       const sourceHandle = await this.rebind(handle, handle.assignment);
       return {
         sourceHandle,
-        sourceRevision: forked.sourceRevision,
-        targetRevision: forked.volumeRevision,
+        sourceSettlementRevision: forked.sourceSettlementRevision,
+        targetSettlementRevision: forked.targetSettlementRevision,
       };
     } catch (error: unknown) {
       const activation = this.#activations.get(handle.activationId);
@@ -1984,77 +1987,84 @@ export class CubeSandboxProvider implements SandboxProvider {
     };
   }
 
-  async materializeFile(
-    request: ToolBrokerMaterializeFileRequest,
+  async listWorkspaceDirectory(
+    request: ToolBrokerListWorkspaceDirectoryRequest,
+  ): Promise<ToolBrokerListWorkspaceDirectoryResponse> {
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#workspaceVolumeGateway.prepare({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.sessionId,
+      volumeId,
+    });
+    const listed = await this.#workspaceVolumeGateway.listDirectory({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.sessionId,
+      volumeId,
+      rootPath: request.rootPath,
+      path: request.path,
+    });
+    return parseToolBrokerListWorkspaceDirectoryResponse({
+      toolBrokerProtocolVersion: 1,
+      type: "workspace.directory_listed",
+      requestId: request.requestId,
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      path: request.path,
+      entries: listed.entries,
+      truncated: listed.truncated,
+    });
+  }
+
+  async readWorkspaceFile(
+    request: ToolBrokerReadWorkspaceFileRequest,
     signal?: AbortSignal,
-  ): Promise<ToolBrokerMaterializeFileResponse> {
-    const snapshotBytes = decodeWorkspaceSnapshotBlob(request.snapshot);
-    const volume = parsePersistentVolumeReference(snapshotBytes);
-    if (volume !== undefined) {
-      if (volume.tenantId !== request.tenantId || volume.workspaceId !== request.workspaceId) {
-        throw new ToolBrokerError(
-          "cubesandbox_volume_reference_invalid",
-          "Persistent Workspace Volume reference did not match the requested Workspace",
-          false,
-        );
-      }
-      const expected = volume.files.find((file) => file.path === request.path);
-      if (expected === undefined) {
-        throw new ToolBrokerError(
-          "workspace_file_not_found",
-          "Workspace file was not found",
-          false,
-        );
-      }
-      if (signal?.aborted) {
-        throw new ToolBrokerError(
-          "snapshot_materialization_cancelled",
-          "Workspace file materialization was cancelled",
-          false,
-        );
-      }
-      const materialized = await this.#workspaceVolumeGateway.materialize({
-        tenantId: volume.tenantId,
-        workspaceId: volume.workspaceId,
-        sessionId: volume.sourceSessionId,
-        volumeId: volume.volumeId,
-        path: request.path,
-        expectedSha256: expected.sha256,
-        maximumBytes: Math.max(1, expected.sizeBytes),
-      });
-      if (
-        signal?.aborted ||
-        materialized.bytes.byteLength !== expected.sizeBytes ||
-        materialized.sha256 !== expected.sha256
-      ) {
-        throw new ToolBrokerError(
-          signal?.aborted
-            ? "snapshot_materialization_cancelled"
-            : "cubesandbox_volume_materialization_invalid",
-          signal?.aborted
-            ? "Workspace file materialization was cancelled"
-            : "Persistent Workspace file did not match the selected revision",
-          false,
-        );
-      }
-      return {
-        toolBrokerProtocolVersion: 1,
-        type: "workspace.file_materialized",
-        requestId: request.requestId,
-        tenantId: request.tenantId,
-        workspaceId: request.workspaceId,
-        path: request.path,
-        content: Buffer.from(materialized.bytes).toString("base64"),
-        sha256: expected.sha256,
-        executable: expected.executable,
-        sizeBytes: expected.sizeBytes,
-      };
+  ): Promise<ToolBrokerReadWorkspaceFileResponse> {
+    if (signal?.aborted) {
+      throw new ToolBrokerError(
+        "workspace_read_cancelled",
+        "Workspace file read was cancelled",
+        false,
+      );
     }
-    throw new ToolBrokerError(
-      "cubesandbox_volume_reference_unsupported",
-      "CubeSandbox accepts only the current persistent Workspace Volume reference",
-      false,
-    );
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#workspaceVolumeGateway.prepare({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.sessionId,
+      volumeId,
+    });
+    const file = await this.#workspaceVolumeGateway.readFile({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.sessionId,
+      volumeId,
+      rootPath: request.rootPath,
+      path: request.path,
+      maximumBytes: request.maximumBytes,
+    });
+    if (signal?.aborted) {
+      throw new ToolBrokerError(
+        "workspace_read_cancelled",
+        "Workspace file read was cancelled",
+        false,
+      );
+    }
+    return parseToolBrokerReadWorkspaceFileResponse({
+      toolBrokerProtocolVersion: 1,
+      type: "workspace.file_read",
+      requestId: request.requestId,
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      path: request.path,
+      content: Buffer.from(file.bytes).toString("base64"),
+      sha256: file.sha256,
+      executable: file.executable,
+      sizeBytes: file.bytes.byteLength,
+    });
   }
 
   async authorizeSourceCredential(

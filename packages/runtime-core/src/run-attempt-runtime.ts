@@ -61,7 +61,7 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
     });
   }
 
-  async checkpointCommitted(command: ExecuteTurnCommandMessage, revision: string): Promise<void> {
+  async settlementCommitted(command: ExecuteTurnCommandMessage, revision: string): Promise<void> {
     const now = validDate(this.#clock);
     const execution = parseExecutionLease(command.payload.executionLease);
     await this.#database.transaction().execute(async (transaction) => {
@@ -74,10 +74,10 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
           executionLease: command.payload.executionLease,
         },
         {
-          runState: "checkpointing",
-          attemptState: "checkpointing",
-          reason: "checkpoint_committed",
-          checkpointRevision: revision,
+          runState: "settling",
+          attemptState: "settling",
+          reason: "settlement_committed",
+          settlementRevision: revision,
           now,
           heartbeat: true,
           transitionId: this.#idGenerator(),

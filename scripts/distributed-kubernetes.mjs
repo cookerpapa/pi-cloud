@@ -136,7 +136,7 @@ function preflight(namespace, values) {
     "metrics-token",
     "model-credential-master-key",
     "tool-broker-token",
-    "sandbox-materializer-token",
+    "workspace-service-token",
     "workspace-terminal-token",
     "cube-persistent-state-key",
     "supervisor-enrollment-token",

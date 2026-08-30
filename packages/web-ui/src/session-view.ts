@@ -563,7 +563,7 @@ export function sessionViewReducer(
         };
       }
       if (action.run.state === "cancel_requested") return { ...turn, status: "cancelling" };
-      if (action.run.state === "running" || action.run.state === "checkpointing") {
+      if (action.run.state === "running" || action.run.state === "settling") {
         return { ...turn, status: "running" };
       }
       return { ...turn, status: "queued" };

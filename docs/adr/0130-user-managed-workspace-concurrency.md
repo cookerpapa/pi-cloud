@@ -33,7 +33,7 @@ couples Run admission to optional compute state.
 - A cloud development machine may have one active Agent authority and one
   human terminal/SSH session at the same time inside the same Cube. Lifecycle
   mutations such as pause and release still require both to settle.
-- The shared Workspace version pointer is last-settled observational metadata,
+- The shared Workspace settlement pointer is last-observed metadata,
   not a compare-and-swap writer lock. A concurrent settlement cannot fail an
   otherwise successful Run merely because another Session settled first. Each
   Session advances only its own checkpoint pointer; it never rewrites every

@@ -12,7 +12,7 @@ Same-Session Runs remain serialized by mailbox position.
 All Pi Workers claim directly from the same ready `runs` rows. PostgreSQL sends
 a notification to reduce idle latency, but a one-second poll is the recovery
 path. A narrow indexed query locks one candidate with `SKIP LOCKED`; only that
-Worker loads the Run snapshot and creates its Attempt.
+Worker loads the immutable Run context and creates its Attempt.
 
 `RunExecutor` transactionally rechecks:
 
@@ -71,8 +71,8 @@ and removes the lease before the AcceptedFactBus performs Kafka append. The
 PostgreSQL projector then applies the accepted fact idempotently without another
 authority query, and the Worker waits at a read-your-writes barrier before the
 next model Step. On successful settlement, the Worker
-prepares the bounded Workspace Volume revision. The terminal transaction
-validates the current Attempt/fence, records the last-settled Workspace version
+prepares the lightweight Workspace Volume settlement. The terminal transaction
+validates the current Attempt/fence, records the last Workspace settlement
 if applicable, writes a terminal event Outbox record and settles the Run. A
 different Session settling the same Workspace first does not fail this Run. Kafka
 retention eventually removes hot fragments while canonical Pi
@@ -103,7 +103,7 @@ capacity.
 Run table queue        at-least-once wakeup + transactional claim
 Pi Session mutation    Authority Gate + Kafka + idempotent PostgreSQL projection
 Tool start              no blind retry; UNKNOWN if ambiguous
-Workspace revision      fenced last-settled observation; persistent Volume owns bytes
+Workspace settlement    fenced last observation; persistent Volume owns bytes
 terminal Run commit     idempotent current-Attempt transaction
 Cube create/delete      idempotent reconcile
 live AcceptedFact       Authority Gate + Kafka acks=all + Gateway fact-id/sequence projection

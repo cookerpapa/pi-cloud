@@ -1,7 +1,7 @@
 export {
   TOOL_BROKER_INVENTORY_PATH,
   TOOL_BROKER_LIVE_PATH,
-  TOOL_BROKER_MATERIALIZER_PATH,
+  TOOL_BROKER_WORKSPACE_BROWSER_PATH,
   TOOL_BROKER_OPERATION_PATH,
   TOOL_BROKER_READY_PATH,
   TOOL_BROKER_SERVICE_PATH,
@@ -79,11 +79,12 @@ export {
   workspaceVolumeId,
   type WorkspaceVolumeGateway,
   type WorkspaceVolumeGatewayIdentity,
-  type WorkspaceVolumeGatewayMaterializeInput,
+  type WorkspaceVolumeGatewayPathInput,
+  type WorkspaceVolumeGatewayReadFileInput,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayLock,
   type WorkspaceVolumeGatewayPrepareInput,
-  type WorkspaceVolumeGatewaySnapshotInput,
+  type WorkspaceVolumeGatewaySettleInput,
   type WorkspaceVolumeGatewayVolumeIdentity,
   type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway.ts";

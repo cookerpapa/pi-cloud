@@ -396,16 +396,10 @@ try {
     ].join(" "),
     expectTools: true,
   });
-  const versions = await api.listWorkspaceVersions(session.sessionId);
-  assert(versions.currentVersionId);
-  const version = versions.versions.find(
-    (candidate) => candidate.versionId === versions.currentVersionId,
-  );
-  assert(version);
-  assert.equal(version.workspaceId, project.workspaceId);
-  const files = await api.listWorkspaceFiles(version.versionId);
-  assert(files.files.some((file) => file.path === "surface_check.py"));
-  const source = await api.readWorkspaceFile(version.versionId, "surface_check.py");
+  const directory = await api.listWorkspaceDirectory(session.sessionId);
+  assert.equal(directory.workspaceId, project.workspaceId);
+  assert(directory.entries.some((entry) => entry.path === "surface_check.py"));
+  const source = await api.readWorkspaceFile(session.sessionId, "surface_check.py");
   assert(Buffer.from(source.bytes).toString("utf8").includes("def add"));
   progress("real coding, Tool execution and Workspace source browsing passed");
 

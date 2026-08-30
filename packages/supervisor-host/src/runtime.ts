@@ -1,9 +1,9 @@
 import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
 import {
-  type CheckpointObjectStore,
-  PostgresSandboxCheckpointStore,
-  TtlCheckpointObjectStore,
-} from "@pi-cloud/runtime-core/checkpoint-runtime";
+  type RuntimeObjectStore,
+  PostgresWorkspaceSettlementStore,
+  TtlRuntimeObjectStore,
+} from "@pi-cloud/runtime-core/workspace-settlement-runtime";
 import type { FactChannelFactory } from "@pi-cloud/runtime-core/durable-event-store";
 import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/accepted-fact-channel";
 import { FactChannelPiSessionMutationProducer } from "@pi-cloud/runtime-core/fact-channel-pi-session-mutation-producer";
@@ -69,7 +69,7 @@ export type PiWorkerRuntimeState =
 export type PiWorkerRuntimeOptions = {
   config: SupervisorHostConfig;
   database?: Kysely<Database>;
-  objectStore: CheckpointObjectStore & { checkHealth(): Promise<void>; destroy(): void };
+  objectStore: RuntimeObjectStore & { checkHealth(): Promise<void>; destroy(): void };
   provisioningClient?: Pick<SupervisorProvisioningClient, "provision">;
   toolBroker?: SupervisorToolBroker;
   idGenerator?: () => string;
@@ -184,7 +184,7 @@ export class PiWorkerRuntime {
   readonly #config: SupervisorHostConfig;
   readonly #database: Kysely<Database>;
   readonly #ownsDatabase: boolean;
-  readonly #objectStore: CheckpointObjectStore & {
+  readonly #objectStore: RuntimeObjectStore & {
     checkHealth(): Promise<void>;
     destroy(): void;
   };
@@ -381,24 +381,24 @@ export class PiWorkerRuntime {
       };
       await this.#provisioningClient.provision(request);
 
-      const cachedCheckpointObjects = new TtlCheckpointObjectStore({
+      const cachedRuntimeObjects = new TtlRuntimeObjectStore({
         objectStore: this.#objectStore,
-        ttlMs: this.#config.checkpointReadCacheTtlMs,
-        maximumEntries: this.#config.checkpointReadCacheMaximumEntries,
-        maximumBytes: this.#config.checkpointReadCacheMaximumBytes,
+        ttlMs: this.#config.runtimeObjectCacheTtlMs,
+        maximumEntries: this.#config.runtimeObjectCacheMaximumEntries,
+        maximumBytes: this.#config.runtimeObjectCacheMaximumBytes,
         ...(this.#metrics === undefined
           ? {}
           : {
               observe: (event) => {
-                this.#metrics!.checkpointCacheAccess.inc({ result: event.result });
-                this.#metrics!.checkpointCacheEntries.set(event.entries);
-                this.#metrics!.checkpointCacheBytes.set(event.bytes);
+                this.#metrics!.runtimeObjectCacheAccess.inc({ result: event.result });
+                this.#metrics!.runtimeObjectCacheEntries.set(event.entries);
+                this.#metrics!.runtimeObjectCacheBytes.set(event.bytes);
               },
             }),
       });
-      const checkpointStore = new PostgresSandboxCheckpointStore({
+      const settlementStore = new PostgresWorkspaceSettlementStore({
         database: this.#database,
-        objectStore: cachedCheckpointObjects,
+        objectStore: cachedRuntimeObjects,
       });
       const workspaceSeedResolver = new PostgresWorkspaceSeedResolver({
         database: this.#database,
@@ -469,7 +469,7 @@ export class PiWorkerRuntime {
         broker: this.#toolBroker,
         runtimeIdentity: identity,
         trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
-        checkpointStore,
+        settlementStore,
         openAgentSession: (command) =>
           openPostgresDurableAgentSession({
             database: this.#database,

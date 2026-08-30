@@ -6,9 +6,9 @@ import {
   type SteerTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import {
-  validateCheckpointObjectKey,
-  type CheckpointObjectStore,
-} from "@pi-cloud/runtime-core/checkpoint-runtime";
+  validateRuntimeObjectKey,
+  type RuntimeObjectStore,
+} from "@pi-cloud/runtime-core/workspace-settlement-runtime";
 import { createHash, timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import {
@@ -33,7 +33,7 @@ export type SupervisorManagementServerOptions = {
   stopCurrentBoot: () => Promise<void>;
   readiness: () => boolean;
   assignmentInventory: SupervisorAssignmentInventory;
-  artifactStore?: Pick<CheckpointObjectStore, "get">;
+  artifactStore?: Pick<RuntimeObjectStore, "get">;
   steerCommand?: (command: SteerTurnCommandMessage) => Promise<void>;
   bodyLimit?: number;
 };
@@ -115,7 +115,7 @@ export class SupervisorManagementServer {
   readonly #stopCurrentBoot: () => Promise<void>;
   readonly #readiness: () => boolean;
   readonly #assignmentInventory: SupervisorAssignmentInventory;
-  readonly #artifactStore: Pick<CheckpointObjectStore, "get"> | undefined;
+  readonly #artifactStore: Pick<RuntimeObjectStore, "get"> | undefined;
   readonly #steerCommand: ((command: SteerTurnCommandMessage) => Promise<void>) | undefined;
   #stopOperation: Promise<void> | undefined;
   #address: string | undefined;
@@ -231,7 +231,7 @@ export class SupervisorManagementServer {
             true,
           );
         }
-        const objectKey = validateCheckpointObjectKey(request.body.objectKey);
+        const objectKey = validateRuntimeObjectKey(request.body.objectKey);
         const bytes = await this.#artifactStore.get(objectKey);
         if (bytes.byteLength > 16 * 1024 * 1024) {
           throw new SupervisorManagementServerError(

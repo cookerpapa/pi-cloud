@@ -95,21 +95,21 @@ export {
   type SandboxRetirementResult,
 } from "./assignment-reconciler.ts";
 export {
-  FileCheckpointObjectStore,
-  MAX_CHECKPOINT_OBJECT_BYTES,
-  PostgresSandboxCheckpointStore,
-  SandboxCheckpointStoreError,
-  validateCheckpointObjectKey,
-  type CheckpointObjectStore,
-  type FileCheckpointObjectStoreOptions,
-  type PostgresSandboxCheckpointStoreOptions,
-} from "@pi-cloud/runtime-core/checkpoint-store";
+  FileRuntimeObjectStore,
+  MAX_RUNTIME_OBJECT_BYTES,
+  PostgresWorkspaceSettlementStore,
+  WorkspaceSettlementStoreError,
+  validateRuntimeObjectKey,
+  type RuntimeObjectStore,
+  type FileRuntimeObjectStoreOptions,
+  type PostgresWorkspaceSettlementStoreOptions,
+} from "@pi-cloud/runtime-core/workspace-settlement-store";
 export {
-  TtlCheckpointObjectStore,
-  type TtlCheckpointObjectStoreEvent,
-  type TtlCheckpointObjectStoreOptions,
-  type TtlCheckpointObjectStoreSnapshot,
-} from "@pi-cloud/runtime-core/checkpoint-object-cache";
+  TtlRuntimeObjectStore,
+  type TtlRuntimeObjectStoreEvent,
+  type TtlRuntimeObjectStoreOptions,
+  type TtlRuntimeObjectStoreSnapshot,
+} from "@pi-cloud/runtime-core/runtime-object-cache";
 export {
   RunCancellationExecutor,
   RunCancellationExecutorInvariantError,
@@ -303,12 +303,17 @@ export {
   type PostgresRunAttemptPhaseObserverOptions,
 } from "@pi-cloud/runtime-core/run-attempt-runtime";
 export {
-  WorkspaceVersionError,
-  WorkspaceVersionService,
-  type TrustedArtifactReader,
-  type WorkspaceVersionErrorCode,
-  type WorkspaceVersionServiceOptions,
-} from "./workspace-version-service.ts";
+  ConversationArchiveError,
+  ConversationArchiveService,
+  type ConversationArchiveErrorCode,
+  type ConversationArchiveServiceOptions,
+} from "./conversation-archive-service.ts";
+export {
+  WorkspaceBrowserError,
+  WorkspaceBrowserService,
+  type TrustedWorkspaceBrowser,
+  type WorkspaceBrowserServiceOptions,
+} from "./workspace-browser-service.ts";
 export {
   DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH,
   WORKSPACE_TERMINAL_PATH,

@@ -229,10 +229,10 @@ describe.sequential("production bootstrap and configuration", () => {
         `cube-egress-${"c".repeat(48)}`,
       ),
       PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
-      PI_CLOUD_SANDBOX_MATERIALIZER_TOKEN_FILE: await secret(
+      PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE: await secret(
         root,
-        "sandbox-materializer-token",
-        `materializer-${"s".repeat(48)}`,
+        "workspace-service-token",
+        `workspace-service-${"s".repeat(48)}`,
       ),
       PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: await secret(
         root,

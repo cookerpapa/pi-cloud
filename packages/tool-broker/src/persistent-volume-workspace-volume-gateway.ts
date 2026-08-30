@@ -1,4 +1,3 @@
-import { captureWorkspaceIndex } from "@pi-cloud/workspace-runtime";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
@@ -10,6 +9,7 @@ import {
   open,
   readFile,
   readdir,
+  realpath,
   rename,
   rm,
   writeFile,
@@ -22,6 +22,7 @@ import {
   VOLUME_GENERATION_FILE,
   VOLUME_GENERATION_PATTERN,
   VOLUME_METADATA_DIRECTORY,
+  VOLUME_SETTLEMENT_FILE,
   VOLUME_WORKSPACE_DIRECTORY,
   WORKSPACE_GIT_HOME_DIRECTORY,
   WorkspaceVolumeGatewayError,
@@ -34,17 +35,35 @@ import {
   type VolumeState,
   type WorkspaceVolumeGateway,
   type WorkspaceVolumeGatewayLock,
-  type WorkspaceVolumeGatewayMaterializeInput,
   type WorkspaceVolumeGatewayDeleteInput,
   type WorkspaceVolumeGatewayForkInput,
+  type WorkspaceVolumeGatewayPathInput,
   type WorkspaceVolumeGatewayPrepareInput,
-  type WorkspaceVolumeGatewaySnapshotInput,
+  type WorkspaceVolumeGatewayReadFileInput,
+  type WorkspaceVolumeGatewaySettleInput,
   type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
   type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
   type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway-contract.ts";
 
 const GIT_TIMEOUT_MS = 5 * 60_000;
+
+function safeBrowsePath(value: string, allowEmpty: boolean): string {
+  if (allowEmpty && value.length === 0) return "";
+  const path = safeRelativeFile(value);
+  if (
+    path
+      .split("/")
+      .some((segment) => segment === ".git" || segment === WORKSPACE_GIT_HOME_DIRECTORY)
+  ) {
+    throw new WorkspaceVolumeGatewayError(
+      "workspace_path_hidden",
+      "Workspace path is not available in the file browser",
+      false,
+    );
+  }
+  return path;
+}
 
 function privateGitHost(hostname: string): boolean {
   if (
@@ -288,10 +307,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     });
   }
 
-  async snapshot(input: WorkspaceVolumeGatewaySnapshotInput): Promise<{
-    volumeRevision: string;
-    files: Awaited<ReturnType<typeof captureWorkspaceIndex>>["files"];
-  }> {
+  async settle(input: WorkspaceVolumeGatewaySettleInput): Promise<{ settlementRevision: string }> {
     const identity = validatedIdentity(input);
     if (
       !UUID_PATTERN.test(input.activationId) ||
@@ -300,32 +316,27 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       !SHA256_PATTERN.test(input.bindingSha256)
     ) {
       throw new WorkspaceVolumeGatewayError(
-        "workspace_capture_fence_invalid",
-        "Workspace capture fence was invalid",
+        "workspace_settlement_fence_invalid",
+        "Workspace settlement fence was invalid",
         false,
       );
     }
     return this.#withVolumeLock(identity.volumeId, async () => {
       const directory = await this.#validatedVolume(identity);
-      const state = (await this.#readState(directory))!;
-      const index = await captureWorkspaceIndex(join(directory, VOLUME_WORKSPACE_DIRECTORY));
-      const volumeRevision = this.#volumeRevision(state.volumeGeneration, index.files);
-      return {
-        volumeRevision,
-        files: index.files,
-      };
+      const settlementRevision = randomBytes(32).toString("hex");
+      await this.#writeSettlementRevision(directory, settlementRevision);
+      return { settlementRevision };
     });
   }
 
   async fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
-    sourceRevision: string;
-    volumeRevision: string;
-    files: Awaited<ReturnType<typeof captureWorkspaceIndex>>["files"];
+    sourceSettlementRevision: string;
+    targetSettlementRevision: string;
   }> {
-    if (!SHA256_PATTERN.test(input.expectedSourceRevision)) {
+    if (!SHA256_PATTERN.test(input.expectedSourceSettlementRevision)) {
       throw new WorkspaceVolumeGatewayError(
-        "workspace_fork_revision_invalid",
-        "Workspace fork source revision was invalid",
+        "workspace_fork_settlement_invalid",
+        "Workspace fork source settlement was invalid",
         false,
       );
     }
@@ -351,7 +362,6 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     return this.#withVolumeLocks([source.volumeId, target.volumeId], async () => {
       await this.checkHealth();
       const sourceDirectory = await this.#validatedVolume(source);
-      const sourceState = (await this.#readState(sourceDirectory))!;
       const targetDirectory = await this.#ensureVolumeDirectory(target.volumeId);
       const existingState = await this.#readState(targetDirectory);
       const existingGeneration = await this.#readVolumeGeneration(targetDirectory);
@@ -363,7 +373,8 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
           existingState.workspaceId !== target.workspaceId ||
           existingState.volumeId !== target.volumeId ||
           existingState.volumeGeneration !== existingGeneration ||
-          existingState.forkedFrom?.workspaceId !== source.workspaceId
+          existingState.forkedFrom?.workspaceId !== source.workspaceId ||
+          existingState.forkedFrom.settlementRevision !== input.expectedSourceSettlementRevision
         ) {
           throw new WorkspaceVolumeGatewayError(
             "workspace_fork_target_conflict",
@@ -371,23 +382,24 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
             false,
           );
         }
-        const existingIndex = await captureWorkspaceIndex(
-          join(targetDirectory, VOLUME_WORKSPACE_DIRECTORY),
-        );
+        const targetSettlementRevision = await this.#readSettlementRevision(targetDirectory);
+        if (targetSettlementRevision === undefined) {
+          throw new WorkspaceVolumeGatewayError(
+            "workspace_fork_target_conflict",
+            "Workspace fork target settlement was missing",
+            false,
+          );
+        }
         return {
-          sourceRevision: existingState.forkedFrom.volumeRevision,
-          volumeRevision: this.#volumeRevision(existingGeneration, existingIndex.files),
-          files: existingIndex.files,
+          sourceSettlementRevision: existingState.forkedFrom.settlementRevision,
+          targetSettlementRevision,
         };
       }
-      const sourceIndex = await captureWorkspaceIndex(
-        join(sourceDirectory, VOLUME_WORKSPACE_DIRECTORY),
-      );
-      const sourceRevision = this.#volumeRevision(sourceState.volumeGeneration, sourceIndex.files);
-      if (sourceRevision !== input.expectedSourceRevision) {
+      const sourceSettlementRevision = await this.#readSettlementRevision(sourceDirectory);
+      if (sourceSettlementRevision !== input.expectedSourceSettlementRevision) {
         throw new WorkspaceVolumeGatewayError(
-          "workspace_fork_source_changed",
-          "Workspace changed before the isolated fork was captured",
+          "workspace_fork_source_settlement_changed",
+          "Workspace settlement changed before the isolated fork was copied",
           true,
         );
       }
@@ -418,30 +430,24 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         const generationPath = join(temporary, VOLUME_METADATA_DIRECTORY, VOLUME_GENERATION_FILE);
         await rm(generationPath, { force: true });
         await writeFile(generationPath, `${volumeGeneration}\n`, { mode: 0o400, flag: "wx" });
+        const targetSettlementRevision = randomBytes(32).toString("hex");
         await this.#writeState(temporary, {
           schemaVersion: 2,
           tenantId: target.tenantId,
           workspaceId: target.workspaceId,
           volumeId: target.volumeId,
           volumeGeneration,
-          forkedFrom: { workspaceId: source.workspaceId, volumeRevision: sourceRevision },
+          forkedFrom: {
+            workspaceId: source.workspaceId,
+            settlementRevision: sourceSettlementRevision,
+          },
         });
-        const copiedIndex = await captureWorkspaceIndex(
-          join(temporary, VOLUME_WORKSPACE_DIRECTORY),
-        );
-        if (JSON.stringify(copiedIndex.files) !== JSON.stringify(sourceIndex.files)) {
-          throw new WorkspaceVolumeGatewayError(
-            "workspace_fork_copy_invalid",
-            "Isolated Workspace copy did not match its source revision",
-            false,
-          );
-        }
+        await this.#writeSettlementRevision(temporary, targetSettlementRevision);
         await rm(targetDirectory, { recursive: true, force: true });
         await rename(temporary, targetDirectory);
         return {
-          sourceRevision,
-          volumeRevision: this.#volumeRevision(volumeGeneration, copiedIndex.files),
-          files: copiedIndex.files,
+          sourceSettlementRevision,
+          targetSettlementRevision,
         };
       } finally {
         await rm(temporary, { recursive: true, force: true }).catch(() => undefined);
@@ -449,54 +455,81 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     });
   }
 
-  async materialize(
-    input: WorkspaceVolumeGatewayMaterializeInput,
-  ): Promise<{ bytes: Uint8Array; sha256: string }> {
+  async listDirectory(input: WorkspaceVolumeGatewayPathInput): Promise<{
+    entries: readonly import("./workspace-volume-gateway-contract.ts").WorkspaceVolumeDirectoryEntry[];
+    truncated: boolean;
+  }> {
     const identity = validatedIdentity(input);
-    const path = safeRelativeFile(input.path);
+    return this.#withVolumeLock(identity.volumeId, async () => {
+      const directory = await this.#validatedVolume(identity);
+      const target = await this.#browseTarget(directory, input.rootPath, input.path, true);
+      const metadata = await lstat(target.absolute);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+        throw new WorkspaceVolumeGatewayError(
+          "workspace_directory_invalid",
+          "Workspace directory was unavailable",
+          false,
+        );
+      }
+      const listed = (await readdir(target.absolute, { withFileTypes: true }))
+        .filter((entry) => entry.name !== ".git" && entry.name !== WORKSPACE_GIT_HOME_DIRECTORY)
+        .sort((left, right) => left.name.localeCompare(right.name));
+      const entries = await Promise.all(
+        listed.slice(0, 4_096).map(async (entry) => {
+          const path =
+            target.relative.length === 0 ? entry.name : `${target.relative}/${entry.name}`;
+          if (entry.isSymbolicLink()) return { name: entry.name, path, kind: "symlink" as const };
+          if (entry.isDirectory()) return { name: entry.name, path, kind: "directory" as const };
+          const file = await lstat(join(target.absolute, entry.name));
+          return {
+            name: entry.name,
+            path,
+            kind: "file" as const,
+            sizeBytes: file.size,
+            executable: (file.mode & 0o111) !== 0,
+          };
+        }),
+      );
+      return { entries, truncated: listed.length > entries.length };
+    });
+  }
+
+  async readFile(input: WorkspaceVolumeGatewayReadFileInput): Promise<{
+    bytes: Uint8Array;
+    sha256: string;
+    executable: boolean;
+  }> {
+    const identity = validatedIdentity(input);
     if (
-      !SHA256_PATTERN.test(input.expectedSha256) ||
       !Number.isSafeInteger(input.maximumBytes) ||
       input.maximumBytes < 1 ||
       input.maximumBytes > 8 * 1_024 * 1_024
     ) {
       throw new WorkspaceVolumeGatewayError(
-        "workspace_materialize_request_invalid",
-        "Workspace materialize request was invalid",
+        "workspace_read_request_invalid",
+        "Workspace file read request was invalid",
         false,
       );
     }
     return this.#withVolumeLock(identity.volumeId, async () => {
       const directory = await this.#validatedVolume(identity);
-      const root = resolve(directory, VOLUME_WORKSPACE_DIRECTORY);
-      const target = resolve(root, path);
-      if (!target.startsWith(`${root}${sep}`)) {
-        throw new WorkspaceVolumeGatewayError(
-          "workspace_materialize_path_invalid",
-          "Workspace materialize path escaped its volume",
-          false,
-        );
-      }
-      const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const target = await this.#browseTarget(directory, input.rootPath, input.path, false);
+      const handle = await open(target.absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
       try {
         const metadata = await handle.stat();
         if (!metadata.isFile() || metadata.size > input.maximumBytes) {
           throw new WorkspaceVolumeGatewayError(
-            "workspace_materialize_file_invalid",
-            "Workspace materialized file was invalid",
+            "workspace_file_invalid",
+            "Workspace file was unavailable or too large",
             false,
           );
         }
         const bytes = await handle.readFile();
-        const sha256 = createHash("sha256").update(bytes).digest("hex");
-        if (sha256 !== input.expectedSha256) {
-          throw new WorkspaceVolumeGatewayError(
-            "workspace_revision_changed",
-            "Workspace changed after the selected revision; refresh and retry",
-            true,
-          );
-        }
-        return { bytes, sha256 };
+        return {
+          bytes,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          executable: (metadata.mode & 0o111) !== 0,
+        };
       } finally {
         await handle.close();
       }
@@ -742,8 +775,8 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         value.forkedFrom !== undefined &&
         (!isRecord(value.forkedFrom) ||
           typeof value.forkedFrom.workspaceId !== "string" ||
-          typeof value.forkedFrom.volumeRevision !== "string" ||
-          !SHA256_PATTERN.test(value.forkedFrom.volumeRevision))
+          typeof value.forkedFrom.settlementRevision !== "string" ||
+          !SHA256_PATTERN.test(value.forkedFrom.settlementRevision))
       )
         return undefined;
       return value as unknown as VolumeState;
@@ -757,6 +790,58 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     return this.#distributedLock === undefined
       ? run()
       : this.#distributedLock.withLock(volumeId, run);
+  }
+
+  async #writeSettlementRevision(directory: string, revision: string): Promise<void> {
+    const target = join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_SETTLEMENT_FILE);
+    const temporary = `${target}.tmp-${process.pid}-${randomBytes(8).toString("hex")}`;
+    try {
+      await writeFile(temporary, `${revision}\n`, { mode: 0o600, flag: "wx" });
+      await rename(temporary, target);
+    } finally {
+      await rm(temporary, { force: true }).catch(() => undefined);
+    }
+  }
+
+  async #readSettlementRevision(directory: string): Promise<string | undefined> {
+    try {
+      const value = (
+        await readFile(join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_SETTLEMENT_FILE), "utf8")
+      ).trim();
+      return SHA256_PATTERN.test(value) ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async #browseTarget(
+    directory: string,
+    rootPathValue: string,
+    pathValue: string,
+    pathMayBeEmpty: boolean,
+  ): Promise<{ absolute: string; relative: string }> {
+    const rootPath = safeBrowsePath(rootPathValue, true);
+    const path = safeBrowsePath(pathValue, pathMayBeEmpty);
+    const volumeRoot = await realpath(join(directory, VOLUME_WORKSPACE_DIRECTORY));
+    const selectedRoot = await realpath(
+      rootPath.length === 0 ? volumeRoot : resolve(volumeRoot, rootPath),
+    );
+    if (selectedRoot !== volumeRoot && !selectedRoot.startsWith(`${volumeRoot}${sep}`)) {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_path_escape",
+        "Workspace browser root escaped its Volume",
+        false,
+      );
+    }
+    const absolute = await realpath(path.length === 0 ? selectedRoot : resolve(selectedRoot, path));
+    if (absolute !== selectedRoot && !absolute.startsWith(`${selectedRoot}${sep}`)) {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_path_escape",
+        "Workspace browser path escaped its selected root",
+        false,
+      );
+    }
+    return { absolute, relative: path };
   }
 
   async #withVolumeLocks<T>(volumeIds: readonly string[], operation: () => Promise<T>): Promise<T> {
@@ -794,17 +879,5 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       release();
       if (this.#locks.get(volumeId) === tail) this.#locks.delete(volumeId);
     }
-  }
-
-  #volumeRevision(
-    volumeGeneration: string,
-    files: readonly import("@pi-cloud/workspace-runtime").WorkspaceSnapshotFileMetadata[],
-  ): string {
-    return createHash("sha256")
-      .update("pi-cloud.workspace-volume-revision.v1\0")
-      .update(volumeGeneration)
-      .update("\0")
-      .update(JSON.stringify(files))
-      .digest("hex");
   }
 }

@@ -77,9 +77,9 @@ const server = new ToolBrokerServer({
   port: config.port,
   serviceToken: config.serviceToken,
   terminalToken: config.terminalToken,
-  ...(config.materializerToken === undefined
+  ...(config.workspaceServiceToken === undefined
     ? {}
-    : { materializerToken: config.materializerToken }),
+    : { workspaceServiceToken: config.workspaceServiceToken }),
   broker,
   metrics: observability.metrics,
 });
