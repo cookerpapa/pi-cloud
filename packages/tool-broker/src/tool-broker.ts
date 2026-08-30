@@ -1937,6 +1937,9 @@ export class ToolBroker {
     if (runtime.materializing !== undefined) await runtime.materializing.catch(() => undefined);
     this.#revokeBinding(activationId);
     runtime.bindingIds.delete(activationId);
+    // The operation owns its abort signal and provider-side process cleanup.
+    // Do not race a second physical destroy against that in-flight RPC.
+    if (runtime.activeOperations > 0) return;
     if (runtime.bindingIds.size > 0) return;
     if (runtime.workspaceTerminalId !== undefined) {
       const terminal = this.#terminals.get(runtime.workspaceTerminalId);

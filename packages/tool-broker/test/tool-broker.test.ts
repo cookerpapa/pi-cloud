@@ -1766,6 +1766,45 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
+  it("does not race binding cancellation with a second physical Cube destroy", async () => {
+    const fixture = providerFixture();
+    let started!: () => void;
+    const operationStarted = new Promise<void>((resolvePromise) => {
+      started = resolvePromise;
+    });
+    fixture.provider.exec = async (_handle, _request, signal) => {
+      started();
+      return new Promise((_, rejectPromise) => {
+        signal?.addEventListener(
+          "abort",
+          () =>
+            rejectPromise(
+              new ToolBrokerError("tool_cancelled", "Tool command was cancelled", true),
+            ),
+          { once: true },
+        );
+      });
+    };
+    const manager = new ToolBroker({
+      provider: fixture.provider,
+      idGenerator: () => ACTIVATION_ID,
+    });
+    const created = await manager.create(createRequest);
+    const controller = new AbortController();
+    const executing = manager.execute(
+      assignment.executionLease,
+      operation("63000000-0000-4000-8000-000000000001"),
+      controller.signal,
+    );
+    await operationStarted;
+    await expect(manager.stop(created.activationId, assignment)).resolves.toBeUndefined();
+    expect(fixture.stopped).toBe(false);
+    controller.abort();
+    await expect(executing).rejects.toMatchObject({ code: "tool_cancelled" });
+    expect(manager.admittedCount).toBe(0);
+    await manager.close();
+  });
+
   it("evicts the least-recently-used warm runtime when new demand reaches admission capacity", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
