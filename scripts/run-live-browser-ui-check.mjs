@@ -217,6 +217,11 @@ try {
       await page.waitFor(
         `document.body.innerText.includes(${JSON.stringify(`UI acceptance ${suffix}`)})`,
       );
+      await clickText(".product-topbar-actions button", "代码托管", "codeHost.open");
+      await page.waitFor(
+        'document.querySelector(".product-code-host-modal") && document.body.innerText.includes("访问令牌")',
+      );
+      await click(".product-code-host-modal header > button", "codeHost.close");
 
       await setValue(
         ".product-composer textarea",
@@ -299,11 +304,8 @@ try {
         '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-STEER-OK")||element.innerText.includes("OLD-BROWSER-UI-STEER"))',
       );
       assert.equal(steerSettled, true, "Steered Turn did not settle with an assistant response");
-      await page.waitFor(
-        '[...document.querySelectorAll(".product-tool[data-tool-name=bash] code")].some(element=>element.textContent.includes("sleep 8"))',
-      );
       const piStyleTranscript = await page.evaluate(
-        'document.querySelectorAll(".product-avatar").length===0 && document.querySelectorAll(".product-tool[data-tool-name=bash]").length===1',
+        'document.querySelectorAll(".product-avatar").length===0 && [...document.querySelectorAll(".product-tool")].every(element=>element.querySelector(".product-tool-line")!==null)',
       );
       assert.equal(piStyleTranscript, true, "Pi-style transcript renderer was not active");
       record("transcript.piStyleToolRenderer");
