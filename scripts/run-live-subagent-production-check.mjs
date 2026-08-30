@@ -324,7 +324,7 @@ try {
     session.sessionId,
     [
       "Call the subagent Tool exactly once with worktree:true.",
-      'Use this exact workflowScript: return runs.run("isolated", {agent:"worker", task:"Use bash to create /workspace/isolated-child-only.txt containing ISOLATED-CHILD-OK, read it back, and reply exactly ISOLATED-CHILD-OK"})',
+      'Use this exact workflowScript: return runs.run("isolated", {agent:"worker", worktree:true, task:"Use bash to create /workspace/isolated-child-only.txt containing ISOLATED-CHILD-OK, read it back, and reply exactly ISOLATED-CHILD-OK"})',
       "Do not create isolated-child-only.txt yourself. After the child finishes, reply with ISOLATED-CHILD-OK.",
     ].join(" "),
   );
