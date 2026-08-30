@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import {
   createPiSubagentsCloudTool,
@@ -6,8 +8,19 @@ import {
   type ExternalJobStartInput,
 } from "../src/pi-subagents-cloud-tool.ts";
 
+async function subagentTemporaryDirectories(): Promise<readonly string[]> {
+  return (await readdir(tmpdir()))
+    .filter(
+      (entry) =>
+        entry.startsWith("pi-cloud-subagent-agent-") ||
+        entry.startsWith("pi-cloud-subagent-state-"),
+    )
+    .sort();
+}
+
 describe("pi-subagents cloud Tool adapter", () => {
   it("executes the upstream workflow contract while delegating leaves to the cloud provider", async () => {
+    const temporaryDirectoriesBefore = await subagentTemporaryDirectories();
     const starts: ExternalJobStartInput[] = [];
     const jobs = new Map<string, string>();
     const tool = await createPiSubagentsCloudTool({
@@ -70,6 +83,7 @@ describe("pi-subagents cloud Tool adapter", () => {
     expect(output).toContain("cloud result 2");
     expect(output).not.toContain('action: "status"');
     expect(output).not.toContain("/tmp/");
+    await expect(subagentTemporaryDirectories()).resolves.toEqual(temporaryDirectoriesBefore);
   }, 30_000);
 
   it("does not expose mutable local profile-management actions through the cloud adapter", async () => {

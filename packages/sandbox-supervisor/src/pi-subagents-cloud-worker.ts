@@ -532,94 +532,88 @@ async function main(): Promise<void> {
     noTools: "builtin",
   });
   await session.bindExtensions({ mode: "print" });
+  let result: AgentToolResult<unknown>;
   try {
-    const registered = session.extensionRunner
-      .getAllRegisteredTools()
-      .find((tool) => tool.definition.name === "subagent");
-    if (registered === undefined) throw new Error("pi-subagents Tool was unavailable");
-    const tool = wrapRegisteredTool(registered, session.extensionRunner);
-    if (input.arguments.action === "list") {
-      const listed = await tool.execute(input.toolCallId, { action: "list" }, abort.signal);
-      parentPort!.postMessage({ type: "result", result: listed });
-      return;
-    }
-    if (typeof input.arguments.action === "string") {
-      throw new Error(
-        "Cloud subagent management actions are unavailable across Worker replacement; start a child or workflow instead",
+    result = await (async (): Promise<AgentToolResult<unknown>> => {
+      const registered = session.extensionRunner
+        .getAllRegisteredTools()
+        .find((tool) => tool.definition.name === "subagent");
+      if (registered === undefined) throw new Error("pi-subagents Tool was unavailable");
+      const tool = wrapRegisteredTool(registered, session.extensionRunner);
+      if (input.arguments.action === "list") {
+        return tool.execute(input.toolCallId, { action: "list" }, abort.signal);
+      }
+      if (typeof input.arguments.action === "string") {
+        throw new Error(
+          "Cloud subagent management actions are unavailable across Worker replacement; start a child or workflow instead",
+        );
+      }
+      const requestedScript =
+        typeof input.arguments.workflowScript === "string"
+          ? input.arguments.workflowScript
+          : structuredChildWorkflowScript(input.arguments);
+      if (requestedScript === undefined) {
+        throw new Error("Cloud subagents require { agent, task } or a pi-subagents workflowScript");
+      }
+      const {
+        agent: _structuredAgent,
+        task: _structuredTask,
+        resume: _structuredResume,
+        ...workflowArguments
+      } = input.arguments;
+      const argumentsForCloud = {
+        ...workflowArguments,
+        workflowScript: cloudWorkflowScript(requestedScript, input.arguments.worktree === true),
+        async: true,
+        mission: false,
+        chatProgress: "off",
+        worktree: false,
+      };
+      const launched = await tool.execute(
+        input.toolCallId,
+        argumentsForCloud,
+        abort.signal,
+        (partial: AgentToolResult<unknown>) =>
+          parentPort!.postMessage({ type: "progress", result: partial }),
       );
-    }
-    const requestedScript =
-      typeof input.arguments.workflowScript === "string"
-        ? input.arguments.workflowScript
-        : structuredChildWorkflowScript(input.arguments);
-    if (requestedScript === undefined) {
-      throw new Error("Cloud subagents require { agent, task } or a pi-subagents workflowScript");
-    }
-    const {
-      agent: _structuredAgent,
-      task: _structuredTask,
-      resume: _structuredResume,
-      ...workflowArguments
-    } = input.arguments;
-    const argumentsForCloud = {
-      ...workflowArguments,
-      workflowScript: cloudWorkflowScript(requestedScript, input.arguments.worktree === true),
-      async: true,
-      mission: false,
-      chatProgress: "off",
-      worktree: false,
-    };
-    const launched = await tool.execute(
-      input.toolCallId,
-      argumentsForCloud,
-      abort.signal,
-      (partial: AgentToolResult<unknown>) =>
-        parentPort!.postMessage({ type: "progress", result: partial }),
-    );
-    const asyncId =
-      typeof launched.details === "object" &&
-      launched.details !== null &&
-      "asyncId" in launched.details &&
-      typeof launched.details.asyncId === "string"
-        ? launched.details.asyncId
-        : undefined;
-    if (asyncId === undefined) {
-      parentPort!.postMessage({ type: "result", result: launched });
-      return;
-    }
-    const registeredWait = session.extensionRunner
-      .getAllRegisteredTools()
-      .find((candidate) => candidate.definition.name === "subagent_wait");
-    if (registeredWait === undefined) throw new Error("pi-subagents wait Tool was unavailable");
-    const waitTool = wrapRegisteredTool(registeredWait, session.extensionRunner);
-    const waited = await waitTool.execute(
-      `${input.toolCallId}:wait`,
-      { id: asyncId, timeoutMs: 300_000 },
-      abort.signal,
-    );
-    // The upstream process watchdog protects a local child process. In
-    // PiCloud, a leaf may already be durably admitted and continue on another
-    // Worker after that local shim exits. PostgreSQL Child Run settlement is
-    // authoritative, so never return an empty parent result while an admitted
-    // cloud leaf is still active.
-    while (activeCloudWaits.size > 0) {
-      await Promise.allSettled([...activeCloudWaits]);
-    }
-    if (
-      completedCloudResults.size === 0 &&
-      failedCloudResults.size === 0 &&
-      blockedCloudResults.size === 0
-    ) {
-      parentPort!.postMessage({ type: "result", result: waited });
-      return;
-    }
-    const blocked = [...blockedCloudResults.values()].sort(
-      (left, right) => left.stepIndex - right.stepIndex,
-    );
-    if (blocked.length > 0) {
-      parentPort!.postMessage({
-        type: "result",
-        result: {
+      const asyncId =
+        typeof launched.details === "object" &&
+        launched.details !== null &&
+        "asyncId" in launched.details &&
+        typeof launched.details.asyncId === "string"
+          ? launched.details.asyncId
+          : undefined;
+      if (asyncId === undefined) return launched;
+      const registeredWait = session.extensionRunner
+        .getAllRegisteredTools()
+        .find((candidate) => candidate.definition.name === "subagent_wait");
+      if (registeredWait === undefined) throw new Error("pi-subagents wait Tool was unavailable");
+      const waitTool = wrapRegisteredTool(registeredWait, session.extensionRunner);
+      const waited = await waitTool.execute(
+        `${input.toolCallId}:wait`,
+        { id: asyncId, timeoutMs: 300_000 },
+        abort.signal,
+      );
+      // The upstream process watchdog protects a local child process. In
+      // PiCloud, a leaf may already be durably admitted and continue on another
+      // Worker after that local shim exits. PostgreSQL Child Run settlement is
+      // authoritative, so never return an empty parent result while an admitted
+      // cloud leaf is still active.
+      while (activeCloudWaits.size > 0) {
+        await Promise.allSettled([...activeCloudWaits]);
+      }
+      if (
+        completedCloudResults.size === 0 &&
+        failedCloudResults.size === 0 &&
+        blockedCloudResults.size === 0
+      ) {
+        return waited;
+      }
+      const blocked = [...blockedCloudResults.values()].sort(
+        (left, right) => left.stepIndex - right.stepIndex,
+      );
+      if (blocked.length > 0) {
+        return {
           content: [
             {
               type: "text" as const,
@@ -635,17 +629,13 @@ async function main(): Promise<void> {
             },
           ],
           details: { state: "blocked", requests: blocked },
-        },
-      });
-      return;
-    }
-    const failed = [...failedCloudResults.values()].sort(
-      (left, right) => left.stepIndex - right.stepIndex,
-    );
-    if (failed.length > 0) {
-      parentPort!.postMessage({
-        type: "result",
-        result: {
+        };
+      }
+      const failed = [...failedCloudResults.values()].sort(
+        (left, right) => left.stepIndex - right.stepIndex,
+      );
+      if (failed.length > 0) {
+        return {
           content: [
             {
               type: "text" as const,
@@ -655,18 +645,14 @@ async function main(): Promise<void> {
             },
           ],
           details: { state: "failed", failures: failed },
-        },
-      });
-      return;
-    }
-    const cloudOutput = [...completedCloudResults.values()]
-      .sort((left, right) => left.stepIndex - right.stepIndex)
-      .map((result) => result.output)
-      .join("\n\n---\n\n")
-      .trim();
-    parentPort!.postMessage({
-      type: "result",
-      result: {
+        };
+      }
+      const cloudOutput = [...completedCloudResults.values()]
+        .sort((left, right) => left.stepIndex - right.stepIndex)
+        .map((result) => result.output)
+        .join("\n\n---\n\n")
+        .trim();
+      return {
         content: [
           {
             type: "text" as const,
@@ -684,14 +670,15 @@ async function main(): Promise<void> {
           state: "completed",
           childCount: completedCloudResults.size,
         },
-      },
-    });
+      };
+    })();
   } finally {
     session.dispose();
     await new Promise<void>((resolvePromise) => bridge.close(() => resolvePromise()));
     rmSync(directories.agentDir, { recursive: true, force: true });
     rmSync(directories.stateDir, { recursive: true, force: true });
   }
+  parentPort.postMessage({ type: "result", result });
 }
 
 void main().catch((error: unknown) => {
