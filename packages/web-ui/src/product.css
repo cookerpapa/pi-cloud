@@ -158,41 +158,6 @@ button:disabled {
   text-align: center;
 }
 
-.product-auth-oidc {
-  display: grid;
-  gap: 12px;
-}
-
-.product-auth-oidc-button {
-  min-height: 44px;
-  border: 1px solid #4a4a4a;
-  border-radius: 9px;
-  background: #f1f1f1;
-  color: #171717;
-  font-size: 14px;
-  font-weight: 620;
-}
-
-.product-auth-oidc-button:hover {
-  background: #fff;
-}
-
-.product-auth-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #777;
-  font-size: 11px;
-}
-
-.product-auth-divider::before,
-.product-auth-divider::after {
-  height: 1px;
-  flex: 1;
-  background: #383838;
-  content: "";
-}
-
 .product-auth-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;

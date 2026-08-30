@@ -7,19 +7,11 @@ Compose project and is not an HA or production GitLab topology.
 ```bash
 npm run gitlab:up
 npm run gitlab:password
-npm run gitlab:oauth
 ```
-
-`gitlab:oauth` creates a local OIDC application and prints the private-runtime
-variables needed for the project connector, Webhook route, Agent-visible Git origin
-and **Continue with GitLab** login button.
-Copy them into the ignored `deploy/production/runtime/.env`, set
-`PI_CLOUD_OIDC_GITLAB_TENANT_ID` to the PiCloud tenant that owns the connected
-project, and restart the Control Plane.
 
 When the PiCloud Compose network already exists, `gitlab:up` also joins the
 GitLab container to its trusted egress network under the `gitlab.localhost`
-alias. This avoids routing local OAuth/API/Git traffic through the host or the
+alias. This avoids routing local API/Git traffic through the host or the
 public proxy; production deployments use their normal routable GitLab origin.
 The local PiCloud runtime exposes `control-plane.internal` on that network for
 Webhook delivery; it is not a public deployment name.

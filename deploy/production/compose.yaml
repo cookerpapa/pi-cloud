@@ -41,12 +41,6 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   PI_CLOUD_GITLAB_ISSUE_LABEL: ${PI_CLOUD_GITLAB_ISSUE_LABEL:-picloud}
   PI_CLOUD_GITLAB_INTERNAL_BASE_URL: ${PI_CLOUD_GITLAB_INTERNAL_BASE_URL:-}
   PI_CLOUD_GITLAB_WORKSPACE_BASE_URL: ${PI_CLOUD_GITLAB_WORKSPACE_BASE_URL:-}
-  PI_CLOUD_OIDC_GITLAB_ENABLED: ${PI_CLOUD_OIDC_GITLAB_ENABLED:-false}
-  PI_CLOUD_OIDC_GITLAB_ISSUER: ${PI_CLOUD_OIDC_GITLAB_ISSUER:-}
-  PI_CLOUD_OIDC_GITLAB_CLIENT_ID: ${PI_CLOUD_OIDC_GITLAB_CLIENT_ID:-}
-  PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_FILE: ${PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_PATH:+/run/pi-cloud-secrets/gitlab-oidc-client-secret}
-  PI_CLOUD_OIDC_GITLAB_LABEL: ${PI_CLOUD_OIDC_GITLAB_LABEL:-GitLab}
-  PI_CLOUD_OIDC_GITLAB_TENANT_ID: ${PI_CLOUD_OIDC_GITLAB_TENANT_ID:-}
   PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE: /run/pi-cloud-secrets/cube-egress-config-token
   PI_CLOUD_KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
   PI_CLOUD_KAFKA_PARTITIONS: ${PI_CLOUD_KAFKA_PARTITIONS:-32}
@@ -151,11 +145,6 @@ x-control-plane-runtime-secrets: &control-plane-runtime-secrets
     source: ${PI_CLOUD_GITHUB_WEBHOOK_SECRET_PATH:-/dev/null}
     target: /run/pi-cloud-secrets/github-webhook-secret
     read_only: true
-  - type: bind
-    source: ${PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_PATH:-/dev/null}
-    target: /run/pi-cloud-secrets/gitlab-oidc-client-secret
-    read_only: true
-
 x-bootstrap-secrets: &bootstrap-secrets
   - type: bind
     source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/database-url

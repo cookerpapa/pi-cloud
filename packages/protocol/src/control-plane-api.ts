@@ -139,21 +139,9 @@ export const TenantIdentityResourceSchema = Type.Object(
     role: TenantApiRoleSchema,
     authenticationKind: Type.Union([
       Type.Literal("local"),
-      Type.Literal("oidc"),
       Type.Literal("api"),
       Type.Literal("system"),
     ]),
-    externalIdentity: Type.Optional(
-      Type.Object(
-        {
-          providerKey: Type.String({ pattern: "^[a-z][a-z0-9-]{0,62}$" }),
-          issuer: Type.String({ minLength: 8, maxLength: 2_048 }),
-          providerUserId: Type.String({ minLength: 1, maxLength: 128 }),
-          username: Type.String({ minLength: 1, maxLength: 255 }),
-        },
-        { additionalProperties: false },
-      ),
-    ),
     platformAdministrator: Type.Boolean(),
   },
   { additionalProperties: false },
@@ -164,17 +152,6 @@ export const AuthenticationConfigurationResourceSchema = Type.Object(
     local: Type.Object(
       { login: Type.Boolean(), registration: Type.Boolean() },
       { additionalProperties: false },
-    ),
-    oidc: Type.Array(
-      Type.Object(
-        {
-          providerKey: Type.String({ pattern: "^[a-z][a-z0-9-]{0,62}$" }),
-          label: Type.String({ minLength: 1, maxLength: 128 }),
-          loginPath: Type.String({ pattern: "^/v1/auth/oidc/[a-z][a-z0-9-]{0,62}$" }),
-        },
-        { additionalProperties: false },
-      ),
-      { maxItems: 16 },
     ),
   },
   { additionalProperties: false },

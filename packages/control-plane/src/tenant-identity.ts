@@ -20,15 +20,7 @@ export type TenantRequestIdentity = Readonly<{
   displayName: string;
   role: TenantApiCredentialRole;
   defaultModelProfileId: string;
-  authenticationKind?: "local" | "oidc" | "api" | "system";
-  externalIdentity?: Readonly<{
-    id: string;
-    providerKey: string;
-    issuer: string;
-    subject: string;
-    providerUserId: string;
-    username: string;
-  }>;
+  authenticationKind?: "local" | "api" | "system";
 }>;
 
 export type GeneratedTenantApiCredential = Readonly<{

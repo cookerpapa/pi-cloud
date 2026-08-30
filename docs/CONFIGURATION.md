@@ -136,21 +136,6 @@ Webhook; the Web UI only surfaces Issue tasks after they exist.
 | `PI_CLOUD_GITLAB_ISSUE_LABEL` | `picloud` | explicit Issue automation label |
 | `PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE` | generated private file | AES-GCM key for project tokens and signing tokens |
 
-GitLab OIDC is independently optional SSO. It is not required for Issue claims
-and does not provide Workspace Git credentials. Register one confidential OAuth
-application with callback `https://<picloud-host>/v1/auth/oidc/gitlab/callback`
-and scopes `openid`, `profile`, `email`, `read_user`. The local lab command `npm run gitlab:oauth`
-creates that application and prints the corresponding private `.env` entries.
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PI_CLOUD_OIDC_GITLAB_ENABLED` | `false` | show **Continue with GitLab** on the login page |
-| `PI_CLOUD_OIDC_GITLAB_ISSUER` | empty | exact GitLab origin |
-| `PI_CLOUD_OIDC_GITLAB_CLIENT_ID` | empty | OAuth application ID |
-| `PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_PATH` | empty | host path to the private client-secret file |
-| `PI_CLOUD_OIDC_GITLAB_LABEL` | `GitLab` | login-button label |
-| `PI_CLOUD_OIDC_GITLAB_TENANT_ID` | platform operator tenant | internal tenant receiving mapped GitLab users |
-
 An Issue label or command only creates a pending request. An authorized PiCloud
 tenant user claims it and chooses elastic compute or a directory under
 `/home/user` in an owned cloud development machine. Elastic execution may
@@ -161,16 +146,14 @@ repository with `git ls-remote`. The user connects the GitLab Origin or
 token is stored only in that environment's `.git-credentials`; PostgreSQL stores
 no copy. The Agent performs `git clone` itself. The initial Run does not commit,
 push, open a Merge Request, comment on or close the Issue.
-When an internal base URL is set, OIDC/Webhook identity still uses the public
-origin while trusted API and Git traffic uses the internal origin. Both must
-identify the same GitLab instance.
+When an internal base URL is set, Webhook identity still uses the public origin
+while trusted API and Git traffic uses the internal origin. Both must identify
+the same GitLab instance.
 
 For a public deployment, replace the local Webhook URL with the public HTTPS
 PiCloud endpoint. In Kubernetes enable `controlPlane.sourceControl.gitlab`, set
 its Webhook URL and put the configured credential-master-key entry in
-`global.existingSecret`. Optional login is configured separately under
-`controlPlane.authentication.gitlab`; its client-secret key also lives in that
-Secret.
+`global.existingSecret`.
 
 ### Optional GitHub App backend
 

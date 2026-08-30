@@ -12,7 +12,6 @@ import { WebAuthenticationError } from "./web-authentication.ts";
 import { PlatformRuntimeSettingsError } from "./platform-runtime-settings.ts";
 import { TurnSteeringError } from "./turn-steering-service.ts";
 import { SourceControlServiceError } from "./source-control-service.ts";
-import { OidcAuthenticationError } from "./oidc-authentication.ts";
 
 type ErrorResponse = {
   status: number;
@@ -57,11 +56,6 @@ export function mappedError(error: unknown): ErrorResponse {
           : error.code === "source_control_conflict"
             ? 409
             : 503;
-    return { status, body: { error: { code: error.code, message: error.message } } };
-  }
-  if (error instanceof OidcAuthenticationError) {
-    const status =
-      error.code === "oidc_request_invalid" || error.code === "oidc_identity_invalid" ? 400 : 503;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof PublicTenantRegistrationError) {

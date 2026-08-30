@@ -114,6 +114,7 @@ import * as liveWorkspaceSettlement from "./112_live_workspace_settlement.ts";
 import * as workspaceOwnedToolRuntime from "./113_workspace_owned_tool_runtime.ts";
 import * as decoupledCodeHostConnections from "./114_decoupled_code_host_connections.ts";
 import * as redactCodeHostTokens from "./115_redact_code_host_tokens.ts";
+import * as removeOidcLogin from "./116_remove_oidc_login.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -233,6 +234,7 @@ export const migrationProvider: MigrationProvider = {
       "113_workspace_owned_tool_runtime": workspaceOwnedToolRuntime,
       "114_decoupled_code_host_connections": decoupledCodeHostConnections,
       "115_redact_code_host_tokens": redactCodeHostTokens,
+      "116_remove_oidc_login": removeOidcLogin,
     };
   },
 };

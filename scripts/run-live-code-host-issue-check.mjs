@@ -280,7 +280,7 @@ try {
     accepted: true,
     piCloudRevision: revision,
     checkedAt: new Date().toISOString(),
-    identity: { piCloudLocalLoginClaimedGitLabIssue: true, gitLabOidcRequired: false },
+    identity: { piCloudLocalLoginClaimedGitLabIssue: true, externalIdentityRequired: false },
     codeHost: {
       provider: "gitlab",
       origin: new URL(job.codeHostOrigin).origin,
@@ -310,7 +310,7 @@ try {
       "# GitLab Issue acceptance",
       "",
       `- Checked at: ${report.checkedAt}`,
-      "- PiCloud local user claimed a GitLab Issue without GitLab OIDC: true",
+      "- PiCloud local user claimed a GitLab Issue without external identity coupling: true",
       `- Environment Code Host Origin: ${report.codeHost.origin}`,
       "- Missing credential / authorized exact-repository preflight: true / true",
       "- User token stored only in environment `.git-credentials`: true",

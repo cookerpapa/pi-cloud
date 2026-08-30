@@ -90,11 +90,9 @@ Origin by sending a scoped token directly to the selected environment's hidden
 Project Webhooks use GitLab's Standard Webhooks HMAC contract, a recent
 timestamp and stable message ID; a `/picloud solve` comment additionally
 requires Developer-or-higher membership.
-Optional GitLab login uses authorization code, PKCE, nonce and a one-use state.
-The login OAuth access token is discarded after resolving the external identity
-and does not grant Git access. Issue claims use PiCloud identity and tenant
-authorization. Starting a private-repository Run separately verifies the exact
-repository through the selected environment's Code Host token.
+Issue claims use PiCloud identity and tenant authorization. Starting a
+private-repository Run separately verifies the exact repository through the
+selected environment's Code Host token.
 
 ## Not guaranteed
 

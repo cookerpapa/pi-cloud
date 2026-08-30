@@ -292,9 +292,8 @@ only unsealed for trusted GitLab API work. They are distinct from user Git OAuth
 credentials. GitHub Issue and
 Issue-comment Webhooks enter through their native raw-body HMAC gate. Provider
 delivery IDs are idempotency keys. Only the configured label or exact
-`/picloud solve` collaborator command creates a pending Issue request. GitLab
-OIDC remains an optional SSO provider but has no role in Issue authorization or
-Git credentials. Any authorized PiCloud tenant user may record a non-exclusive
+`/picloud solve` collaborator command creates a pending Issue request. Any
+authorized PiCloud tenant user may record a non-exclusive
 claim, then explicitly choose elastic compute or an existing Workspace, or a
 directory in an owned development machine.
 The user also names the resulting conversation. The coordinator
@@ -592,7 +591,7 @@ preserve a visible prefix that never reached `message_end`.
 | State | Authority |
 | --- | --- |
 | tenants, users, sessions, durable-resource admission | PostgreSQL |
-| local/optional OIDC identities and non-exclusive PiCloud Issue claims | PostgreSQL |
+| local PiCloud identities and non-exclusive Issue claims | PostgreSQL |
 | Runs, Attempts, leases, fences, ready queue | PostgreSQL |
 | Pi Session entries/compaction/operation records | PostgreSQL SessionStorage |
 | Session Tool grants and immutable Run capability snapshots | PostgreSQL |

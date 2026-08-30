@@ -159,6 +159,15 @@ try {
       await page.evaluate('localStorage.setItem("pi-cloud:ui-language","zh-CN")');
       await page.send("Page.reload", { ignoreCache: true });
       await page.waitFor('document.querySelector(".product-auth-card")');
+      const externalLoginVisible = await page.evaluate(
+        'document.querySelector(".product-auth-oidc-button") !== null',
+      );
+      assert.equal(
+        externalLoginVisible,
+        false,
+        "External login survived on the PiCloud login page",
+      );
+      record("auth.localOnly");
       await clickText(".product-auth-tabs button", "注册", "auth.registerTab");
       await page.waitFor('document.querySelector("input[autocomplete=name]")');
       await clickText(".product-auth-tabs button", "登录", "auth.loginTab");

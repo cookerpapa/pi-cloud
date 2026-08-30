@@ -9,7 +9,6 @@ export const TENANT_REGISTRATION_PATH = "/v1/registrations";
 export const ACCOUNT_REGISTRATION_PATH = "/v1/auth/register";
 export const ACCOUNT_LOGIN_PATH = "/v1/auth/login";
 export const AUTHENTICATION_PROVIDERS_PATH = "/v1/auth/providers";
-const OIDC_AUTHENTICATION_PREFIX = "/v1/auth/oidc/";
 const CUBE_EGRESS_CONFIGURATION_INTERNAL_PATH = "/v1/internal/cube-egress-configuration";
 const GITHUB_WEBHOOK_PATH = "/v1/source-control/github/webhook";
 const GITLAB_WEBHOOK_PATH = "/v1/source-control/gitlab/webhook";
@@ -50,11 +49,7 @@ export class ProductionHttpGateway {
       // authority verified by SandboxPreviewGateway. No other API route
       // bypasses browser/API credential authentication.
       if (isPreviewAccessPath(path)) return;
-      if (
-        request.method === "GET" &&
-        (path === AUTHENTICATION_PROVIDERS_PATH || path.startsWith(OIDC_AUTHENTICATION_PREFIX))
-      )
-        return;
+      if (request.method === "GET" && path === AUTHENTICATION_PROVIDERS_PATH) return;
       // GitHub App Webhooks carry their own HMAC-SHA256 request authority.
       // The controller verifies the raw body before any durable mutation.
       if (

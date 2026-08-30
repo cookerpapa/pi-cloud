@@ -403,12 +403,6 @@ export class SourceControlIssueCoordinator {
           .onRef("credential.tenant_id", "=", "user_row.tenant_id")
           .onRef("credential.user_id", "=", "user_row.id"),
       )
-      .leftJoin("external_identities as external", (join) =>
-        join
-          .onRef("external.tenant_id", "=", "user_row.tenant_id")
-          .onRef("external.user_id", "=", "user_row.id")
-          .on("external.provider_key", "=", "gitlab"),
-      )
       .innerJoin("tenant_runtime_policies as policy", "policy.tenant_id", "tenant.id")
       .select([
         "tenant.id as tenantId",
@@ -417,11 +411,6 @@ export class SourceControlIssueCoordinator {
         "user_row.display_name as displayName",
         "credential.username as localUsername",
         "credential.role as localRole",
-        "external.id as externalIdentityId",
-        "external.issuer as externalIssuer",
-        "external.subject as externalSubject",
-        "external.provider_user_id as externalProviderUserId",
-        "external.username as externalUsername",
         "policy.default_model_profile_id as defaultModelProfileId",
       ])
       .where("repository.id", "=", job.repository_id)
@@ -438,31 +427,11 @@ export class SourceControlIssueCoordinator {
       tenantId: row.tenantId,
       tenantSlug: row.tenantSlug,
       userId: row.userId,
-      ...(row.externalUsername === null
-        ? row.localUsername === null
-          ? {}
-          : { username: row.localUsername }
-        : { username: row.externalUsername }),
+      ...(row.localUsername === null ? {} : { username: row.localUsername }),
       displayName: row.displayName,
       role: row.localRole ?? "member",
       defaultModelProfileId: row.defaultModelProfileId,
-      authenticationKind: row.externalIdentityId === null ? "system" : "oidc",
-      ...(row.externalIdentityId === null ||
-      row.externalIssuer === null ||
-      row.externalSubject === null ||
-      row.externalProviderUserId === null ||
-      row.externalUsername === null
-        ? {}
-        : {
-            externalIdentity: {
-              id: row.externalIdentityId,
-              providerKey: "gitlab",
-              issuer: row.externalIssuer,
-              subject: row.externalSubject,
-              providerUserId: row.externalProviderUserId,
-              username: row.externalUsername,
-            },
-          }),
+      authenticationKind: row.localUsername === null ? "system" : "local",
     };
   }
 

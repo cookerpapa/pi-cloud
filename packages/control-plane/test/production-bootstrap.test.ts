@@ -329,27 +329,6 @@ describe.sequential("production bootstrap and configuration", () => {
       internalBaseUrl: "https://gitlab.internal.example.com/",
       workspaceBaseUrl: "https://gitlab-workspace.example.com/",
     });
-    const gitlabOidcRuntime = await loadProductionControlPlaneConfig({
-      ...environment,
-      PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true",
-      PI_CLOUD_OIDC_GITLAB_ENABLED: "true",
-      PI_CLOUD_OIDC_GITLAB_ISSUER: "http://gitlab.localhost:8929",
-      PI_CLOUD_OIDC_GITLAB_CLIENT_ID: "gitlab-oidc-client-id",
-      PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_FILE: await secret(
-        root,
-        "gitlab-oidc-client-secret",
-        "gitlab-oidc-client-secret-value",
-      ),
-      PI_CLOUD_OIDC_GITLAB_TENANT_ID: CONFIG.tenantId,
-    });
-    expect(gitlabOidcRuntime.gitlabOidc).toEqual({
-      issuer: "http://gitlab.localhost:8929",
-      clientId: "gitlab-oidc-client-id",
-      clientSecret: "gitlab-oidc-client-secret-value",
-      label: "GitLab",
-      tenantId: CONFIG.tenantId,
-      allowInsecureHttp: true,
-    });
     await expect(loadProductionApiToken(environment)).resolves.toBe(
       `pck_40000000-0000-4000-8000-000000000003.${"a".repeat(43)}`,
     );

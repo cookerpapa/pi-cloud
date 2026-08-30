@@ -6,8 +6,8 @@ Accepted.
 
 ## Context
 
-PiCloud previously required a matching GitLab OIDC identity to claim a GitLab
-Issue and stored one repository-specific Git credential in the selected
+PiCloud previously coupled external identity mapping to Issue claims and stored one
+repository-specific Git credential in the selected
 Workspace. That coupled three independent concerns: authenticating to PiCloud,
 receiving project Issue events, and authenticating Git inside an execution
 environment. The single credential was also overwritten when another repository
@@ -18,8 +18,8 @@ was authorized.
 PiCloud identity, project integration, and environment Git authentication are
 independent:
 
-- PiCloud local login or optional enterprise OIDC authenticates the PiCloud
-  user. Issue claims use that PiCloud identity only.
+- PiCloud local login authenticates the user. Issue claims use that PiCloud
+  identity only.
 - A deployment-managed project connection and signed Webhook ingest Issue
   events for a tenant. Its credential never enters a user environment.
 - Each elastic Workspace or exclusive development machine owns zero or more
@@ -42,7 +42,6 @@ the retired `.pi-cloud-home` directory is not supported.
 
 ## Consequences
 
-- A GitLab login is optional SSO and grants no implicit Git repository access.
 - PiCloud users can claim tenant-visible Issue tasks without a GitLab identity
   mapping or a per-claim GitLab membership query.
 - Arbitrary GitLab origins and `https://github.com` can be connected with an
@@ -51,4 +50,3 @@ the retired `.pi-cloud-home` directory is not supported.
   lifecycles and blast radii.
 - Credentials are intentionally readable by untrusted code in the environment
   that owns them, matching an ordinary developer machine threat model.
-

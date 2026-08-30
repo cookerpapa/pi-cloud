@@ -76,14 +76,6 @@ spec:
             - { name: NODE_USE_ENV_PROXY, value: "1" }
             - { name: HTTPS_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
             - { name: HTTP_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
-            {{- if .Values.controlPlane.authentication.gitlab.enabled }}
-            - { name: PI_CLOUD_OIDC_GITLAB_ENABLED, value: "true" }
-            - { name: PI_CLOUD_OIDC_GITLAB_ISSUER, value: {{ .Values.controlPlane.authentication.gitlab.issuer | quote }} }
-            - { name: PI_CLOUD_OIDC_GITLAB_CLIENT_ID, value: {{ .Values.controlPlane.authentication.gitlab.clientId | quote }} }
-            - { name: PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET_FILE, value: /run/pi-cloud-secrets/gitlab-oidc-client-secret }
-            - { name: PI_CLOUD_OIDC_GITLAB_LABEL, value: {{ .Values.controlPlane.authentication.gitlab.label | quote }} }
-            - { name: PI_CLOUD_OIDC_GITLAB_TENANT_ID, value: {{ .Values.controlPlane.authentication.gitlab.tenantId | quote }} }
-            {{- end }}
             {{- if .Values.controlPlane.sourceControl.github.enabled }}
             - { name: PI_CLOUD_GITHUB_APP_ID, value: {{ .Values.controlPlane.sourceControl.github.appId | quote }} }
             - { name: PI_CLOUD_GITHUB_APP_SLUG, value: {{ .Values.controlPlane.sourceControl.github.appSlug | quote }} }

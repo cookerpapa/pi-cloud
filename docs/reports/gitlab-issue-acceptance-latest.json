@@ -4,7 +4,7 @@
   "checkedAt": "2026-08-30T10:37:23.387Z",
   "identity": {
     "piCloudLocalLoginClaimedGitLabIssue": true,
-    "gitLabOidcRequired": false
+    "externalIdentityRequired": false
   },
   "codeHost": {
     "provider": "gitlab",

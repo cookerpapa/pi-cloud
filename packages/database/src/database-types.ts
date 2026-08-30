@@ -491,39 +491,11 @@ export interface WebSessionTable {
   tenant_id: string;
   user_id: string;
   role: TenantApiCredentialRole;
-  authentication_kind: Generated<"local" | "oidc">;
-  external_identity_id: GeneratedNullable<string>;
   secret_sha256: string;
   created_at: GeneratedTimestamp;
   expires_at: Timestamp;
   revoked_at: NullableTimestamp;
   last_used_at: NullableTimestamp;
-}
-
-export interface ExternalIdentityTable {
-  id: string;
-  tenant_id: string;
-  user_id: string;
-  provider_key: string;
-  issuer: string;
-  subject: string;
-  provider_user_id: string;
-  username: string;
-  display_name: string;
-  last_authenticated_at: Timestamp;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
-}
-
-export interface OidcAuthenticationRequestTable {
-  state_sha256: string;
-  provider_key: string;
-  code_verifier: string;
-  nonce: string;
-  redirect_uri: string;
-  expires_at: Timestamp;
-  consumed_at: NullableTimestamp;
-  created_at: GeneratedTimestamp;
 }
 
 export interface ProjectTable {
@@ -1271,8 +1243,6 @@ export interface Database {
   tenant_api_credentials: TenantApiCredentialTable;
   user_password_credentials: UserPasswordCredentialTable;
   web_sessions: WebSessionTable;
-  external_identities: ExternalIdentityTable;
-  oidc_authentication_requests: OidcAuthenticationRequestTable;
   projects: ProjectTable;
   environment_versions: EnvironmentVersionTable;
   environment_validations: EnvironmentValidationTable;

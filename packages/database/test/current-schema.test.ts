@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(115);
+      expect(firstMigrationPass.rows).toHaveLength(116);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("115_redact_code_host_tokens");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("116_remove_oidc_login");
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
@@ -53,8 +53,6 @@ describe("current PiCloud schema", () => {
         "source_control_credentials",
         "agent_definitions",
         "agent_revisions",
-        "external_identities",
-        "oidc_authentication_requests",
         "source_control_issue_claims",
         "workspace_settlements",
         "runtime_objects",
@@ -76,6 +74,8 @@ describe("current PiCloud schema", () => {
         "checkpoint_objects",
         "tool_broker_activations",
         "workspace_git_oauth_requests",
+        "external_identities",
+        "oidc_authentication_requests",
       ]) {
         expect(names.has(retired), `retired table ${retired} survived`).toBe(false);
       }
@@ -121,7 +121,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("115_redact_code_host_tokens");
+      expect(applied.rows.at(-1)?.name).toBe("116_remove_oidc_login");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

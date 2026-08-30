@@ -34,5 +34,5 @@ Volume architecture. Historical experiments remain in Git history.
       local credentialed Git fixture.
 - [ ] Repeat GitLab project-token/private-clone/Issue-to-Run acceptance against
       an external TLS-enabled self-managed instance after the local CE gate.
-- [ ] Validate GitLab OIDC login, multi-user non-exclusive Issue claims and
+- [ ] Validate multi-user non-exclusive GitLab Issue claims and
       both elastic and owned-machine Issue execution against that instance.

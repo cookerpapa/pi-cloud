@@ -65,14 +65,6 @@ controlPlane:
     maximumSessions: 100
   supervisorIdPrefix: pi-cloud-pi-worker-
   publicOriginBaseUrl: https://pi-cloud.example.com
-  authentication:
-    gitlab:
-      enabled: false
-      issuer: https://gitlab.example.com
-      clientId: ""
-      clientSecretSecretKey: gitlab-oidc-client-secret
-      label: GitLab
-      tenantId: "00000000-0000-4000-8000-000000000001"
   sourceControl:
     github:
       enabled: false

@@ -36,7 +36,6 @@ import { GitHubAppClient } from "./github-app-client.ts";
 import { SourceControlService } from "./source-control-service.ts";
 import { SourceControlIssueCoordinator } from "./source-control-issue-coordinator.ts";
 import { SourceControlCredentialVault } from "./source-control-credential-vault.ts";
-import { OidcAuthenticationService } from "./oidc-authentication.ts";
 import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 
 async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Promise<void> {
@@ -228,11 +227,7 @@ export async function startControlPlane(): Promise<void> {
       ticketTtlMs: config.sshTicketTtlMs,
     });
     let githubRuntime;
-    if (
-      config.githubApp !== undefined ||
-      config.gitlabProject !== undefined ||
-      config.gitlabOidc !== undefined
-    ) {
+    if (config.githubApp !== undefined || config.gitlabProject !== undefined) {
       sourceControlDispatcher = new EnvHttpProxyAgent();
     }
     if (config.githubApp !== undefined) {
@@ -279,32 +274,6 @@ export async function startControlPlane(): Promise<void> {
       ...(githubRuntime === undefined ? {} : { github: githubRuntime }),
       ...(gitlabRuntime === undefined ? {} : { gitlab: gitlabRuntime }),
     });
-    const oidcAuthenticationService = new OidcAuthenticationService({
-      database,
-      webAuthentication,
-      publicOrigin: config.publicOriginBaseUrl,
-      providers:
-        config.gitlabOidc === undefined
-          ? []
-          : [
-              {
-                key: "gitlab",
-                label: config.gitlabOidc.label,
-                issuer: config.gitlabOidc.issuer,
-                clientId: config.gitlabOidc.clientId,
-                clientSecret: config.gitlabOidc.clientSecret,
-                tenantId: config.gitlabOidc.tenantId,
-                defaultRole: "member",
-                kind: "gitlab",
-                allowInsecureHttp: config.gitlabOidc.allowInsecureHttp,
-                fetch: (input: string | URL | Request, init?: RequestInit) =>
-                  undiciFetch(input as Parameters<typeof undiciFetch>[0], {
-                    ...(init as Parameters<typeof undiciFetch>[1]),
-                    dispatcher: sourceControlDispatcher!,
-                  }) as unknown as Promise<Response>,
-              },
-            ],
-    });
     runtime = await createControlPlaneRuntime({
       database,
       controlPlaneInstanceId,
@@ -333,8 +302,6 @@ export async function startControlPlane(): Promise<void> {
       workspaceTerminalGateway,
       sandboxPreviewGateway,
       sourceControlService,
-      oidcAuthenticationService,
-      publicOriginBaseUrl: config.publicOriginBaseUrl,
       environmentImageRevision: config.environmentImageRevision,
       metrics: observability.metrics,
       workspaceBrowser: {

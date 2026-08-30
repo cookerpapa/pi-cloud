@@ -6,7 +6,7 @@ shell operations run in CubeSandbox KVM microVMs.
 
 ## What you get
 
-- browser registration/login, optional GitLab OIDC and tenant-isolated conversations;
+- browser registration/login and tenant-isolated conversations;
 - per-browser Chinese/English UI selection without translating prompts, Tool output or model replies;
 - multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
 - durable recursive Subagents with bounded depth/concurrency;

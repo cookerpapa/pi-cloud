@@ -88,7 +88,6 @@ import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import { SourceControlService } from "./source-control-service.ts";
-import { OidcAuthenticationService } from "./oidc-authentication.ts";
 
 @Controller("v1")
 export class ControlPlaneController {
@@ -117,38 +116,16 @@ export class ControlPlaneController {
     @Inject(SshAccessTicketService)
     private readonly sshAccessTickets: SshAccessTicketService,
     @Inject(SourceControlService) private readonly sourceControl: SourceControlService,
-    @Inject(OidcAuthenticationService)
-    private readonly oidcAuthentication: OidcAuthenticationService,
   ) {}
 
   @Get("auth/providers")
   authenticationProviders(): AuthenticationConfigurationResource {
-    return this.oidcAuthentication.configuration();
-  }
-
-  @Get("auth/oidc/:providerKey")
-  async beginOidcLogin(
-    @Param("providerKey") providerKey: string,
-    @Res() reply: FastifyReply,
-  ): Promise<void> {
-    reply
-      .code(302)
-      .header("location", (await this.oidcAuthentication.begin(providerKey)).toString())
-      .send();
-  }
-
-  @Get("auth/oidc/:providerKey/callback")
-  async completeOidcLogin(
-    @Req() request: FastifyRequest,
-    @Param("providerKey") providerKey: string,
-    @Res() reply: FastifyReply,
-  ): Promise<void> {
-    const issued = await this.oidcAuthentication.complete(providerKey, request.raw.url ?? "");
-    reply
-      .code(303)
-      .header("set-cookie", this.webAuthentication.cookie(issued))
-      .header("location", "/")
-      .send();
+    return {
+      local: {
+        login: this.webAuthentication.localLoginEnabled,
+        registration: this.webAuthentication.registrationEnabled,
+      },
+    };
   }
 
   @Post("auth/register")
@@ -199,16 +176,6 @@ export class ControlPlaneController {
       displayName: identity.displayName,
       role: identity.role,
       authenticationKind: identity.authenticationKind ?? "local",
-      ...(identity.externalIdentity === undefined
-        ? {}
-        : {
-            externalIdentity: {
-              providerKey: identity.externalIdentity.providerKey,
-              issuer: identity.externalIdentity.issuer,
-              providerUserId: identity.externalIdentity.providerUserId,
-              username: identity.externalIdentity.username,
-            },
-          }),
       platformAdministrator: this.platformRuntimeSettings.isPlatformAdministrator(identity),
     };
   }

@@ -71,25 +71,6 @@ export function AuthScreen({
         <h1>PiCloud</h1>
       </section>
       <form className="product-auth-card" onSubmit={(event) => void submit(event)}>
-        {(configuration?.oidc.length ?? 0) > 0 ? (
-          <div className="product-auth-oidc">
-            {configuration!.oidc.map((provider) => (
-              <button
-                className="product-auth-oidc-button"
-                key={provider.providerKey}
-                onClick={() => window.location.assign(provider.loginPath)}
-                type="button"
-              >
-                {t("auth.continueWith", { provider: provider.label })}
-              </button>
-            ))}
-            {configuration?.local.login ? (
-              <div className="product-auth-divider">
-                <span>{t("auth.orLocal")}</span>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
         {configuration?.local.login === false ? null : (
           <>
             <div className="product-auth-tabs" role="tablist" aria-label={t("auth.accountActions")}>

@@ -16,7 +16,7 @@
 - Broker-independent development-machine runtime with running-state-preserving takeover;
 - conversation trees, Fork, Steer, recursive Subagents and Workspace rebinding;
 - Compose one-host deployment and Kubernetes/KEDA manifests;
-- optional GitLab OIDC, non-exclusive Issue claims and private-project
+- non-exclusive GitLab Issue claims and private-project
   Issue-to-Run execution choices;
 - ordinary user-owned Git worktrees with user-directed commit, push and
   provider delivery;

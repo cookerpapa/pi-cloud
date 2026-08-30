@@ -69,7 +69,6 @@
     "gitlab:ps": "node scripts/gitlab-lab.mjs ps",
     "gitlab:logs": "node scripts/gitlab-lab.mjs logs",
     "gitlab:password": "node scripts/gitlab-lab.mjs password",
-    "gitlab:oauth": "node scripts/gitlab-lab.mjs oauth",
     "production:token": "node scripts/print-production-token.mjs",
     "production:tenant": "node scripts/production-compose.mjs run --rm --no-deps database-bootstrap /app/packages/control-plane/src/tenant-admin.ts",
     "production:administrator": "node scripts/set-production-administrator.mjs",

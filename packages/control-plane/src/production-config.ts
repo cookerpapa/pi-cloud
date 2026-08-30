@@ -61,14 +61,6 @@ export type ProductionControlPlaneConfig = {
     internalBaseUrl?: string;
     workspaceBaseUrl?: string;
   };
-  gitlabOidc?: {
-    issuer: string;
-    clientId: string;
-    clientSecret: string;
-    label: string;
-    tenantId: string;
-    allowInsecureHttp: boolean;
-  };
 };
 
 export type ProductionBootstrapConfig = {
@@ -237,24 +229,6 @@ function managementUrl(value: string, allowInsecure: boolean): string {
     throw new TypeError("Plain HTTP Supervisor management requires explicit opt-in");
   }
   return parsed.toString();
-}
-
-function oidcIssuer(value: string, allowInsecure: boolean): string {
-  const parsed = new URL(value);
-  if (
-    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
-    parsed.username ||
-    parsed.password ||
-    parsed.search ||
-    parsed.hash ||
-    (parsed.pathname !== "/" && parsed.pathname !== "")
-  ) {
-    throw new TypeError("OIDC issuer must be an HTTP(S) origin");
-  }
-  if (parsed.protocol === "http:" && !allowInsecure) {
-    throw new TypeError("Plain HTTP OIDC requires explicit internal-HTTP opt-in");
-  }
-  return parsed.origin;
 }
 
 function managementUrls(value: string, allowInsecure: boolean): string[] {
@@ -436,7 +410,6 @@ export async function loadProductionControlPlaneConfig(
     true,
   );
   const gitlabEnabled = booleanValue(environment, "PI_CLOUD_GITLAB_ENABLED");
-  const gitlabOidcEnabled = booleanValue(environment, "PI_CLOUD_OIDC_GITLAB_ENABLED");
   return {
     databaseUrl,
     databaseNotificationUrl,
@@ -641,36 +614,6 @@ export async function loadProductionControlPlaneConfig(
                     allowInsecureInternalHttp,
                   ),
                 }),
-          },
-        }
-      : {}),
-    ...(gitlabOidcEnabled
-      ? {
-          gitlabOidc: {
-            issuer: oidcIssuer(
-              required(environment, "PI_CLOUD_OIDC_GITLAB_ISSUER"),
-              allowInsecureInternalHttp,
-            ),
-            clientId: bounded(
-              required(environment, "PI_CLOUD_OIDC_GITLAB_CLIENT_ID"),
-              "PI_CLOUD_OIDC_GITLAB_CLIENT_ID",
-              256,
-            ),
-            clientSecret: await secret(
-              environment,
-              "PI_CLOUD_OIDC_GITLAB_CLIENT_SECRET",
-              allowInlineSecrets,
-            ),
-            label: bounded(
-              environment.PI_CLOUD_OIDC_GITLAB_LABEL ?? "GitLab",
-              "PI_CLOUD_OIDC_GITLAB_LABEL",
-              128,
-            ),
-            tenantId: parseUuidPathParameter(
-              environment.PI_CLOUD_OIDC_GITLAB_TENANT_ID ?? platformOperatorTenantId,
-              "PI_CLOUD_OIDC_GITLAB_TENANT_ID",
-            ),
-            allowInsecureHttp: allowInsecureInternalHttp,
           },
         }
       : {}),
