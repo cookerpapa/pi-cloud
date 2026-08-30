@@ -1,22 +1,22 @@
 {
   "accepted": true,
-  "piCloudRevision": "a2b58ab3348965579707554b3e53b09ca41f6071",
-  "checkedAt": "2026-08-30T02:12:18.568Z",
+  "piCloudRevision": "7e8032fd85b92874b15d5b64ee46213382323666",
+  "checkedAt": "2026-08-30T08:25:16.170Z",
   "browserCookieAuth": true,
   "latencyMs": {
     "pureChat": {
-      "accepted": 38,
-      "firstDurableActivity": 2061,
+      "accepted": 81,
+      "firstDurableActivity": 4901,
       "firstToolStarted": null,
-      "firstAssistantText": 2061,
-      "settled": 2516
+      "firstAssistantText": 4901,
+      "settled": 5304
     },
     "coding": {
-      "accepted": 28,
-      "firstDurableActivity": 2586,
-      "firstToolStarted": 2586,
-      "firstAssistantText": 8953,
-      "settled": 9764
+      "accepted": 26,
+      "firstDurableActivity": 1871,
+      "firstToolStarted": 1871,
+      "firstAssistantText": 6881,
+      "settled": 7473
     }
   },
   "treeForkPrune": true,
@@ -24,6 +24,7 @@
   "terminal": true,
   "terminalAgentConcurrency": true,
   "sharedWorkspaceConcurrentSessions": true,
+  "sharedWorkspaceConcurrentToolBindings": true,
   "steer": true,
   "cancelAndRecover": true,
   "workspaceRebind": true,

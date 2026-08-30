@@ -394,7 +394,7 @@ await terminalCommand(
 const session = await api.createSession(
   development.projectId,
   development.workspaceId,
-  `Agent handoff into exclusive environment ${suffix}`,
+  `Agent binding to exclusive environment ${suffix}`,
   "development_environment",
   "standard",
   "/home/user/empty-project",

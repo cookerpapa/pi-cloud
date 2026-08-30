@@ -478,7 +478,7 @@ function assignmentMetadata(
     [METADATA.imageRevision]: imageRevision,
     // Keep a fence-qualified immutable create record for inventory and orphan
     // reconciliation. Later Run ownership lives only in PostgreSQL and the
-    // Tool Broker activation; generic envd carries no PiCloud authority.
+    // Tool binding; generic envd carries no PiCloud authority.
     [`${ASSIGNMENT_METADATA_PREFIX}${String(execution.fencingToken).padStart(16, "0")}`]:
       JSON.stringify(current),
   });

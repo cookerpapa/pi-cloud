@@ -1122,11 +1122,11 @@ try {
     processCheck.events.some((event) =>
       JSON.stringify(event.payload).includes("PERSISTENT_PROCESS_SURVIVED_OK"),
     ),
-    "Background process did not survive the warm Cube handoff",
+    "Background process did not survive reuse through a later Tool binding",
   );
   const processCheckUsage = await runUsageEvidence(processCheck.accepted.runId);
   await waitForRunningCubeSession(session.sessionId);
-  progress("background process survived repeated warm-Cube Agent handoffs");
+  progress("background process survived cross-Run Tool bindings on one warm Workspace Cube");
   const finalSettlementId = await psql(
     `select current_workspace_settlement_id::text from sessions where id = ${sqlLiteral(session.sessionId)}`,
   );
@@ -1324,7 +1324,7 @@ try {
     },
     multiRound: {
       sameCubeMicroVm: true,
-      runningSessionReuse: true,
+      runningWorkspaceRuntimeReuse: true,
       elasticSandboxPolicy: session.executionMode === "elastic",
       agentPreviewPublished: true,
       backgroundProcessSurvived: true,
@@ -1377,21 +1377,26 @@ try {
     },
     totalUsage: usage,
     cleanup: {
-      retainedRunningSessionMicroVmCount: retainedMainSessionCubes.length,
+      retainedRunningWorkspaceMicroVmCount: retainedMainSessionCubes.length,
       foreignSessionMicroVmCount: 0,
-      warmArchiveReaped: false,
+      conversationDeletionPreservedWorkspaceRuntime: false,
+      mainWorkspaceExplicitWarmEvictionVerified: false,
       explicitWarmEvictionVerified: false,
     },
   };
   assert(usage.requests >= 3 && usage.inputTokens > 0 && usage.outputTokens > 0);
   await api.deleteConversation(session.sessionId, newIdempotencyKey("archive-warm"));
+  await waitForRunningCubeSession(session.sessionId);
+  report.cleanup.conversationDeletionPreservedWorkspaceRuntime = true;
+  progress("conversation deletion preserved its independently owned warm Workspace runtime");
+  await terminateWarmCubeSession(followUp.accepted.runId, session.sessionId);
   await waitForNoCubeSession(session.sessionId);
-  report.cleanup.warmArchiveReaped = true;
-  progress("Session archive left no bounded-warm Cube KVM");
+  report.cleanup.mainWorkspaceExplicitWarmEvictionVerified = true;
+  progress("explicit eviction removed the main warm Workspace Cube");
   await terminateWarmCubeSession(largeFollowUp.accepted.runId, largeSession.sessionId);
   await waitForNoCubeSession(largeSession.sessionId);
   report.cleanup.explicitWarmEvictionVerified = true;
-  report.cleanup.retainedRunningSessionMicroVmCount = 0;
+  report.cleanup.retainedRunningWorkspaceMicroVmCount = 0;
 
   if (writeReport) {
     const reportDirectory = resolve(repositoryRoot, "docs/reports");
@@ -1416,9 +1421,9 @@ try {
         `- First coding queue-to-claim-start / claim-and-preparation / model / Tool: ${String(report.firstCoding.latency.queueToClaimStartMs)} / ${String(report.firstCoding.latency.claimStartToCommandAckMs + report.firstCoding.latency.commandAckToRunnerMs)} / ${String(report.firstCoding.latency.modelTotalMs)} / ${String(report.firstCoding.latency.toolTotalMs)} ms`,
         `- Follow-up queue-to-claim-start / claim-and-preparation / model / Tool: ${String(report.followUpCoding.latency.queueToClaimStartMs)} / ${String(report.followUpCoding.latency.claimStartToCommandAckMs + report.followUpCoding.latency.commandAckToRunnerMs)} / ${String(report.followUpCoding.latency.modelTotalMs)} / ${String(report.followUpCoding.latency.toolTotalMs)} ms`,
         `- Coding Tool calls: ${String(report.firstCoding.toolCalls)} + ${String(report.followUpCoding.toolCalls)}`,
-        `- Same running Session Cube KVM guest reused: ${String(report.multiRound.sameCubeMicroVm)}`,
-        `- Agent Preview / background process survived repeated Run handoffs: ${String(report.multiRound.agentPreviewPublished)} / ${String(report.multiRound.backgroundProcessSurvived)}`,
-        `- Elastic Sandbox policy / warm archive cleanup: ${String(report.multiRound.elasticSandboxPolicy)} / ${String(report.cleanup.warmArchiveReaped)}`,
+        `- Same running Workspace Cube KVM guest reused: ${String(report.multiRound.sameCubeMicroVm)}`,
+        `- Agent Preview / background process survived cross-Run Tool bindings: ${String(report.multiRound.agentPreviewPublished)} / ${String(report.multiRound.backgroundProcessSurvived)}`,
+        `- Elastic runtime / conversation deletion preserved Workspace ownership: ${String(report.multiRound.elasticSandboxPolicy)} / ${String(report.cleanup.conversationDeletionPreservedWorkspaceRuntime)}`,
         `- Workspace restored across Runs: ${String(report.multiRound.workspaceRestored)}`,
         `- Platform Git metadata absent / user-managed .git present: ${String(report.workspaceIsolation.platformGitMetadataAbsent)} / ${String(report.workspaceIsolation.userGitPresent)}`,
         `- Large Workspace files / Volume reference: ${String(report.largeWorkspace.firstFileCount)} / ${String(report.largeWorkspace.volumeReferenceBytes)} bytes`,
@@ -1429,9 +1434,9 @@ try {
         `- PostgreSQL hot-event table absent / projected Session mutations: ${String(report.eventPlane.postgresHotEventTableAbsent)} / ${String(report.eventPlane.projectedSessionMutations)}`,
         `- Scheduler / Worker pool: ${report.scheduler.authority} / ${report.scheduler.workerPool}`,
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,
-        `- Explicit warm eviction / remaining Cube microVMs: ${String(report.cleanup.explicitWarmEvictionVerified)} / ${String(report.cleanup.retainedRunningSessionMicroVmCount + report.cleanup.foreignSessionMicroVmCount)}`,
+        `- Explicit warm eviction / remaining Cube microVMs: ${String(report.cleanup.mainWorkspaceExplicitWarmEvictionVerified && report.cleanup.explicitWarmEvictionVerified)} / ${String(report.cleanup.retainedRunningWorkspaceMicroVmCount + report.cleanup.foreignSessionMicroVmCount)}`,
         "",
-        "A real-model chat Run completed without touching Cube. Two elastic coding Runs used distinct fenced Tool bindings in one bounded-warm Workspace Cube; that warm optimization could later be capacity-evicted, and archiving the conversation left no Cube. The persistent Volume contained no retired platform Git metadata; any ordinary .git directory belongs to the user and Agent. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a new physical runtime identity. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
+        "A real-model chat Run completed without touching Cube. Two elastic coding Runs used distinct fenced Tool bindings in one bounded-warm Workspace Cube; deleting the conversation did not implicitly own or destroy that Workspace runtime, and explicit eviction removed it. The persistent Volume contained no retired platform Git metadata; any ordinary .git directory belongs to the user and Agent. A separate Run generated a deterministic 1024-file fixture without depending on an external network; after explicit source-VM destruction, its follow-up attached the same persistent Workspace Volume to a fresh Cube VM under a new physical runtime identity. All Runs completed through the shared PostgreSQL queue and horizontally scalable Pi Worker pool. Provider usage, canonical Pi entries, cross-tenant API denial and explicit warm eviction were verified.",
         "",
       ].join("\n"),
       "utf8",

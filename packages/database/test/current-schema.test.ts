@@ -17,6 +17,21 @@ describe("current PiCloud schema", () => {
     });
     try {
       await runMigrations(database, "up");
+      // Read the committed ledger before the idempotency pass. Besides checking
+      // ordering independently, this is the visibility barrier required by the
+      // socket-backed PGlite test driver under host load.
+      const firstMigrationPass = await sql<{ name: string; timestamp: string }>`
+        select name, timestamp from kysely_migration
+      `.execute(database);
+      expect(firstMigrationPass.rows).toHaveLength(113);
+      expect(
+        [...firstMigrationPass.rows]
+          .sort((left, right) => {
+            const time = new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime();
+            return time === 0 ? left.name.localeCompare(right.name) : time;
+          })
+          .map((entry) => entry.name),
+      ).toEqual([...firstMigrationPass.rows].map((entry) => entry.name).sort());
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
