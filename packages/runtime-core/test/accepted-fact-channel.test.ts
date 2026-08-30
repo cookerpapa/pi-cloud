@@ -162,7 +162,7 @@ function respondToFact(message: WorkerFactFrame, send: (value: unknown) => void)
 }
 
 describe("WebSocketAcceptedFactIngestor", () => {
-  it("opens one Grant channel, ACKs a durable event and confirms close", async () => {
+  it("opens one ExecutionLease channel, ACKs a durable event and confirms close", async () => {
     const event = publication(1);
     const server = await startServer(respondToFact);
     const ingestor = new WebSocketAcceptedFactIngestor({

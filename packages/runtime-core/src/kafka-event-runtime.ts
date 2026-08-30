@@ -103,6 +103,8 @@ export class KafkaEventRuntime {
   async checkHealth(): Promise<void> {
     if (!this.#started) throw new Error("Kafka event runtime is not running");
     await this.#bus.checkHealth();
+    this.eventStore.checkHealth();
+    this.#canonical.checkHealth();
     this.#terminalRelay.checkHealth();
     await this.factChannels.checkHealth();
   }

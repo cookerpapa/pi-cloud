@@ -24,7 +24,7 @@ const IDS = {
 } as const;
 
 const SENT_AT = "2026-07-19T07:00:00.000Z";
-const EXECUTION_GRANT = createExecutionLease(IDS.lease, IDS.attempt, 1);
+const EXECUTION_LEASE = createExecutionLease(IDS.lease, IDS.attempt, 1);
 
 function command(): SteerTurnCommandMessage {
   const parsed = parseControlToSupervisorMessage({
@@ -43,7 +43,7 @@ function command(): SteerTurnCommandMessage {
       runId: IDS.run,
       turnId: "turn-1",
       agentId: "root",
-      executionLease: EXECUTION_GRANT,
+      executionLease: EXECUTION_LEASE,
       text: "Focus on the current Run.",
     },
   });
@@ -88,7 +88,7 @@ describe("Worker control channel", () => {
         requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         status: "accepted",
       },
     });
@@ -107,7 +107,7 @@ describe("Worker control channel", () => {
         requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         acknowledgedMessageId: IDS.ack,
       },
     });
@@ -123,7 +123,7 @@ describe("Worker control channel", () => {
         requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         commitMessageId: IDS.commit,
         commandKind: "turn.steer",
         status: "completed",

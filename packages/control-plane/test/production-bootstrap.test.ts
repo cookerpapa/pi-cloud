@@ -243,7 +243,7 @@ describe.sequential("production bootstrap and configuration", () => {
       PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID: CONFIG.tenantId,
       PI_CLOUD_API_CREDENTIAL_ID: "40000000-0000-4000-8000-000000000003",
       PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES:
-        "http://{supervisorId}:4100,http://{supervisorId}.cell-0002:4100",
+        "http://{supervisorId}:4100,http://{supervisorId}.workers.example:4100",
       PI_CLOUD_IMAGE_REVISION: "sha-0123456789abcdef",
       PI_CLOUD_KAFKA_BROKERS: "kafka-1:9092,kafka-2:9092",
       PI_CLOUD_KAFKA_REPLICAS: "1",
@@ -265,7 +265,7 @@ describe.sequential("production bootstrap and configuration", () => {
       supervisorIdPrefix: "pi-worker-",
       supervisorManagementBaseUrlTemplates: [
         "http://{supervisorId}:4100",
-        "http://{supervisorId}.cell-0002:4100",
+        "http://{supervisorId}.workers.example:4100",
       ],
       toolBrokerBaseUrls: ["http://tool-broker:4300/"],
       host: "0.0.0.0",

@@ -50,7 +50,6 @@
     "@pi-cloud/pi-session-postgres": "0.1.0",
     "@pi-cloud/protocol": "0.1.0",
     "@pi-cloud/sandbox-supervisor": "0.1.0",
-    "@pi-cloud/workspace-runtime": "0.1.0",
     "@platformatic/kafka": "^2.9.0",
     "kysely": "0.29.4",
     "ws": "8.21.1"

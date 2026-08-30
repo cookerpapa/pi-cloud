@@ -8,7 +8,7 @@
 | Pi Worker | PostgreSQL | yes | queue, Session and lifecycle state |
 | Pi Worker | Tool Broker | yes | fenced Tool RPC |
 | Pi Worker | provider proxy/model provider | yes | model requests |
-| Tool Broker | PostgreSQL | yes | activation and authority state |
+| Tool Broker | PostgreSQL | yes | Workspace runtime ownership and Tool authority state |
 | Tool Broker | Cube API | yes | KVM lifecycle |
 | Volume gateway | PostgreSQL/RWX Workspace storage | yes | revision/Volume coordination |
 | Cube guest | egress proxy | optional | governed public HTTP/HTTPS |

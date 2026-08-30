@@ -51,6 +51,7 @@ export class SourceControlIssueCoordinator {
   readonly #instanceId: string;
   readonly #environmentImageRevision: string;
   readonly #clock: () => Date;
+  readonly #onError: ((source: string, error: unknown) => void) | undefined;
   #timer: NodeJS.Timeout | undefined;
   #running = false;
   #closed = false;
@@ -61,12 +62,14 @@ export class SourceControlIssueCoordinator {
     instanceId: string;
     environmentImageRevision: string;
     clock?: () => Date;
+    onError?: (source: string, error: unknown) => void;
   }) {
     this.#database = options.database;
     this.#sourceControl = options.sourceControl;
     this.#instanceId = options.instanceId;
     this.#environmentImageRevision = options.environmentImageRevision;
     this.#clock = options.clock ?? (() => new Date());
+    this.#onError = options.onError;
   }
 
   start(): void {
@@ -88,7 +91,7 @@ export class SourceControlIssueCoordinator {
         .where("owner_id", "=", this.#instanceId)
         .where("state", "in", ["received", "provisioning", "queued", "running"])
         .execute()
-        .catch(() => undefined);
+        .catch((error: unknown) => this.#onError?.("job_heartbeat", error));
     }, JOB_HEARTBEAT_MS);
     heartbeat.unref();
     try {
@@ -162,8 +165,12 @@ export class SourceControlIssueCoordinator {
     if (this.#closed || this.#running || !this.#sourceControl.configured) return;
     this.#running = true;
     try {
-      await this.#sourceControl.reconcileNextClaimSync().catch(() => false);
+      await this.#sourceControl
+        .reconcileNextClaimSync()
+        .catch((error: unknown) => this.#onError?.("claim_sync", error));
       await this.reconcileOnce();
+    } catch (error: unknown) {
+      this.#onError?.("issue_job", error);
     } finally {
       this.#running = false;
     }

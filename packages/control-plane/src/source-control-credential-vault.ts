@@ -24,7 +24,7 @@ export type SealedSourceControlCredential = Readonly<{
   secretSha256: string;
 }>;
 
-export class SourceControlCredentialVaultError extends Error {
+class SourceControlCredentialVaultError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "SourceControlCredentialVaultError";

@@ -42,8 +42,7 @@ The product page adds:
 - no model picker or credential form; platform model policy is an operator
   concern;
 - streamed assistant text and complete Tool lifecycle from `PiCloudEvent`;
-- a visible turn-cancel control and clear cancelling/failed states;
-- compact sandbox/runner health details for debugging.
+- a visible turn-cancel control and clear cancelling/failed states.
 
 Raw Pi runtime events, lease secrets, credential references, and provider tokens
 must never appear in the DOM or browser developer logs.
@@ -60,7 +59,7 @@ authenticated service Preview, the brokered terminal and active Pi steer are sup
 ## Visual acceptance
 
 - A long Pi-style transcript remains readable without full-width chat bubbles.
-- Tool and thinking blocks can be expanded and collapsed with keyboard access.
+- Tool input/output can be expanded and collapsed with keyboard access.
 - Sidebar and transcript scroll independently on desktop; sidebar becomes an
   overlay on small screens.
 - A disconnected SSE client visibly reconnects with a replacement snapshot
@@ -81,10 +80,10 @@ live directory anywhere in its persisted guest filesystem. Applying for that env
 requires only CPU, memory and disk selectors; it never consumes a pre-existing
 elastic Workspace. Workspace deletion and cloud-development-machine lifecycle
 actions live on a separate resource page, where associated conversations and
-active-Run deletion locks are visible. Connected GitLab projects are selected
-through the trusted source-control resource surface; the browser has no generic
-repository-import workflow. No API token, provider key, model profile, or model picker is shown to
-an ordinary user.
+active-Run deletion locks are visible. Deployment-connected GitLab projects
+appear as Issue tasks on that surface; the browser has no project-connection
+form or generic repository-import workflow. No API token, provider key, model
+profile, or model picker is shown to an ordinary user.
 
 The resource page does not create Workspaces. Its Workspace tab lists only
 elastic-conversation file resources, their latest Sandbox specification and

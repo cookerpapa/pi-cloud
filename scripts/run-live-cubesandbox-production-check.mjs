@@ -1354,7 +1354,7 @@ try {
       }),
       restoredFromPersistentVolume: true,
       freshCubeMicroVm: true,
-      higherGenerationActivation: true,
+      higherRuntimeGeneration: true,
       firstUsage: largeFirstUsage,
       followUpUsage: largeFollowUpUsage,
     },

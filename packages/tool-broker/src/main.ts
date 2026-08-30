@@ -1,6 +1,6 @@
 import { loadToolBrokerConfig } from "./tool-broker-config.ts";
 import { createDatabase } from "@pi-cloud/database";
-import { startServiceObservability } from "@pi-cloud/observability";
+import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
 import { CubeSandboxProvider } from "./cubesandbox-sandbox-provider.ts";
 import { ToolBrokerServer } from "./tool-broker-server.ts";
 import { ToolBroker } from "./tool-broker.ts";
@@ -71,6 +71,12 @@ const broker = new ToolBroker({
   warmTtlMs: config.warmTtlMs,
   maximumWarmWorkspaceRuntimes: config.maximumWarmWorkspaceRuntimes,
   serviceRegistry: new PostgresSandboxHttpServiceRegistry({ database }),
+  onMaintenanceError: () =>
+    operationalLog({
+      service: "pi-cloud-tool-broker",
+      level: "warn",
+      event: "maintenance.failed",
+    }),
 });
 const server = new ToolBrokerServer({
   host: config.host,

@@ -75,12 +75,12 @@ describe.sequential("Run queue authority", () => {
       { id: first.runId, state: "queued", mailbox_position: "1" },
       { id: second.runId, state: "queued", mailbox_position: "2" },
     ]);
-    const legacyTable = await sql<{ count: string }>`
+    const retiredTable = await sql<{ count: string }>`
       select count(*)::text as count
         from information_schema.tables
        where table_schema = 'public' and table_name = 'commands'
     `.execute(database);
-    expect(legacyTable.rows[0]?.count).toBe("0");
+    expect(retiredTable.rows[0]?.count).toBe("0");
 
     let firstStarted!: () => void;
     const started = new Promise<void>((resolve) => {

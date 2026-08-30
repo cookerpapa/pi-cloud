@@ -1,10 +1,8 @@
 export {
-  FileRuntimeObjectStore,
   PostgresWorkspaceSettlementStore,
   WorkspaceSettlementStoreError,
   validateRuntimeObjectKey,
   type RuntimeObjectStore,
-  type FileRuntimeObjectStoreOptions,
   type PostgresWorkspaceSettlementStoreOptions,
 } from "./workspace-settlement-store.ts";
 export {

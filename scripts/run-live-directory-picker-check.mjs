@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
@@ -98,6 +98,7 @@ await waitFor(
 
 const screenshotPath = resolve("/tmp", "pi-cloud-directory-picker-latest.png");
 let acceptanceError;
+let cleanupError;
 try {
   await withChromePage(
     { profilePrefix: "pi-cloud-directory-picker-", width: 1_360, height: 900 },
@@ -179,16 +180,20 @@ try {
 } catch (error) {
   acceptanceError = error;
 } finally {
-  await api
-    .developmentEnvironmentAction(
+  try {
+    await api.developmentEnvironmentAction(
       development.environmentId,
       "release",
       newIdempotencyKey("environment"),
-    )
-    .catch(() => undefined);
+    );
+    await rm(screenshotPath, { force: true });
+  } catch (error) {
+    cleanupError = error;
+  }
 }
 
 if (acceptanceError !== undefined) throw acceptanceError;
+if (cleanupError !== undefined) throw cleanupError;
 
 const report = {
   accepted: true,

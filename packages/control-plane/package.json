@@ -39,7 +39,6 @@
     "@electric-sql/pglite": "0.5.4",
     "@electric-sql/pglite-socket": "0.2.7",
     "@types/ws": "8.18.1",
-    "jose": "6.2.10",
     "ws": "8.21.1"
   }
 }

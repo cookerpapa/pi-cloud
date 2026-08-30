@@ -26,7 +26,7 @@ execution path and failure semantics.
   tenants, Sessions, Attempts, leases, fences, canonical completed Turns and
   Pi's native SessionStorage records.
 - One persistent Cube Volume is the byte authority for a Workspace. PostgreSQL
-  stores only its bounded revision and file-index metadata; user Git state
+  stores only its bounded settlement reference; user Git state
   remains inside the Volume.
 - Kafka is the bounded AcceptedFact authority refined by ADR-0128. It is
   neither a second conversation transcript nor a Run scheduler.
@@ -60,8 +60,8 @@ execution path and failure semantics.
 - The trusted Worker holds model credentials but never executes model-generated
   shell or file operations locally and never receives Cube management
   credentials.
-- The Tool Broker validates tenant, Workspace, Session, Run, Attempt, lease,
-  fence, operation and Step identity. It then reconciles Cube through the Cube
+- The Tool Broker validates the ExecutionLease, frozen Workspace/Turn/Tool
+  bindings and operation identity. It then reconciles Cube through the Cube
   API. Models cannot choose runtime identity, mounts, resources or network
   policy.
 - CubeSandbox KVM is the only untrusted Tool runtime. The guest receives the

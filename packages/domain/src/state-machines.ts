@@ -1,4 +1,4 @@
-import { SessionStateSchema } from "@pi-cloud/protocol";
+import { RunAttemptStateSchema, RunStateSchema, SessionStateSchema } from "@pi-cloud/protocol";
 import { Type, type Static } from "typebox";
 
 export type SessionState = Static<typeof SessionStateSchema>;
@@ -29,34 +29,7 @@ export const TurnControlRequestStateSchema = Type.Union([
   Type.Literal("failed"),
 ]);
 
-export const RunStateSchema = Type.Union([
-  Type.Literal("queued"),
-  Type.Literal("claimed"),
-  Type.Literal("provisioning"),
-  Type.Literal("restoring"),
-  Type.Literal("running"),
-  Type.Literal("settling"),
-  Type.Literal("cancel_requested"),
-  Type.Literal("completed"),
-  Type.Literal("failed"),
-  Type.Literal("cancelled"),
-  Type.Literal("timed_out"),
-  Type.Literal("superseded"),
-]);
-
-export const RunAttemptStateSchema = Type.Union([
-  Type.Literal("claimed"),
-  Type.Literal("provisioning"),
-  Type.Literal("restoring"),
-  Type.Literal("running"),
-  Type.Literal("settling"),
-  Type.Literal("cancel_requested"),
-  Type.Literal("completed"),
-  Type.Literal("failed"),
-  Type.Literal("cancelled"),
-  Type.Literal("timed_out"),
-  Type.Literal("superseded"),
-]);
+export { RunAttemptStateSchema, RunStateSchema } from "@pi-cloud/protocol";
 
 export type TurnState = Static<typeof TurnStateSchema>;
 export type SandboxState = Static<typeof SandboxStateSchema>;

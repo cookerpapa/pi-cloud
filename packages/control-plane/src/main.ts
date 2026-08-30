@@ -327,6 +327,16 @@ export async function startControlPlane(): Promise<void> {
         sourceControl: sourceControlService,
         instanceId: controlPlaneInstanceId,
         environmentImageRevision: config.environmentImageRevision,
+        onError: (source, error) =>
+          operationalLog({
+            service: "pi-cloud-control-plane",
+            level: "warn",
+            event: "source-control-coordinator.failed",
+            attributes: {
+              source,
+              name: error instanceof Error ? error.name : "UnknownError",
+            },
+          }),
       });
       issueCoordinator.start();
     }

@@ -75,6 +75,7 @@ export type ToolBrokerOptions = {
   clock?: () => number;
   imageRevision?: string;
   serviceRegistry?: SandboxHttpServiceRegistry;
+  onMaintenanceError?: (error: unknown) => void;
 };
 
 export class ToolBrokerOwnerRedirectError extends Error {
@@ -351,6 +352,7 @@ export class ToolBroker {
   readonly #maximumWarmWorkspaceRuntimes: number;
   readonly #clock: () => number;
   readonly #imageRevision: string;
+  readonly #onMaintenanceError: ((error: unknown) => void) | undefined;
   readonly #toolBindings = new Map<string, ManagedToolBinding>();
   readonly #warm = new Map<string, ManagedElasticRuntime>();
   readonly #terminals = new Map<string, ManagedWorkspaceTerminal>();
@@ -388,6 +390,7 @@ export class ToolBroker {
     );
     this.#clock = options.clock ?? Date.now;
     this.#imageRevision = options.imageRevision ?? "development";
+    this.#onMaintenanceError = options.onMaintenanceError;
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(this.#imageRevision)) {
       throw new TypeError("Workspace runtime image revision is invalid");
     }
@@ -401,7 +404,7 @@ export class ToolBroker {
           this.#reapUnboundWorkspaceRuntimes(),
           this.#reapOrphanedTerminals(),
           this.#reapOrphanedDevelopmentEnvironments(),
-        ]).catch(() => undefined),
+        ]).catch((error: unknown) => this.#onMaintenanceError?.(error)),
       30_000,
     );
     this.#reaper.unref();

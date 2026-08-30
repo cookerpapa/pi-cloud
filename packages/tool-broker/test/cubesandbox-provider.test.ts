@@ -1066,13 +1066,13 @@ describe("CubeSandbox Provider contract", () => {
     await originalProvider.close();
 
     const upgradedRuntime = new FakeCubeRuntimeClient("next-deployment");
-    const upgradedDataMover = fakeWorkspaceVolumeGateway();
+    const upgradedVolumeGateway = fakeWorkspaceVolumeGateway();
     const upgradedProvider = new CubeSandboxProvider({
       templateId: "pi-cloud-tool-v2",
       imageRevision: "next-deployment",
       webProxy: WEB_PROXY,
       runtimeClient: upgradedRuntime,
-      workspaceVolumeGateway: upgradedDataMover,
+      workspaceVolumeGateway: upgradedVolumeGateway,
     });
     const upgradedAssignment = {
       ...assignment,
@@ -1090,7 +1090,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSettlement: captured.settlement,
       policy: upgradedProvider.defaultPolicy,
     });
-    expect(upgradedDataMover.prepare).toHaveBeenCalledWith(
+    expect(upgradedVolumeGateway.prepare).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: assignment.tenantId,
         workspaceId: assignment.workspaceId,

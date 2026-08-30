@@ -95,13 +95,11 @@ export {
   type SandboxRetirementResult,
 } from "./assignment-reconciler.ts";
 export {
-  FileRuntimeObjectStore,
   MAX_RUNTIME_OBJECT_BYTES,
   PostgresWorkspaceSettlementStore,
   WorkspaceSettlementStoreError,
   validateRuntimeObjectKey,
   type RuntimeObjectStore,
-  type FileRuntimeObjectStoreOptions,
   type PostgresWorkspaceSettlementStoreOptions,
 } from "@pi-cloud/runtime-core/workspace-settlement-store";
 export {
@@ -135,11 +133,6 @@ export {
   type DurableEventStoreErrorCode,
 } from "@pi-cloud/runtime-core/durable-event-store";
 export { projectConversationTurnTranscript } from "@pi-cloud/runtime-core/conversation-turn-projection";
-export {
-  DeterministicExecutionBackend,
-  type DeterministicExecutionOutcome,
-  type DeterministicExecutionRecord,
-} from "./deterministic-execution-backend.ts";
 export {
   AgentRunExecutionBackend,
   type AgentRunExecutionBackendOptions,

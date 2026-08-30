@@ -459,9 +459,23 @@ export class PiWorkerRuntime {
         },
       });
       const subagentSupervisor = new PostgresSubagentSupervisorChannel(this.#database);
-      await subagentJobs.reapStalePreparations().catch(() => undefined);
+      const reapStaleSubagentPreparations = async (): Promise<void> => {
+        try {
+          await subagentJobs.reapStalePreparations();
+        } catch (error: unknown) {
+          operationalLog({
+            service: "pi-cloud-pi-worker",
+            level: "warn",
+            event: "subagent-preparation-reaper.failed",
+            attributes: {
+              name: error instanceof Error ? error.name : "UnknownError",
+            },
+          });
+        }
+      };
+      await reapStaleSubagentPreparations();
       this.#subagentPreparationReaper = setInterval(
-        () => void subagentJobs.reapStalePreparations().catch(() => undefined),
+        () => void reapStaleSubagentPreparations(),
         60_000,
       );
       this.#subagentPreparationReaper.unref();

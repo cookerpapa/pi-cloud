@@ -288,7 +288,7 @@ try {
       authorizedPreflight: authorized.authorized,
       tokenStoredOnlyInEnvironment: true,
       tokenPresentInPostgres: false,
-      legacyPiCloudHomeAbsent: true,
+      retiredPlatformHomeAbsent: true,
     },
     execution: {
       completed: true,
@@ -315,7 +315,7 @@ try {
       "- Missing credential / authorized exact-repository preflight: true / true",
       "- User token stored only in environment `.git-credentials`: true",
       "- User token present in PostgreSQL/Pi SessionStorage: false",
-      "- Legacy `.pi-cloud-home` absent: true",
+      "- Retired platform home absent: true",
       "- Real Agent coding Run completed: true",
       "- Platform clone / Agent-owned clone: false / true",
       "- Issue remained open for explicit later delivery: true",

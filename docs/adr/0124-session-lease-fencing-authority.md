@@ -40,7 +40,7 @@ The same lease is presented at the three Run effect boundaries:
 
 Tool Broker no longer mints or persists a `pcts_*` capability. Its management
 API still uses a machine service credential, while the Tool operation endpoint
-uses the Session lease as its only Run authority. The activation stores the
+uses the Session lease as its only Run authority. The Tool binding stores the
 allowed Tool snapshot and frozen Turn/Attempt context; those are policy and
 causal bindings, not additional credentials.
 
@@ -55,8 +55,9 @@ must not recheck a lease that may legitimately expire later.
 - Old Worker resumes: FactChannel, Tool Broker and terminal commit reject it.
 - Tool transport becomes ambiguous: the operation is `UNKNOWN`; arbitrary
   Shell is not replayed.
-- Command was already running when the lease expired: takeover stops or
-  destroys the old Cube activation before admitting another Workspace writer.
+- Command was already running when the lease expired: takeover retires the old
+  Tool binding and kills that process tree; it destroys the shared Workspace
+  runtime only when process termination cannot be confirmed.
 - Authority transaction rolls back: no lease is issued and no Worker starts.
 
 ## Consequences
@@ -66,5 +67,5 @@ Broker restart no longer depends on an activation-local capability digest.
 PostgreSQL remains on the Tool-start path, which is acceptable because Tool
 operations are low-frequency and already require a durable operation ledger.
 If renewal becomes material at much larger scale, PiCloud should introduce
-hierarchical Worker-connection leases or Cell-local PostgreSQL authorities,
-not a second eventually-consistent lease store.
+hierarchical Worker-connection leases or a partitioned PostgreSQL lease
+authority, not a second eventually-consistent lease store.

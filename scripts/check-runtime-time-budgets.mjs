@@ -94,7 +94,7 @@ assert.ok(
   "Compose Kafka retention can omit a still-recoverable Run",
 );
 
-const composeDataMover = composeText.slice(
+const composeVolumeGateway = composeText.slice(
   composeText.indexOf("\n  workspace-volume-gateway:"),
   composeText.indexOf("\n  tool-broker:"),
 );
@@ -102,19 +102,19 @@ const composeToolBroker = composeText.slice(
   composeText.indexOf("\n  tool-broker:"),
   composeText.indexOf("\n  web:"),
 );
-assert.ok(composeDataMover.length > 0, "Compose Workspace Volume Gateway service is missing");
+assert.ok(composeVolumeGateway.length > 0, "Compose Workspace Volume Gateway service is missing");
 assert.ok(composeToolBroker.length > 0, "Compose Tool Broker service is missing");
 function composeDefaultInteger(section, name) {
   const match = new RegExp(`${name}: (?:\\$\\{[^}\\n]+:-)?(\\d+)(?:\\})?`).exec(section);
   assert.ok(match, `Compose ${name} default is missing`);
   return integer(match[1], `Compose ${name}`);
 }
-const composeDataMoverStop = /stop_grace_period:\s*(\S+)/.exec(composeDataMover)?.[1];
-assert.ok(composeDataMoverStop, "Compose Workspace Volume Gateway stop grace is missing");
+const composeVolumeGatewayStop = /stop_grace_period:\s*(\S+)/.exec(composeVolumeGateway)?.[1];
+assert.ok(composeVolumeGatewayStop, "Compose Workspace Volume Gateway stop grace is missing");
 validateWorkspaceVolumeGatewayPolicy(
   {
     queueWaitMs: composeDefaultInteger(
-      composeDataMover,
+      composeVolumeGateway,
       "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_QUEUE_WAIT_TIMEOUT_MS",
     ),
     requestMs: composeDefaultInteger(
@@ -122,7 +122,7 @@ validateWorkspaceVolumeGatewayPolicy(
       "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS",
     ),
     terminationGraceMs: durationMs(
-      composeDataMoverStop,
+      composeVolumeGatewayStop,
       "Compose Workspace Volume Gateway stop grace",
     ),
   },

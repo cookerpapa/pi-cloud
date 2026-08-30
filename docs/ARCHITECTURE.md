@@ -288,7 +288,7 @@ and the Agent performs visible `git clone` and branch commands.
 
 GitLab Project Webhooks use a Standard Webhooks HMAC signing token and stable
 `webhook-id`; deployment project access tokens are encrypted in PostgreSQL and
-only unsealed for trusted GitLab API work. They are distinct from user Git OAuth
+only unsealed for trusted GitLab API work. They are distinct from user Code Host
 credentials. GitHub Issue and
 Issue-comment Webhooks enter through their native raw-body HMAC gate. Provider
 delivery IDs are idempotency keys. Only the configured label or exact
@@ -468,10 +468,9 @@ image revision. Tool Broker persists that evidence against the physical runtime
 and conversation/development-environment target. A trusted `preview` Tool
 resolves a model-selected verified port into an authenticated conversation
 route, and its structured Tool result renders the application link inline in
-the transcript. There is no persistent top-bar application hint and no need to
-parse or trust assistant text. Historical assistant `localhost` links remain a
-presentation fallback; the Agent never calculates a public IP, signed URL or
-NAT mapping.
+the transcript. There is no persistent top-bar application hint and no parsing
+of assistant text. The Agent never calculates a public IP, signed URL or NAT
+mapping.
 
 Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented. PiCloud does not
 expose Sandbox port 22. A separate trusted SSH gateway validates a one-time

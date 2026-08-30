@@ -117,7 +117,7 @@ Existing warm or exclusive Cubes must be recreated to
 pick up a changed list. This grants guest-initiated outbound access only; it
 does not expose Sandbox ports to the private network.
 
-### Optional GitLab login and project connections
+### Optional GitLab project connection
 
 The default quick start requires no GitLab. To enable the project adapter,
 start the optional acceptance instance with `npm run gitlab:up`, create a

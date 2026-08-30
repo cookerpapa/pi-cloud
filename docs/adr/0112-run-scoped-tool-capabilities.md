@@ -21,8 +21,9 @@ execution authorization boundary.
 - The Host registers only the granted Pi `AgentTool` proxies.
 - Every Tool RPC includes the trusted Pi Tool name as well as the low-level
   operation kind.
-- Tool Broker binds the activation to the Session lease and Run snapshot, then
-  rejects an ungranted Tool or an operation which does not belong to that Tool.
+- Tool Broker binds the Run to the Workspace runtime through the Session lease
+  and Run snapshot, then rejects an ungranted Tool or an operation which does
+  not belong to that Tool.
 - The snapshot contains identifiers only, never credentials or executor
   connection details.
 

@@ -12,9 +12,9 @@ the platform no longer owns a hidden Git baseline or post-processes file
 changes into commits.
 
 GitHub Apps provide repository-scoped installations, signed Webhooks and
-short-lived installation access tokens. GitLab exposes a similar conceptual
-surface through OAuth/project integrations, Webhooks and Merge Requests, but
-the two authentication protocols are not interchangeable.
+short-lived installation access tokens. GitLab project access tokens and
+Project Webhooks provide the corresponding deployment integration, but the two
+authentication protocols are not interchangeable.
 
 ## Decision
 
@@ -62,12 +62,6 @@ Standard Webhooks signing-token contract. Comment triggers additionally verify
 that the actor is a Developer or higher. The connected project credential is
 not a user Git credential.
 
-The default login remains PiCloud-local and GitLab is optional. When configured,
-GitLab OpenID Connect is a second SSO provider for one deployment-selected
-PiCloud tenant. The authorization-code flow uses discovery, PKCE, nonce and
-one-use state. The OAuth access token is discarded after resolving the GitLab
-user; PostgreSQL keeps only the provider subject and public profile. SSO is not
-an Issue authorization or Git credential mechanism.
 Deployments with split-horizon networking may configure a distinct bootstrap
 GitLab API/Git origin. The remote stored in the user repository still uses the
 public provider origin so it is reachable from Cube.

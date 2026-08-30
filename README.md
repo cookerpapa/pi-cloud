@@ -23,42 +23,54 @@ hostile public-SaaS security or abuse-management product.
 ## Architecture
 
 ```text
-                                      trusted plane
+Browser
+  │ HTTPS: UI / REST / snapshot-first SSE / Terminal WebSocket
+  ▼
+Web UI + Caddy ingress
+  ▼
+Control Plane
+  ├─ local auth, tenant API, conversations and resource admission
+  ├─ PostgreSQL Run queue and Worker Control Channel
+  ├─ AcceptedFact Authority Gate
+  ├─ Kafka canonical projector and rebuildable live-tail gateway
+  └─ Workspace browser, Preview and Terminal gateways
+       │
+       ├───────────────────────────▶ PostgreSQL
+       │                             product state / ready Runs
+       │                             ExecutionLease + Fence
+       │                             canonical Pi SessionStorage
+       │
+       └─ snapshot + live SSE ─────▶ Browser
 
-Browser ── REST ──▶ Web ingress ──▶ Control Plane ──┐
-   ▲                  │              │ auth / admission / Runs │
-   │                  │ cursor-free  │ Session API          ▼
-   └── snapshot + SSE ─┘              ├──────────────▶ PostgreSQL
-                                      │                  product state
-                                      │ shared Run queue Pi SessionStorage
-                                      ▼                  Lease / Fence
-                                Pi Worker pool
-                                Pi SDK Agent Loop
-                                Model Gateway ──▶ model provider
-                                      │
-                                      │ Session Lease + Tool RPC
-                                      ▼
-                                  Tool Broker ─────────────┐
-                                      │ Cube lifecycle / envd       │
-                                      ▼                             ▼
-                              CubeSandbox KVM                 Workspace Volume Gateway
-                       untrusted code / processes             persistent Workspace bytes
+PostgreSQL ready Runs ── SKIP LOCKED + NOTIFY ──▶ Pi Worker pool
+                                                    ├─ Pi SDK Agent Loop
+                                                    ├─ bounded Pi context read from PostgreSQL
+                                                    ├─ Model Gateway ──▶ provider relay ──▶ model API
+                                                    └─ leased Tool RPC
+                                                           ▼
+                                                     Tool Broker
+                                                     ├─ Cube lifecycle / Tool binding / Preview
+                                                     ├─ Workspace runtime ownership
+                                                     └─ envd command transport
+                                                           ▼
+                                                    CubeSandbox KVM
+                                                    untrusted code and processes
+                                                           │
+                                                           ▼
+                                                persistent Cube Workspace Volume
 
-                                durable event plane
+Worker CandidateFacts
+  └─ one multiplexed authenticated connection per Worker
+       └─ one logical stream per Session ExecutionLease
+            ▼
+Control Plane Authority Gate ── one PostgreSQL Lease/Fence admission
+            ▼
+Kafka, Session-keyed, replication factor 3, acks=all
+  ├─ canonical projector ──────▶ PostgreSQL Pi SessionStorage
+  └─ incomplete live tail ─────▶ cursor-free snapshot/SSE gateway ──▶ Browser
 
-Pi Worker CandidateFacts
-          │ one multiplexed Fact connection per Worker
-          │ one logical Stream per Session Lease
-          ▼
-Control Plane Authority Gate ── PostgreSQL validates Lease/Fence once
-          │ lease-free AcceptedFacts
-          ▼
-Kafka (Session-keyed, acks=all)
-          ├──▶ canonical projector ──▶ PostgreSQL Pi SessionStorage
-          └──▶ rebuildable live tail ──▶ snapshot-first SSE ──▶ Browser
-
-Cloud development machine only:
-Browser SSH / Terminal / Preview ──▶ trusted gateways ──▶ Tool Broker ──▶ owned Cube
+Workspace files: Browser ──▶ Control Plane ──▶ Workspace Volume Gateway ──▶ Cube Volume
+Owned machine:   Browser SSH/Terminal/Preview ──▶ trusted gateway ──▶ Tool Broker ──▶ Cube
 ```
 
 There are three durable authorities:

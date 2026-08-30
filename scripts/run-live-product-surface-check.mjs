@@ -74,6 +74,19 @@ async function psql(query) {
   return stdout.trim();
 }
 
+async function waitForWorkspacePurge(workspaceId) {
+  assert.match(workspaceId, /^[0-9a-f-]{36}$/u);
+  const deadline = Date.now() + 2 * 60_000;
+  while (Date.now() < deadline) {
+    const purged = await psql(
+      `select coalesce((select storage_purged_at is not null from workspaces where id = '${workspaceId}'), true)::text`,
+    );
+    if (purged === "true") return;
+    await wait(250);
+  }
+  throw new Error(`Workspace ${workspaceId} storage was not purged`);
+}
+
 function wait(delayMs, signal) {
   if (signal?.aborted) return Promise.resolve();
   return new Promise((resolvePromise) => {
@@ -612,6 +625,7 @@ try {
   await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
   const deletion = await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"));
   assert.equal(deletion.workspaceId, project.workspaceId);
+  await waitForWorkspacePurge(project.workspaceId);
   assert(
     !(await api.listWorkspaces()).workspaces.some(
       (workspace) => workspace.workspaceId === project.workspaceId,
@@ -650,7 +664,7 @@ try {
     cancelAndRecover: true,
     workspaceRebind: true,
     tenantIsolation: true,
-    deletion: deletion.storageState,
+    deletion: "purged",
   };
   await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
   await writeFile(
@@ -665,5 +679,6 @@ try {
   }
   for (const workspaceId of createdWorkspaceIds) {
     await api.deleteWorkspace(workspaceId, newIdempotencyKey("delete")).catch(() => undefined);
+    await waitForWorkspacePurge(workspaceId).catch(() => undefined);
   }
 }

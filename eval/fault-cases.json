@@ -1,28 +1,27 @@
 {
   "format": "pi-cloud.fault-eval.v1",
-  "description": "Deterministic infrastructure fault injections. Each case must prove the named failure is contained or recovered without relying on an external model.",
+  "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
       "id": "duplicate-command",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/agent-run-supervisor.test.ts",
       "test": "deduplicates the same command and reuses one execution promise",
-      "invariant": "At-least-once delivery does not execute the same command twice."
+      "invariant": "Duplicate delivery does not execute one Agent command twice."
     },
     {
       "id": "stale-execution-lease",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/agent-run-supervisor.test.ts",
       "test": "retains the high-water fencing token after a pre-start release",
-      "invariant": "A released or recovered old Worker cannot reuse an obsolete ExecutionLease."
+      "invariant": "A released Worker cannot reuse an obsolete ExecutionLease."
     },
     {
-      "id": "stale-accepted-log-authority",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/control-plane-api.test.ts",
-      "test": "emits lease-free accepted facts and rejects a revoked channel",
-      "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "A stale Worker cannot cross the PostgreSQL ExecutionLease boundary into either Kafka AcceptedFact log."
+      "id": "stale-accepted-fact-authority",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-lease-authority-gate.test.ts",
+      "test": "admits one FactChannel, accepts both Fact kinds, renews and closes idempotently",
+      "invariant": "Only the current PostgreSQL ExecutionLease can admit CandidateFacts into the durable log."
     },
     {
       "id": "session-mutation-redelivery",
@@ -32,111 +31,105 @@
       "setupTests": [
         "persists bounded branch context and durable operation records without a JSONL download"
       ],
-      "invariant": "At-least-once Session mutation delivery creates one canonical PostgreSQL effect."
+      "invariant": "Kafka redelivery creates one canonical Pi Session mutation."
     },
     {
       "id": "session-projection-barrier-before-read",
       "workspace": "@pi-cloud/pi-session-postgres",
       "file": "test/postgres-durable-agent-session.test.ts",
       "test": "waits for older Session mutations before rechecking the current ExecutionLease",
-      "invariant": "A replacement Worker crosses the Session-keyed projection barrier and rechecks its ExecutionLease before reading PostgreSQL."
+      "invariant": "A replacement Worker observes every older accepted Session mutation before reading context."
     },
     {
       "id": "message-stream-independence",
       "workspace": "@pi-cloud/pi-session-postgres",
       "file": "test/cloud-agent-runtime.test.ts",
       "test": "commits a complete assistant message independently of public event delivery",
-      "invariant": "A streaming-path failure cannot roll back a complete Pi message already committed to SessionStorage."
+      "invariant": "A live-stream failure cannot roll back a complete native Pi message."
     },
     {
       "id": "interrupted-visible-prefix",
       "workspace": "@pi-cloud/pi-session-postgres",
       "file": "test/cloud-agent-runtime.test.ts",
       "test": "keeps a failed visible assistant prefix in the next native Pi context",
-      "invariant": "A browser-visible failed prefix remains model-visible after Worker replacement."
+      "invariant": "A browser-visible interrupted prefix remains model-visible after Worker replacement."
     },
     {
-      "id": "terminal-stream-independence",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/control-plane-api.test.ts",
-      "test": "settles a completed backend execution without consulting the live projection",
-      "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "A successful Run terminal commit does not reconstruct a complete message from the short-lived delta tail."
+      "id": "terminal-tail-unload",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/kafka-live-session-tail.test.ts",
+      "test": "deduplicates, snapshots immutably and unloads only after terminal canonical state",
+      "invariant": "Terminal projection unloads shared live-tail memory without invalidating an in-flight browser snapshot."
     },
     {
-      "id": "accepted-projection-ahead-of-worker-ack",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/control-plane-api.test.ts",
-      "test": "accepts an already-ahead Kafka projection boundary during Run settlement",
-      "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "A Kafka AcceptedFact watermark already ahead of the Worker ACK cannot strand terminal Run settlement."
+      "id": "multiplexed-fact-reconnect",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/accepted-fact-channel.test.ts",
+      "test": "reopens every logical Run stream after the shared Worker socket reconnects",
+      "invariant": "One broken Worker transport reconnects logical Fact Streams without changing their authorities."
     },
     {
       "id": "control-plane-process-sigkill",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/control-channel-process-fault.test.ts",
       "test": "keeps an active assignment alive while the Control Plane process is killed and replaced",
-      "invariant": "A Control Plane process replacement does not revoke a healthy Agent Loop's ExecutionLease."
+      "invariant": "Control Plane process replacement does not revoke a healthy Agent Loop."
     },
     {
-      "id": "control-channel-expiry-with-live-run",
+      "id": "stale-worker-socket",
       "workspace": "@pi-cloud/control-plane",
-      "file": "test/supervisor-connection-manager.test.ts",
-      "test": "defers channel retirement while a RunAttempt keeps heartbeating through PostgreSQL",
-      "invariant": "A stale Control Channel cannot retire a Worker whose active RunAttempt still has fresh database authority."
+      "file": "test/supervisor-websocket-gateway.test.ts",
+      "test": "uses PostgreSQL to reject an old socket after reconnecting through another replica",
+      "invariant": "A stale Worker Control Channel cannot reclaim current ownership."
     },
     {
-      "id": "dead-worker-management-unavailable",
+      "id": "abandoned-development-environment",
       "workspace": "@pi-cloud/control-plane",
-      "file": "test/supervisor-connection-manager.test.ts",
-      "test": "settles a revoked active Run when the dead Worker has no management endpoint",
-      "invariant": "After connection and ExecutionLease expiry, a dead management endpoint cannot strand the interrupted Run or Session."
+      "file": "test/development-environment-service.test.ts",
+      "test": "retires an abandoned pre-provision request without creating a Cube",
+      "invariant": "A Control Plane failure before provisioning cannot leak a requested development machine."
     },
     {
-      "id": "assignment-loss-releases-model-reservation",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/control-plane-api.test.ts",
-      "test": "terminates expired and orphan runtimes before settling a lost assignment",
-      "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "Worker loss settles its model reservation so the replacement Run does not wait for quota TTL."
-    },
-    {
-      "id": "terminal-tool-activation-before-next-writer",
+      "id": "tool-broker-owner-fence",
       "workspace": "@pi-cloud/tool-broker",
-      "file": "test/activation-state-repository.test.ts",
-      "test": "resolves a Workspace through its Sandbox Domain without ambiguous columns",
-      "invariant": "A replacement writer can retire a failed activation, while a revoked ExecutionLease cannot start another Tool operation."
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "fences an expired replica before a surviving owner stays Ready",
+      "invariant": "A replacement Tool Broker fences the expired owner before serving its Workspace runtime."
     },
     {
-      "id": "checkpoint-corruption-and-cas",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/checkpoint-store.test.ts",
-      "test": "commits artifacts under an ExecutionLease, cold-loads them, and rejects stale or corrupt state",
-      "invariant": "Checkpoint integrity and compare-and-swap fencing token checks survive cold recovery."
+      "id": "ambiguous-tool-transport",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/cubesandbox-provider.test.ts",
+      "test": "destroys an uncertain VM without replaying a disconnected Tool command",
+      "invariant": "An ambiguous Tool transport never blindly replays an arbitrary command."
     },
     {
-      "id": "cancel-complete-race",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/control-plane-api.test.ts",
-      "test": "records cancellation as too late when natural completion wins before its ACK",
-      "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "Exactly one terminal Run outcome wins a cancel/complete race."
+      "id": "stale-workspace-settlement",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/cubesandbox-provider.test.ts",
+      "test": "rejects a persistent Volume reference when tenant or fence is stale",
+      "invariant": "A stale or foreign settlement cannot become the Workspace head."
     },
     {
-      "id": "stale-dispatch-claim",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/control-plane-api.test.ts",
-      "test": "fences a dispatcher whose pre-ACK claim lease was superseded",
-      "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "A superseded dispatcher cannot start external work."
+      "id": "cancel-stop-failure",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/tool-broker.test.ts",
+      "test": "revokes the Session lease before a provider stop failure escapes",
+      "invariant": "Cancellation revokes Tool authority before uncertain process cleanup returns."
     },
     {
-      "id": "orphan-runtime-cleanup",
-      "workspace": "@pi-cloud/control-plane",
-      "file": "test/control-plane-api.test.ts",
-      "test": "terminates expired and orphan runtimes before settling a lost assignment",
-      "setupTests": ["creates a project and workspace atomically, then creates a cold session"],
-      "invariant": "Expired ownership is reconciled only after the orphan runtime is terminated."
+      "id": "shared-runtime-loss",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/tool-broker.test.ts",
+      "test": "fails every binding when the shared physical Workspace runtime is lost",
+      "invariant": "Loss of one Workspace Cube cannot leave a surviving logical Tool binding."
+    },
+    {
+      "id": "workspace-volume-delete-race",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/workspace-volume-deletion-reaper.integration.test.ts",
+      "test": "waits for the live Cube activation before purging POSIX Workspace data",
+      "invariant": "Workspace bytes are not deleted while a live Cube still owns the Volume."
     }
   ]
 }

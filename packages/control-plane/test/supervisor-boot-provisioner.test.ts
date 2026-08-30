@@ -184,7 +184,7 @@ describe.sequential("production Supervisor boot provisioning", () => {
       allowedSupervisorIdPrefix: "production-supervisor-",
       managementBaseUrlTemplates: [
         "http://{supervisorId}:4100",
-        "http://{supervisorId}.cell-0002:4100",
+        "http://{supervisorId}.workers.example:4100",
       ],
       maximumCapacity: 4,
       enrollmentToken: ENROLLMENT_TOKEN,
@@ -192,7 +192,7 @@ describe.sequential("production Supervisor boot provisioning", () => {
     const workerA = request({ supervisorId: "production-supervisor-a" });
     const workerB = request({
       supervisorId: "production-supervisor-b",
-      managementBaseUrl: "http://production-supervisor-b.cell-0002:4100",
+      managementBaseUrl: "http://production-supervisor-b.workers.example:4100",
     });
     await expect(
       Promise.all([provisioner.provision(workerA.body), provisioner.provision(workerB.body)]),

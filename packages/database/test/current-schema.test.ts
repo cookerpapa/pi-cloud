@@ -23,9 +23,11 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(116);
+      expect(firstMigrationPass.rows).toHaveLength(117);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("116_remove_oidc_login");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe(
+        "117_remove_environment_validation_backfill",
+      );
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
@@ -76,6 +78,7 @@ describe("current PiCloud schema", () => {
         "workspace_git_oauth_requests",
         "external_identities",
         "oidc_authentication_requests",
+        "environment_validation_evidence_backfills",
       ]) {
         expect(names.has(retired), `retired table ${retired} survived`).toBe(false);
       }
@@ -121,7 +124,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("116_remove_oidc_login");
+      expect(applied.rows.at(-1)?.name).toBe("117_remove_environment_validation_backfill");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

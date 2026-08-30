@@ -28,7 +28,7 @@ const IDS = {
 };
 
 const SENT_AT = "2026-07-18T08:00:00.000Z";
-const EXECUTION_GRANT = createExecutionLease(IDS.lease, IDS.attempt, 7);
+const EXECUTION_LEASE = createExecutionLease(IDS.lease, IDS.attempt, 7);
 
 function envelope(messageId = IDS.message) {
   return {
@@ -48,7 +48,7 @@ function executionIdentity() {
     runId: IDS.run,
     turnId: "turn-1",
     agentId: "root",
-    executionLease: EXECUTION_GRANT,
+    executionLease: EXECUTION_LEASE,
   } as const;
 }
 
@@ -81,7 +81,7 @@ function commandResultIdentity() {
     requestId: IDS.command,
     sessionId: "session-1",
     turnId: "turn-1",
-    executionLease: EXECUTION_GRANT,
+    executionLease: EXECUTION_LEASE,
     commitMessageId: IDS.commit,
   } as const;
 }
@@ -122,7 +122,7 @@ function heartbeat() {
           sessionId: "session-1",
           turnId: "turn-1",
           state: "running",
-          executionLease: EXECUTION_GRANT,
+          executionLease: EXECUTION_LEASE,
           lastProducedSeq: 12,
           lastAcknowledgedSeq: 10,
         },
@@ -262,7 +262,7 @@ describe("supervisor/control-plane wire protocol", () => {
       ...envelope(),
       type: "event.publish",
       payload: {
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         event,
       },
     } as const;
@@ -292,7 +292,7 @@ describe("supervisor/control-plane wire protocol", () => {
       ...envelope(),
       type: "fact.channel.open",
       payload: {
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         sessionId: "session-1",
         turnId: "turn-1",
         nextEventSeq: 11,
@@ -303,7 +303,7 @@ describe("supervisor/control-plane wire protocol", () => {
       type: "fact.channel.ready",
       payload: {
         acknowledgedMessageId: IDS.message,
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         sessionId: "session-1",
         turnId: "turn-1",
         acknowledgedThroughSeq: 10,
@@ -313,14 +313,14 @@ describe("supervisor/control-plane wire protocol", () => {
     const close = {
       ...envelope(),
       type: "fact.channel.close",
-      payload: { executionLease: EXECUTION_GRANT, acknowledgedThroughSeq: 12 },
+      payload: { executionLease: EXECUTION_LEASE, acknowledgedThroughSeq: 12 },
     } as const;
     const closed = {
       ...envelope(),
       type: "fact.channel.closed",
       payload: {
         acknowledgedMessageId: IDS.message,
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         acknowledgedThroughSeq: 12,
       },
     } as const;
@@ -339,7 +339,7 @@ describe("supervisor/control-plane wire protocol", () => {
       type: "event.rejected",
       payload: {
         sessionId: "session-1",
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         rejectedSeq: 11,
         code: "stale_session_lease",
         retryable: false,
@@ -364,7 +364,7 @@ describe("supervisor/control-plane wire protocol", () => {
         requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         status: "accepted",
       },
     } as const;
@@ -381,7 +381,7 @@ describe("supervisor/control-plane wire protocol", () => {
         requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         acknowledgedMessageId: IDS.message,
       },
     } as const;
@@ -496,7 +496,7 @@ describe("supervisor/control-plane wire protocol", () => {
         executionLeaseRenewals: [
           {
             sessionId: "session-1",
-            executionLease: EXECUTION_GRANT,
+            executionLease: EXECUTION_LEASE,
             validUntil: "2026-07-18T08:01:00.000Z",
           },
         ],
@@ -531,7 +531,7 @@ describe("supervisor/control-plane wire protocol", () => {
       type: "event.ack",
       payload: {
         sessionId: "session-1",
-        executionLease: EXECUTION_GRANT,
+        executionLease: EXECUTION_LEASE,
         acknowledgedThroughSeq: 12,
       },
     } as const;

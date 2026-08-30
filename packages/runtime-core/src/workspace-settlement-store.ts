@@ -17,13 +17,11 @@ import {
 import { PiTurnError } from "@pi-cloud/sandbox-supervisor/pi-turn-runtime";
 import { validateWorkspacePayload } from "@pi-cloud/sandbox-supervisor/workspace-seed";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, link, mkdir, open, readFile, rm } from "node:fs/promises";
-import { dirname, resolve, sep } from "node:path";
 import { sql, type Kysely, type Transaction } from "kysely";
 
 // Workspace settlement references and archived Tool output are bounded runtime objects.
-// runtime objects. Keep one shared guard comfortably above their bounded
-// payloads without permitting unbounded reads.
+// Keep one shared guard comfortably above their bounded payloads without
+// permitting unbounded reads.
 export const MAX_RUNTIME_OBJECT_BYTES = 136 * 1_024 * 1_024;
 
 export interface RuntimeObjectStore {
@@ -31,11 +29,6 @@ export interface RuntimeObjectStore {
   get(objectKey: string): Promise<Uint8Array>;
   delete(objectKey: string): Promise<void>;
 }
-
-export type FileRuntimeObjectStoreOptions = {
-  rootDirectory: string;
-  idGenerator?: () => string;
-};
 
 export type PostgresWorkspaceSettlementStoreOptions = {
   database: Kysely<Database>;
@@ -125,72 +118,6 @@ export function validateRuntimeObjectKey(value: string): string {
     );
   }
   return value;
-}
-
-export class FileRuntimeObjectStore implements RuntimeObjectStore {
-  readonly #rootDirectory: string;
-  readonly #idGenerator: () => string;
-
-  constructor(options: FileRuntimeObjectStoreOptions) {
-    this.#rootDirectory = resolve(options.rootDirectory);
-    this.#idGenerator = options.idGenerator ?? randomUUID;
-  }
-
-  async put(objectKey: string, bytes: Uint8Array): Promise<void> {
-    const target = this.#target(objectKey);
-    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-    const temporary = `${target}.tmp-${this.#idGenerator()}`;
-    let handle: Awaited<ReturnType<typeof open>> | undefined;
-    try {
-      handle = await open(temporary, "wx", 0o600);
-      await handle.writeFile(bytes);
-      await handle.sync();
-      await handle.close();
-      handle = undefined;
-      await link(temporary, target);
-      await rm(temporary, { force: true });
-    } catch (error: unknown) {
-      await handle?.close().catch(() => undefined);
-      await rm(temporary, { force: true }).catch(() => undefined);
-      throw error;
-    }
-  }
-
-  async get(objectKey: string): Promise<Uint8Array> {
-    const target = this.#target(objectKey);
-    const metadata = await lstat(target);
-    if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      throw new WorkspaceSettlementStoreError(
-        "runtime_object_invalid",
-        "Runtime object is not a regular file",
-        false,
-      );
-    }
-    if (metadata.size < 1 || metadata.size > MAX_RUNTIME_OBJECT_BYTES) {
-      throw new WorkspaceSettlementStoreError(
-        "runtime_object_invalid",
-        "Runtime object is outside its byte limit",
-        false,
-      );
-    }
-    return readFile(target);
-  }
-
-  async delete(objectKey: string): Promise<void> {
-    await rm(this.#target(objectKey), { force: true });
-  }
-
-  #target(objectKey: string): string {
-    const target = resolve(this.#rootDirectory, validateRuntimeObjectKey(objectKey));
-    if (target !== this.#rootDirectory && !target.startsWith(`${this.#rootDirectory}${sep}`)) {
-      throw new WorkspaceSettlementStoreError(
-        "runtime_object_key_invalid",
-        "Runtime object key escaped its store",
-        false,
-      );
-    }
-    return target;
-  }
 }
 
 export class PostgresWorkspaceSettlementStore implements WorkspaceSettlementStore {

@@ -35,9 +35,9 @@ assistant nodes. It supports a current-branch view and a whole-family view.
 Pi entry payloads remain an internal storage detail.
 
 Fork creation is transactional and idempotent. The child product Session,
-event cursor, referenced Pi branch and fork operation commit together. A child
+stream identity, referenced Pi branch and fork operation commit together. A child
 conversation renders the inherited product transcript followed by its own
-Turns, while live SSE resumes only from the child Session's event cursor.
+Turns, while snapshot-first SSE uses only the child Session's stream.
 
 The browser presents two independent left panels: the conversation list and
 the selected conversation tree. Each panel is collapsible and horizontally
@@ -64,9 +64,9 @@ bounded, local database copy rather than a full JSONL download or an object
 store checkpoint. It keeps the production Pi runtime unchanged: each child is
 still opened on its `main` lane by the existing Worker.
 
-All branches share one logical Workspace. Each ordinary branch keeps a
-Session-scoped Cube process world while sharing the persistent Volume; users
-are responsible for concurrent edits. The explicit `shared`
+All branches share one logical Workspace and its Workspace-owned Cube process
+world while that runtime is live; users are responsible for concurrent edits.
+The explicit `shared`
 Subagent mode remains a coordinated handoff rather than ordinary branch
 concurrency.
 

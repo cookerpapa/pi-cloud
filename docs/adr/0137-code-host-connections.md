@@ -6,9 +6,9 @@ Accepted.
 
 ## Context
 
-PiCloud previously coupled external identity mapping to Issue claims and stored one
-repository-specific Git credential in the selected
-Workspace. That coupled three independent concerns: authenticating to PiCloud,
+PiCloud previously coupled provider identity to Issue claims and stored one
+repository-specific Git credential in the selected Workspace. That coupled
+three independent concerns: authenticating to PiCloud,
 receiving project Issue events, and authenticating Git inside an execution
 environment. The single credential was also overwritten when another repository
 was authorized.

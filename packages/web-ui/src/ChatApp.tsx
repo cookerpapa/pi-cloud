@@ -2,9 +2,11 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  lazy,
   useMemo,
   useRef,
   useState,
+  Suspense,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -23,11 +25,9 @@ import type {
 } from "@pi-cloud/protocol";
 import { DEFAULT_EXCLUSIVE_WORKING_DIRECTORY } from "@pi-cloud/protocol";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
-import { AdminPage } from "./AdminPage.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";
 import { AuthScreen } from "./AuthScreen.tsx";
 import { ConversationTreeNavigator } from "./ConversationTreeNavigator.tsx";
-import { CodeHostConnectionsModal } from "./CodeHostConnectionsModal.tsx";
 import { ConversationTurn } from "./ConversationTurn.tsx";
 import {
   conversationExportFilename,
@@ -41,10 +41,21 @@ import { activeTurn, createInitialSessionView, sessionViewReducer } from "./sess
 import { streamSessionEvents } from "./sse.ts";
 import { errorMessage } from "./ui-errors.ts";
 import { WorkspaceInspector } from "./WorkspaceInspector.tsx";
-import { WorkspaceDirectoryPicker } from "./WorkspaceDirectoryPicker.tsx";
-import { ResourceManagementPage } from "./ResourceManagementPage.tsx";
 import { useResizablePanel } from "./use-resizable-panel.ts";
 import { useI18n, type Translate, type UiLanguage } from "./i18n.tsx";
+
+const AdminPage = lazy(async () => ({
+  default: (await import("./AdminPage.tsx")).AdminPage,
+}));
+const CodeHostConnectionsModal = lazy(async () => ({
+  default: (await import("./CodeHostConnectionsModal.tsx")).CodeHostConnectionsModal,
+}));
+const ResourceManagementPage = lazy(async () => ({
+  default: (await import("./ResourceManagementPage.tsx")).ResourceManagementPage,
+}));
+const WorkspaceDirectoryPicker = lazy(async () => ({
+  default: (await import("./WorkspaceDirectoryPicker.tsx")).WorkspaceDirectoryPicker,
+}));
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
 
@@ -1139,26 +1150,32 @@ export default function ChatApp() {
     );
   }
   if (identity.platformAdministrator) {
-    return <AdminPage api={api} identity={identity} onLogout={() => void logout()} />;
+    return (
+      <Suspense fallback={<main className="product-loading-page" />}>
+        <AdminPage api={api} identity={identity} onLogout={() => void logout()} />
+      </Suspense>
+    );
   }
   if (resourcePageOpen) {
     return (
-      <ResourceManagementPage
-        api={api}
-        conversations={conversations}
-        environments={developmentEnvironments}
-        initialTab={initialResourceTab}
-        onClose={() => setResourcePageOpen(false)}
-        onRefresh={async () => {
-          await Promise.all([
-            refreshConversations(),
-            refreshWorkspaces(),
-            refreshDevelopmentEnvironments(),
-          ]);
-        }}
-        profiles={developmentProfiles}
-        workspaces={workspaces}
-      />
+      <Suspense fallback={<main className="product-loading-page" />}>
+        <ResourceManagementPage
+          api={api}
+          conversations={conversations}
+          environments={developmentEnvironments}
+          initialTab={initialResourceTab}
+          onClose={() => setResourcePageOpen(false)}
+          onRefresh={async () => {
+            await Promise.all([
+              refreshConversations(),
+              refreshWorkspaces(),
+              refreshDevelopmentEnvironments(),
+            ]);
+          }}
+          profiles={developmentProfiles}
+          workspaces={workspaces}
+        />
+      </Suspense>
     );
   }
   return (
@@ -1369,12 +1386,14 @@ export default function ChatApp() {
         </header>
 
         {codeHostConnectionsOpen && state.session !== null ? (
-          <CodeHostConnectionsModal
-            api={api}
-            onClose={() => setCodeHostConnectionsOpen(false)}
-            workspaceId={state.session.workspaceId}
-            workspaceName={state.project?.name ?? state.session.title}
-          />
+          <Suspense fallback={null}>
+            <CodeHostConnectionsModal
+              api={api}
+              onClose={() => setCodeHostConnectionsOpen(false)}
+              workspaceId={state.session.workspaceId}
+              workspaceName={state.project?.name ?? state.session.title}
+            />
+          </Suspense>
         ) : null}
 
         {workspacePanelOpen ? (
@@ -1604,17 +1623,19 @@ export default function ChatApp() {
               );
               if (environment === undefined) return null;
               return (
-                <WorkspaceDirectoryPicker
-                  api={api}
-                  environmentId={environment.environmentId}
-                  initialDirectory={workingDirectory}
-                  onCancel={() => setDirectoryPickerOpen(false)}
-                  onChoose={(directory) => {
-                    setWorkingDirectory(directory);
-                    setDirectoryPickerOpen(false);
-                  }}
-                  workspaceName={environment.workspaceName}
-                />
+                <Suspense fallback={null}>
+                  <WorkspaceDirectoryPicker
+                    api={api}
+                    environmentId={environment.environmentId}
+                    initialDirectory={workingDirectory}
+                    onCancel={() => setDirectoryPickerOpen(false)}
+                    onChoose={(directory) => {
+                      setWorkingDirectory(directory);
+                      setDirectoryPickerOpen(false);
+                    }}
+                    workspaceName={environment.workspaceName}
+                  />
+                </Suspense>
               );
             })()
           : null}

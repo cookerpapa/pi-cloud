@@ -573,7 +573,25 @@ for (const workspace of (await api.listWorkspaces()).workspaces) {
     .deleteWorkspace(workspace.workspaceId, newIdempotencyKey("delete"))
     .catch(() => undefined);
 }
+assert.equal(
+  (await api.listConversations()).conversations.length,
+  0,
+  "Conversation cleanup failed",
+);
+assert.equal((await api.listWorkspaces()).workspaces.length, 0, "Workspace cleanup failed");
+assert.equal(
+  (await api.listDevelopmentEnvironments()).environments.some(
+    (environment) => environment.state !== "released",
+  ),
+  false,
+  "Development environment cleanup failed",
+);
 await rm(downloadDirectory, { recursive: true, force: true });
+await Promise.all(
+  [screenshotPath, transcriptScreenshotPath, directoryScreenshotPath].map((path) =>
+    rm(path, { force: true }),
+  ),
+);
 
 if (acceptanceError !== undefined) throw acceptanceError;
 

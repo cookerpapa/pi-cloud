@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { request as httpRequest } from "node:http";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -326,104 +326,144 @@ const screenshotPath = resolve(tmpdir(), "pi-cloud-snake-preview-latest.png");
 let session;
 let development;
 let coding;
-if (reusedSessionId === undefined) {
-  progress("registering browser account and creating exclusive Cube");
-  await api.registerAccount(username, "Snake Acceptance", password);
-  development = await api.createDevelopmentEnvironment(
-    `Snake machine ${suffix}`,
-    "standard",
-    newIdempotencyKey("environment"),
-  );
-  await waitForEnvironment(api, development.environmentId, "running");
-  session = await api.createSession(
-    development.projectId,
-    development.workspaceId,
-    `Snake preview acceptance ${suffix}`,
-    "development_environment",
-    "standard",
-    DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
-  );
-  progress("asking the real model to build, test and serve Snake");
-  coding = await runCodingTurn(api, browser, session.sessionId);
-} else {
-  progress("reusing a completed Snake coding Session for browser interaction recovery");
-  await api.loginAccount(username, password);
-  const conversation = await api.getConversation(reusedSessionId);
-  const latest = conversation.turns.at(-1);
-  if (latest?.state !== "completed" || latest.runId === null) {
-    throw new Error("Reused Snake Session does not have a completed Run");
+let environmentReleased = reusedSessionId !== undefined;
+let conversationDeleted = reusedSessionId !== undefined;
+let screenshotDeleted = false;
+
+async function cleanup(strict) {
+  const failures = [];
+  if (!environmentReleased && development !== undefined) {
+    try {
+      await api.developmentEnvironmentAction(
+        development.environmentId,
+        "release",
+        newIdempotencyKey("release-environment"),
+      );
+      environmentReleased = true;
+    } catch (error) {
+      failures.push(error);
+    }
   }
-  session = conversation.session;
-  development = (await api.listDevelopmentEnvironments()).environments.find(
-    (candidate) => candidate.workspaceId === conversation.session.workspaceId,
-  );
-  if (development === undefined || development.state !== "running") {
-    throw new Error("Reused Snake development environment is not running");
+  if (!conversationDeleted && session !== undefined) {
+    try {
+      await api.deleteConversation(session.sessionId, newIdempotencyKey("delete-conversation"));
+      conversationDeleted = true;
+    } catch (error) {
+      failures.push(error);
+    }
   }
-  coding = {
-    accepted: { runId: latest.runId },
-    toolStarts: latest.transcript.items.filter((item) => item.kind === "tool").length,
-    firstDurableActivityMs: null,
-    firstToolStartedMs: null,
-    firstAssistantTextMs: null,
-    settledMs: null,
+  if (!screenshotDeleted) {
+    try {
+      await rm(screenshotPath, { force: true });
+      screenshotDeleted = true;
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (strict && failures.length > 0) {
+    throw new AggregateError(failures, "Snake acceptance cleanup failed");
+  }
+}
+
+try {
+  if (reusedSessionId === undefined) {
+    progress("registering browser account and creating exclusive Cube");
+    await api.registerAccount(username, "Snake Acceptance", password);
+    development = await api.createDevelopmentEnvironment(
+      `Snake machine ${suffix}`,
+      "standard",
+      newIdempotencyKey("environment"),
+    );
+    await waitForEnvironment(api, development.environmentId, "running");
+    session = await api.createSession(
+      development.projectId,
+      development.workspaceId,
+      `Snake preview acceptance ${suffix}`,
+      "development_environment",
+      "standard",
+      DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
+    );
+    progress("asking the real model to build, test and serve Snake");
+    coding = await runCodingTurn(api, browser, session.sessionId);
+  } else {
+    progress("reusing a completed Snake coding Session for browser interaction recovery");
+    await api.loginAccount(username, password);
+    const conversation = await api.getConversation(reusedSessionId);
+    const latest = conversation.turns.at(-1);
+    if (latest?.state !== "completed" || latest.runId === null) {
+      throw new Error("Reused Snake Session does not have a completed Run");
+    }
+    session = conversation.session;
+    development = (await api.listDevelopmentEnvironments()).environments.find(
+      (candidate) => candidate.workspaceId === conversation.session.workspaceId,
+    );
+    if (development === undefined || development.state !== "running") {
+      throw new Error("Reused Snake development environment is not running");
+    }
+    coding = {
+      accepted: { runId: latest.runId },
+      toolStarts: latest.transcript.items.filter((item) => item.kind === "tool").length,
+      firstDurableActivityMs: null,
+      firstToolStartedMs: null,
+      firstAssistantTextMs: null,
+      settledMs: null,
+    };
+  }
+  const preview = await waitForPreview(browser, session.sessionId);
+  assert.match(preview.html, /game-canvas/);
+  assert.match(preview.html, /start-button/);
+  progress("host-authenticated preview reached the Cube service");
+
+  const interaction = await exerciseGame({
+    username,
+    password,
+    previewPath: preview.path,
+    screenshotPath,
+  });
+  progress("headless browser start, movement, pause and reset passed");
+
+  const conversation = await api.getConversation(session.sessionId);
+  const serializedConversation = JSON.stringify(conversation);
+  assert(serializedConversation.includes('"toolName":"preview"'));
+  assert(!serializedConversation.includes("http://localhost:4173/"));
+  if (reusedSessionId === undefined) {
+    await cleanup(true);
+    progress("released all acceptance-only resources");
+  }
+  const previewUrl = new URL(preview.path);
+  const report = {
+    accepted: true,
+    piCloudRevision: testedRevision,
+    checkedAt: new Date().toISOString(),
+    account: username,
+    sessionId: session.sessionId,
+    workspaceId: development.workspaceId,
+    developmentEnvironmentId: development.environmentId,
+    runId: coding.accepted.runId,
+    toolCalls: coding.toolStarts,
+    previewToolUsed: coding.previewToolUsed,
+    firstDurableActivityMs: coding.firstDurableActivityMs,
+    firstToolStartedMs: coding.firstToolStartedMs,
+    firstAssistantTextMs: coding.firstAssistantTextMs,
+    settledMs: coding.settledMs,
+    hostPreviewStatus: 200,
+    previewOrigin: previewUrl.origin,
+    previewRoute: `/v1/conversations/${session.sessionId}/preview/4173`,
+    browserInteraction: interaction,
+    screenshotCaptured: true,
+    conversationRetainedForInspection: reusedSessionId !== undefined,
+    developmentEnvironmentReleased: environmentReleased,
+    cleanupCompleted: environmentReleased && conversationDeleted && screenshotDeleted,
+    reusedCompletedCodingSession: reusedSessionId !== undefined,
+    systemPromptModified: false,
+    modelOutputTranslated: false,
   };
-}
-const preview = await waitForPreview(browser, session.sessionId);
-assert.match(preview.html, /game-canvas/);
-assert.match(preview.html, /start-button/);
-progress("host-authenticated preview reached the Cube service");
-
-const interaction = await exerciseGame({
-  username,
-  password,
-  previewPath: preview.path,
-  screenshotPath,
-});
-progress("headless browser start, movement, pause and reset passed");
-
-const conversation = await api.getConversation(session.sessionId);
-const serializedConversation = JSON.stringify(conversation);
-assert(serializedConversation.includes('"toolName":"preview"'));
-assert(!serializedConversation.includes("http://localhost:4173/"));
-if (reusedSessionId === undefined) {
-  await api.developmentEnvironmentAction(
-    development.environmentId,
-    "release",
-    newIdempotencyKey("release-environment"),
+  await writeFile(
+    resolve(repositoryRoot, "docs/reports/snake-preview-acceptance-latest.json"),
+    `${JSON.stringify(report, null, 2)}\n`,
+    "utf8",
   );
-  progress("released the acceptance-only development environment");
+  process.stdout.write(`${JSON.stringify(report)}\n`);
+} finally {
+  await cleanup(false);
 }
-const previewUrl = new URL(preview.path);
-const report = {
-  accepted: true,
-  piCloudRevision: testedRevision,
-  checkedAt: new Date().toISOString(),
-  account: username,
-  sessionId: session.sessionId,
-  workspaceId: development.workspaceId,
-  developmentEnvironmentId: development.environmentId,
-  runId: coding.accepted.runId,
-  toolCalls: coding.toolStarts,
-  previewToolUsed: coding.previewToolUsed,
-  firstDurableActivityMs: coding.firstDurableActivityMs,
-  firstToolStartedMs: coding.firstToolStartedMs,
-  firstAssistantTextMs: coding.firstAssistantTextMs,
-  settledMs: coding.settledMs,
-  hostPreviewStatus: 200,
-  previewOrigin: previewUrl.origin,
-  previewRoute: `/v1/conversations/${session.sessionId}/preview/4173`,
-  browserInteraction: interaction,
-  screenshotCaptured: true,
-  conversationRetainedForInspection: true,
-  developmentEnvironmentReleased: reusedSessionId === undefined,
-  reusedCompletedCodingSession: reusedSessionId !== undefined,
-  systemPromptModified: false,
-  modelOutputTranslated: false,
-};
-await writeFile(
-  resolve(repositoryRoot, "docs/reports/snake-preview-acceptance-latest.json"),
-  `${JSON.stringify(report, null, 2)}\n`,
-  "utf8",
-);
-process.stdout.write(`${JSON.stringify(report)}\n`);
