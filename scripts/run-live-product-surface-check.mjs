@@ -544,7 +544,12 @@ try {
     expectTools: true,
     expectedTerminal: "turn.cancelled",
     onToolStarted: async (accepted) => {
-      await api.cancelTurn(session.sessionId, accepted.turnId, newIdempotencyKey("cancel"), 250);
+      await api.cancelTurn(
+        siblingSession.sessionId,
+        accepted.turnId,
+        newIdempotencyKey("cancel"),
+        250,
+      );
       cancelAccepted = true;
     },
   });
