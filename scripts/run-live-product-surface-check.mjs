@@ -479,16 +479,22 @@ try {
       api,
       browser,
       sessionId: session.sessionId,
-      prompt:
-        "Use bash exactly once. In that command sleep 3, create concurrent_session_a.txt containing exactly SESSION-A-OK, and read it back. Then reply exactly SESSION-A-OK.",
+      prompt: [
+        "Use bash exactly once with this exact command:",
+        "touch concurrent_a.ready; for i in $(seq 1 300); do test -f concurrent_b.ready && break; sleep 0.1; done; test -f concurrent_b.ready; sleep 2; printf 'SESSION-A-OK' > concurrent_session_a.txt; cat concurrent_session_a.txt",
+        "Then reply exactly SESSION-A-OK.",
+      ].join(" "),
       expectTools: true,
     }),
     runTurn({
       api,
       browser,
       sessionId: siblingSession.sessionId,
-      prompt:
-        "Use bash exactly once. In that command sleep 3, create concurrent_session_b.txt containing exactly SESSION-B-OK, and read it back. Then reply exactly SESSION-B-OK.",
+      prompt: [
+        "Use bash exactly once with this exact command:",
+        "touch concurrent_b.ready; for i in $(seq 1 300); do test -f concurrent_a.ready && break; sleep 0.1; done; test -f concurrent_a.ready; sleep 2; printf 'SESSION-B-OK' > concurrent_session_b.txt; cat concurrent_session_b.txt",
+        "Then reply exactly SESSION-B-OK.",
+      ].join(" "),
       expectTools: true,
     }),
   ]);
