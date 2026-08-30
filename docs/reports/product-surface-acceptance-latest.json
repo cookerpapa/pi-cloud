@@ -1,22 +1,22 @@
 {
   "accepted": true,
-  "piCloudRevision": "f9c785776f60d45e673e6463be4fe3041b4a3ebd",
-  "checkedAt": "2026-08-30T10:42:11.343Z",
+  "piCloudRevision": "02bb47eb03cca4fc747ae83567a112c92277f470",
+  "checkedAt": "2026-08-30T16:46:44.389Z",
   "browserCookieAuth": true,
   "latencyMs": {
     "pureChat": {
-      "accepted": 20,
-      "firstDurableActivity": 1188,
+      "accepted": 26,
+      "firstDurableActivity": 983,
       "firstToolStarted": null,
-      "firstAssistantText": 1188,
-      "settled": 1569
+      "firstAssistantText": 983,
+      "settled": 1352
     },
     "coding": {
-      "accepted": 20,
-      "firstDurableActivity": 1988,
-      "firstToolStarted": 1988,
-      "firstAssistantText": 7126,
-      "settled": 8018
+      "accepted": 185,
+      "firstDurableActivity": 1663,
+      "firstToolStarted": 1663,
+      "firstAssistantText": 5767,
+      "settled": 6349
     }
   },
   "treeForkPrune": true,
@@ -29,5 +29,5 @@
   "cancelAndRecover": true,
   "workspaceRebind": true,
   "tenantIsolation": true,
-  "deletion": "pending"
+  "deletion": "purged"
 }

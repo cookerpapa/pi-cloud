@@ -99,6 +99,7 @@ Current evidence:
 - [Cube KVM acceptance](reports/cubesandbox-kvm-acceptance-latest.md)
 - [Production acceptance](reports/cubesandbox-production-acceptance-latest.md)
 - [Shared Worker-pool acceptance](reports/pi-worker-pool-acceptance-latest.md)
+- [Recursive Subagent acceptance](reports/subagent-production-acceptance-latest.json)
 - [Interactive Snake Preview acceptance](reports/snake-preview-acceptance-latest.json)
 - [Browser UI control acceptance](reports/browser-ui-acceptance-latest.json)
 - [Exclusive folder chooser acceptance](reports/directory-picker-acceptance-latest.json)
@@ -143,10 +144,10 @@ PI_CLOUD_LIVE_LONG_CONTEXT_CHECK=1 \
   npm run production:long-context-check
 ```
 
-This expensive gate performs real coding Turns until Pi completes native
-compaction, then verifies early-context recall, further Tool use and recovery
-on a different Worker. It proves bounded PostgreSQL SessionStorage restoration
-rather than lifetime JSONL download. See
+This expensive gate performs real coding Turns until Pi completes at least two
+native Compactions, then verifies early-context recall, further Tool use and
+recovery on a different Worker. It proves bounded PostgreSQL SessionStorage
+restoration rather than lifetime JSONL download. See
 [the compaction report](reports/long-context-compaction-acceptance-latest.md).
 
 ## Interpreting evidence

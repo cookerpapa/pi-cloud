@@ -1,10 +1,10 @@
 {
   "accepted": true,
-  "piCloudRevision": "f22e1344f5e30a0f275effb7827316a06fde2774",
-  "checkedAt": "2026-08-25T09:25:10.754Z",
-  "account": "directory.acceptance.mt8glhtx",
-  "environmentId": "01dc1153-90dc-47fb-abeb-18b5c27cb531",
-  "createdDirectory": "/home/user/ui-project-mt8glhtx",
+  "piCloudRevision": "02bb47eb03cca4fc747ae83567a112c92277f470",
+  "checkedAt": "2026-08-30T16:48:27.297Z",
+  "account": "directory.acceptance.mtg1mu3x",
+  "environmentId": "fda32690-e840-488c-b236-0bb9b3f5d067",
+  "createdDirectory": "/home/user/ui-project-mtg1mu3x",
   "screenshotCaptured": true,
   "cleanupCompleted": true
 }

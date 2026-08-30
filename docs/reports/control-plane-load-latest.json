@@ -1,8 +1,8 @@
 {
   "format": "pi-cloud.control-plane-load-report.v1",
-  "piCloudRevision": "61ba57ec7528d544356b42285c942447689bb085",
-  "generatedAt": "2026-08-27T11:52:26.866Z",
-  "evaluationId": "4ce49c9c-6220-4768-ae1f-de440b3a6af5",
+  "piCloudRevision": "133dfab76b08936bcab8bb96e133a1212d18a604",
+  "generatedAt": "2026-08-30T16:38:06.800Z",
+  "evaluationId": "d86b8004-27cd-402d-8563-f537abf1484e",
   "methodology": "loopback_http_cold_session_admission_and_tenant_scoped_reads",
   "activeAgentRunBenchmark": false,
   "host": {
@@ -19,11 +19,11 @@
         "requests": 10,
         "successful": 10,
         "errors": 0,
-        "elapsedMs": 378,
-        "throughputPerSecond": 26.47,
-        "p50DurationMs": 219,
-        "p95DurationMs": 373,
-        "p99DurationMs": 373,
+        "elapsedMs": 291,
+        "throughputPerSecond": 34.35,
+        "p50DurationMs": 166,
+        "p95DurationMs": 288,
+        "p99DurationMs": 288,
         "failures": []
       },
       "conversationRead": {
@@ -32,11 +32,11 @@
         "requests": 10,
         "successful": 10,
         "errors": 0,
-        "elapsedMs": 91,
-        "throughputPerSecond": 110.47,
-        "p50DurationMs": 84,
-        "p95DurationMs": 88,
-        "p99DurationMs": 88,
+        "elapsedMs": 50,
+        "throughputPerSecond": 202.01,
+        "p50DurationMs": 47,
+        "p95DurationMs": 49,
+        "p99DurationMs": 49,
         "failures": []
       }
     },
@@ -48,11 +48,11 @@
         "requests": 50,
         "successful": 50,
         "errors": 0,
-        "elapsedMs": 792,
-        "throughputPerSecond": 63.16,
-        "p50DurationMs": 461,
-        "p95DurationMs": 756,
-        "p99DurationMs": 782,
+        "elapsedMs": 744,
+        "throughputPerSecond": 67.2,
+        "p50DurationMs": 486,
+        "p95DurationMs": 715,
+        "p99DurationMs": 736,
         "failures": []
       },
       "conversationRead": {
@@ -61,11 +61,11 @@
         "requests": 50,
         "successful": 50,
         "errors": 0,
-        "elapsedMs": 298,
-        "throughputPerSecond": 167.54,
-        "p50DurationMs": 235,
-        "p95DurationMs": 288,
-        "p99DurationMs": 290,
+        "elapsedMs": 234,
+        "throughputPerSecond": 213.96,
+        "p50DurationMs": 176,
+        "p95DurationMs": 225,
+        "p99DurationMs": 226,
         "failures": []
       }
     },
@@ -77,11 +77,11 @@
         "requests": 100,
         "successful": 100,
         "errors": 0,
-        "elapsedMs": 1313,
-        "throughputPerSecond": 76.15,
-        "p50DurationMs": 773,
-        "p95DurationMs": 1247,
-        "p99DurationMs": 1294,
+        "elapsedMs": 1471,
+        "throughputPerSecond": 67.99,
+        "p50DurationMs": 888,
+        "p95DurationMs": 1393,
+        "p99DurationMs": 1439,
         "failures": []
       },
       "conversationRead": {
@@ -90,11 +90,11 @@
         "requests": 100,
         "successful": 100,
         "errors": 0,
-        "elapsedMs": 668,
-        "throughputPerSecond": 149.65,
-        "p50DurationMs": 622,
-        "p95DurationMs": 647,
-        "p99DurationMs": 655,
+        "elapsedMs": 605,
+        "throughputPerSecond": 165.19,
+        "p50DurationMs": 562,
+        "p95DurationMs": 583,
+        "p99DurationMs": 585,
         "failures": []
       }
     }
@@ -106,67 +106,14 @@
     "errors": 0
   },
   "prometheus": {
-    "residentMemoryBytes": [
-      {
-        "service": "pi-cloud-workspace-volume-gateway",
-        "value": 110555136
-      },
-      {
-        "service": "pi-cloud-tool-broker",
-        "value": 162889728
-      },
-      {
-        "service": "pi-cloud-trusted-runner",
-        "value": 290357248
-      },
-      {
-        "service": "pi-cloud-control-plane",
-        "value": 292941824
-      },
-      {
-        "service": "unknown",
-        "value": 66174976
-      }
-    ],
-    "cpuSeconds": [
-      {
-        "service": "pi-cloud-workspace-volume-gateway",
-        "value": 74.609254
-      },
-      {
-        "service": "pi-cloud-tool-broker",
-        "value": 74.54051699999998
-      },
-      {
-        "service": "pi-cloud-trusted-runner",
-        "value": 13.611272000000001
-      },
-      {
-        "service": "pi-cloud-control-plane",
-        "value": 122.554124
-      },
-      {
-        "service": "unknown",
-        "value": 295.71
-      }
-    ],
-    "eventLoopLagSeconds": [
-      {
-        "service": "pi-cloud-workspace-volume-gateway",
-        "value": 0.002307347
-      },
-      {
-        "service": "pi-cloud-tool-broker",
-        "value": 0.002538411
-      },
-      {
-        "service": "pi-cloud-trusted-runner",
-        "value": 0.002516236
-      },
-      {
-        "service": "pi-cloud-control-plane",
-        "value": 0.00141272
-      }
-    ]
+    "residentMemoryBytes": {
+      "unavailable": "fetch failed"
+    },
+    "cpuSeconds": {
+      "unavailable": "fetch failed"
+    },
+    "eventLoopLagSeconds": {
+      "unavailable": "fetch failed"
+    }
   }
 }

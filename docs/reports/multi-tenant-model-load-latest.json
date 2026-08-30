@@ -1,7 +1,7 @@
 {
   "accepted": true,
-  "piCloudRevision": "7e9155d664876c12eb0c85133ff20834b6e1715b",
-  "checkedAt": "2026-08-28T17:05:41.567Z",
+  "piCloudRevision": "ac2715fb6254313f143a698cb4495897c7421570",
+  "checkedAt": "2026-08-30T16:52:31.699Z",
   "tenants": 6,
   "runs": 12,
   "model": { "provider": "deepseek", "modelId": "deepseek-v4-flash" },
@@ -15,31 +15,31 @@
     "maximumAttemptCount": 1
   },
   "latencyMs": {
-    "acceptance": { "minimum": 45, "p50": 55, "p95": 82, "maximum": 82 },
+    "acceptance": { "minimum": 30, "p50": 45, "p95": 148, "maximum": 148 },
     "firstAssistantText": {
-      "minimum": 1208,
-      "p50": 3678,
-      "p95": 7737,
-      "maximum": 7737
+      "minimum": 795,
+      "p50": 2997,
+      "p95": 8004,
+      "maximum": 8004
     },
-    "settled": { "minimum": 2731, "p50": 4594, "p95": 10566, "maximum": 10566 },
-    "queueWait": { "minimum": 228, "p50": 2588, "p95": 6837, "maximum": 6837 }
+    "settled": { "minimum": 2016, "p50": 4027, "p95": 10408, "maximum": 10408 },
+    "queueWait": { "minimum": 221, "p50": 2057, "p95": 7066, "maximum": 7066 }
   },
   "workers": {
-    "distinct": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
-    "assignments": { "pi-cloud-worker-1": 6, "pi-cloud-worker-2": 6 }
+    "distinct": ["pi-cloud-worker-2", "pi-cloud-worker-1"],
+    "assignments": { "pi-cloud-worker-2": 6, "pi-cloud-worker-1": 6 }
   },
   "streaming": {
     "terminalCount": 12,
     "piEntryCount": 30,
     "messageCount": 24,
-    "canonicalPayloadBytes": 21188,
+    "canonicalPayloadBytes": 21338,
     "entriesPerRun": 2.5
   },
   "usage": {
     "requests": 12,
-    "inputTokens": 1104,
-    "outputTokens": 1259,
+    "inputTokens": 1050,
+    "outputTokens": 1264,
     "cacheReadTokens": 67584,
     "cacheWriteTokens": 0
   }

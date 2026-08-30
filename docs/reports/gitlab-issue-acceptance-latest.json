@@ -1,7 +1,7 @@
 {
   "accepted": true,
-  "piCloudRevision": "0079a3c66547ca21af223251013d907cbba5159f",
-  "checkedAt": "2026-08-30T12:10:15.013Z",
+  "piCloudRevision": "d814519dad5005330b02b05e4c5169a95c844a8e",
+  "checkedAt": "2026-08-30T17:37:59.955Z",
   "identity": {
     "piCloudLocalLoginClaimedGitLabIssue": true,
     "externalIdentityRequired": false
@@ -13,7 +13,7 @@
     "authorizedPreflight": true,
     "tokenStoredOnlyInEnvironment": true,
     "tokenPresentInPostgres": false,
-    "legacyPiCloudHomeAbsent": true
+    "retiredPlatformHomeAbsent": true
   },
   "execution": {
     "completed": true,

@@ -1,8 +1,8 @@
 {
   "accepted": true,
-  "piCloudRevision": "0079a3c66547ca21af223251013d907cbba5159f",
-  "checkedAt": "2026-08-30T12:08:04.075Z",
-  "account": "browser.acceptance.mtfrl6p4",
+  "piCloudRevision": "02bb47eb03cca4fc747ae83567a112c92277f470",
+  "checkedAt": "2026-08-30T16:48:09.395Z",
+  "account": "browser.acceptance.mtg1lk6o",
   "clickedControls": [
     "auth.localOnly",
     "auth.registerTab",
@@ -81,8 +81,8 @@
   ],
   "clickedControlCount": 74,
   "latencyMs": {
-    "userSubmitToFirstAssistantText": 1438,
-    "userSubmitToCompleteReply": 1541
+    "userSubmitToFirstAssistantText": 1034,
+    "userSubmitToCompleteReply": 1241
   },
   "screenshotCaptured": true,
   "cleanupCompleted": true
