@@ -19,8 +19,8 @@ credential helpers or `glab` against the repository it was editing.
 ## Decision
 
 Git is user-managed state inside the Workspace. A repository-backed Workspace
-contains its ordinary `.git` directory and any credentials configured by the
-user or the explicit Workspace authorization flow. The Agent may inspect,
+contains its ordinary `.git` directory and any Code Host connections configured
+by the user for that environment. The Agent may inspect,
 change, print or remove them.
 PiCloud does not claim that a Workspace protects its own credentials from the
 Agent.
@@ -47,7 +47,7 @@ Workspace changes or creates a commit.
 ## Consequences
 
 - Agent behavior matches a normal Linux development machine.
-- Credentials stored by GitLab OAuth, `glab` or Git are intentionally visible
+- Credentials stored by the Code Host dialog, `glab` or Git are intentionally visible
   to untrusted code and disappear only with their configured environment or
   Workspace lifetime.
 - Prompt injection can exfiltrate repository credentials; deployments must

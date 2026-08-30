@@ -14,6 +14,10 @@ import type {
   ToolSandboxOperationResponse,
   ToolBrokerWorkspaceForkRequest,
   SourceControlWorkspaceCredentialAuthorizeRequest,
+  SourceControlWorkspaceCredentialDisconnectRequest,
+  SourceControlWorkspaceCredentialDisconnectResponse,
+  SourceControlWorkspaceCredentialListRequest,
+  SourceControlWorkspaceCredentialListResponse,
   SourceControlWorkspaceCredentialPreflightRequest,
   SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
@@ -272,6 +276,12 @@ export interface SandboxProvider {
   preflightSourceCredential?(
     request: SourceControlWorkspaceCredentialPreflightRequest,
   ): Promise<SourceControlWorkspaceCredentialResponse>;
+  listSourceCredentials?(
+    request: SourceControlWorkspaceCredentialListRequest,
+  ): Promise<SourceControlWorkspaceCredentialListResponse>;
+  disconnectSourceCredential?(
+    request: SourceControlWorkspaceCredentialDisconnectRequest,
+  ): Promise<SourceControlWorkspaceCredentialDisconnectResponse>;
   /** Used only when the Tool Broker restarted before it could reconstruct a handle. */
   destroyRuntime(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
 

@@ -11,7 +11,7 @@ const SourceControlTokenSchema = Type.String({
 const ProviderBaseUrlSchema = Type.String({
   minLength: 8,
   maxLength: 2_048,
-  pattern: "^https?://[^/@\\s]+$",
+  pattern: "^https?://[^/@\\s]+/?$",
 });
 const CloneUrlSchema = Type.String({
   minLength: 12,
@@ -75,6 +75,8 @@ export const SourceControlIssueJobResourceSchema = Type.Object(
   {
     jobId: UuidSchema,
     repositoryId: UuidSchema,
+    repositoryProvider: ProviderSchema,
+    providerBaseUrl: ProviderBaseUrlSchema,
     repositoryFullName: Type.String({ minLength: 3, maxLength: 511 }),
     issueNumber: Type.Integer({ minimum: 1 }),
     issueTitle: Type.String({ minLength: 1, maxLength: 512 }),
@@ -163,18 +165,37 @@ export const SourceControlIssueGitCredentialResourceSchema = Type.Object(
       Type.Union([
         Type.Literal("credential_missing"),
         Type.Literal("credential_rejected"),
-        Type.Literal("gitlab_unreachable"),
+        Type.Literal("code_host_unreachable"),
       ]),
     ),
   },
   { additionalProperties: false },
 );
 
-export const SourceControlIssueGitAuthorizationLinkResourceSchema = Type.Object(
+export const CodeHostConnectionResourceSchema = Type.Object(
   {
-    url: Type.String({ minLength: 8, maxLength: 4_096 }),
-    expiresAt: UtcTimestampSchema,
+    provider: ProviderSchema,
+    origin: ProviderBaseUrlSchema,
   },
+  { additionalProperties: false },
+);
+
+export const CodeHostConnectionListResourceSchema = Type.Object(
+  { connections: Type.Array(CodeHostConnectionResourceSchema, { maxItems: 64 }) },
+  { additionalProperties: false },
+);
+
+export const ConnectCodeHostRequestSchema = Type.Object(
+  {
+    provider: ProviderSchema,
+    origin: ProviderBaseUrlSchema,
+    accessToken: SourceControlTokenSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const DisconnectCodeHostRequestSchema = Type.Object(
+  { provider: ProviderSchema, origin: ProviderBaseUrlSchema },
   { additionalProperties: false },
 );
 
@@ -190,10 +211,8 @@ export const SourceControlWorkspaceCredentialAuthorizeRequestSchema = Type.Objec
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
     workspaceId: UuidSchema,
-    repositoryId: UuidSchema,
     provider: ProviderSchema,
-    userCloneUrl: CloneUrlSchema,
-    verificationCloneUrl: CloneUrlSchema,
+    origin: ProviderBaseUrlSchema,
     credentialMountPath: GitCredentialMountPathSchema,
     accessToken: SourceControlTokenSchema,
   },
@@ -207,9 +226,8 @@ export const SourceControlWorkspaceCredentialPreflightRequestSchema = Type.Objec
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
     workspaceId: UuidSchema,
-    repositoryId: UuidSchema,
     provider: ProviderSchema,
-    userCloneUrl: CloneUrlSchema,
+    origin: ProviderBaseUrlSchema,
     verificationCloneUrl: CloneUrlSchema,
     credentialMountPath: GitCredentialMountPathSchema,
   },
@@ -222,15 +240,65 @@ export const SourceControlWorkspaceCredentialResponseSchema = Type.Object(
     type: Type.Literal("source_control.workspace_credential_result"),
     requestId: UuidSchema,
     workspaceId: UuidSchema,
-    repositoryId: UuidSchema,
+    origin: ProviderBaseUrlSchema,
     authorized: Type.Boolean(),
     reason: Type.Optional(
       Type.Union([
         Type.Literal("credential_missing"),
         Type.Literal("credential_rejected"),
-        Type.Literal("gitlab_unreachable"),
+        Type.Literal("code_host_unreachable"),
       ]),
     ),
+  },
+  { additionalProperties: false },
+);
+
+export const SourceControlWorkspaceCredentialListRequestSchema = Type.Object(
+  {
+    sourceControlProtocolVersion: Type.Literal(1),
+    type: Type.Literal("source_control.workspace_credential_list"),
+    requestId: UuidSchema,
+    tenantId: OpaqueIdSchema,
+    workspaceId: UuidSchema,
+    credentialMountPath: GitCredentialMountPathSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const SourceControlWorkspaceCredentialDisconnectRequestSchema = Type.Object(
+  {
+    sourceControlProtocolVersion: Type.Literal(1),
+    type: Type.Literal("source_control.workspace_credential_disconnect"),
+    requestId: UuidSchema,
+    tenantId: OpaqueIdSchema,
+    workspaceId: UuidSchema,
+    provider: ProviderSchema,
+    origin: ProviderBaseUrlSchema,
+    credentialMountPath: GitCredentialMountPathSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const SourceControlWorkspaceCredentialListResponseSchema = Type.Object(
+  {
+    sourceControlProtocolVersion: Type.Literal(1),
+    type: Type.Literal("source_control.workspace_credential_listed"),
+    requestId: UuidSchema,
+    workspaceId: UuidSchema,
+    connections: Type.Array(CodeHostConnectionResourceSchema, { maxItems: 64 }),
+  },
+  { additionalProperties: false },
+);
+
+export const SourceControlWorkspaceCredentialDisconnectResponseSchema = Type.Object(
+  {
+    sourceControlProtocolVersion: Type.Literal(1),
+    type: Type.Literal("source_control.workspace_credential_disconnected"),
+    requestId: UuidSchema,
+    workspaceId: UuidSchema,
+    provider: ProviderSchema,
+    origin: ProviderBaseUrlSchema,
+    disconnected: Type.Boolean(),
   },
   { additionalProperties: false },
 );
@@ -258,9 +326,10 @@ export type SourceControlIssueGitCredentialRequest = Static<
 export type SourceControlIssueGitCredentialResource = Static<
   typeof SourceControlIssueGitCredentialResourceSchema
 >;
-export type SourceControlIssueGitAuthorizationLinkResource = Static<
-  typeof SourceControlIssueGitAuthorizationLinkResourceSchema
->;
+export type CodeHostConnectionResource = Static<typeof CodeHostConnectionResourceSchema>;
+export type CodeHostConnectionListResource = Static<typeof CodeHostConnectionListResourceSchema>;
+export type ConnectCodeHostRequest = Static<typeof ConnectCodeHostRequestSchema>;
+export type DisconnectCodeHostRequest = Static<typeof DisconnectCodeHostRequestSchema>;
 export type ConnectGitLabProjectRequest = Static<typeof ConnectGitLabProjectRequestSchema>;
 export type SourceControlWorkspaceCredentialAuthorizeRequest = Static<
   typeof SourceControlWorkspaceCredentialAuthorizeRequestSchema
@@ -270,6 +339,18 @@ export type SourceControlWorkspaceCredentialPreflightRequest = Static<
 >;
 export type SourceControlWorkspaceCredentialResponse = Static<
   typeof SourceControlWorkspaceCredentialResponseSchema
+>;
+export type SourceControlWorkspaceCredentialListRequest = Static<
+  typeof SourceControlWorkspaceCredentialListRequestSchema
+>;
+export type SourceControlWorkspaceCredentialDisconnectRequest = Static<
+  typeof SourceControlWorkspaceCredentialDisconnectRequestSchema
+>;
+export type SourceControlWorkspaceCredentialListResponse = Static<
+  typeof SourceControlWorkspaceCredentialListResponseSchema
+>;
+export type SourceControlWorkspaceCredentialDisconnectResponse = Static<
+  typeof SourceControlWorkspaceCredentialDisconnectResponseSchema
 >;
 
 export class SourceControlProtocolError extends Error {
@@ -326,11 +407,19 @@ export const parseSourceControlIssueGitCredentialResource = (value: unknown) =>
     value,
     "source-control Issue Git credential resource",
   );
-export const parseSourceControlIssueGitAuthorizationLinkResource = (value: unknown) =>
-  parse<SourceControlIssueGitAuthorizationLinkResource>(
-    SourceControlIssueGitAuthorizationLinkResourceSchema,
+export const parseCodeHostConnectionListResource = (value: unknown) =>
+  parse<CodeHostConnectionListResource>(
+    CodeHostConnectionListResourceSchema,
     value,
-    "source-control Issue Git authorization link resource",
+    "Code Host connection list resource",
+  );
+export const parseConnectCodeHostRequest = (value: unknown) =>
+  parse<ConnectCodeHostRequest>(ConnectCodeHostRequestSchema, value, "connect Code Host request");
+export const parseDisconnectCodeHostRequest = (value: unknown) =>
+  parse<DisconnectCodeHostRequest>(
+    DisconnectCodeHostRequestSchema,
+    value,
+    "disconnect Code Host request",
   );
 export const parseStartSourceControlIssueJobRequest = (
   value: unknown,
@@ -367,6 +456,30 @@ export const parseSourceControlWorkspaceCredentialRequest = (value: unknown) => 
       "source-control Workspace credential authorization request",
     );
   }
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "source_control.workspace_credential_list"
+  ) {
+    return parse<SourceControlWorkspaceCredentialListRequest>(
+      SourceControlWorkspaceCredentialListRequestSchema,
+      value,
+      "source-control Workspace credential list request",
+    );
+  }
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "source_control.workspace_credential_disconnect"
+  ) {
+    return parse<SourceControlWorkspaceCredentialDisconnectRequest>(
+      SourceControlWorkspaceCredentialDisconnectRequestSchema,
+      value,
+      "source-control Workspace credential disconnect request",
+    );
+  }
   return parse<SourceControlWorkspaceCredentialPreflightRequest>(
     SourceControlWorkspaceCredentialPreflightRequestSchema,
     value,
@@ -378,4 +491,16 @@ export const parseSourceControlWorkspaceCredentialResponse = (value: unknown) =>
     SourceControlWorkspaceCredentialResponseSchema,
     value,
     "source-control Workspace credential response",
+  );
+export const parseSourceControlWorkspaceCredentialListResponse = (value: unknown) =>
+  parse<SourceControlWorkspaceCredentialListResponse>(
+    SourceControlWorkspaceCredentialListResponseSchema,
+    value,
+    "source-control Workspace credential list response",
+  );
+export const parseSourceControlWorkspaceCredentialDisconnectResponse = (value: unknown) =>
+  parse<SourceControlWorkspaceCredentialDisconnectResponse>(
+    SourceControlWorkspaceCredentialDisconnectResponseSchema,
+    value,
+    "source-control Workspace credential disconnect response",
   );

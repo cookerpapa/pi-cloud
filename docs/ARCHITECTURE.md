@@ -280,11 +280,11 @@ Webhook HMAC secret remain deployment secrets, while one-repository
 installation access tokens exist only for the duration of trusted API work.
 
 PiCloud never clones a repository or creates a Git branch. A selected execution
-environment must pass `git ls-remote` before its Issue Run starts. A separate
-GitLab OAuth+PKCE authorization stores the user's OAuth credential in the
-Workspace Volume's hidden `.pi-cloud-home`; PostgreSQL keeps only one-use OAuth
-state and verifier. Tool processes load that Home through `GIT_CONFIG_GLOBAL`,
-and the Agent performs ordinary visible `git clone` and branch commands.
+environment must pass `git ls-remote` before its Issue Run starts. The user
+connects GitLab or GitHub by Origin from the conversation UI; the token is
+written directly to the environment's hidden `.git-credentials` file and is
+never stored in PostgreSQL. Git uses ordinary host-level credential matching,
+and the Agent performs visible `git clone` and branch commands.
 
 GitLab Project Webhooks use a Standard Webhooks HMAC signing token and stable
 `webhook-id`; deployment project access tokens are encrypted in PostgreSQL and
@@ -293,10 +293,10 @@ credentials. GitHub Issue and
 Issue-comment Webhooks enter through their native raw-body HMAC gate. Provider
 delivery IDs are idempotency keys. Only the configured label or exact
 `/picloud solve` collaborator command creates a pending Issue request. GitLab
-OIDC is an optional login provider; it maps one provider subject to one internal
-PiCloud user and discards its OAuth token after login. A matching Developer may
-record a non-exclusive claim, then explicitly choose elastic compute or an
-existing compatible Workspace, or a directory in an owned development machine.
+OIDC remains an optional SSO provider but has no role in Issue authorization or
+Git credentials. Any authorized PiCloud tenant user may record a non-exclusive
+claim, then explicitly choose elastic compute or an existing Workspace, or a
+directory in an owned development machine.
 The user also names the resulting conversation. The coordinator
 provisions an ordinary Project/Workspace when needed, then creates one Session
 and Run under that user's identity and observes the existing PostgreSQL Run
@@ -322,8 +322,9 @@ Workspace bytes are unaffected.
 Cube mounts only the `workspace/` child of a trusted persistent Volume. The
 guest contains normal development tools but no model, database, Kafka or Cube
 control credential. Repository credentials deliberately belong to the selected
-execution environment's hidden Git Home and are visible to its Agent just as
-they would be after `glab auth login`; the Agent owns the resulting `.git` tree.
+execution environment's origin-scoped `.git-credentials` store and are visible
+to its Agent just as they would be after `glab auth login`; the Agent owns the
+resulting `.git` tree.
 The trusted Volume envelope holds only identity, generation and optional fork
 origin metadata; it does not track Git state or file changes.
 
@@ -591,7 +592,7 @@ preserve a visible prefix that never reached `message_end`.
 | State | Authority |
 | --- | --- |
 | tenants, users, sessions, durable-resource admission | PostgreSQL |
-| local/GitLab identity mappings and non-exclusive Issue claims | PostgreSQL |
+| local/optional OIDC identities and non-exclusive PiCloud Issue claims | PostgreSQL |
 | Runs, Attempts, leases, fences, ready queue | PostgreSQL |
 | Pi Session entries/compaction/operation records | PostgreSQL SessionStorage |
 | Session Tool grants and immutable Run capability snapshots | PostgreSQL |
@@ -605,7 +606,7 @@ preserve a visible prefix that never reached `message_end`.
 | cloud development machine guest root, memory and processes | one Cube pause snapshot on its compute node |
 | encrypted machine reconnect capsule | PostgreSQL; key held only by Tool Broker |
 | Workspace settlement/reference | PostgreSQL + trusted Volume envelope |
-| user Git metadata and OAuth credentials | persistent Workspace bytes under `.git` and hidden `.pi-cloud-home`, visible to Cube/Agent |
+| user Git metadata and Code Host tokens | persistent environment bytes under `.git` and hidden `.git-credentials`, visible to Cube/Agent |
 | live process tree | one Cube KVM only |
 | active in-memory `messages[]` | Pi SDK for one active Run |
 | development-environment ownership/lifecycle | PostgreSQL |

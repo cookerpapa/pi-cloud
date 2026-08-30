@@ -24,6 +24,10 @@ import {
   type ToolWebProxyBootstrap,
   type DevelopmentEnvironmentProfileKey,
   type SourceControlWorkspaceCredentialAuthorizeRequest,
+  type SourceControlWorkspaceCredentialDisconnectRequest,
+  type SourceControlWorkspaceCredentialDisconnectResponse,
+  type SourceControlWorkspaceCredentialListRequest,
+  type SourceControlWorkspaceCredentialListResponse,
   type SourceControlWorkspaceCredentialPreflightRequest,
   type SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
@@ -1942,10 +1946,8 @@ export class CubeSandboxProvider implements SandboxProvider {
       sessionId: request.requestId,
       volumeId,
       requestId: request.requestId,
-      repositoryId: request.repositoryId,
       provider: request.provider,
-      userCloneUrl: request.userCloneUrl,
-      verificationCloneUrl: request.verificationCloneUrl,
+      origin: request.origin,
       credentialMountPath: request.credentialMountPath,
       accessToken: request.accessToken,
     });
@@ -1954,7 +1956,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       type: "source_control.workspace_credential_result",
       requestId: request.requestId,
       workspaceId: request.workspaceId,
-      repositoryId: request.repositoryId,
+      origin: request.origin,
       authorized: true,
     };
   }
@@ -1984,9 +1986,8 @@ export class CubeSandboxProvider implements SandboxProvider {
       sessionId: request.requestId,
       volumeId,
       requestId: request.requestId,
-      repositoryId: request.repositoryId,
       provider: request.provider,
-      userCloneUrl: request.userCloneUrl,
+      origin: request.origin,
       verificationCloneUrl: request.verificationCloneUrl,
       credentialMountPath: request.credentialMountPath,
     });
@@ -1995,9 +1996,85 @@ export class CubeSandboxProvider implements SandboxProvider {
       type: "source_control.workspace_credential_result",
       requestId: request.requestId,
       workspaceId: request.workspaceId,
-      repositoryId: request.repositoryId,
+      origin: request.origin,
       authorized: result.authorized,
       ...(result.reason === undefined ? {} : { reason: result.reason }),
+    };
+  }
+
+  async listSourceCredentials(
+    request: SourceControlWorkspaceCredentialListRequest,
+  ): Promise<SourceControlWorkspaceCredentialListResponse> {
+    const list = this.#workspaceVolumeGateway.listSourceCredentials;
+    if (list === undefined) {
+      throw new ToolBrokerError(
+        "source_control_credential_unavailable",
+        "Workspace Git credential listing is unavailable",
+        false,
+      );
+    }
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#workspaceVolumeGateway.prepare({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+    });
+    const result = await list.call(this.#workspaceVolumeGateway, {
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+      requestId: request.requestId,
+      credentialMountPath: request.credentialMountPath,
+    });
+    return {
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_listed",
+      requestId: request.requestId,
+      workspaceId: request.workspaceId,
+      connections: [...result.connections],
+    };
+  }
+
+  async disconnectSourceCredential(
+    request: SourceControlWorkspaceCredentialDisconnectRequest,
+  ): Promise<SourceControlWorkspaceCredentialDisconnectResponse> {
+    const disconnect = this.#workspaceVolumeGateway.disconnectSourceCredential;
+    if (disconnect === undefined) {
+      throw new ToolBrokerError(
+        "source_control_credential_unavailable",
+        "Workspace Git credential disconnection is unavailable",
+        false,
+      );
+    }
+    const volumeId = workspaceVolumeId(request);
+    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#workspaceVolumeGateway.prepare({
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+    });
+    const result = await disconnect.call(this.#workspaceVolumeGateway, {
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      sessionId: request.requestId,
+      volumeId,
+      requestId: request.requestId,
+      provider: request.provider,
+      origin: request.origin,
+      credentialMountPath: request.credentialMountPath,
+    });
+    return {
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_disconnected",
+      requestId: request.requestId,
+      workspaceId: request.workspaceId,
+      provider: request.provider,
+      origin: request.origin,
+      disconnected: result.disconnected,
     };
   }
 

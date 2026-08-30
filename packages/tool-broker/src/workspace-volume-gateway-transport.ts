@@ -14,6 +14,8 @@ import {
   WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH,
+  WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_DISCONNECT_PATH,
+  WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_LIST_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_PREFLIGHT_PATH,
   WorkspaceVolumeGatewayError,
   digest,
@@ -27,6 +29,8 @@ import {
   type WorkspaceVolumeGatewaySettleInput,
   type WorkspaceVolumeDirectoryEntry,
   type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
+  type WorkspaceVolumeGatewaySourceCredentialDisconnectInput,
+  type WorkspaceVolumeGatewaySourceCredentialListInput,
   type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
 } from "./workspace-volume-gateway-contract.ts";
 
@@ -49,7 +53,9 @@ type WorkspaceVolumeGatewayOperation =
   | "read_file"
   | "delete"
   | "source_credential_authorize"
-  | "source_credential_preflight";
+  | "source_credential_preflight"
+  | "source_credential_list"
+  | "source_credential_disconnect";
 
 function boundedInteger(value: number, name: string, minimum: number, maximum: number): number {
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
@@ -247,6 +253,52 @@ export class WorkspaceVolumeGatewayServer {
             preflight.call(
               this.#gateway,
               request.body as WorkspaceVolumeGatewaySourceCredentialPreflightInput,
+            ),
+          );
+        } catch (error: unknown) {
+          return this.#failure(reply, error);
+        }
+      },
+    );
+    this.#server.post(
+      WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_LIST_PATH,
+      async (request, reply) => {
+        try {
+          const list = this.#gateway.listSourceCredentials;
+          if (list === undefined) {
+            throw new WorkspaceVolumeGatewayError(
+              "source_control_credential_unavailable",
+              "Workspace Git credential listing is unavailable",
+              false,
+            );
+          }
+          return await this.#run("source_credential_list", () =>
+            list.call(
+              this.#gateway,
+              request.body as WorkspaceVolumeGatewaySourceCredentialListInput,
+            ),
+          );
+        } catch (error: unknown) {
+          return this.#failure(reply, error);
+        }
+      },
+    );
+    this.#server.post(
+      WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_DISCONNECT_PATH,
+      async (request, reply) => {
+        try {
+          const disconnect = this.#gateway.disconnectSourceCredential;
+          if (disconnect === undefined) {
+            throw new WorkspaceVolumeGatewayError(
+              "source_control_credential_unavailable",
+              "Workspace Git credential disconnection is unavailable",
+              false,
+            );
+          }
+          return await this.#run("source_credential_disconnect", () =>
+            disconnect.call(
+              this.#gateway,
+              request.body as WorkspaceVolumeGatewaySourceCredentialDisconnectInput,
             ),
           );
         } catch (error: unknown) {
@@ -632,7 +684,7 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     input: WorkspaceVolumeGatewaySourceCredentialPreflightInput,
   ): Promise<{
     authorized: boolean;
-    reason?: "credential_missing" | "credential_rejected" | "gitlab_unreachable";
+    reason?: "credential_missing" | "credential_rejected" | "code_host_unreachable";
   }> {
     const response = await this.#request(
       WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_PREFLIGHT_PATH,
@@ -642,7 +694,7 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
       !isRecord(response) ||
       typeof response.authorized !== "boolean" ||
       (response.reason !== undefined &&
-        !["credential_missing", "credential_rejected", "gitlab_unreachable"].includes(
+        !["credential_missing", "credential_rejected", "code_host_unreachable"].includes(
           String(response.reason),
         ))
     ) {
@@ -658,9 +710,57 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
         ? {}
         : {
             reason: response.reason as
-              "credential_missing" | "credential_rejected" | "gitlab_unreachable",
+              "credential_missing" | "credential_rejected" | "code_host_unreachable",
           }),
     };
+  }
+
+  async listSourceCredentials(
+    input: WorkspaceVolumeGatewaySourceCredentialListInput,
+  ): Promise<{ connections: readonly { provider: "github" | "gitlab"; origin: string }[] }> {
+    const response = await this.#request(
+      WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_LIST_PATH,
+      input,
+    );
+    if (
+      !isRecord(response) ||
+      !Array.isArray(response.connections) ||
+      response.connections.some(
+        (connection) =>
+          !isRecord(connection) ||
+          (connection.provider !== "github" && connection.provider !== "gitlab") ||
+          typeof connection.origin !== "string",
+      )
+    ) {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_volume_gateway_response_invalid",
+        "Workspace Volume Gateway response was invalid",
+        false,
+      );
+    }
+    return {
+      connections: response.connections as {
+        provider: "github" | "gitlab";
+        origin: string;
+      }[],
+    };
+  }
+
+  async disconnectSourceCredential(
+    input: WorkspaceVolumeGatewaySourceCredentialDisconnectInput,
+  ): Promise<{ disconnected: boolean }> {
+    const response = await this.#request(
+      WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_DISCONNECT_PATH,
+      input,
+    );
+    if (!isRecord(response) || typeof response.disconnected !== "boolean") {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_volume_gateway_response_invalid",
+        "Workspace Volume Gateway response was invalid",
+        false,
+      );
+    }
+    return { disconnected: response.disconnected };
   }
 
   async close(): Promise<void> {}

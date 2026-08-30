@@ -179,7 +179,7 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         type: "source_control.workspace_credential_result",
         requestId: request.requestId,
         workspaceId: request.workspaceId,
-        repositoryId: request.repositoryId,
+        origin: request.origin,
         authorized: true,
       };
     },
@@ -189,8 +189,28 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         type: "source_control.workspace_credential_result",
         requestId: request.requestId,
         workspaceId: request.workspaceId,
-        repositoryId: request.repositoryId,
+        origin: request.origin,
         authorized: true,
+      };
+    },
+    async listSourceCredentials(request) {
+      return {
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_credential_listed",
+        requestId: request.requestId,
+        workspaceId: request.workspaceId,
+        connections: [{ provider: "github", origin: "https://github.com" }],
+      };
+    },
+    async disconnectSourceCredential(request) {
+      return {
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_credential_disconnected",
+        requestId: request.requestId,
+        workspaceId: request.workspaceId,
+        provider: request.provider,
+        origin: request.origin,
+        disconnected: true,
       };
     },
     async listAssignments(sandboxId) {
@@ -223,10 +243,8 @@ describe("Tool Broker authenticated RPC", () => {
       requestId: "30000000-0000-4000-8000-000000000001",
       tenantId: "tenant-source-control",
       workspaceId: "30000000-0000-4000-8000-000000000002",
-      repositoryId: "30000000-0000-4000-8000-000000000003",
       provider: "github" as const,
-      userCloneUrl: "https://github.com/example/private-repo.git",
-      verificationCloneUrl: "https://github.com/example/private-repo.git",
+      origin: "https://github.com",
       credentialMountPath: "/workspace" as const,
       accessToken: "ghs_process_scoped_test_token",
     };
@@ -236,11 +254,24 @@ describe("Tool Broker authenticated RPC", () => {
         type: "source_control.workspace_credential_authorize",
       }),
     ).resolves.toMatchObject({ authorized: true });
+    await expect(
+      client.listSourceCredentials({
+        sourceControlProtocolVersion: 1,
+        type: "source_control.workspace_credential_list",
+        requestId: "30000000-0000-4000-8000-000000000004",
+        tenantId: common.tenantId,
+        workspaceId: common.workspaceId,
+        credentialMountPath: "/workspace",
+      }),
+    ).resolves.toMatchObject({
+      connections: [{ provider: "github", origin: "https://github.com" }],
+    });
     const { accessToken: _accessToken, ...preflight } = common;
     await expect(
       client.preflightSourceCredential({
         ...preflight,
         type: "source_control.workspace_credential_preflight",
+        verificationCloneUrl: "https://github.com/example/private-repo.git",
       }),
     ).resolves.toMatchObject({ authorized: true });
   });

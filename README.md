@@ -110,22 +110,25 @@ After deployment:
 
 The optional deployment-controlled GitLab adapter connects one public or
 private project through the source-control API with a project access token
-scoped to that repository. PiCloud encrypts this deployment integration
-credential for Webhooks and membership checks; it never copies it into a user
-Workspace. Adding the configured `picloud` label to an Issue,
-or posting `/picloud solve`, creates a pending request without spending model
-quota. A user signed in through the matching optional GitLab OIDC provider and
-holding Developer access may claim it, select elastic compute or an owned
-development-machine directory, choose a conversation name, and start the
-ordinary Session/Run in a new or compatible existing Workspace. The initial
-start performs a real `git ls-remote` preflight. If the selected environment has
-no credential, a separate GitLab OAuth+PKCE flow writes the user token directly
-to that Workspace's hidden persistent Git Home, never PostgreSQL or model
-context. The Agent then performs the visible `git clone` itself. The initial Run
-implements and tests the change but does not commit, push, create an MR,
-comment on or close the Issue. Delivery remains an explicit later user/Agent
-action. Neither the login token nor repository OAuth token enters Pi context or
-Kafka. Run the
+scoped to that repository. PiCloud encrypts this project-integration credential
+for signed Webhooks and Issue API synchronization; it never copies it into a
+user environment. Adding the configured `picloud` label to an Issue, or posting
+`/picloud solve`, creates a pending request without spending model quota. Any
+authorized PiCloud user in the tenant may express a non-exclusive claim, select
+elastic compute or an owned development-machine directory, choose a
+conversation name, and start the ordinary Session/Run. PiCloud login, project
+Issue intake, and Git access are independent.
+
+The conversation header exposes **Code Hosts**. A user can connect a GitLab
+origin or `https://github.com` by writing an appropriately scoped token directly
+to that Workspace or development machine. PostgreSQL stores neither token nor a
+token copy. One environment may hold several origin-scoped connections. Issue
+startup performs a real `git ls-remote` against the exact repository; missing or
+rejected credentials return the user to the same Code Host dialog. The Agent
+then performs the visible `git clone` itself. The initial Run implements and
+tests the change but does not commit, push, create an MR, comment on or close the
+Issue. Delivery remains an explicit later user/Agent action. Neither Code Host
+tokens nor project-integration credentials enter Pi context or Kafka. Run the
 optional local acceptance instance with `npm run gitlab:up`; see
 [its README](deploy/gitlab/README.md).
 

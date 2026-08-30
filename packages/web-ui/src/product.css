@@ -1795,6 +1795,52 @@ body.product-panel-resizing {
   border-radius: 8px;
 }
 
+.product-code-host-modal {
+  width: min(100%, 520px);
+}
+
+.product-code-host-connections {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #3d3d3d;
+  border-radius: 11px;
+  background: #1c1c1c;
+}
+
+.product-code-host-connections h3 {
+  margin: 0;
+  color: #bdbdbd;
+  font-size: 12px;
+}
+
+.product-code-host-connections > small {
+  color: #777;
+}
+
+.product-code-host-connection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: #282828;
+}
+
+.product-code-host-connection > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.product-code-host-connection small {
+  overflow: hidden;
+  color: #858585;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .product-workspace-choice {
   display: grid;
   gap: 10px;

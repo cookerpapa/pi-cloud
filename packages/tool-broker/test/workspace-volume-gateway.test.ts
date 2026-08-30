@@ -111,7 +111,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const workspace = join(workspaceRoot, `picloud-posix-${first.volumeId}`, "workspace");
     await Promise.all([
       mkdir(join(workspace, ".git")),
-      mkdir(join(workspace, ".pi-cloud-home")),
+      writeFile(join(workspace, ".git-credentials"), "hidden\n"),
       writeFile(join(workspace, "visible.txt"), "visible\n"),
       writeFile(join(outside, "secret.txt"), "outside\n"),
     ]);
@@ -256,9 +256,8 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       mover.preflightSourceCredential!({
         ...bound,
         requestId: randomUUID(),
-        repositoryId: "90000000-0000-4000-8000-000000000001",
         provider: "github",
-        userCloneUrl: "https://github.com:8443/example/private-repo.git",
+        origin: "https://github.com:8443",
         verificationCloneUrl: "https://git.internal.example/private-repo.git",
         credentialMountPath: "/workspace",
       }),
@@ -267,35 +266,67 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       mover.authorizeSourceCredential!({
         ...bound,
         requestId: randomUUID(),
-        repositoryId: "90000000-0000-4000-8000-000000000001",
         provider: "github",
-        userCloneUrl: "https://github.com:8443/example/private-repo.git",
-        verificationCloneUrl: "https://git.internal.example/private-repo.git",
+        origin: "https://github.com:8443",
         credentialMountPath: "/workspace",
         accessToken: "ghs_process_scoped_secret",
       }),
     ).resolves.toEqual({ authorized: true });
     const volumeRoot = join(workspaceRoot, `picloud-posix-${bound.volumeId}`);
     const workspace = join(volumeRoot, "workspace");
-    await expect(readdir(workspace)).resolves.toEqual([".pi-cloud-home"]);
-    const credentialPath = join(workspace, ".pi-cloud-home/.git-credentials");
+    await expect(readdir(workspace)).resolves.toEqual([".git-credentials"]);
+    const credentialPath = join(workspace, ".git-credentials");
     const storedCredential = await readFile(credentialPath, "utf8");
     expect(storedCredential).toContain("ghs_process_scoped_secret");
     await writeFile(credentialPath, storedCredential.replace(":8443", "%3a8443"));
-    await expect(readFile(join(workspace, ".pi-cloud-home/.gitconfig"), "utf8")).resolves.toContain(
-      "/workspace/.pi-cloud-home/.git-credentials",
-    );
     await expect(
       mover.preflightSourceCredential!({
         ...bound,
         requestId: randomUUID(),
-        repositoryId: "90000000-0000-4000-8000-000000000001",
         provider: "github",
-        userCloneUrl: "https://github.com:8443/example/private-repo.git",
+        origin: "https://github.com:8443",
         verificationCloneUrl: "https://git.internal.example/private-repo.git",
         credentialMountPath: "/workspace",
       }),
     ).resolves.toEqual({ authorized: true });
+    await mover.authorizeSourceCredential!({
+      ...bound,
+      requestId: randomUUID(),
+      provider: "gitlab",
+      origin: "https://gitlab.example.com",
+      credentialMountPath: "/workspace",
+      accessToken: "glpat_second_site_secret",
+    });
+    await expect(readFile(credentialPath, "utf8")).resolves.toEqual(
+      expect.stringContaining("ghs_process_scoped_secret"),
+    );
+    await expect(readFile(credentialPath, "utf8")).resolves.toEqual(
+      expect.stringContaining("glpat_second_site_secret"),
+    );
+    await expect(
+      mover.listSourceCredentials!({
+        ...bound,
+        requestId: randomUUID(),
+        credentialMountPath: "/workspace",
+      }),
+    ).resolves.toEqual({
+      connections: [
+        { provider: "github", origin: "https://github.com:8443" },
+        { provider: "gitlab", origin: "https://gitlab.example.com" },
+      ],
+    });
+    await expect(
+      mover.disconnectSourceCredential!({
+        ...bound,
+        requestId: randomUUID(),
+        provider: "gitlab",
+        origin: "https://gitlab.example.com",
+        credentialMountPath: "/workspace",
+      }),
+    ).resolves.toEqual({ disconnected: true });
+    await expect(readFile(credentialPath, "utf8")).resolves.not.toContain(
+      "glpat_second_site_secret",
+    );
     const settlement = await mover.settle({
       ...bound,
       activationId: randomUUID(),

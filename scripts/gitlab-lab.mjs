@@ -124,8 +124,8 @@ async function configureOauth() {
       "Doorkeeper::Application.where(name: name).destroy_all",
       "organization = Organizations::Organization.default_organization",
       "raise 'default GitLab organization is unavailable' unless organization",
-      "redirects = ['http://127.0.0.1:8080/v1/auth/oidc/gitlab/callback', 'http://127.0.0.1:8080/v1/source-control/gitlab/authorization/callback'].join(\"\\n\")",
-      "app = Doorkeeper::Application.create!(name: name, redirect_uri: redirects, scopes: 'openid profile email read_user api read_repository write_repository', confidential: true, trusted: false, organization_id: organization.id)",
+      "redirects = 'http://127.0.0.1:8080/v1/auth/oidc/gitlab/callback'",
+      "app = Doorkeeper::Application.create!(name: name, redirect_uri: redirects, scopes: 'openid profile email read_user', confidential: true, trusted: false, organization_id: organization.id)",
       "puts({client_id: app.uid, client_secret: app.plaintext_secret}.to_json)",
     ].join("; ");
     const output = dockerComposeCapture([
@@ -162,7 +162,7 @@ async function configureOauth() {
   }
   const reconcile = [
     `app = Doorkeeper::Application.find_by!(uid: '${clientId}')`,
-    "app.update!(redirect_uri: ['http://127.0.0.1:8080/v1/auth/oidc/gitlab/callback', 'http://127.0.0.1:8080/v1/source-control/gitlab/authorization/callback'].join(\"\\n\"), scopes: 'openid profile email read_user api read_repository write_repository')",
+    "app.update!(redirect_uri: 'http://127.0.0.1:8080/v1/auth/oidc/gitlab/callback', scopes: 'openid profile email read_user')",
   ].join("; ");
   dockerComposeCapture([
     "exec",

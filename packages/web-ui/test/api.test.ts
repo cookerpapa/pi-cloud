@@ -667,4 +667,50 @@ describe("tenant-aware browser API", () => {
       truncated: false,
     });
   });
+
+  it("connects, lists, and disconnects origin-scoped Code Host credentials", async () => {
+    const workspaceId = "20000000-0000-4000-8000-000000000010";
+    const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
+      expect(String(input)).toBe(`/v1/workspaces/${workspaceId}/code-host-connections`);
+      if (init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({
+          provider: "gitlab",
+          origin: "https://gitlab.example.com",
+          accessToken: "glpat-workspace-code-host-token",
+        });
+      }
+      if (init?.method === "DELETE") {
+        expect(JSON.parse(String(init.body))).toEqual({
+          provider: "gitlab",
+          origin: "https://gitlab.example.com",
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          connections:
+            init?.method === "DELETE"
+              ? []
+              : [{ provider: "gitlab", origin: "https://gitlab.example.com" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const api = new PiCloudApi(fetchImplementation);
+    await expect(api.codeHostConnections(workspaceId)).resolves.toMatchObject({
+      connections: [{ provider: "gitlab" }],
+    });
+    await expect(
+      api.connectCodeHost(workspaceId, {
+        provider: "gitlab",
+        origin: "https://gitlab.example.com",
+        accessToken: "glpat-workspace-code-host-token",
+      }),
+    ).resolves.toMatchObject({ connections: [{ origin: "https://gitlab.example.com" }] });
+    await expect(
+      api.disconnectCodeHost(workspaceId, {
+        provider: "gitlab",
+        origin: "https://gitlab.example.com",
+      }),
+    ).resolves.toEqual({ connections: [] });
+  });
 });

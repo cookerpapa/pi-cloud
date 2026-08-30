@@ -83,6 +83,8 @@ export type ToolBrokerBackend = Pick<
       | "preview"
       | "authorizeSourceCredential"
       | "preflightSourceCredential"
+      | "listSourceCredentials"
+      | "disconnectSourceCredential"
     >
   >;
 
@@ -619,17 +621,16 @@ export class ToolBrokerServer {
           request.body !== null &&
           "type" in request.body &&
           (request.body.type === "source_control.workspace_credential_authorize" ||
-            request.body.type === "source_control.workspace_credential_preflight")
+            request.body.type === "source_control.workspace_credential_preflight" ||
+            request.body.type === "source_control.workspace_credential_list" ||
+            request.body.type === "source_control.workspace_credential_disconnect")
         ) {
           const message = parseSourceControlWorkspaceCredentialRequest(request.body);
           await reply.code(200).send(
             await this.#observed({
               request,
               spanName: "source_control.credential",
-              operation:
-                message.type === "source_control.workspace_credential_authorize"
-                  ? "source_credential_authorize"
-                  : "source_credential_preflight",
+              operation: message.type.replace("source_control.workspace_", "source_"),
               kind: "sandbox",
               run: async () => {
                 if (message.type === "source_control.workspace_credential_authorize") {
@@ -643,15 +644,37 @@ export class ToolBrokerServer {
                   }
                   return authorize.call(this.#broker, message);
                 }
-                const preflight = this.#broker.preflightSourceCredential;
-                if (preflight === undefined) {
+                if (message.type === "source_control.workspace_credential_preflight") {
+                  const preflight = this.#broker.preflightSourceCredential;
+                  if (preflight === undefined) {
+                    throw new ToolBrokerError(
+                      "source_control_credential_unavailable",
+                      "Source-control credential preflight is unavailable",
+                      false,
+                    );
+                  }
+                  return preflight.call(this.#broker, message);
+                }
+                if (message.type === "source_control.workspace_credential_list") {
+                  const list = this.#broker.listSourceCredentials;
+                  if (list === undefined) {
+                    throw new ToolBrokerError(
+                      "source_control_credential_unavailable",
+                      "Source-control credential listing is unavailable",
+                      false,
+                    );
+                  }
+                  return list.call(this.#broker, message);
+                }
+                const disconnect = this.#broker.disconnectSourceCredential;
+                if (disconnect === undefined) {
                   throw new ToolBrokerError(
                     "source_control_credential_unavailable",
-                    "Source-control credential preflight is unavailable",
+                    "Source-control credential disconnection is unavailable",
                     false,
                   );
                 }
-                return preflight.call(this.#broker, message);
+                return disconnect.call(this.#broker, message);
               },
             }),
           );

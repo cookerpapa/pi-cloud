@@ -1,5 +1,7 @@
 import type {
   SourceControlWorkspaceCredentialAuthorizeRequest,
+  SourceControlWorkspaceCredentialDisconnectRequest,
+  SourceControlWorkspaceCredentialListRequest,
   SourceControlWorkspaceCredentialPreflightRequest,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
@@ -14,7 +16,7 @@ export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 export const VOLUME_GENERATION_PATTERN = /^[0-9a-f]{64}$/;
 export const VOLUME_METADATA_DIRECTORY = ".pi-cloud-runtime";
 export const VOLUME_WORKSPACE_DIRECTORY = "workspace";
-export const WORKSPACE_GIT_HOME_DIRECTORY = ".pi-cloud-home";
+export const WORKSPACE_GIT_CREDENTIALS_FILE = ".git-credentials";
 export const VOLUME_GENERATION_FILE = "generation";
 export const VOLUME_SETTLEMENT_FILE = "settlement";
 export const MAXIMUM_REQUEST_BYTES = 32 * 1_024;
@@ -30,6 +32,10 @@ export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH =
   "/v1/workspaces/source-control/credential/authorize";
 export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_PREFLIGHT_PATH =
   "/v1/workspaces/source-control/credential/preflight";
+export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_LIST_PATH =
+  "/v1/workspaces/source-control/credential/list";
+export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_DISCONNECT_PATH =
+  "/v1/workspaces/source-control/credential/disconnect";
 
 export type WorkspaceVolumeGatewayVolumeIdentity = Readonly<{
   tenantId: string;
@@ -95,6 +101,18 @@ export type WorkspaceVolumeGatewaySourceCredentialPreflightInput = WorkspaceVolu
     "sourceControlProtocolVersion" | "type" | "tenantId" | "workspaceId"
   >;
 
+export type WorkspaceVolumeGatewaySourceCredentialListInput = WorkspaceVolumeGatewayIdentity &
+  Omit<
+    SourceControlWorkspaceCredentialListRequest,
+    "sourceControlProtocolVersion" | "type" | "tenantId" | "workspaceId"
+  >;
+
+export type WorkspaceVolumeGatewaySourceCredentialDisconnectInput = WorkspaceVolumeGatewayIdentity &
+  Omit<
+    SourceControlWorkspaceCredentialDisconnectRequest,
+    "sourceControlProtocolVersion" | "type" | "tenantId" | "workspaceId"
+  >;
+
 export interface WorkspaceVolumeGateway {
   checkHealth(): Promise<void>;
   prepare(input: WorkspaceVolumeGatewayPrepareInput): Promise<{ attached: boolean }>;
@@ -117,8 +135,14 @@ export interface WorkspaceVolumeGateway {
   ): Promise<{ authorized: true }>;
   preflightSourceCredential?(input: WorkspaceVolumeGatewaySourceCredentialPreflightInput): Promise<{
     authorized: boolean;
-    reason?: "credential_missing" | "credential_rejected" | "gitlab_unreachable";
+    reason?: "credential_missing" | "credential_rejected" | "code_host_unreachable";
   }>;
+  listSourceCredentials?(
+    input: WorkspaceVolumeGatewaySourceCredentialListInput,
+  ): Promise<{ connections: readonly { provider: "github" | "gitlab"; origin: string }[] }>;
+  disconnectSourceCredential?(
+    input: WorkspaceVolumeGatewaySourceCredentialDisconnectInput,
+  ): Promise<{ disconnected: boolean }>;
   close(): Promise<void>;
 }
 

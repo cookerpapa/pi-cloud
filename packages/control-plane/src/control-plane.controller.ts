@@ -27,6 +27,8 @@ import {
   parseCreateDevelopmentEnvironmentRequest,
   parseCreateDevelopmentEnvironmentDirectoryRequest,
   parseConnectGitLabProjectRequest,
+  parseConnectCodeHostRequest,
+  parseDisconnectCodeHostRequest,
   parseStartSourceControlIssueJobRequest,
   parseSourceControlIssueGitCredentialRequest,
   parseDevelopmentEnvironmentActionRequest,
@@ -68,7 +70,7 @@ import {
   type SourceControlIssueJobListResource,
   type SourceControlIssueJobResource,
   type SourceControlIssueGitCredentialResource,
-  type SourceControlIssueGitAuthorizationLinkResource,
+  type CodeHostConnectionListResource,
   type AuthenticationConfigurationResource,
 } from "@pi-cloud/protocol";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -381,31 +383,44 @@ export class ControlPlaneController {
     );
   }
 
-  @Post("source-control/issue-jobs/:jobId/git-authorization")
-  @HttpCode(200)
-  async beginSourceControlIssueGitAuthorization(
+  @Get("workspaces/:workspaceId/code-host-connections")
+  async codeHostConnections(
     @Req() request: FastifyRequest,
-    @Param("jobId") jobIdValue: unknown,
-    @Body() body: unknown,
-  ): Promise<SourceControlIssueGitAuthorizationLinkResource> {
-    const input = parseSourceControlIssueGitCredentialRequest(body);
-    return this.sourceControl.beginIssueGitAuthorization(
-      this.tenantRequestContext.requireMutation(request),
-      parseUuidPathParameter(jobIdValue, "jobId"),
-      input.workspaceId,
+    @Param("workspaceId") workspaceIdValue: unknown,
+  ): Promise<CodeHostConnectionListResource> {
+    return this.sourceControl.listCodeHostConnections(
+      this.tenantRequestContext.resolve(request),
+      parseUuidPathParameter(workspaceIdValue, "workspaceId"),
     );
   }
 
-  @Get("source-control/gitlab/authorization/callback")
-  async completeSourceControlIssueGitAuthorization(
+  @Post("workspaces/:workspaceId/code-host-connections")
+  @HttpCode(200)
+  async connectCodeHost(
     @Req() request: FastifyRequest,
-    @Res() reply: FastifyReply,
-  ): Promise<void> {
-    await this.sourceControl.completeIssueGitAuthorization(request.url);
-    reply
-      .code(303)
-      .header("location", "/?resource=source-control&gitAuthorization=connected")
-      .send();
+    @Param("workspaceId") workspaceIdValue: unknown,
+    @Body() body: unknown,
+  ): Promise<CodeHostConnectionListResource> {
+    return this.sourceControl.connectCodeHost(
+      this.tenantRequestContext.requireMutation(request),
+      parseUuidPathParameter(workspaceIdValue, "workspaceId"),
+      parseConnectCodeHostRequest(body),
+    );
+  }
+
+  @Delete("workspaces/:workspaceId/code-host-connections")
+  async disconnectCodeHost(
+    @Req() request: FastifyRequest,
+    @Param("workspaceId") workspaceIdValue: unknown,
+    @Body() body: unknown,
+  ): Promise<CodeHostConnectionListResource> {
+    const input = parseDisconnectCodeHostRequest(body);
+    return this.sourceControl.disconnectCodeHost(
+      this.tenantRequestContext.requireMutation(request),
+      parseUuidPathParameter(workspaceIdValue, "workspaceId"),
+      input.provider,
+      input.origin,
+    );
   }
 
   @Post("source-control/github/webhook")

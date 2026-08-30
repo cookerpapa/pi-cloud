@@ -27,6 +27,7 @@ import { AdminPage } from "./AdminPage.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";
 import { AuthScreen } from "./AuthScreen.tsx";
 import { ConversationTreeNavigator } from "./ConversationTreeNavigator.tsx";
+import { CodeHostConnectionsModal } from "./CodeHostConnectionsModal.tsx";
 import { ConversationTurn } from "./ConversationTurn.tsx";
 import {
   conversationExportFilename,
@@ -140,6 +141,7 @@ export default function ChatApp() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorRefreshSignal, setInspectorRefreshSignal] = useState(0);
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
+  const [codeHostConnectionsOpen, setCodeHostConnectionsOpen] = useState(false);
   const initialResourceTab =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("resource") === "source-control"
@@ -1322,6 +1324,17 @@ export default function ChatApp() {
               </button>
             ) : null}
             <button
+              disabled={
+                state.session === null ||
+                state.session.workspaceState === "missing" ||
+                selectedDelegatedSession !== null
+              }
+              onClick={() => setCodeHostConnectionsOpen(true)}
+              type="button"
+            >
+              {t("codeHost.button")}
+            </button>
+            <button
               aria-label={t("chat.downloadConversation")}
               className="product-download-conversation"
               disabled={state.session === null || operation !== null}
@@ -1354,6 +1367,15 @@ export default function ChatApp() {
             </button>
           </div>
         </header>
+
+        {codeHostConnectionsOpen && state.session !== null ? (
+          <CodeHostConnectionsModal
+            api={api}
+            onClose={() => setCodeHostConnectionsOpen(false)}
+            workspaceId={state.session.workspaceId}
+            workspaceName={state.project?.name ?? state.session.title}
+          />
+        ) : null}
 
         {workspacePanelOpen ? (
           <div className="product-modal-backdrop" role="presentation">

@@ -136,12 +136,10 @@ Webhook; the Web UI only surfaces Issue tasks after they exist.
 | `PI_CLOUD_GITLAB_ISSUE_LABEL` | `picloud` | explicit Issue automation label |
 | `PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE` | generated private file | AES-GCM key for project tokens and signing tokens |
 
-GitLab OIDC is independently optional. Register one confidential OAuth
-application with callback
-`https://<picloud-host>/v1/auth/oidc/gitlab/callback` plus
-`https://<picloud-host>/v1/source-control/gitlab/authorization/callback`, and
-scopes `openid`, `profile`, `email`, `read_user`, `api`, `read_repository`,
-`write_repository`. The local lab command `npm run gitlab:oauth`
+GitLab OIDC is independently optional SSO. It is not required for Issue claims
+and does not provide Workspace Git credentials. Register one confidential OAuth
+application with callback `https://<picloud-host>/v1/auth/oidc/gitlab/callback`
+and scopes `openid`, `profile`, `email`, `read_user`. The local lab command `npm run gitlab:oauth`
 creates that application and prints the corresponding private `.env` entries.
 
 | Variable | Default | Meaning |
@@ -153,16 +151,15 @@ creates that application and prints the corresponding private `.env` entries.
 | `PI_CLOUD_OIDC_GITLAB_LABEL` | `GitLab` | login-button label |
 | `PI_CLOUD_OIDC_GITLAB_TENANT_ID` | platform operator tenant | internal tenant receiving mapped GitLab users |
 
-An Issue label or command only creates a pending request. A user signed in
-through the matching GitLab instance and holding Developer access claims it and
-chooses elastic compute or an empty directory under `/home/user` in an owned
-cloud development machine. Elastic execution may create a dedicated Workspace
-or reuse a compatible existing one, and the user names the conversation. The
-OAuth token is discarded after login. Before a private-repository Run starts,
-PiCloud checks the selected environment with `git ls-remote`. A separate OAuth
-authorization writes the user token directly to the Workspace's persistent
-`.pi-cloud-home`; PostgreSQL retains only the one-use state/PKCE request. The
-Agent performs `git clone` itself. The initial Run does not commit,
+An Issue label or command only creates a pending request. An authorized PiCloud
+tenant user claims it and chooses elastic compute or a directory under
+`/home/user` in an owned cloud development machine. Elastic execution may
+create a dedicated Workspace or reuse an existing one, and the user names the
+conversation. Before a private-repository Run starts, PiCloud checks the exact
+repository with `git ls-remote`. The user connects the GitLab Origin or
+`https://github.com` from the conversation UI with a scoped access token. The
+token is stored only in that environment's `.git-credentials`; PostgreSQL stores
+no copy. The Agent performs `git clone` itself. The initial Run does not commit,
 push, open a Merge Request, comment on or close the Issue.
 When an internal base URL is set, OIDC/Webhook identity still uses the public
 origin while trusted API and Git traffic uses the internal origin. Both must

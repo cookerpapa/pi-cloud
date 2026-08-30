@@ -6,6 +6,8 @@ import {
   parseSupervisorManagementResponse,
   parseToolSandboxOperationResponse,
   parseSourceControlWorkspaceCredentialResponse,
+  parseSourceControlWorkspaceCredentialDisconnectResponse,
+  parseSourceControlWorkspaceCredentialListResponse,
   type ToolBrokerRequest,
   type ToolBrokerResponse,
   type ToolBrokerListWorkspaceDirectoryRequest,
@@ -25,6 +27,10 @@ import {
   type ToolSandboxOperationResponse,
   type ToolSandboxReleaseResponse,
   type SourceControlWorkspaceCredentialAuthorizeRequest,
+  type SourceControlWorkspaceCredentialDisconnectRequest,
+  type SourceControlWorkspaceCredentialDisconnectResponse,
+  type SourceControlWorkspaceCredentialListRequest,
+  type SourceControlWorkspaceCredentialListResponse,
   type SourceControlWorkspaceCredentialPreflightRequest,
   type SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
@@ -390,11 +396,50 @@ export class ToolBrokerClient {
     if (
       response.requestId !== request.requestId ||
       response.workspaceId !== request.workspaceId ||
-      response.repositoryId !== request.repositoryId
+      response.origin !== request.origin
     ) {
       throw new ToolBrokerClientError(
         "tool_broker_protocol_error",
         "Source-control credential response identity did not match",
+        false,
+      );
+    }
+    return response;
+  }
+
+  async listSourceCredentials(
+    request: SourceControlWorkspaceCredentialListRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspaceCredentialListResponse> {
+    const response = parseSourceControlWorkspaceCredentialListResponse(
+      await this.#post(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
+    );
+    if (response.requestId !== request.requestId || response.workspaceId !== request.workspaceId) {
+      throw new ToolBrokerClientError(
+        "tool_broker_protocol_error",
+        "Source-control credential list identity did not match",
+        false,
+      );
+    }
+    return response;
+  }
+
+  async disconnectSourceCredential(
+    request: SourceControlWorkspaceCredentialDisconnectRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspaceCredentialDisconnectResponse> {
+    const response = parseSourceControlWorkspaceCredentialDisconnectResponse(
+      await this.#post(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
+    );
+    if (
+      response.requestId !== request.requestId ||
+      response.workspaceId !== request.workspaceId ||
+      response.origin !== request.origin ||
+      response.provider !== request.provider
+    ) {
+      throw new ToolBrokerClientError(
+        "tool_broker_protocol_error",
+        "Source-control credential disconnect identity did not match",
         false,
       );
     }
@@ -650,6 +695,20 @@ export class ReplicatedToolBrokerClient {
     signal?: AbortSignal,
   ): Promise<SourceControlWorkspaceCredentialResponse> {
     return this.#nextReplica().preflightSourceCredential(request, signal);
+  }
+
+  listSourceCredentials(
+    request: SourceControlWorkspaceCredentialListRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspaceCredentialListResponse> {
+    return this.#nextReplica().listSourceCredentials(request, signal);
+  }
+
+  disconnectSourceCredential(
+    request: SourceControlWorkspaceCredentialDisconnectRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceControlWorkspaceCredentialDisconnectResponse> {
+    return this.#nextReplica().disconnectSourceCredential(request, signal);
   }
 
   async listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]> {

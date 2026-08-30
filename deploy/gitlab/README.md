@@ -39,12 +39,12 @@ tasks created by configured Webhooks.
 
 The connector registers a signed Issue/Note Webhook automatically. Add the
 `picloud` label to an Issue or post `/picloud solve` as a Developer or higher;
-PiCloud records a pending Issue request. A user authenticated through this
-GitLab instance and holding Developer access may claim it, choose elastic or
-owned-machine execution, and name the Session. PiCloud checks the selected
-environment with `git ls-remote`; missing credentials trigger a separate
-OAuth+PKCE repository authorization. The user token is written directly to that
-Workspace's `.pi-cloud-home`, and the Agent performs `git clone`. The initial
+PiCloud records a pending Issue request. An authorized PiCloud tenant user may
+claim it, choose elastic or owned-machine execution, and name the Session.
+PiCloud checks the selected environment with `git ls-remote`; missing
+credentials open the Code Host connection dialog. A scoped user token is
+written directly to that environment's `.git-credentials`, and the Agent
+performs `git clone`. The initial
 Run changes and tests files only; commit, push, Merge Request and Issue state
 remain explicit later user actions.
 

@@ -241,21 +241,6 @@ export class SourceControlIssueCoordinator {
       });
     }
 
-    if (repository.provider === "github") {
-      const credential = await this.#sourceControl.authorizeAutomationGitCredential(
-        job.tenant_id,
-        job.repository_id,
-        workspaceId!,
-        job.execution_mode === "development_environment" ? "/home/user" : "/workspace",
-      );
-      if (!credential.authorized) {
-        throw new SourceControlServiceError(
-          "source_control_authorization_denied",
-          "Selected environment is not authorized to clone the Issue repository",
-        );
-      }
-    }
-
     const sessionTitle = job.session_title;
     let sessionId = job.session_id;
     if (sessionId === null) {

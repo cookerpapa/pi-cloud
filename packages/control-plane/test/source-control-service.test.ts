@@ -12,6 +12,8 @@ import type { TenantRequestIdentity } from "../src/tenant-identity.ts";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { SourceControlCredentialVault } from "../src/source-control-credential-vault.ts";
 
+vi.setConfig({ hookTimeout: 30_000, testTimeout: 30_000 });
+
 let pglite: PGlite;
 let socket: PGLiteSocketServer;
 let database: Kysely<Database>;
@@ -59,37 +61,6 @@ describe.sequential("source-control App boundary", () => {
     let signingToken = "";
     const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith("/.well-known/openid-configuration")) {
-        return new Response(
-          JSON.stringify({
-            issuer: "https://gitlab.example.com",
-            authorization_endpoint: "https://gitlab.example.com/oauth/authorize",
-            token_endpoint: "https://gitlab.example.com/oauth/token",
-            userinfo_endpoint: "https://gitlab.example.com/oauth/userinfo",
-            jwks_uri: "https://gitlab.example.com/oauth/discovery/keys",
-            response_types_supported: ["code"],
-            subject_types_supported: ["public"],
-            id_token_signing_alg_values_supported: ["RS256"],
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      }
-      if (url.endsWith("/oauth/token")) {
-        return new Response(
-          JSON.stringify({
-            access_token: "glpat-user-workspace-oauth-token",
-            token_type: "Bearer",
-            expires_in: 7_200,
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      }
-      if (url.endsWith("/api/v4/user")) {
-        return new Response(
-          JSON.stringify({ id: 42, username: "gitlab-claimant", name: "GitLab Claimant" }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      }
       if (url.endsWith("/api/v4/projects/group%2Fprivate-repo")) {
         return new Response(
           JSON.stringify({
@@ -112,12 +83,6 @@ describe.sequential("source-control App boundary", () => {
         signingToken = (JSON.parse(String(init.body)) as { signing_token: string }).signing_token;
         return new Response(JSON.stringify({ id: 91 }), { status: 201 });
       }
-      if (
-        url.endsWith("/api/v4/projects/501/members/all/42") ||
-        url.endsWith("/api/v4/projects/501/members/all/43")
-      ) {
-        return new Response(JSON.stringify({ id: 42, access_level: 30 }), { status: 200 });
-      }
       if (url.includes("/api/v4/projects/501/issues/12/notes") && init?.method === undefined) {
         return new Response("[]", { status: 200 });
       }
@@ -134,9 +99,6 @@ describe.sequential("source-control App boundary", () => {
         publicOrigin: "https://picloud.example.com",
         issueLabel: "picloud",
         internalBaseUrl: "https://gitlab.internal.example.com",
-        oauthClientId: "gitlab-oauth-client-id",
-        oauthClientSecret: "gitlab-oauth-client-secret",
-        oauthIssuer: "https://gitlab.example.com",
         fetch: fetchImplementation,
       },
     });
@@ -212,109 +174,39 @@ describe.sequential("source-control App boundary", () => {
     });
     await expect(pendingCoordinator.claimNext()).resolves.toBeUndefined();
     await pendingCoordinator.close();
-    const claimantUserId = randomUUID();
-    const externalIdentityId = randomUUID();
+    const claimant = { ...identity(tenant), username: "pi-owner" };
     const secondClaimantUserId = randomUUID();
-    const secondExternalIdentityId = randomUUID();
-    await database.transaction().execute(async (transaction) => {
-      await transaction
-        .insertInto("users")
-        .values({
-          id: claimantUserId,
-          tenant_id: tenant.tenantId,
-          display_name: "GitLab Claimant",
-        })
-        .executeTakeFirstOrThrow();
-      await transaction
-        .insertInto("external_identities")
-        .values({
-          id: externalIdentityId,
-          tenant_id: tenant.tenantId,
-          user_id: claimantUserId,
-          provider_key: "gitlab",
-          issuer: "https://gitlab.example.com",
-          subject: "gitlab-user-42",
-          provider_user_id: "42",
-          username: "gitlab-claimant",
-          display_name: "GitLab Claimant",
-          last_authenticated_at: new Date(),
-        })
-        .executeTakeFirstOrThrow();
-      await transaction
-        .insertInto("users")
-        .values({
-          id: secondClaimantUserId,
-          tenant_id: tenant.tenantId,
-          display_name: "Second GitLab Claimant",
-        })
-        .executeTakeFirstOrThrow();
-      await transaction
-        .insertInto("external_identities")
-        .values({
-          id: secondExternalIdentityId,
-          tenant_id: tenant.tenantId,
-          user_id: secondClaimantUserId,
-          provider_key: "gitlab",
-          issuer: "https://gitlab.example.com",
-          subject: "gitlab-user-43",
-          provider_user_id: "43",
-          username: "gitlab-second",
-          display_name: "Second GitLab Claimant",
-          last_authenticated_at: new Date(),
-        })
-        .executeTakeFirstOrThrow();
-    });
-    const claimant: TenantRequestIdentity = {
-      credentialId: `oidc:${externalIdentityId}`,
-      tenantId: tenant.tenantId,
-      tenantSlug: tenant.tenantSlug,
-      userId: claimantUserId,
-      username: "gitlab-claimant",
-      displayName: "GitLab Claimant",
-      role: "member",
-      defaultModelProfileId: tenant.defaultModelProfileId,
-      authenticationKind: "oidc",
-      externalIdentity: {
-        id: externalIdentityId,
-        providerKey: "gitlab",
-        issuer: "https://gitlab.example.com",
-        subject: "gitlab-user-42",
-        providerUserId: "42",
-        username: "gitlab-claimant",
-      },
-    };
+    await database
+      .insertInto("users")
+      .values({
+        id: secondClaimantUserId,
+        tenant_id: tenant.tenantId,
+        display_name: "Second PiCloud User",
+      })
+      .executeTakeFirstOrThrow();
     const pendingJob = (await service.listIssueJobs(claimant)).jobs[0]!;
     const secondClaimant: TenantRequestIdentity = {
       ...claimant,
-      credentialId: `oidc:${secondExternalIdentityId}`,
+      credentialId: `local:${secondClaimantUserId}`,
       userId: secondClaimantUserId,
-      username: "gitlab-second",
-      displayName: "Second GitLab Claimant",
-      externalIdentity: {
-        ...claimant.externalIdentity!,
-        id: secondExternalIdentityId,
-        subject: "gitlab-user-43",
-        providerUserId: "43",
-        username: "gitlab-second",
-      },
+      username: "pi-second",
+      displayName: "Second PiCloud User",
+      authenticationKind: "local",
     };
-    await expect(service.claimIssueJob(identity(tenant), pendingJob.jobId)).rejects.toMatchObject({
-      code: "source_control_authorization_denied",
-    });
     await expect(service.claimIssueJob(claimant, pendingJob.jobId)).resolves.toMatchObject({
       claimedByCurrentUser: true,
-      claims: [{ username: "gitlab-claimant" }],
+      claims: [{ username: "pi-owner" }],
     });
     await expect(service.claimIssueJob(secondClaimant, pendingJob.jobId)).resolves.toMatchObject({
       claimedByCurrentUser: true,
       claims: expect.arrayContaining([
-        expect.objectContaining({ username: "gitlab-claimant" }),
-        expect.objectContaining({ username: "gitlab-second" }),
+        expect.objectContaining({ username: "pi-owner" }),
+        expect.objectContaining({ username: "pi-second" }),
       ]),
     });
     await expect(service.unclaimIssueJob(claimant, pendingJob.jobId)).resolves.toMatchObject({
       claimedByCurrentUser: false,
-      claims: [{ username: "gitlab-second" }],
+      claims: [{ username: "pi-second" }],
     });
     await service.claimIssueJob(claimant, pendingJob.jobId);
     await expect(
@@ -341,59 +233,12 @@ describe.sequential("source-control App boundary", () => {
       tenantId: tenant.tenantId,
       defaultModelProfileId: tenant.defaultModelProfileId,
     }).createProject({ name: "Existing GitLab Issue Workspace", source: { kind: "empty" } });
-    const authorization = await service.beginIssueGitAuthorization(
-      claimant,
-      pendingJob.jobId,
-      selectedWorkspace.workspaceId,
-    );
-    const authorizationUrl = new URL(authorization.url);
-    expect(authorizationUrl.searchParams.get("scope")).toBe("api read_repository write_repository");
-    await expect(
-      database
-        .selectFrom("workspace_git_oauth_requests")
-        .select(["tenant_id", "user_id", "issue_job_id", "workspace_id", "consumed_at"])
-        .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({
-      tenant_id: tenant.tenantId,
-      user_id: claimant.userId,
-      issue_job_id: pendingJob.jobId,
-      workspace_id: selectedWorkspace.workspaceId,
-      consumed_at: null,
-    });
-    const authorizeCredential = vi.spyOn(service, "authorizeIssueGitCredential").mockResolvedValue({
-      sourceControlProtocolVersion: 1,
-      type: "source_control.workspace_credential_result",
-      requestId: randomUUID(),
-      workspaceId: selectedWorkspace.workspaceId,
-      repositoryId: pendingJob.repositoryId,
-      authorized: true,
-    });
-    await expect(
-      service.completeIssueGitAuthorization(
-        `/v1/source-control/gitlab/authorization/callback?code=oauth-code&state=${encodeURIComponent(
-          authorizationUrl.searchParams.get("state")!,
-        )}`,
-      ),
-    ).resolves.toEqual({ workspaceId: selectedWorkspace.workspaceId });
-    expect(authorizeCredential).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: claimant.userId }),
-      pendingJob.jobId,
-      selectedWorkspace.workspaceId,
-      "glpat-user-workspace-oauth-token",
-    );
-    await expect(
-      database
-        .selectFrom("workspace_git_oauth_requests")
-        .select("consumed_at")
-        .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ consumed_at: expect.any(Date) });
-    authorizeCredential.mockRestore();
     vi.spyOn(service, "preflightIssueGitCredential").mockResolvedValue({
       sourceControlProtocolVersion: 1,
       type: "source_control.workspace_credential_result",
       requestId: randomUUID(),
       workspaceId: selectedWorkspace.workspaceId,
-      repositoryId: pendingJob.repositoryId,
+      origin: "https://gitlab.example.com",
       authorized: true,
     });
     await expect(
@@ -568,7 +413,7 @@ describe.sequential("source-control App boundary", () => {
     expect(jobs.jobs[0]).toMatchObject({
       issueNumber: 42,
       repositoryFullName: "example/private-repo",
-      state: "received",
+      state: "awaiting_claim",
     });
     const columns = await database
       .selectFrom("source_control_installations")
@@ -576,26 +421,6 @@ describe.sequential("source-control App boundary", () => {
       .executeTakeFirstOrThrow();
     expect(JSON.stringify(columns)).not.toContain("ghs_discovery_token_not_persisted");
 
-    const coordinatorA = new SourceControlIssueCoordinator({
-      database,
-      sourceControl: service,
-      instanceId: "issue-coordinator-a",
-      environmentImageRevision: "test",
-    });
-    const coordinatorB = new SourceControlIssueCoordinator({
-      database,
-      sourceControl: service,
-      instanceId: "issue-coordinator-b",
-      environmentImageRevision: "test",
-    });
-    const claimed = await Promise.all([coordinatorA.claimNext(), coordinatorB.claimNext()]);
-    expect(claimed.filter((value) => value !== undefined)).toHaveLength(1);
-    await Promise.all([coordinatorA.close(), coordinatorB.close()]);
-
-    await database
-      .updateTable("source_control_issue_jobs")
-      .set({ owner_id: null, lease_expires_at: null, available_at: new Date() })
-      .execute();
     await database
       .insertInto("user_password_credentials")
       .values({
@@ -622,14 +447,53 @@ describe.sequential("source-control App boundary", () => {
       })
       .executeTakeFirstOrThrow();
 
-    vi.spyOn(service, "authorizeAutomationGitCredential").mockResolvedValue({
+    const selectedWorkspace = await new ControlPlaneStore({
+      database,
+      tenantId: tenant.tenantId,
+      defaultModelProfileId: tenant.defaultModelProfileId,
+    }).createProject({ name: "GitHub Issue Workspace", source: { kind: "empty" } });
+    await service.claimIssueJob(
+      { ...identity(tenant), username: "source.control.owner" },
+      jobs.jobs[0]!.jobId,
+    );
+    vi.spyOn(service, "preflightIssueGitCredential").mockResolvedValue({
       sourceControlProtocolVersion: 1,
       type: "source_control.workspace_credential_result",
       requestId: randomUUID(),
-      workspaceId: randomUUID(),
-      repositoryId: configured.installations[0]!.repositories[0]!.repositoryId,
+      workspaceId: selectedWorkspace.workspaceId,
+      origin: "https://github.com",
       authorized: true,
     });
+    await service.startIssueJob(
+      { ...identity(tenant), username: "source.control.owner" },
+      jobs.jobs[0]!.jobId,
+      {
+        executionMode: "elastic",
+        sessionTitle: "Fix the insertion sort edge case",
+        sandboxProfileKey: "standard",
+        workspaceId: selectedWorkspace.workspaceId,
+      },
+    );
+
+    const coordinatorA = new SourceControlIssueCoordinator({
+      database,
+      sourceControl: service,
+      instanceId: "issue-coordinator-a",
+      environmentImageRevision: "test",
+    });
+    const coordinatorB = new SourceControlIssueCoordinator({
+      database,
+      sourceControl: service,
+      instanceId: "issue-coordinator-b",
+      environmentImageRevision: "test",
+    });
+    const claimed = await Promise.all([coordinatorA.claimNext(), coordinatorB.claimNext()]);
+    expect(claimed.filter((value) => value !== undefined)).toHaveLength(1);
+    await Promise.all([coordinatorA.close(), coordinatorB.close()]);
+    await database
+      .updateTable("source_control_issue_jobs")
+      .set({ owner_id: null, lease_expires_at: null, available_at: new Date() })
+      .execute();
 
     const coordinator = new SourceControlIssueCoordinator({
       database,

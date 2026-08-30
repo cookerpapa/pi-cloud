@@ -16,7 +16,7 @@ The Web Workspace browser is a live view:
 - opening the panel lists the current root directory;
 - expanding a folder lists only that directory;
 - selecting a file reads only that file with a byte limit;
-- `.git` and `.pi-cloud-home` are omitted from the product browser;
+- `.git` and `.git-credentials` are omitted from the product browser;
 - traversal and symlink escapes are rejected by the trusted Volume gateway.
 
 Browsing does not create a Cube and does not read a historical settlement.

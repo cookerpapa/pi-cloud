@@ -24,7 +24,7 @@ import {
   VOLUME_METADATA_DIRECTORY,
   VOLUME_SETTLEMENT_FILE,
   VOLUME_WORKSPACE_DIRECTORY,
-  WORKSPACE_GIT_HOME_DIRECTORY,
+  WORKSPACE_GIT_CREDENTIALS_FILE,
   WorkspaceVolumeGatewayError,
   isRecord,
   safeRelativeFile,
@@ -42,6 +42,8 @@ import {
   type WorkspaceVolumeGatewayReadFileInput,
   type WorkspaceVolumeGatewaySettleInput,
   type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
+  type WorkspaceVolumeGatewaySourceCredentialDisconnectInput,
+  type WorkspaceVolumeGatewaySourceCredentialListInput,
   type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
   type WorkspaceVolumeGitRunner,
 } from "./workspace-volume-gateway-contract.ts";
@@ -54,7 +56,7 @@ function safeBrowsePath(value: string, allowEmpty: boolean): string {
   if (
     path
       .split("/")
-      .some((segment) => segment === ".git" || segment === WORKSPACE_GIT_HOME_DIRECTORY)
+      .some((segment) => segment === ".git" || segment === WORKSPACE_GIT_CREDENTIALS_FILE)
   ) {
     throw new WorkspaceVolumeGatewayError(
       "workspace_path_hidden",
@@ -135,22 +137,20 @@ function trustedGitEnvironment(
   return environment;
 }
 
-function credentialCloneUrl(
+function credentialOriginUrl(
   provider: "github" | "gitlab",
-  cloneUrl: string,
+  origin: string,
   accessToken: string,
 ): string {
-  const url = new URL(cloneUrl);
+  const url = new URL(origin);
   url.username = provider === "github" ? "x-access-token" : "oauth2";
   url.password = accessToken;
   return url.toString();
 }
 
-function credentialFreeCloneUrl(value: string): string {
+function credentialOrigin(value: string): string {
   const url = new URL(value);
-  url.username = "";
-  url.password = "";
-  return url.toString();
+  return url.origin;
 }
 
 function storedCredentialUrl(value: string): URL {
@@ -166,6 +166,40 @@ function storedCredentialUrl(value: string): URL {
   return new URL(
     `${value.slice(0, schemeEnd + 3)}${normalizedAuthority}${value.slice(authorityEnd)}`,
   );
+}
+
+async function storedCredentials(path: string): Promise<URL[]> {
+  let value: string;
+  try {
+    value = await readFile(path, "utf8");
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+  if (Buffer.byteLength(value, "utf8") > 256 * 1_024) {
+    throw new WorkspaceVolumeGatewayError(
+      "source_control_credential_home_invalid",
+      "Workspace Git credential store was invalid",
+      false,
+    );
+  }
+  const credentials = value.split(/\r?\n/u).filter(Boolean).map(storedCredentialUrl);
+  if (credentials.length > 64) {
+    throw new WorkspaceVolumeGatewayError(
+      "source_control_credential_home_invalid",
+      "Workspace Git credential store was invalid",
+      false,
+    );
+  }
+  return credentials;
+}
+
+function credentialProvider(url: URL): "github" | "gitlab" | undefined {
+  if (url.username === "x-access-token") return "github";
+  if (url.username === "oauth2") return "gitlab";
+  return undefined;
 }
 
 export function runTrustedWorkspaceGit(
@@ -472,7 +506,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         );
       }
       const listed = (await readdir(target.absolute, { withFileTypes: true }))
-        .filter((entry) => entry.name !== ".git" && entry.name !== WORKSPACE_GIT_HOME_DIRECTORY)
+        .filter((entry) => entry.name !== ".git" && entry.name !== WORKSPACE_GIT_CREDENTIALS_FILE)
         .sort((left, right) => left.name.localeCompare(right.name));
       const entries = await Promise.all(
         listed.slice(0, 4_096).map(async (entry) => {
@@ -543,34 +577,21 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     return this.#withVolumeLock(identity.volumeId, async () => {
       const directory = await this.#validatedVolume(identity);
       const workspace = join(directory, VOLUME_WORKSPACE_DIRECTORY);
-      const credentialHome = join(workspace, WORKSPACE_GIT_HOME_DIRECTORY);
-      await mkdir(credentialHome, { mode: 0o700 });
-      const homeMetadata = await lstat(credentialHome);
-      if (!homeMetadata.isDirectory() || homeMetadata.isSymbolicLink()) {
-        throw new WorkspaceVolumeGatewayError(
-          "source_control_credential_home_invalid",
-          "Workspace Git credential home was invalid",
-          false,
-        );
-      }
-      const guestHome = `${input.credentialMountPath}/${WORKSPACE_GIT_HOME_DIRECTORY}`;
-      const credentialUrl = credentialCloneUrl(
-        input.provider,
-        input.userCloneUrl,
-        input.accessToken,
+      const credentialPath = join(workspace, WORKSPACE_GIT_CREDENTIALS_FILE);
+      const credentialUrl = credentialOriginUrl(input.provider, input.origin, input.accessToken);
+      const retained = (await storedCredentials(credentialPath)).filter(
+        (candidate) => credentialOrigin(candidate.toString()) !== input.origin,
       );
+      retained.push(storedCredentialUrl(credentialUrl));
+      retained.sort((left, right) => left.origin.localeCompare(right.origin));
       const suffix = randomBytes(12).toString("hex");
-      const configTemporary = join(credentialHome, `.gitconfig-${suffix}.tmp`);
-      const credentialTemporary = join(credentialHome, `.git-credentials-${suffix}.tmp`);
-      await writeFile(
-        configTemporary,
-        `[credential]\n\thelper = store --file=${guestHome}/.git-credentials\n\tuseHttpPath = true\n`,
-        { mode: 0o600, flag: "wx" },
-      );
-      await writeFile(credentialTemporary, `${credentialUrl}\n`, { mode: 0o600, flag: "wx" });
-      await Promise.all([chmod(configTemporary, 0o600), chmod(credentialTemporary, 0o600)]);
-      await rename(configTemporary, join(credentialHome, ".gitconfig"));
-      await rename(credentialTemporary, join(credentialHome, ".git-credentials"));
+      const temporary = join(workspace, `${WORKSPACE_GIT_CREDENTIALS_FILE}-${suffix}.tmp`);
+      await writeFile(temporary, `${retained.map((entry) => entry.toString()).join("\n")}\n`, {
+        mode: 0o600,
+        flag: "wx",
+      });
+      await chmod(temporary, 0o600);
+      await rename(temporary, credentialPath);
       return { authorized: true };
     });
   }
@@ -579,7 +600,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     input: WorkspaceVolumeGatewaySourceCredentialPreflightInput,
   ): Promise<{
     authorized: boolean;
-    reason?: "credential_missing" | "credential_rejected" | "gitlab_unreachable";
+    reason?: "credential_missing" | "credential_rejected" | "code_host_unreachable";
   }> {
     const identity = validatedIdentity(input);
     return this.#withVolumeLock(identity.volumeId, async () => {
@@ -587,20 +608,14 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       const credentialPath = join(
         directory,
         VOLUME_WORKSPACE_DIRECTORY,
-        WORKSPACE_GIT_HOME_DIRECTORY,
-        ".git-credentials",
+        WORKSPACE_GIT_CREDENTIALS_FILE,
       );
-      let credentialUrl: URL;
-      try {
-        credentialUrl = storedCredentialUrl((await readFile(credentialPath, "utf8")).trim());
-      } catch {
-        return { authorized: false, reason: "credential_missing" };
-      }
-      if (
-        credentialUrl.password.length < 16 ||
-        credentialFreeCloneUrl(credentialUrl.toString()) !==
-          credentialFreeCloneUrl(input.userCloneUrl)
-      ) {
+      const credentialUrl = (await storedCredentials(credentialPath)).find(
+        (candidate) =>
+          credentialOrigin(candidate.toString()) === input.origin &&
+          credentialProvider(candidate) === input.provider,
+      );
+      if (credentialUrl === undefined || credentialUrl.password.length < 16) {
         return { authorized: false, reason: "credential_missing" };
       }
       try {
@@ -614,9 +629,72 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
           retryable: true,
         });
         return { authorized: true };
-      } catch {
-        return { authorized: false, reason: "credential_rejected" };
+      } catch (error: unknown) {
+        return {
+          authorized: false,
+          reason:
+            error instanceof WorkspaceVolumeGatewayError && error.retryable
+              ? "code_host_unreachable"
+              : "credential_rejected",
+        };
       }
+    });
+  }
+
+  async listSourceCredentials(
+    input: WorkspaceVolumeGatewaySourceCredentialListInput,
+  ): Promise<{ connections: readonly { provider: "github" | "gitlab"; origin: string }[] }> {
+    const identity = validatedIdentity(input);
+    return this.#withVolumeLock(identity.volumeId, async () => {
+      const directory = await this.#validatedVolume(identity);
+      const credentialPath = join(
+        directory,
+        VOLUME_WORKSPACE_DIRECTORY,
+        WORKSPACE_GIT_CREDENTIALS_FILE,
+      );
+      const connections = (await storedCredentials(credentialPath))
+        .map((credential) => {
+          const provider = credentialProvider(credential);
+          return provider === undefined ? undefined : { provider, origin: credential.origin };
+        })
+        .filter(
+          (connection): connection is { provider: "github" | "gitlab"; origin: string } =>
+            connection !== undefined,
+        )
+        .sort((left, right) => left.origin.localeCompare(right.origin));
+      return { connections };
+    });
+  }
+
+  async disconnectSourceCredential(
+    input: WorkspaceVolumeGatewaySourceCredentialDisconnectInput,
+  ): Promise<{ disconnected: boolean }> {
+    const identity = validatedIdentity(input);
+    return this.#withVolumeLock(identity.volumeId, async () => {
+      const directory = await this.#validatedVolume(identity);
+      const workspace = join(directory, VOLUME_WORKSPACE_DIRECTORY);
+      const credentialPath = join(workspace, WORKSPACE_GIT_CREDENTIALS_FILE);
+      const existing = await storedCredentials(credentialPath);
+      const retained = existing.filter(
+        (candidate) =>
+          credentialOrigin(candidate.toString()) !== input.origin ||
+          credentialProvider(candidate) !== input.provider,
+      );
+      if (retained.length === existing.length) return { disconnected: false };
+      if (retained.length === 0) {
+        await rm(credentialPath, { force: true });
+      } else {
+        const temporary = join(
+          workspace,
+          `${WORKSPACE_GIT_CREDENTIALS_FILE}-${randomBytes(12).toString("hex")}.tmp`,
+        );
+        await writeFile(temporary, `${retained.map((entry) => entry.toString()).join("\n")}\n`, {
+          mode: 0o600,
+          flag: "wx",
+        });
+        await rename(temporary, credentialPath);
+      }
+      return { disconnected: true };
     });
   }
 

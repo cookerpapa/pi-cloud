@@ -25,6 +25,10 @@ import type {
   SandboxPreviewRequest,
   SandboxPreviewResponse,
   SourceControlWorkspaceCredentialAuthorizeRequest,
+  SourceControlWorkspaceCredentialDisconnectRequest,
+  SourceControlWorkspaceCredentialDisconnectResponse,
+  SourceControlWorkspaceCredentialListRequest,
+  SourceControlWorkspaceCredentialListResponse,
   SourceControlWorkspaceCredentialPreflightRequest,
   SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
@@ -2131,6 +2135,32 @@ export class ToolBroker {
       );
     }
     return this.#provider.preflightSourceCredential(request);
+  }
+
+  async listSourceCredentials(
+    request: SourceControlWorkspaceCredentialListRequest,
+  ): Promise<SourceControlWorkspaceCredentialListResponse> {
+    if (this.#provider.listSourceCredentials === undefined) {
+      throw new ToolBrokerError(
+        "source_control_credential_unavailable",
+        "The configured Sandbox Provider cannot list Workspace Git credentials",
+        false,
+      );
+    }
+    return this.#provider.listSourceCredentials(request);
+  }
+
+  async disconnectSourceCredential(
+    request: SourceControlWorkspaceCredentialDisconnectRequest,
+  ): Promise<SourceControlWorkspaceCredentialDisconnectResponse> {
+    if (this.#provider.disconnectSourceCredential === undefined) {
+      throw new ToolBrokerError(
+        "source_control_credential_unavailable",
+        "The configured Sandbox Provider cannot disconnect Workspace Git credentials",
+        false,
+      );
+    }
+    return this.#provider.disconnectSourceCredential(request);
   }
 
   async close(): Promise<void> {

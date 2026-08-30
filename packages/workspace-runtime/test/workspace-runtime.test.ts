@@ -36,8 +36,7 @@ describe("shared workspace runtime", () => {
     const source = await temporaryDirectory("pi-cloud-workspace-runtime-source-");
     await mkdir(resolve(source, ".git"));
     await writeFile(resolve(source, ".git/HEAD"), "ref: refs/heads/main\n");
-    await mkdir(resolve(source, ".pi-cloud-home"));
-    await writeFile(resolve(source, ".pi-cloud-home/.git-credentials"), "source-secret\n");
+    await writeFile(resolve(source, ".git-credentials"), "source-secret\n");
     await mkdir(resolve(source, "src"));
     await writeFile(resolve(source, "src/App.java"), "class App {}\n");
     await writeFile(resolve(source, "test.sh"), "#!/bin/sh\nexit 0\n");
@@ -48,8 +47,7 @@ describe("shared workspace runtime", () => {
     expect(Buffer.from(restoredEnvelope)).toEqual(Buffer.from(snapshot));
 
     const target = await temporaryDirectory("pi-cloud-workspace-runtime-target-");
-    await mkdir(resolve(target, ".pi-cloud-home"));
-    await writeFile(resolve(target, ".pi-cloud-home/.git-credentials"), "target-secret\n");
+    await writeFile(resolve(target, ".git-credentials"), "target-secret\n");
     await writeFile(resolve(target, "stale.txt"), "remove me");
     await restoreWorkspaceSeed(target, restoredEnvelope);
 
@@ -57,9 +55,9 @@ describe("shared workspace runtime", () => {
       "ref: refs/heads/main\n",
     );
     await expect(readFile(resolve(target, "src/App.java"), "utf8")).resolves.toBe("class App {}\n");
-    await expect(
-      readFile(resolve(target, ".pi-cloud-home/.git-credentials"), "utf8"),
-    ).resolves.toBe("target-secret\n");
+    await expect(readFile(resolve(target, ".git-credentials"), "utf8")).resolves.toBe(
+      "target-secret\n",
+    );
     await expect(readFile(resolve(target, "stale.txt"), "utf8")).rejects.toThrow();
     expect((await stat(resolve(target, "test.sh"))).mode & 0o111).not.toBe(0);
   });

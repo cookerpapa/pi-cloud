@@ -10,6 +10,7 @@ import type {
 import { newIdempotencyKey, PiCloudApi, PiCloudApiError } from "./api.ts";
 import { useI18n } from "./i18n.tsx";
 import { WorkspaceDirectoryPicker } from "./WorkspaceDirectoryPicker.tsx";
+import { CodeHostConnectionsModal } from "./CodeHostConnectionsModal.tsx";
 
 const ACTIVE_SESSION_STATES = new Set([
   "starting",
@@ -18,49 +19,6 @@ const ACTIVE_SESSION_STATES = new Set([
   "recovering",
   "evicting",
 ]);
-const ISSUE_GIT_AUTHORIZATION_DRAFT = "pi-cloud.issue-git-authorization-draft.v1";
-
-type IssueGitAuthorizationDraft = Readonly<{
-  jobId: string;
-  executionMode: "elastic" | "development_environment";
-  profileKey: DevelopmentEnvironmentProfileKey;
-  sessionTitle: string;
-  workspaceId: string;
-  environmentId: string;
-  workingDirectory: string;
-}>;
-
-function readIssueGitAuthorizationDraft(): IssueGitAuthorizationDraft | undefined {
-  if (new URLSearchParams(window.location.search).get("gitAuthorization") !== "connected") {
-    return undefined;
-  }
-  try {
-    const value = JSON.parse(
-      window.sessionStorage.getItem(ISSUE_GIT_AUTHORIZATION_DRAFT) ?? "null",
-    ) as Partial<IssueGitAuthorizationDraft> | null;
-    if (
-      value === null ||
-      typeof value.jobId !== "string" ||
-      (value.executionMode !== "elastic" && value.executionMode !== "development_environment") ||
-      !["starter", "standard", "performance"].includes(value.profileKey ?? "") ||
-      typeof value.sessionTitle !== "string" ||
-      typeof value.workspaceId !== "string" ||
-      typeof value.environmentId !== "string" ||
-      typeof value.workingDirectory !== "string"
-    ) {
-      return undefined;
-    }
-    return value as IssueGitAuthorizationDraft;
-  } catch {
-    return undefined;
-  } finally {
-    window.sessionStorage.removeItem(ISSUE_GIT_AUTHORIZATION_DRAFT);
-    const url = new URL(window.location.href);
-    url.searchParams.delete("gitAuthorization");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  }
-}
-
 function associations(
   conversations: readonly ConversationSummaryResource[],
   workspaceId: string,
@@ -120,29 +78,16 @@ export function ResourceManagementPage({
   const [issueSessionTitle, setIssueSessionTitle] = useState("");
   const [issueWorkspaceId, setIssueWorkspaceId] = useState("");
   const [issueGitCredentialReason, setIssueGitCredentialReason] = useState<
-    "credential_missing" | "credential_rejected" | "gitlab_unreachable" | null
+    "credential_missing" | "credential_rejected" | "code_host_unreachable" | null
   >(null);
   const [issueEnvironmentId, setIssueEnvironmentId] = useState("");
   const [issueWorkingDirectory, setIssueWorkingDirectory] = useState("/home/user");
   const [issueDirectoryPickerOpen, setIssueDirectoryPickerOpen] = useState(false);
+  const [issueCodeHostWorkspaceId, setIssueCodeHostWorkspaceId] = useState<string | null>(null);
   const liveEnvironments = environments;
   const elasticWorkspaces = workspaces;
   const selectedProfile = profiles.find((candidate) => candidate.key === profileKey) ?? profiles[0];
   const issueStartJob = issueJobs.find((job) => job.jobId === issueStartJobId);
-
-  useEffect(() => {
-    const draft = readIssueGitAuthorizationDraft();
-    if (draft === undefined) return;
-    setTab("source-control");
-    setIssueStartJobId(draft.jobId);
-    setIssueExecutionMode(draft.executionMode);
-    setIssueProfileKey(draft.profileKey);
-    setIssueSessionTitle(draft.sessionTitle);
-    setIssueWorkspaceId(draft.workspaceId);
-    setIssueEnvironmentId(draft.environmentId);
-    setIssueWorkingDirectory(draft.workingDirectory);
-    setIssueGitCredentialReason(null);
-  }, []);
 
   function replaceIssueJob(updated: SourceControlIssueJobResource): void {
     setIssueJobs((current) => current.map((job) => (job.jobId === updated.jobId ? updated : job)));
@@ -405,9 +350,6 @@ export function ResourceManagementPage({
                               ? t("sourceControl.unclaim")
                               : t("sourceControl.claim")}
                           </button>
-                        ) : null}
-                        {job.state === "awaiting_claim" && !job.claimEligible ? (
-                          <small>{t("sourceControl.gitlabLoginRequired")}</small>
                         ) : null}
                         {job.state === "awaiting_claim" && job.claimedByCurrentUser ? (
                           <button
@@ -825,31 +767,13 @@ export function ResourceManagementPage({
                 <span>{t(`sourceControl.git.${issueGitCredentialReason}` as const)}</span>
                 <button
                   onClick={() => {
-                    void mutate(async () => {
-                      const workspaceId =
-                        issueExecutionMode === "elastic"
-                          ? issueWorkspaceId
-                          : (liveEnvironments.find(
-                              (environment) => environment.environmentId === issueEnvironmentId,
-                            )?.workspaceId ?? "");
-                      const authorization = await api.beginSourceControlIssueGitAuthorization(
-                        issueStartJob.jobId,
-                        workspaceId,
-                      );
-                      window.sessionStorage.setItem(
-                        ISSUE_GIT_AUTHORIZATION_DRAFT,
-                        JSON.stringify({
-                          jobId: issueStartJob.jobId,
-                          executionMode: issueExecutionMode,
-                          profileKey: issueProfileKey,
-                          sessionTitle: issueSessionTitle,
-                          workspaceId,
-                          environmentId: issueEnvironmentId,
-                          workingDirectory: issueWorkingDirectory,
-                        } satisfies IssueGitAuthorizationDraft),
-                      );
-                      window.location.assign(authorization.url);
-                    });
+                    const workspaceId =
+                      issueExecutionMode === "elastic"
+                        ? issueWorkspaceId
+                        : (liveEnvironments.find(
+                            (environment) => environment.environmentId === issueEnvironmentId,
+                          )?.workspaceId ?? "");
+                    if (workspaceId.length > 0) setIssueCodeHostWorkspaceId(workspaceId);
                   }}
                   type="button"
                 >
@@ -894,6 +818,20 @@ export function ResourceManagementPage({
           }
         />
       ) : null}
+      {issueCodeHostWorkspaceId === null || issueStartJob === undefined ? null : (
+        <CodeHostConnectionsModal
+          api={api}
+          defaultOrigin={issueStartJob.providerBaseUrl}
+          defaultProvider={issueStartJob.repositoryProvider}
+          onClose={() => setIssueCodeHostWorkspaceId(null)}
+          onConnected={() => {
+            setIssueGitCredentialReason(null);
+            setIssueCodeHostWorkspaceId(null);
+          }}
+          workspaceId={issueCodeHostWorkspaceId}
+          workspaceName={issueStartJob.repositoryFullName}
+        />
+      )}
     </main>
   );
 }

@@ -207,24 +207,12 @@ export interface SourceControlIssueJobTable {
   settled_at: NullableTimestamp;
 }
 
-export interface WorkspaceGitOauthRequestTable {
-  state_sha256: string;
-  tenant_id: string;
-  user_id: string;
-  issue_job_id: string;
-  workspace_id: string;
-  code_verifier: string;
-  redirect_uri: string;
-  expires_at: Timestamp;
-  consumed_at: NullableTimestamp;
-  created_at: GeneratedTimestamp;
-}
-
 export interface SourceControlIssueClaimTable {
   tenant_id: string;
   issue_job_id: string;
   user_id: string;
-  external_identity_id: string;
+  username: string;
+  display_name: string;
   claimed_at: GeneratedTimestamp;
 }
 
@@ -1265,7 +1253,6 @@ export interface Database {
   source_control_repositories: SourceControlRepositoryTable;
   source_control_webhook_deliveries: SourceControlWebhookDeliveryTable;
   source_control_issue_jobs: SourceControlIssueJobTable;
-  workspace_git_oauth_requests: WorkspaceGitOauthRequestTable;
   source_control_issue_claims: SourceControlIssueClaimTable;
   source_control_credentials: SourceControlCredentialTable;
   sandbox_domains: SandboxDomainTable;

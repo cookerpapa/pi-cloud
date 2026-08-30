@@ -516,6 +516,7 @@ export function safeToolEnvironment(
   const gitCredentialRoot = TOOL_WORKSPACE_DIRECTORY.startsWith("/home/user")
     ? "/home/user"
     : "/workspace";
+  const gitCredentials = `${gitCredentialRoot}/.git-credentials`;
   const loopbackNoProxy = "127.0.0.1,localhost,::1";
   let proxyEnvironment: NodeJS.ProcessEnv = {};
   if (dependencyProxy !== undefined) {
@@ -596,14 +597,18 @@ export function safeToolEnvironment(
     LANG: "C.UTF-8",
     LC_ALL: "C.UTF-8",
     GIT_CONFIG_NOSYSTEM: "1",
-    GIT_CONFIG_GLOBAL: `${gitCredentialRoot}/.pi-cloud-home/.gitconfig`,
+    GIT_CONFIG_GLOBAL: `${gitCredentialRoot}/.gitconfig`,
     // Kubernetes emptyDir volumes are mounted with root ownership and the
     // Pod's fsGroup, even though every process and repository entry is owned
     // by uid 1000. Pin Git's trust exception to the one fixed workspace root;
     // never accept a user-controlled path here.
-    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_COUNT: "3",
     GIT_CONFIG_KEY_0: "safe.directory",
     GIT_CONFIG_VALUE_0: TOOL_WORKSPACE_DIRECTORY,
+    GIT_CONFIG_KEY_1: "credential.helper",
+    GIT_CONFIG_VALUE_1: `store --file=${gitCredentials}`,
+    GIT_CONFIG_KEY_2: "credential.useHttpPath",
+    GIT_CONFIG_VALUE_2: "false",
     GIT_TERMINAL_PROMPT: "0",
     GIT_ASKPASS: "/bin/false",
     GIT_LFS_SKIP_SMUDGE: "1",

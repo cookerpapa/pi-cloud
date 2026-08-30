@@ -30,7 +30,7 @@ import {
   parseSourceControlIssueJobListResource,
   parseSourceControlIssueJobResource,
   parseSourceControlIssueGitCredentialResource,
-  parseSourceControlIssueGitAuthorizationLinkResource,
+  parseCodeHostConnectionListResource,
   type ConversationDetailResource,
   type AuthSessionResource,
   type AuthenticationConfigurationResource,
@@ -68,7 +68,9 @@ import {
   type SourceControlIssueJobResource,
   type StartSourceControlIssueJobRequest,
   type SourceControlIssueGitCredentialResource,
-  type SourceControlIssueGitAuthorizationLinkResource,
+  type CodeHostConnectionListResource,
+  type ConnectCodeHostRequest,
+  type DisconnectCodeHostRequest,
 } from "@pi-cloud/protocol";
 
 export class PiCloudApiError extends Error {
@@ -175,7 +177,7 @@ async function requestBytes(
 function jsonRequest(
   body: unknown,
   idempotencyKey?: string,
-  method: "POST" | "PUT" = "POST",
+  method: "POST" | "PUT" | "DELETE" = "POST",
 ): RequestInit {
   return {
     method,
@@ -374,15 +376,40 @@ export class PiCloudApi {
     );
   }
 
-  async beginSourceControlIssueGitAuthorization(
-    jobId: string,
-    workspaceId: string,
-  ): Promise<SourceControlIssueGitAuthorizationLinkResource> {
-    return parseSourceControlIssueGitAuthorizationLinkResource(
+  async codeHostConnections(workspaceId: string): Promise<CodeHostConnectionListResource> {
+    return parseCodeHostConnectionListResource(
       await request(
         this.#fetch,
-        `/v1/source-control/issue-jobs/${encodeURIComponent(jobId)}/git-authorization`,
-        jsonRequest({ workspaceId }),
+        `/v1/workspaces/${encodeURIComponent(workspaceId)}/code-host-connections`,
+        {},
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async connectCodeHost(
+    workspaceId: string,
+    input: ConnectCodeHostRequest,
+  ): Promise<CodeHostConnectionListResource> {
+    return parseCodeHostConnectionListResource(
+      await request(
+        this.#fetch,
+        `/v1/workspaces/${encodeURIComponent(workspaceId)}/code-host-connections`,
+        jsonRequest(input),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async disconnectCodeHost(
+    workspaceId: string,
+    input: DisconnectCodeHostRequest,
+  ): Promise<CodeHostConnectionListResource> {
+    return parseCodeHostConnectionListResource(
+      await request(
+        this.#fetch,
+        `/v1/workspaces/${encodeURIComponent(workspaceId)}/code-host-connections`,
+        jsonRequest(input, undefined, "DELETE"),
         this.#authorizationToken,
       ),
     );

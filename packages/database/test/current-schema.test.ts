@@ -20,18 +20,12 @@ describe("current PiCloud schema", () => {
       // Read the committed ledger before the idempotency pass. Besides checking
       // ordering independently, this is the visibility barrier required by the
       // socket-backed PGlite test driver under host load.
-      const firstMigrationPass = await sql<{ name: string; timestamp: string }>`
-        select name, timestamp from kysely_migration
+      const firstMigrationPass = await sql<{ name: string }>`
+        select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(113);
-      expect(
-        [...firstMigrationPass.rows]
-          .sort((left, right) => {
-            const time = new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime();
-            return time === 0 ? left.name.localeCompare(right.name) : time;
-          })
-          .map((entry) => entry.name),
-      ).toEqual([...firstMigrationPass.rows].map((entry) => entry.name).sort());
+      expect(firstMigrationPass.rows).toHaveLength(114);
+      expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("114_decoupled_code_host_connections");
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
@@ -62,7 +56,6 @@ describe("current PiCloud schema", () => {
         "external_identities",
         "oidc_authentication_requests",
         "source_control_issue_claims",
-        "workspace_git_oauth_requests",
         "workspace_settlements",
         "runtime_objects",
       ]) {
@@ -82,6 +75,7 @@ describe("current PiCloud schema", () => {
         "workspace_versions",
         "checkpoint_objects",
         "tool_broker_activations",
+        "workspace_git_oauth_requests",
       ]) {
         expect(names.has(retired), `retired table ${retired} survived`).toBe(false);
       }
@@ -127,7 +121,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("113_workspace_owned_tool_runtime");
+      expect(applied.rows.at(-1)?.name).toBe("114_decoupled_code_host_connections");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

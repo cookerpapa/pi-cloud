@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseCodeHostConnectionListResource,
+  parseConnectCodeHostRequest,
   parseConnectGitLabProjectRequest,
   parseStartSourceControlIssueJobRequest,
   parseSourceControlWorkspaceCredentialRequest,
@@ -24,14 +26,30 @@ describe("source-control protocol", () => {
         requestId: "10000000-0000-4000-8000-000000000001",
         tenantId: "tenant-1",
         workspaceId: "10000000-0000-4000-8000-000000000002",
-        repositoryId: "10000000-0000-4000-8000-000000000003",
         provider: "gitlab",
-        userCloneUrl: "http://gitlab.localhost:8929/team/private-repository.git",
-        verificationCloneUrl: "http://gitlab.internal:8929/team/private-repository.git",
+        origin: "http://gitlab.localhost:8929",
         credentialMountPath: "/workspace",
         accessToken: "glpat-project-scoped-token",
       }),
     ).toMatchObject({ provider: "gitlab", sourceControlProtocolVersion: 1 });
+  });
+
+  it("models environment Code Host connections by provider and Origin", () => {
+    expect(
+      parseConnectCodeHostRequest({
+        provider: "gitlab",
+        origin: "https://gitlab.example.com/",
+        accessToken: "glpat-environment-token",
+      }),
+    ).toMatchObject({ provider: "gitlab" });
+    expect(
+      parseCodeHostConnectionListResource({
+        connections: [
+          { provider: "github", origin: "https://github.com" },
+          { provider: "gitlab", origin: "https://gitlab.example.com" },
+        ],
+      }),
+    ).toHaveProperty("connections", expect.any(Array));
   });
 
   it("accepts a named Issue Session with an optional existing Workspace", () => {

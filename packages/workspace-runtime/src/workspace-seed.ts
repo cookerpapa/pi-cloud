@@ -75,7 +75,7 @@ function validRelativePath(value: string): boolean {
   const segments = value.split("/");
   return (
     segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..") &&
-    segments[0] !== ".pi-cloud-home"
+    segments[0] !== ".git-credentials"
   );
 }
 
@@ -97,7 +97,7 @@ async function collectFiles(root: string, relativeDirectory = ""): Promise<Works
   for (const entry of entries.sort((left, right) => comparePaths(left.name, right.name))) {
     const relativePath =
       relativeDirectory.length === 0 ? entry.name : `${relativeDirectory}/${entry.name}`;
-    if (relativeDirectory.length === 0 && entry.name === ".pi-cloud-home") continue;
+    if (relativeDirectory.length === 0 && entry.name === ".git-credentials") continue;
     if (!validRelativePath(relativePath)) {
       throw seedError("Workspace contains an unsupported path");
     }
@@ -305,7 +305,7 @@ export async function restoreWorkspaceSeed(
 ): Promise<void> {
   const restored = parseWorkspaceSeed(seed);
   for (const entry of await readdir(workspaceDirectory)) {
-    if (entry === ".pi-cloud-home") continue;
+    if (entry === ".git-credentials") continue;
     await rm(resolve(workspaceDirectory, entry), { recursive: true, force: true });
   }
   for (const file of restored) {

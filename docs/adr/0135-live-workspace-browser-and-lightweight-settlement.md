@@ -35,8 +35,8 @@ open file           -> read only that current bounded file
 
 Control Plane derives the Session's Workspace and working-directory root.
 Browser input can select only a relative path below that root. Tool Broker and
-Workspace Volume Gateway reject traversal and symlink escape. `.git` and
-`.pi-cloud-home` are omitted from directory results; other project dotfiles are
+Workspace Volume Gateway rejects traversal and symlink escape. `.git` and
+`.git-credentials` are omitted from directory results; other project dotfiles are
 ordinary visible files. Listing and reading persistent bytes do not create a
 Cube.
 
