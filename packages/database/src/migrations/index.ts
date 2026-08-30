@@ -113,6 +113,7 @@ import * as workspaceGitOauthRequests from "./111_workspace_git_oauth_requests.t
 import * as liveWorkspaceSettlement from "./112_live_workspace_settlement.ts";
 import * as workspaceOwnedToolRuntime from "./113_workspace_owned_tool_runtime.ts";
 import * as decoupledCodeHostConnections from "./114_decoupled_code_host_connections.ts";
+import * as redactCodeHostTokens from "./115_redact_code_host_tokens.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -231,6 +232,7 @@ export const migrationProvider: MigrationProvider = {
       "112_live_workspace_settlement": liveWorkspaceSettlement,
       "113_workspace_owned_tool_runtime": workspaceOwnedToolRuntime,
       "114_decoupled_code_host_connections": decoupledCodeHostConnections,
+      "115_redact_code_host_tokens": redactCodeHostTokens,
     };
   },
 };

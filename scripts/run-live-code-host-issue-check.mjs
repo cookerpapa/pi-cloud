@@ -260,7 +260,16 @@ try {
     ],
     { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1_024 * 1_024 },
   );
-  assert.equal(postgresDump.includes(accessToken), false);
+  const tokenOffset = postgresDump.indexOf(accessToken);
+  if (tokenOffset >= 0) {
+    const copyHeader = postgresDump
+      .slice(0, tokenOffset)
+      .match(/COPY public\.([^ ]+) .*$/gmu)
+      ?.at(-1);
+    throw new Error(
+      `Code Host token leaked into PostgreSQL${copyHeader === undefined ? "" : ` through ${copyHeader.split(" ")[1]}`}`,
+    );
+  }
   const issueAfter = await gitlab(
     `/api/v4/projects/${gitlabProjectId}/issues/${String(issue.iid)}`,
     accessToken,

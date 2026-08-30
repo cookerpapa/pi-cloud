@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createTrustedRemoteAgentTools,
   createTrustedRemoteToolsExtension,
+  redactToolSecrets,
 } from "../src/trusted-remote-tools-extension.ts";
 
 const ACTIVE_TOOLS = ["read", "write", "edit", "bash"] as const;
@@ -81,6 +82,17 @@ afterEach(() => {
 });
 
 describe("trusted remote tools extension governance", () => {
+  it("redacts Code Host tokens and authenticated URLs before model context or artifacts", () => {
+    const source = Buffer.from(
+      "https://oauth2:glpat-super-secret-token@gitlab.example.com/group/repo.git\n" +
+        "github_pat_abcdefghijklmnopqrstuvwxyz123456\n",
+    );
+    const redacted = redactToolSecrets(source).toString("utf8");
+    expect(redacted).not.toContain("glpat-super-secret-token");
+    expect(redacted).not.toContain("github_pat_abcdefghijklmnopqrstuvwxyz123456");
+    expect(redacted).toContain("[PI_CLOUD_REDACTED]");
+  });
+
   it("exposes the identical governed Tool set to a SessionStorage Harness", async () => {
     const runtime = createTrustedRemoteAgentTools({
       ...BASE_CONFIGURATION,

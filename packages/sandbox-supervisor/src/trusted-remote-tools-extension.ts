@@ -33,6 +33,27 @@ import type { PiWorldStateModelMessage } from "./pi-sandbox-continuity.ts";
 
 const MAX_RESPONSE_BYTES = 5 * 1_024 * 1_024;
 const MAX_PROJECT_INSTRUCTIONS_BYTES = 16 * 1_024;
+const HIDDEN_GIT_CREDENTIAL_FILE = ".git-credentials";
+
+export function redactToolSecrets(value: Buffer): Buffer {
+  const source = value.toString("utf8");
+  const redacted = source
+    .replace(/(https?:\/\/[^\s/:@]+:)[^\s@/]+(@[^\s]+)/giu, "$1[PI_CLOUD_REDACTED]$2")
+    .replace(/\b(?:glpat|gldt|glcbt|glptt)-[A-Za-z0-9._~-]{8,}\b/gu, "[PI_CLOUD_REDACTED]")
+    .replace(/\bgithub_pat_[A-Za-z0-9_]{8,}\b/gu, "[PI_CLOUD_REDACTED]")
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{8,}\b/gu, "[PI_CLOUD_REDACTED]");
+  return redacted === source ? value : Buffer.from(redacted, "utf8");
+}
+
+function assertModelReadablePath(path: string): void {
+  if (path.split(/[\\/]/u).includes(HIDDEN_GIT_CREDENTIAL_FILE)) {
+    throw new RemoteToolError(
+      "tool_secret_path",
+      "Code Host credentials are not available through file tools",
+      false,
+    );
+  }
+}
 
 /**
  * The Cube guest admits one cancellable Tool operation per activation. Pi must
@@ -494,6 +515,7 @@ function registerTrustedRemoteTools(
   const readOperations = (toolName: "read" | "edit", toolCallId?: string): ReadOperations => ({
     readFile: async (path) => {
       try {
+        assertModelReadablePath(path);
         const response = await operation(toolName, { operation: "file.read", path });
         if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
         if (response.operation !== "file.read") throw new Error("Tool response kind changed");
@@ -537,6 +559,7 @@ function registerTrustedRemoteTools(
   const writeOperations: WriteOperations = {
     writeFile: async (path, content) => {
       try {
+        assertModelReadablePath(path);
         const response = await operation("write", { operation: "file.write", path, content });
         if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
         if (response.operation !== "file.write") throw new Error("Tool response kind changed");
@@ -546,6 +569,7 @@ function registerTrustedRemoteTools(
     },
     mkdir: async (path) => {
       try {
+        assertModelReadablePath(path);
         const response = await operation("write", { operation: "file.mkdir", path });
         if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
       } catch (error: unknown) {
@@ -557,6 +581,7 @@ function registerTrustedRemoteTools(
   const editOperations: EditOperations = {
     readFile: async (path) => {
       try {
+        assertModelReadablePath(path);
         const response = await operation("edit", { operation: "file.read", path });
         if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
         if (response.operation !== "file.read") throw new Error("Tool response kind changed");
@@ -576,6 +601,7 @@ function registerTrustedRemoteTools(
       }
     },
     writeFile: async (path, content) => {
+      assertModelReadablePath(path);
       const expectedSha256 = editDigests.get(path);
       editDigests.delete(path);
       if (expectedSha256 === undefined) {
@@ -622,7 +648,7 @@ function registerTrustedRemoteTools(
         );
         if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
         if (response.operation !== "bash.exec") throw new Error("Tool response kind changed");
-        const fullOutput = orderedBashOutput(response);
+        const fullOutput = redactToolSecrets(orderedBashOutput(response));
         const maximumModelBytes = Math.min(runtime.maximumToolOutputBytes, DEFAULT_MAX_BYTES);
         await preserveLargeOutput(toolCallId, fullOutput, maximumModelBytes);
         // Pi's Bash tool applies its own tail truncation at DEFAULT_MAX_BYTES.
@@ -648,6 +674,8 @@ function registerTrustedRemoteTools(
       "## PiCloud execution context",
       `All file and command tools operate inside the selected machine directory ${runtime.workingDirectory}.`,
       "Large tool results are bounded in model context and preserved as tenant-scoped artifacts.",
+      "GitLab/GitHub authentication is already configured through Git's credential helper when the user connects a Code Host.",
+      "Always use credential-free HTTPS clone and remote URLs. Never read .git-credentials or embed a token in a command, URL, output, file, or Git remote.",
     ].join("\n");
     if (runtime.projectInstructions === undefined) {
       return { systemPrompt: `${basePrompt}\n\n${platformContext}` };
