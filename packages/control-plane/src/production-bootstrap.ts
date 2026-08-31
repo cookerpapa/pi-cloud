@@ -249,11 +249,26 @@ export async function bootstrapProductionDatabase(
       .where("tenant_id", "=", config.tenantId)
       .executeTakeFirstOrThrow();
     exact(
-      policy.default_model_profile_id === config.modelProfileId &&
-        policy.enabled &&
+      policy.enabled &&
         policy.maximum_projects === config.maximumProjects &&
         policy.maximum_sessions === config.maximumSessions,
       "tenant runtime policy",
+    );
+    const defaultProfile = await transaction
+      .selectFrom("model_profiles as profile")
+      .innerJoin("credential_bindings as binding", (join) =>
+        join
+          .onRef("binding.tenant_id", "=", "profile.tenant_id")
+          .onRef("binding.id", "=", "profile.credential_binding_id")
+          .onRef("binding.version", "=", "profile.credential_binding_version"),
+      )
+      .select(["profile.enabled", "binding.status"])
+      .where("profile.tenant_id", "=", config.tenantId)
+      .where("profile.id", "=", policy.default_model_profile_id)
+      .executeTakeFirst();
+    exact(
+      defaultProfile?.enabled === true && defaultProfile.status === "active",
+      "tenant default model profile",
     );
 
     await transaction

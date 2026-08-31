@@ -21,6 +21,9 @@ import {
   parseCreateTurnCancellationRequest,
   parseIdempotencyKey,
   parseModelConfigurationResource,
+  parseModelCatalogResource,
+  parseSessionModelResource,
+  parseUpdateSessionModelRequest,
   parseProjectResource,
   parseReplaceModelConfigurationRequest,
   parseRunResource,
@@ -397,6 +400,33 @@ describe("control-plane public API schemas", () => {
         apiKey: `sk-${"a".repeat(48)}`,
       }),
     ).toThrow(ControlPlaneApiValidationError);
+    expect(
+      parseModelCatalogResource({
+        models: [
+          {
+            provider: "openai-codex",
+            modelId: "gpt-5.6-terra",
+            displayName: "GPT-5.6 Terra",
+            default: true,
+          },
+        ],
+      }),
+    ).toMatchObject({ models: [{ default: true }] });
+    expect(
+      parseUpdateSessionModelRequest({
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+      }),
+    ).toEqual({ provider: "deepseek", modelId: "deepseek-v4-pro" });
+    expect(
+      parseSessionModelResource({
+        sessionId: UUID,
+        modelProfileId: "40000000-0000-4000-8000-000000000001",
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+        displayName: "DeepSeek V4 Pro",
+      }),
+    ).toMatchObject({ modelId: "deepseek-v4-pro" });
     expect(() =>
       parseModelConfigurationResource({
         mode: "real",

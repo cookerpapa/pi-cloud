@@ -36,6 +36,7 @@ import {
   parseConversationTreeView,
   parseIdempotencyKey,
   parseReplaceModelConfigurationRequest,
+  parseUpdateSessionModelRequest,
   parseReplaceCubeProxyConfigurationRequest,
   parseUuidPathParameter,
   type AcceptedTurnResource,
@@ -50,6 +51,8 @@ import {
   type ConversationWorkspaceBindingResource,
   type ProjectResource,
   type ModelConfigurationResource,
+  type ModelCatalogResource,
+  type SessionModelResource,
   type CubeProxyConfigurationResource,
   type InternalCubeProxyConfigurationResource,
   type RunResource,
@@ -194,6 +197,38 @@ export class ControlPlaneController {
       this.tenantRequestContext.resolve(request),
       parseReplaceModelConfigurationRequest(body),
     );
+  }
+
+  @Get("models")
+  async getModelCatalog(@Req() request: FastifyRequest): Promise<ModelCatalogResource> {
+    const identity = this.tenantRequestContext.resolve(request);
+    return this.controlPlaneStores.forIdentity(identity).modelCatalog();
+  }
+
+  @Get("sessions/:sessionId/model")
+  async getSessionModel(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionIdValue: unknown,
+  ): Promise<SessionModelResource> {
+    const identity = this.tenantRequestContext.resolve(request);
+    return this.controlPlaneStores
+      .forIdentity(identity)
+      .getSessionModel(parseUuidPathParameter(sessionIdValue, "sessionId"));
+  }
+
+  @Put("sessions/:sessionId/model")
+  async updateSessionModel(
+    @Req() request: FastifyRequest,
+    @Param("sessionId") sessionIdValue: unknown,
+    @Body() body: unknown,
+  ): Promise<SessionModelResource> {
+    const identity = this.tenantRequestContext.requireMutation(request);
+    return this.controlPlaneStores
+      .forIdentity(identity)
+      .updateSessionModel(
+        parseUuidPathParameter(sessionIdValue, "sessionId"),
+        parseUpdateSessionModelRequest(body),
+      );
   }
 
   @Get("platform-settings/cube-proxy")
@@ -679,6 +714,7 @@ export class ControlPlaneController {
       .forIdentity(identity)
       .createSession(projectId, request.workspaceId, request.title, request.executionMode, {
         ownerUserId: identity.userId,
+        ...(request.model === undefined ? {} : { model: request.model }),
         ...(request.sandboxProfileKey === undefined
           ? {}
           : { sandboxProfileKey: request.sandboxProfileKey }),

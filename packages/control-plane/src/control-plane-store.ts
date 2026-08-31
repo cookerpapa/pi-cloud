@@ -22,9 +22,12 @@ import type {
   ProjectResource,
   ProjectEnvironmentResource,
   EnvironmentRuntimeSnapshot,
+  ModelCatalogResource,
+  ProviderModelSelection,
   RunResource,
   ExecutionMode,
   SessionResource,
+  SessionModelResource,
   WorkspaceSourceResource,
   WorkspaceDeletionResource,
   WorkspaceListResource,
@@ -44,6 +47,11 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { readCanonicalPiTurnTranscripts } from "@pi-cloud/runtime-core/canonical-pi-conversation";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { loadDelegatedSessionTreeSummaries } from "./delegated-session-projection.ts";
+import {
+  SUPPORTED_MODEL_CATALOG,
+  ensureSelectableModelProfile,
+  supportedModel,
+} from "./model-profile-catalog.ts";
 
 export type ControlPlaneStoreOptions = {
   database: Kysely<Database>;
@@ -179,6 +187,25 @@ function workspaceSourceResource(seedKind: string): WorkspaceSourceResource {
     return { kind: seedKind, status: "ready" };
   }
   throw new ControlPlaneStoreError("control_plane_misconfigured", "Workspace seed is invalid");
+}
+
+function providerModelSelection(
+  provider: string,
+  modelId: string,
+): ProviderModelSelection | undefined {
+  if (
+    provider === "deepseek" &&
+    (modelId === "deepseek-v4-flash" || modelId === "deepseek-v4-pro")
+  ) {
+    return { provider, modelId };
+  }
+  if (
+    provider === "openai-codex" &&
+    (modelId === "gpt-5.6-luna" || modelId === "gpt-5.6-terra" || modelId === "gpt-5.6-sol")
+  ) {
+    return { provider, modelId };
+  }
+  return undefined;
 }
 
 function isoTimestamp(value: Date | string): string {
@@ -494,6 +521,7 @@ export class ControlPlaneStore {
       sandboxProfileKey?: DevelopmentEnvironmentProfileKey;
       workingDirectory?: string;
       ownerUserId?: string;
+      model?: ProviderModelSelection;
     }> = {},
   ): Promise<SessionResource> {
     const sessionId = this.#idGenerator();
@@ -629,7 +657,18 @@ export class ControlPlaneStore {
       }
       const sandboxProfileKey = environmentProfileKey ?? execution.sandboxProfileKey ?? "standard";
 
-      await this.#resolveModelSnapshot(transaction);
+      const selectedModelProfile =
+        execution.model === undefined
+          ? undefined
+          : await ensureSelectableModelProfile({
+              transaction,
+              tenantId: this.#tenantId,
+              selection: execution.model,
+              idGenerator: this.#idGenerator,
+              now: new Date(),
+            });
+      const modelProfileId = selectedModelProfile?.profileId ?? policy.defaultModelProfileId;
+      await this.#resolveModelSnapshot(transaction, modelProfileId);
       const session = await transaction
         .insertInto("sessions")
         .values({
@@ -639,7 +678,7 @@ export class ControlPlaneStore {
           project_id: workspace.project_id,
           workspace_id: workspace.id,
           development_environment_id: developmentEnvironment?.id ?? null,
-          desired_model_profile_id: policy.defaultModelProfileId,
+          desired_model_profile_id: modelProfileId,
           agent_revision_id: PI_CODING_AGENT_REVISION_ID,
           created_by_user_id: execution.ownerUserId ?? null,
           state: "cold",
@@ -690,9 +729,95 @@ export class ControlPlaneStore {
         executionMode: session.execution_mode,
         sandboxProfileKey: session.sandbox_profile_key,
         workingDirectory: session.working_directory,
-        modelProfileId: policy.defaultModelProfileId,
+        modelProfileId,
         createdAt: isoTimestamp(session.created_at),
       };
+    });
+  }
+
+  async modelCatalog(): Promise<ModelCatalogResource> {
+    const policy = await this.#database
+      .selectFrom("tenant_runtime_policies as policy")
+      .innerJoin("model_profiles as profile", (join) =>
+        join
+          .onRef("profile.tenant_id", "=", "policy.tenant_id")
+          .onRef("profile.id", "=", "policy.default_model_profile_id"),
+      )
+      .select(["profile.provider", "profile.model_id as modelId"])
+      .where("policy.tenant_id", "=", this.#tenantId)
+      .where("policy.enabled", "=", true)
+      .executeTakeFirst();
+    if (policy === undefined) {
+      throw new ControlPlaneStoreError(
+        "control_plane_misconfigured",
+        "Tenant model catalog is unavailable",
+      );
+    }
+    const hasConfiguredDefault = SUPPORTED_MODEL_CATALOG.some(
+      (model) => model.provider === policy.provider && model.modelId === policy.modelId,
+    );
+    return {
+      models: SUPPORTED_MODEL_CATALOG.map((model, index) => ({
+        ...model,
+        default:
+          (model.provider === policy.provider && model.modelId === policy.modelId) ||
+          (!hasConfiguredDefault && index === 0),
+      })),
+    };
+  }
+
+  async getSessionModel(sessionId: string): Promise<SessionModelResource> {
+    return this.#sessionModelResource(this.#database, sessionId);
+  }
+
+  async updateSessionModel(
+    sessionId: string,
+    selection: ProviderModelSelection,
+  ): Promise<SessionModelResource> {
+    return this.#database.transaction().execute(async (transaction) => {
+      await this.#lockTenantPolicy(transaction);
+      const session = await transaction
+        .selectFrom("sessions")
+        .select(["id", "session_kind as sessionKind"])
+        .where("tenant_id", "=", this.#tenantId)
+        .where("id", "=", sessionId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (session === undefined || session.sessionKind !== "conversation") {
+        throw new ControlPlaneStoreError("not_found", "Conversation was not found");
+      }
+      const activeTurn = await transaction
+        .selectFrom("turns")
+        .select("id")
+        .where("tenant_id", "=", this.#tenantId)
+        .where("session_id", "=", sessionId)
+        .where("state", "in", ["queued", "running", "cancelling"])
+        .limit(1)
+        .executeTakeFirst();
+      if (activeTurn !== undefined) {
+        throw new ControlPlaneStoreError(
+          "conflict",
+          "Conversation model cannot change while a Run is active",
+        );
+      }
+      const profile = await ensureSelectableModelProfile({
+        transaction,
+        tenantId: this.#tenantId,
+        selection,
+        idGenerator: this.#idGenerator,
+        now: new Date(),
+      });
+      await transaction
+        .updateTable("sessions")
+        .set({
+          desired_model_profile_id: profile.profileId,
+          row_version: sql<string>`${sql.ref("row_version")} + 1`,
+          updated_at: new Date(),
+        })
+        .where("tenant_id", "=", this.#tenantId)
+        .where("id", "=", sessionId)
+        .executeTakeFirstOrThrow();
+      return this.#sessionModelResource(transaction, sessionId);
     });
   }
 
@@ -1988,12 +2113,6 @@ export class ControlPlaneStore {
           );
         }
       }
-      if (session.desired_model_profile_id !== this.#defaultModelProfileId) {
-        throw new ControlPlaneStoreError(
-          "control_plane_misconfigured",
-          "Session model profile does not match the configured v0 profile",
-        );
-      }
       if (!TURN_ACCEPTING_SESSION_STATES.has(session.state)) {
         throw new ControlPlaneStoreError(
           "conflict",
@@ -2004,7 +2123,11 @@ export class ControlPlaneStore {
         session.next_mailbox_position,
         "Next mailbox position",
       );
-      const model = await this.#resolveModelSnapshot(transaction, request.thinkingLevel);
+      const model = await this.#resolveModelSnapshot(
+        transaction,
+        session.desired_model_profile_id,
+        request.thinkingLevel,
+      );
       let toolCapabilities;
       try {
         toolCapabilities = parseCloudToolCapabilitySnapshot(session.tool_capabilities);
@@ -2503,6 +2626,7 @@ export class ControlPlaneStore {
 
   async #resolveModelSnapshot(
     transaction: Transaction<Database>,
+    modelProfileId: string,
     requestedThinkingLevel?: ModelThinkingLevel,
   ) {
     const row = (await transaction
@@ -2526,7 +2650,7 @@ export class ControlPlaneStore {
         "credential.provider as credentialProvider",
       ])
       .where("profile.tenant_id", "=", this.#tenantId)
-      .where("profile.id", "=", this.#defaultModelProfileId)
+      .where("profile.id", "=", modelProfileId)
       .executeTakeFirst()) as ModelSnapshotRow | undefined;
 
     if (
@@ -2565,6 +2689,55 @@ export class ControlPlaneStore {
       }
       throw error;
     }
+  }
+
+  async #sessionModelResource(
+    transaction: Kysely<Database>,
+    sessionId: string,
+  ): Promise<SessionModelResource> {
+    const row = await transaction
+      .selectFrom("sessions as session")
+      .innerJoin("model_profiles as profile", (join) =>
+        join
+          .onRef("profile.tenant_id", "=", "session.tenant_id")
+          .onRef("profile.id", "=", "session.desired_model_profile_id"),
+      )
+      .innerJoin("credential_bindings as binding", (join) =>
+        join
+          .onRef("binding.tenant_id", "=", "profile.tenant_id")
+          .onRef("binding.id", "=", "profile.credential_binding_id")
+          .onRef("binding.version", "=", "profile.credential_binding_version"),
+      )
+      .select([
+        "session.id as sessionId",
+        "session.desired_model_profile_id as modelProfileId",
+        "session.session_kind as sessionKind",
+        "profile.provider",
+        "profile.model_id as modelId",
+        "profile.enabled",
+        "binding.status as bindingStatus",
+      ])
+      .where("session.tenant_id", "=", this.#tenantId)
+      .where("session.id", "=", sessionId)
+      .executeTakeFirst();
+    if (row === undefined || row.sessionKind !== "conversation") {
+      throw new ControlPlaneStoreError("not_found", "Conversation was not found");
+    }
+    const selection = providerModelSelection(row.provider, row.modelId);
+    const catalogModel = selection === undefined ? undefined : supportedModel(selection);
+    if (!row.enabled || row.bindingStatus !== "active" || catalogModel === undefined) {
+      throw new ControlPlaneStoreError(
+        "control_plane_misconfigured",
+        "Conversation model is unavailable",
+      );
+    }
+    return {
+      sessionId: row.sessionId,
+      modelProfileId: row.modelProfileId,
+      provider: catalogModel.provider,
+      modelId: catalogModel.modelId,
+      displayName: catalogModel.displayName,
+    } as SessionModelResource;
   }
 
   async #lockTenantPolicy(transaction: Transaction<Database>): Promise<TenantRuntimePolicy> {

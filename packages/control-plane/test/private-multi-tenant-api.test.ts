@@ -230,10 +230,45 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       method: "POST",
       url: `/v1/projects/${projectA.projectId}/sessions`,
       headers: authorization(memberAToken),
-      payload: { workspaceId: projectA.workspaceId, title: "Test conversation" },
+      payload: {
+        workspaceId: projectA.workspaceId,
+        title: "Test conversation",
+        model: { provider: "openai-codex", modelId: "gpt-5.6-terra" },
+      },
     });
     expect(alphaSession.statusCode).toBe(201);
     sessionA = alphaSession.json<SessionResource>();
+    const catalog = await http.inject({
+      method: "GET",
+      url: "/v1/models",
+      headers: authorization(memberAToken),
+    });
+    expect(catalog.statusCode).toBe(200);
+    expect(catalog.json()).toMatchObject({
+      models: expect.arrayContaining([
+        expect.objectContaining({
+          provider: "openai-codex",
+          modelId: "gpt-5.6-terra",
+          displayName: "GPT-5.6 Terra",
+        }),
+        expect.objectContaining({
+          provider: "deepseek",
+          modelId: "deepseek-v4-pro",
+          displayName: "DeepSeek V4 Pro",
+        }),
+      ]),
+    });
+    const selectedModel = await http.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionA.sessionId}/model`,
+      headers: authorization(memberAToken),
+    });
+    expect(selectedModel.statusCode).toBe(200);
+    expect(selectedModel.json()).toMatchObject({
+      sessionId: sessionA.sessionId,
+      provider: "openai-codex",
+      modelId: "gpt-5.6-terra",
+    });
     const alphaTurn = await http.inject({
       method: "POST",
       url: `/v1/sessions/${sessionA.sessionId}/turns`,
@@ -245,6 +280,14 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     });
     expect(alphaTurn.statusCode).toBe(202);
     turnA = alphaTurn.json<AcceptedTurnResource>();
+    const activeModelChange = await http.inject({
+      method: "PUT",
+      url: `/v1/sessions/${sessionA.sessionId}/model`,
+      headers: authorization(memberAToken),
+      payload: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+    });
+    expect(activeModelChange.statusCode).toBe(409);
+    expect(activeModelChange.json()).toMatchObject({ error: { code: "conflict" } });
 
     const foreignProbes = [
       await http.inject({
@@ -275,6 +318,17 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
         method: "GET",
         url: `/v1/sessions/${sessionA.sessionId}/events`,
         headers: authorization(tenantB.credential.token),
+      }),
+      await http.inject({
+        method: "GET",
+        url: `/v1/sessions/${sessionA.sessionId}/model`,
+        headers: authorization(tenantB.credential.token),
+      }),
+      await http.inject({
+        method: "PUT",
+        url: `/v1/sessions/${sessionA.sessionId}/model`,
+        headers: authorization(tenantB.credential.token),
+        payload: { provider: "deepseek", modelId: "deepseek-v4-pro" },
       }),
     ];
     for (const response of foreignProbes) {
@@ -318,6 +372,45 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
     });
     expect(newTurn.statusCode).toBe(202);
     expect(newTurn.json()).toMatchObject({ mailboxPosition: 2, replayed: false });
+  });
+
+  it("switches only an idle conversation default and snapshots the next Turn", async () => {
+    await database
+      .updateTable("turns")
+      .set({ state: "completed", settled_at: NOW })
+      .where("tenant_id", "=", tenantA.tenantId)
+      .where("session_id", "=", sessionA.sessionId)
+      .execute();
+    const switched = await http.inject({
+      method: "PUT",
+      url: `/v1/sessions/${sessionA.sessionId}/model`,
+      headers: authorization(memberAToken),
+      payload: { provider: "deepseek", modelId: "deepseek-v4-pro" },
+    });
+    expect(switched.statusCode).toBe(200);
+    expect(switched.json()).toMatchObject({
+      sessionId: sessionA.sessionId,
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+    });
+
+    const next = await http.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionA.sessionId}/turns`,
+      headers: {
+        ...authorization(memberAToken),
+        "idempotency-key": "alpha-model-switched-turn",
+      },
+      payload: { prompt: "use the newly selected model" },
+    });
+    expect(next.statusCode).toBe(202);
+    const persisted = await database
+      .selectFrom("turns")
+      .select(["provider", "model_id as modelId"])
+      .where("tenant_id", "=", tenantA.tenantId)
+      .where("id", "=", next.json<AcceptedTurnResource>().turnId)
+      .executeTakeFirstOrThrow();
+    expect(persisted).toEqual({ provider: "deepseek", modelId: "deepseek-v4-pro" });
   });
 
   it("invalidates a revoked tenant credential without affecting another tenant", async () => {

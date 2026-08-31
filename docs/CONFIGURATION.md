@@ -15,12 +15,19 @@ Model keys and service credentials never belong in committed files.
 The administrator page stores versioned values in PostgreSQL and applies them
 to new requests without restarting services:
 
-- Pi provider/model route, without an upstream credential;
+- platform-default Pi provider/model route for future conversations, without an upstream credential;
 - Cube public-egress proxy URL and bypass list.
 
 CLIProxyAPI is the only model-supply authority. Its private Volume contains
 ChatGPT OAuth records and API keys; its native page manages quota, cooldown and
-account health. PiCloud stores only the selected provider/model route. Use:
+account health. PiCloud stores only the selected provider/model route.
+
+Users choose a conversation's initial model in the new-conversation dialog and
+may change its default from the conversation header while no Run is active.
+Every accepted Turn freezes its own provider/model snapshot; changing the
+platform default or Session default never changes historical or in-flight Runs.
+
+Use:
 
 ```bash
 npm run production:provider-gateway:key

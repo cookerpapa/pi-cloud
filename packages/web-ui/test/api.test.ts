@@ -319,6 +319,61 @@ describe("tenant-aware browser API", () => {
     ).resolves.toMatchObject({ mode: "real", routeVersion: 2 });
   });
 
+  it("lists selectable models and changes an idle conversation default", async () => {
+    const sessionId = "40000000-0000-4000-8000-000000000001";
+    const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
+      const path = String(input);
+      if (path === "/v1/models") {
+        return new Response(
+          JSON.stringify({
+            models: [
+              {
+                provider: "openai-codex",
+                modelId: "gpt-5.6-terra",
+                displayName: "GPT-5.6 Terra",
+                default: true,
+              },
+              {
+                provider: "deepseek",
+                modelId: "deepseek-v4-pro",
+                displayName: "DeepSeek V4 Pro",
+                default: false,
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      expect(path).toBe(`/v1/sessions/${sessionId}/model`);
+      if (init?.method === "PUT") {
+        expect(JSON.parse(String(init.body))).toEqual({
+          provider: "deepseek",
+          modelId: "deepseek-v4-pro",
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          sessionId,
+          modelProfileId: "50000000-0000-4000-8000-000000000001",
+          provider: init?.method === "PUT" ? "deepseek" : "openai-codex",
+          modelId: init?.method === "PUT" ? "deepseek-v4-pro" : "gpt-5.6-terra",
+          displayName: init?.method === "PUT" ? "DeepSeek V4 Pro" : "GPT-5.6 Terra",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const api = new PiCloudApi(fetchImplementation);
+    await expect(api.getModelCatalog()).resolves.toMatchObject({
+      models: [{ modelId: "gpt-5.6-terra" }, { modelId: "deepseek-v4-pro" }],
+    });
+    await expect(api.getSessionModel(sessionId)).resolves.toMatchObject({
+      modelId: "gpt-5.6-terra",
+    });
+    await expect(
+      api.updateSessionModel(sessionId, { provider: "deepseek", modelId: "deepseek-v4-pro" }),
+    ).resolves.toMatchObject({ modelId: "deepseek-v4-pro" });
+  });
+
   it("reads and hot-replaces the versioned Cube proxy origin", async () => {
     const token = `pck_10000000-0000-4000-8000-000000000001.${"a".repeat(43)}`;
     const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {

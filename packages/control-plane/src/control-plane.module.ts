@@ -134,6 +134,7 @@ export class ControlPlaneModule {
           provide: TenantModelConfigurationService,
           useValue: new TenantModelConfigurationService({
             database: options.database,
+            ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
             ...(options.platformOperatorTenantId === undefined
               ? {}
               : { platformOperatorTenantId: options.platformOperatorTenantId }),

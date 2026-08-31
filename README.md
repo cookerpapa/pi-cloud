@@ -10,6 +10,7 @@ in CubeSandbox KVM microVMs.
 - browser registration/login and tenant-isolated conversations;
 - per-browser Chinese/English UI selection without translating prompts, Tool output or model replies;
 - multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
+- per-conversation model selection with immutable provider/model snapshots for every Turn;
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
 - self-managed GitLab public/private project connection and explicit Issue-to-Run automation;

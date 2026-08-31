@@ -97,6 +97,10 @@ const zhCN = {
   "chat.connecting": "连接中",
   "chat.reconnecting": "正在重连",
   "chat.connectionFailed": "连接已中断",
+  "chat.model.label": "模型",
+  "chat.model.default": "平台默认",
+  "chat.model.createHint": "作为这个会话的默认模型，之后可在没有任务运行时切换。",
+  "chat.model.nextTurnHint": "切换只影响下一轮，不会改变当前任务或历史消息。",
   "chat.ssh": "SSH",
   "chat.sshExclusiveOnly": "仅云端开发机支持 SSH",
   "chat.reconnect": "重新连接",
@@ -466,6 +470,12 @@ const enUS: Record<UiTextKey, string> = {
   "chat.connecting": "Connecting",
   "chat.reconnecting": "Reconnecting",
   "chat.connectionFailed": "Connection lost",
+  "chat.model.label": "Model",
+  "chat.model.default": "Platform default",
+  "chat.model.createHint":
+    "This becomes the conversation default and can be changed while no task is running.",
+  "chat.model.nextTurnHint":
+    "Changes apply to the next turn without altering the active task or conversation history.",
   "chat.ssh": "SSH",
   "chat.sshExclusiveOnly": "SSH is available only for cloud development machines",
   "chat.reconnect": "Reconnect",

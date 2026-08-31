@@ -100,10 +100,12 @@ It receives Pi's stable Session ID and applies soft Session affinity so later
 Turns prefer the same account/cache route. Losing that affinity changes only
 performance: PostgreSQL Pi SessionStorage remains the recovery authority.
 
-Every Session pins one immutable, deployment-owned `AgentRevision`; every Run
-copies that Revision as its routing snapshot. The Revision independently names
-the Runtime, Harness version and native Session Storage contract. Model choice
-remains a Turn snapshot. The Pi Worker queue only claims `pi_sdk` Revisions and
+Every Session pins one immutable, deployment-owned `AgentRevision` and a
+separately selectable default Model Profile; every Run copies both as its
+routing snapshot. A user may change the Session default only while no Run is
+active, so the change applies to the next Turn without rewriting history or an
+in-flight retry. The Agent Revision independently names the Runtime, Harness
+version and native Session Storage contract. The Pi Worker queue only claims `pi_sdk` Revisions and
 the Runner rejects a non-Pi Session Storage contract, so another Agent family
 may share product tables or the PostgreSQL cluster without reinterpreting
 `pi_session_*` rows.

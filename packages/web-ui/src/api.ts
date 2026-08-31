@@ -11,6 +11,8 @@ import {
   parseConversationPruneResource,
   parseControlPlaneApiError,
   parseModelConfigurationResource,
+  parseModelCatalogResource,
+  parseSessionModelResource,
   parseCubeProxyConfigurationResource,
   parseLogoutResource,
   parseProjectResource,
@@ -45,6 +47,8 @@ import {
   type ProjectResource,
   type ProviderModelSelection,
   type ModelConfigurationResource,
+  type ModelCatalogResource,
+  type SessionModelResource,
   type CubeProxyConfigurationResource,
   type LogoutResource,
   type RunResource,
@@ -262,6 +266,37 @@ export class PiCloudApi {
       await request(
         this.#fetch,
         "/v1/model-configuration",
+        jsonRequest(selection, undefined, "PUT"),
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async getModelCatalog(): Promise<ModelCatalogResource> {
+    return parseModelCatalogResource(
+      await request(this.#fetch, "/v1/models", { method: "GET" }, this.#authorizationToken),
+    );
+  }
+
+  async getSessionModel(sessionId: string): Promise<SessionModelResource> {
+    return parseSessionModelResource(
+      await request(
+        this.#fetch,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/model`,
+        { method: "GET" },
+        this.#authorizationToken,
+      ),
+    );
+  }
+
+  async updateSessionModel(
+    sessionId: string,
+    selection: ProviderModelSelection,
+  ): Promise<SessionModelResource> {
+    return parseSessionModelResource(
+      await request(
+        this.#fetch,
+        `/v1/sessions/${encodeURIComponent(sessionId)}/model`,
         jsonRequest(selection, undefined, "PUT"),
         this.#authorizationToken,
       ),
@@ -661,6 +696,7 @@ export class PiCloudApi {
     executionMode: ExecutionMode,
     sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey = "standard",
     workingDirectory = "/workspace",
+    model?: ProviderModelSelection,
   ): Promise<SessionResource> {
     return parseSessionResource(
       await request(
@@ -669,6 +705,7 @@ export class PiCloudApi {
         jsonRequest({
           workspaceId,
           title,
+          ...(model === undefined ? {} : { model }),
           executionMode,
           sandboxProfileKey,
           workingDirectory,

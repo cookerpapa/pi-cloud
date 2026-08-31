@@ -155,6 +155,15 @@ try {
         await page.wait(50);
       }
 
+      async function selectValue(selector, value, name) {
+        const changed = await page.evaluate(
+          `(()=>{const element=${selectorExpression(selector)};if(!(element instanceof HTMLSelectElement))return false;Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event("change",{bubbles:true}));return element.value===${JSON.stringify(value)}})()`,
+        );
+        assert.equal(changed, true, `Could not select ${selector}`);
+        record(name);
+        await page.wait(50);
+      }
+
       await page.navigate(baseUrl.toString(), 800);
       await page.evaluate('localStorage.setItem("pi-cloud:ui-language","zh-CN")');
       await page.send("Page.reload", { ignoreCache: true });
@@ -216,6 +225,11 @@ try {
         "conversation.elasticMode",
       );
       await setValue(".product-progressive-options > label input", `UI acceptance ${suffix}`);
+      await selectValue(
+        ".product-conversation-model-select",
+        "openai-codex:gpt-5.6-terra",
+        "conversation.modelSelect",
+      );
       await setValue('input[placeholder*="order-service"]', `ui-workspace-${suffix}`);
       await click(
         ".product-resource-profiles button:last-child",
@@ -263,6 +277,16 @@ try {
         },
         "completed browser-submitted Run",
         180_000,
+      );
+      await selectValue(
+        ".product-model-selector select",
+        "openai-codex:gpt-5.6-sol",
+        "conversation.modelSwitch",
+      );
+      await waitFor(
+        async () =>
+          (await api.getSessionModel(elasticConversation.sessionId)).modelId === "gpt-5.6-sol",
+        "conversation model switch",
       );
       await clickLast(
         ".product-turn .product-user-message .product-message-copy",

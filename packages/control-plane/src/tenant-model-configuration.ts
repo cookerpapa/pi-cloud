@@ -5,6 +5,8 @@ import type {
   ReplaceModelConfigurationRequest,
 } from "@pi-cloud/protocol";
 import type { Kysely, Transaction } from "kysely";
+import { randomUUID } from "node:crypto";
+import { supportedModel } from "./model-profile-catalog.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
 export class TenantModelConfigurationError extends Error {
@@ -20,6 +22,7 @@ export class TenantModelConfigurationError extends Error {
 export type TenantModelConfigurationServiceOptions = {
   database: Kysely<Database>;
   clock?: () => Date;
+  idGenerator?: () => string;
   platformOperatorTenantId?: string;
   platformModelSourceTenantId?: string;
 };
@@ -70,27 +73,17 @@ function providerModel(provider: string, modelId: string): ProviderModelSelectio
   return undefined;
 }
 
-function thinkingPolicy(): {
-  defaultThinkingLevel: "off";
-  allowedThinkingLevels: readonly (
-    "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
-  )[];
-} {
-  return {
-    defaultThinkingLevel: "off",
-    allowedThinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-  };
-}
-
 export class TenantModelConfigurationService {
   readonly #database: Kysely<Database>;
   readonly #clock: () => Date;
+  readonly #idGenerator: () => string;
   readonly #platformOperatorTenantId: string | undefined;
   readonly #platformModelSourceTenantId: string | undefined;
 
   constructor(options: TenantModelConfigurationServiceOptions) {
     this.#database = options.database;
     this.#clock = options.clock ?? (() => new Date());
+    this.#idGenerator = options.idGenerator ?? randomUUID;
     this.#platformOperatorTenantId = options.platformOperatorTenantId;
     this.#platformModelSourceTenantId =
       options.platformModelSourceTenantId ?? options.platformOperatorTenantId;
@@ -213,41 +206,46 @@ export class TenantModelConfigurationService {
         "Tenant model configuration is unavailable",
       );
     }
-    const profile = await transaction
+    if (supportedModel(request) === undefined) {
+      throw new TenantModelConfigurationError(
+        "model_configuration_unavailable",
+        "Tenant model configuration is unsupported",
+      );
+    }
+    const current = await transaction
       .selectFrom("model_profiles")
       .select([
-        "id",
         "provider",
         "model_id as modelId",
-        "credential_binding_id as routeBindingId",
-        "credential_binding_version as routeVersion",
+        "credential_binding_id as credentialBindingId",
+        "credential_binding_version as credentialBindingVersion",
         "updated_at as updatedAt",
         "enabled",
       ])
       .where("tenant_id", "=", tenantId)
       .where("id", "=", policy.profileId)
       .executeTakeFirst();
-    if (profile === undefined || !profile.enabled) {
+    if (current === undefined || !current.enabled) {
       throw new TenantModelConfigurationError(
         "model_configuration_unavailable",
         "Tenant model configuration is unavailable",
       );
     }
-    const currentVersion = positiveVersion(profile.routeVersion);
-    if (profile.provider === request.provider && profile.modelId === request.modelId) {
+    const currentVersion = positiveVersion(current.credentialBindingVersion);
+    if (current.provider === request.provider && current.modelId === request.modelId) {
       return {
         mode: "real",
         ...request,
         configured: true,
         routeVersion: currentVersion,
-        updatedAt: timestamp(profile.updatedAt),
+        updatedAt: timestamp(current.updatedAt),
       };
     }
     const maximum = await transaction
       .selectFrom("credential_bindings")
       .select((expression) => expression.fn.max("version").as("maximumVersion"))
       .where("tenant_id", "=", tenantId)
-      .where("id", "=", profile.routeBindingId)
+      .where("id", "=", current.credentialBindingId)
       .executeTakeFirstOrThrow();
     const nextVersion = positiveVersion(maximum.maximumVersion ?? currentVersion) + 1;
     if (!Number.isSafeInteger(nextVersion)) {
@@ -256,11 +254,11 @@ export class TenantModelConfigurationService {
         "Model route version capacity is exhausted",
       );
     }
-    const thinking = thinkingPolicy();
+    const profileId = this.#idGenerator();
     await transaction
       .insertInto("credential_bindings")
       .values({
-        id: profile.routeBindingId,
+        id: current.credentialBindingId,
         tenant_id: tenantId,
         provider: request.provider,
         kind: "brokered",
@@ -272,19 +270,21 @@ export class TenantModelConfigurationService {
       })
       .executeTakeFirstOrThrow();
     await transaction
-      .updateTable("model_profiles")
-      .set({
+      .insertInto("model_profiles")
+      .values({
+        id: profileId,
+        tenant_id: tenantId,
+        name: `default-${request.provider}-${request.modelId}-${profileId.slice(0, 8)}`,
         provider: request.provider,
         model_id: request.modelId,
-        default_thinking_level: thinking.defaultThinkingLevel,
-        allowed_thinking_levels: [...thinking.allowedThinkingLevels],
-        credential_binding_id: profile.routeBindingId,
+        default_thinking_level: "off",
+        allowed_thinking_levels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        credential_binding_id: current.credentialBindingId,
         credential_binding_version: nextVersion,
         enabled: true,
+        created_at: now,
         updated_at: now,
       })
-      .where("tenant_id", "=", tenantId)
-      .where("id", "=", profile.id)
       .executeTakeFirstOrThrow();
     await transaction
       .insertInto("model_rates")
@@ -297,6 +297,11 @@ export class TenantModelConfigurationService {
       })
       .onConflict((conflict) => conflict.doNothing())
       .execute();
+    await transaction
+      .updateTable("tenant_runtime_policies")
+      .set({ default_model_profile_id: profileId })
+      .where("tenant_id", "=", tenantId)
+      .executeTakeFirstOrThrow();
     return {
       mode: "real",
       ...request,

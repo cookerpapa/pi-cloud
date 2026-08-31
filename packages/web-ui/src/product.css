@@ -747,7 +747,33 @@ body.product-panel-resizing {
 }
 .product-topbar-actions {
   display: flex;
+  align-items: center;
   gap: 5px;
+}
+
+.product-model-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 3px;
+  color: #858585;
+  font-size: 10px;
+}
+
+.product-model-selector select {
+  max-width: 168px;
+  padding: 6px 26px 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  outline: none;
+  background: #292929;
+  color: #cfcfcf;
+  font: inherit;
+  font-size: 11px;
+}
+
+.product-model-selector select:focus {
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .product-download-conversation {

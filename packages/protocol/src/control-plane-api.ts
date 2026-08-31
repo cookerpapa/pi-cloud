@@ -64,6 +64,59 @@ export const ProviderModelSelectionSchema = Type.Union([
 
 export const ReplaceModelConfigurationRequestSchema = ProviderModelSelectionSchema;
 
+export const ModelCatalogEntryResourceSchema = Type.Union([
+  Type.Object(
+    {
+      provider: Type.Literal("deepseek"),
+      modelId: DeepSeekModelIdSchema,
+      displayName: Type.String({ minLength: 1, maxLength: 128 }),
+      default: Type.Boolean(),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      provider: Type.Literal("openai-codex"),
+      modelId: OpenAICodexModelIdSchema,
+      displayName: Type.String({ minLength: 1, maxLength: 128 }),
+      default: Type.Boolean(),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
+export const ModelCatalogResourceSchema = Type.Object(
+  {
+    models: Type.Array(ModelCatalogEntryResourceSchema, { minItems: 1, maxItems: 20 }),
+  },
+  { additionalProperties: false },
+);
+
+export const UpdateSessionModelRequestSchema = ProviderModelSelectionSchema;
+
+export const SessionModelResourceSchema = Type.Union([
+  Type.Object(
+    {
+      sessionId: UuidSchema,
+      modelProfileId: UuidSchema,
+      provider: Type.Literal("deepseek"),
+      modelId: DeepSeekModelIdSchema,
+      displayName: Type.String({ minLength: 1, maxLength: 128 }),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      sessionId: UuidSchema,
+      modelProfileId: UuidSchema,
+      provider: Type.Literal("openai-codex"),
+      modelId: OpenAICodexModelIdSchema,
+      displayName: Type.String({ minLength: 1, maxLength: 128 }),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
 export const ModelConfigurationResourceSchema = Type.Union([
   Type.Object(
     {
@@ -271,6 +324,7 @@ export const CreateSessionRequestSchema = Type.Object(
   {
     workspaceId: UuidSchema,
     title: Type.String({ minLength: 1, maxLength: 256 }),
+    model: Type.Optional(ProviderModelSelectionSchema),
     executionMode: Type.Optional(ExecutionModeSchema),
     sandboxProfileKey: Type.Optional(DevelopmentEnvironmentProfileKeySchema),
     workingDirectory: Type.Optional(
@@ -1013,6 +1067,10 @@ export type LogoutResource = Static<typeof LogoutResourceSchema>;
 export type DeepSeekModelId = Static<typeof DeepSeekModelIdSchema>;
 export type OpenAICodexModelId = Static<typeof OpenAICodexModelIdSchema>;
 export type ProviderModelSelection = Static<typeof ProviderModelSelectionSchema>;
+export type ModelCatalogEntryResource = Static<typeof ModelCatalogEntryResourceSchema>;
+export type ModelCatalogResource = Static<typeof ModelCatalogResourceSchema>;
+export type UpdateSessionModelRequest = Static<typeof UpdateSessionModelRequestSchema>;
+export type SessionModelResource = Static<typeof SessionModelResourceSchema>;
 export type ReplaceModelConfigurationRequest = Static<
   typeof ReplaceModelConfigurationRequestSchema
 >;
@@ -1206,6 +1264,18 @@ export function parseReplaceModelConfigurationRequest(
 
 export function parseModelConfigurationResource(value: unknown): ModelConfigurationResource {
   return parseSchema(ModelConfigurationResourceSchema, value, "model configuration resource");
+}
+
+export function parseModelCatalogResource(value: unknown): ModelCatalogResource {
+  return parseSchema(ModelCatalogResourceSchema, value, "model catalog resource");
+}
+
+export function parseUpdateSessionModelRequest(value: unknown): UpdateSessionModelRequest {
+  return parseSchema(UpdateSessionModelRequestSchema, value, "update-session-model request");
+}
+
+export function parseSessionModelResource(value: unknown): SessionModelResource {
+  return parseSchema(SessionModelResourceSchema, value, "session model resource");
 }
 
 export function parseReplaceCubeProxyConfigurationRequest(
