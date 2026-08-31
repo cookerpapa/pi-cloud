@@ -1,7 +1,7 @@
 {
   "accepted": true,
-  "piCloudRevision": "57cae0a4abf85908af048b17cef32aa05c98ab88",
-  "checkedAt": "2026-08-31T14:25:45.389Z",
+  "piCloudRevision": "422337d2ee1bad5bc78546334e8192be65801e27",
+  "checkedAt": "2026-08-31T14:47:25.766Z",
   "tenants": 6,
   "runs": 12,
   "model": { "provider": "openai-codex", "modelId": "gpt-5.6-terra" },
@@ -15,32 +15,37 @@
     "maximumAttemptCount": 1
   },
   "latencyMs": {
-    "acceptance": { "minimum": 30, "p50": 81, "p95": 336, "maximum": 336 },
+    "acceptance": { "minimum": 29, "p50": 49, "p95": 287, "maximum": 287 },
     "firstAssistantText": {
-      "minimum": 3092,
-      "p50": 6928,
-      "p95": 20901,
-      "maximum": 20901
+      "minimum": 2909,
+      "p50": 9445,
+      "p95": 17737,
+      "maximum": 17737
     },
-    "settled": { "minimum": 4053, "p50": 8427, "p95": 23263, "maximum": 23263 },
-    "queueWait": { "minimum": 410, "p50": 4148, "p95": 13839, "maximum": 13839 }
+    "settled": {
+      "minimum": 4636,
+      "p50": 10536,
+      "p95": 22064,
+      "maximum": 22064
+    },
+    "queueWait": { "minimum": 385, "p50": 5932, "p95": 14393, "maximum": 14393 }
   },
   "workers": {
-    "distinct": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
-    "assignments": { "pi-cloud-worker-1": 6, "pi-cloud-worker-2": 6 }
+    "distinct": ["pi-cloud-worker-2", "pi-cloud-worker-1"],
+    "assignments": { "pi-cloud-worker-2": 6, "pi-cloud-worker-1": 6 }
   },
   "streaming": {
     "terminalCount": 12,
     "piEntryCount": 30,
     "messageCount": 24,
-    "canonicalPayloadBytes": 43436,
+    "canonicalPayloadBytes": 45094,
     "entriesPerRun": 2.5
   },
   "usage": {
     "requests": 12,
-    "inputTokens": 28204,
-    "outputTokens": 1150,
-    "cacheReadTokens": 25088,
+    "inputTokens": 13796,
+    "outputTokens": 1097,
+    "cacheReadTokens": 39424,
     "cacheWriteTokens": 0
   }
 }

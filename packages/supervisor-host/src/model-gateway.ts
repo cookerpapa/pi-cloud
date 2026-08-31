@@ -21,6 +21,8 @@ const PROVIDER_RESPONSES_PATH = "/v1/responses";
 const MAX_REQUEST_BYTES = 8 * 1_024 * 1_024;
 const MAX_DECOMPRESSED_REQUEST_BYTES = 32 * 1_024 * 1_024;
 const MAX_RESPONSE_BYTES = 64 * 1_024 * 1_024;
+const PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS = 3;
+const PROVIDER_GATEWAY_RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
 
 type SupportedModel =
   | Readonly<{
@@ -268,6 +270,23 @@ function parseBody(bytes: Buffer, contentEncoding: string | undefined): Record<s
 
 async function writeChunk(response: ServerResponse, chunk: Uint8Array): Promise<void> {
   if (!response.write(chunk)) await once(response, "drain");
+}
+
+async function retryDelay(attempt: number, signal: AbortSignal): Promise<void> {
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const settle = (): void => {
+      signal.removeEventListener("abort", abort);
+      resolvePromise();
+    };
+    const timer = setTimeout(settle, attempt * 100);
+    timer.unref();
+    const abort = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      rejectPromise(signal.reason);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function supportedModel(provider: string, modelId: string): SupportedModel | undefined {
@@ -652,12 +671,32 @@ export class TenantModelGateway {
     response.once("close", abortOnResponse);
     active.requestControllers.add(controller);
     try {
-      const upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${active.providerPath}`, {
-        method: "POST",
-        headers: upstreamHeaders(request, active, this.#providerGatewayApiKey),
-        body: new Uint8Array(requestBytes),
-        signal: controller.signal,
-      });
+      let upstream: Response | undefined;
+      for (let attempt = 1; attempt <= PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS; attempt += 1) {
+        try {
+          upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${active.providerPath}`, {
+            method: "POST",
+            headers: upstreamHeaders(request, active, this.#providerGatewayApiKey),
+            body: new Uint8Array(requestBytes),
+            signal: controller.signal,
+          });
+        } catch (error: unknown) {
+          if (attempt === PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS || controller.signal.aborted) {
+            throw error;
+          }
+          await retryDelay(attempt, controller.signal);
+          continue;
+        }
+        if (
+          !PROVIDER_GATEWAY_RETRYABLE_STATUS.has(upstream.status) ||
+          attempt === PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS
+        ) {
+          break;
+        }
+        await upstream.body?.cancel().catch(() => undefined);
+        await retryDelay(attempt, controller.signal);
+      }
+      if (upstream === undefined) throw new Error("Provider Gateway returned no response");
       response.writeHead(upstream.status, {
         "cache-control": "no-store",
         "content-type": upstream.headers.get("content-type") ?? "text/event-stream; charset=utf-8",

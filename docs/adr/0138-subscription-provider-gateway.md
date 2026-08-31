@@ -49,6 +49,10 @@ ports rather than copied into the product UI.
   A switch never occurs inside an accepted stream. A partial or ambiguous model
   request is settled through the existing interruption boundary before another
   account handles a later sampling Step.
+- The Worker-local capability Gateway may repeat a CLIProxy request only when no
+  response bytes were exposed and CLIProxy returned a transport-class 5xx (or
+  the internal connection failed). It never retries a partial stream; CLIProxy
+  remains the account-selection and provider-quota authority.
 - The one-host deployment runs one active CLIProxyAPI replica. Its affinity cache
   is an optimization and may be lost on restart; PiCloud correctness relies on
   PostgreSQL Pi SessionStorage and full-context replay, not on provider cache.

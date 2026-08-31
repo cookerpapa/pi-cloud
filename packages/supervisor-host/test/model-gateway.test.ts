@@ -198,6 +198,38 @@ describe("tenant model gateway", () => {
     expect(await response.text()).toContain("response.completed");
   });
 
+  it("retries only a pre-stream Provider Gateway transport failure", async () => {
+    let attempts = 0;
+    const upstream = vi.fn<typeof fetch>(async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response('{"error":{"code":"transport_failure"}}', { status: 500 });
+      }
+      return new Response('data: {"choices":[{"delta":{"content":"recovered"}}]}\n\n', {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const gateway = createGateway(upstream);
+    await gateway.start();
+    const lease = gateway.issue(command());
+    const response = await fetch(
+      `http://127.0.0.1:${String(gateway.listeningPort)}/v1/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${lease.runtime.capability}`,
+          "content-type": "application/json",
+          ...samplingHeaders(),
+        },
+        body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, messages: [] }),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("recovered");
+    expect(upstream).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects protocol, model, Step identity and request-count violations before forwarding", async () => {
     const upstream = vi.fn<typeof fetch>(async () => new Response("unexpected"));
     const gateway = createGateway(upstream, 1);
