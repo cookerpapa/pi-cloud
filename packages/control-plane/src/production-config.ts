@@ -20,7 +20,6 @@ export type ProductionControlPlaneConfig = {
   workerEventIngestToken: string;
   supervisorEnrollmentToken: string;
   supervisorManagementToken: string;
-  modelCredentialMasterKey: string;
   cubeEgressConfigToken: string;
   toolBrokerBaseUrls: readonly string[];
   workspaceServiceToken: string;
@@ -453,11 +452,6 @@ export async function loadProductionControlPlaneConfig(
     supervisorManagementToken: await secret(
       environment,
       "PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN",
-      allowInlineSecrets,
-    ),
-    modelCredentialMasterKey: await secret(
-      environment,
-      "PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY",
       allowInlineSecrets,
     ),
     cubeEgressConfigToken: await secret(

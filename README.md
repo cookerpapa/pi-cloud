@@ -1,8 +1,9 @@
 # PiCloud
 
 PiCloud is a self-hosted, multi-tenant Cloud Coding Agent built on the Pi SDK.
-Pi and model credentials run in a trusted Worker pool; model-generated file and
-shell operations run in CubeSandbox KVM microVMs.
+Pi runs in a trusted Worker pool; subscription/API credentials live in a
+dedicated Provider Gateway, while model-generated file and shell operations run
+in CubeSandbox KVM microVMs.
 
 ## What you get
 
@@ -45,7 +46,12 @@ Control Plane
 PostgreSQL ready Runs ── SKIP LOCKED + NOTIFY ──▶ Pi Worker pool
                                                     ├─ Pi SDK Agent Loop
                                                     ├─ bounded Pi context read from PostgreSQL
-                                                    ├─ Model Gateway ──▶ provider relay ──▶ model API
+                                                    ├─ capability Model Gateway
+                                                    │        ▼
+                                                    │   CLIProxyAPI Provider Gateway
+                                                    │   OAuth/API keys + quota + Session affinity
+                                                    │        ▼
+                                                    │   provider relay ──▶ model APIs
                                                     └─ leased Tool RPC
                                                            ▼
                                                      Tool Broker
@@ -111,8 +117,12 @@ After deployment:
    npm run production:administrator -- --username <registered-username>
    ```
 
-3. Sign in again and configure the provider, model, encrypted API key and Cube
-   proxy in the administrator page.
+3. Open `http://127.0.0.1:8081`, sign in again, and choose the Pi model route or
+   configure the Cube proxy. Open the linked Provider Gateway page on port
+   `8318` to manage subscriptions, API keys, quota and account health. Retrieve
+   its management key with `npm run production:provider-gateway:key`; add an
+   independent ChatGPT/Codex subscription with
+   `npm run production:provider-gateway:codex-login`.
 4. Open **开发资源** to create Workspaces or an optional cloud development machine.
 5. Start a conversation in either mode:
    - **Elastic execution** selects/creates a Workspace and chooses a deployment-owned size;

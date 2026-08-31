@@ -10,7 +10,6 @@ import type { TurnSteerBackend } from "./turn-steer.ts";
 import type { SupervisorProvisioningGateway } from "./supervisor-boot-provisioner.ts";
 import type { ProductionHttpGateway } from "./production-http-gateway.ts";
 import type { PublicTenantRegistrationConfiguration } from "./public-tenant-registration.ts";
-import type { TenantModelCredentialVault } from "@pi-cloud/runtime-core/model-credential-runtime";
 import type { TrustedWorkspaceBrowser } from "./workspace-browser-service.ts";
 import type { WebAuthenticationService } from "./web-authentication.ts";
 import type { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
@@ -34,7 +33,6 @@ export type ControlPlaneApplicationOptions = Omit<
   sessionEventStreamOptions?: SessionEventStreamOptions;
   eventRuntime?: ControlPlaneEventRuntime;
   publicRegistration?: PublicTenantRegistrationConfiguration;
-  modelCredentialVault?: TenantModelCredentialVault;
   workspaceBrowser?: TrustedWorkspaceBrowser;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;

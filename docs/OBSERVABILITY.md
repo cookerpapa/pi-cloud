@@ -38,7 +38,8 @@ user-visible Run:
 
 - service scrape health and process CPU/memory/event-loop metrics;
 - ready Run backlog, queue wait, Run throughput, latency and failure rate;
-- provider/model latency, tokens and optional cost observations;
+- provider/model latency and Pi-native token observations; Provider Gateway
+  account quota and cooldown remain visible in CLIProxyAPI's native page;
 - Tool failures and Cube lifecycle/admission capacity;
 - Workspace Volume Gateway queue, latency, rejection and cleanup backlog;
 - Kafka consumer health and Gateway incomplete-tail sessions/events/bytes;

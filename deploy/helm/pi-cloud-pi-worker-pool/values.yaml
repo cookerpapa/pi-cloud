@@ -38,6 +38,7 @@ services:
   toolBrokerUrls:
     - http://tool-broker.pi-cloud-system.svc.cluster.local:4300
   providerProxyUrl: http://provider-egress-relay.pi-cloud-system.svc.cluster.local:3129
+  providerGatewayUrl: http://cli-proxy-api.pi-cloud-system.svc.cluster.local:8317
   otlpTracesEndpoint: ""
 
 database:
@@ -51,7 +52,7 @@ credentials:
   supervisorManagementTokenKey: supervisor-management-token
   toolBrokerTokenKey: tool-broker-token
   workerEventIngestTokenKey: worker-event-ingest-token
-  modelCredentialMasterKeyKey: model-credential-master-key
+  providerGatewayApiKeyKey: cli-proxy-api-key
   metricsTokenKey: metrics-token
 
 runtime:
@@ -89,7 +90,7 @@ networkPolicy:
   trustedNamespaceLabel:
     key: pi-cloud.io/trusted-plane
     value: "true"
-  trustedTcpPorts: [443, 3000, 3129, 4300, 4400, 4318, 5432]
+  trustedTcpPorts: [443, 3000, 3129, 4300, 4400, 4318, 5432, 8317]
   externalEgressCidrs: []
 
 disruptionBudget:

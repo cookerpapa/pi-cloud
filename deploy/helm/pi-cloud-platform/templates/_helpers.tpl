@@ -31,10 +31,6 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
   subPath: supervisor-management-token
   readOnly: true
 - name: platform-secrets
-  mountPath: /run/pi-cloud-secrets/model-credential-master-key
-  subPath: model-credential-master-key
-  readOnly: true
-- name: platform-secrets
   mountPath: /run/pi-cloud-secrets/cube-egress-config-token
   subPath: cube-egress-config-token
   readOnly: true

@@ -16,7 +16,6 @@ export * from "./kafka-live-session-tail.ts";
 export * from "./live-tail-terminal-projection.ts";
 export * from "./accepted-fact-terminal-outbox-relay.ts";
 export * from "./agent-run-execution-backend.ts";
-export * from "./model-credential-runtime.ts";
 export * from "./run-attempt-runtime.ts";
 export * from "./run-attempt-state.ts";
 export * from "./run-cancellation-executor.ts";

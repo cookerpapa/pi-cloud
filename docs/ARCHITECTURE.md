@@ -7,8 +7,8 @@ PiCloud owns durable admission, multi-tenancy, Worker execution authority,
 remote Tool routing, Workspace lifetime, streaming and recovery.
 
 CubeSandbox KVM is the only untrusted execution runtime. PostgreSQL is the only
-business/Run-state authority, Kafka is the bounded AcceptedFact log, and there
-is no second workflow scheduler.
+business/Run-state authority, Kafka is the bounded AcceptedFact log, CLIProxyAPI
+is the model-supply authority, and there is no second workflow scheduler.
 
 ## Source-of-truth and terminology guardrail
 
@@ -59,7 +59,7 @@ a notification received before the waiter is installed forces an immediate
 new claim instead of falling through to the one-second poll.
 
 A Worker with a disconnected ownership channel does not claim, and a Worker
-maintains Fact/Kafka and Tool Broker readiness in a one-second background
+maintains Fact/Kafka, Tool Broker and Provider Gateway readiness in a one-second background
 monitor. Claim admission reads that local fail-closed state without issuing
 duplicate synchronous health requests for every Run. A short execution-plane
 outage therefore leaves the Run queued without creating an Attempt or starting
@@ -89,6 +89,16 @@ not a Session owner. Each slot constructs an independent Pi `Agent`, model
 capability and Tool set from the accepted Run. Process-wide registries contain
 trusted definitions only and never imply that every Agent runtime can see or
 execute every definition.
+
+The slot sees only a short-lived PiCloud Model Gateway capability. That local
+Gateway validates the accepted provider/model, Cloud Step identity, cancellation
+and request count, then forwards the provider-native protocol to CLIProxyAPI.
+DeepSeek stays on Chat Completions; OpenAI Codex stays on Codex Responses rather
+than being flattened to a common wire shape. CLIProxyAPI alone owns upstream
+OAuth/API credentials, refresh, quota/cooldown and concrete account selection.
+It receives Pi's stable Session ID and applies soft Session affinity so later
+Turns prefer the same account/cache route. Losing that affinity changes only
+performance: PostgreSQL Pi SessionStorage remains the recovery authority.
 
 Every Session pins one immutable, deployment-owned `AgentRevision`; every Run
 copies that Revision as its routing snapshot. The Revision independently names

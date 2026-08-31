@@ -4,8 +4,9 @@ export type PiModelRuntimeConfig = {
   provider: string;
   modelId: string;
   baseUrl: string;
-  api: "openai-completions";
+  api: "openai-completions" | "openai-codex-responses";
   apiKey: string;
+  transport?: "sse";
   reasoning?: boolean;
   contextWindow?: number;
   maxTokens?: number;

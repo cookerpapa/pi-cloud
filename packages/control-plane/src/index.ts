@@ -35,15 +35,6 @@ export {
 export { TenantRequestContext, TenantRequestContextError } from "./tenant-request-context.ts";
 
 export {
-  PostgresTenantModelCredentialResolver,
-  TenantModelCredentialError,
-  TenantModelCredentialVault,
-  tenantModelCredentialDigest,
-  type ResolvedTenantModelCredential,
-  type SealedTenantModelCredential,
-  type TenantModelCredentialIdentity,
-} from "@pi-cloud/runtime-core/model-credential-runtime";
-export {
   TenantModelConfigurationError,
   TenantModelConfigurationService,
   type TenantModelConfigurationServiceOptions,

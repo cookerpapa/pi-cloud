@@ -80,5 +80,5 @@ COPY --from=builder /app/packages/web-ui/dist /srv
 
 USER 1000:1000
 WORKDIR /srv
-EXPOSE 8080
+EXPOSE 8080 8081 8318
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

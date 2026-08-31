@@ -12,7 +12,6 @@ Supervisor WebSocket transport.
 - compact Pi Session references and lightweight Workspace settlements;
 - durable event ingestion and cross-replica notifications;
 - conversation projection and terminal-event construction;
-- model credential runtime metadata;
 - structured test evidence primitives.
 
 ## Dependency direction

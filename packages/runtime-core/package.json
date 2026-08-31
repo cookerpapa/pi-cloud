@@ -25,7 +25,6 @@
     "./accepted-fact-terminal-outbox-relay": "./src/accepted-fact-terminal-outbox-relay.ts",
     "./accepted-fact-channel": "./src/accepted-fact-channel.ts",
     "./agent-run-execution-backend": "./src/agent-run-execution-backend.ts",
-    "./model-credential-runtime": "./src/model-credential-runtime.ts",
     "./postgres-runtime-object-store": "./src/postgres-runtime-object-store.ts",
     "./run-attempt-runtime": "./src/run-attempt-runtime.ts",
     "./run-attempt-state": "./src/run-attempt-state.ts",

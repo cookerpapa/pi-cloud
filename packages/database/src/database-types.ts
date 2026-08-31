@@ -606,18 +606,6 @@ export interface ModelProfileTable {
   updated_at: GeneratedTimestamp;
 }
 
-export interface TenantModelCredentialTable {
-  tenant_id: string;
-  credential_binding_id: string;
-  credential_binding_version: Int8;
-  key_version: number;
-  nonce: string;
-  ciphertext: string;
-  auth_tag: string;
-  secret_sha256: string;
-  created_at: GeneratedTimestamp;
-}
-
 export interface SessionTable {
   id: string;
   title: Generated<string>;
@@ -1253,7 +1241,6 @@ export interface Database {
   workspace_delete_operations: WorkspaceDeleteOperationTable;
   credential_bindings: CredentialBindingTable;
   model_profiles: ModelProfileTable;
-  tenant_model_credentials: TenantModelCredentialTable;
   sessions: SessionTable;
   subagent_executions: SubagentExecutionTable;
   subagent_supervisor_requests: SubagentSupervisorRequestTable;

@@ -98,7 +98,13 @@
     "services": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["controlPlaneUrl", "toolBrokerUrls", "providerProxyUrl", "otlpTracesEndpoint"],
+      "required": [
+        "controlPlaneUrl",
+        "toolBrokerUrls",
+        "providerProxyUrl",
+        "providerGatewayUrl",
+        "otlpTracesEndpoint"
+      ],
       "properties": {
         "controlPlaneUrl": { "$ref": "#/$defs/httpUrl" },
         "toolBrokerUrls": {
@@ -109,6 +115,7 @@
           "items": { "$ref": "#/$defs/httpUrl" }
         },
         "providerProxyUrl": { "$ref": "#/$defs/optionalHttpUrl" },
+        "providerGatewayUrl": { "$ref": "#/$defs/httpUrl" },
         "otlpTracesEndpoint": { "$ref": "#/$defs/optionalHttpUrl" }
       }
     },
@@ -131,7 +138,7 @@
         "supervisorManagementTokenKey",
         "toolBrokerTokenKey",
         "workerEventIngestTokenKey",
-        "modelCredentialMasterKeyKey",
+        "providerGatewayApiKeyKey",
         "metricsTokenKey"
       ],
       "properties": {
@@ -139,7 +146,7 @@
         "supervisorManagementTokenKey": { "$ref": "#/$defs/secretKey" },
         "toolBrokerTokenKey": { "$ref": "#/$defs/secretKey" },
         "workerEventIngestTokenKey": { "$ref": "#/$defs/secretKey" },
-        "modelCredentialMasterKeyKey": { "$ref": "#/$defs/secretKey" },
+        "providerGatewayApiKeyKey": { "$ref": "#/$defs/secretKey" },
         "metricsTokenKey": { "$ref": "#/$defs/secretKey" }
       }
     },

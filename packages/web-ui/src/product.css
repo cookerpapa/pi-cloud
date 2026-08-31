@@ -2054,6 +2054,61 @@ body.product-panel-resizing {
   min-height: 16px;
 }
 
+.product-admin-services {
+  display: grid;
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.product-admin-services h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.product-admin-services p {
+  margin: 5px 0 0;
+  color: #888;
+  font-size: 12px;
+}
+
+.product-admin-service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.product-admin-service-grid a {
+  display: grid;
+  gap: 8px;
+  min-height: 122px;
+  padding: 18px;
+  border: 1px solid #383838;
+  border-radius: 12px;
+  background: #1c1c1c;
+  color: #ececec;
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.product-admin-service-grid a:hover {
+  transform: translateY(-1px);
+  border-color: #7466bf;
+}
+
+.product-admin-service-grid span,
+.product-admin-service-grid small {
+  color: #858585;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.product-admin-service-grid small {
+  align-self: end;
+  color: #a99de6;
+}
+
 .product-admin-error {
   position: sticky;
   top: 0;

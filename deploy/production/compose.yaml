@@ -27,14 +27,13 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   NODE_USE_ENV_PROXY: "1"
   HTTP_PROXY: http://provider-egress-relay:3129
   HTTPS_PROXY: http://provider-egress-relay:3129
-  NO_PROXY: 127.0.0.1,localhost,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,control-plane,tool-broker,kafka-1,kafka-2,kafka-3
+  NO_PROXY: 127.0.0.1,localhost,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,control-plane,tool-broker,cli-proxy-api,kafka-1,kafka-2,kafka-3
   PI_CLOUD_IMAGE_REVISION: ${PI_CLOUD_IMAGE_REVISION:-unknown}
   HOST: 0.0.0.0
   PORT: "3000"
   DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
   PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE: /run/pi-cloud-secrets/supervisor-enrollment-token
   PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE: /run/pi-cloud-secrets/supervisor-management-token
-  PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE: /run/pi-cloud-secrets/model-credential-master-key
   PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE: /run/pi-cloud-secrets/source-control-credential-master-key
   PI_CLOUD_GITLAB_ENABLED: ${PI_CLOUD_GITLAB_ENABLED:-false}
   PI_CLOUD_GITLAB_WEBHOOK_URL: ${PI_CLOUD_GITLAB_WEBHOOK_URL:-http://host.docker.internal:8080/v1/source-control/gitlab/webhook}
@@ -108,10 +107,6 @@ x-control-plane-runtime-secrets: &control-plane-runtime-secrets
   - type: bind
     source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/supervisor-management-token
     target: /run/pi-cloud-secrets/supervisor-management-token
-    read_only: true
-  - type: bind
-    source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/model-credential-master-key
-    target: /run/pi-cloud-secrets/model-credential-master-key
     read_only: true
   - type: bind
     source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/source-control-credential-master-key
@@ -454,7 +449,7 @@ services:
     environment:
       PI_CLOUD_PROVIDER_RELAY_MODE: host
       PI_CLOUD_PROVIDER_RELAY_SOCKET: /run/pi-cloud-provider-relay/provider-egress.sock
-      PI_CLOUD_PROVIDER_RELAY_ALLOWED_HOSTS: api.deepseek.com,api.github.com,github.com
+      PI_CLOUD_PROVIDER_RELAY_ALLOWED_HOSTS: api.deepseek.com,api.github.com,github.com,api.openai.com,auth.openai.com,chatgpt.com
       PI_CLOUD_PROVIDER_RELAY_UPSTREAM_PROXY: ${HTTPS_PROXY:-}
     volumes:
       - provider-relay:/run/pi-cloud-provider-relay
@@ -518,6 +513,56 @@ services:
     stop_grace_period: 15s
     logging: *bounded-logging
 
+  cli-proxy-api:
+    image: eceasy/cli-proxy-api@sha256:238691ac26ce55e4d1c5219d72e3ad74838f81eda26359912eeb415e2820d163
+    restart: unless-stopped
+    depends_on:
+      provider-egress-relay:
+        condition: service_healthy
+    environment:
+      HOME: /data
+      HTTP_PROXY: http://provider-egress-relay:3129
+      HTTPS_PROXY: http://provider-egress-relay:3129
+      NO_PROXY: 127.0.0.1,localhost,control-plane,supervisor-host,supervisor-host-1
+      MANAGEMENT_STATIC_PATH: /data/static
+    command: [./CLIProxyAPI, -config, /run/pi-cloud-secrets/cli-proxy-config.yaml]
+    user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
+    volumes:
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/cli-proxy-config.yaml
+        target: /run/pi-cloud-secrets/cli-proxy-config.yaml
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/state/cli-proxy/auth
+        target: /data/auth
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/state/cli-proxy/static
+        target: /data/static
+    networks:
+      - model-egress
+    healthcheck:
+      test:
+        [
+          CMD,
+          /bin/bash,
+          -ec,
+          "exec 3<>/dev/tcp/127.0.0.1/8317; printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3; grep -q '200 OK' <&3",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    stop_grace_period: 30s
+    logging: *bounded-logging
+
   supervisor-host:
     profiles: [compose-pi-workers]
     image: pi-cloud/supervisor-host:${PI_CLOUD_IMAGE_VERSION:-production}
@@ -530,6 +575,8 @@ services:
     depends_on:
       control-plane:
         condition: service_healthy
+      cli-proxy-api:
+        condition: service_healthy
       tool-broker:
         condition: service_healthy
       provider-egress-relay:
@@ -541,7 +588,7 @@ services:
       NODE_USE_ENV_PROXY: "1"
       HTTP_PROXY: http://provider-egress-relay:3129
       HTTPS_PROXY: http://provider-egress-relay:3129
-      NO_PROXY: 127.0.0.1,localhost,control-plane,tool-broker,jaeger,postgres,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2
+      NO_PROXY: 127.0.0.1,localhost,control-plane,tool-broker,cli-proxy-api,jaeger,postgres,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2
       DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
       PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: /run/pi-cloud-secrets/worker-event-ingest-token
       PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true"
@@ -552,7 +599,8 @@ services:
       PI_CLOUD_TOOL_BROKER_TOKEN_FILE: /run/pi-cloud-secrets/tool-broker-token
       PI_CLOUD_TOOL_BROKER_URLS: http://tool-broker:4300
       PI_CLOUD_TOOL_BROKER_REQUEST_TIMEOUT_MS: "360000"
-      PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE: /run/pi-cloud-secrets/model-credential-master-key
+      PI_CLOUD_PROVIDER_GATEWAY_URL: http://cli-proxy-api:8317
+      PI_CLOUD_PROVIDER_GATEWAY_API_KEY_FILE: /run/pi-cloud-secrets/cli-proxy-api-key
       PI_CLOUD_SUPERVISOR_MANAGEMENT_HOST: 0.0.0.0
       PI_CLOUD_SUPERVISOR_MANAGEMENT_PORT: "4100"
       PI_CLOUD_SUPERVISOR_MANAGEMENT_ADVERTISED_URL: http://${PI_CLOUD_SUPERVISOR_ID_PREFIX:-pi-cloud-worker-}1:4100
@@ -601,8 +649,8 @@ services:
         target: /run/pi-cloud-secrets/worker-event-ingest-token
         read_only: true
       - type: bind
-        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/model-credential-master-key
-        target: /run/pi-cloud-secrets/model-credential-master-key
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/cli-proxy-api-key
+        target: /run/pi-cloud-secrets/cli-proxy-api-key
         read_only: true
       - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/metrics-token
@@ -871,14 +919,19 @@ services:
     depends_on:
       control-plane:
         condition: service_healthy
+      cli-proxy-api:
+        condition: service_healthy
     environment:
       XDG_CONFIG_HOME: /tmp/caddy-config
       XDG_DATA_HOME: /tmp/caddy-data
     ports:
       - ${PI_CLOUD_HTTP_BIND_ADDRESS:-127.0.0.1}:${PI_CLOUD_HTTP_PORT:-8080}:8080
+      - ${PI_CLOUD_ADMIN_BIND_ADDRESS:-127.0.0.1}:${PI_CLOUD_ADMIN_PORT:-8081}:8081
+      - ${PI_CLOUD_ADMIN_BIND_ADDRESS:-127.0.0.1}:${PI_CLOUD_CLI_PROXY_MANAGEMENT_PORT:-8318}:8318
     networks:
       - edge
       - api
+      - model-egress
     healthcheck:
       test: [CMD, wget, --quiet, --spider, http://127.0.0.1:8080/healthz]
       interval: 5s

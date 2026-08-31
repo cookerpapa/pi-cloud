@@ -15,7 +15,6 @@ import {
 } from "@pi-cloud/runtime-core/session-event-stream";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 import { TenantRequestContext } from "./tenant-request-context.ts";
-import type { TenantModelCredentialVault } from "@pi-cloud/runtime-core/model-credential-runtime";
 import { TenantModelConfigurationService } from "./tenant-model-configuration.ts";
 import { ConversationArchiveService } from "./conversation-archive-service.ts";
 import {
@@ -41,7 +40,6 @@ export type ControlPlaneModuleOptions = Omit<
   eventRuntime?: ControlPlaneEventRuntime;
   staticRequestIdentity?: TenantRequestIdentity;
   publicRegistration?: PublicTenantRegistrationConfiguration;
-  modelCredentialVault?: TenantModelCredentialVault;
   workspaceBrowser?: TrustedWorkspaceBrowser;
   webAuthentication?: WebAuthenticationService;
   platformOperatorTenantId?: string;
@@ -136,9 +134,6 @@ export class ControlPlaneModule {
           provide: TenantModelConfigurationService,
           useValue: new TenantModelConfigurationService({
             database: options.database,
-            ...(options.modelCredentialVault === undefined
-              ? {}
-              : { vault: options.modelCredentialVault }),
             ...(options.platformOperatorTenantId === undefined
               ? {}
               : { platformOperatorTenantId: options.platformOperatorTenantId }),

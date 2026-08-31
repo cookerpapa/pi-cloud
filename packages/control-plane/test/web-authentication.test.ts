@@ -9,9 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   PostgresTenantApiAuthenticator,
-  PostgresTenantModelCredentialResolver,
   ProductionHttpGateway,
-  TenantModelCredentialVault,
   WebAuthenticationService,
   createControlPlaneApplication,
   createPrivateTenant,
@@ -20,14 +18,12 @@ import {
 } from "../src/index.ts";
 
 const PASSWORD = "correct horse battery 123";
-const PROVIDER_KEY = `sk-${"d".repeat(48)}`;
 
 let pglite: PGlite;
 let socketServer: PGLiteSocketServer;
 let database: Kysely<Database>;
 let application: NestFastifyApplication;
 let http: FastifyInstance;
-let vault: TenantModelCredentialVault;
 let cookie = "";
 let registration: AuthSessionResource;
 let platformTenantId = "";
@@ -50,20 +46,17 @@ beforeAll(async () => {
     maxConnections: 1,
   });
   await runMigrations(database, "up");
-  vault = new TenantModelCredentialVault(Buffer.alloc(32, 9).toString("base64url"));
   const platform = await createPrivateTenant(database, {
     slug: "platform-operator",
     ownerDisplayName: "Platform Operator",
     initialModel: {
       provider: "deepseek",
       modelId: "deepseek-v4-flash",
-      apiKey: PROVIDER_KEY,
-      vault,
     },
   });
   platformTenantId = platform.tenantId;
   platformApiToken = platform.credential.token;
-  const initialModel = await resolvePlatformInitialModel(database, vault, platform.tenantId);
+  const initialModel = await resolvePlatformInitialModel(database, platform.tenantId);
   expect(initialModel).toMatchObject({ provider: "deepseek", modelId: "deepseek-v4-flash" });
   const webAuthentication = new WebAuthenticationService({
     database,
@@ -73,12 +66,11 @@ beforeAll(async () => {
       maximumProjects: 10,
       maximumSessions: 100,
     },
-    initialModel: () => resolvePlatformInitialModel(database, vault, platform.tenantId),
+    initialModel: () => resolvePlatformInitialModel(database, platform.tenantId),
   });
   application = await createControlPlaneApplication({
     database,
     webAuthentication,
-    modelCredentialVault: vault,
     platformOperatorTenantId: platform.tenantId,
     productionHttpGateway: new ProductionHttpGateway({
       authenticator: new PostgresTenantApiAuthenticator({ database }),
@@ -153,13 +145,7 @@ describe.sequential("product web authentication", () => {
       .where("policy.tenant_id", "=", registration.identity.tenantId)
       .executeTakeFirstOrThrow();
     expect(profile).toMatchObject({ provider: "deepseek", modelId: "deepseek-v4-flash" });
-    const resolved = await new PostgresTenantModelCredentialResolver({ database, vault }).resolve({
-      tenantId: registration.identity.tenantId,
-      credentialBindingId: profile.bindingId,
-      credentialBindingVersion: Number(profile.bindingVersion),
-      provider: "deepseek",
-    });
-    expect(resolved.secret).toBe(PROVIDER_KEY);
+    expect(profile.bindingVersion).toBe("1");
   });
 
   it("authenticates API requests with the browser cookie and keeps tenants isolated", async () => {
@@ -186,7 +172,6 @@ describe.sequential("product web authentication", () => {
       payload: {
         provider: "deepseek",
         modelId: "deepseek-v4-pro",
-        apiKey: `sk-${"x".repeat(48)}`,
       },
     });
     expect(registration.identity.tenantId).not.toBe(platformTenantId);
@@ -198,7 +183,6 @@ describe.sequential("product web authentication", () => {
       },
     });
 
-    const rotatedProviderKey = `sk-${"r".repeat(48)}`;
     const platformReplacement = await http.inject({
       method: "PUT",
       url: "/v1/model-configuration",
@@ -206,14 +190,13 @@ describe.sequential("product web authentication", () => {
       payload: {
         provider: "deepseek",
         modelId: "deepseek-v4-pro",
-        apiKey: rotatedProviderKey,
       },
     });
     expect(platformReplacement.statusCode).toBe(200);
     expect(platformReplacement.json()).toMatchObject({
       provider: "deepseek",
       modelId: "deepseek-v4-pro",
-      credentialVersion: 2,
+      routeVersion: 2,
     });
     const rotatedProfile = await database
       .selectFrom("tenant_runtime_policies as policy")
@@ -230,16 +213,7 @@ describe.sequential("product web authentication", () => {
       .where("policy.tenant_id", "=", registration.identity.tenantId)
       .executeTakeFirstOrThrow();
     expect(rotatedProfile).toMatchObject({ modelId: "deepseek-v4-pro", bindingVersion: "2" });
-    expect(
-      (
-        await new PostgresTenantModelCredentialResolver({ database, vault }).resolve({
-          tenantId: registration.identity.tenantId,
-          credentialBindingId: rotatedProfile.bindingId,
-          credentialBindingVersion: Number(rotatedProfile.bindingVersion),
-          provider: "deepseek",
-        })
-      ).secret,
-    ).toBe(rotatedProviderKey);
+    expect(rotatedProfile.bindingVersion).toBe("2");
   });
 
   it("uses generic login failures, rotates sessions, and revokes logout immediately", async () => {

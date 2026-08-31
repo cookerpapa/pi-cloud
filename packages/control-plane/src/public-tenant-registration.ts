@@ -19,7 +19,10 @@ export type PublicTenantRegistrationOptions = {
   idGenerator?: () => string;
   randomSecret?: () => string;
   clock?: () => Date;
-  initialModel?: PrivateTenantInitialModel;
+  initialModel?:
+    | PrivateTenantInitialModel
+    | (() =>
+        PrivateTenantInitialModel | undefined | Promise<PrivateTenantInitialModel | undefined>);
 };
 
 export type PublicTenantRegistrationConfiguration = Omit<
@@ -54,6 +57,11 @@ export class PublicTenantRegistrationService {
         "Self-service tenant registration is not enabled",
       );
     }
+    const configuredInitialModel = this.#options.initialModel;
+    const initialModel =
+      typeof configuredInitialModel === "function"
+        ? await configuredInitialModel()
+        : configuredInitialModel;
     try {
       const created = await createPrivateTenant(this.#options.database, {
         slug: request.tenantSlug,
@@ -68,9 +76,7 @@ export class PublicTenantRegistrationService {
           ? {}
           : { randomSecret: this.#options.randomSecret }),
         ...(this.#options.clock === undefined ? {} : { clock: this.#options.clock }),
-        ...(this.#options.initialModel === undefined
-          ? {}
-          : { initialModel: this.#options.initialModel }),
+        ...(initialModel === undefined ? {} : { initialModel }),
       });
       return {
         tenantId: created.tenantId,

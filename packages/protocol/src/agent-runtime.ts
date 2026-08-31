@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import { DeepSeekModelIdSchema } from "./control-plane-api.ts";
+import { DeepSeekModelIdSchema, OpenAICodexModelIdSchema } from "./control-plane-api.ts";
 import { UuidSchema } from "./protocol-primitives.ts";
 
 // Provider-native Workspace settlements carry only a bounded Volume reference.
@@ -25,21 +25,41 @@ export const AgentRevisionSnapshotSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const AgentModelRuntimeSchema = Type.Object(
-  {
-    kind: Type.Literal("openai_compatible_gateway"),
-    provider: Type.Literal("deepseek"),
-    modelId: DeepSeekModelIdSchema,
-    baseUrl: Type.String({ minLength: 12, maxLength: 2_048 }),
-    capability: Type.String({ pattern: "^pcmg_[A-Za-z0-9_-]{43}$" }),
-    reasoning: Type.Boolean(),
-    contextWindow: Type.Integer({ minimum: 1_024, maximum: 1_000_000 }),
-    maxTokens: Type.Integer({ minimum: 128, maximum: 65_536 }),
-    requestTimeoutMs: Type.Integer({ minimum: 1_000, maximum: 300_000 }),
-    turnTimeoutMs: Type.Integer({ minimum: 1_000, maximum: 900_000 }),
-  },
-  { additionalProperties: false },
-);
+const AgentModelRuntimeCommonSchema = {
+  kind: Type.Literal("openai_compatible_gateway"),
+  baseUrl: Type.String({ minLength: 12, maxLength: 2_048 }),
+  capability: Type.String({
+    minLength: 100,
+    maxLength: 2_048,
+    pattern: "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{43}$",
+  }),
+  reasoning: Type.Boolean(),
+  contextWindow: Type.Integer({ minimum: 1_024, maximum: 1_000_000 }),
+  maxTokens: Type.Integer({ minimum: 128, maximum: 65_536 }),
+  requestTimeoutMs: Type.Integer({ minimum: 1_000, maximum: 300_000 }),
+  turnTimeoutMs: Type.Integer({ minimum: 1_000, maximum: 900_000 }),
+};
+
+export const AgentModelRuntimeSchema = Type.Union([
+  Type.Object(
+    {
+      ...AgentModelRuntimeCommonSchema,
+      provider: Type.Literal("deepseek"),
+      modelId: DeepSeekModelIdSchema,
+      api: Type.Literal("openai-completions"),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...AgentModelRuntimeCommonSchema,
+      provider: Type.Literal("openai-codex"),
+      modelId: OpenAICodexModelIdSchema,
+      api: Type.Literal("openai-codex-responses"),
+    },
+    { additionalProperties: false },
+  ),
+]);
 
 export const WorkspaceBlobSchema = Type.Object(
   {

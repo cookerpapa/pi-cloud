@@ -3,8 +3,9 @@
 ## Current role
 
 CubeSandbox KVM is Pi Cloud's only untrusted Tool runtime. The trusted Pi
-Worker owns the Agent Loop and model credential; the Tool Broker owns execution
-admission and Cube lifecycle. The guest owns neither.
+Worker owns the Agent Loop and a short-lived model capability; CLIProxyAPI owns
+the upstream model credential, while the Tool Broker owns execution admission
+and Cube lifecycle. The guest owns neither.
 
 ```text
 Pi Tool call

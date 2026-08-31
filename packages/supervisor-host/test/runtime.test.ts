@@ -140,6 +140,7 @@ describe("PiWorkerRuntime", () => {
   it("provisions a fresh generation, registers after recovery, and never reuses boot identity", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-cloud-host-runtime-"));
     const server = Fastify({ logger: false });
+    server.head("/healthz", async (_request, reply) => reply.code(200).send());
     const provisioner = new SupervisorBootProvisioner({
       database,
       allowedSupervisorIdPrefix: "supervisor-host-runtime-",
@@ -192,7 +193,8 @@ describe("PiWorkerRuntime", () => {
       enrollmentToken: ENROLLMENT_TOKEN,
       managementToken: MANAGEMENT_TOKEN,
       toolBrokerServiceToken: `tool-broker-${"s".repeat(48)}`,
-      modelCredentialMasterKey: Buffer.alloc(32, 7).toString("base64url"),
+      providerGatewayBaseUrl: address,
+      providerGatewayApiKey: `provider-${"k".repeat(48)}`,
       databaseUrl: connectionString,
       databaseNotificationUrl: connectionString,
       workerEventIngestToken: `event-ingest-${"i".repeat(48)}`,

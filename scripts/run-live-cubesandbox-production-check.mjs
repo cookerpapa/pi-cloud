@@ -357,14 +357,19 @@ async function kafkaState() {
 async function runUsageEvidence(runId) {
   const value = await psql(
     `select count(*) || '|' ||
-            coalesce(sum(input_tokens), 0) || '|' ||
-            coalesce(sum(output_tokens), 0) || '|' ||
-            coalesce(sum(cache_read_tokens), 0) || '|' ||
-            coalesce(sum(cache_write_tokens), 0) || '|' ||
-            coalesce(sum(coalesce(cost_microusd, round(cost_amount * 1000000)::bigint)), 0)
-       from usage_ledger
-      where tenant_id = ${sqlLiteral(tenantId)}
-        and run_id = ${sqlLiteral(runId)}`,
+            coalesce(sum((entry.payload #>> '{message,usage,input}')::bigint), 0) || '|' ||
+            coalesce(sum((entry.payload #>> '{message,usage,output}')::bigint), 0) || '|' ||
+            coalesce(sum((entry.payload #>> '{message,usage,cacheRead}')::bigint), 0) || '|' ||
+            coalesce(sum((entry.payload #>> '{message,usage,cacheWrite}')::bigint), 0) || '|0'
+       from runs run
+       join pi_session_entries entry
+         on entry.tenant_id = run.tenant_id
+        and entry.turn_id = run.turn_id
+      where run.tenant_id = ${sqlLiteral(tenantId)}
+        and run.id = ${sqlLiteral(runId)}
+        and entry.type = 'message'
+        and entry.payload #>> '{message,role}' = 'assistant'
+        and entry.payload #> '{message,usage}' is not null`,
   );
   const [requests, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costMicrousd] =
     value.split("|").map(Number);
@@ -922,9 +927,16 @@ async function runLatencyEvidence(runId) {
     transitionEvidence.split("|").map(Number);
   const modelEvidence = await psql(
     `select count(*)::text || '|' ||
-            coalesce(round(sum(extract(epoch from (settled_at - started_at)) * 1000)), 0)::text
-       from model_requests
-      where run_id = ${sqlLiteral(runId)}`,
+            coalesce(sum(greatest(0, entry.timestamp_ms -
+              (entry.payload #>> '{message,timestamp}')::bigint)), 0)::text
+       from runs run
+       join pi_session_entries entry
+         on entry.tenant_id = run.tenant_id
+        and entry.turn_id = run.turn_id
+      where run.id = ${sqlLiteral(runId)}
+        and entry.type = 'message'
+        and entry.payload #>> '{message,role}' = 'assistant'
+        and entry.payload #>> '{message,timestamp}' is not null`,
   );
   const [modelRequests, modelTotalMs] = modelEvidence.split("|").map(Number);
   const toolEvidence = await psql(

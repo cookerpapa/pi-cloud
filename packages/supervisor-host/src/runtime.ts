@@ -10,10 +10,6 @@ import { FactChannelPiSessionMutationProducer } from "@pi-cloud/runtime-core/fac
 import type { ActiveFactChannelResolver } from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
 import { HttpTerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
-import {
-  PostgresTenantModelCredentialResolver,
-  TenantModelCredentialVault,
-} from "@pi-cloud/runtime-core/model-credential-runtime";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { PostgresRunAttemptPhaseObserver } from "@pi-cloud/runtime-core/run-attempt-runtime";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
@@ -411,14 +407,11 @@ export class PiWorkerRuntime {
         database: this.#database,
       });
       const modelGateway = new TenantModelGateway({
-        database: this.#database,
-        credentialResolver: new PostgresTenantModelCredentialResolver({
-          database: this.#database,
-          vault: new TenantModelCredentialVault(this.#config.modelCredentialMasterKey),
-        }),
         host: this.#config.modelGatewayHost,
         port: this.#config.modelGatewayPort,
         advertisedBaseUrl: this.#config.modelGatewayAdvertisedBaseUrl,
+        providerGatewayBaseUrl: this.#config.providerGatewayBaseUrl,
+        providerGatewayApiKey: this.#config.providerGatewayApiKey,
         capabilityTtlMs: this.#config.modelGatewayCapabilityTtlMs,
         maximumRequestsPerTurn: this.#config.modelGatewayMaximumRequestsPerTurn,
         upstreamRequestTimeoutMs: this.#config.modelGatewayUpstreamRequestTimeoutMs,
@@ -427,6 +420,7 @@ export class PiWorkerRuntime {
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
       });
       await modelGateway.start();
+      await modelGateway.checkProviderHealth();
       this.#modelGateway = modelGateway;
       const runWorkerIdentity = `postgres:${identity.supervisorId}:${identity.bootId}`;
       const factChannels =
@@ -450,7 +444,11 @@ export class PiWorkerRuntime {
       this.#sessionMutationProducer = sessionMutationProducer;
       const runClaimReadiness = new RunClaimReadinessMonitor({
         check: async () => {
-          await Promise.all([factChannels.checkHealth?.(), this.#toolBroker.checkHealth()]);
+          await Promise.all([
+            factChannels.checkHealth?.(),
+            this.#toolBroker.checkHealth(),
+            modelGateway.checkProviderHealth(),
+          ]);
         },
       });
       await runClaimReadiness.start();

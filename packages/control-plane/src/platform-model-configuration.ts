@@ -1,9 +1,5 @@
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
-import {
-  PostgresTenantModelCredentialResolver,
-  type TenantModelCredentialVault,
-} from "@pi-cloud/runtime-core/model-credential-runtime";
 import type { PrivateTenantInitialModel } from "./tenant-administration.ts";
 
 export class PlatformModelConfigurationError extends Error {
@@ -15,7 +11,6 @@ export class PlatformModelConfigurationError extends Error {
 
 export async function resolvePlatformInitialModel(
   database: Kysely<Database>,
-  vault: TenantModelCredentialVault,
   sourceTenantId: string,
 ): Promise<PrivateTenantInitialModel | undefined> {
   const profile = await database
@@ -34,41 +29,32 @@ export async function resolvePlatformInitialModel(
     .select([
       "profile.provider",
       "profile.model_id as modelId",
-      "profile.credential_binding_id as credentialBindingId",
-      "profile.credential_binding_version as credentialBindingVersion",
       "profile.enabled",
-      "binding.status as credentialStatus",
+      "binding.status as routeStatus",
     ])
     .where("policy.tenant_id", "=", sourceTenantId)
     .where("policy.enabled", "=", true)
     .executeTakeFirst();
 
-  if (profile === undefined || !profile.enabled || profile.credentialStatus !== "active") {
+  if (profile === undefined || !profile.enabled || profile.routeStatus !== "active") {
     throw new PlatformModelConfigurationError("Platform default model is unavailable");
   }
   if (profile.provider === "pi-cloud-fake" && profile.modelId === "pi-cloud-fake") {
     return undefined;
   }
   if (
-    profile.provider !== "deepseek" ||
-    (profile.modelId !== "deepseek-v4-flash" && profile.modelId !== "deepseek-v4-pro")
+    profile.provider === "deepseek" &&
+    (profile.modelId === "deepseek-v4-flash" || profile.modelId === "deepseek-v4-pro")
   ) {
-    throw new PlatformModelConfigurationError("Platform default model is unsupported");
+    return { provider: profile.provider, modelId: profile.modelId };
   }
-  const credentialBindingVersion = Number(profile.credentialBindingVersion);
-  if (!Number.isSafeInteger(credentialBindingVersion) || credentialBindingVersion < 1) {
-    throw new PlatformModelConfigurationError("Platform model credential version is invalid");
+  if (
+    profile.provider === "openai-codex" &&
+    (profile.modelId === "gpt-5.6-luna" ||
+      profile.modelId === "gpt-5.6-terra" ||
+      profile.modelId === "gpt-5.6-sol")
+  ) {
+    return { provider: profile.provider, modelId: profile.modelId };
   }
-  const resolved = await new PostgresTenantModelCredentialResolver({ database, vault }).resolve({
-    tenantId: sourceTenantId,
-    credentialBindingId: profile.credentialBindingId,
-    credentialBindingVersion,
-    provider: profile.provider,
-  });
-  return {
-    provider: "deepseek",
-    modelId: profile.modelId,
-    apiKey: resolved.secret,
-    vault,
-  };
+  throw new PlatformModelConfigurationError("Platform default model is unsupported");
 }

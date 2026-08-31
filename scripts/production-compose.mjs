@@ -73,10 +73,12 @@ if (composeOverride !== undefined) await access(composeOverride);
 
 const applicationSecretNames = [
   "api-token",
+  "cli-proxy-api-key",
+  "cli-proxy-config.yaml",
+  "cli-proxy-management-key",
   "database-url",
   "grafana-admin-password",
   "metrics-token",
-  "model-credential-master-key",
   "source-control-credential-master-key",
   "tool-broker-token",
   "worker-event-ingest-token",
@@ -111,6 +113,9 @@ for (const [relativePath, label] of [
   ["state/workspace-volume-gateway", "Workspace Volume Gateway"],
   ["state/cube-shared", "Cube shared Workspace"],
   ["state/cube-shared/volume", "Cube shared Workspace volume"],
+  ["state/cli-proxy", "CLIProxy"],
+  ["state/cli-proxy/auth", "CLIProxy credential"],
+  ["state/cli-proxy/static", "CLIProxy management asset"],
 ]) {
   const state = await lstat(resolve(runtimeDirectory, relativePath));
   if (

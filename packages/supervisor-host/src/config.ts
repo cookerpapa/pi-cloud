@@ -17,7 +17,8 @@ export type SupervisorHostConfig = {
   enrollmentToken: string;
   managementToken: string;
   toolBrokerServiceToken: string;
-  modelCredentialMasterKey: string;
+  providerGatewayBaseUrl: string;
+  providerGatewayApiKey: string;
   databaseUrl: string;
   databaseNotificationUrl: string;
   workerEventIngestToken: string;
@@ -340,9 +341,14 @@ export async function loadSupervisorHostConfig(
       "PI_CLOUD_TOOL_BROKER_TOKEN",
       allowInlineSecrets,
     ),
-    modelCredentialMasterKey: await secret(
+    providerGatewayBaseUrl: internalServiceBaseUrl(
+      required(environment, "PI_CLOUD_PROVIDER_GATEWAY_URL"),
+      allowInsecureInternalHttp,
+      "PI_CLOUD_PROVIDER_GATEWAY_URL",
+    ),
+    providerGatewayApiKey: await secret(
       environment,
-      "PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY",
+      "PI_CLOUD_PROVIDER_GATEWAY_API_KEY",
       allowInlineSecrets,
     ),
     databaseUrl,

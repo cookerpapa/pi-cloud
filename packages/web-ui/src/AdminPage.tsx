@@ -1,14 +1,43 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CubeProxyConfigurationResource,
-  DeepSeekModelId,
   ModelConfigurationResource,
+  ProviderModelSelection,
   TenantIdentityResource,
 } from "@pi-cloud/protocol";
 import { PiCloudApiError, type PiCloudApi } from "./api.ts";
 import { errorMessage } from "./ui-errors.ts";
 import { useI18n } from "./i18n.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";
+
+const MODEL_OPTIONS: readonly (ProviderModelSelection & { label: string })[] = [
+  { provider: "openai-codex", modelId: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+  { provider: "openai-codex", modelId: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+  { provider: "openai-codex", modelId: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
+  { provider: "deepseek", modelId: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+  { provider: "deepseek", modelId: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
+];
+
+function selectionKey(selection: ProviderModelSelection): string {
+  return `${selection.provider}:${selection.modelId}`;
+}
+
+function plainSelection(selection: ProviderModelSelection): ProviderModelSelection {
+  return selection.provider === "deepseek"
+    ? { provider: "deepseek", modelId: selection.modelId }
+    : { provider: "openai-codex", modelId: selection.modelId };
+}
+
+function operatorUrl(port: number, path = "/"): string {
+  const url = new URL(
+    typeof window === "undefined" ? "http://127.0.0.1:8081/" : window.location.href,
+  );
+  url.port = String(port);
+  url.pathname = path;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
 
 export function AdminPage({
   api,
@@ -23,14 +52,38 @@ export function AdminPage({
   const [modelConfiguration, setModelConfiguration] = useState<ModelConfigurationResource | null>(
     null,
   );
-  const [selectedModelId, setSelectedModelId] = useState<DeepSeekModelId>("deepseek-v4-flash");
-  const [modelApiKey, setModelApiKey] = useState("");
+  const [selectedModel, setSelectedModel] = useState<ProviderModelSelection>({
+    provider: "openai-codex",
+    modelId: "gpt-5.6-terra",
+  });
   const [cubeProxyConfiguration, setCubeProxyConfiguration] =
     useState<CubeProxyConfigurationResource | null>(null);
   const [cubeProxyEnabled, setCubeProxyEnabled] = useState(false);
   const [cubeProxyUrl, setCubeProxyUrl] = useState("");
   const [settingsSaving, setSettingsSaving] = useState<"model" | "proxy" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const managementLinks = useMemo(
+    () => [
+      {
+        title: t("admin.providerGateway"),
+        description: t("admin.providerGatewayDescription"),
+        href: operatorUrl(8318, "/management.html"),
+      },
+      { title: "Grafana", description: t("admin.grafanaDescription"), href: operatorUrl(3001) },
+      {
+        title: "Prometheus",
+        description: t("admin.prometheusDescription"),
+        href: operatorUrl(9090),
+      },
+      {
+        title: "Alertmanager",
+        description: t("admin.alertmanagerDescription"),
+        href: operatorUrl(9093),
+      },
+      { title: "Jaeger", description: t("admin.jaegerDescription"), href: operatorUrl(16686) },
+    ],
+    [t],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +94,9 @@ export function AdminPage({
         setCubeProxyEnabled(proxyConfiguration.enabled);
         setCubeProxyUrl(proxyConfiguration.proxyUrl ?? "");
         setModelConfiguration(model);
-        if (model.mode === "real") setSelectedModelId(model.modelId);
+        if (model.mode === "real") {
+          setSelectedModel(plainSelection(model));
+        }
       })
       .catch((caught: unknown) => {
         if (cancelled) return;
@@ -55,21 +110,14 @@ export function AdminPage({
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, t]);
 
   async function saveModelConfiguration(): Promise<void> {
     if (modelConfiguration === null || settingsSaving !== null) return;
-    const apiKey = modelApiKey.trim();
-    if (!/^[A-Za-z0-9._-]{16,512}$/.test(apiKey)) {
-      setError(t("admin.invalidApiKey"));
-      return;
-    }
     setSettingsSaving("model");
     setError(null);
     try {
-      const configured = await api.replaceModelConfiguration(selectedModelId, apiKey);
-      setModelConfiguration(configured);
-      setModelApiKey("");
+      setModelConfiguration(await api.replaceModelConfiguration(selectedModel));
     } catch (caught: unknown) {
       setError(errorMessage(caught, t));
     } finally {
@@ -110,9 +158,7 @@ export function AdminPage({
             <span>{t("admin.subtitle")}</span>
           </div>
         </div>
-        <div>
-          <AccountMenu label={identity.username ?? identity.displayName} onLogout={onLogout} />
-        </div>
+        <AccountMenu label={identity.username ?? identity.displayName} onLogout={onLogout} />
       </header>
       {error ? (
         <div className="product-error-banner product-admin-error">
@@ -138,45 +184,39 @@ export function AdminPage({
               <span>{t("admin.model")}</span>
               <select
                 disabled={settingsSaving !== null}
-                onChange={(event) => setSelectedModelId(event.target.value as DeepSeekModelId)}
-                value={selectedModelId}
+                onChange={(event) => {
+                  const selected = MODEL_OPTIONS.find(
+                    (candidate) => selectionKey(candidate) === event.target.value,
+                  );
+                  if (selected !== undefined) {
+                    setSelectedModel(plainSelection(selected));
+                  }
+                }}
+                value={selectionKey(selectedModel)}
               >
-                <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
-                <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+                {MODEL_OPTIONS.map((option) => (
+                  <option key={selectionKey(option)} value={selectionKey(option)}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
-            </label>
-            <label>
-              <span>API Key</span>
-              <input
-                autoComplete="off"
-                disabled={settingsSaving !== null}
-                onChange={(event) => setModelApiKey(event.target.value)}
-                placeholder={modelConfiguration?.mode === "real" ? t("admin.rotateKey") : "sk-…"}
-                spellCheck={false}
-                type="password"
-                value={modelApiKey}
-              />
             </label>
             <div className="product-settings-action">
               <small>
-                {t("admin.credentialVersion", {
+                {t("admin.routeVersion", {
                   version:
                     modelConfiguration === null
                       ? t("common.loading")
-                      : String(modelConfiguration.credentialVersion),
+                      : String(modelConfiguration.routeVersion),
                 })}
               </small>
               <button
                 className="product-primary-button"
-                disabled={
-                  settingsSaving !== null ||
-                  modelApiKey.trim() === "" ||
-                  modelConfiguration === null
-                }
+                disabled={settingsSaving !== null || modelConfiguration === null}
                 onClick={() => void saveModelConfiguration()}
                 type="button"
               >
-                {settingsSaving === "model" ? t("admin.encrypting") : t("admin.updateModel")}
+                {settingsSaving === "model" ? t("admin.publishing") : t("admin.updateModel")}
               </button>
             </div>
           </section>
@@ -230,6 +270,21 @@ export function AdminPage({
             </div>
           </section>
         </div>
+        <section className="product-admin-services">
+          <div>
+            <h2>{t("admin.services")}</h2>
+            <p>{t("admin.servicesDescription")}</p>
+          </div>
+          <div className="product-admin-service-grid">
+            {managementLinks.map((service) => (
+              <a href={service.href} key={service.title} rel="noreferrer" target="_blank">
+                <strong>{service.title}</strong>
+                <span>{service.description}</span>
+                <small>{t("admin.openService")} ↗</small>
+              </a>
+            ))}
+          </div>
+        </section>
       </section>
     </main>
   );

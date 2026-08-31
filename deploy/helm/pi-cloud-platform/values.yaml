@@ -203,6 +203,7 @@ pi-workers:
     toolBrokerUrls:
       - http://tool-broker:4300
     providerProxyUrl: https://provider-proxy.example.com:3129
+    providerGatewayUrl: https://provider-gateway.example.com
     otlpTracesEndpoint: ""
   database:
     existingSecret: pi-cloud-platform-secrets
@@ -213,7 +214,7 @@ pi-workers:
     supervisorManagementTokenKey: supervisor-management-token
     toolBrokerTokenKey: tool-broker-token
     workerEventIngestTokenKey: worker-event-ingest-token
-    modelCredentialMasterKeyKey: model-credential-master-key
+    providerGatewayApiKeyKey: cli-proxy-api-key
     metricsTokenKey: metrics-token
   runtime:
     allowInsecureInternalHttp: true
@@ -239,7 +240,7 @@ pi-workers:
   networkPolicy:
     enabled: true
     trustedNamespaceLabel: { key: pi-cloud.io/trusted-plane, value: "true" }
-    trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432]
+    trustedTcpPorts: [443, 3000, 3129, 4300, 4318, 5432, 8317]
     externalEgressCidrs: []
   disruptionBudget: { minAvailable: 1 }
   placement: { nodeSelector: {}, tolerations: [] }

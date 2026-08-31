@@ -23,7 +23,7 @@ kubectl -n pi-cloud-workers create secret generic pi-cloud-pi-worker-secrets \
   --from-file=supervisor-management-token=/private/supervisor-management-token \
   --from-file=tool-broker-token=/private/tool-broker-token \
   --from-file=worker-event-ingest-token=/private/worker-event-ingest-token \
-  --from-file=model-credential-master-key=/private/model-credential-master-key \
+  --from-file=cli-proxy-api-key=/private/cli-proxy-api-key \
   --from-file=metrics-token=/private/metrics-token
 ```
 
@@ -32,6 +32,9 @@ URL must target PostgreSQL directly because `LISTEN` is connection-scoped.
 `database.maxConnections` bounds the ordinary PostgreSQL pool independently of
 `workerPool.capacity`; increase it only after observing pool wait time rather
 than multiplying connections for model-waiting Runs.
+`services.providerGatewayUrl` points to a separately operated CLIProxyAPI (or an
+equivalent provider gateway); Workers receive only its client API key, never an
+upstream OAuth refresh token or model-provider API key.
 
 ## Install and scale
 

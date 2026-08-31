@@ -45,18 +45,24 @@ export const DeepSeekModelIdSchema = Type.Union([
   Type.Literal("deepseek-v4-pro"),
 ]);
 
-export const ReplaceModelConfigurationRequestSchema = Type.Object(
-  {
-    provider: Type.Literal("deepseek"),
-    modelId: DeepSeekModelIdSchema,
-    apiKey: Type.String({
-      minLength: 16,
-      maxLength: 512,
-      pattern: "^[A-Za-z0-9._-]+$",
-    }),
-  },
-  { additionalProperties: false },
-);
+export const OpenAICodexModelIdSchema = Type.Union([
+  Type.Literal("gpt-5.6-luna"),
+  Type.Literal("gpt-5.6-terra"),
+  Type.Literal("gpt-5.6-sol"),
+]);
+
+export const ProviderModelSelectionSchema = Type.Union([
+  Type.Object(
+    { provider: Type.Literal("deepseek"), modelId: DeepSeekModelIdSchema },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { provider: Type.Literal("openai-codex"), modelId: OpenAICodexModelIdSchema },
+    { additionalProperties: false },
+  ),
+]);
+
+export const ReplaceModelConfigurationRequestSchema = ProviderModelSelectionSchema;
 
 export const ModelConfigurationResourceSchema = Type.Union([
   Type.Object(
@@ -65,7 +71,7 @@ export const ModelConfigurationResourceSchema = Type.Union([
       provider: Type.Literal("pi-cloud-fake"),
       modelId: Type.Literal("pi-cloud-fake"),
       configured: Type.Literal(false),
-      credentialVersion: PositiveSafeIntegerSchema,
+      routeVersion: PositiveSafeIntegerSchema,
       updatedAt: UtcTimestampSchema,
     },
     { additionalProperties: false },
@@ -76,7 +82,18 @@ export const ModelConfigurationResourceSchema = Type.Union([
       provider: Type.Literal("deepseek"),
       modelId: DeepSeekModelIdSchema,
       configured: Type.Literal(true),
-      credentialVersion: PositiveSafeIntegerSchema,
+      routeVersion: PositiveSafeIntegerSchema,
+      updatedAt: UtcTimestampSchema,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      mode: Type.Literal("real"),
+      provider: Type.Literal("openai-codex"),
+      modelId: OpenAICodexModelIdSchema,
+      configured: Type.Literal(true),
+      routeVersion: PositiveSafeIntegerSchema,
       updatedAt: UtcTimestampSchema,
     },
     { additionalProperties: false },
@@ -994,6 +1011,8 @@ export type LoginAccountRequest = Static<typeof LoginAccountRequestSchema>;
 export type AuthSessionResource = Static<typeof AuthSessionResourceSchema>;
 export type LogoutResource = Static<typeof LogoutResourceSchema>;
 export type DeepSeekModelId = Static<typeof DeepSeekModelIdSchema>;
+export type OpenAICodexModelId = Static<typeof OpenAICodexModelIdSchema>;
+export type ProviderModelSelection = Static<typeof ProviderModelSelectionSchema>;
 export type ReplaceModelConfigurationRequest = Static<
   typeof ReplaceModelConfigurationRequestSchema
 >;

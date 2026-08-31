@@ -190,23 +190,30 @@ export async function bootstrapProductionDatabase(
       profile.provider === "pi-cloud-fake" &&
       profile.model_id === "pi-cloud-fake" &&
       credentialVersion === 1;
-    const ownerConfiguredDeepSeekProfile =
-      profile.provider === "deepseek" &&
-      (profile.model_id === "deepseek-v4-flash" || profile.model_id === "deepseek-v4-pro") &&
+    const ownerConfiguredProviderProfile =
+      ((profile.provider === "deepseek" &&
+        (profile.model_id === "deepseek-v4-flash" || profile.model_id === "deepseek-v4-pro")) ||
+        (profile.provider === "openai-codex" &&
+          (profile.model_id === "gpt-5.6-luna" ||
+            profile.model_id === "gpt-5.6-terra" ||
+            profile.model_id === "gpt-5.6-sol"))) &&
       Number.isSafeInteger(credentialVersion) &&
       credentialVersion >= 2;
+    const expectedThinkingLevels = ownerConfiguredProviderProfile
+      ? ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+      : ["off"];
     exact(
       profile.tenant_id === config.tenantId &&
         profile.name === config.modelProfileName &&
-        (deterministicProfile || ownerConfiguredDeepSeekProfile) &&
+        (deterministicProfile || ownerConfiguredProviderProfile) &&
         profile.default_thinking_level === "off" &&
-        profile.allowed_thinking_levels.length === 1 &&
-        profile.allowed_thinking_levels[0] === "off" &&
+        JSON.stringify(profile.allowed_thinking_levels) ===
+          JSON.stringify(expectedThinkingLevels) &&
         profile.credential_binding_id === config.credentialBindingId &&
         profile.enabled,
       "model profile",
     );
-    if (ownerConfiguredDeepSeekProfile) {
+    if (ownerConfiguredProviderProfile) {
       const activeBinding = await transaction
         .selectFrom("credential_bindings")
         .select(["provider", "kind", "secret_ref", "status"])
@@ -216,21 +223,13 @@ export async function bootstrapProductionDatabase(
         .executeTakeFirst();
       exact(
         activeBinding !== undefined &&
-          activeBinding.provider === "deepseek" &&
-          activeBinding.kind === "api_key" &&
+          activeBinding.provider === profile.provider &&
+          activeBinding.kind === "brokered" &&
           activeBinding.secret_ref ===
-            `sealed://tenant-model-credentials/${config.tenantId}/${config.credentialBindingId}/${String(credentialVersion)}` &&
+            `provider-gateway://${profile.provider}/${profile.model_id}` &&
           activeBinding.status === "active",
-        "active model credential binding",
+        "active model route binding",
       );
-      const sealedCredential = await transaction
-        .selectFrom("tenant_model_credentials")
-        .select("key_version")
-        .where("tenant_id", "=", config.tenantId)
-        .where("credential_binding_id", "=", config.credentialBindingId)
-        .where("credential_binding_version", "=", String(credentialVersion))
-        .executeTakeFirst();
-      exact(sealedCredential !== undefined, "active model credential ciphertext");
     }
 
     await transaction

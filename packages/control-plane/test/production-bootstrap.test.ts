@@ -130,23 +130,10 @@ describe.sequential("production bootstrap and configuration", () => {
         id: CONFIG.credentialBindingId,
         tenant_id: CONFIG.tenantId,
         provider: "deepseek",
-        kind: "api_key",
-        secret_ref: `sealed://tenant-model-credentials/${CONFIG.tenantId}/${CONFIG.credentialBindingId}/2`,
+        kind: "brokered",
+        secret_ref: "provider-gateway://deepseek/deepseek-v4-flash",
         version: 2,
         status: "active",
-      })
-      .execute();
-    await database
-      .insertInto("tenant_model_credentials")
-      .values({
-        tenant_id: CONFIG.tenantId,
-        credential_binding_id: CONFIG.credentialBindingId,
-        credential_binding_version: 2,
-        key_version: 1,
-        nonce: "n".repeat(16),
-        ciphertext: "c".repeat(16),
-        auth_tag: "t".repeat(22),
-        secret_sha256: "a".repeat(64),
       })
       .execute();
     await database
@@ -154,6 +141,7 @@ describe.sequential("production bootstrap and configuration", () => {
       .set({
         provider: "deepseek",
         model_id: "deepseek-v4-flash",
+        allowed_thinking_levels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
         credential_binding_version: 2,
       })
       .where("id", "=", CONFIG.modelProfileId)
@@ -161,26 +149,21 @@ describe.sequential("production bootstrap and configuration", () => {
     await expect(bootstrapProductionDatabase(database, CONFIG, API_TOKEN)).resolves.toBeDefined();
 
     await database
-      .deleteFrom("tenant_model_credentials")
+      .updateTable("credential_bindings")
+      .set({ kind: "api_key" })
       .where("tenant_id", "=", CONFIG.tenantId)
-      .where("credential_binding_id", "=", CONFIG.credentialBindingId)
-      .where("credential_binding_version", "=", "2")
+      .where("id", "=", CONFIG.credentialBindingId)
+      .where("version", "=", "2")
       .execute();
     await expect(bootstrapProductionDatabase(database, CONFIG, API_TOKEN)).rejects.toThrow(
-      "Existing active model credential ciphertext does not match production bootstrap configuration",
+      "Existing active model route binding does not match production bootstrap configuration",
     );
     await database
-      .insertInto("tenant_model_credentials")
-      .values({
-        tenant_id: CONFIG.tenantId,
-        credential_binding_id: CONFIG.credentialBindingId,
-        credential_binding_version: 2,
-        key_version: 1,
-        nonce: "n".repeat(16),
-        ciphertext: "c".repeat(16),
-        auth_tag: "t".repeat(22),
-        secret_sha256: "a".repeat(64),
-      })
+      .updateTable("credential_bindings")
+      .set({ kind: "brokered" })
+      .where("tenant_id", "=", CONFIG.tenantId)
+      .where("id", "=", CONFIG.credentialBindingId)
+      .where("version", "=", "2")
       .execute();
 
     await database
@@ -217,11 +200,6 @@ describe.sequential("production bootstrap and configuration", () => {
         root,
         "management",
         `manage-${"m".repeat(48)}`,
-      ),
-      PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE: await secret(
-        root,
-        "model-master-key",
-        Buffer.alloc(32, 5).toString("base64url"),
       ),
       PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE: await secret(
         root,

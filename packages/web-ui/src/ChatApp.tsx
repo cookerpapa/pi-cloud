@@ -58,6 +58,21 @@ const WorkspaceDirectoryPicker = lazy(async () => ({
 }));
 
 type AuthPhase = "checking" | "anonymous" | "authenticated";
+const PRODUCT_PORT = "8080";
+const ADMIN_PORT = "8081";
+
+function onAdminOrigin(): boolean {
+  return window.location.port === ADMIN_PORT;
+}
+
+function replaceOriginPort(port: string): void {
+  const destination = new URL(window.location.href);
+  destination.port = port;
+  destination.pathname = "/";
+  destination.search = "";
+  destination.hash = "";
+  window.location.replace(destination);
+}
 
 function conversationTitle(prompt: string, fallback: string): string {
   const compact = prompt.replace(/\s+/g, " ").trim();
@@ -358,6 +373,15 @@ export default function ChatApp() {
       cancelled = true;
     };
   }, [api]);
+
+  useEffect(() => {
+    if (authPhase !== "authenticated" || identity === null) return;
+    if (identity.platformAdministrator && !onAdminOrigin()) {
+      replaceOriginPort(ADMIN_PORT);
+    } else if (!identity.platformAdministrator && onAdminOrigin()) {
+      replaceOriginPort(PRODUCT_PORT);
+    }
+  }, [authPhase, identity]);
 
   useEffect(() => {
     if (authPhase !== "authenticated" || identity?.platformAdministrator === true) return;
@@ -1148,6 +1172,9 @@ export default function ChatApp() {
         }}
       />
     );
+  }
+  if (identity.platformAdministrator !== onAdminOrigin()) {
+    return <main className="product-loading-page" />;
   }
   if (identity.platformAdministrator) {
     return (

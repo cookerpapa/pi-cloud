@@ -120,6 +120,35 @@ describe("PiCloudTurnRunner integration", () => {
     reused.release();
   });
 
+  it("configures the native Codex Responses provider with a short-lived gateway credential", async () => {
+    const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+    const payload = Buffer.from(
+      JSON.stringify({
+        "https://api.openai.com/auth": { chatgpt_account_id: "pi-cloud-provider-gateway" },
+      }),
+    ).toString("base64url");
+    const pool = new PiModelRuntimePool(0);
+    const lease = await pool.acquire({
+      provider: "openai-codex",
+      modelId: "gpt-5.6-terra",
+      baseUrl: "http://127.0.0.1:4200",
+      api: "openai-codex-responses",
+      apiKey: `${header}.${payload}.${"s".repeat(43)}`,
+      transport: "sse",
+      reasoning: true,
+      contextWindow: 272_000,
+      maxTokens: 65_536,
+    });
+    expect(lease.runtime.getProviderAuthStatus("openai-codex")).toMatchObject({
+      configured: true,
+    });
+    expect(lease.runtime.getModel("openai-codex", "gpt-5.6-terra")).toMatchObject({
+      api: "openai-codex-responses",
+      baseUrl: "http://127.0.0.1:4200",
+    });
+    lease.release();
+  });
+
   it("executes the native Pi loop from SessionStorage and publishes reviewed events", async () => {
     const fake = new FakeModelServer({ scenarioSequence: ["rate_limit", "text"] });
     await fake.start();

@@ -3,7 +3,7 @@
 	auto_https off
 }
 
-:8080 {
+:8080, :8081 {
 	encode zstd gzip
 
 	handle /healthz {
@@ -35,4 +35,9 @@
 		try_files {path} /index.html
 		file_server
 	}
+}
+
+:8318 {
+	encode zstd gzip
+	reverse_proxy cli-proxy-api:8317
 }

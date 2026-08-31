@@ -134,7 +134,7 @@ function preflight(namespace, values) {
     "database-notification-url",
     "database-url",
     "metrics-token",
-    "model-credential-master-key",
+    "cli-proxy-api-key",
     "tool-broker-token",
     "workspace-service-token",
     "workspace-terminal-token",

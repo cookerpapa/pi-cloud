@@ -14,10 +14,11 @@ identity recovery, billing and incident-response controls.
 
 ### Trusted Agent versus untrusted execution
 
-Pi, model credentials, PostgreSQL access and Tool capabilities remain in the
+Pi, PostgreSQL access and short-lived Tool/model capabilities remain in the
 trusted Worker. CubeSandbox KVM executes `read/write/edit/bash` and receives no
-platform credential. The Worker has no Cube API credential; the Tool Broker has
-no model credential.
+platform credential. Upstream OAuth/API credentials remain in CLIProxyAPI's
+private deployment Volume. The Worker has no Cube API credential; the Tool
+Broker has no model credential.
 
 ### Tenant and stale-Worker isolation
 

@@ -275,9 +275,8 @@ describe("tenant-aware browser API", () => {
     });
   });
 
-  it("reads safe model metadata and submits a write-only provider credential", async () => {
+  it("reads and updates a non-secret Provider Gateway route", async () => {
     const token = `pck_10000000-0000-4000-8000-000000000001.${"a".repeat(43)}`;
-    const providerKey = `sk-${"p".repeat(48)}`;
     const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
       expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${token}`);
       if (init?.method === "GET") {
@@ -287,7 +286,7 @@ describe("tenant-aware browser API", () => {
             provider: "pi-cloud-fake",
             modelId: "pi-cloud-fake",
             configured: false,
-            credentialVersion: 1,
+            routeVersion: 1,
             updatedAt: "2026-07-19T00:00:00.000Z",
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -298,7 +297,6 @@ describe("tenant-aware browser API", () => {
       expect(JSON.parse(String(init?.body))).toEqual({
         provider: "deepseek",
         modelId: "deepseek-v4-flash",
-        apiKey: providerKey,
       });
       return new Response(
         JSON.stringify({
@@ -306,7 +304,7 @@ describe("tenant-aware browser API", () => {
           provider: "deepseek",
           modelId: "deepseek-v4-flash",
           configured: true,
-          credentialVersion: 2,
+          routeVersion: 2,
           updatedAt: "2026-07-19T00:01:00.000Z",
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -317,8 +315,8 @@ describe("tenant-aware browser API", () => {
       mode: "deterministic",
     });
     await expect(
-      api.replaceModelConfiguration("deepseek-v4-flash", providerKey),
-    ).resolves.toMatchObject({ mode: "real", credentialVersion: 2 });
+      api.replaceModelConfiguration({ provider: "deepseek", modelId: "deepseek-v4-flash" }),
+    ).resolves.toMatchObject({ mode: "real", routeVersion: 2 });
   });
 
   it("reads and hot-replaces the versioned Cube proxy origin", async () => {

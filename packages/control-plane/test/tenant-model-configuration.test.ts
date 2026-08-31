@@ -4,20 +4,14 @@ import { createDatabase, runMigrations, type Database } from "@pi-cloud/database
 import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  PostgresTenantModelCredentialResolver,
   TenantModelConfigurationError,
   TenantModelConfigurationService,
-  TenantModelCredentialError,
-  TenantModelCredentialVault,
+  PublicTenantRegistrationService,
   createControlPlaneApplication,
   createPrivateTenant,
+  type PrivateTenantInitialModel,
   type TenantRequestIdentity,
 } from "../src/index.ts";
-
-const MASTER_KEY = Buffer.alloc(32, 11).toString("base64url");
-const OTHER_MASTER_KEY = Buffer.alloc(32, 12).toString("base64url");
-const FIRST_SECRET = `sk-${"a".repeat(48)}`;
-const ROTATED_SECRET = `sk-${"b".repeat(48)}`;
 
 let pglite: PGlite;
 let socketServer: PGLiteSocketServer;
@@ -55,192 +49,72 @@ function ownerIdentity(
 }
 
 describe.sequential("tenant model configuration", () => {
-  it("authenticates ciphertext against the exact tenant binding identity", () => {
-    const identity = {
-      tenantId: "10000000-0000-4000-8000-000000000001",
-      credentialBindingId: "20000000-0000-4000-8000-000000000001",
-      credentialBindingVersion: 2,
-      provider: "deepseek",
-    };
-    const vault = new TenantModelCredentialVault(MASTER_KEY, {
-      randomBytes: () => Buffer.alloc(12, 7),
+  it("persists only a non-secret Provider Gateway route and supports native provider protocols", async () => {
+    const tenant = await createPrivateTenant(database, {
+      slug: "model-route-tenant",
+      ownerDisplayName: "Model Route Tenant",
     });
-    const sealed = vault.seal(identity, FIRST_SECRET);
-    expect(JSON.stringify(sealed)).not.toContain(FIRST_SECRET);
-    expect(vault.open(identity, sealed)).toBe(FIRST_SECRET);
-    expect(() => vault.open({ ...identity, credentialBindingVersion: 3 }, sealed)).toThrow(
-      TenantModelCredentialError,
-    );
-    expect(() => new TenantModelCredentialVault(OTHER_MASTER_KEY).open(identity, sealed)).toThrow(
-      TenantModelCredentialError,
-    );
-    expect(() =>
-      vault.open(identity, {
-        ...sealed,
-        ciphertext: `${sealed.ciphertext[0] === "A" ? "B" : "A"}${sealed.ciphertext.slice(1)}`,
-      }),
-    ).toThrow(TenantModelCredentialError);
-  });
+    const identity = ownerIdentity(tenant);
+    const service = new TenantModelConfigurationService({ database });
 
-  it("isolates safe metadata, content-idempotently updates, and rotates immutable versions", async () => {
-    const tenantA = await createPrivateTenant(database, {
-      slug: "model-tenant-a",
-      ownerDisplayName: "Model Tenant A",
-    });
-    const tenantB = await createPrivateTenant(database, {
-      slug: "model-tenant-b",
-      ownerDisplayName: "Model Tenant B",
-    });
-    const identityA = ownerIdentity(tenantA);
-    const identityB = ownerIdentity(tenantB);
-    let tick = 0;
-    const vault = new TenantModelCredentialVault(MASTER_KEY);
-    const service = new TenantModelConfigurationService({
-      database,
-      vault,
-      clock: () => new Date(Date.UTC(2026, 6, 19, 14, 0, tick++)),
-    });
-
-    await expect(service.get(identityA)).resolves.toMatchObject({
+    await expect(service.get(identity)).resolves.toMatchObject({
       mode: "deterministic",
       configured: false,
-      credentialVersion: 1,
+      routeVersion: 1,
     });
-    const configured = await service.replace(identityA, {
-      provider: "deepseek",
-      modelId: "deepseek-v4-flash",
-      apiKey: FIRST_SECRET,
-    });
-    expect(configured).toMatchObject({
+    await expect(
+      service.replace(identity, { provider: "openai-codex", modelId: "gpt-5.6-terra" }),
+    ).resolves.toMatchObject({
       mode: "real",
-      modelId: "deepseek-v4-flash",
-      credentialVersion: 2,
+      provider: "openai-codex",
+      modelId: "gpt-5.6-terra",
+      routeVersion: 2,
     });
-    await expect(service.get(identityB)).resolves.toMatchObject({
-      mode: "deterministic",
-      configured: false,
-    });
+    await expect(
+      service.replace(identity, { provider: "openai-codex", modelId: "gpt-5.6-terra" }),
+    ).resolves.toMatchObject({ routeVersion: 2 });
+    await expect(
+      service.replace(identity, { provider: "deepseek", modelId: "deepseek-v4-pro" }),
+    ).resolves.toMatchObject({ provider: "deepseek", routeVersion: 3 });
 
-    const persisted = await database
-      .selectFrom("tenant_model_credentials")
-      .selectAll()
-      .where("tenant_id", "=", tenantA.tenantId)
+    const bindings = await database
+      .selectFrom("credential_bindings")
+      .select(["provider", "kind", "secret_ref as route"])
+      .where("tenant_id", "=", tenant.tenantId)
+      .orderBy("version", "asc")
       .execute();
-    expect(persisted).toHaveLength(1);
-    expect(JSON.stringify(persisted)).not.toContain(FIRST_SECRET);
-
-    await expect(
-      service.replace(identityA, {
+    expect(bindings.slice(-2)).toEqual([
+      {
+        provider: "openai-codex",
+        kind: "brokered",
+        route: "provider-gateway://openai-codex/gpt-5.6-terra",
+      },
+      {
         provider: "deepseek",
-        modelId: "deepseek-v4-flash",
-        apiKey: FIRST_SECRET,
-      }),
-    ).resolves.toMatchObject({ credentialVersion: 2 });
-    await expect(
-      service.replace(identityA, {
-        provider: "deepseek",
-        modelId: "deepseek-v4-pro",
-        apiKey: FIRST_SECRET,
-      }),
-    ).resolves.toMatchObject({ credentialVersion: 2, modelId: "deepseek-v4-pro" });
-    await expect(
-      service.replace(identityA, {
-        provider: "deepseek",
-        modelId: "deepseek-v4-flash",
-        apiKey: ROTATED_SECRET,
-      }),
-    ).resolves.toMatchObject({ credentialVersion: 3 });
-
-    const versions = await database
-      .selectFrom("tenant_model_credentials")
-      .select("credential_binding_version as version")
-      .where("tenant_id", "=", tenantA.tenantId)
-      .orderBy("credential_binding_version")
-      .execute();
-    expect(versions.map((row) => Number(row.version))).toEqual([2, 3]);
-
-    const resolver = new PostgresTenantModelCredentialResolver({ database, vault });
-    await expect(
-      resolver.resolve({
-        tenantId: tenantA.tenantId,
-        credentialBindingId: tenantA.credentialBindingId,
-        credentialBindingVersion: 2,
-        provider: "deepseek",
-      }),
-    ).resolves.toMatchObject({ secret: FIRST_SECRET });
-    await expect(
-      resolver.resolve({
-        tenantId: tenantA.tenantId,
-        credentialBindingId: tenantA.credentialBindingId,
-        credentialBindingVersion: 3,
-        provider: "deepseek",
-      }),
-    ).resolves.toMatchObject({ secret: ROTATED_SECRET });
+        kind: "brokered",
+        route: "provider-gateway://deepseek/deepseek-v4-pro",
+      },
+    ]);
+    expect(JSON.stringify(bindings)).not.toMatch(/access_token|refresh_token|api[_-]?key/i);
 
     await expect(
       service.replace(
-        { ...identityA, role: "member" },
-        { provider: "deepseek", modelId: "deepseek-v4-flash", apiKey: FIRST_SECRET },
+        { ...identity, role: "member" },
+        { provider: "deepseek", modelId: "deepseek-v4-flash" },
       ),
     ).rejects.toBeInstanceOf(TenantModelConfigurationError);
   });
 
-  it("reseals an unchanged API key after the credential master key rotates", async () => {
-    const tenant = await createPrivateTenant(database, {
-      slug: "model-master-key-rotation",
-      ownerDisplayName: "Model Master Key Rotation",
-    });
-    const identity = ownerIdentity(tenant);
-    const originalVault = new TenantModelCredentialVault(MASTER_KEY);
-    const originalService = new TenantModelConfigurationService({
-      database,
-      vault: originalVault,
-    });
-    await expect(
-      originalService.replace(identity, {
-        provider: "deepseek",
-        modelId: "deepseek-v4-flash",
-        apiKey: FIRST_SECRET,
-      }),
-    ).resolves.toMatchObject({ credentialVersion: 2 });
-
-    const rotatedVault = new TenantModelCredentialVault(OTHER_MASTER_KEY);
-    const rotatedService = new TenantModelConfigurationService({
-      database,
-      vault: rotatedVault,
-    });
-    await expect(
-      rotatedService.replace(identity, {
-        provider: "deepseek",
-        modelId: "deepseek-v4-flash",
-        apiKey: FIRST_SECRET,
-      }),
-    ).resolves.toMatchObject({ credentialVersion: 3 });
-
-    const resolver = new PostgresTenantModelCredentialResolver({
-      database,
-      vault: rotatedVault,
-    });
-    await expect(
-      resolver.resolve({
-        tenantId: tenant.tenantId,
-        credentialBindingId: tenant.credentialBindingId,
-        credentialBindingVersion: 3,
-        provider: "deepseek",
-      }),
-    ).resolves.toMatchObject({ secret: FIRST_SECRET });
-  });
-
-  it("lets a delegated web administrator update the durable platform source", async () => {
+  it("propagates the platform route to existing managed tenants", async () => {
     const source = await createPrivateTenant(database, {
-      slug: "delegated-model-source",
-      ownerDisplayName: "Delegated Model Source",
+      slug: "platform-model-source",
+      ownerDisplayName: "Platform Model Source",
     });
-    const administrator = await createPrivateTenant(database, {
-      slug: "delegated-model-admin",
-      ownerDisplayName: "Delegated Model Admin",
+    const managed = await createPrivateTenant(database, {
+      slug: "platform-model-managed",
+      ownerDisplayName: "Platform Model Managed",
       webAccount: {
-        username: "delegated-model-admin",
+        username: "platform-model-managed",
         role: "owner",
         passwordSalt: "s".repeat(22),
         passwordHash: "h".repeat(43),
@@ -251,63 +125,100 @@ describe.sequential("tenant model configuration", () => {
     });
     const service = new TenantModelConfigurationService({
       database,
-      vault: new TenantModelCredentialVault(MASTER_KEY),
-      platformOperatorTenantId: administrator.tenantId,
+      platformOperatorTenantId: source.tenantId,
       platformModelSourceTenantId: source.tenantId,
     });
-    await expect(
-      service.replace(ownerIdentity(administrator), {
-        provider: "deepseek",
-        modelId: "deepseek-v4-pro",
-        apiKey: FIRST_SECRET,
-      }),
-    ).resolves.toMatchObject({ mode: "real", modelId: "deepseek-v4-pro" });
-    await expect(service.get(ownerIdentity(source))).resolves.toMatchObject({
-      mode: "real",
-      modelId: "deepseek-v4-pro",
+    await service.replace(ownerIdentity(source), {
+      provider: "openai-codex",
+      modelId: "gpt-5.6-sol",
     });
-    await expect(service.get(ownerIdentity(administrator))).resolves.toMatchObject({
-      mode: "real",
-      modelId: "deepseek-v4-pro",
+    await expect(service.get(ownerIdentity(managed))).resolves.toMatchObject({
+      provider: "openai-codex",
+      modelId: "gpt-5.6-sol",
     });
   });
 
-  it("exposes only the authenticated tenant's safe configuration over HTTP", async () => {
+  it("resolves the current platform route for every API registration", async () => {
+    let initialModel: PrivateTenantInitialModel = {
+      provider: "deepseek",
+      modelId: "deepseek-v4-flash",
+    };
+    const registration = new PublicTenantRegistrationService({
+      database,
+      enabled: true,
+      maximumTenants: 1_000,
+      tenantQuotas: { maximumProjects: 2, maximumSessions: 4 },
+      initialModel: () => initialModel,
+    });
+    const first = await registration.register({
+      tenantSlug: "dynamic-route-first",
+      displayName: "Dynamic Route First",
+    });
+    initialModel = { provider: "openai-codex", modelId: "gpt-5.6-terra" };
+    const second = await registration.register({
+      tenantSlug: "dynamic-route-second",
+      displayName: "Dynamic Route Second",
+    });
+    const profiles = await database
+      .selectFrom("tenant_runtime_policies as policy")
+      .innerJoin("model_profiles as profile", (join) =>
+        join
+          .onRef("profile.tenant_id", "=", "policy.tenant_id")
+          .onRef("profile.id", "=", "policy.default_model_profile_id"),
+      )
+      .select(["policy.tenant_id as tenantId", "profile.provider", "profile.model_id as modelId"])
+      .where("policy.tenant_id", "in", [first.tenantId, second.tenantId])
+      .orderBy("profile.provider", "asc")
+      .execute();
+    expect(profiles).toEqual([
+      {
+        tenantId: first.tenantId,
+        provider: "deepseek",
+        modelId: "deepseek-v4-flash",
+      },
+      {
+        tenantId: second.tenantId,
+        provider: "openai-codex",
+        modelId: "gpt-5.6-terra",
+      },
+    ]);
+  });
+
+  it("exposes route metadata without accepting provider credentials over HTTP", async () => {
     const tenant = await createPrivateTenant(database, {
-      slug: "model-http-tenant",
-      ownerDisplayName: "Model HTTP Owner",
+      slug: "model-route-http",
+      ownerDisplayName: "Model Route HTTP",
     });
     const application = await createControlPlaneApplication({
       database,
       tenantId: tenant.tenantId,
       defaultModelProfileId: tenant.defaultModelProfileId,
-      modelCredentialVault: new TenantModelCredentialVault(MASTER_KEY),
     });
     try {
       await application.listen(0, "127.0.0.1");
       const baseUrl = await application.getUrl();
-      const initial = await fetch(`${baseUrl}/v1/model-configuration`);
-      expect(initial.status).toBe(200);
-      expect(await initial.json()).toMatchObject({ mode: "deterministic", configured: false });
       const replaced = await fetch(`${baseUrl}/v1/model-configuration`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "openai-codex", modelId: "gpt-5.6-luna" }),
+      });
+      expect(replaced.status).toBe(200);
+      expect(await replaced.json()).toMatchObject({
+        mode: "real",
+        provider: "openai-codex",
+        modelId: "gpt-5.6-luna",
+        routeVersion: 2,
+      });
+      const rejected = await fetch(`${baseUrl}/v1/model-configuration`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           provider: "deepseek",
           modelId: "deepseek-v4-flash",
-          apiKey: FIRST_SECRET,
+          apiKey: "must-not-enter-picloud",
         }),
       });
-      expect(replaced.status).toBe(200);
-      const body = await replaced.json();
-      expect(body).toMatchObject({
-        mode: "real",
-        provider: "deepseek",
-        modelId: "deepseek-v4-flash",
-        configured: true,
-        credentialVersion: 2,
-      });
-      expect(JSON.stringify(body)).not.toContain(FIRST_SECRET);
+      expect(rejected.status).toBe(400);
     } finally {
       await application.close();
     }

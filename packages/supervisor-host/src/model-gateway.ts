@@ -1,37 +1,50 @@
 import {
-  PostgresTenantModelCredentialResolver,
-  type TenantModelCredentialIdentity,
-} from "@pi-cloud/runtime-core/model-credential-runtime";
-import type { Database } from "@pi-cloud/database";
-import {
   MODEL_SAMPLING_ATTEMPT_HEADER,
   MODEL_STEP_SEQUENCE_HEADER,
   MODEL_STEP_SHA256_HEADER,
-  parseModelSamplingIdentity,
   parseExecutionLease,
+  parseModelSamplingIdentity,
   type ExecuteTurnCommandMessage,
   type ModelSamplingIdentity,
 } from "@pi-cloud/protocol";
 import type { TrustedModelRuntimeLease } from "@pi-cloud/sandbox-supervisor";
 import { parseTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/observability";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { once } from "node:events";
-import { sql, type Kysely } from "kysely";
+import { zstdDecompressSync } from "node:zlib";
 
-const GATEWAY_PATH = "/v1/chat/completions";
-const DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
-const MAX_RESPONSE_BYTES = 16 * 1_024 * 1_024;
+const CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
+const CODEX_RESPONSES_PATH = "/codex/responses";
+const PROVIDER_RESPONSES_PATH = "/v1/responses";
+const MAX_REQUEST_BYTES = 8 * 1_024 * 1_024;
+const MAX_DECOMPRESSED_REQUEST_BYTES = 32 * 1_024 * 1_024;
+const MAX_RESPONSE_BYTES = 64 * 1_024 * 1_024;
 
-type ModelUsage = Readonly<{
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-}>;
+type SupportedModel =
+  | Readonly<{
+      provider: "deepseek";
+      modelId: "deepseek-v4-flash" | "deepseek-v4-pro";
+      api: "openai-completions";
+      requestPath: typeof CHAT_COMPLETIONS_PATH;
+      providerPath: typeof CHAT_COMPLETIONS_PATH;
+      baseUrlPath: "/v1";
+      contextWindow: number;
+      maxTokens: number;
+    }>
+  | Readonly<{
+      provider: "openai-codex";
+      modelId: "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6-sol";
+      api: "openai-codex-responses";
+      requestPath: typeof CODEX_RESPONSES_PATH;
+      providerPath: typeof PROVIDER_RESPONSES_PATH;
+      baseUrlPath: "";
+      contextWindow: number;
+      maxTokens: number;
+    }>;
 
-type ActiveCapability = {
+type ActiveCapabilityFields = {
   tokenDigest: string;
   tenantId: string;
   sessionId: string;
@@ -39,43 +52,23 @@ type ActiveCapability = {
   runId: string;
   attemptId: string;
   modelProfileId: string;
-  provider: "deepseek";
-  modelId: "deepseek-v4-flash" | "deepseek-v4-pro";
-  providerSecret: string;
   expiresAt: number;
   maximumRequestsPerRun: number;
-  maximumCostMicrousdPerRun: number | undefined;
+  requestsStarted: number;
   revoked: boolean;
   requestControllers: Set<AbortController>;
 };
 
-type ModelRate = Readonly<{
-  input: bigint;
-  output: bigint;
-  cacheRead: bigint;
-  cacheWrite: bigint;
-}>;
-
-type ModelReservation = Readonly<{
-  id: string;
-  sequence: number;
-  requestedModelId: ActiveCapability["modelId"];
-  fallbackModelId: ActiveCapability["modelId"] | undefined;
-  fallbackOnRateLimit: boolean;
-  fallbackOnServerError: boolean;
-  fallbackOnTimeout: boolean;
-  reservedInputTokens: number;
-  reservedOutputTokens: number;
-  primaryRate: ModelRate;
-  fallbackRate: ModelRate | undefined;
-}>;
+type ActiveCapability =
+  | (Extract<SupportedModel, { provider: "deepseek" }> & ActiveCapabilityFields)
+  | (Extract<SupportedModel, { provider: "openai-codex" }> & ActiveCapabilityFields);
 
 export type TenantModelGatewayOptions = {
-  database: Kysely<Database>;
-  credentialResolver: PostgresTenantModelCredentialResolver;
   host: string;
   port: number;
   advertisedBaseUrl: string;
+  providerGatewayBaseUrl: string;
+  providerGatewayApiKey: string;
   capabilityTtlMs?: number;
   maximumRequestsPerTurn?: number;
   upstreamRequestTimeoutMs?: number;
@@ -84,7 +77,6 @@ export type TenantModelGatewayOptions = {
   fetchImplementation?: typeof fetch;
   clock?: () => Date;
   randomBytes?: (size: number) => Buffer;
-  idGenerator?: () => string;
   metrics?: PiCloudMetrics;
 };
 
@@ -121,30 +113,34 @@ function positiveInteger(value: number, name: string, maximum: number): number {
   return value;
 }
 
-function advertisedBaseUrl(value: string): string {
+function serviceBaseUrl(value: string, name: string, requireHttp: boolean): string {
   let parsed: URL;
   try {
     parsed = new URL(value);
   } catch {
-    throw new TenantModelGatewayError(
-      "invalid_gateway_configuration",
-      "Model gateway advertised URL is invalid",
-    );
+    throw new TenantModelGatewayError("invalid_gateway_configuration", `${name} is invalid`);
   }
   if (
-    parsed.protocol !== "http:" ||
+    (requireHttp ? parsed.protocol !== "http:" : !["http:", "https:"].includes(parsed.protocol)) ||
     parsed.username ||
     parsed.password ||
     parsed.search ||
     parsed.hash ||
     (parsed.pathname !== "/" && parsed.pathname !== "")
   ) {
-    throw new TenantModelGatewayError(
-      "invalid_gateway_configuration",
-      "Model gateway advertised URL is invalid",
-    );
+    throw new TenantModelGatewayError("invalid_gateway_configuration", `${name} is invalid`);
   }
   return parsed.toString().replace(/\/$/, "");
+}
+
+function providerGatewayApiKey(value: string): string {
+  if (value.length < 32 || value.length > 4_096 || /[\r\n\0]/.test(value)) {
+    throw new TenantModelGatewayError(
+      "invalid_gateway_configuration",
+      "Provider Gateway API key is invalid",
+    );
+  }
+  return value;
 }
 
 function validDate(clock: () => Date): Date {
@@ -152,14 +148,33 @@ function validDate(clock: () => Date): Date {
   if (!(value instanceof Date) || Number.isNaN(value.valueOf())) {
     throw new TenantModelGatewayError(
       "invalid_gateway_configuration",
-      "Model gateway clock returned an invalid date",
+      "Model Gateway clock returned an invalid date",
     );
   }
   return value;
 }
 
 function bearerCapability(value: string | undefined): string | undefined {
-  return value === undefined ? undefined : /^Bearer (pcmg_[A-Za-z0-9_-]{43})$/.exec(value)?.[1];
+  return value === undefined
+    ? undefined
+    : /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43})$/.exec(value)?.[1];
+}
+
+function capabilityToken(signature: Buffer, sessionId: string, expiresAt: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT", pcmg: 1 }), "utf8").toString(
+    "base64url",
+  );
+  const payload = Buffer.from(
+    JSON.stringify({
+      "https://api.openai.com/auth": {
+        chatgpt_account_id: "pi-cloud-provider-gateway",
+      },
+      sid: sessionId,
+      exp: Math.floor(expiresAt / 1_000),
+    }),
+    "utf8",
+  ).toString("base64url");
+  return `${header}.${payload}.${signature.toString("base64url")}`;
 }
 
 function samplingIdentity(request: IncomingMessage): ModelSamplingIdentity {
@@ -202,173 +217,133 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
   response.end(`${JSON.stringify(body)}\n`);
 }
 
-async function readJson(
-  request: IncomingMessage,
-  maximumBytes: number,
-): Promise<Record<string, unknown>> {
+async function readBody(request: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const value of request) {
     const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
     size += chunk.length;
-    if (size > maximumBytes) {
+    if (size > MAX_REQUEST_BYTES) {
       throw new SafeGatewayHttpError(413, "request_too_large", "Model request is too large");
     }
     chunks.push(chunk);
   }
-  let parsed: unknown;
+  return Buffer.concat(chunks);
+}
+
+function parseBody(bytes: Buffer, contentEncoding: string | undefined): Record<string, unknown> {
+  let decoded = bytes;
+  if (contentEncoding !== undefined && contentEncoding.trim().length > 0) {
+    if (contentEncoding.trim().toLowerCase() !== "zstd") {
+      throw new SafeGatewayHttpError(
+        415,
+        "unsupported_content_encoding",
+        "Model request encoding is unsupported",
+      );
+    }
+    try {
+      decoded = zstdDecompressSync(bytes, { maxOutputLength: MAX_DECOMPRESSED_REQUEST_BYTES });
+    } catch {
+      throw new SafeGatewayHttpError(
+        400,
+        "invalid_request_encoding",
+        "Model request encoding is invalid",
+      );
+    }
+  }
+  if (decoded.length > MAX_DECOMPRESSED_REQUEST_BYTES) {
+    throw new SafeGatewayHttpError(413, "request_too_large", "Model request is too large");
+  }
+  let value: unknown;
   try {
-    parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+    value = JSON.parse(decoded.toString("utf8")) as unknown;
   } catch {
     throw new SafeGatewayHttpError(400, "invalid_request", "Model request must be valid JSON");
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new SafeGatewayHttpError(400, "invalid_request", "Model request must be a JSON object");
   }
-  return parsed as Record<string, unknown>;
-}
-
-function tokenCount(value: unknown): number {
-  return Number.isSafeInteger(value) && (value as number) >= 0 ? (value as number) : 0;
-}
-
-function positiveTokenLimit(value: unknown, fallback: number): number {
-  return Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 65_536
-    ? (value as number)
-    : fallback;
-}
-
-function estimatedInputTokens(body: Record<string, unknown>): number {
-  const bytes = Buffer.byteLength(JSON.stringify(body), "utf8");
-  return Math.max(1, Math.ceil(bytes / 3));
-}
-
-function integer(value: string | number | bigint, name: string): number {
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw new SafeGatewayHttpError(500, "governance_invariant", `${name} is invalid`);
-  }
-  return parsed;
-}
-
-function bigInteger(value: string | number | bigint, name: string): bigint {
-  try {
-    const parsed = BigInt(value);
-    if (parsed < 0n) throw new Error("negative");
-    return parsed;
-  } catch {
-    throw new SafeGatewayHttpError(500, "governance_invariant", `${name} is invalid`);
-  }
-}
-
-function rateFromRow(row: {
-  input_microusd_per_million: string;
-  output_microusd_per_million: string;
-  cache_read_microusd_per_million: string;
-  cache_write_microusd_per_million: string;
-}): ModelRate {
-  return {
-    input: bigInteger(row.input_microusd_per_million, "input model rate"),
-    output: bigInteger(row.output_microusd_per_million, "output model rate"),
-    cacheRead: bigInteger(row.cache_read_microusd_per_million, "cache-read model rate"),
-    cacheWrite: bigInteger(row.cache_write_microusd_per_million, "cache-write model rate"),
-  };
-}
-
-function ceilMicrousd(tokens: number, rate: bigint): bigint {
-  return (BigInt(tokens) * rate + 999_999n) / 1_000_000n;
-}
-
-function estimatedCost(inputTokens: number, outputTokens: number, rate: ModelRate): bigint {
-  return ceilMicrousd(inputTokens, rate.input) + ceilMicrousd(outputTokens, rate.output);
-}
-
-function actualCost(usage: ModelUsage, rate: ModelRate): bigint {
-  return (
-    ceilMicrousd(usage.inputTokens, rate.input) +
-    ceilMicrousd(usage.outputTokens, rate.output) +
-    ceilMicrousd(usage.cacheReadTokens, rate.cacheRead) +
-    ceilMicrousd(usage.cacheWriteTokens, rate.cacheWrite)
-  );
-}
-
-function decimalDollars(microusd: bigint): string {
-  const whole = microusd / 1_000_000n;
-  const fractional = (microusd % 1_000_000n).toString().padStart(6, "0");
-  return `${whole.toString()}.${fractional}`;
-}
-
-function utcDayStart(value: Date): Date {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
-}
-
-function utcMonthStart(value: Date): Date {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1));
-}
-
-function parseUsage(value: unknown): ModelUsage | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const usage = value as Record<string, unknown>;
-  const promptTokens = tokenCount(usage.prompt_tokens);
-  const outputTokens = tokenCount(usage.completion_tokens);
-  const promptDetails =
-    typeof usage.prompt_tokens_details === "object" &&
-    usage.prompt_tokens_details !== null &&
-    !Array.isArray(usage.prompt_tokens_details)
-      ? (usage.prompt_tokens_details as Record<string, unknown>)
-      : undefined;
-  const cacheReadTokens = tokenCount(promptDetails?.cached_tokens ?? usage.prompt_cache_hit_tokens);
-  const cacheWriteTokens = tokenCount(promptDetails?.cache_write_tokens);
-  if (promptTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheWriteTokens === 0) {
-    return undefined;
-  }
-  return {
-    inputTokens: Math.max(0, promptTokens - cacheReadTokens - cacheWriteTokens),
-    outputTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-  };
-}
-
-class StreamingUsageScanner {
-  readonly #decoder = new TextDecoder();
-  #line = "";
-  #usage: ModelUsage | undefined;
-
-  feed(chunk: Uint8Array): ModelUsage | undefined {
-    this.#line += this.#decoder.decode(chunk, { stream: true });
-    if (this.#line.length > 512 * 1_024) this.#line = this.#line.slice(-256 * 1_024);
-    let newline = this.#line.indexOf("\n");
-    while (newline !== -1) {
-      const line = this.#line.slice(0, newline).trim();
-      this.#line = this.#line.slice(newline + 1);
-      if (line.startsWith("data:") && line !== "data: [DONE]") {
-        try {
-          const event = JSON.parse(line.slice(5).trim()) as unknown;
-          if (typeof event === "object" && event !== null && !Array.isArray(event)) {
-            this.#usage = parseUsage((event as Record<string, unknown>).usage) ?? this.#usage;
-          }
-        } catch {
-          // Provider payload validation remains Pi's responsibility. Usage parsing
-          // is deliberately side-band and never changes streamed model bytes.
-        }
-      }
-      newline = this.#line.indexOf("\n");
-    }
-    return this.#usage;
-  }
+  return value as Record<string, unknown>;
 }
 
 async function writeChunk(response: ServerResponse, chunk: Uint8Array): Promise<void> {
   if (!response.write(chunk)) await once(response, "drain");
 }
 
+function supportedModel(provider: string, modelId: string): SupportedModel | undefined {
+  if (
+    provider === "deepseek" &&
+    (modelId === "deepseek-v4-flash" || modelId === "deepseek-v4-pro")
+  ) {
+    return {
+      provider,
+      modelId,
+      api: "openai-completions",
+      requestPath: CHAT_COMPLETIONS_PATH,
+      providerPath: CHAT_COMPLETIONS_PATH,
+      baseUrlPath: "/v1",
+      contextWindow: 128_000,
+      maxTokens: 8_192,
+    };
+  }
+  if (
+    provider === "openai-codex" &&
+    (modelId === "gpt-5.6-luna" || modelId === "gpt-5.6-terra" || modelId === "gpt-5.6-sol")
+  ) {
+    return {
+      provider,
+      modelId,
+      api: "openai-codex-responses",
+      requestPath: CODEX_RESPONSES_PATH,
+      providerPath: PROVIDER_RESPONSES_PATH,
+      baseUrlPath: "",
+      contextWindow: 272_000,
+      maxTokens: 65_536,
+    };
+  }
+  return undefined;
+}
+
+const FORWARDED_REQUEST_HEADERS = new Set([
+  "accept",
+  "accept-encoding",
+  "content-encoding",
+  "content-type",
+  "openai-beta",
+  "originator",
+  "session-id",
+  "session_id",
+  "user-agent",
+  "x-client-request-id",
+  "x-codex-installation-id",
+  "x-codex-turn-metadata",
+  "x-session-affinity",
+  "x-session-id",
+]);
+
+function upstreamHeaders(
+  request: IncomingMessage,
+  active: ActiveCapability,
+  apiKey: string,
+): Headers {
+  const headers = new Headers();
+  for (const [name, raw] of Object.entries(request.headers)) {
+    if (!FORWARDED_REQUEST_HEADERS.has(name) || raw === undefined) continue;
+    headers.set(name, Array.isArray(raw) ? raw.join(", ") : raw);
+  }
+  headers.set("authorization", `Bearer ${apiKey}`);
+  headers.set("content-type", "application/json");
+  headers.set("session-id", active.sessionId);
+  headers.set("x-session-id", active.sessionId);
+  return headers;
+}
+
 export class TenantModelGateway {
-  readonly #database: Kysely<Database>;
-  readonly #credentialResolver: PostgresTenantModelCredentialResolver;
   readonly #host: string;
   readonly #port: number;
   readonly #advertisedBaseUrl: string;
+  readonly #providerGatewayBaseUrl: string;
+  readonly #providerGatewayApiKey: string;
   readonly #capabilityTtlMs: number;
   readonly #maximumRequestsPerTurn: number;
   readonly #upstreamRequestTimeoutMs: number;
@@ -377,7 +352,6 @@ export class TenantModelGateway {
   readonly #fetch: typeof fetch;
   readonly #clock: () => Date;
   readonly #randomBytes: (size: number) => Buffer;
-  readonly #idGenerator: () => string;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #server: Server;
   readonly #capabilities = new Map<string, ActiveCapability>();
@@ -385,14 +359,22 @@ export class TenantModelGateway {
   #closing: Promise<void> | undefined;
 
   constructor(options: TenantModelGatewayOptions) {
-    this.#database = options.database;
-    this.#credentialResolver = options.credentialResolver;
     this.#host = options.host;
     if (!Number.isSafeInteger(options.port) || options.port < 0 || options.port > 65_535) {
       throw new TenantModelGatewayError("invalid_gateway_configuration", "port is invalid");
     }
     this.#port = options.port;
-    this.#advertisedBaseUrl = advertisedBaseUrl(options.advertisedBaseUrl);
+    this.#advertisedBaseUrl = serviceBaseUrl(
+      options.advertisedBaseUrl,
+      "Model Gateway advertised URL",
+      true,
+    );
+    this.#providerGatewayBaseUrl = serviceBaseUrl(
+      options.providerGatewayBaseUrl,
+      "Provider Gateway URL",
+      false,
+    );
+    this.#providerGatewayApiKey = providerGatewayApiKey(options.providerGatewayApiKey);
     this.#capabilityTtlMs = positiveInteger(
       options.capabilityTtlMs ?? 10 * 60_000,
       "capabilityTtlMs",
@@ -421,7 +403,6 @@ export class TenantModelGateway {
     this.#fetch = options.fetchImplementation ?? globalThis.fetch.bind(globalThis);
     this.#clock = options.clock ?? (() => new Date());
     this.#randomBytes = options.randomBytes ?? randomBytes;
-    this.#idGenerator = options.idGenerator ?? randomUUID;
     this.#metrics = options.metrics;
     this.#server = createServer((request, response) => {
       const startedAt = performance.now();
@@ -456,25 +437,10 @@ export class TenantModelGateway {
         },
         run: () => this.#handle(request, response),
       }).then(
-        () => {
-          if (active !== undefined) {
-            this.#metrics?.modelDuration.observe(
-              {
-                provider: active.provider,
-                model: active.modelId,
-                outcome: response.statusCode < 400 ? "completed" : "rejected",
-              },
-              (performance.now() - startedAt) / 1_000,
-            );
-          }
-        },
+        () =>
+          this.#observe(active, response.statusCode < 400 ? "completed" : "rejected", startedAt),
         (error: unknown) => {
-          if (active !== undefined) {
-            this.#metrics?.modelDuration.observe(
-              { provider: active.provider, model: active.modelId, outcome: "failed" },
-              (performance.now() - startedAt) / 1_000,
-            );
-          }
+          this.#observe(active, "failed", startedAt);
           if (error instanceof SafeGatewayHttpError) {
             sendJson(response, error.status, {
               error: { code: error.code, message: error.message },
@@ -482,7 +448,7 @@ export class TenantModelGateway {
             return;
           }
           sendJson(response, 502, {
-            error: { code: "model_gateway_error", message: "Model gateway request failed" },
+            error: { code: "model_gateway_error", message: "Model Gateway request failed" },
           });
         },
       );
@@ -492,7 +458,7 @@ export class TenantModelGateway {
   get listeningPort(): number {
     const address = this.#server.address();
     if (!this.#started || address === null || typeof address === "string") {
-      throw new TenantModelGatewayError("gateway_not_started", "Model gateway is not listening");
+      throw new TenantModelGatewayError("gateway_not_started", "Model Gateway is not listening");
     }
     return (address as AddressInfo).port;
   }
@@ -501,7 +467,7 @@ export class TenantModelGateway {
     if (this.#started) {
       throw new TenantModelGatewayError(
         "gateway_already_started",
-        "Model gateway has already started",
+        "Model Gateway has already started",
       );
     }
     await new Promise<void>((resolvePromise, rejectPromise) => {
@@ -515,87 +481,80 @@ export class TenantModelGateway {
     });
   }
 
-  issue(command: ExecuteTurnCommandMessage): Promise<TrustedModelRuntimeLease> {
-    return this.#issue(command);
-  }
-
-  close(): Promise<void> {
-    this.#closing ??= this.#close();
-    return this.#closing;
-  }
-
-  async #issue(command: ExecuteTurnCommandMessage): Promise<TrustedModelRuntimeLease> {
+  issue(command: ExecuteTurnCommandMessage): TrustedModelRuntimeLease {
     if (!this.#started) {
-      throw new TenantModelGatewayError("gateway_not_started", "Model gateway is not listening");
+      throw new TenantModelGatewayError("gateway_not_started", "Model Gateway is not listening");
     }
-    const model = command.payload.model;
-    if (
-      model.provider !== "deepseek" ||
-      (model.modelId !== "deepseek-v4-flash" && model.modelId !== "deepseek-v4-pro")
-    ) {
+    const model = supportedModel(command.payload.model.provider, command.payload.model.modelId);
+    if (model === undefined) {
       throw new TenantModelGatewayError("unsupported_model", "Accepted model is unsupported");
     }
-    const credentialIdentity: TenantModelCredentialIdentity = {
-      tenantId: command.payload.tenantId,
-      credentialBindingId: model.credentialBindingId,
-      credentialBindingVersion: model.credentialBindingVersion,
-      provider: model.provider,
-    };
-    const resolved = await this.#credentialResolver.resolve(credentialIdentity);
     const random = this.#randomBytes(32);
     if (!Buffer.isBuffer(random) || random.length !== 32) {
       throw new TenantModelGatewayError(
         "invalid_gateway_configuration",
-        "Model gateway capability generation failed",
+        "Model Gateway capability generation failed",
       );
     }
-    const capability = `pcmg_${random.toString("base64url")}`;
+    const expiresAt = validDate(this.#clock).valueOf() + this.#capabilityTtlMs;
+    const capability = capabilityToken(random, command.payload.sessionId, expiresAt);
     const digest = capabilityDigest(capability);
     if (this.#capabilities.has(digest)) {
       throw new TenantModelGatewayError(
         "invalid_gateway_configuration",
-        "Model gateway capability collision occurred",
+        "Model Gateway capability collision occurred",
       );
     }
     const active: ActiveCapability = {
+      ...model,
       tokenDigest: digest,
       tenantId: command.payload.tenantId,
       sessionId: command.payload.sessionId,
       turnId: command.payload.turnId,
       runId: command.payload.runId,
       attemptId: parseExecutionLease(command.payload.executionLease).attemptId,
-      modelProfileId: model.profileId,
-      provider: "deepseek",
-      modelId: model.modelId,
-      providerSecret: resolved.secret,
-      expiresAt: validDate(this.#clock).valueOf() + this.#capabilityTtlMs,
+      modelProfileId: command.payload.model.profileId,
+      expiresAt,
       maximumRequestsPerRun: Math.min(
         this.#maximumRequestsPerTurn,
         command.payload.budgets?.maximumModelRequests ?? this.#maximumRequestsPerTurn,
       ),
-      maximumCostMicrousdPerRun: command.payload.budgets?.maximumCostMicrousd,
+      requestsStarted: 0,
       revoked: false,
       requestControllers: new Set(),
     };
     this.#capabilities.set(digest, active);
     let released = false;
+    const runtime =
+      active.provider === "deepseek"
+        ? ({
+            kind: "openai_compatible_gateway",
+            provider: active.provider,
+            modelId: active.modelId,
+            baseUrl: `${this.#advertisedBaseUrl}/v1`,
+            api: "openai-completions",
+            capability,
+            reasoning: true,
+            contextWindow: active.contextWindow,
+            maxTokens: active.maxTokens,
+            requestTimeoutMs: this.#piRequestTimeoutMs,
+            turnTimeoutMs: this.#piTurnTimeoutMs,
+          } as const)
+        : ({
+            kind: "openai_compatible_gateway",
+            provider: active.provider,
+            modelId: active.modelId,
+            baseUrl: this.#advertisedBaseUrl,
+            api: "openai-codex-responses",
+            capability,
+            reasoning: true,
+            contextWindow: active.contextWindow,
+            maxTokens: active.maxTokens,
+            requestTimeoutMs: this.#piRequestTimeoutMs,
+            turnTimeoutMs: this.#piTurnTimeoutMs,
+          } as const);
     return {
-      runtime: {
-        kind: "openai_compatible_gateway",
-        provider: "deepseek",
-        modelId: model.modelId,
-        baseUrl: `${this.#advertisedBaseUrl}/v1`,
-        capability,
-        // DeepSeek V4 defaults to thinking mode. Pi must model it as a
-        // reasoning-capable provider even when this Turn requests `off`, so
-        // its DeepSeek compatibility adapter sends `thinking.type=disabled`
-        // instead of silently accepting the provider default.
-        reasoning: true,
-        contextWindow: 128_000,
-        maxTokens: 8_192,
-        requestTimeoutMs: this.#piRequestTimeoutMs,
-        turnTimeoutMs: this.#piTurnTimeoutMs,
-      },
+      runtime,
       release: () => {
         if (released) return;
         released = true;
@@ -604,14 +563,27 @@ export class TenantModelGateway {
     };
   }
 
+  async checkProviderHealth(): Promise<void> {
+    const response = await this.#fetch(`${this.#providerGatewayBaseUrl}/healthz`, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!response.ok) throw new Error("Provider Gateway is unavailable");
+  }
+
+  close(): Promise<void> {
+    this.#closing ??= this.#close();
+    return this.#closing;
+  }
+
   async #handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const path = new URL(request.url ?? "/", "http://model-gateway.invalid").pathname;
     if (request.method === "GET" && path === "/health/live") {
       sendJson(response, 200, { status: "ok" });
       return;
     }
-    if (request.method !== "POST" || path !== GATEWAY_PATH) {
-      throw new SafeGatewayHttpError(404, "route_not_found", "Model gateway route not found");
+    if (request.method !== "POST") {
+      throw new SafeGatewayHttpError(404, "route_not_found", "Model Gateway route not found");
     }
     const token = bearerCapability(request.headers.authorization);
     const active =
@@ -622,623 +594,143 @@ export class TenantModelGateway {
       throw new SafeGatewayHttpError(
         401,
         "invalid_capability",
-        "Model gateway capability is invalid",
+        "Model Gateway capability is invalid",
       );
     }
-    const body = await readJson(request, 2 * 1_024 * 1_024);
+    if (path !== active.requestPath) {
+      throw new SafeGatewayHttpError(
+        403,
+        "model_protocol_mismatch",
+        "Model request protocol does not match its Turn capability",
+      );
+    }
+    samplingIdentity(request);
+    if (active.requestsStarted >= active.maximumRequestsPerRun) {
+      throw new SafeGatewayHttpError(
+        429,
+        "model_request_limit_exceeded",
+        "Model request limit was exceeded",
+      );
+    }
+    const requestBytes = await readBody(request);
+    const body = parseBody(requestBytes, request.headers["content-encoding"]);
     if (body.model !== active.modelId) {
       throw new SafeGatewayHttpError(
         403,
         "model_binding_mismatch",
-        "Model request does not match its turn capability",
+        "Model request does not match its Turn capability",
       );
     }
     if (body.stream !== true) {
       throw new SafeGatewayHttpError(
         400,
         "streaming_required",
-        "Model gateway requires a streaming request",
+        "Model Gateway requires a streaming request",
       );
     }
-    const sampling = samplingIdentity(request);
-    const upstreamBody: Record<string, unknown> = {
-      ...body,
-      model: active.modelId,
-      stream: true,
-      stream_options: {
-        ...(typeof body.stream_options === "object" &&
-        body.stream_options !== null &&
-        !Array.isArray(body.stream_options)
-          ? (body.stream_options as Record<string, unknown>)
-          : {}),
-        include_usage: true,
-      },
+    active.requestsStarted += 1;
+
+    const controller = new AbortController();
+    let timedOut = false;
+    let disconnected = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.#upstreamRequestTimeoutMs);
+    timeout.unref();
+    const abortOnRequest = (): void => {
+      disconnected = true;
+      controller.abort();
     };
-    if (
-      typeof upstreamBody.max_completion_tokens === "number" &&
-      upstreamBody.max_tokens === undefined
-    ) {
-      upstreamBody.max_tokens = upstreamBody.max_completion_tokens;
-      delete upstreamBody.max_completion_tokens;
-    }
-
-    const reservation = await this.#reserve(active, upstreamBody, sampling);
-    let selectedModel = reservation.requestedModelId;
-    let selectedRate = reservation.primaryRate;
-    let fallbackReason: string | undefined;
-    let settled = false;
-    let activeAttempt:
-      | {
-          upstream: Response;
-          controller: AbortController;
-          cleanup(): void;
-        }
-      | undefined;
-
-    const fetchAttempt = async (
-      modelId: ActiveCapability["modelId"],
-    ): Promise<
-      | { kind: "response"; upstream: Response; controller: AbortController; cleanup(): void }
-      | { kind: "error"; timedOut: boolean; disconnected: boolean }
-    > => {
-      const controller = new AbortController();
-      let timedOut = false;
-      let disconnected = false;
-      const timeout = setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, this.#upstreamRequestTimeoutMs);
-      timeout.unref();
-      const abortOnRequest = (): void => {
+    const abortOnResponse = (): void => {
+      if (!response.writableEnded) {
         disconnected = true;
         controller.abort();
-      };
-      const abortOnResponse = (): void => {
-        if (!response.writableEnded) {
-          disconnected = true;
-          controller.abort();
-        }
-      };
-      const cleanup = (): void => {
-        clearTimeout(timeout);
-        request.off("aborted", abortOnRequest);
-        response.off("close", abortOnResponse);
-        active.requestControllers.delete(controller);
-      };
-      request.once("aborted", abortOnRequest);
-      response.once("close", abortOnResponse);
-      active.requestControllers.add(controller);
-      try {
-        const upstream = await this.#fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-          method: "POST",
-          headers: {
-            accept: "text/event-stream",
-            authorization: `Bearer ${active.providerSecret}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ ...upstreamBody, model: modelId }),
-          signal: controller.signal,
-        });
-        return { kind: "response", upstream, controller, cleanup };
-      } catch {
-        cleanup();
-        return { kind: "error", timedOut, disconnected };
       }
     };
-
+    request.once("aborted", abortOnRequest);
+    response.once("close", abortOnResponse);
+    active.requestControllers.add(controller);
     try {
-      let attempt = await fetchAttempt(selectedModel);
-      const primaryFallbackReason =
-        attempt.kind === "error"
-          ? attempt.timedOut && reservation.fallbackOnTimeout
-            ? "timeout"
-            : undefined
-          : attempt.upstream.status === 429 && reservation.fallbackOnRateLimit
-            ? "rate_limit"
-            : attempt.upstream.status >= 500 && reservation.fallbackOnServerError
-              ? "server_error"
-              : undefined;
-      if (primaryFallbackReason !== undefined && reservation.fallbackModelId !== undefined) {
-        if (attempt.kind === "response") {
-          await attempt.upstream.body?.cancel().catch(() => undefined);
-          attempt.cleanup();
-        }
-        fallbackReason = primaryFallbackReason;
-        selectedModel = reservation.fallbackModelId;
-        selectedRate = reservation.fallbackRate!;
-        attempt = await fetchAttempt(selectedModel);
-      }
-      if (attempt.kind === "error") {
-        const code = attempt.disconnected
-          ? "downstream_disconnected"
-          : attempt.timedOut
-            ? "upstream_timeout"
-            : "upstream_network_error";
-        await this.#failReservation(
-          active,
-          reservation,
-          selectedModel,
-          fallbackReason,
-          code,
-          null,
-          attempt.disconnected ? "aborted" : "failed",
-        );
-        settled = true;
-        throw new SafeGatewayHttpError(
-          attempt.timedOut ? 504 : 502,
-          code,
-          attempt.timedOut ? "Model provider timed out" : "Model provider request failed",
-        );
-      }
-      activeAttempt = attempt;
-      const upstream = attempt.upstream;
+      const upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${active.providerPath}`, {
+        method: "POST",
+        headers: upstreamHeaders(request, active, this.#providerGatewayApiKey),
+        body: new Uint8Array(requestBytes),
+        signal: controller.signal,
+      });
       response.writeHead(upstream.status, {
         "cache-control": "no-store",
         "content-type": upstream.headers.get("content-type") ?? "text/event-stream; charset=utf-8",
         ...(upstream.headers.get("retry-after") === null
           ? {}
           : { "retry-after": upstream.headers.get("retry-after")! }),
+        ...(upstream.headers.get("x-request-id") === null
+          ? {}
+          : { "x-request-id": upstream.headers.get("x-request-id")! }),
       });
       if (upstream.body === null) {
-        await this.#failReservation(
-          active,
-          reservation,
-          selectedModel,
-          fallbackReason,
-          "upstream_empty_response",
-          upstream.status,
-          "failed",
-        );
-        settled = true;
         response.end();
         return;
       }
-      const scanner = new StreamingUsageScanner();
-      let usage: ModelUsage | undefined;
       let responseBytes = 0;
       for await (const rawChunk of upstream.body) {
         const chunk = rawChunk instanceof Uint8Array ? rawChunk : new Uint8Array(rawChunk);
         responseBytes += chunk.byteLength;
         if (responseBytes > MAX_RESPONSE_BYTES) {
-          attempt.controller.abort();
+          controller.abort();
           throw new SafeGatewayHttpError(
             502,
             "response_too_large",
-            "Model response exceeded the gateway limit",
+            "Model response exceeded the Gateway limit",
           );
         }
-        usage = scanner.feed(chunk) ?? usage;
         await writeChunk(response, chunk);
       }
-      if (upstream.ok && usage !== undefined) {
-        await this.#completeReservation(
-          active,
-          reservation,
-          selectedModel,
-          selectedRate,
-          fallbackReason,
-          usage,
-          upstream.status,
-        );
-      } else {
-        await this.#failReservation(
-          active,
-          reservation,
-          selectedModel,
-          fallbackReason,
-          upstream.ok ? "usage_missing" : "upstream_http_error",
-          upstream.status,
-          "failed",
-        );
-      }
-      settled = true;
       response.end();
     } catch (error: unknown) {
-      if (!settled) {
-        await this.#failReservation(
-          active,
-          reservation,
-          selectedModel,
-          fallbackReason,
-          request.aborted ? "downstream_disconnected" : "stream_failed",
-          null,
-          request.aborted ? "aborted" : "failed",
-        ).catch(() => undefined);
-      }
-      throw error;
+      if (error instanceof SafeGatewayHttpError) throw error;
+      throw new SafeGatewayHttpError(
+        timedOut ? 504 : 502,
+        disconnected
+          ? "downstream_disconnected"
+          : timedOut
+            ? "provider_gateway_timeout"
+            : "provider_gateway_unavailable",
+        timedOut ? "Provider Gateway timed out" : "Provider Gateway request failed",
+      );
     } finally {
-      activeAttempt?.cleanup();
+      clearTimeout(timeout);
+      request.off("aborted", abortOnRequest);
+      response.off("close", abortOnResponse);
+      active.requestControllers.delete(controller);
     }
   }
 
-  async #reserve(
-    active: ActiveCapability,
-    body: Record<string, unknown>,
-    sampling: ModelSamplingIdentity,
-  ): Promise<ModelReservation> {
-    const now = validDate(this.#clock);
-    const inputTokens = estimatedInputTokens(body);
-    const outputTokens = positiveTokenLimit(body.max_tokens ?? body.max_completion_tokens, 8_192);
-    const result = await this.#database.transaction().execute(async (transaction) => {
-      await transaction
-        .updateTable("model_requests")
-        .set({
-          state: "aborted",
-          failure_code: "reservation_expired",
-          settled_at: now,
-        })
-        .where("tenant_id", "=", active.tenantId)
-        .where("state", "=", "reserved")
-        .where("reservation_expires_at", "<=", now)
-        .execute();
-
-      const policy = await transaction
-        .selectFrom("tenant_runtime_policies")
-        .select([
-          "maximum_model_requests_per_run",
-          "maximum_cost_microusd_per_run",
-          "daily_token_budget",
-          "monthly_cost_microusd_budget",
-        ])
-        .where("tenant_id", "=", active.tenantId)
-        .where("enabled", "=", true)
-        .forUpdate()
-        .executeTakeFirst();
-      if (policy === undefined) {
-        throw new SafeGatewayHttpError(403, "tenant_disabled", "Tenant runtime is disabled");
-      }
-      const assignment = await transaction
-        .selectFrom("runs as run")
-        .innerJoin("run_attempts as attempt", (join) =>
-          join
-            .onRef("attempt.tenant_id", "=", "run.tenant_id")
-            .onRef("attempt.run_id", "=", "run.id")
-            .onRef("attempt.id", "=", "run.current_attempt_id"),
-        )
-        .select(["run.state as runState", "attempt.state as attemptState"])
-        .where("run.tenant_id", "=", active.tenantId)
-        .where("run.id", "=", active.runId)
-        .where("run.session_id", "=", active.sessionId)
-        .where("run.turn_id", "=", active.turnId)
-        .where("attempt.id", "=", active.attemptId)
-        .executeTakeFirst();
-      if (
-        assignment === undefined ||
-        !["provisioning", "restoring", "running"].includes(assignment.runState) ||
-        !["provisioning", "restoring", "running"].includes(assignment.attemptState)
-      ) {
-        throw new SafeGatewayHttpError(
-          409,
-          "stale_run_attempt",
-          "Model request Run Attempt is no longer current",
-        );
-      }
-
-      const primaryRateRow = await transaction
-        .selectFrom("model_rates")
-        .select([
-          "input_microusd_per_million",
-          "output_microusd_per_million",
-          "cache_read_microusd_per_million",
-          "cache_write_microusd_per_million",
-        ])
-        .where("tenant_id", "=", active.tenantId)
-        .where("provider", "=", active.provider)
-        .where("model_id", "=", active.modelId)
-        .executeTakeFirst();
-      if (primaryRateRow === undefined) {
-        throw new SafeGatewayHttpError(
-          503,
-          "model_rate_unconfigured",
-          "Model rate configuration is unavailable",
-        );
-      }
-      const primaryRate = rateFromRow(primaryRateRow);
-      const route = await transaction
-        .selectFrom("model_routing_policies")
-        .selectAll()
-        .where("tenant_id", "=", active.tenantId)
-        .where("model_profile_id", "=", active.modelProfileId)
-        .executeTakeFirst();
-      let fallbackModelId: ActiveCapability["modelId"] | undefined;
-      let fallbackRate: ModelRate | undefined;
-      if (route?.enabled) {
-        if (
-          route.fallback_provider !== "deepseek" ||
-          (route.fallback_model_id !== "deepseek-v4-flash" &&
-            route.fallback_model_id !== "deepseek-v4-pro") ||
-          route.fallback_model_id === active.modelId
-        ) {
-          throw new SafeGatewayHttpError(
-            500,
-            "model_route_invalid",
-            "Model fallback route is invalid",
-          );
-        }
-        fallbackModelId = route.fallback_model_id;
-        const fallbackRateRow = await transaction
-          .selectFrom("model_rates")
-          .select([
-            "input_microusd_per_million",
-            "output_microusd_per_million",
-            "cache_read_microusd_per_million",
-            "cache_write_microusd_per_million",
-          ])
-          .where("tenant_id", "=", active.tenantId)
-          .where("provider", "=", "deepseek")
-          .where("model_id", "=", fallbackModelId)
-          .executeTakeFirst();
-        if (fallbackRateRow === undefined) {
-          throw new SafeGatewayHttpError(
-            503,
-            "model_rate_unconfigured",
-            "Fallback model rate configuration is unavailable",
-          );
-        }
-        fallbackRate = rateFromRow(fallbackRateRow);
-      }
-
-      const aggregate = await sql<{
-        request_count: string;
-        run_cost: string;
-        daily_tokens: string;
-        monthly_cost: string;
-        maximum_sequence: number | null;
-      }>`
-        select
-          count(*) filter (where run_id = ${active.runId} and state <> 'budget_denied') as request_count,
-          coalesce(sum(case when run_id = ${active.runId} then
-            case when state = 'completed' then coalesce(actual_cost_microusd, 0)
-            when state = 'reserved' and reservation_expires_at > ${now} then reserved_cost_microusd
-            else 0 end else 0 end), 0) as run_cost,
-          coalesce(sum(case when started_at >= ${utcDayStart(now)} then
-            case when state = 'completed' then
-              coalesce(actual_input_tokens, 0) + coalesce(actual_output_tokens, 0)
-              + coalesce(actual_cache_read_tokens, 0) + coalesce(actual_cache_write_tokens, 0)
-            when state = 'reserved' and reservation_expires_at > ${now} then
-              reserved_input_tokens + reserved_output_tokens else 0 end
-          else 0 end), 0) as daily_tokens,
-          coalesce(sum(case when started_at >= ${utcMonthStart(now)} then
-            case when state = 'completed' then coalesce(actual_cost_microusd, 0)
-            when state = 'reserved' and reservation_expires_at > ${now} then reserved_cost_microusd
-            else 0 end else 0 end), 0) as monthly_cost,
-          max(request_sequence) filter (
-            where run_id = ${active.runId} and attempt_id = ${active.attemptId}
-          ) as maximum_sequence
-        from model_requests where tenant_id = ${active.tenantId}
-      `.execute(transaction);
-      const totals = aggregate.rows[0]!;
-      const sequence = (totals.maximum_sequence ?? 0) + 1;
-      const primaryReservedCost = estimatedCost(inputTokens, outputTokens, primaryRate);
-      const fallbackReservedCost =
-        fallbackRate === undefined ? 0n : estimatedCost(inputTokens, outputTokens, fallbackRate);
-      const reservedCost =
-        primaryReservedCost > fallbackReservedCost ? primaryReservedCost : fallbackReservedCost;
-      const requestLimit = Math.min(
-        integer(policy.maximum_model_requests_per_run, "model request limit"),
-        active.maximumRequestsPerRun,
-      );
-      const runCostLimit = Math.min(
-        integer(policy.maximum_cost_microusd_per_run, "run cost limit"),
-        active.maximumCostMicrousdPerRun ?? Number.MAX_SAFE_INTEGER,
-      );
-      const checks: readonly [boolean, string][] = [
-        [
-          integer(totals.request_count, "model request count") >= requestLimit,
-          "model_request_limit",
-        ],
-        [
-          bigInteger(totals.run_cost, "run cost usage") + reservedCost > BigInt(runCostLimit),
-          "run_cost_budget",
-        ],
-        [
-          bigInteger(totals.daily_tokens, "daily token usage") +
-            BigInt(inputTokens + outputTokens) >
-            bigInteger(policy.daily_token_budget, "daily token budget"),
-          "daily_token_budget",
-        ],
-        [
-          bigInteger(totals.monthly_cost, "monthly cost usage") + reservedCost >
-            bigInteger(policy.monthly_cost_microusd_budget, "monthly cost budget"),
-          "monthly_cost_budget",
-        ],
-      ];
-      const denial = checks.find(([denied]) => denied)?.[1];
-      const id = this.#idGenerator();
-      const reservationExpiresAt = new Date(
-        now.valueOf() + this.#upstreamRequestTimeoutMs * 2 + 60_000,
-      );
-      await transaction
-        .insertInto("model_requests")
-        .values({
-          id,
-          tenant_id: active.tenantId,
-          session_id: active.sessionId,
-          turn_id: active.turnId,
-          run_id: active.runId,
-          attempt_id: active.attemptId,
-          model_profile_id: active.modelProfileId,
-          request_sequence: sequence,
-          step_context_sequence: sampling.stepSequence,
-          step_context_sha256: sampling.stepSha256,
-          sampling_attempt: sampling.samplingAttempt,
-          requested_provider: active.provider,
-          requested_model_id: active.modelId,
-          actual_provider: null,
-          actual_model_id: null,
-          state: denial === undefined ? "reserved" : "budget_denied",
-          fallback_reason: null,
-          reserved_input_tokens: inputTokens,
-          reserved_output_tokens: outputTokens,
-          reserved_cost_microusd: reservedCost.toString(),
-          actual_input_tokens: null,
-          actual_output_tokens: null,
-          actual_cache_read_tokens: null,
-          actual_cache_write_tokens: null,
-          actual_input_microusd_per_million: null,
-          actual_output_microusd_per_million: null,
-          actual_cache_read_microusd_per_million: null,
-          actual_cache_write_microusd_per_million: null,
-          actual_cost_microusd: null,
-          upstream_status: null,
-          failure_code: denial ?? null,
-          reservation_expires_at: reservationExpiresAt,
-          started_at: now,
-          settled_at: denial === undefined ? null : now,
-        })
-        .executeTakeFirstOrThrow();
-      return {
-        denial,
-        reservation: {
-          id,
-          sequence,
-          requestedModelId: active.modelId,
-          fallbackModelId,
-          fallbackOnRateLimit: route?.fallback_on_rate_limit ?? false,
-          fallbackOnServerError: route?.fallback_on_server_error ?? false,
-          fallbackOnTimeout: route?.fallback_on_timeout ?? false,
-          reservedInputTokens: inputTokens,
-          reservedOutputTokens: outputTokens,
-          primaryRate,
-          fallbackRate,
-        } satisfies ModelReservation,
-      };
-    });
-    if (result.denial !== undefined) {
-      throw new SafeGatewayHttpError(429, result.denial, "Model budget was exceeded");
-    }
-    return result.reservation;
-  }
-
-  async #completeReservation(
-    active: ActiveCapability,
-    reservation: ModelReservation,
-    modelId: ActiveCapability["modelId"],
-    rate: ModelRate,
-    fallbackReason: string | undefined,
-    usage: ModelUsage,
-    upstreamStatus: number,
-  ): Promise<void> {
-    const now = validDate(this.#clock);
-    const cost = actualCost(usage, rate);
-    await this.#database.transaction().execute(async (transaction) => {
-      const updated = await transaction
-        .updateTable("model_requests")
-        .set({
-          state: "completed",
-          actual_provider: active.provider,
-          actual_model_id: modelId,
-          fallback_reason: fallbackReason ?? null,
-          actual_input_tokens: usage.inputTokens,
-          actual_output_tokens: usage.outputTokens,
-          actual_cache_read_tokens: usage.cacheReadTokens,
-          actual_cache_write_tokens: usage.cacheWriteTokens,
-          actual_input_microusd_per_million: rate.input.toString(),
-          actual_output_microusd_per_million: rate.output.toString(),
-          actual_cache_read_microusd_per_million: rate.cacheRead.toString(),
-          actual_cache_write_microusd_per_million: rate.cacheWrite.toString(),
-          actual_cost_microusd: cost.toString(),
-          upstream_status: upstreamStatus,
-          failure_code: null,
-          settled_at: now,
-        })
-        .where("id", "=", reservation.id)
-        .where("tenant_id", "=", active.tenantId)
-        .where("state", "=", "reserved")
-        .executeTakeFirst();
-      if (updated.numUpdatedRows !== 1n) {
-        throw new SafeGatewayHttpError(
-          409,
-          "reservation_stale",
-          "Model reservation is no longer active",
-        );
-      }
-      await transaction
-        .insertInto("usage_ledger")
-        .values({
-          id: this.#idGenerator(),
-          tenant_id: active.tenantId,
-          session_id: active.sessionId,
-          turn_id: active.turnId,
-          run_id: active.runId,
-          attempt_id: active.attemptId,
-          model_request_id: reservation.id,
-          model_profile_id: active.modelProfileId,
-          provider: active.provider,
-          model_id: modelId,
-          input_tokens: usage.inputTokens,
-          output_tokens: usage.outputTokens,
-          cache_read_tokens: usage.cacheReadTokens,
-          cache_write_tokens: usage.cacheWriteTokens,
-          cost_microusd: cost.toString(),
-          cost_amount: decimalDollars(cost),
-          created_at: now,
-        })
-        .executeTakeFirstOrThrow();
-    });
-    this.#metrics?.modelTokens.inc(
-      { provider: active.provider, model: modelId, kind: "input" },
-      usage.inputTokens,
+  #observe(
+    active: ActiveCapability | undefined,
+    outcome: "completed" | "rejected" | "failed",
+    startedAt: number,
+  ): void {
+    if (active === undefined) return;
+    this.#metrics?.modelDuration.observe(
+      { provider: active.provider, model: active.modelId, outcome },
+      (performance.now() - startedAt) / 1_000,
     );
-    this.#metrics?.modelTokens.inc(
-      { provider: active.provider, model: modelId, kind: "output" },
-      usage.outputTokens,
-    );
-    this.#metrics?.modelTokens.inc(
-      { provider: active.provider, model: modelId, kind: "cache_read" },
-      usage.cacheReadTokens,
-    );
-    this.#metrics?.modelTokens.inc(
-      { provider: active.provider, model: modelId, kind: "cache_write" },
-      usage.cacheWriteTokens,
-    );
-    this.#metrics?.modelCostMicrousd.inc(
-      { provider: active.provider, model: modelId },
-      Number(cost),
-    );
-  }
-
-  async #failReservation(
-    active: ActiveCapability,
-    reservation: ModelReservation,
-    modelId: ActiveCapability["modelId"],
-    fallbackReason: string | undefined,
-    failureCode: string,
-    upstreamStatus: number | null,
-    state: "failed" | "aborted",
-  ): Promise<void> {
-    await this.#database
-      .updateTable("model_requests")
-      .set({
-        state,
-        actual_provider: active.provider,
-        actual_model_id: modelId,
-        fallback_reason: fallbackReason ?? null,
-        upstream_status: upstreamStatus,
-        failure_code: failureCode,
-        settled_at: validDate(this.#clock),
-      })
-      .where("id", "=", reservation.id)
-      .where("tenant_id", "=", active.tenantId)
-      .where("state", "=", "reserved")
-      .execute();
   }
 
   #revoke(active: ActiveCapability): void {
     if (active.revoked) return;
     active.revoked = true;
-    this.#capabilities.delete(active.tokenDigest);
     for (const controller of active.requestControllers) controller.abort();
     active.requestControllers.clear();
-    active.providerSecret = "";
+    this.#capabilities.delete(active.tokenDigest);
   }
 
   async #close(): Promise<void> {
-    for (const active of this.#capabilities.values()) this.#revoke(active);
-    if (!this.#server.listening) return;
-    await new Promise<void>((resolvePromise) => {
-      this.#server.close(() => resolvePromise());
-      this.#server.closeAllConnections();
-    });
+    for (const active of [...this.#capabilities.values()]) this.#revoke(active);
+    if (!this.#started) return;
+    this.#started = false;
+    this.#server.close();
+    await once(this.#server, "close");
   }
 }

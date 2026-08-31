@@ -33,10 +33,11 @@ async function validEnvironment(root: string): Promise<Record<string, string>> {
       "timing-tool-broker",
       `tool-broker-${"s".repeat(48)}`,
     ),
-    PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE: await secret(
+    PI_CLOUD_PROVIDER_GATEWAY_URL: "http://provider-gateway:8317",
+    PI_CLOUD_PROVIDER_GATEWAY_API_KEY_FILE: await secret(
       root,
-      "timing-model-master-key",
-      Buffer.alloc(32, 9).toString("base64url"),
+      "timing-provider-gateway-key",
+      `provider-${"k".repeat(48)}`,
     ),
     DATABASE_URL_FILE: await secret(
       root,
@@ -83,10 +84,11 @@ describe("Supervisor host production configuration", () => {
         "tool-broker",
         `tool-broker-${"s".repeat(48)}`,
       ),
-      PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE: await secret(
+      PI_CLOUD_PROVIDER_GATEWAY_URL: "http://provider-gateway:8317",
+      PI_CLOUD_PROVIDER_GATEWAY_API_KEY_FILE: await secret(
         root,
-        "model-master-key",
-        Buffer.alloc(32, 9).toString("base64url"),
+        "provider-gateway-key",
+        `provider-${"k".repeat(48)}`,
       ),
       DATABASE_URL_FILE: await secret(
         root,
@@ -205,10 +207,11 @@ describe("Supervisor host production configuration", () => {
           "tool-broker",
           `tool-broker-${"s".repeat(48)}`,
         ),
-        PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE: await secret(
+        PI_CLOUD_PROVIDER_GATEWAY_URL: "http://provider-gateway:8317",
+        PI_CLOUD_PROVIDER_GATEWAY_API_KEY_FILE: await secret(
           root,
-          "model-master-key",
-          Buffer.alloc(32, 9).toString("base64url"),
+          "provider-gateway-key",
+          `provider-${"k".repeat(48)}`,
         ),
         DATABASE_URL_FILE: await secret(
           root,

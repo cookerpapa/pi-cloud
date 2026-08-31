@@ -200,9 +200,6 @@ export async function createControlPlaneRuntime(
       ...(options.webAuthentication === undefined
         ? {}
         : { webAuthentication: options.webAuthentication }),
-      ...(options.modelCredentialVault === undefined
-        ? {}
-        : { modelCredentialVault: options.modelCredentialVault }),
       ...(options.platformOperatorTenantId === undefined
         ? {}
         : { platformOperatorTenantId: options.platformOperatorTenantId }),

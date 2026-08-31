@@ -148,8 +148,10 @@ spec:
               value: {{ join "," .Values.services.toolBrokerUrls | quote }}
             - name: PI_CLOUD_TOOL_BROKER_REQUEST_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.toolBrokerRequestMs | quote }}
-            - name: PI_CLOUD_MODEL_CREDENTIAL_MASTER_KEY_FILE
-              value: /run/pi-cloud-secrets/model-credential-master-key
+            - name: PI_CLOUD_PROVIDER_GATEWAY_URL
+              value: {{ .Values.services.providerGatewayUrl | quote }}
+            - name: PI_CLOUD_PROVIDER_GATEWAY_API_KEY_FILE
+              value: /run/pi-cloud-secrets/provider-gateway-api-key
             - name: PI_CLOUD_SUPERVISOR_MANAGEMENT_HOST
               value: 0.0.0.0
             - name: PI_CLOUD_SUPERVISOR_MANAGEMENT_PORT
@@ -272,8 +274,8 @@ spec:
               subPath: worker-event-ingest-token
               readOnly: true
             - name: secrets
-              mountPath: /run/pi-cloud-secrets/model-credential-master-key
-              subPath: model-credential-master-key
+              mountPath: /run/pi-cloud-secrets/provider-gateway-api-key
+              subPath: provider-gateway-api-key
               readOnly: true
             - name: secrets
               mountPath: /run/pi-cloud-secrets/metrics-token
@@ -305,8 +307,8 @@ spec:
                 path: tool-broker-token
               - key: {{ .Values.credentials.workerEventIngestTokenKey }}
                 path: worker-event-ingest-token
-              - key: {{ .Values.credentials.modelCredentialMasterKeyKey }}
-                path: model-credential-master-key
+              - key: {{ .Values.credentials.providerGatewayApiKeyKey }}
+                path: provider-gateway-api-key
               - key: {{ .Values.credentials.metricsTokenKey }}
                 path: metrics-token
   volumeClaimTemplates:

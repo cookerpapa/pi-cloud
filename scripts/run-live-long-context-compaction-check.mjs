@@ -262,16 +262,22 @@ async function waitForRun(runId) {
 
 async function usageForRun(runId) {
   const rows = await psql(
-    `select request_sequence || '|' ||
-            coalesce(actual_input_tokens, 0) || '|' ||
-            coalesce(actual_output_tokens, 0) || '|' ||
-            coalesce(actual_cache_read_tokens, 0) || '|' ||
-            coalesce(actual_cache_write_tokens, 0) || '|' ||
-            state || '|' || coalesce(failure_code, '') || '|' || coalesce(upstream_status, 0)
-       from model_requests
-      where tenant_id = ${sqlLiteral(tenantId)}
-        and run_id = ${sqlLiteral(runId)}
-      order by request_sequence`,
+    `select row_number() over (order by entry.seq) || '|' ||
+            coalesce((entry.payload #>> '{message,usage,input}')::bigint, 0) || '|' ||
+            coalesce((entry.payload #>> '{message,usage,output}')::bigint, 0) || '|' ||
+            coalesce((entry.payload #>> '{message,usage,cacheRead}')::bigint, 0) || '|' ||
+            coalesce((entry.payload #>> '{message,usage,cacheWrite}')::bigint, 0) ||
+            '|completed||200'
+       from runs run
+       join pi_session_entries entry
+         on entry.tenant_id = run.tenant_id
+        and entry.turn_id = run.turn_id
+      where run.tenant_id = ${sqlLiteral(tenantId)}
+        and run.id = ${sqlLiteral(runId)}
+        and entry.type = 'message'
+        and entry.payload #>> '{message,role}' = 'assistant'
+        and entry.payload #> '{message,usage}' is not null
+      order by entry.seq`,
   );
   const requests =
     rows.length === 0

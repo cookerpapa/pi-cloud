@@ -160,6 +160,7 @@ function configureModelRuntime(runtime: ModelRuntime, config: PiModelRuntimeConf
   runtime.registerProvider(config.provider, {
     name: config.provider,
     baseUrl: config.baseUrl,
+    apiKey: config.apiKey,
     api: config.api,
     models: [
       {
@@ -185,7 +186,22 @@ function configureModelRuntime(runtime: ModelRuntime, config: PiModelRuntimeConf
                 thinkingFormat: "deepseek" as const,
               },
             }
-          : {}),
+          : config.provider === "openai-codex" && config.api === "openai-codex-responses"
+            ? {
+                thinkingLevelMap: {
+                  minimal: "low" as const,
+                  low: "low" as const,
+                  medium: "medium" as const,
+                  high: "high" as const,
+                  xhigh: "xhigh" as const,
+                  max: "max" as const,
+                },
+                compat: {
+                  supportsOpenAIGrammarTools: true,
+                  supportsToolSearch: true,
+                },
+              }
+            : {}),
         input: ["text"],
         contextWindow: config.contextWindow ?? 16_384,
         maxTokens: config.maxTokens ?? 1_024,
@@ -201,6 +217,7 @@ function modelRuntimeSignature(config: PiModelRuntimeConfig): string {
     modelId: config.modelId,
     baseUrl: config.baseUrl,
     api: config.api,
+    transport: config.transport,
     reasoning: config.reasoning ?? false,
     contextWindow: config.contextWindow ?? 16_384,
     maxTokens: config.maxTokens ?? 1_024,
@@ -309,6 +326,24 @@ function streamedTextDelta(value: unknown): { delta: string; contentIndex?: numb
     ...(Number.isSafeInteger(streamEvent.contentIndex)
       ? { contentIndex: streamEvent.contentIndex as number }
       : {}),
+  };
+}
+
+function assistantUsage(
+  value: unknown,
+): Readonly<{ input: number; output: number; cacheRead: number; cacheWrite: number }> | undefined {
+  if (!isRecord(value) || value.type !== "message_end" || !isRecord(value.message))
+    return undefined;
+  if (value.message.role !== "assistant" || !isRecord(value.message.usage)) return undefined;
+  const usage = value.message.usage;
+  const fields = [usage.input, usage.output, usage.cacheRead, usage.cacheWrite];
+  if (fields.some((field) => !Number.isSafeInteger(field) || (field as number) < 0))
+    return undefined;
+  return {
+    input: usage.input as number,
+    output: usage.output as number,
+    cacheRead: usage.cacheRead as number,
+    cacheWrite: usage.cacheWrite as number,
   };
 }
 
@@ -633,9 +668,11 @@ export class PiCloudTurnRunner {
           thinkingLevel: command.payload.model.thinkingLevel,
           streamOptions: {
             timeoutMs: this.#requestTimeoutMs,
+            sessionId: command.payload.sessionId,
             // The cloud runtime owns visible, governed retry attempts so each one
             // receives a fresh sampling identity and model-request ledger row.
             maxRetries: 0,
+            ...(config.transport === undefined ? {} : { transport: config.transport }),
             ...(config.maxTokens === undefined ? {} : { maxTokens: config.maxTokens }),
           },
           retry: { enabled: true, maxRetries: 2, baseDelayMs: 500 },
@@ -656,6 +693,21 @@ export class PiCloudTurnRunner {
           compactionRetainedCustomTypes: Object.keys(PI_WORLD_STATE_ENTRY_PROJECTORS),
           onEvent: async (event) => {
             this.#options.observeEvent?.(event);
+            const usage = assistantUsage(event);
+            if (usage !== undefined) {
+              for (const [kind, tokens] of Object.entries(usage)) {
+                if (tokens > 0) {
+                  this.#options.metrics?.modelTokens.inc(
+                    {
+                      provider: command.payload.model.provider,
+                      model: command.payload.model.modelId,
+                      kind,
+                    },
+                    tokens,
+                  );
+                }
+              }
+            }
             const textDelta = streamedTextDelta(event);
             if (textDelta === undefined) {
               flushPendingText();

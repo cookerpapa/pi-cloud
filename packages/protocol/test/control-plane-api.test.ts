@@ -373,30 +373,28 @@ describe("control-plane public API schemas", () => {
     ).toEqual({ tenantSlug: "team-alpha", displayName: "Alpha Owner" });
   });
 
-  it("keeps tenant model configuration closed and secret-free on reads", () => {
+  it("keeps model routes provider-native and rejects credentials", () => {
     expect(
       parseReplaceModelConfigurationRequest({
-        provider: "deepseek",
-        modelId: "deepseek-v4-flash",
-        apiKey: `sk-${"a".repeat(48)}`,
+        provider: "openai-codex",
+        modelId: "gpt-5.6-terra",
       }),
-    ).toMatchObject({ provider: "deepseek", modelId: "deepseek-v4-flash" });
+    ).toEqual({ provider: "openai-codex", modelId: "gpt-5.6-terra" });
     expect(
       parseModelConfigurationResource({
         mode: "real",
         provider: "deepseek",
         modelId: "deepseek-v4-pro",
         configured: true,
-        credentialVersion: 2,
+        routeVersion: 2,
         updatedAt: "2026-07-19T00:00:00.000Z",
       }),
-    ).toMatchObject({ mode: "real", credentialVersion: 2 });
+    ).toMatchObject({ mode: "real", routeVersion: 2 });
     expect(() =>
       parseReplaceModelConfigurationRequest({
         provider: "deepseek",
         modelId: "deepseek-v4-flash",
         apiKey: `sk-${"a".repeat(48)}`,
-        baseUrl: "https://attacker.invalid",
       }),
     ).toThrow(ControlPlaneApiValidationError);
     expect(() =>
@@ -405,7 +403,7 @@ describe("control-plane public API schemas", () => {
         provider: "deepseek",
         modelId: "deepseek-v4-pro",
         configured: true,
-        credentialVersion: 2,
+        routeVersion: 2,
         updatedAt: "2026-07-19T00:00:00.000Z",
         apiKey: "must-not-cross",
       }),

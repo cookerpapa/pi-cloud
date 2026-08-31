@@ -20,7 +20,6 @@ import {
 import { loadProductionControlPlaneConfig } from "./production-config.ts";
 import { ProductionHttpGateway } from "./production-http-gateway.ts";
 import { PostgresTenantApiAuthenticator } from "./tenant-identity.ts";
-import { TenantModelCredentialVault } from "@pi-cloud/runtime-core/model-credential-runtime";
 import { resolvePlatformInitialModel } from "./platform-model-configuration.ts";
 import { WebAuthenticationService } from "./web-authentication.ts";
 import { createControlPlaneRuntime, type ControlPlaneRuntime } from "./control-plane-runtime.ts";
@@ -98,25 +97,14 @@ export async function startControlPlane(): Promise<void> {
         }),
     });
     await operationalMetrics.start();
-    const modelCredentialVault = new TenantModelCredentialVault(config.modelCredentialMasterKey);
-    const platformInitialModel = await resolvePlatformInitialModel(
-      database,
-      modelCredentialVault,
-      config.platformModelSourceTenantId,
-    );
     const registrationConfiguration = {
       ...config.publicRegistration,
-      ...(platformInitialModel === undefined ? {} : { initialModel: platformInitialModel }),
+      initialModel: () => resolvePlatformInitialModel(database, config.platformModelSourceTenantId),
     };
     const webAuthentication = new WebAuthenticationService({
       database,
       ...registrationConfiguration,
-      initialModel: () =>
-        resolvePlatformInitialModel(
-          database,
-          modelCredentialVault,
-          config.platformModelSourceTenantId,
-        ),
+      initialModel: () => resolvePlatformInitialModel(database, config.platformModelSourceTenantId),
       secureCookie: config.webSessionCookieSecure,
       sessionTtlMs: config.webSessionTtlMs,
       platformOperatorTenantId: config.platformOperatorTenantId,
@@ -295,7 +283,6 @@ export async function startControlPlane(): Promise<void> {
       productionHttpGateway: httpGateway,
       publicRegistration: registrationConfiguration,
       webAuthentication,
-      modelCredentialVault,
       platformOperatorTenantId: config.platformOperatorTenantId,
       platformModelSourceTenantId: config.platformModelSourceTenantId,
       cubeEgressConfigToken: config.cubeEgressConfigToken,

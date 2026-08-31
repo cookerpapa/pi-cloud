@@ -57,9 +57,10 @@ execution path and failure semantics.
 
 ### Tool and Workspace boundary
 
-- The trusted Worker holds model credentials but never executes model-generated
-  shell or file operations locally and never receives Cube management
-  credentials.
+- The trusted Worker holds only a short-lived PiCloud Model Gateway capability,
+  never executes model-generated shell or file operations locally and never
+  receives Cube management credentials. ADR-0138 assigns upstream credentials
+  and provider account selection to CLIProxyAPI.
 - The Tool Broker validates the ExecutionLease, frozen Workspace/Turn/Tool
   bindings and operation identity. It then reconciles Cube through the Cube
   API. Models cannot choose runtime identity, mounts, resources or network

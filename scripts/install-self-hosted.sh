@@ -592,8 +592,9 @@ cat <<EOF
   Next:
     1. Register the dedicated platform administrator account.
     2. Run: npm run production:administrator -- --username <registered-username>
-    3. Sign in again and configure the provider/model key in the administrator
-       page. The key is never handled by this installer.
+    3. Open the operator page on port 8081 and choose the Pi model route.
+    4. Open the linked Provider Gateway page on port 8318 to configure an API
+       key, or run: npm run production:provider-gateway:codex-login
 
   Reconcile later:       ./install.sh
   Read-only diagnosis:   ./install.sh --check-only

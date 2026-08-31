@@ -43,7 +43,7 @@ import {
   type AcceptedTurnResource,
   type TurnSteerResource,
   type ProjectResource,
-  type DeepSeekModelId,
+  type ProviderModelSelection,
   type ModelConfigurationResource,
   type CubeProxyConfigurationResource,
   type LogoutResource,
@@ -256,14 +256,13 @@ export class PiCloudApi {
   }
 
   async replaceModelConfiguration(
-    modelId: DeepSeekModelId,
-    apiKey: string,
+    selection: ProviderModelSelection,
   ): Promise<ModelConfigurationResource> {
     return parseModelConfigurationResource(
       await request(
         this.#fetch,
         "/v1/model-configuration",
-        jsonRequest({ provider: "deepseek", modelId, apiKey }, undefined, "PUT"),
+        jsonRequest(selection, undefined, "PUT"),
         this.#authorizationToken,
       ),
     );

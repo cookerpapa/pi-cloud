@@ -1,11 +1,12 @@
 # Configuration
 
-PiCloud has three configuration surfaces. A setting belongs to exactly one of
+PiCloud has four configuration surfaces. A setting belongs to exactly one of
 them:
 
-1. the administrator page for hot product settings;
-2. the private one-host `.env` for restart-bound deployment settings;
-3. Helm values and Kubernetes Secrets for distributed deployments.
+1. the PiCloud administrator page on port `8081` for hot product settings;
+2. CLIProxyAPI's native management page on port `8318` for provider accounts;
+3. the private one-host `.env` for restart-bound deployment settings;
+4. Helm values and Kubernetes Secrets for distributed deployments.
 
 Model keys and service credentials never belong in committed files.
 
@@ -14,8 +15,17 @@ Model keys and service credentials never belong in committed files.
 The administrator page stores versioned values in PostgreSQL and applies them
 to new requests without restarting services:
 
-- model provider, model ID and encrypted API credential;
+- Pi provider/model route, without an upstream credential;
 - Cube public-egress proxy URL and bypass list.
+
+CLIProxyAPI is the only model-supply authority. Its private Volume contains
+ChatGPT OAuth records and API keys; its native page manages quota, cooldown and
+account health. PiCloud stores only the selected provider/model route. Use:
+
+```bash
+npm run production:provider-gateway:key
+npm run production:provider-gateway:codex-login
+```
 
 Configure the one-host administrator after registration:
 
@@ -55,6 +65,9 @@ then recreate affected services with `npm run production:up`.
 | --- | ---: | --- |
 | `PI_CLOUD_HTTP_BIND_ADDRESS` | `127.0.0.1` | Web listener; use `0.0.0.0` only behind firewall/TLS policy |
 | `PI_CLOUD_HTTP_PORT` | `8080` | Web listener port |
+| `PI_CLOUD_ADMIN_BIND_ADDRESS` | `127.0.0.1` | operator-only listener bind address |
+| `PI_CLOUD_ADMIN_PORT` | `8081` | PiCloud operator landing page |
+| `PI_CLOUD_CLI_PROXY_MANAGEMENT_PORT` | `8318` | native Provider Gateway management page |
 | `PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID` | empty | set by `production:administrator` |
 | `PI_CLOUD_PUBLIC_REGISTRATION_ENABLED` | `true` | allow new browser accounts |
 | `PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS` | `1000` | maximum public tenants |
@@ -239,6 +252,7 @@ The distributed chart uses `values.yaml` for non-secret topology and a named
 Kubernetes Secret for credentials. Important value groups are:
 
 - `external.database`, `external.kafka` and `external.providerProxyUrl`;
+- `pi-workers.services.providerGatewayUrl` and its API-key Secret entry;
 - `sandboxPlane` for Cube, Workspace storage and Broker/Volume capacity;
 - `pi-workers.workerPool`, `autoscaling`, `runtime` and `lifecycle`;
 - `networkPolicy.externalEgressCidrs`;
@@ -262,7 +276,8 @@ validates cross-service concurrency, lease, retention and timeout relations.
 
 ## Secrets
 
-Keep database URLs, model encryption key, Worker enrollment/management tokens,
+Keep database URLs, Provider Gateway API/management keys and OAuth Volume,
+Worker enrollment/management tokens,
 Tool Broker token, Worker Event Ingest token, Cube API key, SSH host key and
 Kafka TLS/SASL material and source-control credential master key in the
 generated private files or Kubernetes Secrets. Cube receives none of them.

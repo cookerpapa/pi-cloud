@@ -7,20 +7,14 @@ import {
   revokeTenantApiCredential,
   type GeneratedTenantApiCredential,
 } from "./tenant-identity.ts";
-import type { DeepSeekModelId } from "@pi-cloud/protocol";
-import type { TenantModelCredentialVault } from "@pi-cloud/runtime-core/model-credential-runtime";
+import type { ProviderModelSelection } from "@pi-cloud/protocol";
 
 export type TenantQuotaConfiguration = Readonly<{
   maximumProjects: number;
   maximumSessions: number;
 }>;
 
-export type PrivateTenantInitialModel = Readonly<{
-  provider: "deepseek";
-  modelId: DeepSeekModelId;
-  apiKey: string;
-  vault: TenantModelCredentialVault;
-}>;
+export type PrivateTenantInitialModel = ProviderModelSelection;
 
 export type CreatePrivateTenantOptions = {
   slug: string;
@@ -184,18 +178,6 @@ export async function createPrivateTenant(
     throw new TypeError("tenant administration clock must return a valid Date");
   }
   const initialModel = options.initialModel;
-  const sealedModelCredential =
-    initialModel === undefined
-      ? undefined
-      : initialModel.vault.seal(
-          {
-            tenantId,
-            credentialBindingId,
-            credentialBindingVersion: 1,
-            provider: initialModel.provider,
-          },
-          initialModel.apiKey,
-        );
 
   const existing = await database
     .selectFrom("tenants")
@@ -256,11 +238,11 @@ export async function createPrivateTenant(
           id: credentialBindingId,
           tenant_id: tenantId,
           provider: initialModel?.provider ?? "pi-cloud-fake",
-          kind: initialModel === undefined ? "brokered" : "api_key",
+          kind: "brokered",
           secret_ref:
             initialModel === undefined
               ? `broker://self-hosted/${tenantId}/deterministic-java-repair`
-              : `sealed://tenant-model-credentials/${tenantId}/${credentialBindingId}/1`,
+              : `provider-gateway://${initialModel.provider}/${initialModel.modelId}`,
           version: 1,
           status: "active",
           created_at: now,
@@ -276,7 +258,7 @@ export async function createPrivateTenant(
           provider: initialModel?.provider ?? "pi-cloud-fake",
           model_id: initialModel?.modelId ?? "pi-cloud-fake",
           default_thinking_level: "off",
-          allowed_thinking_levels: ["off"],
+          allowed_thinking_levels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
           credential_binding_id: credentialBindingId,
           credential_binding_version: 1,
           enabled: true,
@@ -284,22 +266,6 @@ export async function createPrivateTenant(
           updated_at: now,
         })
         .executeTakeFirstOrThrow();
-      if (initialModel !== undefined && sealedModelCredential !== undefined) {
-        await transaction
-          .insertInto("tenant_model_credentials")
-          .values({
-            tenant_id: tenantId,
-            credential_binding_id: credentialBindingId,
-            credential_binding_version: 1,
-            key_version: sealedModelCredential.keyVersion,
-            nonce: sealedModelCredential.nonce,
-            ciphertext: sealedModelCredential.ciphertext,
-            auth_tag: sealedModelCredential.authTag,
-            secret_sha256: sealedModelCredential.secretSha256,
-            created_at: now,
-          })
-          .executeTakeFirstOrThrow();
-      }
       await transaction
         .insertInto("model_rates")
         .values({
