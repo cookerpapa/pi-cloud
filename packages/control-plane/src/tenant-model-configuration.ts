@@ -1,12 +1,11 @@
 import type { Database } from "@pi-cloud/database";
 import type {
   ModelConfigurationResource,
-  ProviderModelSelection,
   ReplaceModelConfigurationRequest,
 } from "@pi-cloud/protocol";
 import type { Kysely, Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
-import { supportedModel } from "./model-profile-catalog.ts";
+import { supportedModel, supportedModelSelection } from "./model-profile-catalog.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
 export class TenantModelConfigurationError extends Error {
@@ -55,22 +54,6 @@ function validClock(clock: () => Date): Date {
     throw new TypeError("Tenant model configuration clock must return a valid Date");
   }
   return now;
-}
-
-function providerModel(provider: string, modelId: string): ProviderModelSelection | undefined {
-  if (
-    provider === "deepseek" &&
-    (modelId === "deepseek-v4-flash" || modelId === "deepseek-v4-pro")
-  ) {
-    return { provider, modelId };
-  }
-  if (
-    provider === "openai-codex" &&
-    (modelId === "gpt-5.6-luna" || modelId === "gpt-5.6-terra" || modelId === "gpt-5.6-sol")
-  ) {
-    return { provider, modelId };
-  }
-  return undefined;
 }
 
 export class TenantModelConfigurationService {
@@ -131,7 +114,7 @@ export class TenantModelConfigurationService {
         updatedAt,
       };
     }
-    const selected = providerModel(row.provider, row.modelId);
+    const selected = supportedModelSelection(row.provider, row.modelId);
     if (selected === undefined) {
       throw new TenantModelConfigurationError(
         "model_configuration_unavailable",

@@ -51,6 +51,7 @@ import {
   SUPPORTED_MODEL_CATALOG,
   ensureSelectableModelProfile,
   supportedModel,
+  supportedModelSelection,
 } from "./model-profile-catalog.ts";
 
 export type ControlPlaneStoreOptions = {
@@ -187,25 +188,6 @@ function workspaceSourceResource(seedKind: string): WorkspaceSourceResource {
     return { kind: seedKind, status: "ready" };
   }
   throw new ControlPlaneStoreError("control_plane_misconfigured", "Workspace seed is invalid");
-}
-
-function providerModelSelection(
-  provider: string,
-  modelId: string,
-): ProviderModelSelection | undefined {
-  if (
-    provider === "deepseek" &&
-    (modelId === "deepseek-v4-flash" || modelId === "deepseek-v4-pro")
-  ) {
-    return { provider, modelId };
-  }
-  if (
-    provider === "openai-codex" &&
-    (modelId === "gpt-5.6-luna" || modelId === "gpt-5.6-terra" || modelId === "gpt-5.6-sol")
-  ) {
-    return { provider, modelId };
-  }
-  return undefined;
 }
 
 function isoTimestamp(value: Date | string): string {
@@ -2723,7 +2705,7 @@ export class ControlPlaneStore {
     if (row === undefined || row.sessionKind !== "conversation") {
       throw new ControlPlaneStoreError("not_found", "Conversation was not found");
     }
-    const selection = providerModelSelection(row.provider, row.modelId);
+    const selection = supportedModelSelection(row.provider, row.modelId);
     const catalogModel = selection === undefined ? undefined : supportedModel(selection);
     if (!row.enabled || row.bindingStatus !== "active" || catalogModel === undefined) {
       throw new ControlPlaneStoreError(

@@ -157,7 +157,7 @@ try {
 
       async function selectValue(selector, value, name) {
         const changed = await page.evaluate(
-          `(()=>{const element=${selectorExpression(selector)};if(!(element instanceof HTMLSelectElement))return false;Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event("change",{bubbles:true}));return element.value===${JSON.stringify(value)}})()`,
+          `(()=>{const element=${selectorExpression(selector)};if(!(element instanceof HTMLSelectElement)||![...element.options].some(option=>option.value===${JSON.stringify(value)}))return false;Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event("change",{bubbles:true}));return true})()`,
         );
         assert.equal(changed, true, `Could not select ${selector}`);
         record(name);
@@ -277,6 +277,10 @@ try {
         },
         "completed browser-submitted Run",
         180_000,
+      );
+      await page.waitFor(
+        `(()=>{const selector=document.querySelector(".product-model-selector select");return selector instanceof HTMLSelectElement&&!selector.disabled&&[...selector.options].some(option=>option.value==="openai-codex:gpt-5.6-sol")})()`,
+        30_000,
       );
       await selectValue(
         ".product-model-selector select",

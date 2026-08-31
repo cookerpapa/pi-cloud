@@ -1,6 +1,7 @@
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import type { PrivateTenantInitialModel } from "./tenant-administration.ts";
+import { supportedModelSelection } from "./model-profile-catalog.ts";
 
 export class PlatformModelConfigurationError extends Error {
   constructor(safeMessage: string) {
@@ -42,19 +43,7 @@ export async function resolvePlatformInitialModel(
   if (profile.provider === "pi-cloud-fake" && profile.modelId === "pi-cloud-fake") {
     return undefined;
   }
-  if (
-    profile.provider === "deepseek" &&
-    (profile.modelId === "deepseek-v4-flash" || profile.modelId === "deepseek-v4-pro")
-  ) {
-    return { provider: profile.provider, modelId: profile.modelId };
-  }
-  if (
-    profile.provider === "openai-codex" &&
-    (profile.modelId === "gpt-5.6-luna" ||
-      profile.modelId === "gpt-5.6-terra" ||
-      profile.modelId === "gpt-5.6-sol")
-  ) {
-    return { provider: profile.provider, modelId: profile.modelId };
-  }
+  const selected = supportedModelSelection(profile.provider, profile.modelId);
+  if (selected !== undefined) return selected;
   throw new PlatformModelConfigurationError("Platform default model is unsupported");
 }

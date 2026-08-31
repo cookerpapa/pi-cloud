@@ -40,6 +40,20 @@ export function supportedModel(
   );
 }
 
+export function supportedModelSelection(
+  provider: string,
+  modelId: string,
+): ProviderModelSelection | undefined {
+  const model = SUPPORTED_MODEL_CATALOG.find(
+    (candidate) => candidate.provider === provider && candidate.modelId === modelId,
+  );
+  if (model === undefined) return undefined;
+  if (model.provider === "deepseek") {
+    return { provider: model.provider, modelId: model.modelId };
+  }
+  return { provider: model.provider, modelId: model.modelId };
+}
+
 export type SelectableModelProfile = Readonly<{
   profileId: string;
   provider: ProviderModelSelection["provider"];
