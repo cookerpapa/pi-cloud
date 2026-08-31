@@ -230,12 +230,19 @@ export class PiWorkerRuntime {
     ) {
       throw new TypeError("Pi SDK Worker runtime capacity must be between 1 and 16");
     }
+    if (
+      !Number.isSafeInteger(options.config.databaseMaxConnections) ||
+      options.config.databaseMaxConnections < 2 ||
+      options.config.databaseMaxConnections > 64
+    ) {
+      throw new TypeError("Pi SDK Worker database pool must be between 2 and 64 connections");
+    }
     this.#config = options.config;
     this.#database =
       options.database ??
       createDatabase({
         connectionString: options.config.databaseUrl,
-        maxConnections: Math.max(4, options.config.maxConcurrentSessions * 4),
+        maxConnections: options.config.databaseMaxConnections,
       });
     this.#ownsDatabase = options.database === undefined;
     this.#objectStore = options.objectStore;

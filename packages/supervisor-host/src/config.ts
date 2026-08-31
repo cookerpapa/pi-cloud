@@ -25,6 +25,7 @@ export type SupervisorHostConfig = {
   managementPort: number;
   managementAdvertisedBaseUrl: string;
   maxConcurrentSessions: number;
+  databaseMaxConnections: number;
   subagentMaximumDepth: number;
   subagentMaximumNodes: number;
   subagentMaximumConcurrent: number;
@@ -304,6 +305,14 @@ export async function loadSupervisorHostConfig(
   const databaseNotificationUrl =
     (await optionalSecret(environment, "DATABASE_NOTIFICATION_URL", allowInlineSecrets)) ??
     databaseUrl;
+  const maxConcurrentSessions = integerValue(environment, "PI_CLOUD_SUPERVISOR_CAPACITY", 4, 1, 16);
+  const databaseMaxConnections = integerValue(
+    environment,
+    "PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS",
+    Math.min(16, maxConcurrentSessions + 2),
+    2,
+    64,
+  );
   return {
     supervisorId: bounded(
       required(environment, "PI_CLOUD_SUPERVISOR_ID"),
@@ -360,7 +369,8 @@ export async function loadSupervisorHostConfig(
       allowInsecureInternalHttp,
       "PI_CLOUD_SUPERVISOR_MANAGEMENT_ADVERTISED_URL",
     ),
-    maxConcurrentSessions: integerValue(environment, "PI_CLOUD_SUPERVISOR_CAPACITY", 4, 1, 16),
+    maxConcurrentSessions,
+    databaseMaxConnections,
     subagentMaximumDepth: integerValue(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH", 4, 1, 64),
     subagentMaximumNodes,
     subagentMaximumConcurrent,

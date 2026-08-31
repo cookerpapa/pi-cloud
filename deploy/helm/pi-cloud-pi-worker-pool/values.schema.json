@@ -115,11 +115,12 @@
     "database": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["existingSecret", "urlKey", "notificationUrlKey"],
+      "required": ["existingSecret", "urlKey", "notificationUrlKey", "maxConnections"],
       "properties": {
         "existingSecret": { "$ref": "#/$defs/dnsLabel" },
         "urlKey": { "$ref": "#/$defs/secretKey" },
-        "notificationUrlKey": { "$ref": "#/$defs/secretKey" }
+        "notificationUrlKey": { "$ref": "#/$defs/secretKey" },
+        "maxConnections": { "type": "integer", "minimum": 2, "maximum": 64 }
       }
     },
     "credentials": {

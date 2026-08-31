@@ -29,6 +29,9 @@ kubectl -n pi-cloud-workers create secret generic pi-cloud-pi-worker-secrets \
 
 The regular database URL may use PgBouncer transaction pooling. The notification
 URL must target PostgreSQL directly because `LISTEN` is connection-scoped.
+`database.maxConnections` bounds the ordinary PostgreSQL pool independently of
+`workerPool.capacity`; increase it only after observing pool wait time rather
+than multiplying connections for model-waiting Runs.
 
 ## Install and scale
 

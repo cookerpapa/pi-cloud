@@ -68,6 +68,7 @@ then recreate affected services with `npm run production:up`.
 | Variable | Default | Meaning |
 | --- | ---: | --- |
 | `PI_CLOUD_SUPERVISOR_CAPACITY` | `2` | simultaneous Agent Loops per Compose Worker |
+| `PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS` | `4` | bounded PostgreSQL pool per Compose Worker; tune independently from slots |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH` | `4` | recursive Agent-tree depth |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_NODES` | `32` | total descendants per root Run |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT` | `3` | active descendants per root Run |
@@ -78,8 +79,12 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS` | `5000` | Broker ownership heartbeat |
 
 Worker capacity must leave room for a root Run and its configured active
-children. Broker heartbeat must leave more than one missed interval before
-lease expiry. `production:config` rejects incoherent lease combinations.
+children. The Worker database pool is intentionally not proportional to slots:
+one connection can serve many model-waiting Runs. For Kubernetes, start near
+half the slot count with a floor of four, observe pool wait time, and use a
+connection proxy before multiplying connections across many replicas. Broker
+heartbeat must leave more than one missed interval before lease expiry.
+`production:config` rejects incoherent lease combinations.
 
 ### Streaming and Workspace operations
 

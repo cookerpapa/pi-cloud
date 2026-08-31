@@ -200,6 +200,7 @@ describe("PiWorkerRuntime", () => {
       managementPort: 0,
       managementAdvertisedBaseUrl: `http://${SUPERVISOR_ID}:4100`,
       maxConcurrentSessions: 4,
+      databaseMaxConnections: 6,
       subagentMaximumDepth: 4,
       subagentMaximumNodes: 32,
       subagentMaximumConcurrent: 3,
@@ -232,6 +233,19 @@ describe("PiWorkerRuntime", () => {
           runWorkerFactory,
         }),
     ).toThrow("Pi SDK Worker runtime capacity must be between 1 and 16");
+    expect(
+      () =>
+        new PiWorkerRuntime({
+          config: {
+            ...baseConfig,
+            databaseMaxConnections: 65,
+          },
+          database,
+          objectStore: objectStore(),
+          toolBroker: runtimeToolBroker,
+          runWorkerFactory,
+        }),
+    ).toThrow("Pi SDK Worker database pool must be between 2 and 64 connections");
     let first: PiWorkerRuntime | undefined;
     let second: PiWorkerRuntime | undefined;
     try {

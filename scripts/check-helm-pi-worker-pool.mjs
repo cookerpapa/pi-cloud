@@ -47,6 +47,7 @@ assert.equal(
   "/run/pi-cloud-secrets/database-notification-url",
 );
 assert.equal(environment.PI_CLOUD_SUPERVISOR_CAPACITY, "4");
+assert.equal(environment.PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS, "8");
 
 const scaler = find("ScaledObject");
 assert(scaler);

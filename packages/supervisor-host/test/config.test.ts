@@ -102,12 +102,14 @@ describe("Supervisor host production configuration", () => {
         `event-ingest-${"i".repeat(48)}`,
       ),
       PI_CLOUD_SUPERVISOR_CAPACITY: "1",
+      PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS: "7",
       PI_CLOUD_MODEL_GATEWAY_ADVERTISED_URL: "http://127.0.0.1:4200",
     });
     expect(config).toMatchObject({
       supervisorId: "supervisor-production-1",
       supervisorWebSocketUrl: "ws://control-plane:3000/internal/v1/supervisor",
       maxConcurrentSessions: 1,
+      databaseMaxConnections: 7,
       subagentMaximumDepth: 4,
       subagentMaximumNodes: 32,
       subagentMaximumConcurrent: 3,
@@ -153,6 +155,32 @@ describe("Supervisor host production configuration", () => {
         PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT: "3",
       }),
     ).rejects.toThrow("Subagent concurrency");
+    await expect(
+      loadSupervisorHostConfig({
+        ...environment,
+        PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS: "65",
+      }),
+    ).rejects.toThrow("PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS");
+  });
+
+  it("bounds the database pool independently from Agent slots", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-cloud-host-config-"));
+    roots.push(root);
+    const environment = await validEnvironment(root);
+
+    await expect(
+      loadSupervisorHostConfig({ ...environment, PI_CLOUD_SUPERVISOR_CAPACITY: "2" }),
+    ).resolves.toMatchObject({ maxConcurrentSessions: 2, databaseMaxConnections: 4 });
+    await expect(
+      loadSupervisorHostConfig({ ...environment, PI_CLOUD_SUPERVISOR_CAPACITY: "16" }),
+    ).resolves.toMatchObject({ maxConcurrentSessions: 16, databaseMaxConnections: 16 });
+    await expect(
+      loadSupervisorHostConfig({
+        ...environment,
+        PI_CLOUD_SUPERVISOR_CAPACITY: "16",
+        PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS: "8",
+      }),
+    ).resolves.toMatchObject({ maxConcurrentSessions: 16, databaseMaxConnections: 8 });
   });
 
   it("accepts a private group-readable Kubernetes Secret projection", async () => {

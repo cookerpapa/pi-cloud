@@ -37,7 +37,7 @@ export async function startSupervisorHost(): Promise<void> {
   });
   const database = createDatabase({
     connectionString: config.databaseUrl,
-    maxConnections: Math.max(4, config.maxConcurrentSessions * 4),
+    maxConnections: config.databaseMaxConnections,
   });
   const objectStore = new PostgresRuntimeObjectStore(database);
   const runtime = new PiWorkerRuntime({
