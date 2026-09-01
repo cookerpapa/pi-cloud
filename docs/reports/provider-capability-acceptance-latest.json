@@ -1,7 +1,7 @@
 {
   "accepted": true,
-  "piCloudRevision": "5ef277a88ce254ff2410123bd29a092867fec599",
-  "checkedAt": "2026-09-01T12:32:06.114Z",
+  "piCloudRevision": "3d69acd1011dd23c725a8c05bec19bbba64a9e87",
+  "checkedAt": "2026-09-01T17:05:54.773Z",
   "route": {
     "firstTurn": "deepseek/deepseek-v4-flash + Provider web_search",
     "secondTurn": "openai-codex/gpt-5.6-luna + Provider web_search"
@@ -11,15 +11,26 @@
     "codexProviderSearchReachedFinalMessage": true,
     "bothProviderSearchesBypassedToolBroker": true,
     "bothProviderSearchesPublishedEphemeralProgress": true,
+    "nativeHostedItemsReplayWithoutAnotherSearch": true,
+    "hiddenProviderSearchResultNotClaimedAsDurable": true,
+    "nativeReplayAnswerObserved": true,
     "crossProviderCanonicalContextRestored": true,
+    "providerHostedItemsPersistedInPiMessages": true,
+    "providerCitationsPersistedInPiMessages": true,
     "cleanupCompleted": true
   },
   "latencyMs": {
-    "providerSearchTurn": 6804,
-    "crossProviderHandoffTurn": 10472
+    "providerSearchTurn": 3441,
+    "nativeReplayTurn": 4504,
+    "crossProviderHandoffTurn": 9981
   },
   "outputCharacters": {
-    "providerSearchTurn": 333,
-    "crossProviderHandoffTurn": 216
+    "providerSearchTurn": 18,
+    "nativeReplayTurn": 122,
+    "crossProviderHandoffTurn": 139
+  },
+  "piSessionStorage": {
+    "durableHostedMessageCount": 2,
+    "durableCitationMessageCount": 1
   }
 }
