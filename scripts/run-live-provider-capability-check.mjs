@@ -97,6 +97,33 @@ function transcriptText(turn) {
     .join("");
 }
 
+function countPiSessionPayloads(sessionId, marker) {
+  const query = [
+    "select count(*)",
+    "from pi_session_entries",
+    `where session_id = '${sessionId}'`,
+    "and type = 'message'",
+    `and payload::text like '%${marker}%'`,
+  ].join(" ");
+  return Number(
+    execFileSync(
+      "docker",
+      [
+        "exec",
+        "pi-cloud-production-postgres-1",
+        "psql",
+        "-U",
+        "pi_cloud",
+        "-d",
+        "pi_cloud",
+        "-Atqc",
+        query,
+      ],
+      { encoding: "utf8" },
+    ).trim(),
+  );
+}
+
 function assertHostedSearchProgress(events, turnId, label) {
   const turnEvents = events.filter((event) => event.turnId === turnId);
   const started = turnEvents.findIndex(
@@ -126,9 +153,13 @@ await api.registerAccount(
 let project;
 let session;
 let firstLatencyMs;
+let nativeReplayLatencyMs;
 let secondLatencyMs;
 let firstText = "";
+let nativeReplayText = "";
 let secondText = "";
+let durableHostedMessageCount = 0;
+let durableCitationMessageCount = 0;
 let cleanupCompleted = false;
 let streamAbort;
 let streamPromise;
@@ -167,8 +198,8 @@ try {
     session.sessionId,
     [
       "Do not call Pi function tools.",
-      "Use the Provider-hosted web search capability to search the official DeepSeek API documentation home page.",
-      "Reply with DEEPSEEK-SEARCH-OK followed by the current page title.",
+      "Use Provider-hosted web search to find the current Hang Seng Index value and exact percentage change from a current source.",
+      "Reply only DEEPSEEK-SEARCH-OK and do not reveal either number.",
     ].join(" "),
     newIdempotencyKey("provider-search"),
     "low",
@@ -199,6 +230,37 @@ try {
     "Provider search was incorrectly projected as a Pi/Tool Broker Tool",
   );
 
+  const nativeReplayStartedAt = performance.now();
+  const nativeReplayAccepted = await api.acceptTurn(
+    session.sessionId,
+    [
+      "Do not call Pi function tools and do not perform another web search.",
+      "Using only the prior Provider search result, state its exact Hang Seng Index value and percentage change.",
+      "If the prior result is unavailable, reply exactly CONTEXT-UNAVAILABLE.",
+    ].join(" "),
+    newIdempotencyKey("provider-native-replay"),
+    "off",
+  );
+  const nativeReplay = await waitForTurn(
+    api,
+    session.sessionId,
+    nativeReplayAccepted.runId,
+    "DeepSeek native Hosted Web Search replay Turn",
+  );
+  nativeReplayLatencyMs = Math.round(performance.now() - nativeReplayStartedAt);
+  nativeReplayText = transcriptText(nativeReplay);
+  assert.equal(nativeReplay.state, "completed", JSON.stringify(nativeReplay));
+  assert.ok(nativeReplayText.length > 0);
+  assert.equal(
+    observedEvents.some(
+      (event) =>
+        event.turnId === nativeReplayAccepted.turnId &&
+        event.type === "provider.hosted_tool.started",
+    ),
+    false,
+    "DeepSeek performed a new search instead of replaying its native result",
+  );
+
   await api.updateSessionModel(session.sessionId, {
     provider: "openai-codex",
     modelId: "gpt-5.6-luna",
@@ -211,7 +273,7 @@ try {
     [
       "Do not call Pi function tools.",
       "Use Provider-hosted web search to find the current title of the official OpenAI developer documentation home page.",
-      "Reply with CODEX-SEARCH-HANDOFF-OK, the OpenAI page title, and the DeepSeek page title preserved from the previous turn.",
+      "Reply with CODEX-SEARCH-HANDOFF-OK, the OpenAI page title, and the marker DEEPSEEK-SEARCH-OK preserved from the previous turns.",
     ].join(" "),
     newIdempotencyKey("provider-handoff"),
     "off",
@@ -240,6 +302,16 @@ try {
     (second.transcript?.items ?? []).some((item) => item.kind === "tool"),
     false,
     "Codex Provider search was incorrectly projected as a Pi/Tool Broker Tool",
+  );
+  durableHostedMessageCount = countPiSessionPayloads(session.sessionId, "providerHostedToolCall");
+  durableCitationMessageCount = countPiSessionPayloads(session.sessionId, "providerAnnotations");
+  assert.ok(
+    durableHostedMessageCount >= 2,
+    "Provider-native Hosted Tool items were not persisted in Pi SessionStorage",
+  );
+  assert.ok(
+    durableCitationMessageCount >= 1,
+    "Provider-native citation annotations were not persisted in Pi SessionStorage",
   );
 } finally {
   streamAbort?.abort();
@@ -286,16 +358,27 @@ const report = {
     codexProviderSearchReachedFinalMessage: true,
     bothProviderSearchesBypassedToolBroker: true,
     bothProviderSearchesPublishedEphemeralProgress: true,
+    nativeHostedItemsReplayWithoutAnotherSearch: true,
+    hiddenProviderSearchResultNotClaimedAsDurable: true,
+    nativeReplayAnswerObserved: nativeReplayText !== "CONTEXT-UNAVAILABLE",
     crossProviderCanonicalContextRestored: true,
+    providerHostedItemsPersistedInPiMessages: true,
+    providerCitationsPersistedInPiMessages: true,
     cleanupCompleted,
   },
   latencyMs: {
     providerSearchTurn: firstLatencyMs,
+    nativeReplayTurn: nativeReplayLatencyMs,
     crossProviderHandoffTurn: secondLatencyMs,
   },
   outputCharacters: {
     providerSearchTurn: firstText.length,
+    nativeReplayTurn: nativeReplayText.length,
     crossProviderHandoffTurn: secondText.length,
+  },
+  piSessionStorage: {
+    durableHostedMessageCount,
+    durableCitationMessageCount,
   },
 };
 await writeFile(

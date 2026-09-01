@@ -36,4 +36,80 @@ describe("ResponsesHostedActivityObserver", () => {
       { phase: "completed", toolName: "web_search", outcome: "failed" },
     ]);
   });
+
+  it("captures completed native search items and citations separately from progress", () => {
+    const activities: unknown[] = [];
+    const transcripts: unknown[] = [];
+    const observer = new ResponsesHostedActivityObserver(
+      (activity) => activities.push(activity),
+      (items) => transcripts.push(items),
+    );
+    observer.push(
+      new TextEncoder().encode(
+        `data: ${JSON.stringify({
+          type: "response.completed",
+          response: {
+            output: [
+              {
+                type: "web_search_call",
+                id: "ws-1",
+                status: "completed",
+                action: { type: "search", query: "current source" },
+              },
+              {
+                type: "message",
+                id: "msg-1",
+                content: [
+                  {
+                    type: "output_text",
+                    text: "answer",
+                    annotations: [
+                      {
+                        type: "url_citation",
+                        url: "https://example.test",
+                        title: "Example",
+                        start_index: 0,
+                        end_index: 6,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        })}\n\n`,
+      ),
+    );
+    observer.finish("completed");
+
+    expect(transcripts).toEqual([
+      [
+        {
+          outputIndex: 0,
+          type: "web_search_call",
+          id: "ws-1",
+          nativeItem: {
+            type: "web_search_call",
+            id: "ws-1",
+            status: "completed",
+            action: { type: "search", query: "current source" },
+          },
+        },
+        {
+          outputIndex: 1,
+          type: "message",
+          id: "msg-1",
+          annotations: [
+            {
+              type: "url_citation",
+              url: "https://example.test",
+              title: "Example",
+              start_index: 0,
+              end_index: 6,
+            },
+          ],
+        },
+      ],
+    ]);
+  });
 });

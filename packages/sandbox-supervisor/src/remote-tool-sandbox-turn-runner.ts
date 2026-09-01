@@ -634,6 +634,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         ...(modelRuntimeLease?.subscribeHostedActivity === undefined
           ? {}
           : { subscribeHostedActivity: modelRuntimeLease.subscribeHostedActivity }),
+        ...(modelRuntimeLease?.subscribeHostedTranscript === undefined
+          ? {}
+          : { subscribeHostedTranscript: modelRuntimeLease.subscribeHostedTranscript }),
         ...(this.#requestTimeoutMs === undefined
           ? {
               requestTimeoutMs: usesEmbeddedFake

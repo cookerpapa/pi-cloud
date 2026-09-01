@@ -43,11 +43,10 @@ gateway continued translating protocols.
 
 - DeepSeek and OpenAI Codex both execute Web Search at their Provider without a
   PiCloud search service or Cube activation.
-- Pi 0.84.1 preserves hosted-search-derived Assistant text but does not retain a
-  typed `web_search_call` in SessionStorage. This decision does not fork Pi's
-  message model; richer hosted-call persistence remains a separate upstream
-  concern.
+- PiCloud preserves hosted-search-derived assistant text, URL citations and a
+  Codex-shaped native action item in the same Pi Session message under
+  ADR-0141. The Pi Agent Loop remains unmodified and never executes that item
+  as a local Tool.
 - The temporary fork build is source- and commit-pinned, testable from a clean
   checkout and removable after an upstream CLIProxyAPI release contains the
   executor.
-

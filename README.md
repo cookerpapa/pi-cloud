@@ -106,11 +106,12 @@ Sandbox-backed Pi function Tools execute through Tool Broker. A verified
 Provider-hosted Tool is instead declared in that Turn's native model request and executes at the
 Provider; the current OpenAI Codex and DeepSeek Responses routes enable Web
 Search. While a search is active, its coarse start/completion progress travels
-through the existing Kafka/SSE live tail so the browser does not look stalled;
-queries, results and Provider-native events do not enter the canonical
-conversation or Pi Session. Switching the conversation model while idle
-rebuilds the effective capability set for the next Turn without changing
-historical Turns or adding a synthetic model-visible notice.
+through the existing Kafka/SSE live tail so the browser does not look stalled.
+The completed Pi assistant message retains the Provider-native search action,
+assistant text and URL citations; native IDs replay only to the exact issuing
+Provider/API/model. Switching the conversation model while idle keeps the
+portable text and links but omits incompatible native action IDs, without
+adding a synthetic model-visible notice or a fabricated local Tool result.
 
 Not every Pi function Tool runs in Cube. The Worker loads trusted platform and
 orchestration Tools through a separate `TrustedToolRuntime`; Preview and
@@ -269,6 +270,7 @@ PI_CLOUD_LIVE_SUBAGENT_CHECK=1 npm run production:subagents-check
 PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-environment-check
 PI_CLOUD_LIVE_LONG_CONTEXT_CHECK=1 npm run production:long-context-check
 PI_CLOUD_LIVE_PROVIDER_CAPABILITY_CHECK=1 npm run production:provider-capability-check
+PI_CLOUD_LIVE_HOSTED_SEARCH_REPLAY_CHECK=1 npm run production:hosted-search-replay-check
 ```
 
 Reports under `docs/reports/` are evidence for their named revision and test

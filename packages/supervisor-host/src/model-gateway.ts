@@ -10,6 +10,7 @@ import {
 } from "@pi-cloud/protocol";
 import type {
   ProviderHostedActivity,
+  ProviderHostedTranscript,
   TrustedModelRuntimeLease,
 } from "@pi-cloud/sandbox-supervisor";
 import { parseTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/observability";
@@ -68,6 +69,7 @@ type ActiveCapabilityFields = {
   revoked: boolean;
   requestControllers: Set<AbortController>;
   hostedActivityListeners: Set<(activity: ProviderHostedActivity) => void>;
+  hostedTranscriptListeners: Set<(transcript: ProviderHostedTranscript) => void>;
 };
 
 type ActiveCapability =
@@ -555,6 +557,7 @@ export class TenantModelGateway {
       revoked: false,
       requestControllers: new Set(),
       hostedActivityListeners: new Set(),
+      hostedTranscriptListeners: new Set(),
     };
     this.#capabilities.set(digest, active);
     let released = false;
@@ -596,6 +599,11 @@ export class TenantModelGateway {
         if (released || active.revoked) return () => undefined;
         active.hostedActivityListeners.add(listener);
         return () => active.hostedActivityListeners.delete(listener);
+      },
+      subscribeHostedTranscript: (listener) => {
+        if (released || active.revoked) return () => undefined;
+        active.hostedTranscriptListeners.add(listener);
+        return () => active.hostedTranscriptListeners.delete(listener);
       },
       release: () => {
         if (released) return;
@@ -646,7 +654,7 @@ export class TenantModelGateway {
         "Model request protocol does not match its Turn capability",
       );
     }
-    samplingIdentity(request);
+    const requestSamplingIdentity = samplingIdentity(request);
     if (active.requestsStarted >= active.maximumRequestsPerRun) {
       throw new SafeGatewayHttpError(
         429,
@@ -735,8 +743,16 @@ export class TenantModelGateway {
         response.end();
         return;
       }
-      hostedActivity = new ResponsesHostedActivityObserver((activity) =>
-        this.#notifyHostedActivity(active, activity),
+      hostedActivity = new ResponsesHostedActivityObserver(
+        (activity) => this.#notifyHostedActivity(active, activity),
+        (items) =>
+          this.#notifyHostedTranscript(active, {
+            provider: active.provider,
+            api: active.api,
+            modelId: active.modelId,
+            ...requestSamplingIdentity,
+            items,
+          }),
       );
       let responseBytes = 0;
       for await (const rawChunk of upstream.body) {
@@ -797,12 +813,23 @@ export class TenantModelGateway {
     }
   }
 
+  #notifyHostedTranscript(active: ActiveCapability, transcript: ProviderHostedTranscript): void {
+    for (const listener of active.hostedTranscriptListeners) {
+      try {
+        listener(transcript);
+      } catch {
+        // Canonical transcript observers cannot interfere with the Provider stream.
+      }
+    }
+  }
+
   #revoke(active: ActiveCapability): void {
     if (active.revoked) return;
     active.revoked = true;
     for (const controller of active.requestControllers) controller.abort();
     active.requestControllers.clear();
     active.hostedActivityListeners.clear();
+    active.hostedTranscriptListeners.clear();
     this.#capabilities.delete(active.tokenDigest);
   }
 

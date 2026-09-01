@@ -22,7 +22,8 @@
   provider delivery;
 - versioned Agent definitions with Run/Worker routing and Runtime-native Session Storage.
 - Provider-native Web Search on the verified OpenAI Codex and DeepSeek Responses routes,
-  frozen with each issued model runtime and kept outside Tool Broker.
+  frozen with each issued model runtime, retained as Codex-shaped Pi transcript
+  items and kept outside Tool Broker.
 
 ## Current release gate
 

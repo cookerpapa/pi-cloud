@@ -203,6 +203,51 @@ describe.sequential("CloudAgentRuntime", () => {
     expect(await storage.findOpenOperations("main", { limit: 2 })).toEqual([]);
   });
 
+  it("persists decorated Provider content and exposes restored context to payload transforms", async () => {
+    const storage = await createStorage();
+    const first = new CloudAgentRuntime({
+      session: storage.asSession(),
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      streamFn: scriptedStream(["searched answer"]),
+      decorateAssistantMessage(message) {
+        (message.content as unknown[]).splice(0, 0, {
+          type: "providerHostedToolCall",
+          toolName: "web_search",
+          nativeItem: { type: "web_search_call", id: "ws-1" },
+        });
+      },
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+    });
+    await first.run("search once");
+
+    let sawRestoredHostedContent = false;
+    const second = new CloudAgentRuntime({
+      session: storage.asSession(),
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      transformProviderPayload(payload, context) {
+        sawRestoredHostedContent = JSON.stringify(context.messages).includes(
+          "providerHostedToolCall",
+        );
+        return payload;
+      },
+      streamFn: async (model, context, options) => {
+        await options?.onPayload?.({ input: [] }, model);
+        return scriptedStream(["restored"])(model, context);
+      },
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+    });
+    await second.run("continue");
+
+    expect(sawRestoredHostedContent).toBe(true);
+    expect(JSON.stringify(await storage.findEntries({ type: "message" }))).toContain(
+      "providerHostedToolCall",
+    );
+  });
+
   it("commits a complete assistant message independently of public event delivery", async () => {
     const storage = await createStorage();
     const runtime = new CloudAgentRuntime({

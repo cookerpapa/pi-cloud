@@ -22,6 +22,7 @@ import {
 import type {
   Api,
   AssistantMessage,
+  Context,
   ImageContent,
   Model,
   Models,
@@ -82,6 +83,12 @@ export type CloudAgentRuntimeOptions = Readonly<{
   transformHeaders?: (
     headers: Record<string, string | null>,
   ) => Record<string, string | null> | Promise<Record<string, string | null>>;
+  transformProviderPayload?: (
+    payload: unknown,
+    context: Context,
+    model: Model<Api>,
+  ) => unknown | undefined | Promise<unknown | undefined>;
+  decorateAssistantMessage?: (message: AssistantMessage) => void | Promise<void>;
   entryProjectors?: Readonly<Record<string, CustomEntryContextMessageProjector>>;
   compactionRetainedCustomTypes?: readonly string[];
   prepareFollowUp?: () => AgentMessage | undefined | Promise<AgentMessage | undefined>;
@@ -345,12 +352,23 @@ export class CloudAgentRuntime {
           ...(options?.headers ?? {}),
         };
         const transformedHeaders = await this.#options.transformHeaders?.(headers);
-        const effectiveOptions = {
+        const effectiveOptions: SimpleStreamOptions = {
           ...options,
           ...this.#options.streamOptions,
           ...(options?.signal === undefined ? {} : { signal: options.signal }),
           headers: transformedHeaders ?? headers,
         };
+        const callerOnPayload = effectiveOptions.onPayload;
+        if (this.#options.transformProviderPayload !== undefined) {
+          effectiveOptions.onPayload = async (payload, targetModel) => {
+            const callerResult = await callerOnPayload?.(payload, targetModel);
+            return this.#options.transformProviderPayload!(
+              callerResult ?? payload,
+              context,
+              targetModel,
+            );
+          };
+        }
         return (
           this.#options.streamFn?.(model, context, effectiveOptions) ??
           this.#options.models!.streamSimple(model, context, effectiveOptions)
@@ -387,6 +405,9 @@ export class CloudAgentRuntime {
       const unsubscribe = agent.subscribe(async (event) => {
         if (event.type === "message_end") {
           await authority.assertCurrent();
+          if (event.message.role === "assistant") {
+            await this.#options.decorateAssistantMessage?.(event.message);
+          }
           const message = normalizeMessage(event.message);
           let entryId: string;
           if (message.role === "assistant") {

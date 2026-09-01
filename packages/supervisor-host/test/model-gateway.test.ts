@@ -208,7 +208,7 @@ describe("tenant model gateway", () => {
       'data: {"type":"response.web_search_call.searching","item_id":"ws-1"}\n\n',
       'data: {"type":"response.web_search_call.completed","item_id":"ws-1"}\n\n',
       'data: {"type":"response.output_text.delta","output_index":1,"delta":"found"}\n\n',
-      'data: {"type":"response.completed","response":{"id":"r1"}}\n\n',
+      'data: {"type":"response.completed","response":{"id":"r1","output":[{"id":"ws-1","type":"web_search_call","status":"completed","action":{"type":"search","query":"official source"}},{"id":"msg-1","type":"message","content":[{"type":"output_text","text":"found","annotations":[] }]}]}}\n\n',
     ].join("");
     const gateway = createGateway(
       vi.fn<typeof fetch>(async () =>
@@ -223,7 +223,11 @@ describe("tenant model gateway", () => {
     await gateway.start();
     const lease = gateway.issue(command("openai-codex", "gpt-5.6-luna"));
     const activities: unknown[] = [];
+    const transcripts: unknown[] = [];
     lease.subscribeHostedActivity?.((activity) => activities.push(activity));
+    lease.subscribeHostedTranscript?.((transcript) => transcripts.push(transcript));
+
+    const headers = samplingHeaders();
 
     const response = await fetch(
       `http://127.0.0.1:${String(gateway.listeningPort)}/codex/responses`,
@@ -232,7 +236,7 @@ describe("tenant model gateway", () => {
         headers: {
           authorization: `Bearer ${lease.runtime.capability}`,
           "content-type": "application/json",
-          ...samplingHeaders(),
+          ...headers,
         },
         body: JSON.stringify({ model: "gpt-5.6-luna", stream: true, input: [] }),
       },
@@ -242,6 +246,20 @@ describe("tenant model gateway", () => {
     expect(activities).toEqual([
       { phase: "started", toolName: "web_search" },
       { phase: "completed", toolName: "web_search", outcome: "completed" },
+    ]);
+    expect(transcripts).toEqual([
+      expect.objectContaining({
+        provider: "openai-codex",
+        api: "openai-codex-responses",
+        modelId: "gpt-5.6-luna",
+        stepSequence: Number(headers["x-pi-cloud-step-sequence"]),
+        stepSha256: headers["x-pi-cloud-step-sha256"],
+        samplingAttempt: 1,
+        items: [
+          expect.objectContaining({ type: "web_search_call", id: "ws-1" }),
+          expect.objectContaining({ type: "message", id: "msg-1" }),
+        ],
+      }),
     ]);
   });
 

@@ -25,6 +25,28 @@ export type ProviderHostedActivitySubscriber = (
   listener: (activity: ProviderHostedActivity) => void,
 ) => () => void;
 
+export type ProviderHostedTranscriptItem = Readonly<{
+  outputIndex: number;
+  type: string;
+  id?: string;
+  nativeItem?: Readonly<Record<string, unknown>>;
+  annotations?: readonly Readonly<Record<string, unknown>>[];
+}>;
+
+export type ProviderHostedTranscript = Readonly<{
+  provider: string;
+  api: AgentModelRuntime["api"];
+  modelId: string;
+  stepSequence: number;
+  stepSha256: string;
+  samplingAttempt: number;
+  items: readonly ProviderHostedTranscriptItem[];
+}>;
+
+export type ProviderHostedTranscriptSubscriber = (
+  listener: (transcript: ProviderHostedTranscript) => void,
+) => () => void;
+
 export type TrustedToolExecutionPlane = "platform" | "orchestration" | "integration";
 
 export type TrustedAgentTool = Readonly<{
@@ -35,6 +57,7 @@ export type TrustedAgentTool = Readonly<{
 export type TrustedModelRuntimeLease = Readonly<{
   runtime: AgentModelRuntime;
   subscribeHostedActivity?: ProviderHostedActivitySubscriber;
+  subscribeHostedTranscript?: ProviderHostedTranscriptSubscriber;
   release(): Promise<void> | void;
 }>;
 

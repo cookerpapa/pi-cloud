@@ -1,4 +1,7 @@
-import type { ProviderHostedActivity } from "@pi-cloud/sandbox-supervisor";
+import type {
+  ProviderHostedActivity,
+  ProviderHostedTranscriptItem,
+} from "@pi-cloud/sandbox-supervisor";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -7,19 +10,24 @@ function isRecord(value: unknown): value is JsonRecord {
 }
 
 /**
- * Observes only coarse Hosted Tool lifecycle facts while leaving the Provider
- * byte stream untouched. Search queries, results and Provider IDs never leave
- * the Model Gateway through this path.
+ * Leaves the Provider byte stream untouched. Public progress receives only
+ * coarse lifecycle facts; the separate trusted callback receives completed
+ * native items for the issuing Pi message.
  */
 export class ResponsesHostedActivityObserver {
   readonly #emit: (activity: ProviderHostedActivity) => void;
+  readonly #emitTranscript: (items: readonly ProviderHostedTranscriptItem[]) => void;
   readonly #decoder = new TextDecoder();
   #buffer = "";
   #eventData: string[] = [];
   #searching = false;
 
-  constructor(emit: (activity: ProviderHostedActivity) => void) {
+  constructor(
+    emit: (activity: ProviderHostedActivity) => void,
+    emitTranscript: (items: readonly ProviderHostedTranscriptItem[]) => void = () => undefined,
+  ) {
     this.#emit = emit;
+    this.#emitTranscript = emitTranscript;
   }
 
   push(chunk: Uint8Array): void {
@@ -97,15 +105,37 @@ export class ResponsesHostedActivityObserver {
       this.#complete("completed");
       return;
     }
-    if (value.type === "response.completed") {
+    if (value.type === "response.completed" || value.type === "response.incomplete") {
+      if (isRecord(value.response) && Array.isArray(value.response.output)) {
+        const output = value.response.output.filter(isRecord);
+        if (output.some((item) => item.type === "web_search_call")) {
+          this.#emitTranscript(
+            output.map((item, outputIndex) => {
+              const annotations =
+                item.type === "message" && Array.isArray(item.content)
+                  ? item.content
+                      .filter(isRecord)
+                      .flatMap((content) =>
+                        Array.isArray(content.annotations)
+                          ? content.annotations.filter(isRecord)
+                          : [],
+                      )
+                  : [];
+              return {
+                outputIndex,
+                type: typeof item.type === "string" ? item.type : "unknown",
+                ...(typeof item.id === "string" ? { id: item.id } : {}),
+                ...(item.type === "web_search_call" ? { nativeItem: item } : {}),
+                ...(annotations.length === 0 ? {} : { annotations }),
+              };
+            }),
+          );
+        }
+      }
       this.#complete("completed");
       return;
     }
-    if (
-      value.type === "response.incomplete" ||
-      value.type === "response.failed" ||
-      value.type === "error"
-    ) {
+    if (value.type === "response.failed" || value.type === "error") {
       this.#complete("failed");
     }
   }

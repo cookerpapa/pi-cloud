@@ -1,4 +1,7 @@
 import {
+  MODEL_SAMPLING_ATTEMPT_HEADER,
+  MODEL_STEP_SEQUENCE_HEADER,
+  MODEL_STEP_SHA256_HEADER,
   createPiCloudEventFactory,
   MAX_TOOL_OUTPUT_BYTES,
   parseSupervisorToControlMessage,
@@ -30,6 +33,10 @@ import {
 import { PiSamplingStepController, type PiSamplingStepCapture } from "./pi-sampling-step.ts";
 import { mergeProviderHostedTools } from "./provider-hosted-tools.ts";
 import {
+  applyProviderHostedTranscript,
+  replayProviderHostedTranscripts,
+} from "./provider-hosted-transcript.ts";
+import {
   PiTurnCancelledError,
   PiTurnError,
   type PiCancellationSignal,
@@ -40,7 +47,11 @@ import {
   type PiTurnResult,
 } from "./pi-turn-runtime.ts";
 import type { TrustedRemoteAgentTools } from "./trusted-remote-tools-extension.ts";
-import type { ProviderHostedActivitySubscriber } from "./agent-turn-runtime.ts";
+import type {
+  ProviderHostedActivitySubscriber,
+  ProviderHostedTranscript,
+  ProviderHostedTranscriptSubscriber,
+} from "./agent-turn-runtime.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -70,6 +81,7 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   persistToolOutputArtifact?: (output: PiToolOutputCapture) => Promise<PiToolOutputArtifact>;
   observeEvent?: (event: CloudAgentRuntimeEvent) => void;
   subscribeHostedActivity?: ProviderHostedActivitySubscriber;
+  subscribeHostedTranscript?: ProviderHostedTranscriptSubscriber;
   prepareFollowUp?: () => AgentMessage | undefined | Promise<AgentMessage | undefined>;
   requestTimeoutMs?: number;
   turnTimeoutMs?: number;
@@ -82,6 +94,14 @@ const DEFAULT_TURN_TIMEOUT_MS = 30_000;
 const MAXIMUM_PENDING_PUBLIC_EVENTS = 512;
 const TEXT_DELTA_AGGREGATION_MS = 25;
 const MAXIMUM_AGGREGATED_TEXT_CHARACTERS = 4_096;
+
+function hostedTranscriptKey(value: {
+  stepSequence: number | string;
+  stepSha256: string;
+  samplingAttempt: number | string;
+}): string {
+  return `${String(value.stepSequence)}:${value.stepSha256}:${String(value.samplingAttempt)}`;
+}
 const BASE_SYSTEM_PROMPT = [
   "You are a coding agent working in a remote, isolated project workspace.",
   "Use the provided read, write, edit, and bash tools to inspect and change the project.",
@@ -501,6 +521,9 @@ export class PiCloudTurnRunner {
         let pendingPublicEvents = 0;
         let fatalError: Error | undefined;
         let unsubscribeHostedActivity: (() => void) | undefined;
+        let unsubscribeHostedTranscript: (() => void) | undefined;
+        let activeSamplingKey: string | undefined;
+        const hostedTranscripts = new Map<string, ProviderHostedTranscript>();
 
         const eventMessage = (event: PiCloudEvent): EventPublishMessage => {
           const parsed = parseSupervisorToControlMessage({
@@ -689,6 +712,9 @@ export class PiCloudTurnRunner {
                 },
           );
         });
+        unsubscribeHostedTranscript = this.#options.subscribeHostedTranscript?.((transcript) => {
+          hostedTranscripts.set(hostedTranscriptKey(transcript), transcript);
+        });
         const runtime = new CloudAgentRuntime({
           session: sessionHandle.session,
           authority: sessionHandle.authority,
@@ -731,13 +757,36 @@ export class PiCloudTurnRunner {
             keepRecentTokens: command.payload.budgets?.compactionKeepRecentTokens ?? 20_000,
           },
           transformContext: (messages) => tools.transformContext(messages),
+          transformProviderPayload: (payload, context, targetModel) =>
+            replayProviderHostedTranscripts(payload, context, targetModel),
+          decorateAssistantMessage: (message) => {
+            if (activeSamplingKey === undefined) return;
+            const transcript = hostedTranscripts.get(activeSamplingKey);
+            if (transcript === undefined) return;
+            applyProviderHostedTranscript(message, transcript);
+            hostedTranscripts.delete(activeSamplingKey);
+          },
           prepareContextMaintenance: async (messages) => {
             await tools.transformContext(messages, "context_maintenance");
           },
-          transformHeaders: (headers) =>
-            tools.transformHeaders(headers as ProviderHeaders) as Promise<
-              Record<string, string | null>
-            >,
+          transformHeaders: async (headers) => {
+            const transformed = (await tools.transformHeaders(
+              headers as ProviderHeaders,
+            )) as Record<string, string | null>;
+            const stepSequence = transformed[MODEL_STEP_SEQUENCE_HEADER];
+            const stepSha256 = transformed[MODEL_STEP_SHA256_HEADER];
+            const samplingAttempt = transformed[MODEL_SAMPLING_ATTEMPT_HEADER];
+            activeSamplingKey =
+              stepSequence === null ||
+              stepSequence === undefined ||
+              stepSha256 === null ||
+              stepSha256 === undefined ||
+              samplingAttempt === null ||
+              samplingAttempt === undefined
+                ? undefined
+                : hostedTranscriptKey({ stepSequence, stepSha256, samplingAttempt });
+            return transformed;
+          },
           entryProjectors: PI_WORLD_STATE_ENTRY_PROJECTORS,
           compactionRetainedCustomTypes: Object.keys(PI_WORLD_STATE_ENTRY_PROJECTORS),
           onEvent: async (event) => {
@@ -837,6 +886,7 @@ export class PiCloudTurnRunner {
           throw error;
         } finally {
           unsubscribeHostedActivity?.();
+          unsubscribeHostedTranscript?.();
           clearTimeout(timer);
           combined.removeEventListener("abort", abort);
           flushPendingText();

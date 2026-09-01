@@ -106,11 +106,20 @@ export {
   type AgentWorkspaceSeedResolver,
   type ProviderHostedActivity,
   type ProviderHostedActivitySubscriber,
+  type ProviderHostedTranscript,
+  type ProviderHostedTranscriptItem,
+  type ProviderHostedTranscriptSubscriber,
   type TrustedAgentTool,
   type TrustedToolExecutionPlane,
   type TrustedModelRuntimeLease,
   type TrustedModelRuntimeLeaseResolver,
 } from "./agent-turn-runtime.ts";
+
+export {
+  applyProviderHostedTranscript,
+  replayProviderHostedTranscripts,
+  type ProviderHostedToolCallContent,
+} from "./provider-hosted-transcript.ts";
 
 export {
   RemoteToolSandboxTurnRunner,
