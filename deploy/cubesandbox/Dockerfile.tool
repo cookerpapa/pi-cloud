@@ -19,7 +19,9 @@ RUN git clone --filter=blob:none https://github.com/e2b-dev/infra.git infra \
 WORKDIR /src/infra/packages/envd
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     --mount=type=cache,target=/go/pkg/mod,sharing=locked \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go get golang.org/x/crypto@v0.55.0 \
+    && go mod download \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
       go build -a -trimpath \
         -ldflags "-X=main.commitSHA=${ENVD_COMMIT} -s -w" \
         -o /out/envd . \
