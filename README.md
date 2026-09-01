@@ -100,7 +100,7 @@ process. See [Architecture](docs/ARCHITECTURE.md),
 
 Pi function Tools always execute through Tool Broker. A verified Provider-hosted
 Tool is instead declared in that Turn's native model request and executes at the
-Provider; the current OpenAI Codex route enables Web Search. Switching the
+Provider; the current OpenAI Codex and DeepSeek Responses routes enable Web Search. Switching the
 conversation model while idle rebuilds this effective capability set for the
 next Turn without changing historical Turns or adding a synthetic UI notice.
 

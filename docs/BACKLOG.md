@@ -43,6 +43,3 @@ Volume architecture. Historical experiments remain in Git history.
       PostgreSQL SessionStorage and cross-Worker recovery contract passes.
 - [ ] Enable Provider image generation only after Pi exposes a portable
       generated-image result that survives Session restore and model handoff.
-- [ ] Re-probe DeepSeek server Web Search if its maintained PiCloud route moves
-      from Chat Completions to native Responses; do not infer support from a
-      model catalog alone.

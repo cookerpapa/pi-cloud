@@ -16,7 +16,6 @@ import type { AddressInfo } from "node:net";
 import { once } from "node:events";
 import { zstdDecompressSync } from "node:zlib";
 
-const CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
 const CODEX_RESPONSES_PATH = "/codex/responses";
 const PROVIDER_RESPONSES_PATH = "/v1/responses";
 const MAX_REQUEST_BYTES = 8 * 1_024 * 1_024;
@@ -29,14 +28,14 @@ type SupportedModel =
   | Readonly<{
       provider: "deepseek";
       modelId: "deepseek-v4-flash" | "deepseek-v4-pro";
-      api: "openai-completions";
-      requestPath: typeof CHAT_COMPLETIONS_PATH;
-      providerPath: typeof CHAT_COMPLETIONS_PATH;
+      api: "openai-responses";
+      requestPath: typeof PROVIDER_RESPONSES_PATH;
+      providerPath: typeof PROVIDER_RESPONSES_PATH;
       baseUrlPath: "/v1";
       contextWindow: number;
       maxTokens: number;
       inputModalities: readonly ["text"];
-      hostedTools: readonly [];
+      hostedTools: readonly ["web_search"];
     }>
   | Readonly<{
       provider: "openai-codex";
@@ -302,14 +301,14 @@ function supportedModel(provider: string, modelId: string): SupportedModel | und
     return {
       provider,
       modelId,
-      api: "openai-completions",
-      requestPath: CHAT_COMPLETIONS_PATH,
-      providerPath: CHAT_COMPLETIONS_PATH,
+      api: "openai-responses",
+      requestPath: PROVIDER_RESPONSES_PATH,
+      providerPath: PROVIDER_RESPONSES_PATH,
       baseUrlPath: "/v1",
       contextWindow: 128_000,
       maxTokens: 8_192,
       inputModalities: ["text"],
-      hostedTools: [],
+      hostedTools: ["web_search"],
     };
   }
   if (
@@ -560,7 +559,7 @@ export class TenantModelGateway {
             provider: active.provider,
             modelId: active.modelId,
             baseUrl: `${this.#advertisedBaseUrl}/v1`,
-            api: "openai-completions",
+            api: "openai-responses",
             capability,
             reasoning: true,
             contextWindow: active.contextWindow,

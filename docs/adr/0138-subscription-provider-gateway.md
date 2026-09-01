@@ -39,9 +39,9 @@ ports rather than copied into the product UI.
 
 ### Protocol and affinity
 
-- DeepSeek uses Pi's OpenAI Chat Completions adapter. OpenAI Codex uses Pi's
-  native Codex Responses adapter. Provider wire protocols are not flattened to
-  Chat Completions before Pi.
+- DeepSeek uses Pi's OpenAI Responses adapter. OpenAI Codex uses Pi's native
+  Codex Responses adapter. Provider wire protocols are not flattened to Chat
+  Completions before Pi or before the upstream Provider.
 - Pi supplies a stable Session ID to every model request. CLIProxyAPI enables
   session affinity so the same provider account and prompt-cache route are
   preferred for later requests in that Session.
@@ -60,7 +60,9 @@ ports rather than copied into the product UI.
 
 ### Deployment and management
 
-- The one-host profile pins CLIProxyAPI `v7.2.146` by OCI digest and mounts a
+- The one-host profile pins the released CLIProxyAPI `v7.2.146` runtime by OCI
+  digest and overlays the source-pinned native Responses executor described by
+  ADR-0140. It mounts a
   private credential/config Volume. Distributed deployment treats the gateway
   as an external service unless an equivalent pinned in-cluster deployment is
   supplied.

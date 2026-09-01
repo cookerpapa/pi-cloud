@@ -21,7 +21,7 @@
 - ordinary user-owned Git worktrees with user-directed commit, push and
   provider delivery;
 - versioned Agent definitions with Run/Worker routing and Runtime-native Session Storage.
-- Provider-native Web Search on the verified OpenAI Codex Responses route,
+- Provider-native Web Search on the verified OpenAI Codex and DeepSeek Responses routes,
   frozen with each issued model runtime and kept outside Tool Broker.
 
 ## Current release gate

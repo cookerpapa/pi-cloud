@@ -72,6 +72,7 @@
     "production:token": "node scripts/print-production-token.mjs",
     "production:provider-gateway:key": "node scripts/print-provider-gateway-management-key.mjs",
     "production:provider-gateway:codex-login": "node scripts/production-compose.mjs run --rm cli-proxy-api ./CLIProxyAPI -config /run/pi-cloud-secrets/cli-proxy-config.yaml -codex-device-login -no-browser",
+    "production:provider-gateway:deepseek-native": "node scripts/configure-deepseek-native-responses.mjs",
     "production:tenant": "node scripts/production-compose.mjs run --rm --no-deps database-bootstrap /app/packages/control-plane/src/tenant-admin.ts",
     "production:administrator": "node scripts/set-production-administrator.mjs",
     "production:check": "node scripts/run-live-cubesandbox-production-check.mjs",

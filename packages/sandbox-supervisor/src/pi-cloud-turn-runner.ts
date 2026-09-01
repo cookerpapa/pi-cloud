@@ -144,7 +144,11 @@ function validateRuntimeConfig(
       false,
     );
   }
-  if ((config.hostedTools?.length ?? 0) > 0 && config.api !== "openai-codex-responses") {
+  if (
+    (config.hostedTools?.length ?? 0) > 0 &&
+    config.api !== "openai-responses" &&
+    config.api !== "openai-codex-responses"
+  ) {
     throw new PiTurnError(
       "invalid_model_runtime",
       "Provider-hosted Tools require a Responses model runtime",
@@ -175,23 +179,23 @@ function configureModelRuntime(runtime: ModelRuntime, config: PiModelRuntimeConf
         id: config.modelId,
         name: config.modelId,
         reasoning: config.reasoning ?? false,
-        ...(config.provider === "deepseek" && config.reasoning === true
+        ...(config.provider === "deepseek" &&
+        config.api === "openai-responses" &&
+        config.reasoning === true
           ? {
               thinkingLevelMap: {
-                minimal: "high" as const,
-                low: "high" as const,
-                medium: "high" as const,
+                off: "none" as const,
+                minimal: "low" as const,
+                low: "low" as const,
+                medium: "medium" as const,
                 high: "high" as const,
                 xhigh: "max" as const,
                 max: "max" as const,
               },
               compat: {
-                supportsStore: false,
                 supportsDeveloperRole: false,
                 supportsStrictMode: false,
-                maxTokensField: "max_tokens" as const,
-                requiresReasoningContentOnAssistantMessages: true,
-                thinkingFormat: "deepseek" as const,
+                supportsLongCacheRetention: false,
               },
             }
           : config.provider === "openai-codex" && config.api === "openai-codex-responses"

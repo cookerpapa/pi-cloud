@@ -514,7 +514,11 @@ services:
     logging: *bounded-logging
 
   cli-proxy-api:
-    image: eceasy/cli-proxy-api@sha256:238691ac26ce55e4d1c5219d72e3ad74838f81eda26359912eeb415e2820d163
+    image: pi-cloud/cli-proxy-api:production
+    build:
+      context: ../..
+      dockerfile: deploy/provider-gateway/Dockerfile
+      network: host
     restart: unless-stopped
     depends_on:
       provider-egress-relay:

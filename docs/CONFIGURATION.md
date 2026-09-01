@@ -32,7 +32,13 @@ Use:
 ```bash
 npm run production:provider-gateway:key
 npm run production:provider-gateway:codex-login
+npm run production:provider-gateway:deepseek-native
 ```
+
+The deploy command applies the last command automatically to configured direct
+DeepSeek V4 providers. Run it manually after adding such a Provider through the
+CLIProxyAPI management page without redeploying the rest of PiCloud; CLIProxyAPI
+hot-reloads the resulting `wire-api: responses` setting.
 
 Configure the one-host administrator after registration:
 

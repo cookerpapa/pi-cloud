@@ -152,6 +152,32 @@ describe("PiCloudTurnRunner integration", () => {
     lease.release();
   });
 
+  it("configures native DeepSeek Responses with Provider-hosted Web Search", async () => {
+    const pool = new PiModelRuntimePool(0);
+    const lease = await pool.acquire({
+      provider: "deepseek",
+      modelId: "deepseek-v4-flash",
+      baseUrl: "http://127.0.0.1:4200/v1",
+      api: "openai-responses",
+      apiKey: FAKE_MODEL_API_KEY,
+      reasoning: true,
+      contextWindow: 1_000_000,
+      maxTokens: 65_536,
+      inputModalities: ["text"],
+      hostedTools: ["web_search"],
+    });
+    expect(lease.runtime.getModel("deepseek", "deepseek-v4-flash")).toMatchObject({
+      api: "openai-responses",
+      baseUrl: "http://127.0.0.1:4200/v1",
+      input: ["text"],
+      compat: {
+        supportsDeveloperRole: false,
+        supportsLongCacheRetention: false,
+      },
+    });
+    lease.release();
+  });
+
   it("executes the native Pi loop from SessionStorage and publishes reviewed events", async () => {
     const fake = new FakeModelServer({ scenarioSequence: ["rate_limit", "text"] });
     await fake.start();

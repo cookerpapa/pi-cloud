@@ -93,9 +93,9 @@ execute every definition.
 The slot sees only a short-lived PiCloud Model Gateway capability. That local
 Gateway validates the accepted provider/model, Cloud Step identity, cancellation
 and request count, then forwards the provider-native protocol to CLIProxyAPI.
-DeepSeek stays on Chat Completions; OpenAI Codex stays on Codex Responses rather
-than being flattened to a common wire shape. CLIProxyAPI alone owns upstream
-OAuth/API credentials, refresh, quota/cooldown and concrete account selection.
+DeepSeek stays on native OpenAI Responses; OpenAI Codex stays on Codex Responses
+rather than either route being flattened to Chat Completions. CLIProxyAPI alone
+owns upstream OAuth/API credentials, refresh, quota/cooldown and concrete account selection.
 It receives Pi's stable Session ID and applies soft Session affinity so later
 Turns prefer the same account/cache route. Losing that affinity changes only
 performance: PostgreSQL Pi SessionStorage remains the recovery authority.
@@ -116,10 +116,10 @@ the immutable Run Tool snapshot and execute through Tool Broker. Hosted Tools
 are merged into the Provider-native Responses payload through Pi's public
 `onPayload` hook and execute entirely at the Provider. They are enabled only
 after an end-to-end probe through the pinned Provider Gateway. The current
-OpenAI Codex route enables `web_search`; the maintained DeepSeek Chat
-Completions route exposes no hosted Tool. Changing models therefore may change
-the hosted Tool set at the next Turn boundary, but never inside an active Agent
-Loop. PiCloud emits no synthetic capability notice to the user or model.
+OpenAI Codex and DeepSeek Responses routes enable `web_search`. Changing models
+may still change the hosted Tool set at the next Turn boundary, but never inside
+an active Agent Loop. PiCloud emits no synthetic capability notice to the user
+or model.
 
 Image understanding is an input modality, not a Tool. Provider image generation
 is intentionally not exposed until Pi's Agent message contract can preserve and

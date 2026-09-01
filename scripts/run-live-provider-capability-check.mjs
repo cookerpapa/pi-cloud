@@ -121,7 +121,7 @@ try {
     "elastic",
     "starter",
     "/workspace",
-    { provider: "openai-codex", modelId: "gpt-5.6-luna" },
+    { provider: "deepseek", modelId: "deepseek-v4-flash" },
   );
 
   const firstStartedAt = performance.now();
@@ -129,8 +129,8 @@ try {
     session.sessionId,
     [
       "Do not call Pi function tools.",
-      "Use the Provider-hosted web search capability to search the official OpenAI developer documentation home page.",
-      "Reply with PROVIDER-SEARCH-OK followed by the current page title.",
+      "Use the Provider-hosted web search capability to search the official DeepSeek API documentation home page.",
+      "Reply with DEEPSEEK-SEARCH-OK followed by the current page title.",
     ].join(" "),
     newIdempotencyKey("provider-search"),
     "low",
@@ -139,12 +139,12 @@ try {
     api,
     session.sessionId,
     firstAccepted.runId,
-    "Provider Web Search Turn",
+    "DeepSeek Provider Web Search Turn",
   );
   firstLatencyMs = Math.round(performance.now() - firstStartedAt);
   firstText = transcriptText(first);
   assert.equal(first.state, "completed", JSON.stringify(first));
-  assert.match(firstText, /PROVIDER-SEARCH-OK/u);
+  assert.match(firstText, /DEEPSEEK-SEARCH-OK/u);
   assert.equal(
     (first.transcript?.items ?? []).some((item) => item.kind === "tool"),
     false,
@@ -152,15 +152,19 @@ try {
   );
 
   await api.updateSessionModel(session.sessionId, {
-    provider: "deepseek",
-    modelId: "deepseek-v4-flash",
+    provider: "openai-codex",
+    modelId: "gpt-5.6-luna",
   });
-  assert.equal((await api.getSessionModel(session.sessionId)).provider, "deepseek");
+  assert.equal((await api.getSessionModel(session.sessionId)).provider, "openai-codex");
 
   const secondStartedAt = performance.now();
   const secondAccepted = await api.acceptTurn(
     session.sessionId,
-    "不要调用任何工具。仅根据上一轮已经保存的回答，回复 HANDOFF-OK，随后复述上一轮找到的页面标题。",
+    [
+      "Do not call Pi function tools.",
+      "Use Provider-hosted web search to find the current title of the official OpenAI developer documentation home page.",
+      "Reply with CODEX-SEARCH-HANDOFF-OK, the OpenAI page title, and the DeepSeek page title preserved from the previous turn.",
+    ].join(" "),
     newIdempotencyKey("provider-handoff"),
     "off",
   );
@@ -168,12 +172,17 @@ try {
     api,
     session.sessionId,
     secondAccepted.runId,
-    "Cross-provider handoff Turn",
+    "Codex Provider Search and cross-provider handoff Turn",
   );
   secondLatencyMs = Math.round(performance.now() - secondStartedAt);
   secondText = transcriptText(second);
   assert.equal(second.state, "completed", JSON.stringify(second));
-  assert.match(secondText, /HANDOFF-OK/u);
+  assert.match(secondText, /CODEX-SEARCH-HANDOFF-OK/u);
+  assert.equal(
+    (second.transcript?.items ?? []).some((item) => item.kind === "tool"),
+    false,
+    "Codex Provider search was incorrectly projected as a Pi/Tool Broker Tool",
+  );
 } finally {
   if (session !== undefined) {
     await api
@@ -209,12 +218,13 @@ const report = {
   piCloudRevision: testedRevision,
   checkedAt: new Date().toISOString(),
   route: {
-    firstTurn: "openai-codex/gpt-5.6-luna + Provider web_search",
-    secondTurn: "deepseek/deepseek-v4-flash",
+    firstTurn: "deepseek/deepseek-v4-flash + Provider web_search",
+    secondTurn: "openai-codex/gpt-5.6-luna + Provider web_search",
   },
   assertions: {
-    providerSearchReachedFinalMessage: true,
-    providerSearchBypassedToolBroker: true,
+    deepSeekProviderSearchReachedFinalMessage: true,
+    codexProviderSearchReachedFinalMessage: true,
+    bothProviderSearchesBypassedToolBroker: true,
     crossProviderCanonicalContextRestored: true,
     cleanupCompleted,
   },

@@ -107,16 +107,19 @@ function createGateway(fetchImplementation: typeof fetch, maximumRequestsPerTurn
 }
 
 describe("tenant model gateway", () => {
-  it("enforces a Turn capability and forwards DeepSeek Chat with stable Session affinity", async () => {
+  it("enforces a Turn capability and forwards native DeepSeek Responses with stable Session affinity", async () => {
     const upstream = vi.fn<typeof fetch>(async (input, init) => {
-      expect(String(input)).toBe("http://provider-gateway:8317/v1/chat/completions");
+      expect(String(input)).toBe("http://provider-gateway:8317/v1/responses");
       const headers = new Headers(init?.headers);
       expect(headers.get("authorization")).toBe(`Bearer ${PROVIDER_GATEWAY_KEY}`);
       expect(headers.get("session-id")).toBe(command().payload.sessionId);
-      return new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
-        status: 200,
-        headers: { "content-type": "text/event-stream" },
-      });
+      return new Response(
+        'data: {"type":"response.output_text.delta","delta":"ok"}\n\ndata: {"type":"response.completed","response":{"id":"r1"}}\n\n',
+        {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        },
+      );
     });
     const gateway = createGateway(upstream);
     await gateway.start();
@@ -124,10 +127,10 @@ describe("tenant model gateway", () => {
     expect(lease.runtime).toMatchObject({
       provider: "deepseek",
       modelId: "deepseek-v4-flash",
-      api: "openai-completions",
+      api: "openai-responses",
       baseUrl: "http://pi-worker:4200/v1",
       inputModalities: ["text"],
-      hostedTools: [],
+      hostedTools: ["web_search"],
     });
     const capabilityPayload = JSON.parse(
       Buffer.from(lease.runtime.capability.split(".")[1]!, "base64url").toString("utf8"),
@@ -135,24 +138,21 @@ describe("tenant model gateway", () => {
     expect(capabilityPayload["https://api.openai.com/auth"]?.chatgpt_account_id).toBe(
       "pi-cloud-provider-gateway",
     );
-    const response = await fetch(
-      `http://127.0.0.1:${String(gateway.listeningPort)}/v1/chat/completions`,
-      {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${lease.runtime.capability}`,
-          "content-type": "application/json",
-          ...samplingHeaders(),
-        },
-        body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, messages: [] }),
+    const response = await fetch(`http://127.0.0.1:${String(gateway.listeningPort)}/v1/responses`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${lease.runtime.capability}`,
+        "content-type": "application/json",
+        ...samplingHeaders(),
       },
-    );
+      body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
+    });
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('"content":"ok"');
+    expect(await response.text()).toContain('"delta":"ok"');
     await lease.release();
     expect(
       (
-        await fetch(`http://127.0.0.1:${String(gateway.listeningPort)}/v1/chat/completions`, {
+        await fetch(`http://127.0.0.1:${String(gateway.listeningPort)}/v1/responses`, {
           method: "POST",
           headers: { authorization: `Bearer ${lease.runtime.capability}`, ...samplingHeaders() },
           body: JSON.stringify({ model: "deepseek-v4-flash", stream: true }),
@@ -209,26 +209,23 @@ describe("tenant model gateway", () => {
       if (attempts === 1) {
         return new Response('{"error":{"code":"transport_failure"}}', { status: 500 });
       }
-      return new Response('data: {"choices":[{"delta":{"content":"recovered"}}]}\n\n', {
-        status: 200,
-        headers: { "content-type": "text/event-stream" },
-      });
+      return new Response(
+        'data: {"type":"response.output_text.delta","delta":"recovered"}\n\ndata: {"type":"response.completed","response":{"id":"r1"}}\n\n',
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
     });
     const gateway = createGateway(upstream);
     await gateway.start();
     const lease = gateway.issue(command());
-    const response = await fetch(
-      `http://127.0.0.1:${String(gateway.listeningPort)}/v1/chat/completions`,
-      {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${lease.runtime.capability}`,
-          "content-type": "application/json",
-          ...samplingHeaders(),
-        },
-        body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, messages: [] }),
+    const response = await fetch(`http://127.0.0.1:${String(gateway.listeningPort)}/v1/responses`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${lease.runtime.capability}`,
+        "content-type": "application/json",
+        ...samplingHeaders(),
       },
-    );
+      body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
+    });
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("recovered");
     expect(upstream).toHaveBeenCalledTimes(2);
@@ -240,19 +237,19 @@ describe("tenant model gateway", () => {
     await gateway.start();
     const lease = gateway.issue(command());
     const endpoint = `http://127.0.0.1:${String(gateway.listeningPort)}`;
-    const noStep = await fetch(`${endpoint}/v1/chat/completions`, {
+    const noStep = await fetch(`${endpoint}/v1/responses`, {
       method: "POST",
       headers: { authorization: `Bearer ${lease.runtime.capability}` },
       body: JSON.stringify({ model: "deepseek-v4-flash", stream: true }),
     });
     expect(noStep.status).toBe(400);
-    const wrongProtocol = await fetch(`${endpoint}/codex/responses`, {
+    const wrongProtocol = await fetch(`${endpoint}/v1/chat/completions`, {
       method: "POST",
       headers: { authorization: `Bearer ${lease.runtime.capability}`, ...samplingHeaders() },
       body: JSON.stringify({ model: "deepseek-v4-flash", stream: true }),
     });
     expect(wrongProtocol.status).toBe(403);
-    const wrongModel = await fetch(`${endpoint}/v1/chat/completions`, {
+    const wrongModel = await fetch(`${endpoint}/v1/responses`, {
       method: "POST",
       headers: { authorization: `Bearer ${lease.runtime.capability}`, ...samplingHeaders() },
       body: JSON.stringify({ model: "deepseek-v4-pro", stream: true }),

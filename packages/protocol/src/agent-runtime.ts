@@ -55,7 +55,7 @@ export const AgentModelRuntimeSchema = Type.Union([
       ...AgentModelRuntimeCommonSchema,
       provider: Type.Literal("deepseek"),
       modelId: DeepSeekModelIdSchema,
-      api: Type.Literal("openai-completions"),
+      api: Type.Literal("openai-responses"),
     },
     { additionalProperties: false },
   ),

@@ -36,6 +36,7 @@ function run(script, args = []) {
 
 await assertDeploymentDiskHeadroom();
 await run("scripts/init-production.mjs");
+await run("scripts/configure-deepseek-native-responses.mjs");
 await run("scripts/init-cubesandbox-runtime.mjs");
 await run("scripts/register-cubesandbox-tool-template.mjs");
 await run("scripts/production-compose.mjs", ["build"]);

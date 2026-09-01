@@ -9,7 +9,7 @@ export type PiModelRuntimeConfig = {
   provider: string;
   modelId: string;
   baseUrl: string;
-  api: "openai-completions" | "openai-codex-responses";
+  api: "openai-completions" | "openai-responses" | "openai-codex-responses";
   apiKey: string;
   transport?: "sse";
   reasoning?: boolean;

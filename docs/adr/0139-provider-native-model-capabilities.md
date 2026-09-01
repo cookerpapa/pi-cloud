@@ -30,8 +30,8 @@ effective capabilities, rather than assuming wire compatibility:
 
 - the OpenAI Codex Responses route executes `web_search` and returns a final
   assistant message through Pi's existing stream parser;
-- the current DeepSeek Chat Completions route supports Pi function Tools but
-  has no server-hosted Tool declaration;
+- the original DeepSeek Chat Completions route supported Pi function Tools but
+  could not carry a server-hosted Tool declaration;
 - an OpenAI hosted image-generation call succeeds upstream, but Pi 0.84.1 does
   not yet expose its image result through the Agent message contract.
 
@@ -53,8 +53,8 @@ effective capabilities, rather than assuming wire compatibility:
   runtime reconstructs its Tool and modality set from its own capability.
 - The product UI does not display a synthetic model-switch or capability
   notice. Provider output remains unmodified.
-- For this revision, OpenAI Codex exposes hosted Web Search. DeepSeek exposes no
-  hosted Tool through its maintained Chat Completions route. Provider image
+- For this revision, OpenAI Codex and the native DeepSeek Responses route expose
+  hosted Web Search. Provider image
   generation and user image attachments remain disabled until Pi's portable
   result/input contracts can be persisted and restored end to end.
 
@@ -67,4 +67,3 @@ effective capabilities, rather than assuming wire compatibility:
 - Provider search is not a Tool Broker operation and consumes no Cube capacity.
 - Adding another hosted capability requires a protocol adapter, persistence and
   recovery acceptance test; adding a name to a catalog is insufficient.
-

@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0140](0140-native-responses-provider-gateway.md) — native Responses
+   passthrough for Provider-hosted DeepSeek Web Search.
 1. [ADR-0139](0139-provider-native-model-capabilities.md) — Provider-native
    model capabilities and hosted Tools.
 1. [ADR-0138](0138-subscription-provider-gateway.md) — CLIProxyAPI model-supply
