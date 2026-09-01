@@ -253,6 +253,7 @@ PI_CLOUD_LIVE_WORKER_POOL_CHECK=1 npm run production:worker-pool-check
 PI_CLOUD_LIVE_SUBAGENT_CHECK=1 npm run production:subagents-check
 PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-environment-check
 PI_CLOUD_LIVE_LONG_CONTEXT_CHECK=1 npm run production:long-context-check
+PI_CLOUD_LIVE_PROVIDER_CAPABILITY_CHECK=1 npm run production:provider-capability-check
 ```
 
 Reports under `docs/reports/` are evidence for their named revision and test
