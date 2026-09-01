@@ -24,6 +24,7 @@ import {
   PiCloudTurnRunner,
   PiModelRuntimePool,
   type PiModelRuntimeConfig,
+  type ProviderHostedActivity,
 } from "../src/index.ts";
 
 const command: ExecuteTurnCommandMessage = {
@@ -200,6 +201,8 @@ describe("PiCloudTurnRunner integration", () => {
     let authorityWasActiveAtSettlement = false;
     let receivedSystemPrompt = "";
     const sourceEvents: string[] = [];
+    let hostedActivityListener: ((activity: ProviderHostedActivity) => void) | undefined;
+    let hostedActivityStarted = false;
     const modelPreparationStarted = deferred<void>();
     const sessionPreparationStarted = deferred<void>();
     const runner = new PiCloudTurnRunner({
@@ -227,6 +230,12 @@ describe("PiCloudTurnRunner integration", () => {
         workspaceBindingSha256: turn.workspaceBindingSha256,
         committedWorkspaceRevision: null,
         toolPolicySha256: turn.toolPolicySha256,
+      },
+      subscribeHostedActivity(listener) {
+        hostedActivityListener = listener;
+        return () => {
+          hostedActivityListener = undefined;
+        };
       },
       createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
         tools: [],
@@ -259,6 +268,17 @@ describe("PiCloudTurnRunner integration", () => {
         },
       }),
       observeEvent(event) {
+        if (event.type === "message_start" && !hostedActivityStarted) {
+          hostedActivityStarted = true;
+          hostedActivityListener?.({ phase: "started", toolName: "web_search" });
+        } else if (event.type === "message_update" && hostedActivityStarted) {
+          hostedActivityStarted = false;
+          hostedActivityListener?.({
+            phase: "completed",
+            toolName: "web_search",
+            outcome: "completed",
+          });
+        }
         sourceEvents.push(
           event.type === "message_end" && event.message.role === "assistant"
             ? `${event.type}:${event.message.errorMessage ?? event.message.stopReason}`
@@ -283,6 +303,15 @@ describe("PiCloudTurnRunner integration", () => {
       expect(result.stopReason).toBe("stop");
       expect(events.map((event) => event.payload.event.type)).toContain("turn.started");
       expect(events.map((event) => event.payload.event.type)).toContain("assistant.text.delta");
+      const eventTypes = events.map((event) => event.payload.event.type);
+      expect(eventTypes).toContain("provider.hosted_tool.started");
+      expect(eventTypes).toContain("provider.hosted_tool.completed");
+      expect(eventTypes.indexOf("provider.hosted_tool.started")).toBeLessThan(
+        eventTypes.indexOf("provider.hosted_tool.completed"),
+      );
+      expect(eventTypes.indexOf("provider.hosted_tool.completed")).toBeLessThan(
+        eventTypes.indexOf("assistant.text.delta"),
+      );
       const textEvents = events.filter(
         (event) => event.payload.event.type === "assistant.text.delta",
       );

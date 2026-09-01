@@ -170,4 +170,32 @@ describe("conversation turn projection", () => {
       },
     ]);
   });
+
+  it("keeps Hosted Tool progress out of the canonical conversation transcript", () => {
+    const projected = projectConversationTurnTranscript(
+      events([
+        { type: "turn.started", payload: { inputKind: "prompt" } },
+        {
+          type: "provider.hosted_tool.started",
+          payload: { toolName: "web_search" },
+        },
+        {
+          type: "provider.hosted_tool.completed",
+          payload: { toolName: "web_search", outcome: "completed" },
+        },
+        { type: "assistant.text.delta", payload: { text: "Grounded answer." } },
+        { type: "turn.completed", payload: { stopReason: "stop" } },
+      ]),
+    );
+
+    expect(projected.throughSequence).toBe(5);
+    expect(projected.items).toEqual([
+      {
+        kind: "text",
+        text: "Grounded answer.",
+        firstSequence: 4,
+        lastSequence: 4,
+      },
+    ]);
+  });
 });

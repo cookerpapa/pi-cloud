@@ -424,6 +424,67 @@ describe("session transcript reducer", () => {
     ]);
   });
 
+  it("shows Hosted Web Search only while its live Provider activity is active", () => {
+    const started = sessionViewReducer(preparedState(), {
+      type: "stream.event",
+      event: envelope(1, {
+        type: "provider.hosted_tool.started",
+        payload: { toolName: "web_search" },
+      }),
+    });
+    expect(started.turns[0]).toMatchObject({
+      status: "running",
+      providerHostedTool: "web_search",
+      items: [],
+    });
+
+    const completed = sessionViewReducer(started, {
+      type: "stream.event",
+      event: envelope(2, {
+        type: "provider.hosted_tool.completed",
+        payload: { toolName: "web_search", outcome: "completed" },
+      }),
+    });
+    expect(completed.turns[0]?.providerHostedTool).toBeNull();
+    expect(completed.turns[0]?.items).toEqual([]);
+  });
+
+  it("recovers an in-flight Hosted Web Search from the cursor-free live snapshot", () => {
+    const conversation: ConversationDetailResource = {
+      project,
+      inheritedMessages: [],
+      session: {
+        ...session,
+        state: "running",
+        updatedAt: CREATED_AT,
+        lastActiveAt: CREATED_AT,
+      },
+      turns: [
+        {
+          turnId: TURN_ID,
+          runId: accepted.runId,
+          mailboxPosition: 1,
+          prompt: "Search current market data",
+          state: "running",
+          acceptedAt: CREATED_AT,
+        },
+      ],
+      historyTruncated: false,
+    };
+    const state = sessionViewReducer(createInitialSessionView(), {
+      type: "conversation.loaded",
+      conversation,
+      liveEvents: [
+        envelope(9, {
+          type: "provider.hosted_tool.started",
+          payload: { toolName: "web_search" },
+        }),
+      ],
+    });
+    expect(state.turns[0]?.providerHostedTool).toBe("web_search");
+    expect(state.turns[0]?.items).toEqual([]);
+  });
+
   it("marks cancellation intent before terminal confirmation", () => {
     let state = preparedState();
     state = sessionViewReducer(state, {

@@ -316,7 +316,7 @@ export function ConversationTurn({
       </div>
       <div className="product-message product-assistant-message">
         <div className="product-assistant-content">
-          {rows.length === 0 && working ? (
+          {rows.length === 0 && working && turn.providerHostedTool === null ? (
             <div className="product-thinking">
               <i />
               <i />
@@ -343,6 +343,14 @@ export function ConversationTurn({
               return <OtherItem item={row.item} key={row.key} />;
             })
           )}
+          {working && turn.providerHostedTool === "web_search" ? (
+            <div className="product-thinking product-provider-activity">
+              <i />
+              <i />
+              <i />
+              <span>{t("turn.searchingWeb")}</span>
+            </div>
+          ) : null}
           {turn.failure ? (
             <div className="product-turn-error">
               <strong>{t("turn.runFailed")}</strong>

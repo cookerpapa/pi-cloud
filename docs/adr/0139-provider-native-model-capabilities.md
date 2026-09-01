@@ -53,6 +53,10 @@ effective capabilities, rather than assuming wire compatibility:
   runtime reconstructs its Tool and modality set from its own capability.
 - The product UI does not display a synthetic model-switch or capability
   notice. Provider output remains unmodified.
+- Hosted Tool start/completion boundaries may appear as ephemeral Run progress.
+  They contain no query, result or Provider identifier, remain in the bounded
+  Kafka live tail, and are omitted from the canonical conversation and Pi
+  SessionStorage. PiCloud does not maintain a Provider-activity sidecar.
 - For this revision, OpenAI Codex and the native DeepSeek Responses route expose
   hosted Web Search. Provider image
   generation and user image attachments remain disabled until Pi's portable

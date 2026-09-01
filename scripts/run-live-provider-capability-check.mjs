@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -96,6 +97,23 @@ function transcriptText(turn) {
     .join("");
 }
 
+function assertHostedSearchProgress(events, turnId, label) {
+  const turnEvents = events.filter((event) => event.turnId === turnId);
+  const started = turnEvents.findIndex(
+    (event) =>
+      event.type === "provider.hosted_tool.started" && event.payload.toolName === "web_search",
+  );
+  const completed = turnEvents.findIndex(
+    (event) =>
+      event.type === "provider.hosted_tool.completed" && event.payload.toolName === "web_search",
+  );
+  const firstText = turnEvents.findIndex((event) => event.type === "assistant.text.delta");
+  assert.notEqual(started, -1, `${label} did not publish Hosted Web Search start progress`);
+  assert.notEqual(completed, -1, `${label} did not publish Hosted Web Search completion progress`);
+  assert.ok(started < completed, `${label} Hosted Web Search progress was out of order`);
+  assert.ok(firstText < 0 || started < firstText, `${label} search progress did not precede text`);
+}
+
 const suffix = Date.now().toString(36);
 const cookieFetch = new BrowserCookieFetch();
 const api = new PiCloudApi(cookieFetch.fetch);
@@ -112,6 +130,8 @@ let secondLatencyMs;
 let firstText = "";
 let secondText = "";
 let cleanupCompleted = false;
+let streamAbort;
+let streamPromise;
 try {
   project = await api.createProject(`provider-cap-${suffix}`);
   session = await api.createSession(
@@ -123,6 +143,24 @@ try {
     "/workspace",
     { provider: "deepseek", modelId: "deepseek-v4-flash" },
   );
+  const observedEvents = [];
+  let streamLive = false;
+  streamAbort = new AbortController();
+  streamPromise = streamSessionEvents({
+    sessionId: session.sessionId,
+    signal: streamAbort.signal,
+    fetchImplementation: cookieFetch.fetch,
+    onSnapshot(snapshot) {
+      observedEvents.push(...snapshot.liveEvents);
+    },
+    onEvent(event) {
+      observedEvents.push(event);
+    },
+    onStatus(status) {
+      if (status.phase === "live") streamLive = true;
+    },
+  });
+  await waitFor(() => streamLive, "Provider capability SSE connection", 30_000);
 
   const firstStartedAt = performance.now();
   const firstAccepted = await api.acceptTurn(
@@ -145,6 +183,16 @@ try {
   firstText = transcriptText(first);
   assert.equal(first.state, "completed", JSON.stringify(first));
   assert.match(firstText, /DEEPSEEK-SEARCH-OK/u);
+  await waitFor(
+    () =>
+      observedEvents.some(
+        (event) =>
+          event.turnId === firstAccepted.turnId && event.type === "provider.hosted_tool.completed",
+      ),
+    "DeepSeek Hosted Web Search progress",
+    30_000,
+  );
+  assertHostedSearchProgress(observedEvents, firstAccepted.turnId, "DeepSeek");
   assert.equal(
     (first.transcript?.items ?? []).some((item) => item.kind === "tool"),
     false,
@@ -178,12 +226,24 @@ try {
   secondText = transcriptText(second);
   assert.equal(second.state, "completed", JSON.stringify(second));
   assert.match(secondText, /CODEX-SEARCH-HANDOFF-OK/u);
+  await waitFor(
+    () =>
+      observedEvents.some(
+        (event) =>
+          event.turnId === secondAccepted.turnId && event.type === "provider.hosted_tool.completed",
+      ),
+    "Codex Hosted Web Search progress",
+    30_000,
+  );
+  assertHostedSearchProgress(observedEvents, secondAccepted.turnId, "Codex");
   assert.equal(
     (second.transcript?.items ?? []).some((item) => item.kind === "tool"),
     false,
     "Codex Provider search was incorrectly projected as a Pi/Tool Broker Tool",
   );
 } finally {
+  streamAbort?.abort();
+  await streamPromise?.catch(() => undefined);
   if (session !== undefined) {
     await api
       .deleteConversation(session.sessionId, newIdempotencyKey("provider-cap-cleanup"))
@@ -225,6 +285,7 @@ const report = {
     deepSeekProviderSearchReachedFinalMessage: true,
     codexProviderSearchReachedFinalMessage: true,
     bothProviderSearchesBypassedToolBroker: true,
+    bothProviderSearchesPublishedEphemeralProgress: true,
     crossProviderCanonicalContextRestored: true,
     cleanupCompleted,
   },

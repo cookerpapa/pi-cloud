@@ -100,9 +100,13 @@ process. See [Architecture](docs/ARCHITECTURE.md),
 
 Pi function Tools always execute through Tool Broker. A verified Provider-hosted
 Tool is instead declared in that Turn's native model request and executes at the
-Provider; the current OpenAI Codex and DeepSeek Responses routes enable Web Search. Switching the
-conversation model while idle rebuilds this effective capability set for the
-next Turn without changing historical Turns or adding a synthetic UI notice.
+Provider; the current OpenAI Codex and DeepSeek Responses routes enable Web
+Search. While a search is active, its coarse start/completion progress travels
+through the existing Kafka/SSE live tail so the browser does not look stalled;
+queries, results and Provider-native events do not enter the canonical
+conversation or Pi Session. Switching the conversation model while idle
+rebuilds the effective capability set for the next Turn without changing
+historical Turns or adding a synthetic model-visible notice.
 
 ## One-host quick start
 

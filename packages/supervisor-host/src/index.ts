@@ -40,6 +40,7 @@ export {
   TenantModelGatewayError,
   type TenantModelGatewayOptions,
 } from "./model-gateway.ts";
+export { ResponsesHostedActivityObserver } from "./responses-hosted-activity.ts";
 export {
   DEFAULT_CLOUD_SUBAGENT_TREE_POLICY,
   PostgresSubagentJobError,

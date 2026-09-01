@@ -67,6 +67,14 @@ describe("PiCloudEventSchema", () => {
           delayMs: 100,
         },
       },
+      {
+        type: "provider.hosted_tool.started",
+        payload: { toolName: "web_search" },
+      },
+      {
+        type: "provider.hosted_tool.completed",
+        payload: { toolName: "web_search", outcome: "completed" },
+      },
       { type: "assistant.text.delta", payload: { text: "partial" } },
       {
         type: "tool.started",

@@ -119,7 +119,11 @@ after an end-to-end probe through the pinned Provider Gateway. The current
 OpenAI Codex and DeepSeek Responses routes enable `web_search`. Changing models
 may still change the hosted Tool set at the next Turn boundary, but never inside
 an active Agent Loop. PiCloud emits no synthetic capability notice to the user
-or model.
+or model. The Model Gateway observes only coarse Hosted Tool start/completion
+boundaries and publishes them through the current Run's Kafka live tail for UI
+progress. The canonical projector deliberately omits these events: raw Provider
+items, queries and results never become Pi messages, Tool Broker operations or
+a parallel Session sidecar.
 
 Image understanding is an input modality, not a Tool. Provider image generation
 is intentionally not exposed until Pi's Agent message contract can preserve and

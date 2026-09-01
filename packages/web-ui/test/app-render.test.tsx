@@ -27,6 +27,7 @@ function turn(turnId: string, prompt: string): TurnView {
     stopReason: "stop",
     failure: null,
     cancellation: null,
+    providerHostedTool: null,
   };
 }
 

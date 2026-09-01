@@ -3,6 +3,7 @@ import {
   MAX_TOOL_OUTPUT_BYTES,
   parseSupervisorToControlMessage,
   type PiCloudEvent,
+  type PiCloudEventBody,
   type EventPublishMessage,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
@@ -39,6 +40,7 @@ import {
   type PiTurnResult,
 } from "./pi-turn-runtime.ts";
 import type { TrustedRemoteAgentTools } from "./trusted-remote-tools-extension.ts";
+import type { ProviderHostedActivitySubscriber } from "./agent-turn-runtime.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -67,6 +69,7 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   onSettled?: (session: Session) => Promise<void> | void;
   persistToolOutputArtifact?: (output: PiToolOutputCapture) => Promise<PiToolOutputArtifact>;
   observeEvent?: (event: CloudAgentRuntimeEvent) => void;
+  subscribeHostedActivity?: ProviderHostedActivitySubscriber;
   prepareFollowUp?: () => AgentMessage | undefined | Promise<AgentMessage | undefined>;
   requestTimeoutMs?: number;
   turnTimeoutMs?: number;
@@ -497,6 +500,7 @@ export class PiCloudTurnRunner {
         let eventChain = Promise.resolve();
         let pendingPublicEvents = 0;
         let fatalError: Error | undefined;
+        let unsubscribeHostedActivity: (() => void) | undefined;
 
         const eventMessage = (event: PiCloudEvent): EventPublishMessage => {
           const parsed = parseSupervisorToControlMessage({
@@ -593,6 +597,17 @@ export class PiCloudTurnRunner {
               pendingPublicEvents -= 1;
             });
         };
+        const enqueuePublic = (body: PiCloudEventBody): void => {
+          pendingPublicEvents += 1;
+          eventChain = eventChain
+            .then(() => publishEvent(eventMessage(eventFactory.next(body))))
+            .catch((error: unknown) => {
+              fatalError ??= error instanceof Error ? error : new Error(String(error));
+            })
+            .finally(() => {
+              pendingPublicEvents -= 1;
+            });
+        };
         let textBlockActive = false;
         let pendingText:
           { event: CloudAgentRuntimeEvent; delta: string; contentIndex?: number } | undefined;
@@ -659,6 +674,20 @@ export class PiCloudTurnRunner {
             }
             return captured;
           },
+        });
+        unsubscribeHostedActivity = this.#options.subscribeHostedActivity?.((activity) => {
+          flushPendingText();
+          enqueuePublic(
+            activity.phase === "started"
+              ? {
+                  type: "provider.hosted_tool.started",
+                  payload: { toolName: activity.toolName },
+                }
+              : {
+                  type: "provider.hosted_tool.completed",
+                  payload: { toolName: activity.toolName, outcome: activity.outcome },
+                },
+          );
         });
         const runtime = new CloudAgentRuntime({
           session: sessionHandle.session,
@@ -807,6 +836,7 @@ export class PiCloudTurnRunner {
           if (toolStarted) await worldState.recordUnavailable().catch(() => undefined);
           throw error;
         } finally {
+          unsubscribeHostedActivity?.();
           clearTimeout(timer);
           combined.removeEventListener("abort", abort);
           flushPendingText();

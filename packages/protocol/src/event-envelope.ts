@@ -149,6 +149,35 @@ const ModelSamplingRetryScheduledEventSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const ProviderHostedToolStartedEventSchema = Type.Object(
+  {
+    ...TurnEnvelopeProperties,
+    type: Type.Literal("provider.hosted_tool.started"),
+    payload: Type.Object(
+      {
+        toolName: Type.Literal("web_search"),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
+const ProviderHostedToolCompletedEventSchema = Type.Object(
+  {
+    ...TurnEnvelopeProperties,
+    type: Type.Literal("provider.hosted_tool.completed"),
+    payload: Type.Object(
+      {
+        toolName: Type.Literal("web_search"),
+        outcome: Type.Union([Type.Literal("completed"), Type.Literal("failed")]),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
 const ToolStartedEventSchema = Type.Object(
   {
     ...TurnEnvelopeProperties,
@@ -314,6 +343,8 @@ export const PiCloudEventSchema = Type.Union([
   ModelSamplingStartedEventSchema,
   ModelSamplingCompletedEventSchema,
   ModelSamplingRetryScheduledEventSchema,
+  ProviderHostedToolStartedEventSchema,
+  ProviderHostedToolCompletedEventSchema,
   AssistantTextDeltaEventSchema,
   ToolStartedEventSchema,
   ToolCompletedEventSchema,
@@ -331,6 +362,8 @@ export type PiCloudEvent =
   | Static<typeof ModelSamplingStartedEventSchema>
   | Static<typeof ModelSamplingCompletedEventSchema>
   | Static<typeof ModelSamplingRetryScheduledEventSchema>
+  | Static<typeof ProviderHostedToolStartedEventSchema>
+  | Static<typeof ProviderHostedToolCompletedEventSchema>
   | Static<typeof AssistantTextDeltaEventSchema>
   | Static<typeof ToolStartedEventSchema>
   | Static<typeof ToolCompletedEventSchema>

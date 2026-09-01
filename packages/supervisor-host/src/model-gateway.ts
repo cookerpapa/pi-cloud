@@ -8,13 +8,17 @@ import {
   type ExecuteTurnCommandMessage,
   type ModelSamplingIdentity,
 } from "@pi-cloud/protocol";
-import type { TrustedModelRuntimeLease } from "@pi-cloud/sandbox-supervisor";
+import type {
+  ProviderHostedActivity,
+  TrustedModelRuntimeLease,
+} from "@pi-cloud/sandbox-supervisor";
 import { parseTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/observability";
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { once } from "node:events";
 import { zstdDecompressSync } from "node:zlib";
+import { ResponsesHostedActivityObserver } from "./responses-hosted-activity.ts";
 
 const CODEX_RESPONSES_PATH = "/codex/responses";
 const PROVIDER_RESPONSES_PATH = "/v1/responses";
@@ -63,6 +67,7 @@ type ActiveCapabilityFields = {
   requestsStarted: number;
   revoked: boolean;
   requestControllers: Set<AbortController>;
+  hostedActivityListeners: Set<(activity: ProviderHostedActivity) => void>;
 };
 
 type ActiveCapability =
@@ -549,6 +554,7 @@ export class TenantModelGateway {
       requestsStarted: 0,
       revoked: false,
       requestControllers: new Set(),
+      hostedActivityListeners: new Set(),
     };
     this.#capabilities.set(digest, active);
     let released = false;
@@ -586,6 +592,11 @@ export class TenantModelGateway {
           };
     return {
       runtime,
+      subscribeHostedActivity: (listener) => {
+        if (released || active.revoked) return () => undefined;
+        active.hostedActivityListeners.add(listener);
+        return () => active.hostedActivityListeners.delete(listener);
+      },
       release: () => {
         if (released) return;
         released = true;
@@ -682,6 +693,7 @@ export class TenantModelGateway {
     request.once("aborted", abortOnRequest);
     response.once("close", abortOnResponse);
     active.requestControllers.add(controller);
+    let hostedActivity: ResponsesHostedActivityObserver | undefined;
     try {
       let upstream: Response | undefined;
       for (let attempt = 1; attempt <= PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS; attempt += 1) {
@@ -723,6 +735,9 @@ export class TenantModelGateway {
         response.end();
         return;
       }
+      hostedActivity = new ResponsesHostedActivityObserver((activity) =>
+        this.#notifyHostedActivity(active, activity),
+      );
       let responseBytes = 0;
       for await (const rawChunk of upstream.body) {
         const chunk = rawChunk instanceof Uint8Array ? rawChunk : new Uint8Array(rawChunk);
@@ -735,10 +750,13 @@ export class TenantModelGateway {
             "Model response exceeded the Gateway limit",
           );
         }
+        hostedActivity.push(chunk);
         await writeChunk(response, chunk);
       }
+      hostedActivity.finish("completed");
       response.end();
     } catch (error: unknown) {
+      hostedActivity?.finish("failed");
       if (error instanceof SafeGatewayHttpError) throw error;
       throw new SafeGatewayHttpError(
         timedOut ? 504 : 502,
@@ -769,11 +787,22 @@ export class TenantModelGateway {
     );
   }
 
+  #notifyHostedActivity(active: ActiveCapability, activity: ProviderHostedActivity): void {
+    for (const listener of active.hostedActivityListeners) {
+      try {
+        listener(activity);
+      } catch {
+        // Run presentation observers cannot interfere with the Provider stream.
+      }
+    }
+  }
+
   #revoke(active: ActiveCapability): void {
     if (active.revoked) return;
     active.revoked = true;
     for (const controller of active.requestControllers) controller.abort();
     active.requestControllers.clear();
+    active.hostedActivityListeners.clear();
     this.#capabilities.delete(active.tokenDigest);
   }
 

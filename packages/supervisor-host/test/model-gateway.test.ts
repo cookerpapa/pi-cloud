@@ -202,6 +202,49 @@ describe("tenant model gateway", () => {
     expect(await response.text()).toContain("response.completed");
   });
 
+  it("observes Hosted Web Search progress without changing the Provider stream", async () => {
+    const stream = [
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"ws-1","type":"web_search_call","status":"in_progress"}}\n\n',
+      'data: {"type":"response.web_search_call.searching","item_id":"ws-1"}\n\n',
+      'data: {"type":"response.web_search_call.completed","item_id":"ws-1"}\n\n',
+      'data: {"type":"response.output_text.delta","output_index":1,"delta":"found"}\n\n',
+      'data: {"type":"response.completed","response":{"id":"r1"}}\n\n',
+    ].join("");
+    const gateway = createGateway(
+      vi.fn<typeof fetch>(async () =>
+        Promise.resolve(
+          new Response(stream, {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          }),
+        ),
+      ),
+    );
+    await gateway.start();
+    const lease = gateway.issue(command("openai-codex", "gpt-5.6-luna"));
+    const activities: unknown[] = [];
+    lease.subscribeHostedActivity?.((activity) => activities.push(activity));
+
+    const response = await fetch(
+      `http://127.0.0.1:${String(gateway.listeningPort)}/codex/responses`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${lease.runtime.capability}`,
+          "content-type": "application/json",
+          ...samplingHeaders(),
+        },
+        body: JSON.stringify({ model: "gpt-5.6-luna", stream: true, input: [] }),
+      },
+    );
+
+    expect(await response.text()).toBe(stream);
+    expect(activities).toEqual([
+      { phase: "started", toolName: "web_search" },
+      { phase: "completed", toolName: "web_search", outcome: "completed" },
+    ]);
+  });
+
   it("retries only a pre-stream Provider Gateway transport failure", async () => {
     let attempts = 0;
     const upstream = vi.fn<typeof fetch>(async () => {

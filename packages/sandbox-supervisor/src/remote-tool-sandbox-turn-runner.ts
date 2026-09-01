@@ -632,6 +632,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           toolPolicySha256: cloudTurn.toolPolicySha256,
         },
         onSettled,
+        ...(modelRuntimeLease?.subscribeHostedActivity === undefined
+          ? {}
+          : { subscribeHostedActivity: modelRuntimeLease.subscribeHostedActivity }),
         ...(this.#requestTimeoutMs === undefined
           ? {
               requestTimeoutMs: usesEmbeddedFake

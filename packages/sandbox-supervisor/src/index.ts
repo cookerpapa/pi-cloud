@@ -104,6 +104,8 @@ export {
   type AgentTurnScenarioContext,
   type AgentTurnScenarioResolver,
   type AgentWorkspaceSeedResolver,
+  type ProviderHostedActivity,
+  type ProviderHostedActivitySubscriber,
   type TrustedModelRuntimeLease,
   type TrustedModelRuntimeLeaseResolver,
 } from "./agent-turn-runtime.ts";

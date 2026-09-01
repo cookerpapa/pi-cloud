@@ -15,8 +15,18 @@ export type AgentWorkspaceSeedResolver = (
   signal: AbortSignal,
 ) => Promise<Uint8Array | undefined> | Uint8Array | undefined;
 
+export type ProviderHostedActivity = Readonly<
+  | { phase: "started"; toolName: "web_search" }
+  | { phase: "completed"; toolName: "web_search"; outcome: "completed" | "failed" }
+>;
+
+export type ProviderHostedActivitySubscriber = (
+  listener: (activity: ProviderHostedActivity) => void,
+) => () => void;
+
 export type TrustedModelRuntimeLease = Readonly<{
   runtime: AgentModelRuntime;
+  subscribeHostedActivity?: ProviderHostedActivitySubscriber;
   release(): Promise<void> | void;
 }>;
 
