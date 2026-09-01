@@ -76,6 +76,13 @@ function hasSearch(result) {
   return (result.output ?? []).some((item) => item.type === "web_search_call");
 }
 
+function nativeSearchResultPayloadPresent(items) {
+  const resultKeys = new Set(["sources", "results", "snippet", "text", "content"]);
+  return items
+    .filter((item) => item.type === "web_search_call")
+    .some((item) => Object.keys(item.action ?? {}).some((key) => resultKeys.has(key)));
+}
+
 const seedPrompt = [
   {
     role: "user",
@@ -104,12 +111,19 @@ const followUp = {
 };
 
 const seeds = {};
+const seedEvidence = {};
 for (const [name, model] of Object.entries(routes)) {
   const result = await response(model, seedPrompt, `${name}-seed`, [{ type: "web_search" }]);
   assert.equal(result.status, "completed", `${name} seed response did not complete`);
   assert.equal(hasSearch(result), true, `${name} seed response did not use Hosted Web Search`);
   seeds[name] = result.output;
+  seedEvidence[name] = {
+    searchCallCount: result.output.filter((item) => item.type === "web_search_call").length,
+    nativeSearchResultPayloadPresent: nativeSearchResultPayloadPresent(result.output),
+  };
 }
+assert.equal(seedEvidence.gpt.nativeSearchResultPayloadPresent, false);
+assert.equal(seedEvidence.deepseek.nativeSearchResultPayloadPresent, false);
 
 const matrix = {};
 for (const [source, items] of Object.entries(seeds)) {
@@ -124,12 +138,12 @@ for (const [source, items] of Object.entries(seeds)) {
       const text = outputText(result).trim();
       matrix[key] = {
         accepted: true,
-        hiddenSearchResultRestored: text !== "CONTEXT-UNAVAILABLE",
+        followUpReturnedSpecificAnswer: text !== "CONTEXT-UNAVAILABLE",
       };
     } catch (error) {
       matrix[key] = {
         accepted: false,
-        hiddenSearchResultRestored: false,
+        followUpReturnedSpecificAnswer: false,
         httpStatus:
           typeof error === "object" && error !== null && "status" in error
             ? error.status
@@ -141,8 +155,6 @@ for (const [source, items] of Object.entries(seeds)) {
 
 assert.equal(matrix.gptToGpt.accepted, true);
 assert.equal(matrix.deepseekToDeepseek.accepted, true);
-assert.equal(matrix.gptToGpt.hiddenSearchResultRestored, false);
-assert.equal(matrix.deepseekToDeepseek.hiddenSearchResultRestored, false);
 
 const report = {
   checkedAt: new Date().toISOString(),
@@ -151,6 +163,7 @@ const report = {
     encoding: "utf8",
   }).trim(),
   seedRoutes: routes,
+  seedEvidence,
   matrix,
   decision: {
     preserveNativeHostedItems: true,
