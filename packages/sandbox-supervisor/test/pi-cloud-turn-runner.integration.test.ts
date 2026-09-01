@@ -138,6 +138,8 @@ describe("PiCloudTurnRunner integration", () => {
       reasoning: true,
       contextWindow: 272_000,
       maxTokens: 65_536,
+      inputModalities: ["text", "image"],
+      hostedTools: ["web_search"],
     });
     expect(lease.runtime.getProviderAuthStatus("openai-codex")).toMatchObject({
       configured: true,
@@ -145,6 +147,7 @@ describe("PiCloudTurnRunner integration", () => {
     expect(lease.runtime.getModel("openai-codex", "gpt-5.6-terra")).toMatchObject({
       api: "openai-codex-responses",
       baseUrl: "http://127.0.0.1:4200",
+      input: ["text", "image"],
     });
     lease.release();
   });

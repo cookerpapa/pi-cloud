@@ -126,6 +126,8 @@ describe("tenant model gateway", () => {
       modelId: "deepseek-v4-flash",
       api: "openai-completions",
       baseUrl: "http://pi-worker:4200/v1",
+      inputModalities: ["text"],
+      hostedTools: [],
     });
     const capabilityPayload = JSON.parse(
       Buffer.from(lease.runtime.capability.split(".")[1]!, "base64url").toString("utf8"),
@@ -177,6 +179,8 @@ describe("tenant model gateway", () => {
       provider: "openai-codex",
       api: "openai-codex-responses",
       baseUrl: "http://pi-worker:4200",
+      inputModalities: ["text", "image"],
+      hostedTools: ["web_search"],
     });
     const body = zstdCompressSync(
       Buffer.from(JSON.stringify({ model: "gpt-5.6-terra", stream: true, input: [] })),

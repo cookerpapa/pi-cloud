@@ -120,6 +120,8 @@ export {
   type AgentRuntimeKind,
   type SessionStorageKind,
   type AgentModelRuntime,
+  type AgentModelInputModality,
+  type AgentModelHostedTool,
   type AgentWorkspaceSeed,
   type WorkspaceBlob,
 } from "./agent-runtime.ts";

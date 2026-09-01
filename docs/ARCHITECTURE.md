@@ -110,6 +110,22 @@ the Runner rejects a non-Pi Session Storage contract, so another Agent family
 may share product tables or the PostgreSQL cluster without reinterpreting
 `pi_session_*` rows.
 
+Each issued model-runtime capability also freezes the effective input
+modalities and Provider-hosted Tool set for that route. Pi function Tools remain
+the immutable Run Tool snapshot and execute through Tool Broker. Hosted Tools
+are merged into the Provider-native Responses payload through Pi's public
+`onPayload` hook and execute entirely at the Provider. They are enabled only
+after an end-to-end probe through the pinned Provider Gateway. The current
+OpenAI Codex route enables `web_search`; the maintained DeepSeek Chat
+Completions route exposes no hosted Tool. Changing models therefore may change
+the hosted Tool set at the next Turn boundary, but never inside an active Agent
+Loop. PiCloud emits no synthetic capability notice to the user or model.
+
+Image understanding is an input modality, not a Tool. Provider image generation
+is intentionally not exposed until Pi's Agent message contract can preserve and
+restore the generated image result; PiCloud does not replace that missing
+contract with a trusted in-process image Tool.
+
 Before a Worker becomes Ready it preloads the governed `pi-subagents` Tool
 contract and two empty Pi `ModelRuntime` slots. An active Run exclusively owns
 one slot and injects its short-lived Model Gateway capability only after
@@ -278,7 +294,10 @@ stale fence or non-retryable identity failure fails closed.
 
 The model gateway is local to the trusted Worker boundary. It injects provider
 credentials, binds model requests to Run/Step identity and records usage. Cube
-cannot reach or authenticate to it.
+cannot reach or authenticate to it. Its issued runtime descriptor includes the
+frozen input modalities and Provider-hosted Tool names. The Gateway validates
+the accepted Provider/model/protocol but does not execute hosted Tools or
+rewrite them as Pi function calls.
 
 ### Source-control App and Issue automation
 

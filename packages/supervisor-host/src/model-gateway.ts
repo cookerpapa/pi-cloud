@@ -4,6 +4,7 @@ import {
   MODEL_STEP_SHA256_HEADER,
   parseExecutionLease,
   parseModelSamplingIdentity,
+  type AgentModelRuntime,
   type ExecuteTurnCommandMessage,
   type ModelSamplingIdentity,
 } from "@pi-cloud/protocol";
@@ -34,6 +35,8 @@ type SupportedModel =
       baseUrlPath: "/v1";
       contextWindow: number;
       maxTokens: number;
+      inputModalities: readonly ["text"];
+      hostedTools: readonly [];
     }>
   | Readonly<{
       provider: "openai-codex";
@@ -44,6 +47,8 @@ type SupportedModel =
       baseUrlPath: "";
       contextWindow: number;
       maxTokens: number;
+      inputModalities: readonly ["text", "image"];
+      hostedTools: readonly ["web_search"];
     }>;
 
 type ActiveCapabilityFields = {
@@ -303,6 +308,8 @@ function supportedModel(provider: string, modelId: string): SupportedModel | und
       baseUrlPath: "/v1",
       contextWindow: 128_000,
       maxTokens: 8_192,
+      inputModalities: ["text"],
+      hostedTools: [],
     };
   }
   if (
@@ -318,6 +325,8 @@ function supportedModel(provider: string, modelId: string): SupportedModel | und
       baseUrlPath: "",
       contextWindow: 272_000,
       maxTokens: 65_536,
+      inputModalities: ["text", "image"],
+      hostedTools: ["web_search"],
     };
   }
   return undefined;
@@ -544,9 +553,9 @@ export class TenantModelGateway {
     };
     this.#capabilities.set(digest, active);
     let released = false;
-    const runtime =
+    const runtime: AgentModelRuntime =
       active.provider === "deepseek"
-        ? ({
+        ? {
             kind: "openai_compatible_gateway",
             provider: active.provider,
             modelId: active.modelId,
@@ -556,10 +565,12 @@ export class TenantModelGateway {
             reasoning: true,
             contextWindow: active.contextWindow,
             maxTokens: active.maxTokens,
+            inputModalities: [...active.inputModalities],
+            hostedTools: [...active.hostedTools],
             requestTimeoutMs: this.#piRequestTimeoutMs,
             turnTimeoutMs: this.#piTurnTimeoutMs,
-          } as const)
-        : ({
+          }
+        : {
             kind: "openai_compatible_gateway",
             provider: active.provider,
             modelId: active.modelId,
@@ -569,9 +580,11 @@ export class TenantModelGateway {
             reasoning: true,
             contextWindow: active.contextWindow,
             maxTokens: active.maxTokens,
+            inputModalities: [...active.inputModalities],
+            hostedTools: [...active.hostedTools],
             requestTimeoutMs: this.#piRequestTimeoutMs,
             turnTimeoutMs: this.#piTurnTimeoutMs,
-          } as const);
+          };
     return {
       runtime,
       release: () => {

@@ -27,6 +27,7 @@ import {
   type PiSandboxContinuity,
 } from "./pi-sandbox-continuity.ts";
 import { PiSamplingStepController, type PiSamplingStepCapture } from "./pi-sampling-step.ts";
+import { mergeProviderHostedTools } from "./provider-hosted-tools.ts";
 import {
   PiTurnCancelledError,
   PiTurnError,
@@ -143,6 +144,13 @@ function validateRuntimeConfig(
       false,
     );
   }
+  if ((config.hostedTools?.length ?? 0) > 0 && config.api !== "openai-codex-responses") {
+    throw new PiTurnError(
+      "invalid_model_runtime",
+      "Provider-hosted Tools require a Responses model runtime",
+      false,
+    );
+  }
   return config;
 }
 
@@ -202,7 +210,7 @@ function configureModelRuntime(runtime: ModelRuntime, config: PiModelRuntimeConf
                 },
               }
             : {}),
-        input: ["text"],
+        input: [...(config.inputModalities ?? ["text"])],
         contextWindow: config.contextWindow ?? 16_384,
         maxTokens: config.maxTokens ?? 1_024,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -221,6 +229,8 @@ function modelRuntimeSignature(config: PiModelRuntimeConfig): string {
     reasoning: config.reasoning ?? false,
     contextWindow: config.contextWindow ?? 16_384,
     maxTokens: config.maxTokens ?? 1_024,
+    inputModalities: config.inputModalities ?? ["text"],
+    hostedTools: config.hostedTools ?? [],
   });
 }
 
@@ -672,6 +682,12 @@ export class PiCloudTurnRunner {
             // The cloud runtime owns visible, governed retry attempts so each one
             // receives a fresh sampling identity and model-request ledger row.
             maxRetries: 0,
+            ...(config.hostedTools === undefined || config.hostedTools.length === 0
+              ? {}
+              : {
+                  onPayload: (payload: unknown) =>
+                    mergeProviderHostedTools(payload, config.hostedTools ?? []),
+                }),
             ...(config.transport === undefined ? {} : { transport: config.transport }),
             ...(config.maxTokens === undefined ? {} : { maxTokens: config.maxTokens }),
           },

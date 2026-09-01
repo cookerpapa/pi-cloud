@@ -11,6 +11,7 @@ in CubeSandbox KVM microVMs.
 - per-browser Chinese/English UI selection without translating prompts, Tool output or model replies;
 - multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
 - per-conversation model selection with immutable provider/model snapshots for every Turn;
+- Provider-native hosted capabilities on verified model routes, without a second PiCloud search service;
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
 - self-managed GitLab public/private project connection and explicit Issue-to-Run automation;
@@ -48,6 +49,7 @@ PostgreSQL ready Runs ── SKIP LOCKED + NOTIFY ──▶ Pi Worker pool
                                                     ├─ Pi SDK Agent Loop
                                                     ├─ bounded Pi context read from PostgreSQL
                                                     ├─ capability Model Gateway
+                                                    │   └─ frozen modalities + Provider-hosted Tools
                                                     │        ▼
                                                     │   CLIProxyAPI Provider Gateway
                                                     │   OAuth/API keys + quota + Session affinity
@@ -95,6 +97,12 @@ an expired or replaced lease, so no Session is permanently assigned to a
 process. See [Architecture](docs/ARCHITECTURE.md),
 [Run lifecycle](docs/RUN_LIFECYCLE.md) and
 [stream durability](docs/STREAM_DURABILITY.md) for the detailed contracts.
+
+Pi function Tools always execute through Tool Broker. A verified Provider-hosted
+Tool is instead declared in that Turn's native model request and executes at the
+Provider; the current OpenAI Codex route enables Web Search. Switching the
+conversation model while idle rebuilds this effective capability set for the
+next Turn without changing historical Turns or adding a synthetic UI notice.
 
 ## One-host quick start
 

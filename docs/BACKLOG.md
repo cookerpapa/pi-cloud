@@ -36,3 +36,13 @@ Volume architecture. Historical experiments remain in Git history.
       an external TLS-enabled self-managed instance after the local CE gate.
 - [ ] Validate multi-user non-exclusive GitLab Issue claims and
       both elastic and owned-machine Issue execution against that instance.
+
+## Provider capabilities
+
+- [ ] Add the user-image attachment path after its Pi-native image input,
+      PostgreSQL SessionStorage and cross-Worker recovery contract passes.
+- [ ] Enable Provider image generation only after Pi exposes a portable
+      generated-image result that survives Session restore and model handoff.
+- [ ] Re-probe DeepSeek server Web Search if its maintained PiCloud route moves
+      from Chat Completions to native Responses; do not infer support from a
+      model catalog alone.

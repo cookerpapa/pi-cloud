@@ -1,4 +1,9 @@
-import type { CancelTurnCommandMessage, EventPublishMessage } from "@pi-cloud/protocol";
+import type {
+  AgentModelHostedTool,
+  AgentModelInputModality,
+  CancelTurnCommandMessage,
+  EventPublishMessage,
+} from "@pi-cloud/protocol";
 
 export type PiModelRuntimeConfig = {
   provider: string;
@@ -10,6 +15,8 @@ export type PiModelRuntimeConfig = {
   reasoning?: boolean;
   contextWindow?: number;
   maxTokens?: number;
+  inputModalities?: readonly AgentModelInputModality[];
+  hostedTools?: readonly AgentModelHostedTool[];
 };
 
 export type PiToolOutputCapture = {
