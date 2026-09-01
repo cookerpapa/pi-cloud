@@ -284,6 +284,7 @@ api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 authorizationToken = registration.apiToken;
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production tenant must use a real model");
+const acceptanceModel = { provider: "deepseek", modelId: "deepseek-v4-flash" };
 const project = await api.createProject(`Subagent production acceptance ${suffix}`);
 const session = await api.createSession(
   project.projectId,
@@ -291,6 +292,7 @@ const session = await api.createSession(
   `Subagent production acceptance ${suffix}`,
   "elastic",
 );
+await api.updateSessionModel(session.sessionId, acceptanceModel);
 
 try {
   const none = await runTurn(
@@ -394,7 +396,7 @@ try {
   const report = {
     accepted: true,
     checkedAt: new Date().toISOString(),
-    model: { provider: model.provider, modelId: model.modelId },
+    model: acceptanceModel,
     parentSessionId: session.sessionId,
     modes: { none: noneEvidence, shared: sharedEvidence, isolated: isolatedEvidence },
     recursiveTree: recursiveEvidence,
