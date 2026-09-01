@@ -35,6 +35,9 @@ const runtimeDirectory = resolve(
   process.env.PI_CLOUD_RUNTIME_DIRECTORY ?? "deploy/production/runtime",
 );
 const environment = parseEnvironment(await readFile(resolve(runtimeDirectory, ".env"), "utf8"));
+const bootstrapToken = (
+  await readFile(resolve(runtimeDirectory, "secrets/api-token"), "utf8")
+).trim();
 const bindAddress = environment.PI_CLOUD_HTTP_BIND_ADDRESS;
 const port = environment.PI_CLOUD_HTTP_PORT;
 if (bindAddress === undefined || port === undefined) {
@@ -143,12 +146,7 @@ function assertHostedSearchProgress(events, turnId, label) {
 
 const suffix = Date.now().toString(36);
 const cookieFetch = new BrowserCookieFetch();
-const api = new PiCloudApi(cookieFetch.fetch);
-await api.registerAccount(
-  `provider.cap.${suffix}`.slice(0, 48),
-  "Provider Capability Acceptance",
-  `Provider capability ${suffix} 9!`,
-);
+const api = new PiCloudApi(cookieFetch.fetch, bootstrapToken);
 
 let project;
 let session;
