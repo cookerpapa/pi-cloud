@@ -111,6 +111,7 @@ let firstLatencyMs;
 let secondLatencyMs;
 let firstText = "";
 let secondText = "";
+let cleanupCompleted = false;
 try {
   project = await api.createProject(`provider-cap-${suffix}`);
   session = await api.createSession(
@@ -178,12 +179,29 @@ try {
     await api
       .deleteConversation(session.sessionId, newIdempotencyKey("provider-cap-cleanup"))
       .catch(() => undefined);
+    await waitFor(
+      async () =>
+        !(await api.listConversations()).conversations.some(
+          (candidate) => candidate.sessionId === session.sessionId,
+        ),
+      "Provider capability conversation cleanup",
+      60_000,
+    );
   }
   if (project !== undefined) {
     await api
       .deleteWorkspace(project.workspaceId, newIdempotencyKey("provider-cap-workspace-cleanup"))
       .catch(() => undefined);
+    await waitFor(
+      async () =>
+        !(await api.listWorkspaces()).workspaces.some(
+          (candidate) => candidate.workspaceId === project.workspaceId,
+        ),
+      "Provider capability Workspace cleanup",
+      60_000,
+    );
   }
+  cleanupCompleted = true;
 }
 
 const report = {
@@ -198,7 +216,7 @@ const report = {
     providerSearchReachedFinalMessage: true,
     providerSearchBypassedToolBroker: true,
     crossProviderCanonicalContextRestored: true,
-    cleanupRequested: true,
+    cleanupCompleted,
   },
   latencyMs: {
     providerSearchTurn: firstLatencyMs,
