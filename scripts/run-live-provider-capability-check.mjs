@@ -178,6 +178,7 @@ try {
   streamPromise = streamSessionEvents({
     sessionId: session.sessionId,
     signal: streamAbort.signal,
+    authorizationToken: bootstrapToken,
     fetchImplementation: cookieFetch.fetch,
     onSnapshot(snapshot) {
       observedEvents.push(...snapshot.liveEvents);
