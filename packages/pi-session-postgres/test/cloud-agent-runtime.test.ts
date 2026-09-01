@@ -135,6 +135,41 @@ afterAll(async () => {
 });
 
 describe.sequential("CloudAgentRuntime", () => {
+  it("keeps frozen Cloud stream options while preserving the active call signal", async () => {
+    const storage = await createStorage();
+    const hostedPayload = (payload: unknown) => payload;
+    let observedOptions: Record<string, unknown> | undefined;
+    const runtime = new CloudAgentRuntime({
+      session: storage.asSession(),
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      streamOptions: {
+        transport: "sse",
+        onPayload: hostedPayload,
+        maxRetries: 0,
+      },
+      streamFn: (_model, _context, options) => {
+        observedOptions = options as unknown as Record<string, unknown>;
+        const stream = new MockAssistantStream();
+        queueMicrotask(() => {
+          const message = assistant("configured");
+          stream.push({ type: "done", reason: "stop", message });
+        });
+        return stream;
+      },
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+    });
+
+    await runtime.run("use frozen transport");
+    expect(observedOptions).toMatchObject({
+      transport: "sse",
+      onPayload: hostedPayload,
+      maxRetries: 0,
+    });
+    expect(observedOptions?.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it("restores active Pi context from PostgreSQL without whole-history snapshots", async () => {
     const storage = await createStorage();
     const contexts: Context[] = [];

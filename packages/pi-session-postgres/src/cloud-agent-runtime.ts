@@ -346,8 +346,9 @@ export class CloudAgentRuntime {
         };
         const transformedHeaders = await this.#options.transformHeaders?.(headers);
         const effectiveOptions = {
-          ...this.#options.streamOptions,
           ...options,
+          ...this.#options.streamOptions,
+          ...(options?.signal === undefined ? {} : { signal: options.signal }),
           headers: transformedHeaders ?? headers,
         };
         return (
