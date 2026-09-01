@@ -19,14 +19,9 @@ import {
   PostgresPiSessionEntryPayloadCache,
   openPostgresDurableAgentSession,
 } from "@pi-cloud/pi-session-postgres";
-import {
-  parseCloudToolCapabilitySnapshot,
-  type SupervisorBootProvisionRequest,
-} from "@pi-cloud/protocol";
+import type { SupervisorBootProvisionRequest } from "@pi-cloud/protocol";
 import { ReplicatedToolBrokerClient } from "@pi-cloud/tool-broker";
 import {
-  createPiSubagentsCloudTool,
-  preloadPiSubagentsCloudToolContract,
   AgentRunSupervisor,
   RemoteToolSandboxTurnRunner,
   ReconnectingSupervisorWebSocketClient,
@@ -34,6 +29,7 @@ import {
   type AgentTurnScenarioContext,
   type ReconnectingSupervisorWebSocketClientStop,
 } from "@pi-cloud/sandbox-supervisor";
+import { PostgresTrustedToolRuntime } from "@pi-cloud/trusted-tool-runtime";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import { SupervisorBootLedger, type SupervisorHostBootIdentity } from "./boot-ledger.ts";
@@ -43,13 +39,7 @@ import {
   SupervisorManagementServerError,
 } from "./management-server.ts";
 import { TenantModelGateway } from "./model-gateway.ts";
-import { PostgresSubagentJobProvider } from "./postgres-subagent-job-provider.ts";
 import { RunClaimReadinessMonitor } from "./run-claim-readiness.ts";
-import {
-  PostgresSubagentSupervisorChannel,
-  createCloudContactSupervisorTool,
-  createCloudSubagentSupervisorTool,
-} from "./postgres-subagent-supervisor-channel.ts";
 import {
   PostgresPiWorker,
   type PostgresPiWorkerOptions,
@@ -57,7 +47,6 @@ import {
 } from "./postgres-pi-worker.ts";
 import { SupervisorProvisioningClient } from "./provisioning-client.ts";
 import { PostgresWorkspaceSeedResolver } from "./workspace-seed.ts";
-import { createCloudPreviewTool } from "./postgres-preview-tool.ts";
 
 export type PiWorkerRuntimeState =
   "idle" | "starting" | "ready" | "draining" | "stopped" | "failed";
@@ -95,28 +84,6 @@ function factChannelResolver(value: FactChannelFactory): ActiveFactChannelResolv
     throw new TypeError("Production FactChannel factory does not expose active channels");
   }
   return candidate as ActiveFactChannelResolver;
-}
-
-function subagentExternalState(state: string) {
-  switch (state) {
-    case "completed":
-      return "completed" as const;
-    case "failed":
-      return "failed" as const;
-    case "cancelled":
-      return "stopped" as const;
-    case "unknown":
-      return "blocked" as const;
-    case "running":
-      return "running" as const;
-    default:
-      return "queued" as const;
-  }
-}
-
-function subagentOption(options: Record<string, unknown>, name: string): string | undefined {
-  const value = options[name];
-  return typeof value === "string" ? value : undefined;
 }
 
 export type SupervisorToolBroker = Pick<
@@ -212,7 +179,7 @@ export class PiWorkerRuntime {
   #modelGateway: TenantModelGateway | undefined;
   #runWorker: SupervisorRunWorker | undefined;
   #runClaimReadiness: RunClaimReadinessMonitor | undefined;
-  #subagentPreparationReaper: NodeJS.Timeout | undefined;
+  #trustedTools: PostgresTrustedToolRuntime | undefined;
   #closing: Promise<void> | undefined;
   #ownerStopSettled = false;
   #terminalSettled = false;
@@ -454,36 +421,28 @@ export class PiWorkerRuntime {
       await runClaimReadiness.start();
       this.#runClaimReadiness = runClaimReadiness;
       const sessionEntryPayloadCache = new PostgresPiSessionEntryPayloadCache();
-      const subagentJobs = new PostgresSubagentJobProvider({
+      const trustedTools = new PostgresTrustedToolRuntime({
         database: this.#database,
         forkWorkspace: (request) => this.#toolBroker.forkWorkspace(request),
+        prioritizeSubagent: (runId) => {
+          this.#runWorker?.prioritizeSubagent?.(runId);
+        },
         treePolicy: {
           maximumDepth: this.#config.subagentMaximumDepth,
           maximumNodes: this.#config.subagentMaximumNodes,
           maximumConcurrentSubagents: this.#config.subagentMaximumConcurrent,
         },
-      });
-      const subagentSupervisor = new PostgresSubagentSupervisorChannel(this.#database);
-      const reapStaleSubagentPreparations = async (): Promise<void> => {
-        try {
-          await subagentJobs.reapStalePreparations();
-        } catch (error: unknown) {
+        onBackgroundError: (error) => {
           operationalLog({
-            service: "pi-cloud-pi-worker",
+            service: "pi-cloud-trusted-tool-runtime",
             level: "warn",
             event: "subagent-preparation-reaper.failed",
-            attributes: {
-              name: error instanceof Error ? error.name : "UnknownError",
-            },
+            attributes: { name: error instanceof Error ? error.name : "UnknownError" },
           });
-        }
-      };
-      await reapStaleSubagentPreparations();
-      this.#subagentPreparationReaper = setInterval(
-        () => void reapStaleSubagentPreparations(),
-        60_000,
-      );
-      this.#subagentPreparationReaper.unref();
+        },
+      });
+      await trustedTools.start();
+      this.#trustedTools = trustedTools;
       const runner = new RemoteToolSandboxTurnRunner({
         broker: this.#toolBroker,
         runtimeIdentity: identity,
@@ -508,155 +467,7 @@ export class PiWorkerRuntime {
               executionLease: command.payload.executionLease,
             }),
           }),
-        createOrchestrationTools: async (command, orchestrationContext) => {
-          const previewTool = createCloudPreviewTool({
-            database: this.#database,
-            tenantId: command.payload.tenantId,
-            sessionId: command.payload.sessionId,
-          });
-          const session = await this.#database
-            .selectFrom("sessions")
-            .select("session_kind")
-            .where("tenant_id", "=", command.payload.tenantId)
-            .where("id", "=", command.payload.sessionId)
-            .executeTakeFirstOrThrow();
-          const treeContext =
-            session.session_kind === "subagent"
-              ? await subagentJobs.treeContext(command.payload.tenantId, command.payload.runId)
-              : undefined;
-          const contactTool =
-            treeContext === undefined
-              ? undefined
-              : createCloudContactSupervisorTool({
-                  channel: subagentSupervisor,
-                  tenantId: command.payload.tenantId,
-                  childSessionId: command.payload.sessionId,
-                  childRunId: command.payload.runId,
-                });
-          const supervisorTool = createCloudSubagentSupervisorTool({
-            channel: subagentSupervisor,
-            jobs: subagentJobs,
-            tenantId: command.payload.tenantId,
-            parentSessionId: command.payload.sessionId,
-          });
-          if (treeContext !== undefined && !treeContext.canSpawnChildren) {
-            return [
-              previewTool,
-              ...(contactTool === undefined ? [] : [contactTool]),
-              supervisorTool,
-            ];
-          }
-          const delegationTool = await createPiSubagentsCloudTool({
-            context: {
-              parentSessionId: command.payload.sessionId,
-              model: {
-                provider: command.payload.model.provider,
-                id: command.payload.model.modelId,
-              },
-              thinkingLevel: command.payload.model.thinkingLevel,
-            },
-            coordinator: {
-              start: async (input, parentToolCallId) => {
-                const contextMode = subagentOption(input.options, "contextMode");
-                const workspaceMode = subagentOption(input.options, "workspaceMode");
-                if (contextMode !== "fresh" && contextMode !== "fork") {
-                  throw new Error("pi-subagents provided an invalid context mode");
-                }
-                if (
-                  workspaceMode !== "none" &&
-                  workspaceMode !== "shared" &&
-                  workspaceMode !== "isolated"
-                ) {
-                  throw new Error("pi-subagents provided an unsupported Workspace mode");
-                }
-                if (workspaceMode === "isolated" && orchestrationContext.activation === undefined) {
-                  throw new Error("Isolated Subagent execution requires an active parent Sandbox");
-                }
-                const tools = parseCloudToolCapabilitySnapshot(
-                  input.options.requestedToolCapabilities,
-                );
-                const systemPrompt = subagentOption(input.options, "systemPrompt");
-                const child = await subagentJobs.start({
-                  tenantId: command.payload.tenantId,
-                  parentSessionId: command.payload.sessionId,
-                  parentRunId: command.payload.runId,
-                  parentExecutionLease: command.payload.executionLease,
-                  parentToolCallId,
-                  workflowRunId: input.runId,
-                  stepIndex: input.stepIndex,
-                  agentName: input.agent,
-                  prompt: input.prompt,
-                  ...(systemPrompt === undefined ? {} : { systemPrompt }),
-                  contextMode,
-                  workspaceMode,
-                  requestedToolCapabilities: tools,
-                  ...(workspaceMode !== "isolated" || orchestrationContext.activation === undefined
-                    ? {}
-                    : { parentActivation: orchestrationContext.activation }),
-                });
-                this.#runWorker?.prioritizeSubagent?.(child.childRunId);
-                return {
-                  providerJobId: child.executionId,
-                  state: subagentExternalState(child.state),
-                };
-              },
-              status: async (providerJobId) => {
-                const child = await subagentJobs.status(command.payload.tenantId, providerJobId);
-                const coordination = await subagentSupervisor.latestForExecution(
-                  command.payload.tenantId,
-                  providerJobId,
-                );
-                return {
-                  providerJobId,
-                  state:
-                    coordination?.expectsReply === true
-                      ? ("blocked" as const)
-                      : subagentExternalState(child.state),
-                  ...(coordination === undefined
-                    ? {}
-                    : {
-                        coordinationRequest: {
-                          requestId: coordination.requestId,
-                          reason: coordination.reason,
-                          message: coordination.message,
-                          expectsReply: coordination.expectsReply,
-                        },
-                      }),
-                  ...(child.failureCode === undefined ? {} : { failureCode: child.failureCode }),
-                  ...(child.failureMessage === undefined
-                    ? {}
-                    : { failureMessage: child.failureMessage }),
-                };
-              },
-              result: async (providerJobId) => {
-                const child = await subagentJobs.result(command.payload.tenantId, providerJobId);
-                return {
-                  providerJobId,
-                  state: subagentExternalState(child.state),
-                  ...(child.output === undefined ? {} : { output: child.output }),
-                  ...(child.failureCode === undefined ? {} : { failureCode: child.failureCode }),
-                  ...(child.failureMessage === undefined
-                    ? {}
-                    : { failureMessage: child.failureMessage }),
-                };
-              },
-              reattach: async (providerJobId) => {
-                const child = await subagentJobs.status(command.payload.tenantId, providerJobId);
-                return { providerJobId, state: subagentExternalState(child.state) };
-              },
-              cancel: async (providerJobId) => {
-                const child = await subagentJobs.cancel(command.payload.tenantId, providerJobId);
-                return { providerJobId, state: subagentExternalState(child.state) };
-              },
-            },
-          });
-          return [
-            previewTool,
-            ...(contactTool === undefined ? [] : [contactTool]),
-            delegationTool,
-            supervisorTool,
-          ];
-        },
+        createTrustedTools: (command, context) => trustedTools.create({ command, ...context }),
         runAttemptPhaseObserver: new PostgresRunAttemptPhaseObserver({
           database: this.#database,
         }),
@@ -666,7 +477,7 @@ export class PiWorkerRuntime {
         turnTimeoutMs: this.#config.piTurnTimeoutMs,
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
       });
-      await Promise.all([runner.warm(), preloadPiSubagentsCloudToolContract()]);
+      await runner.warm();
       const runSupervisor = new AgentRunSupervisor({
         runner,
         maxConcurrentSessions: this.#config.maxConcurrentSessions,
@@ -778,10 +589,8 @@ export class PiWorkerRuntime {
     this.#client?.setAcceptingAssignments(false);
     this.#runClaimReadiness?.close();
     this.#runClaimReadiness = undefined;
-    if (this.#subagentPreparationReaper !== undefined) {
-      clearInterval(this.#subagentPreparationReaper);
-      this.#subagentPreparationReaper = undefined;
-    }
+    this.#trustedTools?.close();
+    this.#trustedTools = undefined;
     // A Kubernetes scale-in is a drain, not a fencing event. Stop queue
     // polling first and give the active Runs their bounded settlement window;
     // owner replacement still uses stopCurrentBoot(), which revokes immediately.

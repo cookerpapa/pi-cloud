@@ -1,6 +1,5 @@
 import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server";
 import { activeTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/observability";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
   type ExecuteTurnCommandMessage,
   modelSamplingHeaders,
@@ -43,6 +42,7 @@ import type {
   AgentTurnScenario,
   AgentTurnScenarioResolver,
   AgentWorkspaceSeedResolver,
+  TrustedAgentTool,
   TrustedModelRuntimeLease,
   TrustedModelRuntimeLeaseResolver,
 } from "./agent-turn-runtime.ts";
@@ -103,12 +103,12 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   workspaceSeedResolver?: AgentWorkspaceSeedResolver;
   settlementStore?: WorkspaceSettlementStore;
   openAgentSession: (command: ExecuteTurnCommandMessage) => Promise<PiCloudSessionHandle>;
-  createOrchestrationTools?: (
+  createTrustedTools?: (
     command: ExecuteTurnCommandMessage,
     context: Readonly<{
       activation?: Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>;
     }>,
-  ) => Promise<readonly AgentTool[]> | readonly AgentTool[];
+  ) => Promise<readonly TrustedAgentTool[]> | readonly TrustedAgentTool[];
   runAttemptPhaseObserver?: RunAttemptPhaseObserver;
   requestTimeoutMs?: number;
   turnTimeoutMs?: number;
@@ -162,7 +162,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
   readonly #settlementStore: WorkspaceSettlementStore | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
-  readonly #createOrchestrationTools: RemoteToolSandboxTurnRunnerOptions["createOrchestrationTools"];
+  readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
   readonly #runAttemptPhaseObserver: RunAttemptPhaseObserver | undefined;
   readonly #requestTimeoutMs: number | undefined;
   readonly #turnTimeoutMs: number | undefined;
@@ -187,7 +187,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#workspaceSeedResolver = options.workspaceSeedResolver;
     this.#settlementStore = options.settlementStore;
     this.#openAgentSession = options.openAgentSession;
-    this.#createOrchestrationTools = options.createOrchestrationTools;
+    this.#createTrustedTools = options.createTrustedTools;
     this.#runAttemptPhaseObserver = options.runAttemptPhaseObserver;
     this.#requestTimeoutMs = options.requestTimeoutMs;
     this.#turnTimeoutMs = options.turnTimeoutMs;
@@ -595,8 +595,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         settlementPolicy === undefined
           ? undefined
           : new PiSettlementGateController(settlementPolicy);
-      const orchestrationTools =
-        (await this.#createOrchestrationTools?.(command, {
+      const trustedToolBindings =
+        (await this.#createTrustedTools?.(command, {
           ...(activeSandbox === undefined
             ? {}
             : {
@@ -605,11 +605,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                   assignment: toolAssignment,
                 },
               }),
-        })) ?? ([] as readonly AgentTool[]);
-      const hasDelegationTool = orchestrationTools.some((tool) => tool.name === "subagent");
-      const hasSupervisorContact = orchestrationTools.some(
-        (tool) => tool.name === "contact_supervisor",
-      );
+        })) ?? ([] as readonly TrustedAgentTool[]);
+      const trustedTools = trustedToolBindings.map((binding) => binding.tool);
+      const hasDelegationTool = trustedTools.some((tool) => tool.name === "subagent");
+      const hasSupervisorContact = trustedTools.some((tool) => tool.name === "contact_supervisor");
       const commonRunnerOptions = {
         resolveModelRuntime,
         openSession: this.#openAgentSession,
@@ -686,9 +685,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               return captured;
             };
             return {
-              tools: [...orchestrationTools],
+              tools: [...trustedTools],
               async systemPrompt(base: string) {
-                return orchestrationTools.length === 0
+                return trustedTools.length === 0
                   ? base
                   : [base]
                       .concat(
@@ -785,10 +784,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                     : { tracestate: downstreamTrace.tracestate }),
                 }),
           });
-          if (orchestrationTools.length === 0) return remoteTools;
+          if (trustedTools.length === 0) return remoteTools;
           return {
             ...remoteTools,
-            tools: [...remoteTools.tools, ...orchestrationTools],
+            tools: [...remoteTools.tools, ...trustedTools],
             async systemPrompt(base: string) {
               return [await remoteTools.systemPrompt(base)]
                 .concat(

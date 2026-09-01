@@ -55,6 +55,10 @@ PostgreSQL ready Runs ── SKIP LOCKED + NOTIFY ──▶ Pi Worker pool
                                                     │   OAuth/API keys + quota + Session affinity
                                                     │        ▼
                                                     │   provider relay ──▶ model APIs
+                                                    ├─ Trusted Tool Runtime
+                                                    │   ├─ platform: Preview
+                                                    │   ├─ orchestration: Subagent/supervisor
+                                                    │   └─ integration: reserved extension plane
                                                     └─ leased Tool RPC
                                                            ▼
                                                      Tool Broker
@@ -98,8 +102,8 @@ process. See [Architecture](docs/ARCHITECTURE.md),
 [Run lifecycle](docs/RUN_LIFECYCLE.md) and
 [stream durability](docs/STREAM_DURABILITY.md) for the detailed contracts.
 
-Pi function Tools always execute through Tool Broker. A verified Provider-hosted
-Tool is instead declared in that Turn's native model request and executes at the
+Sandbox-backed Pi function Tools execute through Tool Broker. A verified
+Provider-hosted Tool is instead declared in that Turn's native model request and executes at the
 Provider; the current OpenAI Codex and DeepSeek Responses routes enable Web
 Search. While a search is active, its coarse start/completion progress travels
 through the existing Kafka/SSE live tail so the browser does not look stalled;
@@ -107,6 +111,13 @@ queries, results and Provider-native events do not enter the canonical
 conversation or Pi Session. Switching the conversation model while idle
 rebuilds the effective capability set for the next Turn without changing
 historical Turns or adding a synthetic model-visible notice.
+
+Not every Pi function Tool runs in Cube. The Worker loads trusted platform and
+orchestration Tools through a separate `TrustedToolRuntime`; Preview and
+Subagent coordination execute against trusted PostgreSQL services, while
+`read`, `write`, `edit` and `bash` alone cross Tool Broker into Cube. The
+runtime already reserves an `integration` execution plane for future external
+systems without putting their credentials in Pi Workers or Sandboxes.
 
 ## One-host quick start
 

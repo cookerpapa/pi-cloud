@@ -106,6 +106,8 @@ export {
   type AgentWorkspaceSeedResolver,
   type ProviderHostedActivity,
   type ProviderHostedActivitySubscriber,
+  type TrustedAgentTool,
+  type TrustedToolExecutionPlane,
   type TrustedModelRuntimeLease,
   type TrustedModelRuntimeLeaseResolver,
 } from "./agent-turn-runtime.ts";

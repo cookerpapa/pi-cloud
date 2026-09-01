@@ -1,4 +1,5 @@
 import type { AgentModelRuntime, ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 
 export type AgentTurnScenario =
   "text" | "java_repair" | "java_followup" | "coding_eval" | "tool_hold" | "timeout";
@@ -23,6 +24,13 @@ export type ProviderHostedActivity = Readonly<
 export type ProviderHostedActivitySubscriber = (
   listener: (activity: ProviderHostedActivity) => void,
 ) => () => void;
+
+export type TrustedToolExecutionPlane = "platform" | "orchestration" | "integration";
+
+export type TrustedAgentTool = Readonly<{
+  executionPlane: TrustedToolExecutionPlane;
+  tool: AgentTool;
+}>;
 
 export type TrustedModelRuntimeLease = Readonly<{
   runtime: AgentModelRuntime;

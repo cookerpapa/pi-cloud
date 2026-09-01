@@ -15,6 +15,7 @@ COPY packages/pi-session-postgres/package.json packages/pi-session-postgres/pack
 COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/runtime-core/package.json packages/runtime-core/package.json
 COPY packages/tool-broker/package.json packages/tool-broker/package.json
+COPY packages/trusted-tool-runtime/package.json packages/trusted-tool-runtime/package.json
 COPY packages/sandbox-supervisor/package.json packages/sandbox-supervisor/package.json
 COPY packages/supervisor-host/package.json packages/supervisor-host/package.json
 COPY packages/supervisor-host/tsconfig.json packages/supervisor-host/tsconfig.json
@@ -57,6 +58,8 @@ COPY packages/runtime-core/package.json packages/runtime-core/package.json
 COPY packages/runtime-core/src packages/runtime-core/src
 COPY packages/tool-broker/package.json packages/tool-broker/package.json
 COPY packages/tool-broker/src packages/tool-broker/src
+COPY packages/trusted-tool-runtime/package.json packages/trusted-tool-runtime/package.json
+COPY packages/trusted-tool-runtime/src packages/trusted-tool-runtime/src
 COPY packages/sandbox-supervisor/package.json packages/sandbox-supervisor/package.json
 COPY packages/sandbox-supervisor/src packages/sandbox-supervisor/src
 COPY packages/supervisor-host/package.json packages/supervisor-host/package.json

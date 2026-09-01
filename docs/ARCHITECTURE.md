@@ -90,6 +90,22 @@ capability and Tool set from the accepted Run. Process-wide registries contain
 trusted definitions only and never imply that every Agent runtime can see or
 execute every definition.
 
+The Agent Host consumes one `TrustedToolRuntime` interface rather than building
+platform Tools itself. The maintained PostgreSQL implementation supplies
+execution-plane-tagged Tool definitions:
+
+```text
+platform       Preview publication
+orchestration  Subagent dispatch and parent/child communication
+integration    reserved for external-system effect executors
+```
+
+These Tools currently execute as trusted modules in the Worker process; the
+interface does not imply another deployment service. `RemoteToolSandboxTurnRunner`
+merges their schemas with the Cube Tool proxies but never routes their execution
+through Cube. This boundary lets a later Integration Executor move out of
+process without changing Pi's Agent Loop or the Sandbox protocol.
+
 The slot sees only a short-lived PiCloud Model Gateway capability. That local
 Gateway validates the accepted provider/model, Cloud Step identity, cancellation
 and request count, then forwards the provider-native protocol to CLIProxyAPI.
