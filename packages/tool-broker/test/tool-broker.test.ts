@@ -1995,7 +1995,7 @@ describe("provider-backed Tool Tool Broker", () => {
         databaseUrl: "postgresql://pi-cloud:secret@postgres:5432/pi-cloud",
         sandboxDomainId: "sandbox-domain-0001",
         advertisedBaseUrl: "http://tool-broker-0:4300/",
-        maximumActiveSandboxes: 2,
+        maximumActiveSandboxes: 3,
         maximumWarmWorkspaceRuntimes: 4,
         cubeSandbox: {
           apiUrl: "https://cube-api.internal",

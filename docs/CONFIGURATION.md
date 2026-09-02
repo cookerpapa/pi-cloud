@@ -98,7 +98,7 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH` | `4` | recursive Agent-tree depth |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_NODES` | `32` | total descendants per root Run |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT` | `3` | active descendants per root Run |
-| `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `2` | active Cubes owned by the one-host Broker |
+| `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `3` | active Cubes owned by the one-host Broker; leaves two elastic slots beside one starter development machine |
 | `PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES` | `4` | idle warm Cube limit |
 | `PI_CLOUD_SANDBOX_WARM_TTL_MS` | `900000` | idle warm lifetime (15 minutes) |
 | `PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS` | `15000` | Broker replica ownership lease |

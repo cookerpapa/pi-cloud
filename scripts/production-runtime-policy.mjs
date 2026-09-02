@@ -111,7 +111,7 @@ export function validateProductionRuntimeEnvironment(environment) {
   if (ownershipHeartbeatMs * 2 >= ownershipLeaseMs) {
     throw new Error("Tool Broker heartbeat must leave lease failure margin");
   }
-  integer(environment, "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES", 2, 1, 1_000);
+  integer(environment, "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES", 3, 1, 1_000);
   integer(environment, "PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES", 4, 1, 1_000);
   integer(environment, "PI_CLOUD_SANDBOX_WARM_TTL_MS", 900_000, 1_000, 24 * 60 * 60_000);
   integer(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS", 2, 1, 64);

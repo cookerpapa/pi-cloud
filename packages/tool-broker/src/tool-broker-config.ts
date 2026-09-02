@@ -245,7 +245,7 @@ export async function loadToolBrokerConfig(
     ),
     maximumActiveSandboxes: integer(
       environment.PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES,
-      2,
+      3,
       1,
       1_000,
     ),
