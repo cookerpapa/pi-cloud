@@ -161,6 +161,10 @@ sandboxPlane:
   cube:
     apiUrl: https://cube-api.example.com
     templateId: pi-cloud-tool-v1
+    developmentTemplateIds:
+      starter: tpl-000000000000000000000000
+      standard: tpl-000000000000000000000000
+      performance: tpl-000000000000000000000000
     proxyNodeIp: cube-proxy.example.com
     proxyPort: 443
     proxyScheme: https

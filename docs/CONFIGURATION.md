@@ -131,6 +131,13 @@ heartbeat must leave more than one missed interval before lease expiry.
 | `PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS` | empty | up to eight comma-separated RFC1918 `/24`–`/32` CIDRs that Cube guests may reach directly |
 | `PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS` | `120000` | Cube lifecycle/control request timeout |
 
+The installer owns `PI_CLOUD_CUBESANDBOX_TEMPLATE_ID` and the mandatory
+`PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS` JSON map. The latter contains
+distinct `starter`, `standard` and `performance` template IDs generated from
+the current immutable template registry. Distributed Helm deployments provide
+the same three IDs through `sandboxPlane.cube.developmentTemplateIds`; a
+missing profile never silently falls back to the ordinary Tool template.
+
 The one-host deployment assigns each combined KRaft Broker/Controller 4 CPU,
 2 GiB of container memory and an explicit 1 GiB JVM heap. The remaining memory
 is required for native allocations and Linux page cache; the container limit

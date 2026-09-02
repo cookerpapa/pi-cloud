@@ -321,6 +321,7 @@
           "required": [
             "apiUrl",
             "templateId",
+            "developmentTemplateIds",
             "proxyNodeIp",
             "proxyPort",
             "proxyScheme",
@@ -331,6 +332,16 @@
           "properties": {
             "apiUrl": { "$ref": "#/$defs/httpUrl" },
             "templateId": { "$ref": "#/$defs/boundedText" },
+            "developmentTemplateIds": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["starter", "standard", "performance"],
+              "properties": {
+                "starter": { "type": "string", "pattern": "^tpl-[a-z0-9]{24}$" },
+                "standard": { "type": "string", "pattern": "^tpl-[a-z0-9]{24}$" },
+                "performance": { "type": "string", "pattern": "^tpl-[a-z0-9]{24}$" }
+              }
+            },
             "proxyNodeIp": { "$ref": "#/$defs/boundedText" },
             "proxyPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
             "proxyScheme": { "type": "string", "enum": ["http", "https"] },

@@ -107,6 +107,7 @@ spec:
             - { name: PI_CLOUD_CUBESANDBOX_API_URL, value: {{ .Values.sandboxPlane.cube.apiUrl | quote }} }
             - { name: PI_CLOUD_CUBESANDBOX_API_KEY_FILE, value: /run/pi-cloud-secrets/cubesandbox-api-key }
             - { name: PI_CLOUD_CUBESANDBOX_TEMPLATE_ID, value: {{ .Values.sandboxPlane.cube.templateId | quote }} }
+            - { name: PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS, value: {{ .Values.sandboxPlane.cube.developmentTemplateIds | toJson | quote }} }
             - { name: PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP, value: {{ .Values.sandboxPlane.cube.proxyNodeIp | quote }} }
             - { name: PI_CLOUD_CUBESANDBOX_PROXY_PORT, value: {{ .Values.sandboxPlane.cube.proxyPort | quote }} }
             - { name: PI_CLOUD_CUBESANDBOX_PROXY_SCHEME, value: {{ .Values.sandboxPlane.cube.proxyScheme | quote }} }
