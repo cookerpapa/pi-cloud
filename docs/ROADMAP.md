@@ -26,6 +26,8 @@
   items and kept outside Tool Broker.
 - Provider → model → reasoning selection with GPT request-scoped Fast mode,
   Session desired settings and immutable Turn snapshots.
+- composer-level cascading Provider/model/reasoning selection, with new Web
+  conversations starting on GPT-5.6 Sol, medium reasoning and Standard service.
 
 ## Current release gate
 

@@ -225,33 +225,12 @@ try {
         "conversation.elasticMode",
       );
       await setValue(".product-progressive-options > label input", `UI acceptance ${suffix}`);
-      await click(
-        ".product-create-model-settings .product-model-menu-trigger",
-        "conversation.modelMenuOpen",
+      assert.equal(
+        await page.evaluate('document.querySelector(".product-create-model-settings")===null'),
+        true,
+        "New-conversation flow still exposed model selection",
       );
-      await clickText(
-        ".product-create-model-settings .product-model-menu-level:first-child button",
-        "GPT",
-        "conversation.providerGpt",
-      );
-      await clickText(
-        ".product-create-model-settings .product-model-menu-level button",
-        "GPT-5.6 Terra",
-        "conversation.modelTerra",
-      );
-      await clickText(
-        ".product-create-model-settings .product-model-menu-level button",
-        "高",
-        "conversation.reasoningHigh",
-      );
-      await click(
-        ".product-create-model-settings .product-model-fast-toggle input",
-        "conversation.fastMode",
-      );
-      await click(
-        ".product-create-model-settings .product-model-menu-apply",
-        "conversation.modelApply",
-      );
+      record("conversation.defaultModelHidden");
       await setValue('input[placeholder*="order-service"]', `ui-workspace-${suffix}`);
       await click(
         ".product-resource-profiles button:last-child",
@@ -292,6 +271,23 @@ try {
           ),
         "elastic conversation",
       );
+      const initialModel = await api.getSessionModel(elasticConversation.sessionId);
+      assert.deepEqual(
+        {
+          provider: initialModel.provider,
+          modelId: initialModel.modelId,
+          thinkingLevel: initialModel.thinkingLevel,
+          fastMode: initialModel.fastMode,
+        },
+        {
+          provider: "openai-codex",
+          modelId: "gpt-5.6-sol",
+          thinkingLevel: "medium",
+          fastMode: false,
+        },
+        "New conversation did not use the GPT-5.6 Sol / medium / Standard default",
+      );
+      record("conversation.defaultModel");
       await waitFor(
         async () => {
           const conversation = await api.getConversation(elasticConversation.sessionId);
@@ -301,33 +297,56 @@ try {
         180_000,
       );
       await page.waitFor(
-        `(()=>{const selector=document.querySelector(".product-topbar-actions .product-model-menu-trigger");return selector instanceof HTMLButtonElement&&!selector.disabled})()`,
+        `(()=>{const selector=document.querySelector(".product-composer .product-model-menu-trigger");return selector instanceof HTMLButtonElement&&!selector.disabled})()`,
         30_000,
       );
-      await click(
-        ".product-topbar-actions .product-model-menu-trigger",
-        "conversation.modelMenuReopen",
+      await click(".product-composer .product-model-menu-trigger", "conversation.modelMenuOpen");
+      await clickText(
+        ".product-model-menu-panel:first-child button",
+        "ChatGPT",
+        "conversation.providerChatGpt",
       );
       await clickText(
-        ".product-topbar-actions .product-model-menu-level:first-child button",
+        ".product-model-menu-subpanel button",
+        "GPT-5.6 Terra",
+        "conversation.modelTerra",
+      );
+      await click(".product-model-menu-fast", "conversation.fastMode");
+      await waitFor(async () => {
+        const selected = await api.getSessionModel(elasticConversation.sessionId);
+        return (
+          selected.provider === "openai-codex" &&
+          selected.modelId === "gpt-5.6-terra" &&
+          selected.thinkingLevel === "medium" &&
+          selected.fastMode
+        );
+      }, "GPT Fast model switch");
+      await clickText(".product-model-menu-subpanel button", "高", "conversation.reasoningHigh");
+      await waitFor(async () => {
+        const selected = await api.getSessionModel(elasticConversation.sessionId);
+        return selected.thinkingLevel === "high" && selected.fastMode;
+      }, "GPT reasoning switch");
+
+      await click(".product-composer .product-model-menu-trigger", "conversation.modelMenuReopen");
+      await clickText(
+        ".product-model-menu-panel:first-child button",
         "DeepSeek",
         "conversation.providerDeepSeek",
       );
       await clickText(
-        ".product-topbar-actions .product-model-menu-level button",
+        ".product-model-menu-subpanel button",
         "DeepSeek V4 Pro",
         "conversation.modelDeepSeekPro",
       );
+      const deepSeekFastVisible = await page.evaluate(
+        'document.querySelector(".product-model-menu-fast") !== null',
+      );
+      assert.equal(deepSeekFastVisible, false, "DeepSeek incorrectly exposed Fast mode");
       await clickText(
-        ".product-topbar-actions .product-model-menu-level button",
+        ".product-model-menu-subpanel button",
         "高",
         "conversation.reasoningDeepSeekHigh",
       );
-      const deepSeekFastVisible = await page.evaluate(
-        'document.querySelector(".product-topbar-actions .product-model-fast-toggle") !== null',
-      );
-      assert.equal(deepSeekFastVisible, false, "DeepSeek incorrectly exposed Fast mode");
-      await click(".product-topbar-actions .product-model-menu-apply", "conversation.modelSwitch");
       await waitFor(async () => {
         const selected = await api.getSessionModel(elasticConversation.sessionId);
         return (

@@ -42,7 +42,7 @@ import { MessageCopyButton } from "./MessageCopyButton.tsx";
 import { Markdown } from "./Markdown.tsx";
 import {
   ModelSettingsMenu,
-  defaultModelSettings,
+  defaultNewConversationSettings,
   settingsFromSessionModel,
 } from "./ModelSettingsMenu.tsx";
 import { isConversationTailVisible } from "./conversation-scroll.ts";
@@ -357,21 +357,7 @@ export default function ChatApp() {
   const refreshModelCatalog = useCallback(async (): Promise<void> => {
     const catalog = await api.getModelCatalog();
     setModelCatalog(catalog);
-    setNewConversationModel((current) => {
-      const selected = catalog.models.find(
-        (model) => current !== null && modelKey(model) === modelKey(current),
-      );
-      const fallback = catalog.models.find((model) => model.default) ?? catalog.models[0];
-      if (
-        current !== null &&
-        selected !== undefined &&
-        selected.thinkingLevels.includes(current.thinkingLevel) &&
-        (!current.fastMode || selected.fastModeAvailable)
-      ) {
-        return current;
-      }
-      return defaultModelSettings(selected ?? fallback!);
-    });
+    setNewConversationModel(defaultNewConversationSettings(catalog));
   }, [api]);
 
   const refreshConversationTree = useCallback(
@@ -824,9 +810,9 @@ export default function ChatApp() {
     setSelectedDevelopmentEnvironmentId(selectableDevelopmentEnvironments[0]?.environmentId ?? "");
     setDevelopmentProfileKey("standard");
     setWorkingDirectory("/workspace");
-    const defaultModel =
-      modelCatalog?.models.find((model) => model.default) ?? modelCatalog?.models[0];
-    if (defaultModel !== undefined) setNewConversationModel(defaultModelSettings(defaultModel));
+    if (modelCatalog !== null) {
+      setNewConversationModel(defaultNewConversationSettings(modelCatalog));
+    }
     setWorkspacePanelOpen(true);
   }
 
@@ -1455,18 +1441,6 @@ export default function ChatApp() {
             )}
           </div>
           <div className="product-topbar-actions">
-            {state.session !== null &&
-            selectedDelegatedSession === null &&
-            sessionModel !== null &&
-            modelCatalog !== null ? (
-              <ModelSettingsMenu
-                catalog={modelCatalog}
-                disabled={currentTurn !== undefined || operation !== null}
-                onApply={switchCurrentModel}
-                t={t}
-                value={settingsFromSessionModel(sessionModel)}
-              />
-            ) : null}
             {state.connection.phase === "failed" ? (
               <button onClick={() => setReconnectGeneration((value) => value + 1)} type="button">
                 {t("chat.reconnect")}
@@ -1592,18 +1566,6 @@ export default function ChatApp() {
                       value={newConversationTitle}
                     />
                   </label>
-
-                  {modelCatalog === null || newConversationModel === null ? null : (
-                    <div className="product-create-model-settings">
-                      <span>{t("chat.model.label")}</span>
-                      <ModelSettingsMenu
-                        catalog={modelCatalog}
-                        onApply={setNewConversationModel}
-                        t={t}
-                        value={newConversationModel}
-                      />
-                    </div>
-                  )}
 
                   {executionMode === "elastic" ? (
                     <fieldset className="product-workspace-choice">
@@ -2145,6 +2107,18 @@ export default function ChatApp() {
               rows={1}
               value={prompt}
             />
+            {state.session !== null &&
+            selectedDelegatedSession === null &&
+            sessionModel !== null &&
+            modelCatalog !== null ? (
+              <ModelSettingsMenu
+                catalog={modelCatalog}
+                disabled={currentTurn !== undefined || operation !== null}
+                onApply={switchCurrentModel}
+                t={t}
+                value={settingsFromSessionModel(sessionModel)}
+              />
+            ) : null}
             {currentTurn?.status === "running" ? (
               <>
                 <button

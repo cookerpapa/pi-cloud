@@ -9,39 +9,50 @@ import type {
 import type { Translate } from "./i18n.tsx";
 
 type Provider = SessionModelSelection["provider"];
+type ModelIdentity =
+  | Pick<Extract<SessionModelSelection, { provider: "deepseek" }>, "provider" | "modelId">
+  | Pick<Extract<SessionModelSelection, { provider: "openai-codex" }>, "provider" | "modelId">;
 
-export function defaultModelSettings(model: ModelCatalogEntryResource): SessionModelSelection {
+function modelKey(model: Pick<ModelCatalogEntryResource, "provider" | "modelId">): string {
+  return `${model.provider}:${model.modelId}`;
+}
+
+function modelSelection(
+  model: ModelIdentity,
+  thinkingLevel: TurnThinkingLevel,
+  fastMode = false,
+): SessionModelSelection {
   if (model.provider === "deepseek") {
-    return {
-      provider: model.provider,
-      modelId: model.modelId,
-      thinkingLevel: model.defaultThinkingLevel,
-      fastMode: false,
-    };
+    return { provider: model.provider, modelId: model.modelId, thinkingLevel, fastMode: false };
   }
   return {
     provider: model.provider,
     modelId: model.modelId,
-    thinkingLevel: model.defaultThinkingLevel,
-    fastMode: false,
+    thinkingLevel,
+    fastMode,
   };
 }
 
+export function defaultModelSettings(model: ModelCatalogEntryResource): SessionModelSelection {
+  return modelSelection(model, model.defaultThinkingLevel);
+}
+
+export function defaultNewConversationSettings(
+  catalog: ModelCatalogResource,
+): SessionModelSelection | null {
+  const model =
+    catalog.models.find(
+      (candidate) => candidate.provider === "openai-codex" && candidate.modelId === "gpt-5.6-sol",
+    ) ?? catalog.models.find((candidate) => candidate.provider === "openai-codex");
+  if (model === undefined) return null;
+  return modelSelection(
+    model,
+    model.thinkingLevels.includes("medium") ? "medium" : model.defaultThinkingLevel,
+  );
+}
+
 export function settingsFromSessionModel(model: SessionModelResource): SessionModelSelection {
-  if (model.provider === "deepseek") {
-    return {
-      provider: model.provider,
-      modelId: model.modelId,
-      thinkingLevel: model.thinkingLevel,
-      fastMode: false,
-    };
-  }
-  return {
-    provider: model.provider,
-    modelId: model.modelId,
-    thinkingLevel: model.thinkingLevel,
-    fastMode: model.fastMode,
-  };
+  return modelSelection(model, model.thinkingLevel, model.fastMode);
 }
 
 function providerName(provider: Provider, t: Translate): string {
@@ -54,13 +65,19 @@ function thinkingName(level: TurnThinkingLevel, t: Translate): string {
   return t(`chat.model.thinking.${level}` as Parameters<Translate>[0]);
 }
 
-function selectionKey(selection: SessionModelSelection): string {
-  return [
-    selection.provider,
-    selection.modelId,
-    selection.thinkingLevel,
-    selection.fastMode ? "fast" : "standard",
-  ].join(":");
+function sameModel(
+  left: Pick<SessionModelSelection, "provider" | "modelId">,
+  right: Pick<SessionModelSelection, "provider" | "modelId">,
+): boolean {
+  return left.provider === right.provider && left.modelId === right.modelId;
+}
+
+function MenuChevron() {
+  return (
+    <span aria-hidden="true" className="product-model-menu-chevron">
+      ›
+    </span>
+  );
 }
 
 export function ModelSettingsMenu({
@@ -78,13 +95,10 @@ export function ModelSettingsMenu({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<Provider | null>(null);
+  const [activeModel, setActiveModel] = useState<ModelCatalogEntryResource | null>(null);
   const [draft, setDraft] = useState(value);
-  const selectedModel = catalog.models.find(
-    (model) => model.provider === value.provider && model.modelId === value.modelId,
-  );
-  const draftModel = catalog.models.find(
-    (model) => model.provider === draft.provider && model.modelId === draft.modelId,
-  );
+  const selectedModel = catalog.models.find((model) => sameModel(model, value));
   const providers = useMemo(
     () =>
       (["openai-codex", "deepseek"] as const).filter((provider) =>
@@ -92,7 +106,16 @@ export function ModelSettingsMenu({
       ),
     [catalog.models],
   );
-  const providerModels = catalog.models.filter((model) => model.provider === draft.provider);
+  const providerModels =
+    activeProvider === null
+      ? []
+      : catalog.models.filter((model) => model.provider === activeProvider);
+
+  const close = (): void => {
+    setOpen(false);
+    setActiveProvider(null);
+    setActiveModel(null);
+  };
 
   useEffect(() => {
     if (!open) setDraft(value);
@@ -100,126 +123,159 @@ export function ModelSettingsMenu({
 
   useEffect(() => {
     if (!open) return;
-    const close = (event: MouseEvent): void => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    const closeOutside = (event: MouseEvent): void => {
+      if (!root.current?.contains(event.target as Node)) close();
     };
-    const escape = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") setOpen(false);
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") close();
     };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", escape);
+    document.addEventListener("mousedown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
     return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", escape);
+      document.removeEventListener("mousedown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
     };
   }, [open]);
 
-  const chooseProvider = (provider: Provider): void => {
-    const model = catalog.models.find((candidate) => candidate.provider === provider);
-    if (model !== undefined) setDraft(defaultModelSettings(model));
-  };
   const chooseModel = (model: ModelCatalogEntryResource): void => {
-    const next = defaultModelSettings(model);
-    if (model.provider === "openai-codex" && draft.provider === "openai-codex") {
-      next.fastMode = draft.fastMode;
-    }
+    setDraft(sameModel(model, value) ? { ...value } : defaultModelSettings(model));
+    setActiveModel(model);
+  };
+
+  const applyThinking = (thinkingLevel: TurnThinkingLevel): void => {
+    const next = modelSelection(draft, thinkingLevel, draft.fastMode);
+    void onApply(next);
+    close();
+  };
+
+  const toggleFast = (): void => {
+    if (draft.provider !== "openai-codex") return;
+    const next = modelSelection(draft, draft.thinkingLevel, !draft.fastMode);
     setDraft(next);
+    void onApply(next);
   };
 
   return (
     <div className="product-model-menu" ref={root}>
       <button
         aria-expanded={open}
+        aria-haspopup="menu"
         className="product-model-menu-trigger"
         disabled={disabled}
         onClick={() => {
+          if (open) {
+            close();
+            return;
+          }
           setDraft(value);
-          setOpen((current) => !current);
+          setActiveProvider(null);
+          setActiveModel(null);
+          setOpen(true);
         }}
         title={t("chat.model.nextTurnHint")}
         type="button"
       >
-        <span>{providerName(value.provider, t)}</span>
+        <span aria-hidden="true" className="product-model-menu-mark">
+          ✦
+        </span>
         <strong>{selectedModel?.displayName ?? value.modelId}</strong>
-        <small>
-          {thinkingName(value.thinkingLevel, t)}
-          {value.fastMode ? ` · ${t("chat.model.fast")}` : ""}
-        </small>
-        <span aria-hidden="true">⌄</span>
+        <small>{thinkingName(value.thinkingLevel, t)}</small>
+        {value.fastMode ? <em>{t("chat.model.fast")}</em> : null}
+        <span aria-hidden="true" className="product-model-menu-caret">
+          ⌃
+        </span>
       </button>
       {!open ? null : (
-        <div className="product-model-menu-popover" role="dialog">
-          <div className="product-model-menu-level">
-            <span>{t("chat.model.provider")}</span>
-            <div>
-              {providers.map((provider) => (
-                <button
-                  aria-pressed={draft.provider === provider}
-                  key={provider}
-                  onClick={() => chooseProvider(provider)}
-                  type="button"
-                >
-                  {providerName(provider, t)}
-                </button>
-              ))}
-            </div>
+        <div className="product-model-menu-flyouts">
+          <div
+            aria-label={t("chat.model.provider")}
+            className="product-model-menu-panel"
+            role="menu"
+          >
+            <span className="product-model-menu-heading">{t("chat.model.provider")}</span>
+            {providers.map((provider) => (
+              <button
+                aria-current={activeProvider === provider ? "true" : undefined}
+                disabled={disabled}
+                key={provider}
+                onClick={() => {
+                  setActiveProvider(provider);
+                  setActiveModel(null);
+                }}
+                role="menuitem"
+                type="button"
+              >
+                <span>{providerName(provider, t)}</span>
+                <MenuChevron />
+              </button>
+            ))}
           </div>
-          <div className="product-model-menu-level">
-            <span>{t("chat.model.model")}</span>
-            <div>
+
+          {activeProvider === null ? null : (
+            <div
+              aria-label={t("chat.model.model")}
+              className="product-model-menu-panel product-model-menu-subpanel"
+              role="menu"
+            >
+              <span className="product-model-menu-heading">{providerName(activeProvider, t)}</span>
               {providerModels.map((model) => (
                 <button
-                  aria-pressed={draft.modelId === model.modelId}
-                  key={`${model.provider}:${model.modelId}`}
+                  aria-current={
+                    activeModel !== null && modelKey(activeModel) === modelKey(model)
+                      ? "true"
+                      : undefined
+                  }
+                  disabled={disabled}
+                  key={modelKey(model)}
                   onClick={() => chooseModel(model)}
+                  role="menuitem"
                   type="button"
                 >
-                  {model.displayName}
+                  <span>{model.displayName}</span>
+                  {sameModel(model, value) ? <span aria-hidden="true">✓</span> : <MenuChevron />}
                 </button>
               ))}
             </div>
-          </div>
-          {draftModel === undefined ? null : (
-            <div className="product-model-menu-level">
-              <span>{t("chat.model.reasoning")}</span>
-              <div>
-                {draftModel.thinkingLevels.map((level) => (
-                  <button
-                    aria-pressed={draft.thinkingLevel === level}
-                    key={level}
-                    onClick={() => setDraft({ ...draft, thinkingLevel: level })}
-                    type="button"
-                  >
-                    {thinkingName(level, t)}
-                  </button>
-                ))}
-              </div>
-              {!draftModel.fastModeAvailable || draft.provider !== "openai-codex" ? null : (
-                <label className="product-model-fast-toggle">
+          )}
+
+          {activeModel === null ? null : (
+            <div
+              aria-label={t("chat.model.reasoning")}
+              className="product-model-menu-panel product-model-menu-subpanel"
+              role="menu"
+            >
+              <span className="product-model-menu-heading">{t("chat.model.reasoning")}</span>
+              {activeModel.thinkingLevels.map((level) => (
+                <button
+                  aria-current={draft.thinkingLevel === level ? "true" : undefined}
+                  disabled={disabled}
+                  key={level}
+                  onClick={() => applyThinking(level)}
+                  role="menuitem"
+                  type="button"
+                >
+                  <span>{thinkingName(level, t)}</span>
+                  {draft.thinkingLevel === level ? <span aria-hidden="true">✓</span> : null}
+                </button>
+              ))}
+              {!activeModel.fastModeAvailable || activeProvider !== "openai-codex" ? null : (
+                <button
+                  aria-checked={draft.fastMode}
+                  className="product-model-menu-fast"
+                  disabled={disabled}
+                  onClick={toggleFast}
+                  role="menuitemcheckbox"
+                  type="button"
+                >
                   <span>
                     <strong>{t("chat.model.fast")}</strong>
                     <small>{t("chat.model.fastHint")}</small>
                   </span>
-                  <input
-                    checked={draft.fastMode}
-                    onChange={(event) => setDraft({ ...draft, fastMode: event.target.checked })}
-                    type="checkbox"
-                  />
-                </label>
+                  <i aria-hidden="true" className={draft.fastMode ? "enabled" : ""} />
+                </button>
               )}
             </div>
           )}
-          <button
-            className="product-model-menu-apply"
-            disabled={selectionKey(draft) === selectionKey(value)}
-            onClick={() => {
-              void onApply(draft);
-              setOpen(false);
-            }}
-            type="button"
-          >
-            {t("chat.model.apply")}
-          </button>
         </div>
       )}
     </div>
