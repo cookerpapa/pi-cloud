@@ -1503,6 +1503,7 @@ export default function ChatApp() {
               </span>
             </button>
             <button
+              className="product-workspace-button"
               disabled={state.session === null || selectedDelegatedSession !== null}
               onClick={() => setInspectorOpen((value) => !value)}
               title={

@@ -274,6 +274,7 @@ PI_CLOUD_LIVE_SUBAGENT_CHECK=1 npm run production:subagents-check
 PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK=1 npm run production:development-environment-check
 PI_CLOUD_LIVE_LONG_CONTEXT_CHECK=1 npm run production:long-context-check
 PI_CLOUD_LIVE_PROVIDER_CAPABILITY_CHECK=1 npm run production:provider-capability-check
+PI_CLOUD_LIVE_MODEL_SETTINGS_CHECK=1 npm run production:model-settings-check
 PI_CLOUD_LIVE_HOSTED_SEARCH_REPLAY_CHECK=1 npm run production:hosted-search-replay-check
 ```
 

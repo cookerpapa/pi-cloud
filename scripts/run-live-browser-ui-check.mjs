@@ -225,10 +225,32 @@ try {
         "conversation.elasticMode",
       );
       await setValue(".product-progressive-options > label input", `UI acceptance ${suffix}`);
-      await selectValue(
-        ".product-conversation-model-select",
-        "openai-codex:gpt-5.6-terra",
-        "conversation.modelSelect",
+      await click(
+        ".product-create-model-settings .product-model-menu-trigger",
+        "conversation.modelMenuOpen",
+      );
+      await clickText(
+        ".product-create-model-settings .product-model-menu-level:first-child button",
+        "GPT",
+        "conversation.providerGpt",
+      );
+      await clickText(
+        ".product-create-model-settings .product-model-menu-level button",
+        "GPT-5.6 Terra",
+        "conversation.modelTerra",
+      );
+      await clickText(
+        ".product-create-model-settings .product-model-menu-level button",
+        "高",
+        "conversation.reasoningHigh",
+      );
+      await click(
+        ".product-create-model-settings .product-model-fast-toggle input",
+        "conversation.fastMode",
+      );
+      await click(
+        ".product-create-model-settings .product-model-menu-apply",
+        "conversation.modelApply",
       );
       await setValue('input[placeholder*="order-service"]', `ui-workspace-${suffix}`);
       await click(
@@ -279,19 +301,42 @@ try {
         180_000,
       );
       await page.waitFor(
-        `(()=>{const selector=document.querySelector(".product-model-selector select");return selector instanceof HTMLSelectElement&&!selector.disabled&&[...selector.options].some(option=>option.value==="openai-codex:gpt-5.6-sol")})()`,
+        `(()=>{const selector=document.querySelector(".product-topbar-actions .product-model-menu-trigger");return selector instanceof HTMLButtonElement&&!selector.disabled})()`,
         30_000,
       );
-      await selectValue(
-        ".product-model-selector select",
-        "openai-codex:gpt-5.6-sol",
-        "conversation.modelSwitch",
+      await click(
+        ".product-topbar-actions .product-model-menu-trigger",
+        "conversation.modelMenuReopen",
       );
-      await waitFor(
-        async () =>
-          (await api.getSessionModel(elasticConversation.sessionId)).modelId === "gpt-5.6-sol",
-        "conversation model switch",
+      await clickText(
+        ".product-topbar-actions .product-model-menu-level:first-child button",
+        "DeepSeek",
+        "conversation.providerDeepSeek",
       );
+      await clickText(
+        ".product-topbar-actions .product-model-menu-level button",
+        "DeepSeek V4 Pro",
+        "conversation.modelDeepSeekPro",
+      );
+      await clickText(
+        ".product-topbar-actions .product-model-menu-level button",
+        "高",
+        "conversation.reasoningDeepSeekHigh",
+      );
+      const deepSeekFastVisible = await page.evaluate(
+        'document.querySelector(".product-topbar-actions .product-model-fast-toggle") !== null',
+      );
+      assert.equal(deepSeekFastVisible, false, "DeepSeek incorrectly exposed Fast mode");
+      await click(".product-topbar-actions .product-model-menu-apply", "conversation.modelSwitch");
+      await waitFor(async () => {
+        const selected = await api.getSessionModel(elasticConversation.sessionId);
+        return (
+          selected.provider === "deepseek" &&
+          selected.modelId === "deepseek-v4-pro" &&
+          selected.thinkingLevel === "high" &&
+          selected.fastMode === false
+        );
+      }, "conversation model switch");
       await clickLast(
         ".product-turn .product-user-message .product-message-copy",
         "transcript.copyUserMessage",
@@ -371,7 +416,7 @@ try {
       await clickText(".product-tree-view-switch button", "整棵树", "tree.full");
       await clickText(".product-tree-view-switch button", "当前分支", "tree.focus");
 
-      await click(".product-topbar-actions button:last-child", "workspace.open");
+      await click(".product-topbar-actions .product-workspace-button", "workspace.open");
       await page.waitFor('document.querySelector(".workspace-directory")');
       await click('.workspace-directory-header button[title="刷新目录"]', "workspace.refresh");
       await clickText(".workspace-view-tabs button", "终端", "workspace.terminalTab");
