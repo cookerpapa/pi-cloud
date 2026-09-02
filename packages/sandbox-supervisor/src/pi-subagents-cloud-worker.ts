@@ -483,6 +483,7 @@ async function main(): Promise<void> {
   progress("正在准备 pi-subagents 云端编排器。", { state: "preparing" });
   const directories = prepareAgentDir();
   directoriesForBridge = directories;
+  process.env.PI_OFFLINE = "1";
   process.env.PI_CODING_AGENT_DIR = directories.agentDir;
   process.env.PI_SUBAGENTS_TEMP_ROOT = directories.stateDir;
   process.env.PI_SUBAGENT_PI_BINARY = directories.shimPath;

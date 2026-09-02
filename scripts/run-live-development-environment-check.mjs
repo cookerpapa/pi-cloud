@@ -413,6 +413,41 @@ const continuityRun = await api.acceptTurn(
   "off",
 );
 await waitForRun(continuityRun.runId);
+const sharedSubagentRun = await api.acceptTurn(
+  session.sessionId,
+  [
+    "Call the subagent Tool exactly once.",
+    'Use this exact workflowScript: return runs.run("development-shared", {agent:"cloud-child", context:"fresh", tools:["read","bash"], task:"Use bash to confirm the current directory is /home/user/empty-project and ./test.sh passes, then reply exactly DEVELOPMENT-SUBAGENT-OK"})',
+    "After it finishes, reply exactly DEVELOPMENT-SUBAGENT-OK.",
+  ].join(" "),
+  newIdempotencyKey("turn"),
+  "off",
+);
+await waitForRun(sharedSubagentRun.runId);
+const sharedSubagentEvidence = JSON.parse(
+  await psql(`
+    select json_build_object(
+      'workspaceMode', execution.workspace_mode,
+      'executionMode', child_session.execution_mode,
+      'developmentEnvironmentId', child_session.development_environment_id,
+      'workingDirectory', child_session.working_directory,
+      'childRunState', child_run.state
+    )::text
+    from subagent_executions as execution
+    join sessions as child_session on child_session.id = execution.child_session_id
+    join runs as child_run on child_run.id = execution.child_run_id
+    where execution.parent_run_id = ${sqlLiteral(sharedSubagentRun.runId)}
+    order by execution.created_at desc
+    limit 1
+  `),
+);
+assert.deepEqual(sharedSubagentEvidence, {
+  workspaceMode: "shared",
+  executionMode: "development_environment",
+  developmentEnvironmentId: development.environmentId,
+  workingDirectory: "/home/user/empty-project",
+  childRunState: "completed",
+});
 const discoveredPreviewResponse = await fetchFromProduction(
   `/v1/conversations/${session.sessionId}/preview/${String(previewPort)}/`,
   { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
@@ -567,6 +602,7 @@ const report = {
   processSurvivedTerminalReconnect: true,
   processSurvivedPauseResume: true,
   agentRunBorrowedAndReturnedSameCube: true,
+  sharedSubagentInheritedDevelopmentEnvironment: true,
   consecutiveAgentRunsPreservedPhysicalContinuity: true,
   machineVolumeDeletedOnRelease: true,
   cubeVolumeMetadataDeleted: true,
