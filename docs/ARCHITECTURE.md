@@ -299,10 +299,10 @@ Context, allowed Tools and Workspace modes are explicit and independent:
 
 - `none` creates a Tool-free child and never reserves Cube capacity;
 - `shared` keeps separate Pi contexts and gives parent and child independent
-  Tool bindings to the same Workspace runtime only after a Child actually calls
-  a local Tool. A shared Child of a cloud development-machine Session inherits
-  that machine identity and working directory. Ordinary Linux concurrency governs
-  their files, processes and ports;
+  Tool bindings to the same Workspace runtime. Elastic bindings activate on
+  the first local Tool; a shared Child of a cloud development-machine Session
+  prebinds the existing machine to attest continuity and inherits its working
+  directory. Ordinary Linux concurrency governs their files, processes and ports;
 - upstream `worktree:true` maps to `isolated`: Tool Broker briefly excludes new
   Tool operations while
   the trusted Volume gateway makes an idempotent revision-bound internal
