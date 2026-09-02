@@ -353,7 +353,7 @@ try {
   assert.equal(sharedEvidence.workspaceMode, "shared");
   assert.equal(sharedEvidence.childWorkspaceId, sharedEvidence.parentWorkspaceId);
   assert.equal(sharedEvidence.childRunState, "completed");
-  assert(sharedEvidence.inheritedReferenceCount > 0);
+  assert.equal(sharedEvidence.inheritedReferenceCount, 0);
 
   const isolated = await runTurn(
     session.sessionId,
