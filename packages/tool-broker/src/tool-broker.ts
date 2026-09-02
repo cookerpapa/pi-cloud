@@ -168,6 +168,7 @@ type ManagedDevelopmentEnvironment = {
   handle: SandboxHandle;
   terminal?: SandboxTerminalSession;
   bindingIds: Set<string>;
+  validatedToolRoots: Set<string>;
 };
 
 type AdmissionWaiter = {
@@ -491,6 +492,7 @@ export class ToolBroker {
           assignment: expected,
           handle,
           bindingIds: new Set(),
+          validatedToolRoots: new Set(),
         });
         this.#admitted.set(candidate.reservation.environmentId, expected);
         const capsule = await this.#persistentCapsule(handle);
@@ -645,6 +647,7 @@ export class ToolBroker {
         assignment,
         handle,
         bindingIds: new Set(),
+        validatedToolRoots: new Set(),
       });
       const runtimeCapsule = await this.#persistentCapsule(handle);
       await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "running", {
@@ -1434,7 +1437,10 @@ export class ToolBroker {
         false,
       );
     }
-    await this.#validateDevelopmentToolRoot(environment.handle, request.toolRoot);
+    if (!environment.validatedToolRoots.has(request.toolRoot)) {
+      await this.#validateDevelopmentToolRoot(environment.handle, request.toolRoot);
+      environment.validatedToolRoots.add(request.toolRoot);
+    }
     const physicalActivationId = validActivationId(environment.reservation.environmentId);
     const activationId = validActivationId(
       environment.bindingIds.size === 0

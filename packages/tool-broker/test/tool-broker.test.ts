@@ -631,6 +631,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(parent.activationId).toBe(ACTIVATION_ID);
     expect(child.activationId).toBe(parseExecutionLease(childAssignment.executionLease).attemptId);
     expect(child.continuityId).toBe(parent.continuityId);
+    expect(fixture.listDirectory).toHaveBeenCalledTimes(1);
     await manager.execute(assignment.executionLease, {
       ...operation("21600000-0000-4000-8000-000000000005"),
       activationId: parent.activationId,
