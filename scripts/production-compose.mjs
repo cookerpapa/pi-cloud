@@ -67,7 +67,7 @@ if (unsupportedOptionalProfiles.length > 0) {
 const allowsStaleCubeTemplate =
   recreatesOnlyControlPlane ||
   runsDatabaseBootstrap ||
-  new Set(["build", "down", "stop", "kill", "rm", "ps", "logs", "exec"]).has(command);
+  new Set(["build", "down", "start", "stop", "kill", "rm", "ps", "logs", "exec"]).has(command);
 await access(environmentFile);
 if (composeOverride !== undefined) await access(composeOverride);
 
