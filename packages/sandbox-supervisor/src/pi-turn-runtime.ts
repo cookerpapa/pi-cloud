@@ -14,11 +14,22 @@ export type PiModelRuntimeConfig = {
   transport?: "sse";
   reasoning?: boolean;
   contextWindow?: number;
+  autoCompactTokenLimit?: number;
   maxTokens?: number;
   inputModalities?: readonly AgentModelInputModality[];
   hostedTools?: readonly AgentModelHostedTool[];
   serviceTier?: "fast" | null;
 };
+
+export function resolveCompactionReserveTokens(
+  config: Pick<PiModelRuntimeConfig, "contextWindow" | "autoCompactTokenLimit">,
+  policyReserveTokens: number,
+): number {
+  if (config.contextWindow === undefined || config.autoCompactTokenLimit === undefined) {
+    return policyReserveTokens;
+  }
+  return Math.max(policyReserveTokens, config.contextWindow - config.autoCompactTokenLimit);
+}
 
 export type PiToolOutputCapture = {
   toolCallId: string;

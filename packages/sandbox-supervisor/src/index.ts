@@ -4,6 +4,7 @@ export {
   PINNED_PI_CODING_AGENT_VERSION,
   PiTurnCancelledError,
   PiTurnError,
+  resolveCompactionReserveTokens,
   type PiModelRuntimeConfig,
   type PiCancellationSignal,
   type PiEventPublisher,

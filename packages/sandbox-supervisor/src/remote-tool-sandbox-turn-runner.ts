@@ -507,6 +507,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               ...(modelRuntimeLease!.runtime.contextWindow === undefined
                 ? {}
                 : { contextWindow: modelRuntimeLease!.runtime.contextWindow }),
+              autoCompactTokenLimit: modelRuntimeLease!.runtime.autoCompactTokenLimit,
               ...(modelRuntimeLease!.runtime.maxTokens === undefined
                 ? {}
                 : { maxTokens: modelRuntimeLease!.runtime.maxTokens }),

@@ -39,6 +39,8 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Provider capabilities
 
+- [x] Align GPT-5.6 Worker context and native Compaction threshold with the
+      deployment's 1,000,000/900,000-token Codex baseline.
 - [ ] Measure Standard/Fast latency and usage on every enabled GPT model before
       making Fast a deployment default.
 - [ ] Replace the PiCloud-owned Hosted Tool content block when pinned Pi exposes

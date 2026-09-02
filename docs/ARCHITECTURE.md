@@ -148,6 +148,12 @@ preserves the native item; model handoff retains only portable assistant text,
 reasoning and citation links. Provider-hidden page contents are not returned
 under `store:false` and are not claimed as durable.
 
+The trusted Model Gateway also supplies model-specific context metadata to Pi.
+GPT-5.6 Luna, Terra and Sol use a 1,000,000-token working window and begin
+native Pi Compaction near 900,000 tokens, matching the deployment's local Codex
+baseline. DeepSeek retains its independent 128,000-token window. These limits
+are runtime capabilities, not user-controlled prompt fields.
+
 Image understanding is an input modality, not a Tool. Provider image generation
 is intentionally not exposed until Pi's Agent message contract can preserve and
 restore the generated image result; PiCloud does not replace that missing

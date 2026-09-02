@@ -218,6 +218,8 @@ describe("tenant model gateway", () => {
     await gateway.start();
     const lease = gateway.issue(command("openai-codex", "gpt-5.6-sol", "fast"));
     expect(lease.runtime.serviceTier).toBe("fast");
+    expect(lease.runtime.contextWindow).toBe(1_000_000);
+    expect(lease.runtime.autoCompactTokenLimit).toBe(900_000);
     const endpoint = `http://127.0.0.1:${String(gateway.listeningPort)}/codex/responses`;
     const accepted = await fetch(endpoint, {
       method: "POST",

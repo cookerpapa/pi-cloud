@@ -38,6 +38,7 @@ type SupportedModel =
       providerPath: typeof PROVIDER_RESPONSES_PATH;
       baseUrlPath: "/v1";
       contextWindow: number;
+      autoCompactTokenLimit: number;
       maxTokens: number;
       inputModalities: readonly ["text"];
       hostedTools: readonly ["web_search"];
@@ -50,6 +51,7 @@ type SupportedModel =
       providerPath: typeof PROVIDER_RESPONSES_PATH;
       baseUrlPath: "";
       contextWindow: number;
+      autoCompactTokenLimit: number;
       maxTokens: number;
       inputModalities: readonly ["text", "image"];
       hostedTools: readonly ["web_search"];
@@ -315,6 +317,7 @@ function supportedModel(provider: string, modelId: string): SupportedModel | und
       providerPath: PROVIDER_RESPONSES_PATH,
       baseUrlPath: "/v1",
       contextWindow: 128_000,
+      autoCompactTokenLimit: 111_616,
       maxTokens: 8_192,
       inputModalities: ["text"],
       hostedTools: ["web_search"],
@@ -331,7 +334,8 @@ function supportedModel(provider: string, modelId: string): SupportedModel | und
       requestPath: CODEX_RESPONSES_PATH,
       providerPath: PROVIDER_RESPONSES_PATH,
       baseUrlPath: "",
-      contextWindow: 272_000,
+      contextWindow: 1_000_000,
+      autoCompactTokenLimit: 900_000,
       maxTokens: 65_536,
       inputModalities: ["text", "image"],
       hostedTools: ["web_search"],
@@ -581,6 +585,7 @@ export class TenantModelGateway {
             capability,
             reasoning: true,
             contextWindow: active.contextWindow,
+            autoCompactTokenLimit: active.autoCompactTokenLimit,
             maxTokens: active.maxTokens,
             inputModalities: [...active.inputModalities],
             hostedTools: [...active.hostedTools],
@@ -597,6 +602,7 @@ export class TenantModelGateway {
             capability,
             reasoning: true,
             contextWindow: active.contextWindow,
+            autoCompactTokenLimit: active.autoCompactTokenLimit,
             maxTokens: active.maxTokens,
             inputModalities: [...active.inputModalities],
             hostedTools: [...active.hostedTools],

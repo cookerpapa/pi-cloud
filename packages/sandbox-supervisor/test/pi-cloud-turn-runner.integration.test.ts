@@ -23,6 +23,7 @@ import {
   PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
   PiCloudTurnRunner,
   PiModelRuntimePool,
+  resolveCompactionReserveTokens,
   type PiModelRuntimeConfig,
   type ProviderHostedActivity,
 } from "../src/index.ts";
@@ -138,7 +139,8 @@ describe("PiCloudTurnRunner integration", () => {
       apiKey: `${header}.${payload}.${"s".repeat(43)}`,
       transport: "sse",
       reasoning: true,
-      contextWindow: 272_000,
+      contextWindow: 1_000_000,
+      autoCompactTokenLimit: 900_000,
       maxTokens: 65_536,
       inputModalities: ["text", "image"],
       hostedTools: ["web_search"],
@@ -151,6 +153,12 @@ describe("PiCloudTurnRunner integration", () => {
       baseUrl: "http://127.0.0.1:4200",
       input: ["text", "image"],
     });
+    expect(
+      resolveCompactionReserveTokens(
+        { contextWindow: 1_000_000, autoCompactTokenLimit: 900_000 },
+        16_384,
+      ),
+    ).toBe(100_000);
     lease.release();
   });
 

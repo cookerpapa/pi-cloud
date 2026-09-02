@@ -39,6 +39,7 @@ import {
 import {
   PiTurnCancelledError,
   PiTurnError,
+  resolveCompactionReserveTokens,
   type PiCancellationSignal,
   type PiEventPublisher,
   type PiModelRuntimeConfig,
@@ -265,6 +266,7 @@ function modelRuntimeSignature(config: PiModelRuntimeConfig): string {
     transport: config.transport,
     reasoning: config.reasoning ?? false,
     contextWindow: config.contextWindow ?? 16_384,
+    autoCompactTokenLimit: config.autoCompactTokenLimit,
     maxTokens: config.maxTokens ?? 1_024,
     inputModalities: config.inputModalities ?? ["text"],
     hostedTools: config.hostedTools ?? [],
@@ -767,7 +769,10 @@ export class PiCloudTurnRunner {
           retry: { enabled: true, maxRetries: 2, baseDelayMs: 500 },
           compaction: {
             enabled: true,
-            reserveTokens: command.payload.budgets?.compactionReserveTokens ?? 16_384,
+            reserveTokens: resolveCompactionReserveTokens(
+              config,
+              command.payload.budgets?.compactionReserveTokens ?? 16_384,
+            ),
             keepRecentTokens: command.payload.budgets?.compactionKeepRecentTokens ?? 20_000,
           },
           transformContext: (messages) => tools.transformContext(messages),
