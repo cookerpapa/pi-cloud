@@ -431,6 +431,7 @@ async function runTurn(sessionId, prompt, expectedTools) {
   let firstTextAt;
   let firstResponseAt;
   let terminal;
+  let canonicalTerminal;
   const observeEvent = (event) => {
     if (event.turnId !== accepted.turnId) return;
     if (events.some((candidate) => candidate.eventId === event.eventId)) return;
@@ -465,13 +466,35 @@ async function runTurn(sessionId, prompt, expectedTools) {
       onStatus() {},
       onSnapshot(snapshot) {
         for (const event of snapshot.liveEvents) observeEvent(event);
+        const recovered = snapshot.conversation.turns.find(
+          (turn) => turn.turnId === accepted.turnId,
+        );
+        if (
+          recovered !== undefined &&
+          ["completed", "failed", "cancelled"].includes(recovered.state)
+        ) {
+          canonicalTerminal = recovered;
+          const recoveredText = (recovered.transcript?.items ?? [])
+            .filter((item) => item.kind === "text")
+            .map((item) => item.text);
+          if (recoveredText.length > 0) {
+            text.splice(0, text.length, ...recoveredText);
+            firstResponseAt ??= performance.now();
+            firstTextAt ??= performance.now();
+          }
+          controller.abort();
+        }
       },
       onEvent: observeEvent,
     });
-    assert(terminal, "Turn did not publish a terminal event");
-    assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
+    assert(terminal || canonicalTerminal, "Turn exposed no live or canonical terminal state");
+    assert.equal(
+      terminal?.type ?? `turn.${canonicalTerminal.state}`,
+      "turn.completed",
+      JSON.stringify(terminal?.payload ?? canonicalTerminal),
+    );
     assert.notEqual(
-      terminal.payload.stopReason,
+      terminal?.payload.stopReason ?? canonicalTerminal?.transcript?.stopReason,
       "length",
       "Model exhausted its output allowance before completing the coding Turn",
     );
