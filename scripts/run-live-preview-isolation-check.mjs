@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { format } from "prettier";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 
 if (process.env.PI_CLOUD_LIVE_PREVIEW_ISOLATION_CHECK !== "1") {
@@ -224,7 +225,7 @@ try {
   };
   await writeFile(
     resolve(repositoryRoot, "docs/reports/preview-isolation-acceptance-latest.json"),
-    `${JSON.stringify(report, null, 2)}\n`,
+    await format(JSON.stringify(report), { parser: "json" }),
     "utf8",
   );
   process.stdout.write(`${JSON.stringify(report)}\n`);

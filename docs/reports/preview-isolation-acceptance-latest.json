@@ -4,14 +4,7 @@
   "checkedAt": "2026-09-02T03:37:57.535Z",
   "sessions": 2,
   "concurrentInitialRuns": 2,
-  "sameSessionPorts": [
-    3000,
-    8000,
-    5173
-  ],
-  "reusedCrossSessionPorts": [
-    3000,
-    8000
-  ],
+  "sameSessionPorts": [3000, 8000, 5173],
+  "reusedCrossSessionPorts": [3000, 8000],
   "crossSessionMarkerLeak": false
 }
