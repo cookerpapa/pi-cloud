@@ -835,16 +835,6 @@ export interface SessionLeaseTable {
   renewed_at: GeneratedTimestamp;
 }
 
-export interface SessionKafkaHeadTable {
-  tenant_id: string;
-  session_id: string;
-  topic: string;
-  kafka_partition: number;
-  kafka_offset: Int8;
-  canonical_event_seq: Int8;
-  updated_at: GeneratedTimestamp;
-}
-
 export interface SupervisorConnectionTable {
   connection_id: string;
   transport_id: string;
@@ -1032,19 +1022,6 @@ export interface ModelRateTable {
   output_microusd_per_million: GeneratedInt8;
   cache_read_microusd_per_million: GeneratedInt8;
   cache_write_microusd_per_million: GeneratedInt8;
-  created_at: GeneratedTimestamp;
-  updated_at: GeneratedTimestamp;
-}
-
-export interface ModelRoutingPolicyTable {
-  tenant_id: string;
-  model_profile_id: string;
-  fallback_provider: string | null;
-  fallback_model_id: string | null;
-  fallback_on_rate_limit: GeneratedBoolean;
-  fallback_on_server_error: GeneratedBoolean;
-  fallback_on_timeout: GeneratedBoolean;
-  enabled: GeneratedBoolean;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
 }
@@ -1258,7 +1235,6 @@ export interface Database {
   supervisor_hosts: SupervisorHostTable;
   sandbox_retirements: SandboxRetirementTable;
   session_leases: SessionLeaseTable;
-  session_kafka_heads: SessionKafkaHeadTable;
   turn_control_requests: TurnControlRequestTable;
   conversation_fork_operations: ConversationForkOperationTable;
   session_terminal_events: SessionTerminalEventTable;
@@ -1266,7 +1242,6 @@ export interface Database {
   artifacts: ArtifactTable;
   usage_ledger: UsageLedgerTable;
   model_rates: ModelRateTable;
-  model_routing_policies: ModelRoutingPolicyTable;
   model_requests: ModelRequestTable;
   platform_runtime_settings: PlatformRuntimeSettingsTable;
   platform_runtime_setting_changes: PlatformRuntimeSettingChangeTable;

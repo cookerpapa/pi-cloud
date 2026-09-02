@@ -119,6 +119,7 @@ import * as removeEnvironmentValidationBackfill from "./117_remove_environment_v
 import * as externalProviderCredentials from "./118_external_provider_credentials.ts";
 import * as codexOffThinkingLevel from "./119_codex_off_thinking_level.ts";
 import * as sessionModelSettings from "./120_session_model_settings.ts";
+import * as removeUnusedRoutingState from "./121_remove_unused_routing_state.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -243,6 +244,7 @@ export const migrationProvider: MigrationProvider = {
       "118_external_provider_credentials": externalProviderCredentials,
       "119_codex_off_thinking_level": codexOffThinkingLevel,
       "120_session_model_settings": sessionModelSettings,
+      "121_remove_unused_routing_state": removeUnusedRoutingState,
     };
   },
 };

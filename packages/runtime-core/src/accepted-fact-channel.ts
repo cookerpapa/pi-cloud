@@ -144,15 +144,6 @@ class ServerFactChannel implements AcceptedFactChannelSession {
   }
 
   async ingest(value: unknown): Promise<EventAckMessage> {
-    await this.#ensureLease();
-    this.#assertUsable();
-    if (this.#publishing) {
-      throw new DurableEventStoreError(
-        "event_conflict",
-        "FactChannel accepts one ordered publication at a time",
-        true,
-      );
-    }
     const message = parseSupervisorToControlMessage(value);
     if (
       message.type !== "event.publish" ||

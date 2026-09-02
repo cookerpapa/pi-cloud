@@ -1,6 +1,5 @@
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
-import { sql } from "kysely";
 import { KafkaAcceptedFactConsumer } from "./kafka-accepted-fact-consumer.ts";
 import { PostgresPiSessionMutationProjector } from "./postgres-pi-session-mutation-projector.ts";
 
@@ -34,25 +33,6 @@ export class KafkaCanonicalProjector {
             .executeTakeFirst();
           if (session === undefined) return;
           await this.#mutations.project(record.fact);
-        } else if (record.fact.kind === "terminal_event") {
-          await sql`
-            insert into session_kafka_heads(
-              tenant_id, session_id, topic, kafka_partition, kafka_offset,
-              canonical_event_seq, updated_at
-            ) select
-              ${record.fact.scope.tenantId}, ${record.fact.scope.sessionId}, ${record.topic},
-              ${record.partition}, ${record.offset}, ${record.fact.event.seq}, now()
-              from sessions
-             where tenant_id = ${record.fact.scope.tenantId}
-               and id = ${record.fact.scope.sessionId}
-            on conflict (tenant_id, session_id) do update
-              set topic = excluded.topic,
-                  kafka_partition = excluded.kafka_partition,
-                  kafka_offset = excluded.kafka_offset,
-                  canonical_event_seq = excluded.canonical_event_seq,
-                  updated_at = excluded.updated_at
-              where session_kafka_heads.kafka_offset <= excluded.kafka_offset
-          `.execute(this.#database);
         }
       },
     });

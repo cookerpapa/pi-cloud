@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(120);
+      expect(firstMigrationPass.rows).toHaveLength(121);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("120_session_model_settings");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("121_remove_unused_routing_state");
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
@@ -40,7 +40,6 @@ describe("current PiCloud schema", () => {
         "run_attempts",
         "turn_control_requests",
         "session_leases",
-        "session_kafka_heads",
         "pi_sessions",
         "pi_session_entries",
         "tool_broker_workspace_runtimes",
@@ -78,6 +77,8 @@ describe("current PiCloud schema", () => {
         "oidc_authentication_requests",
         "environment_validation_evidence_backfills",
         "tenant_model_credentials",
+        "model_routing_policies",
+        "session_kafka_heads",
       ]) {
         expect(names.has(retired), `retired table ${retired} survived`).toBe(false);
       }
@@ -126,7 +127,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("120_session_model_settings");
+      expect(applied.rows.at(-1)?.name).toBe("121_remove_unused_routing_state");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

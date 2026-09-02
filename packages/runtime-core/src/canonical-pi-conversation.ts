@@ -407,9 +407,7 @@ export async function appendInterruptedAssistantPrefix(
     .join("");
   const missingText = visibleText.startsWith(canonicalText)
     ? visibleText.slice(canonicalText.length)
-    : visibleText === canonicalText
-      ? ""
-      : visibleText;
+    : visibleText;
   if (missingText.length === 0) return false;
   const sequence = safeInteger(session.next_seq, "Pi Session next sequence");
   const timestampMs = input.now.valueOf();
