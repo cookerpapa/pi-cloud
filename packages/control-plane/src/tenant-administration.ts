@@ -8,6 +8,7 @@ import {
   type GeneratedTenantApiCredential,
 } from "./tenant-identity.ts";
 import type { ProviderModelSelection } from "@pi-cloud/protocol";
+import { supportedModel } from "./model-profile-catalog.ts";
 
 export type TenantQuotaConfiguration = Readonly<{
   maximumProjects: number;
@@ -178,6 +179,10 @@ export async function createPrivateTenant(
     throw new TypeError("tenant administration clock must return a valid Date");
   }
   const initialModel = options.initialModel;
+  const initialCatalogModel = initialModel === undefined ? undefined : supportedModel(initialModel);
+  if (initialModel !== undefined && initialCatalogModel === undefined) {
+    throw new TypeError("Initial tenant model is unsupported");
+  }
 
   const existing = await database
     .selectFrom("tenants")
@@ -257,8 +262,10 @@ export async function createPrivateTenant(
           name: initialModel === undefined ? "deterministic-java-repair" : "platform-default",
           provider: initialModel?.provider ?? "pi-cloud-fake",
           model_id: initialModel?.modelId ?? "pi-cloud-fake",
-          default_thinking_level: "off",
-          allowed_thinking_levels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+          default_thinking_level: initialCatalogModel?.defaultThinkingLevel ?? "off",
+          allowed_thinking_levels: initialCatalogModel?.thinkingLevels
+            ? [...initialCatalogModel.thinkingLevels]
+            : ["off"],
           credential_binding_id: credentialBindingId,
           credential_binding_version: 1,
           enabled: true,

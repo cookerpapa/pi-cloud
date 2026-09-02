@@ -23,7 +23,7 @@ import type {
   ProjectEnvironmentResource,
   EnvironmentRuntimeSnapshot,
   ModelCatalogResource,
-  ProviderModelSelection,
+  SessionModelSelection,
   RunResource,
   ExecutionMode,
   SessionResource,
@@ -52,6 +52,7 @@ import {
   ensureSelectableModelProfile,
   supportedModel,
   supportedModelSelection,
+  supportedSessionModelSelection,
 } from "./model-profile-catalog.ts";
 
 export type ControlPlaneStoreOptions = {
@@ -503,7 +504,7 @@ export class ControlPlaneStore {
       sandboxProfileKey?: DevelopmentEnvironmentProfileKey;
       workingDirectory?: string;
       ownerUserId?: string;
-      model?: ProviderModelSelection;
+      model?: SessionModelSelection;
     }> = {},
   ): Promise<SessionResource> {
     const sessionId = this.#idGenerator();
@@ -639,6 +640,15 @@ export class ControlPlaneStore {
       }
       const sandboxProfileKey = environmentProfileKey ?? execution.sandboxProfileKey ?? "standard";
 
+      if (
+        execution.model !== undefined &&
+        supportedSessionModelSelection(execution.model) === undefined
+      ) {
+        throw new ControlPlaneStoreError(
+          "invalid_request",
+          "Session model settings are unsupported",
+        );
+      }
       const selectedModelProfile =
         execution.model === undefined
           ? undefined
@@ -650,7 +660,12 @@ export class ControlPlaneStore {
               now: new Date(),
             });
       const modelProfileId = selectedModelProfile?.profileId ?? policy.defaultModelProfileId;
-      await this.#resolveModelSnapshot(transaction, modelProfileId);
+      const model = await this.#resolveModelSnapshot(
+        transaction,
+        modelProfileId,
+        execution.model?.thinkingLevel,
+        execution.model?.fastMode === true ? "fast" : null,
+      );
       const session = await transaction
         .insertInto("sessions")
         .values({
@@ -661,6 +676,8 @@ export class ControlPlaneStore {
           workspace_id: workspace.id,
           development_environment_id: developmentEnvironment?.id ?? null,
           desired_model_profile_id: modelProfileId,
+          desired_thinking_level: model.thinkingLevel,
+          desired_service_tier: model.serviceTier,
           agent_revision_id: PI_CODING_AGENT_REVISION_ID,
           created_by_user_id: execution.ownerUserId ?? null,
           state: "cold",
@@ -754,7 +771,7 @@ export class ControlPlaneStore {
 
   async updateSessionModel(
     sessionId: string,
-    selection: ProviderModelSelection,
+    selection: SessionModelSelection,
   ): Promise<SessionModelResource> {
     return this.#database.transaction().execute(async (transaction) => {
       await this.#lockTenantPolicy(transaction);
@@ -782,6 +799,12 @@ export class ControlPlaneStore {
           "Conversation model cannot change while a Run is active",
         );
       }
+      if (supportedSessionModelSelection(selection) === undefined) {
+        throw new ControlPlaneStoreError(
+          "invalid_request",
+          "Session model settings are unsupported",
+        );
+      }
       const profile = await ensureSelectableModelProfile({
         transaction,
         tenantId: this.#tenantId,
@@ -793,6 +816,8 @@ export class ControlPlaneStore {
         .updateTable("sessions")
         .set({
           desired_model_profile_id: profile.profileId,
+          desired_thinking_level: selection.thinkingLevel,
+          desired_service_tier: selection.fastMode ? "fast" : null,
           row_version: sql<string>`${sql.ref("row_version")} + 1`,
           updated_at: new Date(),
         })
@@ -1966,6 +1991,8 @@ export class ControlPlaneStore {
           "session_row.project_id",
           "session_row.workspace_id",
           "session_row.desired_model_profile_id",
+          "session_row.desired_thinking_level",
+          "session_row.desired_service_tier",
           "session_row.agent_revision_id",
           "session_row.session_kind",
           "session_row.state",
@@ -2108,7 +2135,8 @@ export class ControlPlaneStore {
       const model = await this.#resolveModelSnapshot(
         transaction,
         session.desired_model_profile_id,
-        request.thinkingLevel,
+        request.thinkingLevel ?? (session.desired_thinking_level as ModelThinkingLevel),
+        session.desired_service_tier,
       );
       let toolCapabilities;
       try {
@@ -2140,6 +2168,7 @@ export class ControlPlaneStore {
           provider: model.provider,
           model_id: model.modelId,
           thinking_level: model.thinkingLevel,
+          service_tier: model.serviceTier,
           credential_binding_id: model.credentialBindingId,
           credential_binding_version: model.credentialBindingVersion,
           stop_reason: null,
@@ -2610,6 +2639,7 @@ export class ControlPlaneStore {
     transaction: Transaction<Database>,
     modelProfileId: string,
     requestedThinkingLevel?: ModelThinkingLevel,
+    serviceTier: "fast" | null = null,
   ) {
     const row = (await transaction
       .selectFrom("model_profiles as profile")
@@ -2661,7 +2691,18 @@ export class ControlPlaneStore {
       enabled: row.profileEnabled,
     };
     try {
-      return resolveTurnModel(profile, requestedThinkingLevel);
+      const resolved = resolveTurnModel(profile, requestedThinkingLevel);
+      const catalogModel = supportedModelSelection(resolved.provider, resolved.modelId);
+      const supported = catalogModel === undefined ? undefined : supportedModel(catalogModel);
+      if (supported !== undefined && !supported.thinkingLevels.includes(resolved.thinkingLevel)) {
+        throw new DomainModelValidationError(
+          `Thinking level ${resolved.thinkingLevel} is not supported by ${resolved.modelId}`,
+        );
+      }
+      if (serviceTier === "fast" && supported?.fastModeAvailable !== true) {
+        throw new DomainModelValidationError(`Fast mode is not supported by ${resolved.modelId}`);
+      }
+      return { ...resolved, serviceTier };
     } catch (error) {
       if (error instanceof DomainModelValidationError) {
         throw new ControlPlaneStoreError(
@@ -2693,6 +2734,8 @@ export class ControlPlaneStore {
       .select([
         "session.id as sessionId",
         "session.desired_model_profile_id as modelProfileId",
+        "session.desired_thinking_level as thinkingLevel",
+        "session.desired_service_tier as serviceTier",
         "session.session_kind as sessionKind",
         "profile.provider",
         "profile.model_id as modelId",
@@ -2719,6 +2762,8 @@ export class ControlPlaneStore {
       provider: catalogModel.provider,
       modelId: catalogModel.modelId,
       displayName: catalogModel.displayName,
+      thinkingLevel: row.thinkingLevel,
+      fastMode: row.serviceTier === "fast",
     } as SessionModelResource;
   }
 

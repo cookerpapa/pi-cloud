@@ -58,6 +58,7 @@ function modelSnapshot() {
     provider: "pi-cloud-fake",
     modelId: "pi-cloud-fake",
     thinkingLevel: "off",
+    serviceTier: null,
     credentialBindingId: "credential-binding-1",
     credentialBindingVersion: 3,
   } as const;

@@ -315,6 +315,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
             provider: request.model.provider,
             modelId: request.model.modelId,
             thinkingLevel: request.model.thinkingLevel,
+            serviceTier: request.model.serviceTier,
             credentialBindingId: request.model.credentialBindingId,
             credentialBindingVersion: positiveSafeInteger(
               request.model.credentialBindingVersion,

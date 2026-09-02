@@ -118,6 +118,7 @@ import * as removeOidcLogin from "./116_remove_oidc_login.ts";
 import * as removeEnvironmentValidationBackfill from "./117_remove_environment_validation_backfill.ts";
 import * as externalProviderCredentials from "./118_external_provider_credentials.ts";
 import * as codexOffThinkingLevel from "./119_codex_off_thinking_level.ts";
+import * as sessionModelSettings from "./120_session_model_settings.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -241,6 +242,7 @@ export const migrationProvider: MigrationProvider = {
       "117_remove_environment_validation_backfill": removeEnvironmentValidationBackfill,
       "118_external_provider_credentials": externalProviderCredentials,
       "119_codex_off_thinking_level": codexOffThinkingLevel,
+      "120_session_model_settings": sessionModelSettings,
     };
   },
 };

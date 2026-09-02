@@ -512,6 +512,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 : { maxTokens: modelRuntimeLease!.runtime.maxTokens }),
               inputModalities: modelRuntimeLease!.runtime.inputModalities,
               hostedTools: modelRuntimeLease!.runtime.hostedTools,
+              serviceTier: modelRuntimeLease!.runtime.serviceTier,
             };
       const onSettled: NonNullable<PiCloudTurnRunnerOptions["onSettled"]> = async () => {
         if (activation === undefined) {

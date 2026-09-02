@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { mergeProviderHostedTools } from "../src/provider-hosted-tools.ts";
+import {
+  mergeProviderHostedTools,
+  mergeProviderServiceTier,
+} from "../src/provider-hosted-tools.ts";
 
 describe("Provider-hosted Tool payloads", () => {
   it("adds Web Search beside Pi function Tools without changing their schemas", () => {
@@ -24,5 +27,14 @@ describe("Provider-hosted Tool payloads", () => {
 
     const functionOnly = { tools: [{ type: "function", name: "bash" }] };
     expect(mergeProviderHostedTools(functionOnly, [])).toBe(functionOnly);
+  });
+
+  it("adds Fast as request metadata without changing Standard payloads", () => {
+    const payload = { model: "gpt-5.6-sol", stream: true };
+    expect(mergeProviderServiceTier(payload, "fast")).toEqual({
+      ...payload,
+      service_tier: "fast",
+    });
+    expect(mergeProviderServiceTier(payload, null)).toBe(payload);
   });
 });

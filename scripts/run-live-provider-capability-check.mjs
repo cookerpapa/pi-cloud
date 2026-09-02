@@ -170,7 +170,12 @@ try {
     "elastic",
     "starter",
     "/workspace",
-    { provider: "deepseek", modelId: "deepseek-v4-flash" },
+    {
+      provider: "deepseek",
+      modelId: "deepseek-v4-flash",
+      thinkingLevel: "low",
+      fastMode: false,
+    },
   );
   const observedEvents = [];
   let streamLive = false;
@@ -263,6 +268,8 @@ try {
   await api.updateSessionModel(session.sessionId, {
     provider: "openai-codex",
     modelId: "gpt-5.6-luna",
+    thinkingLevel: "medium",
+    fastMode: false,
   });
   assert.equal((await api.getSessionModel(session.sessionId)).provider, "openai-codex");
 

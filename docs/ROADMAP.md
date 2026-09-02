@@ -24,6 +24,8 @@
 - Provider-native Web Search on the verified OpenAI Codex and DeepSeek Responses routes,
   frozen with each issued model runtime, retained as Codex-shaped Pi transcript
   items and kept outside Tool Broker.
+- Provider → model → reasoning selection with GPT request-scoped Fast mode,
+  Session desired settings and immutable Turn snapshots.
 
 ## Current release gate
 

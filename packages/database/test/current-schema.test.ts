@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(119);
+      expect(firstMigrationPass.rows).toHaveLength(120);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("119_codex_off_thinking_level");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("120_session_model_settings");
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
@@ -86,7 +86,7 @@ describe("current PiCloud schema", () => {
         select table_name, column_name
           from information_schema.columns
          where table_schema = 'public'
-           and table_name in ('workspaces', 'sessions', 'runs', 'tenant_runtime_policies')
+           and table_name in ('workspaces', 'sessions', 'turns', 'runs', 'tenant_runtime_policies')
       `.execute(database);
       const keys = new Set(columns.rows.map((row) => `${row.table_name}.${row.column_name}`));
       expect(keys.has("workspaces.seed_kind")).toBe(true);
@@ -96,6 +96,9 @@ describe("current PiCloud schema", () => {
       expect(keys.has("runs.request_sha256")).toBe(true);
       expect(keys.has("runs.available_at")).toBe(true);
       expect(keys.has("sessions.agent_revision_id")).toBe(true);
+      expect(keys.has("sessions.desired_thinking_level")).toBe(true);
+      expect(keys.has("sessions.desired_service_tier")).toBe(true);
+      expect(keys.has("turns.service_tier")).toBe(true);
       expect(keys.has("runs.agent_revision_id")).toBe(true);
       expect(keys.has("runs.command_id")).toBe(false);
       expect(keys.has("tenant_runtime_policies.maximum_concurrent_turns")).toBe(false);
@@ -123,7 +126,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("119_codex_off_thinking_level");
+      expect(applied.rows.at(-1)?.name).toBe("120_session_model_settings");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

@@ -1,34 +1,55 @@
 import type { Database } from "@pi-cloud/database";
-import type { ModelCatalogEntryResource, ProviderModelSelection } from "@pi-cloud/protocol";
+import type {
+  ModelCatalogEntryResource,
+  ProviderModelSelection,
+  SessionModelSelection,
+  TurnThinkingLevel,
+} from "@pi-cloud/protocol";
 import type { Transaction } from "kysely";
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+const GPT_THINKING_LEVELS: TurnThinkingLevel[] = ["off", "low", "medium", "high", "xhigh", "max"];
+const DEEPSEEK_THINKING_LEVELS: TurnThinkingLevel[] = ["off", "low", "medium", "high", "max"];
 
 export const SUPPORTED_MODEL_CATALOG = Object.freeze([
   {
     provider: "openai-codex",
     modelId: "gpt-5.6-terra",
     displayName: "GPT-5.6 Terra",
+    thinkingLevels: GPT_THINKING_LEVELS,
+    defaultThinkingLevel: "medium",
+    fastModeAvailable: true,
   },
   {
     provider: "openai-codex",
     modelId: "gpt-5.6-sol",
     displayName: "GPT-5.6 Sol",
+    thinkingLevels: GPT_THINKING_LEVELS,
+    defaultThinkingLevel: "low",
+    fastModeAvailable: true,
   },
   {
     provider: "openai-codex",
     modelId: "gpt-5.6-luna",
     displayName: "GPT-5.6 Luna",
+    thinkingLevels: GPT_THINKING_LEVELS,
+    defaultThinkingLevel: "medium",
+    fastModeAvailable: true,
   },
   {
     provider: "deepseek",
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
+    thinkingLevels: DEEPSEEK_THINKING_LEVELS,
+    defaultThinkingLevel: "off",
+    fastModeAvailable: false,
   },
   {
     provider: "deepseek",
     modelId: "deepseek-v4-pro",
     displayName: "DeepSeek V4 Pro",
+    thinkingLevels: DEEPSEEK_THINKING_LEVELS,
+    defaultThinkingLevel: "off",
+    fastModeAvailable: false,
   },
 ] satisfies readonly Omit<ModelCatalogEntryResource, "default">[]);
 
@@ -52,6 +73,20 @@ export function supportedModelSelection(
     return { provider: model.provider, modelId: model.modelId };
   }
   return { provider: model.provider, modelId: model.modelId };
+}
+
+export function supportedSessionModelSelection(
+  selection: SessionModelSelection,
+): (typeof SUPPORTED_MODEL_CATALOG)[number] | undefined {
+  const model = supportedModel(selection);
+  if (
+    model === undefined ||
+    !model.thinkingLevels.includes(selection.thinkingLevel) ||
+    (selection.fastMode && !model.fastModeAvailable)
+  ) {
+    return undefined;
+  }
+  return model;
 }
 
 export type SelectableModelProfile = Readonly<{
@@ -113,6 +148,7 @@ export async function ensureSelectableModelProfile(options: {
 
   const profileId = options.idGenerator();
   const credentialBindingId = options.idGenerator();
+  const catalogModel = supportedModel(options.selection)!;
   await options.transaction
     .insertInto("credential_bindings")
     .values({
@@ -135,8 +171,8 @@ export async function ensureSelectableModelProfile(options: {
       name: `selectable-${options.selection.provider}-${options.selection.modelId}-${profileId.slice(0, 8)}`,
       provider: options.selection.provider,
       model_id: options.selection.modelId,
-      default_thinking_level: "off",
-      allowed_thinking_levels: [...THINKING_LEVELS],
+      default_thinking_level: catalogModel.defaultThinkingLevel,
+      allowed_thinking_levels: [...catalogModel.thinkingLevels],
       credential_binding_id: credentialBindingId,
       credential_binding_version: 1,
       enabled: true,

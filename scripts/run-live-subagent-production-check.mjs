@@ -284,7 +284,12 @@ api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 authorizationToken = registration.apiToken;
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production tenant must use a real model");
-const acceptanceModel = { provider: "deepseek", modelId: "deepseek-v4-flash" };
+const acceptanceModel = {
+  provider: "deepseek",
+  modelId: "deepseek-v4-flash",
+  thinkingLevel: "off",
+  fastMode: false,
+};
 const project = await api.createProject(`Subagent production acceptance ${suffix}`);
 const session = await api.createSession(
   project.projectId,

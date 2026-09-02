@@ -74,6 +74,7 @@ function command(tenantId: string = IDS.tenant): ExecuteTurnCommandMessage {
         provider: "pi-cloud-fake",
         modelId: "pi-cloud-fake",
         thinkingLevel: "off",
+        serviceTier: null,
         credentialBindingId: IDS.credential,
         credentialBindingVersion: 1,
       },

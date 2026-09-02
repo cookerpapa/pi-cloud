@@ -31,7 +31,7 @@ import {
   type PiSandboxContinuity,
 } from "./pi-sandbox-continuity.ts";
 import { PiSamplingStepController, type PiSamplingStepCapture } from "./pi-sampling-step.ts";
-import { mergeProviderHostedTools } from "./provider-hosted-tools.ts";
+import { mergeProviderHostedTools, mergeProviderServiceTier } from "./provider-hosted-tools.ts";
 import {
   applyProviderHostedTranscript,
   replayProviderHostedTranscripts,
@@ -156,6 +156,16 @@ function validateRuntimeConfig(
   if (config.apiKey.length === 0) {
     throw new PiTurnError("credential_unavailable", "Model credential is unavailable", true);
   }
+  if ((config.serviceTier ?? null) !== command.payload.model.serviceTier) {
+    throw new PiTurnError(
+      "model_binding_mismatch",
+      "Resolved model runtime service tier does not match the accepted turn",
+      false,
+    );
+  }
+  if (config.serviceTier === "fast" && config.provider !== "openai-codex") {
+    throw new PiTurnError("invalid_model_runtime", "Fast mode requires an OpenAI model", false);
+  }
   const url = new URL(config.baseUrl);
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new PiTurnError("invalid_model_runtime", "Model endpoint is invalid", false);
@@ -258,6 +268,7 @@ function modelRuntimeSignature(config: PiModelRuntimeConfig): string {
     maxTokens: config.maxTokens ?? 1_024,
     inputModalities: config.inputModalities ?? ["text"],
     hostedTools: config.hostedTools ?? [],
+    serviceTier: config.serviceTier ?? null,
   });
 }
 
@@ -741,11 +752,14 @@ export class PiCloudTurnRunner {
             // The cloud runtime owns visible, governed retry attempts so each one
             // receives a fresh sampling identity and model-request ledger row.
             maxRetries: 0,
-            ...(config.hostedTools === undefined || config.hostedTools.length === 0
+            ...((config.hostedTools === undefined || config.hostedTools.length === 0) &&
+            config.serviceTier !== "fast"
               ? {}
               : {
-                  onPayload: (payload: unknown) =>
-                    mergeProviderHostedTools(payload, config.hostedTools ?? []),
+                  onPayload: (payload: unknown) => {
+                    const withTools = mergeProviderHostedTools(payload, config.hostedTools ?? []);
+                    return mergeProviderServiceTier(withTools, config.serviceTier);
+                  },
                 }),
             ...(config.transport === undefined ? {} : { transport: config.transport }),
             ...(config.maxTokens === undefined ? {} : { maxTokens: config.maxTokens }),

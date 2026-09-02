@@ -62,6 +62,27 @@ export const ProviderModelSelectionSchema = Type.Union([
   ),
 ]);
 
+export const SessionModelSelectionSchema = Type.Union([
+  Type.Object(
+    {
+      provider: Type.Literal("deepseek"),
+      modelId: DeepSeekModelIdSchema,
+      thinkingLevel: TurnThinkingLevelSchema,
+      fastMode: Type.Literal(false),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      provider: Type.Literal("openai-codex"),
+      modelId: OpenAICodexModelIdSchema,
+      thinkingLevel: TurnThinkingLevelSchema,
+      fastMode: Type.Boolean(),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
 export const ReplaceModelConfigurationRequestSchema = ProviderModelSelectionSchema;
 
 export const ModelCatalogEntryResourceSchema = Type.Union([
@@ -71,6 +92,13 @@ export const ModelCatalogEntryResourceSchema = Type.Union([
       modelId: DeepSeekModelIdSchema,
       displayName: Type.String({ minLength: 1, maxLength: 128 }),
       default: Type.Boolean(),
+      thinkingLevels: Type.Array(TurnThinkingLevelSchema, {
+        minItems: 1,
+        maxItems: 7,
+        uniqueItems: true,
+      }),
+      defaultThinkingLevel: TurnThinkingLevelSchema,
+      fastModeAvailable: Type.Literal(false),
     },
     { additionalProperties: false },
   ),
@@ -80,6 +108,13 @@ export const ModelCatalogEntryResourceSchema = Type.Union([
       modelId: OpenAICodexModelIdSchema,
       displayName: Type.String({ minLength: 1, maxLength: 128 }),
       default: Type.Boolean(),
+      thinkingLevels: Type.Array(TurnThinkingLevelSchema, {
+        minItems: 1,
+        maxItems: 7,
+        uniqueItems: true,
+      }),
+      defaultThinkingLevel: TurnThinkingLevelSchema,
+      fastModeAvailable: Type.Literal(true),
     },
     { additionalProperties: false },
   ),
@@ -92,7 +127,7 @@ export const ModelCatalogResourceSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const UpdateSessionModelRequestSchema = ProviderModelSelectionSchema;
+export const UpdateSessionModelRequestSchema = SessionModelSelectionSchema;
 
 export const SessionModelResourceSchema = Type.Union([
   Type.Object(
@@ -102,6 +137,8 @@ export const SessionModelResourceSchema = Type.Union([
       provider: Type.Literal("deepseek"),
       modelId: DeepSeekModelIdSchema,
       displayName: Type.String({ minLength: 1, maxLength: 128 }),
+      thinkingLevel: TurnThinkingLevelSchema,
+      fastMode: Type.Literal(false),
     },
     { additionalProperties: false },
   ),
@@ -112,6 +149,8 @@ export const SessionModelResourceSchema = Type.Union([
       provider: Type.Literal("openai-codex"),
       modelId: OpenAICodexModelIdSchema,
       displayName: Type.String({ minLength: 1, maxLength: 128 }),
+      thinkingLevel: TurnThinkingLevelSchema,
+      fastMode: Type.Boolean(),
     },
     { additionalProperties: false },
   ),
@@ -324,7 +363,7 @@ export const CreateSessionRequestSchema = Type.Object(
   {
     workspaceId: UuidSchema,
     title: Type.String({ minLength: 1, maxLength: 256 }),
-    model: Type.Optional(ProviderModelSelectionSchema),
+    model: Type.Optional(SessionModelSelectionSchema),
     executionMode: Type.Optional(ExecutionModeSchema),
     sandboxProfileKey: Type.Optional(DevelopmentEnvironmentProfileKeySchema),
     workingDirectory: Type.Optional(
@@ -1067,6 +1106,7 @@ export type LogoutResource = Static<typeof LogoutResourceSchema>;
 export type DeepSeekModelId = Static<typeof DeepSeekModelIdSchema>;
 export type OpenAICodexModelId = Static<typeof OpenAICodexModelIdSchema>;
 export type ProviderModelSelection = Static<typeof ProviderModelSelectionSchema>;
+export type SessionModelSelection = Static<typeof SessionModelSelectionSchema>;
 export type ModelCatalogEntryResource = Static<typeof ModelCatalogEntryResourceSchema>;
 export type ModelCatalogResource = Static<typeof ModelCatalogResourceSchema>;
 export type UpdateSessionModelRequest = Static<typeof UpdateSessionModelRequestSchema>;

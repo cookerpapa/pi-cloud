@@ -408,6 +408,9 @@ describe("control-plane public API schemas", () => {
             modelId: "gpt-5.6-terra",
             displayName: "GPT-5.6 Terra",
             default: true,
+            thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
+            defaultThinkingLevel: "medium",
+            fastModeAvailable: true,
           },
         ],
       }),
@@ -416,8 +419,15 @@ describe("control-plane public API schemas", () => {
       parseUpdateSessionModelRequest({
         provider: "deepseek",
         modelId: "deepseek-v4-pro",
+        thinkingLevel: "high",
+        fastMode: false,
       }),
-    ).toEqual({ provider: "deepseek", modelId: "deepseek-v4-pro" });
+    ).toEqual({
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      thinkingLevel: "high",
+      fastMode: false,
+    });
     expect(
       parseSessionModelResource({
         sessionId: UUID,
@@ -425,6 +435,8 @@ describe("control-plane public API schemas", () => {
         provider: "deepseek",
         modelId: "deepseek-v4-pro",
         displayName: "DeepSeek V4 Pro",
+        thinkingLevel: "high",
+        fastMode: false,
       }),
     ).toMatchObject({ modelId: "deepseek-v4-pro" });
     expect(() =>

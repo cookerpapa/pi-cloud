@@ -17,6 +17,7 @@ export type PiModelRuntimeConfig = {
   maxTokens?: number;
   inputModalities?: readonly AgentModelInputModality[];
   hostedTools?: readonly AgentModelHostedTool[];
+  serviceTier?: "fast" | null;
 };
 
 export type PiToolOutputCapture = {

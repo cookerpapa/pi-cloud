@@ -118,9 +118,12 @@ performance: PostgreSQL Pi SessionStorage remains the recovery authority.
 
 Every Session pins one immutable, deployment-owned `AgentRevision` and a
 separately selectable default Model Profile; every Run copies both as its
-routing snapshot. A user may change the Session default only while no Run is
-active, so the change applies to the next Turn without rewriting history or an
-in-flight retry. The Agent Revision independently names the Runtime, Harness
+routing snapshot. The Session also stores the desired reasoning level and
+nullable GPT Fast service tier. A user may change the complete settings only
+while no Run is active, so the change applies to the next Turn without
+rewriting history or an in-flight retry. Turn admission copies Provider, model,
+reasoning, service tier and credential binding into one immutable row. The
+Agent Revision independently names the Runtime, Harness
 version and native Session Storage contract. The Pi Worker queue only claims `pi_sdk` Revisions and
 the Runner rejects a non-Pi Session Storage contract, so another Agent family
 may share product tables or the PostgreSQL cluster without reinterpreting
@@ -648,6 +651,7 @@ preserve a visible prefix that never reached `message_end`.
 | local PiCloud identities and non-exclusive Issue claims | PostgreSQL |
 | Runs, Attempts, leases, fences, ready queue | PostgreSQL |
 | Pi Session entries/compaction/operation records | PostgreSQL SessionStorage |
+| Session desired model/reasoning/Fast settings and immutable Turn snapshots | PostgreSQL |
 | Session Tool grants and immutable Run capability snapshots | PostgreSQL |
 | conversation parent/fork graph | PostgreSQL |
 | canonical completed conversation | PostgreSQL |

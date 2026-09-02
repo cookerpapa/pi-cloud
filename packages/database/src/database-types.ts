@@ -614,6 +614,8 @@ export interface SessionTable {
   workspace_id: string;
   development_environment_id: GeneratedNullable<string>;
   desired_model_profile_id: string;
+  desired_thinking_level: Generated<ModelThinkingLevel>;
+  desired_service_tier: GeneratedNullable<"fast">;
   agent_revision_id: Generated<string>;
   created_by_user_id: GeneratedNullable<string>;
   state: SessionState;
@@ -715,6 +717,7 @@ export interface TurnTable {
   provider: string;
   model_id: string;
   thinking_level: ModelThinkingLevel;
+  service_tier: GeneratedNullable<"fast">;
   credential_binding_id: string;
   credential_binding_version: Int8;
   stop_reason: string | null;

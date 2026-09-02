@@ -21,7 +21,7 @@ import type {
   ExecutionMode,
   ModelCatalogEntryResource,
   ModelCatalogResource,
-  ProviderModelSelection,
+  SessionModelSelection,
   SessionModelResource,
   SshAccessTicketResource,
   TenantIdentityResource,
@@ -40,6 +40,11 @@ import {
 } from "./conversation-export.ts";
 import { MessageCopyButton } from "./MessageCopyButton.tsx";
 import { Markdown } from "./Markdown.tsx";
+import {
+  ModelSettingsMenu,
+  defaultModelSettings,
+  settingsFromSessionModel,
+} from "./ModelSettingsMenu.tsx";
 import { isConversationTailVisible } from "./conversation-scroll.ts";
 import { activeTurn, createInitialSessionView, sessionViewReducer } from "./session-view.ts";
 import { streamSessionEvents } from "./sse.ts";
@@ -87,11 +92,8 @@ function modelKey(model: Pick<ModelCatalogEntryResource, "provider" | "modelId">
   return `${model.provider}:${model.modelId}`;
 }
 
-function modelSelection(model: ModelCatalogEntryResource): ProviderModelSelection {
-  if (model.provider === "deepseek") {
-    return { provider: model.provider, modelId: model.modelId };
-  }
-  return { provider: model.provider, modelId: model.modelId };
+function modelSettingsKey(model: SessionModelSelection): string {
+  return `${modelKey(model)}:${model.thinkingLevel}:${model.fastMode ? "fast" : "standard"}`;
 }
 
 function relativeTime(value: string, language: UiLanguage, t: Translate): string {
@@ -163,7 +165,7 @@ export default function ChatApp() {
     DevelopmentEnvironmentListResource["profiles"]
   >([]);
   const [modelCatalog, setModelCatalog] = useState<ModelCatalogResource | null>(null);
-  const [newConversationModel, setNewConversationModel] = useState<ProviderModelSelection | null>(
+  const [newConversationModel, setNewConversationModel] = useState<SessionModelSelection | null>(
     null,
   );
   const [sessionModel, setSessionModel] = useState<SessionModelResource | null>(null);
@@ -360,7 +362,15 @@ export default function ChatApp() {
         (model) => current !== null && modelKey(model) === modelKey(current),
       );
       const fallback = catalog.models.find((model) => model.default) ?? catalog.models[0];
-      return modelSelection(selected ?? fallback!);
+      if (
+        current !== null &&
+        selected !== undefined &&
+        selected.thinkingLevels.includes(current.thinkingLevel) &&
+        (!current.fastMode || selected.fastModeAvailable)
+      ) {
+        return current;
+      }
+      return defaultModelSettings(selected ?? fallback!);
     });
   }, [api]);
 
@@ -816,7 +826,7 @@ export default function ChatApp() {
     setWorkingDirectory("/workspace");
     const defaultModel =
       modelCatalog?.models.find((model) => model.default) ?? modelCatalog?.models[0];
-    if (defaultModel !== undefined) setNewConversationModel(modelSelection(defaultModel));
+    if (defaultModel !== undefined) setNewConversationModel(defaultModelSettings(defaultModel));
     setWorkspacePanelOpen(true);
   }
 
@@ -1013,23 +1023,22 @@ export default function ChatApp() {
     }
   }
 
-  async function switchCurrentModel(value: string): Promise<void> {
+  async function switchCurrentModel(selection: SessionModelSelection): Promise<void> {
     const sessionId = state.session?.sessionId;
-    const selected = modelCatalog?.models.find((model) => modelKey(model) === value);
     if (
       sessionId === undefined ||
-      selected === undefined ||
       selectedDelegatedSession !== null ||
       currentTurn !== undefined ||
       operation !== null ||
-      (sessionModel !== null && modelKey(sessionModel) === value)
+      (sessionModel !== null &&
+        modelSettingsKey(settingsFromSessionModel(sessionModel)) === modelSettingsKey(selection))
     ) {
       return;
     }
     setOperation("switching-model");
     update({ type: "api.error.cleared" });
     try {
-      setSessionModel(await api.updateSessionModel(sessionId, modelSelection(selected)));
+      setSessionModel(await api.updateSessionModel(sessionId, selection));
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
     } finally {
@@ -1450,21 +1459,13 @@ export default function ChatApp() {
             selectedDelegatedSession === null &&
             sessionModel !== null &&
             modelCatalog !== null ? (
-              <label className="product-model-selector" title={t("chat.model.nextTurnHint")}>
-                <span>{t("chat.model.label")}</span>
-                <select
-                  aria-label={t("chat.model.label")}
-                  disabled={currentTurn !== undefined || operation !== null}
-                  onChange={(event) => void switchCurrentModel(event.target.value)}
-                  value={modelKey(sessionModel)}
-                >
-                  {modelCatalog.models.map((model) => (
-                    <option key={modelKey(model)} value={modelKey(model)}>
-                      {model.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <ModelSettingsMenu
+                catalog={modelCatalog}
+                disabled={currentTurn !== undefined || operation !== null}
+                onApply={switchCurrentModel}
+                t={t}
+                value={settingsFromSessionModel(sessionModel)}
+              />
             ) : null}
             {state.connection.phase === "failed" ? (
               <button onClick={() => setReconnectGeneration((value) => value + 1)} type="button">
@@ -1592,29 +1593,15 @@ export default function ChatApp() {
                   </label>
 
                   {modelCatalog === null || newConversationModel === null ? null : (
-                    <label>
+                    <div className="product-create-model-settings">
                       <span>{t("chat.model.label")}</span>
-                      <select
-                        className="product-conversation-model-select"
-                        onChange={(event) => {
-                          const selected = modelCatalog.models.find(
-                            (model) => modelKey(model) === event.target.value,
-                          );
-                          if (selected !== undefined) {
-                            setNewConversationModel(modelSelection(selected));
-                          }
-                        }}
-                        value={modelKey(newConversationModel)}
-                      >
-                        {modelCatalog.models.map((model) => (
-                          <option key={modelKey(model)} value={modelKey(model)}>
-                            {model.displayName}
-                            {model.default ? ` · ${t("chat.model.default")}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      <small>{t("chat.model.createHint")}</small>
-                    </label>
+                      <ModelSettingsMenu
+                        catalog={modelCatalog}
+                        onApply={setNewConversationModel}
+                        t={t}
+                        value={newConversationModel}
+                      />
+                    </div>
                   )}
 
                   {executionMode === "elastic" ? (

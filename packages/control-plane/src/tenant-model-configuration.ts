@@ -189,7 +189,8 @@ export class TenantModelConfigurationService {
         "Tenant model configuration is unavailable",
       );
     }
-    if (supportedModel(request) === undefined) {
+    const catalogModel = supportedModel(request);
+    if (catalogModel === undefined) {
       throw new TenantModelConfigurationError(
         "model_configuration_unavailable",
         "Tenant model configuration is unsupported",
@@ -260,8 +261,8 @@ export class TenantModelConfigurationService {
         name: `default-${request.provider}-${request.modelId}-${profileId.slice(0, 8)}`,
         provider: request.provider,
         model_id: request.modelId,
-        default_thinking_level: "off",
-        allowed_thinking_levels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        default_thinking_level: catalogModel.defaultThinkingLevel,
+        allowed_thinking_levels: [...catalogModel.thinkingLevels],
         credential_binding_id: current.credentialBindingId,
         credential_binding_version: nextVersion,
         enabled: true,

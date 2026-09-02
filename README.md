@@ -10,7 +10,8 @@ in CubeSandbox KVM microVMs.
 - browser registration/login and tenant-isolated conversations;
 - per-browser Chinese/English UI selection without translating prompts, Tool output or model replies;
 - multi-round Pi Sessions, native Compaction, tree navigation, Fork and Steer;
-- per-conversation model selection with immutable provider/model snapshots for every Turn;
+- cascading per-conversation Provider/model/reasoning selection, GPT Fast mode,
+  and immutable request-setting snapshots for every Turn;
 - Provider-native hosted capabilities on verified model routes, without a second PiCloud search service;
 - durable recursive Subagents with bounded depth/concurrency;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
@@ -112,6 +113,9 @@ assistant text and URL citations; native IDs replay only to the exact issuing
 Provider/API/model. Switching the conversation model while idle keeps the
 portable text and links but omits incompatible native action IDs, without
 adding a synthetic model-visible notice or a fabricated local Tool result.
+Reasoning effort and GPT Fast mode are Session defaults stored in PostgreSQL;
+an accepted Turn freezes both before Worker execution. Fast is an OpenAI
+request service tier, never Pi context, and is not available on DeepSeek.
 
 Not every Pi function Tool runs in Cube. The Worker loads trusted platform and
 orchestration Tools through a separate `TrustedToolRuntime`; Preview and

@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0142](0142-session-model-settings-and-fast-tier.md) — complete
+   next-Turn model settings and GPT Fast service tier.
 1. [ADR-0141](0141-provider-hosted-transcript-items.md) — Codex-shaped Hosted
    Web Search items and exact-route replay in Pi SessionStorage.
 1. [ADR-0140](0140-native-responses-provider-gateway.md) — native Responses

@@ -34,3 +34,11 @@ export function mergeProviderHostedTools(
     .map(hostedToolDeclaration);
   return additions.length === 0 ? payload : { ...payload, tools: [...existing, ...additions] };
 }
+
+export function mergeProviderServiceTier(
+  payload: unknown,
+  serviceTier: "fast" | null | undefined,
+): unknown {
+  if (serviceTier !== "fast" || !isProviderPayload(payload)) return payload;
+  return { ...payload, service_tier: "fast" };
+}

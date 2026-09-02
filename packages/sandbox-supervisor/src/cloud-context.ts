@@ -6,7 +6,7 @@ import {
 import { createHash } from "node:crypto";
 import type { SandboxRuntimeIdentity } from "./sandbox-assignment-inventory.ts";
 
-export const CLOUD_TURN_CONTEXT_SCHEMA_VERSION = 1 as const;
+export const CLOUD_TURN_CONTEXT_SCHEMA_VERSION = 2 as const;
 export const CLOUD_ATTEMPT_CONTEXT_SCHEMA_VERSION = 1 as const;
 export const CLOUD_STEP_CONTEXT_SCHEMA_VERSION = 2 as const;
 export const REMOTE_TOOL_REGISTRY_VERSION = "pi-remote-tools.v2" as const;
@@ -29,6 +29,7 @@ export type CloudTurnContext = Readonly<{
     provider: string;
     modelId: string;
     thinkingLevel: string;
+    serviceTier: "fast" | null;
     credentialBindingId: string;
     credentialBindingVersion: number;
   }>;

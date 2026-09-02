@@ -77,6 +77,7 @@ const TurnModelSnapshotSchema = Type.Object(
     provider: OpaqueIdSchema,
     modelId: OpaqueIdSchema,
     thinkingLevel: ModelThinkingLevelSchema,
+    serviceTier: Type.Union([Type.Literal("fast"), Type.Null()]),
     credentialBindingId: OpaqueIdSchema,
     credentialBindingVersion: PositiveSafeIntegerSchema,
   },

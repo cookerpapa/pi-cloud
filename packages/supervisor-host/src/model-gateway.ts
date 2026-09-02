@@ -63,6 +63,7 @@ type ActiveCapabilityFields = {
   runId: string;
   attemptId: string;
   modelProfileId: string;
+  serviceTier: "fast" | null;
   expiresAt: number;
   maximumRequestsPerRun: number;
   requestsStarted: number;
@@ -98,6 +99,7 @@ export class TenantModelGatewayError extends Error {
     | "gateway_not_started"
     | "gateway_already_started"
     | "unsupported_model"
+    | "unsupported_service_tier"
     | "invalid_gateway_configuration";
 
   constructor(code: TenantModelGatewayError["code"], safeMessage: string) {
@@ -523,6 +525,12 @@ export class TenantModelGateway {
     if (model === undefined) {
       throw new TenantModelGatewayError("unsupported_model", "Accepted model is unsupported");
     }
+    if (command.payload.model.serviceTier === "fast" && model.provider !== "openai-codex") {
+      throw new TenantModelGatewayError(
+        "unsupported_service_tier",
+        "Accepted model does not support Fast mode",
+      );
+    }
     const random = this.#randomBytes(32);
     if (!Buffer.isBuffer(random) || random.length !== 32) {
       throw new TenantModelGatewayError(
@@ -548,6 +556,7 @@ export class TenantModelGateway {
       runId: command.payload.runId,
       attemptId: parseExecutionLease(command.payload.executionLease).attemptId,
       modelProfileId: command.payload.model.profileId,
+      serviceTier: command.payload.model.serviceTier,
       expiresAt,
       maximumRequestsPerRun: Math.min(
         this.#maximumRequestsPerTurn,
@@ -575,6 +584,7 @@ export class TenantModelGateway {
             maxTokens: active.maxTokens,
             inputModalities: [...active.inputModalities],
             hostedTools: [...active.hostedTools],
+            serviceTier: null,
             requestTimeoutMs: this.#piRequestTimeoutMs,
             turnTimeoutMs: this.#piTurnTimeoutMs,
           }
@@ -590,6 +600,7 @@ export class TenantModelGateway {
             maxTokens: active.maxTokens,
             inputModalities: [...active.inputModalities],
             hostedTools: [...active.hostedTools],
+            serviceTier: active.serviceTier,
             requestTimeoutMs: this.#piRequestTimeoutMs,
             turnTimeoutMs: this.#piTurnTimeoutMs,
           };
@@ -669,6 +680,17 @@ export class TenantModelGateway {
         403,
         "model_binding_mismatch",
         "Model request does not match its Turn capability",
+      );
+    }
+    const requestedServiceTier = body.service_tier;
+    if (
+      (active.serviceTier === "fast" && requestedServiceTier !== "fast") ||
+      (active.serviceTier === null && requestedServiceTier !== undefined)
+    ) {
+      throw new SafeGatewayHttpError(
+        403,
+        "model_service_tier_mismatch",
+        "Model request does not match its Turn service tier",
       );
     }
     if (body.stream !== true) {

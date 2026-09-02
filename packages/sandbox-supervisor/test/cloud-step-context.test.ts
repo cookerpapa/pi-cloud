@@ -49,6 +49,7 @@ const command: ExecuteTurnCommandMessage = {
       provider: "pi-cloud-fake",
       modelId: "pi-cloud-fake",
       thinkingLevel: "off",
+      serviceTier: null,
       credentialBindingId: "binding-step",
       credentialBindingVersion: 3,
     },

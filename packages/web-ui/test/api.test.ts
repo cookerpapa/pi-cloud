@@ -332,12 +332,18 @@ describe("tenant-aware browser API", () => {
                 modelId: "gpt-5.6-terra",
                 displayName: "GPT-5.6 Terra",
                 default: true,
+                thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"],
+                defaultThinkingLevel: "medium",
+                fastModeAvailable: true,
               },
               {
                 provider: "deepseek",
                 modelId: "deepseek-v4-pro",
                 displayName: "DeepSeek V4 Pro",
                 default: false,
+                thinkingLevels: ["off", "low", "medium", "high", "max"],
+                defaultThinkingLevel: "off",
+                fastModeAvailable: false,
               },
             ],
           }),
@@ -349,6 +355,8 @@ describe("tenant-aware browser API", () => {
         expect(JSON.parse(String(init.body))).toEqual({
           provider: "deepseek",
           modelId: "deepseek-v4-pro",
+          thinkingLevel: "high",
+          fastMode: false,
         });
       }
       return new Response(
@@ -358,6 +366,8 @@ describe("tenant-aware browser API", () => {
           provider: init?.method === "PUT" ? "deepseek" : "openai-codex",
           modelId: init?.method === "PUT" ? "deepseek-v4-pro" : "gpt-5.6-terra",
           displayName: init?.method === "PUT" ? "DeepSeek V4 Pro" : "GPT-5.6 Terra",
+          thinkingLevel: init?.method === "PUT" ? "high" : "medium",
+          fastMode: false,
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       );
@@ -370,7 +380,12 @@ describe("tenant-aware browser API", () => {
       modelId: "gpt-5.6-terra",
     });
     await expect(
-      api.updateSessionModel(sessionId, { provider: "deepseek", modelId: "deepseek-v4-pro" }),
+      api.updateSessionModel(sessionId, {
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+        thinkingLevel: "high",
+        fastMode: false,
+      }),
     ).resolves.toMatchObject({ modelId: "deepseek-v4-pro" });
   });
 

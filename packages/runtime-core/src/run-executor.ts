@@ -59,6 +59,7 @@ export type TurnExecutionRequest = {
     provider: string;
     modelId: string;
     thinkingLevel: string;
+    serviceTier: "fast" | null;
     credentialBindingId: string;
     credentialBindingVersion: string;
   };
@@ -684,6 +685,7 @@ export class RunExecutor {
           "turn.provider as provider",
           "turn.model_id as modelId",
           "turn.thinking_level as thinkingLevel",
+          "turn.service_tier as serviceTier",
           "turn.credential_binding_id as credentialBindingId",
           "turn.credential_binding_version as credentialBindingVersion",
           "session_row.id as sessionId",
@@ -917,6 +919,7 @@ export class RunExecutor {
             provider: row.provider,
             modelId: row.modelId,
             thinkingLevel: row.thinkingLevel,
+            serviceTier: row.serviceTier,
             credentialBindingId: row.credentialBindingId,
             credentialBindingVersion: row.credentialBindingVersion,
           },

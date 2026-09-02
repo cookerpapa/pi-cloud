@@ -39,6 +39,8 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Provider capabilities
 
+- [ ] Measure Standard/Fast latency and usage on every enabled GPT model before
+      making Fast a deployment default.
 - [ ] Replace the PiCloud-owned Hosted Tool content block when pinned Pi exposes
       a first-class, backend-conformant Responses hosted-item contract.
 - [ ] Add the user-image attachment path after its Pi-native image input,

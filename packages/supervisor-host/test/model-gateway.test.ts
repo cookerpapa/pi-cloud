@@ -30,6 +30,7 @@ function command(
     | "gpt-5.6-luna"
     | "gpt-5.6-terra"
     | "gpt-5.6-sol" = "deepseek-v4-flash",
+  serviceTier: "fast" | null = null,
 ): ExecuteTurnCommandMessage {
   return {
     protocolVersion: 1,
@@ -69,6 +70,7 @@ function command(
         provider,
         modelId,
         thinkingLevel: provider === "openai-codex" ? "medium" : "off",
+        serviceTier,
         credentialBindingId: "10000000-0000-4000-8000-000000000012",
         credentialBindingVersion: 2,
       },
@@ -200,6 +202,50 @@ describe("tenant model gateway", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("response.completed");
+  });
+
+  it("binds Fast mode to the issued GPT Turn and rejects a mismatched request", async () => {
+    const upstream = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(JSON.parse(new TextDecoder().decode(init?.body as Uint8Array))).toMatchObject({
+        service_tier: "fast",
+      });
+      return new Response('data: {"type":"response.completed","response":{"id":"r1"}}\n\n', {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const gateway = createGateway(upstream);
+    await gateway.start();
+    const lease = gateway.issue(command("openai-codex", "gpt-5.6-sol", "fast"));
+    expect(lease.runtime.serviceTier).toBe("fast");
+    const endpoint = `http://127.0.0.1:${String(gateway.listeningPort)}/codex/responses`;
+    const accepted = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${lease.runtime.capability}`,
+        "content-type": "application/json",
+        ...samplingHeaders(),
+      },
+      body: JSON.stringify({
+        model: "gpt-5.6-sol",
+        stream: true,
+        service_tier: "fast",
+        input: [],
+      }),
+    });
+    expect(accepted.status).toBe(200);
+    await accepted.text();
+    const rejected = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${lease.runtime.capability}`,
+        "content-type": "application/json",
+        ...samplingHeaders(),
+      },
+      body: JSON.stringify({ model: "gpt-5.6-sol", stream: true, input: [] }),
+    });
+    expect(rejected.status).toBe(403);
+    expect(upstream).toHaveBeenCalledTimes(1);
   });
 
   it("observes Hosted Web Search progress without changing the Provider stream", async () => {

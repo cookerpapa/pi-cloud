@@ -46,6 +46,7 @@ import {
   type TurnSteerResource,
   type ProjectResource,
   type ProviderModelSelection,
+  type SessionModelSelection,
   type ModelConfigurationResource,
   type ModelCatalogResource,
   type SessionModelResource,
@@ -291,7 +292,7 @@ export class PiCloudApi {
 
   async updateSessionModel(
     sessionId: string,
-    selection: ProviderModelSelection,
+    selection: SessionModelSelection,
   ): Promise<SessionModelResource> {
     return parseSessionModelResource(
       await request(
@@ -696,7 +697,7 @@ export class PiCloudApi {
     executionMode: ExecutionMode,
     sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey = "standard",
     workingDirectory = "/workspace",
-    model?: ProviderModelSelection,
+    model?: SessionModelSelection,
   ): Promise<SessionResource> {
     return parseSessionResource(
       await request(
