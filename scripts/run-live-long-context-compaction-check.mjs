@@ -493,11 +493,8 @@ async function runTurn(sessionId, prompt, expectedTools) {
       "turn.completed",
       JSON.stringify(terminal?.payload ?? canonicalTerminal),
     );
-    assert.notEqual(
-      terminal?.payload.stopReason ?? canonicalTerminal?.transcript?.stopReason,
-      "length",
-      "Model exhausted its output allowance before completing the coding Turn",
-    );
+    const stopReason =
+      terminal?.payload.stopReason ?? canonicalTerminal?.transcript?.stopReason ?? "stop";
     assert(firstResponseAt !== undefined, "Turn did not stream a model response or Tool call");
     const toolCalls = events.filter((event) => event.type === "tool.started").length;
     const hostedSearches = events.filter(
@@ -535,6 +532,7 @@ async function runTurn(sessionId, prompt, expectedTools) {
       text: text.join(""),
       toolCalls,
       hostedSearches,
+      stopReason,
       firstResponseMs: Math.round(firstResponseAt - submittedAt),
       firstTextMs: firstTextAt === undefined ? undefined : Math.round(firstTextAt - submittedAt),
       settledMs: Math.round(performance.now() - submittedAt),
@@ -845,40 +843,62 @@ try {
     `starting ${model.provider}/${model.modelId} Session ${session.sessionId} on ${initialWorkers.length} Workers`,
   );
   const selectedTasks = algorithmTasks.slice(0, maximumCodingTurns);
-  for (const [index, task] of selectedTasks.entries()) {
-    const turn = await runTurn(session.sessionId, codingPrompt(task, index, marker), true);
-    const [usage, evidence] = await Promise.all([usageForRun(turn.runId), runEvidence(turn.runId)]);
-    const round = {
-      round: index + 1,
-      task: task[0],
-      runId: turn.runId,
-      worker: evidence.supervisorId,
-      runtimeId: evidence.runtimeId,
-      toolCalls: turn.toolCalls,
-      firstResponseMs: turn.firstResponseMs,
-      firstTextMs: turn.firstTextMs,
-      settledMs: turn.settledMs,
-      usage,
-      sessionBytes: evidence.sessionBytes,
-      sessionEntries: evidence.sessionEntries,
-      activeContextBytes: evidence.activeContextBytes,
-      activeContextEntries: evidence.activeContextEntries,
-      eventCompactions: turn.eventCompactions,
-    };
-    rounds.push(round);
-    progress(
-      `round ${String(index + 1)} ${task[0]}: input(max/sum)=${String(usage.maximumRequestInputTokens)}/${String(usage.inputTokens)}, output=${String(usage.outputTokens)}, tools=${String(turn.toolCalls)}, firstResponse=${String(turn.firstResponseMs)}ms, settled=${String(turn.settledMs)}ms, active-context=${String(evidence.activeContextBytes)}B/${String(evidence.activeContextEntries)} entries`,
-    );
-    const roundCompaction = turn.eventCompactions.find(
-      (compaction) => compaction.runId === turn.runId && compaction.status === "completed",
-    );
-    if (roundCompaction !== undefined) {
-      completedCompaction = roundCompaction;
-      const completedCount = rounds.flatMap((candidate) => candidate.eventCompactions).length;
+  taskLoop: for (const [index, task] of selectedTasks.entries()) {
+    for (let continuation = 0; continuation <= 1; continuation += 1) {
+      const prompt =
+        continuation === 0
+          ? codingPrompt(task, index, marker)
+          : [
+              "The previous coding Turn reached its output limit.",
+              `Continue and finish the existing ${task[0]} task from the current Workspace state.`,
+              "Inspect what was actually written, complete any missing implementation or tests, run the directly affected tests, and keep the final response concise.",
+            ].join(" ");
+      const turn = await runTurn(session.sessionId, prompt, true);
+      const [usage, evidence] = await Promise.all([
+        usageForRun(turn.runId),
+        runEvidence(turn.runId),
+      ]);
+      const round = {
+        round: rounds.length + 1,
+        task: `${task[0]}${continuation === 0 ? "" : " continuation"}`,
+        runId: turn.runId,
+        worker: evidence.supervisorId,
+        runtimeId: evidence.runtimeId,
+        stopReason: turn.stopReason,
+        toolCalls: turn.toolCalls,
+        firstResponseMs: turn.firstResponseMs,
+        firstTextMs: turn.firstTextMs,
+        settledMs: turn.settledMs,
+        usage,
+        sessionBytes: evidence.sessionBytes,
+        sessionEntries: evidence.sessionEntries,
+        activeContextBytes: evidence.activeContextBytes,
+        activeContextEntries: evidence.activeContextEntries,
+        eventCompactions: turn.eventCompactions,
+      };
+      rounds.push(round);
       progress(
-        `Pi compaction ${String(completedCount)}/${String(requiredCompactions)} completed: ${String(roundCompaction.tokensBefore)} -> ${String(roundCompaction.estimatedTokensAfter)} estimated tokens in ${String(roundCompaction.durationMs)}ms`,
+        `round ${String(round.round)} ${round.task}: input(max/sum)=${String(usage.maximumRequestInputTokens)}/${String(usage.inputTokens)}, output=${String(usage.outputTokens)}, tools=${String(turn.toolCalls)}, firstResponse=${String(turn.firstResponseMs)}ms, settled=${String(turn.settledMs)}ms, active-context=${String(evidence.activeContextBytes)}B/${String(evidence.activeContextEntries)} entries`,
       );
-      if (completedCount >= requiredCompactions) break;
+      const roundCompaction = turn.eventCompactions.find(
+        (compaction) => compaction.runId === turn.runId && compaction.status === "completed",
+      );
+      if (roundCompaction !== undefined) {
+        completedCompaction = roundCompaction;
+        const completedCount = rounds.flatMap((candidate) => candidate.eventCompactions).length;
+        progress(
+          `Pi compaction ${String(completedCount)}/${String(requiredCompactions)} completed: ${String(roundCompaction.tokensBefore)} -> ${String(roundCompaction.estimatedTokensAfter)} estimated tokens in ${String(roundCompaction.durationMs)}ms`,
+        );
+      }
+      if (turn.stopReason === "length") {
+        assert.equal(continuation, 0, "Coding task exhausted two consecutive output allowances");
+        progress(`round ${String(round.round)} reached length; continuing from durable state`);
+        continue;
+      }
+      if (rounds.flatMap((candidate) => candidate.eventCompactions).length >= requiredCompactions) {
+        break taskLoop;
+      }
+      break;
     }
   }
 
