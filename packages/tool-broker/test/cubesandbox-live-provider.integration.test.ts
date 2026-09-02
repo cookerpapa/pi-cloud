@@ -19,10 +19,25 @@ import { describe, expect, it } from "vitest";
 import {
   CubeSandboxProvider,
   HttpWorkspaceVolumeGateway,
+  InMemoryWorkspaceRuntimeStateRepository,
   OfficialCubeSandboxRuntimeClient,
   ToolBroker,
   type OfficialCubeSandboxRuntimeClientOptions,
+  type ToolBrokerOptions,
 } from "../src/index.ts";
+
+type TestToolBrokerDefaults = "stateRepository" | "ownerBaseUrl" | "imageRevision";
+type TestToolBrokerOptions = Omit<ToolBrokerOptions, TestToolBrokerDefaults> &
+  Partial<Pick<ToolBrokerOptions, TestToolBrokerDefaults>>;
+
+function testBroker(options: TestToolBrokerOptions): ToolBroker {
+  return new ToolBroker({
+    stateRepository: new InMemoryWorkspaceRuntimeStateRepository(),
+    ownerBaseUrl: "http://tool-broker.test",
+    imageRevision: "development",
+    ...options,
+  });
+}
 
 const enabled = process.env.PI_CLOUD_CUBESANDBOX_TEST === "1";
 const STEP_CONTEXT_SHA256 = "a".repeat(64);
@@ -397,7 +412,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           ),
         }),
       });
-      const manager = new ToolBroker({
+      const manager = testBroker({
         provider,
         imageRevision: config.imageRevision,
         warmTtlMs: PERSISTENT_IDLE_TTL_PROOF_MS,

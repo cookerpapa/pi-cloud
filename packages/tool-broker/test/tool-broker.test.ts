@@ -21,9 +21,23 @@ import {
   InMemoryWorkspaceRuntimeStateRepository,
   ToolBroker,
   loadToolBrokerConfig,
+  type ToolBrokerOptions,
   type SandboxCreateSpec,
   type SandboxProvider,
 } from "../src/index.ts";
+
+type TestToolBrokerDefaults = "stateRepository" | "ownerBaseUrl" | "imageRevision";
+type TestToolBrokerOptions = Omit<ToolBrokerOptions, TestToolBrokerDefaults> &
+  Partial<Pick<ToolBrokerOptions, TestToolBrokerDefaults>>;
+
+function testBroker(options: TestToolBrokerOptions): ToolBroker {
+  return new ToolBroker({
+    stateRepository: new InMemoryWorkspaceRuntimeStateRepository(),
+    ownerBaseUrl: "http://tool-broker.test",
+    imageRevision: "development",
+    ...options,
+  });
+}
 
 const ACTIVATION_ID = "10000000-0000-4000-8000-000000000010";
 const SECOND_ACTIVATION_ID = "20000000-0000-4000-8000-000000000020";
@@ -343,7 +357,7 @@ describe("provider-backed Tool Tool Broker", () => {
     const retired = vi.spyOn(repository, "listRetiredWarmWorkspaceRuntimeIds");
     const orphaned = vi.spyOn(repository, "claimOrphanedWorkspaceRuntimes");
     const terminal = vi.spyOn(repository, "claimUnboundWorkspaceRuntimes");
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       stateRepository: repository,
       idGenerator: () => ACTIVATION_ID,
@@ -363,7 +377,7 @@ describe("provider-backed Tool Tool Broker", () => {
   it("admits simultaneous Tool bindings for two Sessions sharing one Workspace", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
     });
@@ -407,7 +421,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("keeps a user-owned development KVM across PTY disconnect and supports pause/resume", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -589,7 +603,7 @@ describe("provider-backed Tool Tool Broker", () => {
       generation: 3,
       profileKey: "standard",
     });
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       stateRepository,
       idGenerator: () => ACTIVATION_ID,
@@ -613,7 +627,7 @@ describe("provider-backed Tool Tool Broker", () => {
   it("leaves a running development KVM online while its Tool Broker shuts down", async () => {
     const fixture = providerFixture();
     const repository = new InMemoryWorkspaceRuntimeStateRepository();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       stateRepository: repository,
       idGenerator: () => ACTIVATION_ID,
@@ -650,7 +664,7 @@ describe("provider-backed Tool Tool Broker", () => {
   it("returns a borrowed development KVM to machine authority before Broker shutdown", async () => {
     const fixture = providerFixture();
     const repository = new InMemoryWorkspaceRuntimeStateRepository();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       stateRepository: repository,
       idGenerator: () => ACTIVATION_ID,
@@ -695,7 +709,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("rejects a missing exclusive working directory without destroying the user's machine", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -750,7 +764,7 @@ describe("provider-backed Tool Tool Broker", () => {
   it("lets a human terminal and an Agent use the same elastic Workspace", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
     });
@@ -793,7 +807,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("rejects the removed Session-persistent elastic Sandbox mode", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -819,7 +833,7 @@ describe("provider-backed Tool Tool Broker", () => {
       }
     }
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       stateRepository: new RetiringTerminalRepository(),
       idGenerator: (() => {
@@ -895,7 +909,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("retains an idle Workspace runtime without a provider authority handoff", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -921,7 +935,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("proxies a tenant-authorized port through a retained private-ingress Cube", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -977,7 +991,7 @@ describe("provider-backed Tool Tool Broker", () => {
       }
     }
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
       stateRepository: new DomainCapacityRepository(),
@@ -992,7 +1006,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("keeps the Session lease above the provider and binds an immutable identity handle", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -1102,7 +1116,7 @@ describe("provider-backed Tool Tool Broker", () => {
       httpServices: [{ port: 3_000, protocol: "http" }],
     });
     const observe = vi.fn(async () => undefined);
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
       serviceRegistry: { observe, async end() {}, async endRuntime() {} },
@@ -1128,7 +1142,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("enforces the Run Tool snapshot independently of model visibility", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -1150,7 +1164,7 @@ describe("provider-backed Tool Tool Broker", () => {
   it("queues materialization behind the global active Sandbox admission limit", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
       maximumActiveSandboxes: 1,
@@ -1196,7 +1210,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("reads current Workspace files without consuming Cube admission capacity", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
       maximumActiveSandboxes: 1,
@@ -1232,7 +1246,7 @@ describe("provider-backed Tool Tool Broker", () => {
   it("removes an aborted Tool binding admission waiter without consuming capacity", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
       maximumActiveSandboxes: 1,
@@ -1281,7 +1295,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("reuses one Workspace runtime across fenced attempts without reprovisioning", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -1332,7 +1346,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("runs parent and child Tool bindings in one shared Workspace runtime", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       stateRepository: new InMemoryWorkspaceRuntimeStateRepository(),
       idGenerator: () => ACTIVATION_ID,
@@ -1392,7 +1406,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
   it("creates an isolated Workspace fork without revoking the parent lease", async () => {
     const fixture = providerFixture();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -1429,7 +1443,7 @@ describe("provider-backed Tool Tool Broker", () => {
   it("expires every elastic warm runtime at the deployment TTL", async () => {
     const fixture = providerFixture();
     let now = 1_000;
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
       warmTtlMs: 1_000,
@@ -1466,7 +1480,7 @@ describe("provider-backed Tool Tool Broker", () => {
     }
     const fixture = providerFixture();
     const stateRepository = new RetiredStateRepository();
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       stateRepository,
       idGenerator: () => ACTIVATION_ID,
@@ -1507,7 +1521,7 @@ describe("provider-backed Tool Tool Broker", () => {
     const fixture = providerFixture();
     const stateRepository = new TrackingStateRepository();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       stateRepository,
       idGenerator: () => activationIds.shift()!,
@@ -1562,7 +1576,7 @@ describe("provider-backed Tool Tool Broker", () => {
       "30000000-0000-4000-8000-000000000030",
       "30000000-0000-4000-8000-000000000031",
     ];
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
       maximumActiveSandboxes: 2,
@@ -1675,7 +1689,7 @@ describe("provider-backed Tool Tool Broker", () => {
       }
     };
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
       maximumActiveSandboxes: 2,
@@ -1729,7 +1743,7 @@ describe("provider-backed Tool Tool Broker", () => {
     fixture.provider.exec = async () => {
       throw new ToolBrokerError("cubesandbox_tool_result_unknown", "Physical Cube was lost", false);
     };
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -1785,7 +1799,7 @@ describe("provider-backed Tool Tool Broker", () => {
         );
       });
     };
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -1807,7 +1821,7 @@ describe("provider-backed Tool Tool Broker", () => {
   it("evicts the least-recently-used warm runtime when new demand reaches admission capacity", async () => {
     const fixture = providerFixture();
     const activationIds = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => activationIds.shift()!,
       maximumActiveSandboxes: 1,
@@ -1877,7 +1891,7 @@ describe("provider-backed Tool Tool Broker", () => {
       executionLease: assignment.executionLease,
     };
     fixture.provider.listAssignments = async () => [runtimeAssignment];
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
@@ -1906,7 +1920,7 @@ describe("provider-backed Tool Tool Broker", () => {
     fixture.provider.stop = async () => {
       throw new ToolBrokerError("cleanup_failed", "cleanup failed", true);
     };
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });

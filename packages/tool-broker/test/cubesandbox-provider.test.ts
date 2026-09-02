@@ -17,13 +17,28 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   CubeSandboxProvider,
+  InMemoryWorkspaceRuntimeStateRepository,
   ToolBroker,
   type CubeSandboxCreateInput,
   type CubeSandboxGuestCommandRequest,
   type CubeSandboxInstance,
   type CubeSandboxRuntimeClient,
+  type ToolBrokerOptions,
 } from "../src/index.ts";
 import type { WorkspaceVolumeGateway } from "../src/workspace-volume-gateway.ts";
+
+type TestToolBrokerDefaults = "stateRepository" | "ownerBaseUrl" | "imageRevision";
+type TestToolBrokerOptions = Omit<ToolBrokerOptions, TestToolBrokerDefaults> &
+  Partial<Pick<ToolBrokerOptions, TestToolBrokerDefaults>>;
+
+function testBroker(options: TestToolBrokerOptions): ToolBroker {
+  return new ToolBroker({
+    stateRepository: new InMemoryWorkspaceRuntimeStateRepository(),
+    ownerBaseUrl: "http://tool-broker.test",
+    imageRevision: "development",
+    ...options,
+  });
+}
 
 const ACTIVATION_ID = "10000000-0000-4000-8000-000000000010";
 const STEP_CONTEXT_SHA256 = "a".repeat(64);
@@ -546,7 +561,7 @@ describe("CubeSandbox Provider contract", () => {
       runtimeClient: runtime,
       workspaceVolumeGateway,
     });
-    const manager = new ToolBroker({
+    const manager = testBroker({
       provider,
       imageRevision: "development",
       idGenerator: () => ACTIVATION_ID,
@@ -621,7 +636,7 @@ describe("CubeSandbox Provider contract", () => {
       path: "result.txt",
       content: Buffer.from("cube\n").toString("base64"),
     });
-    const upgradedBroker = new ToolBroker({
+    const upgradedBroker = testBroker({
       provider: new CubeSandboxProvider({
         templateId: "pi-cloud-tool-v2",
         imageRevision: "next-deployment",

@@ -54,7 +54,6 @@ import {
   type SandboxTerminalSize,
 } from "./sandbox-provider.ts";
 import {
-  InMemoryWorkspaceRuntimeStateRepository,
   type WorkspaceRuntimeReservation,
   type WorkspaceRuntimeStateRepository,
   type DevelopmentEnvironmentReservation,
@@ -66,14 +65,14 @@ import type {
 
 export type ToolBrokerOptions = {
   provider: SandboxProvider;
-  ownerBaseUrl?: string;
-  stateRepository?: WorkspaceRuntimeStateRepository;
+  ownerBaseUrl: string;
+  stateRepository: WorkspaceRuntimeStateRepository;
   idGenerator?: () => string;
   maximumActiveSandboxes?: number;
   warmTtlMs?: number;
   maximumWarmWorkspaceRuntimes?: number;
   clock?: () => number;
-  imageRevision?: string;
+  imageRevision: string;
   serviceRegistry?: SandboxHttpServiceRegistry;
   onMaintenanceError?: (error: unknown) => void;
 };
@@ -368,9 +367,8 @@ export class ToolBroker {
       throw new TypeError("Sandbox Provider ID is invalid");
     }
     this.#provider = options.provider;
-    this.#ownerBaseUrl = new URL(options.ownerBaseUrl ?? "http://tool-broker.invalid").toString();
-    this.#stateRepository =
-      options.stateRepository ?? new InMemoryWorkspaceRuntimeStateRepository();
+    this.#ownerBaseUrl = new URL(options.ownerBaseUrl).toString();
+    this.#stateRepository = options.stateRepository;
     this.#serviceRegistry = options.serviceRegistry;
     this.#idGenerator = options.idGenerator ?? randomUUID;
     this.#maximumActiveSandboxes = positiveInteger(
@@ -389,7 +387,7 @@ export class ToolBroker {
       1_000,
     );
     this.#clock = options.clock ?? Date.now;
-    this.#imageRevision = options.imageRevision ?? "development";
+    this.#imageRevision = options.imageRevision;
     this.#onMaintenanceError = options.onMaintenanceError;
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(this.#imageRevision)) {
       throw new TypeError("Workspace runtime image revision is invalid");
