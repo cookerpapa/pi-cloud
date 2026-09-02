@@ -790,15 +790,26 @@ const registration = await acceptanceIdentity(suffix);
 api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 authorizationToken = registration.apiToken;
 tenantId = registration.tenantId;
-const model = await api.getModelConfiguration();
-assert.equal(model.mode, "real", "Long-context acceptance requires a real model");
+const platformModel = await api.getModelConfiguration();
+assert.equal(platformModel.mode, "real", "Long-context acceptance requires a real model");
 const project = await api.createProject(`Long-context algorithm lab ${suffix}`);
 const session = await api.createSession(
   project.projectId,
   project.workspaceId,
   `Long-context algorithm lab ${suffix}`,
   "elastic",
+  "standard",
+  "/workspace",
+  {
+    provider: "deepseek",
+    modelId: "deepseek-v4-flash",
+    thinkingLevel: "off",
+    fastMode: false,
+  },
 );
+const model = await api.getSessionModel(session.sessionId);
+assert.equal(model.provider, "deepseek");
+assert.equal(model.modelId, "deepseek-v4-flash");
 
 const rounds = [];
 let completedCompaction;
@@ -1136,8 +1147,9 @@ try {
   process.stdout.write(`${JSON.stringify(report)}\n`);
 
   await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+  await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete-workspace"));
   cleanupCompleted = true;
-  progress("acceptance Session deleted and retained Cube released");
+  progress("acceptance Session and Workspace deleted; retained Cube released");
 } finally {
   if (stoppedWorkerService !== undefined) {
     await restoreWorker(stoppedWorkerService).catch(() => undefined);
@@ -1145,6 +1157,9 @@ try {
   if (!cleanupCompleted) {
     await api
       .deleteConversation(session.sessionId, newIdempotencyKey("delete"))
+      .catch(() => undefined);
+    await api
+      .deleteWorkspace(project.workspaceId, newIdempotencyKey("delete-workspace"))
       .catch(() => undefined);
   }
   await revokeAcceptanceCredential(registration).catch(() => undefined);
