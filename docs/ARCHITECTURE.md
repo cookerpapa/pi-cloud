@@ -247,11 +247,12 @@ instead of replaying arbitrary shell or file mutations.
 
 Session Tool grants are copied into immutable Run capability snapshots during
 admission. The snapshot is part of the frozen Cloud Turn context, selects which
-Pi `AgentTool` proxies enter one runtime, but does not eagerly create a Cube.
-The first actual `read/write/edit/bash` call resolves one single-flight Sandbox
-activation and carries the frozen grant to Tool Broker. A Run that uses only
-Provider-hosted or trusted orchestration Tools never contacts Tool Broker. Each
-Sandbox operation then carries its trusted Pi Tool name;
+Pi `AgentTool` proxies enter one runtime, but does not eagerly create an elastic
+Cube. The first actual `read/write/edit/bash` call resolves one single-flight
+Sandbox activation and carries the frozen grant to Tool Broker. A Tool-capable
+Run against a pre-existing development machine reserves only its per-Run Tool
+binding before model sampling, so Harness World State can attest that the same
+physical machine survived. Each Sandbox operation then carries its trusted Pi Tool name;
 Broker rejects both ungranted names and invalid Tool/operation combinations.
 Model visibility is therefore an affordance, while Broker authorization is the
 security boundary.

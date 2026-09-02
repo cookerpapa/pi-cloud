@@ -481,6 +481,13 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       signal.addEventListener("abort", abortSandbox, { once: true });
       if (signal.aborted) abortSandbox();
 
+      if (!toolFree && command.payload.executionMode === "development_environment") {
+        // The machine already exists. Reserve only this Run's Tool binding so
+        // World State can attest physical continuity before model sampling;
+        // elastic Cube allocation remains lazy.
+        await ensureActivation();
+      }
+
       if (usesEmbeddedFake) {
         fakeModel = new FakeModelServer({ defaultScenario: scenario });
         await fakeModel.start();

@@ -24,6 +24,7 @@ import {
   createCloudStepContext,
   createCloudTurnContext,
   PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
+  PI_SANDBOX_RESET_CUSTOM_TYPE,
   PiCloudTurnRunner,
   PiModelRuntimePool,
   RemoteToolSandboxTurnRunner,
@@ -144,6 +145,87 @@ describe("PiCloudTurnRunner integration", () => {
         runner.run(command, () => undefined, new AbortController().signal),
       ).resolves.toMatchObject({ stopReason: "stop" });
       expect(create).not.toHaveBeenCalled();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("prebinds an existing development machine without reporting a renewed lease as a reset", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pi-cloud-development-continuity-"));
+    const developmentCommand: ExecuteTurnCommandMessage = {
+      ...command,
+      payload: {
+        ...command.payload,
+        executionMode: "development_environment",
+        workingDirectory: "/home/user/project",
+      },
+    };
+    const turn = createCloudTurnContext(developmentCommand, undefined);
+    const session = new Session(
+      new InMemorySessionStorage({
+        id: developmentCommand.payload.sessionId,
+        createdAt: Date.now(),
+      }),
+    );
+    await session.appendCustomEntry(PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE, {
+      schemaVersion: 3,
+      sandbox: { status: "active", continuityId: "development-runtime-1" },
+      environmentSha256: turn.environmentSha256,
+      workspaceBindingSha256: turn.workspaceBindingSha256,
+      committedWorkspaceRevision: null,
+      toolPolicySha256: turn.toolPolicySha256,
+    });
+    const authority = new TestAuthority();
+    const create = vi.fn(async (request: Parameters<ToolBrokerBoundary["create"]>[0]) => ({
+      toolBrokerProtocolVersion: 1 as const,
+      type: "tool_sandbox.reserved" as const,
+      requestId: request.requestId,
+      activationId: "99999999-9999-4999-8999-999999999999",
+      executionLease: request.assignment.executionLease,
+      ownerBaseUrl: "http://tool-broker.test",
+      workspaceRoot: "/home/user/project",
+      continuity: "warm_reuse" as const,
+      continuityId: "development-runtime-1",
+    }));
+    const capture = vi.fn(async () => ({
+      toolBrokerProtocolVersion: 1 as const,
+      type: "tool_sandbox.unused" as const,
+      requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      activationId: "99999999-9999-4999-8999-999999999999",
+    }));
+    const release = vi.fn(async () => ({ retained: false }));
+    const broker = {
+      create,
+      capture,
+      release,
+      async stop() {},
+      operationUrlFor() {
+        return "http://tool-broker.test/internal/v1/tool-operation";
+      },
+    } as ToolBrokerBoundary;
+    const runner = new RemoteToolSandboxTurnRunner({
+      broker,
+      runtimeIdentity: {
+        supervisorId: "supervisor-development-test",
+        bootId: "77777777-7777-4777-8777-777777777780",
+        sandboxId: "sandbox-development-test",
+      },
+      trustedWorkspaceDirectory: directory,
+      scenario: "text",
+      openAgentSession: async () => ({ session, authority }),
+    });
+    try {
+      await expect(
+        runner.run(developmentCommand, () => undefined, new AbortController().signal),
+      ).resolves.toMatchObject({ stopReason: "stop" });
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(
+        (await session.findEntriesOnBranch()).filter(
+          (entry) => entry.type === "custom" && entry.customType === PI_SANDBOX_RESET_CUSTOM_TYPE,
+        ),
+      ).toHaveLength(0);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

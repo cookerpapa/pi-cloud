@@ -49,10 +49,11 @@ conversation.
   target ordinary conversation Sessions only.
 - Freeze the child's Tool set as an intersection with the parent Run
   capability snapshot. A child can never widen its parent's grant.
-- Tool capability does not reserve compute. A Tool-capable parent or child
+- Tool capability does not reserve elastic compute. An elastic parent or child
   creates a Cube lazily on its first actual `read`, `write`, `edit` or `bash`
-  operation. Provider-hosted and trusted orchestration Tools do not contact
-  Tool Broker.
+  operation. A Run bound to an existing development machine instead reserves
+  its per-Run Tool binding before model sampling, allowing Harness World State
+  to distinguish a renewed lease from a physical machine reset.
 - Register the same cloud Subagent Tool in eligible Child Runs. Persist
   `root_run_id`, `parent_execution_id` and `depth`, serialize admission under
   the root Run and enforce one deployment-owned budget across the whole tree.

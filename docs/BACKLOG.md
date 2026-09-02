@@ -56,6 +56,6 @@ Volume architecture. Historical experiments remain in Git history.
       upstream-compatible Child selector.
 - [x] Keep context inheritance, Workspace placement and local Tool grants
       explicit and independent.
-- [x] Activate Cube only on the first actual local Tool operation, including
-      Tool-capable research Runs that finish without touching a Workspace.
+- [x] Activate elastic Cube only on the first actual local Tool operation,
+      while prebinding owned machines to preserve physical-continuity semantics.
 - [ ] Repeat shared-Workspace Subagent acceptance on a multi-node Cube cluster.
