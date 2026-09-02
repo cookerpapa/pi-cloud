@@ -119,7 +119,7 @@ describe("credential-free Tool Sandbox worker", () => {
     process.env.HTTP_PROXY = "http://inherited-proxy.invalid:9999";
     process.env.HTTPS_PROXY = "http://inherited-proxy.invalid:9999";
     try {
-      const environment = safeToolEnvironment(undefined, {
+      const environment = safeToolEnvironment({
         host: "10.255.255.254",
         port: 3_128,
         directPrivateCidrs: ["192.168.31.0/24"],
@@ -322,7 +322,7 @@ describe("credential-free Tool Sandbox worker", () => {
     }
   });
 
-  it("injects an ephemeral proxy only into dependency recipe commands", async () => {
+  it("injects the Cube web proxy only into dependency recipe commands", async () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-environment-proxy-"));
     const recipe: EnvironmentRecipe = {
       schemaVersion: 1,
@@ -349,26 +349,13 @@ describe("credential-free Tool Sandbox worker", () => {
     };
     try {
       const setup = await executeEnvironmentRecipe(recipeEnvironment(recipe), workspace, {
-        dependencyProxy: {
-          host: "10.43.0.53",
+        webProxy: {
+          host: "10.255.255.254",
           port: 3_128,
-          capability: `pcpc1_${"a".repeat(64)}.${"b".repeat(86)}`,
-          publicKeyFingerprint: "c".repeat(64),
-        },
-        environmentStage: { type: "dependency_setup" },
-        verifyDependencyProxy: async (proxy) => {
-          expect(proxy.publicKeyFingerprint).toBe("c".repeat(64));
+          directPrivateCidrs: [],
         },
       });
-      expect(setup).toMatchObject([{ id: "proxy-evidence", phase: "setup", exitCode: 0 }]);
-      await expect(
-        executeEnvironmentRecipe(recipeEnvironment(recipe), workspace, {
-          environmentStage: {
-            type: "offline_restore",
-            setupCommands: setup,
-          },
-        }),
-      ).resolves.toMatchObject([
+      expect(setup).toMatchObject([
         { id: "proxy-evidence", phase: "setup", exitCode: 0 },
         { id: "proxy-cleared", phase: "verification", exitCode: 0 },
       ]);

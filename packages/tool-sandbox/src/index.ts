@@ -3,5 +3,4 @@ export {
   prepareToolWorkspace,
   resolveToolWorkspacePath,
   safeToolEnvironment,
-  verifyDependencyProxyTrust,
 } from "./tool-worker.ts";

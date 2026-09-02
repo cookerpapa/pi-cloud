@@ -1,7 +1,6 @@
 import { MAX_WORKSPACE_BLOB_BYTES, type WorkspaceBlob } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
-import { constants, type Stats } from "node:fs";
-import { chmod, mkdir, open, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, posix, resolve } from "node:path";
 import { TextDecoder } from "node:util";
 import { parseWorkspaceVolumeSettlement } from "./workspace-volume-settlement.ts";
@@ -20,23 +19,10 @@ type WorkspaceSeedFile = {
   content: string;
 };
 
-type WorkspaceSeedBundle = {
-  format: "pi-cloud.workspace-seed.v1";
-  files: WorkspaceSeedFile[];
-};
-
 export type WorkspaceSeedFileContent = {
   path: string;
   executable: boolean;
   content: Buffer;
-};
-
-export type WorkspaceSeedMetadata = {
-  path: string;
-  executable: boolean;
-  sizeBytes: number;
-  sha256: string;
-  content?: Buffer;
 };
 
 function seedError(message: string): WorkspaceRuntimeError {
@@ -88,77 +74,6 @@ function decodeCanonicalBase64(value: string): Buffer {
     throw seedError("Workspace file content is not canonical base64");
   }
   return decoded;
-}
-
-async function collectFiles(root: string, relativeDirectory = ""): Promise<WorkspaceSeedFile[]> {
-  const directory = relativeDirectory.length === 0 ? root : resolve(root, relativeDirectory);
-  const entries = await readdir(directory, { withFileTypes: true });
-  const files: WorkspaceSeedFile[] = [];
-  for (const entry of entries.sort((left, right) => comparePaths(left.name, right.name))) {
-    const relativePath =
-      relativeDirectory.length === 0 ? entry.name : `${relativeDirectory}/${entry.name}`;
-    if (relativeDirectory.length === 0 && entry.name === ".git-credentials") continue;
-    if (!validRelativePath(relativePath)) {
-      throw seedError("Workspace contains an unsupported path");
-    }
-    if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) {
-      throw seedError("Workspace contains a link or special file");
-    }
-    if (entry.isDirectory()) {
-      files.push(...(await collectFiles(root, relativePath)));
-      if (files.length > MAX_WORKSPACE_SEED_FILES) {
-        throw seedError("Workspace contains too many files for this seed format");
-      }
-      continue;
-    }
-    const absolutePath = resolve(root, relativePath);
-    let metadata: Stats;
-    let content: Buffer;
-    try {
-      const handle = await open(absolutePath, constants.O_RDONLY | constants.O_NOFOLLOW);
-      try {
-        metadata = await handle.stat();
-        if (!metadata.isFile() || metadata.size > MAX_WORKSPACE_SEED_FILE_BYTES) {
-          throw seedError("Workspace file is outside its byte limit");
-        }
-        content = await handle.readFile();
-        if (content.byteLength > MAX_WORKSPACE_SEED_FILE_BYTES) {
-          throw seedError("Workspace file is outside its byte limit");
-        }
-      } finally {
-        await handle.close();
-      }
-    } catch (error: unknown) {
-      if (error instanceof WorkspaceRuntimeError) throw error;
-      throw seedError("Workspace file could not be captured safely");
-    }
-    files.push({
-      path: relativePath,
-      executable: (metadata.mode & 0o111) !== 0,
-      sizeBytes: content.byteLength,
-      sha256: sha256(content),
-      content: content.toString("base64"),
-    });
-    if (files.length > MAX_WORKSPACE_SEED_FILES) {
-      throw seedError("Workspace contains too many files for this seed format");
-    }
-  }
-  return files;
-}
-
-export async function captureWorkspaceSeed(workspaceDirectory: string): Promise<Uint8Array> {
-  const files = (await collectFiles(workspaceDirectory)).sort((left, right) =>
-    comparePaths(left.path, right.path),
-  );
-  const bundle: WorkspaceSeedBundle = {
-    format: "pi-cloud.workspace-seed.v1",
-    files,
-  };
-  const encoded = Buffer.from(`${JSON.stringify(bundle)}\n`, "utf8");
-  if (encoded.byteLength > MAX_WORKSPACE_SEED_BYTES) {
-    throw seedError("Workspace seed is outside its byte limit");
-  }
-  return encoded;
 }
 
 export function parseWorkspaceSeed(seed: Uint8Array): WorkspaceSeedFileContent[] {
@@ -271,34 +186,6 @@ export function createWorkspaceSeed(
   return encoded;
 }
 
-export function mergeWorkspaceSeeds(
-  sources: readonly { root: string; seed: Uint8Array }[],
-): Uint8Array {
-  if (sources.length < 1 || sources.length > 8) {
-    throw seedError("Workspace source set is outside its repository limit");
-  }
-  const roots = new Set<string>();
-  const files: WorkspaceSeedFileContent[] = [];
-  for (const source of sources) {
-    if (
-      (source.root !== "." && !/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/.test(source.root)) ||
-      (sources.length > 1 && source.root === ".") ||
-      roots.has(source.root)
-    ) {
-      throw seedError("Workspace source root is invalid or repeated");
-    }
-    roots.add(source.root);
-    for (const file of parseWorkspaceSeed(source.seed)) {
-      files.push({
-        path: source.root === "." ? file.path : `${source.root}/${file.path}`,
-        executable: file.executable,
-        content: file.content,
-      });
-    }
-  }
-  return createWorkspaceSeed(files);
-}
-
 export async function restoreWorkspaceSeed(
   workspaceDirectory: string,
   seed: Uint8Array,
@@ -319,22 +206,6 @@ export async function restoreWorkspaceSeed(
 export function validateWorkspacePayload(seed: Uint8Array): void {
   if (parseWorkspaceVolumeSettlement(seed) !== undefined) return;
   parseWorkspaceSeed(seed);
-}
-
-export function workspaceSeedMetadata(seed: Uint8Array): WorkspaceSeedMetadata[] {
-  const volume = parseWorkspaceVolumeSettlement(seed);
-  if (volume !== undefined) return [];
-  return parseWorkspaceSeed(seed).map((file) => ({
-    path: file.path,
-    executable: file.executable,
-    sizeBytes: file.content.byteLength,
-    sha256: sha256(file.content),
-    content: file.content,
-  }));
-}
-
-export function workspaceSeedFileCount(seed: Uint8Array): number {
-  return workspaceSeedMetadata(seed).length;
 }
 
 export function encodeWorkspaceBlob(seed: Uint8Array): WorkspaceBlob {

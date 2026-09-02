@@ -60,20 +60,6 @@ const ToolOutputChunkSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const DependencyProxyBootstrapSchema = Type.Object(
-  {
-    host: Type.String({ minLength: 7, maxLength: 15, pattern: "^[0-9.]+$" }),
-    port: Type.Integer({ minimum: 1, maximum: 65_535 }),
-    capability: Type.String({
-      minLength: 128,
-      maxLength: 16_384,
-      pattern: "^pcpc1_[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{86}$",
-    }),
-    publicKeyFingerprint: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-  },
-  { additionalProperties: false },
-);
-
 export const ToolWebProxyBootstrapSchema = Type.Object(
   {
     host: Type.String({ minLength: 7, maxLength: 15, pattern: "^[0-9.]+$" }),
@@ -87,17 +73,6 @@ export const ToolWebProxyBootstrapSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-export const ToolWorkerEnvironmentStageSchema = Type.Union([
-  Type.Object({ type: Type.Literal("dependency_setup") }, { additionalProperties: false }),
-  Type.Object(
-    {
-      type: Type.Literal("offline_restore"),
-      setupCommands: Type.Array(EnvironmentRecipeCommandResultSchema, { maxItems: 10 }),
-    },
-    { additionalProperties: false },
-  ),
-]);
 
 const ToolWorkerWorkspaceAttachSchema = Type.Object(
   {
@@ -542,10 +517,7 @@ export const ToolWorkerInputSchema = Type.Union([
       toolRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
       environment: EnvironmentRuntimeSnapshotSchema,
       workspaceSeed: AgentWorkspaceSeedSchema,
-      workspaceSettlement: Type.Optional(WorkspaceBlobSchema),
-      dependencyProxy: Type.Optional(DependencyProxyBootstrapSchema),
       webProxy: Type.Optional(ToolWebProxyBootstrapSchema),
-      environmentStage: Type.Optional(ToolWorkerEnvironmentStageSchema),
       workspaceAttach: Type.Optional(ToolWorkerWorkspaceAttachSchema),
     },
     { additionalProperties: false },
@@ -641,9 +613,7 @@ export type ToolSandboxOperationRequest = Static<typeof ToolSandboxOperationRequ
 export type ToolSandboxOperationResponse = Static<typeof ToolSandboxOperationResponseSchema>;
 export type ToolWorkerInput = Static<typeof ToolWorkerInputSchema>;
 export type ToolWorkerOutput = Static<typeof ToolWorkerOutputSchema>;
-export type DependencyProxyBootstrap = Static<typeof DependencyProxyBootstrapSchema>;
 export type ToolWebProxyBootstrap = Static<typeof ToolWebProxyBootstrapSchema>;
-export type ToolWorkerEnvironmentStage = Static<typeof ToolWorkerEnvironmentStageSchema>;
 
 export class ToolSandboxProtocolError extends Error {
   constructor(message: string) {

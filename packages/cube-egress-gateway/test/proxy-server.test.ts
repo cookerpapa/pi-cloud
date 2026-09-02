@@ -1,5 +1,5 @@
 import { createServer, request, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { connect, type AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CubeEgressRuntimeConfiguration } from "../src/configuration-poller.ts";
 import { createCubeEgressGateway, type CubeEgressAuditRecord } from "../src/proxy-server.ts";
@@ -65,6 +65,19 @@ async function throughGateway(
     );
     outgoing.once("error", reject);
     outgoing.end();
+  });
+}
+
+async function throughConnect(gatewayPort: number, target: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(gatewayPort, "127.0.0.1");
+    const chunks: Buffer[] = [];
+    socket.once("connect", () => {
+      socket.write(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n\r\n`);
+    });
+    socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+    socket.once("error", reject);
+    socket.once("close", () => resolve(Buffer.concat(chunks).toString("latin1")));
   });
 }
 
@@ -137,5 +150,30 @@ describe("Cube egress gateway", () => {
       status: 403,
       body: "",
     });
+  });
+
+  it("records one close outcome when both ends of a CONNECT tunnel close", async () => {
+    const proxy = createServer();
+    proxy.on("connect", (_request, socket) => {
+      socket.end("HTTP/1.1 200 Connection Established\r\n\r\n");
+    });
+    const proxyPort = await listen(proxy);
+    const audits: CubeEgressAuditRecord[] = [];
+    const gateway = createCubeEgressGateway({
+      poller: {
+        current: {
+          enabled: true,
+          upstreamProxyUrl: new URL(`http://127.0.0.1:${String(proxyPort)}`),
+          revision: 8,
+        },
+      },
+      audit: (record) => audits.push(record),
+    });
+    const gatewayPort = await listen(gateway);
+
+    await expect(throughConnect(gatewayPort, "8.8.8.8:443")).resolves.toContain(
+      "200 Connection Established",
+    );
+    expect(audits.filter(({ outcome }) => outcome === "closed")).toHaveLength(1);
   });
 });

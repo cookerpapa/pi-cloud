@@ -252,7 +252,10 @@ export function createCubeEgressGateway(options: {
       }, CONNECTION_DURATION_MS);
       duration.unref();
       let responseHeader = Buffer.alloc(0);
+      let finalized = false;
       const finish = (reason: string): void => {
+        if (finalized) return;
+        finalized = true;
         clearTimeout(timeout);
         clearTimeout(duration);
         audit({

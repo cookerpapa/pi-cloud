@@ -228,9 +228,7 @@ export {
   MAX_TOOL_RANGE_FILE_BYTES,
   MAX_TOOL_READ_RANGE_BYTES,
   MAX_TOOL_READ_RANGE_LINES,
-  DependencyProxyBootstrapSchema,
   ToolWebProxyBootstrapSchema,
-  ToolWorkerEnvironmentStageSchema,
   ToolBrokerListWorkspaceDirectoryRequestSchema,
   ToolBrokerListWorkspaceDirectoryResponseSchema,
   ToolBrokerReadWorkspaceFileRequestSchema,
@@ -286,9 +284,7 @@ export {
   type ToolSandboxStopResponse,
   type ToolWorkerInput,
   type ToolWorkerOutput,
-  type DependencyProxyBootstrap,
   type ToolWebProxyBootstrap,
-  type ToolWorkerEnvironmentStage,
 } from "./tool-sandbox.ts";
 
 export {

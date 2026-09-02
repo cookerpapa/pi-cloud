@@ -1,9 +1,5 @@
-import {
-  captureWorkspaceSeed,
-  restoreWorkspaceSeed,
-  validateWorkspacePayload,
-} from "../src/index.ts";
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createWorkspaceSeed, restoreWorkspaceSeed } from "@pi-cloud/workspace-runtime";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -26,16 +22,19 @@ afterEach(async () => {
 
 describe("bounded Workspace seed bundle", () => {
   it("round-trips user-owned Git metadata with regular files and executable bits", async () => {
-    const source = await temporaryDirectory("pi-cloud-workspace-source-");
-    await mkdir(resolve(source, ".git"));
-    await writeFile(resolve(source, ".git/HEAD"), "ref: refs/heads/main\n");
-    await mkdir(resolve(source, "src"));
-    await writeFile(resolve(source, "src/App.java"), "class App {}\n");
-    await writeFile(resolve(source, "test.sh"), "#!/bin/sh\nexit 0\n");
-    await chmod(resolve(source, "test.sh"), 0o755);
-
-    const snapshot = await captureWorkspaceSeed(source);
-    validateWorkspacePayload(snapshot);
+    const snapshot = createWorkspaceSeed([
+      {
+        path: ".git/HEAD",
+        executable: false,
+        content: Buffer.from("ref: refs/heads/main\n"),
+      },
+      {
+        path: "src/App.java",
+        executable: false,
+        content: Buffer.from("class App {}\n"),
+      },
+      { path: "test.sh", executable: true, content: Buffer.from("#!/bin/sh\nexit 0\n") },
+    ]);
 
     const target = await temporaryDirectory("pi-cloud-workspace-target-");
     await writeFile(resolve(target, "stale.txt"), "remove me");
