@@ -631,7 +631,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(parent.activationId).toBe(ACTIVATION_ID);
     expect(child.activationId).toBe(parseExecutionLease(childAssignment.executionLease).attemptId);
     expect(child.continuityId).toBe(parent.continuityId);
-    expect(fixture.listDirectory).toHaveBeenCalledTimes(1);
+    expect(fixture.listDirectory).not.toHaveBeenCalled();
     await manager.execute(assignment.executionLease, {
       ...operation("21600000-0000-4000-8000-000000000005"),
       activationId: parent.activationId,
@@ -784,7 +784,7 @@ describe("provider-backed Tool Tool Broker", () => {
     ).resolves.toMatchObject({ status: "owned", state: "running", agentActive: false });
   });
 
-  it("rejects a missing exclusive working directory without destroying the user's machine", async () => {
+  it("does not add a redundant directory probe to development-machine binding admission", async () => {
     const fixture = providerFixture();
     const manager = testBroker({
       provider: fixture.provider,
@@ -811,19 +811,24 @@ describe("provider-backed Tool Tool Broker", () => {
         false,
       ),
     );
-    await expect(
-      manager.create({
-        ...createRequest,
-        toolRoot: "/missing",
-        executionMode: "development_environment",
-      }),
-    ).rejects.toMatchObject({
-      code: "development_environment_working_directory_unavailable",
-      retryable: false,
+    const binding = await manager.create({
+      ...createRequest,
+      toolRoot: "/missing",
+      executionMode: "development_environment",
     });
+    expect(binding.activationId).toBe(ACTIVATION_ID);
+    expect(fixture.listDirectory).not.toHaveBeenCalled();
     expect(fixture.settle).not.toHaveBeenCalled();
     expect(fixture.stopped).toBe(false);
     expect(fixture.destroyed).toBe(false);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: "51111111-1111-4111-8111-111111111113",
+      activationId: binding.activationId,
+      assignment,
+      disposition: "destroy",
+    });
     const terminal = await manager.openDevelopmentEnvironmentTerminal({
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment_terminal.open",

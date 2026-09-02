@@ -168,7 +168,6 @@ type ManagedDevelopmentEnvironment = {
   handle: SandboxHandle;
   terminal?: SandboxTerminalSession;
   bindingIds: Set<string>;
-  validatedToolRoots: Set<string>;
 };
 
 type AdmissionWaiter = {
@@ -492,7 +491,6 @@ export class ToolBroker {
           assignment: expected,
           handle,
           bindingIds: new Set(),
-          validatedToolRoots: new Set(),
         });
         this.#admitted.set(candidate.reservation.environmentId, expected);
         const capsule = await this.#persistentCapsule(handle);
@@ -647,7 +645,6 @@ export class ToolBroker {
         assignment,
         handle,
         bindingIds: new Set(),
-        validatedToolRoots: new Set(),
       });
       const runtimeCapsule = await this.#persistentCapsule(handle);
       await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "running", {
@@ -1437,13 +1434,6 @@ export class ToolBroker {
         false,
       );
     }
-    const rootAlreadyBound = [...environment.bindingIds].some(
-      (bindingId) => this.#toolBindings.get(bindingId)?.spec.toolRoot === request.toolRoot,
-    );
-    if (!environment.validatedToolRoots.has(request.toolRoot) && !rootAlreadyBound) {
-      await this.#validateDevelopmentToolRoot(environment.handle, request.toolRoot);
-    }
-    environment.validatedToolRoots.add(request.toolRoot);
     const physicalActivationId = validActivationId(environment.reservation.environmentId);
     const activationId = validActivationId(
       environment.bindingIds.size === 0
@@ -2349,19 +2339,6 @@ export class ToolBroker {
     this.#cancelAdmissionWaiter(activationId);
   }
 
-  async #validateDevelopmentToolRoot(handle: SandboxHandle, toolRoot: string | undefined) {
-    if (this.#provider.listDirectory === undefined) return;
-    try {
-      await this.#provider.listDirectory(handle, toolRoot ?? DEFAULT_EXCLUSIVE_WORKING_DIRECTORY);
-    } catch {
-      throw new ToolBrokerError(
-        "development_environment_working_directory_unavailable",
-        "The selected exclusive machine working directory is unavailable",
-        false,
-      );
-    }
-  }
-
   async #materialize(activation: ManagedToolBinding, signal?: AbortSignal): Promise<SandboxHandle> {
     if (activation.elasticRuntime !== undefined) {
       const handle = await this.#materializeElasticRuntime(activation.elasticRuntime, signal);
@@ -2379,7 +2356,6 @@ export class ToolBroker {
     if (signal?.aborted) {
       throw new ToolBrokerError("tool_operation_cancelled", "Tool operation was cancelled", false);
     }
-    await this.#validateDevelopmentToolRoot(handle, activation.spec.toolRoot);
     if (
       handle.activationId !== activation.spec.activationId ||
       handle.assignment.tenantId !== activation.assignment.tenantId ||
