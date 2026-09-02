@@ -356,6 +356,30 @@ try {
           selected.fastMode === false
         );
       }, "conversation model switch");
+      await click(
+        ".product-composer .product-model-menu-trigger",
+        "conversation.modelMenuReturnToGpt",
+      );
+      await clickText(
+        ".product-model-menu-panel:first-child button",
+        "ChatGPT",
+        "conversation.providerChatGptAgain",
+      );
+      await clickText(
+        ".product-model-menu-subpanel button",
+        "GPT-5.6 Sol",
+        "conversation.modelSol",
+      );
+      await clickText(".product-model-menu-subpanel button", "中", "conversation.reasoningMedium");
+      await waitFor(async () => {
+        const selected = await api.getSessionModel(elasticConversation.sessionId);
+        return (
+          selected.provider === "openai-codex" &&
+          selected.modelId === "gpt-5.6-sol" &&
+          selected.thinkingLevel === "medium" &&
+          selected.fastMode === false
+        );
+      }, "conversation model return to GPT");
       await clickLast(
         ".product-turn .product-user-message .product-message-copy",
         "transcript.copyUserMessage",
