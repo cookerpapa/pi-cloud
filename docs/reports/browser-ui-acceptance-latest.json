@@ -1,8 +1,8 @@
 {
   "accepted": true,
-  "piCloudRevision": "277a34705596010b794c929bd2c0a70cf6a2df7b",
-  "checkedAt": "2026-09-02T10:51:17.334Z",
-  "account": "browser.acceptance.mtjz63k5",
+  "piCloudRevision": "dcc138bd237770a2ea3b73b3ed017b374630cdac",
+  "checkedAt": "2026-09-02T11:42:29.310Z",
+  "account": "browser.acceptance.mtk0zvs9",
   "clickedControls": [
     "auth.localOnly",
     "auth.registerTab",
@@ -15,6 +15,7 @@
     "account.menuOpenAgain",
     "account.languageMenuAgain",
     "account.languageChinese",
+    "composer.defaultModelVisible",
     "sidebar.collapse",
     "sidebar.expand",
     "tree.collapse",
@@ -94,10 +95,10 @@
     "account.menuOpenForLogout",
     "account.logout"
   ],
-  "clickedControlCount": 89,
+  "clickedControlCount": 90,
   "latencyMs": {
-    "userSubmitToFirstAssistantText": 2354,
-    "userSubmitToCompleteReply": 2560
+    "userSubmitToFirstAssistantText": 2249,
+    "userSubmitToCompleteReply": 2453
   },
   "screenshotCaptured": true,
   "cleanupCompleted": true
