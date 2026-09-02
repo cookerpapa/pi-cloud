@@ -641,6 +641,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         ])
         .executeTakeFirst();
       let borrowedDevelopmentEnvironmentId: string | undefined;
+      let claimDevelopmentEnvironment = false;
       if (liveDevelopmentEnvironment !== undefined) {
         if (
           liveDevelopmentEnvironment.owner_instance_id !== this.#instanceId &&
@@ -651,12 +652,14 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         if (
           liveDevelopmentEnvironment.owner_instance_id !== this.#instanceId ||
           liveDevelopmentEnvironment.state !== "running" ||
-          liveDevelopmentEnvironment.agent_activation_id !== null ||
-          liveDevelopmentEnvironment.id !== input.activationId
+          liveDevelopmentEnvironment.id !== input.activationId ||
+          (liveDevelopmentEnvironment.agent_activation_id !== null &&
+            liveDevelopmentEnvironment.agent_activation_id !== liveDevelopmentEnvironment.id)
         ) {
           return { status: "busy" };
         }
         borrowedDevelopmentEnvironmentId = liveDevelopmentEnvironment.id;
+        claimDevelopmentEnvironment = liveDevelopmentEnvironment.agent_activation_id === null;
       }
       const authority = await transaction
         .selectFrom("session_leases")
@@ -725,7 +728,12 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           .where("owner_instance_id", "=", this.#instanceId)
           .where("state", "=", existing.state)
           .executeTakeFirstOrThrow();
-        return { status: "reserved" };
+        return borrowedDevelopmentEnvironmentId === undefined
+          ? { status: "reserved" }
+          : {
+              status: "development_environment",
+              environmentId: borrowedDevelopmentEnvironmentId,
+            };
       }
       const domain = await transaction
         .selectFrom("sandbox_domains")
@@ -775,7 +783,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       ) {
         return { status: "capacity" };
       }
-      if (borrowedDevelopmentEnvironmentId !== undefined) {
+      if (borrowedDevelopmentEnvironmentId !== undefined && claimDevelopmentEnvironment) {
         const lent = await transaction
           .updateTable("development_environments")
           .set({ agent_activation_id: input.activationId, updated_at: now })

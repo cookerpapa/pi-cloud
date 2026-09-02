@@ -167,7 +167,7 @@ type ManagedDevelopmentEnvironment = {
   assignment: ToolSandboxAssignment;
   handle: SandboxHandle;
   terminal?: SandboxTerminalSession;
-  agentActivationId?: string;
+  bindingIds: Set<string>;
 };
 
 type AdmissionWaiter = {
@@ -490,6 +490,7 @@ export class ToolBroker {
           reservation: candidate.reservation,
           assignment: expected,
           handle,
+          bindingIds: new Set(),
         });
         this.#admitted.set(candidate.reservation.environmentId, expected);
         const capsule = await this.#persistentCapsule(handle);
@@ -643,6 +644,7 @@ export class ToolBroker {
         reservation,
         assignment,
         handle,
+        bindingIds: new Set(),
       });
       const runtimeCapsule = await this.#persistentCapsule(handle);
       await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "running", {
@@ -737,7 +739,7 @@ export class ToolBroker {
         false,
       );
     }
-    if (environment.agentActivationId !== undefined) {
+    if (environment.bindingIds.size > 0) {
       throw new ToolBrokerError(
         "development_environment_agent_active",
         "Wait for the active Agent Run before changing the development environment",
@@ -949,14 +951,7 @@ export class ToolBroker {
         true,
       );
     }
-    const agentActivation =
-      environment.agentActivationId === undefined
-        ? undefined
-        : this.#toolBindings.get(environment.agentActivationId);
-    const terminalHandle =
-      agentActivation?.materializing === undefined
-        ? (agentActivation?.handle ?? environment.handle)
-        : ((await agentActivation.materializing.catch(() => undefined)) ?? environment.handle);
+    const terminalHandle = environment.handle;
     let terminal: SandboxTerminalSession;
     try {
       terminal = await this.#provider.openTerminal(terminalHandle, {
@@ -1439,17 +1434,22 @@ export class ToolBroker {
         false,
       );
     }
-    if (environment.agentActivationId !== undefined) {
+    await this.#validateDevelopmentToolRoot(environment.handle, request.toolRoot);
+    const physicalActivationId = validActivationId(environment.reservation.environmentId);
+    const activationId = validActivationId(
+      environment.bindingIds.size === 0
+        ? physicalActivationId
+        : parseExecutionLease(request.assignment.executionLease).attemptId,
+    );
+    if (this.#toolBindings.has(activationId) || environment.bindingIds.has(activationId)) {
       throw new ToolBrokerError(
-        "development_environment_workspace_busy",
-        "Exclusive development environment already has an active Agent Run",
-        true,
+        "tool_binding_identity_collision",
+        "Tool binding identity collided",
+        false,
       );
     }
-    await this.#validateDevelopmentToolRoot(environment.handle, request.toolRoot);
-    const activationId = validActivationId(environment.reservation.environmentId);
     const reservationInput: WorkspaceRuntimeReservation = {
-      activationId,
+      activationId: physicalActivationId,
       assignment: request.assignment,
       turnContextSha256: request.turnContextSha256,
       attemptContextSha256: request.attemptContextSha256,
@@ -1480,7 +1480,7 @@ export class ToolBroker {
         true,
       );
     }
-    environment.agentActivationId = activationId;
+    environment.bindingIds.add(activationId);
     this.#toolBindings.set(activationId, {
       activationId,
       assignment: request.assignment,
@@ -1488,7 +1488,7 @@ export class ToolBroker {
       attemptContextSha256: request.attemptContextSha256,
       allowedTools: new Set(parseCloudToolCapabilitySnapshot(request.allowedTools)),
       spec: {
-        activationId,
+        activationId: physicalActivationId,
         assignment: request.assignment,
         environment: request.environment,
         workspaceSeed: request.workspaceSeed,
@@ -1506,7 +1506,7 @@ export class ToolBroker {
       exclusiveOperation: false,
       operations: new Map(),
       seenCaptureIds: new Set(),
-      developmentEnvironmentId: activationId,
+      developmentEnvironmentId: environment.reservation.environmentId,
     });
     return {
       toolBrokerProtocolVersion: 1,
@@ -1601,7 +1601,7 @@ export class ToolBroker {
       if (elasticRuntime !== undefined) elasticRuntime.activeOperations += 1;
       try {
         const started = await this.#stateRepository.beginOperation(
-          elasticRuntime?.physicalActivationId ?? request.activationId,
+          elasticRuntime?.physicalActivationId ?? activation.reservation.activationId,
           request.activationId,
           activation.assignment,
           request.operationId,
@@ -1614,7 +1614,7 @@ export class ToolBroker {
             false,
           );
         }
-        const handle = await this.#materialize(request.activationId, activation, operationSignal);
+        const handle = await this.#materialize(activation, operationSignal);
         let response: ToolSandboxOperationResponse;
         try {
           response = await this.#provider.exec(
@@ -1691,7 +1691,7 @@ export class ToolBroker {
         activationId,
       };
     }
-    return this.#provider.settle(await this.#materialize(activationId, activation), requestId, {
+    return this.#provider.settle(await this.#materialize(activation), requestId, {
       activationId,
       assignment,
     });
@@ -1726,7 +1726,7 @@ export class ToolBroker {
     activation.exclusiveOperation = true;
     if (elasticRuntime !== undefined) elasticRuntime.exclusiveOperation = true;
     try {
-      const handle = await this.#materialize(request.sourceActivationId, activation);
+      const handle = await this.#materialize(activation);
       const forked = await this.#provider.forkWorkspace(handle, request);
       if (elasticRuntime === undefined) activation.handle = forked.sourceHandle;
       else elasticRuntime.handle = forked.sourceHandle;
@@ -1765,12 +1765,22 @@ export class ToolBroker {
     const environmentId = activation.developmentEnvironmentId;
     const environment =
       environmentId === undefined ? undefined : this.#developmentEnvironments.get(environmentId);
-    if (environment === undefined || environment.agentActivationId !== request.activationId) {
+    if (environment === undefined || !environment.bindingIds.has(request.activationId)) {
       throw new ToolBrokerError(
         "development_environment_identity_conflict",
         "Development environment Agent binding was lost",
         false,
       );
+    }
+    environment.bindingIds.delete(request.activationId);
+    if (environment.bindingIds.size > 0) {
+      return {
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.released",
+        requestId: request.requestId,
+        activationId: request.activationId,
+        retained: handle !== undefined,
+      };
     }
     try {
       if (handle === undefined) {
@@ -1781,11 +1791,10 @@ export class ToolBroker {
         );
       }
       environment.handle = handle;
-      delete environment.agentActivationId;
       const runtimeCapsule = await this.#persistentCapsule(handle);
       await this.#stateRepository.returnDevelopmentEnvironment(
         environment.reservation.environmentId,
-        request.activationId,
+        activation.reservation.activationId,
         "running",
         { handle, ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }) },
       );
@@ -1801,13 +1810,12 @@ export class ToolBroker {
         await this.#provider.stop(handle).catch(() => undefined);
         await this.#endHttpServices(activation, handle).catch(() => undefined);
       }
-      delete environment.agentActivationId;
       this.#developmentEnvironments.delete(environment.reservation.environmentId);
       this.#releaseAdmission(environment.reservation.environmentId);
       await this.#stateRepository
         .returnDevelopmentEnvironment(
           environment.reservation.environmentId,
-          request.activationId,
+          activation.reservation.activationId,
           "failed",
           { failureCode: operationFailureCode(error) },
         )
@@ -1889,7 +1897,7 @@ export class ToolBroker {
     assignment: ToolSandboxAssignment,
   ): Promise<SandboxInspection> {
     const activation = this.#ownedBinding(activationId, assignment);
-    return this.#provider.inspect(await this.#materialize(activationId, activation));
+    return this.#provider.inspect(await this.#materialize(activation));
   }
 
   async stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
@@ -1921,23 +1929,27 @@ export class ToolBroker {
     }
     if (activation.developmentEnvironmentId !== undefined) {
       const environment = this.#developmentEnvironments.get(activation.developmentEnvironmentId);
+      const operations = [...activation.operations.values()];
+      for (const operation of operations) operation.controller.abort();
+      await Promise.allSettled(operations.map((operation) => operation.result));
       const handle =
         activation.materializing === undefined
           ? activation.handle
           : await activation.materializing.catch(() => undefined);
+      this.#toolBindings.delete(activationId);
+      environment?.bindingIds.delete(activationId);
+      if (environment !== undefined && environment.bindingIds.size > 0) return;
       if (handle !== undefined) {
         await this.#provider.stop(handle).catch(() => undefined);
         await this.#endHttpServices(activation, handle).catch(() => undefined);
       }
-      this.#toolBindings.delete(activationId);
       if (environment !== undefined) {
-        delete environment.agentActivationId;
         this.#developmentEnvironments.delete(environment.reservation.environmentId);
         this.#releaseAdmission(environment.reservation.environmentId);
         await this.#stateRepository
           .returnDevelopmentEnvironment(
             environment.reservation.environmentId,
-            activationId,
+            activation.reservation.activationId,
             "failed",
             { failureCode: "agent_execution_interrupted" },
           )
@@ -2175,17 +2187,19 @@ export class ToolBroker {
       let capsule: string | undefined;
       let detachableHandle = environment.handle;
       try {
-        const activationId = environment.agentActivationId;
-        const activation =
-          activationId === undefined ? undefined : this.#toolBindings.get(activationId);
-        if (activation !== undefined) {
-          detachableHandle =
-            activation.materializing === undefined
-              ? (activation.handle ?? detachableHandle)
-              : ((await activation.materializing.catch(() => undefined)) ?? detachableHandle);
+        const bindings = [...environment.bindingIds]
+          .map((bindingId) => this.#toolBindings.get(bindingId))
+          .filter((binding): binding is ManagedToolBinding => binding !== undefined);
+        if (bindings.length > 0) {
+          for (const binding of bindings) {
+            detachableHandle =
+              binding.materializing === undefined
+                ? (binding.handle ?? detachableHandle)
+                : ((await binding.materializing.catch(() => undefined)) ?? detachableHandle);
+            this.#toolBindings.delete(binding.activationId);
+          }
           environment.handle = detachableHandle;
-          delete environment.agentActivationId;
-          this.#toolBindings.delete(activationId!);
+          environment.bindingIds.clear();
           capsule = await this.#persistentCapsule(detachableHandle);
           if (capsule === undefined) {
             throw new ToolBrokerError(
@@ -2196,7 +2210,7 @@ export class ToolBroker {
           }
           await this.#stateRepository.returnDevelopmentEnvironment(
             environmentId,
-            activationId!,
+            environmentId,
             "running",
             { handle: detachableHandle, runtimeCapsule: capsule },
           );
@@ -2339,11 +2353,7 @@ export class ToolBroker {
     }
   }
 
-  async #materialize(
-    activationId: string,
-    activation: ManagedToolBinding,
-    signal?: AbortSignal,
-  ): Promise<SandboxHandle> {
+  async #materialize(activation: ManagedToolBinding, signal?: AbortSignal): Promise<SandboxHandle> {
     if (activation.elasticRuntime !== undefined) {
       const handle = await this.#materializeElasticRuntime(activation.elasticRuntime, signal);
       activation.usedPhysicalRuntime = true;
@@ -2375,7 +2385,11 @@ export class ToolBroker {
       );
     }
     activation.usedPhysicalRuntime = true;
-    await this.#stateRepository.setWorkspaceRuntimeState(activationId, "active", { handle });
+    await this.#stateRepository.setWorkspaceRuntimeState(
+      activation.reservation.activationId,
+      "active",
+      { handle },
+    );
     return handle;
   }
 

@@ -587,6 +587,82 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.close();
   });
 
+  it("gives concurrent parent and Child Runs independent bindings to one development KVM", async () => {
+    const fixture = providerFixture();
+    const manager = testBroker({
+      provider: fixture.provider,
+      idGenerator: () => ACTIVATION_ID,
+    });
+    await manager.provisionDevelopmentEnvironment({
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.provision",
+      requestId: "21600000-0000-4000-8000-000000000001",
+      environmentId: ACTIVATION_ID,
+      tenantId: assignment.tenantId,
+      userId: "77777777-7777-4777-8777-777777777777",
+      projectId: assignment.projectId,
+      workspaceId: assignment.workspaceId,
+      generation: 1,
+      profileKey: "standard",
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+    });
+    const parent = await manager.create({
+      ...createRequest,
+      executionMode: "development_environment",
+    });
+    const childAssignment: ToolSandboxAssignment = {
+      ...assignment,
+      sessionId: "session-provider-test-child",
+      runId: "command-provider-test-child",
+      turnId: "turn-provider-test-child",
+      executionLease: createExecutionLease(
+        "21600000-0000-4000-8000-000000000002",
+        "21600000-0000-4000-8000-000000000003",
+        1,
+      ),
+    };
+    const child = await manager.create({
+      ...createRequest,
+      requestId: "21600000-0000-4000-8000-000000000004",
+      assignment: childAssignment,
+      executionMode: "development_environment",
+    });
+    expect(parent.activationId).toBe(ACTIVATION_ID);
+    expect(child.activationId).toBe(parseExecutionLease(childAssignment.executionLease).attemptId);
+    expect(child.continuityId).toBe(parent.continuityId);
+    await manager.execute(assignment.executionLease, {
+      ...operation("21600000-0000-4000-8000-000000000005"),
+      activationId: parent.activationId,
+    });
+    await manager.execute(childAssignment.executionLease, {
+      ...operation("21600000-0000-4000-8000-000000000006"),
+      activationId: child.activationId,
+    });
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: "21600000-0000-4000-8000-000000000007",
+      activationId: child.activationId,
+      assignment: childAssignment,
+      disposition: "keep_warm",
+      workspaceRevision: "3".repeat(64),
+    });
+    expect(fixture.stopped).toBe(false);
+    await manager.release({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId: "21600000-0000-4000-8000-000000000008",
+      activationId: parent.activationId,
+      assignment,
+      disposition: "keep_warm",
+      workspaceRevision: "4".repeat(64),
+    });
+    expect(fixture.createCount).toBe(1);
+    expect(fixture.stopped).toBe(false);
+    await manager.close();
+  });
+
   it("releases a database-owned development environment after its in-memory handle is lost", async () => {
     const fixture = providerFixture();
     const destroyRuntime = vi.fn(async () => undefined);
