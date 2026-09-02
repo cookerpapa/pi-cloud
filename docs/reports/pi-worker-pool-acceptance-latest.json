@@ -1,45 +1,45 @@
 {
   "accepted": true,
-  "checkedAt": "2026-08-30T16:54:49.133Z",
-  "model": { "provider": "deepseek", "modelId": "deepseek-v4-flash" },
+  "checkedAt": "2026-09-02T05:23:50.069Z",
+  "model": { "provider": "openai-codex", "modelId": "gpt-5.6-terra" },
   "workerDeployment": "compose",
   "workers": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
   "failover": {
-    "firstWorker": "pi-cloud-worker-1",
-    "followUpWorker": "pi-cloud-worker-2",
+    "firstWorker": "pi-cloud-worker-2",
+    "followUpWorker": "pi-cloud-worker-1",
     "differentWorker": true,
     "postgresSessionRestored": true,
     "markerRecovered": true,
-    "firstSettledMs": 1508,
-    "followUpSettledMs": 1987,
+    "firstSettledMs": 2823,
+    "followUpSettledMs": 4078,
     "candidateRuns": 1
   },
   "activeCrashRecovery": {
-    "killedWorker": "pi-cloud-worker-2",
+    "killedWorker": "pi-cloud-worker-1",
     "terminalState": "failed",
     "firstVisibleSequence": 3,
-    "terminalSequence": 16,
+    "terminalSequence": 14,
     "acceptedPrefixProjected": true,
     "sessionProjectionBarriers": 1,
-    "replacementRunId": "ef680b75-4737-4ecc-bc71-efd076a39eef"
+    "replacementRunId": "a6ed5f25-6f23-4ba8-90ca-d7860879665f"
   },
   "concurrency": {
     "runs": 4,
     "workerIds": [
-      "pi-cloud-worker-1",
       "pi-cloud-worker-2",
       "pi-cloud-worker-1",
-      "pi-cloud-worker-2"
+      "pi-cloud-worker-2",
+      "pi-cloud-worker-1"
     ],
     "distinctWorkers": 2,
     "observedWorkerIds": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
-    "settledMs": [5747, 9386, 9305, 5543]
+    "settledMs": [6388, 8435, 12613, 14349]
   },
   "totalUsage": {
     "requests": 7,
-    "inputTokens": 894,
-    "outputTokens": 1162,
-    "cacheReadTokens": 45056,
+    "inputTokens": 25362,
+    "outputTokens": 757,
+    "cacheReadTokens": 40448,
     "cacheWriteTokens": 0
   }
 }

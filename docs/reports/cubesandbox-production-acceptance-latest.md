@@ -1,26 +1,26 @@
 # CubeSandbox production acceptance
 
-- Checked at: 2026-08-31T14:45:01.293Z
+- Checked at: 2026-09-02T05:20:32.543Z
 - Provider/model: openai-codex / gpt-5.6-terra
-- Pure-chat first activity / assistant text / settled: 3191 / 3191 / 3701 ms
-- Pure-chat queue-to-claim-start / claim-and-preparation / model: 34 / 261 / 2921 ms
+- Pure-chat first activity / assistant text / settled: 14239 / 14239 / 18263 ms
+- Pure-chat queue-to-claim-start / claim-and-preparation / model: 14 / 138 / 10815 ms
 - Pure-chat Tool calls / Cube activations: 0 / 0
-- First coding first activity / Tool / assistant text / settled: 10456 / 10456 / 18673 / 19717 ms
-- Follow-up first activity / Tool / assistant text / settled: 3596 / 3596 / 16663 / 17939 ms
-- First coding queue-to-claim-start / claim-and-preparation / model / Tool: 14 / 193 / 13936 / 2659 ms
-- Follow-up queue-to-claim-start / claim-and-preparation / model / Tool: 24 / 219 / 13522 / 1326 ms
+- First coding first activity / Tool / assistant text / settled: 15855 / 15855 / 30386 / 34419 ms
+- Follow-up first activity / Tool / assistant text / settled: 3371 / 3371 / 14112 / 15263 ms
+- First coding queue-to-claim-start / claim-and-preparation / model / Tool: 9 / 138 / 18093 / 1649 ms
+- Follow-up queue-to-claim-start / claim-and-preparation / model / Tool: 18 / 158 / 14089 / 1000 ms
 - Coding Tool calls: 2 + 3
 - Same running Workspace Cube KVM guest reused: true
 - Agent Preview / background process survived cross-Run Tool bindings: true / true
 - Elastic runtime / conversation deletion preserved Workspace ownership: true / true
 - Workspace restored across Runs: true
 - Platform Git metadata absent / user-managed .git present: true / false
-- Large Workspace files / Volume reference: 1025 / 869 bytes
+- Large Workspace files / Volume reference: 1025 / 868 bytes
 - Large Workspace fresh-VM cold restore: true
-- Real input/output/cache-read tokens: 31995 / 2235 / 91648
-- Canonical conversation: 5 terminal Turns / 38 Pi entries / 60549 bytes
-- Kafka AcceptedFacts / canonical Session heads: 26452 / 110
-- PostgreSQL hot-event table absent / projected Session mutations: true / 96
+- Real input/output/cache-read tokens: 36880 / 2196 / 184576
+- Canonical conversation: 5 terminal Turns / 40 Pi entries / 43735 bytes
+- Kafka AcceptedFacts / published terminal outbox facts: 40820 / 5
+- PostgreSQL hot-event table absent / projected Session mutations: true / 101
 - Scheduler / Worker pool: PostgreSQL / shared
 - Cross-tenant conversation hidden: true
 - Explicit warm eviction / remaining Cube microVMs: true / 0

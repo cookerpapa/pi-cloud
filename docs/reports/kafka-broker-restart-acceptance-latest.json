@@ -1,15 +1,15 @@
 {
   "accepted": true,
-  "piCloudRevision": "ac2715fb6254313f143a698cb4495897c7421570",
-  "checkedAt": "2026-08-30T16:55:44.002Z",
-  "provider": "deepseek",
-  "modelId": "deepseek-v4-flash",
-  "runId": "a394a74f-9c09-465f-b149-5568c75328ae",
-  "turnId": "6bf7bf9e-73b0-4760-9dd5-874510b81c69",
+  "piCloudRevision": "15d30f6b249e10d2251501cd834e05d797b4f72a",
+  "checkedAt": "2026-09-02T05:08:58.339Z",
+  "provider": "openai-codex",
+  "modelId": "gpt-5.6-terra",
+  "runId": "69da55fc-7cd8-4697-b473-c60c7aa08dd9",
+  "turnId": "8b1e1840-9c3f-4e45-8c34-6c43447d6e6d",
   "firstTextSequence": 3,
-  "terminalSequence": 216,
-  "sseReconnects": 0,
+  "terminalSequence": 249,
+  "sseReconnects": 2,
   "attemptCount": 1,
   "faultMode": "kafka-broker",
-  "elapsedMs": 14235
+  "elapsedMs": 28735
 }

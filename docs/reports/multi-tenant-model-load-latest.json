@@ -1,51 +1,56 @@
 {
   "accepted": true,
-  "piCloudRevision": "422337d2ee1bad5bc78546334e8192be65801e27",
-  "checkedAt": "2026-08-31T14:47:25.766Z",
-  "tenants": 6,
-  "runs": 12,
+  "piCloudRevision": "2d79609e7f95012a7f2d455b6d97455628290976",
+  "checkedAt": "2026-09-02T03:39:56.769Z",
+  "tenants": 12,
+  "runs": 24,
   "model": { "provider": "openai-codex", "modelId": "gpt-5.6-terra" },
   "correctness": {
-    "completedRuns": 12,
+    "completedRuns": 24,
     "failedRuns": 0,
-    "markerRestores": 6,
-    "crossTenantApiDenials": 6,
+    "markerRestores": 12,
+    "crossTenantApiDenials": 12,
     "crossTenantMarkerLeaks": 0,
     "unexpectedToolEvents": 0,
     "maximumAttemptCount": 1
   },
   "latencyMs": {
-    "acceptance": { "minimum": 29, "p50": 49, "p95": 287, "maximum": 287 },
+    "acceptance": { "minimum": 24, "p50": 108, "p95": 432, "maximum": 436 },
     "firstAssistantText": {
-      "minimum": 2909,
-      "p50": 9445,
-      "p95": 17737,
-      "maximum": 17737
+      "minimum": 2625,
+      "p50": 14821,
+      "p95": 35654,
+      "maximum": 36483
     },
     "settled": {
-      "minimum": 4636,
-      "p50": 10536,
-      "p95": 22064,
-      "maximum": 22064
+      "minimum": 3595,
+      "p50": 16100,
+      "p95": 39879,
+      "maximum": 39894
     },
-    "queueWait": { "minimum": 385, "p50": 5932, "p95": 14393, "maximum": 14393 }
+    "queueWait": {
+      "minimum": 324,
+      "p50": 12168,
+      "p95": 32345,
+      "maximum": 34330
+    }
   },
   "workers": {
-    "distinct": ["pi-cloud-worker-2", "pi-cloud-worker-1"],
-    "assignments": { "pi-cloud-worker-2": 6, "pi-cloud-worker-1": 6 }
+    "distinct": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
+    "assignments": { "pi-cloud-worker-1": 12, "pi-cloud-worker-2": 12 }
   },
   "streaming": {
-    "terminalCount": 12,
-    "piEntryCount": 30,
-    "messageCount": 24,
-    "canonicalPayloadBytes": 45094,
+    "terminalCount": 24,
+    "piEntryCount": 60,
+    "messageCount": 48,
+    "canonicalPayloadBytes": 60503,
     "entriesPerRun": 2.5
   },
   "usage": {
-    "requests": 12,
-    "inputTokens": 13796,
-    "outputTokens": 1097,
-    "cacheReadTokens": 39424,
+    "requests": 24,
+    "inputTokens": 39108,
+    "outputTokens": 2412,
+    "cacheReadTokens": 172032,
     "cacheWriteTokens": 0
   }
 }

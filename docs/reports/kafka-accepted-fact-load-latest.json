@@ -1,6 +1,6 @@
 {
   "format": "pi-cloud.kafka-accepted-fact-load.v1",
-  "generatedAt": "2026-08-30T16:36:55.894Z",
+  "generatedAt": "2026-09-02T03:41:12.567Z",
   "host": {
     "logicalCpuCount": 32,
     "totalMemoryGiB": 19.53,
@@ -22,12 +22,12 @@
       "eventsPerSession": 4096,
       "concurrency": 1,
       "events": 4096,
-      "elapsedMs": 20057.478,
-      "eventsPerSecond": 204.21,
+      "elapsedMs": 14593.307,
+      "eventsPerSecond": 280.68,
       "acknowledgementLatencyMs": {
-        "p50": 3.966,
-        "p95": 5.464,
-        "p99": 6.957
+        "p50": 3.233,
+        "p95": 3.72,
+        "p99": 4.124
       }
     },
     {
@@ -36,12 +36,12 @@
       "eventsPerSession": 256,
       "concurrency": 16,
       "events": 4096,
-      "elapsedMs": 2148.742,
-      "eventsPerSecond": 1906.23,
+      "elapsedMs": 1209.083,
+      "eventsPerSecond": 3387.69,
       "acknowledgementLatencyMs": {
-        "p50": 7.331,
-        "p95": 10.432,
-        "p99": 25.455
+        "p50": 4.175,
+        "p95": 5.259,
+        "p99": 24.423
       }
     },
     {
@@ -50,12 +50,12 @@
       "eventsPerSession": 64,
       "concurrency": 64,
       "events": 4096,
-      "elapsedMs": 2009.512,
-      "eventsPerSecond": 2038.31,
+      "elapsedMs": 557.345,
+      "eventsPerSecond": 7349.13,
       "acknowledgementLatencyMs": {
-        "p50": 12.445,
-        "p95": 90.406,
-        "p99": 351.164
+        "p50": 4.867,
+        "p95": 32.723,
+        "p99": 135.893
       }
     },
     {
@@ -64,12 +64,12 @@
       "eventsPerSession": 32,
       "concurrency": 128,
       "events": 4096,
-      "elapsedMs": 625.833,
-      "eventsPerSecond": 6544.88,
+      "elapsedMs": 205.862,
+      "eventsPerSecond": 19896.78,
       "acknowledgementLatencyMs": {
-        "p50": 11.801,
-        "p95": 58.605,
-        "p99": 78.164
+        "p50": 5.128,
+        "p95": 7.117,
+        "p99": 43.022
       }
     },
     {
@@ -78,12 +78,12 @@
       "eventsPerSession": 16,
       "concurrency": 256,
       "events": 4096,
-      "elapsedMs": 451.971,
-      "eventsPerSecond": 9062.53,
+      "elapsedMs": 100.139,
+      "eventsPerSecond": 40903.13,
       "acknowledgementLatencyMs": {
-        "p50": 17.879,
-        "p95": 64.15,
-        "p99": 64.639
+        "p50": 5.804,
+        "p95": 7.911,
+        "p99": 8.704
       }
     },
     {
@@ -92,12 +92,12 @@
       "eventsPerSession": 8,
       "concurrency": 512,
       "events": 4096,
-      "elapsedMs": 295.064,
-      "eventsPerSecond": 13881.74,
+      "elapsedMs": 96.269,
+      "eventsPerSecond": 42547.51,
       "acknowledgementLatencyMs": {
-        "p50": 32.566,
-        "p95": 49.791,
-        "p99": 54.742
+        "p50": 9.711,
+        "p95": 19.32,
+        "p99": 21.781
       }
     },
     {
@@ -106,12 +106,12 @@
       "eventsPerSession": 4,
       "concurrency": 1024,
       "events": 4096,
-      "elapsedMs": 221.586,
-      "eventsPerSecond": 18484.94,
+      "elapsedMs": 79.455,
+      "eventsPerSecond": 51550.88,
       "acknowledgementLatencyMs": {
-        "p50": 45.32,
-        "p95": 71.867,
-        "p99": 82.378
+        "p50": 15.665,
+        "p95": 23.176,
+        "p99": 30.263
       }
     },
     {
@@ -120,12 +120,12 @@
       "eventsPerSession": 1024,
       "concurrency": 256,
       "events": 262144,
-      "elapsedMs": 15094.418,
-      "eventsPerSecond": 17366.95,
+      "elapsedMs": 7037.259,
+      "eventsPerSecond": 37250.87,
       "acknowledgementLatencyMs": {
-        "p50": 12.012,
-        "p95": 35.375,
-        "p99": 55.432
+        "p50": 6.13,
+        "p95": 10.43,
+        "p99": 26.768
       }
     },
     {
@@ -134,12 +134,12 @@
       "eventsPerSession": 512,
       "concurrency": 512,
       "events": 262144,
-      "elapsedMs": 9051.464,
-      "eventsPerSecond": 28961.5,
+      "elapsedMs": 4263.717,
+      "eventsPerSecond": 61482.51,
       "acknowledgementLatencyMs": {
-        "p50": 14.675,
-        "p95": 33.919,
-        "p99": 44.533
+        "p50": 6.58,
+        "p95": 13.338,
+        "p99": 24.479
       }
     },
     {
@@ -148,14 +148,14 @@
       "eventsPerSession": 256,
       "concurrency": 1024,
       "events": 262144,
-      "elapsedMs": 8381.95,
-      "eventsPerSecond": 31274.82,
+      "elapsedMs": 3744.244,
+      "eventsPerSecond": 70012.54,
       "acknowledgementLatencyMs": {
-        "p50": 28.945,
-        "p95": 59.092,
-        "p99": 74.065
+        "p50": 12.715,
+        "p95": 23.841,
+        "p99": 35.432
       }
     }
   ],
-  "revision": "133dfab76b08936bcab8bb96e133a1212d18a604"
+  "revision": "2d79609e7f95012a7f2d455b6d97455628290976"
 }

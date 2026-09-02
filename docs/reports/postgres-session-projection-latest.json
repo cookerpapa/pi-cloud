@@ -1,7 +1,7 @@
 {
   "format": "pi-cloud.postgres-session-projection-capacity.v1",
-  "generatedAt": "2026-08-30T16:37:32.429Z",
-  "revision": "133dfab76b08936bcab8bb96e133a1212d18a604",
+  "generatedAt": "2026-09-02T03:41:42.008Z",
+  "revision": "2d79609e7f95012a7f2d455b6d97455628290976",
   "workload": {
     "sessionCount": 2000,
     "mutationsPerSession": 4,
@@ -13,15 +13,15 @@
     "failures": [],
     "persistedEntries": 8000,
     "persistedResults": 8000,
-    "elapsedMs": 18816.62,
-    "messagesPerSecond": 425.16,
+    "elapsedMs": 8055.59,
+    "messagesPerSecond": 993.1,
     "latencyMs": {
-      "p50": 547.48,
-      "p95": 895.07,
-      "p99": 1095.52
+      "p50": 242.41,
+      "p95": 330.08,
+      "p99": 433.49
     },
-    "walBytes": 50881652,
-    "walBytesPerMessage": 6360.21
+    "walBytes": 47415760,
+    "walBytesPerMessage": 5926.97
   },
   "scope": [
     "isolated single-node PostgreSQL",
