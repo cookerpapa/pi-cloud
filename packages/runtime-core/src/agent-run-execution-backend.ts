@@ -338,15 +338,11 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       const prepareStartedAt = performance.now();
       prepared = this.#supervisor.prepare(command, async (message) => {
         const eventMessage = parseSupervisorToControlMessage(message);
-        const publications = eventMessage.type === "event.publish" ? [eventMessage] : [];
         if (
-          publications.length === 0 ||
-          publications.some(
-            (publication) =>
-              publication.payload.executionLease !== acknowledgement?.executionLease ||
-              publication.payload.event.sessionId !== request.sessionId ||
-              publication.payload.event.turnId !== request.turnId,
-          )
+          eventMessage.type !== "event.publish" ||
+          eventMessage.payload.executionLease !== acknowledgement?.executionLease ||
+          eventMessage.payload.event.sessionId !== request.sessionId ||
+          eventMessage.payload.event.turnId !== request.turnId
         ) {
           throw new TurnExecutionBackendError(
             "backend_protocol_violation",
@@ -354,9 +350,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
             false,
           );
         }
-        const last = publications.at(-1)!;
-        const eventAck = validateEventAck(last, await factChannel!.ingest(eventMessage));
-        for (const publication of publications) await this.#onEvent?.(publication);
+        const eventAck = validateEventAck(eventMessage, await factChannel!.ingest(eventMessage));
+        await this.#onEvent?.(eventMessage);
         return eventAck;
       });
       this.#metrics?.runPreparationDuration.observe(
