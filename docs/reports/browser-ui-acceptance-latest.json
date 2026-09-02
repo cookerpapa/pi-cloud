@@ -1,8 +1,8 @@
 {
   "accepted": true,
-  "piCloudRevision": "d0cbcdc112df779819d41114e172fead6e6fc444",
-  "checkedAt": "2026-09-01T00:00:33.024Z",
-  "account": "browser.acceptance.mthwhifk",
+  "piCloudRevision": "975e95ee34474b96e8229de1cfb81a5d829a55e5",
+  "checkedAt": "2026-09-02T01:52:01.941Z",
+  "account": "browser.acceptance.mtjfwpm9",
   "clickedControls": [
     "auth.localOnly",
     "auth.registerTab",
@@ -21,12 +21,21 @@
     "tree.expand",
     "conversation.new",
     "conversation.elasticMode",
-    "conversation.modelSelect",
+    "conversation.modelMenuOpen",
+    "conversation.providerGpt",
+    "conversation.modelTerra",
+    "conversation.reasoningHigh",
+    "conversation.fastMode",
+    "conversation.modelApply",
     "conversation.performanceProfile",
     "conversation.create",
     "codeHost.open",
     "codeHost.close",
     "composer.send",
+    "conversation.modelMenuReopen",
+    "conversation.providerDeepSeek",
+    "conversation.modelDeepSeekPro",
+    "conversation.reasoningDeepSeekHigh",
     "conversation.modelSwitch",
     "transcript.copyUserMessage",
     "transcript.copyAssistantMessage",
@@ -81,10 +90,10 @@
     "account.menuOpenForLogout",
     "account.logout"
   ],
-  "clickedControlCount": 76,
+  "clickedControlCount": 85,
   "latencyMs": {
-    "userSubmitToFirstAssistantText": 2142,
-    "userSubmitToCompleteReply": 2246
+    "userSubmitToFirstAssistantText": 8160,
+    "userSubmitToCompleteReply": 8979
   },
   "screenshotCaptured": true,
   "cleanupCompleted": true
