@@ -1437,10 +1437,13 @@ export class ToolBroker {
         false,
       );
     }
-    if (!environment.validatedToolRoots.has(request.toolRoot)) {
+    const rootAlreadyBound = [...environment.bindingIds].some(
+      (bindingId) => this.#toolBindings.get(bindingId)?.spec.toolRoot === request.toolRoot,
+    );
+    if (!environment.validatedToolRoots.has(request.toolRoot) && !rootAlreadyBound) {
       await this.#validateDevelopmentToolRoot(environment.handle, request.toolRoot);
-      environment.validatedToolRoots.add(request.toolRoot);
     }
+    environment.validatedToolRoots.add(request.toolRoot);
     const physicalActivationId = validActivationId(environment.reservation.environmentId);
     const activationId = validActivationId(
       environment.bindingIds.size === 0
