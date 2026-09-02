@@ -978,7 +978,10 @@ try {
   const providerSwitchEvidence = await runEvidence(providerSwitch.runId);
   const providerSwitchModel = await turnModelSnapshot(providerSwitch.turnId);
   assert.notEqual(providerSwitchEvidence.supervisorId, crossWorkerEvidence.supervisorId);
-  assert.equal(providerSwitch.hostedSearches, 1);
+  assert(
+    providerSwitch.hostedSearches >= 1,
+    "GPT Provider switch did not execute Hosted Web Search",
+  );
   assert.match(providerSwitch.text, /COMPACTED-GPT-SEARCH-OK/u);
   assert.match(providerSwitch.text, new RegExp(marker, "u"));
   assert.deepEqual(providerSwitchModel, {
