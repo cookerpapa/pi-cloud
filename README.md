@@ -28,63 +28,65 @@ hostile public-SaaS security or abuse-management product.
 
 ```text
 Browser
-  │ HTTPS: UI / REST / snapshot-first SSE / Terminal WebSocket
+  │ UI / REST / snapshot-first SSE / Terminal WebSocket / Preview
   ▼
-Web UI + Caddy ingress
+Caddy ingress
   ▼
-Control Plane
-  ├─ local auth, tenant API, conversations and resource admission
-  ├─ PostgreSQL Run queue and Worker Control Channel
-  ├─ AcceptedFact Authority Gate
-  ├─ Kafka canonical projector and rebuildable live-tail gateway
-  └─ Workspace browser, Preview and Terminal gateways
-       │
-       ├───────────────────────────▶ PostgreSQL
-       │                             product state / ready Runs
-       │                             ExecutionLease + Fence
-       │                             canonical Pi SessionStorage
-       │
-       └─ snapshot + live SSE ─────▶ Browser
+Control Plane replicas
+  ├─ local identity, tenant and conversation APIs
+  ├─ Session desired model/reasoning/Fast settings
+  ├─ Run admission, cancellation, Steer and resource APIs
+  ├─ Worker Control Channel + AcceptedFact Authority Gate
+  ├─ cursor-free SSE / Terminal / Preview gateways
+  └─ optional GitLab/GitHub Issue intake
+            │
+            ├──────────────▶ PostgreSQL
+            │                product state + ready Run queue
+            │                RunAttempt + ExecutionLease/Fence
+            │                immutable Turn model/Tool snapshots
+            │                canonical Pi SessionStorage
+            │
+            └─ snapshot + live SSE ──────────────────────────────▶ Browser
 
-PostgreSQL ready Runs ── SKIP LOCKED + NOTIFY ──▶ Pi Worker pool
-                                                    ├─ Pi SDK Agent Loop
-                                                    ├─ bounded Pi context read from PostgreSQL
-                                                    ├─ capability Model Gateway
-                                                    │   └─ frozen modalities + Provider-hosted Tools
-                                                    │        ▼
-                                                    │   CLIProxyAPI Provider Gateway
-                                                    │   OAuth/API keys + quota + Session affinity
-                                                    │        ▼
-                                                    │   provider relay ──▶ model APIs
-                                                    ├─ Trusted Tool Runtime
-                                                    │   ├─ platform: Preview
-                                                    │   ├─ orchestration: Subagent/supervisor
-                                                    │   └─ integration: reserved extension plane
-                                                    └─ leased Tool RPC
-                                                           ▼
-                                                     Tool Broker
-                                                     ├─ Cube lifecycle / Tool binding / Preview
-                                                     ├─ Workspace runtime ownership
-                                                     └─ envd command transport
-                                                           ▼
-                                                    CubeSandbox KVM
-                                                    untrusted code and processes
-                                                           │
-                                                           ▼
-                                                persistent Cube Workspace Volume
+PostgreSQL ready Runs
+  └─ SKIP LOCKED + LISTEN/NOTIFY
+       ▼
+Trusted Pi Worker pool (replaceable, bounded slots)
+  ├─ Pi SDK Agent Loop + native Compaction
+  ├─ bounded Session context read from PostgreSQL
+  ├─ Worker-local capability Model Gateway
+  │    └─ frozen Provider/model/reasoning/Fast/modalities/Hosted Tools
+  │          ▼
+  │       CLIProxyAPI Provider Gateway
+  │       subscription/API credentials, quota and soft Session affinity
+  │          ▼
+  │       OpenAI / DeepSeek native Responses APIs
+  ├─ TrustedToolRuntime
+  │    ├─ platform: Preview publication
+  │    ├─ orchestration: Subagent + supervisor channel
+  │    └─ integration: reserved external-system executor
+  └─ leased read/write/edit/bash RPC
+         ▼
+      Tool Broker replicas
+      Cube lifecycle + Tool binding + Workspace runtime ownership
+         ▼
+      CubeSandbox KVM microVM ───────▶ persistent Cube Workspace Volume
+      untrusted code and processes
 
-Worker CandidateFacts
-  └─ one multiplexed authenticated connection per Worker
+Every Worker
+  └─ one authenticated multiplexed Fact connection
        └─ one logical stream per Session ExecutionLease
             ▼
-Control Plane Authority Gate ── one PostgreSQL Lease/Fence admission
-            ▼
-Kafka, Session-keyed, replication factor 3, acks=all
-  ├─ canonical projector ──────▶ PostgreSQL Pi SessionStorage
-  └─ incomplete live tail ─────▶ cursor-free snapshot/SSE gateway ──▶ Browser
+AcceptedFact Authority Gate
+  └─ one PostgreSQL Lease/Fence admission per logical stream
+       ▼
+Kafka (Session-keyed, replication factor 3, acks=all)
+  ├─ canonical consumer ─────────────▶ PostgreSQL Pi SessionStorage
+  └─ incomplete-Turn consumer ───────▶ rebuildable live tail ─────▶ SSE
 
-Workspace files: Browser ──▶ Control Plane ──▶ Workspace Volume Gateway ──▶ Cube Volume
-Owned machine:   Browser SSH/Terminal/Preview ──▶ trusted gateway ──▶ Tool Broker ──▶ Cube
+Workspace browser: Browser ─▶ Control Plane ─▶ Workspace Volume Gateway ─▶ Cube Volume
+Human terminal:    Browser ─▶ Control Plane ─▶ Tool Broker PTY ───────────▶ Cube
+Owned machine SSH: SSH client ─▶ SSH Gateway ─▶ Tool Broker PTY ─────────▶ Cube
 ```
 
 There are three durable authorities:
