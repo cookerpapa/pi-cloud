@@ -212,6 +212,10 @@ try {
         "account.languageChinese",
       );
       await page.waitFor('document.body.innerText.includes("新对话")');
+      await page.waitFor(
+        'document.querySelector(".product-composer .product-model-menu-trigger")?.textContent.includes("GPT-5.6 Sol")===true',
+      );
+      record("composer.defaultModelVisible");
 
       await click(".product-sidebar > .product-panel-collapse", "sidebar.collapse");
       await click(".product-sidebar > .product-panel-collapse", "sidebar.expand");

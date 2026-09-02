@@ -232,6 +232,12 @@ export default function ChatApp() {
   const followingConversationTailRef = useRef(true);
   const deepLinkHandledRef = useRef(false);
   const currentTurn = activeTurn(state);
+  const composerModelSelection =
+    state.session === null
+      ? newConversationModel
+      : sessionModel === null
+        ? null
+        : settingsFromSessionModel(sessionModel);
   const currentDevelopmentEnvironment = developmentEnvironments.find(
     (environment) =>
       state.session?.executionMode === "development_environment" &&
@@ -810,7 +816,7 @@ export default function ChatApp() {
     setSelectedDevelopmentEnvironmentId(selectableDevelopmentEnvironments[0]?.environmentId ?? "");
     setDevelopmentProfileKey("standard");
     setWorkingDirectory("/workspace");
-    if (modelCatalog !== null) {
+    if (modelCatalog !== null && state.session !== null) {
       setNewConversationModel(defaultNewConversationSettings(modelCatalog));
     }
     setWorkspacePanelOpen(true);
@@ -2107,16 +2113,15 @@ export default function ChatApp() {
               rows={1}
               value={prompt}
             />
-            {state.session !== null &&
-            selectedDelegatedSession === null &&
-            sessionModel !== null &&
-            modelCatalog !== null ? (
+            {selectedDelegatedSession === null &&
+            modelCatalog !== null &&
+            composerModelSelection !== null ? (
               <ModelSettingsMenu
                 catalog={modelCatalog}
                 disabled={currentTurn !== undefined || operation !== null}
-                onApply={switchCurrentModel}
+                onApply={state.session === null ? setNewConversationModel : switchCurrentModel}
                 t={t}
-                value={settingsFromSessionModel(sessionModel)}
+                value={composerModelSelection}
               />
             ) : null}
             {currentTurn?.status === "running" ? (
