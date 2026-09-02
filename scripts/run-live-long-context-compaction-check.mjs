@@ -435,7 +435,11 @@ async function runTurn(sessionId, prompt, expectedTools) {
     if (event.turnId !== accepted.turnId) return;
     if (events.some((candidate) => candidate.eventId === event.eventId)) return;
     events.push(event);
-    if (event.type === "assistant.text.delta" || event.type === "tool.started") {
+    if (
+      event.type === "assistant.text.delta" ||
+      event.type === "tool.started" ||
+      event.type === "provider.hosted_tool.started"
+    ) {
       firstResponseAt ??= performance.now();
     }
     if (event.type === "assistant.text.delta") {
@@ -473,6 +477,10 @@ async function runTurn(sessionId, prompt, expectedTools) {
     );
     assert(firstResponseAt !== undefined, "Turn did not stream a model response or Tool call");
     const toolCalls = events.filter((event) => event.type === "tool.started").length;
+    const hostedSearches = events.filter(
+      (event) =>
+        event.type === "provider.hosted_tool.started" && event.payload.toolName === "web_search",
+    ).length;
     if (expectedTools) {
       assert(toolCalls > 0, "Coding turn did not execute a Tool");
       assert(events.some((event) => event.type === "tool.completed"));
@@ -503,6 +511,7 @@ async function runTurn(sessionId, prompt, expectedTools) {
       ...accepted,
       text: text.join(""),
       toolCalls,
+      hostedSearches,
       firstResponseMs: Math.round(firstResponseAt - submittedAt),
       firstTextMs: firstTextAt === undefined ? undefined : Math.round(firstTextAt - submittedAt),
       settledMs: Math.round(performance.now() - submittedAt),
@@ -523,6 +532,16 @@ async function activeWorkers() {
       order by supervisor_id`,
   );
   return output.length === 0 ? [] : output.split(/\r?\n/);
+}
+
+async function turnModelSnapshot(turnId) {
+  const row = await psql(
+    `select provider || '|' || model_id || '|' || thinking_level || '|' || coalesce(service_tier, 'standard')
+       from turns
+      where id = ${sqlLiteral(turnId)}`,
+  );
+  const [provider, modelId, thinkingLevel, serviceTier] = row.split("|");
+  return { provider, modelId, thinkingLevel, serviceTier };
 }
 
 async function waitForWorkers(expectedCount) {
@@ -903,6 +922,43 @@ try {
   await restoreWorker(stoppedWorkerService);
   stoppedWorkerService = undefined;
 
+  stoppedWorkerService = await stopWorker(crossWorkerEvidence.supervisorId);
+  const providerSwitchWorkers = await waitForWorkers(1);
+  assert(!providerSwitchWorkers.includes(crossWorkerEvidence.supervisorId));
+  await api.updateSessionModel(session.sessionId, {
+    provider: "openai-codex",
+    modelId: "gpt-5.6-luna",
+    thinkingLevel: "medium",
+    fastMode: true,
+  });
+  const providerSwitch = await runTurn(
+    session.sessionId,
+    [
+      "Do not call Pi function tools.",
+      "Use Provider-hosted web search to find the title of the official OpenAI developer documentation home page.",
+      `Reply with COMPACTED-GPT-SEARCH-OK, that title, and the exact persisted project marker ${marker}.`,
+    ].join(" "),
+    false,
+  );
+  const providerSwitchUsage = await usageForRun(providerSwitch.runId);
+  const providerSwitchEvidence = await runEvidence(providerSwitch.runId);
+  const providerSwitchModel = await turnModelSnapshot(providerSwitch.turnId);
+  assert.notEqual(providerSwitchEvidence.supervisorId, crossWorkerEvidence.supervisorId);
+  assert.equal(providerSwitch.hostedSearches, 1);
+  assert.match(providerSwitch.text, /COMPACTED-GPT-SEARCH-OK/u);
+  assert.match(providerSwitch.text, new RegExp(marker, "u"));
+  assert.deepEqual(providerSwitchModel, {
+    provider: "openai-codex",
+    modelId: "gpt-5.6-luna",
+    thinkingLevel: "medium",
+    serviceTier: "fast",
+  });
+  progress(
+    `post-compaction Provider switch recovered on ${providerSwitchEvidence.supervisorId}: hosted-search=${String(providerSwitch.hostedSearches)}, first-response=${String(providerSwitch.firstResponseMs)}ms`,
+  );
+  await restoreWorker(stoppedWorkerService);
+  stoppedWorkerService = undefined;
+
   const [algolabDirectory, testsDirectory] = await Promise.all([
     api.listWorkspaceDirectory(session.sessionId, "algolab"),
     api.listWorkspaceDirectory(session.sessionId, "tests"),
@@ -923,6 +979,7 @@ try {
     recallUsage,
     postCompactionUsage,
     crossWorkerUsage,
+    providerSwitchUsage,
   ].reduce(
     (total, usage) => ({
       modelRequests: total.modelRequests + usage.requestCount,
@@ -1022,6 +1079,18 @@ try {
         activeContextBytes: crossWorkerEvidence.activeContextBytes,
         activeContextEntries: crossWorkerEvidence.activeContextEntries,
       },
+      providerSwitch: {
+        runId: providerSwitch.runId,
+        from: crossWorkerEvidence.supervisorId,
+        to: providerSwitchEvidence.supervisorId,
+        model: providerSwitchModel,
+        hostedSearches: providerSwitch.hostedSearches,
+        markerRecovered: true,
+        firstResponseMs: providerSwitch.firstResponseMs,
+        firstTextMs: providerSwitch.firstTextMs,
+        settledMs: providerSwitch.settledMs,
+        usage: providerSwitchUsage,
+      },
     },
     totalUsage,
   };
@@ -1051,12 +1120,14 @@ try {
         `- Post-compaction coding first-response/settled: ${String(report.postCompaction.coding.firstResponseMs)} / ${String(report.postCompaction.coding.settledMs)} ms`,
         `- Cross-Worker recovery: ${report.postCompaction.crossWorker.from} -> ${report.postCompaction.crossWorker.to}`,
         `- Same bounded-warm Cube runtime rebound: ${String(report.postCompaction.crossWorker.sameCubeRuntimeRebound)}`,
+        `- Post-compaction Provider/Worker switch: ${report.postCompaction.providerSwitch.from} -> ${report.postCompaction.providerSwitch.to}, ${report.postCompaction.providerSwitch.model.provider}/${report.postCompaction.providerSwitch.model.modelId}, Fast=${String(report.postCompaction.providerSwitch.model.serviceTier === "fast")}`,
+        `- Post-compaction Hosted Web Search first-response/settled: ${String(report.postCompaction.providerSwitch.firstResponseMs)} / ${String(report.postCompaction.providerSwitch.settledMs)} ms`,
         `- Real model attempts/completed/recovered failures: ${String(report.totalUsage.modelAttempts)} / ${String(report.totalUsage.modelRequests)} / ${String(report.totalUsage.recoveredRequestFailures)}`,
         `- Real input/output/cache-read/cache-write tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)} / ${String(report.totalUsage.cacheWriteTokens)}`,
         `- Final Pi SessionStorage bytes/entries: ${String(report.postCompaction.crossWorker.sessionBytes)} / ${String(report.postCompaction.crossWorker.sessionEntries)}`,
         `- Final active context bytes/entries: ${String(report.postCompaction.crossWorker.activeContextBytes)} / ${String(report.postCompaction.crossWorker.activeContextEntries)}`,
         "",
-        "The workload used real multi-round Python coding tasks, remote Tool calls, deterministic tests and a bounded-warm CubeSandbox KVM over a persistent Workspace Volume. Pi completed two native threshold/overflow Compactions, retained an early conversation invariant, continued coding afterward, and restored the compacted native Session on a different Worker while sharing the same warm Workspace runtime through a new Tool binding.",
+        "The workload used real multi-round Python coding tasks, remote Tool calls, deterministic tests and a bounded-warm CubeSandbox KVM over a persistent Workspace Volume. Pi completed two native threshold/overflow Compactions, retained an early conversation invariant, continued coding afterward, restored the compacted native Session on a different Worker, then switched the Session to GPT Fast on another Worker and completed Provider-hosted Web Search without a Pi Tool call.",
         "",
       ].join("\n"),
       "utf8",
