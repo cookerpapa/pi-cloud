@@ -233,8 +233,7 @@ describe("product chat experience", () => {
               rootSessionId,
               depth: 1,
               parentTurnId: rootTurnId,
-              title: "worker · subagent",
-              agentName: "worker",
+              title: "Subagent",
               contextMode: "fork",
               workspaceMode: "shared",
               state: "completed",
@@ -249,8 +248,7 @@ describe("product chat experience", () => {
               rootSessionId,
               depth: 1,
               parentTurnId: rootTurnId,
-              title: "scout · subagent",
-              agentName: "scout",
+              title: "Subagent",
               contextMode: "fresh",
               workspaceMode: "none",
               state: "completed",
@@ -302,12 +300,11 @@ describe("product chat experience", () => {
             {
               kind: "subagent",
               sessionId: "10000000-0000-4000-8000-000000000032",
-              title: "worker · subagent",
+              title: "Subagent",
               parentSessionId: rootSessionId,
               forkedFromTurnId: rootTurnId,
               forkedFromEntryId: rootEntryId,
               current: false,
-              agentName: "worker",
               contextMode: "fork",
               workspaceMode: "shared",
               delegatedState: "completed",
@@ -316,12 +313,11 @@ describe("product chat experience", () => {
             {
               kind: "subagent",
               sessionId: "10000000-0000-4000-8000-000000000034",
-              title: "scout · subagent",
+              title: "Subagent",
               parentSessionId: rootSessionId,
               forkedFromTurnId: rootTurnId,
               forkedFromEntryId: rootEntryId,
               current: false,
-              agentName: "scout",
               contextMode: "fresh",
               workspaceMode: "none",
               delegatedState: "completed",
@@ -339,10 +335,10 @@ describe("product chat experience", () => {
     expect(markup).toContain("改用泛型实现");
     expect(markup).toContain("product-tree-user");
     expect(markup).toContain("product-tree-assistant");
-    expect(markup).toContain("worker");
+    expect(markup).toContain("Subagent");
     expect(markup).toContain("继承上下文");
     expect(markup).toContain("共享工作区");
-    expect(markup).toContain("scout");
+    expect(markup).not.toContain("scout");
     expect(markup).toContain("独立上下文");
     expect(markup).toContain("无工具");
   });

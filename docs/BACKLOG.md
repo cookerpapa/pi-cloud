@@ -49,3 +49,13 @@ Volume architecture. Historical experiments remain in Git history.
       PostgreSQL SessionStorage and cross-Worker recovery contract passes.
 - [ ] Enable Provider image generation only after Pi exposes a portable
       generated-image result that survives Session restore and model handoff.
+
+## Subagent execution
+
+- [x] Remove persona/role profiles from the cloud contract and keep one neutral
+      upstream-compatible Child selector.
+- [x] Keep context inheritance, Workspace placement and local Tool grants
+      explicit and independent.
+- [x] Activate Cube only on the first actual local Tool operation, including
+      Tool-capable research Runs that finish without touching a Workspace.
+- [ ] Repeat shared-Workspace Subagent acceptance on a multi-node Cube cluster.

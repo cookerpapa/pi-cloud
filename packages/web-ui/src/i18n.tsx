@@ -178,6 +178,7 @@ const zhCN = {
   "chat.inherited.divider": "Subagent 独立执行从这里开始",
   "chat.latest": "回到最新 ↓",
   "chat.subagentReadOnly": "这是一次 Subagent 执行记录。后续消息请回到父会话发送。",
+  "chat.subagentTitle": "Subagent",
   "chat.sendLabel": "发送消息",
   "chat.queuePlaceholder": "继续输入，消息会在当前任务后执行",
   "chat.promptPlaceholder": "给 PiCloud 发送消息",
@@ -570,6 +571,7 @@ const enUS: Record<UiTextKey, string> = {
   "chat.latest": "Jump to latest ↓",
   "chat.subagentReadOnly":
     "This is a Subagent execution record. Return to the parent chat to send another message.",
+  "chat.subagentTitle": "Subagent",
   "chat.sendLabel": "Send message",
   "chat.queuePlaceholder": "Keep typing; this message will run after the current task",
   "chat.promptPlaceholder": "Message PiCloud",

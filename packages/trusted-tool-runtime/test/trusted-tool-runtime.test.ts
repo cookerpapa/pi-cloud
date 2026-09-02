@@ -40,7 +40,12 @@ const command = {
 describe("PostgresTrustedToolRuntime", () => {
   it("exposes root-session Tools with explicit non-Sandbox execution planes", async () => {
     const runtime = new PostgresTrustedToolRuntime({ database: rootSessionDatabase() });
-    const tools = await runtime.create({ command });
+    const tools = await runtime.create({
+      command,
+      ensureActivation: async () => {
+        throw new Error("Tool-free trusted Tools must not activate a Sandbox");
+      },
+    });
 
     expect(tools.map(({ executionPlane, tool }) => [tool.name, executionPlane])).toEqual([
       ["preview", "platform"],

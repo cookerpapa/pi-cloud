@@ -28,6 +28,8 @@
   Session desired settings and immutable Turn snapshots.
 - composer-level cascading Provider/model/reasoning selection, with new Web
   conversations starting on GPT-5.6 Sol, medium reasoning and Standard service.
+- role-free neutral Subagents with explicit task/context/Workspace/Tool settings
+  and lazy Cube activation on the first local Tool call.
 
 ## Current release gate
 

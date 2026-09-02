@@ -15,7 +15,10 @@ import {
   InMemorySessionStorage,
   Session,
 } from "@earendil-works/pi-agent-core";
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import {
   createCloudAttemptContext,
   createCloudStepContext,
@@ -23,9 +26,11 @@ import {
   PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
   PiCloudTurnRunner,
   PiModelRuntimePool,
+  RemoteToolSandboxTurnRunner,
   resolveCompactionReserveTokens,
   type PiModelRuntimeConfig,
   type ProviderHostedActivity,
+  type ToolBrokerBoundary,
 } from "../src/index.ts";
 
 const command: ExecuteTurnCommandMessage = {
@@ -101,6 +106,49 @@ function deferred<T>() {
 }
 
 describe("PiCloudTurnRunner integration", () => {
+  it("does not reserve a physical Sandbox when registered local Tools remain unused", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pi-cloud-lazy-sandbox-"));
+    const session = new Session(
+      new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
+    );
+    const authority = new TestAuthority();
+    const create = vi.fn(async () => {
+      throw new Error("A text-only model response must not reserve a Sandbox");
+    });
+    const broker = {
+      create,
+      async capture() {
+        throw new Error("unused");
+      },
+      async release() {
+        throw new Error("unused");
+      },
+      async stop() {},
+      operationUrlFor() {
+        return "http://tool-broker.test/internal/v1/tool-operation";
+      },
+    } as ToolBrokerBoundary;
+    const runner = new RemoteToolSandboxTurnRunner({
+      broker,
+      runtimeIdentity: {
+        supervisorId: "supervisor-lazy-test",
+        bootId: "77777777-7777-4777-8777-777777777779",
+        sandboxId: "sandbox-lazy-test",
+      },
+      trustedWorkspaceDirectory: directory,
+      scenario: "text",
+      openAgentSession: async () => ({ session, authority }),
+    });
+    try {
+      await expect(
+        runner.run(command, () => undefined, new AbortController().signal),
+      ).resolves.toMatchObject({ stopReason: "stop" });
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("reuses an idle ModelRuntime without sharing one between active Runs", async () => {
     const pool = new PiModelRuntimePool(1);
     const runtime: PiModelRuntimeConfig = {

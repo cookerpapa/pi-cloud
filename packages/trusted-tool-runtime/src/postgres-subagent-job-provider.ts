@@ -323,6 +323,7 @@ export class PostgresSubagentJobProvider {
           "parent_session.desired_model_profile_id as modelProfileId",
           "parent_session.created_by_user_id as createdByUserId",
           "parent_session.execution_mode as executionMode",
+          "parent_session.development_environment_id as developmentEnvironmentId",
           "parent_session.sandbox_profile_key as sandboxProfileKey",
           "parent_session.working_directory as workingDirectory",
           "parent_session.session_kind as sessionKind",
@@ -521,7 +522,7 @@ export class PostgresSubagentJobProvider {
         .insertInto("sessions")
         .values({
           id: childSessionId,
-          title: `${input.agentName} · subagent`,
+          title: "Subagent",
           tenant_id: input.tenantId,
           project_id: parent.projectId,
           workspace_id: childWorkspaceId,
@@ -531,9 +532,12 @@ export class PostgresSubagentJobProvider {
           agent_revision_id: parent.agentRevisionId,
           created_by_user_id: parent.createdByUserId,
           state: "cold",
-          execution_mode: "elastic",
+          execution_mode: input.workspaceMode === "shared" ? parent.executionMode : "elastic",
+          development_environment_id:
+            input.workspaceMode === "shared" ? parent.developmentEnvironmentId : null,
           sandbox_profile_key: parent.sandboxProfileKey,
-          working_directory: parent.workingDirectory,
+          working_directory:
+            input.workspaceMode === "isolated" ? "/workspace" : parent.workingDirectory,
           session_kind: "subagent",
           tool_capabilities: sql<unknown[]>`${JSON.stringify(tools)}::jsonb`,
           workspace_settlement_key:
@@ -608,7 +612,7 @@ export class PostgresSubagentJobProvider {
             created_at_ms: Date.now(),
             parent_session_id: input.parentSessionId,
             next_seq: 1,
-            name: `${input.agentName} · subagent`,
+            name: "Subagent",
           })
           .executeTakeFirstOrThrow();
         await transaction

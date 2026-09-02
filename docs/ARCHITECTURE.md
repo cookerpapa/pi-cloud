@@ -247,8 +247,11 @@ instead of replaying arbitrary shell or file mutations.
 
 Session Tool grants are copied into immutable Run capability snapshots during
 admission. The snapshot is part of the frozen Cloud Turn context, selects which
-Pi `AgentTool` proxies enter one runtime, and is carried to Tool Broker when a
-Tool binding is reserved. Each operation then carries its trusted Pi Tool name;
+Pi `AgentTool` proxies enter one runtime, but does not eagerly create a Cube.
+The first actual `read/write/edit/bash` call resolves one single-flight Sandbox
+activation and carries the frozen grant to Tool Broker. A Run that uses only
+Provider-hosted or trusted orchestration Tools never contacts Tool Broker. Each
+Sandbox operation then carries its trusted Pi Tool name;
 Broker rejects both ungranted names and invalid Tool/operation combinations.
 Model visibility is therefore an affordance, while Broker authorization is the
 security boundary.
@@ -256,7 +259,11 @@ security boundary.
 ### Durable Pi subagents
 
 PiCloud pins the public `pi-subagents` package and preserves its model-visible
-Tool schema, deployment-owned profiles and workflow-script runtime. A narrow
+Tool schema and workflow-script runtime. Upstream persona/role profiles are
+disabled. The required internal agent selector has one neutral `cloud-child`
+value whose prompt only establishes the Child execution boundary; behavior
+comes from the delegated task plus explicit context, Workspace, Tool, model and
+thinking settings. A narrow
 `PI_SUBAGENT_PI_BINARY` adapter replaces only local child execution. Every child
 becomes a typed `session_kind=subagent` Pi Session, Run and RunAttempt in
 PostgreSQL and is claimed by the ordinary shared Worker pool. The product
@@ -287,12 +294,14 @@ surface immediately in the parent Tool stream, and may be answered by a parent
 Run on another Worker. The reply wakes the existing Child Run; it never starts
 the task again.
 
-Workspace modes are explicit:
+Context, allowed Tools and Workspace modes are explicit and independent:
 
 - `none` creates a Tool-free child and never reserves Cube capacity;
 - `shared` keeps separate Pi contexts and gives parent and child independent
-  Tool bindings to the same Workspace runtime; ordinary Linux concurrency
-  governs their files, processes and ports;
+  Tool bindings to the same Workspace runtime only after a Child actually calls
+  a local Tool. A shared Child of a cloud development-machine Session inherits
+  that machine identity and working directory. Ordinary Linux concurrency governs
+  their files, processes and ports;
 - upstream `worktree:true` maps to `isolated`: Tool Broker briefly excludes new
   Tool operations while
   the trusted Volume gateway makes an idempotent revision-bound internal

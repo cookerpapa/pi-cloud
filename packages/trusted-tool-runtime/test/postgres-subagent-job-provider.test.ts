@@ -253,7 +253,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       parentToolCallId: "subagent-tool-none",
       workflowRunId: "workflow-none",
       stepIndex: 0,
-      agentName: "oracle",
+      agentName: "cloud-child",
       prompt: "Review the approach without using tools",
       contextMode: "fresh" as const,
       workspaceMode: "none" as const,
@@ -330,9 +330,9 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       parentToolCallId: "subagent-tool-shared",
       workflowRunId: "workflow-shared",
       stepIndex: 1,
-      agentName: "scout",
+      agentName: "cloud-child",
       prompt: "Inspect the repository",
-      systemPrompt: "You are a deployment-owned scout profile.",
+      systemPrompt: "Execute only this delegated task.",
       contextMode: "fork",
       workspaceMode: "shared",
       requestedToolCapabilities: ["read", "bash"],
@@ -353,7 +353,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       .where("id", "=", started.childRunId)
       .executeTakeFirstOrThrow();
     expect(child.tool_capability_snapshot).toEqual(["read", "bash"]);
-    expect(child.agent_system_prompt).toContain("You are a deployment-owned scout profile.");
+    expect(child.agent_system_prompt).toContain("Execute only this delegated task.");
     expect(child.agent_system_prompt).toContain("PiCloud delegated execution boundary");
     const dispatched: string[] = [];
     const dispatcher = new RunExecutor({
@@ -390,7 +390,6 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           sessionId: started.childSessionId,
           parentSessionId: null,
           current: true,
-          agentName: "scout",
           contextMode: "fork",
           workspaceMode: "shared",
           entries: [
@@ -400,6 +399,96 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         },
       ],
     });
+  });
+
+  it("inherits a shared parent cloud development machine without converting it to elastic", async () => {
+    const environmentId = crypto.randomUUID();
+    const parent = await database
+      .selectFrom("sessions")
+      .select(["project_id", "workspace_id"])
+      .where("id", "=", parentSessionId)
+      .executeTakeFirstOrThrow();
+    const owner = await database
+      .selectFrom("users")
+      .select("id")
+      .where("tenant_id", "=", tenantId)
+      .orderBy("created_at", "asc")
+      .executeTakeFirstOrThrow();
+    await database
+      .insertInto("development_environments")
+      .values({
+        id: environmentId,
+        tenant_id: tenantId,
+        owner_user_id: owner.id,
+        project_id: parent.project_id,
+        workspace_id: parent.workspace_id,
+        sandbox_domain_id: "sandbox-domain-test",
+        environment_version_id: null,
+        owner_instance_id: null,
+        owner_base_url: null,
+        runtime_id: null,
+        runtime_name: null,
+        state: "requested",
+        failure_code: null,
+        idempotency_key: `development-${environmentId}`,
+        request_sha256: "f".repeat(64),
+        profile_key: "standard",
+        cpu_count: 2,
+        memory_mib: 4_096,
+        system_disk_gib: 16,
+      })
+      .executeTakeFirstOrThrow();
+    await database
+      .updateTable("sessions")
+      .set({
+        execution_mode: "development_environment",
+        development_environment_id: environmentId,
+        working_directory: "/home/user/research",
+      })
+      .where("id", "=", parentSessionId)
+      .executeTakeFirstOrThrow();
+    try {
+      const provider = new PostgresSubagentJobProvider({ database });
+      const child = await provider.start({
+        tenantId,
+        parentSessionId,
+        parentRunId,
+        parentExecutionLease: parentExecutionLease(),
+        parentToolCallId: "subagent-development-shared",
+        workflowRunId: "workflow-development-shared",
+        stepIndex: 11,
+        agentName: "cloud-child",
+        prompt: "Use the shared machine only if the delegated task needs local tools",
+        contextMode: "fresh",
+        workspaceMode: "shared",
+        requestedToolCapabilities: ["read", "write", "edit", "bash"],
+      });
+      await expect(
+        database
+          .selectFrom("sessions")
+          .select([
+            "execution_mode as executionMode",
+            "development_environment_id as developmentEnvironmentId",
+            "working_directory as workingDirectory",
+          ])
+          .where("id", "=", child.childSessionId)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({
+        executionMode: "development_environment",
+        developmentEnvironmentId: environmentId,
+        workingDirectory: "/home/user/research",
+      });
+    } finally {
+      await database
+        .updateTable("sessions")
+        .set({
+          execution_mode: "elastic",
+          development_environment_id: null,
+          working_directory: "/workspace",
+        })
+        .where("id", "=", parentSessionId)
+        .executeTakeFirstOrThrow();
+    }
   });
 
   it("prepares an isolated internal Workspace before dispatching the Child Run", async () => {
@@ -435,7 +524,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       parentToolCallId: "subagent-tool-isolated",
       workflowRunId: "workflow-isolated",
       stepIndex: 2,
-      agentName: "worker",
+      agentName: "cloud-child",
       prompt: "Implement an independent approach",
       contextMode: "fork",
       workspaceMode: "isolated",
@@ -499,7 +588,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       parentToolCallId: "subagent-tool-cancel",
       workflowRunId: "workflow-cancel",
       stepIndex: 3,
-      agentName: "oracle",
+      agentName: "cloud-child",
       prompt: "Cancel this queued review",
       contextMode: "fresh",
       workspaceMode: "none",
@@ -535,7 +624,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       parentToolCallId: "subagent-tool-supervisor",
       workflowRunId: "workflow-supervisor",
       stepIndex: 4,
-      agentName: "worker",
+      agentName: "cloud-child",
       prompt: "Ask the parent only if a material decision is required",
       contextMode: "fork",
       workspaceMode: "none",
@@ -598,7 +687,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       parentToolCallId: "recursive-level-one",
       workflowRunId: "recursive-root-workflow",
       stepIndex: 0,
-      agentName: "worker",
+      agentName: "cloud-child",
       prompt: "Delegate one bounded verification task",
       contextMode: "fork",
       workspaceMode: "none",
@@ -620,7 +709,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       parentToolCallId: "recursive-level-two",
       workflowRunId: "recursive-child-workflow",
       stepIndex: 0,
-      agentName: "oracle",
+      agentName: "cloud-child",
       prompt: "Verify the child result without tools",
       contextMode: "fork",
       workspaceMode: "none",
@@ -726,7 +815,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         parentToolCallId: "recursive-level-three",
         workflowRunId: "recursive-grandchild-workflow",
         stepIndex: 0,
-        agentName: "worker",
+        agentName: "cloud-child",
         prompt: "This node must not be created",
         contextMode: "fresh",
         workspaceMode: "none",
@@ -756,7 +845,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         parentToolCallId: "stale-tool",
         workflowRunId: "stale-workflow",
         stepIndex: 0,
-        agentName: "scout",
+        agentName: "cloud-child",
         prompt: "Must not start",
         contextMode: "fresh",
         workspaceMode: "none",

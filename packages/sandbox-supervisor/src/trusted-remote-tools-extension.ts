@@ -92,8 +92,11 @@ class RemoteToolError extends Error {
 }
 
 export type TrustedRemoteToolsRuntimeConfiguration = {
-  operationUrl: string;
-  activationId: string;
+  operationUrl?: string;
+  activationId?: string;
+  resolveOperationTarget?: () =>
+    | Promise<Readonly<{ operationUrl: string; activationId: string }>>
+    | Readonly<{ operationUrl: string; activationId: string }>;
   executionLease: string;
   turnContextSha256: string;
   attemptContextSha256: string;
@@ -125,21 +128,48 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   tracestate?: string;
 };
 
-function validateRuntimeConfiguration(
-  candidate: TrustedRemoteToolsRuntimeConfiguration,
-): TrustedRemoteToolsRuntimeConfiguration {
-  const operationUrl = candidate.operationUrl;
-  const parsed = new URL(operationUrl);
+type ValidatedRemoteToolsRuntimeConfiguration = Omit<
+  TrustedRemoteToolsRuntimeConfiguration,
+  "operationUrl" | "activationId" | "resolveOperationTarget"
+> & {
+  resolveOperationTarget(): Promise<Readonly<{ operationUrl: string; activationId: string }>>;
+};
+
+function validateOperationTarget(target: {
+  operationUrl: string;
+  activationId: string;
+}): Readonly<{ operationUrl: string; activationId: string }> {
+  const parsed = new URL(target.operationUrl);
   if (
     (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
     parsed.username ||
     parsed.password ||
     parsed.search ||
-    parsed.hash
+    parsed.hash ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      target.activationId,
+    )
   ) {
-    throw new Error("Trusted Tool Sandbox operation URL is invalid");
+    throw new Error("Trusted Tool Sandbox operation target is invalid");
   }
-  const activationId = candidate.activationId;
+  return { operationUrl: parsed.toString(), activationId: target.activationId };
+}
+
+function validateRuntimeConfiguration(
+  candidate: TrustedRemoteToolsRuntimeConfiguration,
+): ValidatedRemoteToolsRuntimeConfiguration {
+  const staticTarget =
+    candidate.operationUrl === undefined || candidate.activationId === undefined
+      ? undefined
+      : validateOperationTarget({
+          operationUrl: candidate.operationUrl,
+          activationId: candidate.activationId,
+        });
+  if ((staticTarget === undefined) === (candidate.resolveOperationTarget === undefined)) {
+    throw new Error("Trusted Tool Sandbox operation target is ambiguous");
+  }
+  const resolveOperationTarget = async () =>
+    staticTarget ?? validateOperationTarget(await candidate.resolveOperationTarget!());
   const executionLease = candidate.executionLease;
   const turnContextSha256 = candidate.turnContextSha256;
   const attemptContextSha256 = candidate.attemptContextSha256;
@@ -155,9 +185,6 @@ function validateRuntimeConfiguration(
     candidate.allowedTools ?? [...CLOUD_TOOL_NAMES],
   );
   if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      activationId,
-    ) ||
     !/^pcel1_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionLease) ||
     !/^[0-9a-f]{64}$/.test(turnContextSha256) ||
     !/^[0-9a-f]{64}$/.test(attemptContextSha256) ||
@@ -202,8 +229,7 @@ function validateRuntimeConfiguration(
     throw new Error("Trusted trace state is invalid");
   }
   return {
-    operationUrl: parsed.toString(),
-    activationId,
+    resolveOperationTarget,
     executionLease,
     turnContextSha256,
     attemptContextSha256,
@@ -341,7 +367,7 @@ type TrustedRemoteToolBindings = Readonly<{
 
 function registerTrustedRemoteTools(
   pi: ExtensionAPI,
-  runtime: TrustedRemoteToolsRuntimeConfiguration,
+  runtime: ValidatedRemoteToolsRuntimeConfiguration,
 ): TrustedRemoteToolBindings {
   let remainingToolCalls = runtime.remainingToolCalls;
   let currentStep: FrozenCloudStep | undefined;
@@ -415,11 +441,12 @@ function registerTrustedRemoteTools(
         false,
       );
     }
+    const target = await runtime.resolveOperationTarget();
     await runtime.onToolOperationStarted?.();
     const candidate = {
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.operation",
-      activationId: runtime.activationId,
+      activationId: target.activationId,
       operationId: randomUUID(),
       turnContextSha256: runtime.turnContextSha256,
       attemptContextSha256: runtime.attemptContextSha256,
@@ -429,7 +456,7 @@ function registerTrustedRemoteTools(
       ...request,
     } as ToolSandboxOperationRequest;
     const requestOnce = async (): Promise<{ response: Response; value: unknown }> => {
-      const response = await fetch(runtime.operationUrl, {
+      const response = await fetch(target.operationUrl, {
         method: "POST",
         headers: {
           authorization: `Bearer ${runtime.executionLease}`,
@@ -473,7 +500,7 @@ function registerTrustedRemoteTools(
     }
     const parsed = parseToolSandboxOperationResponse(value);
     if (
-      parsed.activationId !== runtime.activationId ||
+      parsed.activationId !== target.activationId ||
       parsed.operationId !== candidate.operationId
     ) {
       throw new RemoteToolError(

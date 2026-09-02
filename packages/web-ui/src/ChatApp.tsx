@@ -1180,7 +1180,7 @@ export default function ChatApp() {
               <span className="product-conversation-branch-mark">
                 {delegated.contextMode === "fork" ? "↳" : "⋯"}
               </span>
-              {delegated.agentName} · Subagent
+              {t("chat.subagentTitle")}
             </strong>
             <small>
               {t("chat.subagentDepth", { depth: delegated.depth })} ·{" "}
@@ -1401,7 +1401,7 @@ export default function ChatApp() {
             <strong>{state.session?.title ?? t("chat.newConversation")}</strong>
             {selectedDelegatedSession === null ? null : (
               <span className="product-delegated-title">
-                {selectedDelegatedSession.agentName} ·{" "}
+                {t("chat.subagentTitle")} ·{" "}
                 {delegatedContextLabel(selectedDelegatedSession.contextMode, t)} ·{" "}
                 {delegatedWorkspaceLabel(selectedDelegatedSession.workspaceMode, t)} ·{" "}
                 {t("chat.readOnly")}

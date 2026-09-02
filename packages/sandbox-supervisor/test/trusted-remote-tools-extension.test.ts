@@ -127,6 +127,54 @@ describe("trusted remote tools extension governance", () => {
     expect(runtime.tools.map((tool) => tool.name)).toEqual(["read", "bash"]);
   });
 
+  it("resolves the physical Sandbox only when the model actually calls a local Tool", async () => {
+    const {
+      activationId: _activationId,
+      operationUrl: _operationUrl,
+      ...configuration
+    } = BASE_CONFIGURATION;
+    const resolveOperationTarget = vi.fn(async () => ({
+      activationId: "10000000-0000-4000-8000-000000000077",
+      operationUrl: "http://127.0.0.1:4999/v1/tool-operations",
+    }));
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      const request = JSON.parse(String(init.body)) as {
+        activationId: string;
+        operationId: string;
+      };
+      return new Response(
+        JSON.stringify({
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.operation_result",
+          activationId: request.activationId,
+          operationId: request.operationId,
+          operation: "file.read_range",
+          content: Buffer.from("lazy\n").toString("base64"),
+          startLine: 1,
+          endLine: 1,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const runtime = createTrustedRemoteAgentTools({
+      ...configuration,
+      allowedTools: ["read"],
+      remainingToolCalls: 1,
+      resolveOperationTarget,
+    });
+
+    await runtime.systemPrompt("Base prompt");
+    await runtime.transformContext([]);
+    expect(resolveOperationTarget).not.toHaveBeenCalled();
+    await runtime.tools[0]!.execute(
+      "tool-call-lazy",
+      { path: "README.md" },
+      new AbortController().signal,
+      () => undefined,
+    );
+    expect(resolveOperationTarget).toHaveBeenCalledTimes(1);
+  });
+
   it("assigns fresh governed identities to Pi context-maintenance requests", async () => {
     const purposes: Array<string | undefined> = [];
     const capture = createStepCapture();

@@ -10,6 +10,8 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
+export const PI_CLOUD_NEUTRAL_SUBAGENT = "cloud-child" as const;
+
 export type ExternalJobStartInput = Readonly<{
   prompt: string;
   promptDigest: string;
@@ -102,7 +104,7 @@ async function loadContract(): Promise<Contract> {
       return {
         name: definition.name,
         label: definition.label,
-        description: definition.description,
+        description: `${definition.description}\n\nPiCloud exposes one neutral Child named ${PI_CLOUD_NEUTRAL_SUBAGENT}. Role profiles are disabled; behavior comes from the delegated task and explicit context, Workspace, Tool, model, and thinking settings.`,
         parameters: definition.parameters,
       };
     } finally {

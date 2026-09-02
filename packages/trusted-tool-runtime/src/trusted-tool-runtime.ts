@@ -8,6 +8,7 @@ import {
 } from "@pi-cloud/protocol";
 import {
   createPiSubagentsCloudTool,
+  PI_CLOUD_NEUTRAL_SUBAGENT,
   preloadPiSubagentsCloudToolContract,
   type TrustedAgentTool,
 } from "@pi-cloud/sandbox-supervisor";
@@ -25,7 +26,9 @@ import { createCloudPreviewTool } from "./postgres-preview-tool.ts";
 
 export type TrustedToolRunContext = Readonly<{
   command: ExecuteTurnCommandMessage;
-  activation?: Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>;
+  ensureActivation(): Promise<
+    Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>
+  >;
 }>;
 
 export interface TrustedToolRuntime {
@@ -109,7 +112,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
 
   async create({
     command,
-    activation,
+    ensureActivation,
   }: TrustedToolRunContext): Promise<readonly TrustedAgentTool[]> {
     const preview = trusted(
       "platform",
@@ -167,6 +170,9 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
         },
         coordinator: {
           start: async (input, parentToolCallId) => {
+            if (input.agent !== PI_CLOUD_NEUTRAL_SUBAGENT) {
+              throw new Error("PiCloud role profiles were removed; use the neutral cloud child");
+            }
             const contextMode = option(input.options, "contextMode");
             const workspaceMode = option(input.options, "workspaceMode");
             if (contextMode !== "fresh" && contextMode !== "fork") {
@@ -179,11 +185,10 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
             ) {
               throw new Error("pi-subagents provided an unsupported Workspace mode");
             }
-            if (workspaceMode === "isolated" && activation === undefined) {
-              throw new Error("Isolated Subagent execution requires an active parent Sandbox");
-            }
             const tools = parseCloudToolCapabilitySnapshot(input.options.requestedToolCapabilities);
             const systemPrompt = option(input.options, "systemPrompt");
+            const parentActivation =
+              workspaceMode === "isolated" ? await ensureActivation() : undefined;
             const child = await this.#jobs.start({
               tenantId: command.payload.tenantId,
               parentSessionId: command.payload.sessionId,
@@ -198,9 +203,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
               contextMode,
               workspaceMode,
               requestedToolCapabilities: tools,
-              ...(workspaceMode !== "isolated" || activation === undefined
-                ? {}
-                : { parentActivation: activation }),
+              ...(parentActivation === undefined ? {} : { parentActivation }),
             });
             this.#prioritizeSubagent?.(child.childRunId);
             return {

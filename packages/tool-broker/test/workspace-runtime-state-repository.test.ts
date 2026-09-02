@@ -375,7 +375,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         request_sha256: "f".repeat(64),
         child_session_id: delegatedSessionId,
         child_run_id: childRunId,
-        agent_name: "scout",
+        agent_name: "cloud-child",
         context_mode: "fork",
         workspace_mode: "shared",
         state: "queued",

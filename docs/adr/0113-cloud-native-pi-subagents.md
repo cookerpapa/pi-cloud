@@ -7,8 +7,10 @@ Status: accepted
 Pi intentionally keeps subagent orchestration outside its core. The official
 repository contains an example, while `nicobailon/pi-subagents`—maintained by
 the original example contributor—provides the established community contract
-for agent profiles, foreground/background execution, workflow composition,
-steer, resume and bounded capability inheritance.
+for child execution, foreground/background workflows, composition, steer,
+resume and bounded capability inheritance. Its profile mechanism is useful for
+local personas, but making profile names determine cloud permissions or
+Workspace placement would couple prompts to infrastructure policy.
 
 Running that package's local `pi` child processes inside one Agent Host would
 bypass PiCloud's PostgreSQL Run queue, make child Session data local to one
@@ -25,6 +27,10 @@ conversation.
 
 - Pin and adapt the public `pi-subagents` contract; do not patch Pi's Agent
   Loop or invent a competing agent-profile/workflow language.
+- Disable upstream built-in persona profiles. Expose one neutral internal
+  `cloud-child` selector only because the upstream runner contract requires an
+  agent name. Child behavior comes from its task; context inheritance, allowed
+  Tools, Workspace mode, model and thinking are independent explicit inputs.
 - Replace only the package's child execution backend. Each child is admitted as
   a durable Child Session and Child Run, then claimed by the existing shared
   Pi Agent Host pool.
@@ -43,6 +49,10 @@ conversation.
   target ordinary conversation Sessions only.
 - Freeze the child's Tool set as an intersection with the parent Run
   capability snapshot. A child can never widen its parent's grant.
+- Tool capability does not reserve compute. A Tool-capable parent or child
+  creates a Cube lazily on its first actual `read`, `write`, `edit` or `bash`
+  operation. Provider-hosted and trusted orchestration Tools do not contact
+  Tool Broker.
 - Register the same cloud Subagent Tool in eligible Child Runs. Persist
   `root_run_id`, `parent_execution_id` and `depth`, serialize admission under
   the root Run and enforce one deployment-owned budget across the whole tree.
@@ -56,7 +66,8 @@ conversation.
 - Support explicit Workspace modes:
   - `none`: no Cube Tool access;
   - `shared`: the parent and child use one Workspace runtime with independent
-    Tool bindings and ordinary Linux concurrency;
+    Tool bindings and ordinary Linux concurrency. A child of a development-
+    machine Session inherits that machine identity and working directory;
   - `isolated`: the child receives a Volume fork at a declared parent
     Workspace settlement and uses a different Cube.
 - A provider job identity is idempotent across Worker loss. Recovery reattaches
@@ -81,8 +92,7 @@ conversation.
   orthogonal: a trusted worker profile may use either an exact `fork` of the
   parent Pi branch or a `fresh` context in either Workspace mode.
 - Project-controlled agent or extension code remains outside the trusted Host.
-  Only deployment-owned profiles are enabled until a separate extension trust
-  policy is accepted.
+  The neutral adapter is code-owned and does not load user-defined profiles.
 - Parent cancellation is propagated recursively to durable descendant Runs.
   Tree navigation and archival follow the same durable parent-execution links.
 - The package's cross-invocation management actions (including standalone

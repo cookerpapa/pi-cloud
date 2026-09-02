@@ -274,6 +274,17 @@ async function recursiveTreeEvidence(rootRunId) {
   return JSON.parse(value);
 }
 
+async function childCreatedToolRuntime(childRunId) {
+  const value = await psql(`
+    select exists (
+      select 1
+      from tool_broker_workspace_runtimes
+      where bootstrap_run_id = ${sqlLiteral(childRunId)}
+    )::text
+  `);
+  return value === "t";
+}
+
 await retireHistoricalAcceptanceCubes();
 const suffix = `${Date.now().toString(36)}`;
 const registration = await new PiCloudApi(fetchFromProduction).registerTenant(
@@ -304,7 +315,7 @@ try {
     session.sessionId,
     [
       "Call the subagent Tool exactly once and do not call any file or bash Tool.",
-      'Use this exact workflowScript: return runs.run("none", {agent:"oracle", task:"Reply exactly SUBAGENT-NONE-OK"})',
+      'Use this exact workflowScript: return runs.run("none", {agent:"cloud-child", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-NONE-OK"})',
       "After it finishes, reply with SUBAGENT-NONE-OK.",
     ].join(" "),
   );
@@ -312,12 +323,29 @@ try {
   assert.equal(noneEvidence.workspaceMode, "none");
   assert.equal(noneEvidence.childRunState, "completed");
 
+  const lazy = await runTurn(
+    session.sessionId,
+    [
+      "Call the subagent Tool exactly once and do not call any file or bash Tool yourself.",
+      'Use this exact workflowScript: return runs.run("lazy", {agent:"cloud-child", context:"fresh", tools:["read","write","edit","bash"], task:"Do not call any local Tool. Reply exactly SUBAGENT-LAZY-OK"})',
+      "After it finishes, reply with SUBAGENT-LAZY-OK.",
+    ].join(" "),
+  );
+  const lazyEvidence = await executionEvidence(lazy.accepted.runId);
+  assert.equal(lazyEvidence.workspaceMode, "shared");
+  assert.equal(lazyEvidence.childRunState, "completed");
+  assert.equal(
+    await childCreatedToolRuntime(lazyEvidence.childRunId),
+    false,
+    "A Tool-capable Child that used no local Tool eagerly created Cube capacity",
+  );
+
   const shared = await runTurn(
     session.sessionId,
     [
       "First use bash to write exactly SHARED-PARENT-OK into /workspace/shared-parent-marker.txt.",
       "Then call the subagent Tool exactly once with worktree:false.",
-      'Use this exact workflowScript: return runs.run("shared", {agent:"worker", task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK"})',
+      'Use this exact workflowScript: return runs.run("shared", {agent:"cloud-child", context:"fresh", tools:["read","bash"], task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK"})',
       "After it finishes, reply with SHARED-CHILD-OK.",
     ].join(" "),
   );
@@ -331,7 +359,7 @@ try {
     session.sessionId,
     [
       "Call the subagent Tool exactly once with worktree:true.",
-      'Use this exact workflowScript: return runs.run("isolated", {agent:"worker", worktree:true, task:"Use bash to create /workspace/isolated-child-only.txt containing ISOLATED-CHILD-OK, read it back, and reply exactly ISOLATED-CHILD-OK"})',
+      'Use this exact workflowScript: return runs.run("isolated", {agent:"cloud-child", context:"fork", tools:["read","write","edit","bash"], worktree:true, task:"Use bash to create /workspace/isolated-child-only.txt containing ISOLATED-CHILD-OK, read it back, and reply exactly ISOLATED-CHILD-OK"})',
       "Do not create isolated-child-only.txt yourself. After the child finishes, reply with ISOLATED-CHILD-OK.",
     ].join(" "),
   );
@@ -344,14 +372,14 @@ try {
 
   const nestedTask = [
     "Call the subagent Tool exactly once and do not call file or bash Tools.",
-    'Use this exact workflowScript: return runs.run("nested", {agent:"oracle", task:"Reply exactly SUBAGENT-NESTED-LEAF-OK"})',
+    'Use this exact workflowScript: return runs.run("nested", {agent:"cloud-child", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-NESTED-LEAF-OK"})',
     "After it finishes, reply exactly SUBAGENT-NESTED-PARENT-OK.",
   ].join(" ");
   const recursive = await runTurn(
     session.sessionId,
     [
       "Create a two-level recursive Agent tree.",
-      `Call the subagent Tool exactly once with this exact workflowScript: return runs.run("recursive-parent", {agent:"cloud-fanout", task:${JSON.stringify(nestedTask)}})`,
+      `Call the subagent Tool exactly once with this exact workflowScript: return runs.run("recursive-parent", {agent:"cloud-child", context:"fresh", tools:[], task:${JSON.stringify(nestedTask)}})`,
       "After it finishes, reply exactly SUBAGENT-RECURSIVE-OK.",
     ].join(" "),
   );
@@ -403,7 +431,12 @@ try {
     checkedAt: new Date().toISOString(),
     model: acceptanceModel,
     parentSessionId: session.sessionId,
-    modes: { none: noneEvidence, shared: sharedEvidence, isolated: isolatedEvidence },
+    modes: {
+      none: noneEvidence,
+      lazyToolCapable: lazyEvidence,
+      shared: sharedEvidence,
+      isolated: isolatedEvidence,
+    },
     recursiveTree: recursiveEvidence,
     productProjection: {
       listContainsEveryRecursiveSession: true,

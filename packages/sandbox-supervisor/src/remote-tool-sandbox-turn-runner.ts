@@ -106,7 +106,9 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   createTrustedTools?: (
     command: ExecuteTurnCommandMessage,
     context: Readonly<{
-      activation?: Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>;
+      ensureActivation(): Promise<
+        Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>
+      >;
     }>,
   ) => Promise<readonly TrustedAgentTool[]> | readonly TrustedAgentTool[];
   runAttemptPhaseObserver?: RunAttemptPhaseObserver;
@@ -383,7 +385,37 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       runtimeIdentity: this.#runtimeIdentity,
       turnContextSha256: cloudTurn.sha256,
     });
+    const createRequest: ToolSandboxCreateRequest = {
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.create",
+      requestId: this.#idGenerator(),
+      assignment: toolAssignment,
+      turnContextSha256: cloudTurn.sha256,
+      attemptContextSha256: cloudAttempt.sha256,
+      allowedTools: cloudTurn.context.tools.names,
+      executionMode: command.payload.executionMode,
+      sandboxProfileKey: command.payload.sandboxProfileKey,
+      toolRoot: command.payload.workingDirectory,
+      environment: command.payload.environment,
+      workspaceSeed:
+        workspaceSeed === undefined
+          ? { kind: "sample_java" }
+          : { kind: "bundle", bundle: encodeWorkspaceBlob(workspaceSeed) },
+      ...(loadedSettlement === undefined
+        ? {}
+        : {
+            ...(loadedSettlement.reference === undefined
+              ? {}
+              : {
+                  workspaceSettlement: encodeWorkspaceBlob(loadedSettlement.reference),
+                }),
+            ...(loadedSettlement.workspaceRevision === undefined
+              ? {}
+              : { workspaceRevision: loadedSettlement.workspaceRevision }),
+          }),
+    };
     let activation: ToolSandboxCreateResponse | undefined;
+    let activationPromise: Promise<ToolSandboxCreateResponse> | undefined;
     let fakeModel: FakeModelServer | undefined;
     let retainedWorkspaceRevision: string | undefined;
     let completedSuccessfully = false;
@@ -413,45 +445,23 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     const abortSandbox = (): void => {
       void stopSandbox().catch(() => undefined);
     };
-
-    try {
-      const createRequest: ToolSandboxCreateRequest = {
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.create",
-        requestId: this.#idGenerator(),
-        assignment: toolAssignment,
-        turnContextSha256: cloudTurn.sha256,
-        attemptContextSha256: cloudAttempt.sha256,
-        allowedTools: cloudTurn.context.tools.names,
-        executionMode: command.payload.executionMode,
-        sandboxProfileKey: command.payload.sandboxProfileKey,
-        toolRoot: command.payload.workingDirectory,
-        environment: command.payload.environment,
-        workspaceSeed:
-          workspaceSeed === undefined
-            ? { kind: "sample_java" }
-            : { kind: "bundle", bundle: encodeWorkspaceBlob(workspaceSeed) },
-        ...(loadedSettlement === undefined
-          ? {}
-          : {
-              ...(loadedSettlement.reference === undefined
-                ? {}
-                : {
-                    workspaceSettlement: encodeWorkspaceBlob(loadedSettlement.reference),
-                  }),
-              ...(loadedSettlement.workspaceRevision === undefined
-                ? {}
-                : { workspaceRevision: loadedSettlement.workspaceRevision }),
-            }),
-      };
-      if (!toolFree) {
+    const ensureActivation = async (): Promise<ToolSandboxCreateResponse> => {
+      if (signal.aborted) throw signal.reason;
+      if (activation !== undefined) return activation;
+      activationPromise ??= (async () => {
         const createStartedAt = performance.now();
         try {
-          activation = await this.#broker.create(createRequest);
+          const created = await this.#broker.create(createRequest);
+          activation = created;
           this.#metrics?.sandboxDuration.observe(
             { operation: "reserve", outcome: "completed" },
             (performance.now() - createStartedAt) / 1_000,
           );
+          if (signal.aborted) {
+            await stopSandbox();
+            throw signal.reason;
+          }
+          return created;
         } catch (error: unknown) {
           this.#metrics?.sandboxDuration.observe(
             { operation: "reserve", outcome: "failed" },
@@ -463,7 +473,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             "Tool Sandbox authority could not be reserved",
           );
         }
-      }
+      })();
+      return activationPromise;
+    };
+
+    try {
       signal.addEventListener("abort", abortSandbox, { once: true });
       if (signal.aborted) abortSandbox();
 
@@ -517,15 +531,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             };
       const onSettled: NonNullable<PiCloudTurnRunnerOptions["onSettled"]> = async () => {
         if (activation === undefined) {
-          if (toolFree) {
-            retainedWorkspaceRevision = loadedSettlement?.workspaceRevision;
-            return;
-          }
-          throw new PiTurnError(
-            "tool_sandbox_unavailable",
-            "Tool Sandbox was unavailable at settlement",
-            true,
-          );
+          retainedWorkspaceRevision = loadedSettlement?.workspaceRevision;
+          return;
         }
         const settlementStartedAt = performance.now();
         const captured = await this.#broker
@@ -591,7 +598,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           retainedWorkspaceRevision = captured.settlement.sha256;
         }
       };
-      const activeSandbox = activation;
       const settlementPolicy = settlementGatePolicyFromCommand(command);
       const settlementGate =
         settlementPolicy === undefined
@@ -599,14 +605,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : new PiSettlementGateController(settlementPolicy);
       const trustedToolBindings =
         (await this.#createTrustedTools?.(command, {
-          ...(activeSandbox === undefined
-            ? {}
-            : {
-                activation: {
-                  activationId: activeSandbox.activationId,
-                  assignment: toolAssignment,
-                },
-              }),
+          ensureActivation: async () => {
+            const active = await ensureActivation();
+            return { activationId: active.activationId, assignment: toolAssignment };
+          },
         })) ?? ([] as readonly TrustedAgentTool[]);
       const trustedTools = trustedToolBindings.map((binding) => binding.tool);
       const hasDelegationTool = trustedTools.some((tool) => tool.name === "subagent");
@@ -624,9 +626,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             }),
         sandboxContinuity: {
           continuityId:
-            activeSandbox?.continuityId ??
+            activation?.continuityId ??
             parseExecutionLease(command.payload.executionLease).attemptId,
-          continuity: activeSandbox?.continuity ?? "cold_restore",
+          continuity: activation?.continuity ?? "cold_restore",
           environmentSha256: cloudTurn.environmentSha256,
           workspaceBindingSha256: cloudTurn.workspaceBindingSha256,
           committedWorkspaceRevision: loadedSettlement?.workspaceRevision ?? null,
@@ -663,7 +665,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       const runner = new PiCloudTurnRunner({
         ...commonRunnerOptions,
         createAgentTools: ({ toolOutputDirectory, stepWorldState, captureSamplingStep }) => {
-          if (activeSandbox === undefined) {
+          if (toolFree) {
             let stepSequence = 0;
             let currentStep: Awaited<ReturnType<typeof captureSamplingStep>>["step"] | undefined;
             let currentSamplingAttempt: number | undefined;
@@ -751,9 +753,14 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           }
           let stepSequence = 0;
           const remoteTools = createTrustedRemoteAgentTools({
-            activationId: activeSandbox.activationId,
+            resolveOperationTarget: async () => {
+              const active = await ensureActivation();
+              return {
+                activationId: active.activationId,
+                operationUrl: this.#broker.operationUrlFor(active.activationId),
+              };
+            },
             executionLease: toolAssignment.executionLease,
-            operationUrl: this.#broker.operationUrlFor(activeSandbox.activationId),
             turnContextSha256: cloudTurn.sha256,
             attemptContextSha256: cloudAttempt.sha256,
             allowedTools: cloudTurn.context.tools.names,

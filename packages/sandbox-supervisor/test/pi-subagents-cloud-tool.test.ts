@@ -56,21 +56,21 @@ describe("pi-subagents cloud Tool adapter", () => {
       "tool-call-1",
       {
         workflowScript: `return runs.all([
-          { key: "first", agent: "oracle", task: "Challenge the plan" },
-          { key: "second", agent: "scout", task: "Inspect the repository" }
+          { key: "first", agent: "cloud-child", task: "Challenge the plan", tools: [] },
+          { key: "second", agent: "cloud-child", task: "Inspect the repository", tools: ["read", "bash"] }
         ])`,
       },
       new AbortController().signal,
     );
 
     expect(starts, JSON.stringify(result)).toHaveLength(2);
-    expect(starts.map((start) => start.agent).sort()).toEqual(["oracle", "scout"]);
-    expect(starts.find((start) => start.agent === "oracle")?.options).toMatchObject({
-      contextMode: "fork",
+    expect(starts.map((start) => start.agent)).toEqual(["cloud-child", "cloud-child"]);
+    expect(starts[0]?.options).toMatchObject({
+      contextMode: "fresh",
       workspaceMode: "none",
       requestedToolCapabilities: [],
     });
-    expect(starts.find((start) => start.agent === "scout")?.options).toMatchObject({
+    expect(starts[1]?.options).toMatchObject({
       contextMode: "fresh",
       workspaceMode: "shared",
       requestedToolCapabilities: ["read", "bash"],
@@ -149,7 +149,8 @@ describe("pi-subagents cloud Tool adapter", () => {
       .filter((part): part is { type: "text"; text: string } => part.type === "text")
       .map((part) => part.text)
       .join("\n");
-    expect(output).toContain("worker");
+    expect(output).toContain("cloud-child");
+    expect(output).not.toMatch(/researcher|reviewer|scout|oracle|worker/u);
   }, 30_000);
 
   it("accepts the upstream structured single-child form without a failed compatibility call", async () => {
@@ -173,13 +174,13 @@ describe("pi-subagents cloud Tool adapter", () => {
     });
     const result = await tool.execute(
       "tool-call-structured",
-      { agent: "worker", task: "Implement insertion sort" },
+      { agent: "cloud-child", task: "Implement insertion sort" },
       new AbortController().signal,
     );
     expect(starts).toHaveLength(1);
     expect(starts[0]).toMatchObject({
-      agent: "worker",
-      options: { contextMode: "fork", workspaceMode: "shared" },
+      agent: "cloud-child",
+      options: { contextMode: "fresh", workspaceMode: "shared" },
     });
     expect(starts[0]!.prompt).toContain("Implement insertion sort");
     expect(starts[0]!.prompt).not.toContain("Write your findings to exactly this path");
@@ -208,13 +209,13 @@ describe("pi-subagents cloud Tool adapter", () => {
     await tool.execute(
       "tool-call-isolated",
       {
-        workflowScript: `return runs.run("isolated", {agent:"worker", task:"Try another implementation", worktree:true})`,
+        workflowScript: `return runs.run("isolated", {agent:"cloud-child", task:"Try another implementation", worktree:true})`,
       },
       new AbortController().signal,
     );
     expect(starts).toHaveLength(1);
     expect(starts[0]?.options).toMatchObject({
-      contextMode: "fork",
+      contextMode: "fresh",
       workspaceMode: "isolated",
       requestedToolCapabilities: expect.arrayContaining(["read", "write", "edit", "bash"]),
     });
@@ -246,7 +247,7 @@ describe("pi-subagents cloud Tool adapter", () => {
     const execution = tool.execute(
       "tool-call-cancel",
       {
-        workflowScript: `return runs.run("cancel", {agent:"worker", task:"Wait"})`,
+        workflowScript: `return runs.run("cancel", {agent:"cloud-child", task:"Wait"})`,
       },
       controller.signal,
     );
@@ -279,7 +280,7 @@ describe("pi-subagents cloud Tool adapter", () => {
     });
     const result = await tool.execute(
       "tool-call-blocked",
-      { agent: "worker", task: "Implement the API" },
+      { agent: "cloud-child", task: "Implement the API" },
       new AbortController().signal,
       (update) => {
         updates.push(
@@ -325,7 +326,7 @@ describe("pi-subagents cloud Tool adapter", () => {
       "tool-call-after-shim-timeout",
       {
         workflowScript:
-          'return runs.run("slow-cloud", {agent:"worker", task:"Finish remotely", timeoutMs:1000})',
+          'return runs.run("slow-cloud", {agent:"cloud-child", task:"Finish remotely", timeoutMs:1000})',
       },
       new AbortController().signal,
     );

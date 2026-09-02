@@ -16,6 +16,7 @@ import {
   SessionManager,
   wrapRegisteredTool,
 } from "@earendil-works/pi-coding-agent";
+import { PI_CLOUD_NEUTRAL_SUBAGENT } from "./pi-subagents-cloud-tool.ts";
 
 type WorkerInput = Readonly<{
   toolCallId: string;
@@ -43,6 +44,8 @@ type ExternalJobStartInput = Readonly<{
 }>;
 
 const ISOLATED_WORKSPACE_TASK_PREFIX = "[pi-cloud-workspace-mode:isolated]\n";
+const CHILD_OPTIONS_PREFIX = "[pi-cloud-child-options:";
+const CLOUD_CHILD_AGENT = PI_CLOUD_NEUTRAL_SUBAGENT;
 
 const input = workerData as WorkerInput;
 const cloudShimPath = fileURLToPath(new URL("./pi-subagents-cloud-shim.cjs", import.meta.url));
@@ -104,21 +107,29 @@ function prepareAgentDir(): {
   mkdirSync(join(agentDir, "agents"), { recursive: true });
   writeFileSync(
     join(agentDir, "extensions", "subagent", "config.json"),
-    `${JSON.stringify({ asyncByDefault: false, defaultSubagentContext: "fresh", maxSubagentDepth: 64 })}\n`,
+    `${JSON.stringify({
+      asyncByDefault: false,
+      defaultSubagentContext: "fresh",
+      maxSubagentDepth: 64,
+    })}\n`,
     { encoding: "utf8", mode: 0o600 },
   );
   writeFileSync(
-    join(agentDir, "agents", "cloud-fanout.md"),
+    join(agentDir, "settings.json"),
+    `${JSON.stringify({ subagents: { disableBuiltins: true } })}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+  writeFileSync(
+    join(agentDir, "agents", `${CLOUD_CHILD_AGENT}.md`),
     [
       "---",
-      "name: cloud-fanout",
-      "description: Deployment-owned bounded fanout agent for cloud recursion",
-      "tools: subagent",
-      "defaultContext: fork",
-      "inheritProjectContext: true",
+      `name: ${CLOUD_CHILD_AGENT}`,
+      "description: General PiCloud child; behavior comes only from the delegated task and explicit runtime settings",
+      "systemPromptMode: append",
+      "inheritProjectContext: false",
       "inheritSkills: false",
       "---",
-      "Execute only the delegated fanout task. Use the subagent tool for the explicitly requested child work, wait for it, and return its focused result. Do not invent additional branches.",
+      "Execute only the delegated task and return its result. Do not infer a persona or profession from this internal profile name.",
       "",
     ].join("\n"),
     { encoding: "utf8", mode: 0o600 },
@@ -175,6 +186,24 @@ function parseChildInvocation(value: unknown): ExternalJobStartInput {
   let prompt = taskArgument.startsWith("@")
     ? readFileSync(taskArgument.slice(1), "utf8")
     : taskArgument;
+  let cloudContextMode: "fresh" | "fork" = "fresh";
+  let cloudRequestedTools: string[] | undefined;
+  const cloudOptionsStart = prompt.indexOf(CHILD_OPTIONS_PREFIX);
+  if (cloudOptionsStart >= 0) {
+    const metadataEnd = prompt.indexOf("]\n", cloudOptionsStart);
+    if (metadataEnd < 0) throw new Error("PiCloud Child options marker was truncated");
+    const metadata = JSON.parse(
+      prompt.slice(cloudOptionsStart + CHILD_OPTIONS_PREFIX.length, metadataEnd),
+    ) as Record<string, unknown>;
+    if (metadata.context === "fork") cloudContextMode = "fork";
+    if (Array.isArray(metadata.tools)) {
+      cloudRequestedTools = metadata.tools.filter(
+        (tool): tool is string =>
+          typeof tool === "string" && ["read", "write", "edit", "bash"].includes(tool),
+      );
+    }
+    prompt = `${prompt.slice(0, cloudOptionsStart)}${prompt.slice(metadataEnd + 2)}`;
+  }
   // pi-subagents normally asks a local child process to mirror its final
   // answer into a host-side output file. A cloud child cannot and must not
   // write outside /workspace; its native PostgreSQL Session result is already
@@ -205,23 +234,17 @@ function parseChildInvocation(value: unknown): ExternalJobStartInput {
           .split(",")
           .map((tool) => tool.trim())
           .filter((tool) => ["read", "write", "edit", "bash"].includes(tool));
+  if (cloudRequestedTools !== undefined) requestedToolCapabilities = cloudRequestedTools;
   const agent =
-    typeof env.PI_SUBAGENT_CHILD_AGENT === "string" ? env.PI_SUBAGENT_CHILD_AGENT : "delegate";
-  if (agent === "oracle" || agent === "gpt-pro") requestedToolCapabilities = [];
-  if (agent === "scout" || agent === "researcher" || agent === "reviewer") {
-    requestedToolCapabilities = requestedToolCapabilities.filter(
-      (tool) => tool === "read" || tool === "bash",
-    );
+    typeof env.PI_SUBAGENT_CHILD_AGENT === "string"
+      ? env.PI_SUBAGENT_CHILD_AGENT
+      : CLOUD_CHILD_AGENT;
+  if (agent !== CLOUD_CHILD_AGENT) {
+    throw new Error(`PiCloud supports only the neutral ${CLOUD_CHILD_AGENT} Subagent`);
   }
   const runId = typeof env.PI_SUBAGENT_RUN_ID === "string" ? env.PI_SUBAGENT_RUN_ID : randomUUID();
   const childIndex = Number(env.PI_SUBAGENT_CHILD_INDEX ?? 0);
   const stepIndex = Number.isSafeInteger(childIndex) && childIndex >= 0 ? childIndex : 0;
-  const contextMode =
-    agent === "scout" || agent === "researcher"
-      ? "fresh"
-      : values.has("--session")
-        ? "fork"
-        : "fresh";
   return {
     prompt,
     promptDigest: createHash("sha256").update(prompt, "utf8").digest("hex"),
@@ -230,7 +253,7 @@ function parseChildInvocation(value: unknown): ExternalJobStartInput {
     stepIndex,
     agent,
     options: {
-      contextMode,
+      contextMode: cloudContextMode,
       workspaceMode:
         requestedToolCapabilities.length === 0 ? "none" : isolatedWorkspace ? "isolated" : "shared",
       requestedToolCapabilities,
@@ -248,15 +271,24 @@ function parseChildInvocation(value: unknown): ExternalJobStartInput {
 
 function cloudWorkflowScript(script: string, defaultIsolated: boolean): string {
   const marker = JSON.stringify(ISOLATED_WORKSPACE_TASK_PREFIX);
+  const optionsPrefix = JSON.stringify(CHILD_OPTIONS_PREFIX);
+  const childAgent = JSON.stringify(CLOUD_CHILD_AGENT);
   return [
     `const __piCloudDefaultIsolated = ${String(defaultIsolated)};`,
     `const __piCloudTaskMarker = ${marker};`,
+    `const __piCloudOptionsPrefix = ${optionsPrefix};`,
+    `const __piCloudAgent = ${childAgent};`,
     "const __piCloudChild = (spec) => {",
     "  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return spec;",
+    "  if (spec.agent !== undefined && spec.agent !== __piCloudAgent) throw new Error('PiCloud role profiles were removed; use the neutral cloud-child agent');",
     "  const isolated = spec.worktree === undefined ? __piCloudDefaultIsolated : spec.worktree === true;",
-    "  const task = isolated && typeof spec.task === 'string' ? __piCloudTaskMarker + spec.task : spec.task;",
+    "  const context = spec.context === 'fork' ? 'fork' : 'fresh';",
+    "  const tools = Array.isArray(spec.tools) ? spec.tools : undefined;",
+    "  const options = __piCloudOptionsPrefix + JSON.stringify({ context, ...(tools === undefined ? {} : { tools }) }) + ']\\n';",
+    "  const task = typeof spec.task === 'string' ? options + (isolated ? __piCloudTaskMarker : '') + spec.task : spec.task;",
     "  const timeoutMs = spec.timeoutMs === undefined ? 300000 : spec.timeoutMs;",
-    "  return { ...spec, worktree: false, timeoutMs, ...(task === undefined ? {} : { task }) };",
+    "  const { context: _context, tools: _tools, ...upstream } = spec;",
+    "  return { ...upstream, agent: __piCloudAgent, worktree: false, timeoutMs, ...(task === undefined ? {} : { task }) };",
     "};",
     "const __piCloudRuns = Object.freeze({",
     "  run: (key, spec) => runs.run(key, __piCloudChild(spec)),",
@@ -272,7 +304,7 @@ function cloudWorkflowScript(script: string, defaultIsolated: boolean): string {
 function structuredChildWorkflowScript(
   argumentsValue: Record<string, unknown>,
 ): string | undefined {
-  if (typeof argumentsValue.agent !== "string" || argumentsValue.agent.trim() === "") {
+  if (argumentsValue.agent !== undefined && argumentsValue.agent !== CLOUD_CHILD_AGENT) {
     return undefined;
   }
   const child = Object.fromEntries(
@@ -280,6 +312,7 @@ function structuredChildWorkflowScript(
       .filter((key) => argumentsValue[key] !== undefined)
       .map((key) => [key, argumentsValue[key]]),
   );
+  child.agent = CLOUD_CHILD_AGENT;
   return `return runs.run("main", ${JSON.stringify(child)});`;
 }
 
@@ -294,7 +327,7 @@ async function waitForCloudResult(
     state: string;
   };
   activeProviderJobs.add(started.providerJobId);
-  progress(`Subagent ${startInput.agent} 已进入云端 Worker 队列。`, {
+  progress("Subagent 已进入云端 Worker 队列。", {
     state: started.state,
     agent: startInput.agent,
     stepIndex: startInput.stepIndex,
@@ -337,8 +370,8 @@ async function waitForCloudResult(
       latestCoordinationId = latestCoordination.requestId;
       progress(
         latestCoordination.expectsReply
-          ? `Subagent ${startInput.agent} 正在等待父 Agent 决策：${latestCoordination.message}`
-          : `Subagent ${startInput.agent}：${latestCoordination.message}`,
+          ? `Subagent 正在等待父 Agent 决策：${latestCoordination.message}`
+          : `Subagent：${latestCoordination.message}`,
         {
           state,
           agent: startInput.agent,
@@ -350,17 +383,12 @@ async function waitForCloudResult(
     }
     if (state !== previousState) {
       previousState = state;
-      progress(
-        state === "running"
-          ? `Subagent ${startInput.agent} 正在执行。`
-          : `Subagent ${startInput.agent} 状态：${state}`,
-        {
-          state,
-          agent: startInput.agent,
-          stepIndex: startInput.stepIndex,
-          elapsedMs: Date.now() - startedAt,
-        },
-      );
+      progress(state === "running" ? "Subagent 正在执行。" : `Subagent 状态：${state}`, {
+        state,
+        agent: startInput.agent,
+        stepIndex: startInput.stepIndex,
+        elapsedMs: Date.now() - startedAt,
+      });
     }
   }
   if (state === "blocked" && latestCoordination?.expectsReply === true) {
@@ -398,7 +426,7 @@ async function waitForCloudResult(
             : `Subagent ended in state ${String(result.state ?? "failed")}.`,
       });
     }
-    progress(`Subagent ${startInput.agent} 已结束。`, {
+    progress("Subagent 已结束。", {
       state: result.state,
       agent: startInput.agent,
       stepIndex: startInput.stepIndex,

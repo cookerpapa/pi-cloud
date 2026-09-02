@@ -97,14 +97,12 @@ function TreeBranch({
               navigate(branch.sessionId, { turnId: first.turnId, entryId: first.entryId });
             }
           }}
-          title={branch.title}
+          title={branch.kind === "subagent" ? t("chat.subagentTitle") : branch.title}
           type="button"
         >
           <span>{branch.kind === "subagent" ? "◈" : "↳"}</span>
           <span>
-            <strong>
-              {branch.kind === "subagent" ? (branch.agentName ?? branch.title) : branch.title}
-            </strong>
+            <strong>{branch.kind === "subagent" ? t("chat.subagentTitle") : branch.title}</strong>
             {branch.kind === "subagent" &&
             branch.contextMode !== undefined &&
             branch.workspaceMode !== undefined ? (
