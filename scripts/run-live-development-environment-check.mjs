@@ -413,6 +413,12 @@ const continuityRun = await api.acceptTurn(
   "off",
 );
 await waitForRun(continuityRun.runId);
+await api.updateSessionModel(session.sessionId, {
+  provider: "openai-codex",
+  modelId: "gpt-5.6-luna",
+  thinkingLevel: "low",
+  fastMode: false,
+});
 const sharedSubagentRun = await api.acceptTurn(
   session.sessionId,
   [
@@ -424,8 +430,7 @@ const sharedSubagentRun = await api.acceptTurn(
   "off",
 );
 await waitForRun(sharedSubagentRun.runId);
-const sharedSubagentEvidence = JSON.parse(
-  await psql(`
+const sharedSubagentEvidenceValue = await psql(`
     select json_build_object(
       'workspaceMode', execution.workspace_mode,
       'executionMode', child_session.execution_mode,
@@ -439,8 +444,9 @@ const sharedSubagentEvidence = JSON.parse(
     where execution.parent_run_id = ${sqlLiteral(sharedSubagentRun.runId)}
     order by execution.created_at desc
     limit 1
-  `),
-);
+  `);
+assert(sharedSubagentEvidenceValue, "Development-machine parent created no Subagent execution");
+const sharedSubagentEvidence = JSON.parse(sharedSubagentEvidenceValue);
 assert.deepEqual(sharedSubagentEvidence, {
   workspaceMode: "shared",
   executionMode: "development_environment",
