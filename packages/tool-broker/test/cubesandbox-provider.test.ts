@@ -22,10 +22,24 @@ import {
   type CubeSandboxCreateInput,
   type CubeSandboxGuestCommandRequest,
   type CubeSandboxInstance,
+  type CubeSandboxProviderOptions,
   type CubeSandboxRuntimeClient,
   type ToolBrokerOptions,
 } from "../src/index.ts";
 import type { WorkspaceVolumeGateway } from "../src/workspace-volume-gateway.ts";
+
+const DEVELOPMENT_TEMPLATE_IDS = Object.freeze({
+  starter: "tpl-starter00000000000000000",
+  standard: "tpl-standard0000000000000000",
+  performance: "tpl-performance0000000000000",
+});
+
+type TestCubeProviderOptions = Omit<CubeSandboxProviderOptions, "developmentTemplateIds"> &
+  Partial<Pick<CubeSandboxProviderOptions, "developmentTemplateIds">>;
+
+function testCubeProvider(options: TestCubeProviderOptions): CubeSandboxProvider {
+  return new CubeSandboxProvider({ developmentTemplateIds: DEVELOPMENT_TEMPLATE_IDS, ...options });
+}
 
 type TestToolBrokerDefaults = "stateRepository" | "ownerBaseUrl" | "imageRevision";
 type TestToolBrokerOptions = Omit<ToolBrokerOptions, TestToolBrokerDefaults> &
@@ -394,7 +408,7 @@ function operation(activationId: string): ToolSandboxOperationRequest {
 describe("CubeSandbox Provider contract", () => {
   it("attests a real-template probe with full-public egress and private ingress", async () => {
     const runtime = new FakeCubeRuntimeClient();
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -420,7 +434,7 @@ describe("CubeSandbox Provider contract", () => {
 
   it("rejects callers that try to replace the deployment-owned Cube network policy", async () => {
     const runtime = new FakeCubeRuntimeClient();
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -449,12 +463,12 @@ describe("CubeSandbox Provider contract", () => {
   it("uses Cube never-timeout lifecycle and preserves identity across development pause/resume", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const persistentStateKey = Buffer.alloc(32, 9);
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       developmentTemplateIds: {
         starter: "tpl-starter00000000000000000",
         standard: "tpl-standard0000000000000000",
-        performance: "tpl-performance00000000000000",
+        performance: "tpl-performance0000000000000",
       },
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -526,12 +540,12 @@ describe("CubeSandbox Provider contract", () => {
     const persisted = await provider.persistentCapsule(handle);
     expect(persisted.capsule).not.toContain(handle.runtimeName);
     await provider.detachPersistent(handle);
-    const replacement = new CubeSandboxProvider({
+    const replacement = testCubeProvider({
       templateId: "pi-cloud-tool-v2",
       developmentTemplateIds: {
         starter: "tpl-starter00000000000000000",
         standard: "tpl-standard0000000000000000",
-        performance: "tpl-performance00000000000000",
+        performance: "tpl-performance0000000000000",
       },
       // A deployment may advance its default template while a user-owned
       // machine keeps running its original, internally-consistent guest image.
@@ -554,7 +568,7 @@ describe("CubeSandbox Provider contract", () => {
   it("keeps the Workspace runtime outside Supervisor assignment inventory", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const workspaceVolumeGateway = fakeWorkspaceVolumeGateway();
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -637,7 +651,7 @@ describe("CubeSandbox Provider contract", () => {
       content: Buffer.from("cube\n").toString("base64"),
     });
     const upgradedBroker = testBroker({
-      provider: new CubeSandboxProvider({
+      provider: testCubeProvider({
         templateId: "pi-cloud-tool-v2",
         imageRevision: "next-deployment",
         webProxy: WEB_PROXY,
@@ -782,7 +796,7 @@ describe("CubeSandbox Provider contract", () => {
   it("reattaches a settled Workspace Volume to another Session with an independent fence", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const workspaceVolumeGateway = fakeWorkspaceVolumeGateway();
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -870,7 +884,7 @@ describe("CubeSandbox Provider contract", () => {
 
   it("executes parent and child Tool bindings concurrently in one Workspace Cube", async () => {
     const runtime = new FakeCubeRuntimeClient();
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -924,7 +938,7 @@ describe("CubeSandbox Provider contract", () => {
   it("forks an isolated persistent Volume while keeping the parent Cube usable", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const gateway = fakeWorkspaceVolumeGateway();
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -972,7 +986,7 @@ describe("CubeSandbox Provider contract", () => {
 
   it("captures a lightweight persistent Volume reference for a Cube Workspace", async () => {
     const runtime = new FakeCubeRuntimeClient();
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -1003,7 +1017,7 @@ describe("CubeSandbox Provider contract", () => {
 
   it("rejects a persistent Volume reference when tenant or fence is stale", async () => {
     const runtime = new FakeCubeRuntimeClient();
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -1056,7 +1070,7 @@ describe("CubeSandbox Provider contract", () => {
   });
 
   it("reattaches the persistent Workspace Volume after the Tool image is upgraded", async () => {
-    const originalProvider = new CubeSandboxProvider({
+    const originalProvider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -1082,7 +1096,7 @@ describe("CubeSandbox Provider contract", () => {
 
     const upgradedRuntime = new FakeCubeRuntimeClient("next-deployment");
     const upgradedVolumeGateway = fakeWorkspaceVolumeGateway();
-    const upgradedProvider = new CubeSandboxProvider({
+    const upgradedProvider = testCubeProvider({
       templateId: "pi-cloud-tool-v2",
       imageRevision: "next-deployment",
       webProxy: WEB_PROXY,
@@ -1127,7 +1141,7 @@ describe("CubeSandbox Provider contract", () => {
       }
       return originalRunCommand(instance, input);
     };
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,
@@ -1181,7 +1195,7 @@ describe("CubeSandbox Provider contract", () => {
         .update(canonicalEnvironmentRecipeJson(dependencyRecipe))
         .digest("hex") as `${string}`,
     };
-    const provider = new CubeSandboxProvider({
+    const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
       imageRevision: "development",
       webProxy: WEB_PROXY,

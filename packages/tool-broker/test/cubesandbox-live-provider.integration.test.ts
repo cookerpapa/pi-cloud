@@ -402,6 +402,11 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
       const secondAssignment = assignment(testRun, 2);
       const provider = new CubeSandboxProvider({
         templateId: config.templateId,
+        developmentTemplateIds: {
+          starter: config.templateId,
+          standard: config.templateId,
+          performance: config.templateId,
+        },
         imageRevision: config.imageRevision,
         webProxy: config.webProxy,
         runtime: config.runtime,

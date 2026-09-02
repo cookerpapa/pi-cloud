@@ -83,12 +83,8 @@ function integer(
 }
 
 function developmentTemplateIds(
-  value: string | undefined,
-  fallback: string,
+  value: string,
 ): Readonly<Record<"starter" | "standard" | "performance", string>> {
-  if (value === undefined) {
-    return Object.freeze({ starter: fallback, standard: fallback, performance: fallback });
-  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(value) as unknown;
@@ -290,12 +286,7 @@ export async function loadToolBrokerConfig(
         256,
       ),
       developmentTemplateIds: developmentTemplateIds(
-        environment.PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS,
-        bounded(
-          required(environment, "PI_CLOUD_CUBESANDBOX_TEMPLATE_ID"),
-          "cubeSandboxTemplateId",
-          256,
-        ),
+        required(environment, "PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS"),
       ),
       proxyNodeIp: bounded(
         required(environment, "PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP"),

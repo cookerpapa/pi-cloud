@@ -208,7 +208,7 @@ type CubeActivation = {
 
 export type CubeSandboxProviderOptions = Readonly<{
   templateId: string;
-  developmentTemplateIds?: Readonly<Record<DevelopmentEnvironmentProfileKey, string>>;
+  developmentTemplateIds: Readonly<Record<DevelopmentEnvironmentProfileKey, string>>;
   imageRevision: string;
   runtimeClient?: CubeSandboxRuntimeClient;
   runtime?: OfficialCubeSandboxRuntimeClientOptions;
@@ -738,7 +738,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       (["starter", "standard", "performance"] as const).map((key) => [
         key,
         bounded(
-          options.developmentTemplateIds?.[key] ?? options.templateId,
+          options.developmentTemplateIds[key],
           `CubeSandbox ${key} development template ID`,
           256,
         ),

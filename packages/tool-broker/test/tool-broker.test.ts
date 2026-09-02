@@ -1979,6 +1979,11 @@ describe("provider-backed Tool Tool Broker", () => {
           PI_CLOUD_CUBESANDBOX_API_URL: "https://cube-api.internal",
           PI_CLOUD_CUBESANDBOX_API_KEY_FILE: cubeKeyPath,
           PI_CLOUD_CUBESANDBOX_TEMPLATE_ID: "pi-cloud-tool-v1",
+          PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS: JSON.stringify({
+            starter: "tpl-starter00000000000000000",
+            standard: "tpl-standard0000000000000000",
+            performance: "tpl-performance0000000000000",
+          }),
           PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP: "10.20.30.40",
           PI_CLOUD_CUBESANDBOX_PROXY_SCHEME: "https",
           PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS:

@@ -466,8 +466,9 @@ export class ToolBroker {
     ]);
     let recovered = 0;
     for (const candidate of recoverable) {
+      let handle: SandboxHandle | undefined;
       try {
-        const handle = await this.#provider.adoptPersistentCapsule(candidate.runtimeCapsule);
+        handle = await this.#provider.adoptPersistentCapsule(candidate.runtimeCapsule);
         const expected = developmentEnvironmentAssignment({
           environmentId: candidate.reservation.environmentId,
           tenantId: candidate.reservation.tenantId,
@@ -509,6 +510,9 @@ export class ToolBroker {
         );
         recovered += 1;
       } catch (error: unknown) {
+        if (handle !== undefined) {
+          await this.#provider.detachPersistent?.(handle).catch(() => undefined);
+        }
         await this.#stateRepository
           .setDevelopmentEnvironmentState(candidate.reservation.environmentId, "unknown", {
             failureCode: operationFailureCode(error),
@@ -988,13 +992,6 @@ export class ToolBroker {
   }
 
   async openTerminal(input: WorkspaceTerminalOpenInput): Promise<WorkspaceTerminalConnection> {
-    await Promise.all([
-      this.reapWarm(),
-      this.reapRetiredWarm(),
-      this.#reapOrphanedWorkspaceRuntimes(),
-      this.#reapUnboundWorkspaceRuntimes(0),
-      this.#reapOrphanedTerminals(),
-    ]);
     if (this.#provider.openTerminal === undefined) {
       throw new ToolBrokerError(
         "workspace_terminal_unsupported",
