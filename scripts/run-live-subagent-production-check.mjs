@@ -285,9 +285,9 @@ authorizationToken = registration.apiToken;
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production tenant must use a real model");
 const acceptanceModel = {
-  provider: "deepseek",
-  modelId: "deepseek-v4-flash",
-  thinkingLevel: "off",
+  provider: "openai-codex",
+  modelId: "gpt-5.6-luna",
+  thinkingLevel: "low",
   fastMode: false,
 };
 const project = await api.createProject(`Subagent production acceptance ${suffix}`);
