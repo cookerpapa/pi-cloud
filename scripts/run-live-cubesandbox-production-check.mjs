@@ -347,11 +347,7 @@ async function kafkaState() {
     .split("\n")
     .filter(Boolean)
     .reduce((total, line) => total + Number(line.split(":").at(-1) ?? 0), 0);
-  const canonicalHeads = Number(await psql("select count(*) from session_kafka_heads"));
-  return {
-    acceptedFacts,
-    canonicalHeads,
-  };
+  return { acceptedFacts };
 }
 
 async function runUsageEvidence(runId) {
@@ -1188,17 +1184,24 @@ try {
   assert(terminalThroughSequence <= processCheck.throughSequence);
   const eventPlaneEvidence = await psql(
     `select (to_regclass('public.session_events') is null)::int || '|' ||
-            count(*)
-       from pi_session_mutation_results
-      where tenant_id = ${sqlLiteral(tenantId)}`,
+            (select count(*) from pi_session_mutation_results
+              where tenant_id = ${sqlLiteral(tenantId)}) || '|' ||
+            (select count(*)
+               from outbox terminal_outbox
+               join session_terminal_events terminal
+                 on terminal.event_id = terminal_outbox.id
+              where terminal.tenant_id = ${sqlLiteral(tenantId)}
+                and terminal.session_id = ${sqlLiteral(session.sessionId)}
+                and terminal_outbox.topic = 'session.event.accepted.v1'
+                and terminal_outbox.published_at is not null)`,
   );
-  const [postgresHotEventTableAbsent, projectedSessionMutations] = eventPlaneEvidence
-    .split("|")
-    .map(Number);
+  const [postgresHotEventTableAbsent, projectedSessionMutations, publishedTerminalEvents] =
+    eventPlaneEvidence.split("|").map(Number);
   assert.equal(postgresHotEventTableAbsent, 1);
   assert(projectedSessionMutations > 0);
+  assert.equal(publishedTerminalEvents, terminalCount);
   const kafka = await kafkaState();
-  assert(kafka.acceptedFacts > 0 && kafka.canonicalHeads > 0);
+  assert(kafka.acceptedFacts > 0);
 
   const foreignApi = bootstrapApi;
   const foreignProject = await foreignApi.createProject(`Foreign Cube project ${suffix}`);
@@ -1380,6 +1383,7 @@ try {
       authority: "Kafka acks=all",
       postgresHotEventTableAbsent: true,
       projectedSessionMutations,
+      publishedTerminalEvents,
       kafka,
     },
     scheduler: {
@@ -1442,7 +1446,7 @@ try {
         `- Large Workspace fresh-VM cold restore: ${String(report.largeWorkspace.freshCubeMicroVm)}`,
         `- Real input/output/cache-read tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)}`,
         `- Canonical conversation: ${String(report.canonicalConversation.terminalCount)} terminal Turns / ${String(report.canonicalConversation.piEntryCount)} Pi entries / ${String(report.canonicalConversation.canonicalPayloadBytes)} bytes`,
-        `- Kafka AcceptedFacts / canonical Session heads: ${String(report.eventPlane.kafka.acceptedFacts)} / ${String(report.eventPlane.kafka.canonicalHeads)}`,
+        `- Kafka AcceptedFacts / published terminal outbox facts: ${String(report.eventPlane.kafka.acceptedFacts)} / ${String(report.eventPlane.publishedTerminalEvents)}`,
         `- PostgreSQL hot-event table absent / projected Session mutations: ${String(report.eventPlane.postgresHotEventTableAbsent)} / ${String(report.eventPlane.projectedSessionMutations)}`,
         `- Scheduler / Worker pool: ${report.scheduler.authority} / ${report.scheduler.workerPool}`,
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,
