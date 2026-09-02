@@ -1164,6 +1164,50 @@ describe("CubeSandbox Provider contract", () => {
     await provider.close();
   });
 
+  it("preserves a development VM when the guest rejects an operation before executing it", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const originalRunCommand = runtime.runCommand.bind(runtime);
+    runtime.runCommand = async (instance, input) => {
+      if (runtime.requestForCommand(input).mode === "operation") {
+        return {
+          stdout: `${JSON.stringify({
+            toolWorkerProtocolVersion: 1,
+            type: "worker.failed",
+            code: "tool_root_unavailable",
+            message: "Selected machine working directory was unavailable",
+            retryable: false,
+          })}\n`,
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      return originalRunCommand(instance, input);
+    };
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+    });
+    const handle = await provider.create({
+      activationId: ACTIVATION_ID,
+      assignment,
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+      policy: provider.defaultPolicy,
+      lifetime: "development_environment",
+      toolRoot: "/home/user/project",
+    });
+    await expect(provider.exec(handle, operation(ACTIVATION_ID))).rejects.toMatchObject({
+      code: "tool_root_unavailable",
+    });
+    expect(runtime.destroyed).toEqual([]);
+    await expect(provider.inspect(handle)).resolves.toMatchObject({ state: "running" });
+    await provider.destroy(handle);
+    await provider.close();
+  });
+
   it("runs dependency setup inside the same full-public Cube VM", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const dependencyRecipe = {

@@ -1108,10 +1108,11 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     activation.seenOperationIds.add(request.operationId);
+    let output: ReturnType<typeof parseToolWorkerOutput>;
     try {
       const timeoutMs =
         request.operation === "bash.exec" ? request.timeoutMs + 5_000 : this.#readyTimeoutMs;
-      const output = parseToolWorkerOutput(
+      output = parseToolWorkerOutput(
         await this.#guestJson(
           activation.instance,
           {
@@ -1131,17 +1132,6 @@ export class CubeSandboxProvider implements SandboxProvider {
           },
         ),
       );
-      if (output.type === "worker.failed") {
-        throw new ToolBrokerError(output.code, output.message, output.retryable);
-      }
-      if (output.type !== "worker.operation_result") {
-        throw new ToolBrokerError(
-          "cubesandbox_protocol_error",
-          "CubeSandbox returned the wrong Tool Worker response",
-          false,
-        );
-      }
-      return parseToolSandboxOperationResponse(output.response);
     } catch (error: unknown) {
       // A disconnected remote command has an unknowable execution result.
       // Destroying the disposable VM prevents it from continuing behind a
@@ -1156,6 +1146,17 @@ export class CubeSandboxProvider implements SandboxProvider {
         signal?.aborted === true,
       );
     }
+    if (output.type === "worker.failed") {
+      throw new ToolBrokerError(output.code, output.message, output.retryable);
+    }
+    if (output.type !== "worker.operation_result") {
+      throw new ToolBrokerError(
+        "cubesandbox_protocol_error",
+        "CubeSandbox returned the wrong Tool Worker response",
+        false,
+      );
+    }
+    return parseToolSandboxOperationResponse(output.response);
   }
 
   async readFile(
