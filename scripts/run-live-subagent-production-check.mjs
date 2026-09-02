@@ -279,7 +279,7 @@ async function childCreatedToolRuntime(childRunId) {
     select exists (
       select 1
       from tool_broker_workspace_runtimes
-      where bootstrap_run_id = ${sqlLiteral(childRunId)}
+      where run_id = ${sqlLiteral(childRunId)}
     )::text
   `);
   return value === "t";
