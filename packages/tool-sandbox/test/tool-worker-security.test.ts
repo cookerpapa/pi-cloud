@@ -7,6 +7,7 @@ import {
   type EnvironmentRuntimeSnapshot,
 } from "@pi-cloud/protocol";
 import { spawn } from "node:child_process";
+import { createWorkspaceSeed, encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import { createHash } from "node:crypto";
 import {
   access,
@@ -23,6 +24,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   dependencyRecipeWebProxy,
+  attachToolExecution,
   executeEnvironmentRecipe,
   readWorkspaceFile,
   readWorkspaceFileRange,
@@ -227,6 +229,34 @@ describe("credential-free Tool Sandbox worker", () => {
       });
     } finally {
       await rm(linkedWorkspace, { force: true });
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("attaches an existing persistent Volume independently of its original seed kind", async () => {
+    const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-volume-authority-"));
+    const base = {
+      toolWorkerProtocolVersion: 1 as const,
+      type: "worker.initialize" as const,
+      activationId: "10000000-0000-4000-8000-000000000001",
+      toolRoot: workspace,
+      environment: recipeEnvironment(DEFAULT_PROJECT_ENVIRONMENT_RECIPE),
+      workspaceAttach: { recipeCommands: [] },
+    };
+    try {
+      await expect(
+        attachToolExecution({
+          ...base,
+          workspaceSeed: {
+            kind: "bundle",
+            bundle: encodeWorkspaceBlob(createWorkspaceSeed([])),
+          },
+        }),
+      ).resolves.toBeUndefined();
+      await expect(
+        attachToolExecution({ ...base, workspaceSeed: { kind: "sample_java" } }),
+      ).resolves.toBeUndefined();
+    } finally {
       await rm(workspace, { recursive: true, force: true });
     }
   });

@@ -1042,7 +1042,7 @@ export async function initializeToolExecution(
       },
     );
   } else {
-    await validateAttachedInitialization(message);
+    await validateAttachedInitialization();
     environment.recipeCommands = [...message.workspaceAttach.recipeCommands];
   }
   return environment;
@@ -1069,16 +1069,7 @@ async function selectToolRoot(toolRoot: string): Promise<void> {
   TOOL_WORKSPACE_DIRECTORY = canonicalToolRoot;
 }
 
-function validateAttachedInitialization(
-  message: Extract<ToolWorkerInput, { type: "worker.initialize" }>,
-): Promise<void> {
-  if (message.workspaceAttach === undefined || message.workspaceSeed.kind !== "sample_java") {
-    throw new ToolWorkerError(
-      "workspace_attach_invalid",
-      "Preserved Tool workspace could not be attached",
-      false,
-    );
-  }
+function validateAttachedInitialization(): Promise<void> {
   return validateAttachedWorkspaceRoot(
     TOOL_WORKSPACE_DIRECTORY,
     TOOL_WORKSPACE_DIRECTORY === "/workspace",
@@ -1090,5 +1081,5 @@ export async function attachToolExecution(
 ): Promise<void> {
   await selectToolRoot(message.toolRoot);
   safeToolEnvironment(message.webProxy);
-  await validateAttachedInitialization(message);
+  await validateAttachedInitialization();
 }
