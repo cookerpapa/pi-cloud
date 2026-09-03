@@ -33,18 +33,12 @@
     "deepseek": {
       "callCount": 2,
       "detailedCallCount": 2,
-      "actionTypes": [
-        "search",
-        "search"
-      ]
+      "actionTypes": ["search", "search"]
     },
     "codex": {
       "callCount": 2,
       "detailedCallCount": 2,
-      "actionTypes": [
-        "search",
-        "search"
-      ]
+      "actionTypes": ["search", "search"]
     }
   },
   "piSessionStorage": {

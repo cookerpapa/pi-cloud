@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { format } from "prettier";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 
@@ -425,7 +426,7 @@ const report = {
 };
 await writeFile(
   resolve(repositoryRoot, "docs/reports/provider-capability-acceptance-latest.json"),
-  `${JSON.stringify(report, null, 2)}\n`,
+  await format(JSON.stringify(report), { parser: "json" }),
   "utf8",
 );
 process.stdout.write(`${JSON.stringify(report)}\n`);
