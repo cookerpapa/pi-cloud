@@ -4,6 +4,7 @@ import { constants } from "node:fs";
 import { access, mkdir, open, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { format } from "prettier";
 import {
   OfficialCubeSandboxRuntimeClient,
   workspaceVolumeId,
@@ -225,6 +226,22 @@ async function executionEvidence(parentRunId) {
       'parentWorker', parent_attempt.claim_owner_id,
       'childWorker', child_attempt.claim_owner_id,
       'sameWorker', parent_attempt.claim_owner_id = child_attempt.claim_owner_id,
+      'piSessionId', child.pi_session_id,
+      'piSessionLane', child.pi_session_lane,
+      'contextBaseEntryId', execution.pi_context_base_entry_id,
+      'childPhysicalSessionExists', exists (
+        select 1
+        from pi_sessions physical
+        where physical.tenant_id = execution.tenant_id
+          and physical.id = execution.child_session_id::text
+      ),
+      'laneExists', exists (
+        select 1
+        from pi_session_lanes lane
+        where lane.tenant_id = execution.tenant_id
+          and lane.session_id = child.pi_session_id
+          and lane.lane = child.pi_session_lane
+      ),
       'inheritedReferenceCount', (
         select count(*)
         from pi_session_entry_refs ref
@@ -235,7 +252,13 @@ async function executionEvidence(parentRunId) {
         select count(*)
         from pi_session_entries entry
         where entry.tenant_id = execution.tenant_id
-          and entry.session_id = execution.child_session_id::text
+          and entry.session_id = child.pi_session_id
+          and entry.turn_id in (
+            select turn.id
+            from turns turn
+            where turn.tenant_id = execution.tenant_id
+              and turn.session_id = execution.child_session_id
+          )
       ),
       'workspaceKind', child_workspace.workspace_kind,
       'workspaceDeleted', child_workspace.deleted_at is not null
@@ -244,6 +267,7 @@ async function executionEvidence(parentRunId) {
     join runs as parent_run on parent_run.id = execution.parent_run_id
     join run_attempts as parent_attempt on parent_attempt.id = parent_run.current_attempt_id
     join runs as child_run on child_run.id = execution.child_run_id
+    join sessions as child on child.id = execution.child_session_id
     join run_attempts as child_attempt on child_attempt.id = child_run.current_attempt_id
     join workspaces as child_workspace on child_workspace.id = child_run.workspace_id
     where execution.parent_run_id = ${sqlLiteral(parentRunId)}
@@ -265,10 +289,14 @@ async function recursiveTreeEvidence(rootRunId) {
       'state', execution.state,
       'childSessionId', execution.child_session_id,
       'childRunId', execution.child_run_id,
-      'childRunState', child_run.state
+      'childRunState', child_run.state,
+      'piSessionId', child.pi_session_id,
+      'piSessionLane', child.pi_session_lane,
+      'contextBaseEntryId', execution.pi_context_base_entry_id
     ) order by execution.depth, execution.created_at), '[]'::json)::text
     from subagent_executions as execution
     join runs as child_run on child_run.id = execution.child_run_id
+    join sessions as child on child.id = execution.child_session_id
     where execution.root_run_id = ${sqlLiteral(rootRunId)}
   `);
   return JSON.parse(value);
@@ -283,6 +311,15 @@ async function childCreatedToolRuntime(childRunId) {
     )::text
   `);
   return value === "t";
+}
+
+function assertLaneBacked(evidence, rootPiSessionId) {
+  assert.equal(evidence.piSessionId, rootPiSessionId);
+  assert.match(evidence.piSessionLane, /^subagent-[0-9a-f-]{36}$/u);
+  assert.equal(evidence.childPhysicalSessionExists, false);
+  assert.equal(evidence.laneExists, true);
+  assert.equal(evidence.inheritedReferenceCount, 0);
+  assert(evidence.childOwnedEntryCount > 0);
 }
 
 await retireHistoricalAcceptanceCubes();
@@ -322,6 +359,8 @@ try {
   const noneEvidence = await executionEvidence(none.accepted.runId);
   assert.equal(noneEvidence.workspaceMode, "none");
   assert.equal(noneEvidence.childRunState, "completed");
+  assert.equal(noneEvidence.contextBaseEntryId, null);
+  assertLaneBacked(noneEvidence, session.sessionId);
 
   const lazy = await runTurn(
     session.sessionId,
@@ -334,6 +373,8 @@ try {
   const lazyEvidence = await executionEvidence(lazy.accepted.runId);
   assert.equal(lazyEvidence.workspaceMode, "shared");
   assert.equal(lazyEvidence.childRunState, "completed");
+  assert.equal(lazyEvidence.contextBaseEntryId, null);
+  assertLaneBacked(lazyEvidence, session.sessionId);
   assert.equal(
     await childCreatedToolRuntime(lazyEvidence.childRunId),
     false,
@@ -353,7 +394,8 @@ try {
   assert.equal(sharedEvidence.workspaceMode, "shared");
   assert.equal(sharedEvidence.childWorkspaceId, sharedEvidence.parentWorkspaceId);
   assert.equal(sharedEvidence.childRunState, "completed");
-  assert.equal(sharedEvidence.inheritedReferenceCount, 0);
+  assert.equal(sharedEvidence.contextBaseEntryId, null);
+  assertLaneBacked(sharedEvidence, session.sessionId);
 
   const isolated = await runTurn(
     session.sessionId,
@@ -368,7 +410,8 @@ try {
   assert.notEqual(isolatedEvidence.childWorkspaceId, isolatedEvidence.parentWorkspaceId);
   assert.equal(isolatedEvidence.workspaceKind, "subagent_isolated");
   assert.equal(isolatedEvidence.workspaceDeleted, true);
-  assert(isolatedEvidence.inheritedReferenceCount > 0);
+  assert(isolatedEvidence.contextBaseEntryId);
+  assertLaneBacked(isolatedEvidence, session.sessionId);
 
   const nestedTask = [
     "Call the subagent Tool exactly once and do not call file or bash Tools.",
@@ -391,6 +434,12 @@ try {
   );
   assert(recursiveEvidence.every((execution) => execution.rootRunId === recursive.accepted.runId));
   assert(recursiveEvidence.every((execution) => execution.childRunState === "completed"));
+  assert(recursiveEvidence.every((execution) => execution.piSessionId === session.sessionId));
+  assert(
+    recursiveEvidence.every((execution) =>
+      /^subagent-[0-9a-f-]{36}$/u.test(execution.piSessionLane),
+    ),
+  );
   assert.equal(recursiveEvidence[0].parentExecutionId, null);
   assert.equal(recursiveEvidence[1].parentExecutionId, recursiveEvidence[0].executionId);
   const conversationList = await api.listConversations();
@@ -447,7 +496,7 @@ try {
   await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
   await writeFile(
     resolve(repositoryRoot, "docs/reports/subagent-production-acceptance-latest.json"),
-    `${JSON.stringify(report, null, 2)}\n`,
+    await format(JSON.stringify(report), { parser: "json" }),
     "utf8",
   );
   process.stdout.write(`${JSON.stringify(report)}\n`);
