@@ -23,6 +23,32 @@ function database(): Kysely<Database> {
       },
       {
         turn_id: TURN_ID,
+        seq: "3",
+        timestamp_ms: "1787529600050",
+        payload: {
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "providerHostedToolCall",
+                toolName: "web_search",
+                nativeItem: {
+                  id: "call_search_1",
+                  type: "web_search_call",
+                  status: "completed",
+                  action: {
+                    type: "search",
+                    queries: ["official release", "ws_call_id=call_search_1"],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+      {
+        turn_id: TURN_ID,
         seq: "4",
         timestamp_ms: "1787529600100",
         payload: {
@@ -136,6 +162,12 @@ describe("canonical Pi conversation", () => {
     });
     expect(transcripts.get(TURN_ID)?.items).toMatchObject([
       { kind: "text", text: "Before maintenance." },
+      {
+        kind: "hosted_search",
+        activityId: "call_search_1",
+        status: "completed",
+        action: { type: "search", queries: ["official release"] },
+      },
       {
         kind: "compaction",
         status: "completed",

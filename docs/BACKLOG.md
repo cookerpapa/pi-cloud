@@ -39,6 +39,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Provider capabilities
 
+- [x] Preserve per-call Hosted Web Search identity, count and portable action
+      details across live Kafka/SSE output and canonical Pi Session reload.
+- [x] Keep completed Markdown blocks stable while only the in-flight tail is
+      reparsed during streaming.
 - [x] Align GPT-5.6 Worker context and native Compaction threshold with the
       deployment's 1,000,000/900,000-token Codex baseline.
 - [ ] Measure Standard/Fast latency and usage on every enabled GPT model before

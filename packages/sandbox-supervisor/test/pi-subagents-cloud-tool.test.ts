@@ -65,12 +65,22 @@ describe("pi-subagents cloud Tool adapter", () => {
 
     expect(starts, JSON.stringify(result)).toHaveLength(2);
     expect(starts.map((start) => start.agent)).toEqual(["cloud-child", "cloud-child"]);
-    expect(starts[0]?.options).toMatchObject({
+    const toolFree = starts.find(
+      (start) =>
+        Array.isArray(start.options.requestedToolCapabilities) &&
+        start.options.requestedToolCapabilities.length === 0,
+    );
+    const shared = starts.find(
+      (start) =>
+        Array.isArray(start.options.requestedToolCapabilities) &&
+        start.options.requestedToolCapabilities.length > 0,
+    );
+    expect(toolFree?.options).toMatchObject({
       contextMode: "fresh",
       workspaceMode: "none",
       requestedToolCapabilities: [],
     });
-    expect(starts[1]?.options).toMatchObject({
+    expect(shared?.options).toMatchObject({
       contextMode: "fresh",
       workspaceMode: "shared",
       requestedToolCapabilities: ["read", "bash"],

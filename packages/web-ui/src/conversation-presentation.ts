@@ -14,6 +14,11 @@ export type ConversationPresentationRow =
       items: readonly ToolTranscriptItem[];
     }
   | {
+      kind: "hosted_search";
+      key: string;
+      items: readonly Extract<TranscriptItem, { kind: "hosted_search" }>[];
+    }
+  | {
       kind: "item";
       key: string;
       item: Exclude<TranscriptItem, { kind: "text" } | { kind: "tool" }>;
@@ -56,6 +61,20 @@ export function deriveConversationPresentationRows(
         kind: "activity",
         key: `activity:${tools[0]!.key}`,
         items: tools,
+      });
+      continue;
+    }
+    if (item.kind === "hosted_search") {
+      const searches: Extract<TranscriptItem, { kind: "hosted_search" }>[] = [item];
+      index += 1;
+      while (index < items.length && items[index]?.kind === "hosted_search") {
+        searches.push(items[index] as Extract<TranscriptItem, { kind: "hosted_search" }>);
+        index += 1;
+      }
+      rows.push({
+        kind: "hosted_search",
+        key: `hosted-search-group:${searches[0]!.activityId}`,
+        items: searches,
       });
       continue;
     }

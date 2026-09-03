@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { ResponsesHostedActivityObserver } from "../src/index.ts";
 
 describe("ResponsesHostedActivityObserver", () => {
-  it("recognizes split SSE search lifecycle events and emits no Provider payload", () => {
+  it("recognizes split SSE search lifecycle events and emits the Codex-style action", () => {
     const activities: unknown[] = [];
     const observer = new ResponsesHostedActivityObserver((activity) => activities.push(activity));
     const body = [
-      'data: {"type":"response.output_item.added","item":{"type":"web_search_call"}}\n\n',
-      'data: {"type":"response.web_search_call.searching"}\n\n',
-      'data: {"type":"response.output_item.done","item":{"type":"web_search_call","status":"completed","action":{"query":"private query"}}}\n\n',
+      'data: {"type":"response.output_item.added","item":{"id":"ws-1","type":"web_search_call"}}\n\n',
+      'data: {"type":"response.web_search_call.searching","item_id":"ws-1"}\n\n',
+      'data: {"type":"response.output_item.done","item":{"id":"ws-1","type":"web_search_call","status":"completed","action":{"type":"search","query":"private query"}}}\n\n',
       'data: {"type":"response.output_text.delta","delta":"answer"}\n\n',
     ].join("");
     const encoded = new TextEncoder().encode(body);
@@ -18,22 +18,98 @@ describe("ResponsesHostedActivityObserver", () => {
     observer.finish("completed");
 
     expect(activities).toEqual([
-      { phase: "started", toolName: "web_search" },
-      { phase: "completed", toolName: "web_search", outcome: "completed" },
+      { phase: "started", toolName: "web_search", activityId: "ws-1" },
+      {
+        phase: "completed",
+        toolName: "web_search",
+        activityId: "ws-1",
+        outcome: "completed",
+        action: { type: "search", queries: ["private query"] },
+      },
     ]);
-    expect(JSON.stringify(activities)).not.toContain("private query");
   });
 
   it("settles an active search when the Provider stream fails", () => {
     const activities: unknown[] = [];
     const observer = new ResponsesHostedActivityObserver((activity) => activities.push(activity));
     observer.push(
-      new TextEncoder().encode('data: {"type":"response.web_search_call.in_progress"}\n\n'),
+      new TextEncoder().encode(
+        'data: {"type":"response.web_search_call.in_progress","item_id":"ws-failed"}\n\n',
+      ),
     );
     observer.finish("failed");
     expect(activities).toEqual([
-      { phase: "started", toolName: "web_search" },
-      { phase: "completed", toolName: "web_search", outcome: "failed" },
+      { phase: "started", toolName: "web_search", activityId: "ws-failed" },
+      {
+        phase: "completed",
+        toolName: "web_search",
+        activityId: "ws-failed",
+        outcome: "failed",
+      },
+    ]);
+  });
+
+  it("tracks concurrent DeepSeek search calls separately and removes transport markers", () => {
+    const activities: unknown[] = [];
+    const observer = new ResponsesHostedActivityObserver((activity) => activities.push(activity));
+    const events = [
+      {
+        type: "response.output_item.added",
+        item: { id: "call_00", type: "web_search_call", status: "in_progress" },
+      },
+      {
+        type: "response.output_item.added",
+        item: { id: "call_01", type: "web_search_call", status: "in_progress" },
+      },
+      {
+        type: "response.output_item.done",
+        item: {
+          id: "call_00",
+          type: "web_search_call",
+          status: "completed",
+          action: {
+            type: "search",
+            queries: ["official Node release", "ws_call_id=call_00"],
+          },
+        },
+      },
+      {
+        type: "response.output_item.done",
+        item: {
+          id: "call_01",
+          type: "web_search_call",
+          status: "completed",
+          action: {
+            type: "open_page",
+            url: "https://python.org/downloads/#ws_call_id=call_01",
+          },
+        },
+      },
+    ];
+    observer.push(
+      new TextEncoder().encode(
+        events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+      ),
+    );
+    observer.finish("completed");
+
+    expect(activities).toEqual([
+      { phase: "started", toolName: "web_search", activityId: "call_00" },
+      { phase: "started", toolName: "web_search", activityId: "call_01" },
+      {
+        phase: "completed",
+        toolName: "web_search",
+        activityId: "call_00",
+        outcome: "completed",
+        action: { type: "search", queries: ["official Node release"] },
+      },
+      {
+        phase: "completed",
+        toolName: "web_search",
+        activityId: "call_01",
+        outcome: "completed",
+        action: { type: "open_page", url: "https://python.org/downloads/" },
+      },
     ]);
   });
 

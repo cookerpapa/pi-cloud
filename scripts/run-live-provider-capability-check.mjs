@@ -127,21 +127,33 @@ function countPiSessionPayloads(sessionId, marker) {
   );
 }
 
-function assertHostedSearchProgress(events, turnId, label) {
+function assertHostedSearchProgress(events, turnId, label, minimumCalls = 1) {
   const turnEvents = events.filter((event) => event.turnId === turnId);
-  const started = turnEvents.findIndex(
-    (event) =>
-      event.type === "provider.hosted_tool.started" && event.payload.toolName === "web_search",
-  );
-  const completed = turnEvents.findIndex(
-    (event) =>
-      event.type === "provider.hosted_tool.completed" && event.payload.toolName === "web_search",
-  );
+  const started = turnEvents.filter((event) => event.type === "provider.hosted_tool.started");
+  const completed = turnEvents.filter((event) => event.type === "provider.hosted_tool.completed");
   const firstText = turnEvents.findIndex((event) => event.type === "assistant.text.delta");
-  assert.notEqual(started, -1, `${label} did not publish Hosted Web Search start progress`);
-  assert.notEqual(completed, -1, `${label} did not publish Hosted Web Search completion progress`);
-  assert.ok(started < completed, `${label} Hosted Web Search progress was out of order`);
-  assert.ok(firstText < 0 || started < firstText, `${label} search progress did not precede text`);
+  assert.ok(started.length >= minimumCalls, `${label} did not publish every Web Search start`);
+  assert.equal(completed.length, started.length, `${label} did not pair Web Search completion`);
+  assert.deepEqual(
+    new Set(completed.map((event) => event.payload.activityId)),
+    new Set(started.map((event) => event.payload.activityId)),
+    `${label} Web Search activity identities did not pair`,
+  );
+  assert.ok(
+    firstText < 0 || turnEvents.indexOf(started[0]) < firstText,
+    `${label} search progress did not precede text`,
+  );
+  assert.ok(
+    completed.some((event) => event.payload.action !== undefined),
+    `${label} did not publish any Web Search action details`,
+  );
+  return {
+    callCount: started.length,
+    detailedCallCount: completed.filter((event) => event.payload.action !== undefined).length,
+    actionTypes: completed.flatMap((event) =>
+      event.payload.action === undefined ? [] : [event.payload.action.type],
+    ),
+  };
 }
 
 const suffix = Date.now().toString(36);
@@ -158,6 +170,8 @@ let nativeReplayText = "";
 let secondText = "";
 let durableHostedMessageCount = 0;
 let durableCitationMessageCount = 0;
+let deepSeekSearchActivity;
+let codexSearchActivity;
 let cleanupCompleted = false;
 let streamAbort;
 let streamPromise;
@@ -202,7 +216,7 @@ try {
     session.sessionId,
     [
       "Do not call Pi function tools.",
-      "Use Provider-hosted web search to find the current Hang Seng Index value and exact percentage change from a current source.",
+      "Use Provider-hosted web search and perform at least two distinct searches to find the current Hang Seng Index value and exact percentage change from current sources.",
       "Reply only DEEPSEEK-SEARCH-OK and do not reveal either number.",
     ].join(" "),
     newIdempotencyKey("provider-search"),
@@ -221,13 +235,22 @@ try {
   await waitFor(
     () =>
       observedEvents.some(
-        (event) =>
-          event.turnId === firstAccepted.turnId && event.type === "provider.hosted_tool.completed",
+        (event) => event.turnId === firstAccepted.turnId && event.type === "turn.completed",
       ),
     "DeepSeek Hosted Web Search progress",
     30_000,
   );
-  assertHostedSearchProgress(observedEvents, firstAccepted.turnId, "DeepSeek");
+  deepSeekSearchActivity = assertHostedSearchProgress(
+    observedEvents,
+    firstAccepted.turnId,
+    "DeepSeek",
+    2,
+  );
+  assert.equal(
+    (first.transcript?.items ?? []).filter((item) => item.kind === "hosted_search").length,
+    deepSeekSearchActivity.callCount,
+    "DeepSeek settled transcript lost Hosted Web Search activities",
+  );
   assert.equal(
     (first.transcript?.items ?? []).some((item) => item.kind === "tool"),
     false,
@@ -278,7 +301,7 @@ try {
     session.sessionId,
     [
       "Do not call Pi function tools.",
-      "Use Provider-hosted web search to find the current title of the official OpenAI developer documentation home page.",
+      "Use Provider-hosted web search and perform at least two distinct searches to find the current title of the official OpenAI developer documentation home page.",
       "Reply with CODEX-SEARCH-HANDOFF-OK, the OpenAI page title, and the marker DEEPSEEK-SEARCH-OK preserved from the previous turns.",
     ].join(" "),
     newIdempotencyKey("provider-handoff"),
@@ -297,13 +320,22 @@ try {
   await waitFor(
     () =>
       observedEvents.some(
-        (event) =>
-          event.turnId === secondAccepted.turnId && event.type === "provider.hosted_tool.completed",
+        (event) => event.turnId === secondAccepted.turnId && event.type === "turn.completed",
       ),
     "Codex Hosted Web Search progress",
     30_000,
   );
-  assertHostedSearchProgress(observedEvents, secondAccepted.turnId, "Codex");
+  codexSearchActivity = assertHostedSearchProgress(
+    observedEvents,
+    secondAccepted.turnId,
+    "Codex",
+    2,
+  );
+  assert.equal(
+    (second.transcript?.items ?? []).filter((item) => item.kind === "hosted_search").length,
+    codexSearchActivity.callCount,
+    "Codex settled transcript lost Hosted Web Search activities",
+  );
   assert.equal(
     (second.transcript?.items ?? []).some((item) => item.kind === "tool"),
     false,
@@ -381,6 +413,10 @@ const report = {
     providerSearchTurn: firstText.length,
     nativeReplayTurn: nativeReplayText.length,
     crossProviderHandoffTurn: secondText.length,
+  },
+  hostedSearchActivity: {
+    deepseek: deepSeekSearchActivity,
+    codex: codexSearchActivity,
   },
   piSessionStorage: {
     durableHostedMessageCount,

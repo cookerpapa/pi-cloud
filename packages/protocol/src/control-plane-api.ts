@@ -9,6 +9,7 @@ import {
 } from "./protocol-primitives.ts";
 import {
   PiCloudEventSchema,
+  ProviderHostedWebSearchActionSchema,
   SessionStateSchema,
   TurnCancellationReasonSchema,
 } from "./event-envelope.ts";
@@ -652,6 +653,17 @@ export const DevelopmentEnvironmentListResourceSchema = Type.Object(
 );
 
 export const ConversationTranscriptItemResourceSchema = Type.Union([
+  Type.Object(
+    {
+      kind: Type.Literal("hosted_search"),
+      activityId: Type.String({ minLength: 1, maxLength: 256 }),
+      status: Type.Union([Type.Literal("completed"), Type.Literal("failed")]),
+      action: Type.Optional(ProviderHostedWebSearchActionSchema),
+      firstSequence: PositiveSafeIntegerSchema,
+      lastSequence: PositiveSafeIntegerSchema,
+    },
+    { additionalProperties: false },
+  ),
   Type.Object(
     {
       kind: Type.Literal("text"),

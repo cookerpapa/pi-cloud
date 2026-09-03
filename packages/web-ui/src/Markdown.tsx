@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { HighlightedCode } from "./HighlightedCode.tsx";
@@ -94,17 +94,57 @@ const StableMarkdownBody = memo(function StableMarkdownBody({
   );
 });
 
+export function streamingMarkdownBlocks(text: string): readonly string[] {
+  if (text.length === 0) return [];
+  if (/^\s*\[[^\]]+\]:\s*\S+/mu.test(text)) return [text];
+  const blocks: string[] = [];
+  let start = 0;
+  let offset = 0;
+  let fence: "```" | "~~~" | null = null;
+  for (const match of text.matchAll(/.*(?:\n|$)/gu)) {
+    const line = match[0];
+    if (line.length === 0) continue;
+    offset += line.length;
+    const trimmed = line.trimStart();
+    if (fence === null) {
+      if (trimmed.startsWith("```")) fence = "```";
+      else if (trimmed.startsWith("~~~")) fence = "~~~";
+    } else if (trimmed.startsWith(fence)) {
+      fence = null;
+    }
+    if (fence === null && /^\s*$/u.test(line)) {
+      blocks.push(text.slice(start, offset));
+      start = offset;
+    }
+  }
+  if (start < text.length) blocks.push(text.slice(start));
+  return blocks;
+}
+
 export function Markdown({
   children,
   sessionId,
+  streaming = false,
 }: {
   children: string;
   sessionId?: string | undefined;
+  streaming?: boolean;
 }) {
   const { t } = useI18n();
+  const blocks = useMemo(
+    () => (streaming ? streamingMarkdownBlocks(children) : [children]),
+    [children, streaming],
+  );
   return (
     <div className="product-markdown">
-      <StableMarkdownBody sessionId={sessionId} t={t} text={children} />
+      {blocks.map((block, index) => (
+        <StableMarkdownBody
+          key={streaming ? `stream-block:${String(index)}` : "final"}
+          sessionId={sessionId}
+          t={t}
+          text={block}
+        />
+      ))}
     </div>
   );
 }

@@ -27,7 +27,6 @@ function turn(turnId: string, prompt: string): TurnView {
     stopReason: "stop",
     failure: null,
     cancellation: null,
-    providerHostedTool: null,
   };
 }
 
@@ -614,6 +613,36 @@ describe("product chat experience", () => {
     expect(markup).toContain("read · write");
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain("Successfully wrote");
+  });
+
+  it("keeps repeated Hosted Web Search calls as a stable Codex-style activity group", () => {
+    const searchTurn: TurnView = {
+      ...turn("10000000-0000-4000-8000-000000000042", "调研最新版本"),
+      items: [
+        {
+          kind: "hosted_search",
+          key: "hosted-search:ws-1",
+          activityId: "ws-1",
+          status: "completed",
+          action: { type: "search", queries: ["Node.js latest release", "Python latest release"] },
+          firstSequence: 1,
+          lastSequence: 2,
+        },
+        {
+          kind: "hosted_search",
+          key: "hosted-search:ws-2",
+          activityId: "ws-2",
+          status: "completed",
+          action: { type: "open_page", url: "https://www.python.org/downloads/" },
+          firstSequence: 3,
+          lastSequence: 4,
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(<ConversationTurn turn={searchTurn} />);
+    expect(markup).toContain("已搜索网页 2 次");
+    expect(markup).toContain("Node.js latest release …");
+    expect(markup).toContain("https://www.python.org/downloads/");
   });
 
   it("renders durable Pi compaction and model retry lifecycle rows", () => {

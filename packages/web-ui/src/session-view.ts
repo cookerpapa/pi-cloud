@@ -25,6 +25,15 @@ export type TranscriptItem =
       recoveredTextLength?: number;
     }
   | {
+      kind: "hosted_search";
+      key: string;
+      activityId: string;
+      status: "running" | "completed" | "failed";
+      action?: import("@pi-cloud/protocol").ProviderHostedWebSearchAction;
+      firstSequence: number;
+      lastSequence?: number;
+    }
+  | {
       kind: "tool";
       key: string;
       toolCallId: string;
@@ -77,7 +86,6 @@ export type TurnView = {
   stopReason: string | null;
   failure: { code: string; message: string; retryable: boolean } | null;
   cancellation: { reason: string; forced: boolean } | null;
-  providerHostedTool: "web_search" | null;
 };
 
 export type ConnectionView =
@@ -148,7 +156,6 @@ function unknownTurn(turnId: string): TurnView {
     stopReason: null,
     failure: null,
     cancellation: null,
-    providerHostedTool: null,
   };
 }
 
@@ -194,6 +201,9 @@ function transcriptItem(
       ...(recovered ? { recoveredTextLength: item.text.length } : {}),
     };
   }
+  if (item.kind === "hosted_search") {
+    return { ...item, key: `hosted-search:${item.activityId}` };
+  }
   if (item.kind === "tool") {
     return { ...item, key: `tool:${item.toolCallId}` };
   }
@@ -227,13 +237,58 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
       return appendText(turn, event.payload.text, event.seq);
     }
     if (event.type === "provider.hosted_tool.started") {
-      return { ...turn, status: "running", providerHostedTool: event.payload.toolName };
-    }
-    if (event.type === "provider.hosted_tool.completed") {
+      if (
+        turn.items.some(
+          (item) => item.kind === "hosted_search" && item.activityId === event.payload.activityId,
+        )
+      ) {
+        return { ...turn, status: "running" };
+      }
       return {
         ...turn,
-        providerHostedTool:
-          turn.providerHostedTool === event.payload.toolName ? null : turn.providerHostedTool,
+        status: "running",
+        items: [
+          ...turn.items,
+          {
+            kind: "hosted_search",
+            key: `hosted-search:${event.payload.activityId}`,
+            activityId: event.payload.activityId,
+            status: "running",
+            firstSequence: event.seq,
+          },
+        ],
+      };
+    }
+    if (event.type === "provider.hosted_tool.completed") {
+      let matched = false;
+      const items = turn.items.map((item): TranscriptItem => {
+        if (item.kind !== "hosted_search" || item.activityId !== event.payload.activityId) {
+          return item;
+        }
+        matched = true;
+        return {
+          ...item,
+          status: event.payload.outcome,
+          ...(event.payload.action === undefined ? {} : { action: event.payload.action }),
+          lastSequence: event.seq,
+        };
+      });
+      return {
+        ...turn,
+        items: matched
+          ? items
+          : [
+              ...items,
+              {
+                kind: "hosted_search",
+                key: `hosted-search:${event.payload.activityId}`,
+                activityId: event.payload.activityId,
+                status: event.payload.outcome,
+                ...(event.payload.action === undefined ? {} : { action: event.payload.action }),
+                firstSequence: event.seq,
+                lastSequence: event.seq,
+              },
+            ],
       };
     }
     if (event.type === "tool.started") {
@@ -378,8 +433,12 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
     if (event.type === "turn.completed") {
       return {
         ...turn,
+        items: turn.items.map((item) =>
+          item.kind === "hosted_search" && item.status === "running"
+            ? { ...item, status: "completed" as const, lastSequence: event.seq }
+            : item,
+        ),
         status: "completed",
-        providerHostedTool: null,
         terminalSequence: event.seq,
         stopReason: event.payload.stopReason,
       };
@@ -399,10 +458,12 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
           if (item.kind === "compaction" && item.status === "running") {
             return { ...item, status: "failed", lastSequence: event.seq };
           }
+          if (item.kind === "hosted_search" && item.status === "running") {
+            return { ...item, status: "failed", lastSequence: event.seq };
+          }
           return item;
         }),
         status: "failed",
-        providerHostedTool: null,
         terminalSequence: event.seq,
         failure: event.payload,
       };
@@ -422,10 +483,12 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
           if (item.kind === "compaction" && item.status === "running") {
             return { ...item, status: "aborted", lastSequence: event.seq };
           }
+          if (item.kind === "hosted_search" && item.status === "running") {
+            return { ...item, status: "failed", lastSequence: event.seq };
+          }
           return item;
         }),
         status: "cancelled",
-        providerHostedTool: null,
         terminalSequence: event.seq,
         stopReason: "cancelled",
         cancellation: event.payload,
@@ -501,7 +564,6 @@ export function sessionViewReducer(
         prompt: turn.prompt,
         acceptedAt: turn.acceptedAt,
         status: turn.state,
-        providerHostedTool: null,
       })),
       historyTruncated: action.conversation.historyTruncated,
       connection: { phase: "offline", attempt: 0, message: "Opening durable event stream" },
@@ -548,7 +610,6 @@ export function sessionViewReducer(
         return {
           ...turn,
           status: "completed",
-          providerHostedTool: null,
           stopReason: action.run.stopReason ?? "stop",
         };
       }
@@ -556,7 +617,6 @@ export function sessionViewReducer(
         return {
           ...turn,
           status: "cancelled",
-          providerHostedTool: null,
           stopReason: "cancelled",
           cancellation: { reason: "cancelled", forced: false },
         };
@@ -569,7 +629,6 @@ export function sessionViewReducer(
         return {
           ...turn,
           status: "failed",
-          providerHostedTool: null,
           failure:
             action.run.failure === undefined
               ? action.run.state === "timed_out"

@@ -52,7 +52,6 @@ describe("UI internationalization", () => {
       stopReason: "stop",
       failure: null,
       cancellation: null,
-      providerHostedTool: null,
     };
     const conversation = renderToStaticMarkup(
       <I18nProvider initialLanguage="en-US">

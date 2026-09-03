@@ -717,11 +717,19 @@ export class PiCloudTurnRunner {
             activity.phase === "started"
               ? {
                   type: "provider.hosted_tool.started",
-                  payload: { toolName: activity.toolName },
+                  payload: {
+                    toolName: activity.toolName,
+                    activityId: activity.activityId,
+                  },
                 }
               : {
                   type: "provider.hosted_tool.completed",
-                  payload: { toolName: activity.toolName, outcome: activity.outcome },
+                  payload: {
+                    toolName: activity.toolName,
+                    activityId: activity.activityId,
+                    outcome: activity.outcome,
+                    ...(activity.action === undefined ? {} : { action: activity.action }),
+                  },
                 },
           );
         });

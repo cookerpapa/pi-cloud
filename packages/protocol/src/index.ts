@@ -24,6 +24,7 @@ export {
 
 export {
   PiCloudEventSchema,
+  ProviderHostedWebSearchActionSchema,
   PiCloudProtocolError,
   SessionStateSchema,
   TurnCancellationReasonSchema,
@@ -35,6 +36,7 @@ export {
   type PiCloudEventFactoryOptions,
   type PiCloudEventIdentity,
   type PiCloudEventType,
+  type ProviderHostedWebSearchAction,
   type SessionState,
 } from "./event-envelope.ts";
 

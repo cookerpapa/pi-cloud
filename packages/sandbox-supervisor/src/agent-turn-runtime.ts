@@ -1,4 +1,8 @@
-import type { AgentModelRuntime, ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
+import type {
+  AgentModelRuntime,
+  ExecuteTurnCommandMessage,
+  ProviderHostedWebSearchAction,
+} from "@pi-cloud/protocol";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 
 export type AgentTurnScenario =
@@ -17,8 +21,14 @@ export type AgentWorkspaceSeedResolver = (
 ) => Promise<Uint8Array | undefined> | Uint8Array | undefined;
 
 export type ProviderHostedActivity = Readonly<
-  | { phase: "started"; toolName: "web_search" }
-  | { phase: "completed"; toolName: "web_search"; outcome: "completed" | "failed" }
+  | { phase: "started"; toolName: "web_search"; activityId: string }
+  | {
+      phase: "completed";
+      toolName: "web_search";
+      activityId: string;
+      outcome: "completed" | "failed";
+      action?: ProviderHostedWebSearchAction;
+    }
 >;
 
 export type ProviderHostedActivitySubscriber = (

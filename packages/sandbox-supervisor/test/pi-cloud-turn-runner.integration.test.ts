@@ -409,13 +409,19 @@ describe("PiCloudTurnRunner integration", () => {
       observeEvent(event) {
         if (event.type === "message_start" && !hostedActivityStarted) {
           hostedActivityStarted = true;
-          hostedActivityListener?.({ phase: "started", toolName: "web_search" });
+          hostedActivityListener?.({
+            phase: "started",
+            toolName: "web_search",
+            activityId: "ws-integration",
+          });
         } else if (event.type === "message_update" && hostedActivityStarted) {
           hostedActivityStarted = false;
           hostedActivityListener?.({
             phase: "completed",
             toolName: "web_search",
+            activityId: "ws-integration",
             outcome: "completed",
+            action: { type: "search", queries: ["integration source"] },
           });
         }
         sourceEvents.push(

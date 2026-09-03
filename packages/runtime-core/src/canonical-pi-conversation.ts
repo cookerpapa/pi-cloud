@@ -5,6 +5,7 @@ import {
   type ConversationTranscriptItemResource,
   type ConversationTurnTranscriptResource,
 } from "@pi-cloud/protocol";
+import { normalizeProviderHostedWebSearchAction } from "@pi-cloud/sandbox-supervisor";
 import { sql, type Kysely, type Transaction } from "kysely";
 
 export const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_assistant_prefix";
@@ -16,6 +17,12 @@ type TerminalProjectionMetadata = Pick<
 > & { occurredAt: string };
 type DraftItem =
   | { kind: "text"; text: string }
+  | {
+      kind: "hosted_search";
+      activityId: string;
+      status: "completed" | "failed";
+      action?: import("@pi-cloud/protocol").ProviderHostedWebSearchAction;
+    }
   | {
       kind: "tool";
       toolCallId: string;
@@ -209,6 +216,18 @@ function projectPiEntries(
           else drafts.push({ kind: "text", text: candidate.text });
           continue;
         }
+        if (candidate?.type === "providerHostedToolCall" && candidate.toolName === "web_search") {
+          const nativeItem = record(candidate.nativeItem);
+          if (typeof nativeItem?.id !== "string" || nativeItem.id.length === 0) continue;
+          const action = normalizeProviderHostedWebSearchAction(nativeItem);
+          drafts.push({
+            kind: "hosted_search",
+            activityId: nativeItem.id,
+            status: nativeItem.status === "failed" ? "failed" : "completed",
+            ...(action === undefined ? {} : { action }),
+          });
+          continue;
+        }
         if (
           candidate?.type === "toolCall" &&
           typeof candidate.id === "string" &&
@@ -271,6 +290,9 @@ function projectPiEntries(
   const items = drafts.map((item, index): ConversationTranscriptItemResource => {
     const sequence = Math.min(terminal.throughSequence, firstSequence + index);
     if (item.kind === "text") {
+      return { ...item, firstSequence: sequence, lastSequence: sequence };
+    }
+    if (item.kind === "hosted_search") {
       return { ...item, firstSequence: sequence, lastSequence: sequence };
     }
     if (item.kind === "compaction") {

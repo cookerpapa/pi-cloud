@@ -136,7 +136,12 @@ function AssistantTextItem({
   );
   return (
     <div className={processNarration ? "product-agent-stage" : "product-agent-answer"}>
-      <Markdown sessionId={sessionId}>{visibleText}</Markdown>
+      <Markdown
+        sessionId={sessionId}
+        streaming={streaming || visibleText.length < item.text.length}
+      >
+        {visibleText}
+      </Markdown>
     </div>
   );
 }
@@ -197,6 +202,65 @@ function ToolActivityGroup({ items }: { items: readonly ToolTranscriptItem[] }) 
           ))}
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function hostedSearchDetail(
+  action: Extract<TranscriptItem, { kind: "hosted_search" }>["action"],
+): string | null {
+  if (action === undefined) return null;
+  if (action.type === "search") {
+    const first = action.queries[0] ?? "";
+    return action.queries.length > 1 ? `${first} …` : first;
+  }
+  if (action.type === "open_page") return action.url;
+  if (action.pattern !== undefined && action.url !== undefined) {
+    return `“${action.pattern}” · ${action.url}`;
+  }
+  return action.pattern ?? action.url ?? null;
+}
+
+function HostedSearchGroup({
+  items,
+}: {
+  items: readonly Extract<TranscriptItem, { kind: "hosted_search" }>[];
+}) {
+  const { t } = useI18n();
+  const running = items.some((item) => item.status === "running");
+  const failed = !running && items.every((item) => item.status === "failed");
+  const details = [
+    ...new Set(
+      items
+        .map((item) => hostedSearchDetail(item.action))
+        .filter((detail): detail is string => detail !== null && detail.length > 0),
+    ),
+  ];
+  const label = running
+    ? items.length > 1
+      ? t("turn.searchingWebCount", { count: items.length })
+      : t("turn.searchingWeb")
+    : failed
+      ? t("turn.searchWebFailed")
+      : items.length > 1
+        ? t("turn.searchedWebCount", { count: items.length })
+        : t("turn.searchedWeb");
+  return (
+    <section
+      aria-label={label}
+      className={`product-hosted-search ${running ? "running" : failed ? "failed" : "completed"}`}
+    >
+      <div className="product-hosted-search-summary">
+        <span aria-hidden="true">{running ? "◌" : failed ? "!" : "✓"}</span>
+        <strong>{label}</strong>
+      </div>
+      {details.length === 0 ? null : (
+        <ol>
+          {details.map((detail) => (
+            <li key={detail}>{detail}</li>
+          ))}
+        </ol>
+      )}
     </section>
   );
 }
@@ -316,7 +380,7 @@ export function ConversationTurn({
       </div>
       <div className="product-message product-assistant-message">
         <div className="product-assistant-content">
-          {rows.length === 0 && working && turn.providerHostedTool === null ? (
+          {rows.length === 0 && working ? (
             <div className="product-thinking">
               <i />
               <i />
@@ -340,17 +404,12 @@ export function ConversationTurn({
               if (row.kind === "activity") {
                 return <ToolActivityGroup items={row.items} key={row.key} />;
               }
+              if (row.kind === "hosted_search") {
+                return <HostedSearchGroup items={row.items} key={row.key} />;
+              }
               return <OtherItem item={row.item} key={row.key} />;
             })
           )}
-          {working && turn.providerHostedTool === "web_search" ? (
-            <div className="product-thinking product-provider-activity">
-              <i />
-              <i />
-              <i />
-              <span>{t("turn.searchingWeb")}</span>
-            </div>
-          ) : null}
           {turn.failure ? (
             <div className="product-turn-error">
               <strong>{t("turn.runFailed")}</strong>

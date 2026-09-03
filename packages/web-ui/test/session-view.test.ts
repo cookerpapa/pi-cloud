@@ -424,29 +424,50 @@ describe("session transcript reducer", () => {
     ]);
   });
 
-  it("shows Hosted Web Search only while its live Provider activity is active", () => {
+  it("keeps each Hosted Web Search as one stable activity from start through completion", () => {
     const started = sessionViewReducer(preparedState(), {
       type: "stream.event",
       event: envelope(1, {
         type: "provider.hosted_tool.started",
-        payload: { toolName: "web_search" },
+        payload: { toolName: "web_search", activityId: "ws-1" },
       }),
     });
     expect(started.turns[0]).toMatchObject({
       status: "running",
-      providerHostedTool: "web_search",
-      items: [],
+      items: [
+        {
+          kind: "hosted_search",
+          key: "hosted-search:ws-1",
+          activityId: "ws-1",
+          status: "running",
+          firstSequence: 1,
+        },
+      ],
     });
 
     const completed = sessionViewReducer(started, {
       type: "stream.event",
       event: envelope(2, {
         type: "provider.hosted_tool.completed",
-        payload: { toolName: "web_search", outcome: "completed" },
+        payload: {
+          toolName: "web_search",
+          activityId: "ws-1",
+          outcome: "completed",
+          action: { type: "search", queries: ["current market data"] },
+        },
       }),
     });
-    expect(completed.turns[0]?.providerHostedTool).toBeNull();
-    expect(completed.turns[0]?.items).toEqual([]);
+    expect(completed.turns[0]?.items).toEqual([
+      {
+        kind: "hosted_search",
+        key: "hosted-search:ws-1",
+        activityId: "ws-1",
+        status: "completed",
+        action: { type: "search", queries: ["current market data"] },
+        firstSequence: 1,
+        lastSequence: 2,
+      },
+    ]);
   });
 
   it("recovers an in-flight Hosted Web Search from the cursor-free live snapshot", () => {
@@ -477,12 +498,17 @@ describe("session transcript reducer", () => {
       liveEvents: [
         envelope(9, {
           type: "provider.hosted_tool.started",
-          payload: { toolName: "web_search" },
+          payload: { toolName: "web_search", activityId: "ws-live" },
         }),
       ],
     });
-    expect(state.turns[0]?.providerHostedTool).toBe("web_search");
-    expect(state.turns[0]?.items).toEqual([]);
+    expect(state.turns[0]?.items).toEqual([
+      expect.objectContaining({
+        kind: "hosted_search",
+        activityId: "ws-live",
+        status: "running",
+      }),
+    ]);
   });
 
   it("marks cancellation intent before terminal confirmation", () => {

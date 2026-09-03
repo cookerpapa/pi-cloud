@@ -34,6 +34,17 @@ function toolMarkdown(item: Extract<ConversationTranscriptItemResource, { kind: 
 
 function transcriptItemMarkdown(item: ConversationTranscriptItemResource): string {
   if (item.kind === "text") return item.text;
+  if (item.kind === "hosted_search") {
+    const detail =
+      item.action?.type === "search"
+        ? item.action.queries.join("; ")
+        : item.action?.type === "open_page"
+          ? item.action.url
+          : item.action?.type === "find_in_page"
+            ? [item.action.pattern, item.action.url].filter(Boolean).join(" · ")
+            : "";
+    return `> Web search: ${item.status}${detail.length === 0 ? "" : ` — ${detail}`}`;
+  }
   if (item.kind === "tool") return toolMarkdown(item);
   if (item.kind === "notification") return `> ${item.level.toUpperCase()}: ${item.message}`;
   if (item.kind === "compaction") {

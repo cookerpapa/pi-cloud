@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initialProgressiveText, nextProgressiveTextIndex } from "../src/ConversationTurn.tsx";
+import { streamingMarkdownBlocks } from "../src/Markdown.tsx";
 
 describe("progressive durable text presentation", () => {
   it("reveals a durable batch through many small animation frames", () => {
@@ -50,5 +51,20 @@ describe("progressive durable text presentation", () => {
     expect(initialProgressiveText(target, true)).toBe("");
     expect(initialProgressiveText(target, false)).toBe(target);
     expect(() => initialProgressiveText(target, true, -1)).toThrow(/Recovered/u);
+  });
+
+  it("freezes completed Markdown blocks while a citation-heavy tail keeps growing", () => {
+    expect(
+      streamingMarkdownBlocks(
+        "第一段已经稳定。\n\n第二段正在生成 [OpenAI](https://developers.openai.com",
+      ),
+    ).toEqual(["第一段已经稳定。\n\n", "第二段正在生成 [OpenAI](https://developers.openai.com"]);
+  });
+
+  it("does not split fenced code at blank lines", () => {
+    expect(streamingMarkdownBlocks("```ts\nconst a = 1;\n\nconst b = 2;\n```\n\n尾部")).toEqual([
+      "```ts\nconst a = 1;\n\nconst b = 2;\n```\n\n",
+      "尾部",
+    ]);
   });
 });

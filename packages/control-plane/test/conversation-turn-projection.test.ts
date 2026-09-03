@@ -177,11 +177,16 @@ describe("conversation turn projection", () => {
         { type: "turn.started", payload: { inputKind: "prompt" } },
         {
           type: "provider.hosted_tool.started",
-          payload: { toolName: "web_search" },
+          payload: { toolName: "web_search", activityId: "ws-1" },
         },
         {
           type: "provider.hosted_tool.completed",
-          payload: { toolName: "web_search", outcome: "completed" },
+          payload: {
+            toolName: "web_search",
+            activityId: "ws-1",
+            outcome: "completed",
+            action: { type: "search", queries: ["official source"] },
+          },
         },
         { type: "assistant.text.delta", payload: { text: "Grounded answer." } },
         { type: "turn.completed", payload: { stopReason: "stop" } },

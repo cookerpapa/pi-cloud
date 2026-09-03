@@ -30,6 +30,8 @@
   conversations starting on GPT-5.6 Sol, medium reasoning and Standard service.
 - role-free neutral Subagents with explicit task/context/Workspace/Tool settings
   and lazy Cube activation on the first local Tool call.
+- Codex-style per-call Hosted Web Search activity for GPT and DeepSeek, plus
+  stable-region Markdown rendering for citation-heavy streams.
 
 ## Current release gate
 

@@ -138,12 +138,14 @@ after an end-to-end probe through the pinned Provider Gateway. The current
 OpenAI Codex and DeepSeek Responses routes enable `web_search`. Changing models
 may still change the hosted Tool set at the next Turn boundary, but never inside
 an active Agent Loop. PiCloud emits no synthetic capability notice to the user
-or model. The Model Gateway publishes coarse Hosted Tool start/completion
-boundaries through the current Run's Kafka live tail for UI progress. Those
-progress events never become Tool Broker operations or a parallel Session
-sidecar. At the terminal Responses boundary, the trusted adapter binds completed
-native search actions and URL citations to the issuing sampling identity and
-stores them inside that Pi assistant message. Exact Provider/API/model replay
+or model. The Model Gateway publishes per-call Hosted Tool start/completion
+boundaries and portable `search/open_page/find_in_page` display actions through
+the current Run's Kafka live tail. The UI updates one stable activity row per
+Provider item and can show repeated-search counts. Those progress events never
+become Tool Broker operations or a parallel Session sidecar. At the terminal
+Responses boundary, the trusted adapter binds completed native search actions
+and URL citations to the issuing sampling identity and stores them inside that
+Pi assistant message. Exact Provider/API/model replay
 preserves the native item; model handoff retains only portable assistant text,
 reasoning and citation links. Provider-hidden page contents are not returned
 under `store:false` and are not claimed as durable.

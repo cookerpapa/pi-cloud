@@ -91,6 +91,9 @@ describe("Provider Hosted transcript", () => {
       "providerHostedToolCall",
       "text",
     ]);
+    expect(message.content[1]).toMatchObject({
+      action: { type: "search", queries: ["official source"] },
+    });
     expect(
       (message.content[2] as unknown as { providerAnnotations: unknown[] }).providerAnnotations,
     ).toHaveLength(1);

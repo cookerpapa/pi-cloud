@@ -1330,6 +1330,50 @@ body.product-panel-resizing {
   margin-left: 4px;
   font-size: 12px;
 }
+
+.product-hosted-search {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0;
+  color: #8f8f8f;
+  font-size: 12px;
+}
+.product-hosted-search-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.product-hosted-search-summary > span {
+  width: 14px;
+  color: #777;
+  text-align: center;
+}
+.product-hosted-search.running .product-hosted-search-summary > span {
+  animation: product-search-spin 1.2s linear infinite;
+}
+.product-hosted-search.failed .product-hosted-search-summary > span {
+  color: #d08a8a;
+}
+.product-hosted-search strong {
+  color: #aaa;
+  font-weight: 600;
+}
+.product-hosted-search ol {
+  display: grid;
+  gap: 3px;
+  margin: 0 0 0 21px;
+  padding-left: 15px;
+  color: #777;
+}
+.product-hosted-search li {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+@keyframes product-search-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 @keyframes product-dot {
   0%,
   70%,

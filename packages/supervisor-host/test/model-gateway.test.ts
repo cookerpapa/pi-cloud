@@ -292,8 +292,14 @@ describe("tenant model gateway", () => {
 
     expect(await response.text()).toBe(stream);
     expect(activities).toEqual([
-      { phase: "started", toolName: "web_search" },
-      { phase: "completed", toolName: "web_search", outcome: "completed" },
+      { phase: "started", toolName: "web_search", activityId: "ws-1" },
+      {
+        phase: "completed",
+        toolName: "web_search",
+        activityId: "ws-1",
+        outcome: "completed",
+        action: { type: "search", queries: ["official source"] },
+      },
     ]);
     expect(transcripts).toEqual([
       expect.objectContaining({

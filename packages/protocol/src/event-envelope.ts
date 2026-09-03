@@ -149,6 +149,35 @@ const ModelSamplingRetryScheduledEventSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const ProviderHostedWebSearchActionSchema = Type.Union([
+  Type.Object(
+    {
+      type: Type.Literal("search"),
+      queries: Type.Array(Type.String({ minLength: 1, maxLength: 4_096 }), {
+        minItems: 1,
+        maxItems: 16,
+      }),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      type: Type.Literal("open_page"),
+      url: Type.String({ minLength: 1, maxLength: 16_384 }),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      type: Type.Literal("find_in_page"),
+      url: Type.Optional(Type.String({ minLength: 1, maxLength: 16_384 })),
+      pattern: Type.Optional(Type.String({ minLength: 1, maxLength: 4_096 })),
+    },
+    { additionalProperties: false },
+  ),
+]);
+export type ProviderHostedWebSearchAction = Static<typeof ProviderHostedWebSearchActionSchema>;
+
 const ProviderHostedToolStartedEventSchema = Type.Object(
   {
     ...TurnEnvelopeProperties,
@@ -156,6 +185,7 @@ const ProviderHostedToolStartedEventSchema = Type.Object(
     payload: Type.Object(
       {
         toolName: Type.Literal("web_search"),
+        activityId: OpaqueIdSchema,
       },
       { additionalProperties: false },
     ),
@@ -170,7 +200,9 @@ const ProviderHostedToolCompletedEventSchema = Type.Object(
     payload: Type.Object(
       {
         toolName: Type.Literal("web_search"),
+        activityId: OpaqueIdSchema,
         outcome: Type.Union([Type.Literal("completed"), Type.Literal("failed")]),
+        action: Type.Optional(ProviderHostedWebSearchActionSchema),
       },
       { additionalProperties: false },
     ),
