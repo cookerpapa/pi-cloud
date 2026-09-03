@@ -401,12 +401,19 @@ export async function appendInterruptedAssistantPrefix(
     .map((item) => item.text)
     .join("");
   if (visibleText.length === 0) return false;
+  const binding = await transaction
+    .selectFrom("sessions")
+    .select(["pi_session_id as piSessionId", "pi_session_lane as piSessionLane"])
+    .where("tenant_id", "=", input.tenantId)
+    .where("id", "=", input.sessionId)
+    .executeTakeFirst();
+  if (binding === undefined) return false;
   const lane = await transaction
     .selectFrom("pi_session_lanes")
     .select("leaf_id")
     .where("tenant_id", "=", input.tenantId)
-    .where("session_id", "=", input.sessionId)
-    .where("lane", "=", "main")
+    .where("session_id", "=", binding.piSessionId)
+    .where("lane", "=", binding.piSessionLane)
     .forUpdate()
     .executeTakeFirst();
   if (lane === undefined) return false;
@@ -414,7 +421,7 @@ export async function appendInterruptedAssistantPrefix(
     .selectFrom("pi_sessions")
     .select("next_seq")
     .where("tenant_id", "=", input.tenantId)
-    .where("id", "=", input.sessionId)
+    .where("id", "=", binding.piSessionId)
     .forUpdate()
     .executeTakeFirstOrThrow();
   const existingRows = await transaction
@@ -446,7 +453,7 @@ export async function appendInterruptedAssistantPrefix(
     .insertInto("pi_session_entries")
     .values({
       tenant_id: input.tenantId,
-      session_id: input.sessionId,
+      session_id: binding.piSessionId,
       id: input.entryId,
       seq: sequence,
       parent_id: lane.leaf_id,
@@ -461,14 +468,14 @@ export async function appendInterruptedAssistantPrefix(
     .updateTable("pi_session_lanes")
     .set({ leaf_id: input.entryId })
     .where("tenant_id", "=", input.tenantId)
-    .where("session_id", "=", input.sessionId)
-    .where("lane", "=", "main")
+    .where("session_id", "=", binding.piSessionId)
+    .where("lane", "=", binding.piSessionLane)
     .executeTakeFirstOrThrow();
   await transaction
     .insertInto("pi_session_log")
     .values({
       tenant_id: input.tenantId,
-      session_id: input.sessionId,
+      session_id: binding.piSessionId,
       seq: sequence,
       kind: "entry",
       payload: { entryId: input.entryId },
@@ -478,7 +485,7 @@ export async function appendInterruptedAssistantPrefix(
     .updateTable("pi_sessions")
     .set({ next_seq: sql<string>`${sql.ref("next_seq")} + 1` })
     .where("tenant_id", "=", input.tenantId)
-    .where("id", "=", input.sessionId)
+    .where("id", "=", binding.piSessionId)
     .where("next_seq", "=", session.next_seq)
     .executeTakeFirstOrThrow();
   return true;

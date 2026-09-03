@@ -10,6 +10,8 @@ import type { ActiveFactChannelResolver, CandidatePiSessionMutationFact } from "
 export type PiSessionMutationScope = Readonly<{
   tenantId: string;
   sessionId: string;
+  piSessionId: string;
+  piSessionLane: string;
   turnId: string;
   runId: string;
   executionLease: string;

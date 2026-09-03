@@ -107,18 +107,21 @@ describe("AcceptedFactIngestGateway", () => {
     const channel = await client.open({
       executionLease: GRANT,
       sessionId: "session-1",
+      piSession: { id: "session-1", lane: "main" },
       turnId: "turn-1",
       nextEventSeq: 1,
     });
     const second = await client.open({
       executionLease: SECOND_GRANT,
       sessionId: "session-2",
+      piSession: { id: "session-2", lane: "main" },
       turnId: "turn-2",
       nextEventSeq: 1,
     });
     const failed = await client.open({
       executionLease: FAILED_GRANT,
       sessionId: "session-failed",
+      piSession: { id: "session-failed", lane: "main" },
       turnId: "turn-failed",
       nextEventSeq: 1,
     });

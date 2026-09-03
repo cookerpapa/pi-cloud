@@ -167,6 +167,7 @@ describe("supervisor/control-plane wire protocol", () => {
       type: "command.turn.execute",
       payload: {
         ...executionIdentity(),
+        piSession: { id: "session-1", lane: "main" },
         nextEventSeq: 11,
         agent: {
           revisionId: "84041f7b-5052-4abf-8bfd-16adf083c67e",
@@ -295,6 +296,7 @@ describe("supervisor/control-plane wire protocol", () => {
       payload: {
         executionLease: EXECUTION_LEASE,
         sessionId: "session-1",
+        piSession: { id: "session-1", lane: "main" },
         turnId: "turn-1",
         nextEventSeq: 11,
       },

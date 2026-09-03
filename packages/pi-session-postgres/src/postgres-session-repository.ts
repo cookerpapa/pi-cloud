@@ -38,6 +38,59 @@ type StoredEntryReferenceRow = {
   source_entry_id: string;
 };
 
+export async function createPostgresPiSessionLaneInTransaction(
+  transaction: Transaction<Database>,
+  input: {
+    tenantId: string;
+    sessionId: string;
+    lane: string;
+    at: string | null;
+  },
+): Promise<void> {
+  if (input.lane.length < 1 || input.lane.length > 128) {
+    throw new SessionError("invalid_lane", "Pi lane name is invalid");
+  }
+  if (input.at !== null) {
+    const target = await transaction
+      .selectFrom("pi_session_visible_entries")
+      .select("id")
+      .where("tenant_id", "=", input.tenantId)
+      .where("session_id", "=", input.sessionId)
+      .where("id", "=", input.at)
+      .executeTakeFirst();
+    if (target === undefined) {
+      throw new SessionError("invalid_fork_target", "Pi lane target was not found");
+    }
+  }
+  const sequence = await transaction
+    .updateTable("pi_sessions")
+    .set({ next_seq: sql<string>`${sql.ref("next_seq")} + 1` })
+    .where("tenant_id", "=", input.tenantId)
+    .where("id", "=", input.sessionId)
+    .returning(sql<string>`${sql.ref("next_seq")} - 1`.as("sequence"))
+    .executeTakeFirst();
+  if (sequence === undefined) throw new SessionError("not_found", "Pi Session was not found");
+  await transaction
+    .insertInto("pi_session_lanes")
+    .values({
+      tenant_id: input.tenantId,
+      session_id: input.sessionId,
+      lane: input.lane,
+      leaf_id: input.at,
+    })
+    .executeTakeFirstOrThrow();
+  await transaction
+    .insertInto("pi_session_log")
+    .values({
+      tenant_id: input.tenantId,
+      session_id: input.sessionId,
+      seq: sequence.sequence,
+      kind: "lane",
+      payload: { lane: input.lane, leafId: input.at },
+    })
+    .executeTakeFirstOrThrow();
+}
+
 function safeInteger(value: string | number, name: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {

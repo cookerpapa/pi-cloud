@@ -140,6 +140,7 @@ describe.sequential("CloudAgentRuntime", () => {
     const hostedPayload = (payload: unknown) => payload;
     let observedOptions: Record<string, unknown> | undefined;
     const runtime = new CloudAgentRuntime({
+      lane: "main",
       session: storage.asSession(),
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -176,6 +177,7 @@ describe.sequential("CloudAgentRuntime", () => {
     const run = async (prompt: string, answerText: string) => {
       const authority = new TestAuthority();
       const runtime = new CloudAgentRuntime({
+        lane: "main",
         session: storage.asSession(),
         authority,
         model: getModel("openai", "gpt-4o-mini"),
@@ -203,9 +205,53 @@ describe.sequential("CloudAgentRuntime", () => {
     expect(await storage.findOpenOperations("main", { limit: 2 })).toEqual([]);
   });
 
+  it("runs independent Agent Loops on forked lanes without copying or crossing context", async () => {
+    const storage = await createStorage();
+    const session = storage.asSession();
+    await session.appendMessage({ role: "user", content: "shared-root", timestamp: Date.now() });
+    const forkPoint = await session.getLeafId();
+    await session.createLane("child-a", forkPoint);
+    await session.createLane("child-b", forkPoint);
+    const contextsA: Context[] = [];
+    const contextsB: Context[] = [];
+
+    await new CloudAgentRuntime({
+      session,
+      lane: "child-a",
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      streamFn: scriptedStream(["answer-a"], contextsA),
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+    }).run("task-a");
+    await new CloudAgentRuntime({
+      session: storage.asSession(),
+      lane: "child-b",
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      streamFn: scriptedStream(["answer-b"], contextsB),
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+    }).run("task-b");
+
+    expect(JSON.stringify(contextsA[0]?.messages)).toContain("shared-root");
+    expect(JSON.stringify(contextsB[0]?.messages)).toContain("shared-root");
+    expect(JSON.stringify(contextsB[0]?.messages)).not.toContain("answer-a");
+    expect(JSON.stringify(await session.view("child-a").findEntriesOnBranch())).toContain(
+      "answer-a",
+    );
+    expect(JSON.stringify(await session.view("child-b").findEntriesOnBranch())).toContain(
+      "answer-b",
+    );
+    expect(JSON.stringify(await session.view("main").findEntriesOnBranch())).not.toContain(
+      "answer-a",
+    );
+  });
+
   it("persists decorated Provider content and exposes restored context to payload transforms", async () => {
     const storage = await createStorage();
     const first = new CloudAgentRuntime({
+      lane: "main",
       session: storage.asSession(),
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -224,6 +270,7 @@ describe.sequential("CloudAgentRuntime", () => {
 
     let sawRestoredHostedContent = false;
     const second = new CloudAgentRuntime({
+      lane: "main",
       session: storage.asSession(),
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -251,6 +298,7 @@ describe.sequential("CloudAgentRuntime", () => {
   it("commits a complete assistant message independently of public event delivery", async () => {
     const storage = await createStorage();
     const runtime = new CloudAgentRuntime({
+      lane: "main",
       session: storage.asSession(),
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -281,6 +329,7 @@ describe.sequential("CloudAgentRuntime", () => {
   it("keeps a failed visible assistant prefix in the next native Pi context", async () => {
     const storage = await createStorage();
     const failedRuntime = new CloudAgentRuntime({
+      lane: "main",
       session: storage.asSession(),
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -305,6 +354,7 @@ describe.sequential("CloudAgentRuntime", () => {
 
     const contexts: Context[] = [];
     const resumed = new CloudAgentRuntime({
+      lane: "main",
       session: storage.asSession(),
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -323,6 +373,7 @@ describe.sequential("CloudAgentRuntime", () => {
     let request = 0;
     let executed = false;
     const runtime = new CloudAgentRuntime({
+      lane: "main",
       session: storage.asSession(),
       authority,
       model: getModel("openai", "gpt-4o-mini"),
@@ -383,6 +434,7 @@ describe.sequential("CloudAgentRuntime", () => {
     const contexts: Context[] = [];
     let followUpAvailable = true;
     const runtime = new CloudAgentRuntime({
+      lane: "main",
       session: storage.asSession(),
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -415,6 +467,7 @@ describe.sequential("CloudAgentRuntime", () => {
     const events: string[] = [];
     let request = 0;
     const runtime = new CloudAgentRuntime({
+      lane: "main",
       session: storage.asSession(),
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -493,6 +546,7 @@ describe.sequential("CloudAgentRuntime", () => {
     });
     const contexts: Context[] = [];
     const runtime = new CloudAgentRuntime({
+      lane: "main",
       session,
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -540,6 +594,7 @@ describe.sequential("CloudAgentRuntime", () => {
     } as unknown as Models;
     const events: CloudAgentRuntimeEvent[] = [];
     const runtime = new CloudAgentRuntime({
+      lane: "main",
       session,
       authority: new TestAuthority(),
       model,
@@ -620,6 +675,7 @@ describe.sequential("CloudAgentRuntime", () => {
     const firstContexts: Context[] = [];
     const model = { ...getModel("openai", "gpt-4o-mini"), contextWindow: 256 };
     const first = new CloudAgentRuntime({
+      lane: "main",
       session,
       authority: new TestAuthority(),
       model,
@@ -645,6 +701,7 @@ describe.sequential("CloudAgentRuntime", () => {
 
     const replacementContexts: Context[] = [];
     const replacement = new CloudAgentRuntime({
+      lane: "main",
       session: storage.asSession(),
       authority: new TestAuthority(),
       model,

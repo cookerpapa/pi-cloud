@@ -41,6 +41,14 @@ const CommandIdentityProperties = {
   executionLease: ExecutionLeaseSchema,
 };
 
+const PiSessionLaneBindingSchema = Type.Object(
+  {
+    id: OpaqueIdSchema,
+    lane: Type.String({ minLength: 1, maxLength: 128 }),
+  },
+  { additionalProperties: false },
+);
+
 const RuntimeVersionSchema = Type.String({
   minLength: 5,
   maxLength: 128,
@@ -166,6 +174,7 @@ export const ExecuteTurnCommandMessageSchema = Type.Object(
     payload: Type.Object(
       {
         ...CommandIdentityProperties,
+        piSession: PiSessionLaneBindingSchema,
         nextEventSeq: PositiveSafeIntegerSchema,
         agent: AgentRevisionSnapshotSchema,
         input: PromptInputSchema,
@@ -395,6 +404,7 @@ export const FactChannelOpenMessageSchema = Type.Object(
       {
         executionLease: ExecutionLeaseSchema,
         sessionId: OpaqueIdSchema,
+        piSession: PiSessionLaneBindingSchema,
         turnId: OpaqueIdSchema,
         nextEventSeq: PositiveSafeIntegerSchema,
       },

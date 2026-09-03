@@ -40,17 +40,20 @@ describe("PostgreSQL Pi runtime world-state harness", () => {
     );
     const first = await PiSessionWorldStateController.create(
       session,
+      "main",
       continuity(FIRST_ACTIVATION, "cold_restore"),
     );
     await first.capture();
 
     const second = await PiSessionWorldStateController.create(
       session,
+      "main",
       continuity(SECOND_ACTIVATION, "cold_restore", SECOND_WORKSPACE_SHA256),
     );
     const changed = await second.capture();
     const replacementWorker = await PiSessionWorldStateController.create(
       session,
+      "main",
       continuity(SECOND_ACTIVATION, "cold_restore", SECOND_WORKSPACE_SHA256),
     );
     expect((await replacementWorker.capture()).modelMessages).toHaveLength(0);
@@ -75,6 +78,7 @@ describe("PostgreSQL Pi runtime world-state harness", () => {
     );
     const first = await PiSessionWorldStateController.create(
       session,
+      "main",
       continuity(FIRST_ACTIVATION, "warm_reuse"),
     );
     await first.capture();
@@ -82,6 +86,7 @@ describe("PostgreSQL Pi runtime world-state harness", () => {
 
     const nextRun = await PiSessionWorldStateController.create(
       session,
+      "main",
       continuity(FIRST_ACTIVATION, "warm_reuse"),
     );
     expect((await nextRun.capture()).modelMessages).toHaveLength(0);
@@ -90,5 +95,25 @@ describe("PostgreSQL Pi runtime world-state harness", () => {
         (entry) => entry.type === "custom" && entry.customType === PI_SANDBOX_RESET_CUSTOM_TYPE,
       ),
     ).toHaveLength(0);
+  });
+
+  it("records execution World State only on the selected Agent lane", async () => {
+    const session = new Session(
+      new InMemorySessionStorage({ id: "lane-world-state-session", createdAt: Date.now() }),
+    );
+    await session.createLane("child", null);
+    const child = await PiSessionWorldStateController.create(
+      session,
+      "child",
+      continuity(FIRST_ACTIVATION, "cold_restore"),
+    );
+    await child.capture();
+
+    expect(await session.view("main").findEntriesOnBranch()).toEqual([]);
+    expect(
+      (await session.view("child").findEntriesOnBranch()).filter(
+        (entry) => entry.type === "custom" && entry.customType === "pi-cloud.runtime_world_state",
+      ),
+    ).toHaveLength(1);
   });
 });

@@ -173,6 +173,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
     const writer = await ingestor.open({
       executionLease: event.payload.executionLease,
       sessionId: event.payload.event.sessionId,
+      piSession: { id: event.payload.event.sessionId, lane: "main" },
       turnId: event.payload.event.turnId!,
       nextEventSeq: 1,
     });
@@ -188,6 +189,8 @@ describe("WebSocketAcceptedFactIngestor", () => {
         scope: {
           tenantId: id(1, 10),
           sessionId: event.payload.event.sessionId,
+          piSessionId: event.payload.event.sessionId,
+          piSessionLane: "main",
           turnId: event.payload.event.turnId!,
           runId: id(1, 11),
           executionLease: event.payload.executionLease,
@@ -214,12 +217,14 @@ describe("WebSocketAcceptedFactIngestor", () => {
       ingestor.open({
         executionLease: firstEvent.payload.executionLease,
         sessionId: firstEvent.payload.event.sessionId,
+        piSession: { id: firstEvent.payload.event.sessionId, lane: "main" },
         turnId: firstEvent.payload.event.turnId!,
         nextEventSeq: 1,
       }),
       ingestor.open({
         executionLease: secondEvent.payload.executionLease,
         sessionId: secondEvent.payload.event.sessionId,
+        piSession: { id: secondEvent.payload.event.sessionId, lane: "main" },
         turnId: secondEvent.payload.event.turnId!,
         nextEventSeq: 1,
       }),
@@ -234,6 +239,8 @@ describe("WebSocketAcceptedFactIngestor", () => {
         scope: {
           tenantId: id(22, 10),
           sessionId: secondEvent.payload.event.sessionId,
+          piSessionId: secondEvent.payload.event.sessionId,
+          piSessionLane: "main",
           turnId: secondEvent.payload.event.turnId!,
           runId: id(22, 11),
           executionLease: secondEvent.payload.executionLease,
@@ -261,12 +268,14 @@ describe("WebSocketAcceptedFactIngestor", () => {
       ingestor.open({
         executionLease: firstOne.payload.executionLease,
         sessionId: firstOne.payload.event.sessionId,
+        piSession: { id: firstOne.payload.event.sessionId, lane: "main" },
         turnId: firstOne.payload.event.turnId!,
         nextEventSeq: 1,
       }),
       ingestor.open({
         executionLease: firstTwo.payload.executionLease,
         sessionId: firstTwo.payload.event.sessionId,
+        piSession: { id: firstTwo.payload.event.sessionId, lane: "main" },
         turnId: firstTwo.payload.event.turnId!,
         nextEventSeq: 1,
       }),

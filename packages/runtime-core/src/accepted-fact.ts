@@ -7,6 +7,8 @@ export type CandidatePiSessionMutationFact = Readonly<{
   scope: Readonly<{
     tenantId: string;
     sessionId: string;
+    piSessionId: string;
+    piSessionLane: string;
     turnId: string;
     runId: string;
     executionLease: string;
@@ -53,6 +55,7 @@ export type AcceptedPiSessionMutationFact = Readonly<{
   kind: "pi_session_mutation";
   factId: string;
   scope: AcceptedFactScope;
+  piSession: Readonly<{ id: string; lane: string }>;
   operation: PiSessionMutationOperation;
   occurredAt: string;
 }>;

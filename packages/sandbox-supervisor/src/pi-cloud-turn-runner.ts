@@ -58,6 +58,7 @@ type JsonRecord = Record<string, unknown>;
 
 export type PiCloudSessionHandle = Readonly<{
   session: Session;
+  lane: string;
   authority: CloudAgentExecutionAuthority;
 }>;
 
@@ -69,7 +70,6 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   modelRuntimePool?: PiModelRuntimePool;
   metrics?: PiCloudMetrics;
   createAgentTools: (context: {
-    session: Session;
     toolOutputDirectory: string;
     stepWorldState: PiSessionWorldStateController;
     captureSamplingStep: (
@@ -78,7 +78,7 @@ export type PiCloudTurnRunnerOptions = Readonly<{
     ) => Promise<PiSamplingStepCapture>;
   }) => TrustedRemoteAgentTools;
   sandboxContinuity: PiSandboxContinuity;
-  onSettled?: (session: Session) => Promise<void> | void;
+  onSettled?: () => Promise<void> | void;
   persistToolOutputArtifact?: (output: PiToolOutputCapture) => Promise<PiToolOutputArtifact>;
   observeEvent?: (event: CloudAgentRuntimeEvent) => void;
   subscribeHostedActivity?: ProviderHostedActivitySubscriber;
@@ -519,6 +519,7 @@ export class PiCloudTurnRunner {
         const worldStateStartedAt = performance.now();
         const worldState = await PiSessionWorldStateController.create(
           sessionHandle.session,
+          sessionHandle.lane,
           this.#options.sandboxContinuity,
         );
         // Persist execution-world changes before the accepted user prompt is
@@ -688,7 +689,6 @@ export class PiCloudTurnRunner {
           else scheduleTextFlush();
         };
         const tools = this.#options.createAgentTools({
-          session: sessionHandle.session,
           toolOutputDirectory,
           stepWorldState: worldState,
           captureSamplingStep: async (createFresh, captureOptions) => {
@@ -738,6 +738,7 @@ export class PiCloudTurnRunner {
         });
         const runtime = new CloudAgentRuntime({
           session: sessionHandle.session,
+          lane: sessionHandle.lane,
           authority: sessionHandle.authority,
           model,
           models: modelRuntime,
@@ -889,7 +890,7 @@ export class PiCloudTurnRunner {
           if (fatalError !== undefined) throw fatalError;
           if (result.kind === "completed") {
             await sessionHandle.authority.assertCurrent();
-            await this.#options.onSettled?.(sessionHandle.session);
+            await this.#options.onSettled?.();
             await sessionHandle.authority.assertCurrent();
           } else {
             if (toolStarted) await worldState.recordUnavailable().catch(() => undefined);

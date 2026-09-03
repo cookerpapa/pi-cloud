@@ -67,6 +67,7 @@ export type CloudAgentRuntimeEvent =
 
 export type CloudAgentRuntimeOptions = Readonly<{
   session: Session;
+  lane: string;
   authority: CloudAgentExecutionAuthority;
   model: Model<Api>;
   models?: Models;
@@ -290,7 +291,8 @@ export class CloudAgentRuntime {
 
     const authority = this.#options.authority;
     const session = this.#options.session;
-    const lane = "main";
+    const lane = this.#options.lane;
+    const tree = session.view(lane);
     const operationId = this.#id();
     const userMessage = normalizeMessage(createUserMessage(text, images));
     const userEntryId = this.#id();
@@ -304,7 +306,7 @@ export class CloudAgentRuntime {
         id: operationId,
         lane,
         type: "operation_started",
-        sourceLeafId: await session.getLeafId(),
+        sourceLeafId: await tree.getLeafId(),
         intent: {
           kind: "run",
           originalPrompt: [userMessage],
@@ -516,7 +518,7 @@ export class CloudAgentRuntime {
             assistantAttempt,
           );
         }
-        await session.appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
+        await tree.appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
           content: recoveryMarker(
             kind === "failed"
               ? (finalMessage.errorMessage ?? "Model request failed")
@@ -539,7 +541,7 @@ export class CloudAgentRuntime {
             }
           : {}),
       });
-      const leafId = await session.getLeafId();
+      const leafId = await tree.getLeafId();
       if (leafId === null) throw new Error("Cloud Agent Session did not produce a leaf");
       return {
         kind,
@@ -557,7 +559,7 @@ export class CloudAgentRuntime {
     } catch (error: unknown) {
       const failure = operationError(error);
       if (!authority.signal.aborted) {
-        await session
+        await tree
           .appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
             content: recoveryMarker(failure.message),
           })
@@ -596,7 +598,7 @@ export class CloudAgentRuntime {
   async #loadContext(): Promise<AgentMessage[]> {
     const path = (
       await this.#options.session
-        .view("main")
+        .view(this.#options.lane)
         .findEntriesOnBranch({ stopAtType: "compaction", order: "newestFirst" })
     ).reverse();
     const entryProjectors = {
@@ -611,7 +613,7 @@ export class CloudAgentRuntime {
     if (!this.#compaction.enabled) return false;
     const path = (
       await this.#options.session
-        .view("main")
+        .view(this.#options.lane)
         .findEntriesOnBranch({ stopAtType: "compaction", order: "newestFirst" })
     ).reverse();
     const context = buildSessionContext(path, {
@@ -631,14 +633,14 @@ export class CloudAgentRuntime {
     await this.#options.onEvent?.({ type: "compaction_start", reason: "threshold" });
     const entryId = this.#id();
     const attempts = await this.#options.session.findRecords({
-      lane: "main",
+      lane: this.#options.lane,
       type: "step_attempt",
       runId: operationId,
     });
     const attempt = attempts.filter((record) => record.step === "compaction").length + 1;
     await this.#options.session.appendRecord({
       id: this.#id(),
-      lane: "main",
+      lane: this.#options.lane,
       type: "step_attempt",
       runId: operationId,
       step: "compaction",
@@ -679,12 +681,12 @@ export class CloudAgentRuntime {
         ...(result.value.details === undefined ? {} : { details: result.value.details }),
         ...(result.value.usage === undefined ? {} : { usage: result.value.usage }),
       },
-      "main",
+      this.#options.lane,
     );
     if (result.value.usage !== undefined) {
       await this.#options.session.appendRecord({
         id: this.#id(),
-        lane: "main",
+        lane: this.#options.lane,
         type: "usage",
         cause: "compaction",
         runId: operationId,
@@ -762,7 +764,7 @@ export class CloudAgentRuntime {
         resultEntryIds.set(toolCallId, resultEntryId);
         await this.#options.session.appendRecord({
           id: this.#id(),
-          lane: "main",
+          lane: this.#options.lane,
           type: "tool_started",
           runId: operationId,
           assistantEntryId: durableAssistantEntryId,
@@ -787,7 +789,9 @@ export class CloudAgentRuntime {
 
   async #recoverInterruptedOperation(): Promise<void> {
     const session = this.#options.session;
-    const open = await session.findOpenOperations("main", { limit: 2 });
+    const lane = this.#options.lane;
+    const tree = session.view(lane);
+    const open = await session.findOpenOperations(lane, { limit: 2 });
     if (open.length > 1) throw new Error("Pi Session contains multiple unfinished operations");
     const operation = open[0];
     if (operation === undefined) return;
@@ -798,11 +802,11 @@ export class CloudAgentRuntime {
           if (entry.type !== "message") {
             throw new Error("Cloud Agent Run recovery found a non-message initial entry");
           }
-          await session.appendEntry(entry, "main");
+          await session.appendEntry(entry, lane);
         }
       }
       const tools = await session.findRecords({
-        lane: "main",
+        lane,
         type: "tool_started",
         runId: operation.id,
       });
@@ -817,15 +821,15 @@ export class CloudAgentRuntime {
           isError: true,
           timestamp: Date.now(),
         };
-        await session.appendEntry({ id: tool.resultEntryId, type: "message", message }, "main");
+        await session.appendEntry({ id: tool.resultEntryId, type: "message", message }, lane);
       }
     }
-    await session.appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
+    await tree.appendCustomEntry(INTERRUPTION_CUSTOM_TYPE, {
       content: recoveryMarker("Worker execution was interrupted before durable settlement"),
     });
     await session.appendRecord({
       id: this.#id(),
-      lane: "main",
+      lane,
       type: "operation_finished",
       runId: operation.id,
       outcome: "failed",
@@ -858,7 +862,7 @@ export class CloudAgentRuntime {
       const stopReason = assistant.stopReason === "pending" ? "error" : assistant.stopReason;
       await this.#options.session.appendRecord({
         id: this.#id(),
-        lane: "main",
+        lane: this.#options.lane,
         type: "usage",
         cause,
         runId: operationId,
@@ -871,7 +875,7 @@ export class CloudAgentRuntime {
     }
     await this.#options.session.appendRecord({
       id: this.#id(),
-      lane: "main",
+      lane: this.#options.lane,
       type: "usage",
       cause,
       runId: operationId,

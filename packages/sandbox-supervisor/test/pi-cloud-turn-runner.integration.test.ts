@@ -45,6 +45,7 @@ const command: ExecuteTurnCommandMessage = {
     projectId: "project-1",
     workspaceId: "workspace-1",
     sessionId: "session-1",
+    piSession: { id: "session-1", lane: "main" },
     runId: "44444444-4444-4444-8444-444444444444",
     turnId: "turn-1",
     agentId: "root",
@@ -138,7 +139,7 @@ describe("PiCloudTurnRunner integration", () => {
       },
       trustedWorkspaceDirectory: directory,
       scenario: "text",
-      openAgentSession: async () => ({ session, authority }),
+      openAgentSession: async () => ({ session, lane: "main", authority }),
     });
     try {
       await expect(
@@ -212,7 +213,7 @@ describe("PiCloudTurnRunner integration", () => {
       },
       trustedWorkspaceDirectory: directory,
       scenario: "text",
-      openAgentSession: async () => ({ session, authority }),
+      openAgentSession: async () => ({ session, lane: "main", authority }),
     });
     try {
       await expect(
@@ -360,7 +361,7 @@ describe("PiCloudTurnRunner integration", () => {
       openSession: async () => {
         sessionPreparationStarted.resolve(undefined);
         await modelPreparationStarted.promise;
-        return { session, authority };
+        return { session, lane: "main", authority };
       },
       sandboxContinuity: {
         continuityId: "88888888-8888-4888-8888-888888888888",

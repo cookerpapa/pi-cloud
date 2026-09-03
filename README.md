@@ -13,7 +13,8 @@ in CubeSandbox KVM microVMs.
 - cascading per-conversation Provider/model/reasoning selection, GPT Fast mode,
   and immutable request-setting snapshots for every Turn;
 - Provider-native hosted capabilities on verified model routes, without a second PiCloud search service;
-- durable recursive Subagents with bounded depth/concurrency;
+- durable recursive Subagents with bounded depth/concurrency and shared Pi
+  Session lanes instead of copied inherited transcripts;
 - named Workspaces, source browsing, Web Terminal and authenticated service preview;
 - self-managed GitLab public/private project connection and explicit Issue-to-Run automation;
 - one elastic Cube runtime per active Workspace, or user-owned full-VM Cube environments with root SSH/terminal access;
@@ -44,7 +45,7 @@ Control Plane replicas
             │                product state + ready Run queue
             │                RunAttempt + ExecutionLease/Fence
             │                immutable Turn model/Tool snapshots
-            │                canonical Pi SessionStorage
+            │                canonical Pi Entry DAGs + lane heads
             │
             └─ snapshot + live SSE ──────────────────────────────▶ Browser
 

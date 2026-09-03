@@ -608,6 +608,8 @@ export interface ModelProfileTable {
 
 export interface SessionTable {
   id: string;
+  pi_session_id: string;
+  pi_session_lane: string;
   title: Generated<string>;
   tenant_id: string;
   project_id: string;
@@ -659,6 +661,7 @@ export interface SubagentExecutionTable {
   child_workspace_id: GeneratedNullable<string>;
   agent_name: string;
   context_mode: SubagentContextMode;
+  pi_context_base_entry_id: GeneratedNullable<string>;
   workspace_mode: SubagentWorkspaceMode;
   state: SubagentExecutionState;
   result_entry_id: string | null;

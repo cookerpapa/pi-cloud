@@ -670,6 +670,8 @@ export class ControlPlaneStore {
         .insertInto("sessions")
         .values({
           id: sessionId,
+          pi_session_id: sessionId,
+          pi_session_lane: "main",
           title,
           tenant_id: this.#tenantId,
           project_id: workspace.project_id,
@@ -1621,8 +1623,17 @@ export class ControlPlaneStore {
     sessionId: string,
   ): Promise<ConversationDetailResource["inheritedMessages"]> {
     const execution = await this.#database
-      .selectFrom("subagent_executions")
-      .select(["context_mode as contextMode", "created_at as createdAt"])
+      .selectFrom("subagent_executions as execution")
+      .innerJoin("sessions as child", (join) =>
+        join
+          .onRef("child.tenant_id", "=", "execution.tenant_id")
+          .onRef("child.id", "=", "execution.child_session_id"),
+      )
+      .select([
+        "execution.context_mode as contextMode",
+        "execution.pi_context_base_entry_id as contextBaseEntryId",
+        "child.pi_session_id as piSessionId",
+      ])
       .where("tenant_id", "=", this.#tenantId)
       .where("child_session_id", "=", sessionId)
       .executeTakeFirst();
@@ -1633,23 +1644,34 @@ export class ControlPlaneStore {
       );
     }
     if (execution.contextMode !== "fork") return [];
-    const forkedBefore = new Date(execution.createdAt).valueOf();
-    if (!Number.isSafeInteger(forkedBefore) || forkedBefore < 0) {
-      throw new ControlPlaneStoreError(
-        "control_plane_misconfigured",
-        "Delegated Session fork timestamp is invalid",
-      );
-    }
-    const rows = await this.#database
-      .selectFrom("pi_session_visible_entries")
-      .select(["id", "timestamp_ms as timestampMs", "payload"])
-      .where("tenant_id", "=", this.#tenantId)
-      .where("session_id", "=", sessionId)
-      .where("type", "=", "message")
-      .where("timestamp_ms", "<", String(forkedBefore))
-      .orderBy("seq", "asc")
-      .limit(MAX_INHERITED_MESSAGES + 1)
-      .execute();
+    if (execution.contextBaseEntryId === null) return [];
+    const rows = (
+      await sql<{ id: string; timestampMs: string; payload: Record<string, unknown> }>`
+        with recursive branch as (
+          select id, parent_id, seq, type, timestamp_ms, payload
+            from pi_session_visible_entries
+           where tenant_id = ${this.#tenantId}::uuid
+             and session_id = ${execution.piSessionId}
+             and id = ${execution.contextBaseEntryId}
+          union all
+          select parent.id,
+                 parent.parent_id,
+                 parent.seq,
+                 parent.type,
+                 parent.timestamp_ms,
+                 parent.payload
+            from pi_session_visible_entries parent
+            join branch child on child.parent_id = parent.id
+           where parent.tenant_id = ${this.#tenantId}::uuid
+             and parent.session_id = ${execution.piSessionId}
+        )
+        select id, timestamp_ms as "timestampMs", payload
+         from branch
+         where type = 'message'
+         order by seq asc
+         limit ${MAX_INHERITED_MESSAGES + 1}
+      `.execute(this.#database)
+    ).rows;
     if (rows.length > MAX_INHERITED_MESSAGES) {
       throw new ControlPlaneStoreError("invalid_request", "Inherited conversation is too large");
     }

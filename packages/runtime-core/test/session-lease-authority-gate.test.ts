@@ -35,6 +35,7 @@ function openMessage(): FactChannelOpenMessage {
     payload: {
       executionLease: createExecutionLease(GRANT_ID, EXECUTION_ID, 1),
       sessionId: SESSION_ID,
+      piSession: { id: SESSION_ID, lane: "main" },
       turnId: TURN_ID,
       nextEventSeq: 1,
     },
@@ -55,6 +56,15 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
     resources.push(async () => pglite.close());
     resources.push(async () => socket.stop());
     resources.push(async () => database.destroy());
+    await sql`
+      create table sessions (
+        tenant_id uuid not null,
+        id uuid not null,
+        pi_session_id text not null,
+        pi_session_lane text not null,
+        primary key (tenant_id, id)
+      )
+    `.execute(database);
     await sql`
       create table session_leases (
         session_id uuid primary key,
@@ -86,6 +96,10 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
         '2026-08-26T00:01:00.000Z', '2026-08-26T00:00:00.000Z',
         '2026-08-26T00:00:00.000Z'
       )
+    `.execute(database);
+    await sql`
+      insert into sessions(tenant_id, id, pi_session_id, pi_session_lane)
+      values (${SESSION_ID}, ${SESSION_ID}, ${SESSION_ID}, 'main')
     `.execute(database);
 
     let now = new Date("2026-08-26T00:00:00.000Z");
@@ -129,6 +143,8 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
         scope: {
           tenantId: SESSION_ID,
           sessionId: SESSION_ID,
+          piSessionId: SESSION_ID,
+          piSessionLane: "main",
           turnId: TURN_ID,
           runId: SESSION_ID,
           executionLease: openMessage().payload.executionLease,
@@ -144,7 +160,28 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
     expect(acceptedMutation).toMatchObject({
       kind: "pi_session_mutation",
       factId: "10000000-0000-4000-8000-000000000011",
+      piSession: { id: SESSION_ID, lane: "main" },
     });
+    expect(() =>
+      authority.accept(scope, {
+        kind: "pi_session_mutation",
+        mutation: {
+          schemaVersion: 1,
+          mutationId: "10000000-0000-4000-8000-000000000012",
+          scope: {
+            tenantId: SESSION_ID,
+            sessionId: SESSION_ID,
+            piSessionId: SESSION_ID,
+            piSessionLane: "main",
+            turnId: TURN_ID,
+            runId: SESSION_ID,
+            executionLease: openMessage().payload.executionLease,
+          },
+          operation: { kind: "move_lane", lane: "sibling", to: null },
+          occurredAt: "2026-08-26T00:00:00.000Z",
+        },
+      }),
+    ).toThrow(ExecutionLeaseAuthorityGateError);
     expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pcel1_");
     const recorded = await new PostgresAcceptedFactProgressStore(database).recordMany([
       {

@@ -129,6 +129,8 @@ async function seed(database: Kysely<Database>, toolBrokerBaseUrl: string): Prom
     .insertInto("sessions")
     .values({
       id: IDS.session,
+      pi_session_id: IDS.session,
+      pi_session_lane: "main",
       tenant_id: IDS.tenant,
       project_id: IDS.project,
       workspace_id: IDS.workspace,

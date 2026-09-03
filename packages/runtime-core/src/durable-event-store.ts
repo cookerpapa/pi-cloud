@@ -30,6 +30,7 @@ export class DurableEventStoreError extends Error {
 export type FactChannelOpenRequest = Readonly<{
   executionLease: string;
   sessionId: string;
+  piSession: Readonly<{ id: string; lane: string }>;
   turnId: string;
   nextEventSeq: number;
 }>;

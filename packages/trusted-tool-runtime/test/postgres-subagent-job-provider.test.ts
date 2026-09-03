@@ -21,6 +21,7 @@ let database: Kysely<Database>;
 let tenantId: string;
 let parentSessionId: string;
 let parentRunId: string;
+let parentTurnId: string;
 let parentAttemptId: string;
 let parentSandboxId: string;
 
@@ -212,6 +213,7 @@ beforeAll(async () => {
     .where("tenant_id", "=", tenantId)
     .where("id", "=", parentRunId)
     .executeTakeFirstOrThrow();
+  parentTurnId = run.turn_id;
   await database.transaction().execute(async (transaction) => {
     await transaction
       .updateTable("runs")
@@ -284,13 +286,30 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       runTools: [],
       runId: persisted.runId,
     });
-    const piSession = await database
-      .selectFrom("pi_sessions")
-      .select("parent_session_id")
+    const binding = await database
+      .selectFrom("sessions")
+      .select(["pi_session_id as piSessionId", "pi_session_lane as piSessionLane"])
       .where("tenant_id", "=", tenantId)
       .where("id", "=", started.childSessionId)
       .executeTakeFirstOrThrow();
-    expect(piSession.parent_session_id).toBe(parentSessionId);
+    expect(binding.piSessionId).toBe(parentSessionId);
+    expect(binding.piSessionLane).toBe(`subagent-${started.executionId}`);
+    await expect(
+      database
+        .selectFrom("pi_sessions")
+        .select(({ fn }) => fn.countAll<string>().as("count"))
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", started.childSessionId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ count: "0" });
+    await expect(
+      database
+        .selectFrom("pi_session_entry_refs")
+        .select(({ fn }) => fn.countAll<string>().as("count"))
+        .where("tenant_id", "=", tenantId)
+        .where("session_id", "=", started.childSessionId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ count: "0" });
     const queuedRun = await database
       .selectFrom("runs")
       .select(["created_at as createdAt", "available_at as availableAt"])
@@ -298,11 +317,13 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       .executeTakeFirstOrThrow();
     expect(queuedRun.availableAt.valueOf()).toBeGreaterThan(queuedRun.createdAt.valueOf());
     const dispatched: string[] = [];
+    const dispatchedPiBindings: Array<{ id: string; lane: string }> = [];
     const dispatcher = new RunExecutor({
       database,
       backend: {
         async execute(request, lifecycle) {
           dispatched.push(request.runId);
+          dispatchedPiBindings.push({ id: request.piSessionId, lane: request.piSessionLane });
           await lifecycle.started();
           return { stopReason: "stop" };
         },
@@ -311,16 +332,33 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     await dispatcher.dispatchRun(persisted.runId);
     expect(dispatched).toEqual([started.childRunId]);
+    expect(dispatchedPiBindings).toEqual([
+      { id: parentSessionId, lane: `subagent-${started.executionId}` },
+    ]);
   });
 
   it("forks Pi context, narrows tools and reads the terminal result from PostgreSQL", async () => {
-    const parentRepository = new PostgresPiSessionRepository({ database, tenantId });
+    const parentRepository = new PostgresPiSessionRepository({
+      database,
+      tenantId,
+      turnId: parentTurnId,
+    });
     const parentPi = await parentRepository.openById(parentSessionId);
     await parentPi.appendMessage({
       role: "user",
       content: "Delegate repository inspection",
       timestamp: Date.now(),
     });
+    await expect(
+      database
+        .selectFrom("pi_session_entries")
+        .select("id")
+        .where("tenant_id", "=", tenantId)
+        .where("session_id", "=", parentSessionId)
+        .where("turn_id", "=", parentTurnId)
+        .where("type", "=", "message")
+        .execute(),
+    ).resolves.toHaveLength(1);
     const provider = new PostgresSubagentJobProvider({ database });
     const started = await provider.start({
       tenantId,
@@ -337,21 +375,49 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       workspaceMode: "shared",
       requestedToolCapabilities: ["read", "bash"],
     });
-    const repository = new PostgresPiSessionRepository({ database, tenantId });
-    const childPi = await repository.openById(started.childSessionId);
-    const inherited = await childPi.view("main").findEntriesOnBranch({ order: "oldestFirst" });
+    const binding = await database
+      .selectFrom("sessions")
+      .select(["pi_session_id as piSessionId", "pi_session_lane as piSessionLane"])
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", started.childSessionId)
+      .executeTakeFirstOrThrow();
+    const child = await database
+      .selectFrom("runs")
+      .select(["turn_id", "id", "tool_capability_snapshot", "agent_system_prompt"])
+      .where("id", "=", started.childRunId)
+      .executeTakeFirstOrThrow();
+    const repository = new PostgresPiSessionRepository({
+      database,
+      tenantId,
+      turnId: child.turn_id,
+    });
+    const childPi = await repository.openById(binding.piSessionId);
+    const inherited = await childPi
+      .view(binding.piSessionLane)
+      .findEntriesOnBranch({ order: "oldestFirst" });
     expect(inherited).toHaveLength(2);
     expect(inherited[0]?.type).toBe("message");
     if (inherited[0]?.type === "message") expect(inherited[0].message.role).toBe("user");
     expect(inherited[1]?.type).toBe("message");
     if (inherited[1]?.type === "message") expect(inherited[1].message.role).toBe("assistant");
     expect(JSON.stringify(inherited)).not.toContain("Delegate repository inspection");
+    await expect(
+      database
+        .selectFrom("subagent_executions")
+        .select("pi_context_base_entry_id as contextBaseEntryId")
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", started.executionId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ contextBaseEntryId: inherited.at(-1)?.id });
+    await expect(
+      database
+        .selectFrom("pi_session_entry_refs")
+        .select(({ fn }) => fn.countAll<string>().as("count"))
+        .where("tenant_id", "=", tenantId)
+        .where("session_id", "=", started.childSessionId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ count: "0" });
 
-    const child = await database
-      .selectFrom("runs")
-      .select(["turn_id", "id", "tool_capability_snapshot", "agent_system_prompt"])
-      .where("id", "=", started.childRunId)
-      .executeTakeFirstOrThrow();
     expect(child.tool_capability_snapshot).toEqual(["read", "bash"]);
     expect(child.agent_system_prompt).toContain("Execute only this delegated task.");
     expect(child.agent_system_prompt).toContain("PiCloud delegated execution boundary");
@@ -369,7 +435,9 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     await dispatcher.dispatchRun(child.id);
     expect(dispatched).toEqual([started.childRunId]);
-    await childPi.appendMessage(assistant("Subagent result from PostgreSQL"));
+    await childPi
+      .view(binding.piSessionLane)
+      .appendMessage(assistant("Subagent result from PostgreSQL"));
 
     await expect(provider.result(tenantId, started.executionId)).resolves.toMatchObject({
       state: "completed",
@@ -693,6 +761,28 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       workspaceMode: "none",
     });
     const childExecutionLease = await activateChildRun(child.childSessionId, child.childRunId, 11);
+    const childBinding = await database
+      .selectFrom("sessions")
+      .select(["pi_session_id as piSessionId", "pi_session_lane as piSessionLane"])
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", child.childSessionId)
+      .executeTakeFirstOrThrow();
+    const childTurn = await database
+      .selectFrom("runs")
+      .select("turn_id as turnId")
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", child.childRunId)
+      .executeTakeFirstOrThrow();
+    const childSession = await new PostgresPiSessionRepository({
+      database,
+      tenantId,
+      turnId: childTurn.turnId,
+    }).openById(childBinding.piSessionId);
+    await childSession.view(childBinding.piSessionLane).appendMessage({
+      role: "user",
+      content: "Delegate one bounded verification task",
+      timestamp: Date.now(),
+    });
     await expect(provider.treeContext(tenantId, child.childRunId)).resolves.toMatchObject({
       executionId: child.executionId,
       rootSessionId: parentSessionId,

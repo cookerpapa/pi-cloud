@@ -56,6 +56,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Subagent execution
 
+- [x] Bind every delegated product Session to a unique lane in its root Pi
+      Session while retaining independent Run, event and ExecutionLease identity.
+- [ ] Measure shared Pi Session sequence-row contention at the maximum supported
+      concurrent Child count before raising the default tree concurrency.
 - [x] Remove persona/role profiles from the cloud contract and keep one neutral
       upstream-compatible Child selector.
 - [x] Keep context inheritance, Workspace placement and local Tool grants

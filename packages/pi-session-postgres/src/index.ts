@@ -25,6 +25,7 @@ export {
   type PostgresDurableAgentSession,
 } from "./postgres-durable-agent-session.ts";
 export {
+  createPostgresPiSessionLaneInTransaction,
   forkPostgresPiSessionInTransaction,
   PostgresPiSessionRepository,
   type PostgresPiSessionCreateOptions,

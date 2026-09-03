@@ -49,6 +49,7 @@ function command(
       projectId: "project-1",
       workspaceId: "workspace-1",
       sessionId: overrides.sessionId ?? "session-1",
+      piSession: { id: overrides.sessionId ?? "session-1", lane: "main" },
       runId: overrides.runId ?? "40000000-0000-4000-8000-000000000001",
       turnId: "turn-1",
       agentId: "root",

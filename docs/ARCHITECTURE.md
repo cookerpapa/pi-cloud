@@ -202,12 +202,12 @@ Pi identifiers are stored as `text`; PiCloud product UUIDs are one valid
 subset. Tenant isolation and exact `ExecutionLease` validation are additional cloud
 contracts layered around the official port.
 
-Forked Pi entries use copy-on-write references. PostgreSQL stores the selected
-branch's IDs, parent links and local sequence in the Child, while immutable
-JSON payloads remain in their canonical source rows. A per-Worker 64 MiB LRU
-caches those payloads. A colocated Child therefore reuses context already read
-by its parent; a remote Worker misses safely and fetches the same canonical
-rows. Cache contents are never authoritative and are not required for recovery.
+Human conversation forks use copy-on-write references. PostgreSQL stores the
+selected branch's IDs, parent links and local sequence in the new conversation,
+while immutable JSON payloads remain in their canonical source rows. Delegated
+Agents instead share the root conversation's Pi Entry DAG through unique lane
+heads and do not create per-Entry reference rows. A per-Worker 64 MiB LRU still
+caches payloads for human forks; cache contents are never authoritative.
 
 The production coding adapter is a deliberately thin `CloudAgentRuntime`. It
 loads only the newest native compaction plus its active suffix, constructs one
@@ -268,8 +268,10 @@ value whose prompt only establishes the Child execution boundary; behavior
 comes from the delegated task plus explicit context, Workspace, Tool, model and
 thinking settings. A narrow
 `PI_SUBAGENT_PI_BINARY` adapter replaces only local child execution. Every child
-becomes a typed `session_kind=subagent` Pi Session, Run and RunAttempt in
-PostgreSQL and is claimed by the ordinary shared Worker pool. The product
+becomes a typed `session_kind=subagent` product Session, Run and RunAttempt in
+PostgreSQL and is claimed by the ordinary shared Worker pool. Its product
+Session binds to a unique lane in the root conversation's physical Pi Session.
+The product
 projects it beneath the causal parent Turn with explicit context and Workspace
 mode labels; its native transcript is inspectable but read-only. Focused tree
 navigation roots itself at the selected Child and shows inherited Pi context,
@@ -315,11 +317,12 @@ Context, allowed Tools and Workspace modes are explicit and independent:
   terminal settlement. Child Sandbox retention is always ephemeral even when
   the parent conversation is persistent.
 
-For `context=fork`, PiCloud forks the native Pi branch immediately before the
+For `context=fork`, PiCloud creates the Child lane at the exact Entry before the
 current parent prompt that requested delegation, then appends the deployment-
-owned Child task. Earlier conversation and compaction state are preserved, but
-the orchestration request itself is not copied as another executable Child
-instruction.
+owned Child task on that lane. `context=fresh` starts the lane at `null`.
+Earlier conversation and compaction state are shared through the immutable
+Entry DAG, while the orchestration request is not copied as another executable
+Child instruction.
 
 RunAttempt fences and the Tool Broker operation ledger remain the side-effect
 authority across parent and child bindings; envd carries no Session identity
@@ -649,9 +652,10 @@ immutable snapshot of that tail; later frames contain new events. Terminal Facts
 are sent to existing subscribers and then unload the covered shared tail. Slow
 connections have bounded queues and reconnect for another snapshot.
 
-Accepted Pi Session mutations contain immutable Run execution identity for
-result correlation but no ExecutionLease. A shared Kafka consumer group applies
-complete entries, records and compaction facts idempotently to PostgreSQL. Before opening a Session,
+Accepted Pi Session mutations contain immutable logical Run identity for result
+correlation plus the Authority-Gate-resolved physical Pi Session/lane target,
+but no ExecutionLease. A shared Kafka consumer group applies complete entries,
+records and compaction facts idempotently to PostgreSQL. Before opening a Session,
 every Run appends a keyed recovery barrier and waits for its projection; all
 older accepted Session mutations have then been applied before the Worker
 reads PostgreSQL. Each semantic Pi write also waits for its own mutation result

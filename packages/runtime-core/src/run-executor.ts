@@ -38,6 +38,8 @@ export type TurnExecutionRequest = {
   projectId: string;
   workspaceId: string;
   sessionId: string;
+  piSessionId: string;
+  piSessionLane: string;
   runId: string;
   turnId: string;
   attemptId: string;
@@ -689,6 +691,8 @@ export class RunExecutor {
           "turn.credential_binding_id as credentialBindingId",
           "turn.credential_binding_version as credentialBindingVersion",
           "session_row.id as sessionId",
+          "session_row.pi_session_id as piSessionId",
+          "session_row.pi_session_lane as piSessionLane",
           "session_row.state as sessionState",
           "session_row.session_kind as sessionKind",
           "session_row.execution_mode as executionMode",
@@ -894,6 +898,8 @@ export class RunExecutor {
           projectId: row.projectId,
           workspaceId: row.workspaceId,
           sessionId: row.sessionId,
+          piSessionId: row.piSessionId,
+          piSessionLane: row.piSessionLane,
           runId: row.runId,
           turnId: row.turnId,
           attemptId,

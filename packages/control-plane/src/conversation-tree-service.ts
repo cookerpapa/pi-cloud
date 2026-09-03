@@ -48,6 +48,13 @@ type CompletedTurnRow = {
   mailboxPosition: string;
 };
 
+type PiSessionBinding = {
+  productSessionId: string;
+  piSessionId: string;
+  piSessionLane: string;
+  contextBaseEntryId: string | null;
+};
+
 type MappedEntry = ConversationTreeEntryResource & { readonly index: number };
 
 function safeInteger(value: string | number, description: string): number {
@@ -188,31 +195,70 @@ function mappedConversationEntries(
 async function sessionEntries(
   database: Kysely<Database> | Transaction<Database>,
   tenantId: string,
-  sessionIds: readonly string[],
+  bindings: readonly PiSessionBinding[],
 ): Promise<Map<string, PiEntryRow[]>> {
-  if (sessionIds.length === 0) return new Map();
-  const rows = await database
-    .selectFrom("pi_session_visible_entries")
-    .select([
-      "session_id",
-      "id",
-      "seq",
-      "parent_id",
-      "type",
-      "custom_type",
-      "timestamp_ms",
-      "payload",
-      "source_session_id",
-      "source_entry_id",
-    ])
-    .where("tenant_id", "=", tenantId)
-    .where("session_id", "in", sessionIds)
-    .orderBy("session_id")
-    .orderBy("seq")
-    .execute();
-  const grouped = new Map<string, PiEntryRow[]>();
+  if (bindings.length === 0) return new Map();
+  const requested = bindings.map((binding) => ({
+    piSessionId: binding.piSessionId,
+    piSessionLane: binding.piSessionLane,
+  }));
+  const rows = (
+    await sql<{
+      session_id: string;
+      id: string;
+      seq: string;
+      parent_id: string | null;
+      type: string;
+      custom_type: string | null;
+      timestamp_ms: string;
+      payload: Record<string, unknown>;
+      source_session_id: string;
+      source_entry_id: string;
+    }>`
+      with recursive requested as (
+        select distinct "piSessionId" as session_id, "piSessionLane" as lane
+          from jsonb_to_recordset(${JSON.stringify(requested)}::jsonb) as binding(
+            "piSessionId" text,
+            "piSessionLane" text
+          )
+      ), reachable as (
+        select lane.session_id, lane.leaf_id as id
+          from pi_session_lanes lane
+          join requested
+            on requested.session_id = lane.session_id
+           and requested.lane = lane.lane
+         where lane.tenant_id = ${tenantId}::uuid
+           and lane.leaf_id is not null
+        union
+        select parent.session_id, parent.parent_id
+          from pi_session_visible_entries parent
+          join reachable child
+            on child.session_id = parent.session_id
+           and child.id = parent.id
+         where parent.tenant_id = ${tenantId}::uuid
+           and parent.parent_id is not null
+      )
+      select entry.session_id,
+             entry.id,
+             entry.seq,
+             entry.parent_id,
+             entry.type,
+             entry.custom_type,
+             entry.timestamp_ms,
+             entry.payload,
+             entry.source_session_id,
+             entry.source_entry_id
+        from pi_session_visible_entries entry
+        join reachable
+          on reachable.session_id = entry.session_id
+         and reachable.id = entry.id
+       where entry.tenant_id = ${tenantId}::uuid
+       order by entry.session_id, entry.seq
+    `.execute(database)
+  ).rows;
+  const groupedByPiSession = new Map<string, PiEntryRow[]>();
   for (const row of rows) {
-    const entries = grouped.get(row.session_id) ?? [];
+    const entries = groupedByPiSession.get(row.session_id) ?? [];
     entries.push({
       id: row.id,
       seq: row.seq,
@@ -224,9 +270,38 @@ async function sessionEntries(
       sourceSessionId: row.source_session_id,
       sourceEntryId: row.source_entry_id,
     });
-    grouped.set(row.session_id, entries);
+    groupedByPiSession.set(row.session_id, entries);
   }
-  return grouped;
+  return new Map(
+    bindings.map((binding) => [
+      binding.productSessionId,
+      groupedByPiSession.get(binding.piSessionId) ?? [],
+    ]),
+  );
+}
+
+async function sessionBindings(
+  database: Kysely<Database> | Transaction<Database>,
+  tenantId: string,
+  sessionIds: readonly string[],
+): Promise<PiSessionBinding[]> {
+  if (sessionIds.length === 0) return [];
+  return database
+    .selectFrom("sessions as session")
+    .leftJoin("subagent_executions as execution", (join) =>
+      join
+        .onRef("execution.tenant_id", "=", "session.tenant_id")
+        .onRef("execution.child_session_id", "=", "session.id"),
+    )
+    .select([
+      "session.id as productSessionId",
+      "session.pi_session_id as piSessionId",
+      "session.pi_session_lane as piSessionLane",
+      "execution.pi_context_base_entry_id as contextBaseEntryId",
+    ])
+    .where("session.tenant_id", "=", tenantId)
+    .where("session.id", "in", sessionIds)
+    .execute();
 }
 
 async function completedTurns(
@@ -266,20 +341,28 @@ async function completedTurns(
   return grouped;
 }
 
-async function mainLeaves(
+async function laneLeaves(
   database: Kysely<Database> | Transaction<Database>,
   tenantId: string,
-  sessionIds: readonly string[],
+  bindings: readonly PiSessionBinding[],
 ): Promise<Map<string, string | null>> {
-  if (sessionIds.length === 0) return new Map();
+  if (bindings.length === 0) return new Map();
+  const piSessionIds = [...new Set(bindings.map((binding) => binding.piSessionId))];
   const rows = await database
     .selectFrom("pi_session_lanes")
-    .select(["session_id", "leaf_id"])
+    .select(["session_id", "lane", "leaf_id"])
     .where("tenant_id", "=", tenantId)
-    .where("session_id", "in", sessionIds)
-    .where("lane", "=", "main")
+    .where("session_id", "in", piSessionIds)
     .execute();
-  return new Map(rows.map((row) => [row.session_id, row.leaf_id] as const));
+  const byLane = new Map(
+    rows.map((row) => [`${row.session_id}\0${row.lane}`, row.leaf_id] as const),
+  );
+  return new Map(
+    bindings.map((binding) => [
+      binding.productSessionId,
+      byLane.get(`${binding.piSessionId}\0${binding.piSessionLane}`) ?? null,
+    ]),
+  );
 }
 
 export class ConversationTreeService {
@@ -362,10 +445,14 @@ export class ConversationTreeService {
       ...(selectedDelegated === undefined ? [] : [selectedDelegated.sessionId]),
     ];
     const uniqueSessionIds = [...new Set(sessionIds)];
+    const bindings = await sessionBindings(this.#database, tenantId, uniqueSessionIds);
+    const bindingBySession = new Map(
+      bindings.map((binding) => [binding.productSessionId, binding] as const),
+    );
     const [entriesBySession, turnsBySession, leaves] = await Promise.all([
-      sessionEntries(this.#database, tenantId, uniqueSessionIds),
+      sessionEntries(this.#database, tenantId, bindings),
       completedTurns(this.#database, tenantId, uniqueSessionIds),
-      mainLeaves(this.#database, tenantId, uniqueSessionIds),
+      laneLeaves(this.#database, tenantId, bindings),
     ]);
     let entryCount = 0;
     const humanBranches: ConversationTreeBranchResource[] = humanSessions.map((session, index) => {
@@ -409,11 +496,20 @@ export class ConversationTreeService {
 
     const delegatedBranches: ConversationTreeBranchResource[] = [];
     for (const summary of delegated) {
-      const createdAt = new Date(summary.createdAt).valueOf();
-      const ownEntries = activeBranch(
-        entriesBySession.get(summary.sessionId) ?? [],
-        leaves.get(summary.sessionId) ?? null,
-      ).filter((entry) => safeInteger(entry.timestampMs, "Subagent entry timestamp") >= createdAt);
+      const binding = bindingBySession.get(summary.sessionId);
+      if (binding === undefined) {
+        throw new ControlPlaneStoreError(
+          "control_plane_misconfigured",
+          "Delegated Session has no Pi lane binding",
+        );
+      }
+      const ownEntries = ownBranch(
+        activeBranch(
+          entriesBySession.get(summary.sessionId) ?? [],
+          leaves.get(summary.sessionId) ?? null,
+        ),
+        binding.contextBaseEntryId,
+      );
       const mapped = mappedConversationEntries(
         ownEntries,
         turnsBySession.get(summary.sessionId) ?? [],
@@ -448,10 +544,24 @@ export class ConversationTreeService {
         entriesBySession.get(selectedDelegated.sessionId) ?? [],
         leaves.get(selectedDelegated.sessionId) ?? null,
       );
-      const createdAt = new Date(selectedDelegated.createdAt).valueOf();
-      const inheritedBranch = active.filter(
-        (entry) => safeInteger(entry.timestampMs, "Subagent entry timestamp") < createdAt,
-      );
+      const binding = bindingBySession.get(selectedDelegated.sessionId);
+      if (binding === undefined) {
+        throw new ControlPlaneStoreError(
+          "control_plane_misconfigured",
+          "Delegated Session has no Pi lane binding",
+        );
+      }
+      const contextBaseIndex =
+        binding.contextBaseEntryId === null
+          ? -1
+          : active.findIndex((entry) => entry.id === binding.contextBaseEntryId);
+      if (binding.contextBaseEntryId !== null && contextBaseIndex < 0) {
+        throw new ControlPlaneStoreError(
+          "control_plane_misconfigured",
+          "Delegated Session context boundary is missing from its Pi lane",
+        );
+      }
+      const inheritedBranch = active.slice(0, contextBaseIndex + 1);
       const inheritedTurns = [
         ...lineage.map((session) => session.id),
         ...selectedDelegatedAncestorSessionIds.filter(
@@ -479,9 +589,7 @@ export class ConversationTreeService {
         });
       }
       const own = mappedConversationEntries(
-        active.filter(
-          (entry) => safeInteger(entry.timestampMs, "Subagent entry timestamp") >= createdAt,
-        ),
+        active.slice(contextBaseIndex + 1),
         turnsBySession.get(selectedDelegated.sessionId) ?? [],
       );
       const mapped = [...inherited, ...own];
@@ -678,10 +786,11 @@ export class ConversationTreeService {
           );
         }
 
+        const bindings = await sessionBindings(transaction, tenantId, [sessionId]);
         const [entriesBySession, turnsBySession, leaves] = await Promise.all([
-          sessionEntries(transaction, tenantId, [sessionId]),
+          sessionEntries(transaction, tenantId, bindings),
           completedTurns(transaction, tenantId, [sessionId]),
-          mainLeaves(transaction, tenantId, [sessionId]),
+          laneLeaves(transaction, tenantId, bindings),
         ]);
         const branch = ownBranch(
           activeBranch(entriesBySession.get(sessionId) ?? [], leaves.get(sessionId) ?? null),
@@ -1056,8 +1165,9 @@ export class ConversationTreeService {
         if (leaf?.leaf_id === null || leaf === undefined) {
           throw new ControlPlaneStoreError("conflict", "Conversation has no forkable Pi history");
         }
+        const bindings = await sessionBindings(transaction, tenantId, [sourceSessionId]);
         const [entriesBySession, turnsBySession] = await Promise.all([
-          sessionEntries(transaction, tenantId, [sourceSessionId]),
+          sessionEntries(transaction, tenantId, bindings),
           completedTurns(transaction, tenantId, [sourceSessionId]),
         ]);
         const sourceBranch = activeBranch(
@@ -1104,6 +1214,8 @@ export class ConversationTreeService {
           .insertInto("sessions")
           .values({
             id: childSessionId,
+            pi_session_id: childSessionId,
+            pi_session_lane: "main",
             title,
             tenant_id: tenantId,
             project_id: source.project_id,

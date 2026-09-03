@@ -85,6 +85,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .values(
         [rootSessionId, unrelatedSessionId].map((id) => ({
           id,
+          pi_session_id: id,
+          pi_session_lane: "main",
           tenant_id: tenantId,
           project_id: projectId,
           workspace_id: workspaceId,
@@ -121,6 +123,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .insertInto("sessions")
       .values({
         id: childSessionId,
+        pi_session_id: childSessionId,
+        pi_session_lane: "main",
         tenant_id: tenantId,
         project_id: projectId,
         workspace_id: workspaceId,
@@ -252,6 +256,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .insertInto("sessions")
       .values({
         id: delegatedSessionId,
+        pi_session_id: delegatedSessionId,
+        pi_session_lane: "main",
         tenant_id: tenantId,
         project_id: projectId,
         workspace_id: workspaceId,

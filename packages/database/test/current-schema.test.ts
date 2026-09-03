@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(121);
+      expect(firstMigrationPass.rows).toHaveLength(122);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("121_remove_unused_routing_state");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("122_subagent_pi_session_lanes");
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
@@ -87,7 +87,10 @@ describe("current PiCloud schema", () => {
         select table_name, column_name
           from information_schema.columns
          where table_schema = 'public'
-           and table_name in ('workspaces', 'sessions', 'turns', 'runs', 'tenant_runtime_policies')
+         and table_name in (
+           'workspaces', 'sessions', 'subagent_executions', 'turns', 'runs',
+           'tenant_runtime_policies'
+         )
       `.execute(database);
       const keys = new Set(columns.rows.map((row) => `${row.table_name}.${row.column_name}`));
       expect(keys.has("workspaces.seed_kind")).toBe(true);
@@ -99,6 +102,9 @@ describe("current PiCloud schema", () => {
       expect(keys.has("sessions.agent_revision_id")).toBe(true);
       expect(keys.has("sessions.desired_thinking_level")).toBe(true);
       expect(keys.has("sessions.desired_service_tier")).toBe(true);
+      expect(keys.has("sessions.pi_session_id")).toBe(true);
+      expect(keys.has("sessions.pi_session_lane")).toBe(true);
+      expect(keys.has("subagent_executions.pi_context_base_entry_id")).toBe(true);
       expect(keys.has("turns.service_tier")).toBe(true);
       expect(keys.has("runs.agent_revision_id")).toBe(true);
       expect(keys.has("runs.command_id")).toBe(false);
@@ -127,7 +133,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("121_remove_unused_routing_state");
+      expect(applied.rows.at(-1)?.name).toBe("122_subagent_pi_session_lanes");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

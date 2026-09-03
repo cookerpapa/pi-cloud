@@ -454,6 +454,8 @@ export class PiWorkerRuntime {
             scope: {
               tenantId: command.payload.tenantId,
               sessionId: command.payload.sessionId,
+              piSessionId: command.payload.piSession.id,
+              piSessionLane: command.payload.piSession.lane,
               turnId: command.payload.turnId,
               runId: command.payload.runId,
             },
@@ -462,6 +464,8 @@ export class PiWorkerRuntime {
             mutationPublisher: sessionMutationProducer.scoped({
               tenantId: command.payload.tenantId,
               sessionId: command.payload.sessionId,
+              piSessionId: command.payload.piSession.id,
+              piSessionLane: command.payload.piSession.lane,
               turnId: command.payload.turnId,
               runId: command.payload.runId,
               executionLease: command.payload.executionLease,

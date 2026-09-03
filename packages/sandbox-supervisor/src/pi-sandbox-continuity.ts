@@ -191,6 +191,7 @@ export const PI_WORLD_STATE_ENTRY_PROJECTORS: Readonly<
 /** PostgreSQL SessionStorage variant used by the cloud-native Pi runtime. */
 export class PiSessionWorldStateController {
   readonly #session: Session;
+  readonly #lane: string;
   readonly #continuity: PiSandboxContinuity;
   readonly #messagesAppendedDuringRun: PiWorldStateModelMessage[] = [];
   #status: PiRuntimeWorldState["sandbox"]["status"];
@@ -198,10 +199,12 @@ export class PiSessionWorldStateController {
 
   private constructor(
     session: Session,
+    lane: string,
     continuity: PiSandboxContinuity,
     previous: PiRuntimeWorldState | undefined,
   ) {
     this.#session = session;
+    this.#lane = lane;
     this.#continuity = continuity;
     this.#status = continuity.continuity === "warm_reuse" ? "active" : "inactive";
     this.#previous = previous;
@@ -209,9 +212,10 @@ export class PiSessionWorldStateController {
 
   static async create(
     session: Session,
+    lane: string,
     continuity: PiSandboxContinuity,
   ): Promise<PiSessionWorldStateController> {
-    const [latest] = await session.view("main").findEntriesOnBranch({
+    const [latest] = await session.view(lane).findEntriesOnBranch({
       type: "custom",
       customType: PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
       order: "newestFirst",
@@ -219,6 +223,7 @@ export class PiSessionWorldStateController {
     });
     return new PiSessionWorldStateController(
       session,
+      lane,
       continuity,
       latest === undefined ? undefined : runtimeWorldState(latest),
     );
@@ -298,13 +303,15 @@ export class PiSessionWorldStateController {
     }
     for (const customType of material) {
       const message = modelMessage(customType, previous!, current);
-      await this.#session.appendCustomEntry(customType, {
+      await this.#session.view(this.#lane).appendCustomEntry(customType, {
         content: message.content,
         details: message.details,
       });
       this.#messagesAppendedDuringRun.push(message);
     }
-    await this.#session.appendCustomEntry(PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE, current);
+    await this.#session
+      .view(this.#lane)
+      .appendCustomEntry(PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE, current);
     this.#previous = current;
     return current;
   }

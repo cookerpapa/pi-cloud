@@ -9,6 +9,7 @@ const DEFAULT_FACT_CHANNEL_LEASE_MS = 9_000;
 export type ExecutionLeaseAuthorityRequest = Readonly<{
   executionLease: string;
   sessionId: string;
+  piSession: Readonly<{ id: string; lane: string }>;
   turnId: string;
 }>;
 
@@ -21,6 +22,8 @@ export type ExecutionLeaseAuthorityScope = Readonly<{
   fencingToken: number;
   tenantId: string;
   sessionId: string;
+  piSessionId: string;
+  piSessionLane: string;
   runId: string;
   turnId: string;
   leaseDurationMs: number;
@@ -98,6 +101,15 @@ export class PostgresExecutionLeaseAuthorityGate {
         .where("lease_id", "=", grantIdentity.leaseId)
         .forUpdate()
         .executeTakeFirst();
+      const session =
+        row === undefined
+          ? undefined
+          : await transaction
+              .selectFrom("sessions")
+              .select(["pi_session_id", "pi_session_lane"])
+              .where("tenant_id", "=", row.tenant_id)
+              .where("id", "=", request.sessionId)
+              .executeTakeFirst();
       const grantExpiry = row === undefined ? now : new Date(row.valid_until);
       if (
         row === undefined ||
@@ -105,6 +117,8 @@ export class PostgresExecutionLeaseAuthorityGate {
         Number(row.fencing_token) !== grantIdentity.fencingToken ||
         row.session_id !== request.sessionId ||
         row.turn_id !== request.turnId ||
+        session?.pi_session_id !== request.piSession.id ||
+        session.pi_session_lane !== request.piSession.lane ||
         grantExpiry.valueOf() <= now.valueOf()
       ) {
         throw new ExecutionLeaseAuthorityGateError(
@@ -152,6 +166,8 @@ export class PostgresExecutionLeaseAuthorityGate {
         fencingToken: grantIdentity.fencingToken,
         tenantId: row.tenant_id,
         sessionId: row.session_id,
+        piSessionId: session.pi_session_id,
+        piSessionLane: session.pi_session_lane,
         runId: row.run_id,
         turnId: row.turn_id,
         leaseDurationMs: validUntil.valueOf() - now.valueOf(),
@@ -193,12 +209,34 @@ export class PostgresExecutionLeaseAuthorityGate {
       mutation.scope.executionLease !== scope.executionLease ||
       mutation.scope.tenantId !== scope.tenantId ||
       mutation.scope.sessionId !== scope.sessionId ||
+      mutation.scope.piSessionId !== scope.piSessionId ||
+      mutation.scope.piSessionLane !== scope.piSessionLane ||
       mutation.scope.runId !== scope.runId ||
       mutation.scope.turnId !== scope.turnId
     ) {
       throw new ExecutionLeaseAuthorityGateError(
         "stale_session_lease",
         "Pi Session mutation candidate does not belong to its ExecutionLease",
+        false,
+      );
+    }
+    const operationLane =
+      mutation.operation.kind === "append_entry" ||
+      mutation.operation.kind === "create_lane" ||
+      mutation.operation.kind === "move_lane"
+        ? mutation.operation.lane
+        : mutation.operation.kind === "append_record"
+          ? mutation.operation.record.lane
+          : undefined;
+    if (
+      (operationLane !== undefined && operationLane !== scope.piSessionLane) ||
+      (operationLane === undefined &&
+        mutation.operation.kind !== "projection_barrier" &&
+        scope.piSessionLane !== "main")
+    ) {
+      throw new ExecutionLeaseAuthorityGateError(
+        "stale_session_lease",
+        "Pi Session mutation does not belong to its authorized lane",
         false,
       );
     }
@@ -213,6 +251,7 @@ export class PostgresExecutionLeaseAuthorityGate {
         attemptId: scope.attemptId,
         fencingToken: scope.fencingToken,
       },
+      piSession: { id: scope.piSessionId, lane: scope.piSessionLane },
       operation: mutation.operation,
       occurredAt: mutation.occurredAt,
     };

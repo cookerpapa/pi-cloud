@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0144](0144-subagent-pi-session-lanes.md) — shared Pi Session Entry
+   trees with independently scheduled, lane-bound Subagents.
 1. [ADR-0143](0143-hosted-search-activity-and-stable-markdown.md) — per-call
    Provider Web Search activity and stable-region Markdown streaming.
 1. [ADR-0142](0142-session-model-settings-and-fast-tier.md) — complete

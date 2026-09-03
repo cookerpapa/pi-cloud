@@ -9,6 +9,8 @@ import type { PiSessionMutationPublisher } from "./session-mutation.ts";
 export type CloudAgentExecutionScope = Readonly<{
   tenantId: string;
   sessionId: string;
+  piSessionId: string;
+  piSessionLane: string;
   turnId: string;
   runId: string;
 }>;
@@ -25,6 +27,7 @@ export type OpenPostgresDurableAgentSessionOptions = Readonly<{
 
 export type PostgresDurableAgentSession = Readonly<{
   session: Session;
+  lane: string;
   authority: PostgresRunExecutionAuthority;
 }>;
 
@@ -69,9 +72,16 @@ export async function openPostgresDurableAgentSession(
         ? {}
         : { mutationPublisher: options.mutationPublisher }),
     });
-    const session = await repository.openById(options.scope.sessionId);
+    const session = await repository.openById(options.scope.piSessionId);
+    const lane = (await session.getLanes()).find(
+      (candidate) => candidate.lane === options.scope.piSessionLane,
+    );
+    if (lane === undefined) {
+      throw new Error("Pi Session lane was not found");
+    }
     return {
       session,
+      lane: lane.lane,
       authority,
     };
   } catch (error: unknown) {

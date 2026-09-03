@@ -32,11 +32,11 @@ conversation.
   agent name. Child behavior comes from its task; context inheritance, allowed
   Tools, Workspace mode, model and thinking are independent explicit inputs.
 - Replace only the package's child execution backend. Each child is admitted as
-  a durable Child Session and Child Run, then claimed by the existing shared
-  Pi Agent Host pool.
-- PostgreSQL owns the parent/child execution relation, child Run state and all
-  Pi Session entries. A local child process, local JSONL file or Worker cache is
-  never authoritative.
+  a durable product Session and Child Run, binds to a unique lane in the root
+  Pi Session tree, then is claimed by the existing shared Pi Agent Host pool.
+- PostgreSQL owns the parent/child execution relation, child Run state, lane
+  heads and all Pi Session entries. A local child process, local JSONL file or
+  Worker cache is never authoritative.
 - Keep human conversation ancestry separate from `subagent_executions`, then
   project both into the product tree with explicit node types.
 - List Child Sessions beneath their causal parent Session and anchor them to
@@ -44,7 +44,7 @@ conversation.
   rendered as inherited context; a `fresh` edge is rendered as independent
   context. Workspace mode is displayed separately because context inheritance
   and file/process sharing are independent decisions.
-- Child transcripts are tenant-scoped, durable Pi Sessions that users may
+- Child transcripts are tenant-scoped, durable lane projections that users may
   inspect read-only. Human follow-up, delete and fork operations continue to
   target ordinary conversation Sessions only.
 - Freeze the child's Tool set as an intersection with the parent Run
@@ -60,10 +60,10 @@ conversation.
   The maintained defaults are depth 4, 32 total nodes and 3 active descendants;
   deployment configuration may lower or raise them within hard validation
   bounds, but prompts and Tool arguments cannot.
-- Fork native Pi context at the boundary before the current delegation prompt.
-  This preserves earlier context without copying the parent's “call a
-  subagent” request as the Child's own pending instruction. A Child may still
-  make a new, concrete delegation through its registered Tool.
+- Create a native Pi lane at the exact boundary before the current delegation
+  prompt. This preserves earlier context without copying Entry payloads or the
+  parent's “call a subagent” request as the Child's own pending instruction. A
+  Child may still make a new, concrete delegation through its registered Tool.
 - Support explicit Workspace modes:
   - `none`: no Cube Tool access;
   - `shared`: the parent and child use one Workspace runtime with independent
@@ -84,6 +84,10 @@ conversation.
 - Subagent Runs consume the same Worker capacity as ordinary Runs and can scale
   by adding Agent Host replicas. Their root-tree depth/node/concurrency budget
   remains the bounded orchestration admission rule.
+- Parent and Child Agent Loops may execute on different Workers while sharing
+  one immutable Entry DAG. ExecutionLease and event identity remain scoped to
+  each logical product Session; Pi mutations additionally bind the exact
+  physical Session and lane.
 - Worker admission reserves a child lane so waiting parents cannot consume
   every local slot. A future durable parent-wait boundary may reclaim the
   waiting slot as an optimization, but correctness does not depend on it.

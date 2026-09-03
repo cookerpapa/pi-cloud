@@ -6,7 +6,7 @@ import type {
   SubagentWorkspaceMode,
 } from "@pi-cloud/database";
 import {
-  forkPostgresPiSessionInTransaction,
+  createPostgresPiSessionLaneInTransaction,
   PostgresPiSessionRepository,
 } from "@pi-cloud/pi-session-postgres";
 import {
@@ -310,6 +310,7 @@ export class PostgresSubagentJobProvider {
         )
         .select([
           "parent_run.state as runState",
+          "parent_run.turn_id as parentTurnId",
           "parent_run.current_attempt_id as currentAttemptId",
           "parent_run.project_id as projectId",
           "parent_run.workspace_id as workspaceId",
@@ -320,6 +321,7 @@ export class PostgresSubagentJobProvider {
           "parent_attempt.lease_id as executionLeaseId",
           "parent_attempt.fencing_token as fencingToken",
           "parent_session.id as sessionId",
+          "parent_session.pi_session_id as piSessionId",
           "parent_session.desired_model_profile_id as modelProfileId",
           "parent_session.created_by_user_id as createdByUserId",
           "parent_session.execution_mode as executionMode",
@@ -484,6 +486,7 @@ export class PostgresSubagentJobProvider {
 
       const executionId = this.#id();
       const childSessionId = this.#id();
+      const childPiSessionLane = `subagent-${executionId}`;
       const childTurnId = this.#id();
       const childRunId = this.#id();
       const childWorkspaceId = input.workspaceMode === "isolated" ? this.#id() : parent.workspaceId;
@@ -522,6 +525,8 @@ export class PostgresSubagentJobProvider {
         .insertInto("sessions")
         .values({
           id: childSessionId,
+          pi_session_id: parent.piSessionId,
+          pi_session_lane: childPiSessionLane,
           title: "Subagent",
           tenant_id: input.tenantId,
           project_id: parent.projectId,
@@ -550,81 +555,40 @@ export class PostgresSubagentJobProvider {
           archived_at: null,
         })
         .executeTakeFirstOrThrow();
+      let childLaneStart: string | null = null;
       if (input.contextMode === "fork") {
-        const leaf = await transaction
-          .selectFrom("pi_session_lanes")
-          .select("leaf_id")
-          .where("tenant_id", "=", input.tenantId)
-          .where("session_id", "=", input.parentSessionId)
-          .where("lane", "=", "main")
-          .executeTakeFirstOrThrow();
-        let forkBoundaryEntryId = leaf.leaf_id;
-        if (leaf.leaf_id !== null && parent.parentPrompt !== null) {
-          const branch = await sql<{
-            id: string;
-            seq: string;
-            type: string;
-            payload: Record<string, unknown>;
-          }>`
-            with recursive branch as (
-              select id, seq, parent_id, type, payload
-                from pi_session_visible_entries
-               where tenant_id = ${input.tenantId}::uuid
-                 and session_id = ${input.parentSessionId}
-                 and id = ${leaf.leaf_id}
-              union all
-              select parent.id, parent.seq, parent.parent_id, parent.type, parent.payload
-                from pi_session_visible_entries parent
-                join branch child on child.parent_id = parent.id
-               where parent.tenant_id = ${input.tenantId}::uuid
-                 and parent.session_id = ${input.parentSessionId}
-            )
-            select id, seq, type, payload
-              from branch
-             where type = 'message'
-             order by seq::bigint desc
-          `.execute(transaction);
-          const currentPrompt = branch.rows.find(
-            (entry) => storedMessageText(entry.payload) === parent.parentPrompt,
+        if (parent.parentPrompt === null) {
+          throw new PostgresSubagentJobError(
+            "parent_tree_invalid",
+            "Parent prompt is missing from its Pi lane",
           );
-          if (currentPrompt !== undefined) forkBoundaryEntryId = currentPrompt.id;
         }
-        await forkPostgresPiSessionInTransaction(
-          transaction,
-          input.tenantId,
-          input.parentSessionId,
-          childSessionId,
-          {
-            id: childSessionId,
-            parentSessionId: input.parentSessionId,
-            scope: "branch",
-            ...(forkBoundaryEntryId === null
-              ? {}
-              : { entryId: forkBoundaryEntryId, position: "before" as const }),
-          },
+        const promptEntries = await transaction
+          .selectFrom("pi_session_entries")
+          .select(["id", "parent_id as parentId", "payload"])
+          .where("tenant_id", "=", input.tenantId)
+          .where("session_id", "=", parent.piSessionId)
+          .where("turn_id", "=", parent.parentTurnId)
+          .where("type", "=", "message")
+          .orderBy("seq", "asc")
+          .execute();
+        const currentPrompt = promptEntries.find(
+          (entry) => storedMessageText(entry.payload) === parent.parentPrompt,
         );
-      } else {
-        await transaction
-          .insertInto("pi_sessions")
-          .values({
-            tenant_id: input.tenantId,
-            id: childSessionId,
-            created_at_ms: Date.now(),
-            parent_session_id: input.parentSessionId,
-            next_seq: 1,
-            name: "Subagent",
-          })
-          .executeTakeFirstOrThrow();
-        await transaction
-          .insertInto("pi_session_lanes")
-          .values({
-            tenant_id: input.tenantId,
-            session_id: childSessionId,
-            lane: "main",
-            leaf_id: null,
-          })
-          .executeTakeFirstOrThrow();
+        if (currentPrompt === undefined) {
+          throw new PostgresSubagentJobError(
+            "parent_tree_invalid",
+            "Parent prompt is missing from its Pi lane",
+          );
+        }
+        childLaneStart = currentPrompt.parentId;
       }
+      await createPostgresPiSessionLaneInTransaction(transaction, {
+        tenantId: input.tenantId,
+        sessionId: parent.piSessionId,
+        lane: childPiSessionLane,
+        at: childLaneStart,
+      });
 
       await transaction
         .insertInto("turns")
@@ -713,6 +677,7 @@ export class PostgresSubagentJobProvider {
           child_workspace_id: input.workspaceMode === "isolated" ? childWorkspaceId : null,
           agent_name: input.agentName,
           context_mode: input.contextMode,
+          pi_context_base_entry_id: childLaneStart,
           workspace_mode: input.workspaceMode,
           state: input.workspaceMode === "isolated" ? "preparing" : "queued",
           result_entry_id: null,
@@ -1065,9 +1030,17 @@ export class PostgresSubagentJobProvider {
   async result(tenantId: string, executionId: string): Promise<CloudSubagentJobResult> {
     const status = await this.status(tenantId, executionId);
     if (status.state !== "completed") return status;
+    const binding = await this.#database
+      .selectFrom("sessions")
+      .select(["pi_session_id as piSessionId", "pi_session_lane as piSessionLane"])
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", status.childSessionId)
+      .executeTakeFirstOrThrow();
     const repository = new PostgresPiSessionRepository({ database: this.#database, tenantId });
-    const session = await repository.openById(status.childSessionId);
-    const entries = await session.view("main").findEntriesOnBranch({ order: "newestFirst" });
+    const session = await repository.openById(binding.piSessionId);
+    const entries = await session
+      .view(binding.piSessionLane)
+      .findEntriesOnBranch({ order: "newestFirst" });
     const final = entries.find(
       (
         entry,

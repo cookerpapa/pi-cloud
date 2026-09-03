@@ -30,7 +30,7 @@ export class PostgresPiSessionMutationProjector {
     const storage = new PostgresPiSessionStorage({
       database: this.#database,
       tenantId: fact.scope.tenantId,
-      sessionId: fact.scope.sessionId,
+      sessionId: fact.piSession.id,
       turnId: fact.scope.turnId,
       projectedMutationId: fact.factId,
     });

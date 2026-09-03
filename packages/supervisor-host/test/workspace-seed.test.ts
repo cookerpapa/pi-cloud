@@ -51,6 +51,7 @@ function command(tenantId: string = IDS.tenant): ExecuteTurnCommandMessage {
       projectId: IDS.project,
       workspaceId: IDS.workspace,
       sessionId: IDS.session,
+      piSession: { id: IDS.session, lane: "main" },
       runId: IDS.run,
       turnId: IDS.turn,
       agentId: "root",
@@ -168,6 +169,8 @@ async function fixture(seedKind: WorkspaceSeedKind): Promise<Fixture> {
     .insertInto("sessions")
     .values({
       id: IDS.session,
+      pi_session_id: IDS.session,
+      pi_session_lane: "main",
       tenant_id: IDS.tenant,
       project_id: IDS.project,
       workspace_id: IDS.workspace,

@@ -48,9 +48,10 @@ execution path and failure semantics.
   executes the Agent Loop and appends complete Pi messages incrementally.
   Cold Sessions retain no dedicated process and never download a lifetime
   JSONL transcript.
-- Fork context uses copy-on-write Entry references plus a bounded per-Worker
-  immutable-payload cache. Local Child placement can avoid retransferring the
-  inherited payload; remote placement remains a normal PostgreSQL read.
+- Human conversation forks use copy-on-write Entry references. Delegated
+  Agents use unique lane heads in one shared Pi Session Entry DAG, so spawning
+  a Child does not write one reference per inherited Entry. Every Worker can
+  recover the selected lane directly from PostgreSQL.
 - Pi remains responsible for model messages, Tool selection and compaction.
   Pi Cloud adds cloud admission, interruption/world-state facts, active steer,
   remote Tool routing and terminal settlement around Pi's public primitives.

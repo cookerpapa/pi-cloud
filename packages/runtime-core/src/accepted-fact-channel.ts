@@ -318,6 +318,7 @@ export class FactChannelService {
         {
           executionLease: message.payload.executionLease,
           sessionId: message.payload.sessionId,
+          piSession: message.payload.piSession,
           turnId: message.payload.turnId,
         },
         { connectionId, instanceId: this.#instanceId },
