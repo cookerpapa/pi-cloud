@@ -302,6 +302,51 @@ async function recursiveTreeEvidence(rootRunId) {
   return JSON.parse(value);
 }
 
+async function parallelExecutionEvidence(parentRunId) {
+  const value = await psql(`
+    select coalesce(json_agg(json_build_object(
+      'executionId', execution.id,
+      'childSessionId', execution.child_session_id,
+      'childRunId', execution.child_run_id,
+      'childRunState', child_run.state,
+      'piSessionId', child.pi_session_id,
+      'piSessionLane', child.pi_session_lane,
+      'contextBaseEntryId', execution.pi_context_base_entry_id,
+      'childPhysicalSessionExists', exists (
+        select 1 from pi_sessions physical
+        where physical.tenant_id = execution.tenant_id
+          and physical.id = execution.child_session_id::text
+      ),
+      'laneExists', exists (
+        select 1 from pi_session_lanes lane
+        where lane.tenant_id = execution.tenant_id
+          and lane.session_id = child.pi_session_id
+          and lane.lane = child.pi_session_lane
+      ),
+      'inheritedReferenceCount', (
+        select count(*) from pi_session_entry_refs ref
+        where ref.tenant_id = execution.tenant_id
+          and ref.session_id = execution.child_session_id::text
+      ),
+      'childOwnedEntryCount', (
+        select count(*) from pi_session_entries entry
+        where entry.tenant_id = execution.tenant_id
+          and entry.session_id = child.pi_session_id
+          and entry.turn_id in (
+            select turn.id from turns turn
+            where turn.tenant_id = execution.tenant_id
+              and turn.session_id = execution.child_session_id
+          )
+      )
+    ) order by execution.created_at), '[]'::json)::text
+    from subagent_executions execution
+    join runs child_run on child_run.id = execution.child_run_id
+    join sessions child on child.id = execution.child_session_id
+    where execution.parent_run_id = ${sqlLiteral(parentRunId)}
+  `);
+  return JSON.parse(value);
+}
+
 async function childCreatedToolRuntime(childRunId) {
   const value = await psql(`
     select exists (
@@ -380,6 +425,23 @@ try {
     false,
     "A Tool-capable Child that used no local Tool eagerly created Cube capacity",
   );
+
+  const parallel = await runTurn(
+    session.sessionId,
+    [
+      "Call the subagent Tool exactly once and run exactly two independent children in parallel.",
+      'Use this exact workflowScript: return runs.all([{key:"left", agent:"cloud-child", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-PARALLEL-LEFT"}, {key:"right", agent:"cloud-child", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-PARALLEL-RIGHT"}])',
+      "After both finish, reply exactly SUBAGENT-PARALLEL-OK.",
+    ].join(" "),
+  );
+  const parallelEvidence = await parallelExecutionEvidence(parallel.accepted.runId);
+  assert.equal(parallelEvidence.length, 2, JSON.stringify(parallelEvidence));
+  for (const child of parallelEvidence) {
+    assert.equal(child.childRunState, "completed");
+    assert.equal(child.contextBaseEntryId, null);
+    assertLaneBacked(child, session.sessionId);
+  }
+  assert.equal(new Set(parallelEvidence.map((child) => child.piSessionLane)).size, 2);
 
   const shared = await runTurn(
     session.sessionId,
@@ -483,6 +545,7 @@ try {
     modes: {
       none: noneEvidence,
       lazyToolCapable: lazyEvidence,
+      parallel: parallelEvidence,
       shared: sharedEvidence,
       isolated: isolatedEvidence,
     },
