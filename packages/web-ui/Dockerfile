@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && export GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \
     && downloaded=0 \
     && for attempt in 1 2 3; do \
-      if go get google.golang.org/grpc@v1.82.1 golang.org/x/crypto@v0.55.0 golang.org/x/text@v0.41.0 \
+      if go get google.golang.org/grpc@v1.83.1 golang.org/x/crypto@v0.55.0 golang.org/x/text@v0.41.0 \
         && go mod download; then downloaded=1; break; fi; \
     done \
     && test "$downloaded" = 1 \
