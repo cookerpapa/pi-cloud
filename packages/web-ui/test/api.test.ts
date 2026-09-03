@@ -535,7 +535,7 @@ describe("tenant-aware browser API", () => {
                     depth: 1,
                     parentTurnId: "60000000-0000-4000-8000-000000000003",
                     title: "Subagent",
-                    contextMode: "fork",
+                    contextMode: "branch",
                     workspaceMode: "shared",
                     state: "completed",
                     workspaceName: "Alpha repair",
@@ -581,7 +581,7 @@ describe("tenant-aware browser API", () => {
 
     await expect(api.listConversations()).resolves.toMatchObject({
       conversations: [{ title: "Repair checkout", workspaceName: "Alpha repair" }],
-      delegatedSessions: [{ contextMode: "fork", workspaceMode: "shared" }],
+      delegatedSessions: [{ contextMode: "branch", workspaceMode: "shared" }],
     });
     await expect(
       api.getConversation("20000000-0000-4000-8000-000000000001"),

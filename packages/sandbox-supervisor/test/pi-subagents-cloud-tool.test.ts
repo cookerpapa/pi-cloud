@@ -197,6 +197,49 @@ describe("pi-subagents cloud Tool adapter", () => {
     expect(JSON.stringify(result)).toContain("structured result");
   }, 30_000);
 
+  it("maps inherited Subagent context to a branch lane and rejects the old fork name", async () => {
+    const starts: ExternalJobStartInput[] = [];
+    const tool = await createPiSubagentsCloudTool({
+      context: { parentSessionId: "00000000-0000-4000-8000-000000000023" },
+      coordinator: {
+        start(input): ExternalJobHandle {
+          starts.push(input);
+          return { providerJobId: `job-${starts.length}`, state: "completed" };
+        },
+        status: (providerJobId) => ({ providerJobId, state: "completed" }),
+        result: (providerJobId) => ({
+          providerJobId,
+          state: "completed",
+          output: "branch result",
+        }),
+        reattach: (providerJobId) => ({ providerJobId, state: "completed" }),
+        cancel: (providerJobId) => ({ providerJobId, state: "stopped" }),
+      },
+    });
+
+    expect(
+      (tool.parameters as unknown as { properties: { context: { enum: string[] } } }).properties
+        .context.enum,
+    ).toEqual(["fresh", "branch"]);
+    await tool.execute(
+      "tool-call-branch",
+      { agent: "cloud-child", task: "Inspect inherited context", context: "branch" },
+      new AbortController().signal,
+    );
+    expect(starts).toHaveLength(1);
+    expect(starts[0]?.options).toMatchObject({ contextMode: "branch" });
+
+    const rejected = await tool.execute(
+      "tool-call-old-fork",
+      { agent: "cloud-child", task: "Do not silently downgrade", context: "fork" },
+      new AbortController().signal,
+    );
+    expect(starts).toHaveLength(1);
+    expect(rejected.details).toMatchObject({
+      completions: [expect.objectContaining({ state: "failed", success: false })],
+    });
+  }, 30_000);
+
   it("maps upstream worktree isolation onto an isolated cloud Workspace", async () => {
     const starts: ExternalJobStartInput[] = [];
     const tool = await createPiSubagentsCloudTool({

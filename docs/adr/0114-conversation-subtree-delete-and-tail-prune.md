@@ -4,9 +4,9 @@ Status: accepted
 
 ## Context
 
-PiCloud presents human conversation forks and delegated Subagent Sessions as a
+PiCloud presents human conversation forks and delegated Subagent execution views as a
 tree. Deleting only one parent row leaves visible child branches and can leave
-internal Child Sessions blocking Workspace cleanup. Users also need to discard
+internal Child execution scopes blocking Workspace cleanup. Users also need to discard
 an unsuccessful continuation while keeping an earlier settled answer and using
 that answer as the next model-context boundary.
 
@@ -24,7 +24,7 @@ middle range would destroy audit evidence and make concurrent recovery unsafe.
   the anchor entry and appends the corresponding native lane fact. Immutable Pi
   entries, Runs, events and projections remain as unreachable audit evidence.
 - Human branches forked from the anchor or a later Turn are recursively
-  archived. Subagent Sessions produced by pruned Turns or archived human
+  archived. Subagent execution scopes produced by pruned Turns or archived human
   branches are archived as well. Subagents that contributed to the retained
   anchor Turn remain visible.
 - The prune operation is idempotent. Session locking, target validation, Turn

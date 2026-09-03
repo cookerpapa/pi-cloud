@@ -246,7 +246,7 @@ export class PostgresSubagentJobProvider {
     }
     safeStep(input.stepIndex);
     const parentGrant = parseExecutionLease(input.parentExecutionLease);
-    if (input.contextMode !== "fresh" && input.contextMode !== "fork") {
+    if (input.contextMode !== "fresh" && input.contextMode !== "branch") {
       throw new TypeError("Subagent context mode is invalid");
     }
     if (
@@ -556,7 +556,7 @@ export class PostgresSubagentJobProvider {
         })
         .executeTakeFirstOrThrow();
       let childLaneStart: string | null = null;
-      if (input.contextMode === "fork") {
+      if (input.contextMode === "branch") {
         if (parent.parentPrompt === null) {
           throw new PostgresSubagentJobError(
             "parent_tree_invalid",

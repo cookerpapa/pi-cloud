@@ -121,6 +121,7 @@ import * as codexOffThinkingLevel from "./119_codex_off_thinking_level.ts";
 import * as sessionModelSettings from "./120_session_model_settings.ts";
 import * as removeUnusedRoutingState from "./121_remove_unused_routing_state.ts";
 import * as subagentPiSessionLanes from "./122_subagent_pi_session_lanes.ts";
+import * as subagentBranchContext from "./123_subagent_branch_context.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -247,6 +248,7 @@ export const migrationProvider: MigrationProvider = {
       "120_session_model_settings": sessionModelSettings,
       "121_remove_unused_routing_state": removeUnusedRoutingState,
       "122_subagent_pi_session_lanes": subagentPiSessionLanes,
+      "123_subagent_branch_context": subagentBranchContext,
     };
   },
 };

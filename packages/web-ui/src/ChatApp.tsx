@@ -111,7 +111,7 @@ function delegatedContextLabel(
   mode: DelegatedSessionSummaryResource["contextMode"],
   t: Translate,
 ): string {
-  return mode === "fork" ? t("chat.context.inherited") : t("chat.context.fresh");
+  return mode === "branch" ? t("chat.context.inherited") : t("chat.context.fresh");
 }
 
 function delegatedWorkspaceLabel(
@@ -1178,7 +1178,7 @@ export default function ChatApp() {
           >
             <strong>
               <span className="product-conversation-branch-mark">
-                {delegated.contextMode === "fork" ? "↳" : "⋯"}
+                {delegated.contextMode === "branch" ? "↳" : "⋯"}
               </span>
               {t("chat.subagentTitle")}
             </strong>

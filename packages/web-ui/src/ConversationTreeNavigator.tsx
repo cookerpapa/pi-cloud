@@ -57,7 +57,7 @@ function contextLabel(
   mode: NonNullable<ConversationTreeBranchResource["contextMode"]>,
   t: Translate,
 ): string {
-  return mode === "fork" ? t("chat.context.inherited") : t("chat.context.fresh");
+  return mode === "branch" ? t("chat.context.inherited") : t("chat.context.fresh");
 }
 
 function workspaceLabel(

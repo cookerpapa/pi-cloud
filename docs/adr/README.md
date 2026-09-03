@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0145](0145-fork-and-branch-semantics.md) — Fork creates an independent
+   Session; delegated inherited context is a Branch/Lane.
 1. [ADR-0144](0144-subagent-pi-session-lanes.md) — shared Pi Session Entry
    trees with independently scheduled, lane-bound Subagents.
 1. [ADR-0143](0143-hosted-search-activity-and-stable-markdown.md) — per-call
@@ -56,7 +58,7 @@ Read the documents in this order:
 1. [ADR-0112](0112-run-scoped-tool-capabilities.md) — Session grants, immutable
    Run Tool snapshots and Broker-side execution authorization.
 1. [ADR-0113](0113-cloud-native-pi-subagents.md) — upstream-compatible Pi
-   subagents on durable Child Sessions/Runs with explicit Workspace modes.
+   subagents on durable Child lanes/Runs with explicit Workspace modes.
 1. [ADR-0114](0114-conversation-subtree-delete-and-tail-prune.md) — recursive
    tree deletion and Pi-native conversation tail pruning.
 1. [ADR-0115](0115-user-owned-development-environments.md) — tenant-aware,

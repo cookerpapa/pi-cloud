@@ -234,7 +234,7 @@ The child shares the Workspace and begins with no open operation records. Tree
 navigation is not exposed to the model or added to its context.
 
 Deleting a parent archives its whole human descendant subtree and their typed
-Subagent Sessions after proving every Run has settled. Pruning after a settled
+Subagent execution views after proving every Run has settled. Pruning after a settled
 final response keeps that response, marks later product Turns invisible and
 moves Pi's native `main` lane back to the retained entry. Later immutable
 entries remain audit evidence but are unreachable from UI and model context;
@@ -268,10 +268,10 @@ value whose prompt only establishes the Child execution boundary; behavior
 comes from the delegated task plus explicit context, Workspace, Tool, model and
 thinking settings. A narrow
 `PI_SUBAGENT_PI_BINARY` adapter replaces only local child execution. Every child
-becomes a typed `session_kind=subagent` product Session, Run and RunAttempt in
-PostgreSQL and is claimed by the ordinary shared Worker pool. Its product
-Session binds to a unique lane in the root conversation's physical Pi Session.
-The product
+gets an independently addressable `session_kind=subagent` execution scope, Run
+and RunAttempt in PostgreSQL and is claimed by the ordinary shared Worker pool.
+That scope binds to a unique lane in the root conversation's physical Pi
+Session; it is not another Pi Session. The product
 projects it beneath the causal parent Turn with explicit context and Workspace
 mode labels; its native transcript is inspectable but read-only. Focused tree
 navigation roots itself at the selected Child and shows inherited Pi context,
@@ -310,14 +310,14 @@ Context, allowed Tools and Workspace modes are explicit and independent:
 - upstream `worktree:true` maps to `isolated`: Tool Broker briefly excludes new
   Tool operations while
   the trusted Volume gateway makes an idempotent revision-bound internal
-  Workspace copy, and the child keeps its resolved `fresh` or `fork` Pi context
+  Workspace copy, and the child keeps its resolved `fresh` or `branch` Pi context
   while running concurrently in another Cube. Its semantic result is returned
   to the parent; Git branches or explicit file operations are user-managed.
   The internal Workspace is hidden from product lists and retired after
   terminal settlement. Child Sandbox retention is always ephemeral even when
   the parent conversation is persistent.
 
-For `context=fork`, PiCloud creates the Child lane at the exact Entry before the
+For `context=branch`, PiCloud creates the Child lane at the exact Entry before the
 current parent prompt that requested delegation, then appends the deployment-
 owned Child task on that lane. `context=fresh` starts the lane at `null`.
 Earlier conversation and compaction state are shared through the immutable

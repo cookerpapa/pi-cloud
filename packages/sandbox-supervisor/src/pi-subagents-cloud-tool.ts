@@ -58,6 +58,24 @@ export type PiSubagentCloudToolContext = Readonly<{
 }>;
 
 type Contract = Pick<ToolDefinition, "name" | "label" | "description" | "parameters">;
+
+function branchContextParameters(parameters: Contract["parameters"]): Contract["parameters"] {
+  const result = structuredClone(parameters) as unknown as Record<string, unknown>;
+  const properties = result.properties;
+  if (typeof properties !== "object" || properties === null || Array.isArray(properties)) {
+    throw new Error("pi-subagents Tool context contract is unavailable");
+  }
+  const context = (properties as Record<string, unknown>).context;
+  if (typeof context !== "object" || context === null || Array.isArray(context)) {
+    throw new Error("pi-subagents Tool context field is unavailable");
+  }
+  Object.assign(context, {
+    enum: ["fresh", "branch"],
+    description:
+      "'fresh' starts a new empty Child lane; 'branch' inherits the parent Pi branch in the same Session. Session fork is a separate user operation.",
+  });
+  return result as unknown as Contract["parameters"];
+}
 type WorkerProviderRequest = Readonly<{
   type: "provider.request";
   requestId: string;
@@ -104,8 +122,8 @@ async function loadContract(): Promise<Contract> {
       return {
         name: definition.name,
         label: definition.label,
-        description: `${definition.description}\n\nPiCloud exposes one neutral Child named ${PI_CLOUD_NEUTRAL_SUBAGENT}. Role profiles are disabled; behavior comes from the delegated task and explicit context, Workspace, Tool, model, and thinking settings.`,
-        parameters: definition.parameters,
+        description: `${definition.description}\n\nPiCloud exposes one neutral Child named ${PI_CLOUD_NEUTRAL_SUBAGENT}. Role profiles are disabled. Use context 'branch' for a Child lane that inherits this Session, or 'fresh' for an empty Child lane. Creating a new user Session is a separate Fork operation.`,
+        parameters: branchContextParameters(definition.parameters),
       };
     } finally {
       await rm(agentDir, { recursive: true, force: true });

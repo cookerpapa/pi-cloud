@@ -382,7 +382,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         child_session_id: delegatedSessionId,
         child_run_id: childRunId,
         agent_name: "cloud-child",
-        context_mode: "fork",
+        context_mode: "branch",
         workspace_mode: "shared",
         state: "queued",
       })

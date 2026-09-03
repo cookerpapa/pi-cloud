@@ -205,7 +205,7 @@ describe.sequential("CloudAgentRuntime", () => {
     expect(await storage.findOpenOperations("main", { limit: 2 })).toEqual([]);
   });
 
-  it("runs independent Agent Loops on forked lanes without copying or crossing context", async () => {
+  it("runs independent Agent Loops on branched lanes without copying or crossing context", async () => {
     const storage = await createStorage();
     const session = storage.asSession();
     await session.appendMessage({ role: "user", content: "shared-root", timestamp: Date.now() });

@@ -175,7 +175,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
             }
             const contextMode = option(input.options, "contextMode");
             const workspaceMode = option(input.options, "workspaceMode");
-            if (contextMode !== "fresh" && contextMode !== "fork") {
+            if (contextMode !== "fresh" && contextMode !== "branch") {
               throw new Error("pi-subagents provided an invalid context mode");
             }
             if (

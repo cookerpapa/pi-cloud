@@ -32,15 +32,17 @@ conversation.
   agent name. Child behavior comes from its task; context inheritance, allowed
   Tools, Workspace mode, model and thinking are independent explicit inputs.
 - Replace only the package's child execution backend. Each child is admitted as
-  a durable product Session and Child Run, binds to a unique lane in the root
-  Pi Session tree, then is claimed by the existing shared Pi Agent Host pool.
+  a durable product execution scope and Child Run, binds to a unique lane in
+  the root Pi Session tree, then is claimed by the existing shared Pi Agent
+  Host pool. The scope reuses the Session-shaped queue/event authority but is
+  not a second physical Pi Session.
 - PostgreSQL owns the parent/child execution relation, child Run state, lane
   heads and all Pi Session entries. A local child process, local JSONL file or
   Worker cache is never authoritative.
 - Keep human conversation ancestry separate from `subagent_executions`, then
   project both into the product tree with explicit node types.
-- List Child Sessions beneath their causal parent Session and anchor them to
-  the parent Turn that invoked the orchestration Tool. A `fork` context edge is
+- List Child execution views beneath their causal parent Session and anchor them to
+  the parent Turn that invoked the orchestration Tool. A `branch` context edge is
   rendered as inherited context; a `fresh` edge is rendered as independent
   context. Workspace mode is displayed separately because context inheritance
   and file/process sharing are independent decisions.
@@ -94,7 +96,7 @@ conversation.
 - Shared mode preserves live files, dependencies and processes and permits
   user-managed concurrent mutations. Isolated mode requires a
   trusted Volume fork and an explicit result/merge contract. Context mode is
-  orthogonal: a trusted worker profile may use either an exact `fork` of the
+  orthogonal: a trusted worker profile may use either a `branch` from the
   parent Pi branch or a `fresh` context in either Workspace mode.
 - Project-controlled agent or extension code remains outside the trusted Host.
   The neutral adapter is code-owned and does not load user-defined profiles.

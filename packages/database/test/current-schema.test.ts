@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(122);
+      expect(firstMigrationPass.rows).toHaveLength(123);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("122_subagent_pi_session_lanes");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("123_subagent_branch_context");
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
@@ -133,7 +133,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("122_subagent_pi_session_lanes");
+      expect(applied.rows.at(-1)?.name).toBe("123_subagent_branch_context");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

@@ -72,7 +72,7 @@ export type SandboxDomainState = "active" | "draining" | "disabled";
 export type ExecutionMode = "elastic" | "development_environment";
 export type SessionKind = "conversation" | "subagent";
 export type WorkspaceKind = "user" | "development_environment" | "subagent_isolated";
-export type SubagentContextMode = "fresh" | "fork";
+export type SubagentContextMode = "fresh" | "branch";
 export type SubagentWorkspaceMode = "none" | "shared" | "isolated";
 export type SubagentExecutionState =
   "preparing" | "queued" | "running" | "completed" | "failed" | "cancelled" | "unknown";

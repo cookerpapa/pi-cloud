@@ -434,7 +434,7 @@ export const ConversationSummaryResourceSchema = Type.Object(
 
 export const DelegatedSessionContextModeSchema = Type.Union([
   Type.Literal("fresh"),
-  Type.Literal("fork"),
+  Type.Literal("branch"),
 ]);
 
 export const DelegatedSessionWorkspaceModeSchema = Type.Union([
@@ -454,9 +454,10 @@ export const DelegatedSessionStateSchema = Type.Union([
 ]);
 
 /**
- * A delegated Pi Session is visible product history, but it is not a normal
- * human conversation fork. The parent Turn is the causal/UI anchor while the
- * context and Workspace modes describe two independent inheritance axes.
+ * An independently addressable view of a delegated Agent lane. Its product
+ * Session ID scopes queueing, events and inspection; the canonical Pi context
+ * remains a lane in the parent's physical Pi Session. It is never a human
+ * conversation Fork.
  */
 export const DelegatedSessionSummaryResourceSchema = Type.Object(
   {

@@ -19,10 +19,11 @@ one Tool authority.
 
 ## Decision
 
-Every product Session stores an explicit `(pi_session_id, pi_session_lane)`
-binding. Human conversations continue to own their own Pi Session and `main`
-lane. Every delegated Child remains a distinct product Session and Run, but it
-receives a unique lane in the root conversation's Pi Session:
+Every Session-shaped execution scope stores an explicit
+`(pi_session_id, pi_session_lane)` binding. Human conversations continue to own
+their own Pi Session and `main` lane. Every delegated Child retains an
+independent queue/event/lease scope and Run, but receives a unique lane in the
+root conversation's Pi Session rather than another physical Pi Session:
 
 ```text
 Pi Session
@@ -31,17 +32,18 @@ Pi Session
 └── subagent-<execution-id>
 ```
 
-`context=fork` creates the Child lane at the Entry immediately before the
+PiCloud now names inherited delegated context `context=branch`: it creates the
+Child lane at the Entry immediately before the
 parent prompt that requested delegation. `context=fresh` creates it at `null`.
 Child Entries, operation records, interruption facts, World State and
 Compaction are appended only to that lane. A Child's final result is returned
 to the parent as the existing Subagent Tool result; other Child history is not
 implicitly merged into the parent lane.
 
-The logical product Session remains the Run, event, cancellation, UI and
+The logical Child execution scope remains the Run, event, cancellation, UI and
 ExecutionLease identity. The accepted Pi mutation protocol separately carries
 the physical Pi Session target. The PostgreSQL Authority Gate resolves the
-committed product Session binding and rejects a different Pi Session or lane
+committed execution-scope binding and rejects a different Pi Session or lane
 before Kafka accepts the mutation. Projectors do not recheck an expired lease
 after durable acceptance.
 
@@ -51,7 +53,7 @@ and are not delegated execution lanes.
 
 ## Consequences
 
-- Delegated context forks create one lane row instead of one reference row per
+- Delegated context branches create one lane row instead of one reference row per
   inherited Entry.
 - Parent and Child can run concurrently on different Workers while PostgreSQL
   remains the shared Session authority.
@@ -60,7 +62,7 @@ and are not delegated execution lanes.
   this cost explicit and measurable.
 - Worker runtimes, Compaction, recovery and World State must always use the
   command's immutable lane binding; `main` is not an implicit fallback.
-- Archiving a Child hides its product Session but retains its lane and immutable
+- Archiving a Child hides its product execution view but retains its lane and immutable
   Entries as audit/history state. Physical garbage collection requires a
   separate retention decision.
 - Pi 0.84.1's high-level AgentHarness execution methods remain incomplete, so

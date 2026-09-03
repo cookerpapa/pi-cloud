@@ -31,7 +31,7 @@
 - role-free neutral Subagents with explicit task/context/Workspace/Tool settings
   and lazy Cube activation on the first local Tool call.
 - lane-bound Subagents sharing one durable Pi Session Entry DAG without
-  per-Entry context-fork references.
+  per-Entry inherited-context references.
 - Codex-style per-call Hosted Web Search activity for GPT and DeepSeek, plus
   stable-region Markdown rendering for citation-heavy streams.
 

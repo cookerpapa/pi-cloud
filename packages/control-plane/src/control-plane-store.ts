@@ -1643,7 +1643,7 @@ export class ControlPlaneStore {
         "Delegated Session has no execution record",
       );
     }
-    if (execution.contextMode !== "fork") return [];
+    if (execution.contextMode !== "branch") return [];
     if (execution.contextBaseEntryId === null) return [];
     const rows = (
       await sql<{ id: string; timestampMs: string; payload: Record<string, unknown> }>`

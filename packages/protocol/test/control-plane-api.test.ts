@@ -193,10 +193,50 @@ describe("control-plane public API schemas", () => {
             lastActiveAt: createdAt,
           },
         ],
-        delegatedSessions: [],
+        delegatedSessions: [
+          {
+            executionId: "31000000-0000-4000-8000-000000000001",
+            sessionId: "31000000-0000-4000-8000-000000000002",
+            parentSessionId: "30000000-0000-4000-8000-000000000001",
+            rootSessionId: "30000000-0000-4000-8000-000000000001",
+            depth: 1,
+            parentTurnId: "31000000-0000-4000-8000-000000000003",
+            title: "Inspect the implementation",
+            contextMode: "branch",
+            workspaceMode: "shared",
+            state: "running",
+            workspaceName: "Java repair demo",
+            createdAt,
+          },
+        ],
         truncated: false,
       }),
-    ).toMatchObject({ conversations: [{ title: "Repair checkout" }] });
+    ).toMatchObject({
+      conversations: [{ title: "Repair checkout" }],
+      delegatedSessions: [{ contextMode: "branch" }],
+    });
+    expect(() =>
+      parseConversationListResource({
+        conversations: [],
+        delegatedSessions: [
+          {
+            executionId: "31000000-0000-4000-8000-000000000001",
+            sessionId: "31000000-0000-4000-8000-000000000002",
+            parentSessionId: "30000000-0000-4000-8000-000000000001",
+            rootSessionId: "30000000-0000-4000-8000-000000000001",
+            depth: 1,
+            parentTurnId: "31000000-0000-4000-8000-000000000003",
+            title: "Legacy context name",
+            contextMode: "fork",
+            workspaceMode: "shared",
+            state: "running",
+            workspaceName: "Java repair demo",
+            createdAt,
+          },
+        ],
+        truncated: false,
+      }),
+    ).toThrow();
     expect(
       parseConversationDetailResource({
         project: {

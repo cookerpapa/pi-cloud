@@ -337,7 +337,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     ]);
   });
 
-  it("forks Pi context, narrows tools and reads the terminal result from PostgreSQL", async () => {
+  it("branches Pi context, narrows tools and reads the terminal result from PostgreSQL", async () => {
     const parentRepository = new PostgresPiSessionRepository({
       database,
       tenantId,
@@ -371,7 +371,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       agentName: "cloud-child",
       prompt: "Inspect the repository",
       systemPrompt: "Execute only this delegated task.",
-      contextMode: "fork",
+      contextMode: "branch",
       workspaceMode: "shared",
       requestedToolCapabilities: ["read", "bash"],
     });
@@ -458,7 +458,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           sessionId: started.childSessionId,
           parentSessionId: null,
           current: true,
-          contextMode: "fork",
+          contextMode: "branch",
           workspaceMode: "shared",
           entries: [
             { role: "user", text: "Earlier context" },
@@ -594,7 +594,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       stepIndex: 2,
       agentName: "cloud-child",
       prompt: "Implement an independent approach",
-      contextMode: "fork",
+      contextMode: "branch",
       workspaceMode: "isolated",
       requestedToolCapabilities: ["read", "write", "edit", "bash"],
       parentActivation: {
@@ -694,7 +694,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       stepIndex: 4,
       agentName: "cloud-child",
       prompt: "Ask the parent only if a material decision is required",
-      contextMode: "fork",
+      contextMode: "branch",
       workspaceMode: "none",
     });
     await database
@@ -757,7 +757,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       stepIndex: 0,
       agentName: "cloud-child",
       prompt: "Delegate one bounded verification task",
-      contextMode: "fork",
+      contextMode: "branch",
       workspaceMode: "none",
     });
     const childExecutionLease = await activateChildRun(child.childSessionId, child.childRunId, 11);
@@ -801,7 +801,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       stepIndex: 0,
       agentName: "cloud-child",
       prompt: "Verify the child result without tools",
-      contextMode: "fork",
+      contextMode: "branch",
       workspaceMode: "none",
     });
     const persisted = await database

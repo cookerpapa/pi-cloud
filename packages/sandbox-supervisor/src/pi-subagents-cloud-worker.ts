@@ -186,7 +186,7 @@ function parseChildInvocation(value: unknown): ExternalJobStartInput {
   let prompt = taskArgument.startsWith("@")
     ? readFileSync(taskArgument.slice(1), "utf8")
     : taskArgument;
-  let cloudContextMode: "fresh" | "fork" = "fresh";
+  let cloudContextMode: "fresh" | "branch" = "fresh";
   let cloudRequestedTools: string[] | undefined;
   const cloudOptionsStart = prompt.indexOf(CHILD_OPTIONS_PREFIX);
   if (cloudOptionsStart >= 0) {
@@ -195,7 +195,7 @@ function parseChildInvocation(value: unknown): ExternalJobStartInput {
     const metadata = JSON.parse(
       prompt.slice(cloudOptionsStart + CHILD_OPTIONS_PREFIX.length, metadataEnd),
     ) as Record<string, unknown>;
-    if (metadata.context === "fork") cloudContextMode = "fork";
+    if (metadata.context === "branch") cloudContextMode = "branch";
     if (Array.isArray(metadata.tools)) {
       cloudRequestedTools = metadata.tools.filter(
         (tool): tool is string =>
@@ -281,8 +281,9 @@ function cloudWorkflowScript(script: string, defaultIsolated: boolean): string {
     "const __piCloudChild = (spec) => {",
     "  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return spec;",
     "  if (spec.agent !== undefined && spec.agent !== __piCloudAgent) throw new Error('PiCloud role profiles were removed; use the neutral cloud-child agent');",
+    "  if (spec.context !== undefined && spec.context !== 'fresh' && spec.context !== 'branch') throw new Error(\"PiCloud Subagent context must be 'fresh' or 'branch'; use conversation Fork to create a new Session\");",
     "  const isolated = spec.worktree === undefined ? __piCloudDefaultIsolated : spec.worktree === true;",
-    "  const context = spec.context === 'fork' ? 'fork' : 'fresh';",
+    "  const context = spec.context === 'branch' ? 'branch' : 'fresh';",
     "  const tools = Array.isArray(spec.tools) ? spec.tools : undefined;",
     "  const options = __piCloudOptionsPrefix + JSON.stringify({ context, ...(tools === undefined ? {} : { tools }) }) + ']\\n';",
     "  const task = typeof spec.task === 'string' ? options + (isolated ? __piCloudTaskMarker : '') + spec.task : spec.task;",
@@ -518,7 +519,7 @@ async function main(): Promise<void> {
   );
   sessionManager.appendMessage({
     role: "user",
-    content: "PiCloud owns the parent context in PostgreSQL; fork it through the cloud runner.",
+    content: "PiCloud owns the parent context in PostgreSQL; branch it through the cloud runner.",
     timestamp: Date.now(),
   });
   sessionManager.appendMessage({
