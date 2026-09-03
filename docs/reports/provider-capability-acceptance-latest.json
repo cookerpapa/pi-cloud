@@ -1,7 +1,7 @@
 {
   "accepted": true,
-  "piCloudRevision": "2d79609e7f95012a7f2d455b6d97455628290976",
-  "checkedAt": "2026-09-02T03:38:24.901Z",
+  "piCloudRevision": "468840cc949c98182a568e20eb92398abb88c49b",
+  "checkedAt": "2026-09-03T00:16:02.592Z",
   "route": {
     "firstTurn": "deepseek/deepseek-v4-flash + Provider web_search",
     "secondTurn": "openai-codex/gpt-5.6-luna + Provider web_search"
@@ -20,14 +20,32 @@
     "cleanupCompleted": true
   },
   "latencyMs": {
-    "providerSearchTurn": 3189,
-    "nativeReplayTurn": 2412,
-    "crossProviderHandoffTurn": 14192
+    "providerSearchTurn": 4261,
+    "nativeReplayTurn": 3201,
+    "crossProviderHandoffTurn": 14448
   },
   "outputCharacters": {
-    "providerSearchTurn": 18,
-    "nativeReplayTurn": 197,
-    "crossProviderHandoffTurn": 138
+    "providerSearchTurn": 81,
+    "nativeReplayTurn": 158,
+    "crossProviderHandoffTurn": 140
+  },
+  "hostedSearchActivity": {
+    "deepseek": {
+      "callCount": 2,
+      "detailedCallCount": 2,
+      "actionTypes": [
+        "search",
+        "search"
+      ]
+    },
+    "codex": {
+      "callCount": 2,
+      "detailedCallCount": 2,
+      "actionTypes": [
+        "search",
+        "search"
+      ]
+    }
   },
   "piSessionStorage": {
     "durableHostedMessageCount": 2,
