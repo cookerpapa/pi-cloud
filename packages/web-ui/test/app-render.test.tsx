@@ -615,7 +615,7 @@ describe("product chat experience", () => {
     expect(markup).not.toContain("Successfully wrote");
   });
 
-  it("keeps repeated Hosted Web Search calls as a stable Codex-style activity group", () => {
+  it("renders each Hosted Web Search as a separate Codex-style activity row", () => {
     const searchTurn: TurnView = {
       ...turn("10000000-0000-4000-8000-000000000042", "调研最新版本"),
       items: [
@@ -640,9 +640,30 @@ describe("product chat experience", () => {
       ],
     };
     const markup = renderToStaticMarkup(<ConversationTurn turn={searchTurn} />);
-    expect(markup).toContain("已搜索网页 2 次");
-    expect(markup).toContain("Node.js latest release …");
+    expect(markup).toContain("已搜索网页：Node.js latest release …");
+    expect(markup).not.toContain("已搜索网页 2 次");
+    expect(markup.match(/product-hosted-search completed/g)).toHaveLength(2);
+    expect(markup.match(/>•<\/span>/g)).toHaveLength(2);
     expect(markup).toContain("https://www.python.org/downloads/");
+  });
+
+  it("renders an in-flight Hosted Web Search with the Codex-style hollow marker", () => {
+    const searchTurn: TurnView = {
+      ...turn("10000000-0000-4000-8000-000000000043", "搜索网页"),
+      status: "running",
+      items: [
+        {
+          kind: "hosted_search",
+          key: "hosted-search:ws-running",
+          activityId: "ws-running",
+          status: "running",
+          firstSequence: 1,
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(<ConversationTurn turn={searchTurn} />);
+    expect(markup).toContain("正在搜索网页");
+    expect(markup).toContain(">◦</span>");
   });
 
   it("renders durable Pi compaction and model retry lifecycle rows", () => {

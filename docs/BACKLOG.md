@@ -42,8 +42,9 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Provider capabilities
 
-- [x] Preserve per-call Hosted Web Search identity, count and portable action
-      details across live Kafka/SSE output and canonical Pi Session reload.
+- [x] Preserve per-call Hosted Web Search identity and portable action details
+      across live Kafka/SSE output and canonical Pi Session reload, with one
+      stable searching/searched row per Provider item.
 - [x] Keep completed Markdown blocks stable while only the in-flight tail is
       reparsed during streaming.
 - [x] Align GPT-5.6 Worker context and native Compaction threshold with the

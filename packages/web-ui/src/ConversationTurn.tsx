@@ -227,40 +227,36 @@ function HostedSearchGroup({
   items: readonly Extract<TranscriptItem, { kind: "hosted_search" }>[];
 }) {
   const { t } = useI18n();
-  const running = items.some((item) => item.status === "running");
-  const failed = !running && items.every((item) => item.status === "failed");
-  const details = [
-    ...new Set(
-      items
-        .map((item) => hostedSearchDetail(item.action))
-        .filter((detail): detail is string => detail !== null && detail.length > 0),
-    ),
-  ];
-  const label = running
-    ? items.length > 1
-      ? t("turn.searchingWebCount", { count: items.length })
-      : t("turn.searchingWeb")
-    : failed
-      ? t("turn.searchWebFailed")
-      : items.length > 1
-        ? t("turn.searchedWebCount", { count: items.length })
-        : t("turn.searchedWeb");
   return (
-    <section
-      aria-label={label}
-      className={`product-hosted-search ${running ? "running" : failed ? "failed" : "completed"}`}
-    >
-      <div className="product-hosted-search-summary">
-        <span aria-hidden="true">{running ? "◌" : failed ? "!" : "✓"}</span>
-        <strong>{label}</strong>
-      </div>
-      {details.length === 0 ? null : (
-        <ol>
-          {details.map((detail) => (
-            <li key={detail}>{detail}</li>
-          ))}
-        </ol>
-      )}
+    <section aria-label={t("turn.webSearchActivity")} className="product-hosted-search-list">
+      {items.map((item) => {
+        const detail = hostedSearchDetail(item.action);
+        const label =
+          item.status === "running"
+            ? t("turn.searchingWeb")
+            : item.status === "failed"
+              ? t("turn.searchWebFailed")
+              : item.action?.type === "search" && detail !== null
+                ? t("turn.searchedWebFor", { query: detail })
+                : t("turn.searchedWeb");
+        return (
+          <div
+            aria-label={label}
+            className={`product-hosted-search ${item.status}`}
+            key={item.key}
+          >
+            <span aria-hidden="true" className="product-hosted-search-marker">
+              {item.status === "running" ? "◦" : item.status === "failed" ? "!" : "•"}
+            </span>
+            <span className="product-hosted-search-label">
+              {label}
+              {detail !== null && item.action?.type !== "search" ? (
+                <span className="product-hosted-search-detail"> · {detail}</span>
+              ) : null}
+            </span>
+          </div>
+        );
+      })}
     </section>
   );
 }

@@ -115,10 +115,11 @@ effect boundary rejects an expired or replaced lease. See
 Sandbox-backed Pi function Tools execute through Tool Broker. A verified
 Provider-hosted Tool is instead declared in that Turn's native model request and executes at the
 Provider; the current OpenAI Codex and DeepSeek Responses routes enable Web
-Search. Each Provider search item keeps one stable activity row from start to
-completion; repeated searches show their count and portable query/open/find
-details through the existing Kafka/SSE live tail. Completed activity is rebuilt
-from the same Pi assistant message after reload.
+Search. Each Provider search item keeps one stable Codex-style activity row
+that changes in place from searching to searched; repeated searches remain
+separate and show portable query/open/find details through the existing
+Kafka/SSE live tail. Completed activity is rebuilt from the same Pi assistant
+message after reload.
 The completed Pi assistant message retains the Provider-native search action,
 assistant text and URL citations; native IDs replay only to the exact issuing
 Provider/API/model. Switching the conversation model while idle keeps the

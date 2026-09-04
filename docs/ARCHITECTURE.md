@@ -150,7 +150,8 @@ an active Agent Loop. PiCloud emits no synthetic capability notice to the user
 or model. The Model Gateway publishes per-call Hosted Tool start/completion
 boundaries and portable `search/open_page/find_in_page` display actions through
 the current Run's Kafka live tail. The UI updates one stable activity row per
-Provider item and can show repeated-search counts. Those progress events never
+Provider item, preserving repeated searches as an ordered list while changing
+each row in place from searching to searched. Those progress events never
 become Tool Broker operations or a parallel Session sidecar. At the terminal
 Responses boundary, the trusted adapter binds completed native search actions
 and URL citations to the issuing sampling identity and stores them inside that
