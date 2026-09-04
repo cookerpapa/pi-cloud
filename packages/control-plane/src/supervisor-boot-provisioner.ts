@@ -280,10 +280,7 @@ export class SupervisorBootProvisioner {
         .where("supervisor_id", "=", provisionedSupervisorId)
         .forUpdate()
         .executeTakeFirstOrThrow();
-      if (
-        host.maximum_capacity < this.#maximumCapacity ||
-        host.management_base_url !== provisionedManagementBaseUrl
-      ) {
+      if (host.management_base_url !== provisionedManagementBaseUrl) {
         throw new SupervisorBootProvisionError(
           "provision_host_policy_conflict",
           "Stored Supervisor host policy does not match deployment configuration",
@@ -291,7 +288,7 @@ export class SupervisorBootProvisioner {
           false,
         );
       }
-      if (host.maximum_capacity > this.#maximumCapacity) {
+      if (host.maximum_capacity !== this.#maximumCapacity) {
         await transaction
           .updateTable("supervisor_hosts")
           .set({

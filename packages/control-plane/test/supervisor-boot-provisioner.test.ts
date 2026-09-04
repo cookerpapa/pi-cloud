@@ -210,7 +210,7 @@ describe.sequential("production Supervisor boot provisioning", () => {
     ).rejects.toMatchObject({ code: "provision_policy_rejected", statusCode: 403 });
   });
 
-  it("automatically tightens a stored host capacity but never expands it", async () => {
+  it("reconciles stored host capacity to the trusted deployment policy", async () => {
     const supervisorId = "production-supervisor-capacity-migration";
     const original = new SupervisorBootProvisioner({
       database,
@@ -241,10 +241,14 @@ describe.sequential("production Supervisor boot provisioning", () => {
 
     await expect(
       original.provision(request({ supervisorId, capacity: 1 }).body),
-    ).rejects.toMatchObject({
-      code: "provision_host_policy_conflict",
-      statusCode: 409,
-    });
+    ).resolves.toMatchObject({ idempotent: false });
+    await expect(
+      database
+        .selectFrom("supervisor_hosts")
+        .select("maximum_capacity")
+        .where("supervisor_id", "=", supervisorId)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ maximum_capacity: 4 });
   });
 
   it("serves the bounded internal endpoint without exposing raw errors", async () => {
