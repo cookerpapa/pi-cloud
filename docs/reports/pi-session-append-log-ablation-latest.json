@@ -1,0 +1,56 @@
+{
+  "format": "pi-cloud.pi-session-append-log-ablation.v1",
+  "generatedAt": "2026-09-04T11:10:34.042Z",
+  "beforeRevision": "d9483a90a1f0b8db4edc36917100394a4848219f",
+  "afterRevision": "0889f4e8371fb68db17f9b953ade7f7aa3bf72b7",
+  "scope": [
+    "same WSL2 host",
+    "fresh isolated pinned PostgreSQL container per trial",
+    "complete 1 KiB Pi semantic Entries",
+    "no model, Tool, Kafka or Cube time in timed window",
+    "three alternating trials; median reported"
+  ],
+  "workloads": {
+    "manySessions": {
+      "sessions": 2000,
+      "eventsPerSession": 4,
+      "writerConcurrency": 256,
+      "replaySessions": 500,
+      "before": {
+        "appendEventsPerSecond": 917.16,
+        "appendLatencyMs": { "p50": 261.04, "p95": 345.2, "p99": 485.58 },
+        "walBytesPerEvent": 6566.8,
+        "replayEventsPerSecond": 22769.2,
+        "replayLatencyMs": { "p50": 39.29, "p95": 48.95, "p99": 53.09 }
+      },
+      "after": {
+        "appendEventsPerSecond": 903.31,
+        "appendLatencyMs": { "p50": 265.45, "p95": 352.11, "p99": 503.48 },
+        "walBytesPerEvent": 6800.33,
+        "replayEventsPerSecond": 26409.7,
+        "replayLatencyMs": { "p50": 35.11, "p95": 42.99, "p99": 46.97 }
+      }
+    },
+    "longerSessions": {
+      "sessions": 250,
+      "eventsPerSession": 32,
+      "writerConcurrency": 128,
+      "replaySessions": 250,
+      "before": {
+        "appendEventsPerSecond": 905.95,
+        "appendLatencyMs": { "p50": 122.25, "p95": 183.77, "p99": 343.45 },
+        "walBytesPerEvent": 6512.18,
+        "replayEventsPerSecond": 57798.29,
+        "replayLatencyMs": { "p50": 65.79, "p95": 82.39, "p99": 107.69 }
+      },
+      "after": {
+        "appendEventsPerSecond": 865.98,
+        "appendLatencyMs": { "p50": 127.43, "p95": 190.17, "p99": 322.02 },
+        "walBytesPerEvent": 6778.58,
+        "replayEventsPerSecond": 67061.21,
+        "replayLatencyMs": { "p50": 57.43, "p95": 72.46, "p99": 94.37 }
+      }
+    }
+  },
+  "failures": 0
+}

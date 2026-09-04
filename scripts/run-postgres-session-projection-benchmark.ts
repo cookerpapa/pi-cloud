@@ -12,10 +12,12 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const sessionCount = Number(process.env.PI_CLOUD_PG_BENCHMARK_SESSIONS ?? "2000");
 const mutationsPerSession = Number(process.env.PI_CLOUD_PG_BENCHMARK_MUTATIONS ?? "4");
 const concurrency = Number(process.env.PI_CLOUD_PG_BENCHMARK_CONCURRENCY ?? "256");
+const replaySessionCount = Number(process.env.PI_CLOUD_PG_BENCHMARK_REPLAY_SESSIONS ?? "500");
 for (const [value, name, maximum] of [
   [sessionCount, "sessions", 20_000],
   [mutationsPerSession, "mutations", 32],
   [concurrency, "concurrency", 2_000],
+  [replaySessionCount, "replay sessions", 20_000],
 ] as const) {
   if (!Number.isSafeInteger(value) || value < 1 || value > maximum) {
     throw new Error(`${name} is invalid`);
@@ -129,8 +131,8 @@ try {
         .execute();
     }
     const before = await sql<{
-      bytes: string;
-    }>`select wal_bytes::text as bytes from pg_stat_wal`.execute(database);
+      lsn: string;
+    }>`select pg_current_wal_insert_lsn()::text as lsn`.execute(database);
     const durations: number[] = [];
     const failures: string[] = [];
     const startedAt = performance.now();
@@ -175,9 +177,25 @@ try {
     }
     const elapsedMs = performance.now() - startedAt;
     const after = await sql<{
-      bytes: string;
-    }>`select wal_bytes::text as bytes from pg_stat_wal`.execute(database);
+      lsn: string;
+    }>`select pg_current_wal_insert_lsn()::text as lsn`.execute(database);
     const total = sessionCount * mutationsPerSession;
+    const replaySessions = sessions.slice(0, Math.min(replaySessionCount, sessions.length));
+    const replayStartedAt = performance.now();
+    const replay = await parallelMap(replaySessions, concurrency, async (sessionId) => {
+      const started = performance.now();
+      const items = await new PostgresPiSessionStorage({
+        database,
+        tenantId,
+        sessionId,
+      }).getLog();
+      if (items.length !== mutationsPerSession || items.some((item) => item.kind !== "entry")) {
+        throw new Error("Pi Session log replay returned an incomplete semantic stream");
+      }
+      return performance.now() - started;
+    });
+    const replayElapsedMs = performance.now() - replayStartedAt;
+    failures.push(...replay.failures);
     const entries = await database
       .selectFrom("pi_session_entries")
       .select(({ fn }) => fn.countAll<string>().as("count"))
@@ -186,9 +204,15 @@ try {
       .selectFrom("pi_session_mutation_results")
       .select(({ fn }) => fn.countAll<string>().as("count"))
       .executeTakeFirstOrThrow();
-    const walBytes = Number(BigInt(after.rows[0]!.bytes) - BigInt(before.rows[0]!.bytes));
+    const wal = await sql<{ bytes: string }>`
+      select pg_wal_lsn_diff(
+        ${after.rows[0]!.lsn}::pg_lsn,
+        ${before.rows[0]!.lsn}::pg_lsn
+      )::text as bytes
+    `.execute(database);
+    const walBytes = Number(wal.rows[0]!.bytes);
     const report = {
-      format: "pi-cloud.postgres-session-projection-capacity.v1",
+      format: "pi-cloud.postgres-session-projection-capacity.v2",
       generatedAt: new Date().toISOString(),
       revision: spawnSync("git", ["rev-parse", "HEAD"], {
         cwd: root,
@@ -214,6 +238,20 @@ try {
         },
         walBytes,
         walBytesPerMessage: Number((walBytes / total).toFixed(2)),
+        logReplay: {
+          sessions: replaySessions.length,
+          semanticEvents: replaySessions.length * mutationsPerSession,
+          elapsedMs: Number(replayElapsedMs.toFixed(2)),
+          sessionsPerSecond: Number(((replaySessions.length * 1000) / replayElapsedMs).toFixed(2)),
+          eventsPerSecond: Number(
+            ((replaySessions.length * mutationsPerSession * 1000) / replayElapsedMs).toFixed(2),
+          ),
+          latencyMs: {
+            p50: Number(percentile(replay.durations, 0.5).toFixed(2)),
+            p95: Number(percentile(replay.durations, 0.95).toFixed(2)),
+            p99: Number(percentile(replay.durations, 0.99).toFixed(2)),
+          },
+        },
       },
       scope: [
         "isolated single-node PostgreSQL",
@@ -227,7 +265,7 @@ try {
     );
     await writeFile(
       `${root}/docs/reports/postgres-session-projection-latest.md`,
-      `# PostgreSQL Session projection acceptance\n\n- Complete messages: ${total}\n- Throughput: ${report.result.messagesPerSecond} messages/s\n- Latency p50/p95/p99: ${report.result.latencyMs.p50} / ${report.result.latencyMs.p95} / ${report.result.latencyMs.p99} ms\n- WAL: ${walBytes} bytes (${report.result.walBytesPerMessage} bytes/message)\n- Failures: ${failures.length}\n\nThis measures complete semantic Session projection, not token deltas.\n`,
+      `# PostgreSQL Session projection acceptance\n\n- Complete messages: ${total}\n- Throughput: ${report.result.messagesPerSecond} messages/s\n- Latency p50/p95/p99: ${report.result.latencyMs.p50} / ${report.result.latencyMs.p95} / ${report.result.latencyMs.p99} ms\n- WAL: ${walBytes} bytes (${report.result.walBytesPerMessage} bytes/message)\n- Log replay: ${report.result.logReplay.sessionsPerSecond} Sessions/s, ${report.result.logReplay.eventsPerSecond} events/s\n- Log replay latency p50/p95/p99: ${report.result.logReplay.latencyMs.p50} / ${report.result.logReplay.latencyMs.p95} / ${report.result.logReplay.latencyMs.p99} ms\n- Failures: ${failures.length}\n\nThis measures complete semantic Session projection, not token deltas.\n`,
     );
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     if (failures.length > 0 || Number(entries.count) !== total || Number(results.count) !== total) {
