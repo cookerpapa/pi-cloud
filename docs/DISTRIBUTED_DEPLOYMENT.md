@@ -38,14 +38,12 @@ AcceptedFacts -> Kafka keyed by Session
               └-> canonical consumer group -> PostgreSQL SessionStorage
 ```
 
-There are no execution Cells or Worker-affinity queues. A Workspace binds to a
-Sandbox Domain for Cube/storage locality; any Pi Worker may execute its next
-Run.
-
-Do not confuse a live RunAttempt's `worker_id` with affinity. It identifies the
-replica that currently heartbeats and executes that one fenced Attempt. It does
-not influence placement of the Session's next Run, and no private Worker queue
-or durable preferred-Worker record exists after the current migrations finish.
+There are no execution Cells, private Worker queues or persistent cold-Session
+affinity records. A Workspace binds to a Sandbox Domain for Cube/storage
+locality. Any Pi Worker may acquire a cold physical Pi Session, but every
+unexpired Attempt on that Session's main and delegated Lanes must use the same
+Worker boot identity. PostgreSQL derives that active ownership from RunAttempt
+claims under a brief `pi_sessions` row lock.
 
 ## Deploy
 
@@ -82,8 +80,8 @@ configured minimum Workers continue polling PostgreSQL.
 
 Workers use rolling replacement and a long termination grace so active Runs can
 settle or lose authority safely. Correctness does not depend on a stable Worker
-ordinal or local Session cache. A replacement reconnects to PostgreSQL and may
-claim any ready Run.
+ordinal or local Session cache. A replacement may acquire a Session after its
+previous owner's Attempts expire; stale ExecutionLeases cannot commit effects.
 
 Before claiming high availability, test on the actual storage/network stack:
 

@@ -50,10 +50,11 @@ Control Plane replicas
             └─ snapshot + live SSE ──────────────────────────────▶ Browser
 
 PostgreSQL ready Runs
-  └─ SKIP LOCKED + LISTEN/NOTIFY
+  └─ physical Pi Session owner claim + SKIP LOCKED + LISTEN/NOTIFY
        ▼
 Trusted Pi Worker pool (replaceable, bounded slots)
-  ├─ Pi SDK Agent Loop + native Compaction
+  ├─ one active owner per physical Pi Session
+  ├─ parallel main/Subagent Lane Agent Loops + native Compaction
   ├─ bounded Session context read from PostgreSQL
   ├─ Worker-local capability Model Gateway
   │    └─ frozen Provider/model/reasoning/Fast/modalities/Hosted Tools
@@ -99,10 +100,12 @@ There are three durable authorities:
   a cloud development machine's guest root, memory and processes on its compute node;
   releasing that machine deletes its private Volume but never its conversations.
 
-Any healthy Worker may run a Session's next message. PostgreSQL atomically
-issues one versioned, never-reused `ExecutionLease`; every effect boundary rejects
-an expired or replaced lease, so no Session is permanently assigned to a
-process. See [Architecture](docs/ARCHITECTURE.md),
+Any healthy Worker may acquire a cold Pi Session. While any Lane is active,
+that physical Session stays on one Worker; its main and Subagent Lanes execute
+in parallel inside that ownership boundary. PostgreSQL atomically issues one
+versioned, never-reused `ExecutionLease` per active Lane operation, and every
+effect boundary rejects an expired or replaced lease. See
+[Architecture](docs/ARCHITECTURE.md),
 [Run lifecycle](docs/RUN_LIFECYCLE.md) and
 [stream durability](docs/STREAM_DURABILITY.md) for the detailed contracts.
 

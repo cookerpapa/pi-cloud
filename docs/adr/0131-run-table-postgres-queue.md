@@ -47,7 +47,7 @@ database pattern rather than another runtime state machine.
 - Keep RunAttempt transitions for this cutover. Their diagnostic/public API
   value and possible removal are a separate decision.
 - Remove the unused tenant `last_scheduled_at` ordering. The maintained queue is
-  global FIFO subject to Subagent priority and same-Session causality; tenant
+  global FIFO subject to physical Pi Session ownership and same-Lane causality; tenant
   fairness is not claimed without measured starvation and an explicit policy.
 
 ## Destructive cutover

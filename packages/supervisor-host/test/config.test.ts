@@ -103,14 +103,14 @@ describe("Supervisor host production configuration", () => {
         "worker-event-ingest",
         `event-ingest-${"i".repeat(48)}`,
       ),
-      PI_CLOUD_SUPERVISOR_CAPACITY: "1",
+      PI_CLOUD_SUPERVISOR_CAPACITY: "4",
       PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS: "7",
       PI_CLOUD_MODEL_GATEWAY_ADVERTISED_URL: "http://127.0.0.1:4200",
     });
     expect(config).toMatchObject({
       supervisorId: "supervisor-production-1",
       supervisorWebSocketUrl: "ws://control-plane:3000/internal/v1/supervisor",
-      maxConcurrentSessions: 1,
+      maxConcurrentSessions: 4,
       databaseMaxConnections: 7,
       subagentMaximumDepth: 4,
       subagentMaximumNodes: 32,
@@ -172,7 +172,7 @@ describe("Supervisor host production configuration", () => {
 
     await expect(
       loadSupervisorHostConfig({ ...environment, PI_CLOUD_SUPERVISOR_CAPACITY: "2" }),
-    ).resolves.toMatchObject({ maxConcurrentSessions: 2, databaseMaxConnections: 4 });
+    ).rejects.toThrow("leave at least one conversation slot");
     await expect(
       loadSupervisorHostConfig({ ...environment, PI_CLOUD_SUPERVISOR_CAPACITY: "16" }),
     ).resolves.toMatchObject({ maxConcurrentSessions: 16, databaseMaxConnections: 16 });

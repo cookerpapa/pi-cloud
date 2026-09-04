@@ -48,6 +48,11 @@ assert.equal(
 );
 assert.equal(environment.PI_CLOUD_SUPERVISOR_CAPACITY, "4");
 assert.equal(environment.PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS, "8");
+assert.equal(environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT, "3");
+assert(
+  Number(environment.PI_CLOUD_SUPERVISOR_CAPACITY) >
+    Number(environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT),
+);
 
 const scaler = find("ScaledObject");
 assert(scaler);

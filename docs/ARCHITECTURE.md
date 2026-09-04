@@ -21,15 +21,18 @@ background evidence and never reactivate a component in the current topology.
 The current Worker invariant is deliberately precise:
 
 - there is one shared PostgreSQL ready-Run queue;
-- no user, Session or Workspace stores a preferred Worker;
-- any healthy Worker with a free slot may claim the next eligible Run;
-- a Worker that creates a Child Run may make one immediate local claim attempt
-  when its reserved Child slot is free; this is an opportunistic race, never a
-  queued or persisted affinity decision;
-- the Worker/Supervisor identity on a live RunAttempt is ephemeral execution
-  ownership represented externally by one versioned `ExecutionLease`, not affinity;
-- later Turns restore their bounded Pi context from PostgreSQL and therefore
-  do not depend on the previous Worker remaining alive or warm.
+- a cold physical Pi Session has no Worker affinity and may be acquired by any
+  healthy Worker with a free conversation slot;
+- while any Lane is active, all unexpired Attempts bound to that
+  `(tenant_id, pi_session_id)` have one never-reused Worker boot identity;
+- Run Claim briefly locks the shared `pi_sessions` row, so concurrent claims
+  cannot elect two active owners;
+- main and delegated Lanes may execute concurrently on the owning Worker, with
+  separately bounded conversation and Child capacity;
+- every Lane operation retains its own versioned `ExecutionLease`; active
+  Session ownership is placement, not a second effect authority;
+- after all Attempts expire or settle, a later Turn may restore the Session on
+  another Worker from PostgreSQL.
 
 ## Components
 
@@ -48,11 +51,13 @@ becoming scheduler locks for one another.
 ### PostgreSQL Run queue
 
 Ready `runs` rows are the sole Worker queue. All Pi Workers query that table
-directly. A lightweight indexed `FOR UPDATE SKIP LOCKED` query locks one Run
-before its immutable execution snapshot is loaded; Attempt creation, its first
-transition and the Run update are then one CTE statement in the same
-transaction. There is no separate read-then-claim dispatcher. `RunExecutor`
-make competing claims and duplicate wakeups harmless. `LISTEN/NOTIFY` is a
+directly. A lightweight indexed `FOR UPDATE SKIP LOCKED` query locks one Run,
+then the claimant briefly locks its physical `pi_sessions` row and rejects a
+different live Worker owner before loading the immutable execution snapshot.
+Attempt creation, its first transition and the Run update are one CTE statement
+in the same transaction. There is no separate read-then-claim dispatcher or
+owner table. `RunExecutor` makes competing claims and duplicate wakeups
+harmless. `LISTEN/NOTIFY` is a
 best-effort wakeup hint with periodic polling as the correctness fallback. A
 monotonic process-local notification generation covers the claim-to-wait race:
 a notification received before the waiter is installed forces an immediate
@@ -80,15 +85,19 @@ actually required.
 
 ### Trusted Pi Worker pool
 
-Workers are horizontally replaceable. A Worker slot claims one Run, opens the
-Pi Session, calls the model and delegates Tools. Cold Sessions have no process
-or thread.
+Workers are horizontally replaceable. A conversation slot claims a cold
+physical Pi Session or another Run for a Session it already owns. Cold Sessions
+have no process or thread. An active Session's main and delegated Lanes stay on
+that Worker until their Attempts settle or lose authority.
 
-One Worker process is an Agent Host with several bounded runtime slots; it is
-not a Session owner. Each slot constructs an independent Pi `Agent`, model
-capability and Tool set from the accepted Run. Process-wide registries contain
-trusted definitions only and never imply that every Agent runtime can see or
-execute every definition.
+One Worker process is an Agent Host that owns several active Sessions. It has
+separately bounded conversation and Child Lane capacity, so a Parent waiting on
+recursive delegation cannot consume the only slot able to start its Child.
+Each active Lane currently constructs an independent Pi `Agent`, model
+capability and Tool set from the accepted Run. This is a temporary adapter for
+Pi 0.84's unfinished high-level AgentHarness; the Worker ownership boundary and
+PostgreSQL Session/Lane contract already match Harness V2. Process-wide
+registries contain trusted definitions only and never widen one Lane's tools.
 
 The Agent Host consumes one `TrustedToolRuntime` interface rather than building
 platform Tools itself. The maintained PostgreSQL implementation supplies
@@ -162,13 +171,12 @@ restore the generated image result; PiCloud does not replace that missing
 contract with a trusted in-process image Tool.
 
 Before a Worker becomes Ready it preloads the governed `pi-subagents` Tool
-contract and two empty Pi `ModelRuntime` slots. An active Run exclusively owns
-one slot and injects its short-lived Model Gateway capability only after
-checkout; concurrent Runs never share a mutable runtime. The slot returns to
-the Worker-local pool after settlement, while additional slots are created
-lazily if configured Worker concurrency exceeds the prewarmed capacity. This
-moves module/provider initialization out of user-visible first-token latency
-without making Session affinity part of correctness.
+contract and two empty Pi `ModelRuntime` slots. An active Lane operation
+exclusively owns one slot and injects its short-lived Model Gateway capability
+only after checkout; concurrent Lanes never share a mutable model runtime. The
+slot returns to the Worker-local pool after settlement, while additional slots
+are created lazily. This moves module/provider initialization out of
+user-visible first-token latency without making cold-Session placement sticky.
 
 For an accepted Run, Pi Session open and Model Runtime acquisition begin
 concurrently because neither consumes the other's state. World State capture
@@ -269,7 +277,8 @@ comes from the delegated task plus explicit context, Workspace, Tool, model and
 thinking settings. A narrow
 `PI_SUBAGENT_PI_BINARY` adapter replaces only local child execution. Every child
 gets an independently addressable `session_kind=subagent` execution scope, Run
-and RunAttempt in PostgreSQL and is claimed by the ordinary shared Worker pool.
+and RunAttempt in PostgreSQL. The physical Pi Session's owning Worker claims it
+from reserved Child capacity; another Worker skips it.
 That scope binds to a unique lane in the root conversation's physical Pi
 Session; it is not another Pi Session. The product
 projects it beneath the causal parent Turn with explicit context and Workspace
@@ -286,18 +295,18 @@ all descendants share one deployment-owned tree budget. Defaults are depth 4,
 the fixed depth/node boundary, while a concurrent-spawn race is rejected under
 the root-Run lock. These bounds can be configured per Worker deployment but are
 never model-controlled. Nested Child Runs use the same PostgreSQL queue,
-RunAttempt fence, Tool Broker authorization and Cube Workspace modes as the
-first generation. Cancelling or archiving a parent covers its full descendant
-execution subtree. Worker admission keeps a deployment-owned Child slot
-available so a waiting parent cannot occupy every local execution lane.
+physical Session owner, RunAttempt fence, Tool Broker authorization and Cube
+Workspace modes as the first generation. Cancelling or archiving a parent
+covers its full descendant execution subtree. Worker admission reserves the
+configured Child concurrency from total Lane capacity so waiting ancestors
+cannot block their descendants.
 
-The upstream native supervisor channel is local-file based, so PiCloud replaces
-that transport with a PostgreSQL channel while preserving the
-`contact_supervisor`/`subagent_supervisor` Tool semantics. Progress updates are
-durable and non-blocking. Decision/interview requests pause the Child Tool,
-surface immediately in the parent Tool stream, and may be answered by a parent
-Run on another Worker. The reply wakes the existing Child Run; it never starts
-the task again.
+The upstream native supervisor channel is local-file based, so PiCloud persists
+its `contact_supervisor`/`subagent_supervisor` state in PostgreSQL. Parent and
+Child normally communicate inside the same owning Worker; the durable row is a
+recovery record rather than a cross-Worker execution path. Progress updates are
+non-blocking. Decision/interview requests pause the Child Tool, surface in the
+parent Tool stream and wake the same Child Run after reply.
 
 Context, allowed Tools and Workspace modes are explicit and independent:
 
@@ -703,8 +712,9 @@ Session, then queues the Run. Pure conversation stays entirely in the trusted
 plane. If Pi chooses a Tool, the Broker lazily creates Cube and mounts the
 Workspace Volume.
 
-For a later message, any Worker can resume the same Pi Session from PostgreSQL.
-It first crosses the Session mutation projection barrier, rechecks its newer
+For a later message, the current owner handles it while another Lane remains
+active; otherwise any Worker may acquire and restore the cold Pi Session. It
+first crosses the Session mutation projection barrier, rechecks its newer
 fence, then Pi reconstructs the active model context and respects its native
 compaction boundary. If the Workspace Cube is still warm, the Run receives a
 new Tool binding without changing physical identity; otherwise a new KVM mounts
@@ -747,4 +757,5 @@ Control Plane, Pi Worker and Tool Broker are independent replica sets.
 PostgreSQL/PgBouncer, Workspace storage and Cube are external authorities.
 Scaling the Worker pool adds Agent Loop slots;
 scaling Cube compute adds concurrent Tool environments. No Cell abstraction or
-per-Worker affinity is required for correctness.
+private per-Worker queue is required; active Session ownership is derived from
+the shared RunAttempt authority.

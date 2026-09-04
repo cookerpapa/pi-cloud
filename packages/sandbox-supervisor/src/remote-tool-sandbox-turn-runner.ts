@@ -714,7 +714,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                           : [],
                         hasSupervisorContact
                           ? [
-                              "A durable contact_supervisor Tool can reach the parent Agent across cloud Workers.",
+                              "A durable contact_supervisor Tool can reach the parent Agent on this Session's owning Worker.",
                             ]
                           : [],
                       )
@@ -819,7 +819,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                     : [],
                   hasSupervisorContact
                     ? [
-                        "A durable contact_supervisor Tool can reach the parent Agent across cloud Workers.",
+                        "A durable contact_supervisor Tool can reach the parent Agent on this Session's owning Worker.",
                       ]
                     : [],
                 )

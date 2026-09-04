@@ -83,16 +83,15 @@ conversation.
 
 ## Consequences
 
-- Subagent Runs consume the same Worker capacity as ordinary Runs and can scale
-  by adding Agent Host replicas. Their root-tree depth/node/concurrency budget
-  remains the bounded orchestration admission rule.
-- Parent and Child Agent Loops may execute on different Workers while sharing
-  one immutable Entry DAG. ExecutionLease and event identity remain scoped to
-  each logical product Session; Pi mutations additionally bind the exact
-  physical Session and lane.
-- Worker admission reserves a child lane so waiting parents cannot consume
-  every local slot. A future durable parent-wait boundary may reclaim the
-  waiting slot as an optimization, but correctness does not depend on it.
+- Subagent Runs use reserved Child Lane capacity on their physical Pi Session's
+  owning Worker. Their root-tree depth/node/concurrency budget remains the
+  bounded orchestration admission rule.
+- Parent and Child Agent Loops execute on the same Worker while sharing one
+  immutable Entry DAG. ExecutionLease and event identity remain scoped to each
+  logical product execution; Pi mutations additionally bind the exact physical
+  Session and lane.
+- Worker admission reserves the configured Child concurrency so waiting
+  ancestors cannot consume every local slot needed by descendants.
 - Shared mode preserves live files, dependencies and processes and permits
   user-managed concurrent mutations. Isolated mode requires a
   trusted Volume fork and an explicit result/merge contract. Context mode is

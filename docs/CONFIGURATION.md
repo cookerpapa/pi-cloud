@@ -93,7 +93,7 @@ then recreate affected services with `npm run production:up`.
 
 | Variable | Default | Meaning |
 | --- | ---: | --- |
-| `PI_CLOUD_SUPERVISOR_CAPACITY` | `2` | simultaneous Agent Loops per Compose Worker |
+| `PI_CLOUD_SUPERVISOR_CAPACITY` | `4` | total Agent Lane operations per Compose Worker; Subagent capacity is reserved from this total |
 | `PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS` | `4` | bounded PostgreSQL pool per Compose Worker; tune independently from slots |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH` | `4` | recursive Agent-tree depth |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_NODES` | `32` | total descendants per root Run |

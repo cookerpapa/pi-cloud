@@ -290,12 +290,18 @@ async function recursiveTreeEvidence(rootRunId) {
       'childSessionId', execution.child_session_id,
       'childRunId', execution.child_run_id,
       'childRunState', child_run.state,
+      'rootWorker', root_attempt.claim_owner_id,
+      'childWorker', child_attempt.claim_owner_id,
+      'sameWorker', root_attempt.claim_owner_id = child_attempt.claim_owner_id,
       'piSessionId', child.pi_session_id,
       'piSessionLane', child.pi_session_lane,
       'contextBaseEntryId', execution.pi_context_base_entry_id
     ) order by execution.depth, execution.created_at), '[]'::json)::text
     from subagent_executions as execution
+    join runs as root_run on root_run.id = execution.root_run_id
+    join run_attempts as root_attempt on root_attempt.id = root_run.current_attempt_id
     join runs as child_run on child_run.id = execution.child_run_id
+    join run_attempts as child_attempt on child_attempt.id = child_run.current_attempt_id
     join sessions as child on child.id = execution.child_session_id
     where execution.root_run_id = ${sqlLiteral(rootRunId)}
   `);
@@ -309,6 +315,9 @@ async function parallelExecutionEvidence(parentRunId) {
       'childSessionId', execution.child_session_id,
       'childRunId', execution.child_run_id,
       'childRunState', child_run.state,
+      'parentWorker', parent_attempt.claim_owner_id,
+      'childWorker', child_attempt.claim_owner_id,
+      'sameWorker', parent_attempt.claim_owner_id = child_attempt.claim_owner_id,
       'piSessionId', child.pi_session_id,
       'piSessionLane', child.pi_session_lane,
       'contextBaseEntryId', execution.pi_context_base_entry_id,
@@ -340,7 +349,10 @@ async function parallelExecutionEvidence(parentRunId) {
       )
     ) order by execution.created_at), '[]'::json)::text
     from subagent_executions execution
+    join runs parent_run on parent_run.id = execution.parent_run_id
+    join run_attempts parent_attempt on parent_attempt.id = parent_run.current_attempt_id
     join runs child_run on child_run.id = execution.child_run_id
+    join run_attempts child_attempt on child_attempt.id = child_run.current_attempt_id
     join sessions child on child.id = execution.child_session_id
     where execution.parent_run_id = ${sqlLiteral(parentRunId)}
   `);
@@ -365,6 +377,7 @@ function assertLaneBacked(evidence, rootPiSessionId) {
   assert.equal(evidence.laneExists, true);
   assert.equal(evidence.inheritedReferenceCount, 0);
   assert(evidence.childOwnedEntryCount > 0);
+  assert.equal(evidence.sameWorker, true);
 }
 
 await retireHistoricalAcceptanceCubes();
@@ -497,6 +510,7 @@ try {
   assert(recursiveEvidence.every((execution) => execution.rootRunId === recursive.accepted.runId));
   assert(recursiveEvidence.every((execution) => execution.childRunState === "completed"));
   assert(recursiveEvidence.every((execution) => execution.piSessionId === session.sessionId));
+  assert(recursiveEvidence.every((execution) => execution.sameWorker === true));
   assert(
     recursiveEvidence.every((execution) =>
       /^subagent-[0-9a-f-]{36}$/u.test(execution.piSessionLane),

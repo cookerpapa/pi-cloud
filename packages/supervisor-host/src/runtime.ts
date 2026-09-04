@@ -75,7 +75,7 @@ export type SupervisorRunWorker = {
   readonly state: PostgresPiWorkerState;
   start(): Promise<void>;
   stop(): Promise<void>;
-  prioritizeSubagent?(runId: string): boolean;
+  scheduleOwnedSubagent?(runId: string): boolean;
 };
 
 function factChannelResolver(value: FactChannelFactory): ActiveFactChannelResolver {
@@ -192,6 +192,15 @@ export class PiWorkerRuntime {
       options.config.maxConcurrentSessions > 16
     ) {
       throw new TypeError("Pi SDK Worker runtime capacity must be between 1 and 16");
+    }
+    if (
+      !Number.isSafeInteger(options.config.subagentMaximumConcurrent) ||
+      options.config.subagentMaximumConcurrent < 1 ||
+      options.config.subagentMaximumConcurrent >= options.config.maxConcurrentSessions
+    ) {
+      throw new TypeError(
+        "Pi SDK Worker Subagent capacity must leave at least one conversation slot",
+      );
     }
     if (
       !Number.isSafeInteger(options.config.databaseMaxConnections) ||
@@ -424,8 +433,8 @@ export class PiWorkerRuntime {
       const trustedTools = new PostgresTrustedToolRuntime({
         database: this.#database,
         forkWorkspace: (request) => this.#toolBroker.forkWorkspace(request),
-        prioritizeSubagent: (runId) => {
-          this.#runWorker?.prioritizeSubagent?.(runId);
+        scheduleOwnedSubagent: (runId) => {
+          this.#runWorker?.scheduleOwnedSubagent?.(runId);
         },
         treePolicy: {
           maximumDepth: this.#config.subagentMaximumDepth,
@@ -530,6 +539,7 @@ export class PiWorkerRuntime {
         notificationConnectionString: this.#config.databaseNotificationUrl,
         identity: runWorkerIdentity,
         maximumConcurrentRuns: this.#config.maxConcurrentSessions,
+        maximumConcurrentSubagents: this.#config.subagentMaximumConcurrent,
         canClaimRuns: () => this.#state === "ready" && client?.state === "connected",
         admitRunClaims: async () => runClaimReadiness.ready,
         runExecutor: new RunExecutor({

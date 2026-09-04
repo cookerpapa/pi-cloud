@@ -307,6 +307,11 @@ export async function loadSupervisorHostConfig(
     (await optionalSecret(environment, "DATABASE_NOTIFICATION_URL", allowInlineSecrets)) ??
     databaseUrl;
   const maxConcurrentSessions = integerValue(environment, "PI_CLOUD_SUPERVISOR_CAPACITY", 4, 1, 16);
+  if (subagentMaximumConcurrent >= maxConcurrentSessions) {
+    throw new TypeError(
+      "Pi Worker capacity must leave at least one conversation slot after reserving Subagent lanes",
+    );
+  }
   const databaseMaxConnections = integerValue(
     environment,
     "PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS",

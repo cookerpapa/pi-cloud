@@ -55,8 +55,8 @@ and are not delegated execution lanes.
 
 - Delegated context branches create one lane row instead of one reference row per
   inherited Entry.
-- Parent and Child can run concurrently on different Workers while PostgreSQL
-  remains the shared Session authority.
+- Parent and Child run concurrently on the physical Pi Session's one active
+  Worker, while PostgreSQL remains the durable Session authority.
 - Pi Session sequence allocation is shared across lanes and briefly serializes
   commits on one PostgreSQL row. The bounded Subagent concurrency limit keeps
   this cost explicit and measurable.

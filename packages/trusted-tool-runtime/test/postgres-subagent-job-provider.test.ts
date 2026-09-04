@@ -245,7 +245,7 @@ afterAll(async () => {
 });
 
 describe.sequential("PostgresSubagentJobProvider", () => {
-  it("creates an idempotent Tool-free Child Session and queues it for the shared Worker pool", async () => {
+  it("creates an idempotent Tool-free Child Lane Run for its owning Worker", async () => {
     const provider = new PostgresSubagentJobProvider({ database });
     const request = {
       tenantId,
@@ -320,6 +320,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     const dispatchedPiBindings: Array<{ id: string; lane: string }> = [];
     const dispatcher = new RunExecutor({
       database,
+      claimOwnerId: "test-worker",
       backend: {
         async execute(request, lifecycle) {
           dispatched.push(request.runId);
@@ -330,7 +331,10 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       },
     });
     await new Promise((resolve) => setTimeout(resolve, 100));
-    await dispatcher.dispatchRun(persisted.runId);
+    await expect(dispatcher.dispatchRun(persisted.runId)).resolves.toMatchObject({
+      status: "completed",
+      runId: started.childRunId,
+    });
     expect(dispatched).toEqual([started.childRunId]);
     expect(dispatchedPiBindings).toEqual([
       { id: parentSessionId, lane: `subagent-${started.executionId}` },
@@ -424,6 +428,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     const dispatched: string[] = [];
     const dispatcher = new RunExecutor({
       database,
+      claimOwnerId: "test-worker",
       backend: {
         async execute(request, lifecycle) {
           dispatched.push(request.runId);
@@ -433,7 +438,10 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       },
     });
     await new Promise((resolve) => setTimeout(resolve, 100));
-    await dispatcher.dispatchRun(child.id);
+    await expect(dispatcher.dispatchRun(child.id)).resolves.toMatchObject({
+      status: "completed",
+      runId: started.childRunId,
+    });
     expect(dispatched).toEqual([started.childRunId]);
     await childPi
       .view(binding.piSessionLane)
@@ -682,7 +690,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     });
   });
 
-  it("persists cross-Worker Child progress and blocking supervisor replies", async () => {
+  it("persists Child progress and blocking supervisor replies for recovery", async () => {
     const provider = new PostgresSubagentJobProvider({ database });
     const started = await provider.start({
       tenantId,

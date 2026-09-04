@@ -3,7 +3,8 @@
 ## Completed foundation
 
 - multi-tenant Web Coding Agent using Pi SDK;
-- PostgreSQL Run/Attempt authority, same-Session ordering and shared Worker queue;
+- PostgreSQL Run/Attempt authority, same-Lane ordering, physical Pi Session
+  Worker ownership and shared Worker queue;
 - Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with native Compaction;
 - one multiplexed Fact connection per Worker, logical per-Run Streams and a PostgreSQL Authority Gate;
 - lossless PostgreSQL queue wake-up and background fail-closed execution-plane readiness;
@@ -30,8 +31,8 @@
   conversations starting on GPT-5.6 Sol, medium reasoning and Standard service.
 - role-free neutral Subagents with explicit task/context/Workspace/Tool settings
   and lazy Cube activation on the first local Tool call.
-- lane-bound Subagents sharing one durable Pi Session Entry DAG without
-  per-Entry inherited-context references.
+- owner-local Lane-bound Subagents sharing one durable Pi Session Entry DAG
+  without per-Entry inherited-context references.
 - Codex-style per-call Hosted Web Search activity for GPT and DeepSeek, plus
   stable-region Markdown rendering for citation-heavy streams.
 

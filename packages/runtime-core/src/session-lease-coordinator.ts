@@ -13,6 +13,10 @@ import type {
   TurnExecutionAuthority,
   TurnExecutionRequest,
 } from "./run-executor.ts";
+import {
+  conflictingPiSessionWorker,
+  lockPiSessionWorkerOwnership,
+} from "./pi-session-worker-ownership.ts";
 
 const DEFAULT_LEASE_DURATION_MS = 60_000;
 
@@ -433,7 +437,14 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     return this.#database.transaction().execute(async (transaction) => {
       const session = await transaction
         .selectFrom("sessions")
-        .select(["tenant_id", "project_id", "workspace_id", "state", "last_fencing_token"])
+        .select([
+          "tenant_id",
+          "project_id",
+          "workspace_id",
+          "pi_session_id",
+          "state",
+          "last_fencing_token",
+        ])
         .where("id", "=", request.sessionId)
         .forUpdate()
         .executeTakeFirst();
@@ -441,7 +452,8 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         session === undefined ||
         session.tenant_id !== request.tenantId ||
         session.project_id !== request.projectId ||
-        session.workspace_id !== request.workspaceId
+        session.workspace_id !== request.workspaceId ||
+        session.pi_session_id !== request.piSessionId
       ) {
         throw new SessionLeaseCoordinatorError(
           "session_unavailable",
@@ -456,6 +468,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           true,
         );
       }
+      await lockPiSessionWorkerOwnership(transaction, request.tenantId, request.piSessionId);
       if (this.#connectionGuard !== undefined) {
         const guardedSandbox = await transaction
           .selectFrom("sandboxes")
@@ -494,6 +507,8 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           "attempt.sandbox_id as sandboxId",
           "attempt.lease_id as executionLeaseId",
           "attempt.fencing_token as fencingToken",
+          "attempt.claim_owner_id as claimOwnerId",
+          "attempt.claim_expires_at as claimExpiresAt",
         ])
         .where("run.tenant_id", "=", request.tenantId)
         .where("run.id", "=", request.runId)
@@ -507,6 +522,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         runAttempt.currentAttemptId !== request.attemptId ||
         runAttempt.runState !== "claimed" ||
         runAttempt.attemptState !== "claimed" ||
+        new Date(runAttempt.claimExpiresAt).valueOf() <= now.valueOf() ||
         runAttempt.sandboxId !== null ||
         runAttempt.executionLeaseId !== null ||
         runAttempt.fencingToken !== null
@@ -515,6 +531,19 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           "stale_attempt",
           "Run attempt is unavailable for execution",
           false,
+        );
+      }
+      const conflictingWorker = await conflictingPiSessionWorker(transaction, {
+        tenantId: request.tenantId,
+        piSessionId: request.piSessionId,
+        expectedWorkerId: runAttempt.claimOwnerId,
+        now,
+      });
+      if (conflictingWorker !== undefined) {
+        throw new SessionLeaseCoordinatorError(
+          "pi_session_owner_conflict",
+          "Pi Session is active on another Worker",
+          true,
         );
       }
 

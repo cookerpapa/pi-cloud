@@ -79,8 +79,8 @@ Volume reuse across a fresh KVM, tenant isolation and cleanup.
 
 The long-context gate is intentionally expensive. It runs real coding tasks
 until Pi compacts its native Session, verifies early-context recall and
-post-compaction Tool use, and then stops the owning Worker to prove recovery on
-another Worker.
+post-compaction Tool use, and then stops the owning Worker to prove the cold
+Session can be acquired and recovered by another Worker.
 
 The generated runtime directory contains credentials and must remain mode 0700;
 individual secrets must remain private regular files. Do not commit it.

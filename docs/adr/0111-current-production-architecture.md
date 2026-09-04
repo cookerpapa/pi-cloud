@@ -37,12 +37,12 @@ execution path and failure semantics.
 
 - Every healthy Pi Worker competes for one shared PostgreSQL ready-Run queue.
   `LISTEN/NOTIFY` reduces wake-up latency; bounded polling preserves
-  correctness. There is no Temporal scheduler, execution Cell or persistent
-  Worker affinity. A newly created Child may race for an immediately free slot
-  on its parent's Worker, then falls back to the shared queue without waiting.
+  correctness. There is no Temporal scheduler, execution Cell, private queue or
+  persistent cold-Session affinity.
 - A transactional claim creates a RunAttempt and monotonically fenced execution
-  authority. The recorded Worker identity is temporary ownership, never a
-  routing preference.
+  authority. It also locks the physical `pi_sessions` row and rejects a
+  different unexpired Worker owner. Every active Lane of one Pi Session
+  therefore stays on one Worker, while a cold Session remains freely assignable.
 - A Worker creates Pi's native `Agent` only for an active Run. It restores the
   newest compaction plus the active suffix from PostgreSQL SessionStorage,
   executes the Agent Loop and appends complete Pi messages incrementally.
@@ -50,8 +50,9 @@ execution path and failure semantics.
   JSONL transcript.
 - Human conversation forks use copy-on-write Entry references. Delegated
   Agents use unique lane heads in one shared Pi Session Entry DAG, so spawning
-  a Child does not write one reference per inherited Entry. Every Worker can
-  recover the selected lane directly from PostgreSQL.
+  a Child does not write one reference per inherited Entry. The owning Worker
+  runs those Lanes in parallel; after authority expiry another Worker can
+  recover the Session from PostgreSQL.
 - Pi remains responsible for model messages, Tool selection and compaction.
   Pi Cloud adds cloud admission, interruption/world-state facts, active steer,
   remote Tool routing and terminal settlement around Pi's public primitives.

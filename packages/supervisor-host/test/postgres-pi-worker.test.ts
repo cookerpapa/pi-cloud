@@ -1,42 +1,39 @@
 import { describe, expect, it } from "vitest";
 import {
   PostgresQueueWake,
-  canPrioritizeLocalSubagent,
+  canScheduleOwnedSubagent,
   selectPiWorkerSlotKinds,
 } from "../src/postgres-pi-worker.ts";
 
 describe("PostgreSQL Pi Worker admission", () => {
-  it("reserves one multi-slot Worker lane for durable Subagent children", () => {
-    const parents = [1, 2, 3].map((index) => ({
+  it("reserves the declared Lane capacity for owner-local Subagent children", () => {
+    const parents = [{ runId: "parent-1", subagent: false }];
+    expect(selectPiWorkerSlotKinds([], 4, 3)).toEqual([false, true, true, true]);
+    expect(selectPiWorkerSlotKinds(parents, 4, 3)).toEqual([true, true, true]);
+  });
+
+  it("bounds conversation and Child lanes independently", () => {
+    const active = [1, 2, 3].map((index) => ({
       runId: `parent-${index}`,
       subagent: false,
     }));
-    expect(selectPiWorkerSlotKinds([], 4)).toEqual([false, false, false, true]);
-    expect(selectPiWorkerSlotKinds(parents, 4)).toEqual([true]);
+    expect(selectPiWorkerSlotKinds(active, 6, 3)).toEqual([true, true, true]);
+    expect(() => selectPiWorkerSlotKinds([], 3, 3)).toThrow("leave at least one conversation slot");
   });
 
-  it("uses the full pool when children are already running and keeps single-slot mode valid", () => {
-    expect(selectPiWorkerSlotKinds([{ runId: "child", subagent: true }], 2)).toEqual([false]);
-    expect(selectPiWorkerSlotKinds([], 1)).toEqual([false]);
-  });
-
-  it("offers local Child work only while this Worker has immediate capacity", () => {
-    expect(canPrioritizeLocalSubagent("child", [{ runId: "parent", subagent: false }], 2)).toBe(
-      true,
-    );
+  it("admits an owned Child only while this Worker has Child capacity", () => {
+    expect(canScheduleOwnedSubagent("child", [{ runId: "parent", subagent: false }], 1)).toBe(true);
     expect(
-      canPrioritizeLocalSubagent(
+      canScheduleOwnedSubagent(
         "child",
         [
           { runId: "parent", subagent: false },
           { runId: "other-child", subagent: true },
         ],
-        2,
+        1,
       ),
     ).toBe(false);
-    expect(canPrioritizeLocalSubagent("child", [{ runId: "child", subagent: true }], 2)).toBe(
-      false,
-    );
+    expect(canScheduleOwnedSubagent("child", [{ runId: "child", subagent: true }], 1)).toBe(false);
   });
 });
 

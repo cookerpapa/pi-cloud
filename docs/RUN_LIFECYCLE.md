@@ -12,7 +12,10 @@ Same-Session Runs remain serialized by mailbox position.
 All Pi Workers claim directly from the same ready `runs` rows. PostgreSQL sends
 a notification to reduce idle latency, but a one-second poll is the recovery
 path. A narrow indexed query locks one candidate with `SKIP LOCKED`; only that
-Worker loads the immutable Run context and creates its Attempt.
+Worker loads the immutable Run context and creates its Attempt. Before doing so
+it briefly locks the physical `pi_sessions` row: an unexpired Attempt owned by
+another Worker makes this candidate ineligible, while another Lane on the same
+Worker may proceed in parallel.
 
 `RunExecutor` transactionally rechecks:
 
@@ -20,6 +23,7 @@ Worker loads the immutable Run context and creates its Attempt.
 - this is the Session's next runnable message;
 - cancellation has not won;
 - no current Attempt already owns the Run.
+- all active Lanes of the physical Pi Session have this Worker as owner.
 
 It creates a RunAttempt with a bounded claim lease. The Worker heartbeats that
 claim and obtains an opaque execution authority containing the current Attempt
@@ -38,7 +42,7 @@ Workspace produces `sandbox_reset`; a different stable Workspace binding
 produces `workspace_changed`. Both are hidden Pi custom facts, never browser
 messages or modifications to the user's text. Repeated context hooks on the
 same binding do not append another fact, and Compaction retains the newest
-material fact for cross-Worker recovery.
+material fact for recovery after Session ownership moves to another Worker.
 
 For a Tool call, the Worker presents the same Session lease used by the
 FactChannel. Tool Broker verifies its expiry and fence together with the Tool

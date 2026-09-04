@@ -310,7 +310,7 @@ describe("pi-subagents cloud Tool adapter", () => {
     expect(cancelled).toEqual(["job-cancel"]);
   }, 30_000);
 
-  it("surfaces durable cross-Worker supervisor requests instead of appearing stalled", async () => {
+  it("surfaces durable supervisor requests from an owned Child lane instead of appearing stalled", async () => {
     const updates: string[] = [];
     const tool = await createPiSubagentsCloudTool({
       context: { parentSessionId: "00000000-0000-4000-8000-000000000005" },

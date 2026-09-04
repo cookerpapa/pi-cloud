@@ -47,7 +47,7 @@ export function validateProductionRuntimeEnvironment(environment) {
   integer(environment, "PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS", 1_000, 2, 1_000_000);
   integer(environment, "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS", 10, 1, 1_000_000);
   integer(environment, "PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS", 100, 1, 1_000_000);
-  integer(environment, "PI_CLOUD_SUPERVISOR_CAPACITY", 2, 1, 16);
+  const workerCapacity = integer(environment, "PI_CLOUD_SUPERVISOR_CAPACITY", 4, 1, 16);
   integer(environment, "PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS", 4, 2, 64);
   integer(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH", 4, 1, 64);
   const subagentNodes = integer(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_NODES", 32, 1, 10_000);
@@ -60,6 +60,9 @@ export function validateProductionRuntimeEnvironment(environment) {
   );
   if (subagentConcurrent > subagentNodes) {
     throw new Error("Subagent concurrency cannot exceed the Subagent node budget");
+  }
+  if (subagentConcurrent >= workerCapacity) {
+    throw new Error("Worker capacity must leave at least one conversation slot");
   }
   const queueWaitMs = integer(
     environment,

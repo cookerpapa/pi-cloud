@@ -12,6 +12,7 @@ let pglite: PGlite;
 let socket: PGLiteSocketServer;
 let database: Kysely<Database>;
 let store: ControlPlaneStore;
+let tenantId: string;
 
 beforeAll(async () => {
   pglite = await PGlite.create();
@@ -31,6 +32,7 @@ beforeAll(async () => {
     slug: "run-queue-test",
     ownerDisplayName: "Run Queue Test",
   });
+  tenantId = tenant.tenantId;
   store = new ControlPlaneStore({
     database,
     tenantId: tenant.tenantId,
@@ -253,5 +255,163 @@ describe.sequential("Run queue authority", () => {
     ]);
     expect(results.every((result) => result.status === "completed")).toBe(true);
     expect(observed).toEqual(new Set([left.runId, right.runId]));
+  });
+
+  it("keeps every active Lane of one physical Pi Session on its owner Worker", async () => {
+    const project = await store.createProject({ name: "lane-owner", source: { kind: "empty" } });
+    await database
+      .updateTable("environment_versions")
+      .set({ state: "validated", validated_at: new Date() })
+      .where("id", "=", project.environment.environmentVersionId)
+      .executeTakeFirstOrThrow();
+    const [rootSession, childScope] = await Promise.all([
+      store.createSession(project.projectId, project.workspaceId, "Lane owner", "elastic"),
+      store.createSession(project.projectId, project.workspaceId, "Child scope", "elastic"),
+    ]);
+    const [root, child] = await Promise.all([
+      store.acceptTurn(rootSession.sessionId, "lane-owner-root", { prompt: "parent" }),
+      store.acceptTurn(childScope.sessionId, "lane-owner-child", { prompt: "child" }),
+    ]);
+    const childLane = `subagent-${globalThis.crypto.randomUUID()}`;
+    await database.transaction().execute(async (transaction) => {
+      await transaction
+        .insertInto("pi_session_lanes")
+        .values({
+          tenant_id: tenantId,
+          session_id: rootSession.sessionId,
+          lane: childLane,
+          leaf_id: null,
+        })
+        .executeTakeFirstOrThrow();
+      await transaction
+        .updateTable("sessions")
+        .set({
+          pi_session_id: rootSession.sessionId,
+          pi_session_lane: childLane,
+          session_kind: "subagent",
+        })
+        .where("id", "=", childScope.sessionId)
+        .executeTakeFirstOrThrow();
+    });
+
+    let parentStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      parentStarted = resolve;
+    });
+    let releaseParent!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseParent = resolve;
+    });
+    const observed: string[] = [];
+    const owner = new RunExecutor({
+      database,
+      claimOwnerId: "pi-session-owner-worker",
+      backend: {
+        async execute(request, lifecycle) {
+          await lifecycle.started();
+          observed.push(request.runId);
+          if (request.runId === root.runId) {
+            parentStarted();
+            await release;
+          }
+          return { stopReason: "stop" };
+        },
+      },
+    });
+    const other = new RunExecutor({
+      database,
+      claimOwnerId: "other-worker",
+      backend: {
+        async execute() {
+          throw new Error("Another Worker must not execute a Lane in the owned Pi Session");
+        },
+      },
+    });
+
+    const parentExecution = owner.dispatchRun(root.runId);
+    await started;
+    await expect(other.dispatchRun(child.runId)).resolves.toEqual({ status: "idle" });
+    await expect(owner.dispatchRun(child.runId)).resolves.toMatchObject({
+      status: "completed",
+      runId: child.runId,
+    });
+    releaseParent();
+    await expect(parentExecution).resolves.toMatchObject({
+      status: "completed",
+      runId: root.runId,
+    });
+    expect(observed).toEqual([root.runId, child.runId]);
+  });
+
+  it("atomically elects one Worker when two Lanes of a cold Pi Session race", async () => {
+    const project = await store.createProject({ name: "lane-race", source: { kind: "empty" } });
+    await database
+      .updateTable("environment_versions")
+      .set({ state: "validated", validated_at: new Date() })
+      .where("id", "=", project.environment.environmentVersionId)
+      .executeTakeFirstOrThrow();
+    const [leftScope, rightScope] = await Promise.all([
+      store.createSession(project.projectId, project.workspaceId, "Left lane", "elastic"),
+      store.createSession(project.projectId, project.workspaceId, "Right lane", "elastic"),
+    ]);
+    const [left, right] = await Promise.all([
+      store.acceptTurn(leftScope.sessionId, "lane-race-left", { prompt: "left" }),
+      store.acceptTurn(rightScope.sessionId, "lane-race-right", { prompt: "right" }),
+    ]);
+    const rightLane = `subagent-${globalThis.crypto.randomUUID()}`;
+    await database.transaction().execute(async (transaction) => {
+      await transaction
+        .insertInto("pi_session_lanes")
+        .values({
+          tenant_id: tenantId,
+          session_id: leftScope.sessionId,
+          lane: rightLane,
+          leaf_id: null,
+        })
+        .executeTakeFirstOrThrow();
+      await transaction
+        .updateTable("sessions")
+        .set({
+          pi_session_id: leftScope.sessionId,
+          pi_session_lane: rightLane,
+          session_kind: "subagent",
+        })
+        .where("id", "=", rightScope.sessionId)
+        .executeTakeFirstOrThrow();
+    });
+
+    let notifyStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve;
+    });
+    let releaseWinner!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+    const owners: string[] = [];
+    const executor = (owner: string) =>
+      new RunExecutor({
+        database,
+        claimOwnerId: owner,
+        backend: {
+          async execute(_request, lifecycle) {
+            await lifecycle.started();
+            owners.push(owner);
+            notifyStarted();
+            await release;
+            return { stopReason: "stop" };
+          },
+        },
+      });
+    const leftExecution = executor("lane-race-worker-left").dispatchRun(left.runId);
+    const rightExecution = executor("lane-race-worker-right").dispatchRun(right.runId);
+    await started;
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    releaseWinner();
+    const results = await Promise.all([leftExecution, rightExecution]);
+
+    expect(results.filter((result) => result.status === "completed")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "idle")).toHaveLength(1);
+    expect(owners).toHaveLength(1);
   });
 });

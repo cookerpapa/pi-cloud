@@ -321,6 +321,7 @@ describe("PiWorkerRuntime", () => {
       expect(activeCredential.boot_id).toBe(secondIdentity.bootId);
       expect(runWorkerOptions).toHaveLength(2);
       expect(runWorkerOptions.map((options) => options.maximumConcurrentRuns)).toEqual([4, 4]);
+      expect(runWorkerOptions.map((options) => options.maximumConcurrentSubagents)).toEqual([3, 3]);
       expect(runWorkerOptions.map((options) => options.canClaimRuns?.())).toEqual([false, true]);
       await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
       toolBrokerHealthy = false;

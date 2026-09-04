@@ -8,7 +8,6 @@ import type { Kysely } from "kysely";
 import { Client } from "pg";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
-const LOCAL_SUBAGENT_PRIORITY_DELAY_MS = 25;
 
 type ExecutionReference = {
   runId: string;
@@ -18,25 +17,34 @@ type ExecutionReference = {
 export function selectPiWorkerSlotKinds(
   active: readonly ExecutionReference[],
   maximumConcurrentRuns: number,
+  maximumConcurrentSubagents: number,
 ): boolean[] {
   positiveInteger(maximumConcurrentRuns, "maximumConcurrentRuns");
+  positiveInteger(maximumConcurrentSubagents, "maximumConcurrentSubagents");
+  if (maximumConcurrentSubagents >= maximumConcurrentRuns) {
+    throw new TypeError("Subagent capacity must leave at least one conversation slot");
+  }
   const activeParents = active.filter((entry) => !entry.subagent).length;
-  const maximumParents = maximumConcurrentRuns < 2 ? 1 : maximumConcurrentRuns - 1;
-  const available = Math.max(0, maximumConcurrentRuns - active.length);
-  const parentSlots = Math.min(available, Math.max(0, maximumParents - activeParents));
+  const activeSubagents = active.length - activeParents;
+  const maximumParents = maximumConcurrentRuns - maximumConcurrentSubagents;
+  const parentSlots = Math.max(0, maximumParents - activeParents);
+  const subagentSlots = Math.max(0, maximumConcurrentSubagents - activeSubagents);
   return [
     ...Array.from({ length: parentSlots }, () => false),
-    ...Array.from({ length: available - parentSlots }, () => true),
+    ...Array.from({ length: subagentSlots }, () => true),
   ];
 }
 
-export function canPrioritizeLocalSubagent(
+export function canScheduleOwnedSubagent(
   runId: string,
   active: readonly ExecutionReference[],
-  maximumConcurrentRuns: number,
+  maximumConcurrentSubagents: number,
 ): boolean {
-  positiveInteger(maximumConcurrentRuns, "maximumConcurrentRuns");
-  return !active.some((entry) => entry.runId === runId) && active.length < maximumConcurrentRuns;
+  positiveInteger(maximumConcurrentSubagents, "maximumConcurrentSubagents");
+  return (
+    !active.some((entry) => entry.runId === runId) &&
+    active.filter((entry) => entry.subagent).length < maximumConcurrentSubagents
+  );
 }
 
 type CancellationReference = {
@@ -84,6 +92,7 @@ export type PostgresPiWorkerOptions = {
   notificationConnectionString: string;
   identity: string;
   maximumConcurrentRuns: number;
+  maximumConcurrentSubagents: number;
   pollIntervalMs?: number;
   runExecutor: RunExecutor;
   cancellationExecutor: RunCancellationExecutor;
@@ -127,6 +136,7 @@ export class PostgresPiWorker {
   readonly #notificationConnectionString: string;
   readonly #identity: string;
   readonly #maximumConcurrentRuns: number;
+  readonly #maximumConcurrentSubagents: number;
   readonly #pollIntervalMs: number;
   readonly #runExecutor: RunExecutor;
   readonly #cancellationExecutor: RunCancellationExecutor;
@@ -156,6 +166,13 @@ export class PostgresPiWorker {
       options.maximumConcurrentRuns,
       "maximumConcurrentRuns",
     );
+    this.#maximumConcurrentSubagents = positiveInteger(
+      options.maximumConcurrentSubagents,
+      "maximumConcurrentSubagents",
+    );
+    if (this.#maximumConcurrentSubagents >= this.#maximumConcurrentRuns) {
+      throw new TypeError("Subagent capacity must leave at least one conversation slot");
+    }
     this.#pollIntervalMs = positiveInteger(
       options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
       "pollIntervalMs",
@@ -203,19 +220,15 @@ export class PostgresPiWorker {
     this.#state = "stopped";
   }
 
-  prioritizeSubagent(runId: string): boolean {
+  scheduleOwnedSubagent(runId: string): boolean {
     bounded(runId, "Subagent runId", 256);
     if (this.#state !== "running" || !this.#canClaimRuns()) return false;
     const active = [...this.#activeRuns.entries()].map(([activeRunId, entry]) => ({
       runId: activeRunId,
       subagent: entry.subagent,
     }));
-    if (!canPrioritizeLocalSubagent(runId, active, this.#maximumConcurrentRuns)) return false;
+    if (!canScheduleOwnedSubagent(runId, active, this.#maximumConcurrentSubagents)) return false;
     const execution = (async () => {
-      await new Promise<void>((resolvePromise) => {
-        const timer = setTimeout(resolvePromise, LOCAL_SUBAGENT_PRIORITY_DELAY_MS);
-        timer.unref();
-      });
       if (this.#state !== "running" || !this.#canClaimRuns()) return;
       if (!(await this.#admitRunClaims())) return;
       await this.#executeRun(runId);
@@ -262,6 +275,7 @@ export class PostgresPiWorker {
         subagent: entry.subagent,
       })),
       this.#maximumConcurrentRuns,
+      this.#maximumConcurrentSubagents,
     );
     if (slots.length === 0 || !(await this.#admitRunClaims())) return;
     for (const subagent of slots) {

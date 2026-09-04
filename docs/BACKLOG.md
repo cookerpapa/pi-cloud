@@ -58,6 +58,8 @@ Volume architecture. Historical experiments remain in Git history.
 
 - [x] Bind every delegated execution scope to a unique lane in its root Pi
       Session while retaining independent Run, event and ExecutionLease identity.
+- [x] Keep every active Lane of one physical Pi Session on one Worker, while
+      preserving cold-Session reassignment after authority expiry.
 - [ ] Measure shared Pi Session sequence-row contention at the maximum supported
       concurrent Child count before raising the default tree concurrency.
 - [x] Remove persona/role profiles from the cloud contract and keep one neutral

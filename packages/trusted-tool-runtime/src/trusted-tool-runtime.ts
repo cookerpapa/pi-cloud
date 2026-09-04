@@ -42,7 +42,7 @@ export type PostgresTrustedToolRuntimeOptions = Readonly<{
   forkWorkspace?: (
     request: ToolBrokerWorkspaceForkRequest,
   ) => Promise<ToolBrokerWorkspaceForkResponse>;
-  prioritizeSubagent?: (runId: string) => void;
+  scheduleOwnedSubagent?: (runId: string) => void;
   treePolicy?: CloudSubagentTreePolicy;
   onBackgroundError?: (error: unknown) => void;
   reaperIntervalMs?: number;
@@ -81,7 +81,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
   readonly #database: Kysely<Database>;
   readonly #jobs: PostgresSubagentJobProvider;
   readonly #supervisor: PostgresSubagentSupervisorChannel;
-  readonly #prioritizeSubagent: ((runId: string) => void) | undefined;
+  readonly #scheduleOwnedSubagent: ((runId: string) => void) | undefined;
   readonly #onBackgroundError: ((error: unknown) => void) | undefined;
   readonly #reaperIntervalMs: number;
   #reaper: NodeJS.Timeout | undefined;
@@ -94,7 +94,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
       ...(options.treePolicy === undefined ? {} : { treePolicy: options.treePolicy }),
     });
     this.#supervisor = new PostgresSubagentSupervisorChannel(options.database);
-    this.#prioritizeSubagent = options.prioritizeSubagent;
+    this.#scheduleOwnedSubagent = options.scheduleOwnedSubagent;
     this.#onBackgroundError = options.onBackgroundError;
     this.#reaperIntervalMs = options.reaperIntervalMs ?? 60_000;
   }
@@ -205,7 +205,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
               requestedToolCapabilities: tools,
               ...(parentActivation === undefined ? {} : { parentActivation }),
             });
-            this.#prioritizeSubagent?.(child.childRunId);
+            this.#scheduleOwnedSubagent?.(child.childRunId);
             return {
               providerJobId: child.executionId,
               state: externalState(child.state),

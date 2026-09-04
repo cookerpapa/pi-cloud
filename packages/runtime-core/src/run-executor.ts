@@ -25,6 +25,11 @@ import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
 import { transitionCurrentRunAttempt } from "./run-attempt-state.ts";
+import {
+  conflictingPiSessionWorker,
+  lockPiSessionWorkerOwnership,
+  piSessionWorkerAvailable,
+} from "./pi-session-worker-ownership.ts";
 import { commitTerminalTurnEvent } from "./terminal-turn-event.ts";
 import type {
   PreparedTerminalTurnProjection,
@@ -603,6 +608,14 @@ export class RunExecutor {
           .where("candidate_policy.enabled", "=", true)
           .where("candidate_agent.runtime_kind", "=", this.#agentRuntimeKind)
           .where(
+            piSessionWorkerAvailable(
+              sql.ref("candidate_session.tenant_id"),
+              sql.ref("candidate_session.pi_session_id"),
+              this.#claimOwnerId,
+              now,
+            ),
+          )
+          .where(
             sql<boolean>`not exists (
               select 1
               from runs as active_run
@@ -743,6 +756,14 @@ export class RunExecutor {
         .where("run.state", "in", ["queued", "claimed"])
         .where("turn.state", "=", "queued")
         .where(
+          piSessionWorkerAvailable(
+            sql.ref("session_row.tenant_id"),
+            sql.ref("session_row.pi_session_id"),
+            this.#claimOwnerId,
+            now,
+          ),
+        )
+        .where(
           sql<boolean>`not exists (
             select 1
             from runs as active_run
@@ -774,6 +795,15 @@ export class RunExecutor {
         .executeTakeFirst();
 
       if (!row) return undefined;
+
+      await lockPiSessionWorkerOwnership(transaction, row.tenantId, row.piSessionId);
+      const conflictingWorker = await conflictingPiSessionWorker(transaction, {
+        tenantId: row.tenantId,
+        piSessionId: row.piSessionId,
+        expectedWorkerId: this.#claimOwnerId,
+        now,
+      });
+      if (conflictingWorker !== undefined) return undefined;
 
       if (row.inputKind !== "prompt" || row.inputText === null) {
         throw new RunExecutorInvariantError(
