@@ -285,9 +285,37 @@ describe("PiAgentEventAdapter", () => {
     });
   });
 
-  it("ignores provider tool-call fragments until validated execution starts", () => {
+  it("publishes one safe preparation boundary while ignoring tool argument fragments", () => {
     const adapter = createAdapter();
     adapter.adapt({ type: "agent_start" });
+
+    const preparing = adapter.adapt({
+      type: "message_update",
+      message: { providerSecret: "must-not-pass" },
+      assistantMessageEvent: {
+        type: "toolcall_start",
+        contentIndex: 0,
+        partial: {
+          providerSecret: "must-not-pass",
+          content: [
+            {
+              type: "toolCall",
+              id: "write-1",
+              name: "write",
+              arguments: {},
+              providerSecret: "must-not-pass",
+            },
+          ],
+        },
+      },
+    });
+    expect(preparing).toMatchObject({
+      kind: "mapped",
+      event: {
+        type: "assistant.tool_call.preparing",
+        payload: { toolCallId: "write-1", toolName: "write" },
+      },
+    });
 
     const first = adapter.adapt({
       type: "message_update",
@@ -330,7 +358,7 @@ describe("PiAgentEventAdapter", () => {
         },
       }),
     ).toEqual({ kind: "ignored", sourceType: "message_update.toolcall_end" });
-    expect(JSON.stringify(first)).not.toContain("must-not-pass");
+    expect(JSON.stringify([preparing, first])).not.toContain("must-not-pass");
   });
 
   it("classifies an ambiguous Cube result as unknown instead of failed", () => {

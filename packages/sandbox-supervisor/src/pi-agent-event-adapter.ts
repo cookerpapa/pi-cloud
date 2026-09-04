@@ -246,6 +246,34 @@ export class PiAgentEventAdapter {
           reason: "Pi message_update is missing assistantMessageEvent",
         };
       }
+      if (streamEvent.type === "toolcall_start") {
+        const contentIndex = nonNegativeInteger(streamEvent.contentIndex);
+        const partial = isRecord(streamEvent.partial) ? streamEvent.partial : undefined;
+        const content = Array.isArray(partial?.content) ? partial.content : undefined;
+        const toolCall = contentIndex === undefined ? undefined : content?.[contentIndex];
+        if (
+          !isRecord(toolCall) ||
+          toolCall.type !== "toolCall" ||
+          typeof toolCall.id !== "string" ||
+          toolCall.id.length === 0 ||
+          typeof toolCall.name !== "string" ||
+          toolCall.name.length === 0
+        ) {
+          return {
+            kind: "invalid",
+            sourceType: "message_update.toolcall_start",
+            reason: "Pi Tool Call start is missing its stable identity",
+          };
+        }
+        return {
+          kind: "mapped",
+          terminal: false,
+          event: this.#eventFactory.next({
+            type: "assistant.tool_call.preparing",
+            payload: { toolCallId: toolCall.id, toolName: toolCall.name },
+          }),
+        };
+      }
       if (streamEvent.type === "toolcall_delta") {
         // Tool arguments can arrive as hundreds of tiny provider fragments.
         // The validated complete arguments are published once at

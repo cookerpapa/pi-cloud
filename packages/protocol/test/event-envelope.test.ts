@@ -82,6 +82,10 @@ describe("PiCloudEventSchema", () => {
       },
       { type: "assistant.text.delta", payload: { text: "partial" } },
       {
+        type: "assistant.tool_call.preparing",
+        payload: { toolCallId: "call-1", toolName: "read" },
+      },
+      {
         type: "tool.started",
         payload: { toolCallId: "call-1", toolName: "read", input: { path: "a" } },
       },

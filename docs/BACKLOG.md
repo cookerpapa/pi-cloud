@@ -46,6 +46,9 @@ Volume architecture. Historical experiments remain in Git history.
       response is bounded by its Turn rather than a 120-second wall clock.
 - [x] Detach failed or cancelled Runs from user-owned development machines
       without destroying the KVM or emitting a false sandbox-reset fact.
+- [x] Show one durable, argument-free Working activity while Pi assembles a
+      Tool Call, replacing it with the complete Tool boundary without storing
+      streamed JSON fragments.
 - [x] Preserve per-call Hosted Web Search identity and portable action details
       across live Kafka/SSE output and canonical Pi Session reload, with one
       stable searching/searched row per Provider item.

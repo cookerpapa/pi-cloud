@@ -312,6 +312,16 @@ function OtherItem({
 }: {
   item: Exclude<TranscriptItem, { kind: "text" } | { kind: "tool" }>;
 }) {
+  const { t } = useI18n();
+  if (item.kind === "tool_preparing") {
+    return (
+      <div className="product-tool-preparing" role="status">
+        <span aria-hidden="true">◦</span>
+        <span>{t("turn.working")}</span>
+        <code>{item.toolName}</code>
+      </div>
+    );
+  }
   if (item.kind === "compaction" || item.kind === "retry") return <LifecycleItem item={item} />;
   if (item.kind === "notification") {
     return (

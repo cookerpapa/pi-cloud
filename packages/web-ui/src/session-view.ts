@@ -34,6 +34,13 @@ export type TranscriptItem =
       lastSequence?: number;
     }
   | {
+      kind: "tool_preparing";
+      key: string;
+      toolCallId: string;
+      toolName: string;
+      firstSequence: number;
+    }
+  | {
       kind: "tool";
       key: string;
       toolCallId: string;
@@ -291,16 +298,49 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
             ],
       };
     }
+    if (event.type === "assistant.tool_call.preparing") {
+      if (
+        turn.items.some(
+          (item) =>
+            (item.kind === "tool_preparing" || item.kind === "tool") &&
+            item.toolCallId === event.payload.toolCallId,
+        )
+      ) {
+        return { ...turn, status: "running" };
+      }
+      return {
+        ...turn,
+        status: "running",
+        items: [
+          ...turn.items,
+          {
+            kind: "tool_preparing",
+            key: `tool:${event.payload.toolCallId}`,
+            toolCallId: event.payload.toolCallId,
+            toolName: event.payload.toolName,
+            firstSequence: event.seq,
+          },
+        ],
+      };
+    }
     if (event.type === "tool.started") {
       let matched = false;
       const items = turn.items.map((item): TranscriptItem => {
-        if (item.kind !== "tool" || item.toolCallId !== event.payload.toolCallId) return item;
+        if (
+          (item.kind !== "tool" && item.kind !== "tool_preparing") ||
+          item.toolCallId !== event.payload.toolCallId
+        ) {
+          return item;
+        }
         matched = true;
         return {
-          ...item,
+          kind: "tool",
+          key: item.key,
+          toolCallId: item.toolCallId,
           toolName: event.payload.toolName,
           input: event.payload.input,
           status: "running",
+          firstSequence: item.firstSequence,
           startedAt: event.occurredAt,
         };
       });
@@ -418,7 +458,7 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
       return {
         ...turn,
         items: [
-          ...turn.items,
+          ...turn.items.filter((item) => item.kind !== "tool_preparing"),
           {
             kind: "retry",
             key: `retry:${String(event.seq)}`,
@@ -430,14 +470,22 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
         ],
       };
     }
+    if (
+      event.type === "model.sampling.completed" &&
+      (event.payload.outcome === "failed" || event.payload.outcome === "aborted")
+    ) {
+      return { ...turn, items: turn.items.filter((item) => item.kind !== "tool_preparing") };
+    }
     if (event.type === "turn.completed") {
       return {
         ...turn,
-        items: turn.items.map((item) =>
-          item.kind === "hosted_search" && item.status === "running"
-            ? { ...item, status: "completed" as const, lastSequence: event.seq }
-            : item,
-        ),
+        items: turn.items
+          .filter((item) => item.kind !== "tool_preparing")
+          .map((item) =>
+            item.kind === "hosted_search" && item.status === "running"
+              ? { ...item, status: "completed" as const, lastSequence: event.seq }
+              : item,
+          ),
         status: "completed",
         terminalSequence: event.seq,
         stopReason: event.payload.stopReason,
@@ -446,23 +494,25 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
     if (event.type === "turn.failed") {
       return {
         ...turn,
-        items: turn.items.map((item): TranscriptItem => {
-          if (item.kind === "tool" && item.status === "running") {
-            return {
-              ...item,
-              status: "unknown",
-              lastSequence: event.seq,
-              completedAt: event.occurredAt,
-            };
-          }
-          if (item.kind === "compaction" && item.status === "running") {
-            return { ...item, status: "failed", lastSequence: event.seq };
-          }
-          if (item.kind === "hosted_search" && item.status === "running") {
-            return { ...item, status: "failed", lastSequence: event.seq };
-          }
-          return item;
-        }),
+        items: turn.items
+          .filter((item) => item.kind !== "tool_preparing")
+          .map((item): TranscriptItem => {
+            if (item.kind === "tool" && item.status === "running") {
+              return {
+                ...item,
+                status: "unknown",
+                lastSequence: event.seq,
+                completedAt: event.occurredAt,
+              };
+            }
+            if (item.kind === "compaction" && item.status === "running") {
+              return { ...item, status: "failed", lastSequence: event.seq };
+            }
+            if (item.kind === "hosted_search" && item.status === "running") {
+              return { ...item, status: "failed", lastSequence: event.seq };
+            }
+            return item;
+          }),
         status: "failed",
         terminalSequence: event.seq,
         failure: event.payload,
@@ -471,23 +521,25 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
     if (event.type === "turn.cancelled") {
       return {
         ...turn,
-        items: turn.items.map((item): TranscriptItem => {
-          if (item.kind === "tool" && item.status === "running") {
-            return {
-              ...item,
-              status: "unknown",
-              lastSequence: event.seq,
-              completedAt: event.occurredAt,
-            };
-          }
-          if (item.kind === "compaction" && item.status === "running") {
-            return { ...item, status: "aborted", lastSequence: event.seq };
-          }
-          if (item.kind === "hosted_search" && item.status === "running") {
-            return { ...item, status: "failed", lastSequence: event.seq };
-          }
-          return item;
-        }),
+        items: turn.items
+          .filter((item) => item.kind !== "tool_preparing")
+          .map((item): TranscriptItem => {
+            if (item.kind === "tool" && item.status === "running") {
+              return {
+                ...item,
+                status: "unknown",
+                lastSequence: event.seq,
+                completedAt: event.occurredAt,
+              };
+            }
+            if (item.kind === "compaction" && item.status === "running") {
+              return { ...item, status: "aborted", lastSequence: event.seq };
+            }
+            if (item.kind === "hosted_search" && item.status === "running") {
+              return { ...item, status: "failed", lastSequence: event.seq };
+            }
+            return item;
+          }),
         status: "cancelled",
         terminalSequence: event.seq,
         stopReason: "cancelled",

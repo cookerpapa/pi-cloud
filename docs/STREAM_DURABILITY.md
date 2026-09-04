@@ -31,7 +31,10 @@ Kafka's producer may batch network records internally without changing Fact
 identity or adding a product timer. Every delta still requires Kafka `acks=all`
 before Gateway can expose it. The browser progressively reveals an already
 durable fragment for visual smoothness; that presentation does not create a
-second server-side event stream.
+second server-side event stream. Streamed Tool arguments remain private to Pi;
+one argument-free preparation Fact makes that interval visible and is replaced
+by the complete Tool start boundary. It is live-only and is not copied into the
+settled PostgreSQL transcript.
 
 ## Cursor-free browser handoff
 

@@ -357,6 +357,70 @@ describe("session transcript reducer", () => {
     ]);
   });
 
+  it("replaces a streamed Tool preparation row with the validated Tool boundary", () => {
+    const preparing = sessionViewReducer(preparedState(), {
+      type: "stream.event",
+      event: envelope(1, {
+        type: "assistant.tool_call.preparing",
+        payload: { toolCallId: "call-large", toolName: "bash" },
+      }),
+    });
+    expect(preparing.turns[0]?.items).toEqual([
+      {
+        kind: "tool_preparing",
+        key: "tool:call-large",
+        toolCallId: "call-large",
+        toolName: "bash",
+        firstSequence: 1,
+      },
+    ]);
+
+    const started = sessionViewReducer(preparing, {
+      type: "stream.event",
+      event: envelope(2, {
+        type: "tool.started",
+        payload: {
+          toolCallId: "call-large",
+          toolName: "bash",
+          input: { command: "printf a-very-large-command" },
+        },
+      }),
+    });
+    expect(started.turns[0]?.items).toEqual([
+      expect.objectContaining({
+        kind: "tool",
+        key: "tool:call-large",
+        toolCallId: "call-large",
+        status: "running",
+        firstSequence: 1,
+      }),
+    ]);
+  });
+
+  it("removes an unfinished Tool preparation row at a failed sampling boundary", () => {
+    let state = sessionViewReducer(preparedState(), {
+      type: "stream.event",
+      event: envelope(1, {
+        type: "assistant.tool_call.preparing",
+        payload: { toolCallId: "call-abandoned", toolName: "write" },
+      }),
+    });
+    state = sessionViewReducer(state, {
+      type: "stream.event",
+      event: envelope(2, {
+        type: "model.sampling.completed",
+        payload: {
+          stepSequence: 1,
+          stepSha256: "a".repeat(64),
+          samplingAttempt: 1,
+          outcome: "failed",
+          stopReason: "error",
+        },
+      }),
+    });
+    expect(state.turns[0]?.items).toEqual([]);
+  });
+
   it("marks an in-flight Tool unknown when its Run fails", () => {
     const events: PiCloudEvent[] = [
       envelope(1, { type: "turn.started", payload: { inputKind: "prompt" } }),

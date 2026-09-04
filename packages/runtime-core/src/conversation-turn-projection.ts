@@ -71,6 +71,11 @@ export function projectConversationTurnTranscript(
       }
       continue;
     }
+    if (event.type === "assistant.tool_call.preparing") {
+      // This live-only row covers the interval while Pi validates streamed
+      // arguments. Canonical history begins at the complete Tool boundary.
+      continue;
+    }
     if (event.type === "tool.started") {
       const index = toolItemIndex(items, event.payload.toolCallId);
       if (index < 0) {

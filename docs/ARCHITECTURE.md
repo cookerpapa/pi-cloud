@@ -646,8 +646,12 @@ opening a file performs one bounded file read and verifies that response.
 
 Pi exposes separate Assistant-message, Tool-execution and Agent lifecycle
 events. The public adapter intentionally ignores thinking fragments, streamed
-Tool-call JSON and partial Tool stdout. It publishes Assistant text deltas,
-complete Tool start/result Items and low-frequency lifecycle boundaries.
+Tool-call JSON and partial Tool stdout. At `toolcall_start` it publishes one
+argument-free `assistant.tool_call.preparing` activity so a large function-call
+payload does not look stalled; the validated `tool.started` event replaces that
+row in place. This transient activity is omitted from the settled PostgreSQL
+transcript. The adapter otherwise publishes Assistant text deltas, complete
+Tool start/result Items and low-frequency lifecycle boundaries.
 
 After PostgreSQL issues the current Session lease, the Worker opens one logical
 Fact Stream bound to that lease, Session and Turn. All active Streams in one
@@ -678,7 +682,10 @@ incomplete active Turns only. The public SSE request carries no cursor. Its firs
 frame replaces the browser view with PostgreSQL canonical messages plus an
 immutable snapshot of that tail; later frames contain new events. Terminal Facts
 are sent to existing subscribers and then unload the covered shared tail. Slow
-connections have bounded queues and reconnect for another snapshot.
+connections have bounded queues and reconnect for another snapshot. A 15-second
+SSE heartbeat keeps an idle healthy connection open. The browser reconnects
+immediately but delays its visible reconnect label for one second, preventing a
+brief transport replacement from flickering the top bar.
 
 Accepted Pi Session mutations contain immutable logical Run identity for result
 correlation plus the Authority-Gate-resolved physical Pi Session/lane target,

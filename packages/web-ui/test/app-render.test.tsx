@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AdminPage } from "../src/AdminPage.tsx";
 import { AuthScreen } from "../src/AuthScreen.tsx";
-import ChatApp from "../src/ChatApp.tsx";
+import ChatApp, { connectionPhaseDisplayDelayMs } from "../src/ChatApp.tsx";
 import { ConversationTreeNavigator } from "../src/ConversationTreeNavigator.tsx";
 import { ConversationTurn } from "../src/ConversationTurn.tsx";
 import { conversationPreviewHref, Markdown } from "../src/Markdown.tsx";
@@ -31,6 +31,12 @@ function turn(turnId: string, prompt: string): TurnView {
 }
 
 describe("product chat experience", () => {
+  it("keeps a brief SSE reconnect from flickering the connected label", () => {
+    expect(connectionPhaseDisplayDelayMs("live", "reconnecting")).toBe(1_000);
+    expect(connectionPhaseDisplayDelayMs("connecting", "reconnecting")).toBe(0);
+    expect(connectionPhaseDisplayDelayMs("reconnecting", "failed")).toBe(0);
+  });
+
   it("polls resource projection only while an environment is transitioning", () => {
     const environment = {
       environmentId: "10000000-0000-4000-8000-000000000001",
@@ -664,6 +670,26 @@ describe("product chat experience", () => {
     const markup = renderToStaticMarkup(<ConversationTurn turn={searchTurn} />);
     expect(markup).toContain("正在搜索网页");
     expect(markup).toContain(">◦</span>");
+  });
+
+  it("shows bounded activity while Pi is still assembling Tool arguments", () => {
+    const workingTurn: TurnView = {
+      ...turn("10000000-0000-4000-8000-000000000044", "创建前端应用"),
+      status: "running",
+      items: [
+        {
+          kind: "tool_preparing",
+          key: "tool:call-working",
+          toolCallId: "call-working",
+          toolName: "bash",
+          firstSequence: 1,
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(<ConversationTurn turn={workingTurn} />);
+    expect(markup).toContain("处理中…");
+    expect(markup).toContain(">bash</code>");
+    expect(markup).toContain('role="status"');
   });
 
   it("renders durable Pi compaction and model retry lifecycle rows", () => {

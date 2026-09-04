@@ -89,6 +89,21 @@ const AssistantTextDeltaEventSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const AssistantToolCallPreparingEventSchema = Type.Object(
+  {
+    ...TurnEnvelopeProperties,
+    type: Type.Literal("assistant.tool_call.preparing"),
+    payload: Type.Object(
+      {
+        toolCallId: OpaqueIdSchema,
+        toolName: OpaqueIdSchema,
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
 const ModelSamplingIdentityProperties = {
   stepSequence: PositiveSafeIntegerSchema,
   stepSha256: Type.String({ pattern: "^[0-9a-f]{64}$" }),
@@ -378,6 +393,7 @@ export const PiCloudEventSchema = Type.Union([
   ProviderHostedToolStartedEventSchema,
   ProviderHostedToolCompletedEventSchema,
   AssistantTextDeltaEventSchema,
+  AssistantToolCallPreparingEventSchema,
   ToolStartedEventSchema,
   ToolCompletedEventSchema,
   ContextCompactionStartedEventSchema,
@@ -397,6 +413,7 @@ export type PiCloudEvent =
   | Static<typeof ProviderHostedToolStartedEventSchema>
   | Static<typeof ProviderHostedToolCompletedEventSchema>
   | Static<typeof AssistantTextDeltaEventSchema>
+  | Static<typeof AssistantToolCallPreparingEventSchema>
   | Static<typeof ToolStartedEventSchema>
   | Static<typeof ToolCompletedEventSchema>
   | Static<typeof ContextCompactionStartedEventSchema>

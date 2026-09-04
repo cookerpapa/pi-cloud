@@ -69,6 +69,34 @@ const WorkspaceDirectoryPicker = lazy(async () => ({
 type AuthPhase = "checking" | "anonymous" | "authenticated";
 const PRODUCT_PORT = "8080";
 const ADMIN_PORT = "8081";
+const RECONNECT_DISPLAY_GRACE_MS = 1_000;
+
+type PresentedConnectionPhase = "offline" | "connecting" | "live" | "reconnecting" | "failed";
+
+export function connectionPhaseDisplayDelayMs(
+  previous: PresentedConnectionPhase,
+  next: PresentedConnectionPhase,
+): number {
+  return previous === "live" && next === "reconnecting" ? RECONNECT_DISPLAY_GRACE_MS : 0;
+}
+
+function usePresentedConnectionPhase(phase: PresentedConnectionPhase): PresentedConnectionPhase {
+  const [presented, setPresented] = useState(phase);
+  const presentedRef = useRef(phase);
+  useEffect(() => {
+    const commit = (next: PresentedConnectionPhase): void => {
+      presentedRef.current = next;
+      setPresented(next);
+    };
+    const delayMs = connectionPhaseDisplayDelayMs(presentedRef.current, phase);
+    if (delayMs > 0) {
+      const timer = setTimeout(() => commit(phase), delayMs);
+      return () => clearTimeout(timer);
+    }
+    commit(phase);
+  }, [phase]);
+  return presented;
+}
 
 function onAdminOrigin(): boolean {
   return window.location.port === ADMIN_PORT;
@@ -148,6 +176,7 @@ export default function ChatApp() {
   const [authPhase, setAuthPhase] = useState<AuthPhase>("checking");
   const [identity, setIdentity] = useState<TenantIdentityResource | null>(null);
   const [state, setState] = useState(createInitialSessionView);
+  const presentedConnectionPhase = usePresentedConnectionPhase(state.connection.phase);
   const [conversations, setConversations] = useState<readonly ConversationSummaryResource[]>([]);
   const [delegatedSessions, setDelegatedSessions] = useState<
     readonly DelegatedSessionSummaryResource[]
@@ -1422,12 +1451,12 @@ export default function ChatApp() {
               </span>
             ) : null}
             {state.session ? (
-              <span className={state.connection.phase === "live" ? "online" : ""}>
-                {state.connection.phase === "live"
+              <span className={presentedConnectionPhase === "live" ? "online" : ""}>
+                {presentedConnectionPhase === "live"
                   ? t("chat.connected")
-                  : state.connection.phase === "reconnecting"
+                  : presentedConnectionPhase === "reconnecting"
                     ? t("chat.reconnecting")
-                    : state.connection.phase === "failed"
+                    : presentedConnectionPhase === "failed"
                       ? t("chat.connectionFailed")
                       : t("chat.connecting")}
               </span>

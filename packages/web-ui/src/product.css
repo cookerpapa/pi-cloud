@@ -1331,6 +1331,26 @@ body.product-panel-resizing {
   font-size: 12px;
 }
 
+.product-tool-preparing {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 8px 0;
+  color: #8f8f8f;
+  font-size: 12px;
+}
+.product-tool-preparing > span:first-child {
+  width: 14px;
+  color: #777;
+  text-align: center;
+  animation: product-search-pulse 1.2s ease-in-out infinite;
+}
+.product-tool-preparing code {
+  color: #777;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+}
+
 .product-hosted-search-list {
   display: grid;
   gap: 4px;
