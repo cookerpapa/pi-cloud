@@ -391,8 +391,8 @@ authorizationToken = registration.apiToken;
 const model = await api.getModelConfiguration();
 assert.equal(model.mode, "real", "Production tenant must use a real model");
 const acceptanceModel = {
-  provider: "openai-codex",
-  modelId: "gpt-5.6-luna",
+  provider: "deepseek",
+  modelId: "deepseek-v4-flash",
   thinkingLevel: "low",
   fastMode: false,
 };

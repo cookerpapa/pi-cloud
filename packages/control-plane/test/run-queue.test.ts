@@ -341,6 +341,25 @@ describe.sequential("Run queue authority", () => {
       runId: root.runId,
     });
     expect(observed).toEqual([root.runId, child.runId]);
+
+    const later = await store.acceptTurn(rootSession.sessionId, "lane-owner-later", {
+      prompt: "later",
+    });
+    const replacement = new RunExecutor({
+      database,
+      claimOwnerId: "replacement-worker",
+      backend: {
+        async execute(request, lifecycle) {
+          expect(request.piSessionId).toBe(rootSession.sessionId);
+          await lifecycle.started();
+          return { stopReason: "stop" };
+        },
+      },
+    });
+    await expect(replacement.dispatchRun(later.runId)).resolves.toMatchObject({
+      status: "completed",
+      runId: later.runId,
+    });
   });
 
   it("atomically elects one Worker when two Lanes of a cold Pi Session race", async () => {
