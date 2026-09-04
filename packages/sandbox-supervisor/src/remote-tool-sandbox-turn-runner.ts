@@ -88,7 +88,8 @@ export interface ToolBrokerBoundary {
   release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition: { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
+    disposition:
+      { kind: "detach" } | { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
   ): Promise<{ retained: boolean }>;
   stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
   operationUrlFor(activationId: string): string;
@@ -443,7 +444,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       return stopPromise;
     };
     const abortSandbox = (): void => {
-      void stopSandbox().catch(() => undefined);
+      if (command.payload.executionMode === "elastic") {
+        void stopSandbox().catch(() => undefined);
+      }
     };
     const ensureActivation = async (): Promise<ToolSandboxCreateResponse> => {
       if (signal.aborted) throw signal.reason;
@@ -851,7 +854,13 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       signal.removeEventListener("abort", abortSandbox);
       await fakeModel?.stop().catch(() => undefined);
       let cleanupError: unknown;
-      if (activation !== undefined && completedSuccessfully && !signal.aborted) {
+      if (activation !== undefined && command.payload.executionMode === "development_environment") {
+        await this.#broker
+          .release(activation.activationId, toolAssignment, { kind: "detach" })
+          .catch((error: unknown) => {
+            cleanupError = error;
+          });
+      } else if (activation !== undefined && completedSuccessfully && !signal.aborted) {
         const disposition =
           retainedWorkspaceRevision === undefined
             ? ({ kind: "destroy" } as const)

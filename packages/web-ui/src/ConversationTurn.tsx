@@ -240,11 +240,7 @@ function HostedSearchGroup({
                 ? t("turn.searchedWebFor", { query: detail })
                 : t("turn.searchedWeb");
         return (
-          <div
-            aria-label={label}
-            className={`product-hosted-search ${item.status}`}
-            key={item.key}
-          >
+          <div aria-label={label} className={`product-hosted-search ${item.status}`} key={item.key}>
             <span aria-hidden="true" className="product-hosted-search-marker">
               {item.status === "running" ? "◦" : item.status === "failed" ? "!" : "•"}
             </span>

@@ -51,16 +51,22 @@ export function validateDistributedDeploymentValues(values) {
     "Pi Worker Tool Broker timeout",
   );
   const modelRequestMs = integer(runtime?.timeouts?.modelRequestMs, "Pi Worker model timeout");
-  const upstreamMs = integer(
-    runtime?.timeouts?.modelUpstreamRequestMs,
-    "Pi Worker model upstream timeout",
+  const upstreamConnectMs = integer(
+    runtime?.timeouts?.modelUpstreamConnectMs,
+    "Pi Worker model upstream connect timeout",
+  );
+  const upstreamIdleMs = integer(
+    runtime?.timeouts?.modelUpstreamIdleMs,
+    "Pi Worker model upstream idle timeout",
   );
   const capabilityMs = integer(
     runtime?.timeouts?.modelCapabilityTtlMs,
     "Pi Worker model capability TTL",
   );
-  if (upstreamMs > modelRequestMs || modelRequestMs > turnMs) {
-    throw new Error("Model upstream, model request and Turn timeouts are not ordered");
+  if (upstreamConnectMs > modelRequestMs || modelRequestMs > turnMs || upstreamIdleMs > turnMs) {
+    throw new Error(
+      "Model connection, stream idle, response-header and Turn timeouts are not ordered",
+    );
   }
   if (capabilityMs < turnMs + 60_000) {
     throw new Error("Model capability TTL must outlive the Turn and expiry margin");

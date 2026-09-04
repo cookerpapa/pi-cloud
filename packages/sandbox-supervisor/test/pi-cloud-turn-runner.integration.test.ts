@@ -3,6 +3,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   createExecutionLease,
+  type AgentModelRuntime,
   type EventPublishMessage,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
@@ -228,6 +229,141 @@ describe("PiCloudTurnRunner integration", () => {
         ),
       ).toHaveLength(0);
     } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("detaches a failed Agent Run without destroying or resetting its development machine", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pi-cloud-development-model-failure-"));
+    const fake = new FakeModelServer({
+      scenarioSequence: ["tool_call", "disconnect", "disconnect", "disconnect"],
+    });
+    await fake.start();
+    const developmentCommand: ExecuteTurnCommandMessage = {
+      ...command,
+      payload: {
+        ...command.payload,
+        executionMode: "development_environment",
+        workingDirectory: "/home/user/project",
+        model: {
+          ...command.payload.model,
+          provider: "deepseek",
+          modelId: "deepseek-v4-flash",
+          thinkingLevel: "off",
+        },
+      },
+    };
+    const turn = createCloudTurnContext(developmentCommand, undefined);
+    const session = new Session(
+      new InMemorySessionStorage({
+        id: developmentCommand.payload.sessionId,
+        createdAt: Date.now(),
+      }),
+    );
+    await session.appendCustomEntry(PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE, {
+      schemaVersion: 3,
+      sandbox: { status: "active", continuityId: "development-runtime-1" },
+      environmentSha256: turn.environmentSha256,
+      workspaceBindingSha256: turn.workspaceBindingSha256,
+      committedWorkspaceRevision: null,
+      toolPolicySha256: turn.toolPolicySha256,
+    });
+    const authority = new TestAuthority();
+    const create = vi.fn(async (request: Parameters<ToolBrokerBoundary["create"]>[0]) => ({
+      toolBrokerProtocolVersion: 1 as const,
+      type: "tool_sandbox.reserved" as const,
+      requestId: request.requestId,
+      activationId: "99999999-9999-4999-8999-999999999998",
+      executionLease: request.assignment.executionLease,
+      ownerBaseUrl: "http://tool-broker.test",
+      workspaceRoot: "/home/user/project",
+      continuity: "warm_reuse" as const,
+      continuityId: "development-runtime-1",
+    }));
+    const capture = vi.fn(async () => {
+      throw new Error("A failed model response must not settle the development machine");
+    });
+    const release = vi.fn(async () => ({ retained: true }));
+    const stop = vi.fn(async () => undefined);
+    const modelLeaseRelease = vi.fn(async () => undefined);
+    const broker = {
+      create,
+      capture,
+      release,
+      stop,
+      operationUrlFor() {
+        return "http://tool-broker.test/internal/v1/tool-operation";
+      },
+    } as ToolBrokerBoundary;
+    const runner = new RemoteToolSandboxTurnRunner({
+      broker,
+      runtimeIdentity: {
+        supervisorId: "supervisor-development-failure-test",
+        bootId: "77777777-7777-4777-8777-777777777781",
+        sandboxId: "sandbox-development-failure-test",
+      },
+      trustedWorkspaceDirectory: directory,
+      modelRuntimeLeaseResolver: async () => ({
+        runtime: {
+          kind: "openai_compatible_gateway",
+          provider: "deepseek",
+          modelId: "deepseek-v4-flash",
+          baseUrl: fake.baseUrl,
+          api: "openai-completions",
+          capability: FAKE_MODEL_API_KEY,
+          reasoning: false,
+          contextWindow: 131_072,
+          autoCompactTokenLimit: 100_000,
+          maxTokens: 16_384,
+          requestTimeoutMs: 1_000,
+          turnTimeoutMs: 5_000,
+          inputModalities: ["text"],
+          hostedTools: [],
+          serviceTier: null,
+        } as unknown as AgentModelRuntime,
+        release: modelLeaseRelease,
+      }),
+      openAgentSession: async () => ({ session, lane: "main", authority }),
+      createTrustedTools: () => [
+        {
+          executionPlane: "platform",
+          tool: {
+            name: "inspect_workspace",
+            label: "Inspect Workspace",
+            description: "Return one deterministic inspection result",
+            parameters: {
+              type: "object",
+              properties: { path: { type: "string" } },
+              required: ["path"],
+              additionalProperties: false,
+            } as never,
+            async execute() {
+              return { content: [{ type: "text", text: "workspace inspected" }], details: {} };
+            },
+          },
+        },
+      ],
+    });
+    try {
+      await expect(
+        runner.run(developmentCommand, () => undefined, new AbortController().signal),
+      ).rejects.toMatchObject({ code: "model_error" });
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(capture).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledWith(
+        "99999999-9999-4999-8999-999999999998",
+        expect.anything(),
+        { kind: "detach" },
+      );
+      expect(stop).not.toHaveBeenCalled();
+      expect(modelLeaseRelease).toHaveBeenCalledTimes(1);
+      expect(
+        (await session.findEntriesOnBranch()).filter(
+          (entry) => entry.type === "custom" && entry.customType === PI_SANDBOX_RESET_CUSTOM_TYPE,
+        ),
+      ).toHaveLength(0);
+    } finally {
+      await fake.stop();
       await rm(directory, { recursive: true, force: true });
     }
   });

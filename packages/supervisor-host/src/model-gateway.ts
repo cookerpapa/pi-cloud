@@ -87,7 +87,8 @@ export type TenantModelGatewayOptions = {
   providerGatewayApiKey: string;
   capabilityTtlMs?: number;
   maximumRequestsPerTurn?: number;
-  upstreamRequestTimeoutMs?: number;
+  upstreamConnectTimeoutMs?: number;
+  upstreamIdleTimeoutMs?: number;
   piRequestTimeoutMs?: number;
   piTurnTimeoutMs?: number;
   fetchImplementation?: typeof fetch;
@@ -232,6 +233,20 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
     "content-type": "application/json; charset=utf-8",
   });
   response.end(`${JSON.stringify(body)}\n`);
+}
+
+function sendStreamingError(
+  response: ServerResponse,
+  error: Readonly<{ code: string; message: string }>,
+): void {
+  if (!response.headersSent) {
+    sendJson(response, 502, { error });
+    return;
+  }
+  if (response.writableEnded || response.destroyed) return;
+  response.end(
+    `data: ${JSON.stringify({ type: "error", code: error.code, message: error.message })}\n\n`,
+  );
 }
 
 async function readBody(request: IncomingMessage): Promise<Buffer> {
@@ -386,7 +401,8 @@ export class TenantModelGateway {
   readonly #providerGatewayApiKey: string;
   readonly #capabilityTtlMs: number;
   readonly #maximumRequestsPerTurn: number;
-  readonly #upstreamRequestTimeoutMs: number;
+  readonly #upstreamConnectTimeoutMs: number;
+  readonly #upstreamIdleTimeoutMs: number;
   readonly #piRequestTimeoutMs: number;
   readonly #piTurnTimeoutMs: number;
   readonly #fetch: typeof fetch;
@@ -425,10 +441,15 @@ export class TenantModelGateway {
       "maximumRequestsPerTurn",
       256,
     );
-    this.#upstreamRequestTimeoutMs = positiveInteger(
-      options.upstreamRequestTimeoutMs ?? 120_000,
-      "upstreamRequestTimeoutMs",
+    this.#upstreamConnectTimeoutMs = positiveInteger(
+      options.upstreamConnectTimeoutMs ?? 120_000,
+      "upstreamConnectTimeoutMs",
       300_000,
+    );
+    this.#upstreamIdleTimeoutMs = positiveInteger(
+      options.upstreamIdleTimeoutMs ?? 300_000,
+      "upstreamIdleTimeoutMs",
+      15 * 60_000,
     );
     this.#piRequestTimeoutMs = positiveInteger(
       options.piRequestTimeoutMs ?? 150_000,
@@ -482,13 +503,19 @@ export class TenantModelGateway {
         (error: unknown) => {
           this.#observe(active, "failed", startedAt);
           if (error instanceof SafeGatewayHttpError) {
-            sendJson(response, error.status, {
-              error: { code: error.code, message: error.message },
-            });
+            if (response.headersSent) {
+              if (error.code === "downstream_disconnected") response.destroy();
+              else sendStreamingError(response, { code: error.code, message: error.message });
+            } else {
+              sendJson(response, error.status, {
+                error: { code: error.code, message: error.message },
+              });
+            }
             return;
           }
-          sendJson(response, 502, {
-            error: { code: "model_gateway_error", message: "Model Gateway request failed" },
+          sendStreamingError(response, {
+            code: "model_gateway_error",
+            message: "Model Gateway request failed",
           });
         },
       );
@@ -709,13 +736,21 @@ export class TenantModelGateway {
     active.requestsStarted += 1;
 
     const controller = new AbortController();
-    let timedOut = false;
+    let timeoutPhase: "connect" | "idle" | undefined;
     let disconnected = false;
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, this.#upstreamRequestTimeoutMs);
-    timeout.unref();
+    let timeout: NodeJS.Timeout | undefined;
+    const clearUpstreamTimeout = (): void => {
+      if (timeout !== undefined) clearTimeout(timeout);
+      timeout = undefined;
+    };
+    const armUpstreamTimeout = (phase: "connect" | "idle", timeoutMs: number): void => {
+      clearUpstreamTimeout();
+      timeout = setTimeout(() => {
+        timeoutPhase = phase;
+        controller.abort();
+      }, timeoutMs);
+      timeout.unref();
+    };
     const abortOnRequest = (): void => {
       disconnected = true;
       controller.abort();
@@ -734,13 +769,16 @@ export class TenantModelGateway {
       let upstream: Response | undefined;
       for (let attempt = 1; attempt <= PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS; attempt += 1) {
         try {
+          armUpstreamTimeout("connect", this.#upstreamConnectTimeoutMs);
           upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${active.providerPath}`, {
             method: "POST",
             headers: upstreamHeaders(request, active, this.#providerGatewayApiKey),
             body: new Uint8Array(requestBytes),
             signal: controller.signal,
           });
+          clearUpstreamTimeout();
         } catch (error: unknown) {
+          clearUpstreamTimeout();
           if (attempt === PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS || controller.signal.aborted) {
             throw error;
           }
@@ -783,7 +821,9 @@ export class TenantModelGateway {
           }),
       );
       let responseBytes = 0;
+      armUpstreamTimeout("idle", this.#upstreamIdleTimeoutMs);
       for await (const rawChunk of upstream.body) {
+        armUpstreamTimeout("idle", this.#upstreamIdleTimeoutMs);
         const chunk = rawChunk instanceof Uint8Array ? rawChunk : new Uint8Array(rawChunk);
         responseBytes += chunk.byteLength;
         if (responseBytes > MAX_RESPONSE_BYTES) {
@@ -797,22 +837,29 @@ export class TenantModelGateway {
         hostedActivity.push(chunk);
         await writeChunk(response, chunk);
       }
+      clearUpstreamTimeout();
       hostedActivity.finish("completed");
       response.end();
     } catch (error: unknown) {
       hostedActivity?.finish("failed");
       if (error instanceof SafeGatewayHttpError) throw error;
       throw new SafeGatewayHttpError(
-        timedOut ? 504 : 502,
+        timeoutPhase === undefined ? 502 : 504,
         disconnected
           ? "downstream_disconnected"
-          : timedOut
-            ? "provider_gateway_timeout"
-            : "provider_gateway_unavailable",
-        timedOut ? "Provider Gateway timed out" : "Provider Gateway request failed",
+          : timeoutPhase === "connect"
+            ? "provider_gateway_connect_timeout"
+            : timeoutPhase === "idle"
+              ? "provider_gateway_idle_timeout"
+              : "provider_gateway_unavailable",
+        timeoutPhase === "connect"
+          ? "Provider Gateway response headers timed out"
+          : timeoutPhase === "idle"
+            ? "Provider Gateway response stream became idle"
+            : "Provider Gateway request failed",
       );
     } finally {
-      clearTimeout(timeout);
+      clearUpstreamTimeout();
       request.off("aborted", abortOnRequest);
       response.off("close", abortOnResponse);
       active.requestControllers.delete(controller);

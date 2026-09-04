@@ -112,7 +112,7 @@ export interface WorkspaceRuntimeStateRepository {
   returnDevelopmentEnvironment(
     environmentId: string,
     activationId: string,
-    outcome: "running" | "failed",
+    outcome: "running" | "unknown",
     detail?: { handle?: SandboxHandle; failureCode?: string; runtimeCapsule?: string },
   ): Promise<void>;
   reserveDevelopmentEnvironmentTerminal(environmentId: string): Promise<boolean>;
@@ -219,7 +219,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   async returnDevelopmentEnvironment(
     environmentId: string,
     activationId: string,
-    outcome: "running" | "failed",
+    outcome: "running" | "unknown",
   ): Promise<void> {
     if (environmentId !== activationId) return;
     const environment = this.#developmentEnvironments.get(environmentId);
@@ -1314,7 +1314,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   async returnDevelopmentEnvironment(
     environmentId: string,
     activationId: string,
-    outcome: "running" | "failed",
+    outcome: "running" | "unknown",
     detail: { handle?: SandboxHandle; failureCode?: string; runtimeCapsule?: string } = {},
   ): Promise<void> {
     const now = validDate(this.#clock);
@@ -1325,10 +1325,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .set({
           agent_activation_id: null,
           state: outcome,
-          runtime_id: outcome === "running" ? (detail.handle?.runtimeId ?? null) : null,
-          runtime_name: outcome === "running" ? (detail.handle?.runtimeName ?? null) : null,
-          runtime_capsule: outcome === "running" ? (detail.runtimeCapsule ?? null) : null,
-          failure_code: outcome === "failed" ? failureCode(detail.failureCode) : null,
+          runtime_id: detail.handle?.runtimeId ?? null,
+          runtime_name: detail.handle?.runtimeName ?? null,
+          runtime_capsule: detail.runtimeCapsule ?? null,
+          failure_code: outcome === "unknown" ? failureCode(detail.failureCode) : null,
           updated_at: now,
         })
         .where("id", "=", environmentId)

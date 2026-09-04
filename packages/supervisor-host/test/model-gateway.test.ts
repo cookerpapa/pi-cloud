@@ -95,7 +95,11 @@ afterEach(async () => {
   await Promise.all(gateways.splice(0).map((gateway) => gateway.close()));
 });
 
-function createGateway(fetchImplementation: typeof fetch, maximumRequestsPerTurn = 8) {
+function createGateway(
+  fetchImplementation: typeof fetch,
+  maximumRequestsPerTurn = 8,
+  timeouts: { upstreamConnectTimeoutMs?: number; upstreamIdleTimeoutMs?: number } = {},
+) {
   const gateway = new TenantModelGateway({
     host: "127.0.0.1",
     port: 0,
@@ -103,6 +107,7 @@ function createGateway(fetchImplementation: typeof fetch, maximumRequestsPerTurn
     providerGatewayBaseUrl: "http://provider-gateway:8317",
     providerGatewayApiKey: PROVIDER_GATEWAY_KEY,
     maximumRequestsPerTurn,
+    ...timeouts,
     fetchImplementation,
   });
   gateways.push(gateway);
@@ -345,6 +350,112 @@ describe("tenant model gateway", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("recovered");
     expect(upstream).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies the upstream timeout to connection and stream idleness instead of total duration", async () => {
+    const encoder = new TextEncoder();
+    const upstream = vi.fn<typeof fetch>(async (_input, init) => {
+      const signal = init?.signal;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            const timers = [
+              setTimeout(
+                () =>
+                  controller.enqueue(
+                    encoder.encode(
+                      'data: {"type":"response.output_text.delta","delta":"still "}\n\n',
+                    ),
+                  ),
+                5,
+              ),
+              setTimeout(
+                () =>
+                  controller.enqueue(
+                    encoder.encode(
+                      'data: {"type":"response.output_text.delta","delta":"active"}\n\n',
+                    ),
+                  ),
+                25,
+              ),
+              setTimeout(() => {
+                controller.enqueue(
+                  encoder.encode('data: {"type":"response.completed","response":{"id":"r1"}}\n\n'),
+                );
+                controller.close();
+              }, 50),
+            ];
+            signal?.addEventListener(
+              "abort",
+              () => {
+                for (const timer of timers) clearTimeout(timer);
+                controller.error(new Error("upstream aborted"));
+              },
+              { once: true },
+            );
+          },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+    });
+    const gateway = createGateway(upstream, 8, {
+      upstreamConnectTimeoutMs: 20,
+      upstreamIdleTimeoutMs: 40,
+    });
+    await gateway.start();
+    const lease = gateway.issue(command());
+    const response = await fetch(`http://127.0.0.1:${String(gateway.listeningPort)}/v1/responses`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${lease.runtime.capability}`,
+        "content-type": "application/json",
+        ...samplingHeaders(),
+      },
+      body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
+    });
+    const body = await response.text();
+    expect(body).toContain('"delta":"still "');
+    expect(body).toContain('"delta":"active"');
+    expect(body).toContain("response.completed");
+    expect(body).not.toContain("provider_gateway_idle_timeout");
+  });
+
+  it("returns a protocol-visible failure when an established Provider stream becomes idle", async () => {
+    const encoder = new TextEncoder();
+    const upstream = vi.fn<typeof fetch>(async (_input, init) => {
+      const signal = init?.signal;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode('data: {"type":"response.created","response":{"id":"r1"}}\n\n'),
+            );
+            signal?.addEventListener(
+              "abort",
+              () => controller.error(new Error("upstream aborted")),
+              { once: true },
+            );
+          },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+    });
+    const gateway = createGateway(upstream, 8, {
+      upstreamConnectTimeoutMs: 100,
+      upstreamIdleTimeoutMs: 20,
+    });
+    await gateway.start();
+    const lease = gateway.issue(command());
+    const response = await fetch(`http://127.0.0.1:${String(gateway.listeningPort)}/v1/responses`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${lease.runtime.capability}`,
+        "content-type": "application/json",
+        ...samplingHeaders(),
+      },
+      body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
+    });
+    expect(await response.text()).toContain("provider_gateway_idle_timeout");
   });
 
   it("rejects protocol, model, Step identity and request-count violations before forwarding", async () => {

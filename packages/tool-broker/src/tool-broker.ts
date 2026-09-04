@@ -813,6 +813,7 @@ export class ToolBroker {
     await environment.terminal?.kill().catch(() => undefined);
     try {
       await this.#provider.destroy(environment.handle);
+      await this.#serviceRegistry?.endRuntime(environment.handle.runtimeId).catch(() => undefined);
     } catch (error: unknown) {
       await this.#stateRepository
         .setDevelopmentEnvironmentState(request.environmentId, "unknown", {
@@ -1754,7 +1755,21 @@ export class ToolBroker {
   ): Promise<ToolSandboxReleaseResponse> {
     const activation = this.#ownedBinding(request.activationId, request.assignment);
     if (activation.elasticRuntime !== undefined) {
+      if (request.disposition === "detach") {
+        throw new ToolBrokerError(
+          "tool_binding_identity_mismatch",
+          "Elastic Tool Sandbox bindings cannot detach from their runtime",
+          false,
+        );
+      }
       return this.#releaseElasticBinding(request, activation);
+    }
+    if (request.disposition !== "detach") {
+      throw new ToolBrokerError(
+        "tool_binding_identity_mismatch",
+        "Development environment Tool bindings must detach from their machine",
+        false,
+      );
     }
     let handle = activation.handle;
     if (activation.materializing !== undefined) {
@@ -1781,46 +1796,14 @@ export class ToolBroker {
         retained: handle !== undefined,
       };
     }
-    try {
-      if (handle === undefined) {
-        throw new ToolBrokerError(
-          "development_environment_unavailable",
-          "Development environment runtime was unavailable after Agent execution",
-          true,
-        );
-      }
-      environment.handle = handle;
-      const runtimeCapsule = await this.#persistentCapsule(handle);
-      await this.#stateRepository.returnDevelopmentEnvironment(
-        environment.reservation.environmentId,
-        activation.reservation.activationId,
-        "running",
-        { handle, ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }) },
-      );
-      return {
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.released",
-        requestId: request.requestId,
-        activationId: request.activationId,
-        retained: true,
-      };
-    } catch (error: unknown) {
-      if (handle !== undefined) {
-        await this.#provider.stop(handle).catch(() => undefined);
-        await this.#endHttpServices(activation, handle).catch(() => undefined);
-      }
-      this.#developmentEnvironments.delete(environment.reservation.environmentId);
-      this.#releaseAdmission(environment.reservation.environmentId);
-      await this.#stateRepository
-        .returnDevelopmentEnvironment(
-          environment.reservation.environmentId,
-          activation.reservation.activationId,
-          "failed",
-          { failureCode: operationFailureCode(error) },
-        )
-        .catch(() => undefined);
-      throw error;
-    }
+    await this.#returnDevelopmentEnvironmentBinding(activation, environment, handle);
+    return {
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.released",
+      requestId: request.requestId,
+      activationId: request.activationId,
+      retained: true,
+    };
   }
 
   async #releaseElasticBinding(
@@ -1938,21 +1921,8 @@ export class ToolBroker {
       this.#toolBindings.delete(activationId);
       environment?.bindingIds.delete(activationId);
       if (environment !== undefined && environment.bindingIds.size > 0) return;
-      if (handle !== undefined) {
-        await this.#provider.stop(handle).catch(() => undefined);
-        await this.#endHttpServices(activation, handle).catch(() => undefined);
-      }
       if (environment !== undefined) {
-        this.#developmentEnvironments.delete(environment.reservation.environmentId);
-        this.#releaseAdmission(environment.reservation.environmentId);
-        await this.#stateRepository
-          .returnDevelopmentEnvironment(
-            environment.reservation.environmentId,
-            activation.reservation.activationId,
-            "failed",
-            { failureCode: "agent_execution_interrupted" },
-          )
-          .catch(() => undefined);
+        await this.#returnDevelopmentEnvironmentBinding(activation, environment, handle);
       }
       return;
     }
@@ -1961,6 +1931,40 @@ export class ToolBroker {
       "Tool binding was not attached to a Workspace runtime or development environment",
       false,
     );
+  }
+
+  async #returnDevelopmentEnvironmentBinding(
+    activation: ManagedToolBinding,
+    environment: ManagedDevelopmentEnvironment,
+    handle: SandboxHandle | undefined,
+  ): Promise<void> {
+    if (handle !== undefined) environment.handle = handle;
+    try {
+      const runtimeCapsule = await this.#persistentCapsule(environment.handle);
+      if (runtimeCapsule === undefined) {
+        throw new ToolBrokerError(
+          "persistent_machine_recovery_state_unavailable",
+          "Development environment recovery state was unavailable after Agent execution",
+          true,
+        );
+      }
+      await this.#stateRepository.returnDevelopmentEnvironment(
+        environment.reservation.environmentId,
+        activation.reservation.activationId,
+        "running",
+        { handle: environment.handle, runtimeCapsule },
+      );
+    } catch (error: unknown) {
+      await this.#stateRepository
+        .returnDevelopmentEnvironment(
+          environment.reservation.environmentId,
+          activation.reservation.activationId,
+          "unknown",
+          { handle: environment.handle, failureCode: operationFailureCode(error) },
+        )
+        .catch(() => undefined);
+      throw error;
+    }
   }
 
   async #stopElasticBinding(activationId: string, activation: ManagedToolBinding): Promise<void> {
@@ -2024,10 +2028,6 @@ export class ToolBroker {
       listeningPorts: discovery.listeningPorts,
       httpServices: discovery.httpServices,
     });
-  }
-
-  async #endHttpServices(activation: ManagedToolBinding, handle: SandboxHandle): Promise<void> {
-    await this.#serviceRegistry?.end(this.#httpServiceTarget(activation), handle.runtimeId);
   }
 
   async listAssignments(sandboxId: string): Promise<readonly SupervisorRuntimeAssignment[]> {

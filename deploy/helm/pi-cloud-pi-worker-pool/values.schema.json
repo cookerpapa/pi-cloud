@@ -182,14 +182,16 @@
           "required": [
             "toolBrokerRequestMs",
             "modelCapabilityTtlMs",
-            "modelUpstreamRequestMs",
+            "modelUpstreamConnectMs",
+            "modelUpstreamIdleMs",
             "modelRequestMs",
             "turnMs"
           ],
           "properties": {
             "toolBrokerRequestMs": { "$ref": "#/$defs/positiveMs" },
             "modelCapabilityTtlMs": { "$ref": "#/$defs/positiveMs" },
-            "modelUpstreamRequestMs": { "$ref": "#/$defs/positiveMs" },
+            "modelUpstreamConnectMs": { "$ref": "#/$defs/positiveMs" },
+            "modelUpstreamIdleMs": { "$ref": "#/$defs/positiveMs" },
             "modelRequestMs": { "$ref": "#/$defs/positiveMs" },
             "turnMs": { "$ref": "#/$defs/positiveMs" }
           }

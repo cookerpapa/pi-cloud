@@ -68,7 +68,8 @@ runtime:
   timeouts:
     toolBrokerRequestMs: 360000
     modelCapabilityTtlMs: 900000
-    modelUpstreamRequestMs: 120000
+    modelUpstreamConnectMs: 120000
+    modelUpstreamIdleMs: 300000
     modelRequestMs: 150000
     turnMs: 600000
 

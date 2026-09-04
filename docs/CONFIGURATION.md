@@ -256,7 +256,8 @@ validated set. They are not ordinary `.env` knobs because increasing one may
 make another service kill a still-valid operation. Current defaults are:
 
 ```text
-model upstream request 120 s <= Pi model request 150 s <= Pi Turn 600 s
+model upstream connect 120 s <= Pi response-header wait 150 s <= Pi Turn 600 s
+model upstream stream idle 300 s <= Pi Turn 600 s
 Tool Broker request 360 s
 model capability TTL 900 s
 Worker termination grace 720 s

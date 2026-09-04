@@ -217,6 +217,17 @@ export const ToolSandboxReleaseRequestSchema = Type.Union([
       requestId: UuidSchema,
       activationId: UuidSchema,
       assignment: ToolSandboxAssignmentSchema,
+      disposition: Type.Literal("detach"),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.release"),
+      requestId: UuidSchema,
+      activationId: UuidSchema,
+      assignment: ToolSandboxAssignmentSchema,
       disposition: Type.Literal("keep_warm"),
       workspaceRevision: Type.String({ pattern: "^[0-9a-f]{64}$" }),
     },

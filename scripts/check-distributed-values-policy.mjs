@@ -26,7 +26,8 @@ const valid = {
       timeouts: {
         toolBrokerRequestMs: 360_000,
         modelCapabilityTtlMs: 900_000,
-        modelUpstreamRequestMs: 120_000,
+        modelUpstreamConnectMs: 120_000,
+        modelUpstreamIdleMs: 300_000,
         modelRequestMs: 150_000,
         turnMs: 600_000,
       },

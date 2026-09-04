@@ -123,6 +123,8 @@ describe("Supervisor host production configuration", () => {
       runtimeObjectCacheTtlMs: 600_000,
       runtimeObjectCacheMaximumEntries: 512,
       runtimeObjectCacheMaximumBytes: 32 * 1_024 * 1_024,
+      modelGatewayUpstreamConnectTimeoutMs: 120_000,
+      modelGatewayUpstreamIdleTimeoutMs: 300_000,
     });
   });
 
@@ -140,10 +142,17 @@ describe("Supervisor host production configuration", () => {
     await expect(
       loadSupervisorHostConfig({
         ...environment,
-        PI_CLOUD_MODEL_GATEWAY_UPSTREAM_REQUEST_TIMEOUT_MS: "151000",
+        PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS: "151000",
         PI_CLOUD_PI_MODEL_REQUEST_TIMEOUT_MS: "150000",
       }),
-    ).rejects.toThrow("upstream timeout");
+    ).rejects.toThrow("upstream connect timeout");
+    await expect(
+      loadSupervisorHostConfig({
+        ...environment,
+        PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS: "601000",
+        PI_CLOUD_PI_TURN_TIMEOUT_MS: "600000",
+      }),
+    ).rejects.toThrow("upstream idle timeout");
     await expect(
       loadSupervisorHostConfig({
         ...environment,

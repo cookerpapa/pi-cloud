@@ -87,6 +87,23 @@ describe("PiAgentEventAdapter", () => {
     expect(JSON.stringify(settled)).not.toContain("must-not-pass");
   });
 
+  it("turns a terminated Provider stream into a useful bounded failure", () => {
+    const adapter = createAdapter();
+    adapter.adapt({ type: "agent_start" });
+    adapter.adapt({
+      type: "message_end",
+      message: { role: "assistant", stopReason: "error", errorMessage: "terminated" },
+    });
+    expect(adapter.adapt({ type: "agent_settled" })).toMatchObject({
+      kind: "settled",
+      result: {
+        status: "failed",
+        code: "model_error",
+        message: "Model response stream ended before completion",
+      },
+    });
+  });
+
   it("correlates one logical Step across a bounded provider retry and Tool result", () => {
     let eventId = 0;
     const adapter = new PiAgentEventAdapter(

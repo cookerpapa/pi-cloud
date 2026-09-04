@@ -530,7 +530,6 @@ export class PiCloudTurnRunner {
           (performance.now() - worldStateStartedAt) / 1_000,
         );
         const samplingSteps = new PiSamplingStepController();
-        let toolStarted = false;
         let eventChain = Promise.resolve();
         let pendingPublicEvents = 0;
         let fatalError: Error | undefined;
@@ -582,7 +581,6 @@ export class PiCloudTurnRunner {
           }
           if (outcome.kind === "mapped") {
             let publicEvent = outcome.event;
-            if (publicEvent.type === "tool.started") toolStarted = true;
             if (
               publicEvent.type === "tool.completed" &&
               this.#options.persistToolOutputArtifact !== undefined
@@ -892,8 +890,6 @@ export class PiCloudTurnRunner {
             await sessionHandle.authority.assertCurrent();
             await this.#options.onSettled?.();
             await sessionHandle.authority.assertCurrent();
-          } else {
-            if (toolStarted) await worldState.recordUnavailable().catch(() => undefined);
           }
           const settled = await publishMapped({ type: "agent_settled" });
           if (settled.kind !== "settled")
@@ -909,9 +905,6 @@ export class PiCloudTurnRunner {
           return {
             stopReason: settled.result.stopReason,
           };
-        } catch (error: unknown) {
-          if (toolStarted) await worldState.recordUnavailable().catch(() => undefined);
-          throw error;
         } finally {
           unsubscribeHostedActivity?.();
           unsubscribeHostedTranscript?.();

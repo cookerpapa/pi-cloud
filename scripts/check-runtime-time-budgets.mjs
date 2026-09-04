@@ -29,7 +29,11 @@ function durationMs(value, description) {
 function validateWorkerPolicy(policy, description) {
   const manager = integer(policy.toolBrokerRequestMs, `${description} Tool Broker timeout`);
   const capability = integer(policy.modelCapabilityTtlMs, `${description} model capability TTL`);
-  const upstream = integer(policy.modelUpstreamRequestMs, `${description} upstream timeout`);
+  const upstreamConnect = integer(
+    policy.modelUpstreamConnectMs,
+    `${description} upstream connect timeout`,
+  );
+  const upstreamIdle = integer(policy.modelUpstreamIdleMs, `${description} upstream idle timeout`);
   const model = integer(policy.modelRequestMs, `${description} Pi model timeout`);
   const turn = integer(policy.turnMs, `${description} Pi Turn timeout`);
   const termination = integer(policy.terminationGraceMs, `${description} termination grace`);
@@ -38,7 +42,11 @@ function validateWorkerPolicy(policy, description) {
     manager >= MAX_TOOL_EXECUTION_MS + TOOL_TRANSPORT_MARGIN_MS,
     `${description} can time out before a maximum Tool result is returned`,
   );
-  assert.ok(upstream <= model, `${description} Pi may time out before its model gateway`);
+  assert.ok(
+    upstreamConnect <= model,
+    `${description} Pi may time out before its model gateway returns response headers`,
+  );
+  assert.ok(upstreamIdle <= turn, `${description} upstream stream can outlive its Turn`);
   assert.ok(model <= turn, `${description} Turn may time out before one model request`);
   assert.ok(
     capability >= turn + MODEL_CAPABILITY_MARGIN_MS,
@@ -81,7 +89,8 @@ validateWorkerPolicy(
   {
     toolBrokerRequestMs: composeInteger("PI_CLOUD_TOOL_BROKER_REQUEST_TIMEOUT_MS"),
     modelCapabilityTtlMs: composeInteger("PI_CLOUD_MODEL_GATEWAY_CAPABILITY_TTL_MS"),
-    modelUpstreamRequestMs: composeInteger("PI_CLOUD_MODEL_GATEWAY_UPSTREAM_REQUEST_TIMEOUT_MS"),
+    modelUpstreamConnectMs: composeInteger("PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS"),
+    modelUpstreamIdleMs: composeInteger("PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS"),
     modelRequestMs: composeInteger("PI_CLOUD_PI_MODEL_REQUEST_TIMEOUT_MS"),
     turnMs: composeInteger("PI_CLOUD_PI_TURN_TIMEOUT_MS"),
     terminationGraceMs: durationMs(composeStop, "Compose Pi Worker stop grace"),

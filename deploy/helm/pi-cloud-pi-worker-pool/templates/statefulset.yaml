@@ -10,8 +10,11 @@
 {{- if lt (int $timeouts.toolBrokerRequestMs) 360000 -}}
 {{- fail "runtime.timeouts.toolBrokerRequestMs must outlive the maximum Tool execution" -}}
 {{- end -}}
-{{- if gt (int $timeouts.modelUpstreamRequestMs) (int $timeouts.modelRequestMs) -}}
-{{- fail "runtime.timeouts.modelUpstreamRequestMs cannot exceed modelRequestMs" -}}
+{{- if gt (int $timeouts.modelUpstreamConnectMs) (int $timeouts.modelRequestMs) -}}
+{{- fail "runtime.timeouts.modelUpstreamConnectMs cannot exceed modelRequestMs" -}}
+{{- end -}}
+{{- if gt (int $timeouts.modelUpstreamIdleMs) (int $timeouts.turnMs) -}}
+{{- fail "runtime.timeouts.modelUpstreamIdleMs cannot exceed turnMs" -}}
 {{- end -}}
 {{- if gt (int $timeouts.modelRequestMs) (int $timeouts.turnMs) -}}
 {{- fail "runtime.timeouts.modelRequestMs cannot exceed turnMs" -}}
@@ -192,8 +195,10 @@ spec:
               value: {{ .Values.runtime.timeouts.modelCapabilityTtlMs | quote }}
             - name: PI_CLOUD_MODEL_GATEWAY_MAXIMUM_REQUESTS_PER_TURN
               value: "128"
-            - name: PI_CLOUD_MODEL_GATEWAY_UPSTREAM_REQUEST_TIMEOUT_MS
-              value: {{ .Values.runtime.timeouts.modelUpstreamRequestMs | quote }}
+            - name: PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS
+              value: {{ .Values.runtime.timeouts.modelUpstreamConnectMs | quote }}
+            - name: PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS
+              value: {{ .Values.runtime.timeouts.modelUpstreamIdleMs | quote }}
             - name: PI_CLOUD_PI_MODEL_REQUEST_TIMEOUT_MS
               value: {{ .Values.runtime.timeouts.modelRequestMs | quote }}
             - name: PI_CLOUD_PI_TURN_TIMEOUT_MS

@@ -42,7 +42,8 @@ export type SupervisorHostConfig = {
   modelGatewayAdvertisedBaseUrl: string;
   modelGatewayCapabilityTtlMs: number;
   modelGatewayMaximumRequestsPerTurn: number;
-  modelGatewayUpstreamRequestTimeoutMs: number;
+  modelGatewayUpstreamConnectTimeoutMs: number;
+  modelGatewayUpstreamIdleTimeoutMs: number;
   piModelRequestTimeoutMs: number;
   piTurnTimeoutMs: number;
 };
@@ -257,12 +258,19 @@ export async function loadSupervisorHostConfig(
     1_000,
     60 * 60_000,
   );
-  const modelGatewayUpstreamRequestTimeoutMs = integerValue(
+  const modelGatewayUpstreamConnectTimeoutMs = integerValue(
     environment,
-    "PI_CLOUD_MODEL_GATEWAY_UPSTREAM_REQUEST_TIMEOUT_MS",
+    "PI_CLOUD_MODEL_GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS",
     120_000,
     1_000,
     300_000,
+  );
+  const modelGatewayUpstreamIdleTimeoutMs = integerValue(
+    environment,
+    "PI_CLOUD_MODEL_GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS",
+    300_000,
+    1_000,
+    15 * 60_000,
   );
   const piModelRequestTimeoutMs = integerValue(
     environment,
@@ -276,11 +284,16 @@ export async function loadSupervisorHostConfig(
       "Tool Broker timeout must outlive the maximum Tool execution and transport margin",
     );
   }
-  if (modelGatewayUpstreamRequestTimeoutMs > piModelRequestTimeoutMs) {
-    throw new TypeError("Model upstream timeout cannot exceed the Pi model-request timeout");
+  if (modelGatewayUpstreamConnectTimeoutMs > piModelRequestTimeoutMs) {
+    throw new TypeError(
+      "Model upstream connect timeout cannot exceed the Pi response-header timeout",
+    );
   }
   if (piModelRequestTimeoutMs > piTurnTimeoutMs) {
     throw new TypeError("Pi model-request timeout cannot exceed the Pi Turn timeout");
+  }
+  if (modelGatewayUpstreamIdleTimeoutMs > piTurnTimeoutMs) {
+    throw new TypeError("Model upstream idle timeout cannot exceed the Pi Turn timeout");
   }
   if (modelGatewayCapabilityTtlMs < piTurnTimeoutMs + MODEL_CAPABILITY_EXPIRY_MARGIN_MS) {
     throw new TypeError("Model capability TTL must outlive the Pi Turn timeout and expiry margin");
@@ -431,7 +444,8 @@ export async function loadSupervisorHostConfig(
       1,
       256,
     ),
-    modelGatewayUpstreamRequestTimeoutMs,
+    modelGatewayUpstreamConnectTimeoutMs,
+    modelGatewayUpstreamIdleTimeoutMs,
     piModelRequestTimeoutMs,
     piTurnTimeoutMs,
   };

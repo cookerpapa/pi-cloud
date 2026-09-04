@@ -228,11 +228,12 @@ export class ToolBrokerClient {
   async release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition: { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
+    disposition:
+      { kind: "detach" } | { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
   ): Promise<ToolSandboxReleaseResponse> {
     const requestId = this.#idGenerator();
     const response = await this.#service(
-      disposition.kind !== "destroy"
+      disposition.kind === "keep_warm"
         ? {
             toolBrokerProtocolVersion: 1,
             type: "tool_sandbox.release",
@@ -242,14 +243,23 @@ export class ToolBrokerClient {
             disposition: disposition.kind,
             workspaceRevision: disposition.workspaceRevision,
           }
-        : {
-            toolBrokerProtocolVersion: 1,
-            type: "tool_sandbox.release",
-            requestId,
-            activationId,
-            assignment,
-            disposition: "destroy",
-          },
+        : disposition.kind === "detach"
+          ? {
+              toolBrokerProtocolVersion: 1,
+              type: "tool_sandbox.release",
+              requestId,
+              activationId,
+              assignment,
+              disposition: "detach",
+            }
+          : {
+              toolBrokerProtocolVersion: 1,
+              type: "tool_sandbox.release",
+              requestId,
+              activationId,
+              assignment,
+              disposition: "destroy",
+            },
     );
     if (
       response.type !== "tool_sandbox.released" ||

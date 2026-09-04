@@ -365,7 +365,11 @@ credentials, binds model requests to Run/Step identity and records usage. Cube
 cannot reach or authenticate to it. Its issued runtime descriptor includes the
 frozen input modalities and Provider-hosted Tool names. The Gateway validates
 the accepted Provider/model/protocol but does not execute hosted Tools or
-rewrite them as Pi function calls.
+rewrite them as Pi function calls. Waiting for Provider response headers and
+waiting for the next streaming byte use separate timeouts. Stream activity
+renews the idle deadline; only the enclosing Pi Turn owns total model duration.
+An idle stream ends with a Responses-compatible error event so Pi retains a
+bounded diagnostic instead of seeing an unexplained transport termination.
 
 ### Source-control App and Issue automation
 
@@ -512,7 +516,11 @@ different machine. Users create a new machine explicitly after release.
 The allocation participates in Sandbox-Domain capacity. `agent_activation_id`
 and `terminal_active` are independent durable ownership facts. Tool Broker
 grants a temporary Agent Tool binding to the existing machine and returns that
-binding without changing the Cube's physical identity. A
+binding without changing the Cube's physical identity. Completing, cancelling
+or failing an Agent Run detaches only that temporary binding. It never destroys
+the user-owned KVM and a model-only failure does not create a sandbox-reset
+World State fact. Only the explicit development-environment release operation
+destroys the machine. A
 planned Broker shutdown stores an encrypted reconnect capsule, detaches its
 process-local handle and leaves each cloud development machine in its existing
 physical state. It does not pause a running VM. A replacement Broker validates

@@ -462,8 +462,7 @@ describe("provider-backed Tool Tool Broker", () => {
         requestId: "21111111-1111-4111-8111-111111111113",
         activationId: agent.activationId,
         assignment,
-        disposition: "keep_warm",
-        workspaceRevision: "1".repeat(64),
+        disposition: "detach",
       }),
     ).resolves.toMatchObject({ retained: true });
     expect(fixture.createCount).toBe(1);
@@ -542,16 +541,9 @@ describe("provider-backed Tool Tool Broker", () => {
       secondAssignment,
       "21111111-1111-4111-8111-111111111119",
     );
-    await manager.release({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.release",
-      requestId: "21111111-1111-4111-8111-111111111120",
-      activationId: secondAgent.activationId,
-      assignment: secondAssignment,
-      disposition: "keep_warm",
-      workspaceRevision: "2".repeat(64),
-    });
+    await manager.stop(secondAgent.activationId, secondAssignment);
     expect(fixture.createCount).toBe(1);
+    expect(fixture.destroyed).toBe(false);
     await concurrentTerminal.close();
     expect(fixture.destroyed).toBe(false);
     await manager.developmentEnvironmentLifecycle({
@@ -646,8 +638,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "21600000-0000-4000-8000-000000000007",
       activationId: child.activationId,
       assignment: childAssignment,
-      disposition: "keep_warm",
-      workspaceRevision: "3".repeat(64),
+      disposition: "detach",
     });
     expect(fixture.stopped).toBe(false);
     await manager.release({
@@ -656,8 +647,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "21600000-0000-4000-8000-000000000008",
       activationId: parent.activationId,
       assignment,
-      disposition: "keep_warm",
-      workspaceRevision: "4".repeat(64),
+      disposition: "detach",
     });
     expect(fixture.createCount).toBe(1);
     expect(fixture.stopped).toBe(false);
@@ -827,7 +817,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "51111111-1111-4111-8111-111111111113",
       activationId: binding.activationId,
       assignment,
-      disposition: "destroy",
+      disposition: "detach",
     });
     const terminal = await manager.openDevelopmentEnvironmentTerminal({
       developmentEnvironmentProtocolVersion: 1,

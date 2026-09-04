@@ -103,6 +103,30 @@ function assistantStopReason(value: unknown): AssistantStopReason | undefined {
   }
 }
 
+function safeAssistantFailureMessage(value: unknown): string | undefined {
+  if (!isRecord(value) || value.role !== "assistant" || value.stopReason !== "error") {
+    return undefined;
+  }
+  const raw = typeof value.errorMessage === "string" ? value.errorMessage.trim() : "";
+  const normalized = raw.toLowerCase();
+  if (normalized === "terminated" || normalized.includes("stream ended before")) {
+    return "Model response stream ended before completion";
+  }
+  if (normalized.includes("response stream became idle")) {
+    return "Model response stream became idle before completion";
+  }
+  if (normalized.includes("response headers timed out")) {
+    return "Model provider did not return response headers in time";
+  }
+  if (normalized.includes("usage limit") || normalized.includes("insufficient_quota")) {
+    return "Model provider usage limit was reached";
+  }
+  if (normalized.includes("rate limit") || normalized.includes("rate_limit")) {
+    return "Model provider rate limit was reached";
+  }
+  return undefined;
+}
+
 /**
  * Converts the reviewed, public subset of Pi agent events into PiCloud v1
  * events. Pi event objects never leave this adapter.
@@ -114,6 +138,7 @@ export class PiAgentEventAdapter {
   #piTurnActive = false;
   #settled = false;
   #lastAssistantStopReason: AssistantStopReason | undefined;
+  #lastAssistantFailureMessage: string | undefined;
   #cancellationReason: TurnCancellationReason | undefined;
   #compactionActive = false;
   #activeSampling: ModelSamplingIdentity | undefined;
@@ -383,6 +408,9 @@ export class PiAgentEventAdapter {
     if (value.type === "message_end") {
       const stopReason = assistantStopReason(value.message);
       this.#lastAssistantStopReason = stopReason ?? this.#lastAssistantStopReason;
+      if (stopReason !== undefined) {
+        this.#lastAssistantFailureMessage = safeAssistantFailureMessage(value.message);
+      }
       if (stopReason === undefined) return { kind: "ignored", sourceType: value.type };
       if (this.#activeSampling === undefined) {
         if (!this.#requireSamplingIdentity) {
@@ -488,6 +516,7 @@ export class PiAgentEventAdapter {
         const stopReason = assistantStopReason(value.messages[index]);
         if (stopReason !== undefined) {
           this.#lastAssistantStopReason = stopReason;
+          this.#lastAssistantFailureMessage = safeAssistantFailureMessage(value.messages[index]);
           break;
         }
       }
@@ -514,7 +543,7 @@ export class PiAgentEventAdapter {
           result: {
             status: "failed",
             code: "model_error",
-            message: "Model request failed",
+            message: this.#lastAssistantFailureMessage ?? "Model request failed",
             retryable: true,
           },
         };

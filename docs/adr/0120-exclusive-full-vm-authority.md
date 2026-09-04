@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-08-23; amended on 2026-08-28.
+Accepted on 2026-08-23; amended on 2026-09-04.
 
 ## Context
 
@@ -59,6 +59,11 @@ authorization authority for Tool execution or platform access.
   authority and records an interrupted or unknown effect; a process already
   started inside the user-owned VM may continue. Later writers are admitted only
   after the VM has returned to machine authority under the replacement Broker.
+- Run completion, cancellation and failure revoke and detach only the temporary
+  Agent Tool binding. A model transport failure is not evidence that the KVM was
+  reset. `tool_sandbox.stop` therefore destroys elastic runtimes but detaches
+  from a development environment; only an authenticated explicit machine
+  release destroys the complete user-owned Cube.
 - If adoption cannot be proven, PiCloud reports `recovery_required`; it never
   silently creates an empty replacement and claims the old root filesystem or
   processes survived.
@@ -93,6 +98,8 @@ The previous behavior that destroyed every development environment from
 `ToolBroker.close()` is invalid. Directory selection, restart recovery and
 release acceptance must cover `/etc` or another guest-root marker, prove that
 `/workspace` is absent from an exclusive VM, and prove Session archival does
-not change machine state. Explicit VM release tombstones the machine-owned
+not change machine state. Model failure and Run cancellation acceptance must
+also prove that the machine identity survives and no false sandbox-reset fact
+is appended. Explicit VM release tombstones the machine-owned
 Workspace and schedules its complete home Volume for deletion. Conversation
 history remains available and must be rebound before it can execute again.
