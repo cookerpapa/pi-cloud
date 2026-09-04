@@ -14,6 +14,8 @@ import {
   type CompactionPreparation,
   type CompactionSettings,
   type CustomEntryContextMessageProjector,
+  type LaneRecord,
+  type NewRecord,
   type Session,
   type StreamFn,
   type ThinkingLevel,
@@ -34,6 +36,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { isRetryableAssistantError } from "@earendil-works/pi-ai";
 import type { ExecutionAuthority } from "./execution-authority.ts";
+import type { PiSessionMutationOperation } from "./session-mutation.ts";
 
 export const PI_MODEL_RETRY_CUSTOM_TYPE = "pi-cloud.model_retry";
 
@@ -93,6 +96,10 @@ export type CloudAgentRuntimeOptions = Readonly<{
   entryProjectors?: Readonly<Record<string, CustomEntryContextMessageProjector>>;
   compactionRetainedCustomTypes?: readonly string[];
   prepareFollowUp?: () => AgentMessage | undefined | Promise<AgentMessage | undefined>;
+  commitCheckpoint?: (
+    operation: PiSessionMutationOperation,
+    sourceEvent: CloudAgentRuntimeEvent,
+  ) => Promise<void>;
   onEvent?: (event: CloudAgentRuntimeEvent) => Promise<void> | void;
   idGenerator?: () => string;
 }>;
@@ -405,6 +412,7 @@ export class CloudAgentRuntime {
       if (authority.signal.aborted) abortForAuthority();
 
       const unsubscribe = agent.subscribe(async (event) => {
+        let checkpointHandledEvent = false;
         if (event.type === "message_end") {
           await authority.assertCurrent();
           if (event.message.role === "assistant") {
@@ -424,8 +432,29 @@ export class CloudAgentRuntime {
             message.role !== "assistant" ||
             (message.stopReason !== "error" && message.stopReason !== "aborted");
           if (durableMessage && (await session.getEntry(entryId)) === undefined) {
-            await session.appendEntry({ id: entryId, type: "message", message }, lane);
-            await this.#recordUsage(operationId, entryId, message, assistantAttempt);
+            const usageRecord = this.#usageRecord(operationId, entryId, message, assistantAttempt);
+            if (this.#options.commitCheckpoint === undefined) {
+              await session.appendEntry({ id: entryId, type: "message", message }, lane);
+              if (usageRecord !== undefined) await session.appendRecord(usageRecord);
+            } else {
+              await this.#options.commitCheckpoint(
+                {
+                  kind: "append_items",
+                  items: [
+                    {
+                      kind: "append_entry",
+                      entry: { id: entryId, type: "message", message },
+                      lane,
+                    },
+                    ...(usageRecord === undefined
+                      ? []
+                      : [{ kind: "append_record" as const, record: usageRecord }]),
+                  ],
+                },
+                event,
+              );
+              checkpointHandledEvent = true;
+            }
           }
           if (message.role === "assistant") {
             assistantEntryId = durableMessage ? entryId : undefined;
@@ -434,7 +463,12 @@ export class CloudAgentRuntime {
             toolIndex = 0;
           }
         }
-        await this.#options.onEvent?.(event);
+        if (
+          !checkpointHandledEvent &&
+          !(event.type === "tool_execution_start" && this.#options.commitCheckpoint !== undefined)
+        ) {
+          await this.#options.onEvent?.(event);
+        }
         if (
           event.type === "turn_end" &&
           event.toolResults.length === 0 &&
@@ -762,7 +796,7 @@ export class CloudAgentRuntime {
         }
         const resultEntryId = this.#id();
         resultEntryIds.set(toolCallId, resultEntryId);
-        await this.#options.session.appendRecord({
+        const intent: NewRecord<LaneRecord> = {
           id: this.#id(),
           lane: this.#options.lane,
           type: "tool_started",
@@ -774,7 +808,20 @@ export class CloudAgentRuntime {
           effectiveArgs: isObject(params) ? structuredClone(params) : {},
           resultEntryId,
           replay: "never",
-        });
+        };
+        if (this.#options.commitCheckpoint === undefined) {
+          await this.#options.session.appendRecord(intent);
+        } else {
+          await this.#options.commitCheckpoint(
+            { kind: "append_items", items: [{ kind: "append_record", record: intent }] },
+            {
+              type: "tool_execution_start",
+              toolCallId,
+              toolName: tool.name,
+              args: params,
+            },
+          );
+        }
         const result = await tool.execute(
           toolCallId,
           params,
@@ -843,6 +890,16 @@ export class CloudAgentRuntime {
     message: AgentMessage,
     assistantAttempt: number,
   ): Promise<void> {
+    const record = this.#usageRecord(operationId, entryId, message, assistantAttempt);
+    if (record !== undefined) await this.#options.session.appendRecord(record);
+  }
+
+  #usageRecord(
+    operationId: string,
+    entryId: string,
+    message: AgentMessage,
+    assistantAttempt: number,
+  ): NewRecord<LaneRecord> | undefined {
     let usage: Usage | undefined;
     let cause: "assistant" | "tool";
     let toolCallId: string | undefined;
@@ -854,13 +911,13 @@ export class CloudAgentRuntime {
       cause = "tool";
       toolCallId = message.toolCallId;
     } else {
-      return;
+      return undefined;
     }
-    if (usage === undefined) return;
+    if (usage === undefined) return undefined;
     if (cause === "assistant") {
       const assistant = message as AssistantMessage;
       const stopReason = assistant.stopReason === "pending" ? "error" : assistant.stopReason;
-      await this.#options.session.appendRecord({
+      return {
         id: this.#id(),
         lane: this.#options.lane,
         type: "usage",
@@ -870,10 +927,9 @@ export class CloudAgentRuntime {
         attempt: Math.max(1, assistantAttempt),
         stopReason,
         usage,
-      });
-      return;
+      };
     }
-    await this.#options.session.appendRecord({
+    return {
       id: this.#id(),
       lane: this.#options.lane,
       type: "usage",
@@ -882,6 +938,6 @@ export class CloudAgentRuntime {
       entryId,
       toolCallId: toolCallId!,
       usage,
-    });
+    };
   }
 }

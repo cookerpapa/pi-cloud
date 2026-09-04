@@ -92,4 +92,47 @@ describe("Kafka Gateway live Session tail", () => {
     expect(tail.statistics()).toMatchObject({ duplicateEvents: 1, evictedEvents: 2 });
     subscription.close();
   });
+
+  it("projects public events carried by one atomic Pi Session checkpoint Fact", async () => {
+    const tail = new KafkaLiveSessionTail({
+      brokers: ["127.0.0.1:1"],
+      topic: "unused",
+      clientId: "test",
+      instanceId: "test",
+    });
+    const event = {
+      schemaVersion: 1 as const,
+      eventId: "10000000-0000-4000-8000-000000000008",
+      sessionId: SESSION_ID,
+      turnId: TURN_ID,
+      agentId: "root",
+      seq: 2,
+      occurredAt: "2026-08-26T00:00:01.000Z",
+      type: "model.sampling.completed" as const,
+      payload: {
+        stepSequence: 1,
+        stepSha256: "a".repeat(64),
+        samplingAttempt: 1,
+        outcome: "completed" as const,
+        stopReason: "toolUse" as const,
+      },
+    };
+    tail.project({
+      kind: "pi_session_mutation",
+      factId: "10000000-0000-4000-8000-000000000009",
+      scope: {
+        tenantId: TENANT_ID,
+        sessionId: SESSION_ID,
+        runId: RUN_ID,
+        turnId: TURN_ID,
+        attemptId: "10000000-0000-4000-8000-000000000010",
+        fencingToken: 1,
+      },
+      piSession: { id: SESSION_ID, lane: "main" },
+      operation: { kind: "projection_barrier" },
+      events: [event],
+      occurredAt: event.occurredAt,
+    });
+    expect(tail.snapshot(TENANT_ID, SESSION_ID).events).toEqual([event]);
+  });
 });

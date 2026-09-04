@@ -16,6 +16,7 @@ The maintained invariants are:
 V implies K
 T(success) implies P
 the next model Step waits for its required P projection barrier
+an arbitrary Tool effect implies P(complete model output) and P(validated Tool intent)
 S contains no browser-supplied cursor
 arbitrary Tool effects are never inferred from K, V or an interrupted text prefix
 ```
@@ -35,6 +36,15 @@ second server-side event stream. Streamed Tool arguments remain private to Pi;
 one argument-free preparation Fact makes that interval visible and is replaced
 by the complete Tool start boundary. It is live-only and is not copied into the
 settled PostgreSQL transcript.
+
+At the end of a model sampling step, the complete Assistant Entry, usage Record
+and reviewed `model.sampling.completed` event are one AcceptedFact. After Pi
+validates the selected Tool and its arguments, the `tool_started` intent Record
+and reviewed `tool.started` event are a second AcceptedFact. Each Fact gets one
+Kafka `acks=all` receipt and one idempotent PostgreSQL Session projection; only
+then may the Tool execute. These two barriers cannot be collapsed because an
+execution intent does not exist until Pi validation succeeds. Independent
+message, usage, lifecycle-event and intent barriers are deliberately avoided.
 
 ## Cursor-free browser handoff
 
@@ -65,6 +75,8 @@ pinning shared memory.
 | before `K` | Fact was never shown | producer may retry the same stable Fact ID |
 | after `K`, before `V` | Fact may be unseen | Gateway consumer resumes from Kafka; reconnect receives a replacement snapshot |
 | after `V`, before complete `P` | visible prefix remains in Kafka | interruption projection records the bounded prefix and abort fact in Pi context |
+| after complete model `P`, before intent `P` | complete Tool call is canonical but no effect was admitted | recover as interrupted without marking that Tool effect `UNKNOWN` |
+| after intent `P`, before a durable Tool result | the specific Tool may have started | recover that Tool as `UNKNOWN`; later Tool calls in the same Assistant message remain unstarted |
 | complete `P`, before `T` | complete Pi message exists, Run is not terminal | stable mutation ID makes projection redelivery idempotent; terminal settlement retries under current authority |
 | after `T`, before terminal Kafka append | canonical result is complete | PostgreSQL terminal outbox retries the same terminal Fact |
 | canonical projector loss | Kafka group offset does not advance | replacement consumer reapplies idempotently and commits the offset |

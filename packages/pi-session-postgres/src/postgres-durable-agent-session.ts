@@ -29,6 +29,7 @@ export type PostgresDurableAgentSession = Readonly<{
   session: Session;
   lane: string;
   authority: PostgresRunExecutionAuthority;
+  mutationPublisher?: PiSessionMutationPublisher;
 }>;
 
 export async function synchronizePiSessionProjectionBeforeRead(
@@ -83,6 +84,9 @@ export async function openPostgresDurableAgentSession(
       session,
       lane: lane.lane,
       authority,
+      ...(options.mutationPublisher === undefined
+        ? {}
+        : { mutationPublisher: options.mutationPublisher }),
     };
   } catch (error: unknown) {
     await authority.close();

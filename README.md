@@ -92,6 +92,12 @@ Human terminal:    Browser ─▶ Control Plane ─▶ Tool Broker PTY ───
 Owned machine SSH: SSH client ─▶ SSH Gateway ─▶ Tool Broker PTY ─────────▶ Cube
 ```
 
+Before an arbitrary Tool effect, the Worker crosses two atomic durability
+boundaries: complete model output plus usage, then Pi-validated Tool intent.
+Each boundary is one Session mutation with its matching public event in the
+same Kafka AcceptedFact; the Tool runs only after the intent is projected to
+PostgreSQL.
+
 There are three durable authorities:
 
 - PostgreSQL owns product state, the Run queue and one self-contained,

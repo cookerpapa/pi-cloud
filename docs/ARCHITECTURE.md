@@ -194,6 +194,14 @@ transactional query projections of that log. They keep branch and current-state
 reads bounded without becoming a second conversation authority.
 Active-Run mutations first cross the same PostgreSQL `ExecutionLease` authority
 as browser-visible events, then enter one accepted Session-keyed Kafka topic.
+One accepted mutation may carry the public event caused by that same Pi
+boundary. The complete Assistant Entry, its usage Record and
+`model.sampling.completed` therefore share one Kafka Fact and one atomic
+PostgreSQL projection. After Pi validates a Tool call, its `tool_started`
+Record and public `tool.started` event share a second Fact. The Tool effect can
+begin only after that second projection succeeds. This leaves two causally
+necessary post-sampling barriers before an arbitrary Tool effect instead of
+serially persisting the message, usage, public lifecycle event and Tool intent.
 The Projector applies those accepted facts idempotently without rechecking a
 lease that may legitimately expire after PubAck. Direct administrative
 repository mutations remain transactionally authorized at their PostgreSQL
@@ -259,9 +267,11 @@ Workspace bytes are deliberately not rolled back.
 The runtime keeps only the cloud behavior the product needs: automatic
 compaction, model retry, active steer, reviewed event mapping, remote Tools,
 world-state changes and terminal Workspace settlement. A Tool intent is
-written before its effect. If a Worker disappears before the Tool result is
-known, the next Run records an unknown-effect result and interruption fact
-instead of replaying arbitrary shell or file mutations.
+written only after Pi validates the Tool name and arguments, and always before
+its effect. If a Worker disappears before the Tool result is known, the next
+Run records an unknown-effect result and interruption fact instead of replaying
+arbitrary shell or file mutations. A validation failure creates an ordinary Pi
+Tool error result but no execution intent because no effect was admitted.
 
 Session Tool grants are copied into immutable Run capability snapshots during
 admission. The snapshot is part of the frozen Cloud Turn context, selects which
@@ -689,12 +699,14 @@ brief transport replacement from flickering the top bar.
 
 Accepted Pi Session mutations contain immutable logical Run identity for result
 correlation plus the Authority-Gate-resolved physical Pi Session/lane target,
-but no ExecutionLease. A shared Kafka consumer group applies complete entries,
-records and compaction facts idempotently to PostgreSQL. Before opening a Session,
-every Run appends a keyed recovery barrier and waits for its projection; all
-older accepted Session mutations have then been applied before the Worker
-reads PostgreSQL. Each semantic Pi write also waits for its own mutation result
-before the Agent Loop advances.
+but no ExecutionLease. They may also carry the zero or one reviewed public
+event produced by that exact semantic boundary. Gateway projects that attached
+event into the live tail from the same Kafka record; a shared Kafka consumer
+group applies complete entries, records and compaction facts idempotently to
+PostgreSQL. Before opening a Session, every Run appends a keyed recovery barrier
+and waits for its projection; all older accepted Session mutations have then
+been applied before the Worker reads PostgreSQL. Each semantic Pi write also
+waits for its own mutation result before the Agent Loop advances.
 PostgreSQL therefore stores semantic Pi state, not token fragments. Terminal
 Run state and a one-row event outbox commit in the same PostgreSQL transaction.
 Abnormal interruption recovery reads only the retained Kafka Session tail needed to

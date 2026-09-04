@@ -6,10 +6,12 @@ import {
   type AgentModelRuntime,
   type EventPublishMessage,
   type ExecuteTurnCommandMessage,
+  type PiCloudEvent,
 } from "@pi-cloud/protocol";
 import {
   PI_MODEL_RETRY_CUSTOM_TYPE,
   type CloudAgentExecutionAuthority,
+  type PiSessionMutationOperation,
 } from "@pi-cloud/pi-session-postgres";
 import {
   buildSessionContext,
@@ -269,6 +271,8 @@ describe("PiCloudTurnRunner integration", () => {
       toolPolicySha256: turn.toolPolicySha256,
     });
     const authority = new TestAuthority();
+    const checkpointEvents: PiCloudEvent[] = [];
+    const checkpointOperations: PiSessionMutationOperation[] = [];
     const create = vi.fn(async (request: Parameters<ToolBrokerBoundary["create"]>[0]) => ({
       toolBrokerProtocolVersion: 1 as const,
       type: "tool_sandbox.reserved" as const,
@@ -323,7 +327,30 @@ describe("PiCloudTurnRunner integration", () => {
         } as unknown as AgentModelRuntime,
         release: modelLeaseRelease,
       }),
-      openAgentSession: async () => ({ session, lane: "main", authority }),
+      openAgentSession: async () => ({
+        session,
+        lane: "main",
+        authority,
+        mutationPublisher: {
+          async synchronize() {},
+          async mutate(operation, attachedEvents = []) {
+            if (operation.kind !== "append_items") {
+              throw new Error("Runtime checkpoint must use one atomic append batch");
+            }
+            const results = [];
+            for (const item of operation.items) {
+              results.push(
+                item.kind === "append_entry"
+                  ? await session.appendEntry(item.entry, item.lane)
+                  : await session.appendRecord(item.record),
+              );
+            }
+            checkpointOperations.push(operation);
+            checkpointEvents.push(...attachedEvents);
+            return { items: results };
+          },
+        },
+      }),
       createTrustedTools: () => [
         {
           executionPlane: "platform",
@@ -357,6 +384,18 @@ describe("PiCloudTurnRunner integration", () => {
       );
       expect(stop).not.toHaveBeenCalled();
       expect(modelLeaseRelease).toHaveBeenCalledTimes(1);
+      expect(checkpointEvents.map((event) => event.type)).toContain("tool.started");
+      expect(checkpointOperations).toContainEqual(
+        expect.objectContaining({
+          kind: "append_items",
+          items: [
+            expect.objectContaining({
+              kind: "append_record",
+              record: expect.objectContaining({ type: "tool_started" }),
+            }),
+          ],
+        }),
+      );
       expect(
         (await session.findEntriesOnBranch()).filter(
           (entry) => entry.type === "custom" && entry.customType === PI_SANDBOX_RESET_CUSTOM_TYPE,
@@ -463,6 +502,8 @@ describe("PiCloudTurnRunner integration", () => {
     );
     const authority = new TestAuthority();
     const events: EventPublishMessage[] = [];
+    const checkpointOperations: PiSessionMutationOperation[] = [];
+    const checkpointEvents: PiCloudEvent[] = [];
     const turn = createCloudTurnContext(command, undefined);
     const attempt = createCloudAttemptContext({
       command,
@@ -497,7 +538,30 @@ describe("PiCloudTurnRunner integration", () => {
       openSession: async () => {
         sessionPreparationStarted.resolve(undefined);
         await modelPreparationStarted.promise;
-        return { session, lane: "main", authority };
+        return {
+          session,
+          lane: "main",
+          authority,
+          mutationPublisher: {
+            async synchronize() {},
+            async mutate(operation, attachedEvents = []) {
+              if (operation.kind !== "append_items") {
+                throw new Error("Runtime checkpoint must use one atomic append batch");
+              }
+              const results = [];
+              for (const item of operation.items) {
+                results.push(
+                  item.kind === "append_entry"
+                    ? await session.appendEntry(item.entry, item.lane)
+                    : await session.appendRecord(item.record),
+                );
+              }
+              checkpointOperations.push(operation);
+              checkpointEvents.push(...attachedEvents);
+              return { items: results };
+            },
+          },
+        };
       },
       sandboxContinuity: {
         continuityId: "88888888-8888-4888-8888-888888888888",
@@ -607,7 +671,33 @@ describe("PiCloudTurnRunner integration", () => {
           )
           .join(""),
       ).toBe("PiCloud fake stream OK.");
-      expect(events.map((event) => event.payload.event.type)).toContain("model.sampling.completed");
+      expect(
+        events.some(
+          ({ payload: { event } }) =>
+            event.type === "model.sampling.completed" && event.payload.outcome === "completed",
+        ),
+      ).toBe(false);
+      expect(
+        checkpointEvents.some(
+          (event) =>
+            event.type === "model.sampling.completed" && event.payload.outcome === "completed",
+        ),
+      ).toBe(true);
+      expect(checkpointOperations).toContainEqual(
+        expect.objectContaining({
+          kind: "append_items",
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "append_entry",
+              entry: expect.objectContaining({ type: "message" }),
+            }),
+            expect.objectContaining({
+              kind: "append_record",
+              record: expect.objectContaining({ type: "usage" }),
+            }),
+          ]),
+        }),
+      );
       expect(events.map((event) => event.payload.event.type)).toContain(
         "model.sampling.retry.scheduled",
       );

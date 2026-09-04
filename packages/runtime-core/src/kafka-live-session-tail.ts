@@ -96,8 +96,11 @@ export class KafkaLiveSessionTail {
   }
 
   project(fact: AcceptedFact): void {
-    if (fact.kind !== "agent_event" && fact.kind !== "terminal_event") return;
-    this.#accept(fact.scope.tenantId, fact.event);
+    if (fact.kind === "agent_event" || fact.kind === "terminal_event") {
+      this.#accept(fact.scope.tenantId, fact.event);
+      return;
+    }
+    for (const event of fact.events) this.#accept(fact.scope.tenantId, event);
   }
 
   statistics() {

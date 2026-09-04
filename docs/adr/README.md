@@ -6,6 +6,9 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0148](0148-two-phase-tool-effect-checkpoint.md) — two atomic
+   post-sampling checkpoints distinguish complete model output, validated Tool
+   intent and the later effect.
 1. [ADR-0147](0147-self-contained-pi-session-event-log.md) — one
    self-contained append-only semantic log per physical Pi Session, with
    rebuildable query projections and context-independent Subagent communication.

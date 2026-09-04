@@ -220,23 +220,38 @@ export class PostgresExecutionLeaseAuthorityGate {
         false,
       );
     }
-    const operationLane =
-      mutation.operation.kind === "append_entry" ||
-      mutation.operation.kind === "create_lane" ||
-      mutation.operation.kind === "move_lane"
-        ? mutation.operation.lane
-        : mutation.operation.kind === "append_record"
-          ? mutation.operation.record.lane
-          : undefined;
+    const operationLanes =
+      mutation.operation.kind === "append_items"
+        ? mutation.operation.items.map((item) =>
+            item.kind === "append_entry" ? item.lane : item.record.lane,
+          )
+        : mutation.operation.kind === "append_entry" ||
+            mutation.operation.kind === "create_lane" ||
+            mutation.operation.kind === "move_lane"
+          ? [mutation.operation.lane]
+          : mutation.operation.kind === "append_record"
+            ? [mutation.operation.record.lane]
+            : [];
     if (
-      (operationLane !== undefined && operationLane !== scope.piSessionLane) ||
-      (operationLane === undefined &&
+      operationLanes.some((lane) => lane !== scope.piSessionLane) ||
+      (operationLanes.length === 0 &&
         mutation.operation.kind !== "projection_barrier" &&
         scope.piSessionLane !== "main")
     ) {
       throw new ExecutionLeaseAuthorityGateError(
         "stale_session_lease",
         "Pi Session mutation does not belong to its authorized lane",
+        false,
+      );
+    }
+    if (
+      mutation.events.some(
+        (event) => event.sessionId !== scope.sessionId || event.turnId !== scope.turnId,
+      )
+    ) {
+      throw new ExecutionLeaseAuthorityGateError(
+        "stale_session_lease",
+        "Pi Session checkpoint event does not belong to its ExecutionLease",
         false,
       );
     }
@@ -253,6 +268,7 @@ export class PostgresExecutionLeaseAuthorityGate {
       },
       piSession: { id: scope.piSessionId, lane: scope.piSessionLane },
       operation: mutation.operation,
+      events: mutation.events,
       occurredAt: mutation.occurredAt,
     };
   }

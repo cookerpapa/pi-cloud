@@ -196,9 +196,23 @@ describe("WebSocketAcceptedFactIngestor", () => {
           executionLease: event.payload.executionLease,
         },
         operation: { kind: "projection_barrier" },
+        events: [
+          {
+            schemaVersion: 1,
+            eventId: id(1, 12),
+            sessionId: event.payload.event.sessionId,
+            turnId: event.payload.event.turnId!,
+            agentId: "root",
+            seq: 2,
+            occurredAt: "2026-08-26T00:00:00.000Z",
+            type: "tool.started",
+            payload: { toolCallId: "call-1", toolName: "bash", input: { command: "true" } },
+          },
+        ],
         occurredAt: "2026-08-26T00:00:00.000Z",
       }),
     ).resolves.toEqual({ mutationId: id(1, 9), accepted: true });
+    expect(writer.acknowledgedThroughSeq).toBe(2);
     await writer.close();
     expect(server.connectionCount()).toBe(1);
     await ingestor.close();
@@ -246,6 +260,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
           executionLease: secondEvent.payload.executionLease,
         },
         operation: { kind: "projection_barrier" },
+        events: [],
         occurredAt: "2026-08-26T00:00:00.000Z",
       }),
     ).resolves.toEqual({ mutationId: id(22, 9), accepted: true });

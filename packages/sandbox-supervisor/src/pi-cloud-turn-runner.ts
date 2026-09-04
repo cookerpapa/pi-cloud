@@ -15,6 +15,8 @@ import {
   PI_MODEL_RETRY_CUSTOM_TYPE,
   type CloudAgentExecutionAuthority,
   type CloudAgentRuntimeEvent,
+  type PiSessionMutationOperation,
+  type PiSessionMutationPublisher,
 } from "@pi-cloud/pi-session-postgres";
 import type { AgentMessage, Session } from "@earendil-works/pi-agent-core";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -60,6 +62,7 @@ export type PiCloudSessionHandle = Readonly<{
   session: Session;
   lane: string;
   authority: CloudAgentExecutionAuthority;
+  mutationPublisher?: PiSessionMutationPublisher;
 }>;
 
 export type PiCloudTurnRunnerOptions = Readonly<{
@@ -734,6 +737,23 @@ export class PiCloudTurnRunner {
         unsubscribeHostedTranscript = this.#options.subscribeHostedTranscript?.((transcript) => {
           hostedTranscripts.set(hostedTranscriptKey(transcript), transcript);
         });
+        const observeRuntimeEvent = (event: CloudAgentRuntimeEvent): void => {
+          this.#options.observeEvent?.(event);
+          const usage = assistantUsage(event);
+          if (usage === undefined) return;
+          for (const [kind, tokens] of Object.entries(usage)) {
+            if (tokens > 0) {
+              this.#options.metrics?.modelTokens.inc(
+                {
+                  provider: command.payload.model.provider,
+                  model: command.payload.model.modelId,
+                  kind,
+                },
+                tokens,
+              );
+            }
+          }
+        };
         const runtime = new CloudAgentRuntime({
           session: sessionHandle.session,
           lane: sessionHandle.lane,
@@ -815,23 +835,36 @@ export class PiCloudTurnRunner {
           },
           entryProjectors: PI_WORLD_STATE_ENTRY_PROJECTORS,
           compactionRetainedCustomTypes: Object.keys(PI_WORLD_STATE_ENTRY_PROJECTORS),
-          onEvent: async (event) => {
-            this.#options.observeEvent?.(event);
-            const usage = assistantUsage(event);
-            if (usage !== undefined) {
-              for (const [kind, tokens] of Object.entries(usage)) {
-                if (tokens > 0) {
-                  this.#options.metrics?.modelTokens.inc(
-                    {
-                      provider: command.payload.model.provider,
-                      model: command.payload.model.modelId,
-                      kind,
-                    },
-                    tokens,
+          ...(sessionHandle.mutationPublisher === undefined
+            ? {}
+            : {
+                commitCheckpoint: async (
+                  operation: PiSessionMutationOperation,
+                  sourceEvent: CloudAgentRuntimeEvent,
+                ) => {
+                  flushPendingText();
+                  await eventChain;
+                  if (fatalError !== undefined) throw fatalError;
+                  const outcome = adapter.adapt(this.#adapterEvent(sourceEvent));
+                  if (outcome.kind === "invalid") {
+                    throw new PiTurnError("pi_protocol_error", outcome.reason, false);
+                  }
+                  if (outcome.kind === "settled") {
+                    throw new PiTurnError(
+                      "pi_protocol_error",
+                      "Pi checkpoint unexpectedly crossed a terminal event",
+                      false,
+                    );
+                  }
+                  await sessionHandle.mutationPublisher!.mutate(
+                    operation,
+                    outcome.kind === "mapped" ? [outcome.event] : [],
                   );
-                }
-              }
-            }
+                  observeRuntimeEvent(sourceEvent);
+                },
+              }),
+          onEvent: async (event) => {
+            observeRuntimeEvent(event);
             const textDelta = streamedTextDelta(event);
             if (textDelta === undefined) {
               flushPendingText();

@@ -18,7 +18,11 @@ import {
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { ExecutionAuthority } from "./execution-authority.ts";
 import type { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
-import type { PiSessionMutationOperation, PiSessionMutationPublisher } from "./session-mutation.ts";
+import type {
+  PiSessionAppendOperation,
+  PiSessionMutationOperation,
+  PiSessionMutationPublisher,
+} from "./session-mutation.ts";
 
 export type { ActiveExecutionAuthority, ExecutionAuthority } from "./execution-authority.ts";
 
@@ -265,61 +269,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
         lane,
       })) as TEntry;
     }
-    return this.#mutate(async (transaction) => {
-      const pointer = await transaction
-        .selectFrom("pi_session_lanes")
-        .select("leaf_id")
-        .where("tenant_id", "=", this.#tenantId)
-        .where("session_id", "=", this.#sessionId)
-        .where("lane", "=", lane)
-        .forUpdate()
-        .executeTakeFirst();
-      if (pointer === undefined) throw new SessionError("invalid_lane", "Pi lane was not found");
-      const seq = await this.#nextSequence(transaction);
-      await this.#requireUnusedId(transaction, newEntry.id);
-      const timestamp = Date.now();
-      const complete = {
-        ...payload<Record<string, unknown>>(newEntry),
-        parentId: pointer.leaf_id,
-        seq,
-        timestamp,
-      } as TEntry;
-      const turnId = await this.#entryTurnId(transaction, lane);
-      await transaction
-        .insertInto("pi_session_entries")
-        .values({
-          tenant_id: this.#tenantId,
-          session_id: this.#sessionId,
-          id: complete.id,
-          seq,
-          parent_id: pointer.leaf_id,
-          type: complete.type,
-          custom_type: complete.type === "custom" ? complete.customType : null,
-          timestamp_ms: timestamp,
-          payload: complete as unknown as Record<string, unknown>,
-          turn_id: turnId,
-        })
-        .executeTakeFirst();
-      await transaction
-        .updateTable("pi_session_lanes")
-        .set({ leaf_id: complete.id })
-        .where("tenant_id", "=", this.#tenantId)
-        .where("session_id", "=", this.#sessionId)
-        .where("lane", "=", lane)
-        .executeTakeFirstOrThrow();
-      await this.#appendLog(
-        transaction,
-        seq,
-        "entry",
-        {
-          lane,
-          turnId,
-          entry: complete as unknown as Record<string, unknown>,
-        },
-        complete,
-      );
-      return complete;
-    });
+    return this.#mutate((transaction) => this.#appendEntry(transaction, newEntry, lane));
   }
 
   async appendRecord<TRecord extends LaneRecord>(newRecord: NewRecord<TRecord>): Promise<TRecord> {
@@ -329,67 +279,40 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
         record: newRecord as NewRecord<LaneRecord>,
       })) as TRecord;
     }
+    return this.#mutate((transaction) => this.#appendRecord(transaction, newRecord));
+  }
+
+  async appendItems(
+    items: readonly PiSessionAppendOperation[],
+  ): Promise<Readonly<{ items: readonly (Entry | LaneRecord)[] }>> {
+    if (this.#mutationPublisher !== undefined || this.#projectedMutationId === undefined) {
+      throw new SessionError("storage", "Atomic Pi Session append is projector-only");
+    }
+    if (items.length < 1 || items.length > 16) {
+      throw new SessionError("storage", "Atomic Pi Session append size is invalid");
+    }
     return this.#mutate(async (transaction) => {
-      const lane = await transaction
-        .selectFrom("pi_session_lanes")
-        .select("lane")
+      const results: (Entry | LaneRecord)[] = [];
+      for (const item of items) {
+        results.push(
+          item.kind === "append_entry"
+            ? await this.#appendEntry(transaction, item.entry, item.lane, null)
+            : await this.#appendRecord(transaction, item.record, null),
+        );
+      }
+      const result = { items: results } as const;
+      const last = results.at(-1)!;
+      await transaction
+        .updateTable("pi_session_log")
+        .set({
+          mutation_id: this.#projectedMutationId,
+          mutation_result: result as unknown as Record<string, unknown>,
+        })
         .where("tenant_id", "=", this.#tenantId)
         .where("session_id", "=", this.#sessionId)
-        .where("lane", "=", newRecord.lane)
-        .forUpdate()
-        .executeTakeFirst();
-      if (lane === undefined) throw new SessionError("invalid_lane", "Pi lane was not found");
-      if (newRecord.type === "operation_started") {
-        const open = await this.#findOpenOperations(transaction, newRecord.lane, 1);
-        if (open.length > 0) {
-          throw new SessionError(
-            "storage",
-            `Pi lane ${newRecord.lane} already has an open operation`,
-          );
-        }
-      }
-      const seq = await this.#nextSequence(transaction);
-      await this.#requireUnusedId(transaction, newRecord.id);
-      const timestamp = Date.now();
-      const complete = {
-        ...payload<Record<string, unknown>>(newRecord),
-        seq,
-        timestamp,
-      } as TRecord;
-      const runId =
-        complete.type === "operation_started"
-          ? complete.id
-          : "runId" in complete && typeof complete.runId === "string"
-            ? complete.runId
-            : null;
-      const turnId = await this.#recordTurnId(transaction, newRecord);
-      await transaction
-        .insertInto("pi_session_records")
-        .values({
-          tenant_id: this.#tenantId,
-          session_id: this.#sessionId,
-          id: complete.id,
-          seq,
-          lane: complete.lane,
-          type: complete.type,
-          run_id: runId,
-          operation_kind: complete.type === "operation_started" ? complete.intent.kind : null,
-          timestamp_ms: timestamp,
-          payload: complete as unknown as Record<string, unknown>,
-          turn_id: turnId,
-        })
-        .executeTakeFirst();
-      await this.#appendLog(
-        transaction,
-        seq,
-        "record",
-        {
-          turnId,
-          record: complete as unknown as Record<string, unknown>,
-        },
-        complete,
-      );
-      return complete;
+        .where("seq", "=", String(last.seq))
+        .executeTakeFirstOrThrow();
+      return result;
     });
   }
 
@@ -794,6 +717,136 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
     };
   }
 
+  async #appendEntry<TEntry extends Entry>(
+    transaction: Transaction<Database>,
+    newEntry: ProvisionedEntry<TEntry>,
+    lane: string,
+    mutationId: string | null | undefined = this.#projectedMutationId,
+  ): Promise<TEntry> {
+    const pointer = await transaction
+      .selectFrom("pi_session_lanes")
+      .select("leaf_id")
+      .where("tenant_id", "=", this.#tenantId)
+      .where("session_id", "=", this.#sessionId)
+      .where("lane", "=", lane)
+      .forUpdate()
+      .executeTakeFirst();
+    if (pointer === undefined) throw new SessionError("invalid_lane", "Pi lane was not found");
+    const seq = await this.#nextSequence(transaction);
+    await this.#requireUnusedId(transaction, newEntry.id);
+    const timestamp = Date.now();
+    const complete = {
+      ...payload<Record<string, unknown>>(newEntry),
+      parentId: pointer.leaf_id,
+      seq,
+      timestamp,
+    } as TEntry;
+    const turnId = await this.#entryTurnId(transaction, lane);
+    await transaction
+      .insertInto("pi_session_entries")
+      .values({
+        tenant_id: this.#tenantId,
+        session_id: this.#sessionId,
+        id: complete.id,
+        seq,
+        parent_id: pointer.leaf_id,
+        type: complete.type,
+        custom_type: complete.type === "custom" ? complete.customType : null,
+        timestamp_ms: timestamp,
+        payload: complete as unknown as Record<string, unknown>,
+        turn_id: turnId,
+      })
+      .executeTakeFirst();
+    await transaction
+      .updateTable("pi_session_lanes")
+      .set({ leaf_id: complete.id })
+      .where("tenant_id", "=", this.#tenantId)
+      .where("session_id", "=", this.#sessionId)
+      .where("lane", "=", lane)
+      .executeTakeFirstOrThrow();
+    await this.#appendLog(
+      transaction,
+      seq,
+      "entry",
+      {
+        lane,
+        turnId,
+        entry: complete as unknown as Record<string, unknown>,
+      },
+      complete,
+      mutationId,
+    );
+    return complete;
+  }
+
+  async #appendRecord<TRecord extends LaneRecord>(
+    transaction: Transaction<Database>,
+    newRecord: NewRecord<TRecord>,
+    mutationId: string | null | undefined = this.#projectedMutationId,
+  ): Promise<TRecord> {
+    const lane = await transaction
+      .selectFrom("pi_session_lanes")
+      .select("lane")
+      .where("tenant_id", "=", this.#tenantId)
+      .where("session_id", "=", this.#sessionId)
+      .where("lane", "=", newRecord.lane)
+      .forUpdate()
+      .executeTakeFirst();
+    if (lane === undefined) throw new SessionError("invalid_lane", "Pi lane was not found");
+    if (newRecord.type === "operation_started") {
+      const open = await this.#findOpenOperations(transaction, newRecord.lane, 1);
+      if (open.length > 0) {
+        throw new SessionError(
+          "storage",
+          `Pi lane ${newRecord.lane} already has an open operation`,
+        );
+      }
+    }
+    const seq = await this.#nextSequence(transaction);
+    await this.#requireUnusedId(transaction, newRecord.id);
+    const timestamp = Date.now();
+    const complete = {
+      ...payload<Record<string, unknown>>(newRecord),
+      seq,
+      timestamp,
+    } as TRecord;
+    const runId =
+      complete.type === "operation_started"
+        ? complete.id
+        : "runId" in complete && typeof complete.runId === "string"
+          ? complete.runId
+          : null;
+    const turnId = await this.#recordTurnId(transaction, newRecord);
+    await transaction
+      .insertInto("pi_session_records")
+      .values({
+        tenant_id: this.#tenantId,
+        session_id: this.#sessionId,
+        id: complete.id,
+        seq,
+        lane: complete.lane,
+        type: complete.type,
+        run_id: runId,
+        operation_kind: complete.type === "operation_started" ? complete.intent.kind : null,
+        timestamp_ms: timestamp,
+        payload: complete as unknown as Record<string, unknown>,
+        turn_id: turnId,
+      })
+      .executeTakeFirst();
+    await this.#appendLog(
+      transaction,
+      seq,
+      "record",
+      {
+        turnId,
+        record: complete as unknown as Record<string, unknown>,
+      },
+      complete,
+      mutationId,
+    );
+    return complete;
+  }
+
   async #mutate<T>(effect: (transaction: Transaction<Database>) => Promise<T>): Promise<T> {
     try {
       return await this.#database.transaction().execute(async (transaction) => {
@@ -923,6 +976,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
     kind: LogItem["kind"],
     value: Record<string, unknown>,
     mutationResult: unknown = null,
+    mutationId: string | null | undefined = this.#projectedMutationId,
   ): Promise<void> {
     await transaction
       .insertInto("pi_session_log")
@@ -932,7 +986,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
         seq,
         kind,
         payload: value,
-        mutation_id: this.#projectedMutationId ?? null,
+        mutation_id: mutationId ?? null,
         mutation_result: mutationResult as Record<string, unknown> | null,
       })
       .executeTakeFirst();

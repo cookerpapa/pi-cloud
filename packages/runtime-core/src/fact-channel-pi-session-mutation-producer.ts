@@ -3,6 +3,7 @@ import type {
   PiSessionMutationOperation,
   PiSessionMutationPublisher,
 } from "@pi-cloud/pi-session-postgres";
+import type { PiCloudEvent } from "@pi-cloud/protocol";
 import { SessionError } from "@earendil-works/pi-agent-core";
 import type { Kysely } from "kysely";
 import type { ActiveFactChannelResolver, CandidatePiSessionMutationFact } from "./accepted-fact.ts";
@@ -29,9 +30,9 @@ export class FactChannelPiSessionMutationProducer {
 
   scoped(scope: PiSessionMutationScope): PiSessionMutationPublisher {
     return {
-      mutate: (operation) => this.#mutate(scope, operation),
+      mutate: (operation, events = []) => this.#mutate(scope, operation, events),
       synchronize: async () => {
-        await this.#mutate(scope, { kind: "projection_barrier" });
+        await this.#mutate(scope, { kind: "projection_barrier" }, []);
       },
     };
   }
@@ -45,7 +46,11 @@ export class FactChannelPiSessionMutationProducer {
     this.#closed = true;
   }
 
-  async #mutate(scope: PiSessionMutationScope, operation: PiSessionMutationOperation) {
+  async #mutate(
+    scope: PiSessionMutationScope,
+    operation: PiSessionMutationOperation,
+    events: readonly PiCloudEvent[],
+  ) {
     if (this.#closed) throw new Error("Pi Session mutation producer is closed");
     const mutationId = globalThis.crypto.randomUUID();
     const request: CandidatePiSessionMutationFact = {
@@ -53,6 +58,7 @@ export class FactChannelPiSessionMutationProducer {
       mutationId,
       scope,
       operation,
+      events,
       occurredAt: new Date().toISOString(),
     };
     const deadline = Date.now() + 120_000;

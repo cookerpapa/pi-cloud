@@ -62,7 +62,12 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
   if (parsed.kind === "agent_event" || parsed.kind === "terminal_event") {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) };
   }
-  if (parsed.kind === "pi_session_mutation") return parsed;
+  if (parsed.kind === "pi_session_mutation") {
+    return {
+      ...parsed,
+      events: (parsed.events ?? []).map((event) => parsePiCloudEvent(event)),
+    };
+  }
   throw new TypeError("Kafka AcceptedFact kind is invalid");
 }
 

@@ -238,6 +238,68 @@ describe.sequential("PostgresPiSessionStorage", () => {
     expect(after.name).toBe("idempotent projection");
   });
 
+  it("projects one accepted checkpoint as an atomic append-only batch", async () => {
+    const mutationId = "d1000000-0000-4000-8000-000000000098";
+    const atomicSessionId = "d1000000-0000-4000-8000-000000000094";
+    await PostgresPiSessionStorage.create({
+      database,
+      tenantId: TENANT_ID,
+      sessionId: atomicSessionId,
+    });
+    const storage = new PostgresPiSessionStorage({
+      database,
+      tenantId: TENANT_ID,
+      sessionId: atomicSessionId,
+      projectedMutationId: mutationId,
+    });
+    const items = [
+      {
+        kind: "append_entry" as const,
+        lane: "main",
+        entry: {
+          id: "d1000000-0000-4000-8000-000000000097",
+          type: "custom" as const,
+          customType: "atomic-checkpoint",
+          data: { phase: "assistant" },
+        },
+      },
+      {
+        kind: "append_record" as const,
+        record: {
+          id: "d1000000-0000-4000-8000-000000000096",
+          lane: "main",
+          type: "step_attempt" as const,
+          runId: "d1000000-0000-4000-8000-000000000095",
+          step: "assistant" as const,
+          attempt: 1,
+          resultEntryId: "d1000000-0000-4000-8000-000000000097",
+        },
+      },
+    ];
+    const before = await storage.getStats();
+    const projected = await storage.appendItems(items);
+    expect(projected.items).toHaveLength(2);
+    await expect(storage.appendItems(items)).resolves.toEqual(projected);
+    const marked = await database
+      .selectFrom("pi_session_log")
+      .select(["seq", "mutation_id"])
+      .where("tenant_id", "=", TENANT_ID)
+      .where("session_id", "=", atomicSessionId)
+      .where("mutation_id", "=", mutationId)
+      .execute();
+    expect(marked).toHaveLength(1);
+    expect((await storage.getStats()).messageCount).toBe(before.messageCount);
+    await expect(storage.getEntry("d1000000-0000-4000-8000-000000000097")).resolves.toMatchObject({
+      customType: "atomic-checkpoint",
+    });
+    await expect(
+      storage.findRecords({
+        type: "step_attempt",
+        runId: "d1000000-0000-4000-8000-000000000095",
+      }),
+    ).resolves.toHaveLength(1);
+  });
+
   it("forks by reference without copying inherited JSON payloads", async () => {
     const entryPayloadCache = new PostgresPiSessionEntryPayloadCache({
       maximumBytes: 1024 * 1024,

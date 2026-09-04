@@ -1,6 +1,6 @@
 import type { Database } from "@pi-cloud/database";
 import { PostgresPiSessionStorage } from "@pi-cloud/pi-session-postgres";
-import { SessionError, type Entry, type LaneRecord } from "@earendil-works/pi-agent-core";
+import { SessionError } from "@earendil-works/pi-agent-core";
 import type { Kysely } from "kysely";
 import type { AcceptedPiSessionMutationFact } from "./accepted-fact.ts";
 
@@ -49,7 +49,7 @@ export class PostgresPiSessionMutationProjector {
   async #recordResult(
     fact: AcceptedPiSessionMutationFact,
     state: "completed" | "failed",
-    result: Record<string, unknown> | Entry | LaneRecord | null,
+    result: unknown,
     error?: SessionError,
   ): Promise<void> {
     await this.#database
@@ -74,7 +74,7 @@ export class PostgresPiSessionMutationProjector {
 async function applyOperation(
   storage: PostgresPiSessionStorage,
   operation: AcceptedPiSessionMutationFact["operation"],
-): Promise<Entry | LaneRecord | undefined> {
+): Promise<unknown> {
   switch (operation.kind) {
     case "create_lane":
       await storage.createLane(operation.lane, operation.at);
@@ -86,6 +86,8 @@ async function applyOperation(
       return storage.appendEntry(operation.entry, operation.lane);
     case "append_record":
       return storage.appendRecord(operation.record);
+    case "append_items":
+      return storage.appendItems(operation.items);
     case "set_name":
       await storage.setName(operation.name);
       return undefined;

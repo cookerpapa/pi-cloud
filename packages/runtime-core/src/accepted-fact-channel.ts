@@ -168,6 +168,9 @@ class ServerFactChannel implements AcceptedFactChannelSession {
     mutation: CandidatePiSessionMutationFact,
   ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
     await this.#append({ kind: "pi_session_mutation", mutation });
+    for (const event of mutation.events) {
+      this.#acknowledgedThroughSeq = Math.max(this.#acknowledgedThroughSeq, event.seq);
+    }
     return { mutationId: mutation.mutationId, accepted: true };
   }
 
@@ -877,6 +880,9 @@ class RemoteFactChannel implements FactChannel {
         response.payload.mutationId === mutation.mutationId &&
         response.payload.accepted
       ) {
+        for (const event of mutation.events) {
+          this.#acknowledgedThroughSeq = Math.max(this.#acknowledgedThroughSeq, event.seq);
+        }
         return { mutationId: mutation.mutationId, accepted: true };
       }
       this.#openedGeneration = 0;

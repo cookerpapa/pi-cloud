@@ -14,6 +14,7 @@ export type CandidatePiSessionMutationFact = Readonly<{
     executionLease: string;
   }>;
   operation: PiSessionMutationOperation;
+  events: readonly PiCloudEvent[];
   occurredAt: string;
 }>;
 
@@ -57,6 +58,7 @@ export type AcceptedPiSessionMutationFact = Readonly<{
   scope: AcceptedFactScope;
   piSession: Readonly<{ id: string; lane: string }>;
   operation: PiSessionMutationOperation;
+  events: readonly PiCloudEvent[];
   occurredAt: string;
 }>;
 

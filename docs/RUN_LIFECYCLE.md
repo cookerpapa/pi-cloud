@@ -50,6 +50,16 @@ binding, frozen Tool policy and Step context. The first binding lazily creates
 the Workspace-owned Cube; later bindings share it without provider rebind.
 Different Sessions may execute Tools concurrently in that Cube.
 
+There are exactly two causally necessary post-sampling durability barriers
+before the effect. First, one AcceptedFact atomically carries the complete Pi
+Assistant Entry, its usage Record and `model.sampling.completed`. Pi then
+validates the Tool name and arguments. Second, one AcceptedFact carries the
+specific `tool_started` intent and public `tool.started`. Only after its
+PostgreSQL projection result returns does the bound Tool call Tool Broker. A
+rejected Tool call never writes execution intent. This distinguishes a Tool
+that may have started from later calls that were merely present in the model
+message.
+
 A Tool transport retry may reattach to the same operation identity. It must not
 start a second arbitrary shell operation. If start/result cannot be proven, the
 result is `UNKNOWN`.
@@ -69,12 +79,12 @@ before terminal settlement releases the lease. Terminal sequence allocation
 uses the maximum of Attempt progress and the separately projected channel
 progress, so a lagging projection cannot move the Session stream backwards.
 
-Pi `message_end` submits a complete Session mutation through that same
-FactChannel. The unified PostgreSQL Gate validates current writer authority once
-and removes the lease before the AcceptedFactBus performs Kafka append. The
-PostgreSQL projector then applies the accepted fact idempotently without another
-authority query, and the Worker waits at a read-your-writes barrier before the
-next model Step. On successful settlement, the Worker
+Pi `message_end` submits a complete Session mutation and its matching reviewed
+public event through that same FactChannel. The unified PostgreSQL Gate
+validates current writer authority once and removes the lease before the
+AcceptedFactBus performs Kafka append. The PostgreSQL projector then applies
+the accepted fact idempotently without another authority query, and the Worker
+waits at a read-your-writes barrier before the next model Step. On successful settlement, the Worker
 prepares the lightweight Workspace Volume settlement. The terminal transaction
 validates the current Attempt/fence, records the last Workspace settlement
 if applicable, writes a terminal event Outbox record and settles the Run. A

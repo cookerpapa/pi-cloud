@@ -150,6 +150,7 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
           executionLease: openMessage().payload.executionLease,
         },
         operation: { kind: "projection_barrier" },
+        events: [],
         occurredAt: "2026-08-26T00:00:00.000Z",
       },
     });
@@ -178,6 +179,7 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
             executionLease: openMessage().payload.executionLease,
           },
           operation: { kind: "move_lane", lane: "sibling", to: null },
+          events: [],
           occurredAt: "2026-08-26T00:00:00.000Z",
         },
       }),
