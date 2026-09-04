@@ -649,11 +649,11 @@ export class AgentRunSupervisor {
           }
           if (
             message.payload.executionLease !== assignment.command.payload.executionLease ||
-            message.payload.event.seq !== assignment.lastProducedSeq + 1
+            message.payload.event.seq <= assignment.lastProducedSeq
           ) {
             throw new AgentRunSupervisorError(
               "invalid_event",
-              "Runner event identity or sequence does not match its assignment",
+              "Runner event identity or ordering does not match its assignment",
             );
           }
           assignment.lastProducedSeq = message.payload.event.seq;

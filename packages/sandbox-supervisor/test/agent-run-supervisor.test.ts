@@ -316,6 +316,50 @@ describe("AgentRunSupervisor", () => {
     );
   });
 
+  it("allows public-event sequence gaps occupied by atomic Session checkpoint Facts", async () => {
+    const publishingRunner: SupervisorTurnRunner = {
+      async run(value, publishEvent) {
+        for (const seq of [1, 3]) {
+          await publishEvent({
+            protocolVersion: 1,
+            messageId: `aaaaaaaa-aaaa-4aaa-8aaa-${String(seq).padStart(12, "0")}`,
+            sentAt: "2026-07-18T08:00:00.000Z",
+            type: "event.publish",
+            payload: {
+              executionLease: value.payload.executionLease,
+              event: {
+                schemaVersion: 1,
+                eventId: `bbbbbbbb-bbbb-4bbb-8bbb-${String(seq).padStart(12, "0")}`,
+                sessionId: value.payload.sessionId,
+                turnId: value.payload.turnId,
+                agentId: "root",
+                seq,
+                occurredAt: "2026-07-18T08:00:00.000Z",
+                type: "turn.started",
+                payload: { inputKind: "prompt" },
+              },
+            },
+          });
+        }
+        return { stopReason: "stop" };
+      },
+    };
+    const supervisor = new AgentRunSupervisor({ runner: publishingRunner });
+    const prepared = supervisor.prepare(command(), (message): EventAckMessage => ({
+      protocolVersion: 1,
+      messageId: globalThis.crypto.randomUUID(),
+      sentAt: "2026-07-18T08:00:00.000Z",
+      type: "event.ack",
+      payload: {
+        sessionId: message.payload.event.sessionId,
+        executionLease: message.payload.executionLease,
+        acknowledgedThroughSeq: message.payload.event.seq,
+      },
+    }));
+
+    await expect(prepared.run()).resolves.toEqual({ stopReason: "stop", lastEventSeq: 3 });
+  });
+
   it("prepares cancellation without side effects, then aborts the exact running assignment", async () => {
     let observedSignal: AbortSignal | undefined;
     const abortingRunner: SupervisorTurnRunner = {
