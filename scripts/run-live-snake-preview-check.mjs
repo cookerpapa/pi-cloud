@@ -182,6 +182,20 @@ async function runCodingTurn(api, browser, sessionId) {
     const run = await waitForRun(api, accepted.runId);
     const toolStarts = events.filter((event) => event.type === "tool.started").length;
     assert(toolStarts >= 3, "Snake coding Run did not exercise the Tool path");
+    const toolPreparations = events.filter(
+      (event) => event.type === "assistant.tool_call.preparing",
+    );
+    assert(toolPreparations.length >= 3, "Snake coding Run did not expose Tool preparation");
+    for (const preparation of toolPreparations) {
+      const preparationIndex = events.indexOf(preparation);
+      const startedIndex = events.findIndex(
+        (event, index) =>
+          index > preparationIndex &&
+          event.type === "tool.started" &&
+          event.payload.toolCallId === preparation.payload.toolCallId,
+      );
+      assert(startedIndex > preparationIndex, "Tool preparation was not replaced by Tool start");
+    }
     assert(firstDurableActivityAt !== undefined);
     assert(firstToolStartedAt !== undefined);
     assert(firstAssistantTextAt !== undefined);
@@ -199,6 +213,7 @@ async function runCodingTurn(api, browser, sessionId) {
       firstAssistantTextMs: Math.round(firstAssistantTextAt - startedAt),
       settledMs: Math.round(performance.now() - startedAt),
       toolStarts,
+      toolPreparations: toolPreparations.length,
       previewToolUsed,
     };
   } finally {
@@ -449,6 +464,7 @@ try {
     developmentEnvironmentId: development.environmentId,
     runId: coding.accepted.runId,
     toolCalls: coding.toolStarts,
+    toolPreparations: coding.toolPreparations,
     previewToolUsed: coding.previewToolUsed,
     firstDurableActivityMs: coding.firstDurableActivityMs,
     firstToolStartedMs: coding.firstToolStartedMs,
