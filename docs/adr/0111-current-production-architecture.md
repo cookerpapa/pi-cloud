@@ -22,7 +22,9 @@ execution path and failure semantics.
 ### Durable authorities
 
 - PostgreSQL is the sole product, Run queue and canonical Pi Session
-  authority. It owns
+  authority. One self-contained append-only log per physical Pi Session owns
+  semantic history; Entry, Record, Lane and label tables are transactional
+  query projections. PostgreSQL also owns
   tenants, Sessions, Attempts, leases, fences, canonical completed Turns and
   Pi's native SessionStorage records.
 - One persistent Cube Volume is the byte authority for a Workspace. PostgreSQL
@@ -48,11 +50,12 @@ execution path and failure semantics.
   executes the Agent Loop and appends complete Pi messages incrementally.
   Cold Sessions retain no dedicated process and never download a lifetime
   JSONL transcript.
-- Human conversation forks use copy-on-write Entry references. Delegated
-  Agents use unique lane heads in one shared Pi Session Entry DAG, so spawning
-  a Child does not write one reference per inherited Entry. The owning Worker
-  runs those Lanes in parallel; after authority expiry another Worker can
-  recover the Session from PostgreSQL.
+- Human conversation forks use copy-on-write Entry query projections while the
+  destination log carries complete inherited Entry facts. Delegated Agents use
+  unique lane heads in one shared Pi Session Entry DAG, so spawning a Child
+  does not write one reference per inherited Entry. The owning Worker runs
+  those Lanes in parallel; after authority expiry another Worker can recover
+  the Session from PostgreSQL.
 - Pi remains responsible for model messages, Tool selection and compaction.
   Pi Cloud adds cloud admission, interruption/world-state facts, active steer,
   remote Tool routing and terminal settlement around Pi's public primitives.
@@ -90,7 +93,8 @@ execution path and failure semantics.
   `message_end` submits a complete Pi message through the same PostgreSQL
   Authority Gate to the accepted Session mutation topic;
   the PostgreSQL projector applies it before the next model Step. Pi's ordered
-  log stores stable identifiers and hydrates canonical entries/records on read.
+  log stores the complete semantic Entry or Record; indexed projections serve
+  branch and current-state reads without hydrating the canonical log.
 - The browser sees only Facts durably accepted by Kafka after the authority
   decision. Gateway reconstructs incomplete Session tails in memory; reconnect
   receives a cursor-free PostgreSQL + live-tail replacement snapshot. Failed or

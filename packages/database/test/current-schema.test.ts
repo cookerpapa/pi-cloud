@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(123);
+      expect(firstMigrationPass.rows).toHaveLength(124);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("123_subagent_branch_context");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("124_self_contained_pi_session_log");
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
@@ -133,7 +133,14 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("123_subagent_branch_context");
+      expect(applied.rows.at(-1)?.name).toBe("124_self_contained_pi_session_log");
+
+      const sessionLogConstraint = await sql<{ definition: string }>`
+        select pg_get_constraintdef(oid) as definition
+          from pg_constraint
+         where conname = 'pi_session_log_payload_valid'
+      `.execute(database);
+      expect(sessionLogConstraint.rows[0]?.definition).toContain("payload -> 'entry'");
 
       const retiredGitColumns = await sql<{ column_name: string }>`
         select column_name

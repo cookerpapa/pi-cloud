@@ -5,7 +5,8 @@
 - multi-tenant Web Coding Agent using Pi SDK;
 - PostgreSQL Run/Attempt authority, same-Lane ordering, physical Pi Session
   Worker ownership and shared Worker queue;
-- Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with native Compaction;
+- Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with one self-contained
+  append-only semantic log per physical Session and native Compaction;
 - one multiplexed Fact connection per Worker, logical per-Run Streams and a PostgreSQL Authority Gate;
 - lossless PostgreSQL queue wake-up and background fail-closed execution-plane readiness;
 - Kafka `acks=all` AcceptedFact log keyed by Session;

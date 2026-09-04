@@ -709,14 +709,56 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
             session_id: alphaSession.sessionId,
             seq: 1,
             kind: "entry",
-            payload: { entryId: userEntryId },
+            payload: {
+              lane: "main",
+              turnId: alphaTurn.turnId,
+              entry: {
+                id: userEntryId,
+                seq: 1,
+                parentId: null,
+                timestamp: NOW.valueOf(),
+                type: "message",
+                message: {
+                  role: "user",
+                  content: "alpha private prompt",
+                  timestamp: NOW.valueOf(),
+                },
+              },
+            },
           },
           {
             tenant_id: alpha.tenantId,
             session_id: alphaSession.sessionId,
             seq: 2,
             kind: "entry",
-            payload: { entryId: assistantEntryId },
+            payload: {
+              lane: "main",
+              turnId: alphaTurn.turnId,
+              entry: {
+                id: assistantEntryId,
+                seq: 2,
+                parentId: userEntryId,
+                timestamp: NOW.valueOf() + 1,
+                type: "message",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "alpha final answer" }],
+                  provider: "test",
+                  model: "test",
+                  api: "test",
+                  usage: {
+                    input: 1,
+                    output: 1,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                    totalTokens: 2,
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                  },
+                  stopReason: "stop",
+                  timestamp: NOW.valueOf() + 1,
+                },
+              },
+            },
           },
         ])
         .execute();
@@ -834,6 +876,8 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
         .orderBy("seq")
         .execute(),
     ).toEqual([
+      { seq: "1", kind: "entry" },
+      { seq: "2", kind: "entry" },
       { seq: "3", kind: "lane" },
       { seq: "4", kind: "fact" },
     ]);
@@ -952,7 +996,18 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
             session_id: alphaSession.sessionId,
             seq: entry.seq,
             kind: "entry",
-            payload: { entryId: entry.id },
+            payload: {
+              lane: "main",
+              turnId: laterTurn.turnId,
+              entry: {
+                id: entry.id,
+                seq: entry.seq,
+                type: "message",
+                parentId: entry.parentId,
+                timestamp: entry.timestamp,
+                message: entry.message,
+              },
+            },
           })),
         )
         .execute();

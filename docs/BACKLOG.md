@@ -5,6 +5,9 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Exercise an offline rebuild of Entry/Lane/Record/label projections from a
+      self-contained `pi_session_log` after deliberately removing the derived
+      rows.
 - [ ] Kill one Kafka broker during concurrent Agent streams and verify
       `acks=all`, consumer recovery and snapshot replacement.
 - [ ] Kill the canonical projector after PostgreSQL commit but before Kafka

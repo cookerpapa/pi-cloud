@@ -750,6 +750,80 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     });
   });
 
+  it("keeps supervisor communication independent from fresh or branched context", async () => {
+    const provider = new PostgresSubagentJobProvider({
+      database,
+      treePolicy: { maximumDepth: 4, maximumNodes: 32, maximumConcurrentSubagents: 32 },
+    });
+    const started = await provider.start({
+      tenantId,
+      parentSessionId,
+      parentRunId,
+      parentExecutionLease: parentExecutionLease(),
+      parentToolCallId: "subagent-tool-fresh-supervisor",
+      workflowRunId: "workflow-fresh-supervisor",
+      stepIndex: 41,
+      agentName: "cloud-child",
+      prompt: "Investigate only this task and report one durable progress fact",
+      contextMode: "fresh",
+      workspaceMode: "none",
+    });
+    const child = await database
+      .selectFrom("sessions")
+      .select(["pi_session_id as piSessionId", "pi_session_lane as piSessionLane"])
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", started.childSessionId)
+      .executeTakeFirstOrThrow();
+    await expect(
+      database
+        .selectFrom("pi_session_lanes")
+        .select("leaf_id as leafId")
+        .where("tenant_id", "=", tenantId)
+        .where("session_id", "=", child.piSessionId)
+        .where("lane", "=", child.piSessionLane)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ leafId: null });
+    await database
+      .updateTable("subagent_executions")
+      .set({ state: "running", updated_at: new Date() })
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", started.executionId)
+      .executeTakeFirstOrThrow();
+
+    const channel = new PostgresSubagentSupervisorChannel(database);
+    await channel.contact({
+      tenantId,
+      childSessionId: started.childSessionId,
+      childRunId: started.childRunId,
+      reason: "progress_update",
+      message: "Fresh-context progress is durable.",
+    });
+    await expect(channel.latestForExecution(tenantId, started.executionId)).resolves.toMatchObject({
+      message: "Fresh-context progress is durable.",
+    });
+    await database.transaction().execute(async (transaction) => {
+      const now = new Date();
+      await transaction
+        .updateTable("subagent_executions")
+        .set({ state: "cancelled", settled_at: now, updated_at: now })
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", started.executionId)
+        .executeTakeFirstOrThrow();
+      await transaction
+        .updateTable("runs")
+        .set({ state: "cancelled", stop_reason: "cancelled", settled_at: now })
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", started.childRunId)
+        .executeTakeFirstOrThrow();
+      await transaction
+        .updateTable("turns")
+        .set({ state: "cancelled", stop_reason: "cancelled", settled_at: now })
+        .where("tenant_id", "=", tenantId)
+        .where("session_id", "=", started.childSessionId)
+        .executeTakeFirstOrThrow();
+    });
+  });
+
   it("creates a bounded recursive tree with one root budget and durable parent links", async () => {
     const provider = new PostgresSubagentJobProvider({
       database,

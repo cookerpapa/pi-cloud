@@ -478,7 +478,11 @@ export async function appendInterruptedAssistantPrefix(
       session_id: binding.piSessionId,
       seq: sequence,
       kind: "entry",
-      payload: { entryId: input.entryId },
+      payload: {
+        lane: binding.piSessionLane,
+        turnId: input.turnId,
+        entry,
+      },
     })
     .executeTakeFirstOrThrow();
   await transaction

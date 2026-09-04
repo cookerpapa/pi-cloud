@@ -7,6 +7,7 @@ import {
   PostgresPiSessionEntryPayloadCache,
   PostgresPiSessionRepository,
   PostgresPiSessionStorage,
+  rebuildPostgresPiSessionProjections,
 } from "../src/index.ts";
 
 const TENANT_ID = "d1000000-0000-4000-8000-000000000001";
@@ -127,6 +128,27 @@ describe.sequential("PostgresPiSessionStorage", () => {
       "fact",
       "lane",
     ]);
+    const storedLog = await database
+      .selectFrom("pi_session_log")
+      .select(["seq", "kind", "payload"])
+      .where("tenant_id", "=", TENANT_ID)
+      .where("session_id", "=", SESSION_ID)
+      .orderBy("seq", "asc")
+      .execute();
+    expect(storedLog.map((item) => Number(item.seq))).toEqual(
+      Array.from({ length: storedLog.length }, (_, index) => index + 1),
+    );
+    for (const item of storedLog) {
+      if (item.kind === "entry") {
+        expect(item.payload).toMatchObject({
+          lane: expect.any(String),
+          entry: { id: expect.any(String) },
+        });
+      }
+      if (item.kind === "record") {
+        expect(item.payload).toMatchObject({ record: { id: expect.any(String), lane: "main" } });
+      }
+    }
   });
 
   it("checks the opaque execution authority before every mutation", async () => {
@@ -267,6 +289,23 @@ describe.sequential("PostgresPiSessionStorage", () => {
       message: { role: "user", content: "fork-only delta" },
     });
     expect((await fork.getLog()).filter((item) => item.kind === "entry")).toHaveLength(5);
+    const forkLog = await database
+      .selectFrom("pi_session_log")
+      .select(["kind", "payload"])
+      .where("tenant_id", "=", TENANT_ID)
+      .where("session_id", "=", "shared-entry-fork")
+      .orderBy("seq", "asc")
+      .execute();
+    expect(forkLog.slice(0, 4)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "entry",
+          payload: expect.objectContaining({
+            entry: expect.objectContaining({ id: expect.any(String), type: expect.any(String) }),
+          }),
+        }),
+      ]),
+    );
 
     const nested = await repository.fork(await fork.getMetadata(), {
       id: "nested-shared-entry-fork",
@@ -385,6 +424,107 @@ describe.sequential("PostgresPiSessionStorage", () => {
         start: "d1000000-0000-4000-8000-000000000039",
       }),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("rebuilds multi-Lane query projections from the self-contained Session log", async () => {
+    const sessionId = "append-only-multi-lane";
+    const storage = await PostgresPiSessionStorage.create({
+      database,
+      tenantId: TENANT_ID,
+      sessionId,
+    });
+    const root = await storage.appendEntry(
+      {
+        id: "append-only-root",
+        type: "message",
+        message: { role: "user", content: "shared context", timestamp: 1 },
+      },
+      "main",
+    );
+    await storage.createLane("child-branch", root.id);
+    await storage.createLane("child-fresh", null);
+    const branched = await storage.appendEntry(
+      {
+        id: "append-only-branched",
+        type: "message",
+        message: { role: "user", content: "inherited child task", timestamp: 2 },
+      },
+      "child-branch",
+    );
+    const fresh = await storage.appendEntry(
+      {
+        id: "append-only-fresh",
+        type: "message",
+        message: { role: "user", content: "prompt-only child task", timestamp: 3 },
+      },
+      "child-fresh",
+    );
+    await storage.appendRecord({
+      id: "append-only-operation",
+      lane: "child-branch",
+      type: "operation_started",
+      sourceLeafId: branched.id,
+      intent: { kind: "run", originalPrompt: [], initialMessages: [] },
+    });
+    await storage.appendRecord({
+      id: "append-only-finished",
+      lane: "child-branch",
+      type: "operation_finished",
+      runId: "append-only-operation",
+      outcome: "completed",
+    });
+    await storage.setName("append-only replay");
+    await storage.setLabel(root.id, "shared-root");
+    const canonicalLog = await storage.getLog();
+
+    await database.transaction().execute(async (transaction) => {
+      await transaction
+        .deleteFrom("pi_session_labels")
+        .where("tenant_id", "=", TENANT_ID)
+        .where("session_id", "=", sessionId)
+        .execute();
+      await transaction
+        .deleteFrom("pi_session_records")
+        .where("tenant_id", "=", TENANT_ID)
+        .where("session_id", "=", sessionId)
+        .execute();
+      await transaction
+        .deleteFrom("pi_session_lanes")
+        .where("tenant_id", "=", TENANT_ID)
+        .where("session_id", "=", sessionId)
+        .execute();
+      await transaction
+        .deleteFrom("pi_session_entries")
+        .where("tenant_id", "=", TENANT_ID)
+        .where("session_id", "=", sessionId)
+        .execute();
+      await transaction
+        .updateTable("pi_sessions")
+        .set({ name: "corrupt projection", next_seq: 999 })
+        .where("tenant_id", "=", TENANT_ID)
+        .where("id", "=", sessionId)
+        .executeTakeFirstOrThrow();
+    });
+
+    await rebuildPostgresPiSessionProjections(database, { tenantId: TENANT_ID, sessionId });
+    await expect(storage.getLog()).resolves.toEqual(canonicalLog);
+    await expect(storage.getLanes()).resolves.toEqual([
+      { lane: "child-branch", leafId: branched.id },
+      { lane: "child-fresh", leafId: fresh.id },
+      { lane: "main", leafId: root.id },
+    ]);
+    await expect(storage.getName()).resolves.toBe("append-only replay");
+    await expect(storage.getLabel(root.id)).resolves.toBe("shared-root");
+    await expect(storage.findOpenOperations("child-branch")).resolves.toEqual([]);
+    await expect(
+      storage.findEntriesOnBranch({ start: branched.id, order: "oldestFirst" }),
+    ).resolves.toMatchObject([
+      { id: root.id, parentId: null },
+      { id: branched.id, parentId: root.id },
+    ]);
+    await expect(
+      storage.findEntriesOnBranch({ start: fresh.id, order: "oldestFirst" }),
+    ).resolves.toMatchObject([{ id: fresh.id, parentId: null }]);
   });
 
   it("uses the official repository lifecycle while keeping tenants isolated", async () => {

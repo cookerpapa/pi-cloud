@@ -184,8 +184,13 @@ still follows Session open, and Pi execution still waits for both preparations;
 no durability or authority boundary is removed for latency.
 
 Pi 0.84's official `SessionStorage` interface is implemented by
-`@pi-cloud/pi-session-postgres`. It stores Pi entries, lanes, records, labels
-and the append log in PostgreSQL, and bounds an active branch at Pi compaction.
+`@pi-cloud/pi-session-postgres`. One physical Pi Session owns one
+self-contained append-only `pi_session_log`: every Entry, operation Record,
+Lane move and fact shares its Session-local sequence, and all active Lanes
+interleave only at this commit boundary. `pi_session_entries`,
+`pi_session_records`, `pi_session_lanes` and `pi_session_labels` are
+transactional query projections of that log. They keep branch and current-state
+reads bounded without becoming a second conversation authority.
 Active-Run mutations first cross the same PostgreSQL `ExecutionLease` authority
 as browser-visible events, then enter one accepted Session-keyed Kafka topic.
 The Projector applies those accepted facts idempotently without rechecking a
@@ -193,7 +198,8 @@ lease that may legitimately expire after PubAck. Direct administrative
 repository mutations remain transactionally authorized at their PostgreSQL
 effect boundary.
 
-The native `pi_session_entries` compaction node is the recovery authority;
+The native Compaction Entry in `pi_session_log` is the recovery authority;
+`pi_session_entries` indexes that immutable fact for bounded branch reads.
 Kafka's durable `context.compaction.*` facts provide live and audit evidence.
 The obsolete `context_compactions` governance ledger has been removed rather
 than maintained as a second, eventually inconsistent source of truth.
@@ -210,12 +216,13 @@ Pi identifiers are stored as `text`; PiCloud product UUIDs are one valid
 subset. Tenant isolation and exact `ExecutionLease` validation are additional cloud
 contracts layered around the official port.
 
-Human conversation forks use copy-on-write references. PostgreSQL stores the
-selected branch's IDs, parent links and local sequence in the new conversation,
-while immutable JSON payloads remain in their canonical source rows. Delegated
-Agents instead share the root conversation's Pi Entry DAG through unique lane
-heads and do not create per-Entry reference rows. A per-Worker 64 MiB LRU still
-caches payloads for human forks; cache contents are never authoritative.
+Human conversation forks use copy-on-write query projections. Their independent
+Pi Session log nevertheless receives complete, self-contained Entry facts for
+the selected branch; a destination can therefore replay its history without
+the source projection. Delegated Agents instead share the root conversation's
+Pi Entry DAG through unique lane heads and create neither a new Pi Session nor
+per-Entry references. A per-Worker 64 MiB LRU may accelerate the fork query
+projection; cache contents are never authoritative.
 
 The production coding adapter is a deliberately thin `CloudAgentRuntime`. It
 loads only the newest native compaction plus its active suffix, constructs one
@@ -308,7 +315,10 @@ recovery record rather than a cross-Worker execution path. Progress updates are
 non-blocking. Decision/interview requests pause the Child Tool, surface in the
 parent Tool stream and wake the same Child Run after reply.
 
-Context, allowed Tools and Workspace modes are explicit and independent:
+Context, Parent/Child communication, allowed Tools and Workspace modes are
+explicit and independent. `fresh` and `branch` use the same supervisor channel,
+Run queue and Lane lifecycle; changing the context anchor never grants or
+removes a communication path:
 
 - `none` creates a Tool-free child and never reserves Cube capacity;
 - `shared` keeps separate Pi contexts and gives parent and child independent
@@ -681,7 +691,8 @@ preserve a visible prefix that never reached `message_end`.
 | tenants, users, sessions, durable-resource admission | PostgreSQL |
 | local PiCloud identities and non-exclusive Issue claims | PostgreSQL |
 | Runs, Attempts, leases, fences, ready queue | PostgreSQL |
-| Pi Session entries/compaction/operation records | PostgreSQL SessionStorage |
+| Pi Session semantic event log | PostgreSQL `pi_session_log` |
+| Pi Entry/Lane/Record/label query projections | PostgreSQL SessionStorage projections |
 | Session desired model/reasoning/Fast settings and immutable Turn snapshots | PostgreSQL |
 | Session Tool grants and immutable Run capability snapshots | PostgreSQL |
 | conversation parent/fork graph | PostgreSQL |

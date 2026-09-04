@@ -20,8 +20,9 @@ PiCloud adopts Pi's `/fork` product semantics:
 
 - a fork starts at a settled, final assistant entry;
 - it creates a new product Session and a new Pi Session;
-- the new Pi Session records copy-on-write references to the selected
-  root-to-leaf branch rather than copying immutable JSON payloads;
+- the new Pi Session records copy-on-write query references to the selected
+  root-to-leaf branch, while its canonical append-only log contains complete
+  destination Entry facts and remains independently replayable;
 - referenced entries keep their Pi entry IDs and parent links, while the child
   has a fresh append sequence and no inherited open operation records;
 - the child continues to use the same Workspace as its parent. The fork changes
@@ -59,10 +60,11 @@ resizable. A settled final assistant message offers “从此对话开始”.
 
 ## Consequences
 
-Forks duplicate the selected Pi entry branch inside PostgreSQL. This is a
-bounded, local database copy rather than a full JSONL download or an object
-store checkpoint. It keeps the production Pi runtime unchanged: each child is
-still opened on its `main` lane by the existing Worker.
+Forks duplicate the selected Pi Entry facts once in the destination's canonical
+log. The read projection may still share immutable source payloads. This is a
+bounded, local database transaction rather than a full JSONL download or an
+object-store checkpoint. It keeps the production Pi runtime unchanged: each
+child is still opened on its `main` lane by the existing Worker.
 
 All branches share one logical Workspace and its Workspace-owned Cube process
 world while that runtime is live; users are responsible for concurrent edits.

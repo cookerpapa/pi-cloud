@@ -45,7 +45,8 @@ Control Plane replicas
             │                product state + ready Run queue
             │                RunAttempt + ExecutionLease/Fence
             │                immutable Turn model/Tool snapshots
-            │                canonical Pi Entry DAGs + lane heads
+            │                self-contained Pi Session logs
+            │                + Entry/Lane query projections
             │
             └─ snapshot + live SSE ──────────────────────────────▶ Browser
 
@@ -93,7 +94,9 @@ Owned machine SSH: SSH client ─▶ SSH Gateway ─▶ Tool Broker PTY ──�
 
 There are three durable authorities:
 
-- PostgreSQL owns product state, the Run queue and canonical Pi Sessions;
+- PostgreSQL owns product state, the Run queue and one self-contained,
+  append-only semantic log per physical Pi Session; Entry/Lane tables are
+  transactional query projections;
 - Kafka owns the bounded AcceptedFact log; Gateway memory holds only rebuildable
   incomplete Session tails;
 - a persistent Cube Volume owns elastic Workspace bytes; Cube pause state owns

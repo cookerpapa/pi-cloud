@@ -1266,6 +1266,27 @@ export class ConversationTreeService {
           )
           .execute();
         let nextSequence = copiedEntries.length + 1;
+        await transaction
+          .insertInto("pi_session_log")
+          .values(
+            copiedEntries.map((entry) => ({
+              tenant_id: tenantId,
+              session_id: childSessionId,
+              seq: entry.sequence,
+              kind: "entry",
+              payload: {
+                lane: "main",
+                turnId: null,
+                entry: {
+                  ...entry.payload,
+                  seq: entry.sequence,
+                  parentId: entry.parentId,
+                  timestamp: safeInteger(entry.timestampMs, "Pi entry timestamp"),
+                },
+              },
+            })),
+          )
+          .execute();
         const laneSequence = nextSequence++;
         await transaction
           .insertInto("pi_session_lanes")

@@ -284,6 +284,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
         seq,
         timestamp,
       } as TEntry;
+      const turnId = await this.#entryTurnId(transaction, lane);
       await transaction
         .insertInto("pi_session_entries")
         .values({
@@ -296,7 +297,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
           custom_type: complete.type === "custom" ? complete.customType : null,
           timestamp_ms: timestamp,
           payload: complete as unknown as Record<string, unknown>,
-          turn_id: await this.#entryTurnId(transaction, lane),
+          turn_id: turnId,
         })
         .executeTakeFirst();
       await transaction
@@ -306,7 +307,17 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
         .where("session_id", "=", this.#sessionId)
         .where("lane", "=", lane)
         .executeTakeFirstOrThrow();
-      await this.#appendLog(transaction, seq, "entry", { entryId: complete.id }, complete);
+      await this.#appendLog(
+        transaction,
+        seq,
+        "entry",
+        {
+          lane,
+          turnId,
+          entry: complete as unknown as Record<string, unknown>,
+        },
+        complete,
+      );
       return complete;
     });
   }
@@ -368,7 +379,16 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
           turn_id: turnId,
         })
         .executeTakeFirst();
-      await this.#appendLog(transaction, seq, "record", { recordId: complete.id }, complete);
+      await this.#appendLog(
+        transaction,
+        seq,
+        "record",
+        {
+          turnId,
+          record: complete as unknown as Record<string, unknown>,
+        },
+        complete,
+      );
       return complete;
     });
   }
@@ -612,64 +632,25 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
 
   async getLog(options: { afterSeq?: number; limit?: number } = {}): Promise<LogItem[]> {
     const boundedLimit = limit(options.limit) ?? Number.MAX_SAFE_INTEGER;
-    const rows = await sql<{
-      seq: string;
-      kind: LogItem["kind"];
-      payload: Record<string, unknown>;
-    }>`
-      select log.seq,
-             log.kind,
-             case log.kind
-               when 'entry' then jsonb_build_object('entry', entry.payload)
-               when 'record' then jsonb_build_object('record', record.payload)
-               else log.payload
-             end as payload
-        from pi_session_log log
-        left join pi_session_entries entry
-          on log.kind = 'entry'
-         and entry.tenant_id = log.tenant_id
-         and entry.session_id = log.session_id
-         and entry.id = log.payload ->> 'entryId'
-        left join pi_session_records record
-          on log.kind = 'record'
-         and record.tenant_id = log.tenant_id
-         and record.session_id = log.session_id
-         and record.id = log.payload ->> 'recordId'
-       where log.tenant_id = ${this.#tenantId}::uuid
-         and log.session_id = ${this.#sessionId}::text
-         and (${options.afterSeq ?? null}::bigint is null
-              or log.seq > ${options.afterSeq ?? null}::bigint)
-      union all
-      select ref.seq,
-             'entry' as kind,
-             jsonb_build_object(
-               'entry',
-               source.payload || jsonb_build_object(
-                 'seq', ref.seq,
-                 'parentId', ref.parent_id,
-                 'timestamp', ref.timestamp_ms
-               )
-             ) as payload
-        from pi_session_entry_refs ref
-        join pi_session_entries source
-          on source.tenant_id = ref.tenant_id
-         and source.session_id = ref.source_session_id
-         and source.id = ref.source_entry_id
-       where ref.tenant_id = ${this.#tenantId}::uuid
-         and ref.session_id = ${this.#sessionId}::text
-         and (${options.afterSeq ?? null}::bigint is null
-              or ref.seq > ${options.afterSeq ?? null}::bigint)
-       order by seq asc
-       limit ${boundedLimit}
-    `.execute(this.#database);
-    return rows.rows.map(
-      (row) =>
-        ({
-          ...payload<Record<string, unknown>>(row.payload),
-          kind: row.kind,
-          seq: safeInteger(row.seq, "Pi log sequence"),
-        }) as LogItem,
-    );
+    let selection = this.#database
+      .selectFrom("pi_session_log")
+      .select(["seq", "kind", "payload"])
+      .where("tenant_id", "=", this.#tenantId)
+      .where("session_id", "=", this.#sessionId);
+    if (options.afterSeq !== undefined) {
+      selection = selection.where("seq", ">", String(options.afterSeq));
+    }
+    const rows = await selection.orderBy("seq", "asc").limit(boundedLimit).execute();
+    return rows.map((row) => {
+      const seq = safeInteger(row.seq, "Pi log sequence");
+      if (row.kind === "entry") {
+        return { kind: "entry", seq, entry: payload<Entry>(row.payload.entry) };
+      }
+      if (row.kind === "record") {
+        return { kind: "record", seq, record: payload<LaneRecord>(row.payload.record) };
+      }
+      return { ...payload<Record<string, unknown>>(row.payload), kind: row.kind, seq } as LogItem;
+    });
   }
 
   async getName(): Promise<string | undefined> {

@@ -6,6 +6,9 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0147](0147-self-contained-pi-session-event-log.md) — one
+   self-contained append-only semantic log per physical Pi Session, with
+   rebuildable query projections and context-independent Subagent communication.
 1. [ADR-0146](0146-single-owner-pi-session-lanes.md) — one active Worker owns
    every Lane of a physical Pi Session.
 1. [ADR-0145](0145-fork-and-branch-semantics.md) — Fork creates an independent

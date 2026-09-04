@@ -48,8 +48,9 @@ before Kafka accepts the mutation. Projectors do not recheck an expired lease
 after durable acceptance.
 
 Human “from this response” conversation forks remain separate Pi Sessions with
-copy-on-write Entry references. They have independent user-controlled lifecycle
-and are not delegated execution lanes.
+copy-on-write Entry query projections and complete destination log facts. They
+have independent user-controlled lifecycle and are not delegated execution
+lanes.
 
 ## Consequences
 

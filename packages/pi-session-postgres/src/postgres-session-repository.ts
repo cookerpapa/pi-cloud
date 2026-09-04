@@ -34,6 +34,7 @@ type StoredEntryReferenceRow = {
   type: string;
   custom_type: string | null;
   timestamp_ms: string;
+  payload: Record<string, unknown>;
   source_session_id: string;
   source_entry_id: string;
 };
@@ -292,6 +293,7 @@ export async function forkPostgresPiSessionInTransaction(
         "type",
         "custom_type",
         "timestamp_ms",
+        "payload",
         "source_session_id",
         "source_entry_id",
       ])
@@ -344,6 +346,7 @@ export async function forkPostgresPiSessionInTransaction(
                    type,
                    custom_type,
                    timestamp_ms,
+                   payload,
                    source_session_id,
                    source_entry_id
               from pi_session_visible_entries
@@ -357,6 +360,7 @@ export async function forkPostgresPiSessionInTransaction(
                    parent.type,
                    parent.custom_type,
                    parent.timestamp_ms,
+                   parent.payload,
                    parent.source_session_id,
                    parent.source_entry_id
               from pi_session_visible_entries parent
@@ -371,6 +375,7 @@ export async function forkPostgresPiSessionInTransaction(
                  type,
                  custom_type,
                  timestamp_ms,
+                 payload,
                  source_session_id,
                  source_entry_id
             from branch
@@ -398,6 +403,29 @@ export async function forkPostgresPiSessionInTransaction(
           type: entry.type,
           custom_type: entry.custom_type,
           timestamp_ms: entry.timestamp_ms,
+        })),
+      )
+      .execute();
+  }
+  if (sharedEntries.length > 0) {
+    await transaction
+      .insertInto("pi_session_log")
+      .values(
+        sharedEntries.map((entry) => ({
+          tenant_id: tenantId,
+          session_id: destinationId,
+          seq: entry.localSeq,
+          kind: "entry",
+          payload: {
+            lane: "main",
+            turnId: null,
+            entry: {
+              ...entry.payload,
+              seq: entry.localSeq,
+              parentId: entry.parent_id,
+              timestamp: safeInteger(entry.timestamp_ms, "Pi entry timestamp"),
+            },
+          },
         })),
       )
       .execute();
