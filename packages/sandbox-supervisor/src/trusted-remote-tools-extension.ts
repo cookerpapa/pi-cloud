@@ -838,7 +838,10 @@ function registerTrustedRemoteTools(
   if (allowedTools.has("bash")) {
     pi.registerTool({
       ...bashTool,
-      description: `${bashTool.description}\n\nFor a long-running service, detach it and redirect stdin, stdout, and stderr (for example: nohup command </dev/null >server.log 2>&1 &). Verify the service in a separate bash call.`,
+      // Pi's validator accepts unknown properties unless the schema is closed.
+      // In particular, silently ignoring `cwd` would execute in the wrong directory.
+      parameters: { ...bashTool.parameters, additionalProperties: false },
+      description: `${bashTool.description}\n\nOnly command and timeout are accepted. To change directory, use cd inside command (for example: cd /path/to/project && npm test).\n\nFor a long-running service, detach it and redirect stdin, stdout, and stderr (for example: nohup command </dev/null >server.log 2>&1 &). Verify the service in a separate bash call.`,
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();

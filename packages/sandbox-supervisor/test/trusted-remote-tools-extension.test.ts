@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 import { createExecutionLease } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -82,6 +83,41 @@ afterEach(() => {
 });
 
 describe("trusted remote tools extension governance", () => {
+  it.each(["cwd", "env", "timeuot"])(
+    "rejects unsupported Bash parameter %s through Pi validation",
+    (name) => {
+      const runtime = createTrustedRemoteAgentTools(BASE_CONFIGURATION);
+      const bash = runtime.tools.find((tool) => tool.name === "bash")!;
+      expect(bash.parameters).toMatchObject({ additionalProperties: false });
+      expect(() =>
+        validateToolArguments(bash, {
+          type: "toolCall",
+          id: "bad-bash",
+          name: "bash",
+          arguments: { command: "node --check game.js", [name]: "/home/user/snake-game" },
+        }),
+      ).toThrow(new RegExp(name));
+    },
+  );
+
+  it.each([
+    { command: "pwd" },
+    { command: "cd /home/user/snake-game && node --check game.js", timeout: 20 },
+  ])("preserves Pi's declared Bash parameters: %j", (args) => {
+    const bash = createTrustedRemoteAgentTools(BASE_CONFIGURATION).tools.find(
+      (tool) => tool.name === "bash",
+    )!;
+    expect(
+      validateToolArguments(bash, {
+        type: "toolCall",
+        id: "valid-bash",
+        name: "bash",
+        arguments: args,
+      }),
+    ).toEqual(args);
+    expect(bash.description).toContain("use cd inside command");
+  });
+
   it("redacts Code Host tokens and authenticated URLs before model context or artifacts", () => {
     const source = Buffer.from(
       "https://oauth2:glpat-super-secret-token@gitlab.example.com/group/repo.git\n" +

@@ -307,20 +307,37 @@ function LifecycleItem({
   );
 }
 
+function ToolPreparation({ item }: { item: Extract<TranscriptItem, { kind: "tool_preparing" }> }) {
+  const { t } = useI18n();
+  const startedAt = Date.parse(item.startedAt);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.floor((now - startedAt) / 1_000));
+  return (
+    <div
+      className="product-tool-preparing"
+      data-tool-call-id={item.toolCallId}
+      role="status"
+      title={t("turn.toolPreparingHint")}
+    >
+      <span aria-hidden="true" className="product-tool-preparing-spinner" />
+      <span>{t("turn.toolPreparing")}</span>
+      <code>{item.toolName}</code>
+      <small aria-hidden="true">{t("turn.toolPreparingElapsed", { seconds })}</small>
+    </div>
+  );
+}
+
 function OtherItem({
   item,
 }: {
   item: Exclude<TranscriptItem, { kind: "text" } | { kind: "tool" }>;
 }) {
-  const { t } = useI18n();
   if (item.kind === "tool_preparing") {
-    return (
-      <div className="product-tool-preparing" role="status">
-        <span aria-hidden="true">◦</span>
-        <span>{t("turn.working")}</span>
-        <code>{item.toolName}</code>
-      </div>
-    );
+    return <ToolPreparation item={item} />;
   }
   if (item.kind === "compaction" || item.kind === "retry") return <LifecycleItem item={item} />;
   if (item.kind === "notification") {

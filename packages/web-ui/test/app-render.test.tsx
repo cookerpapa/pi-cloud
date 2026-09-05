@@ -683,11 +683,15 @@ describe("product chat experience", () => {
           toolCallId: "call-working",
           toolName: "bash",
           firstSequence: 1,
+          startedAt: new Date(Date.now() - 123_000).toISOString(),
         },
       ],
     };
     const markup = renderToStaticMarkup(<ConversationTurn turn={workingTurn} />);
-    expect(markup).toContain("处理中…");
+    expect(markup).toContain("正在准备工具调用");
+    expect(markup).toContain("工具尚未执行");
+    expect(markup).toContain("已等待 123 秒");
+    expect(markup).toContain("product-tool-preparing-spinner");
     expect(markup).toContain(">bash</code>");
     expect(markup).toContain('role="status"');
   });

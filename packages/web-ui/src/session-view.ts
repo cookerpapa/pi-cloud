@@ -39,6 +39,7 @@ export type TranscriptItem =
       toolCallId: string;
       toolName: string;
       firstSequence: number;
+      startedAt: string;
     }
   | {
       kind: "tool";
@@ -319,6 +320,7 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
             toolCallId: event.payload.toolCallId,
             toolName: event.payload.toolName,
             firstSequence: event.seq,
+            startedAt: event.occurredAt,
           },
         ],
       };
@@ -365,10 +367,19 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
     if (event.type === "tool.completed") {
       let matched = false;
       const items = turn.items.map((item): TranscriptItem => {
-        if (item.kind !== "tool" || item.toolCallId !== event.payload.toolCallId) return item;
+        if (
+          (item.kind !== "tool" && item.kind !== "tool_preparing") ||
+          item.toolCallId !== event.payload.toolCallId
+        )
+          return item;
         matched = true;
         return {
           ...item,
+          kind: "tool",
+          // Pi can reject arguments before any tool.started/intent boundary.
+          // Replace preparation with the error instead of leaving a duplicate spinner.
+          input: item.kind === "tool" ? item.input : null,
+          startedAt: item.kind === "tool" ? item.startedAt : event.occurredAt,
           ...(event.payload.output === undefined ? {} : { output: event.payload.output }),
           status: event.payload.outcome,
           lastSequence: event.seq,

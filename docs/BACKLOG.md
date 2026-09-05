@@ -46,6 +46,9 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Provider capabilities
 
+- [x] Reject undeclared Bash arguments through Pi's native schema validator
+      before execution intent; distinguish Tool preparation/waiting from
+      execution and replace rejected preparation rows without duplicate UI.
 - [x] Separate Provider connection and streaming-idle timeouts so a long active
       response is bounded by its Turn rather than a 120-second wall clock.
 - [x] Detach failed or cancelled Runs from user-owned development machines

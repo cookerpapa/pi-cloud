@@ -1333,17 +1333,35 @@ body.product-panel-resizing {
 
 .product-tool-preparing {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
   margin: 8px 0;
-  color: #8f8f8f;
+  color: #666;
   font-size: 12px;
 }
-.product-tool-preparing > span:first-child {
-  width: 14px;
-  color: #777;
-  text-align: center;
-  animation: product-search-pulse 1.2s ease-in-out infinite;
+.product-tool-preparing-spinner {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border: 1.5px solid #ddd;
+  border-top-color: #777;
+  border-radius: 50%;
+  animation: product-tool-preparing-spin 1s linear infinite;
+}
+@keyframes product-tool-preparing-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .product-tool-preparing-spinner {
+    animation: none;
+  }
+}
+.product-tool-preparing small {
+  color: #888;
+  font-variant-numeric: tabular-nums;
 }
 .product-tool-preparing code {
   color: #777;

@@ -469,77 +469,81 @@ describe.sequential("CloudAgentRuntime", () => {
     ]);
   });
 
-  it("does not persist execution intent for Tool arguments rejected by Pi", async () => {
-    const storage = await createStorage();
-    const session = storage.asSession();
-    const checkpointEvents: CloudAgentRuntimeEvent[] = [];
-    let request = 0;
-    let executed = false;
-    const runtime = new CloudAgentRuntime({
-      lane: "main",
-      session,
-      authority: new TestAuthority(),
-      model: getModel("openai", "gpt-4o-mini"),
-      systemPrompt: "test",
-      tools: [
-        {
-          name: "required_path",
-          label: "Required path",
-          description: "requires one path",
-          parameters: {
-            type: "object",
-            properties: { path: { type: "string" } },
-            required: ["path"],
-            additionalProperties: false,
-          } as any,
-          async execute() {
-            executed = true;
-            return { content: [{ type: "text", text: "unexpected" }], details: {} };
+  it.each([{}, { path: "/workspace/file.txt", cwd: "/ignored" }])(
+    "does not persist execution intent for Tool arguments rejected by Pi: %j",
+    async (arguments_) => {
+      const storage = await createStorage();
+      const session = storage.asSession();
+      const checkpointEvents: CloudAgentRuntimeEvent[] = [];
+      let request = 0;
+      let executed = false;
+      const runtime = new CloudAgentRuntime({
+        lane: "main",
+        session,
+        authority: new TestAuthority(),
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: "test",
+        tools: [
+          {
+            name: "required_path",
+            label: "Required path",
+            description: "requires one path",
+            parameters: {
+              type: "object",
+              properties: { path: { type: "string" } },
+              required: ["path"],
+              additionalProperties: false,
+            } as any,
+            async execute() {
+              executed = true;
+              return { content: [{ type: "text", text: "unexpected" }], details: {} };
+            },
           },
-        },
-      ],
-      streamFn: () => {
-        const stream = new MockAssistantStream();
-        queueMicrotask(() => {
-          request += 1;
-          stream.push({
-            type: "done",
-            reason: request === 1 ? "toolUse" : "stop",
-            message:
-              request === 1
-                ? {
-                    ...assistant(""),
-                    content: [
-                      {
-                        type: "toolCall",
-                        id: "invalid-tool-1",
-                        name: "required_path",
-                        arguments: {},
-                      },
-                    ],
-                    stopReason: "toolUse",
-                  }
-                : assistant("validation handled"),
+        ],
+        streamFn: () => {
+          const stream = new MockAssistantStream();
+          queueMicrotask(() => {
+            request += 1;
+            stream.push({
+              type: "done",
+              reason: request === 1 ? "toolUse" : "stop",
+              message:
+                request === 1
+                  ? {
+                      ...assistant(""),
+                      content: [
+                        {
+                          type: "toolCall",
+                          id: "invalid-tool-1",
+                          name: "required_path",
+                          arguments: arguments_,
+                        },
+                      ],
+                      stopReason: "toolUse",
+                    }
+                  : assistant("validation handled"),
+            });
           });
-        });
-        return stream;
-      },
-      commitCheckpoint: async (operation, sourceEvent) => {
-        if (operation.kind !== "append_items") throw new Error("Expected atomic append batch");
-        for (const item of operation.items) {
-          if (item.kind === "append_entry") await session.appendEntry(item.entry, item.lane);
-          else await session.appendRecord(item.record);
-        }
-        if (sourceEvent !== undefined) checkpointEvents.push(sourceEvent);
-      },
-      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
-    });
+          return stream;
+        },
+        commitCheckpoint: async (operation, sourceEvent) => {
+          if (operation.kind !== "append_items") throw new Error("Expected atomic append batch");
+          for (const item of operation.items) {
+            if (item.kind === "append_entry") await session.appendEntry(item.entry, item.lane);
+            else await session.appendRecord(item.record);
+          }
+          if (sourceEvent !== undefined) checkpointEvents.push(sourceEvent);
+        },
+        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      });
 
-    await expect(runtime.run("validate first")).resolves.toMatchObject({ kind: "completed" });
-    expect(executed).toBe(false);
-    expect(checkpointEvents.map((event) => event.type)).not.toContain("tool_execution_start");
-    await expect(storage.findRecords({ type: "tool_started" })).resolves.toHaveLength(0);
-  });
+      await expect(runtime.run("validate first")).resolves.toMatchObject({ kind: "completed" });
+      expect(executed).toBe(false);
+      expect(checkpointEvents.map((event) => event.type)).not.toContain("tool_execution_start");
+      await expect(storage.findRecords({ type: "tool_started" })).resolves.toHaveLength(0);
+      expect(JSON.stringify(await storage.findEntries())).toContain("Validation failed");
+    },
+  );
 
   it("keeps a bounded product follow-up inside the same native Agent Run", async () => {
     const storage = await createStorage();

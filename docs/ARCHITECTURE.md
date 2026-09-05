@@ -272,6 +272,10 @@ its effect. If a Worker disappears before the Tool result is known, the next
 Run records an unknown-effect result and interruption fact instead of replaying
 arbitrary shell or file mutations. A validation failure creates an ordinary Pi
 Tool error result but no execution intent because no effect was admitted.
+The remote Bash proxy closes Pi's top-level argument schema: only `command`
+and optional `timeout` are accepted. Unknown fields such as `cwd` are rejected
+by Pi before intent or Sandbox activation; changing directory belongs in the
+shell command, not an ignored extra property.
 
 Session Tool grants are copied into immutable Run capability snapshots during
 admission. The snapshot is part of the frozen Cloud Turn context, selects which
@@ -666,7 +670,10 @@ events. The public adapter intentionally ignores thinking fragments, streamed
 Tool-call JSON and partial Tool stdout. At `toolcall_start` it publishes one
 argument-free `assistant.tool_call.preparing` activity so a large function-call
 payload does not look stalled; the validated `tool.started` event replaces that
-row in place. This transient activity is omitted from the settled PostgreSQL
+row in place. The browser explicitly labels preparation as not yet executed
+and shows elapsed waiting time from the durable event timestamp, including
+after refresh. Validation rejection replaces it directly with a failed Tool
+result without leaving a spinner or claiming execution. This transient activity is omitted from the settled PostgreSQL
 transcript. The adapter otherwise publishes Assistant text deltas, complete
 Tool start/result Items and low-frequency lifecycle boundaries.
 

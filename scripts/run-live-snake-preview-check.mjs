@@ -16,6 +16,11 @@ const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).trim();
+const workingTreeDirty =
+  execFileSync("git", ["status", "--porcelain"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  }).trim().length > 0;
 
 if (process.env.PI_CLOUD_LIVE_SNAKE_PREVIEW_CHECK !== "1") {
   throw new Error(
@@ -122,6 +127,7 @@ async function runCodingTurn(api, browser, sessionId) {
     "Build a complete browser Snake game in the current working directory and test it.",
     "Use only HTML, CSS and vanilla JavaScript with no external dependencies.",
     "Create index.html, styles.css and app.js.",
+    "Use the write Tool for the source files rather than shell heredocs.",
     "The page must contain #game-canvas, #start-button, #pause-button, #reset-button and #score.",
     "Keyboard arrow keys and WASD must control the snake.",
     "Expose window.__snakeTestState() returning an object with headX, headY, score, running and tick.",
@@ -191,10 +197,13 @@ async function runCodingTurn(api, browser, sessionId) {
       const startedIndex = events.findIndex(
         (event, index) =>
           index > preparationIndex &&
-          event.type === "tool.started" &&
+          (event.type === "tool.started" || event.type === "tool.completed") &&
           event.payload.toolCallId === preparation.payload.toolCallId,
       );
-      assert(startedIndex > preparationIndex, "Tool preparation was not replaced by Tool start");
+      assert(
+        startedIndex > preparationIndex,
+        "Tool preparation was not replaced by start or rejection",
+      );
     }
     assert(firstDurableActivityAt !== undefined);
     assert(firstToolStartedAt !== undefined);
@@ -220,6 +229,79 @@ async function runCodingTurn(api, browser, sessionId) {
     clearTimeout(timer);
     controller.abort();
   }
+}
+
+async function runCodingWithPreparationBrowser(api, browser, sessionId) {
+  return withChromePage({ profilePrefix: "pi-cloud-preparation-" }, async (page) => {
+    await page.navigate(baseUrl.toString());
+    const login = await page.evaluate(
+      `fetch('/v1/auth/login', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(${JSON.stringify({ username, password })})}).then(r=>r.status)`,
+    );
+    assert.equal(login, 200);
+    await page.evaluate('localStorage.setItem("pi-cloud:ui-language","zh-CN")');
+    await page.navigate(new URL(`/?session=${sessionId}`, baseUrl).toString());
+    await page.waitFor('document.querySelector(".product-composer textarea")');
+    const run = runCodingTurn(api, browser, sessionId);
+    // Preserve the model error while the independent browser observation is waiting.
+    let runError;
+    const settled = run.catch((error) => {
+      runError = error;
+    });
+    try {
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-tool-preparing")].some(row=>row.querySelector("code")?.textContent==="write" && Number(row.querySelector("small")?.textContent.match(/\\d+/)?.[0])>=3)',
+        180_000,
+      );
+      const initial = await page.evaluate(`(()=>{
+        const row=[...document.querySelectorAll('.product-tool-preparing')].find(row=>row.querySelector('code')?.textContent==='write' && Number(row.querySelector('small')?.textContent.match(/\\d+/)?.[0])>=3);
+        return {id:row.dataset.toolCallId, text:row.textContent, title:row.title,
+          animation:getComputedStyle(row.querySelector('.product-tool-preparing-spinner')).animationName};
+      })()`);
+      assert(initial.text.includes("正在准备工具调用"));
+      assert(initial.title.includes("尚未执行"));
+      assert.equal(initial.animation, "product-tool-preparing-spin");
+      const selector = `.product-tool-preparing[data-tool-call-id=${JSON.stringify(initial.id)}]`;
+      const elapsed = `Number(document.querySelector(${JSON.stringify(selector)})?.querySelector('small')?.textContent.match(/\\d+/)?.[0])`;
+      const before = await page.evaluate(elapsed);
+      assert(before >= 3, "Preparation clock did not advance during argument generation");
+      await page.send("Page.reload", { ignoreCache: true });
+      await page.waitFor(`document.querySelector(${JSON.stringify(selector)})`, 30_000);
+      const recovered = await page.evaluate(elapsed);
+      assert(recovered >= before, "Refresh reset the preparation clock");
+      progress("browser observed live Tool preparation, ticking clock and snapshot recovery");
+      const result = await settled;
+      if (runError) throw runError;
+      await page.waitFor('document.querySelectorAll(".product-tool-preparing").length===0');
+      return {
+        ...result,
+        preparationBrowser: { before, recovered, spinner: true, cleared: true },
+      };
+    } catch (error) {
+      progress(`preparation browser failure: ${error.message}`);
+      const result = await settled;
+      if (result) {
+        const spans = result.events
+          .filter((event) => event.type === "assistant.tool_call.preparing")
+          .map((preparation) => {
+            const end = result.events.find(
+              (event) =>
+                (event.type === "tool.started" || event.type === "tool.completed") &&
+                event.payload.toolCallId === preparation.payload.toolCallId,
+            );
+            return {
+              tool: preparation.payload.toolName,
+              preparationMs: end
+                ? Date.parse(end.occurredAt) - Date.parse(preparation.occurredAt)
+                : null,
+            };
+          });
+        progress(JSON.stringify({ spans }));
+      }
+      throw error;
+    } finally {
+      await settled;
+    }
+  });
 }
 
 async function waitForPreview(browser, sessionId) {
@@ -407,7 +489,7 @@ try {
       DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
     );
     progress("asking the real model to build, test and serve Snake");
-    coding = await runCodingTurn(api, browser, session.sessionId);
+    coding = await runCodingWithPreparationBrowser(api, browser, session.sessionId);
   } else {
     progress("reusing a completed Snake coding Session for browser interaction recovery");
     await api.loginAccount(username, password);
@@ -457,6 +539,7 @@ try {
   const report = {
     accepted: true,
     piCloudRevision: testedRevision,
+    workingTreeDirty,
     checkedAt: new Date().toISOString(),
     account: username,
     sessionId: session.sessionId,
@@ -465,6 +548,7 @@ try {
     runId: coding.accepted.runId,
     toolCalls: coding.toolStarts,
     toolPreparations: coding.toolPreparations,
+    preparationBrowser: coding.preparationBrowser,
     previewToolUsed: coding.previewToolUsed,
     firstDurableActivityMs: coding.firstDurableActivityMs,
     firstToolStartedMs: coding.firstToolStartedMs,

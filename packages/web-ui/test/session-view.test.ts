@@ -372,6 +372,7 @@ describe("session transcript reducer", () => {
         toolCallId: "call-large",
         toolName: "bash",
         firstSequence: 1,
+        startedAt: CREATED_AT,
       },
     ]);
 
@@ -395,6 +396,39 @@ describe("session transcript reducer", () => {
         firstSequence: 1,
       }),
     ]);
+  });
+
+  it("replaces preparation with a validation error even without an execution intent", () => {
+    const preparing = sessionViewReducer(preparedState(), {
+      type: "stream.event",
+      event: envelope(1, {
+        type: "assistant.tool_call.preparing",
+        payload: { toolCallId: "invalid-bash", toolName: "bash" },
+      }),
+    });
+    const failed = sessionViewReducer(preparing, {
+      type: "stream.event",
+      event: envelope(2, {
+        type: "tool.completed",
+        payload: {
+          toolCallId: "invalid-bash",
+          outcome: "failed",
+          output: {
+            content: [{ type: "text", text: "Validation failed: unexpected property cwd" }],
+          },
+        },
+      }),
+    });
+    expect(failed.turns[0]?.items).toEqual([
+      expect.objectContaining({
+        kind: "tool",
+        key: "tool:invalid-bash",
+        toolName: "bash",
+        status: "failed",
+        input: null,
+      }),
+    ]);
+    expect(failed.turns[0]?.items.some((item) => item.kind === "tool_preparing")).toBe(false);
   });
 
   it("removes an unfinished Tool preparation row at a failed sampling boundary", () => {
