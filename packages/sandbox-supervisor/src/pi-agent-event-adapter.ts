@@ -5,6 +5,7 @@ import type {
   ModelSamplingIdentity,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
+import { isIncompleteModelStreamError } from "@pi-cloud/pi-session-postgres";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -109,7 +110,11 @@ function safeAssistantFailureMessage(value: unknown): string | undefined {
   }
   const raw = typeof value.errorMessage === "string" ? value.errorMessage.trim() : "";
   const normalized = raw.toLowerCase();
-  if (normalized === "terminated" || normalized.includes("stream ended before")) {
+  if (
+    normalized === "terminated" ||
+    normalized.includes("stream ended before") ||
+    isIncompleteModelStreamError(raw)
+  ) {
     return "Model response stream ended before completion";
   }
   if (normalized.includes("response stream became idle")) {

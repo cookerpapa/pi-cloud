@@ -3,7 +3,7 @@ import { createServer as createHttpServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProviderBridgeRelay,
   createProviderHostProxy,
@@ -75,6 +75,45 @@ afterEach(async () => {
 });
 
 describe("provider egress relay", () => {
+  it("keeps an established tunnel open beyond three minutes and audits the initiating EOF", async () => {
+    const echo = createServer((socket) => socket.pipe(socket));
+    const echoPort = await listenTcp(echo);
+    const audit: ProviderEgressAuditRecord[] = [];
+    const proxyPort = await listenTcp(
+      createProviderHostProxy({
+        allowedHosts: ["chatgpt.com"],
+        resolveHost: async () => ["1.1.1.1"],
+        connectDirect: () => connect(echoPort, "127.0.0.1"),
+        audit: (record) => audit.push(record),
+      }),
+    );
+    const socket = connect(proxyPort, "127.0.0.1");
+    try {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const connected = new Promise<void>((resolve) => socket.once("data", () => resolve()));
+      socket.write("CONNECT chatgpt.com:443 HTTP/1.1\r\nHost: chatgpt.com:443\r\n\r\n");
+      await connected;
+      await vi.advanceTimersByTimeAsync(181_000);
+      expect(socket.destroyed).toBe(false);
+      const echoed = new Promise<string>((resolve) =>
+        socket.once("data", (bytes) => resolve(bytes.toString())),
+      );
+      socket.write("still-streaming");
+      expect(await echoed).toBe("still-streaming");
+      expect(audit.filter((record) => record.outcome === "closed")).toEqual([]);
+      vi.useRealTimers();
+      const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+      socket.end();
+      await closed;
+      expect(audit.filter((record) => record.outcome === "closed")).toEqual([
+        expect.objectContaining({ reason: "client_ended" }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+      socket.destroy();
+    }
+  });
+
   it("bridges an allowlisted CONNECT request through an operator upstream proxy", async () => {
     const upstreamTargets: string[] = [];
     const upstream = createHttpServer();

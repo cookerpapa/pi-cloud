@@ -87,12 +87,15 @@ describe("PiAgentEventAdapter", () => {
     expect(JSON.stringify(settled)).not.toContain("must-not-pass");
   });
 
-  it("turns a terminated Provider stream into a useful bounded failure", () => {
+  it.each([
+    "terminated",
+    "Codex error: stream error: stream disconnected before completion: stream closed before response.completed",
+  ])("turns premature Provider stream closure into a bounded failure: %s", (errorMessage) => {
     const adapter = createAdapter();
     adapter.adapt({ type: "agent_start" });
     adapter.adapt({
       type: "message_end",
-      message: { role: "assistant", stopReason: "error", errorMessage: "terminated" },
+      message: { role: "assistant", stopReason: "error", errorMessage },
     });
     expect(adapter.adapt({ type: "agent_settled" })).toMatchObject({
       kind: "settled",

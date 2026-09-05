@@ -36,6 +36,7 @@ import type {
   UserMessage,
 } from "@earendil-works/pi-ai";
 import { isRetryableAssistantError } from "@earendil-works/pi-ai";
+import { isIncompleteModelStreamError } from "./model-stream-error.ts";
 import type { ExecutionAuthority } from "./execution-authority.ts";
 import type { PiSessionMutationOperation, PiSessionAppendOperation } from "./session-mutation.ts";
 
@@ -423,6 +424,7 @@ export class CloudAgentRuntime {
       removeAuthorityAbort = () => authority.signal.removeEventListener("abort", abortForAuthority);
       if (authority.signal.aborted) abortForAuthority();
 
+      let retryAttempt = 0;
       const unsubscribe = agent.subscribe(async (event) => {
         let checkpointHandledEvent = false;
         if (event.type === "message_end") {
@@ -483,6 +485,19 @@ export class CloudAgentRuntime {
           await this.#options.onEvent?.(event);
         }
         if (
+          event.type === "message_end" &&
+          event.message.role === "assistant" &&
+          event.message.stopReason === "toolUse" &&
+          retryAttempt > 0
+        ) {
+          await this.#options.onEvent?.({
+            type: "auto_retry_end",
+            success: true,
+            attempt: retryAttempt,
+          });
+          retryAttempt = 0;
+        }
+        if (
           event.type === "turn_end" &&
           event.toolResults.length === 0 &&
           event.message.role === "assistant" &&
@@ -496,14 +511,16 @@ export class CloudAgentRuntime {
 
       try {
         const retry = this.#options.retry;
-        let retryAttempt = 0;
         for (;;) {
           await agent.continue();
           if (
             finalMessage?.stopReason !== "error" ||
             retry?.enabled !== true ||
             retryAttempt >= retry.maxRetries ||
-            !isRetryableAssistantError(finalMessage)
+            !(
+              isRetryableAssistantError(finalMessage) ||
+              isIncompleteModelStreamError(finalMessage.errorMessage ?? "")
+            )
           ) {
             if (retryAttempt > 0) {
               await this.#options.onEvent?.({
@@ -519,6 +536,17 @@ export class CloudAgentRuntime {
           }
 
           retryAttempt += 1;
+          // Keep already-visible text without admitting incomplete Tool arguments.
+          // Pi excludes failed Assistant messages from provider input; the existing
+          // prefix projector gives subsequent sampling/restoration this text as a fact.
+          if (hasVisibleAssistantPrefix(finalMessage)) {
+            await tree.appendCustomEntry(INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE, {
+              text: finalMessage.content
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join(""),
+            });
+          }
           const delayMs = retry.baseDelayMs * 2 ** (retryAttempt - 1);
           await this.#options.onEvent?.({
             type: "auto_retry_start",

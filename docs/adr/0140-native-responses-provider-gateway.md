@@ -27,7 +27,7 @@ gateway continued translating protocols.
   terminal events on `/responses`.
 - The contribution is tracked in
   <https://github.com/router-for-me/CLIProxyAPI/pull/5382>. Until it is released,
-  the one-host image reproducibly builds the public fork commit `c12c5a4c` and
+  the one-host image reproducibly builds the public fork commit `48549e65` and
   overlays only that binary on the previously pinned CLIProxyAPI runtime image.
 - Production initialization/reconciliation marks only configured DeepSeek V4
   providers with `wire-api: responses`. Other OpenAI-compatible providers keep

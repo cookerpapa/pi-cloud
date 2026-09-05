@@ -487,6 +487,14 @@ try {
       "development_environment",
       "standard",
       DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
+      process.env.PI_CLOUD_SNAKE_MODEL_ID === undefined
+        ? undefined
+        : {
+            provider: "openai-codex",
+            modelId: process.env.PI_CLOUD_SNAKE_MODEL_ID,
+            thinkingLevel: "off",
+            fastMode: false,
+          },
     );
     progress("asking the real model to build, test and serve Snake");
     coding = await runCodingWithPreparationBrowser(api, browser, session.sessionId);

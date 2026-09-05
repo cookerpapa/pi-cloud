@@ -11,7 +11,6 @@ import { connect as connectTls } from "node:tls";
 import type { Duplex } from "node:stream";
 
 const CONNECT_TIMEOUT_MS = 10_000;
-const CONNECTION_DURATION_MS = 180_000;
 
 const nonPublicIpv4 = new BlockList();
 for (const [network, prefix] of [
@@ -108,20 +107,15 @@ function tunnel(
   let connected = false;
   let finalized = false;
   const connectTimer = setTimeout(() => {
+    finish("connect_timeout");
     upstream.destroy();
     deny(client, 504, "Gateway Timeout");
   }, CONNECT_TIMEOUT_MS);
   connectTimer.unref();
-  const durationTimer = setTimeout(() => {
-    upstream.destroy();
-    client.destroy();
-  }, CONNECTION_DURATION_MS);
-  durationTimer.unref();
   const finish = (reason: string): void => {
     if (finalized) return;
     finalized = true;
     clearTimeout(connectTimer);
-    clearTimeout(durationTimer);
     options.audit?.({
       timestamp: new Date(options.now()).toISOString(),
       outcome: "closed",
@@ -146,6 +140,12 @@ function tunnel(
       via: options.via,
     });
   });
+  // Record the initiating half-close, before pipe() propagates it to the other peer.
+  // An established TLS tunnel has no wall-clock TTL; the model request owns
+  // cancellation and its idle deadline. TCP keepalive detects dead peers.
+  upstream.setKeepAlive(true, 30_000);
+  upstream.once("end", () => finish("upstream_ended"));
+  client.once("end", () => finish("client_ended"));
   upstream.once("error", () => {
     if (!connected) deny(client, 502, "Bad Gateway");
     else client.destroy();

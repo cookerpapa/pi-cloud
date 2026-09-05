@@ -497,244 +497,258 @@ describe("PiCloudTurnRunner integration", () => {
     lease.release();
   });
 
-  it("executes the native Pi loop from SessionStorage and publishes reviewed events", async () => {
-    const fake = new FakeModelServer({ scenarioSequence: ["rate_limit", "text"] });
-    await fake.start();
-    const session = new Session(
-      new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
-    );
-    const authority = new TestAuthority();
-    const events: EventPublishMessage[] = [];
-    const checkpointOperations: PiSessionMutationOperation[] = [];
-    const checkpointEvents: PiCloudEvent[] = [];
-    const turn = createCloudTurnContext(command, undefined);
-    const attempt = createCloudAttemptContext({
-      command,
-      runtimeIdentity: {
-        supervisorId: "supervisor-cloud-test",
-        bootId: "77777777-7777-4777-8777-777777777778",
-        sandboxId: "sandbox-cloud-test",
-      },
-      turnContextSha256: turn.sha256,
-    });
-    let stepSequence = 0;
-    let authorityWasActiveAtSettlement = false;
-    let receivedSystemPrompt = "";
-    const sourceEvents: string[] = [];
-    let hostedActivityListener: ((activity: ProviderHostedActivity) => void) | undefined;
-    let hostedActivityStarted = false;
-    const modelPreparationStarted = deferred<void>();
-    const sessionPreparationStarted = deferred<void>();
-    const runner = new PiCloudTurnRunner({
-      resolveModelRuntime: async () => {
-        modelPreparationStarted.resolve(undefined);
-        await sessionPreparationStarted.promise;
-        return {
-          provider: "pi-cloud-fake",
-          modelId: "pi-cloud-fake",
-          baseUrl: fake.baseUrl,
-          api: "openai-completions",
-          apiKey: FAKE_MODEL_API_KEY,
-          contextWindow: 131_072,
-        };
-      },
-      openSession: async () => {
-        sessionPreparationStarted.resolve(undefined);
-        await modelPreparationStarted.promise;
-        return {
-          session,
-          lane: "main",
-          authority,
-          mutationPublisher: {
-            async synchronize() {},
-            async mutate(operation, attachedEvents = []) {
-              if (operation.kind !== "append_items") {
-                throw new Error("Runtime checkpoint must use one atomic append batch");
-              }
-              const results = [];
-              for (const item of operation.items) {
-                results.push(
-                  item.kind === "append_entry"
-                    ? await session.appendEntry(item.entry, item.lane)
-                    : await session.appendRecord(item.record),
-                );
-              }
-              checkpointOperations.push(operation);
-              checkpointEvents.push(...attachedEvents);
-              return { items: results };
-            },
-          },
-        };
-      },
-      sandboxContinuity: {
-        continuityId: "88888888-8888-4888-8888-888888888888",
-        continuity: "cold_restore",
-        environmentSha256: turn.environmentSha256,
-        workspaceBindingSha256: turn.workspaceBindingSha256,
-        committedWorkspaceRevision: null,
-        toolPolicySha256: turn.toolPolicySha256,
-      },
-      subscribeHostedActivity(listener) {
-        hostedActivityListener = listener;
-        return () => {
-          hostedActivityListener = undefined;
-        };
-      },
-      createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
-        tools: [],
-        async systemPrompt(base) {
-          receivedSystemPrompt = base;
-          return base;
+  it.each(["rate_limit", "disconnect"] as const)(
+    "recovers native Pi sampling through the HTTP transport: %s",
+    async (failure) => {
+      const fake = new FakeModelServer({ scenarioSequence: [failure, "text"] });
+      await fake.start();
+      const session = new Session(
+        new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
+      );
+      const authority = new TestAuthority();
+      const events: EventPublishMessage[] = [];
+      const checkpointOperations: PiSessionMutationOperation[] = [];
+      const checkpointEvents: PiCloudEvent[] = [];
+      const turn = createCloudTurnContext(command, undefined);
+      const attempt = createCloudAttemptContext({
+        command,
+        runtimeIdentity: {
+          supervisorId: "supervisor-cloud-test",
+          bootId: "77777777-7777-4777-8777-777777777778",
+          sandboxId: "sandbox-cloud-test",
         },
-        async transformContext(messages, purpose = "agent") {
-          await captureSamplingStep(
-            async () => {
-              const captured = await stepWorldState.capture();
-              return {
-                step: createCloudStepContext({
-                  sequence: (stepSequence += 1),
-                  turnContextSha256: turn.sha256,
-                  attemptContextSha256: attempt.sha256,
-                  allowedTools: command.payload.toolCapabilities,
-                  activeTools: ["read", "write", "edit", "bash"],
-                  worldState: captured.worldState,
-                }),
-                modelMessages: captured.modelMessages,
-              };
-            },
-            { publishEvent: purpose === "agent" },
-          );
-          return messages;
-        },
-        async transformHeaders(headers = {}) {
-          return headers;
-        },
-      }),
-      observeEvent(event) {
-        if (event.type === "message_start" && !hostedActivityStarted) {
-          hostedActivityStarted = true;
-          hostedActivityListener?.({
-            phase: "started",
-            toolName: "web_search",
-            activityId: "ws-integration",
-          });
-        } else if (event.type === "message_update" && hostedActivityStarted) {
-          hostedActivityStarted = false;
-          hostedActivityListener?.({
-            phase: "completed",
-            toolName: "web_search",
-            activityId: "ws-integration",
-            outcome: "completed",
-            action: { type: "search", queries: ["integration source"] },
-          });
-        }
-        sourceEvents.push(
-          event.type === "message_end" && event.message.role === "assistant"
-            ? `${event.type}:${event.message.errorMessage ?? event.message.stopReason}`
-            : event.type,
-        );
-      },
-      onSettled() {
-        authorityWasActiveAtSettlement = !authority.closed;
-      },
-    });
-
-    try {
-      const result = await runner
-        .run(command, (event) => {
-          events.push(event);
-        })
-        .catch((error: unknown) => {
-          throw new Error(
-            `${error instanceof Error ? error.message : String(error)}: ${sourceEvents.join(",")}`,
-          );
-        });
-      expect(result.stopReason).toBe("stop");
-      expect(events.map((event) => event.payload.event.type)).toContain("turn.started");
-      expect(events.map((event) => event.payload.event.type)).toContain("assistant.text.delta");
-      const eventTypes = events.map((event) => event.payload.event.type);
-      expect(eventTypes).toContain("provider.hosted_tool.started");
-      expect(eventTypes).toContain("provider.hosted_tool.completed");
-      expect(eventTypes.indexOf("provider.hosted_tool.started")).toBeLessThan(
-        eventTypes.indexOf("provider.hosted_tool.completed"),
-      );
-      expect(eventTypes.indexOf("provider.hosted_tool.completed")).toBeLessThan(
-        eventTypes.indexOf("assistant.text.delta"),
-      );
-      const textEvents = events.filter(
-        (event) => event.payload.event.type === "assistant.text.delta",
-      );
-      expect(textEvents).toHaveLength(2);
-      expect(
-        textEvents
-          .map((event) =>
-            event.payload.event.type === "assistant.text.delta"
-              ? event.payload.event.payload.text
-              : "",
-          )
-          .join(""),
-      ).toBe("PiCloud fake stream OK.");
-      expect(
-        events.some(
-          ({ payload: { event } }) =>
-            event.type === "model.sampling.completed" && event.payload.outcome === "completed",
-        ),
-      ).toBe(false);
-      expect(
-        checkpointEvents.some(
-          (event) =>
-            event.type === "model.sampling.completed" && event.payload.outcome === "completed",
-        ),
-      ).toBe(true);
-      expect(checkpointOperations).toContainEqual(
-        expect.objectContaining({
-          kind: "append_items",
-          items: expect.arrayContaining([
-            expect.objectContaining({
-              kind: "append_entry",
-              entry: expect.objectContaining({ type: "message" }),
-            }),
-            expect.objectContaining({
-              kind: "append_record",
-              record: expect.objectContaining({ type: "usage" }),
-            }),
-          ]),
-        }),
-      );
-      expect(events.map((event) => event.payload.event.type)).toContain(
-        "model.sampling.retry.scheduled",
-      );
-      expect(fake.observations.map((observation) => observation.scenario)).toEqual([
-        "rate_limit",
-        "text",
-      ]);
-      expect((await session.getStats()).messageCount).toBe(2);
-      const entries = await session.findEntriesOnBranch();
-      const baseline = entries.find(
-        (entry) =>
-          entry.type === "custom" && entry.customType === PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
-      );
-      const prompt = entries.find(
-        (entry) => entry.type === "message" && entry.message.role === "user",
-      );
-      const retry = entries.find(
-        (entry) => entry.type === "custom" && entry.customType === PI_MODEL_RETRY_CUSTOM_TYPE,
-      );
-      expect(baseline).toBeDefined();
-      expect(prompt).toBeDefined();
-      expect(retry).toMatchObject({
-        type: "custom",
-        data: { nextSamplingAttempt: 2, maximumSamplingAttempts: 3 },
+        turnContextSha256: turn.sha256,
       });
-      expect(JSON.stringify(buildSessionContext(entries).messages)).not.toContain(
-        PI_MODEL_RETRY_CUSTOM_TYPE,
-      );
-      expect(prompt!.seq).toBeGreaterThan(baseline!.seq);
-      expect(authorityWasActiveAtSettlement).toBe(true);
-      expect(authority.closed).toBe(true);
-      expect(receivedSystemPrompt).toContain("所有对用户可见的内容");
-    } finally {
-      await fake.stop();
-    }
-  });
+      let stepSequence = 0;
+      let authorityWasActiveAtSettlement = false;
+      let receivedSystemPrompt = "";
+      const sourceEvents: string[] = [];
+      let hostedActivityListener: ((activity: ProviderHostedActivity) => void) | undefined;
+      let hostedActivityStarted = false;
+      const modelPreparationStarted = deferred<void>();
+      const sessionPreparationStarted = deferred<void>();
+      const runner = new PiCloudTurnRunner({
+        resolveModelRuntime: async () => {
+          modelPreparationStarted.resolve(undefined);
+          await sessionPreparationStarted.promise;
+          return {
+            provider: "pi-cloud-fake",
+            modelId: "pi-cloud-fake",
+            baseUrl: fake.baseUrl,
+            api: "openai-completions",
+            apiKey: FAKE_MODEL_API_KEY,
+            contextWindow: 131_072,
+          };
+        },
+        openSession: async () => {
+          sessionPreparationStarted.resolve(undefined);
+          await modelPreparationStarted.promise;
+          return {
+            session,
+            lane: "main",
+            authority,
+            mutationPublisher: {
+              async synchronize() {},
+              async mutate(operation, attachedEvents = []) {
+                if (operation.kind !== "append_items") {
+                  throw new Error("Runtime checkpoint must use one atomic append batch");
+                }
+                const results = [];
+                for (const item of operation.items) {
+                  results.push(
+                    item.kind === "append_entry"
+                      ? await session.appendEntry(item.entry, item.lane)
+                      : await session.appendRecord(item.record),
+                  );
+                }
+                checkpointOperations.push(operation);
+                checkpointEvents.push(...attachedEvents);
+                return { items: results };
+              },
+            },
+          };
+        },
+        sandboxContinuity: {
+          continuityId: "88888888-8888-4888-8888-888888888888",
+          continuity: "cold_restore",
+          environmentSha256: turn.environmentSha256,
+          workspaceBindingSha256: turn.workspaceBindingSha256,
+          committedWorkspaceRevision: null,
+          toolPolicySha256: turn.toolPolicySha256,
+        },
+        subscribeHostedActivity(listener) {
+          hostedActivityListener = listener;
+          return () => {
+            hostedActivityListener = undefined;
+          };
+        },
+        createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
+          tools: [],
+          async systemPrompt(base) {
+            receivedSystemPrompt = base;
+            return base;
+          },
+          async transformContext(messages, purpose = "agent") {
+            await captureSamplingStep(
+              async () => {
+                const captured = await stepWorldState.capture();
+                return {
+                  step: createCloudStepContext({
+                    sequence: (stepSequence += 1),
+                    turnContextSha256: turn.sha256,
+                    attemptContextSha256: attempt.sha256,
+                    allowedTools: command.payload.toolCapabilities,
+                    activeTools: ["read", "write", "edit", "bash"],
+                    worldState: captured.worldState,
+                  }),
+                  modelMessages: captured.modelMessages,
+                };
+              },
+              { publishEvent: purpose === "agent" },
+            );
+            return messages;
+          },
+          async transformHeaders(headers = {}) {
+            return headers;
+          },
+        }),
+        observeEvent(event) {
+          if (event.type === "message_start" && !hostedActivityStarted) {
+            hostedActivityStarted = true;
+            hostedActivityListener?.({
+              phase: "started",
+              toolName: "web_search",
+              activityId: "ws-integration",
+            });
+          } else if (event.type === "message_update" && hostedActivityStarted) {
+            hostedActivityStarted = false;
+            hostedActivityListener?.({
+              phase: "completed",
+              toolName: "web_search",
+              activityId: "ws-integration",
+              outcome: "completed",
+              action: { type: "search", queries: ["integration source"] },
+            });
+          }
+          sourceEvents.push(
+            event.type === "message_end" && event.message.role === "assistant"
+              ? `${event.type}:${event.message.errorMessage ?? event.message.stopReason}`
+              : event.type,
+          );
+        },
+        onSettled() {
+          authorityWasActiveAtSettlement = !authority.closed;
+        },
+      });
+
+      try {
+        const result = await runner
+          .run(command, (event) => {
+            events.push(event);
+          })
+          .catch((error: unknown) => {
+            throw new Error(
+              `${error instanceof Error ? error.message : String(error)}: ${sourceEvents.join(",")}`,
+            );
+          });
+        expect(result.stopReason).toBe("stop");
+        expect(events.map((event) => event.payload.event.type)).toContain("turn.started");
+        expect(events.map((event) => event.payload.event.type)).toContain("assistant.text.delta");
+        const eventTypes = events.map((event) => event.payload.event.type);
+        expect(eventTypes).toContain("provider.hosted_tool.started");
+        expect(eventTypes).toContain("provider.hosted_tool.completed");
+        expect(eventTypes.indexOf("provider.hosted_tool.started")).toBeLessThan(
+          eventTypes.indexOf("provider.hosted_tool.completed"),
+        );
+        expect(eventTypes.indexOf("provider.hosted_tool.completed")).toBeLessThan(
+          eventTypes.indexOf("assistant.text.delta"),
+        );
+        const textEvents = events.filter(
+          (event) => event.payload.event.type === "assistant.text.delta",
+        );
+        expect(textEvents).toHaveLength(failure === "disconnect" ? 3 : 2);
+        expect(
+          textEvents
+            .map((event) =>
+              event.payload.event.type === "assistant.text.delta"
+                ? event.payload.event.payload.text
+                : "",
+            )
+            .join(""),
+        ).toBe(
+          `${failure === "disconnect" ? "partial-before-disconnect" : ""}PiCloud fake stream OK.`,
+        );
+        expect(
+          events.some(
+            ({ payload: { event } }) =>
+              event.type === "model.sampling.completed" && event.payload.outcome === "completed",
+          ),
+        ).toBe(false);
+        expect(
+          checkpointEvents.some(
+            (event) =>
+              event.type === "model.sampling.completed" && event.payload.outcome === "completed",
+          ),
+        ).toBe(true);
+        expect(checkpointOperations).toContainEqual(
+          expect.objectContaining({
+            kind: "append_items",
+            items: expect.arrayContaining([
+              expect.objectContaining({
+                kind: "append_entry",
+                entry: expect.objectContaining({ type: "message" }),
+              }),
+              expect.objectContaining({
+                kind: "append_record",
+                record: expect.objectContaining({ type: "usage" }),
+              }),
+            ]),
+          }),
+        );
+        expect(events.map((event) => event.payload.event.type)).toContain(
+          "model.sampling.retry.scheduled",
+        );
+        expect(fake.observations.map((observation) => observation.scenario)).toEqual([
+          failure,
+          "text",
+        ]);
+        expect((await session.getStats()).messageCount).toBe(2);
+        const entries = await session.findEntriesOnBranch();
+        if (failure === "disconnect") {
+          expect(
+            entries.filter(
+              (entry) =>
+                entry.type === "custom" &&
+                entry.customType === "pi-cloud.interrupted_assistant_prefix",
+            ),
+          ).toHaveLength(1);
+        }
+        const baseline = entries.find(
+          (entry) =>
+            entry.type === "custom" && entry.customType === PI_RUNTIME_WORLD_STATE_CUSTOM_TYPE,
+        );
+        const prompt = entries.find(
+          (entry) => entry.type === "message" && entry.message.role === "user",
+        );
+        const retry = entries.find(
+          (entry) => entry.type === "custom" && entry.customType === PI_MODEL_RETRY_CUSTOM_TYPE,
+        );
+        expect(baseline).toBeDefined();
+        expect(prompt).toBeDefined();
+        expect(retry).toMatchObject({
+          type: "custom",
+          data: { nextSamplingAttempt: 2, maximumSamplingAttempts: 3 },
+        });
+        expect(JSON.stringify(buildSessionContext(entries).messages)).not.toContain(
+          PI_MODEL_RETRY_CUSTOM_TYPE,
+        );
+        expect(prompt!.seq).toBeGreaterThan(baseline!.seq);
+        expect(authorityWasActiveAtSettlement).toBe(true);
+        expect(authority.closed).toBe(true);
+        expect(receivedSystemPrompt).toContain("所有对用户可见的内容");
+      } finally {
+        await fake.stop();
+      }
+    },
+  );
 });

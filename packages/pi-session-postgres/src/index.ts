@@ -1,4 +1,5 @@
 export { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
+export { isIncompleteModelStreamError } from "./model-stream-error.ts";
 export { rebuildPostgresPiSessionProjections } from "./postgres-session-projection-rebuilder.ts";
 export {
   PostgresPiSessionStorage,

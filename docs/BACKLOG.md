@@ -5,6 +5,9 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Retry premature Responses disconnections without replaying completed Tools,
+      retain visible prefixes, reset retry numbering per sampling Step, remove
+      the CONNECT tunnel wall-clock expiry and record safe stream-end evidence.
 - [x] Remove redundant message handoffs (ADR-0149): SSE heartbeat/snapshot,
       atomic projection receipts, context reads, Tool/Cube RPC, partition
       consumers and browser subscriptions; validate live coding afterward.

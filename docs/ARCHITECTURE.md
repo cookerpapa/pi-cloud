@@ -384,6 +384,19 @@ waiting for the next streaming byte use separate timeouts. Stream activity
 renews the idle deadline; only the enclosing Pi Turn owns total model duration.
 An idle stream ends with a Responses-compatible error event so Pi retains a
 bounded diagnostic instead of seeing an unexplained transport termination.
+Premature Responses EOF/disconnection enters the existing bounded model retry
+policy. Only the failed sampling is retried; complete Tool results remain in
+SessionStorage and incomplete Tool arguments are never executed. Visible text
+from an interrupted sampling is retained as an existing prefix fact before the
+retry. Its retry counter resets when a successful sampling returns Tool calls,
+so a later Cloud Step starts its own retry sequence.
+
+The CONNECT egress relay limits connection establishment, not the age of an
+established TLS tunnel. Model Gateway owns streaming idle timeout and the Turn
+owns cancellation. Relay audit records the initiating half-close; CLIProxyAPI
+logs whether the authenticated upstream sent an error event, the HTTP body
+ended without a terminal event, or a read/cancellation error occurred. These
+diagnostics omit prompts, response text and credentials.
 
 ### Source-control App and Issue automation
 

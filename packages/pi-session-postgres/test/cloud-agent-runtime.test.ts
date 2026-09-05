@@ -622,6 +622,164 @@ describe.sequential("CloudAgentRuntime", () => {
     expect(await storage.findRecords({ type: "step_attempt" })).toHaveLength(2);
   });
 
+  it("retries interrupted model sampling without replaying Tools or losing visible text", async () => {
+    const storage = await createStorage();
+    const contexts: Context[] = [];
+    const events: CloudAgentRuntimeEvent[] = [];
+    const effects: string[] = [];
+    const toolCall = (id: string): AssistantMessage => ({
+      ...assistant(""),
+      content: [{ type: "toolCall", id, name: "mutate", arguments: {} }],
+      stopReason: "toolUse",
+    });
+    const disconnected =
+      "Codex error: stream error: stream disconnected before completion: stream closed before response.completed";
+    const responses: AssistantMessage[] = [
+      toolCall("effect-1"),
+      {
+        ...assistantError(disconnected),
+        content: [
+          { type: "text", text: "visible-before-disconnect" },
+          ...toolCall("incomplete-never-execute").content,
+        ],
+      },
+      toolCall("effect-2"),
+      assistantError(disconnected),
+      assistant("recovered"),
+    ];
+    let request = 0;
+    const runtime = new CloudAgentRuntime({
+      lane: "main",
+      session: storage.asSession(),
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      tools: [
+        {
+          name: "mutate",
+          label: "Mutate",
+          description: "test effect",
+          parameters: { type: "object", properties: {} } as any,
+          async execute(id) {
+            effects.push(id);
+            return { content: [{ type: "text", text: `done-${id}` }], details: {} };
+          },
+        },
+      ],
+      streamFn: (_model, context) => {
+        contexts.push({ ...context, messages: structuredClone(context.messages) });
+        const stream = new MockAssistantStream();
+        const message = responses[request++]!;
+        queueMicrotask(() => {
+          if (message.stopReason === "error")
+            stream.push({ type: "error", reason: "error", error: message });
+          else
+            stream.push({
+              type: "done",
+              reason: message.stopReason as "stop" | "toolUse",
+              message,
+            });
+        });
+        return stream;
+      },
+      retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 },
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      onEvent(event) {
+        events.push(event);
+      },
+    });
+    const result = await runtime.run("change things");
+    expect(result.kind, JSON.stringify(result)).toBe("completed");
+    expect(effects).toEqual(["effect-1", "effect-2"]);
+    expect(request).toBe(5);
+    expect(events.filter((e) => e.type === "auto_retry_start").map((e) => e.attempt)).toEqual([
+      1, 1,
+    ]);
+    expect(await storage.findRecords({ type: "tool_started" })).toHaveLength(2);
+    expect(JSON.stringify(contexts[2]?.messages)).toContain("done-effect-1");
+    expect(JSON.stringify(contexts[2]?.messages)).toContain("visible-before-disconnect");
+    expect(JSON.stringify(contexts[2]?.messages)).not.toContain("incomplete-never-execute");
+    const restored: Context[] = [];
+    await new CloudAgentRuntime({
+      lane: "main",
+      session: storage.asSession(),
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      streamFn: scriptedStream(["next turn"], restored),
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+    }).run("continue");
+    expect(JSON.stringify(restored[0]?.messages).match(/visible-before-disconnect/g)).toHaveLength(
+      1,
+    );
+    expect(JSON.stringify(restored[0]?.messages)).not.toContain("incomplete-never-execute");
+  });
+
+  it.each([
+    ["stream disconnected before completion: stream closed before response.completed", 3],
+    ["invalid_api_key", 1],
+    ["insufficient_quota", 1],
+    ["invalid_request_error", 1],
+  ])(
+    "bounds retries and preserves permanent failures: %s",
+    async (errorMessage, expectedRequests) => {
+      const storage = await createStorage();
+      let requests = 0;
+      const runtime = new CloudAgentRuntime({
+        lane: "main",
+        session: storage.asSession(),
+        authority: new TestAuthority(),
+        model: getModel("openai", "gpt-4o-mini"),
+        systemPrompt: "test",
+        streamFn: () => {
+          requests++;
+          const stream = new MockAssistantStream();
+          queueMicrotask(() =>
+            stream.push({ type: "error", reason: "error", error: assistantError(errorMessage) }),
+          );
+          return stream;
+        },
+        retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 },
+        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      });
+      expect(await runtime.run("test error policy")).toMatchObject({ kind: "failed" });
+      expect(requests).toBe(expectedRequests);
+      expect(await storage.findRecords({ type: "tool_started" })).toHaveLength(0);
+    },
+  );
+
+  it("does not start another model request after authority is revoked during retry backoff", async () => {
+    const storage = await createStorage();
+    const authority = new TestAuthority();
+    let requests = 0;
+    const runtime = new CloudAgentRuntime({
+      lane: "main",
+      session: storage.asSession(),
+      authority,
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      streamFn: () => {
+        requests++;
+        const stream = new MockAssistantStream();
+        queueMicrotask(() =>
+          stream.push({
+            type: "error",
+            reason: "error",
+            error: assistantError("stream closed before response.completed"),
+          }),
+        );
+        return stream;
+      },
+      retry: { enabled: true, maxRetries: 2, baseDelayMs: 10 },
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      onEvent(event) {
+        if (event.type === "auto_retry_start") authority.revoke();
+      },
+    });
+    await expect(runtime.run("cancel retry")).rejects.toThrow();
+    expect(requests).toBe(1);
+  });
+
   it("settles an unresolved Tool as unknown instead of replaying it", async () => {
     const storage = await createStorage();
     const session = storage.asSession();
