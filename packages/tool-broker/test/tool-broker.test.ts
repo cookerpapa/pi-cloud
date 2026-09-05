@@ -1198,6 +1198,9 @@ describe("provider-backed Tool Tool Broker", () => {
       assignment.executionLease,
       operation("10000000-0000-4000-8000-000000000031"),
     );
+    expect(observe).not.toHaveBeenCalled();
+    expect(fixture.discoverHttpServices).not.toHaveBeenCalled();
+    await manager.refreshServices(created.activationId, assignment);
     expect(observe).toHaveBeenCalledWith(
       expect.objectContaining({
         target: expect.objectContaining({

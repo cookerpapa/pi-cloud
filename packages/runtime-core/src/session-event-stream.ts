@@ -50,7 +50,7 @@ async function writeChunk(response: ServerResponse, chunk: string): Promise<bool
 }
 
 async function nextWithHeartbeat(
-  subscription: SessionEventSubscription,
+  pending: ReturnType<SessionEventSubscription["next"]>,
   heartbeatIntervalMs: number,
 ) {
   let timer: NodeJS.Timeout | undefined;
@@ -58,9 +58,11 @@ async function nextWithHeartbeat(
     timer = setTimeout(() => resolve("heartbeat"), heartbeatIntervalMs);
     timer.unref();
   });
-  const result = await Promise.race([subscription.next(), heartbeat]);
-  if (result !== "heartbeat" && timer !== undefined) clearTimeout(timer);
-  return result;
+  try {
+    return await Promise.race([pending, heartbeat]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export class OpenSessionEventStream {
@@ -87,13 +89,15 @@ export class OpenSessionEventStream {
     response.once("close", close);
     try {
       if (!(await writeChunk(response, snapshotFrame(this.#snapshot)))) return;
+      let pending = this.#subscription.next();
       while (!response.destroyed && !response.writableEnded) {
-        const item = await nextWithHeartbeat(this.#subscription, this.#heartbeatIntervalMs);
+        const item = await nextWithHeartbeat(pending, this.#heartbeatIntervalMs);
         if (item === "heartbeat") {
           if (!(await writeChunk(response, ": keepalive\n\n"))) return;
           continue;
         }
         if (item === undefined) return;
+        pending = this.#subscription.next();
         // Queue overflow deliberately asks the browser to reconnect and receive
         // one replacement snapshot instead of pinning shared Gateway memory.
         if (item.throughSequence === null || item.event === undefined) return;

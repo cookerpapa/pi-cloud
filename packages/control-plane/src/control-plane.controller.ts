@@ -789,13 +789,7 @@ export class ControlPlaneController {
     const stream = await this.sessionEventStream.open({
       tenantId: identity.tenantId,
       sessionId,
-      loadCanonical: async () => {
-        const [conversation, canonicalThroughSequence] = await Promise.all([
-          store.getConversation(sessionId),
-          store.conversationEventBoundary(sessionId),
-        ]);
-        return { conversation, canonicalThroughSequence };
-      },
+      loadCanonical: () => store.getConversationView(sessionId),
     });
 
     reply.hijack();

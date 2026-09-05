@@ -840,11 +840,15 @@ export class PiCloudTurnRunner {
             : {
                 commitCheckpoint: async (
                   operation: PiSessionMutationOperation,
-                  sourceEvent: CloudAgentRuntimeEvent,
+                  sourceEvent?: CloudAgentRuntimeEvent,
                 ) => {
                   flushPendingText();
                   await eventChain;
                   if (fatalError !== undefined) throw fatalError;
+                  if (sourceEvent === undefined) {
+                    await sessionHandle.mutationPublisher!.mutate(operation);
+                    return;
+                  }
                   const outcome = adapter.adapt(this.#adapterEvent(sourceEvent));
                   if (outcome.kind === "invalid") {
                     throw new PiTurnError("pi_protocol_error", outcome.reason, false);

@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0149](0149-message-handoff-round-trips.md) — reduce redundant handoffs
+   while retaining semantic durability and effect admission.
 1. [ADR-0148](0148-two-phase-tool-effect-checkpoint.md) — two atomic
    post-sampling checkpoints distinguish complete model output, validated Tool
    intent and the later effect.

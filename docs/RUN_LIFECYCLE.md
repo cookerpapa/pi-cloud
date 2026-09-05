@@ -68,8 +68,8 @@ result is `UNKNOWN`.
 
 The Worker opens one short-leased logical Fact Stream for its opaque
 ExecutionLease before Pi starts. Streams from all active Runs in that Worker
-share one physical Fact WebSocket. Assistant text deltas cross their Stream
-without an intentional batching delay; one lease remains ordered while
+share one physical Fact WebSocket. The first text delta publishes immediately,
+and adjacent text deltas coalesce for up to 25ms; one lease remains ordered while
 different leases publish concurrently. Tool arguments and Tool results enter
 the same stream only as complete Items. Each event's Kafka `acks=all` receipt is the
 visibility boundary. Event ordering and duplicate handling belong to the
@@ -91,6 +91,13 @@ if applicable, writes a terminal event Outbox record and settles the Run. A
 different Session settling the same Workspace first does not fail this Run. Kafka
 retention eventually removes hot fragments while canonical Pi
 messages remain in PostgreSQL.
+
+Session mutations and successful receipts commit in one transaction. Workers
+use commit-delayed notifications on their existing LISTEN connection to read
+the authoritative receipts, with one shared bounded fallback for missed hints.
+Each model Step reads its active branch once for both Compaction assessment
+and model context. The Run-start Record and user Entry share a checkpoint;
+Compaction Entry and Usage likewise commit together.
 
 ## Cancellation and failure
 

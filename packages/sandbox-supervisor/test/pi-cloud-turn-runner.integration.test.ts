@@ -122,6 +122,7 @@ describe("PiCloudTurnRunner integration", () => {
     });
     const broker = {
       create,
+      async refreshServices() {},
       async capture() {
         throw new Error("unused");
       },
@@ -201,6 +202,7 @@ describe("PiCloudTurnRunner integration", () => {
     const broker = {
       create,
       capture,
+      async refreshServices() {},
       release,
       async stop() {},
       operationUrlFor() {
@@ -295,6 +297,7 @@ describe("PiCloudTurnRunner integration", () => {
       capture,
       release,
       stop,
+      async refreshServices() {},
       operationUrlFor() {
         return "http://tool-broker.test/internal/v1/tool-operation";
       },

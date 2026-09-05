@@ -26,6 +26,7 @@ import { createCloudPreviewTool } from "./postgres-preview-tool.ts";
 
 export type TrustedToolRunContext = Readonly<{
   command: ExecuteTurnCommandMessage;
+  refreshServices(): Promise<void>;
   ensureActivation(): Promise<
     Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>
   >;
@@ -113,10 +114,12 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
   async create({
     command,
     ensureActivation,
+    refreshServices,
   }: TrustedToolRunContext): Promise<readonly TrustedAgentTool[]> {
     const preview = trusted(
       "platform",
       createCloudPreviewTool({
+        refreshServices,
         database: this.#database,
         tenantId: command.payload.tenantId,
         sessionId: command.payload.sessionId,

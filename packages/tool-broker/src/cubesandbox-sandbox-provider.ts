@@ -819,44 +819,40 @@ export class CubeSandboxProvider implements SandboxProvider {
     const prepareInput = options.runAsToolUser
       ? `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && `
       : `/bin/chmod 0400 ${path} && `;
+    const result = await this.#client.runCommand(instance, {
+      command: `trap '/bin/rm -f -- ${path}' EXIT; ${prepareInput}${prefix}/usr/local/bin/node ${program} ${path}`,
+      cwd: "/",
+      user: "root",
+      timeoutMs: options.timeoutMs,
+      maximumOutputBytes,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    if (result.exitCode !== 0) {
+      throw new ToolBrokerError(
+        "cubesandbox_guest_execution_failed",
+        "CubeSandbox one-shot guest helper failed",
+        false,
+        new Error(
+          `Guest helper exited with code ${String(result.exitCode)}: ${result.stderr.slice(-1_024)}`,
+        ),
+      );
+    }
+    const output = result.stdout.trim();
+    if (output.length < 2 || output.length > maximumOutputBytes) {
+      throw new ToolBrokerError(
+        "cubesandbox_guest_response_invalid",
+        "CubeSandbox guest response was invalid",
+        false,
+      );
+    }
     try {
-      const result = await this.#client.runCommand(instance, {
-        command: `${prepareInput}${prefix}/usr/local/bin/node ${program} ${path}`,
-        cwd: "/",
-        user: "root",
-        timeoutMs: options.timeoutMs,
-        maximumOutputBytes,
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-      });
-      if (result.exitCode !== 0) {
-        throw new ToolBrokerError(
-          "cubesandbox_guest_execution_failed",
-          "CubeSandbox one-shot guest helper failed",
-          false,
-          new Error(
-            `Guest helper exited with code ${String(result.exitCode)}: ${result.stderr.slice(-1_024)}`,
-          ),
-        );
-      }
-      const output = result.stdout.trim();
-      if (output.length < 2 || output.length > maximumOutputBytes) {
-        throw new ToolBrokerError(
-          "cubesandbox_guest_response_invalid",
-          "CubeSandbox guest response was invalid",
-          false,
-        );
-      }
-      try {
-        return JSON.parse(output) as unknown;
-      } catch {
-        throw new ToolBrokerError(
-          "cubesandbox_guest_response_invalid",
-          "CubeSandbox guest response was invalid",
-          false,
-        );
-      }
-    } finally {
-      await this.#client.removeGuestFile(instance, path).catch(() => undefined);
+      return JSON.parse(output) as unknown;
+    } catch {
+      throw new ToolBrokerError(
+        "cubesandbox_guest_response_invalid",
+        "CubeSandbox guest response was invalid",
+        false,
+      );
     }
   }
 

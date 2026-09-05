@@ -92,6 +92,7 @@ export type SupervisorToolBroker = Pick<
   | "checkHealth"
   | "create"
   | "capture"
+  | "refreshServices"
   | "release"
   | "stop"
   | "listAssignments"
@@ -539,6 +540,11 @@ export class PiWorkerRuntime {
         database: this.#database,
         notificationConnectionString: this.#config.databaseNotificationUrl,
         identity: runWorkerIdentity,
+        onSessionProjection: (mutationId) => {
+          if (sessionMutationProducer instanceof FactChannelPiSessionMutationProducer) {
+            sessionMutationProducer.notifyProjected(mutationId);
+          }
+        },
         maximumConcurrentRuns: this.#config.maxConcurrentSessions,
         maximumConcurrentSubagents: this.#config.subagentMaximumConcurrent,
         canClaimRuns: () => this.#state === "ready" && client?.state === "connected",

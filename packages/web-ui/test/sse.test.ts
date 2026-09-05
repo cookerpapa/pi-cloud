@@ -4,12 +4,27 @@ import {
   type PiCloudEvent,
   type SessionViewSnapshotResource,
 } from "@pi-cloud/protocol";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SseFrameParser, streamSessionEvents, type SessionStreamStatus } from "../src/sse.ts";
 
 const SESSION_ID = "10000000-0000-4000-8000-000000000001";
 const TURN_ID = "20000000-0000-4000-8000-000000000001";
 const CREATED_AT = "2026-07-19T00:00:00.000Z";
+
+it("stops reconnecting for a deleted or unauthorized Session", async () => {
+  const request = vi.fn(async () => new Response(null, { status: 404 }));
+  await expect(
+    streamSessionEvents({
+      sessionId: SESSION_ID,
+      signal: new AbortController().signal,
+      fetchImplementation: request,
+      onSnapshot() {},
+      onEvent() {},
+      onStatus() {},
+    }),
+  ).rejects.toThrow("404");
+  expect(request).toHaveBeenCalledTimes(1);
+});
 
 function event(sequence: number, text: string): PiCloudEvent {
   return {

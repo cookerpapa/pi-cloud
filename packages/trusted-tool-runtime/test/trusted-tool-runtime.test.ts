@@ -42,6 +42,7 @@ describe("PostgresTrustedToolRuntime", () => {
     const runtime = new PostgresTrustedToolRuntime({ database: rootSessionDatabase() });
     const tools = await runtime.create({
       command,
+      refreshServices: async () => undefined,
       ensureActivation: async () => {
         throw new Error("Tool-free trusted Tools must not activate a Sandbox");
       },

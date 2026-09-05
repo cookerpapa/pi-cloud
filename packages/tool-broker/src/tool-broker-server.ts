@@ -55,6 +55,7 @@ export type ToolBrokerBackend = Pick<
   | "checkHealth"
   | "create"
   | "capture"
+  | "refreshServices"
   | "forkWorkspace"
   | "release"
   | "stop"
@@ -482,6 +483,16 @@ export class ToolBrokerServer {
             this.#broker.cleanPrewarmCount,
           );
           await reply.code(200).send(reserved);
+          return;
+        }
+        if (message.type === "tool_sandbox.refresh_services") {
+          await this.#broker.refreshServices(message.activationId, message.assignment);
+          await reply.code(200).send({
+            toolBrokerProtocolVersion: 1,
+            type: "tool_sandbox.services_refreshed",
+            requestId: message.requestId,
+            activationId: message.activationId,
+          });
           return;
         }
         if (message.type === "tool_sandbox.capture") {

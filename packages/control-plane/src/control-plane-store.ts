@@ -1430,6 +1430,31 @@ export class ControlPlaneStore {
   }
 
   async getConversation(sessionId: string): Promise<ConversationDetailResource> {
+    return (await this.getConversationView(sessionId)).conversation;
+  }
+
+  async getConversationView(sessionId: string): Promise<{
+    conversation: ConversationDetailResource;
+    canonicalThroughSequence: number;
+  }> {
+    return this.#database
+      .transaction()
+      .setIsolationLevel("repeatable read")
+      .execute((transaction) => {
+        const reader = new ControlPlaneStore({
+          database: transaction,
+          tenantId: this.#tenantId,
+          defaultModelProfileId: this.#defaultModelProfileId,
+          environmentImageRevision: this.#environmentImageRevision,
+        });
+        return reader.#readConversation(sessionId);
+      });
+  }
+
+  async #readConversation(sessionId: string): Promise<{
+    conversation: ConversationDetailResource;
+    canonicalThroughSequence: number;
+  }> {
     const conversation = await this.#database
       .selectFrom("sessions as session_row")
       .innerJoin("projects as project", (join) =>
@@ -1563,60 +1588,51 @@ export class ControlPlaneStore {
       };
     });
 
-    nonNegativeSafeInteger(conversation.nextEventSequence, "Conversation next event sequence");
+    const canonicalThroughSequence =
+      nonNegativeSafeInteger(conversation.nextEventSequence, "Conversation next event sequence") -
+      1;
     const environment = await this.#loadActiveProjectEnvironment(conversation.projectId);
     const inheritedMessages =
       conversation.sessionKind === "subagent"
         ? await this.#delegatedInheritedMessages(sessionId)
         : [];
     return {
-      project: {
-        projectId: conversation.projectId,
-        workspaceId: conversation.workspaceId,
-        name: conversation.projectName,
-        createdAt: isoTimestamp(conversation.projectCreatedAt),
-        source: workspaceSourceResource(conversation.workspaceSeedKind),
-        environment,
+      canonicalThroughSequence,
+      conversation: {
+        project: {
+          projectId: conversation.projectId,
+          workspaceId: conversation.workspaceId,
+          name: conversation.projectName,
+          createdAt: isoTimestamp(conversation.projectCreatedAt),
+          source: workspaceSourceResource(conversation.workspaceSeedKind),
+          environment,
+        },
+        session: {
+          sessionId: conversation.sessionId,
+          title: conversation.sessionTitle,
+          projectId: conversation.projectId,
+          workspaceId: conversation.workspaceId,
+          ...(conversation.developmentEnvironmentId === null
+            ? {}
+            : { developmentEnvironmentId: conversation.developmentEnvironmentId }),
+          workspaceState: conversation.workspaceDeletedAt === null ? "attached" : "missing",
+          state: conversation.sessionState,
+          executionMode: conversation.executionMode,
+          sandboxProfileKey: conversation.sandboxProfileKey,
+          workingDirectory: conversation.workingDirectory,
+          modelProfileId: conversation.modelProfileId,
+          createdAt: isoTimestamp(conversation.sessionCreatedAt),
+          updatedAt: isoTimestamp(conversation.sessionUpdatedAt),
+          lastActiveAt: isoTimestamp(conversation.lastActiveAt),
+          ...(conversation.parentSessionId === null
+            ? {}
+            : { parentSessionId: conversation.parentSessionId }),
+        },
+        inheritedMessages,
+        turns,
+        historyTruncated,
       },
-      session: {
-        sessionId: conversation.sessionId,
-        title: conversation.sessionTitle,
-        projectId: conversation.projectId,
-        workspaceId: conversation.workspaceId,
-        ...(conversation.developmentEnvironmentId === null
-          ? {}
-          : { developmentEnvironmentId: conversation.developmentEnvironmentId }),
-        workspaceState: conversation.workspaceDeletedAt === null ? "attached" : "missing",
-        state: conversation.sessionState,
-        executionMode: conversation.executionMode,
-        sandboxProfileKey: conversation.sandboxProfileKey,
-        workingDirectory: conversation.workingDirectory,
-        modelProfileId: conversation.modelProfileId,
-        createdAt: isoTimestamp(conversation.sessionCreatedAt),
-        updatedAt: isoTimestamp(conversation.sessionUpdatedAt),
-        lastActiveAt: isoTimestamp(conversation.lastActiveAt),
-        ...(conversation.parentSessionId === null
-          ? {}
-          : { parentSessionId: conversation.parentSessionId }),
-      },
-      inheritedMessages,
-      turns,
-      historyTruncated,
     };
-  }
-
-  async conversationEventBoundary(sessionId: string): Promise<number> {
-    const row = await this.#database
-      .selectFrom("sessions")
-      .select("next_event_seq as nextEventSequence")
-      .where("tenant_id", "=", this.#tenantId)
-      .where("id", "=", sessionId)
-      .where("archived_at", "is", null)
-      .executeTakeFirst();
-    if (row === undefined) {
-      throw new ControlPlaneStoreError("not_found", "Conversation was not found");
-    }
-    return nonNegativeSafeInteger(row.nextEventSequence, "Conversation next event sequence") - 1;
   }
 
   async #delegatedInheritedMessages(

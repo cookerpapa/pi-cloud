@@ -104,6 +104,7 @@ export type PostgresPiWorkerOptions = {
   canClaimRuns?: () => boolean;
   /** Checks external execution-plane readiness only when claimable work exists. */
   admitRunClaims?: () => Promise<boolean>;
+  onSessionProjection?: (mutationId: string) => void;
   onFailure?: (operation: "listen" | "claim" | "execute" | "cancel", error: unknown) => void;
 };
 
@@ -142,6 +143,7 @@ export class PostgresPiWorker {
   readonly #cancellationExecutor: RunCancellationExecutor;
   readonly #canClaimRuns: () => boolean;
   readonly #admitRunClaims: () => Promise<boolean>;
+  readonly #onSessionProjection: ((mutationId: string) => void) | undefined;
   readonly #onFailure:
     ((operation: "listen" | "claim" | "execute" | "cancel", error: unknown) => void) | undefined;
   readonly #activeRuns = new Map<
@@ -181,6 +183,7 @@ export class PostgresPiWorker {
     this.#cancellationExecutor = options.cancellationExecutor;
     this.#canClaimRuns = options.canClaimRuns ?? (() => true);
     this.#admitRunClaims = options.admitRunClaims ?? (() => Promise.resolve(true));
+    this.#onSessionProjection = options.onSessionProjection;
     this.#onFailure = options.onFailure;
   }
 
@@ -247,10 +250,13 @@ export class PostgresPiWorker {
     });
     listener.on("notification", (message) => {
       if (message.channel === "pi_cloud_run_queue") this.#queueWake.notify();
+      if (message.channel === "pi_cloud_session_projection" && message.payload)
+        this.#onSessionProjection?.(message.payload);
     });
     listener.on("error", (error) => this.#observeFailure("listen", error));
     await listener.connect();
     await listener.query("listen pi_cloud_run_queue");
+    await listener.query("listen pi_cloud_session_projection");
     this.#listener = listener;
   }
 

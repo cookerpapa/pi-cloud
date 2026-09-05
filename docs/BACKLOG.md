@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [ ] Remove redundant message handoffs (ADR-0149): SSE heartbeat/snapshot,
+      atomic projection receipts, context reads, Tool/Cube RPC, partition
+      consumers and browser subscriptions; validate live coding afterward.
+
 - [x] Exercise an offline rebuild of Entry/Lane/Record/label projections from a
       self-contained `pi_session_log` after deliberately removing the derived
       rows.

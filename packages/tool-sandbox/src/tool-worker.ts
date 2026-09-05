@@ -547,19 +547,30 @@ async function assertNoFinalSymlink(path: string): Promise<void> {
   }
 }
 
-async function ensureWorkspaceDirectory(path: string): Promise<void> {
-  const relativePath = relative(TOOL_WORKSPACE_DIRECTORY, path);
+async function ensureWorkspaceDirectory(
+  path: string,
+  workspaceDirectory = TOOL_WORKSPACE_DIRECTORY,
+): Promise<void> {
+  const relativePath = relative(workspaceDirectory, path);
   if (relativePath === "") return;
-  let current = TOOL_WORKSPACE_DIRECTORY;
+  let current = workspaceDirectory;
   for (const segment of relativePath.split(sep)) {
     current = join(current, segment);
-    const metadata = await lstat(current).catch((error: unknown) => {
+    let metadata = await lstat(current).catch((error: unknown) => {
       if (isMissing(error)) return undefined;
       throw error;
     });
     if (metadata === undefined) {
-      await mkdir(current, { mode: 0o755 });
-      continue;
+      await mkdir(current, { mode: 0o755 }).catch((error: unknown) => {
+        if (
+          typeof error !== "object" ||
+          error === null ||
+          !("code" in error) ||
+          error.code !== "EEXIST"
+        )
+          throw error;
+      });
+      metadata = await lstat(current);
     }
     if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
       throw new ToolWorkerError(
@@ -704,6 +715,7 @@ export async function writeWorkspaceFile(
   const target = resolveToolWorkspacePath(path, workspaceDirectory);
   await assertNoFinalSymlink(target);
   const parent = dirname(target);
+  if (expectedSha256 === undefined) await ensureWorkspaceDirectory(parent, workspaceDirectory);
   await assertRealPathInsideWorkspace(parent, workspaceDirectory);
   if (expectedSha256 !== undefined) {
     const actualSha256 = await currentWorkspaceFileSha256(target);

@@ -6,6 +6,7 @@ import {
 } from "@platformatic/kafka";
 import type { AcceptedFact } from "./accepted-fact.ts";
 import { parseKafkaAcceptedFact } from "./kafka-accepted-fact.ts";
+import { consumePartitioned } from "./partitioned-consumption.ts";
 
 export type KafkaAcceptedFactRecord = Readonly<{
   fact: AcceptedFact;
@@ -160,23 +161,41 @@ export class KafkaAcceptedFactConsumer {
   }
 
   async #consume(stream: MessagesStream<string, string, string, string>): Promise<void> {
-    let uncommitted = 0;
-    for await (const message of stream) {
-      let delayMs = 50;
-      while (!this.#closing) {
-        try {
-          await this.#handle(message);
-          this.#processedOffsets.set(message.partition, message.offset + 1n);
-          if (this.#commitMessages && ++uncommitted >= this.#commitEvery) {
-            await message.commit();
-            uncommitted = 0;
+    const uncommitted = new Map<
+      number,
+      { count: number; last: Message<string, string, string, string> }
+    >();
+    const generation = new AbortController();
+    const stop = () => generation.abort();
+    stream.once("close", stop);
+    try {
+      await consumePartitioned(stream, async (message) => {
+        let delayMs = 50;
+        while (!this.#closing && !generation.signal.aborted) {
+          try {
+            await this.#handle(message);
+            if (this.#closing || generation.signal.aborted) return;
+            this.#processedOffsets.set(message.partition, message.offset + 1n);
+            if (this.#commitMessages) {
+              const count = (uncommitted.get(message.partition)?.count ?? 0) + 1;
+              uncommitted.set(message.partition, { count, last: message });
+              if (count >= this.#commitEvery) {
+                await message.commit();
+                uncommitted.delete(message.partition);
+              }
+            }
+            break;
+          } catch {
+            await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+            delayMs = Math.min(1_000, delayMs * 2);
           }
-          break;
-        } catch {
-          await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-          delayMs = Math.min(1_000, delayMs * 2);
         }
+      });
+      if (!this.#closing && !generation.signal.aborted) {
+        await Promise.all([...uncommitted.values()].map(({ last }) => last.commit()));
       }
+    } finally {
+      stream.off("close", stop);
     }
   }
 

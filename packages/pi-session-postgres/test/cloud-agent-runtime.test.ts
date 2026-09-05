@@ -14,7 +14,7 @@ import type {
   CustomEntryContextMessageProjector,
 } from "@earendil-works/pi-agent-core";
 import type { Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   CloudAgentRuntime,
   PostgresPiSessionStorage,
@@ -370,6 +370,7 @@ describe.sequential("CloudAgentRuntime", () => {
 
   it("records Tool intent before the effect and binds it to the same authority", async () => {
     const storage = await createStorage();
+    const reads = vi.spyOn(storage, "findEntriesOnBranch");
     const authority = new TestAuthority();
     let request = 0;
     let executed = false;
@@ -395,6 +396,7 @@ describe.sequential("CloudAgentRuntime", () => {
             additionalProperties: false,
           } as any,
           async execute() {
+            expect(reads).toHaveBeenCalledTimes(1);
             expect(checkpoints.map(({ sourceEvent }) => sourceEvent.type)).toEqual([
               "message_end",
               "tool_execution_start",
@@ -445,13 +447,14 @@ describe.sequential("CloudAgentRuntime", () => {
           if (item.kind === "append_entry") await session.appendEntry(item.entry, item.lane);
           else await session.appendRecord(item.record);
         }
-        checkpoints.push({ operation, sourceEvent });
+        if (sourceEvent !== undefined) checkpoints.push({ operation, sourceEvent });
       },
-      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      compaction: { enabled: true, reserveTokens: 100, keepRecentTokens: 100 },
     });
 
     expect(await runtime.run("change it")).toMatchObject({ kind: "completed" });
     expect(executed).toBe(true);
+    expect(reads).toHaveBeenCalledTimes(2);
     const [tool] = await storage.findRecords({ type: "tool_started" });
     expect(tool).toMatchObject({ toolCallId: "tool-1", toolName: "mutate", replay: "never" });
     expect(await storage.getEntry(tool!.resultEntryId)).toMatchObject({
@@ -527,7 +530,7 @@ describe.sequential("CloudAgentRuntime", () => {
           if (item.kind === "append_entry") await session.appendEntry(item.entry, item.lane);
           else await session.appendRecord(item.record);
         }
-        checkpointEvents.push(sourceEvent);
+        if (sourceEvent !== undefined) checkpointEvents.push(sourceEvent);
       },
       compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
     });

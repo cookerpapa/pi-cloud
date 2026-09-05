@@ -202,7 +202,7 @@ export async function streamSessionEvents(options: StreamSessionEventsOptions): 
       if (!response.ok) {
         throw new SessionStreamError(
           `SSE request failed with HTTP ${String(response.status)}`,
-          true,
+          response.status >= 500 || response.status === 408 || response.status === 429,
         );
       }
       let result: Awaited<ReturnType<typeof consumeResponse>>;

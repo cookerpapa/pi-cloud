@@ -849,7 +849,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
 
   async #mutate<T>(effect: (transaction: Transaction<Database>) => Promise<T>): Promise<T> {
     try {
-      return await this.#database.transaction().execute(async (transaction) => {
+      const execute = async (transaction: Transaction<Database>): Promise<T> => {
         await this.#authority?.assertCurrent(transaction);
         if (this.#projectedMutationId !== undefined) {
           const projected = await transaction
@@ -864,7 +864,10 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
           }
         }
         return effect(transaction);
-      });
+      };
+      return this.#database.isTransaction
+        ? await execute(this.#database as Transaction<Database>)
+        : await this.#database.transaction().execute(execute);
     } catch (error) {
       if (error instanceof SessionError) throw error;
       if (postgresErrorCode(error) === "23505") {

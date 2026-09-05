@@ -26,10 +26,10 @@ keyed by opaque Session ID, so one Session remains in one Kafka partition.
 PostgreSQL stores complete Pi-native semantic state once. Gateway replicas consume
 Kafka into rebuildable memory containing incomplete active Turns only.
 
-Each reviewed Pi Assistant text delta crosses the Authority Gate as one Fact;
-there is no application-level microbatch or semantic coalescer before Kafka.
-Kafka's producer may batch network records internally without changing Fact
-identity or adding a product timer. Every delta still requires Kafka `acks=all`
+The first Assistant text delta is published immediately; adjacent deltas in
+the same content block coalesce for up to 25ms. Semantic boundaries flush that
+buffer. Kafka's producer additionally batches network records without changing
+Fact identity. Every published fragment requires Kafka `acks=all`
 before Gateway can expose it. The browser progressively reveals an already
 durable fragment for visual smoothness; that presentation does not create a
 second server-side event stream. Streamed Tool arguments remain private to Pi;
@@ -45,12 +45,22 @@ Kafka `acks=all` receipt and one idempotent PostgreSQL Session projection; only
 then may the Tool execute. These two barriers cannot be collapsed because an
 execution intent does not exist until Pi validation succeeds. Independent
 message, usage, lifecycle-event and intent barriers are deliberately avoided.
+The successful projection receipt commits with its Session mutation. Workers
+publish first, then read receipts when the shared LISTEN connection reports a
+committed mutation ID. A shared one-second fallback reads all pending IDs if
+notifications are lost; neither a notification nor a transport ACK substitutes
+for the committed receipt. Queue admission and receipt notifications reuse one
+dedicated PostgreSQL connection per Worker.
 
 ## Cursor-free browser handoff
 
 The browser opens one SSE request without `Last-Event-ID` or a query watermark.
-Gateway subscribes the connection and takes an immutable Session-tail snapshot
-before performing network writes. Its first frame replaces the browser view:
+Opening an existing conversation does not first download the same REST history.
+Changing language or tree focus leaves this subscription intact.
+Gateway subscribes first, reads canonical history and its boundary under one
+repeatable-read transaction, then takes an immutable live-tail snapshot. It
+retries if terminal eviction overtook that database snapshot. No database
+transaction remains open during network writes. Its first frame replaces the browser view:
 
 ```text
 event: session.snapshot
@@ -67,6 +77,11 @@ already-open subscribers, then advances the canonical boundary and removes the
 covered tail by pointer replacement. Existing responses retain their immutable
 snapshot references; slow clients have bounded queues and reconnect instead of
 pinning shared memory.
+Heartbeats reuse the outstanding event read, so idle periods do not create
+another reader or force a reconnect. Consumers run partitions concurrently with
+bounded pending work; handlers and offset commits remain ordered within each
+partition. The live-tail ordered path appends directly and uses a sequence index
+for duplicate/conflict lookup; out-of-order arrivals use ordered insertion.
 
 ## Failure matrix
 

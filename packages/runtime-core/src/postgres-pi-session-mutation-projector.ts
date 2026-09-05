@@ -1,7 +1,7 @@
 import type { Database } from "@pi-cloud/database";
 import { PostgresPiSessionStorage } from "@pi-cloud/pi-session-postgres";
 import { SessionError } from "@earendil-works/pi-agent-core";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import type { AcceptedPiSessionMutationFact } from "./accepted-fact.ts";
 
 export class PostgresPiSessionMutationProjector {
@@ -21,38 +21,41 @@ export class PostgresPiSessionMutationProjector {
         .where("expires_at", "<", new Date())
         .execute();
     }
-    const existing = await this.#database
-      .selectFrom("pi_session_mutation_results")
-      .select("mutation_id")
-      .where("mutation_id", "=", fact.factId)
-      .executeTakeFirst();
-    if (existing !== undefined) return;
-    const storage = new PostgresPiSessionStorage({
-      database: this.#database,
-      tenantId: fact.scope.tenantId,
-      sessionId: fact.piSession.id,
-      turnId: fact.scope.turnId,
-      projectedMutationId: fact.factId,
-    });
     try {
-      const result =
-        fact.operation.kind === "projection_barrier"
-          ? { kind: "projection_barrier" as const }
-          : await applyOperation(storage, fact.operation);
-      await this.#recordResult(fact, "completed", result ?? null);
+      await this.#database.transaction().execute(async (transaction) => {
+        const existing = await transaction
+          .selectFrom("pi_session_mutation_results")
+          .select("mutation_id")
+          .where("mutation_id", "=", fact.factId)
+          .executeTakeFirst();
+        if (existing !== undefined) return;
+        const storage = new PostgresPiSessionStorage({
+          database: transaction,
+          tenantId: fact.scope.tenantId,
+          sessionId: fact.piSession.id,
+          turnId: fact.scope.turnId,
+          projectedMutationId: fact.factId,
+        });
+        const result =
+          fact.operation.kind === "projection_barrier"
+            ? { kind: "projection_barrier" as const }
+            : await applyOperation(storage, fact.operation);
+        await this.#recordResult(transaction, fact, "completed", result ?? null);
+      });
     } catch (error: unknown) {
       if (!(error instanceof SessionError)) throw error;
-      await this.#recordResult(fact, "failed", null, error);
+      await this.#recordResult(this.#database, fact, "failed", null, error);
     }
   }
 
   async #recordResult(
+    database: Kysely<Database>,
     fact: AcceptedPiSessionMutationFact,
     state: "completed" | "failed",
     result: unknown,
     error?: SessionError,
   ): Promise<void> {
-    await this.#database
+    await database
       .insertInto("pi_session_mutation_results")
       .values({
         mutation_id: fact.factId,
@@ -67,6 +70,9 @@ export class PostgresPiSessionMutationProjector {
         expires_at: new Date(Date.now() + 60 * 60_000),
       })
       .onConflict((conflict) => conflict.column("mutation_id").doNothing())
+      .returning(
+        sql<string>`pg_notify('pi_cloud_session_projection', ${fact.factId})`.as("notification"),
+      )
       .executeTakeFirst();
   }
 }

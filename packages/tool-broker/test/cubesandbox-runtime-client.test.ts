@@ -305,10 +305,6 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     });
     const temporaryGuestPath = "/tmp/pi-cloud-envd-10000000-0000-4000-8000-000000000001.json";
     await client.writeGuestFile(instance, temporaryGuestPath, Buffer.from("{}"));
-    await client.removeGuestFile(instance, temporaryGuestPath);
-    await expect(client.removeGuestFile(instance, "/tmp/untrusted.json")).rejects.toThrow(
-      "temporary guest path was invalid",
-    );
     const terminal = await client.openTerminal(instance, {
       rows: 24,
       cols: 100,

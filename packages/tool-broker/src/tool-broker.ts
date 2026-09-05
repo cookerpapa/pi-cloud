@@ -1629,22 +1629,6 @@ export class ToolBroker {
           }
           throw error;
         }
-        if (
-          request.operation === "bash.exec" &&
-          this.#provider.discoverHttpServices !== undefined
-        ) {
-          const discovery = await this.#provider
-            .discoverHttpServices(handle, operationSignal)
-            .catch(() => undefined);
-          if (discovery !== undefined) {
-            await this.#observeHttpServices(
-              activation,
-              handle,
-              request.operationId,
-              discovery,
-            ).catch(() => undefined);
-          }
-        }
         await this.#stateRepository.settleOperation(request.operationId, "succeeded");
         return response;
       } catch (error: unknown) {
@@ -1667,6 +1651,19 @@ export class ToolBroker {
       controller: operationController,
     });
     return durable;
+  }
+
+  async refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
+    const activation = this.#ownedBinding(activationId, assignment);
+    if (this.#provider.discoverHttpServices === undefined)
+      throw new ToolBrokerError(
+        "service_discovery_unavailable",
+        "Service discovery is unavailable",
+        false,
+      );
+    const handle = await this.#materialize(activation);
+    const discovery = await this.#provider.discoverHttpServices(handle);
+    await this.#observeHttpServices(activation, handle, randomUUID(), discovery);
   }
 
   async capture(
@@ -2369,12 +2366,13 @@ export class ToolBroker {
         false,
       );
     }
+    if (!activation.usedPhysicalRuntime)
+      await this.#stateRepository.setWorkspaceRuntimeState(
+        activation.reservation.activationId,
+        "active",
+        { handle },
+      );
     activation.usedPhysicalRuntime = true;
-    await this.#stateRepository.setWorkspaceRuntimeState(
-      activation.reservation.activationId,
-      "active",
-      { handle },
-    );
     return handle;
   }
 

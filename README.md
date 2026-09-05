@@ -98,6 +98,10 @@ Each boundary is one Session mutation with its matching public event in the
 same Kafka AcceptedFact; the Tool runs only after the intent is projected to
 PostgreSQL.
 
+Session projection and its receipt commit together; Workers wait on their
+shared PostgreSQL notification connection. Gateways consume Kafka partitions
+concurrently and initialize the browser from one consistent history/live snapshot.
+
 There are three durable authorities:
 
 - PostgreSQL owns product state, the Run queue and one self-contained,

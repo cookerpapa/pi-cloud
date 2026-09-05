@@ -105,7 +105,12 @@ describe("trusted Preview Tool", () => {
       })
       .execute();
 
-    const tool = createCloudPreviewTool({ database, tenantId, sessionId });
+    const tool = createCloudPreviewTool({
+      database,
+      tenantId,
+      sessionId,
+      refreshServices: async () => undefined,
+    });
     await expect(tool.execute("preview-call", { port: 3_000, path: "/game" })).resolves.toEqual(
       expect.objectContaining({
         details: expect.objectContaining({

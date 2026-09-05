@@ -17,6 +17,7 @@ export function createCloudPreviewTool(options: {
   database: Kysely<Database>;
   tenantId: string;
   sessionId: string;
+  refreshServices(): Promise<void>;
 }): AgentTool {
   return {
     name: "preview",
@@ -26,6 +27,7 @@ export function createCloudPreviewTool(options: {
     parameters: PreviewToolSchema,
     async execute(_toolCallId, raw) {
       const input = raw as { port: number; path?: string };
+      await options.refreshServices();
       const session = await options.database
         .selectFrom("sessions")
         .select("development_environment_id")

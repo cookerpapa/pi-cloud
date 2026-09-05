@@ -594,14 +594,10 @@ function registerTrustedRemoteTools(
         throw errorForPi(error);
       }
     },
+    // Pi calls mkdir before writeFile; the remote write performs both under
+    // one Broker operation, with the same guest-side path checks.
     mkdir: async (path) => {
-      try {
-        assertModelReadablePath(path);
-        const response = await operation("write", { operation: "file.mkdir", path });
-        if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
-      } catch (error: unknown) {
-        throw errorForPi(error);
-      }
+      assertModelReadablePath(path);
     },
   };
   const editDigests = new Map<string, string>();
@@ -655,7 +651,10 @@ function registerTrustedRemoteTools(
         throw errorForPi(error);
       }
     },
-    access: readOperations("edit").access,
+    // A remote read already verifies existence and readability.
+    access: async (path) => {
+      assertModelReadablePath(path);
+    },
   };
   const bashOperations = (toolCallId: string): BashOperations => ({
     exec: async (command, cwd, { onData, signal, timeout }) => {

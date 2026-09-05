@@ -80,6 +80,7 @@ export function projectInstructionsFromWorkspaceSeed(
 }
 
 export interface ToolBrokerBoundary {
+  refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
   create(request: ToolSandboxCreateRequest): Promise<ToolSandboxCreateResponse>;
   capture(
     activationId: string,
@@ -107,6 +108,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   createTrustedTools?: (
     command: ExecuteTurnCommandMessage,
     context: Readonly<{
+      refreshServices(): Promise<void>;
       ensureActivation(): Promise<
         Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>
       >;
@@ -615,6 +617,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : new PiSettlementGateController(settlementPolicy);
       const trustedToolBindings =
         (await this.#createTrustedTools?.(command, {
+          refreshServices: async () => {
+            const active = await ensureActivation();
+            await this.#broker.refreshServices(active.activationId, toolAssignment);
+          },
           ensureActivation: async () => {
             const active = await ensureActivation();
             return { activationId: active.activationId, assignment: toolAssignment };

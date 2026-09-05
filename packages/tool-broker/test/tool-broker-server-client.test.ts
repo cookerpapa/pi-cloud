@@ -85,6 +85,7 @@ afterEach(async () => {
 function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend {
   return {
     providerId: "test-provider",
+    async refreshServices() {},
     async checkHealth() {},
     async create(request) {
       observedServerTrace = activeTraceCarrier();

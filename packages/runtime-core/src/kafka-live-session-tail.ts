@@ -7,6 +7,7 @@ type SessionTailState = {
   canonicalThroughSequence: number;
   events: PiCloudEvent[];
   eventIds: Set<string>;
+  sequences: Map<number, PiCloudEvent>;
   bytes: number;
   updatedAt: number;
 };
@@ -125,6 +126,7 @@ export class KafkaLiveSessionTail {
         canonicalThroughSequence: 0,
         events: [],
         eventIds: new Set<string>(),
+        sequences: new Map<number, PiCloudEvent>(),
         bytes: 0,
         updatedAt: Date.now(),
       } satisfies SessionTailState);
@@ -133,7 +135,7 @@ export class KafkaLiveSessionTail {
       this.#duplicateEvents += 1;
       return;
     }
-    const sameSequence = state.events.find((candidate) => candidate.seq === event.seq);
+    const sameSequence = state.sequences.get(event.seq);
     if (sameSequence !== undefined) {
       if (sameSequence.eventId === event.eventId) {
         this.#duplicateEvents += 1;
@@ -141,8 +143,19 @@ export class KafkaLiveSessionTail {
       }
       throw new Error("Kafka Session tail contains conflicting events at one sequence");
     }
-    state.events.push(event);
-    state.events.sort((left, right) => left.seq - right.seq);
+    if (state.events.length === 0 || state.events.at(-1)!.seq < event.seq) {
+      state.events.push(event);
+    } else {
+      let low = 0,
+        high = state.events.length;
+      while (low < high) {
+        const mid = (low + high) >>> 1;
+        if (state.events[mid]!.seq < event.seq) low = mid + 1;
+        else high = mid;
+      }
+      state.events.splice(low, 0, event);
+    }
+    state.sequences.set(event.seq, event);
     state.eventIds.add(event.eventId);
     state.bytes += Buffer.byteLength(JSON.stringify(event), "utf8");
     state.updatedAt = Date.now();
@@ -160,6 +173,7 @@ export class KafkaLiveSessionTail {
       this.#evictedEvents += state.events.length - retained.length;
       state.canonicalThroughSequence = event.seq;
       state.events = retained;
+      state.sequences = new Map(retained.map((candidate) => [candidate.seq, candidate]));
       state.eventIds = new Set(retained.map((candidate) => candidate.eventId));
       state.bytes = retained.reduce(
         (total, candidate) => total + Buffer.byteLength(JSON.stringify(candidate), "utf8"),

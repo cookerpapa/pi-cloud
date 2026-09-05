@@ -129,6 +129,14 @@ export async function withChromePage(
     });
     const page = {
       send: cdp.send,
+      onRequest(listener) {
+        const observe = (raw) => {
+          const message = JSON.parse(String(raw));
+          if (message.method === "Network.requestWillBeSent") listener(message.params.request.url);
+        };
+        cdp.socket.on("message", observe);
+        return () => cdp.socket.off("message", observe);
+      },
       async evaluate(expression) {
         const result = await cdp.send("Runtime.evaluate", {
           expression,

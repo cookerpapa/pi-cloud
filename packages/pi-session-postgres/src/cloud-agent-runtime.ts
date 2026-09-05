@@ -14,6 +14,7 @@ import {
   type CompactionPreparation,
   type CompactionSettings,
   type CustomEntryContextMessageProjector,
+  type Entry,
   type LaneRecord,
   type NewRecord,
   type Session,
@@ -36,7 +37,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { isRetryableAssistantError } from "@earendil-works/pi-ai";
 import type { ExecutionAuthority } from "./execution-authority.ts";
-import type { PiSessionMutationOperation } from "./session-mutation.ts";
+import type { PiSessionMutationOperation, PiSessionAppendOperation } from "./session-mutation.ts";
 
 export const PI_MODEL_RETRY_CUSTOM_TYPE = "pi-cloud.model_retry";
 
@@ -98,7 +99,7 @@ export type CloudAgentRuntimeOptions = Readonly<{
   prepareFollowUp?: () => AgentMessage | undefined | Promise<AgentMessage | undefined>;
   commitCheckpoint?: (
     operation: PiSessionMutationOperation,
-    sourceEvent: CloudAgentRuntimeEvent,
+    sourceEvent?: CloudAgentRuntimeEvent,
   ) => Promise<void>;
   onEvent?: (event: CloudAgentRuntimeEvent) => Promise<void> | void;
   idGenerator?: () => string;
@@ -309,20 +310,30 @@ export class CloudAgentRuntime {
     try {
       await authority.assertCurrent();
       await this.#recoverInterruptedOperation();
-      await session.appendRecord({
-        id: operationId,
-        lane,
-        type: "operation_started",
-        sourceLeafId: await tree.getLeafId(),
-        intent: {
-          kind: "run",
-          originalPrompt: [userMessage],
-          initialMessages: [{ id: userEntryId, type: "message", message: userMessage }],
+      await this.#appendItems([
+        {
+          kind: "append_record",
+          record: {
+            id: operationId,
+            lane,
+            type: "operation_started",
+            sourceLeafId: await tree.getLeafId(),
+            intent: {
+              kind: "run",
+              originalPrompt: [userMessage],
+              initialMessages: [{ id: userEntryId, type: "message", message: userMessage }],
+            },
+          },
         },
-      });
-      await session.appendEntry({ id: userEntryId, type: "message", message: userMessage }, lane);
+        {
+          kind: "append_entry",
+          entry: { id: userEntryId, type: "message", message: userMessage },
+          lane,
+        },
+      ]);
 
-      const restored = await this.#loadContext();
+      let initialPath: Entry[] | undefined = await this.#loadBranch();
+      const restored = this.#context(initialPath);
       const systemPrompt =
         typeof this.#options.systemPrompt === "function"
           ? await this.#options.systemPrompt()
@@ -395,8 +406,9 @@ export class CloudAgentRuntime {
         },
         convertToLlm,
         transformContext: async (_messages, signal) => {
-          await this.#compactIfNeeded(operationId, signal);
-          const current = await this.#loadContext();
+          const path = initialPath ?? (await this.#loadBranch());
+          initialPath = undefined;
+          const current = await this.#compactIfNeeded(operationId, path, signal);
           return this.#options.transformContext
             ? this.#options.transformContext(current, signal)
             : current;
@@ -414,6 +426,7 @@ export class CloudAgentRuntime {
       const unsubscribe = agent.subscribe(async (event) => {
         let checkpointHandledEvent = false;
         if (event.type === "message_end") {
+          initialPath = undefined;
           await authority.assertCurrent();
           if (event.message.role === "assistant") {
             await this.#options.decorateAssistantMessage?.(event.message);
@@ -630,11 +643,30 @@ export class CloudAgentRuntime {
   }
 
   async #loadContext(): Promise<AgentMessage[]> {
-    const path = (
+    return this.#context(await this.#loadBranch());
+  }
+
+  async #appendItems(items: readonly PiSessionAppendOperation[]): Promise<void> {
+    if (this.#options.commitCheckpoint !== undefined) {
+      await this.#options.commitCheckpoint({ kind: "append_items", items });
+      return;
+    }
+    for (const item of items) {
+      if (item.kind === "append_entry")
+        await this.#options.session.appendEntry(item.entry, item.lane);
+      else await this.#options.session.appendRecord(item.record);
+    }
+  }
+
+  async #loadBranch(): Promise<Entry[]> {
+    return (
       await this.#options.session
         .view(this.#options.lane)
         .findEntriesOnBranch({ stopAtType: "compaction", order: "newestFirst" })
     ).reverse();
+  }
+
+  #context(path: Entry[]): AgentMessage[] {
     const entryProjectors = {
       [INTERRUPTION_CUSTOM_TYPE]: interruptionProjector,
       [INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE]: interruptedAssistantPrefixProjector,
@@ -643,24 +675,18 @@ export class CloudAgentRuntime {
     return buildSessionContext(path, { entryProjectors }).messages;
   }
 
-  async #compactIfNeeded(operationId: string, signal?: AbortSignal): Promise<boolean> {
-    if (!this.#compaction.enabled) return false;
-    const path = (
-      await this.#options.session
-        .view(this.#options.lane)
-        .findEntriesOnBranch({ stopAtType: "compaction", order: "newestFirst" })
-    ).reverse();
-    const context = buildSessionContext(path, {
-      entryProjectors: {
-        [INTERRUPTION_CUSTOM_TYPE]: interruptionProjector,
-        ...(this.#options.entryProjectors ?? {}),
-      },
-    }).messages;
+  async #compactIfNeeded(
+    operationId: string,
+    path: Entry[],
+    signal?: AbortSignal,
+  ): Promise<AgentMessage[]> {
+    const context = this.#context(path);
+    if (!this.#compaction.enabled) return context;
     const tokens = estimateContextTokens(context).tokens;
-    if (!shouldCompact(tokens, this.#options.model.contextWindow, this.#compaction)) return false;
+    if (!shouldCompact(tokens, this.#options.model.contextWindow, this.#compaction)) return context;
     const preparation = prepareCompaction(path, this.#compaction);
     if (!preparation.ok) throw preparation.error;
-    if (preparation.value === undefined) return false;
+    if (preparation.value === undefined) return context;
 
     await this.#options.prepareContextMaintenance?.(context, signal);
 
@@ -705,31 +731,39 @@ export class CloudAgentRuntime {
       });
       throw result.error;
     }
-    await this.#options.session.appendEntry(
+    await this.#appendItems([
       {
-        id: entryId,
-        type: "compaction",
-        summary: result.value.summary,
-        retainedTail: result.value.retainedTail,
-        tokensBefore: result.value.tokensBefore,
-        ...(result.value.details === undefined ? {} : { details: result.value.details }),
-        ...(result.value.usage === undefined ? {} : { usage: result.value.usage }),
-      },
-      this.#options.lane,
-    );
-    if (result.value.usage !== undefined) {
-      await this.#options.session.appendRecord({
-        id: this.#id(),
+        kind: "append_entry",
         lane: this.#options.lane,
-        type: "usage",
-        cause: "compaction",
-        runId: operationId,
-        entryId,
-        attempt,
-        stopReason: "stop",
-        usage: result.value.usage,
-      });
-    }
+        entry: {
+          id: entryId,
+          type: "compaction",
+          summary: result.value.summary,
+          retainedTail: result.value.retainedTail,
+          tokensBefore: result.value.tokensBefore,
+          ...(result.value.details === undefined ? {} : { details: result.value.details }),
+          ...(result.value.usage === undefined ? {} : { usage: result.value.usage }),
+        },
+      },
+      ...(result.value.usage === undefined
+        ? []
+        : [
+            {
+              kind: "append_record" as const,
+              record: {
+                id: this.#id(),
+                lane: this.#options.lane,
+                type: "usage" as const,
+                cause: "compaction" as const,
+                runId: operationId,
+                entryId,
+                attempt,
+                stopReason: "stop" as const,
+                usage: result.value.usage,
+              },
+            },
+          ]),
+    ]);
     const compactedContext = await this.#loadContext();
     // Provider usage on an assistant retained by compaction still describes the
     // pre-compaction request.  estimateContextTokens() intentionally trusts that
@@ -750,7 +784,7 @@ export class CloudAgentRuntime {
         estimatedTokensAfter,
       },
     });
-    return true;
+    return compactedContext;
   }
 
   #modelsWithHeaders(): Models {

@@ -356,6 +356,16 @@ export const ToolBrokerReadWorkspaceFileResponseSchema = Type.Object(
 );
 
 export const ToolBrokerRequestSchema = Type.Union([
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.refresh_services"),
+      requestId: UuidSchema,
+      activationId: UuidSchema,
+      assignment: ToolSandboxAssignmentSchema,
+    },
+    { additionalProperties: false },
+  ),
   ToolSandboxCreateRequestSchema,
   ToolSandboxCaptureRequestSchema,
   ToolSandboxReleaseRequestSchema,
@@ -364,6 +374,15 @@ export const ToolBrokerRequestSchema = Type.Union([
 ]);
 
 export const ToolBrokerResponseSchema = Type.Union([
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.services_refreshed"),
+      requestId: UuidSchema,
+      activationId: UuidSchema,
+    },
+    { additionalProperties: false },
+  ),
   ToolSandboxCreateResponseSchema,
   ToolSandboxCreateRedirectResponseSchema,
   ToolSandboxCaptureResponseSchema,

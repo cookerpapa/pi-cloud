@@ -304,6 +304,33 @@ try {
         `(()=>{const selector=document.querySelector(".product-composer .product-model-menu-trigger");return selector instanceof HTMLButtonElement&&!selector.disabled})()`,
         30_000,
       );
+      const openingRequests = [];
+      const stopOpeningObserver = page.onRequest((url) =>
+        openingRequests.push(new URL(url).pathname),
+      );
+      await clickText(
+        ".product-conversation-row > button:first-child",
+        `UI acceptance ${suffix}`,
+        "conversation.openFromSnapshot",
+      );
+      await page.waitFor(
+        '!document.querySelector(".product-conversation-row.active > button:first-child").disabled && document.querySelector(".product-agent-answer")?.innerText.includes("BROWSER-UI-CHAT-OK")',
+      );
+      stopOpeningObserver();
+      assert.equal(
+        openingRequests.filter(
+          (path) => path === `/v1/sessions/${elasticConversation.sessionId}/events`,
+        ).length,
+        1,
+        "Opening a Session did not use one snapshot stream",
+      );
+      assert.equal(
+        openingRequests.filter(
+          (path) => path === `/v1/conversations/${elasticConversation.sessionId}`,
+        ).length,
+        0,
+        "Opening a Session redundantly downloaded REST history",
+      );
       await click(".product-composer .product-model-menu-trigger", "conversation.modelMenuOpen");
       await clickText(
         ".product-model-menu-panel:first-child button",
@@ -460,8 +487,20 @@ try {
       );
       await page.waitFor('document.querySelectorAll(".product-turn").length===1', 60_000);
 
+      const streamRequests = [];
+      const stopObservingRequests = page.onRequest((url) => {
+        if (/\/v1\/sessions\/[^/]+\/events(?:\?|$)/u.test(url)) streamRequests.push(url);
+      });
       await clickText(".product-tree-view-switch button", "整棵树", "tree.full");
       await clickText(".product-tree-view-switch button", "当前分支", "tree.focus");
+      await page.wait(32_000);
+      assert.equal(
+        streamRequests.length,
+        0,
+        "Tree focus or idle heartbeats recreated the Session stream",
+      );
+      stopObservingRequests();
+      record("stream.idleHeartbeatsAndTreeFocus");
 
       await click(".product-topbar-actions .product-workspace-button", "workspace.open");
       await page.waitFor('document.querySelector(".workspace-directory")');

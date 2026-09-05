@@ -217,10 +217,6 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     this.guestFiles.set(path, Buffer.from(data));
   }
 
-  async removeGuestFile(_instance: CubeSandboxInstance, path: string): Promise<void> {
-    this.guestFiles.delete(path);
-  }
-
   async runCommand(
     instance: CubeSandboxInstance,
     input: CubeSandboxGuestCommandRequest,
@@ -241,6 +237,8 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
       };
     }
     const request = this.requestForCommand(input);
+    const cleanedPath = /trap '\/bin\/rm -f -- ([^']+)' EXIT/u.exec(input.command)?.[1];
+    if (cleanedPath !== undefined) this.guestFiles.delete(cleanedPath);
     this.requests.push({ sandboxId: instance.sandboxId, input, guestRequest: request });
     if (input.command.includes("envd-preview-proxy.mjs")) {
       if (request.mode !== "preview_http") throw new Error("unexpected preview request");

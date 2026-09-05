@@ -176,6 +176,9 @@ export default function ChatApp() {
   const [authPhase, setAuthPhase] = useState<AuthPhase>("checking");
   const [identity, setIdentity] = useState<TenantIdentityResource | null>(null);
   const [state, setState] = useState(createInitialSessionView);
+  const [streamSessionId, setStreamSessionId] = useState<string | null>(null);
+  const currentStreamSession = useRef(streamSessionId);
+  currentStreamSession.current = streamSessionId;
   const presentedConnectionPhase = usePresentedConnectionPhase(state.connection.phase);
   const [conversations, setConversations] = useState<readonly ConversationSummaryResource[]>([]);
   const [delegatedSessions, setDelegatedSessions] = useState<
@@ -337,6 +340,8 @@ export default function ChatApp() {
   }, [conversationTree]);
 
   const update = useCallback((action: Parameters<typeof sessionViewReducer>[1]) => {
+    if (action.type === "conversation.loaded")
+      setStreamSessionId(action.conversation.session.sessionId);
     setState((current) => sessionViewReducer(current, action));
   }, []);
 
@@ -561,21 +566,33 @@ export default function ChatApp() {
     };
   }, [api, authPhase, state.session?.sessionId, treeView, update]);
 
+  const streamPresentation = useRef({ treeView, t, elasticWorkspaces });
+  streamPresentation.current = { treeView, t, elasticWorkspaces };
   useEffect(() => {
-    const sessionId = state.session?.sessionId;
-    if (sessionId === undefined || authPhase !== "authenticated") return;
+    const sessionId = streamSessionId;
+    if (sessionId === null || authPhase !== "authenticated") return;
     const controller = new AbortController();
     void streamSessionEvents({
       sessionId,
       signal: controller.signal,
       onSnapshot(snapshot) {
+        if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
         update({
           type: "conversation.loaded",
           conversation: snapshot.conversation,
           liveEvents: snapshot.liveEvents,
         });
+        setConversationLoading(null);
+        if (snapshot.conversation.session.workspaceState === "missing") {
+          const available = streamPresentation.current.elasticWorkspaces;
+          setSelectedWorkspaceId(available[0]?.workspaceId ?? "");
+          setRebindWorkspaceChoice(available.length === 0 ? "new" : "existing");
+          setRebindWorkspaceName("");
+          setWorkspaceRebindOpen(true);
+        }
       },
       onEvent(event) {
+        if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
         update({ type: "stream.event", event });
         if (
           event.type === "turn.completed" ||
@@ -584,7 +601,9 @@ export default function ChatApp() {
         ) {
           setInspectorRefreshSignal((value) => value + 1);
           void refreshConversations().catch(() => undefined);
-          void refreshConversationTree(sessionId, treeView).catch(() => undefined);
+          void refreshConversationTree(sessionId, streamPresentation.current.treeView).catch(
+            () => undefined,
+          );
         }
       },
       onStatus(status) {
@@ -592,7 +611,11 @@ export default function ChatApp() {
       },
     }).catch(() => {
       if (!controller.signal.aborted) {
-        update({ type: "api.error", message: t("chat.streamDisconnected") });
+        setConversationLoading(null);
+        update({
+          type: "api.error",
+          message: streamPresentation.current.t("chat.streamDisconnected"),
+        });
       }
     });
     return () => controller.abort();
@@ -602,9 +625,7 @@ export default function ChatApp() {
     reconnectGeneration,
     refreshConversations,
     refreshConversationTree,
-    state.session?.sessionId,
-    treeView,
-    t,
+    streamSessionId,
     update,
   ]);
 
@@ -695,6 +716,8 @@ export default function ChatApp() {
   }, [pendingTreeJump, state.session?.sessionId, state.turns.length]);
 
   function resetConversation(): void {
+    currentStreamSession.current = null;
+    setStreamSessionId(null);
     setState(createInitialSessionView());
     setSessionModel(null);
     setPrompt("");
@@ -732,23 +755,17 @@ export default function ChatApp() {
     setConversationLoading(sessionId);
     update({ type: "api.error.cleared" });
     try {
-      const loaded = await loadConversation(sessionId);
-      update({
-        type: "conversation.loaded",
-        conversation: loaded.conversation,
-      });
-      if (loaded.conversation.session.workspaceState === "missing") {
-        setSelectedWorkspaceId(elasticWorkspaces[0]?.workspaceId ?? "");
-        setRebindWorkspaceChoice(elasticWorkspaces.length === 0 ? "new" : "existing");
-        setRebindWorkspaceName("");
-        setWorkspaceRebindOpen(true);
-      }
+      currentStreamSession.current = sessionId;
+      setStreamSessionId(sessionId);
+      if (streamSessionId === sessionId) setReconnectGeneration((value) => value + 1);
       setSelectedDelegatedSession(delegatedSession);
+      setSessionModel(null);
       if (jumpTarget !== undefined) setPendingTreeJump(jumpTarget);
       setSidebarOpen(false);
+      const model = await api.getSessionModel(sessionId);
+      if (currentStreamSession.current === sessionId) setSessionModel(model);
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
-    } finally {
       setConversationLoading(null);
     }
   }
@@ -1101,9 +1118,7 @@ export default function ChatApp() {
       }
       if (session.executionMode === "development_environment") {
         const environmentId = session.developmentEnvironmentId;
-        const environments = (await api.listDevelopmentEnvironments()).environments;
-        setDevelopmentEnvironments(environments);
-        const environment = environments.find(
+        const environment = developmentEnvironments.find(
           (candidate) => candidate.environmentId === environmentId,
         );
         if (environment?.state === "paused") {
@@ -1117,9 +1132,6 @@ export default function ChatApp() {
               candidate.environmentId === resumed.environmentId ? resumed : candidate,
             ),
           );
-        } else if (environment?.state !== "running") {
-          update({ type: "api.error", message: t("chat.selectExclusiveError") });
-          return;
         }
       }
       const accepted = await api.acceptTurn(
@@ -1131,7 +1143,7 @@ export default function ChatApp() {
       update({ type: "turn.accepted", accepted, prompt: text });
       followConversationTail(true);
       setPrompt("");
-      await refreshConversations();
+      void refreshConversations().catch(() => undefined);
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
     } finally {

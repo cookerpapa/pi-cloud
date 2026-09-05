@@ -199,6 +199,28 @@ export class ToolBrokerClient {
     return response;
   }
 
+  async refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
+    const requestId = this.#idGenerator();
+    const response = await this.#service({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.refresh_services",
+      requestId,
+      activationId,
+      assignment,
+    });
+    if (
+      response.type !== "tool_sandbox.services_refreshed" ||
+      response.requestId !== requestId ||
+      response.activationId !== activationId
+    ) {
+      throw new ToolBrokerClientError(
+        "tool_broker_protocol_error",
+        "Service discovery response did not match",
+        false,
+      );
+    }
+  }
+
   async capture(
     activationId: string,
     assignment: ToolSandboxAssignment,
@@ -638,6 +660,10 @@ export class ReplicatedToolBrokerClient {
       request.assignment,
     );
     return response;
+  }
+
+  refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
+    return this.#ownedClient(activationId).refreshServices(activationId, assignment);
   }
 
   capture(

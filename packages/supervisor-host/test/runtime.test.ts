@@ -93,6 +93,7 @@ function objectStore() {
 
 function toolBroker(): SupervisorToolBroker {
   return {
+    async refreshServices() {},
     operationUrlFor: () => "http://tool-broker.test/internal/v1/tool-operation",
     async checkHealth() {},
     async create() {

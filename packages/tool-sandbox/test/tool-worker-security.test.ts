@@ -185,6 +185,8 @@ describe("credential-free Tool Sandbox worker", () => {
   it("atomically replaces an expected file revision and rejects stale edits", async () => {
     const workspace = await mkdtemp(resolve(tmpdir(), "pi-cloud-atomic-edit-"));
     try {
+      await writeWorkspaceFile("nested/new/source.ts", "created\n", undefined, workspace);
+      expect(await readFile(resolve(workspace, "nested/new/source.ts"), "utf8")).toBe("created\n");
       await writeFile(resolve(workspace, "source.ts"), "export const value = 1;\n");
       const original = await readWorkspaceFile("source.ts", workspace);
       const writtenSha256 = await writeWorkspaceFile(

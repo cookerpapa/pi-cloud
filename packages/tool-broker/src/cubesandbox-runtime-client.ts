@@ -88,7 +88,6 @@ export interface CubeSandboxRuntimeClient {
     input: CubeSandboxGuestCommandRequest,
   ): Promise<CubeSandboxGuestCommandResult>;
   writeGuestFile(instance: CubeSandboxInstance, path: string, data: Uint8Array): Promise<void>;
-  removeGuestFile(instance: CubeSandboxInstance, path: string): Promise<void>;
   openTerminal(
     instance: CubeSandboxInstance,
     input: Readonly<{
@@ -779,26 +778,6 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         `CubeSandbox envd file write failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
         response.status,
       );
-    }
-  }
-
-  async removeGuestFile(instance: CubeSandboxInstance, path: string): Promise<void> {
-    if (
-      !/^\/tmp\/pi-cloud-envd-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/u.test(
-        path,
-      )
-    ) {
-      throw new TypeError("CubeSandbox temporary guest path was invalid");
-    }
-    const result = await this.runCommand(instance, {
-      command: `/bin/rm -- ${path}`,
-      cwd: "/",
-      user: "root",
-      timeoutMs: Math.min(this.#requestTimeoutMs, 10_000),
-      maximumOutputBytes: 64 * 1_024,
-    });
-    if (result.exitCode !== 0) {
-      throw new CubeRuntimeClientError("CubeSandbox temporary guest file could not be removed");
     }
   }
 

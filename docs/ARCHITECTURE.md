@@ -576,8 +576,8 @@ should use relative asset URLs under the path-based preview endpoint. HTML
 responses get a per-response CSP nonce on inline script/style blocks.
 
 The immutable template exposes and probes only envd, so PiCloud does not reserve
-fixed application ports or depend on Cube host-port mappings. After each Bash
-operation, Cube Provider uses its trusted management channel to run a fixed,
+fixed application ports or depend on Cube host-port mappings. At Preview Tool
+publication, Cube Provider uses its trusted management channel to run a fixed,
 credential-free listener probe inside the VM. The probe reads the VM's
 listening-socket table and checks bounded unprivileged candidates as HTTP; it
 does not change the Agent Tool response contract or depend on the guest's PiCloud
@@ -588,6 +588,13 @@ route, and its structured Tool result renders the application link inline in
 the transcript. There is no persistent top-bar application hint and no parsing
 of assistant text. The Agent never calculates a public IP, signed URL or NAT
 mapping.
+
+Ordinary Bash does not wait for service discovery. One guest invocation also
+cleans up its request file before exiting, avoiding a separate cleanup RPC.
+Remote writes create their parent directories in the same operation; edits
+read the file directly without a separate access check. Broker effect admission
+and edit conflict detection still apply. An already-active development-machine
+binding does not rewrite its unchanged runtime handle for every operation.
 
 Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented. PiCloud does not
 expose Sandbox port 22. A separate trusted SSH gateway validates a one-time
@@ -686,6 +693,13 @@ does not inspect event sequence, deduplicate, replay, choose a Stream or wait
 for a projector. Those responsibilities start after acceptance. Pi still waits
 for its mutation result/projection barrier when the next Agent operation
 causally depends on canonical Session state.
+
+The successful receipt and its Session mutation commit together. The existing
+Worker LISTEN connection receives an opaque mutation ID after commit; one
+shared receipt reader handles all pending mutations, with a one-second
+fallback if notification delivery is interrupted. A model Step reads its
+active branch once for both Compaction assessment and model input. The first
+Step reuses its just-restored branch; a real compaction refreshes the result.
 
 Each Gateway consumes the Kafka topic into a rebuildable in-memory tail holding
 incomplete active Turns only. The public SSE request carries no cursor. Its first
