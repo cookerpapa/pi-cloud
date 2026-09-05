@@ -17,6 +17,7 @@ RUN npm run build --workspace @pi-cloud/web-ui
 
 FROM golang:1.26.6-alpine3.23@sha256:5978cc992ad5ef96a7469713c8af849c1433824761ce3be2c56381403cd8d9a3 AS caddy-builder
 
+ARG PI_CLOUD_GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org|direct
 RUN installed=0 \
     && for attempt in 1 2 3; do \
@@ -39,7 +40,7 @@ RUN cloned=0 \
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     cd /src/caddy \
-    && export GOPROXY='https://goproxy.cn|https://proxy.golang.org|direct' \
+    && export GOPROXY="${PI_CLOUD_GOPROXY}" \
     && downloaded=0 \
     && for attempt in 1 2 3; do \
       if go get google.golang.org/grpc@v1.83.1 golang.org/x/crypto@v0.55.0 golang.org/x/text@v0.41.0 \

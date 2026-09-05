@@ -7,7 +7,8 @@ ARG ENVD_COMMIT=6392356aaab9ed07e2f7df0c84c8d9ad8bac1327
 FROM ${GO_BASE_IMAGE} AS envd-builder
 ARG ENVD_COMMIT
 ARG PI_CLOUD_ALPINE_MIRROR=https://mirrors.aliyun.com/alpine
-ENV GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct
+ARG PI_CLOUD_GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct
+ENV GOPROXY=${PI_CLOUD_GOPROXY}
 RUN sed -i "s|https://dl-cdn.alpinelinux.org/alpine|${PI_CLOUD_ALPINE_MIRROR}|g" \
       /etc/apk/repositories \
     && apk add --no-cache ca-certificates git

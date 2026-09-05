@@ -113,6 +113,7 @@ jobs:
           docker build
           --file "${{ matrix.dockerfile }}"
           --build-arg PI_CLOUD_VERSION=ci
+          --build-arg PI_CLOUD_GOPROXY=https://proxy.golang.org,direct
           --build-arg PI_CLOUD_REVISION="${{ github.sha }}"
           --tag "pi-cloud/${{ matrix.image }}:ci"
           .
