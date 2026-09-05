@@ -1,8 +1,8 @@
 {
   "accepted": true,
-  "piCloudRevision": "30a5a5558f509b37c1bb3d4cd7f6910f49e3f293",
-  "checkedAt": "2026-09-03T14:05:58.928Z",
-  "account": "browser.acceptance.mtllk7zk",
+  "piCloudRevision": "d0770b973f3b7e036fdfa34ce8b932f9d7ba9a4b",
+  "checkedAt": "2026-09-05T01:16:21.236Z",
+  "account": "browser.acceptance.mtnoxj6d",
   "clickedControls": [
     "auth.localOnly",
     "auth.registerTab",
@@ -29,6 +29,7 @@
     "codeHost.close",
     "composer.send",
     "conversation.defaultModel",
+    "conversation.openFromSnapshot",
     "conversation.modelMenuOpen",
     "conversation.providerChatGpt",
     "conversation.modelTerra",
@@ -53,6 +54,7 @@
     "conversation.pruneLaterTurns",
     "tree.full",
     "tree.focus",
+    "stream.idleHeartbeatsAndTreeFocus",
     "workspace.open",
     "workspace.refresh",
     "workspace.terminalTab",
@@ -95,10 +97,10 @@
     "account.menuOpenForLogout",
     "account.logout"
   ],
-  "clickedControlCount": 90,
+  "clickedControlCount": 92,
   "latencyMs": {
-    "userSubmitToFirstAssistantText": 5122,
-    "userSubmitToCompleteReply": 5328
+    "userSubmitToFirstAssistantText": 2879,
+    "userSubmitToCompleteReply": 3190
   },
   "screenshotCaptured": true,
   "cleanupCompleted": true

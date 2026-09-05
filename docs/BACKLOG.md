@@ -5,7 +5,7 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
-- [ ] Remove redundant message handoffs (ADR-0149): SSE heartbeat/snapshot,
+- [x] Remove redundant message handoffs (ADR-0149): SSE heartbeat/snapshot,
       atomic projection receipts, context reads, Tool/Cube RPC, partition
       consumers and browser subscriptions; validate live coding afterward.
 
@@ -16,7 +16,7 @@ Volume architecture. Historical experiments remain in Git history.
       `acks=all`, consumer recovery and snapshot replacement.
 - [ ] Kill the canonical projector after PostgreSQL commit but before Kafka
       offset commit; verify idempotent redelivery.
-- [ ] Kill/restart a Gateway after visible partial output; verify a new browser
+- [x] Kill/restart a Gateway after visible partial output; verify a new browser
       request receives PostgreSQL canonical messages plus the rebuilt Kafka tail.
 - [ ] Validate PostgreSQL/PgBouncer failover and Cube compute-node drain on a
       physical multi-node deployment.
