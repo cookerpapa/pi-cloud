@@ -3,19 +3,16 @@ import { Value } from "typebox/value";
 import { UuidSchema } from "./protocol-primitives.ts";
 
 export const TOOL_BROKER_SANDBOX_PREVIEW_PATH = "/internal/v1/sandbox-preview" as const;
+export const PREVIEW_ACCESS_TTL_MS = 15 * 60_000;
+export const PREVIEW_SCOPE_HEADER = "x-pi-cloud-preview-scope";
 export const SANDBOX_PREVIEW_MINIMUM_PORT = 1_024 as const;
 export const SANDBOX_PREVIEW_MAXIMUM_PORT = 65_535 as const;
-export const SANDBOX_TRUSTED_TOOL_SERVICE_PORT = 49_984 as const;
-const SandboxPreviewPortSchema = Type.Union([
-  Type.Integer({ minimum: SANDBOX_PREVIEW_MINIMUM_PORT, maximum: 49_983 }),
-  Type.Integer({ minimum: 49_985, maximum: SANDBOX_PREVIEW_MAXIMUM_PORT }),
-]);
 
-const PreviewHeadersSchema = Type.Record(
-  Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z0-9-]+$" }),
-  Type.String({ maxLength: 8_192 }),
-  { maxProperties: 32 },
-);
+const SandboxPreviewPortSchema = Type.Union([
+  Type.Integer({ minimum: SANDBOX_PREVIEW_MINIMUM_PORT, maximum: 49_982 }),
+  Type.Integer({ minimum: 49_985, maximum: 50_004 }),
+  Type.Integer({ minimum: 50_006, maximum: SANDBOX_PREVIEW_MAXIMUM_PORT }),
+]);
 
 export const SandboxPreviewTargetSchema = Type.Union([
   Type.Object(
@@ -28,57 +25,21 @@ export const SandboxPreviewTargetSchema = Type.Union([
   ),
 ]);
 
-export const SandboxPreviewRequestSchema = Type.Object(
+export const SandboxPreviewConnectionSchema = Type.Object(
   {
-    sandboxPreviewProtocolVersion: Type.Literal(1),
-    type: Type.Literal("sandbox_preview.request"),
-    requestId: UuidSchema,
     tenantId: UuidSchema,
     userId: UuidSchema,
+    workspaceId: UuidSchema,
     target: SandboxPreviewTargetSchema,
     port: SandboxPreviewPortSchema,
-    method: Type.Union([
-      Type.Literal("GET"),
-      Type.Literal("HEAD"),
-      Type.Literal("POST"),
-      Type.Literal("PUT"),
-      Type.Literal("PATCH"),
-      Type.Literal("DELETE"),
-      Type.Literal("OPTIONS"),
-    ]),
-    path: Type.String({ minLength: 1, maxLength: 8_192, pattern: "^/" }),
-    headers: PreviewHeadersSchema,
-    body: Type.Optional(Type.String({ maxLength: 24 * 1_024 * 1_024 })),
+    expiresAt: Type.Integer({ minimum: 1 }),
   },
   { additionalProperties: false },
 );
-
-export const SandboxPreviewResponseSchema = Type.Union([
-  Type.Object(
-    {
-      sandboxPreviewProtocolVersion: Type.Literal(1),
-      type: Type.Literal("sandbox_preview.response"),
-      requestId: UuidSchema,
-      status: Type.Integer({ minimum: 100, maximum: 599 }),
-      headers: PreviewHeadersSchema,
-      body: Type.String({ maxLength: 24 * 1_024 * 1_024 }),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      sandboxPreviewProtocolVersion: Type.Literal(1),
-      type: Type.Literal("sandbox_preview.owner_redirect"),
-      requestId: UuidSchema,
-      ownerBaseUrl: Type.String({ minLength: 8, maxLength: 2_048 }),
-    },
-    { additionalProperties: false },
-  ),
-]);
-
-export type SandboxPreviewTarget = Static<typeof SandboxPreviewTargetSchema>;
-export type SandboxPreviewRequest = Static<typeof SandboxPreviewRequestSchema>;
-export type SandboxPreviewResponse = Static<typeof SandboxPreviewResponseSchema>;
+export type SandboxPreviewConnectionRequest = Static<typeof SandboxPreviewConnectionSchema>;
+export function parseSandboxPreviewConnection(value: unknown): SandboxPreviewConnectionRequest {
+  return parse(SandboxPreviewConnectionSchema, value, "Sandbox preview connection");
+}
 
 export class SandboxPreviewProtocolError extends Error {
   constructor(message: string) {
@@ -96,10 +57,4 @@ function parse<Schema extends TSchema>(
   return value as Static<Schema>;
 }
 
-export function parseSandboxPreviewRequest(value: unknown): SandboxPreviewRequest {
-  return parse(SandboxPreviewRequestSchema, value, "Sandbox preview request");
-}
-
-export function parseSandboxPreviewResponse(value: unknown): SandboxPreviewResponse {
-  return parse(SandboxPreviewResponseSchema, value, "Sandbox preview response");
-}
+export type SandboxPreviewTarget = Static<typeof SandboxPreviewTargetSchema>;

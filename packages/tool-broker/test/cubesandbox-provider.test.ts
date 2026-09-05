@@ -14,6 +14,7 @@ import {
   parseWorkspaceVolumeSettlement,
 } from "@pi-cloud/workspace-runtime";
 import { createHash } from "node:crypto";
+import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import {
   CubeSandboxProvider,
@@ -240,14 +241,6 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     const cleanedPath = /trap '\/bin\/rm -f -- ([^']+)' EXIT/u.exec(input.command)?.[1];
     if (cleanedPath !== undefined) this.guestFiles.delete(cleanedPath);
     this.requests.push({ sandboxId: instance.sandboxId, input, guestRequest: request });
-    if (input.command.includes("envd-preview-proxy.mjs")) {
-      if (request.mode !== "preview_http") throw new Error("unexpected preview request");
-      return this.#result({
-        status: 200,
-        headers: { "content-type": "text/html; charset=utf-8" },
-        body: Buffer.from("<html>private-preview-ok</html>").toString("base64"),
-      });
-    }
     if (input.command.includes("envd-guest-control.mjs")) {
       if (request.mode === "evidence") {
         return this.#result({
@@ -352,6 +345,10 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     const bytes = path === undefined ? undefined : this.guestFiles.get(path);
     if (bytes === undefined) throw new Error("guest request unavailable");
     return JSON.parse(Buffer.from(bytes).toString("utf8")) as Record<string, unknown>;
+  }
+
+  async openTcp(_instance: CubeSandboxInstance, _port: number) {
+    return new PassThrough();
   }
 
   async openTerminal(
@@ -499,13 +496,9 @@ describe("CubeSandbox Provider contract", () => {
       path: "/home/user",
       entries: [{ name: "new-project", path: "/home/user/new-project", kind: "directory" }],
     });
-    await expect(
-      provider.previewHttp(handle, { port: 5_173, method: "GET", path: "/", headers: {} }),
-    ).resolves.toMatchObject({
-      status: 200,
-      headers: { "content-type": "text/html; charset=utf-8" },
-      body: Buffer.from("<html>private-preview-ok</html>"),
-    });
+    const preview = await provider.openPreviewConnection(handle, 5173);
+    expect(preview).toBeInstanceOf(PassThrough);
+    preview.destroy();
     await expect(provider.discoverHttpServices(handle)).resolves.toEqual({
       listeningPorts: [3_000],
       httpServices: [{ port: 3_000, protocol: "http" }],

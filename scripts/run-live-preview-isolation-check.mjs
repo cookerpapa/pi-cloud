@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
-import { request as httpRequest } from "node:http";
+import { readPreviewDocument } from "./lib/preview-client.mjs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { format } from "prettier";
@@ -100,31 +100,9 @@ async function preview(browser, sessionId, portNumber) {
   const location = bootstrap.headers.get("location");
   assert(location, "Preview bootstrap did not return an isolated origin");
   const publicUrl = new URL(location, baseUrl);
-  const response = await new Promise((resolvePromise, rejectPromise) => {
-    const request = httpRequest(
-      {
-        hostname: connectHost,
-        port: publicUrl.port,
-        path: `${publicUrl.pathname}${publicUrl.search}`,
-        headers: { accept: "*/*", host: publicUrl.host },
-      },
-      (incoming) => {
-        const chunks = [];
-        incoming.on("data", (chunk) => chunks.push(chunk));
-        incoming.once("end", () =>
-          resolvePromise({
-            status: incoming.statusCode ?? 0,
-            body: Buffer.concat(chunks).toString("utf8"),
-          }),
-        );
-      },
-    );
-    request.once("error", rejectPromise);
-    request.setTimeout(30_000, () => request.destroy(new Error("Preview request timed out")));
-    request.end();
-  });
+  const response = await readPreviewDocument(publicUrl, connectHost);
   assert.equal(response.status, 200);
-  return response.body;
+  return response.body.toString("utf8");
 }
 
 function twoServicePrompt(label) {
@@ -216,6 +194,11 @@ try {
   const report = {
     accepted: true,
     piCloudRevision: testedRevision,
+    workingTreeDirty:
+      execFileSync("git", ["status", "--porcelain"], {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      }).trim().length > 0,
     checkedAt: new Date().toISOString(),
     sessions: 2,
     concurrentInitialRuns: 2,

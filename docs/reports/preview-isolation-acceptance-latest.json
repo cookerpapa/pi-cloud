@@ -1,7 +1,8 @@
 {
   "accepted": true,
-  "piCloudRevision": "2d79609e7f95012a7f2d455b6d97455628290976",
-  "checkedAt": "2026-09-02T03:37:57.535Z",
+  "piCloudRevision": "46be67adf81bdb74691f4a95fa30e617ff6a5ab7",
+  "workingTreeDirty": true,
+  "checkedAt": "2026-09-05T05:22:53.544Z",
   "sessions": 2,
   "concurrentInitialRuns": 2,
   "sameSessionPorts": [3000, 8000, 5173],

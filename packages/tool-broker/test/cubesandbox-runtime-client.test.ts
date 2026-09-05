@@ -1,4 +1,9 @@
-import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
+import {
+  createServer,
+  type IncomingHttpHeaders,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { OfficialCubeSandboxRuntimeClient } from "../src/index.ts";
@@ -15,6 +20,7 @@ let port: number;
 const observed: ObservedRequest[] = [];
 let runtimeState = "running";
 let pauseReturnsTimeout = false;
+let tcpResponse: ServerResponse | undefined;
 
 function connectFrame(value: unknown, flags = 0): Buffer {
   const payload = Buffer.from(JSON.stringify(value), "utf8");
@@ -59,6 +65,11 @@ beforeAll(async () => {
         }
         if (request.url === "/process.Process/Start") {
           response.writeHead(200, { "content-type": "application/connect+json" });
+          if (typeof body === "object" && body !== null && "stdin" in body && body.stdin === true) {
+            tcpResponse = response;
+            response.write(connectFrame({ event: { start: { pid: 74 } } }));
+            return;
+          }
           if (typeof body === "object" && body !== null && "pty" in body) {
             response.write(connectFrame({ event: { start: { pid: 73 } } }));
             response.write(
@@ -78,6 +89,13 @@ beforeAll(async () => {
           return;
         }
         if (request.url?.startsWith("/process.Process/") === true) {
+          const input = body as { input?: { stdin?: string }; signal?: string };
+          if (input.input?.stdin)
+            tcpResponse?.write(connectFrame({ event: { data: { stdout: input.input.stdin } } }));
+          if (input.signal && tcpResponse) {
+            tcpResponse.end(connectFrame({ event: { end: { exitCode: 0 } } }));
+            tcpResponse = undefined;
+          }
           response.writeHead(200, { "content-type": "application/json" });
           response.end("{}");
           return;
@@ -339,6 +357,20 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     expect(observed.find((request) => request.path === "/process.Process/Update")).toMatchObject({
       body: { process: { pid: 73 }, pty: { size: { rows: 40, cols: 120 } } },
     });
+    const tcp = await client.openTcp(instance, 4173);
+    const echoed = new Promise<Buffer>((resolve) => tcp.once("data", resolve));
+    tcp.write(Buffer.from([0, 255, 13, 10]));
+    expect(await echoed).toEqual(Buffer.from([0, 255, 13, 10]));
+    const tcpStart = observed.filter((request) => request.path === "/process.Process/Start").at(-1);
+    expect(tcpStart?.body).toMatchObject({ stdin: true, process: { cmd: "/usr/bin/setpriv" } });
+    expect(JSON.stringify(tcpStart?.body)).not.toContain("private-traffic-token");
+    expect(JSON.stringify(tcpStart?.body)).not.toContain('"pty"');
+    await new Promise<void>((resolve) => {
+      tcp.once("close", resolve);
+      tcp.end();
+      tcp.resume();
+    });
+    await expect(client.openTcp(instance, 49983)).rejects.toThrow("Invalid application port");
     await expect(client.read(instance.sandboxId)).resolves.toMatchObject({
       sandboxId: "cube-runtime-1",
       metadata: { "picloud.managed": "true" },

@@ -38,7 +38,8 @@ Control Plane replicas
   ├─ Session desired model/reasoning/Fast settings
   ├─ Run admission, cancellation, Steer and resource APIs
   ├─ Worker Control Channel + AcceptedFact Authority Gate
-  ├─ cursor-free SSE / Terminal / Preview gateways
+  ├─ cursor-free SSE / Terminal gateways
+  ├─ isolated Preview-origin listener (streaming HTTP / WebSocket)
   └─ optional GitLab/GitHub Issue intake
             │
             ├──────────────▶ PostgreSQL
@@ -224,10 +225,13 @@ parsing. Cube Provider identifies live HTTP ports through the trusted guest
 management channel, Tool Broker records them, and the Web client renders
 an authenticated application link when the Agent calls the trusted `preview`
 Tool. The link appears with that Tool result rather than as a permanent top-bar
-hint. The
-main origin issues a short-lived target capability and redirects to an isolated
-`*.preview.localhost` origin, so application storage and scripts work without
-receiving PiCloud cookies. Production DNS/TLS must cover
+hint. The main origin issues a short-lived target capability. The isolated
+`*.preview.localhost` origin exchanges it for a host-only HttpOnly Cookie and
+serves the application at its real root paths. Vite modules, dynamic CSS,
+HMR, WebSockets and SSE use the same authenticated connection path; no HTML or
+JavaScript URL rewriting is required. Platform/Preview credentials never reach
+the application. Access lasts fifteen minutes; reopen the application from its
+conversation to renew it. Production DNS/TLS must cover
 `*.preview.<application-host>`; Cube addresses and public port mappings are
 never exposed to the Agent. SSH is available only for cloud development
 machines and only while no other human terminal owns the environment; it may
@@ -289,6 +293,7 @@ explicit acknowledgement:
 PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
 PI_CLOUD_LIVE_PRODUCT_SURFACE_CHECK=1 npm run production:product-surface-check
 PI_CLOUD_LIVE_SNAKE_PREVIEW_CHECK=1 npm run production:snake-preview-check
+PI_CLOUD_LIVE_VITE_PREVIEW_CHECK=1 npm run production:vite-preview-check
 PI_CLOUD_LIVE_BROWSER_UI_CHECK=1 npm run production:browser-ui-check
 PI_CLOUD_LIVE_DIRECTORY_PICKER_CHECK=1 npm run production:directory-picker-check
 PI_CLOUD_LIVE_WORKER_POOL_CHECK=1 npm run production:worker-pool-check

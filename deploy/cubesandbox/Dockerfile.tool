@@ -51,7 +51,6 @@ COPY packages/workspace-runtime/src packages/workspace-runtime/src
 RUN node node_modules/esbuild/bin/esbuild \
       packages/tool-sandbox/src/envd-tool-exec.ts \
       packages/tool-sandbox/src/envd-guest-control.ts \
-      packages/tool-sandbox/src/envd-preview-proxy.ts \
       --bundle \
       --platform=node \
       --format=esm \
@@ -156,7 +155,6 @@ RUN sh scripts/retry-npm-command.sh install --global npm@12.0.2 \
 
 COPY --from=tool-worker-builder /out/envd-tool-exec.mjs /opt/pi-cloud/bin/envd-tool-exec.mjs
 COPY --from=tool-worker-builder /out/envd-guest-control.mjs /opt/pi-cloud/bin/envd-guest-control.mjs
-COPY --from=tool-worker-builder /out/envd-preview-proxy.mjs /opt/pi-cloud/bin/envd-preview-proxy.mjs
 COPY --chown=1000:1000 \
   packages/sandbox-supervisor/test/fixtures/sample-java-repair \
   /opt/pi-cloud/sample-java-repair

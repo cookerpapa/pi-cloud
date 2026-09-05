@@ -7,7 +7,6 @@ import {
   TENANT_REGISTRATION_PATH,
   tenantRequestIdentity,
 } from "../src/index.ts";
-import { isPreviewAccessPath } from "../src/sandbox-preview-gateway.ts";
 
 const TOKEN = `api-${"a".repeat(48)}`;
 const IDENTITY = {
@@ -116,14 +115,11 @@ describe("ProductionHttpGateway", () => {
     }
   });
 
-  it("delegates only a structurally valid isolated Preview capability path to its gateway", async () => {
+  it("does not let an old preview path bypass main-origin authentication", async () => {
     const token = `pcpa_${"a".repeat(32)}.${"b".repeat(43)}`;
     const previewPath =
       `/v1/conversations/10000000-0000-4000-8000-000000000001/preview/4173/` +
       `__pi_cloud_access__/${token}/app.js`;
-    expect(isPreviewAccessPath(previewPath)).toBe(true);
-    expect(isPreviewAccessPath(previewPath.replace("pcpa_", "invalid_"))).toBe(false);
-    expect(isPreviewAccessPath("/v1/test")).toBe(false);
 
     const server = Fastify({ logger: false });
     new ProductionHttpGateway({
@@ -134,8 +130,7 @@ describe("ProductionHttpGateway", () => {
     const address = await server.listen({ host: "127.0.0.1", port: 0 });
     try {
       const delegated = await fetch(`${address}${previewPath}`);
-      expect(delegated.status).toBe(200);
-      await expect(delegated.json()).resolves.toEqual({ delegated: true });
+      expect(delegated.status).toBe(401);
       expect((await fetch(`${address}${previewPath.replace("pcpa_", "invalid_")}`)).status).toBe(
         401,
       );

@@ -5,6 +5,8 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Replace path-token/buffered Preview with authenticated root-origin HTTP,
+      SSE and WebSocket streaming; validate Vite dynamic CSS and HMR.
 - [x] Retry premature Responses disconnections without replaying completed Tools,
       retain visible prefixes, reset retry numbering per sampling Step, remove
       the CONNECT tunnel wall-clock expiry and record safe stream-end evidence.

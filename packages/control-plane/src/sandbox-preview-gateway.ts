@@ -1,411 +1,428 @@
 import type { Database } from "@pi-cloud/database";
 import {
-  TOOL_BROKER_SANDBOX_PREVIEW_PATH,
-  SANDBOX_PREVIEW_MAXIMUM_PORT,
-  SANDBOX_PREVIEW_MINIMUM_PORT,
-  SANDBOX_TRUSTED_TOOL_SERVICE_PORT,
-  parseSandboxPreviewResponse,
+  PREVIEW_ACCESS_TTL_MS,
+  parseSandboxPreviewConnection,
   parseUuidPathParameter,
-  type SandboxPreviewRequest,
   type SandboxPreviewTarget,
+  type SandboxPreviewConnectionRequest,
 } from "@pi-cloud/protocol";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Kysely } from "kysely";
-import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { Socket } from "node:net";
+import { createProxyServer } from "httpxy";
 import { tenantRequestIdentity } from "./tenant-identity.ts";
+import { previewConnectionAgent } from "./preview-connect.ts";
 
 export const CONVERSATION_PREVIEW_PATH = "/v1/conversations/:sessionId/preview/:port/*";
 export const DEVELOPMENT_ENVIRONMENT_PREVIEW_PATH =
   "/v1/development-environments/:environmentId/preview/:port/*";
-
-const MAXIMUM_REDIRECTS = 3;
-const MAXIMUM_REQUEST_BYTES = 4 * 1_024 * 1_024;
-const PREVIEW_ACCESS_SEGMENT = "__pi_cloud_access__";
-const PREVIEW_ACCESS_TTL_MS = 15 * 60 * 1_000;
-const PREVIEW_ACCESS_PATTERN = /^pcpa_([A-Za-z0-9_-]{32,1024})\.([A-Za-z0-9_-]{43})$/;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const UUID_PATH_SOURCE = "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
-const PREVIEW_ACCESS_PATH_PATTERN = new RegExp(
-  `^/v1/(?:conversations|development-environments)/${UUID_PATH_SOURCE}/preview/[0-9]{4,5}/${PREVIEW_ACCESS_SEGMENT}/pcpa_[A-Za-z0-9_-]{32,1024}\\.[A-Za-z0-9_-]{43}(?:/|$)`,
-  "i",
-);
-
+export const PREVIEW_COOKIE = "pi_cloud_preview";
+export const PREVIEW_BOOTSTRAP_PATH = "/__pi_cloud_preview_auth";
 export type SandboxPreviewGatewayOptions = Readonly<{
   database: Kysely<Database>;
   previewToken: string;
   publicOriginBaseUrl: string;
   allowInsecureInternalHttp: boolean;
+  listenHost?: string;
+  listenPort?: number;
 }>;
-
-function previewPort(value: unknown): SandboxPreviewRequest["port"] {
-  const parsed = Number(value);
-  if (
-    !Number.isSafeInteger(parsed) ||
-    parsed < SANDBOX_PREVIEW_MINIMUM_PORT ||
-    parsed > SANDBOX_PREVIEW_MAXIMUM_PORT ||
-    parsed === SANDBOX_TRUSTED_TOOL_SERVICE_PORT
-  ) {
-    throw new Error("Preview port is outside the application port range");
-  }
-  return parsed as SandboxPreviewRequest["port"];
-}
-
-function requestBody(request: FastifyRequest): Buffer | undefined {
-  if (request.body === undefined || request.body === null) return undefined;
-  const body = Buffer.isBuffer(request.body)
-    ? request.body
-    : Buffer.from(
-        typeof request.body === "string" ? request.body : JSON.stringify(request.body),
-        "utf8",
-      );
-  if (body.byteLength > MAXIMUM_REQUEST_BYTES) throw new Error("Preview request body is too large");
-  return body;
-}
-
-function requestHeaders(request: FastifyRequest): Readonly<Record<string, string>> {
-  const allowed = new Set([
-    "accept",
-    "accept-language",
-    "content-type",
-    "if-modified-since",
-    "if-none-match",
-    "range",
-    "user-agent",
-  ]);
-  const headers: Record<string, string> = {};
-  for (const [name, raw] of Object.entries(request.headers)) {
-    if (!allowed.has(name.toLowerCase()) || typeof raw !== "string") continue;
-    headers[name.toLowerCase()] = raw.slice(0, 8_192);
-  }
-  return Object.freeze(headers);
-}
-
-function publicPrefix(target: SandboxPreviewTarget, port: number): string {
-  return target.kind === "conversation"
-    ? `/v1/conversations/${encodeURIComponent(target.sessionId)}/preview/${String(port)}`
-    : `/v1/development-environments/${encodeURIComponent(target.environmentId)}/preview/${String(port)}`;
-}
-
-function publicOriginBaseUrl(value: string): URL {
-  const parsed = new URL(value);
-  if (
-    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
-    parsed.username ||
-    parsed.password ||
-    parsed.search ||
-    parsed.hash ||
-    (parsed.pathname !== "/" && parsed.pathname !== "") ||
-    parsed.hostname.length < 1
-  ) {
-    throw new TypeError("Preview public origin base URL is invalid");
-  }
-  return parsed;
-}
 
 export function previewOriginHostname(
   secret: string,
   baseHostname: string,
   target: SandboxPreviewTarget,
   port: number,
+  workspaceId: string,
 ): string {
-  const targetId = target.kind === "conversation" ? target.sessionId : target.environmentId;
-  const label = createHmac("sha256", secret)
-    .update(`${target.kind}\0${targetId}\0${String(port)}`, "utf8")
+  const id = target.kind === "conversation" ? target.sessionId : target.environmentId;
+  const hash = createHmac("sha256", secret)
+    .update([target.kind, id, String(port), workspaceId].join("\0"))
     .digest("hex")
     .slice(0, 24);
-  return `p-${label}.${baseHostname}`;
+  return `p-${hash}.${baseHostname}`;
 }
-
-type PreviewAccessClaims = Readonly<{
-  tenantId: string;
-  userId: string;
-  target: SandboxPreviewTarget;
-  port: number;
-  expiresAt: number;
-}>;
-
-function previewAccessPayload(claims: PreviewAccessClaims): string {
-  return Buffer.from(
-    JSON.stringify({
-      version: 1,
-      tenantId: claims.tenantId,
-      userId: claims.userId,
-      targetKind: claims.target.kind,
-      targetId:
-        claims.target.kind === "conversation"
-          ? claims.target.sessionId
-          : claims.target.environmentId,
-      port: claims.port,
-      expiresAt: claims.expiresAt,
-    }),
-    "utf8",
-  ).toString("base64url");
-}
-
 export function issuePreviewAccessToken(
   secret: string,
-  claims: Omit<PreviewAccessClaims, "expiresAt">,
+  scope: Omit<SandboxPreviewConnectionRequest, "expiresAt">,
   now = Date.now(),
 ): string {
-  const payload = previewAccessPayload({ ...claims, expiresAt: now + PREVIEW_ACCESS_TTL_MS });
-  const signature = createHmac("sha256", secret).update(payload, "utf8").digest("base64url");
-  return `pcpa_${payload}.${signature}`;
+  const payload = Buffer.from(
+    JSON.stringify({ ...scope, expiresAt: now + PREVIEW_ACCESS_TTL_MS }),
+  ).toString("base64url");
+  return `pcpa_${payload}.${createHmac("sha256", secret).update(payload).digest("base64url")}`;
 }
-
 export function verifyPreviewAccessToken(
   secret: string,
   token: string,
-  expectedTarget: SandboxPreviewTarget,
-  expectedPort: number,
   now = Date.now(),
-): Readonly<{ tenantId: string; userId: string }> | undefined {
-  const match = PREVIEW_ACCESS_PATTERN.exec(token);
-  if (match === null) return undefined;
-  const payload = match[1]!;
-  const candidate = Buffer.from(match[2]!, "base64url");
-  const expected = createHmac("sha256", secret).update(payload, "utf8").digest();
-  if (candidate.byteLength !== expected.byteLength || !timingSafeEqual(candidate, expected)) {
+): SandboxPreviewConnectionRequest | undefined {
+  const match = /^pcpa_([A-Za-z0-9_-]{32,2048})\.([A-Za-z0-9_-]{43})$/.exec(token);
+  if (!match) return undefined;
+  const signature = Buffer.from(match[2]!, "base64url");
+  const expected = createHmac("sha256", secret).update(match[1]!).digest();
+  if (signature.length !== expected.length || !timingSafeEqual(signature, expected))
     return undefined;
-  }
   try {
-    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<
-      string,
-      unknown
-    >;
-    const expectedTargetId =
-      expectedTarget.kind === "conversation"
-        ? expectedTarget.sessionId
-        : expectedTarget.environmentId;
-    if (
-      claims.version !== 1 ||
-      typeof claims.tenantId !== "string" ||
-      !UUID_PATTERN.test(claims.tenantId) ||
-      typeof claims.userId !== "string" ||
-      !UUID_PATTERN.test(claims.userId) ||
-      claims.targetKind !== expectedTarget.kind ||
-      claims.targetId !== expectedTargetId ||
-      claims.port !== expectedPort ||
-      !Number.isSafeInteger(claims.expiresAt) ||
-      (claims.expiresAt as number) <= now ||
-      (claims.expiresAt as number) > now + PREVIEW_ACCESS_TTL_MS
-    ) {
-      return undefined;
-    }
-    return { tenantId: claims.tenantId, userId: claims.userId };
+    const scope = parseSandboxPreviewConnection(
+      JSON.parse(Buffer.from(match[1]!, "base64url").toString()),
+    );
+    return scope.expiresAt > now && scope.expiresAt <= now + PREVIEW_ACCESS_TTL_MS
+      ? scope
+      : undefined;
   } catch {
     return undefined;
   }
 }
-
-function previewAccessRoute(
-  suffix: string,
-): Readonly<{ token: string; upstreamSuffix: string }> | undefined {
-  const parts = suffix.split("/");
-  if (parts[0] !== PREVIEW_ACCESS_SEGMENT) return undefined;
+export function previewCookie(token: string, expiresAt: number, secure: boolean): string {
+  return `${PREVIEW_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Expires=${new Date(expiresAt).toUTCString()}${secure ? "; Secure" : ""}`;
+}
+export function stripPreviewCookie(header: string | undefined): string | undefined {
+  const value = header
+    ?.split(";")
+    .filter((part) => ![PREVIEW_COOKIE, "pi_cloud_session"].includes(part.trim().split("=")[0]!))
+    .join(";")
+    .trim();
+  return value || undefined;
+}
+export function previewSecurityHeaders(origin: string): Record<string, string> {
+  const websocket = new URL(origin);
+  websocket.protocol = websocket.protocol === "https:" ? "wss:" : "ws:";
   return {
-    token: parts[1] ?? "",
-    upstreamSuffix: parts.slice(2).join("/"),
-  };
-}
-
-export function isPreviewAccessPath(path: string): boolean {
-  return path.length <= 2_048 && PREVIEW_ACCESS_PATH_PATTERN.test(path);
-}
-
-export function rewritePreviewHtml(body: Buffer, prefix: string, nonce: string): Buffer {
-  if (body.byteLength > 4 * 1_024 * 1_024) return body;
-  const html = body.toString("utf8");
-  if (!/<(?:html|head)[\s>]/iu.test(html)) return body;
-  const base = `<base href="${prefix}/">`;
-  const rewritten = html
-    .replace(/<script(?![^>]*\bsrc=)(?![^>]*\bnonce=)([^>]*)>/giu, `<script nonce="${nonce}"$1>`)
-    .replace(/<style(?![^>]*\bnonce=)([^>]*)>/giu, `<style nonce="${nonce}"$1>`);
-  return Buffer.from(
-    /<head[\s>]/iu.test(rewritten)
-      ? rewritten.replace(/(<head[^>]*>)/iu, `$1${base}`)
-      : `${base}${rewritten}`,
-    "utf8",
-  );
-}
-
-export function previewSecurityHeaders(nonce: string): Readonly<Record<string, string>> {
-  return Object.freeze({
-    "content-security-policy":
-      "sandbox allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads; " +
-      `default-src 'self' data: blob:; script-src 'self' 'nonce-${nonce}' blob:; ` +
-      `style-src 'self' 'nonce-${nonce}' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'`,
+    "content-security-policy": `sandbox allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads; default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https: blob:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; img-src 'self' data: blob: https:; connect-src 'self' ${websocket.origin}; form-action 'self'; base-uri 'self'; frame-ancestors 'none'`,
     "cross-origin-resource-policy": "same-origin",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
+  };
+}
+function applicationPath(value: string): string {
+  if (
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("\\") ||
+    /[\r\n]/.test(value)
+  )
+    throw new Error("Invalid application path");
+  return value;
+}
+function fail(response: ServerResponse, status: number, message: string): void {
+  if (response.headersSent) {
+    response.destroy();
+    return;
+  }
+  response.writeHead(status, {
+    "content-type": "text/plain; charset=utf-8",
+    "cache-control": "no-store",
   });
+  response.end(message);
 }
 
 export class SandboxPreviewGateway {
   readonly #database: Kysely<Database>;
   readonly #previewToken: string;
-  readonly #allowInsecureInternalHttp: boolean;
   readonly #publicOriginBaseUrl: URL;
+  readonly #allowInsecureInternalHttp: boolean;
+  readonly #options: SandboxPreviewGatewayOptions;
+  readonly #sockets = new Set<Socket>();
+  readonly #origins = new WeakMap<IncomingMessage, string>();
+  readonly #proxy = createProxyServer({
+    xfwd: true,
+    changeOrigin: true,
+    prependPath: false,
+    cookieDomainRewrite: "",
+    proxyTimeout: 0,
+  });
+  readonly #server = createServer((request, response) => {
+    void this.#serve(request, response);
+  });
   #installed = false;
 
   constructor(options: SandboxPreviewGatewayOptions) {
-    if (!/^[A-Za-z0-9._~+/=-]{32,4096}$/.test(options.previewToken)) {
-      throw new TypeError("Sandbox preview gateway token is invalid");
-    }
+    this.#options = options;
     this.#database = options.database;
     this.#previewToken = options.previewToken;
-    this.#publicOriginBaseUrl = publicOriginBaseUrl(options.publicOriginBaseUrl);
+    this.#publicOriginBaseUrl = new URL(options.publicOriginBaseUrl);
     this.#allowInsecureInternalHttp = options.allowInsecureInternalHttp;
-  }
-
-  install(fastify: FastifyInstance): void {
-    if (this.#installed) throw new Error("Sandbox preview gateway is already installed");
-    this.#installed = true;
-    fastify.register(async (scope) => {
-      scope.all(CONVERSATION_PREVIEW_PATH, (request, reply) =>
-        this.#handle(request, reply, "conversation"),
-      );
-      scope.all(DEVELOPMENT_ENVIRONMENT_PREVIEW_PATH, (request, reply) =>
-        this.#handle(request, reply, "development_environment"),
-      );
+    if (
+      !["http:", "https:"].includes(this.#publicOriginBaseUrl.protocol) ||
+      this.#publicOriginBaseUrl.username ||
+      this.#publicOriginBaseUrl.password
+    )
+      throw new Error("Invalid preview origin");
+    this.#server.on("connection", (socket) => {
+      this.#sockets.add(socket);
+      socket.once("close", () => this.#sockets.delete(socket));
+    });
+    this.#server.on("upgrade", (request, socket, head) => {
+      void this.#upgrade(request, socket as Socket, head);
+    });
+    this.#proxy.on("proxyRes", (response, request) => {
+      const origin = this.#origins.get(request);
+      if (origin) Object.assign(response.headers, previewSecurityHeaders(origin));
+      const cookies = response.headers["set-cookie"];
+      if (cookies)
+        response.headers["set-cookie"] = cookies
+          .filter(
+            (cookie) =>
+              ![PREVIEW_COOKIE, "pi_cloud_session"].includes(cookie.split("=")[0]!.trim()),
+          )
+          .map((cookie) => cookie.replace(/;\s*domain=[^;]*/gi, ""));
     });
   }
-
-  async #handle(
+  get address(): string | undefined {
+    const address = this.#server.address();
+    return address && typeof address !== "string" ? `http://127.0.0.1:${address.port}` : undefined;
+  }
+  install(fastify: FastifyInstance): void {
+    if (this.#installed) throw new Error("Preview gateway already installed");
+    this.#installed = true;
+    fastify.get(CONVERSATION_PREVIEW_PATH, (request, reply) =>
+      this.#bootstrap(request, reply, "conversation"),
+    );
+    fastify.get(DEVELOPMENT_ENVIRONMENT_PREVIEW_PATH, (request, reply) =>
+      this.#bootstrap(request, reply, "development_environment"),
+    );
+    fastify.addHook(
+      "onReady",
+      () =>
+        new Promise<void>((resolve, reject) => {
+          this.#server.once("error", reject);
+          this.#server.listen(
+            this.#options.listenPort ?? 0,
+            this.#options.listenHost ?? "127.0.0.1",
+            () => resolve(),
+          );
+        }),
+    );
+    fastify.addHook("onClose", () => this.close());
+  }
+  async close(): Promise<void> {
+    for (const socket of this.#sockets) socket.destroy();
+    if (this.#server.listening)
+      await new Promise<void>((resolve) => this.#server.close(() => resolve()));
+  }
+  async #bootstrap(
     request: FastifyRequest,
     reply: FastifyReply,
     kind: SandboxPreviewTarget["kind"],
   ): Promise<void> {
-    const browserIdentity = tenantRequestIdentity(request);
+    const identity = tenantRequestIdentity(request);
+    if (!identity) {
+      await reply.code(401).send({ error: "authentication_required" });
+      return;
+    }
     try {
       const params = request.params as Record<string, unknown>;
-      const target: SandboxPreviewTarget =
+      const requested: SandboxPreviewTarget =
         kind === "conversation"
-          ? {
-              kind,
-              sessionId: parseUuidPathParameter(params.sessionId, "sessionId"),
-            }
-          : {
-              kind,
-              environmentId: parseUuidPathParameter(params.environmentId, "environmentId"),
-            };
-      const port = previewPort(params.port);
-      const rawSuffix = typeof params["*"] === "string" ? params["*"] : "";
-      const accessRoute = previewAccessRoute(rawSuffix);
-      let tenantId: string;
-      let userId: string;
-      let accessToken: string;
-      let suffix: string;
-      if (accessRoute !== undefined) {
-        const access = verifyPreviewAccessToken(
-          this.#previewToken,
-          accessRoute.token,
-          target,
-          port,
-        );
-        if (access === undefined) {
-          await reply.code(401).send({ error: "preview_access_invalid" });
-          return;
-        }
-        tenantId = access.tenantId;
-        userId = access.userId;
-        accessToken = accessRoute.token;
-        suffix = accessRoute.upstreamSuffix;
-        const expectedHostname = previewOriginHostname(
-          this.#previewToken,
-          this.#publicOriginBaseUrl.hostname,
-          target,
-          port,
-        );
-        if (request.hostname.toLowerCase() !== expectedHostname.toLowerCase()) {
-          await reply.code(421).send({ error: "preview_origin_mismatch" });
-          return;
-        }
-      } else {
-        if (browserIdentity === undefined) {
-          await reply.code(401).send({ error: "authentication_required" });
-          return;
-        }
-        tenantId = browserIdentity.tenantId;
-        userId = browserIdentity.userId;
-        accessToken = issuePreviewAccessToken(this.#previewToken, {
-          tenantId,
-          userId,
-          target,
-          port,
-        });
-        suffix = rawSuffix;
-        const prefix = publicPrefix(target, port);
-        const accessPrefix = `${prefix}/${PREVIEW_ACCESS_SEGMENT}/${accessToken}`;
-        const redirect = new URL(this.#publicOriginBaseUrl);
-        redirect.hostname = previewOriginHostname(
-          this.#previewToken,
-          this.#publicOriginBaseUrl.hostname,
-          target,
-          port,
-        );
-        const search = new URL(request.raw.url ?? "/", "http://pi-cloud.local").search;
-        redirect.pathname = `${accessPrefix}/${suffix}`;
-        redirect.search = search;
-        await reply.code(307).header("cache-control", "no-store").redirect(redirect.toString());
-        return;
-      }
-      const forwardedTarget =
-        target.kind === "conversation"
-          ? await this.#conversationPreviewTarget(tenantId, userId, target)
-          : target;
-      const search = new URL(request.raw.url ?? "/", "http://pi-cloud.local").search;
-      const method = request.method as SandboxPreviewRequest["method"];
-      if (!new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]).has(method)) {
-        throw new Error("Preview HTTP method is unsupported");
-      }
-      const baseUrl = await this.#resolveBaseUrl(tenantId, userId, forwardedTarget);
-      const body = requestBody(request);
-      const response = await this.#forward(baseUrl, 0, {
-        sandboxPreviewProtocolVersion: 1,
-        type: "sandbox_preview.request",
-        requestId: randomUUID(),
-        tenantId,
-        userId,
-        target: forwardedTarget,
-        port,
-        method,
-        path: `/${suffix}${search}`,
-        headers: requestHeaders(request),
-        ...(body === undefined ? {} : { body: body.toString("base64") }),
-      });
-      if (response.type !== "sandbox_preview.response") {
-        throw new Error("Preview owner redirect did not resolve");
-      }
-      const prefix = publicPrefix(target, port);
-      const accessPrefix = `${prefix}/${PREVIEW_ACCESS_SEGMENT}/${accessToken}`;
-      const previewNonce = randomBytes(18).toString("base64");
-      for (const [name, value] of Object.entries(response.headers)) {
-        if (name === "content-encoding" || name === "content-length") continue;
-        reply.header(
-          name,
-          name === "location" && value.startsWith("/") ? `${accessPrefix}${value}` : value,
-        );
-      }
-      reply.header("cache-control", "no-store");
-      for (const [name, value] of Object.entries(previewSecurityHeaders(previewNonce))) {
-        reply.header(name, value);
-      }
-      let responseBody: Uint8Array = Buffer.from(response.body, "base64");
-      if ((response.headers["content-type"] ?? "").toLowerCase().includes("text/html")) {
-        responseBody = rewritePreviewHtml(Buffer.from(responseBody), accessPrefix, previewNonce);
-      }
+          ? { kind, sessionId: parseUuidPathParameter(params.sessionId, "sessionId") }
+          : { kind, environmentId: parseUuidPathParameter(params.environmentId, "environmentId") };
+      const target =
+        requested.kind === "conversation"
+          ? await this.#conversationPreviewTarget(identity.tenantId, identity.userId, requested)
+          : requested;
+      const workspaceId = await this.#workspaceBinding(identity.tenantId, identity.userId, target);
+      const scope = {
+        tenantId: identity.tenantId,
+        userId: identity.userId,
+        target,
+        workspaceId,
+        port: Number(params.port),
+      };
+      const token = issuePreviewAccessToken(this.#previewToken, scope);
+      if (!verifyPreviewAccessToken(this.#previewToken, token))
+        throw new Error("Invalid preview port");
+      const next = new URL(this.#publicOriginBaseUrl);
+      next.hostname = previewOriginHostname(
+        this.#previewToken,
+        next.hostname,
+        target,
+        scope.port,
+        workspaceId,
+      );
+      next.pathname = PREVIEW_BOOTSTRAP_PATH;
+      const search = new URL(request.raw.url ?? "/", "http://localhost").search;
+      next.searchParams.set("ticket", token);
+      next.searchParams.set("path", applicationPath(`/${String(params["*"] ?? "")}${search}`));
       await reply
-        .code(response.status)
-        .send(method === "HEAD" ? undefined : Buffer.from(responseBody));
-    } catch (error: unknown) {
-      request.log.warn({ err: error }, "Sandbox preview request failed");
+        .header("cache-control", "no-store")
+        .header("referrer-policy", "no-referrer")
+        .redirect(next.toString(), 307);
+    } catch {
       await reply.code(503).send({
         error: "sandbox_preview_unavailable",
         message: "Sandbox service is not currently reachable",
       });
     }
   }
-
+  #origin(request: IncomingMessage): string {
+    const raw = request.headers.host ?? "";
+    const expected = new URL(`${this.#publicOriginBaseUrl.protocol}//${raw}/`);
+    if (expected.host !== raw || expected.pathname !== "/") throw new Error("Invalid preview host");
+    return expected.origin;
+  }
+  #scope(request: IncomingMessage, ticket?: string): SandboxPreviewConnectionRequest {
+    const tokens =
+      request.headers.cookie
+        ?.split(";")
+        .map((v) => v.trim())
+        .filter((v) => v.startsWith(PREVIEW_COOKIE + "=")) ?? [];
+    const token =
+      ticket ?? (tokens.length === 1 ? tokens[0]!.slice(PREVIEW_COOKIE.length + 1) : "");
+    const scope = verifyPreviewAccessToken(this.#previewToken, token);
+    if (!scope)
+      throw new Error("Preview access expired or missing. Reopen the application from PiCloud.");
+    const origin = new URL(this.#origin(request));
+    if (
+      origin.hostname !==
+      previewOriginHostname(
+        this.#previewToken,
+        this.#publicOriginBaseUrl.hostname,
+        scope.target,
+        scope.port,
+        scope.workspaceId,
+      )
+    )
+      throw new Error("Preview origin mismatch");
+    if (request.headers.origin && request.headers.origin !== origin.origin)
+      throw new Error("Cross-origin preview access rejected");
+    return scope;
+  }
+  async #authorizedOwner(scope: SandboxPreviewConnectionRequest): Promise<string> {
+    if (
+      (await this.#workspaceBinding(scope.tenantId, scope.userId, scope.target)) !==
+      scope.workspaceId
+    )
+      throw new Error("Preview workspace changed");
+    return this.#resolveBaseUrl(scope.tenantId, scope.userId, scope.target);
+  }
+  #prepare(request: IncomingMessage, scope: SandboxPreviewConnectionRequest): void {
+    const origin = this.#origin(request);
+    this.#origins.set(request, origin);
+    const cookie = stripPreviewCookie(request.headers.cookie);
+    for (const key of Object.keys(request.headers)) {
+      if (
+        key.startsWith("x-pi-cloud-") ||
+        key.startsWith("x-forwarded-") ||
+        key.startsWith("cube-") ||
+        key.startsWith("e2b-") ||
+        key === "forwarded"
+      )
+        delete request.headers[key];
+    }
+    if (cookie) request.headers.cookie = cookie;
+    else delete request.headers.cookie;
+    request.headers["x-forwarded-host"] = new URL(origin).host;
+    request.headers["x-forwarded-proto"] = this.#publicOriginBaseUrl.protocol.slice(0, -1);
+    if (request.headers.origin) request.headers.origin = `http://localhost:${scope.port}`;
+  }
+  async #serve(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    try {
+      const url = new URL(applicationPath(request.url ?? "/"), this.#origin(request));
+      if (url.pathname === PREVIEW_BOOTSTRAP_PATH) {
+        if (request.method !== "GET") {
+          fail(response, 405, "Method not allowed");
+          return;
+        }
+        const ticket = url.searchParams.get("ticket") ?? "";
+        const scope = this.#scope(request, ticket);
+        await this.#authorizedOwner(scope);
+        response.writeHead(303, {
+          "set-cookie": previewCookie(
+            ticket,
+            scope.expiresAt,
+            this.#publicOriginBaseUrl.protocol === "https:",
+          ),
+          location: applicationPath(url.searchParams.get("path") ?? "/"),
+          "cache-control": "no-store",
+          "referrer-policy": "no-referrer",
+        });
+        response.end();
+        return;
+      }
+      let scope: SandboxPreviewConnectionRequest;
+      try {
+        scope = this.#scope(request);
+      } catch {
+        fail(
+          response,
+          401,
+          "Preview access expired or invalid. Reopen the application from PiCloud.",
+        );
+        return;
+      }
+      const owner = await this.#authorizedOwner(scope);
+      const agent = previewConnectionAgent(
+        owner,
+        this.#previewToken,
+        scope,
+        this.#allowInsecureInternalHttp,
+      );
+      response.once("close", () => agent.destroy());
+      this.#prepare(request, scope);
+      await this.#proxy.web(request, response, {
+        target: `http://localhost:${scope.port}`,
+        agent,
+        autoRewrite: true,
+        protocolRewrite: this.#publicOriginBaseUrl.protocol.slice(0, -1),
+      });
+    } catch {
+      fail(response, 502, "Sandbox application is not reachable");
+    }
+  }
+  async #upgrade(request: IncomingMessage, socket: Socket, head: Buffer): Promise<void> {
+    socket.on("error", () => socket.destroy());
+    try {
+      applicationPath(request.url ?? "/");
+      const scope = this.#scope(request);
+      const owner = await this.#authorizedOwner(scope);
+      const agent = previewConnectionAgent(
+        owner,
+        this.#previewToken,
+        scope,
+        this.#allowInsecureInternalHttp,
+      );
+      socket.once("close", () => agent.destroy());
+      this.#prepare(request, scope);
+      await this.#proxy.ws(
+        request,
+        socket,
+        { target: `http://localhost:${scope.port}`, agent },
+        head,
+      );
+    } catch {
+      socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+    }
+  }
+  async #workspaceBinding(
+    tenantId: string,
+    userId: string,
+    target: SandboxPreviewTarget,
+  ): Promise<string> {
+    const row =
+      target.kind === "development_environment"
+        ? await this.#database
+            .selectFrom("development_environments")
+            .select("workspace_id")
+            .where("id", "=", target.environmentId)
+            .where("tenant_id", "=", tenantId)
+            .where("owner_user_id", "=", userId)
+            .where("state", "=", "running")
+            .executeTakeFirst()
+        : await this.#database
+            .selectFrom("sessions as s")
+            .innerJoin("workspaces as w", "w.id", "s.workspace_id")
+            .select("s.workspace_id")
+            .where("s.id", "=", target.sessionId)
+            .where("s.tenant_id", "=", tenantId)
+            .where("s.created_by_user_id", "=", userId)
+            .where("s.archived_at", "is", null)
+            .where("w.deleted_at", "is", null)
+            .executeTakeFirst();
+    if (!row) throw new Error("Preview resource unavailable");
+    return row.workspace_id;
+  }
   async #conversationPreviewTarget(
     tenantId: string,
     userId: string,
@@ -486,31 +503,5 @@ export class SandboxPreviewGateway {
       .executeTakeFirst();
     if (row === undefined) throw new Error("Conversation preview is unavailable");
     return row.ownerBaseUrl ?? row.fallbackBaseUrl;
-  }
-
-  async #forward(
-    baseUrl: string,
-    redirects: number,
-    message: SandboxPreviewRequest,
-  ): Promise<ReturnType<typeof parseSandboxPreviewResponse>> {
-    if (redirects > MAXIMUM_REDIRECTS) throw new Error("Too many Tool Broker redirects");
-    const target = new URL(TOOL_BROKER_SANDBOX_PREVIEW_PATH, baseUrl);
-    if (target.protocol === "http:" && !this.#allowInsecureInternalHttp) {
-      throw new Error("Insecure Tool Broker preview URL was rejected");
-    }
-    const response = await fetch(target, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.#previewToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(message),
-      signal: AbortSignal.timeout(70_000),
-    });
-    const parsed = parseSandboxPreviewResponse(await response.json());
-    if (parsed.type === "sandbox_preview.owner_redirect") {
-      return this.#forward(parsed.ownerBaseUrl, redirects + 1, message);
-    }
-    return parsed;
   }
 }

@@ -1,5 +1,7 @@
 import { Agent, buildConnector, fetch, type Dispatcher } from "undici";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
+import { PREVIEW_ACCESS_TTL_MS } from "@pi-cloud/protocol";
+import { Duplex, Readable, Writable } from "node:stream";
 
 export const CUBESANDBOX_ENVD_PORT = 49_983;
 const CONNECT_PROTOCOL_VERSION = "1";
@@ -74,6 +76,7 @@ export type CubeSandboxGuestCommandResult = Readonly<{
 }>;
 
 export interface CubeSandboxRuntimeClient {
+  openTcp?(instance: CubeSandboxInstance, port: number): Promise<Duplex>;
   checkHealth(): Promise<void>;
   ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume>;
   deleteVolume(volumeId: string): Promise<void>;
@@ -778,6 +781,150 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         `CubeSandbox envd file write failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
         response.status,
       );
+    }
+  }
+
+  async openTcp(instance: CubeSandboxInstance, port: number): Promise<Duplex> {
+    if (
+      !Number.isInteger(port) ||
+      port < 1024 ||
+      port > 65535 ||
+      [CUBESANDBOX_ENVD_PORT, 49_984, 50_005].includes(port)
+    ) {
+      throw new CubeRuntimeClientError("Invalid application port");
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.#requestTimeoutMs);
+    timeout.unref();
+    // A connection-scoped byte relay, not a PTY or a resident control service.
+    // No authority/credential is sent to the guest; the only target is loopback.
+    const script = `const s=require('node:net').connect(${port},'127.0.0.1');
+      s.on('connect',()=>{process.stdin.pipe(s);s.pipe(process.stdout)});
+      s.on('error',()=>process.exit(1));s.on('end',()=>process.stdout.end(()=>process.exit(0)));
+      process.stdout.on('error',()=>process.exit(0));process.on('SIGTERM',()=>s.end());
+      setTimeout(()=>process.exit(0),${PREVIEW_ACCESS_TTL_MS}).unref();`;
+    try {
+      const response = await this.#dataFetch(
+        instance,
+        CUBESANDBOX_ENVD_PORT,
+        "/process.Process/Start",
+        {
+          headers: {
+            authorization: userAuthorization("root"),
+            "content-type": CONNECT_CONTENT_TYPE,
+            "connect-protocol-version": CONNECT_PROTOCOL_VERSION,
+          },
+          body: encodeConnectEnvelope(
+            Buffer.from(
+              JSON.stringify({
+                process: {
+                  cmd: "/usr/bin/setpriv",
+                  args: [
+                    "--reuid",
+                    "1000",
+                    "--regid",
+                    "1000",
+                    "--clear-groups",
+                    "--no-new-privs",
+                    "/usr/local/bin/node",
+                    "-e",
+                    script,
+                  ],
+                  cwd: "/tmp",
+                  envs: {},
+                },
+                stdin: true,
+              }),
+            ),
+          ),
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok || response.body === null)
+        throw new CubeRuntimeClientError("Application TCP stream could not start");
+      const frames = connectFrames(response.body as ReadableStream<Uint8Array>);
+      const first = await frames.next();
+      if (first.done) throw new CubeRuntimeClientError("Application TCP stream has no process");
+      const start = record(
+        record(parseJson(first.value.payload, "envd TCP start"), "envd TCP start").event,
+        "envd TCP event",
+      ).start as { pid?: number };
+      const pid = start?.pid;
+      if (!Number.isSafeInteger(pid) || pid! < 1)
+        throw new CubeRuntimeClientError("Application TCP stream has no PID");
+      clearTimeout(timeout);
+      let ended = false;
+      const unary = async (method: "SendInput" | "SendSignal", value: unknown): Promise<void> => {
+        const result = await this.#dataFetch(
+          instance,
+          CUBESANDBOX_ENVD_PORT,
+          `/process.Process/${method}`,
+          {
+            headers: {
+              "content-type": "application/json",
+              "connect-protocol-version": CONNECT_PROTOCOL_VERSION,
+            },
+            body: Buffer.from(JSON.stringify({ process: { pid }, ...(value as object) })),
+            signal: AbortSignal.timeout(this.#requestTimeoutMs),
+          },
+        );
+        await result.body?.cancel();
+        if (!result.ok && result.status !== 404)
+          throw new CubeRuntimeClientError("Application TCP input failed", result.status);
+      };
+      const readable = Readable.from(
+        (async function* () {
+          for await (const frame of frames) {
+            if ((frame.flags & CONNECT_END_STREAM_FLAG) !== 0) {
+              raiseConnectEnd(frame.payload);
+              break;
+            }
+            if ((frame.flags & CONNECT_COMPRESSED_FLAG) !== 0)
+              throw new CubeRuntimeClientError("Compressed application TCP output is unsupported");
+            const event = record(
+              record(parseJson(frame.payload, "envd TCP"), "envd TCP").event,
+              "envd TCP event",
+            );
+            const data = record(event.data ?? {}, "envd TCP data");
+            if (typeof data.stdout === "string") yield Buffer.from(data.stdout, "base64");
+            if (event.end !== undefined) {
+              ended = true;
+              const end = record(event.end, "envd TCP end");
+              if ((end.exitCode ?? end.exit_code ?? exitCodeFromStatus(end.status)) !== 0)
+                throw new CubeRuntimeClientError("Application TCP connection closed with an error");
+              return;
+            }
+          }
+        })(),
+        { objectMode: false },
+      );
+      const writable = new Writable({
+        write(chunk: Buffer, _encoding, callback) {
+          const send = async () => {
+            for (let offset = 0; offset < chunk.length; offset += 65536) {
+              await unary("SendInput", {
+                input: { stdin: chunk.subarray(offset, offset + 65536).toString("base64") },
+              });
+            }
+          };
+          void send().then(() => callback(), callback);
+        },
+        final(callback) {
+          void unary("SendSignal", { signal: "SIGNAL_SIGTERM" }).then(() => callback(), callback);
+        },
+      });
+      const duplex = Duplex.from({ readable, writable });
+      duplex.once("close", () => {
+        const cleanup = ended
+          ? Promise.resolve()
+          : unary("SendSignal", { signal: "SIGNAL_SIGKILL" });
+        void cleanup.catch(() => undefined).finally(() => controller.abort());
+      });
+      return duplex;
+    } catch (error) {
+      clearTimeout(timeout);
+      controller.abort();
+      throw error;
     }
   }
 

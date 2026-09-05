@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted on 2026-08-25. This replaces ADR-0121.
+Accepted on 2026-08-25. Origin isolation remains current; ADR-0150 replaces
+the original path-token and buffered-proxy mechanics.
 
 ## Context
 
@@ -23,11 +24,12 @@ target/port subdomain below the deployment-owned Preview base domain:
 https://p-<target-hash>.preview.example.com/
 ```
 
-The isolated origin verifies both the capability and expected hostname before
-proxying to Tool Broker. PiCloud browser cookies remain host-only and are never
-sent to Preview subdomains. The capability URL carries no platform or Cube
-credential, uses `no-referrer`, expires after fifteen minutes and cannot be
-reused for another target or port.
+The isolated origin verifies the capability, Workspace binding and hostname,
+exchanges it for a host-only HttpOnly Cookie, and redirects to the app's root
+path. PiCloud browser cookies remain on the main origin; Preview authority is
+stripped before application requests enter the Broker connection. The bootstrap
+uses `no-referrer`, expires after fifteen minutes and cannot grant a different
+target, Workspace or port. See ADR-0150 for the streaming transport.
 
 Because the application is no longer same-origin with PiCloud, its CSP sandbox
 may include `allow-same-origin` together with scripts, forms and downloads.

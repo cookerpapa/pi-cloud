@@ -11,6 +11,7 @@ import {
   parseExecutionLease,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
+import { PassThrough } from "node:stream";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -191,11 +192,9 @@ function providerFixture() {
   const detachPersistent = vi.fn<NonNullable<SandboxProvider["detachPersistent"]>>(
     async () => undefined,
   );
-  const previewHttp = vi.fn<NonNullable<SandboxProvider["previewHttp"]>>(async () => ({
-    status: 200,
-    headers: { "content-type": "text/html; charset=utf-8" },
-    body: Buffer.from("<html><body>preview-ok</body></html>"),
-  }));
+  const openPreviewConnection = vi.fn<NonNullable<SandboxProvider["openPreviewConnection"]>>(
+    async () => new PassThrough(),
+  );
   const listDirectory = vi.fn<NonNullable<SandboxProvider["listDirectory"]>>(
     async (_handle, path) => ({
       path,
@@ -247,7 +246,7 @@ function providerFixture() {
         disconnect() {},
       };
     },
-    previewHttp,
+    openPreviewConnection,
     listDirectory,
     createDirectory,
     pause,
@@ -312,7 +311,7 @@ function providerFixture() {
     resume,
     persistentCapsule,
     detachPersistent,
-    previewHttp,
+    openPreviewConnection,
     listDirectory,
     createDirectory,
     get createSpec() {
@@ -1026,33 +1025,19 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceRevision: "1".repeat(64),
     });
 
-    const response = await manager.preview({
-      sandboxPreviewProtocolVersion: 1,
-      type: "sandbox_preview.request",
-      requestId: "32000000-0000-4000-8000-000000000003",
+    const connection = await manager.openPreviewConnection({
       tenantId: assignment.tenantId,
       userId: "user-provider-test",
+      workspaceId: assignment.workspaceId,
       target: { kind: "conversation", sessionId: assignment.sessionId },
       port: 8000,
-      method: "GET",
-      path: "/",
-      headers: { accept: "text/html" },
+      expiresAt: Date.now() + 60_000,
     });
-    expect(response).toMatchObject({
-      type: "sandbox_preview.response",
-      status: 200,
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
-    expect(
-      Buffer.from(
-        response.type === "sandbox_preview.response" ? response.body : "",
-        "base64",
-      ).toString(),
-    ).toContain("preview-ok");
-    expect(fixture.previewHttp).toHaveBeenCalledWith(
+    expect(fixture.openPreviewConnection).toHaveBeenCalledWith(
       expect.objectContaining({ activationId: ACTIVATION_ID }),
-      expect.objectContaining({ port: 8000, method: "GET", path: "/" }),
+      8000,
     );
+    connection.destroy();
     await manager.close();
   });
 

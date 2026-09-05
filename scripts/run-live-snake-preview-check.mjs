@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { request as httpRequest } from "node:http";
+import { readPreviewDocument } from "./lib/preview-client.mjs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -317,34 +317,10 @@ async function waitForPreview(browser, sessionId) {
     const location = bootstrap.headers.get("location");
     if (bootstrap.status === 307 && location !== null) {
       const publicUrl = new URL(location, baseUrl);
-      const loopbackUrl = new URL(publicUrl);
-      loopbackUrl.hostname = connectHost;
-      const response = await new Promise((resolvePromise, rejectPromise) => {
-        const request = httpRequest(
-          {
-            hostname: loopbackUrl.hostname,
-            port: loopbackUrl.port,
-            path: `${loopbackUrl.pathname}${loopbackUrl.search}`,
-            headers: { accept: "text/html", host: publicUrl.host },
-          },
-          (incoming) => {
-            const chunks = [];
-            incoming.on("data", (chunk) => chunks.push(chunk));
-            incoming.once("end", () =>
-              resolvePromise({
-                status: incoming.statusCode ?? 0,
-                html: Buffer.concat(chunks).toString("utf8"),
-              }),
-            );
-          },
-        );
-        request.once("error", rejectPromise);
-        request.setTimeout(30_000, () => request.destroy(new Error("Preview request timed out")));
-        request.end();
-      });
+      const response = await readPreviewDocument(publicUrl, connectHost);
       lastStatus = response.status;
       if (response.status >= 200 && response.status < 300) {
-        return { path: publicUrl.toString(), html: response.html };
+        return { path: publicUrl.toString(), html: response.body.toString("utf8") };
       }
     }
     await wait(500);

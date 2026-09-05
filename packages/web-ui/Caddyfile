@@ -6,6 +6,11 @@
 :8080, :8081 {
 	encode zstd gzip
 
+	@preview expression "{http.request.host}.matches('^p-[0-9a-f]{24}[.].+$')"
+	handle @preview {
+		reverse_proxy {$PI_CLOUD_PREVIEW_UPSTREAM:control-plane:3001}
+	}
+
 	handle /healthz {
 		respond "ok" 200
 	}

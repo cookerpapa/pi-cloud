@@ -57,6 +57,7 @@ spec:
           imagePullPolicy: {{ .Values.images.controlPlane.pullPolicy }}
           ports:
             - { name: http, containerPort: 3000 }
+            - { name: preview, containerPort: 3001 }
             - { name: metrics, containerPort: 9464 }
           env:
             - { name: NODE_ENV, value: production }
@@ -151,6 +152,7 @@ spec:
   selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: control-plane }
   ports:
     - { name: http, port: 3000, targetPort: http }
+    - { name: preview, port: 3001, targetPort: preview }
     - { name: metrics, port: 9464, targetPort: metrics }
 ---
 apiVersion: policy/v1

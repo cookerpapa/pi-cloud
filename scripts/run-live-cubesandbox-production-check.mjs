@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
-import { request as httpRequest } from "node:http";
+import { readPreviewDocument } from "./lib/preview-client.mjs";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -145,32 +145,8 @@ const fetchFromProduction = async (input, init = {}) => {
   if (response.status < 300 || response.status >= 400 || location === null) return response;
   const target = new URL(location, request);
   if (!target.hostname.endsWith(".preview.localhost")) return response;
-  return new Promise((resolvePromise, rejectPromise) => {
-    const request = httpRequest(
-      {
-        hostname: connectHost,
-        port: target.port,
-        path: `${target.pathname}${target.search}`,
-        method: init.method ?? "GET",
-        headers: { ...Object.fromEntries(new Headers(init.headers)), host: target.host },
-        signal: init.signal ?? AbortSignal.timeout(300_000),
-      },
-      (incoming) => {
-        const chunks = [];
-        incoming.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-        incoming.once("end", () => {
-          resolvePromise(
-            new Response(Buffer.concat(chunks), {
-              status: incoming.statusCode ?? 500,
-              headers: incoming.headers,
-            }),
-          );
-        });
-      },
-    );
-    request.once("error", rejectPromise);
-    request.end();
-  });
+  const preview = await readPreviewDocument(target, connectHost);
+  return new Response(preview.body, { status: preview.status, headers: preview.headers });
 };
 const bootstrapApi = new PiCloudApi(fetchFromProduction, token);
 let api = bootstrapApi;

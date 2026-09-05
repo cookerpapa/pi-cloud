@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0150](0150-root-origin-streaming-preview.md) — root-origin application
+   preview with scoped Cookies and streaming HTTP/WebSocket transport.
 1. [ADR-0149](0149-message-handoff-round-trips.md) — reduce redundant handoffs
    while retaining semantic durability and effect admission.
 1. [ADR-0148](0148-two-phase-tool-effect-checkpoint.md) — two atomic

@@ -12,9 +12,11 @@ import {
   parseToolBrokerReadWorkspaceFileRequest,
   parseSupervisorManagementRequest,
   parseToolSandboxOperationRequest,
-  parseSandboxPreviewRequest,
   parseSourceControlWorkspaceCredentialRequest,
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
+  PREVIEW_SCOPE_HEADER,
+  PREVIEW_ACCESS_TTL_MS,
+  parseSandboxPreviewConnection,
   type InternalServiceError,
   type SupervisorManagementResponse,
 } from "@pi-cloud/protocol";
@@ -81,7 +83,7 @@ export type ToolBrokerBackend = Pick<
       | "developmentEnvironmentLifecycle"
       | "browseDevelopmentEnvironment"
       | "openDevelopmentEnvironmentTerminal"
-      | "preview"
+      | "openPreviewConnection"
       | "authorizeSourceCredential"
       | "preflightSourceCredential"
       | "listSourceCredentials"
@@ -172,6 +174,7 @@ export class ToolBrokerServer {
   readonly #capacityMetrics: NodeJS.Timeout;
   #address: string | undefined;
   #ready = false;
+  readonly #previewConnections = new Set<import("node:stream").Duplex>();
 
   constructor(options: ToolBrokerServerOptions) {
     if (options.host.trim().length === 0) throw new TypeError("host must not be empty");
@@ -206,6 +209,57 @@ export class ToolBrokerServer {
     this.#capacityMetrics = setInterval(() => this.#recordCapacityMetrics(), 1_000);
     this.#capacityMetrics.unref();
     this.#installRoutes();
+    this.#server.server.on("connect", (request, socket, head) => {
+      socket.on("error", () => socket.destroy());
+      void (async () => {
+        if (request.url !== TOOL_BROKER_SANDBOX_PREVIEW_PATH || !this.#ready) {
+          socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+          return;
+        }
+        if (!this.#terminalAuthorized(request.headers.authorization)) {
+          socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+          return;
+        }
+        const raw = request.headers[PREVIEW_SCOPE_HEADER];
+        if (typeof raw !== "string" || raw.length > 4096) throw new Error("Invalid preview scope");
+        const scope = parseSandboxPreviewConnection(
+          JSON.parse(Buffer.from(raw, "base64url").toString()),
+        );
+        const lifetime = scope.expiresAt - Date.now();
+        if (lifetime <= 0 || lifetime > PREVIEW_ACCESS_TTL_MS)
+          throw new Error("Expired preview scope");
+        const stream = await this.#broker.openPreviewConnection!(scope);
+        if (socket.destroyed || scope.expiresAt <= Date.now()) {
+          stream.destroy();
+          if (!socket.destroyed)
+            socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+          return;
+        }
+        this.#previewConnections.add(socket);
+        const timer = setTimeout(() => socket.destroy(), Math.max(1, scope.expiresAt - Date.now()));
+        timer.unref();
+        socket.once("close", () => {
+          clearTimeout(timer);
+          this.#previewConnections.delete(socket);
+          stream.destroy();
+        });
+        stream.once("error", () => socket.destroy());
+        stream.once("close", () => {
+          if (stream.readableEnded) socket.end();
+          else socket.destroy();
+        });
+        socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        if (head.length > 0) stream.write(head);
+        socket.pipe(stream);
+        stream.pipe(socket);
+      })().catch((error: unknown) => {
+        if (error instanceof ToolBrokerOwnerRedirectError) {
+          socket.end(
+            `HTTP/1.1 307 Temporary Redirect\r\nLocation: ${error.ownerBaseUrl}\r\nConnection: close\r\n\r\n`,
+          );
+        } else socket.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
+      });
+    });
   }
 
   get address(): string | undefined {
@@ -223,6 +277,7 @@ export class ToolBrokerServer {
 
   async close(): Promise<void> {
     this.#ready = false;
+    for (const connection of this.#previewConnections) connection.destroy();
     clearInterval(this.#capacityMetrics);
     await this.#broker.close();
     if (this.#address !== undefined) {
@@ -413,31 +468,6 @@ export class ToolBrokerServer {
           { websocket: true },
           (socket) => this.#acceptTerminalSocket(socket, true),
         );
-      });
-    }
-
-    if (this.#terminalDigest !== undefined && this.#broker.preview !== undefined) {
-      this.#server.post(TOOL_BROKER_SANDBOX_PREVIEW_PATH, async (request, reply) => {
-        if (!this.#terminalAuthorized(request.headers.authorization)) {
-          await reply.code(401).send();
-          return;
-        }
-        try {
-          const message = parseSandboxPreviewRequest(request.body);
-          await reply.code(200).send(await this.#broker.preview!(message));
-        } catch (error: unknown) {
-          if (error instanceof ToolBrokerOwnerRedirectError) {
-            const message = parseSandboxPreviewRequest(request.body);
-            await reply.code(200).send({
-              sandboxPreviewProtocolVersion: 1,
-              type: "sandbox_preview.owner_redirect",
-              requestId: message.requestId,
-              ownerBaseUrl: error.ownerBaseUrl,
-            });
-            return;
-          }
-          await this.#failure(reply, error);
-        }
       });
     }
 

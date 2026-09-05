@@ -76,6 +76,7 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS: ${PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS:-100}
   PI_CLOUD_METRICS_HOST: 0.0.0.0
   PI_CLOUD_METRICS_PORT: "9464"
+  PI_CLOUD_PREVIEW_PORT: ${PI_CLOUD_PREVIEW_PORT:-3001}
   PI_CLOUD_METRICS_TOKEN_FILE: /run/pi-cloud-secrets/metrics-token
   PI_CLOUD_OTLP_TRACES_ENDPOINT: ${PI_CLOUD_OTLP_TRACES_ENDPOINT:-}
 
@@ -928,6 +929,7 @@ services:
         condition: service_healthy
     environment:
       XDG_CONFIG_HOME: /tmp/caddy-config
+      PI_CLOUD_PREVIEW_UPSTREAM: control-plane:${PI_CLOUD_PREVIEW_PORT:-3001}
       XDG_DATA_HOME: /tmp/caddy-data
     ports:
       - ${PI_CLOUD_HTTP_BIND_ADDRESS:-127.0.0.1}:${PI_CLOUD_HTTP_PORT:-8080}:8080

@@ -22,8 +22,7 @@ import type {
   ToolBrokerWorkspaceForkRequest,
   ToolBrokerWorkspaceForkResponse,
   CloudToolName,
-  SandboxPreviewRequest,
-  SandboxPreviewResponse,
+  SandboxPreviewConnectionRequest,
   SourceControlWorkspaceCredentialAuthorizeRequest,
   SourceControlWorkspaceCredentialDisconnectRequest,
   SourceControlWorkspaceCredentialDisconnectResponse,
@@ -1136,14 +1135,9 @@ export class ToolBroker {
     }
   }
 
-  async preview(request: SandboxPreviewRequest): Promise<SandboxPreviewResponse> {
-    if (this.#provider.previewHttp === undefined) {
-      throw new ToolBrokerError(
-        "sandbox_preview_unsupported",
-        "The configured Sandbox Provider does not support HTTP preview",
-        false,
-      );
-    }
+  async #previewHandle(
+    request: Pick<SandboxPreviewConnectionRequest, "tenantId" | "userId" | "target">,
+  ): Promise<SandboxHandle> {
     const ownership = await this.#stateRepository.sandboxPreviewOwner(
       request.tenantId,
       request.userId,
@@ -1190,32 +1184,26 @@ export class ToolBroker {
         true,
       );
     }
-    let body: Buffer | undefined;
-    if (request.body !== undefined) {
-      body = Buffer.from(request.body, "base64");
-      if (body.toString("base64") !== request.body) {
-        throw new ToolBrokerError(
-          "sandbox_preview_request_invalid",
-          "Sandbox preview body was invalid",
-          false,
-        );
-      }
-    }
-    const response = await this.#provider.previewHttp(handle, {
-      port: request.port,
-      method: request.method,
-      path: request.path,
-      headers: request.headers,
-      ...(body === undefined ? {} : { body }),
-    });
-    return {
-      sandboxPreviewProtocolVersion: 1,
-      type: "sandbox_preview.response",
-      requestId: request.requestId,
-      status: response.status,
-      headers: response.headers,
-      body: Buffer.from(response.body).toString("base64"),
-    };
+    return handle;
+  }
+
+  async openPreviewConnection(
+    request: SandboxPreviewConnectionRequest,
+  ): Promise<import("node:stream").Duplex> {
+    const handle = await this.#previewHandle(request);
+    if (handle.assignment.workspaceId !== request.workspaceId)
+      throw new ToolBrokerError(
+        "sandbox_preview_binding_changed",
+        "Application workspace changed",
+        false,
+      );
+    if (this.#provider.openPreviewConnection === undefined)
+      throw new ToolBrokerError(
+        "sandbox_preview_unsupported",
+        "Application connections are unavailable",
+        false,
+      );
+    return this.#provider.openPreviewConnection(handle, request.port);
   }
 
   async create(request: ToolSandboxCreateRequest): Promise<ToolSandboxCreateResponse> {

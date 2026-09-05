@@ -25,6 +25,7 @@ export type ProductionControlPlaneConfig = {
   workspaceServiceToken: string;
   workspaceTerminalToken: string;
   previewPublicOriginBaseUrl: string;
+  previewPort: number;
   sshGatewayEnabled: boolean;
   sshAdvertisedHost: string;
   sshAdvertisedPort: number;
@@ -474,6 +475,7 @@ export async function loadProductionControlPlaneConfig(
       allowInlineSecrets,
     ),
     previewPublicOriginBaseUrl,
+    previewPort: integerValue(environment, "PI_CLOUD_PREVIEW_PORT", 3001, 1, 65535),
     publicOriginBaseUrl,
     sshGatewayEnabled: booleanValue(environment, "PI_CLOUD_SSH_GATEWAY_ENABLED"),
     sshAdvertisedHost: bounded(

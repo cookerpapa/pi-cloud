@@ -198,6 +198,8 @@ export async function startControlPlane(): Promise<void> {
       database,
       previewToken: config.workspaceTerminalToken,
       publicOriginBaseUrl: config.previewPublicOriginBaseUrl,
+      listenHost: config.host,
+      listenPort: config.previewPort,
       allowInsecureInternalHttp: config.allowInsecureInternalHttp,
     });
     developmentEnvironmentService = new DevelopmentEnvironmentService({

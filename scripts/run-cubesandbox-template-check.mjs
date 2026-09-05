@@ -251,27 +251,13 @@ try {
     "printf 'PI_CLOUD_PREVIEW_OK\\n' > /workspace/preview.txt && setsid --fork python3 -m http.server 5173 --bind 0.0.0.0 --directory /workspace </dev/null >/tmp/pi-cloud-preview.log 2>&1",
   );
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
-  const previewPath = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
-  await writeEnvdFile(baseUrl, previewPath, {
-    mode: "preview_http",
-    request: {
-      port: 5_173,
-      method: "GET",
-      path: "/preview.txt",
-      headers: { accept: "text/plain" },
-      maximumResponseBytes: 64 * 1_024,
-      timeoutMs: 5_000,
-    },
-  });
   const previewResult = await envdRun(
     baseUrl,
-    `/bin/chown 1000:1000 ${previewPath} && /bin/chmod 0400 ${previewPath} && /usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node /opt/pi-cloud/bin/envd-preview-proxy.mjs ${previewPath}`,
+    "curl --fail --silent http://127.0.0.1:5173/preview.txt",
   );
   assert(
-    previewResult.exitCode === 0 &&
-      Buffer.from(JSON.parse(previewResult.stdout).body, "base64").toString("utf8") ===
-        "PI_CLOUD_PREVIEW_OK\n",
-    `Guest preview failed: ${previewResult.stderr || previewResult.stdout}`,
+    previewResult.exitCode === 0 && previewResult.stdout === "PI_CLOUD_PREVIEW_OK\\n",
+    "Guest HTTP service failed",
   );
   await envdRun(baseUrl, "/usr/bin/pkill -f '^python3 -m http.server 5173 '");
 

@@ -579,18 +579,30 @@ lifecycle budget so deployment overrides cannot silently restore the former
 
 ### Authenticated Sandbox service preview
 
-The browser reaches a service through a same-origin PiCloud preview path. The
-Control Plane authenticates the user and resolves the conversation or owned
-development environment. Tool Broker resolves the local live handle and uses
-Cube's authenticated envd ingress to launch an unprivileged, bounded one-shot
-HTTP helper. That helper reaches the requested localhost application port and
-exits after returning the response. Applications must bind `0.0.0.0` or
-localhost; envd port 49983 is never a Preview target. Cube traffic
-tokens, envd access tokens, physical Sandbox IDs and external routing details
-never leave the trusted execution plane or reach the application. Responses are
-bounded and security-sensitive hop-by-hop headers are not forwarded. Applications
-should use relative asset URLs under the path-based preview endpoint. HTML
-responses get a per-response CSP nonce on inline script/style blocks.
+The main-origin Preview link authenticates the user and resolves the current
+Workspace or owned development machine. It issues a fifteen-minute capability
+bound to user, target, Workspace and application port. The isolated origin
+exchanges it for a host-only HttpOnly Cookie and redirects to the original
+application path. Rebinding a Workspace changes the hostname and invalidates
+the old binding; release prevents later access.
+
+Caddy routes every Preview-host path to a dedicated listener in the existing
+Control Plane process (internal port 3001). No Preview request, including `/v1`,
+can enter the main application's API or SPA fallback. The listener uses pinned
+`httpxy` for streaming HTTP and WebSocket upgrade. Platform cookies and reserved
+headers are removed; application cookies remain host-scoped. Dynamic styles
+and development scripts work inside the isolated origin, including HTTPS static
+assets. Network/form access remains self-scoped and framing is denied.
+
+An authenticated HTTP CONNECT to Tool Broker selects only the authorized guest
+loopback port. Broker resolves current ownership and opens a provider-neutral
+byte stream. Cube's envd Start/SendInput stream carries a short-lived unprivileged
+Node TCP relay, without a PTY, listening port, resident controller or credential
+in the guest. Backpressure is stream-based; application responses are not encoded
+as whole JSON/base64 objects. Expiry, disconnect and service shutdown close the
+connection and relay, not the application process. The guest relay also has a
+bounded orphan lifetime. HTTP, SSE, binary data and WebSockets use this same
+transport. No HTML/base-tag/script rewriting or special Vite base is required.
 
 The immutable template exposes and probes only envd, so PiCloud does not reserve
 fixed application ports or depend on Cube host-port mappings. At Preview Tool

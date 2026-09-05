@@ -1,0 +1,29 @@
+{
+  "revision": "46be67adf81bdb74691f4a95fa30e617ff6a5ab7",
+  "workingTreeDirty": true,
+  "checkedAt": "2026-09-05T05:11:52.943Z",
+  "hmrWithoutReload": true,
+  "sse": {
+    "first": "data: first\n\n",
+    "rest": "data: last\n\n",
+    "firstMs": 83,
+    "totalMs": 1466
+  },
+  "websocket": [0, 255, 65, 13, 10],
+  "cookieIsolation": true,
+  "rootApplicationRouting": true,
+  "accepted": true,
+  "sessionId": "8300ae1e-d86a-4477-85b9-1c838a1cde2e",
+  "workspaceId": "fed04a98-a2c4-4fcd-8f27-3d18f5a6b4b6",
+  "runs": [
+    {
+      "runId": "d98406c9-389a-49f0-a9bf-3765ba35d57a",
+      "elapsedMs": 134216
+    },
+    {
+      "runId": "8930236d-8ab6-4863-9065-cd1ed11a4481",
+      "elapsedMs": 2905
+    }
+  ],
+  "resourcesDeleted": true
+}

@@ -79,6 +79,7 @@
     "production:check": "node scripts/run-live-cubesandbox-production-check.mjs",
     "production:product-surface-check": "node scripts/run-live-product-surface-check.mjs",
     "production:snake-preview-check": "node scripts/run-live-snake-preview-check.mjs",
+    "production:vite-preview-check": "node scripts/run-live-vite-preview-check.mjs",
     "production:preview-isolation-check": "node scripts/run-live-preview-isolation-check.mjs",
     "production:browser-ui-check": "node scripts/run-live-browser-ui-check.mjs",
     "production:directory-picker-check": "node scripts/run-live-directory-picker-check.mjs",

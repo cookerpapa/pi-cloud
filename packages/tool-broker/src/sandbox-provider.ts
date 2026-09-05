@@ -21,6 +21,7 @@ import type {
   SourceControlWorkspaceCredentialPreflightRequest,
   SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
+import type { Duplex } from "node:stream";
 
 export const SANDBOX_PROVIDER_API_VERSION = 1 as const;
 
@@ -178,26 +179,13 @@ export type SandboxTerminalSession = Readonly<{
   disconnect(): void;
 }>;
 
-export type SandboxPreviewHttpRequest = Readonly<{
-  port: number;
-  method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
-  path: string;
-  headers: Readonly<Record<string, string>>;
-  body?: Uint8Array;
-}>;
-
-export type SandboxPreviewHttpResponse = Readonly<{
-  status: number;
-  headers: Readonly<Record<string, string>>;
-  body: Uint8Array;
-}>;
-
 /**
  * Provider-neutral execution contract owned by the trusted Tool Broker.
  * Implementations must not expose their native SDK/client objects through a
  * handle or require the Agent Runner to know provider-specific arguments.
  */
 export interface SandboxProvider {
+  openPreviewConnection?(handle: SandboxHandle, port: number): Promise<Duplex>;
   readonly providerId: string;
   readonly cleanPrewarmCount?: number;
   /** Provider-specific policy selected only by trusted deployment config. */
@@ -226,11 +214,6 @@ export interface SandboxProvider {
   ): Promise<void>;
   /** Open a human-operated PTY without granting Agent Tool authority. */
   openTerminal?(handle: SandboxHandle, size: SandboxTerminalSize): Promise<SandboxTerminalSession>;
-  /** Proxy one tenant-authorized HTTP request through the runtime's private ingress token. */
-  previewHttp?(
-    handle: SandboxHandle,
-    request: SandboxPreviewHttpRequest,
-  ): Promise<SandboxPreviewHttpResponse>;
   /** Pause a long-lived user environment while preserving Cube VM state. */
   pause?(handle: SandboxHandle): Promise<void>;
   /** Resume the same paused Cube identity and return its refreshed handle. */
