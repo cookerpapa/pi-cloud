@@ -116,4 +116,43 @@ describe("PostgreSQL Pi runtime world-state harness", () => {
       ),
     ).toHaveLength(1);
   });
+
+  it("does not mistake temporary disconnection for a reset, but records a new Guest exactly once", async () => {
+    const session = new Session(
+      new InMemorySessionStorage({ id: "guest-reconnection", createdAt: Date.now() }),
+    );
+    const first = await PiSessionWorldStateController.create(
+      session,
+      "main",
+      continuity(FIRST_ACTIVATION, "warm_reuse"),
+    );
+    await first.capture();
+    await first.recordUnavailable();
+    expect((await first.capture()).modelMessages).toHaveLength(0);
+    const reconnected = await PiSessionWorldStateController.create(
+      session,
+      "main",
+      continuity(FIRST_ACTIVATION, "warm_reuse"),
+    );
+    expect((await reconnected.capture()).modelMessages).toHaveLength(0);
+    await reconnected.recordUnavailable();
+    const replacement = await PiSessionWorldStateController.create(
+      session,
+      "main",
+      continuity(SECOND_ACTIVATION, "cold_restore"),
+    );
+    expect((await replacement.capture()).modelMessages).toHaveLength(0);
+    await replacement.recordActive();
+    const nextRun = await PiSessionWorldStateController.create(
+      session,
+      "main",
+      continuity(SECOND_ACTIVATION, "warm_reuse"),
+    );
+    expect((await nextRun.capture()).modelMessages).toHaveLength(0);
+    expect(
+      (await session.findEntriesOnBranch()).filter(
+        (entry) => entry.type === "custom" && entry.customType === PI_SANDBOX_RESET_CUSTOM_TYPE,
+      ),
+    ).toHaveLength(1);
+  });
 });

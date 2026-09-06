@@ -184,6 +184,9 @@ function providerFixture() {
   const persistentCapsule = vi.fn<NonNullable<SandboxProvider["persistentCapsule"]>>(
     async (handle) => ({ handle, capsule: "test-exclusive-machine-capsule" }),
   );
+  const probeExecution = vi.fn<NonNullable<SandboxProvider["probeExecution"]>>(async (handle) => ({
+    continuityId: handle.runtimeId,
+  }));
   const adoptPersistentCapsule = vi.fn<NonNullable<SandboxProvider["adoptPersistentCapsule"]>>(
     async () => {
       throw new Error("Provider fixture has no detached machine to adopt");
@@ -252,6 +255,7 @@ function providerFixture() {
     pause,
     resume,
     persistentCapsule,
+    probeExecution,
     adoptPersistentCapsule,
     detachPersistent,
     settle,
@@ -310,6 +314,7 @@ function providerFixture() {
     pause,
     resume,
     persistentCapsule,
+    probeExecution,
     detachPersistent,
     openPreviewConnection,
     listDirectory,
@@ -725,6 +730,72 @@ describe("provider-backed Tool Tool Broker", () => {
         ACTIVATION_ID,
       ),
     ).resolves.toMatchObject({ status: "owned", state: "running" });
+  });
+
+  it("quarantines a broken development binding without deleting its VM, capsule or first error", async () => {
+    const fixture = providerFixture();
+    const repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const settleOperation = vi.spyOn(repository, "settleOperation");
+    const returnMachine = vi.spyOn(repository, "returnDevelopmentEnvironment");
+    const destroyRuntime = vi.spyOn(fixture.provider, "destroyRuntime");
+    const manager = testBroker({
+      provider: fixture.provider,
+      stateRepository: repository,
+      idGenerator: () => ACTIVATION_ID,
+    });
+    await manager.provisionDevelopmentEnvironment({
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.provision",
+      requestId: "63111111-1111-4111-8111-111111111111",
+      environmentId: ACTIVATION_ID,
+      tenantId: assignment.tenantId,
+      userId: "77777777-7777-4777-8777-777777777777",
+      projectId: assignment.projectId,
+      workspaceId: assignment.workspaceId,
+      generation: 1,
+      profileKey: "standard",
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+    });
+    const binding = await manager.create({
+      ...createRequest,
+      executionMode: "development_environment",
+    });
+    const failure = new ToolBrokerError(
+      "cubesandbox_tool_result_unknown",
+      "Command result was lost",
+      false,
+    );
+    fixture.exec.mockRejectedValueOnce(failure);
+    await expect(
+      manager.execute(assignment.executionLease, operation("63111111-1111-4111-8111-111111111112")),
+    ).rejects.toBe(failure);
+    await expect(
+      manager.execute(assignment.executionLease, operation("63111111-1111-4111-8111-111111111113")),
+    ).rejects.toBe(failure);
+    expect(fixture.exec).toHaveBeenCalledTimes(1);
+    expect(settleOperation).toHaveBeenCalledWith(expect.anything(), "unknown", failure.code);
+    await manager.stop(binding.activationId, assignment);
+    await manager.stop(binding.activationId, assignment);
+    expect(returnMachine).toHaveBeenCalledWith(
+      ACTIVATION_ID,
+      binding.activationId,
+      "unknown",
+      expect.objectContaining({
+        handle: expect.objectContaining({ runtimeId: "66666666-6666-4666-8666-666666666666" }),
+        runtimeCapsule: "test-exclusive-machine-capsule",
+        failureCode: failure.code,
+      }),
+    );
+    expect(destroyRuntime).not.toHaveBeenCalled();
+    expect(fixture.destroyed).toBe(false);
+    await manager.recoverPersistentDevelopmentEnvironments();
+    await expect(
+      manager.create({ ...createRequest, executionMode: "development_environment" }),
+    ).resolves.toMatchObject({ continuity: "warm_reuse" });
+    expect(fixture.createCount).toBe(1);
+    await manager.close();
+    expect(fixture.destroyed).toBe(false);
   });
 
   it("returns a borrowed development KVM to machine authority before Broker shutdown", async () => {

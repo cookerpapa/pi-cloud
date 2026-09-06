@@ -133,6 +133,14 @@ export class CubeRuntimeClientError extends Error {
   }
 }
 
+/** The Guest process ran, but the requested application socket was refused. */
+export class CubeApplicationPortError extends CubeRuntimeClientError {
+  constructor() {
+    super("Application port is not accepting connections");
+    this.name = "CubeApplicationPortError";
+  }
+}
+
 function bounded(value: unknown, label: string, maximum: number): string {
   if (
     typeof value !== "string" ||
@@ -799,10 +807,11 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     // A connection-scoped byte relay, not a PTY or a resident control service.
     // No authority/credential is sent to the guest; the only target is loopback.
     const script = `const s=require('node:net').connect(${port},'127.0.0.1');
-      s.on('connect',()=>{process.stdin.pipe(s);s.pipe(process.stdout)});
-      s.on('error',()=>process.exit(1));s.on('end',()=>process.stdout.end(()=>process.exit(0)));
+      s.on('connect',()=>{process.stderr.write('PI_CLOUD_TCP_CONNECTED\\n');process.stdin.pipe(s);s.pipe(process.stdout)});
+      s.on('error',()=>process.stderr.write('PI_CLOUD_TCP_FAILED\\n',()=>process.exit(1)));s.on('end',()=>process.stdout.end(()=>process.exit(0)));
       process.stdout.on('error',()=>process.exit(0));process.on('SIGTERM',()=>s.end());
       setTimeout(()=>process.exit(0),${PREVIEW_ACCESS_TTL_MS}).unref();`;
+    let killRelay: (() => Promise<void>) | undefined;
     try {
       const response = await this.#dataFetch(
         instance,
@@ -852,8 +861,6 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       const pid = start?.pid;
       if (!Number.isSafeInteger(pid) || pid! < 1)
         throw new CubeRuntimeClientError("Application TCP stream has no PID");
-      clearTimeout(timeout);
-      let ended = false;
       const unary = async (method: "SendInput" | "SendSignal", value: unknown): Promise<void> => {
         const result = await this.#dataFetch(
           instance,
@@ -872,8 +879,47 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         if (!result.ok && result.status !== 404)
           throw new CubeRuntimeClientError("Application TCP input failed", result.status);
       };
+      killRelay = () => unary("SendSignal", { signal: "SIGNAL_SIGKILL" });
+      let ended = false;
+      const initialOutput: Buffer[] = [];
+      let initialBytes = 0;
+      let connectionReport = "";
+      // envd's start event proves only that the relay process exists. Do not
+      // ACK CONNECT until that relay confirms the application's TCP socket.
+      while (!connectionReport.includes("PI_CLOUD_TCP_CONNECTED\n")) {
+        const next = await frames.next();
+        if (next.done) throw new CubeRuntimeClientError("Guest TCP relay ended before connecting");
+        if ((next.value.flags & CONNECT_END_STREAM_FLAG) !== 0) {
+          raiseConnectEnd(next.value.payload);
+          throw new CubeRuntimeClientError("Guest TCP relay ended before connecting");
+        }
+        if ((next.value.flags & CONNECT_COMPRESSED_FLAG) !== 0)
+          throw new CubeRuntimeClientError("Compressed application TCP output is unsupported");
+        const event = record(
+          record(parseJson(next.value.payload, "envd TCP connect"), "envd TCP connect").event,
+          "envd TCP event",
+        );
+        const data = record(event.data ?? {}, "envd TCP data");
+        if (typeof data.stderr === "string")
+          connectionReport += Buffer.from(data.stderr, "base64").toString("utf8");
+        if (connectionReport.includes("PI_CLOUD_TCP_FAILED\n"))
+          throw new CubeApplicationPortError();
+        if (connectionReport.length > 1024)
+          throw new CubeRuntimeClientError("Guest TCP relay handshake was invalid");
+        if (typeof data.stdout === "string") {
+          const output = Buffer.from(data.stdout, "base64");
+          initialBytes += output.length;
+          if (initialBytes > 65536)
+            throw new CubeRuntimeClientError("Guest TCP relay handshake output exceeded its limit");
+          initialOutput.push(output);
+        }
+        if (event.end !== undefined)
+          throw new CubeRuntimeClientError("Guest TCP relay exited before connecting");
+      }
+      clearTimeout(timeout);
       const readable = Readable.from(
         (async function* () {
+          yield* initialOutput;
           for await (const frame of frames) {
             if ((frame.flags & CONNECT_END_STREAM_FLAG) !== 0) {
               raiseConnectEnd(frame.payload);
@@ -924,6 +970,8 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     } catch (error) {
       clearTimeout(timeout);
       controller.abort();
+      // Terminate only this connection's relay, never the user's web server.
+      void killRelay?.().catch(() => undefined);
       throw error;
     }
   }

@@ -10,6 +10,7 @@ export {
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
   PREVIEW_ACCESS_TTL_MS,
   PREVIEW_SCOPE_HEADER,
+  PREVIEW_FAILURE_HEADER,
   parseSandboxPreviewConnection,
   type SandboxPreviewConnectionRequest,
   SANDBOX_PREVIEW_MINIMUM_PORT,

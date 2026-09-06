@@ -1279,11 +1279,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .updateTable("development_environments")
         .set({
           state,
-          ...(state === "running" ? {} : { terminal_active: false }),
+          ...(state === "running" || state === "unknown" ? {} : { terminal_active: false }),
           ...(state === "released" ? { owner_instance_id: null, owner_base_url: null } : {}),
-          ...(state === "released"
+          ...(state === "released" || state === "failed"
             ? { runtime_id: null, runtime_name: null }
-            : (state === "unknown" || state === "releasing") && detail.handle === undefined
+            : detail.handle === undefined
               ? {}
               : {
                   runtime_id: detail.handle?.runtimeId ?? null,
@@ -1325,9 +1325,15 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .set({
           agent_activation_id: null,
           state: outcome,
-          runtime_id: detail.handle?.runtimeId ?? null,
-          runtime_name: detail.handle?.runtimeName ?? null,
-          runtime_capsule: detail.runtimeCapsule ?? null,
+          ...(detail.handle === undefined
+            ? {}
+            : {
+                runtime_id: detail.handle.runtimeId,
+                runtime_name: detail.handle.runtimeName,
+              }),
+          ...(detail.runtimeCapsule === undefined
+            ? {}
+            : { runtime_capsule: detail.runtimeCapsule }),
           failure_code: outcome === "unknown" ? failureCode(detail.failureCode) : null,
           updated_at: now,
         })
@@ -1398,6 +1404,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("sandbox_domain_id", "=", this.#sandboxDomainId)
         .where("state", "=", "unknown")
         .where("runtime_capsule", "is", null)
+        .where(sql<boolean>`failure_code is distinct from 'persistent_machine_recovery_required'`)
         .where("environment_version_id", "is not", null)
         .orderBy("updated_at", "asc")
         .limit(boundedLimit)
@@ -1410,10 +1417,8 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           .set({
             owner_instance_id: this.#instanceId,
             owner_base_url: this.#ownerBaseUrl,
-            state: "releasing",
-            runtime_id: null,
-            runtime_name: null,
-            failure_code: "tool_broker_owner_lost",
+            state: "unknown",
+            failure_code: "persistent_machine_recovery_required",
             updated_at: now,
           })
           .where("id", "=", row.id)

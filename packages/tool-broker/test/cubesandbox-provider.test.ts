@@ -151,6 +151,7 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   readonly destroyed: string[] = [];
   readonly instances = new Map<string, CubeSandboxInstance>();
   healthChecks = 0;
+  guestBootId = "10000000-0000-4000-8000-000000000001";
   closed = false;
   readonly terminalAdmins: boolean[] = [];
 
@@ -241,6 +242,9 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
     const cleanedPath = /trap '\/bin\/rm -f -- ([^']+)' EXIT/u.exec(input.command)?.[1];
     if (cleanedPath !== undefined) this.guestFiles.delete(cleanedPath);
     this.requests.push({ sandboxId: instance.sandboxId, input, guestRequest: request });
+    if (request.mode === "execution_probe") {
+      return { stdout: this.guestBootId + "\n", stderr: "", exitCode: 0 };
+    }
     if (input.command.includes("envd-guest-control.mjs")) {
       if (request.mode === "evidence") {
         return this.#result({
@@ -341,6 +345,8 @@ class FakeCubeRuntimeClient implements CubeSandboxRuntimeClient {
   }
 
   requestForCommand(input: CubeSandboxGuestCommandRequest): Record<string, unknown> {
+    if (input.command.includes("/proc/sys/kernel/random/boot_id"))
+      return { mode: "execution_probe" };
     const path = input.command.match(/(\/tmp\/pi-cloud-envd-[0-9a-f-]{36}\.json)$/u)?.[1];
     const bytes = path === undefined ? undefined : this.guestFiles.get(path);
     if (bytes === undefined) throw new Error("guest request unavailable");
@@ -1153,6 +1159,101 @@ describe("CubeSandbox Provider contract", () => {
     expect(runtime.destroyed).toEqual(["cube-sandbox-1"]);
     await expect(provider.inspect(handle)).resolves.toMatchObject({ state: "absent" });
     await provider.close();
+  });
+
+  it.each(["file.read", "bash.exec", "cancelled_mutation"] as const)(
+    "preserves a persistent VM after disconnected %s and keeps its recovery capsule",
+    async (kind) => {
+      const runtime = new FakeCubeRuntimeClient();
+      const provider = testCubeProvider({
+        templateId: "pi-cloud-tool-v1",
+        imageRevision: "development",
+        webProxy: WEB_PROXY,
+        runtimeClient: runtime,
+        workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+        persistentStateKey: Buffer.alloc(32, 9),
+      });
+      const handle = await provider.create({
+        activationId: ACTIVATION_ID,
+        assignment,
+        environment,
+        workspaceSeed: { kind: "sample_java" },
+        policy: provider.defaultPolicy,
+        lifetime: "development_environment",
+      });
+      const first = await provider.probeExecution(handle);
+      const original = runtime.runCommand.bind(runtime);
+      const cause = new Error("connection lost after Guest dispatch");
+      const abort = new AbortController();
+      runtime.runCommand = async (instance, input) => {
+        if (runtime.requestForCommand(input).mode === "operation") {
+          if (kind === "cancelled_mutation") abort.abort();
+          throw cause;
+        }
+        return original(instance, input);
+      };
+      const request: ToolSandboxOperationRequest =
+        kind === "file.read"
+          ? {
+              ...operation(ACTIVATION_ID),
+              operation: "file.read",
+              toolName: "read",
+              path: "/home/user/package.json",
+            }
+          : operation(ACTIVATION_ID);
+      await expect(provider.exec(handle, request, abort.signal)).rejects.toMatchObject({
+        code:
+          kind === "file.read" ? "cubesandbox_tool_unavailable" : "cubesandbox_tool_result_unknown",
+        cause,
+      });
+      expect(runtime.destroyed).toEqual([]);
+      const capsule = await provider.persistentCapsule(handle);
+      await provider.detachPersistent(handle);
+      runtime.runCommand = original;
+      const adopted = await provider.adoptPersistentCapsule(capsule.capsule);
+      expect(await provider.probeExecution(adopted)).toEqual(first);
+      runtime.guestBootId = "20000000-0000-4000-8000-000000000002";
+      expect(await provider.probeExecution(adopted)).not.toEqual(first);
+      await provider.destroy(adopted);
+      await provider.close();
+    },
+  );
+
+  it("does not adopt a control-plane running VM whose Guest is unreachable", async () => {
+    const runtime = new FakeCubeRuntimeClient();
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+      persistentStateKey: Buffer.alloc(32, 9),
+    });
+    const handle = await provider.create({
+      activationId: ACTIVATION_ID,
+      assignment,
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+      policy: provider.defaultPolicy,
+      lifetime: "development_environment",
+    });
+    const capsule = await provider.persistentCapsule(handle);
+    await provider.detachPersistent(handle);
+    const original = runtime.runCommand.bind(runtime);
+    runtime.runCommand = async () => {
+      throw new Error("host unavailable");
+    };
+    await expect(provider.adoptPersistentCapsule(capsule.capsule)).rejects.toMatchObject({
+      code: "cubesandbox_tool_unavailable",
+    });
+    expect(runtime.destroyed).toEqual([]);
+    runtime.runCommand = original;
+    const recovered = await provider.adoptPersistentCapsule(capsule.capsule);
+    expect(recovered.runtimeId).toBe(handle.runtimeId);
+    // Even a provider shutdown without a successful explicit detach cannot
+    // release a user's machine. The control plane retains its capsule.
+    await provider.close();
+    expect(runtime.destroyed).toEqual([]);
   });
 
   it("preserves a development VM when the guest rejects an operation before executing it", async () => {

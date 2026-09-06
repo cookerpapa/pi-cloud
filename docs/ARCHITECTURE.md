@@ -683,6 +683,17 @@ Volume belongs to that machine and is deleted on explicit release. Conversation
 history remains independent and reports a missing Workspace until the user
 rebinds it.
 
+Tool transport failure quarantines the binding without destroying an owned VM
+or discarding its encrypted reconnect capsule. A subsequent reconcile probes
+native Guest execution before readmitting the same machine. The observed Guest
+boot ID survives Broker replacement in the capsule; renewing a Lease or losing
+one TCP connection is not evidence of a sandbox reset. Only observed execution
+continuity changes produce a model-visible reset fact. Preview CONNECT waits
+for the actual application socket, distinguishing a stopped app from Guest
+execution failure (ADR-0151). Host shutdown is not equivalent to an explicit
+pause: rootfs/process recovery requires surviving native Cube state, whereas
+Volume bytes have a separate durability boundary.
+
 Source browsing lists and reads the current persistent Volume directly through
 the trusted Volume gateway. It neither creates a Cube nor consumes Cube
 admission capacity. Directory expansion performs one bounded directory read;

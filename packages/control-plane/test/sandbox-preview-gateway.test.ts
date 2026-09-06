@@ -12,7 +12,7 @@ import {
   PREVIEW_COOKIE,
   PREVIEW_BOOTSTRAP_PATH,
 } from "../src/sandbox-preview-gateway.ts";
-import { PREVIEW_SCOPE_HEADER } from "@pi-cloud/protocol";
+import { PREVIEW_SCOPE_HEADER, PREVIEW_FAILURE_HEADER } from "@pi-cloud/protocol";
 
 const secret = "preview-secret-" + "x".repeat(40);
 const scope = {
@@ -37,7 +37,9 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function fixture() {
+async function fixture(
+  previewFailure?: "sandbox_application_unavailable" | "sandbox_execution_unavailable",
+) {
   const observed: Array<{
     path: string;
     cookie: string | undefined;
@@ -95,6 +97,12 @@ async function fixture() {
       JSON.parse(Buffer.from(req.headers[PREVIEW_SCOPE_HEADER] as string, "base64url").toString()),
     );
     expect(req.headers.authorization).toBe(`Bearer ${secret}`);
+    if (previewFailure !== undefined) {
+      socket.end(
+        `HTTP/1.1 503 Service Unavailable\r\n${PREVIEW_FAILURE_HEADER}: ${previewFailure}\r\nConnection: close\r\n\r\n`,
+      );
+      return;
+    }
     const upstream = connect(
       (app.address() as import("node:net").AddressInfo).port,
       "127.0.0.1",
@@ -200,6 +208,15 @@ async function fixture() {
 }
 
 describe("root-origin Preview", () => {
+  it.each([
+    ["sandbox_application_unavailable", 502, "application port"],
+    ["sandbox_execution_unavailable", 503, "execution channel"],
+  ] as const)("preserves %s through CONNECT to the browser", async (code, status, message) => {
+    const f = await fixture(code);
+    const response = await f.request("/");
+    expect(response.status).toBe(status);
+    expect(response.body.toString()).toContain(message);
+  });
   it("scopes authority to expiry/workspace and uses host-only HttpOnly cookies", () => {
     const token = issuePreviewAccessToken(secret, scope, 1000);
     expect(verifyPreviewAccessToken(secret, token, 1000)).toMatchObject(scope);

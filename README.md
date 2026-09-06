@@ -216,6 +216,11 @@ Releasing a cloud development machine deletes that machine and all of its files.
 Its conversations remain readable and must be rebound to another Workspace
 before they can run again.
 
+Tool/preview failures do not release owned machines. A stopped application must
+be restarted separately. Host shutdown is not an automatic Cube pause/snapshot:
+persistent Volume files survive, but recovering guest rootfs/processes requires
+the original Cube runtime or its native snapshot on the compute node.
+
 The language selector is available on the sign-in page and beside the current
 username. It is a browser-local presentation preference: switching it does not
 modify Session context, system prompts, user messages or Agent output.

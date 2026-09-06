@@ -4,6 +4,7 @@ import { createDatabase, runMigrations } from "@pi-cloud/database";
 import { createExecutionLease } from "@pi-cloud/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import { PostgresWorkspaceRuntimeStateRepository } from "../src/index.ts";
+import { CubePersistentCapsuleCodec } from "../src/cube-persistent-capsule.ts";
 
 const resources: Array<() => Promise<void>> = [];
 
@@ -528,6 +529,79 @@ describe("PostgreSQL Tool Broker ownership", () => {
         .where("workspace_runtime_id", "=", activation.activationId)
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({ state: "cleaning", failure_code: "workspace_runtime_unbound" });
+    const machineId = "20000000-0000-4000-8000-000000000050";
+    const identity = {
+      runtime_id: "20000000-0000-4000-8000-000000000051",
+      runtime_name: "surviving-user-machine",
+      runtime_capsule: new CubePersistentCapsuleCodec(Buffer.alloc(32, 9)).seal({
+        fixture: "surviving-user-machine",
+      }),
+    };
+    await database
+      .insertInto("development_environments")
+      .values({
+        id: machineId,
+        tenant_id: tenantId,
+        owner_user_id: userId,
+        project_id: projectId,
+        workspace_id: workspaceId,
+        sandbox_domain_id: "sandbox-domain-0001",
+        environment_version_id: environmentId,
+        owner_instance_id: "20000000-0000-4000-8000-000000000004",
+        owner_base_url: "http://tool-broker-0:4300",
+        profile_key: "standard",
+        cpu_count: 2,
+        memory_mib: 4096,
+        system_disk_gib: 20,
+        ...identity,
+        ip_address: null,
+        agent_activation_id: activation.activationId,
+        state: "running",
+        failure_code: null,
+        idempotency_key: "test-machine-retention",
+        request_sha256: "d".repeat(64),
+      })
+      .execute();
+    await repository.returnDevelopmentEnvironment(machineId, activation.activationId, "unknown", {
+      failureCode: "test_transport_failure",
+    });
+    expect(
+      await database
+        .selectFrom("development_environments")
+        .select(["runtime_id", "runtime_name", "runtime_capsule", "agent_activation_id", "state"])
+        .where("id", "=", machineId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ ...identity, agent_activation_id: null, state: "unknown" });
+    await repository.setDevelopmentEnvironmentState(machineId, "unknown", {
+      failureCode: "persistent_machine_recovery_required",
+    });
+    expect(
+      await database
+        .selectFrom("development_environments")
+        .select(["runtime_id", "runtime_name", "runtime_capsule"])
+        .where("id", "=", machineId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual(identity);
+    await database
+      .updateTable("development_environments")
+      .set({ runtime_capsule: null, failure_code: "missing_capsule" })
+      .where("id", "=", machineId)
+      .execute();
+    expect(await repository.claimOrphanedDevelopmentEnvironments(16)).toEqual([
+      expect.objectContaining({ environmentId: machineId }),
+    ]);
+    expect(
+      await database
+        .selectFrom("development_environments")
+        .select(["runtime_id", "runtime_name", "state"])
+        .where("id", "=", machineId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({
+      runtime_id: identity.runtime_id,
+      runtime_name: identity.runtime_name,
+      state: "unknown",
+    });
+    expect(await repository.claimOrphanedDevelopmentEnvironments(16)).toEqual([]);
     await database
       .updateTable("workspace_terminal_sessions")
       .set({ state: "cleaning" })

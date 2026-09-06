@@ -3,9 +3,25 @@ import { request as httpsRequest } from "node:https";
 import type { Socket } from "node:net";
 import {
   PREVIEW_SCOPE_HEADER,
+  PREVIEW_FAILURE_HEADER,
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
   type SandboxPreviewConnectionRequest,
 } from "@pi-cloud/protocol";
+
+export class PreviewConnectionError extends Error {
+  constructor(
+    readonly code: "sandbox_application_unavailable" | "sandbox_execution_unavailable",
+    options?: ErrorOptions,
+  ) {
+    super(
+      code === "sandbox_application_unavailable"
+        ? "The application port is not accepting connections. Start the application service and try again."
+        : "The sandbox execution channel is unavailable. Check the development machine or its connection.",
+      options,
+    );
+    this.name = "PreviewConnectionError";
+  }
+}
 
 /** The application HTTP/WS bytes travel inside a separately authorized CONNECT. */
 export function previewConnectionAgent(
@@ -39,7 +55,7 @@ export function previewConnectionAgent(
       timeout.unref();
       request.once("error", (error) => {
         clearTimeout(timeout);
-        reject(error);
+        reject(new PreviewConnectionError("sandbox_execution_unavailable", { cause: error }));
       });
       request.once("connect", (response, socket, head) => {
         clearTimeout(timeout);
@@ -51,7 +67,13 @@ export function previewConnectionAgent(
         }
         if (response.statusCode !== 200) {
           socket.destroy();
-          reject(new Error("Preview owner rejected the connection"));
+          reject(
+            new PreviewConnectionError(
+              response.headers[PREVIEW_FAILURE_HEADER] === "sandbox_application_unavailable"
+                ? "sandbox_application_unavailable"
+                : "sandbox_execution_unavailable",
+            ),
+          );
           return;
         }
         if (head.length > 0) socket.unshift(head);

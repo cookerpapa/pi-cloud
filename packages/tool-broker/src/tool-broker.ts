@@ -167,6 +167,7 @@ type ManagedDevelopmentEnvironment = {
   handle: SandboxHandle;
   terminal?: SandboxTerminalSession;
   bindingIds: Set<string>;
+  failure?: ToolBrokerError;
 };
 
 type AdmissionWaiter = {
@@ -400,7 +401,7 @@ export class ToolBroker {
           this.#reapOrphanedWorkspaceRuntimes(),
           this.#reapUnboundWorkspaceRuntimes(),
           this.#reapOrphanedTerminals(),
-          this.#reapOrphanedDevelopmentEnvironments(),
+          this.#markUnrecoverableDevelopmentEnvironments(),
         ]).catch((error: unknown) => this.#onMaintenanceError?.(error)),
       30_000,
     );
@@ -460,6 +461,19 @@ export class ToolBroker {
 
   async #recoverPersistentDevelopmentEnvironments(): Promise<number> {
     if (this.#provider.adoptPersistentCapsule === undefined) return 0;
+    for (const environment of this.#developmentEnvironments.values()) {
+      if (
+        environment.failure === undefined ||
+        environment.bindingIds.size > 0 ||
+        environment.terminal !== undefined
+      )
+        continue;
+      try {
+        await this.#verifyDevelopmentEnvironment(environment);
+      } catch {
+        /* Keep the same physical identity/capsule for the next reconcile. */
+      }
+    }
     const recoverable = await this.#stateRepository.claimRecoverableDevelopmentEnvironments(256, [
       ...this.#developmentEnvironments.keys(),
     ]);
@@ -485,13 +499,6 @@ export class ToolBroker {
             false,
           );
         }
-        this.#developmentEnvironments.set(candidate.reservation.environmentId, {
-          reservation: candidate.reservation,
-          assignment: expected,
-          handle,
-          bindingIds: new Set(),
-        });
-        this.#admitted.set(candidate.reservation.environmentId, expected);
         const capsule = await this.#persistentCapsule(handle);
         if (capsule === undefined) {
           throw new ToolBrokerError(
@@ -501,13 +508,26 @@ export class ToolBroker {
           );
         }
         const inspection = await this.#provider.inspect(handle);
-        const recoveredState =
-          inspection.state === "stopped" || candidate.state === "paused" ? "paused" : "running";
+        if (inspection.state !== "stopped" && inspection.state !== "running") {
+          throw new ToolBrokerError(
+            "cubesandbox_tool_unavailable",
+            "Recovered development machine is not ready",
+            false,
+          );
+        }
+        const recoveredState = inspection.state === "stopped" ? "paused" : "running";
         await this.#stateRepository.setDevelopmentEnvironmentState(
           candidate.reservation.environmentId,
           recoveredState,
           { handle, runtimeCapsule: capsule },
         );
+        this.#developmentEnvironments.set(candidate.reservation.environmentId, {
+          reservation: candidate.reservation,
+          assignment: expected,
+          handle,
+          bindingIds: new Set(),
+        });
+        this.#admitted.set(candidate.reservation.environmentId, expected);
         recovered += 1;
       } catch (error: unknown) {
         if (handle !== undefined) {
@@ -1423,6 +1443,14 @@ export class ToolBroker {
         false,
       );
     }
+    if (environment.failure !== undefined) throw environment.failure;
+    let continuityId: string;
+    try {
+      ({ continuityId } = await this.#verifyDevelopmentEnvironment(environment));
+    } catch (error) {
+      await this.#quarantineDevelopmentEnvironment(environment, error);
+      throw error;
+    }
     const physicalActivationId = validActivationId(environment.reservation.environmentId);
     const activationId = validActivationId(
       environment.bindingIds.size === 0
@@ -1505,7 +1533,7 @@ export class ToolBroker {
       ownerBaseUrl: this.#ownerBaseUrl,
       workspaceRoot: request.toolRoot,
       continuity: "warm_reuse",
-      continuityId: environment.handle.runtimeId,
+      continuityId,
     };
   }
 
@@ -1614,6 +1642,18 @@ export class ToolBroker {
         } catch (error: unknown) {
           if (elasticRuntime !== undefined) {
             await this.#markElasticRuntimeLost(elasticRuntime, error);
+          } else if (
+            activation.developmentEnvironmentId !== undefined &&
+            error instanceof ToolBrokerError &&
+            (error.code === "cubesandbox_tool_result_unknown" ||
+              error.code === "cubesandbox_tool_unavailable" ||
+              error.code === "tool_sandbox_identity_mismatch")
+          ) {
+            const environment = this.#developmentEnvironments.get(
+              activation.developmentEnvironmentId,
+            );
+            if (environment !== undefined)
+              await this.#quarantineDevelopmentEnvironment(environment, error);
           }
           throw error;
         }
@@ -1623,7 +1663,11 @@ export class ToolBroker {
         await this.#stateRepository
           .settleOperation(
             request.operationId,
-            operationSignal.aborted ? "cancelled" : "failed",
+            error instanceof ToolBrokerError && error.code === "cubesandbox_tool_result_unknown"
+              ? "unknown"
+              : operationSignal.aborted
+                ? "cancelled"
+                : "failed",
             operationFailureCode(error),
           )
           .catch(() => undefined);
@@ -1874,6 +1918,8 @@ export class ToolBroker {
   async #stopActivation(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
     const activation = this.#toolBindings.get(activationId);
     if (activation === undefined) {
+      // A completed/failed binding may share the machine's activation ID.
+      if (this.#developmentEnvironments.has(activationId)) return;
       if (this.#admitted.has(activationId)) {
         await this.#provider.destroyRuntime(activationId, assignment);
         this.#releaseAdmission(activationId);
@@ -1936,8 +1982,12 @@ export class ToolBroker {
       await this.#stateRepository.returnDevelopmentEnvironment(
         environment.reservation.environmentId,
         activation.reservation.activationId,
-        "running",
-        { handle: environment.handle, runtimeCapsule },
+        environment.failure === undefined ? "running" : "unknown",
+        {
+          handle: environment.handle,
+          runtimeCapsule,
+          ...(environment.failure === undefined ? {} : { failureCode: environment.failure.code }),
+        },
       );
     } catch (error: unknown) {
       await this.#stateRepository
@@ -2195,8 +2245,14 @@ export class ToolBroker {
           await this.#stateRepository.returnDevelopmentEnvironment(
             environmentId,
             environmentId,
-            "running",
-            { handle: detachableHandle, runtimeCapsule: capsule },
+            environment.failure === undefined ? "running" : "unknown",
+            {
+              handle: detachableHandle,
+              runtimeCapsule: capsule,
+              ...(environment.failure === undefined
+                ? {}
+                : { failureCode: environment.failure.code }),
+            },
           );
         } else {
           const inspection = await this.#provider.inspect(detachableHandle);
@@ -2217,8 +2273,18 @@ export class ToolBroker {
           }
           await this.#stateRepository.setDevelopmentEnvironmentState(
             environmentId,
-            inspection.state === "running" ? "running" : "paused",
-            { handle: detachableHandle, runtimeCapsule: capsule },
+            environment.failure !== undefined
+              ? "unknown"
+              : inspection.state === "running"
+                ? "running"
+                : "paused",
+            {
+              handle: detachableHandle,
+              runtimeCapsule: capsule,
+              ...(environment.failure === undefined
+                ? {}
+                : { failureCode: environment.failure.code }),
+            },
           );
         }
         await this.#provider.detachPersistent?.(detachableHandle);
@@ -2325,6 +2391,12 @@ export class ToolBroker {
   }
 
   async #materialize(activation: ManagedToolBinding, signal?: AbortSignal): Promise<SandboxHandle> {
+    if (activation.developmentEnvironmentId !== undefined) {
+      const failure = this.#developmentEnvironments.get(
+        activation.developmentEnvironmentId,
+      )?.failure;
+      if (failure !== undefined) throw failure;
+    }
     if (activation.elasticRuntime !== undefined) {
       const handle = await this.#materializeElasticRuntime(activation.elasticRuntime, signal);
       activation.usedPhysicalRuntime = true;
@@ -2524,27 +2596,18 @@ export class ToolBroker {
     }
   }
 
-  async #reapOrphanedDevelopmentEnvironments(): Promise<void> {
+  async #markUnrecoverableDevelopmentEnvironments(): Promise<void> {
     const orphaned = await this.#stateRepository.claimOrphanedDevelopmentEnvironments(16);
     for (const environment of orphaned) {
       const local = this.#developmentEnvironments.get(environment.environmentId);
       local?.terminal?.disconnect();
       if (local?.terminal !== undefined) await local.terminal.kill().catch(() => undefined);
       this.#developmentEnvironments.delete(environment.environmentId);
-      const assignment = developmentEnvironmentAssignment({
-        environmentId: environment.environmentId,
-        tenantId: environment.tenantId,
-        projectId: environment.projectId,
-        workspaceId: environment.workspaceId,
-        generation: environment.generation,
-      });
       try {
-        await this.#provider.destroyRuntime(environment.environmentId, assignment);
-        this.#releaseAdmission(environment.environmentId);
         await this.#stateRepository.setDevelopmentEnvironmentState(
           environment.environmentId,
-          "failed",
-          { failureCode: "tool_broker_owner_lost" },
+          "unknown",
+          { failureCode: "persistent_machine_recovery_required" },
         );
       } catch (error: unknown) {
         await this.#stateRepository
@@ -2554,6 +2617,60 @@ export class ToolBroker {
           .catch(() => undefined);
       }
     }
+  }
+
+  async #verifyDevelopmentEnvironment(
+    environment: ManagedDevelopmentEnvironment,
+  ): Promise<{ continuityId: string }> {
+    if (this.#provider.probeExecution === undefined) {
+      throw new ToolBrokerError(
+        "cubesandbox_tool_unavailable",
+        "Guest execution probes are unavailable",
+        false,
+      );
+    }
+    const observation = await this.#provider.probeExecution(environment.handle);
+    const runtimeCapsule = await this.#persistentCapsule(environment.handle);
+    if (runtimeCapsule === undefined) {
+      throw new ToolBrokerError(
+        "persistent_machine_recovery_state_unavailable",
+        "Development machine recovery state is unavailable",
+        false,
+      );
+    }
+    await this.#stateRepository.setDevelopmentEnvironmentState(
+      environment.reservation.environmentId,
+      "running",
+      {
+        handle: environment.handle,
+        runtimeCapsule,
+      },
+    );
+    delete environment.failure;
+    return observation;
+  }
+
+  async #quarantineDevelopmentEnvironment(
+    environment: ManagedDevelopmentEnvironment,
+    error: unknown,
+  ): Promise<void> {
+    environment.failure ??=
+      error instanceof ToolBrokerError
+        ? error
+        : new ToolBrokerError(
+            "cubesandbox_tool_unavailable",
+            "Development machine execution is unavailable",
+            false,
+            error,
+          );
+    const runtimeCapsule = await this.#persistentCapsule(environment.handle).catch(() => undefined);
+    await this.#stateRepository
+      .setDevelopmentEnvironmentState(environment.reservation.environmentId, "unknown", {
+        handle: environment.handle,
+        failureCode: environment.failure.code,
+        ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
+      })
+      .catch((persistenceError: unknown) => this.#onMaintenanceError?.(persistenceError));
   }
 
   #closeTerminal(terminalId: string, terminal: ManagedWorkspaceTerminal): Promise<void> {

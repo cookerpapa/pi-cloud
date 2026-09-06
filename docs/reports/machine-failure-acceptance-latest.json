@@ -1,0 +1,28 @@
+{
+  "checkedAt": "2026-09-06T02:13:33.519Z",
+  "runs": [
+    {
+      "runId": "55ef336c-240e-4b30-aa81-b3e684cc6046",
+      "elapsedMs": 81712
+    },
+    {
+      "runId": "e5bac111-ab2e-4292-89a8-50580165d234",
+      "elapsedMs": 17178
+    }
+  ],
+  "accepted": true,
+  "hostPowerLossTested": false,
+  "environmentId": "4d40bad6-13a2-4260-9704-6cffdd2c3b43",
+  "stoppedApplicationDidNotStopMachine": true,
+  "applicationRestarted": true,
+  "brokerRestartPreservedRootFilesProcessAndPreview": true,
+  "resetMarkers": 0,
+  "usage": {
+    "input": 5916,
+    "output": 12182,
+    "cacheRead": 249600
+  },
+  "resourcesReleased": true,
+  "volumeDataPurged": true,
+  "cleanupRequiredTargetedRemovalOfRootOwnedFixture": true
+}

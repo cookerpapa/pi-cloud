@@ -41,6 +41,7 @@ import {
 } from "@pi-cloud/workspace-runtime";
 import {
   CubeRuntimeClientError,
+  CubeApplicationPortError,
   OfficialCubeSandboxRuntimeClient,
   type CubeSandboxInstance,
   type CubeSandboxRuntimeClient,
@@ -203,6 +204,9 @@ type CubeActivation = {
   volumeId: string;
   lifetime: "agent_turn" | "development_environment";
   toolRoot: string;
+  /** Observed lazily, including for machines adopted before their first probe. */
+  guestBootId?: string;
+  continuityId?: string;
 };
 
 export type CubeSandboxProviderOptions = Readonly<{
@@ -736,6 +740,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       timeoutMs: number;
       maximumOutputBytes?: number;
       signal?: AbortSignal;
+      onDispatch?: () => void;
     }>,
   ): Promise<unknown> {
     const path = `/tmp/pi-cloud-envd-${randomUUID()}.json`;
@@ -770,6 +775,8 @@ export class CubeSandboxProvider implements SandboxProvider {
     const prepareInput = options.runAsToolUser
       ? `/bin/chown 1000:1000 ${path} && /bin/chmod 0400 ${path} && `
       : `/bin/chmod 0400 ${path} && `;
+    options.signal?.throwIfAborted();
+    options.onDispatch?.();
     const result = await this.#client.runCommand(instance, {
       command: `trap '/bin/rm -f -- ${path}' EXIT; ${prepareInput}${prefix}/usr/local/bin/node ${program} ${path}`,
       cwd: "/",
@@ -1055,6 +1062,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     activation.seenOperationIds.add(request.operationId);
+    let dispatched = false;
     let output: ReturnType<typeof parseToolWorkerOutput>;
     try {
       const timeoutMs =
@@ -1075,22 +1083,39 @@ export class CubeSandboxProvider implements SandboxProvider {
             program: "tool",
             runAsToolUser: true,
             timeoutMs,
+            onDispatch: () => {
+              dispatched = true;
+            },
             ...(signal === undefined ? {} : { signal }),
           },
         ),
       );
     } catch (error: unknown) {
-      // A disconnected remote command has an unknowable execution result.
-      // Destroying the disposable VM prevents it from continuing behind a
-      // newer Attempt and is safer than replaying arbitrary Bash.
-      await this.#client.destroy(activation.instance.sandboxId).catch(() => undefined);
-      this.#activations.delete(handle.activationId);
+      const persistent = activation.lifetime === "development_environment";
+      const mayHaveEffects =
+        dispatched &&
+        (request.operation === "bash.exec" ||
+          request.operation === "file.write" ||
+          request.operation === "file.mkdir");
+      // Only disposable runtimes have fail-closed destruction. A failed Tool
+      // does not grant authority to release a user's complete development VM.
+      if (!persistent) {
+        await this.#client.destroy(activation.instance.sandboxId).catch(() => undefined);
+        this.#activations.delete(handle.activationId);
+      }
       throw new ToolBrokerError(
-        signal?.aborted ? "tool_cancelled" : "cubesandbox_tool_result_unknown",
-        signal?.aborted
-          ? "Tool command was cancelled"
-          : "CubeSandbox Tool command result was unknown; the VM was destroyed",
-        signal?.aborted === true,
+        mayHaveEffects
+          ? "cubesandbox_tool_result_unknown"
+          : signal?.aborted
+            ? "tool_cancelled"
+            : "cubesandbox_tool_unavailable",
+        mayHaveEffects
+          ? "Tool execution result could not be confirmed; do not replay this operation"
+          : signal?.aborted
+            ? "Tool command was cancelled before a mutating command was dispatched"
+            : "The sandbox execution channel is unavailable; the Tool did not return a result",
+        false,
+        error,
       );
     }
     if (output.type === "worker.failed") {
@@ -1242,7 +1267,20 @@ export class CubeSandboxProvider implements SandboxProvider {
         true,
       );
     }
-    return this.#client.openTcp(activation.instance, port);
+    try {
+      return await this.#client.openTcp(activation.instance, port);
+    } catch (error) {
+      throw new ToolBrokerError(
+        error instanceof CubeApplicationPortError
+          ? "sandbox_application_unavailable"
+          : "sandbox_execution_unavailable",
+        error instanceof CubeApplicationPortError
+          ? "The application port is not accepting connections"
+          : "The sandbox execution channel is unavailable",
+        true,
+        error,
+      );
+    }
   }
 
   async discoverHttpServices(
@@ -1433,7 +1471,7 @@ export class CubeSandboxProvider implements SandboxProvider {
   async persistentCapsule(
     handle: SandboxHandle,
   ): Promise<import("./sandbox-provider.ts").PersistentSandboxCapsule> {
-    const activation = await this.#owned(handle);
+    const activation = this.#localOwned(handle);
     if (this.#persistentCapsules === undefined) {
       throw new ToolBrokerError(
         "persistent_capsule_key_missing",
@@ -1463,6 +1501,8 @@ export class CubeSandboxProvider implements SandboxProvider {
         volumeId: activation.volumeId,
         lifetime: activation.lifetime,
         toolRoot: activation.toolRoot,
+        guestBootId: activation.guestBootId,
+        continuityId: activation.continuityId,
       }),
     };
   }
@@ -1552,7 +1592,14 @@ export class CubeSandboxProvider implements SandboxProvider {
       metadata: instance.metadata,
       trafficAccessToken: instance.trafficAccessToken,
     });
-    const state = current.state.toLowerCase() === "paused" ? "paused" : "running";
+    const state = current.state.toLowerCase();
+    if (state !== "paused" && state !== "running") {
+      throw new ToolBrokerError(
+        "cubesandbox_tool_unavailable",
+        "Development machine is not ready for execution",
+        false,
+      );
+    }
     this.#activations.set(handle.activationId, {
       instance: recoveredInstance,
       handle,
@@ -1566,12 +1613,55 @@ export class CubeSandboxProvider implements SandboxProvider {
       volumeId: raw.volumeId,
       lifetime: "development_environment",
       toolRoot: raw.toolRoot,
+      ...(typeof raw.guestBootId === "string" ? { guestBootId: raw.guestBootId } : {}),
+      ...(typeof raw.continuityId === "string" ? { continuityId: raw.continuityId } : {}),
     });
+    if (state === "running") {
+      try {
+        await this.probeExecution(handle);
+      } catch (error) {
+        this.#activations.delete(handle.activationId);
+        throw error;
+      }
+    }
     return handle;
   }
 
+  async probeExecution(handle: SandboxHandle): Promise<{ continuityId: string }> {
+    try {
+      const activation = await this.#owned(handle);
+      if (activation.instance.state.toLowerCase() !== "running") {
+        throw new Error("Guest is not running");
+      }
+      const result = await this.#client.runCommand(activation.instance, {
+        command: `/usr/bin/setpriv --reuid 1000 --regid 1000 --clear-groups --no-new-privs /usr/local/bin/node -e 'const fs=require("node:fs");fs.accessSync("/opt/pi-cloud/bin/envd-tool-exec.mjs",fs.constants.R_OK);process.stdout.write(fs.readFileSync("/proc/sys/kernel/random/boot_id","utf8"));'`,
+        cwd: "/",
+        user: "root",
+        timeoutMs: 10_000,
+        maximumOutputBytes: 1024,
+      });
+      const bootId = result.stdout.trim();
+      if (result.exitCode !== 0 || !/^[0-9a-f-]{36}$/.test(bootId)) {
+        throw new Error("Guest execution probe did not complete successfully");
+      }
+      if (activation.guestBootId !== undefined && activation.guestBootId !== bootId) {
+        activation.continuityId = runtimeUuid(`${handle.runtimeName}:${bootId}`);
+      }
+      activation.guestBootId = bootId;
+      activation.state = "running";
+      return { continuityId: activation.continuityId ?? handle.runtimeId };
+    } catch (error) {
+      throw new ToolBrokerError(
+        "cubesandbox_tool_unavailable",
+        "Development machine execution is unavailable; its state was retained for recovery",
+        false,
+        error,
+      );
+    }
+  }
+
   async detachPersistent(handle: SandboxHandle): Promise<void> {
-    const activation = await this.#owned(handle);
+    const activation = this.#localOwned(handle);
     if (activation.lifetime !== "development_environment") {
       throw new ToolBrokerError(
         "persistent_detach_lifetime_invalid",
@@ -2083,7 +2173,9 @@ export class CubeSandboxProvider implements SandboxProvider {
   }
 
   async close(): Promise<void> {
-    const instances = [...this.#activations.values()].map((activation) => activation.instance);
+    const instances = [...this.#activations.values()]
+      .filter((activation) => activation.lifetime !== "development_environment")
+      .map((activation) => activation.instance);
     this.#activations.clear();
     await Promise.allSettled(instances.map((instance) => this.#client.destroy(instance.sandboxId)));
     await Promise.all([this.#client.close(), this.#workspaceVolumeGateway.close()]);
@@ -2163,7 +2255,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
   }
 
-  async #owned(handle: SandboxHandle): Promise<CubeActivation> {
+  #localOwned(handle: SandboxHandle): CubeActivation {
     this.#assertHandle(handle);
     const activation = this.#activations.get(handle.activationId);
     if (
@@ -2178,6 +2270,11 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
+    return activation;
+  }
+
+  async #owned(handle: SandboxHandle): Promise<CubeActivation> {
+    const activation = this.#localOwned(handle);
     const current = await this.#client.read(handle.runtimeName);
     if (
       current === undefined ||
@@ -2196,6 +2293,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
+    activation.instance = { ...activation.instance, ...current };
     return activation;
   }
 

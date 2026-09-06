@@ -191,6 +191,8 @@ export interface SandboxProvider {
   /** Provider-specific policy selected only by trusted deployment config. */
   readonly defaultPolicy: SandboxPolicy;
   checkHealth(): Promise<void>;
+  /** Attest Guest execution, not merely the provider's control-plane record. */
+  probeExecution?(handle: SandboxHandle): Promise<{ continuityId: string }>;
   create(spec: SandboxCreateSpec): Promise<SandboxHandle>;
   exec(
     handle: SandboxHandle,

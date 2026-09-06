@@ -1,5 +1,10 @@
 import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server";
-import { activeTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/observability";
+import {
+  activeTraceCarrier,
+  operationalLog,
+  withSpan,
+  type PiCloudMetrics,
+} from "@pi-cloud/observability";
 import {
   type ExecuteTurnCommandMessage,
   modelSamplingHeaders,
@@ -422,6 +427,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     let fakeModel: FakeModelServer | undefined;
     let retainedWorkspaceRevision: string | undefined;
     let completedSuccessfully = false;
+    let executionError: unknown;
+    let toolRuntimeFailure: PiTurnError | undefined;
     let stopPromise: Promise<void> | undefined;
     const stopSandbox = (): Promise<void> => {
       if (activation === undefined) return Promise.resolve();
@@ -452,6 +459,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     };
     const ensureActivation = async (): Promise<ToolSandboxCreateResponse> => {
       if (signal.aborted) throw signal.reason;
+      if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
       if (activation !== undefined) return activation;
       activationPromise ??= (async () => {
         const createStartedAt = performance.now();
@@ -542,6 +550,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               serviceTier: modelRuntimeLease!.runtime.serviceTier,
             };
       const onSettled: NonNullable<PiCloudTurnRunnerOptions["onSettled"]> = async () => {
+        if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
         if (activation === undefined) {
           retainedWorkspaceRevision = loadedSettlement?.workspaceRevision;
           return;
@@ -783,6 +792,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             captureStepContext: (activeTools, purpose = "agent") =>
               captureSamplingStep(
                 async () => {
+                  if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
                   const captured = await stepWorldState.capture();
                   const step = createCloudStepContext({
                     sequence: (stepSequence += 1),
@@ -797,7 +807,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 { publishEvent: purpose === "agent" },
               ),
             onToolOperationStarted: () => stepWorldState.recordActive(),
-            onToolOperationUnavailable: () => stepWorldState.recordUnavailable(),
+            onToolOperationUnavailable: async (failure) => {
+              toolRuntimeFailure ??= new PiTurnError(failure.code, failure.message, false);
+              await stepWorldState.recordUnavailable();
+            },
             remainingToolCalls: command.payload.budgets?.remainingToolCalls ?? 128,
             maximumToolOutputBytes: command.payload.budgets?.maximumToolOutputBytes ?? 65_536,
             toolOutputDirectory,
@@ -856,6 +869,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       const result = await runner.run(command, publishEvent, signal);
       completedSuccessfully = true;
       return result;
+    } catch (error) {
+      // Pi may surface a secondary sampling/settlement error while unwinding
+      // after a refused next Step. The first Tool transport failure is primary.
+      executionError = toolRuntimeFailure ?? error;
+      throw executionError;
     } finally {
       signal.removeEventListener("abort", abortSandbox);
       await fakeModel?.stop().catch(() => undefined);
@@ -887,7 +905,13 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       await releaseModelRuntimeLease(modelRuntimeLease).catch((error: unknown) => {
         cleanupError ??= error;
       });
-      if (cleanupError !== undefined) {
+      if (cleanupError !== undefined && executionError !== undefined) {
+        operationalLog({
+          service: "pi-cloud-trusted-runner",
+          level: "warn",
+          event: "run.cleanup_failed_after_execution_error",
+        });
+      } else if (cleanupError !== undefined) {
         throw safePiError(
           cleanupError,
           "trusted_runner_cleanup_failed",

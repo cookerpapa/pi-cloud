@@ -15,6 +15,7 @@ import {
   parseSourceControlWorkspaceCredentialRequest,
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
   PREVIEW_SCOPE_HEADER,
+  PREVIEW_FAILURE_HEADER,
   PREVIEW_ACCESS_TTL_MS,
   parseSandboxPreviewConnection,
   type InternalServiceError,
@@ -135,7 +136,12 @@ function safeDiagnostic(error: unknown): Readonly<{
       return { name: "UnknownError", message: "Non-Error failure" };
     }
     const clean = (text: string, fallback: string): string => {
-      const normalized = text.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+      const normalized = text
+        .replace(/[\u0000-\u001f\u007f]/g, " ")
+        .replace(/Bearer\s+[^\s,;"']+/gi, "Bearer [redacted]")
+        .replace(/((?:token|password|secret|api[_-]?key)\s*[=:]\s*)[^\s,;"']+/gi, "$1[redacted]")
+        .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, "$1[redacted]@")
+        .trim();
       return normalized.length === 0 ? fallback : normalized.slice(0, 1_024);
     };
     return {
@@ -211,6 +217,7 @@ export class ToolBrokerServer {
     this.#installRoutes();
     this.#server.server.on("connect", (request, socket, head) => {
       socket.on("error", () => socket.destroy());
+      let scopeAccepted = false;
       void (async () => {
         if (request.url !== TOOL_BROKER_SANDBOX_PREVIEW_PATH || !this.#ready) {
           socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
@@ -228,6 +235,7 @@ export class ToolBrokerServer {
         const lifetime = scope.expiresAt - Date.now();
         if (lifetime <= 0 || lifetime > PREVIEW_ACCESS_TTL_MS)
           throw new Error("Expired preview scope");
+        scopeAccepted = true;
         const stream = await this.#broker.openPreviewConnection!(scope);
         if (socket.destroyed || scope.expiresAt <= Date.now()) {
           stream.destroy();
@@ -257,7 +265,19 @@ export class ToolBrokerServer {
           socket.end(
             `HTTP/1.1 307 Temporary Redirect\r\nLocation: ${error.ownerBaseUrl}\r\nConnection: close\r\n\r\n`,
           );
-        } else socket.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
+        } else if (!scopeAccepted) {
+          socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+        } else {
+          const applicationUnavailable =
+            error instanceof ToolBrokerError && error.code === "sandbox_application_unavailable";
+          const code = applicationUnavailable
+            ? "sandbox_application_unavailable"
+            : "sandbox_execution_unavailable";
+          reportFailure("preview_connection_failed", safeFailure(error), error);
+          socket.end(
+            `HTTP/1.1 ${applicationUnavailable ? "502 Bad Gateway" : "503 Service Unavailable"}\r\n${PREVIEW_FAILURE_HEADER}: ${code}\r\nConnection: close\r\n\r\n`,
+          );
+        }
       });
     });
   }

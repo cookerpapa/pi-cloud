@@ -5,6 +5,7 @@ import { UuidSchema } from "./protocol-primitives.ts";
 export const TOOL_BROKER_SANDBOX_PREVIEW_PATH = "/internal/v1/sandbox-preview" as const;
 export const PREVIEW_ACCESS_TTL_MS = 15 * 60_000;
 export const PREVIEW_SCOPE_HEADER = "x-pi-cloud-preview-scope";
+export const PREVIEW_FAILURE_HEADER = "x-pi-cloud-preview-failure";
 export const SANDBOX_PREVIEW_MINIMUM_PORT = 1_024 as const;
 export const SANDBOX_PREVIEW_MAXIMUM_PORT = 65_535 as const;
 

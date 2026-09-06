@@ -118,7 +118,9 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
         }>
       >;
   onToolOperationStarted?: () => void | Promise<void>;
-  onToolOperationUnavailable?: () => void | Promise<void>;
+  onToolOperationUnavailable?: (
+    failure: Readonly<{ code: string; message: string; retryable: boolean }>,
+  ) => void | Promise<void>;
   remainingToolCalls: number;
   maximumToolOutputBytes: number;
   toolOutputDirectory: string;
@@ -485,8 +487,14 @@ function registerTrustedRemoteTools(
     if (!response.ok) {
       try {
         const failure = parseInternalServiceError(value).error;
-        if (failure.code === "cubesandbox_tool_result_unknown") {
-          await runtime.onToolOperationUnavailable?.();
+        if (
+          [
+            "cubesandbox_tool_result_unknown",
+            "cubesandbox_tool_unavailable",
+            "tool_sandbox_identity_mismatch",
+          ].includes(failure.code)
+        ) {
+          await runtime.onToolOperationUnavailable?.(failure);
         }
         throw new RemoteToolError(failure.code, failure.message, failure.retryable);
       } catch (error: unknown) {
@@ -510,8 +518,14 @@ function registerTrustedRemoteTools(
       );
     }
     if (parsed.type === "tool_sandbox.operation_failed") {
-      if (parsed.code === "cubesandbox_tool_result_unknown") {
-        await runtime.onToolOperationUnavailable?.();
+      if (
+        [
+          "cubesandbox_tool_result_unknown",
+          "cubesandbox_tool_unavailable",
+          "tool_sandbox_identity_mismatch",
+        ].includes(parsed.code)
+      ) {
+        await runtime.onToolOperationUnavailable?.(parsed);
       }
       throwFailure(parsed);
     }

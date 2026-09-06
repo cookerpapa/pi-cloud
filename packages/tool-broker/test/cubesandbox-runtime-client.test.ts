@@ -5,8 +5,9 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { OfficialCubeSandboxRuntimeClient } from "../src/index.ts";
+import { CubeApplicationPortError } from "../src/cubesandbox-runtime-client.ts";
 
 type ObservedRequest = {
   method: string;
@@ -21,6 +22,11 @@ const observed: ObservedRequest[] = [];
 let runtimeState = "running";
 let pauseReturnsTimeout = false;
 let tcpResponse: ServerResponse | undefined;
+let tcpConnectMode: "connected" | "refused" | "unreachable" = "connected";
+beforeEach(() => {
+  observed.length = 0;
+  tcpConnectMode = "connected";
+});
 
 function connectFrame(value: unknown, flags = 0): Buffer {
   const payload = Buffer.from(JSON.stringify(value), "utf8");
@@ -68,6 +74,27 @@ beforeAll(async () => {
           if (typeof body === "object" && body !== null && "stdin" in body && body.stdin === true) {
             tcpResponse = response;
             response.write(connectFrame({ event: { start: { pid: 74 } } }));
+            if (tcpConnectMode === "unreachable") {
+              response.end(connectFrame({ event: { end: { exitCode: 127 } } }));
+              return;
+            }
+            if (tcpConnectMode === "refused") {
+              response.end(
+                connectFrame({
+                  event: {
+                    data: { stderr: Buffer.from("PI_CLOUD_TCP_FAILED\n").toString("base64") },
+                  },
+                }),
+              );
+              return;
+            }
+            response.write(
+              connectFrame({
+                event: {
+                  data: { stderr: Buffer.from("PI_CLOUD_TCP_CONNECTED\n").toString("base64") },
+                },
+              }),
+            );
             return;
           }
           if (typeof body === "object" && body !== null && "pty" in body) {
@@ -227,6 +254,47 @@ afterAll(async () => {
 });
 
 describe("official CubeSandbox HTTP compatibility client", () => {
+  it.each(["refused", "unreachable"] as const)(
+    "does not ACK a preview when the application is %s",
+    async (mode) => {
+      const client = new OfficialCubeSandboxRuntimeClient({
+        apiUrl: `http://127.0.0.1:${port}`,
+        apiKey: "k".repeat(48),
+        proxyNodeIp: "127.0.0.1",
+        proxyPort: port,
+        proxyScheme: "http",
+        sandboxDomain: "cube.test",
+        egressProxyIp: "10.255.255.254",
+      });
+      tcpConnectMode = mode;
+      try {
+        const instance = await client.create({
+          templateId: "pi-cloud-tool-v1",
+          timeoutSeconds: 900,
+          metadata: {},
+          allowInternetAccess: true,
+          allowPublicTraffic: false,
+        });
+        const error = await client.openTcp(instance, 4173).then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+        expect(error).toBeInstanceOf(Error);
+        expect(error instanceof CubeApplicationPortError).toBe(mode === "refused");
+        await vi.waitFor(() =>
+          expect(observed).toContainEqual(
+            expect.objectContaining({
+              path: "/process.Process/SendSignal",
+              body: { process: { pid: 74 }, signal: "SIGNAL_SIGKILL" },
+            }),
+          ),
+        );
+      } finally {
+        tcpConnectMode = "connected";
+        await client.close();
+      }
+    },
+  );
   it("reconciles an HTTP 408 pause from the eventual physical state", async () => {
     runtimeState = "running";
     pauseReturnsTimeout = true;

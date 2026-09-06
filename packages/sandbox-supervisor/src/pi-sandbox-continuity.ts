@@ -269,7 +269,10 @@ export class PiSessionWorldStateController {
       schemaVersion: 3,
       sandbox: {
         status: this.#status,
-        continuityId: this.#status === "inactive" ? null : this.#continuity.continuityId,
+        continuityId:
+          this.#status === "inactive"
+            ? (this.#previous?.sandbox.continuityId ?? null)
+            : this.#continuity.continuityId,
       },
       environmentSha256: this.#continuity.environmentSha256,
       workspaceBindingSha256: this.#continuity.workspaceBindingSha256,
@@ -288,9 +291,9 @@ export class PiSessionWorldStateController {
       previous !== undefined && previous.workspaceBindingSha256 !== current.workspaceBindingSha256;
     if (
       !workspaceChanged &&
-      previous?.sandbox.status === "active" &&
-      (current.sandbox.status !== "active" ||
-        previous.sandbox.continuityId !== current.sandbox.continuityId)
+      previous?.sandbox.continuityId != null &&
+      current.sandbox.status === "active" &&
+      previous.sandbox.continuityId !== current.sandbox.continuityId
     ) {
       material.push(PI_SANDBOX_RESET_CUSTOM_TYPE);
     }

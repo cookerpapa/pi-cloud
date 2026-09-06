@@ -5,6 +5,13 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Separate persistent machine, Tool and Preview failure boundaries
+      (ADR-0151), preserve recovery capsules and first errors, and verify Guest
+      execution on adoption; exercise real Cube/service restart acceptance.
+- [ ] Make explicit machine release clean root-owned Guest files without partial
+      Volume deletion; the uid-1000 Volume gateway can currently remove metadata
+      before failing on a root-owned directory. Keep deletion authority and
+      identity evidence through GC retries; do not grant broad host privileges.
 - [x] Replace path-token/buffered Preview with authenticated root-origin HTTP,
       SSE and WebSocket streaming; validate Vite dynamic CSS and HMR.
 - [x] Retry premature Responses disconnections without replaying completed Tools,

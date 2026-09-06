@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0151](0151-development-machine-failure-boundaries.md) — separate Tool,
+   machine and application failures; retain exclusive VM recovery authority.
 1. [ADR-0150](0150-root-origin-streaming-preview.md) — root-origin application
    preview with scoped Cookies and streaming HTTP/WebSocket transport.
 1. [ADR-0149](0149-message-handoff-round-trips.md) — reduce redundant handoffs

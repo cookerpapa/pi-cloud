@@ -13,7 +13,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { Socket } from "node:net";
 import { createProxyServer } from "httpxy";
 import { tenantRequestIdentity } from "./tenant-identity.ts";
-import { previewConnectionAgent } from "./preview-connect.ts";
+import { PreviewConnectionError, previewConnectionAgent } from "./preview-connect.ts";
 
 export const CONVERSATION_PREVIEW_PATH = "/v1/conversations/:sessionId/preview/:port/*";
 export const DEVELOPMENT_ENVIRONMENT_PREVIEW_PATH =
@@ -252,7 +252,7 @@ export class SandboxPreviewGateway {
     } catch {
       await reply.code(503).send({
         error: "sandbox_preview_unavailable",
-        message: "Sandbox service is not currently reachable",
+        message: "Preview target is unavailable or not authorized. Check the selected environment.",
       });
     }
   }
@@ -367,16 +367,26 @@ export class SandboxPreviewGateway {
         autoRewrite: true,
         protocolRewrite: this.#publicOriginBaseUrl.protocol.slice(0, -1),
       });
-    } catch {
-      fail(response, 502, "Sandbox application is not reachable");
+    } catch (error) {
+      fail(
+        response,
+        error instanceof PreviewConnectionError && error.code === "sandbox_execution_unavailable"
+          ? 503
+          : 502,
+        error instanceof PreviewConnectionError
+          ? error.message
+          : "The preview connection is unavailable. Check the environment and application service.",
+      );
     }
   }
   async #upgrade(request: IncomingMessage, socket: Socket, head: Buffer): Promise<void> {
     socket.on("error", () => socket.destroy());
+    let authorized = false;
     try {
       applicationPath(request.url ?? "/");
       const scope = this.#scope(request);
       const owner = await this.#authorizedOwner(scope);
+      authorized = true;
       const agent = previewConnectionAgent(
         owner,
         this.#previewToken,
@@ -391,8 +401,14 @@ export class SandboxPreviewGateway {
         { target: `http://localhost:${scope.port}`, agent },
         head,
       );
-    } catch {
-      socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+    } catch (error) {
+      const status = !authorized
+        ? "401 Unauthorized"
+        : error instanceof PreviewConnectionError &&
+            error.code === "sandbox_application_unavailable"
+          ? "502 Bad Gateway"
+          : "503 Service Unavailable";
+      socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
     }
   }
   async #workspaceBinding(
