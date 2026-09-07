@@ -28,14 +28,14 @@ arbitrary Tool effects are never inferred from K, V or an interrupted text prefi
 Kafka is a bounded recovery log, not the lifetime transcript. AcceptedFacts are
 keyed by opaque Session ID, so one Session remains in one Kafka partition.
 PostgreSQL stores complete Pi-native semantic state once. Gateway replicas consume
-Kafka into rebuildable memory containing incomplete active Turns only.
+only subscribed Kafka partitions into rebuildable memory.
 
 A lease check cannot be atomic with Kafka append. Closure therefore happens in
 the log itself: the first execution seal divides accepted old records from late
 records that cannot affect canonical or live state. The seal is published by the
 trusted terminal Outbox even when its Worker is dead. It names an exact Attempt,
-not every future Run or every Lane. Both paths use durable Attempt closure on
-restart; no lease-expiry inference or browser acknowledgement is required.
+not every future Run or every Lane. Both paths use the durable first-seal position on
+restart; valid pre-seal records remain valid even when PG is ahead of a live reader; no lease-expiry inference or browser acknowledgement is required.
 
 The first Assistant text delta is published immediately; adjacent deltas in
 the same content block coalesce for up to 25ms. Semantic boundaries flush that
@@ -68,7 +68,8 @@ dedicated PostgreSQL connection per Worker.
 The browser opens one SSE request without `Last-Event-ID` or a query watermark.
 Opening an existing conversation does not first download the same REST history.
 Changing language or tree focus leaves this subscription intact.
-Gateway subscribes first, reads canonical history and its boundary under one
+Gateway retains the target partition and waits for its bounded replay, then
+subscribes to live wakes and reads canonical history and its boundary under one
 repeatable-read transaction, then takes an immutable live-tail snapshot. It
 retries if terminal eviction overtook that database snapshot. No database
 transaction remains open during network writes. Its first frame replaces the browser view:
@@ -110,14 +111,15 @@ for duplicate/conflict lookup; out-of-order arrivals use ordered insertion.
 | old record after seal | it may remain in bounded Kafka history | neither PG lane nor SSE accepts it |
 | seal commit succeeded, ACK lost | closed execution stays closed | duplicate seal is a no-op |
 | `C` completed, queued successor starts | predecessor context includes its preserved prefix | old records cannot subsequently rewrite it |
-| canonical projector loss | volatile prefix is lost, canonical entries are not | replay retained Kafka from beginning; skip durably closed attempts, deduplicate semantic effects and rebuild open prefixes |
+| canonical projector loss | volatile prefix is lost, canonical entries are not | seek to the minimum durable partition checkpoint/unsealed start; rebuild open prefixes and deduplicate already projected outcomes |
 | Gateway loss | no canonical loss | replacement Gateway rebuilds its soft tail from Kafka and PostgreSQL |
 | browser loss | no server-side acknowledgement is needed | reconnect receives `S`; no browser cursor survives |
 | Worker loss during arbitrary Tool work | outcome may be unknown | revoke authority, record `UNKNOWN`, never auto-run the Tool again |
 | Cube loss | process/memory state is gone | persistent Workspace Volume keeps files; the next model sees a minimal reset fact |
 
 Kafka retention must exceed maximum Turn time plus settlement/recovery grace.
-RunAttempt rows retain closure and first/projected Kafka coordinates; none enter
+RunAttempt rows retain first/seal/projected Kafka coordinates; partition checkpoints
+advance with semantic/seal transactions, never token fragments; none enter
 the browser API. If an unsealed Run is older than the configured retention window
 or replay is missing its recorded first offset, recovery stops for operator action.
 Finite retention is not a promise of recovery after an unlimited outage.

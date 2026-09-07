@@ -3,7 +3,7 @@ import {
   type RunCancellationExecutionResult,
   RunCancellationExecutor,
 } from "@pi-cloud/runtime-core/run-cancellation-executor";
-import { type RunExecutionResult, RunExecutor } from "@pi-cloud/runtime-core/run-executor";
+import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import type { Kysely } from "kysely";
 import { Client } from "pg";
 
@@ -14,7 +14,7 @@ type ExecutionReference = {
   subagent: boolean;
 };
 
-export function selectPiWorkerSlotKinds(
+export function selectPiWorkerProbeKinds(
   active: readonly ExecutionReference[],
   maximumConcurrentRuns: number,
   maximumConcurrentSubagents: number,
@@ -29,10 +29,7 @@ export function selectPiWorkerSlotKinds(
   const maximumParents = maximumConcurrentRuns - maximumConcurrentSubagents;
   const parentSlots = Math.max(0, maximumParents - activeParents);
   const subagentSlots = Math.max(0, maximumConcurrentSubagents - activeSubagents);
-  return [
-    ...Array.from({ length: parentSlots }, () => false),
-    ...Array.from({ length: subagentSlots }, () => true),
-  ];
+  return [...(parentSlots > 0 ? [false] : []), ...(subagentSlots > 0 ? [true] : [])];
 }
 
 export function canScheduleOwnedSubagent(
@@ -148,8 +145,9 @@ export class PostgresPiWorker {
     ((operation: "listen" | "claim" | "execute" | "cancel", error: unknown) => void) | undefined;
   readonly #activeRuns = new Map<
     string,
-    Readonly<{ execution: Promise<void>; subagent: boolean }>
+    Readonly<{ execution: Promise<void>; subagent: boolean; runId?: string }>
   >();
+  readonly #claimingKinds = new Set<boolean>();
   #state: PostgresPiWorkerState = "idle";
   #controller: AbortController | undefined;
   #listener: Client | undefined;
@@ -227,7 +225,7 @@ export class PostgresPiWorker {
     bounded(runId, "Subagent runId", 256);
     if (this.#state !== "running" || !this.#canClaimRuns()) return false;
     const active = [...this.#activeRuns.entries()].map(([activeRunId, entry]) => ({
-      runId: activeRunId,
+      runId: entry.runId ?? activeRunId,
       subagent: entry.subagent,
     }));
     if (!canScheduleOwnedSubagent(runId, active, this.#maximumConcurrentSubagents)) return false;
@@ -275,23 +273,35 @@ export class PostgresPiWorker {
 
   async #fillCapacity(): Promise<void> {
     if (!this.#canClaimRuns()) return;
-    const slots = selectPiWorkerSlotKinds(
+    const slots = selectPiWorkerProbeKinds(
       [...this.#activeRuns.entries()].map(([runId, entry]) => ({
-        runId,
+        runId: entry.runId ?? runId,
         subagent: entry.subagent,
       })),
       this.#maximumConcurrentRuns,
       this.#maximumConcurrentSubagents,
     );
     if (slots.length === 0 || !(await this.#admitRunClaims())) return;
-    for (const subagent of slots) {
+    for (const subagent of [false, true]) {
+      if (!slots.includes(subagent) || this.#claimingKinds.has(subagent)) continue;
+      this.#claimingKinds.add(subagent);
       const slotId = `slot:${globalThis.crypto.randomUUID()}`;
       let claimed = false;
-      const execution = this.#executeNext(subagent)
+      let awaitingClaim = true;
+      const execution = this.#executeNext(subagent, (runId) => {
+        awaitingClaim = false;
+        this.#claimingKinds.delete(subagent);
+        const active = this.#activeRuns.get(slotId);
+        if (active) this.#activeRuns.set(slotId, { ...active, runId });
+        // A successful claim fills capacity immediately; an empty probe does
+        // not wake all remaining free slots to repeat the same empty query.
+        this.#queueWake.notify();
+      })
         .then((value) => {
           claimed = value;
         })
         .finally(() => {
+          if (awaitingClaim) this.#claimingKinds.delete(subagent);
           this.#activeRuns.delete(slotId);
           if (claimed) this.#queueWake.notify();
         });
@@ -315,28 +325,23 @@ export class PostgresPiWorker {
 
   async #executeRun(runId: string): Promise<void> {
     try {
-      const result = await this.#runExecutor.dispatchRun(runId);
-      await this.#settleDispatchResult(result);
+      await this.#runExecutor.dispatchRun(runId);
     } catch (error: unknown) {
       this.#observeFailure("execute", error);
     }
   }
 
-  async #executeNext(subagent: boolean): Promise<boolean> {
+  async #executeNext(subagent: boolean, onClaimed: (runId: string) => void): Promise<boolean> {
     try {
-      const result = await this.#runExecutor.dispatchNext(subagent ? "subagent" : "conversation");
-      await this.#settleDispatchResult(result);
+      const result = await this.#runExecutor.dispatchNext(
+        subagent ? "subagent" : "conversation",
+        onClaimed,
+      );
       return result.status !== "idle";
     } catch (error: unknown) {
       this.#observeFailure("execute", error);
       return false;
     }
-  }
-
-  async #settleDispatchResult(_result: RunExecutionResult): Promise<void> {
-    // RunExecutor owns every durable transition. The queue only needs
-    // another claim: completed work is published, while a deferred/retryable
-    // record carries its next available_at timestamp.
   }
 
   async #cancellationReferences(): Promise<CancellationReference[]> {

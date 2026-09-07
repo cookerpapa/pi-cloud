@@ -1,0 +1,49 @@
+{
+  "format": "pi-cloud.session-batch-ablation.v1",
+  "checkedAt": "2026-09-07T12:13:04.858Z",
+  "baseline": "c8472665",
+  "concurrentLaneIdNamespace": true,
+  "scope": "two-item atomic native append, 128 Sessions x4 per arm, concurrency16, isolated PostgreSQL 2CPU/768MiB; no model/Cube; excludes outer projection receipts",
+  "results": [
+    {
+      "name": "before",
+      "batches": 512,
+      "statementsPerBatch": 17,
+      "batchesPerSecond": 294.8969208116265,
+      "latencyMs": {
+        "p50": 39.73399900000004,
+        "p95": 98.63026400000126
+      }
+    },
+    {
+      "name": "after",
+      "batches": 512,
+      "statementsPerBatch": 8,
+      "batchesPerSecond": 462.97180946205646,
+      "latencyMs": {
+        "p50": 19.097925000000032,
+        "p95": 73.88360999999895
+      }
+    },
+    {
+      "name": "after",
+      "batches": 512,
+      "statementsPerBatch": 8,
+      "batchesPerSecond": 506.73338814631495,
+      "latencyMs": {
+        "p50": 16.768490999998903,
+        "p95": 73.18520999999964
+      }
+    },
+    {
+      "name": "before",
+      "batches": 512,
+      "statementsPerBatch": 17,
+      "batchesPerSecond": 339.5078858922323,
+      "latencyMs": {
+        "p50": 29.737874000000375,
+        "p95": 74.87393900000097
+      }
+    }
+  ]
+}

@@ -46,6 +46,7 @@ export class KafkaEventRuntime {
     };
     this.#bus = new KafkaAcceptedFactBus(configuration);
     this.eventStore = new KafkaLiveSessionTail({
+      retentionMs: options.retentionMs,
       database: options.database,
       brokers: options.brokers,
       topic,
@@ -109,6 +110,11 @@ export class KafkaEventRuntime {
     this.eventStore.checkHealth();
     this.#canonical?.checkHealth();
     this.#terminalRelay?.checkHealth();
+  }
+
+  async checkIngestHealth(): Promise<void> {
+    if (!this.#started) throw new Error("Kafka event runtime is not running");
+    await this.#bus.checkHealth();
   }
 
   statistics() {

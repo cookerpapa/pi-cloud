@@ -2,14 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   PostgresQueueWake,
   canScheduleOwnedSubagent,
-  selectPiWorkerSlotKinds,
+  selectPiWorkerProbeKinds,
 } from "../src/postgres-pi-worker.ts";
 
 describe("PostgreSQL Pi Worker admission", () => {
   it("reserves the declared Lane capacity for owner-local Subagent children", () => {
     const parents = [{ runId: "parent-1", subagent: false }];
-    expect(selectPiWorkerSlotKinds([], 4, 3)).toEqual([false, true, true, true]);
-    expect(selectPiWorkerSlotKinds(parents, 4, 3)).toEqual([true, true, true]);
+    expect(selectPiWorkerProbeKinds([], 4, 3)).toEqual([false, true]);
+    expect(selectPiWorkerProbeKinds([], 128, 16)).toEqual([false, true]);
+    expect(selectPiWorkerProbeKinds(parents, 4, 3)).toEqual([true]);
   });
 
   it("bounds conversation and Child lanes independently", () => {
@@ -17,8 +18,10 @@ describe("PostgreSQL Pi Worker admission", () => {
       runId: `parent-${index}`,
       subagent: false,
     }));
-    expect(selectPiWorkerSlotKinds(active, 6, 3)).toEqual([true, true, true]);
-    expect(() => selectPiWorkerSlotKinds([], 3, 3)).toThrow("leave at least one conversation slot");
+    expect(selectPiWorkerProbeKinds(active, 6, 3)).toEqual([true]);
+    expect(() => selectPiWorkerProbeKinds([], 3, 3)).toThrow(
+      "leave at least one conversation slot",
+    );
   });
 
   it("admits an owned Child only while this Worker has Child capacity", () => {

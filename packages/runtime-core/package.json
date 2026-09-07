@@ -41,6 +41,7 @@
     "test": "vitest --run --passWithNoTests"
   },
   "dependencies": {
+    "@confluentinc/kafka-javascript": "1.10.0",
     "@earendil-works/pi-agent-core": "0.84.1",
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/domain": "0.1.0",

@@ -1,14 +1,11 @@
-import {
-  Consumer,
-  stringDeserializers,
-  type Message,
-  type MessagesStream,
-} from "@platformatic/kafka";
+import kafkaNative from "@confluentinc/kafka-javascript";
+import type { KafkaJS as KafkaTypes } from "@confluentinc/kafka-javascript";
 import type { AcceptedFact } from "./accepted-fact.ts";
 import { AcceptedFactProjectionPendingError } from "./accepted-fact.ts";
 import { parseKafkaAcceptedFact } from "./kafka-accepted-fact.ts";
-import { consumePartitioned } from "./partitioned-consumption.ts";
+import type { KafkaPartitionBounds } from "./accepted-fact-recovery.ts";
 import { operationalLog } from "@pi-cloud/observability";
+const { KafkaJS, CODES } = kafkaNative;
 
 export type KafkaAcceptedFactRecord = Readonly<{
   fact: AcceptedFact;
@@ -17,232 +14,397 @@ export type KafkaAcceptedFactRecord = Readonly<{
   offset: bigint;
 }>;
 
-export class KafkaAcceptedFactConsumer {
-  #consumer: Consumer<string, string, string, string>;
-  readonly #configuration: Readonly<{
-    brokers: readonly string[];
-    clientId: string;
-    groupId: string;
-  }>;
-  readonly #topic: string;
-  readonly #handler: (record: KafkaAcceptedFactRecord) => Promise<void>;
-  readonly #mode: "committed" | "earliest";
-  readonly #commitMessages: boolean;
-  readonly #commitEvery: number;
-  readonly #onReset: (() => void) | undefined;
-  #stream: MessagesStream<string, string, string, string> | undefined;
-  #run: Promise<void> | undefined;
-  #failure: unknown;
-  #closing = false;
-  readonly #processedOffsets = new Map<number, bigint>();
-  readonly #stalledPartitions = new Set<number>();
+type Options = {
+  brokers: readonly string[];
+  clientId: string;
+  groupId: string;
+  topic: string;
+  commitMessages?: boolean;
+  onReset?(): void;
+  demandDriven?: boolean;
+  onPartitionReset?(partition: number): void;
+  replayOffsets?(
+    bounds: readonly KafkaPartitionBounds[],
+    partitionCount: number,
+  ): Promise<ReadonlyMap<number, bigint | Error>>;
+  handler(record: KafkaAcceptedFactRecord): Promise<void>;
+};
 
-  constructor(options: {
-    brokers: readonly string[];
-    clientId: string;
-    groupId: string;
-    topic: string;
-    mode: "committed" | "earliest";
-    commitMessages?: boolean;
-    commitEvery?: number;
-    onReset?(): void;
-    handler(record: KafkaAcceptedFactRecord): Promise<void>;
-  }) {
-    this.#topic = options.topic;
-    this.#handler = options.handler;
-    this.#mode = options.mode;
-    this.#commitMessages = options.commitMessages ?? true;
-    this.#commitEvery = options.commitEvery ?? 1;
-    this.#onReset = options.onReset;
-    if (!Number.isSafeInteger(this.#commitEvery) || this.#commitEvery < 1) {
-      throw new TypeError("Kafka consumer commitEvery is invalid");
-    }
-    this.#configuration = {
-      brokers: options.brokers,
-      clientId: options.clientId,
-      groupId: options.groupId,
-    };
-    this.#consumer = this.#createConsumer();
+/** librdkafka owns bounded buffering, assignments and partition flow control.
+ * A failed record pauses/seeks ONLY its partition and returns the batch worker. */
+export class KafkaAcceptedFactConsumer {
+  readonly #options: Options;
+  readonly #kafka: KafkaTypes.Kafka;
+  #admin: KafkaTypes.Admin;
+  #adminReady: Promise<void> | undefined;
+  #consumer: KafkaTypes.Consumer | undefined;
+  #run: Promise<void> | undefined;
+  #wake: (() => void) | undefined;
+  #closing = false;
+  #ready = false;
+  #epoch = 0;
+  #failure: unknown;
+  readonly #processedOffsets = new Map<number, bigint>();
+  readonly #initialTargets = new Map<number, bigint>();
+  readonly #retries = new Map<number, { since: number; count: number; timer: NodeJS.Timeout }>();
+  readonly #inflight = new Map<Promise<void>, number>();
+  readonly #references = new Map<number, number>();
+  readonly #fetching = new Set<number>();
+  readonly #activating = new Map<number, Promise<void>>();
+  readonly #blocked = new Map<number, Error>();
+
+  constructor(options: Options) {
+    this.#options = options;
+    this.#kafka = new KafkaJS.Kafka({
+      kafkaJS: {
+        brokers: [...options.brokers],
+        clientId: options.clientId,
+        logLevel: KafkaJS.logLevel.NOTHING,
+      },
+    });
+    this.#admin = this.#kafka.admin();
   }
 
-  #createConsumer(): Consumer<string, string, string, string> {
-    return new Consumer({
-      clientId: this.#configuration.clientId,
-      groupId: this.#configuration.groupId,
-      bootstrapBrokers: [...this.#configuration.brokers],
-      deserializers: stringDeserializers,
-      autocommit: false,
-      maxWaitTime: 100,
-      highWaterMark: 256,
-      groupProtocol: "classic",
-      sessionTimeout: 10_000,
-      heartbeatInterval: 1_000,
-      rebalanceTimeout: 30_000,
-    });
+  async #bounds(): Promise<KafkaPartitionBounds[]> {
+    if (!this.#adminReady) {
+      const admin = this.#admin;
+      this.#adminReady = admin.connect().catch(async (error) => {
+        await admin.disconnect().catch(() => undefined);
+        this.#admin = this.#kafka.admin();
+        this.#adminReady = undefined;
+        throw error;
+      });
+    }
+    await this.#adminReady;
+    return (await this.#admin.fetchTopicOffsets(this.#options.topic)).map((p) => ({
+      partition: p.partition,
+      low: BigInt(p.low ?? 0),
+      high: BigInt(p.high ?? p.offset),
+    }));
+  }
+
+  async captureEndOffsets(): Promise<readonly bigint[]> {
+    const bounds = await this.#bounds();
+    const result: bigint[] = [];
+    for (const b of bounds) {
+      result[b.partition] = b.high;
+      if (!this.#processedOffsets.has(b.partition)) this.#processedOffsets.set(b.partition, b.low);
+    }
+    return result;
   }
 
   async start(): Promise<void> {
-    if (this.#run !== undefined) throw new Error("Kafka AcceptedFact consumer can only start once");
+    if (this.#run) throw new Error("Kafka consumer can only start once");
     this.#run = this.#runForever();
   }
 
-  async #openAndConsume(): Promise<void> {
-    this.#stalledPartitions.clear();
-    this.#onReset?.();
-    this.#stream = await this.#consumer.consume({
-      topics: [this.#topic],
-      mode: this.#mode,
-      fallbackMode: "earliest",
-      autocommit: false,
-      maxWaitTime: 100,
-      highWaterMark: 256,
-      groupProtocol: "classic",
-      sessionTimeout: 10_000,
-      heartbeatInterval: 1_000,
-      rebalanceTimeout: 30_000,
-    });
-    this.#failure = undefined;
-    await this.#consume(this.#stream);
+  async #runForever(): Promise<void> {
+    while (!this.#closing) {
+      let restart!: () => void;
+      const interrupted = new Promise<void>((resolve) => {
+        restart = resolve;
+        this.#wake = resolve;
+      });
+      const consumer = this.#kafka.consumer({
+        // PG owns recovery floors. Native offset commits run in the background.
+        kafkaJS: {
+          groupId: this.#options.groupId,
+          fromBeginning: true,
+          autoCommit: this.#options.commitMessages !== false,
+          autoCommitInterval: 1000,
+        },
+        "partition.assignment.strategy": "range",
+        "session.timeout.ms": 10_000,
+        "heartbeat.interval.ms": 1_000,
+        "queued.max.messages.kbytes": 32 * 1024,
+        "queued.min.messages": 1,
+        "fetch.queue.backoff.ms": 5,
+        "fetch.wait.max.ms": 25,
+        "fetch.max.bytes": 1024 * 1024,
+        rebalance_cb: async (
+          error: { code: number },
+          assignments: Array<{ topic: string; partition: number; offset?: number }>,
+          functions: {
+            assign(value: Array<{ topic: string; partition: number; offset?: number }>): void;
+            unassign(value: Array<{ topic: string; partition: number; offset?: number }>): void;
+          },
+        ) => {
+          this.#epoch++;
+          this.#ready = false;
+          this.#fetching.clear();
+          this.#blocked.clear();
+          for (const retry of this.#retries.values()) clearTimeout(retry.timer);
+          this.#retries.clear();
+          if (error.code !== CODES.ERRORS.ERR__ASSIGN_PARTITIONS) {
+            functions.unassign(assignments);
+            return;
+          }
+          try {
+            await Promise.allSettled([...this.#inflight.keys()]);
+            this.#options.onReset?.();
+            const allBounds = await this.#bounds();
+            const bounds = allBounds.filter((b) =>
+              assignments.some((a) => a.partition === b.partition),
+            );
+            const offsets = this.#options.replayOffsets
+              ? new Map(await this.#options.replayOffsets(bounds, allBounds.length))
+              : new Map(bounds.map((b) => [b.partition, b.low]));
+            for (const b of bounds) {
+              const offset = offsets.get(b.partition)!;
+              if (offset instanceof Error) this.#blocked.set(b.partition, offset);
+              this.#processedOffsets.set(b.partition, offset instanceof Error ? b.low : offset);
+              this.#initialTargets.set(b.partition, b.high);
+            }
+            functions.assign(
+              assignments.map((a) => ({
+                ...a,
+                offset: Number(
+                  this.#blocked.has(a.partition)
+                    ? bounds.find((b) => b.partition === a.partition)!.high
+                    : offsets.get(a.partition),
+                ),
+              })),
+            );
+            const idle = assignments
+              .filter(
+                (a) =>
+                  this.#blocked.has(a.partition) ||
+                  (this.#options.demandDriven && !this.#references.has(a.partition)),
+              )
+              .map((a) => a.partition);
+            if (idle.length) consumer.pause([{ topic: this.#options.topic, partitions: idle }]);
+            for (const a of assignments)
+              if (!idle.includes(a.partition)) this.#fetching.add(a.partition);
+            this.#failure = undefined;
+            this.#ready = true;
+          } catch (failure) {
+            // The native callback otherwise falls back to default assignment.
+            // Never consume from an unverified recovery position after an error.
+            functions.assign([]);
+            this.#failure = failure;
+            restart();
+          }
+        },
+      });
+      this.#consumer = consumer;
+      try {
+        const partitions = (await this.#bounds()).length;
+        await consumer.connect();
+        await consumer.subscribe({ topics: [this.#options.topic] });
+        await consumer.run({
+          partitionsConsumedConcurrently: Math.max(1, partitions),
+          eachBatchAutoResolve: false,
+          eachBatch: (payload) => {
+            const task = this.#batch(consumer, payload, this.#epoch);
+            this.#inflight.set(task, payload.batch.partition);
+            void task.finally(() => this.#inflight.delete(task)).catch(() => undefined);
+            return task;
+          },
+        });
+        await interrupted;
+      } catch (error) {
+        this.#failure = error;
+      } finally {
+        this.#ready = false;
+        this.#epoch++;
+        for (const retry of this.#retries.values()) clearTimeout(retry.timer);
+        this.#retries.clear();
+        await consumer.disconnect().catch(() => undefined);
+      }
+      if (!this.#closing) await new Promise((resolve) => setTimeout(resolve, 250));
+    }
   }
 
-  async #runForever(): Promise<void> {
-    let delayMs = 100;
-    while (!this.#closing) {
+  async #batch(
+    consumer: KafkaTypes.Consumer,
+    payload: KafkaTypes.EachBatchPayload,
+    epoch: number,
+  ): Promise<void> {
+    const { batch } = payload;
+    if (this.#closing || epoch !== this.#epoch || payload.isStale() || !this.#ready) return;
+    if (
+      this.#blocked.has(batch.partition) ||
+      (this.#options.demandDriven && !this.#fetching.has(batch.partition))
+    ) {
+      consumer.pause([{ topic: batch.topic, partitions: [batch.partition] }]);
+      consumer.seek({
+        topic: batch.topic,
+        partition: batch.partition,
+        offset: batch.messages[0]!.offset,
+      });
+      return;
+    }
+    for (const message of batch.messages) {
+      if (this.#closing || epoch !== this.#epoch || payload.isStale() || !this.#ready) return;
       try {
-        await this.#openAndConsume();
-        if (!this.#closing) throw new Error("Kafka AcceptedFact consumer ended unexpectedly");
-      } catch (error: unknown) {
-        if (this.#closing) return;
-        this.#failure = error;
-        await this.#stream?.close().catch(() => undefined);
-        await this.#consumer.close().catch(() => undefined);
-        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-        delayMs = Math.min(5_000, delayMs * 2);
-        this.#stream = undefined;
-        this.#consumer = this.#createConsumer();
+        if (message.value === null) throw new Error("AcceptedFact cannot be a Kafka tombstone");
+        const fact = parseKafkaAcceptedFact(message.value);
+        await this.#options.handler({
+          fact,
+          topic: batch.topic,
+          partition: batch.partition,
+          offset: BigInt(message.offset),
+        });
+        if (epoch !== this.#epoch || payload.isStale()) return;
+        payload.resolveOffset(message.offset);
+        this.#processedOffsets.set(batch.partition, BigInt(message.offset) + 1n);
+        const retry = this.#retries.get(batch.partition);
+        if (retry) {
+          clearTimeout(retry.timer);
+          this.#retries.delete(batch.partition);
+        }
+      } catch (error) {
+        if (this.#closing || epoch !== this.#epoch || payload.isStale()) return;
+        const previous = this.#retries.get(batch.partition);
+        const since = previous?.since ?? Date.now(),
+          count = (previous?.count ?? 0) + 1;
+        if (!(error instanceof AcceptedFactProjectionPendingError) && !previous)
+          operationalLog({
+            service: "pi-cloud-kafka-consumer",
+            level: "error",
+            event: "partition.stalled",
+            attributes: { topic: batch.topic, partition: batch.partition },
+          });
+        consumer.pause([{ topic: batch.topic, partitions: [batch.partition] }]);
+        consumer.seek({ topic: batch.topic, partition: batch.partition, offset: message.offset });
+        const timer = setTimeout(
+          () => {
+            if (
+              !this.#closing &&
+              epoch === this.#epoch &&
+              (!this.#options.demandDriven || this.#fetching.has(batch.partition))
+            )
+              consumer.resume([{ topic: batch.topic, partitions: [batch.partition] }]);
+          },
+          Math.min(1000, 25 * 2 ** Math.min(count - 1, 6)),
+        );
+        timer.unref();
+        this.#retries.set(batch.partition, { since, count, timer });
+        break;
       }
     }
   }
 
   checkHealth(): void {
     if (
-      this.#run === undefined ||
+      !this.#ready ||
       this.#failure !== undefined ||
-      this.#stalledPartitions.size > 0 ||
-      !this.#consumer.isActive()
-    ) {
+      this.#blocked.size > 0 ||
+      [...this.#retries.values()].some((r) => Date.now() - r.since > 5000)
+    )
       throw new Error("Kafka AcceptedFact consumer is unhealthy");
-    }
-  }
-
-  async captureEndOffsets(): Promise<readonly bigint[]> {
-    const starts = (
-      await this.#consumer.listOffsets({ topics: [this.#topic], timestamp: -2n })
-    ).get(this.#topic);
-    if (starts === undefined) {
-      throw new Error("Kafka AcceptedFact Topic start offsets are unavailable");
-    }
-    starts.forEach((offset, partition) => this.#processedOffsets.set(partition, offset));
-    const ends = (await this.#consumer.listOffsets({ topics: [this.#topic] })).get(this.#topic);
-    if (ends === undefined) throw new Error("Kafka AcceptedFact Topic end offsets are unavailable");
-    return ends;
   }
 
   async waitUntilInitialReplay(offsets: readonly bigint[], timeoutMs = 120_000): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
+    const end = Date.now() + timeoutMs;
+    while (!this.#closing && Date.now() < end) {
       if (
-        offsets.every(
-          (target, partition) =>
-            target === 0n || (this.#processedOffsets.get(partition) ?? 0n) >= target,
-        )
-      ) {
+        this.#ready &&
+        this.#blocked.size === 0 &&
+        offsets.every((v, p) => (this.#processedOffsets.get(p) ?? 0n) >= v)
+      )
         return;
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error("Kafka Gateway live-tail replay did not reach its startup boundary");
+    throw new Error("Kafka replay did not reach its startup boundary");
+  }
+
+  async waitForPartition(partition: number, timeoutMs = 120_000): Promise<void> {
+    const end = Date.now() + timeoutMs;
+    while (!this.#closing && Date.now() < end) {
+      const target = this.#initialTargets.get(partition);
+      if (this.#blocked.has(partition)) throw this.#blocked.get(partition)!;
+      if (
+        this.#ready &&
+        target !== undefined &&
+        (this.#processedOffsets.get(partition) ?? 0n) >= target
+      )
+        return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("Session partition replay is unavailable");
+  }
+
+  async partitionCount(): Promise<number> {
+    return (await this.#bounds()).length;
+  }
+
+  async retainPartition(partition: number): Promise<() => void> {
+    this.#references.set(partition, (this.#references.get(partition) ?? 0) + 1);
+    const release = () => {
+      const left = (this.#references.get(partition) ?? 1) - 1;
+      if (left > 0) this.#references.set(partition, left);
+      else {
+        this.#references.delete(partition);
+        this.#fetching.delete(partition);
+        if (this.#ready && !this.#closing)
+          this.#consumer?.pause([{ topic: this.#options.topic, partitions: [partition] }]);
+        // No browser owns this soft tail. Drop it after outstanding handlers
+        // quiesce; a later subscriber reconstructs from the durable recovery floor.
+        void Promise.allSettled(
+          [...this.#inflight].filter(([, p]) => p === partition).map(([task]) => task),
+        ).then(() => {
+          if (!this.#references.has(partition) && !this.#fetching.has(partition))
+            this.#options.onPartitionReset?.(partition);
+        });
+      }
+    };
+    try {
+      let activation = this.#activating.get(partition);
+      if (!activation) {
+        activation = this.#activate(partition);
+        this.#activating.set(partition, activation);
+        void activation.finally(() => this.#activating.delete(partition)).catch(() => undefined);
+      }
+      await activation;
+      await this.waitForPartition(partition);
+      let released = false;
+      return () => {
+        if (!released) {
+          released = true;
+          release();
+        }
+      };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
+  async #activate(partition: number): Promise<void> {
+    const deadline = Date.now() + 120_000;
+    while (!this.#ready && !this.#closing && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 10));
+    if (!this.#ready || !this.#consumer) throw new Error("Kafka live partition is unavailable");
+    if (this.#fetching.has(partition)) return;
+    const epoch = this.#epoch,
+      consumer = this.#consumer;
+    await Promise.allSettled(
+      [...this.#inflight].filter(([, p]) => p === partition).map(([task]) => task),
+    );
+    const allBounds = await this.#bounds(),
+      bounds = allBounds.filter((b) => b.partition === partition);
+    const offsets = this.#options.replayOffsets
+      ? await this.#options.replayOffsets(bounds, allBounds.length)
+      : new Map(bounds.map((b) => [b.partition, b.low]));
+    if (epoch !== this.#epoch) throw new Error("Kafka assignment changed while opening Session");
+    this.#options.onPartitionReset?.(partition);
+    const offset = offsets.get(partition)!;
+    if (offset instanceof Error) throw offset;
+    this.#blocked.delete(partition);
+    this.#processedOffsets.set(partition, offset);
+    this.#initialTargets.set(partition, bounds[0]!.high);
+    consumer.seek({ topic: this.#options.topic, partition, offset: offset.toString() });
+    this.#fetching.add(partition);
+    consumer.resume([{ topic: this.#options.topic, partitions: [partition] }]);
   }
 
   async close(): Promise<void> {
     this.#closing = true;
-    await this.#stream?.close().catch(() => undefined);
-    await this.#consumer.close().catch(() => undefined);
+    this.#epoch++;
+    this.#wake?.();
     await this.#run;
-    this.#stream = undefined;
-    this.#run = undefined;
-  }
-
-  async #consume(stream: MessagesStream<string, string, string, string>): Promise<void> {
-    const uncommitted = new Map<
-      number,
-      { count: number; last: Message<string, string, string, string> }
-    >();
-    const generation = new AbortController();
-    const stop = () => generation.abort();
-    stream.once("close", stop);
-    try {
-      await consumePartitioned(stream, async (message) => {
-        let delayMs = 50;
-        const startedAt = Date.now();
-        while (!this.#closing && !generation.signal.aborted) {
-          try {
-            await this.#handle(message);
-            if (this.#stalledPartitions.delete(message.partition))
-              operationalLog({
-                service: "pi-cloud-kafka-consumer",
-                level: "info",
-                event: "partition.recovered",
-                attributes: { topic: this.#topic, partition: message.partition },
-              });
-            if (this.#closing || generation.signal.aborted) return;
-            this.#processedOffsets.set(message.partition, message.offset + 1n);
-            if (this.#commitMessages) {
-              const count = (uncommitted.get(message.partition)?.count ?? 0) + 1;
-              uncommitted.set(message.partition, { count, last: message });
-              if (count >= this.#commitEvery) {
-                await message.commit();
-                uncommitted.delete(message.partition);
-              }
-            }
-            break;
-          } catch (error) {
-            // The live consumer commonly reaches a seal a few milliseconds
-            // before the canonical consumer commits it. This is not an outage.
-            if (
-              error instanceof AcceptedFactProjectionPendingError &&
-              Date.now() - startedAt < 5_000
-            ) {
-              await new Promise<void>((resolve) => setTimeout(resolve, 50));
-              continue;
-            }
-            if (!this.#stalledPartitions.has(message.partition))
-              operationalLog({
-                service: "pi-cloud-kafka-consumer",
-                level: "error",
-                event: "partition.stalled",
-                attributes: { topic: this.#topic, partition: message.partition },
-              });
-            this.#stalledPartitions.add(message.partition);
-            await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-            delayMs = Math.min(1_000, delayMs * 2);
-          }
-        }
-      });
-      if (!this.#closing && !generation.signal.aborted) {
-        await Promise.all([...uncommitted.values()].map(({ last }) => last.commit()));
-      }
-    } finally {
-      stream.off("close", stop);
-    }
-  }
-
-  async #handle(message: Message<string, string, string, string>): Promise<void> {
-    await this.#handler({
-      fact: parseKafkaAcceptedFact(message.value),
-      topic: message.topic,
-      partition: message.partition,
-      offset: message.offset,
-    });
+    if (this.#adminReady) await this.#admin.disconnect();
+    this.#consumer = undefined;
   }
 }

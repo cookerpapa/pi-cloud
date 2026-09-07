@@ -791,6 +791,7 @@ export interface RunAttemptTable {
   last_heartbeat_at: NullableTimestamp;
   last_event_seq: GeneratedInt8;
   output_seal_id: GeneratedNullable<string>;
+  output_seal_offset: NullableInt8;
   output_sealed_at: NullableTimestamp;
   output_first_topic: GeneratedNullable<string>;
   output_first_partition: GeneratedNullable<number>;
@@ -1195,6 +1196,7 @@ export interface RuntimeObjectTable {
 }
 
 export interface Database {
+  accepted_fact_projection_offsets: { topic: string; partition: number; next_offset: Int8 };
   agent_definitions: AgentDefinitionTable;
   agent_revisions: AgentRevisionTable;
   source_control_installation_requests: SourceControlInstallationRequestTable;

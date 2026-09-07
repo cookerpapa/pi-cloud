@@ -9,7 +9,7 @@ import {
 import { parsePiCloudEvent } from "@pi-cloud/protocol";
 import type { AcceptedFact, AcceptedFactBus, AcceptedFactReceipt } from "./accepted-fact.ts";
 
-export const ACCEPTED_FACT_TOPIC = "pi-cloud.accepted-facts.v2";
+export const ACCEPTED_FACT_TOPIC = "pi-cloud.accepted-facts.v3";
 
 export type KafkaAcceptedFactConfiguration = Readonly<{
   brokers: readonly string[];

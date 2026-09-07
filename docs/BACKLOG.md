@@ -5,6 +5,13 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] ADR-0155: classify live records by the actual seal position, isolate paused
+      partitions, restore from durable recovery floors and invalidate idle OPEN caches.
+- [x] Batch native append SQL without a timer; preserve concurrent Lane ID uniqueness
+      and rejected-operation outcomes beyond short receipt retention.
+- [x] Decouple verified warm Tool execution from per-operation Cube inspection;
+      retain private ingress identity and lifecycle checks.
+      [ADR-0155 acceptance](reports/isolated-handoffs-acceptance.md).
 - [x] Close each retired execution in Kafka order before a successor reads context;
       reject late old records in canonical and SSE paths. Preserve visible prefixes
       across consumer/Worker replacement (ADR-0154).
@@ -50,6 +57,8 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Capacity
 
+- [x] Replace per-free-Slot scans with one concurrent claim probe per queue kind;
+      wake immediately after a successful claim and preserve Child capacity.
 - [ ] Measure AcceptedFact producer p50/p95/p99 with 1/16/64/128 active Sessions.
 - [ ] Measure Gateway live-tail bytes per active Turn and 2,000/10,000 SSE
       connections.

@@ -232,6 +232,10 @@ async function registerTenant(index, suffix) {
     project.projectId,
     project.workspaceId,
     `Multi-tenant model load ${suffix}`,
+    "elastic",
+    "starter",
+    "/workspace",
+    { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "off", fastMode: false },
   );
   await psql(
     `update sessions
@@ -245,7 +249,7 @@ async function registerTenant(index, suffix) {
     tenantId: body.tenantId,
     token: body.apiToken,
     api,
-    model,
+    model: { ...model, provider: "deepseek", modelId: "deepseek-v4-flash" },
     session,
     marker: `TENANT-${String(index + 1)}-${suffix.toUpperCase()}`,
   };
@@ -315,6 +319,25 @@ async function runTurn(lane, prompt, round) {
       retryDelayMs: 100,
       onStatus() {},
       onSnapshot(snapshot) {
+        // A fast Run may finish before this HTTP client attaches. A canonical
+        // terminal snapshot is completion too, not a missing SSE terminal.
+        const turn = snapshot.conversation.turns.find((row) => row.turnId === accepted.turnId);
+        if (turn?.transcript?.terminalSequence != null) {
+          text.length = 0;
+          text.push(
+            ...turn.transcript.items
+              .filter((item) => item.kind === "text")
+              .map((item) => item.text),
+          );
+          firstAssistantTextMs ??= Math.round(performance.now() - submittedAt);
+          terminal = {
+            type: `turn.${turn.state}`,
+            payload: turn.transcript.failure ?? { stopReason: turn.transcript.stopReason },
+          };
+          controller.abort();
+          return;
+        }
+        text.length = 0;
         for (const event of snapshot.liveEvents) observeEvent(event);
       },
       onEvent: observeEvent,

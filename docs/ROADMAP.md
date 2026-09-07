@@ -39,6 +39,8 @@
 
 ## Current release gate
 
+- [x] Use positioned execution seals, demand-driven partition tails and bounded
+      recovery offsets; remove the shared consumer queue and free-Slot claim storms.
 - [x] Remove JetStream, browser cursors and replay-specific Gateway state.
 - [x] Keep PostgreSQL as canonical product/Pi Session authority.
 - [x] Keep Kafka as the only AcceptedFact durable append log.

@@ -57,7 +57,9 @@ different live Worker owner before loading the immutable execution snapshot.
 Attempt creation, its first transition and the Run update are one CTE statement
 in the same transaction. There is no separate read-then-claim dispatcher or
 owner table. `RunExecutor` makes competing claims and duplicate wakeups
-harmless. `LISTEN/NOTIFY` is a
+harmless. A Worker probes each queue kind at most once concurrently, not once per
+free Slot. A successful claim wakes the next probe immediately; an empty claim
+waits for a notification or poll. `LISTEN/NOTIFY` is a
 best-effort wakeup hint with periodic polling as the correctness fallback. A
 monotonic process-local notification generation covers the claim-to-wait race:
 a notification received before the waiter is installed forces an immediate
@@ -619,6 +621,11 @@ the transcript. There is no persistent top-bar application hint and no parsing
 of assistant text. The Agent never calculates a public IP, signed URL or NAT
 mapping.
 
+Verified warm Tool execution uses the Sandbox-ID hostname and private ingress
+token directly. Control-plane inspection remains on create, recovery and explicit
+inspection, not every Tool operation or Volume settlement. Failure never silently
+reroutes an uncertain command to another instance. Large requests still use envd
+file upload plus process start; they are not embedded in argv.
 Ordinary Bash does not wait for service discovery. One guest invocation also
 cleans up its request file before exiting, avoiding a separate cleanup RPC.
 Remote writes create their parent directories in the same operation; edits
@@ -756,7 +763,9 @@ for a projector. Those responsibilities start after acceptance. Pi still waits
 for its mutation result/projection barrier when the next Agent operation
 causally depends on canonical Session state.
 
-The successful receipt and its Session mutation commit together. The existing
+Already-available Entry/Record items lock Lane heads, reserve one sequence range,
+check the shared ID namespace after acquiring the Session lock, and bulk-insert
+log/query projections in one transaction. This adds no batching timer. The successful receipt and its Session mutation commit together. The existing
 Worker LISTEN connection receives an opaque mutation ID after commit; one
 shared receipt reader handles all pending mutations, with a one-second
 fallback if notification delivery is interrupted. Append receipts contain only
@@ -768,8 +777,10 @@ A model Step reads its
 active branch once for both Compaction assessment and model input. The first
 Step reuses its just-restored branch; a real compaction refreshes the result.
 
-Each Gateway consumes the Kafka topic into a rebuildable in-memory tail holding
-incomplete active Turns only. The public SSE request carries no cursor. Its first
+Each Gateway consumes only Kafka partitions currently needed by browser subscriptions.
+A first subscription locates the recovery floor and reconstructs that partition;
+the last disconnect pauses it and drops its quiescent soft tail. Reopening invalidates the partition's old OPEN
+cache before seeking, so a seal committed while idle cannot be bypassed. The public SSE request carries no cursor. Its first
 frame replaces the browser view with PostgreSQL canonical messages plus an
 immutable snapshot of that tail; later frames contain new events. An execution
 seal is reduced to a public terminal only after its canonical PG transaction.
@@ -794,28 +805,35 @@ transaction requests an immutable RunAttempt seal through the existing Outbox.
 Relays claim bounded Session heads and publish outside the transaction. The seal
 uses the same Session key and fixed Kafka partition as all execution data.
 
-The canonical consumer folds records in partition order. At the first seal it
+The canonical consumer folds records in partition order. Confluent's bounded
+native consumer handles partition flow control; a failed record pauses/seeks
+only its partition rather than filling a shared promise queue. At the first seal it
 preserves visible interrupted text not already in Pi, allocates the terminal
 sequence after actual accepted events, and commits the public terminal, Session
 boundary and Attempt closure together. Records after the seal cannot mutate the
 lane. Gateway follows the same closure rule and waits for this transaction before
 showing the terminal. Duplicate seals are harmless; a seal names one Attempt,
 never an entire Session or another Lane. Closure metadata is durable on the
-Attempt; RAM tombstone eviction or Kafka retention cannot reopen it.
+Attempt, including the first seal's Kafka offset. A live reader behind PG accepts
+records before that offset and rejects records after it; a currently-closed boolean
+is not a historical cutoff. RAM cache eviction cannot reopen a sealed execution.
 
-Canonical and live folds replay retained Kafka data on restart/reassignment,
-skipping closed executions. Complete mutation effects also carry a durable
-per-Attempt projected offset so replay cannot rewind an active lane when short
-receipt rows expire. Unsealed prefixes outside the configured retention window,
-or missing their recorded first offset, stop recovery. No consumer resumes at
-an offset while pretending its lost in-memory prefix still exists. This costs a
-bounded recovery scan; no token rows or new coordinator are introduced.
+Canonical and live folds start at the minimum of a durable partition checkpoint
+and known unsealed execution starts. Kafka end positions are captured before PG
+state is read, preventing a concurrent publication from being skipped. Checkpoints
+are co-committed only with semantic outcomes/seals; deltas create no PG rows.
+Complete mutation outcomes also carry a per-Attempt projected offset: expiring a
+short receipt cannot replay an old effect or reinterpret a rejected operation.
+Known missing prefixes block their partition, not unrelated partitions. API/ingest
+readiness is independent of consumer replay; SSE waits for its target partition.
+Ordinary idle TTL never discards an unsealed prefix being actively served.
 
 Canonical projection and terminal publication default to the Control Plane
 process. They can instead run in the optional `canonical-projector` role, with
 only PostgreSQL/Kafka access and no live-tail replica. This is a composition split,
-not a second authority. Each SSE Gateway still rebuilds its own retained live
-tail; this change does not implement tail sharding. Configuration is in
+not a second authority. Gateways retain only subscribed partitions, but two replicas
+serving the same partition still duplicate its consumption; this is not exclusive
+partition-to-Gateway routing. Configuration is in
 [CONFIGURATION.md](CONFIGURATION.md).
 The interrupted prefix is reduced by the canonical consumer at the seal, not
 fetched best-effort from a separate terminal-projection HTTP endpoint.
@@ -861,8 +879,8 @@ Workspace Volume.
 
 For a later message, the current owner handles it while another Lane remains
 active; otherwise any Worker may acquire and restore the cold Pi Session. It
-first crosses the Session mutation projection barrier, rechecks its newer
-fence, then Pi reconstructs the active model context and respects its native
+waits for predecessor output seals at claim, verifies its execution authority,
+then Pi reconstructs the active model context and respects its native
 compaction boundary. If the Workspace Cube is still warm, the Run receives a
 new Tool binding without changing physical identity; otherwise a new KVM mounts
 the same persistent Volume. Process state is not
@@ -876,13 +894,13 @@ terminated because their VM crosses one Turn's timeout.
 - arbitrary shell start is not exactly-once and is never blindly replayed;
 - current-authority checks guard Tool admission, terminal Run commits and
   Workspace settlement. Accepted Pi mutations are projected without a new lease
-  check; the late-ingress publication gap above is a known limitation on
-  Session recovery, not a proven stale-publisher guarantee;
+  check; the first ordered execution seal excludes late old records from canonical
+  and live state. This is not physical Cube process fencing;
 - an unreachable Worker endpoint cannot strand a Session after its connection
   and lease expire: logical retirement proceeds under the durable fence, the
   interrupted Run and model reservation fail, terminal Tool ownership is
   retired before the next writer, and the Session returns to idle for a
-  barriered next Run;
+  seal-gated next Run;
 - cancellation revokes authority before process termination;
 - during `cancel_requested`, Tool authority is revoked while the current
   ExecutionLease retains narrowly bounded Pi Session write authority to commit

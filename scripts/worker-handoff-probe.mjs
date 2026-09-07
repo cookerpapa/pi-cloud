@@ -21,6 +21,7 @@ import { KafkaAcceptedFactBus } from "../packages/runtime-core/src/kafka-accepte
 import { KafkaAcceptedFactConsumer } from "../packages/runtime-core/src/kafka-accepted-fact-consumer.ts";
 import { KafkaLiveSessionTail } from "../packages/runtime-core/src/kafka-live-session-tail.ts";
 import { ExecutionStreamProjector } from "../packages/runtime-core/src/execution-stream-projection.ts";
+import { loadFactReplayOffsets } from "../packages/runtime-core/src/accepted-fact-recovery.ts";
 import { AcceptedFactTerminalOutboxRelay } from "../packages/runtime-core/src/accepted-fact-terminal-outbox-relay.ts";
 import { SessionLeaseCoordinator } from "../packages/runtime-core/src/session-lease-coordinator.ts";
 import { AcceptedFactIngestGateway } from "../packages/control-plane/src/accepted-fact-ingest-gateway.ts";
@@ -105,6 +106,7 @@ if (process.argv[2] === "ingress") {
                 entryId: entry.id,
                 runId: fact.scope.runId,
                 eventIds: fact.events.map((event) => event.eventId),
+                precedingSequence: fact.events[0].seq - 1,
               },
               resolve,
             ),
@@ -208,7 +210,7 @@ if (process.argv[2] === "ingress") {
     admin = new Admin({ clientId: randomUUID(), bootstrapBrokers: brokers });
   let consumer, tail, relay, cp, provider, stream;
   const children = [];
-  const abort = new AbortController();
+  let abort = new AbortController();
   const report = {
     format: "pi-cloud.worker-handoff-probe.v1",
     checkedAt: new Date().toISOString(),
@@ -257,9 +259,9 @@ if (process.argv[2] === "ingress") {
         topic,
         clientId: randomUUID(),
         groupId,
-        mode: "earliest",
-        commitEvery: 64,
         onReset: () => projector.reset(),
+        replayOffsets: (bounds, partitionCount) =>
+          loadFactReplayOffsets(db, topic, bounds, { partitionCount, retentionMs: 3600000 }),
         handler: async (record) => {
           await projector.project(record);
           if (record.fact.kind !== "agent_event")
@@ -574,6 +576,46 @@ if (process.argv[2] === "ingress") {
       newIdempotencyKey("fault-steer"),
     );
     await waitFor(() => faultInfo, "ingress paused before complete assistant mutation");
+    await waitFor(
+      () =>
+        tail.snapshot(registration.tenantId, session.sessionId).highWaterMark >=
+        faultInfo.precedingSequence,
+      "all pre-checkpoint live events",
+    );
+    const visiblePrefix = tail
+      .readTurn(registration.tenantId, session.sessionId, old.turnId)
+      .filter((event) => event.type === "assistant.text.delta")
+      .map((event) => event.payload.text)
+      .join("");
+    assert(visiblePrefix.length > 0);
+    abort.abort();
+    await stream;
+    abort = new AbortController();
+    await waitFor(() => tail.statistics().cachedEvents === 0, "last viewer releases cached prefix");
+    let reopened = false;
+    stream = streamSessionEvents({
+      sessionId: session.sessionId,
+      signal: abort.signal,
+      authorizationToken: registration.apiToken,
+      fetchImplementation: (path, init) => fetch(new URL(path, apiUrl), init),
+      onStatus() {},
+      onSnapshot(snapshot) {
+        if (!reopened) {
+          const prefix = snapshot.liveEvents
+            .filter((event) => event.turnId === old.turnId && event.type === "assistant.text.delta")
+            .map((event) => event.payload.text)
+            .join("");
+          assert.equal(prefix, visiblePrefix);
+          reopened = true;
+        }
+      },
+      onEvent(event) {
+        eventCount++;
+        shownEventIds.add(event.eventId);
+      },
+    });
+    await waitFor(() => reopened, "reopening reconstructs the same visible prefix");
+    report.fault.lastViewerDisconnectRebuiltPrefix = true;
     // Lose only the canonical consumer's volatile fold while old text is in Kafka.
     // Rejoining must replay it, even if group offsets were already committed.
     await consumer.close();
@@ -670,9 +712,10 @@ if (process.argv[2] === "ingress") {
       topic,
       clientId: randomUUID(),
       groupId,
-      mode: "earliest",
       commitMessages: false,
       onReset: () => projector.reset(),
+      replayOffsets: (bounds, partitionCount) =>
+        loadFactReplayOffsets(db, topic, bounds, { partitionCount, retentionMs: 3600000 }),
       handler: (record) => projector.project(record),
     });
     const ends = await consumer.captureEndOffsets();

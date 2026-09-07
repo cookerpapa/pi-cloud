@@ -2,6 +2,7 @@ import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { KafkaAcceptedFactConsumer } from "./kafka-accepted-fact-consumer.ts";
 import { ExecutionStreamProjector } from "./execution-stream-projection.ts";
+import { loadFactReplayOffsets } from "./accepted-fact-recovery.ts";
 
 export class KafkaCanonicalProjector {
   readonly #projection: ExecutionStreamProjector;
@@ -19,13 +20,14 @@ export class KafkaCanonicalProjector {
     this.#consumer = new KafkaAcceptedFactConsumer({
       brokers: options.brokers,
       clientId: `${options.clientId}-canonical-projector`,
-      groupId: options.groupId ?? "pi-cloud-canonical-projector-v2",
+      groupId: options.groupId ?? "pi-cloud-canonical-projector-v3",
       topic: options.topic,
-      mode: "earliest",
-      // Commits expose operational lag. Recovery deliberately rebuilds the
-      // volatile prefix instead of treating an offset as a fold checkpoint.
-      commitEvery: 64,
       onReset: () => this.#projection.reset(),
+      replayOffsets: (bounds, partitionCount) =>
+        loadFactReplayOffsets(options.database, options.topic, bounds, {
+          partitionCount,
+          retentionMs: options.retentionMs,
+        }),
       handler: (record) => this.#projection.project(record),
     });
   }

@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0155](0155-isolated-consumption-and-bounded-handoffs.md) — positioned seals,
+   partition-local consumption, bounded replay, SQL batching and demand-driven tails.
 1. [ADR-0154](0154-ordered-execution-stream-seals.md) — ordered RunAttempt closure
    before handoff, shared canonical/live cutoff and interrupted-prefix recovery.
 1. [ADR-0153](0153-boundary-consolidation.md) — incremental consolidation of

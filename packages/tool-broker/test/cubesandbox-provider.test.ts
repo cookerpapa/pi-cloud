@@ -408,6 +408,40 @@ function operation(activationId: string): ToolSandboxOperationRequest {
 }
 
 describe("CubeSandbox Provider contract", () => {
+  it("executes and settles a verified warm handle without a control-plane GET", async () => {
+    const runtime = new FakeCubeRuntimeClient(),
+      volume = fakeWorkspaceVolumeGateway();
+    const provider = testCubeProvider({
+      templateId: "pi-cloud-tool-v1",
+      imageRevision: "development",
+      webProxy: WEB_PROXY,
+      runtimeClient: runtime,
+      workspaceVolumeGateway: volume,
+    });
+    const handle = await provider.create({
+      activationId: ACTIVATION_ID,
+      assignment,
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+      policy: provider.defaultPolicy,
+    });
+    const inspect = vi
+      .spyOn(runtime, "read")
+      .mockRejectedValue(new Error("control plane unavailable"));
+    await expect(provider.exec(handle, operation(handle.activationId))).resolves.toMatchObject({
+      operation: "bash.exec",
+      exitCode: 0,
+    });
+    await expect(provider.settle(handle, crypto.randomUUID())).resolves.toMatchObject({
+      type: "tool_sandbox.captured",
+    });
+    expect(inspect).not.toHaveBeenCalled();
+    // Lifecycle identity validation remains authoritative when explicitly inspecting.
+    await expect(provider.inspect(handle)).rejects.toThrow("control plane unavailable");
+    inspect.mockRestore();
+    await provider.destroy(handle);
+    await provider.close();
+  });
   it("attests a real-template probe with full-public egress and private ingress", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const provider = testCubeProvider({

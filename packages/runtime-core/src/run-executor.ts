@@ -372,13 +372,17 @@ export class RunExecutor {
     return this.#dispatch(runId.toLowerCase());
   }
 
-  async dispatchNext(sessionKind: "conversation" | "subagent"): Promise<RunExecutionResult> {
-    return this.#dispatch(undefined, sessionKind);
+  async dispatchNext(
+    sessionKind: "conversation" | "subagent",
+    onClaimed?: (runId: string) => void,
+  ): Promise<RunExecutionResult> {
+    return this.#dispatch(undefined, sessionKind, onClaimed);
   }
 
   async #dispatch(
     runId?: string,
     sessionKind?: "conversation" | "subagent",
+    onClaimed?: (runId: string) => void,
   ): Promise<RunExecutionResult> {
     const claimStartedAt = performance.now();
     let claim: ClaimedTurn | undefined;
@@ -396,6 +400,7 @@ export class RunExecutor {
       throw error;
     }
     if (!claim) return { status: "idle" };
+    onClaimed?.(claim.request.runId);
 
     const observedAt = safeDate(this.#clock).valueOf();
     this.#metrics?.queueWait.observe(Math.max(0, observedAt - claim.queuedAt.valueOf()) / 1_000);

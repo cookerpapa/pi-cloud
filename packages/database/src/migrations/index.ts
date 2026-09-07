@@ -126,6 +126,7 @@ import * as selfContainedPiSessionLog from "./124_self_contained_pi_session_log.
 import * as terminalOutboxSessionOrder from "./125_terminal_outbox_session_order.ts";
 import * as compactPiMutationResults from "./126_compact_pi_mutation_results.ts";
 import * as executionStreamSeals from "./127_execution_stream_seals.ts";
+import * as positionedStreamRecovery from "./128_positioned_stream_recovery.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -257,6 +258,7 @@ export const migrationProvider: MigrationProvider = {
       "125_terminal_outbox_session_order": terminalOutboxSessionOrder,
       "126_compact_pi_mutation_results": compactPiMutationResults,
       "127_execution_stream_seals": executionStreamSeals,
+      "128_positioned_stream_recovery": positionedStreamRecovery,
     };
   },
 };

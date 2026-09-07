@@ -5,7 +5,7 @@ import {
   type ConversationTranscriptItemResource,
   type ConversationTurnTranscriptResource,
 } from "@pi-cloud/protocol";
-import { normalizeProviderHostedWebSearchAction } from "@pi-cloud/sandbox-supervisor";
+import { normalizeProviderHostedWebSearchAction } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 
 export const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_assistant_prefix";

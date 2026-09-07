@@ -112,20 +112,21 @@ PostgreSQL.
 Session projection and its receipt commit together; Workers wait on their
 shared PostgreSQL notification connection. Gateways consume Kafka partitions
 concurrently and initialize the browser from one consistent history/live snapshot.
-Canonical projection can run separately from the API/SSE process; the default
+The producer remains Platformatic; the consumer uses Confluent/librdkafka for
+partition-local pause, seek and bounded buffering. Canonical projection can run separately from the API/SSE process; the default
 deployment keeps them together. Tool infrastructure is activated on demand and
 does not gate model-only conversation.
 
-Consumer restart rebuilds unsealed prefixes from the retained Kafka log; recovery
-must remain within its retention window. See [stream durability](docs/STREAM_DURABILITY.md).
+Consumers recover from durable partition positions and unsealed execution starts.
+SSE Gateways fetch only partitions with browser subscriptions; API startup does
+not wait for closed history replay. Recovery remains bounded by Kafka retention. See [stream durability](docs/STREAM_DURABILITY.md).
 
 There are three durable authorities:
 
 - PostgreSQL owns product state, the Run queue and one self-contained,
   append-only semantic log per physical Pi Session; Entry/Lane tables are
   transactional query projections;
-- Kafka owns the bounded AcceptedFact log; Gateway memory holds only rebuildable
-  incomplete Session tails;
+- Kafka owns the bounded AcceptedFact log; Gateway memory holds rebuildable tails for subscribed partitions;
 - a persistent Cube Volume owns elastic Workspace bytes; Cube pause state owns
   a cloud development machine's guest root, memory and processes on its compute node;
   releasing that machine deletes its private Volume but never its conversations.

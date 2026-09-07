@@ -161,6 +161,10 @@ The one-host deployment assigns each combined KRaft Broker/Controller 4 CPU,
 is required for native allocations and Linux page cache; the container limit
 must never be lower than `-Xmx`.
 
+Consumers use Confluent's partition pause/seek with a 32 MiB native queue budget
+and a 5 ms fetch-queue backoff (the native 1 s default is unsuitable for interactive
+streams). SSE subscribes on demand and uses server-side recovery coordinates;
+normal data consumption never introduces a new batching delay.
 Kafka retention must cover a maximum Turn plus settlement grace. Browser
 reconnect always receives a replacement PostgreSQL + Gateway-tail snapshot;
 there is no public cursor or HTTP 410 replay path. Volume queue wait must be

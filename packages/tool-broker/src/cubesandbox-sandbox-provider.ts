@@ -1054,7 +1054,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     signal?: AbortSignal,
     toolRoot = handle.workspaceRoot,
   ): Promise<ToolSandboxOperationResponse> {
-    const activation = await this.#owned(handle);
+    const activation = this.#dataOwned(handle);
     if (activation.seenOperationIds.has(request.operationId)) {
       throw new ToolBrokerError(
         "tool_operation_replay",
@@ -1257,7 +1257,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     handle: SandboxHandle,
     port: number,
   ): Promise<import("node:stream").Duplex> {
-    const activation = await this.#owned(handle);
+    const activation = this.#dataOwned(handle);
     if (
       (activation.state !== "running" && activation.state !== "idle") ||
       this.#client.openTcp === undefined
@@ -1288,7 +1288,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     handle: SandboxHandle,
     signal?: AbortSignal,
   ): Promise<SandboxHttpServiceDiscovery> {
-    const activation = await this.#owned(handle);
+    const activation = this.#dataOwned(handle);
     if (activation.state !== "running" && activation.state !== "idle") {
       throw new ToolBrokerError(
         "sandbox_service_discovery_unavailable",
@@ -1369,7 +1369,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     handle: SandboxHandle,
     path: string,
   ): Promise<import("./sandbox-provider.ts").SandboxDirectoryListing> {
-    const activation = await this.#owned(handle);
+    const activation = this.#dataOwned(handle);
     if (activation.state !== "running" && activation.state !== "idle") {
       throw new ToolBrokerError(
         "development_environment_directory_unavailable",
@@ -1391,7 +1391,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     path: string,
     name: string,
   ): Promise<SandboxDirectoryListing> {
-    const activation = await this.#owned(handle);
+    const activation = this.#dataOwned(handle);
     if (activation.state !== "running" && activation.state !== "idle") {
       throw new ToolBrokerError(
         "development_environment_directory_unavailable",
@@ -1681,7 +1681,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       assignment: handle.assignment,
     },
   ): Promise<ToolSandboxCaptureResponse> {
-    const activation = await this.#owned(handle);
+    const activation = this.#dataOwned(handle);
     if (activation.seenCaptureIds.has(requestId)) {
       throw new ToolBrokerError("tool_capture_replay", "Tool capture ID was already used", false);
     }
@@ -1932,7 +1932,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     handle: SandboxHandle,
     request: ToolBrokerListWorkspaceDirectoryRequest,
   ): Promise<ToolBrokerListWorkspaceDirectoryResponse> {
-    const activation = await this.#owned(handle);
+    const activation = this.#dataOwned(handle);
     const data = await browseCubeWorkspace(this.#client, activation.instance, request);
     return parseToolBrokerListWorkspaceDirectoryResponse({
       toolBrokerProtocolVersion: 1,
@@ -1949,7 +1949,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     handle: SandboxHandle,
     request: ToolBrokerReadWorkspaceFileRequest,
   ): Promise<ToolBrokerReadWorkspaceFileResponse> {
-    const activation = await this.#owned(handle);
+    const activation = this.#dataOwned(handle);
     const data = await browseCubeWorkspace(this.#client, activation.instance, request);
     return parseToolBrokerReadWorkspaceFileResponse({
       toolBrokerProtocolVersion: 1,
@@ -2291,6 +2291,22 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
+    return activation;
+  }
+
+  #dataOwned(handle: SandboxHandle): CubeActivation {
+    const activation = this.#localOwned(handle);
+    // The verified create/recovery handle pins the private ingress token and
+    // Sandbox-ID host. Reusing an IP cannot authenticate as this Sandbox.
+    if (
+      !activation.instance.trafficAccessToken ||
+      (activation.state !== "running" && activation.state !== "idle")
+    )
+      throw new ToolBrokerError(
+        "tool_sandbox_unavailable",
+        "Verified Sandbox data channel is unavailable",
+        false,
+      );
     return activation;
   }
 

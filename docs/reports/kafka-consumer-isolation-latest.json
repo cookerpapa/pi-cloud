@@ -1,0 +1,12 @@
+{
+  "format": "pi-cloud.consumer-isolation.v1",
+  "checkedAt": "2026-09-07T12:34:27.250Z",
+  "passed": true,
+  "heldPartitionRecords": 513,
+  "otherPartitionMs": 56.7314779999997,
+  "allHeldRecordsRecovered": true,
+  "recoveryRecordsRead": 2,
+  "demandOnlySubscribedPartition": true,
+  "idlePartitionPaused": true,
+  "consumerRebalance": true
+}

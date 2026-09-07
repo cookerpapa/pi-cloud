@@ -7,6 +7,7 @@ import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts"
 import { appendInterruptedAssistantPrefix } from "./canonical-pi-conversation.ts";
 import { projectConversationTurnTranscript } from "./conversation-turn-projection.ts";
 import { PostgresPiSessionMutationProjector } from "./postgres-pi-session-mutation-projector.ts";
+import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
 
 export function factEvents(fact: AcceptedFact): readonly PiCloudEvent[] {
   return fact.kind === "agent_event"
@@ -21,7 +22,8 @@ export function factEvents(fact: AcceptedFact): readonly PiCloudEvent[] {
 export class ExecutionStreamBoundary {
   readonly #database: Kysely<Database>;
   readonly #open = new Set<string>();
-  readonly #closed = new Set<string>();
+  readonly #closed = new Map<string, bigint>();
+  readonly #partitions = new Map<string, number>();
   readonly #retentionMs: number;
 
   constructor(database: Kysely<Database>, retentionMs = 24 * 60 * 60_000) {
@@ -32,17 +34,39 @@ export class ExecutionStreamBoundary {
   reset(): void {
     this.#open.clear();
     this.#closed.clear();
+    this.#partitions.clear();
   }
 
-  close(attemptId: string): void {
+  resetPartition(partition: number): void {
+    for (const [id, part] of this.#partitions)
+      if (part === partition) {
+        this.#open.delete(id);
+        this.#closed.delete(id);
+        this.#partitions.delete(id);
+      }
+  }
+
+  close(attemptId: string, offset = -1n, partition?: number): void {
+    if (partition !== undefined) this.#partitions.set(attemptId, partition);
     this.#open.delete(attemptId);
-    this.#closed.add(attemptId);
-    if (this.#closed.size > 4096) this.#closed.delete(this.#closed.values().next().value!);
+    const previous = this.#closed.get(attemptId);
+    this.#closed.delete(attemptId);
+    this.#closed.set(attemptId, previous === undefined || offset < previous ? offset : previous);
+    if (this.#closed.size > 65_536) {
+      const oldest = this.#closed.keys().next().value!;
+      this.#closed.delete(oldest);
+      this.#partitions.delete(oldest);
+    }
   }
 
   async isOpen(record: KafkaAcceptedFactRecord, canonical: boolean): Promise<boolean> {
     const { scope } = record.fact;
-    if (this.#closed.has(scope.attemptId)) return false;
+    const cutoff = this.#closed.get(scope.attemptId);
+    if (cutoff !== undefined) {
+      this.#closed.delete(scope.attemptId);
+      this.#closed.set(scope.attemptId, cutoff);
+      return !canonical && record.offset < cutoff;
+    }
     if (this.#open.has(scope.attemptId)) return true;
     const attempt = await this.#database
       .selectFrom("run_attempts as attempt")
@@ -50,6 +74,7 @@ export class ExecutionStreamBoundary {
       .select([
         "attempt.claimed_at",
         "attempt.output_sealed_at",
+        "attempt.output_seal_offset",
         "attempt.output_first_topic",
         "attempt.output_first_partition",
         "attempt.output_first_offset",
@@ -61,8 +86,9 @@ export class ExecutionStreamBoundary {
       .where("run.turn_id", "=", scope.turnId)
       .executeTakeFirst();
     if (!attempt || attempt.output_sealed_at !== null) {
-      this.close(scope.attemptId);
-      return false;
+      const cutoff = attempt?.output_seal_offset == null ? -1n : BigInt(attempt.output_seal_offset);
+      this.close(scope.attemptId, cutoff, record.partition);
+      return !canonical && record.offset < cutoff;
     }
     if (canonical) {
       if (attempt.claimed_at.valueOf() < Date.now() - this.#retentionMs)
@@ -88,6 +114,7 @@ export class ExecutionStreamBoundary {
       }
     }
     this.#open.add(scope.attemptId);
+    this.#partitions.set(scope.attemptId, record.partition);
     return true;
   }
 }
@@ -123,18 +150,23 @@ export class ExecutionStreamProjector {
       prefix.set(event.seq, event);
     }
     if (fact.kind === "pi_session_mutation") {
-      await this.#mutations.project(fact, true, record.offset);
+      await this.#mutations.project(fact, true, record);
     } else if (fact.kind === "execution_seal") {
       await this.#seal(
         fact,
+        record,
         [...prefix.values()].sort((a, b) => a.seq - b.seq),
       );
-      this.#boundary.close(fact.scope.attemptId);
+      this.#boundary.close(fact.scope.attemptId, record.offset, record.partition);
       this.#prefixes.delete(fact.scope.attemptId);
     }
   }
 
-  async #seal(fact: AcceptedExecutionSealFact, prefix: readonly PiCloudEvent[]): Promise<void> {
+  async #seal(
+    fact: AcceptedExecutionSealFact,
+    position: FactPosition,
+    prefix: readonly PiCloudEvent[],
+  ): Promise<void> {
     await this.#database.transaction().execute(async (transaction) => {
       const attempt = await transaction
         .selectFrom("run_attempts")
@@ -197,9 +229,14 @@ export class ExecutionStreamProjector {
         .execute();
       await transaction
         .updateTable("run_attempts")
-        .set({ output_sealed_at: now, last_event_seq: event.seq })
+        .set({
+          output_sealed_at: now,
+          output_seal_offset: position.offset.toString(),
+          last_event_seq: event.seq,
+        })
         .where("id", "=", fact.scope.attemptId)
         .execute();
+      await recordFactProjection(transaction, position);
       await sql`select pg_notify('pi_cloud_run_queue', id::text) from runs
         where session_id = ${fact.scope.sessionId}::uuid and state = 'queued'`.execute(transaction);
     });

@@ -3,6 +3,7 @@ import { PostgresPiSessionStorage, compactPiMutationResult } from "@pi-cloud/pi-
 import { SessionError } from "@earendil-works/pi-agent-core";
 import { sql, type Kysely } from "kysely";
 import type { AcceptedPiSessionMutationFact } from "./accepted-fact.ts";
+import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
 
 export class PostgresPiSessionMutationProjector {
   readonly #database: Kysely<Database>;
@@ -15,8 +16,9 @@ export class PostgresPiSessionMutationProjector {
   async project(
     fact: AcceptedPiSessionMutationFact,
     requireProductSession = false,
-    offset?: bigint,
+    position?: FactPosition,
   ): Promise<void> {
+    const offset = position?.offset;
     this.#projectedSinceCleanup += 1;
     if (this.#projectedSinceCleanup >= 256) {
       this.#projectedSinceCleanup = 0;
@@ -65,10 +67,38 @@ export class PostgresPiSessionMutationProjector {
             .set({ output_projected_offset: offset.toString() })
             .where("id", "=", fact.scope.attemptId)
             .execute();
+        if (position) await recordFactProjection(transaction, position);
       });
     } catch (error: unknown) {
       if (!(error instanceof SessionError)) throw error;
-      await this.#recordResult(this.#database, fact, "failed", null, error);
+      await this.#database.transaction().execute(async (transaction) => {
+        if (position && requireProductSession) {
+          const attempt = await transaction
+            .selectFrom("run_attempts")
+            .select(["output_sealed_at", "output_projected_offset"])
+            .where("id", "=", fact.scope.attemptId)
+            .forUpdate()
+            .executeTakeFirst();
+          if (
+            !attempt ||
+            attempt.output_sealed_at !== null ||
+            (attempt.output_projected_offset !== null &&
+              BigInt(attempt.output_projected_offset) >= position.offset)
+          )
+            return;
+        }
+        await this.#recordResult(transaction, fact, "failed", null, error);
+        // Rejection is a final projection outcome too. Expiring the short receipt
+        // must never let a formerly invalid mutation succeed against later state.
+        if (position) {
+          await transaction
+            .updateTable("run_attempts")
+            .set({ output_projected_offset: position.offset.toString() })
+            .where("id", "=", fact.scope.attemptId)
+            .execute();
+          await recordFactProjection(transaction, position);
+        }
+      });
     }
   }
 

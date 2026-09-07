@@ -177,7 +177,7 @@ export async function startControlPlane(): Promise<void> {
       webSessionAuthenticator: webAuthentication,
       readiness: async () => {
         if (runtime?.state !== "running") return false;
-        await Promise.all([activeAgentEvents.checkHealth(), sql`select 1`.execute(database)]);
+        await Promise.all([activeAgentEvents.checkIngestHealth(), sql`select 1`.execute(database)]);
         return true;
       },
     });

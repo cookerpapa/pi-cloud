@@ -7,6 +7,8 @@ import {
   type KafkaAcceptedFactRecord,
 } from "./kafka-accepted-fact-consumer.ts";
 import { SessionEventHub } from "./session-event-hub.ts";
+import { loadFactReplayOffsets } from "./accepted-fact-recovery.ts";
+import { kafkaProducerLane } from "./kafka-accepted-fact.ts";
 import {
   ExecutionStreamBoundary,
   factEvents,
@@ -39,6 +41,7 @@ export class KafkaLiveSessionTail {
   readonly #boundary: ExecutionStreamBoundary;
   readonly #sessions = new Map<string, SessionTailState>();
   readonly #maximumIdleMs: number;
+  #partitions = 0;
   #sweepTimer: NodeJS.Timeout | undefined;
   #acceptedEvents = 0;
   #duplicateEvents = 0;
@@ -51,6 +54,7 @@ export class KafkaLiveSessionTail {
     clientId: string;
     instanceId: string;
     maximumIdleMs?: number;
+    retentionMs?: number;
   }) {
     this.#maximumIdleMs = options.maximumIdleMs ?? 30 * 60_000;
     this.#database = options.database;
@@ -60,9 +64,26 @@ export class KafkaLiveSessionTail {
       clientId: `${options.clientId}-live-tail`,
       groupId: `pi-cloud-live-tail-${options.instanceId}`,
       topic: options.topic,
-      mode: "earliest",
       commitMessages: false,
-      onReset: () => this.#boundary.reset(),
+      demandDriven: true,
+      onReset: () => {
+        this.#boundary.reset();
+        this.#sessions.clear();
+        this.eventHub.resyncAll();
+      },
+      onPartitionReset: (partition) => {
+        this.#boundary.resetPartition(partition);
+        for (const [key] of this.#sessions) {
+          const sessionId = key.split("\0")[1]!;
+          if (kafkaProducerLane(sessionId, this.#partitions) === partition)
+            this.#sessions.delete(key);
+        }
+      },
+      replayOffsets: (bounds, partitionCount) =>
+        loadFactReplayOffsets(options.database, options.topic, bounds, {
+          partitionCount,
+          retentionMs: options.retentionMs ?? 7_200_000,
+        }),
       handler: (record) => this.projectRecord(record),
     });
   }
@@ -70,13 +91,16 @@ export class KafkaLiveSessionTail {
   async start(): Promise<void> {
     this.#sweepTimer = setInterval(() => this.#sweep(), 60_000);
     this.#sweepTimer.unref();
-    const endOffsets = await this.#consumer.captureEndOffsets();
+    this.#partitions = await this.#consumer.partitionCount();
     await this.#consumer.start();
-    await this.#consumer.waitUntilInitialReplay(endOffsets);
   }
 
   checkHealth(): void {
     this.#consumer.checkHealth();
+  }
+
+  async retainSession(_tenantId: string, sessionId: string): Promise<() => void> {
+    return this.#consumer.retainPartition(kafkaProducerLane(sessionId, this.#partitions));
   }
 
   async close(): Promise<void> {
@@ -90,7 +114,7 @@ export class KafkaLiveSessionTail {
   #sweep(): void {
     const expiresBefore = Date.now() - this.#maximumIdleMs;
     for (const [key, state] of this.#sessions) {
-      if (state.updatedAt < expiresBefore) this.#sessions.delete(key);
+      if (state.events.length === 0 && state.updatedAt < expiresBefore) this.#sessions.delete(key);
     }
   }
 
@@ -118,7 +142,7 @@ export class KafkaLiveSessionTail {
     const { fact } = record;
     if (fact.kind === "execution_seal") {
       const terminal = await readProjectedSeal(this.#database, fact);
-      this.#boundary.close(fact.scope.attemptId);
+      this.#boundary.close(fact.scope.attemptId, record.offset, record.partition);
       if (terminal) this.#accept(fact.scope.tenantId, terminal);
     } else if (await this.#boundary.isOpen(record, false)) {
       this.project(fact);

@@ -35,6 +35,10 @@ alone cannot restore this fold. Recovery beyond retention stops rather than
 silently discarding visible output. This adds recovery scan cost, not PG delta
 rows; incremental durable fold checkpoints require separate measured justification.
 
+ADR-0155 supersedes the retained-beginning scan with a durable partition recovery
+floor and positional seal classification. The seal and handoff invariants above
+remain in force; the old boolean-only live cutoff is not the maintained path.
+
 ## Alternatives and limits
 
 PostgreSQL Outbox/CDC for every fragment would make authority + append transactional

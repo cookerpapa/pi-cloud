@@ -14,6 +14,7 @@ export type SessionEventStreamOptions = Readonly<{
 }>;
 
 export interface LiveSessionTailSource {
+  retainSession?(tenantId: string, sessionId: string): Promise<() => void>;
   snapshot(tenantId: string, sessionId: string): LiveSessionTailSnapshot;
 }
 
@@ -70,17 +71,20 @@ export class OpenSessionEventStream {
   readonly #snapshot: SessionViewSnapshotResource;
   readonly #highWaterMark: number;
   readonly #heartbeatIntervalMs: number;
+  readonly #release: (() => void) | undefined;
 
   constructor(options: {
     subscription: SessionEventSubscription;
     snapshot: SessionViewSnapshotResource;
     highWaterMark: number;
     heartbeatIntervalMs: number;
+    release?: () => void;
   }) {
     this.#subscription = options.subscription;
     this.#snapshot = options.snapshot;
     this.#highWaterMark = options.highWaterMark;
     this.#heartbeatIntervalMs = options.heartbeatIntervalMs;
+    this.#release = options.release;
   }
 
   async pipe(response: ServerResponse): Promise<void> {
@@ -110,6 +114,7 @@ export class OpenSessionEventStream {
     } finally {
       response.off("close", close);
       this.#subscription.close();
+      this.#release?.();
     }
   }
 }
@@ -137,6 +142,7 @@ export class SessionEventStream {
     sessionId: string;
     loadCanonical(): Promise<CanonicalSessionView>;
   }): Promise<OpenSessionEventStream> {
+    const release = await this.#tails.retainSession?.(options.tenantId, options.sessionId);
     const subscription = this.#hub.subscribe(options.tenantId, options.sessionId);
     try {
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -153,11 +159,13 @@ export class SessionEventStream {
             liveEvents.at(-1)?.seq ??
             Math.max(canonical.canonicalThroughSequence, tail.canonicalThroughSequence),
           heartbeatIntervalMs: this.#heartbeatIntervalMs,
+          ...(release === undefined ? {} : { release }),
         });
       }
       throw new Error("Canonical Session view did not catch up with its committed Kafka tail");
     } catch (error: unknown) {
       subscription.close();
+      release?.();
       throw error;
     }
   }

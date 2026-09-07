@@ -2,7 +2,7 @@ import type {
   ProviderHostedActivity,
   ProviderHostedTranscriptItem,
 } from "@pi-cloud/sandbox-supervisor";
-import { normalizeProviderHostedWebSearchAction } from "@pi-cloud/sandbox-supervisor";
+import { normalizeProviderHostedWebSearchAction } from "@pi-cloud/protocol";
 
 type JsonRecord = Record<string, unknown>;
 

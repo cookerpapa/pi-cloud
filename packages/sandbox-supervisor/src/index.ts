@@ -119,7 +119,6 @@ export {
 
 export {
   applyProviderHostedTranscript,
-  normalizeProviderHostedWebSearchAction,
   replayProviderHostedTranscripts,
   type ProviderHostedToolCallContent,
 } from "./provider-hosted-transcript.ts";
