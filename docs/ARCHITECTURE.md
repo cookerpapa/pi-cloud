@@ -657,7 +657,8 @@ copy Workspaces to Kopia or object storage. It:
 
 - prepares and verifies the stable tenant/Workspace Volume identity;
 - initializes an empty/imported Workspace once;
-- deletes Workspace file bytes only when asked by the Tool Broker deletion coordinator;
+- prepares generation-bound deletion authority only when asked by the Broker;
+- finalizes its trusted metadata only after Cube has deleted the user file tree;
 - records a lightweight provider settlement revision without walking the file tree;
 - lists one current directory or reads one current file for the UI;
 - rejects traversal and symlink escapes and hides platform/Git metadata;
@@ -666,9 +667,13 @@ copy Workspaces to Kopia or object storage. It:
 
 The deletion coordinator runs in Tool Broker because only that service holds
 CubeAPI authority. It waits for the Workspace runtime, Tool bindings and human terminals,
-deletes the POSIX directory through the narrow gateway, deletes the deterministic
-Cube Volume record, and only then commits `storage_purged_at`. Repeated cleanup
-is idempotent; no empty Cube Volume metadata is retained.
+asks the gateway to persist a deletion marker, then calls Cube Volume DELETE.
+Cube's existing Controller plugin refuses an unmarked generation and removes
+only `workspace/` using its storage privileges, including root-owned Guest files.
+The gateway remains uid 1000 and retains identity metadata throughout failures.
+After Cube deletion, it atomically retires its envelope before removing metadata;
+Broker then commits `storage_purged_at`. Repeated cleanup is idempotent across
+Cube 409, partial file deletion, lost ACKs and finalizer crashes (ADR-0152).
 
 Creating an elastic Workspace reserves its tenant/project identity but not CPU
 or memory. Compute admission occurs on the first Tool-using Run, so an idle
@@ -694,6 +699,13 @@ execution failure (ADR-0151). Host shutdown is not equivalent to an explicit
 pause: rootfs/process recovery requires surviving native Cube state, whereas
 Volume bytes have a separate durability boundary.
 
+Elastic continuity uses the allocation ID both before materialization and during
+warm reuse; it does not switch to a different identifier after the first Tool.
+The Runner replaces its initial placeholder with the actual Broker binding.
+World State observed inside a Tool is published at the next clean sampling or
+settlement boundary, never between a Tool Call and Tool Result. This preserves
+Pi's native call/result pairing when provider adapters repair missing results.
+
 Source browsing lists and reads the current persistent Volume directly through
 the trusted Volume gateway. It neither creates a Cube nor consumes Cube
 admission capacity. Directory expansion performs one bounded directory read;
@@ -706,7 +718,9 @@ events. The public adapter intentionally ignores thinking fragments, streamed
 Tool-call JSON and partial Tool stdout. At `toolcall_start` it publishes one
 argument-free `assistant.tool_call.preparing` activity so a large function-call
 payload does not look stalled; the validated `tool.started` event replaces that
-row in place. The browser explicitly labels preparation as not yet executed
+row in place. Write/edit display generation-specific activity. Provider adapters
+may complete the Tool identity on a later delta; no argument fragments are
+published. The browser explicitly labels preparation as not yet executed
 and shows elapsed waiting time from the durable event timestamp, including
 after refresh. Validation rejection replaces it directly with a failed Tool
 result without leaving a spinner or claiming execution. This transient activity is omitted from the settled PostgreSQL

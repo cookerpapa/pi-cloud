@@ -137,6 +137,7 @@ function safeAssistantFailureMessage(value: unknown): string | undefined {
  * events. Pi event objects never leave this adapter.
  */
 export class PiAgentEventAdapter {
+  readonly #preparingTools = new Set<string>();
   readonly #eventFactory: PiCloudEventFactory;
   readonly #inputKind: "prompt";
   #agentStarted = false;
@@ -198,6 +199,7 @@ export class PiAgentEventAdapter {
       throw new Error("Model sampling identity did not advance monotonically");
     }
     this.#activeSampling = identity;
+    this.#preparingTools.clear();
     return this.#eventFactory.next({
       type: "model.sampling.started",
       payload: identity,
@@ -251,7 +253,7 @@ export class PiAgentEventAdapter {
           reason: "Pi message_update is missing assistantMessageEvent",
         };
       }
-      if (streamEvent.type === "toolcall_start") {
+      if (streamEvent.type === "toolcall_start" || streamEvent.type === "toolcall_delta") {
         const contentIndex = nonNegativeInteger(streamEvent.contentIndex);
         const partial = isRecord(streamEvent.partial) ? streamEvent.partial : undefined;
         const content = Array.isArray(partial?.content) ? partial.content : undefined;
@@ -264,12 +266,13 @@ export class PiAgentEventAdapter {
           typeof toolCall.name !== "string" ||
           toolCall.name.length === 0
         ) {
-          return {
-            kind: "invalid",
-            sourceType: "message_update.toolcall_start",
-            reason: "Pi Tool Call start is missing its stable identity",
-          };
+          // Some provider adapters fill the function name/ID after the first
+          // frame. Wait for identity, not for the complete argument payload.
+          return { kind: "ignored", sourceType: `message_update.${streamEvent.type}` };
         }
+        if (this.#preparingTools.has(toolCall.id))
+          return { kind: "ignored", sourceType: `message_update.${streamEvent.type}` };
+        this.#preparingTools.add(toolCall.id);
         return {
           kind: "mapped",
           terminal: false,
@@ -278,12 +281,6 @@ export class PiAgentEventAdapter {
             payload: { toolCallId: toolCall.id, toolName: toolCall.name },
           }),
         };
-      }
-      if (streamEvent.type === "toolcall_delta") {
-        // Tool arguments can arrive as hundreds of tiny provider fragments.
-        // The validated complete arguments are published once at
-        // tool_execution_start, so partial JSON is not a public event.
-        return { kind: "ignored", sourceType: "message_update.toolcall_delta" };
       }
       if (streamEvent.type === "toolcall_end") {
         return { kind: "ignored", sourceType: "message_update.toolcall_end" };

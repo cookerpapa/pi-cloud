@@ -2,7 +2,10 @@ import {
   buildSessionContext,
   InMemorySessionStorage,
   Session,
+  convertToLlm,
 } from "@earendil-works/pi-agent-core";
+import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import type { Model } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import {
   PI_SANDBOX_RESET_CUSTOM_TYPE,
@@ -34,6 +37,80 @@ function continuity(
 }
 
 describe("PostgreSQL Pi runtime world-state harness", () => {
+  it("publishes a reset after the Tool result, yielding only one native Responses output", async () => {
+    const session = new Session(
+      new InMemorySessionStorage({ id: "tool-pair-boundary", createdAt: Date.now() }),
+    );
+    const first = await PiSessionWorldStateController.create(
+      session,
+      "main",
+      continuity(FIRST_ACTIVATION, "warm_reuse"),
+    );
+    await first.capture();
+    const changed = await PiSessionWorldStateController.create(
+      session,
+      "main",
+      continuity("attempt-placeholder", "cold_restore"),
+    );
+    await changed.capture();
+    const model: Model<"openai-responses"> = {
+      id: "test",
+      name: "test",
+      api: "openai-responses",
+      provider: "deepseek",
+      baseUrl: "http://invalid",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 8192,
+    };
+    await session.appendMessage({
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content: [
+        { type: "toolCall", id: "call_test|fc_test", name: "read", arguments: { path: "a.py" } },
+      ],
+      stopReason: "toolUse",
+      timestamp: 1,
+      usage: {
+        input: 1,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    });
+    await changed.recordActive({ continuityId: SECOND_ACTIVATION, continuity: "cold_restore" });
+    expect(
+      (await session.findEntriesOnBranch()).filter(
+        (e) => e.type === "custom" && e.customType === PI_SANDBOX_RESET_CUSTOM_TYPE,
+      ),
+    ).toHaveLength(0);
+    await session.appendMessage({
+      role: "toolResult",
+      toolCallId: "call_test|fc_test",
+      toolName: "read",
+      content: [{ type: "text", text: "file contents" }],
+      isError: false,
+      timestamp: 2,
+    });
+    await changed.capture();
+    const messages = convertToLlm(
+      buildSessionContext(await session.findEntriesOnBranch({ order: "oldestFirst" }), {
+        entryProjectors: PI_WORLD_STATE_ENTRY_PROJECTORS,
+      }).messages,
+    );
+    const wire = convertResponsesMessages(model, { messages }, new Set(["deepseek"]));
+    expect(wire.filter((item) => item.type === "function_call_output")).toEqual([
+      { type: "function_call_output", call_id: "call_test", output: "file contents" },
+    ]);
+    expect(JSON.stringify(wire)).not.toContain("No result");
+    expect(JSON.stringify(wire)).toContain("sandbox_reset");
+  });
   it("persists one Workspace-change fact across Worker replacement", async () => {
     const session = new Session(
       new InMemorySessionStorage({ id: "workspace-change-session", createdAt: Date.now() }),
@@ -143,6 +220,7 @@ describe("PostgreSQL Pi runtime world-state harness", () => {
     );
     expect((await replacement.capture()).modelMessages).toHaveLength(0);
     await replacement.recordActive();
+    await replacement.capture();
     const nextRun = await PiSessionWorldStateController.create(
       session,
       "main",

@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0152](0152-volume-deletion-and-tool-preparation.md) — native Volume
+   deletion with retained authority and visible write/edit preparation.
 1. [ADR-0151](0151-development-machine-failure-boundaries.md) — separate Tool,
    machine and application failures; retain exclusive VM recovery authority.
 1. [ADR-0150](0150-root-origin-streaming-preview.md) — root-origin application

@@ -23,6 +23,8 @@ import {
   VOLUME_GENERATION_PATTERN,
   VOLUME_METADATA_DIRECTORY,
   VOLUME_SETTLEMENT_FILE,
+  VOLUME_DELETE_FILE,
+  volumeDeleteMarker,
   VOLUME_WORKSPACE_DIRECTORY,
   WORKSPACE_GIT_CREDENTIALS_FILE,
   WorkspaceVolumeGatewayError,
@@ -282,6 +284,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     return this.#withVolumeLock(identity.volumeId, async () => {
       await this.checkHealth();
       const directory = await this.#ensureVolumeDirectory(identity.volumeId);
+      await this.#assertNotDeleting(directory);
       const state = await this.#readState(directory);
       const generation = await this.#readVolumeGeneration(directory);
       const workspaceValid = await this.#hasValidWorkspaceDirectory(directory);
@@ -698,52 +701,134 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     });
   }
 
-  async delete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ deleted: boolean }> {
+  async #deletionEnvelope(
+    identity: ReturnType<typeof validatedVolumeIdentity>,
+  ): Promise<{ directory: string; marker: string } | undefined> {
+    const directory = this.#volumeDirectory(identity.volumeId);
+    const metadata = await lstat(directory).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (metadata === undefined) return undefined;
+    const state = await this.#readState(directory);
+    const generation = await this.#readVolumeGeneration(directory);
+    if (
+      !metadata.isDirectory() ||
+      metadata.isSymbolicLink() ||
+      state === undefined ||
+      generation === undefined ||
+      state.tenantId !== identity.tenantId ||
+      state.workspaceId !== identity.workspaceId ||
+      state.volumeId !== identity.volumeId ||
+      state.volumeGeneration !== generation
+    ) {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_volume_binding_invalid",
+        "Persistent Workspace Volume identity was invalid",
+        false,
+      );
+    }
+    return { directory, marker: volumeDeleteMarker(identity.volumeId, generation) };
+  }
+
+  async prepareDelete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ prepared: boolean }> {
     const identity = validatedVolumeIdentity(input);
     return this.#withVolumeLock(identity.volumeId, async () => {
-      const directory = this.#volumeDirectory(identity.volumeId);
-      let metadata;
+      const envelope = await this.#deletionEnvelope(identity);
+      if (envelope === undefined) return { prepared: false };
+      const target = join(envelope.directory, VOLUME_METADATA_DIRECTORY, VOLUME_DELETE_FILE);
+      const temporary = `${target}.${randomBytes(8).toString("hex")}`;
       try {
-        metadata = await lstat(directory);
-      } catch (error: unknown) {
-        if (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          error.code === "ENOENT"
-        ) {
-          return { deleted: false };
+        const file = await open(
+          temporary,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+          0o400,
+        );
+        try {
+          await file.writeFile(envelope.marker);
+          await file.sync();
+        } finally {
+          await file.close();
         }
-        throw error;
+        await rename(temporary, target);
+        const directory = await open(dirname(target), constants.O_RDONLY);
+        try {
+          await directory.sync();
+        } finally {
+          await directory.close();
+        }
+      } finally {
+        await rm(temporary, { force: true });
       }
-      const state = await this.#readState(directory);
-      const generation = await this.#readVolumeGeneration(directory);
-      if (
-        !metadata.isDirectory() ||
-        metadata.isSymbolicLink() ||
-        state === undefined ||
-        generation === undefined ||
-        state.tenantId !== identity.tenantId ||
-        state.workspaceId !== identity.workspaceId ||
-        state.volumeId !== identity.volumeId ||
-        state.volumeGeneration !== generation ||
-        !(await this.#hasValidWorkspaceDirectory(directory))
-      ) {
+      return { prepared: true };
+    });
+  }
+
+  async finalizeDelete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ deleted: boolean }> {
+    const identity = validatedVolumeIdentity(input);
+    return this.#withVolumeLock(identity.volumeId, async () => {
+      const retired = `${this.#volumeDirectory(identity.volumeId)}.deleted`;
+      const envelope = await this.#deletionEnvelope(identity);
+      if (envelope === undefined) {
+        await rm(retired, { recursive: true, force: true });
+        return { deleted: false };
+      }
+      const target = join(envelope.directory, VOLUME_METADATA_DIRECTORY, VOLUME_DELETE_FILE);
+      const marker = await readFile(target, "utf8");
+      if (marker !== envelope.marker)
         throw new WorkspaceVolumeGatewayError(
-          "workspace_volume_binding_invalid",
-          "Persistent Workspace Volume identity was invalid",
+          "workspace_volume_delete_invalid",
+          "Volume deletion was not authorized",
           false,
         );
+      const workspace = await lstat(join(envelope.directory, VOLUME_WORKSPACE_DIRECTORY)).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return undefined;
+          throw error;
+        },
+      );
+      if (workspace !== undefined)
+        throw new WorkspaceVolumeGatewayError(
+          "workspace_volume_delete_pending",
+          "Cube has not removed Workspace bytes",
+          true,
+        );
+      // Retire the complete trusted envelope atomically. A process crash while
+      // removing these metadata files cannot invalidate the next GC retry.
+      await rename(envelope.directory, retired);
+      const parent = await open(this.#workspaceRoot, constants.O_RDONLY);
+      try {
+        await parent.sync();
+      } finally {
+        await parent.close();
       }
-      await rm(directory, { recursive: true, force: false });
+      await rm(retired, { recursive: true, force: true });
       return { deleted: true };
     });
+  }
+
+  async #assertNotDeleting(directory: string): Promise<void> {
+    const marker = await lstat(
+      join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_DELETE_FILE),
+    ).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (marker !== undefined)
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_volume_deleting",
+        "Workspace Volume is being deleted",
+        false,
+      );
   }
 
   async close(): Promise<void> {}
 
   async #validatedVolume(identity: ReturnType<typeof validatedIdentity>): Promise<string> {
-    const directory = await this.#ensureVolumeDirectory(identity.volumeId);
+    // A read/settlement arriving after finalization must not recreate an empty
+    // envelope and strand the deletion retry without its identity metadata.
+    const directory = this.#volumeDirectory(identity.volumeId);
+    await this.#assertNotDeleting(directory);
     const state = await this.#readState(directory);
     const generation = await this.#readVolumeGeneration(directory);
     if (

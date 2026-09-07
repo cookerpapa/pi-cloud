@@ -130,7 +130,10 @@ describe("WorkspaceVolumeDeletionReaper", () => {
 
       let failNextMetadataDelete = true;
       const deleteVolumeMetadata = vi.fn(async (_volumeId: string) => {
-        if (!failNextMetadataDelete) return;
+        if (!failNextMetadataDelete) {
+          await rm(join(volumeRoot, "workspace"), { recursive: true, force: true });
+          return;
+        }
         failNextMetadataDelete = false;
         throw new Error("transient Cube Volume metadata conflict");
       });
@@ -179,9 +182,10 @@ describe("WorkspaceVolumeDeletionReaper", () => {
         .where("terminal_id", "=", "e0000000-0000-4000-8000-000000000001")
         .execute();
       await expect(reaper.runOnce()).resolves.toBe(0);
-      await expect(lstat(volumeRoot)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(lstat(join(volumeRoot, "workspace", "private.txt"))).resolves.toBeDefined();
       expect(deleteVolumeMetadata).toHaveBeenCalledWith(volumeId);
       await expect(reaper.runOnce()).resolves.toBe(1);
+      await expect(lstat(volumeRoot)).rejects.toMatchObject({ code: "ENOENT" });
       await expect(
         database
           .selectFrom("workspaces")

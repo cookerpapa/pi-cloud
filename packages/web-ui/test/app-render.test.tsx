@@ -672,7 +672,11 @@ describe("product chat experience", () => {
     expect(markup).toContain(">◦</span>");
   });
 
-  it("shows bounded activity while Pi is still assembling Tool arguments", () => {
+  it.each([
+    ["bash", "正在准备工具调用"],
+    ["write", "正在生成文件内容"],
+    ["edit", "正在生成代码修改"],
+  ])("shows bounded %s activity while Pi is still assembling Tool arguments", (toolName, label) => {
     const workingTurn: TurnView = {
       ...turn("10000000-0000-4000-8000-000000000044", "创建前端应用"),
       status: "running",
@@ -681,18 +685,18 @@ describe("product chat experience", () => {
           kind: "tool_preparing",
           key: "tool:call-working",
           toolCallId: "call-working",
-          toolName: "bash",
+          toolName,
           firstSequence: 1,
           startedAt: new Date(Date.now() - 123_000).toISOString(),
         },
       ],
     };
     const markup = renderToStaticMarkup(<ConversationTurn turn={workingTurn} />);
-    expect(markup).toContain("正在准备工具调用");
+    expect(markup).toContain(label);
     expect(markup).toContain("工具尚未执行");
     expect(markup).toContain("已等待 123 秒");
     expect(markup).toContain("product-tool-preparing-spinner");
-    expect(markup).toContain(">bash</code>");
+    expect(markup).toContain(`>${toolName}</code>`);
     expect(markup).toContain('role="status"');
   });
 

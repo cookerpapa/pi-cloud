@@ -258,6 +258,10 @@ try {
       `select json_build_object('input',coalesce(sum((payload->'message'->'usage'->>'input')::bigint),0),'output',coalesce(sum((payload->'message'->'usage'->>'output')::bigint),0),'cacheRead',coalesce(sum((payload->'message'->'usage'->>'cacheRead')::bigint),0)) from pi_session_entries where session_id=${sqlString(session.sessionId)}`,
     ),
   );
+  await terminal(
+    "mkdir -p /home/user/root-owned-gc; printf ROOT_ONLY > /home/user/root-owned-gc/private; chmod 000 /home/user/root-owned-gc/private /home/user/root-owned-gc",
+  );
+  report.rootOwnedDeletionFixture = true;
   report.accepted = true;
 } catch (error) {
   report.failure = error instanceof Error ? error.message : String(error);
@@ -278,10 +282,25 @@ try {
       )
       .catch((error) => cleanupErrors.push(error.message));
   report.resourcesReleased = cleanupErrors.length === 0;
+  if (machine && report.resourcesReleased) {
+    for (let attempt = 0; attempt < 180; attempt++) {
+      const purged = await sql(
+        `select storage_purged_at is not null from workspaces where id=${sqlString(machine.workspaceId)}`,
+      );
+      if (purged === "t") {
+        report.volumeDataPurged = true;
+        break;
+      }
+      await sleep(1000);
+    }
+    if (!report.volumeDataPurged)
+      cleanupErrors.push("Released machine Volume did not purge automatically");
+  }
   if (cleanupErrors.length) report.cleanupErrors = cleanupErrors;
   await writeFile(
     "docs/reports/machine-failure-acceptance-latest.json",
     JSON.stringify(report, null, 2) + "\n",
   );
   console.log(JSON.stringify(report));
+  if (cleanupErrors.length && !report.failure) throw new Error(cleanupErrors.join("; "));
 }

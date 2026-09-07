@@ -10,7 +10,8 @@ import {
   WORKSPACE_VOLUME_GATEWAY_FORK_PATH,
   WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH,
   WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH,
-  WORKSPACE_VOLUME_GATEWAY_DELETE_PATH,
+  WORKSPACE_VOLUME_GATEWAY_PREPARE_DELETE_PATH,
+  WORKSPACE_VOLUME_GATEWAY_FINALIZE_DELETE_PATH,
   WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH,
@@ -51,7 +52,8 @@ type WorkspaceVolumeGatewayOperation =
   | "fork"
   | "list_directory"
   | "read_file"
-  | "delete"
+  | "prepare_delete"
+  | "finalize_delete"
   | "source_credential_authorize"
   | "source_credential_preflight"
   | "source_credential_list"
@@ -205,10 +207,19 @@ export class WorkspaceVolumeGatewayServer {
         return this.#failure(reply, error);
       }
     });
-    this.#server.post(WORKSPACE_VOLUME_GATEWAY_DELETE_PATH, async (request, reply) => {
+    this.#server.post(WORKSPACE_VOLUME_GATEWAY_PREPARE_DELETE_PATH, async (request, reply) => {
       try {
-        return await this.#run("delete", () =>
-          this.#gateway.delete(request.body as WorkspaceVolumeGatewayDeleteInput),
+        return await this.#run("prepare_delete", () =>
+          this.#gateway.prepareDelete(request.body as WorkspaceVolumeGatewayDeleteInput),
+        );
+      } catch (error: unknown) {
+        return this.#failure(reply, error);
+      }
+    });
+    this.#server.post(WORKSPACE_VOLUME_GATEWAY_FINALIZE_DELETE_PATH, async (request, reply) => {
+      try {
+        return await this.#run("finalize_delete", () =>
+          this.#gateway.finalizeDelete(request.body as WorkspaceVolumeGatewayDeleteInput),
         );
       } catch (error: unknown) {
         return this.#failure(reply, error);
@@ -647,8 +658,24 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     return { bytes, sha256, executable: executable === "true" };
   }
 
-  async delete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ deleted: boolean }> {
-    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_DELETE_PATH, input);
+  async prepareDelete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ prepared: boolean }> {
+    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_PREPARE_DELETE_PATH, input);
+    if (
+      !isRecord(response) ||
+      Object.keys(response).length !== 1 ||
+      typeof response.prepared !== "boolean"
+    ) {
+      throw new WorkspaceVolumeGatewayError(
+        "workspace_volume_gateway_response_invalid",
+        "Workspace Volume Gateway response was invalid",
+        false,
+      );
+    }
+    return { prepared: response.prepared };
+  }
+
+  async finalizeDelete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ deleted: boolean }> {
+    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_FINALIZE_DELETE_PATH, input);
     if (
       !isRecord(response) ||
       Object.keys(response).length !== 1 ||

@@ -1466,6 +1466,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     expect(second.activationId).not.toBe(first.activationId);
     expect(second.continuity).toBe("warm_reuse");
+    expect(second.continuityId).toBe(first.continuityId);
     await manager.execute(nextAssignment.executionLease, {
       ...operation("10000000-0000-4000-8000-000000000022"),
       activationId: second.activationId,

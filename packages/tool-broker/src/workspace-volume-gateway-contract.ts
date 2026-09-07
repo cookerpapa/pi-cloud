@@ -19,6 +19,10 @@ export const VOLUME_WORKSPACE_DIRECTORY = "workspace";
 export const WORKSPACE_GIT_CREDENTIALS_FILE = ".git-credentials";
 export const VOLUME_GENERATION_FILE = "generation";
 export const VOLUME_SETTLEMENT_FILE = "settlement";
+export const VOLUME_DELETE_FILE = "delete-authorized";
+export function volumeDeleteMarker(volumeId: string, generation: string): string {
+  return `pi-cloud-volume-delete-v1\n${volumeId}\n${generation}\n`;
+}
 export const MAXIMUM_REQUEST_BYTES = 32 * 1_024;
 export const MAXIMUM_RESPONSE_BYTES = 8 * 1_024 * 1_024;
 
@@ -27,7 +31,8 @@ export const WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH = "/v1/workspaces/settle";
 export const WORKSPACE_VOLUME_GATEWAY_FORK_PATH = "/v1/workspaces/fork";
 export const WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH = "/v1/workspaces/list-directory";
 export const WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH = "/v1/workspaces/read-file";
-export const WORKSPACE_VOLUME_GATEWAY_DELETE_PATH = "/v1/workspaces/delete";
+export const WORKSPACE_VOLUME_GATEWAY_PREPARE_DELETE_PATH = "/v1/workspaces/prepare-delete";
+export const WORKSPACE_VOLUME_GATEWAY_FINALIZE_DELETE_PATH = "/v1/workspaces/finalize-delete";
 export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH =
   "/v1/workspaces/source-control/credential/authorize";
 export const WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_PREFLIGHT_PATH =
@@ -129,7 +134,8 @@ export interface WorkspaceVolumeGateway {
     sha256: string;
     executable: boolean;
   }>;
-  delete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ deleted: boolean }>;
+  prepareDelete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ prepared: boolean }>;
+  finalizeDelete(input: WorkspaceVolumeGatewayDeleteInput): Promise<{ deleted: boolean }>;
   authorizeSourceCredential?(
     input: WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
   ): Promise<{ authorized: true }>;

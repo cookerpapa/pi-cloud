@@ -1,5 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { tmpdir } from "node:os";
@@ -210,9 +220,39 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     const volumeRoot = join(workspaceRoot, `picloud-posix-${first.volumeId}`);
     await writeFile(join(volumeRoot, "workspace", "private.txt"), "delete me\n");
 
-    await expect(mover.delete(first)).resolves.toEqual({ deleted: true });
+    await expect(mover.prepareDelete(first)).resolves.toEqual({ prepared: true });
+    await expect(mover.prepare(first)).rejects.toMatchObject({ code: "workspace_volume_deleting" });
+    await expect(mover.finalizeDelete(first)).rejects.toMatchObject({
+      code: "workspace_volume_delete_pending",
+    });
+    await expect(readFile(join(volumeRoot, "workspace", "private.txt"), "utf8")).resolves.toBe(
+      "delete me\n",
+    );
+    await expect(mover.prepareDelete(first)).resolves.toEqual({ prepared: true });
+    // Cube's Controller hook removes user bytes; the gateway removes metadata.
+    await rm(join(volumeRoot, "workspace"), { recursive: true });
+    await expect(mover.finalizeDelete(first)).resolves.toEqual({ deleted: true });
     await expect(lstat(volumeRoot)).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(mover.delete(first)).resolves.toEqual({ deleted: false });
+    await expect(mover.finalizeDelete(first)).resolves.toEqual({ deleted: false });
+    await expect(mover.prepareDelete(first)).resolves.toEqual({ prepared: false });
+  });
+
+  it("finishes a metadata-retirement crash without recreating a deleted Volume", async () => {
+    const workspaceRoot = await root();
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const input = identity("retired-metadata");
+    const directory = join(workspaceRoot, `picloud-posix-${input.volumeId}`);
+    await mover.prepare(input);
+    await mover.prepareDelete(input);
+    await rm(join(directory, "workspace"), { recursive: true });
+    await rename(directory, `${directory}.deleted`);
+    await expect(
+      mover.readFile({ ...input, rootPath: "", path: "no-file", maximumBytes: 100 }),
+    ).rejects.toBeDefined();
+    await expect(lstat(directory)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(mover.prepareDelete(input)).resolves.toEqual({ prepared: false });
+    await expect(mover.finalizeDelete(input)).resolves.toEqual({ deleted: false });
+    await expect(lstat(`${directory}.deleted`)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("stores and revalidates a Git-normalized credential outside the product browser", async () => {
@@ -372,7 +412,10 @@ describe("HttpWorkspaceVolumeGateway", () => {
           executable: false,
         };
       },
-      async delete() {
+      async prepareDelete() {
+        return { prepared: true };
+      },
+      async finalizeDelete() {
         return { deleted: true };
       },
       async close() {},
@@ -399,7 +442,10 @@ describe("HttpWorkspaceVolumeGateway", () => {
       ).resolves.toMatchObject({
         entries: expect.arrayContaining([expect.objectContaining({ path: "src/file-00000.ts" })]),
       });
-      await expect(client.delete(identity("session-large-index"))).resolves.toEqual({
+      await expect(client.prepareDelete(identity("session-large-index"))).resolves.toEqual({
+        prepared: true,
+      });
+      await expect(client.finalizeDelete(identity("session-large-index"))).resolves.toEqual({
         deleted: true,
       });
     } finally {

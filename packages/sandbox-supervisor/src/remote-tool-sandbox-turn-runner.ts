@@ -806,7 +806,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 },
                 { publishEvent: purpose === "agent" },
               ),
-            onToolOperationStarted: () => stepWorldState.recordActive(),
+            onToolOperationStarted: () => stepWorldState.recordActive(activation),
             onToolOperationUnavailable: async (failure) => {
               toolRuntimeFailure ??= new PiTurnError(failure.code, failure.message, false);
               await stepWorldState.recordUnavailable();

@@ -364,6 +364,41 @@ describe("PiAgentEventAdapter", () => {
     expect(JSON.stringify([preparing, first])).not.toContain("must-not-pass");
   });
 
+  it.each(["write", "edit"])(
+    "announces %s as soon as a late provider identity is available",
+    (toolName) => {
+      const adapter = createAdapter();
+      adapter.adapt({ type: "agent_start" });
+      const partial = { content: [{ type: "toolCall", id: "call-late", name: "", arguments: {} }] };
+      expect(
+        adapter.adapt({
+          type: "message_update",
+          assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial },
+        }).kind,
+      ).toBe("ignored");
+      partial.content[0]!.name = toolName;
+      const event = {
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_delta",
+          contentIndex: 0,
+          partial,
+          delta: "PRIVATE_PARTIAL_CODE",
+        },
+      };
+      const result = adapter.adapt(event);
+      expect(result).toMatchObject({
+        kind: "mapped",
+        event: {
+          type: "assistant.tool_call.preparing",
+          payload: { toolCallId: "call-late", toolName },
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain("PRIVATE_PARTIAL_CODE");
+      expect(adapter.adapt(event).kind).toBe("ignored");
+    },
+  );
+
   it("classifies an ambiguous Cube result as unknown instead of failed", () => {
     const adapter = createAdapter();
     adapter.adapt({ type: "agent_start" });

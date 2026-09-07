@@ -192,7 +192,7 @@ export const PI_WORLD_STATE_ENTRY_PROJECTORS: Readonly<
 export class PiSessionWorldStateController {
   readonly #session: Session;
   readonly #lane: string;
-  readonly #continuity: PiSandboxContinuity;
+  #continuity: PiSandboxContinuity;
   readonly #messagesAppendedDuringRun: PiWorldStateModelMessage[] = [];
   #status: PiRuntimeWorldState["sandbox"]["status"];
   #previous: PiRuntimeWorldState | undefined;
@@ -254,14 +254,17 @@ export class PiSessionWorldStateController {
     };
   }
 
-  async recordActive(): Promise<void> {
+  async recordActive(
+    continuity?: Pick<PiSandboxContinuity, "continuityId" | "continuity">,
+  ): Promise<void> {
+    if (continuity !== undefined) this.#continuity = { ...this.#continuity, ...continuity };
     this.#status = "active";
-    await this.#reconcile();
+    // Observe now; capture publishes model-visible changes at the next clean
+    // sampling/settlement boundary, never inside a Tool call/result pair.
   }
 
   async recordUnavailable(): Promise<void> {
     this.#status = "unavailable";
-    await this.#reconcile();
   }
 
   #current(): PiRuntimeWorldState {

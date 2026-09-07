@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmod,
   chown,
@@ -518,6 +519,9 @@ async function installPosixVolumePlugin() {
   // recreates CubeMaster/Cubelet instead of silently retaining a stale mount.
   const sharedRootMetadata = await stat(posixSharedRoot);
   const sharedRootIdentity = `${String(sharedRootMetadata.dev)}-${String(sharedRootMetadata.ino)}`;
+  const pluginSha256 = createHash("sha256")
+    .update(await readFile(posixVolumePluginSource))
+    .digest("hex");
   await chmod(posixVolumeRoot, 0o700);
   const pod = await captureKubectl([
     "-n",
@@ -604,6 +608,7 @@ async function installPosixVolumePlugin() {
             metadata: {
               annotations: {
                 "pi-cloud.io/posix-shared-root-identity": sharedRootIdentity,
+                "pi-cloud.io/posix-volume-plugin-sha256": pluginSha256,
               },
             },
             spec: {

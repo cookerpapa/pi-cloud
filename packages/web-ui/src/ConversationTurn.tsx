@@ -324,7 +324,15 @@ function ToolPreparation({ item }: { item: Extract<TranscriptItem, { kind: "tool
       title={t("turn.toolPreparingHint")}
     >
       <span aria-hidden="true" className="product-tool-preparing-spinner" />
-      <span>{t("turn.toolPreparing")}</span>
+      <span>
+        {t(
+          item.toolName === "write"
+            ? "turn.toolPreparingWrite"
+            : item.toolName === "edit"
+              ? "turn.toolPreparingEdit"
+              : "turn.toolPreparing",
+        )}
+      </span>
       <code>{item.toolName}</code>
       <small aria-hidden="true">{t("turn.toolPreparingElapsed", { seconds })}</small>
     </div>

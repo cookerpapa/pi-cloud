@@ -215,6 +215,9 @@ capacity and the selected Cube profile have all been admitted.
 Releasing a cloud development machine deletes that machine and all of its files.
 Its conversations remain readable and must be rebound to another Workspace
 before they can run again.
+Cube's native Volume plugin also removes root-owned files; existing installations
+must apply the [Controller plugin update](deploy/cubesandbox/README.md) before
+upgrading the Broker/Volume gateway. The gateway itself remains unprivileged.
 
 Tool/preview failures do not release owned machines. A stopped application must
 be restarted separately. Host shutdown is not an automatic Cube pause/snapshot:

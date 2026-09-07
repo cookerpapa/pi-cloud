@@ -258,15 +258,30 @@ operator must replace that local path with the same POSIX shared filesystem on
 CubeMaster, every Cubelet and the Volume Gateway. That filesystem must provide
 the replication and backup policy required by the deployment's recovery claim.
 
-Conversation state and lightweight Workspace settlement metadata commit
-through PostgreSQL. For an exact Session, the external Tool Broker waits for
-the short-lived Tool Worker to exit, briefly freezes uid-1000 processes through
-envd while the trusted Volume Gateway flushes and indexes `/workspace`, resumes
-those exact process identities, and retains the running VM for the bounded warm
-TTL. A later higher-fence Run starts a fresh credential-free Tool Worker. Failed,
-cancelled, timed-out or ambiguous transitions destroy the
-guest; a later Run attaches the same persistent Volume to a fresh base-template
-guest.
+Conversation state and lightweight Workspace settlement metadata commit through
+PostgreSQL. The Volume gateway records a settlement revision without indexing,
+archiving or pausing the file tree. Elastic failures retire their disposable VM;
+owned development machines survive Tool/Run failures and Broker replacement.
+
+Explicit release first persists a generation-bound deletion marker beside the
+Volume metadata. Cube's native Controller Destroy hook removes `workspace/`,
+including root-owned files, without following symlinks or crossing filesystems.
+The unprivileged gateway then atomically retires/removes its own envelope before
+PostgreSQL records the purge. Neither a permission error nor a process crash
+discards deletion authority halfway through cleanup.
+
+For an existing installation, update the Controller hook **before** upgrading
+the Broker/Volume gateway:
+
+```bash
+sudo "$(command -v node)" scripts/update-cube-volume-plugin.mjs
+```
+
+This rolls only CubeMaster, not Cubelets or user VMs. Fresh installations include
+the hook automatically. Custom/shared storage must grant the Cube Controller
+the storage permissions needed to unlink files of all Guest UIDs; do not run the
+general-purpose Volume gateway as root. The contract can be tested against an
+isolated temporary mount with `node --import tsx scripts/run-volume-deletion-contract-check.mjs`.
 
 Operational inspection and teardown remain available even if the source
 revision has advanced beyond the last registered template:

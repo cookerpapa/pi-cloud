@@ -131,9 +131,22 @@ case "$operation" in
       exit 0
     fi
     assert_safe_volume
-    # Destruction is intentionally conservative. Retention/GC must clear a
-    # volume through PiCloud's fenced workflow before Cube can remove it.
-    rmdir -- "$volume_path" 2>/dev/null || fail
+    # CubeMaster has already verified zero live references. PiCloud authorizes
+    # this exact generation outside the Guest mount; untrusted files never
+    # carry deletion authority. Keep the envelope intact for failed GC retries.
+    readonly metadata_path="${volume_path}/.pi-cloud-runtime"
+    readonly marker_path="${metadata_path}/delete-authorized"
+    readonly generation_path="${metadata_path}/generation"
+    [[ -d "$metadata_path" && ! -L "$metadata_path" ]] || fail
+    [[ -f "$marker_path" && ! -L "$marker_path" && -f "$generation_path" && ! -L "$generation_path" ]] || fail
+    generation="$(cat -- "$generation_path")"
+    [[ "$generation" =~ ^[0-9a-f]{64}$ ]] || fail
+    expected_marker="$(printf 'pi-cloud-volume-delete-v1\n%s\n%s' "$volume_id" "$generation")"
+    [[ "$(cat -- "$marker_path")" == "$expected_marker" ]] || fail
+    if [[ -e "$workspace_path" || -L "$workspace_path" ]]; then
+      assert_safe_workspace
+      rm -rf --one-file-system --preserve-root=all -- "$workspace_path" || fail
+    fi
     printf '%s\n' '{"error":""}'
     ;;
   attach)

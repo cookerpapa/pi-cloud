@@ -68,7 +68,8 @@ describe("Tool Broker application CONNECT", () => {
       allowed.socket.write(Buffer.from([0, 255, 65]));
       expect(await data).toEqual(Buffer.from([0, 255, 65]));
       await new Promise<void>((resolve) => allowed.socket.once("close", () => resolve()));
-      expect(stream.destroyed).toBe(true);
+      // Peer FIN can arrive before the server's own close callback runs.
+      await vi.waitFor(() => expect(stream.destroyed).toBe(true));
     } finally {
       await server.close();
     }

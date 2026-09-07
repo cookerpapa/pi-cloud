@@ -1,28 +1,28 @@
 {
-  "checkedAt": "2026-09-06T02:13:33.519Z",
+  "checkedAt": "2026-09-07T03:03:14.673Z",
   "runs": [
     {
-      "runId": "55ef336c-240e-4b30-aa81-b3e684cc6046",
-      "elapsedMs": 81712
+      "runId": "90d8076d-5dba-4c54-9def-4269fe505085",
+      "elapsedMs": 13039
     },
     {
-      "runId": "e5bac111-ab2e-4292-89a8-50580165d234",
-      "elapsedMs": 17178
+      "runId": "71c7ad41-8c6b-4dc4-98e2-437479a597cc",
+      "elapsedMs": 23124
     }
   ],
   "accepted": true,
   "hostPowerLossTested": false,
-  "environmentId": "4d40bad6-13a2-4260-9704-6cffdd2c3b43",
+  "environmentId": "a9b44170-7981-4b43-9168-7440cd1e6199",
   "stoppedApplicationDidNotStopMachine": true,
   "applicationRestarted": true,
   "brokerRestartPreservedRootFilesProcessAndPreview": true,
   "resetMarkers": 0,
   "usage": {
-    "input": 5916,
-    "output": 12182,
-    "cacheRead": 249600
+    "input": 5519,
+    "output": 3869,
+    "cacheRead": 116864
   },
+  "rootOwnedDeletionFixture": true,
   "resourcesReleased": true,
-  "volumeDataPurged": true,
-  "cleanupRequiredTargetedRemovalOfRootOwnedFixture": true
+  "volumeDataPurged": true
 }

@@ -1417,7 +1417,10 @@ export class ToolBroker {
       ownerBaseUrl: this.#ownerBaseUrl,
       workspaceRoot: request.toolRoot,
       continuity: runtime.handle === undefined ? "cold_restore" : "warm_reuse",
-      continuityId: runtime.handle?.runtimeId ?? runtime.physicalActivationId,
+      // This allocation identity exists before materialization and survives
+      // warm reuse. Switching to the provider's runtime UUID on the next Run
+      // would falsely report a reset of the very same Cube.
+      continuityId: runtime.physicalActivationId,
     };
   }
 

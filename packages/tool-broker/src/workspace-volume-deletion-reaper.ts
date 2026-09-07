@@ -126,12 +126,14 @@ export class WorkspaceVolumeDeletionReaper {
     for (const workspace of pending.rows) {
       try {
         const volumeId = workspaceVolumeId(workspace);
-        await this.#gateway.delete({
+        const identity = {
           tenantId: workspace.tenantId,
           workspaceId: workspace.workspaceId,
           volumeId,
-        });
+        };
+        await this.#gateway.prepareDelete(identity);
         await this.#deleteVolumeMetadata(volumeId);
+        await this.#gateway.finalizeDelete(identity);
         const purgedAt = this.#clock();
         const updated = await this.#database
           .updateTable("workspaces")

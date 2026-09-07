@@ -135,7 +135,8 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
         executable: false,
       };
     }),
-    delete: vi.fn(async ({ volumeId }) => ({ deleted: volumes.delete(volumeId) })),
+    prepareDelete: vi.fn(async ({ volumeId }) => ({ prepared: volumes.has(volumeId) })),
+    finalizeDelete: vi.fn(async ({ volumeId }) => ({ deleted: volumes.delete(volumeId) })),
     close: vi.fn(async () => undefined),
   };
 }
