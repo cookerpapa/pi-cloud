@@ -5,6 +5,9 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] ADR-0156: close at the Kafka seal and announce the terminal on its durable
+      commit notification, without Gateway per-seal SELECT/polling. Preserve
+      bounded successor buffering, duplicate delivery and restart recovery.
 - [x] ADR-0155: classify live records by the actual seal position, isolate paused
       partitions, restore from durable recovery floors and invalidate idle OPEN caches.
 - [x] Batch native append SQL without a timer; preserve concurrent Lane ID uniqueness

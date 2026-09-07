@@ -2,12 +2,12 @@ import type { Database } from "@pi-cloud/database";
 import { parsePiCloudEvent, type PiCloudEvent } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { AcceptedExecutionSealFact, AcceptedFact } from "./accepted-fact.ts";
-import { AcceptedFactProjectionPendingError } from "./accepted-fact.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import { appendInterruptedAssistantPrefix } from "./canonical-pi-conversation.ts";
 import { projectConversationTurnTranscript } from "./conversation-turn-projection.ts";
 import { PostgresPiSessionMutationProjector } from "./postgres-pi-session-mutation-projector.ts";
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
+import { enqueueExecutionCommit } from "./execution-stream-commit.ts";
 
 export function factEvents(fact: AcceptedFact): readonly PiCloudEvent[] {
   return fact.kind === "agent_event"
@@ -119,8 +119,7 @@ export class ExecutionStreamBoundary {
   }
 }
 
-/** This fold is volatile. Its consumer must replay from the retained beginning
- * after assignment, never resume a committed offset with an empty prefix. */
+/** Rebuild volatile prefixes from the PG recovery floor, never a consumer-group offset. */
 export class ExecutionStreamProjector {
   readonly #database: Kysely<Database>;
   readonly #boundary: ExecutionStreamBoundary;
@@ -140,7 +139,11 @@ export class ExecutionStreamProjector {
 
   async project(record: KafkaAcceptedFactRecord): Promise<void> {
     const { fact } = record;
-    if (!(await this.#boundary.isOpen(record, true))) return;
+    if (fact.kind === "execution_committed") return; // Notification, not another mutation.
+    if (!(await this.#boundary.isOpen(record, true))) {
+      if (fact.kind === "execution_seal") await this.#seal(fact, record, []);
+      return;
+    }
     const prefix = this.#prefixes.get(fact.scope.attemptId) ?? new Map<number, PiCloudEvent>();
     this.#prefixes.set(fact.scope.attemptId, prefix);
     for (const event of factEvents(fact)) {
@@ -170,16 +173,59 @@ export class ExecutionStreamProjector {
     await this.#database.transaction().execute(async (transaction) => {
       const attempt = await transaction
         .selectFrom("run_attempts")
-        .select(["output_seal_id", "output_sealed_at", "fencing_token"])
+        .select([
+          "output_seal_id",
+          "output_sealed_at",
+          "fencing_token",
+          "output_seal_offset",
+          "output_first_topic",
+          "output_first_partition",
+        ])
         .where("id", "=", fact.scope.attemptId)
         .forUpdate()
         .executeTakeFirst();
-      if (!attempt || attempt.output_sealed_at !== null) return;
+      if (!attempt) return;
       if (
         attempt.output_seal_id !== fact.factId ||
         Number(attempt.fencing_token ?? 0) !== fact.scope.fencingToken
       )
         throw new Error("Execution seal does not match its requested RunAttempt");
+      if (attempt.output_sealed_at !== null) {
+        const terminal = await transaction
+          .selectFrom("session_terminal_events")
+          .selectAll()
+          .where("event_id", "=", fact.factId)
+          .executeTakeFirstOrThrow();
+        const event = parsePiCloudEvent({
+          schemaVersion: terminal.schema_version,
+          eventId: terminal.event_id,
+          sessionId: terminal.session_id,
+          turnId: terminal.turn_id,
+          agentId: terminal.agent_id,
+          seq: Number(terminal.seq),
+          occurredAt: terminal.occurred_at.toISOString(),
+          type: terminal.type,
+          payload: terminal.payload,
+        });
+        if (
+          event.type !== "turn.completed" &&
+          event.type !== "turn.failed" &&
+          event.type !== "turn.cancelled"
+        )
+          throw new Error("Stored execution terminal has an invalid type");
+        await enqueueExecutionCommit(
+          transaction,
+          fact,
+          {
+            topic: attempt.output_first_topic!,
+            partition: attempt.output_first_partition!,
+            offset: BigInt(attempt.output_seal_offset!),
+          },
+          event,
+        );
+        await recordFactProjection(transaction, position);
+        return;
+      }
       const event = parsePiCloudEvent({
         schemaVersion: 1,
         eventId: fact.factId,
@@ -237,45 +283,15 @@ export class ExecutionStreamProjector {
         .where("id", "=", fact.scope.attemptId)
         .execute();
       await recordFactProjection(transaction, position);
+      if (
+        event.type !== "turn.completed" &&
+        event.type !== "turn.failed" &&
+        event.type !== "turn.cancelled"
+      )
+        throw new Error("Execution seal must carry a terminal event");
+      await enqueueExecutionCommit(transaction, fact, position, event);
       await sql`select pg_notify('pi_cloud_run_queue', id::text) from runs
         where session_id = ${fact.scope.sessionId}::uuid and state = 'queued'`.execute(transaction);
     });
   }
-}
-
-/** Gateway may see the seal before the canonical consumer. Retrying the record
- * keeps this partition ordered without claiming that business-terminal = sealed. */
-export async function readProjectedSeal(
-  database: Kysely<Database>,
-  fact: AcceptedExecutionSealFact,
-): Promise<PiCloudEvent | undefined> {
-  const row = await database
-    .selectFrom("run_attempts as attempt")
-    .leftJoin("session_terminal_events as event", "event.event_id", "attempt.output_seal_id")
-    .select([
-      "attempt.output_sealed_at",
-      "event.event_id",
-      "event.seq",
-      "event.type",
-      "event.payload",
-      "event.occurred_at",
-      "event.agent_id",
-    ])
-    .where("attempt.id", "=", fact.scope.attemptId)
-    .executeTakeFirst();
-  if (!row) return undefined; // Session deletion cascades its execution history.
-  if (row.output_sealed_at === null)
-    throw new AcceptedFactProjectionPendingError("Execution seal projection is pending");
-  if (!row.event_id) return undefined;
-  return parsePiCloudEvent({
-    schemaVersion: 1,
-    eventId: row.event_id,
-    sessionId: fact.scope.sessionId,
-    turnId: fact.scope.turnId,
-    agentId: row.agent_id,
-    seq: Number(row.seq),
-    type: row.type,
-    payload: row.payload,
-    occurredAt: row.occurred_at!.toISOString(),
-  });
 }

@@ -52,6 +52,16 @@ export type AcceptedExecutionSealFact = Readonly<{
   occurredAt: string;
 }>;
 
+/** A canonical transaction's durable notification, never produced by a Worker. */
+export type AcceptedExecutionCommitFact = Readonly<{
+  kind: "execution_committed";
+  factId: string;
+  scope: AcceptedFactScope;
+  seal: Readonly<{ factId: string; topic: string; partition: number; offset: string }>;
+  event: Extract<PiCloudEvent, { type: "turn.completed" | "turn.failed" | "turn.cancelled" }>;
+  occurredAt: string;
+}>;
+
 export type AcceptedPiSessionMutationFact = Readonly<{
   kind: "pi_session_mutation";
   factId: string;
@@ -63,15 +73,15 @@ export type AcceptedPiSessionMutationFact = Readonly<{
 }>;
 
 export type AcceptedFact =
-  AcceptedAgentEventFact | AcceptedExecutionSealFact | AcceptedPiSessionMutationFact;
+  | AcceptedAgentEventFact
+  | AcceptedExecutionSealFact
+  | AcceptedExecutionCommitFact
+  | AcceptedPiSessionMutationFact;
 
 export type AcceptedFactReceipt = Readonly<{
   factId: string;
   durable: true;
 }>;
-
-/** An ordered record is durable but its dependent canonical transaction is still in flight. */
-export class AcceptedFactProjectionPendingError extends Error {}
 
 export interface AcceptedFactBus {
   append(fact: AcceptedFact): Promise<AcceptedFactReceipt>;

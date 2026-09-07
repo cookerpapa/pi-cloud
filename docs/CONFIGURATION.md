@@ -165,6 +165,12 @@ Consumers use Confluent's partition pause/seek with a 32 MiB native queue budget
 and a 5 ms fetch-queue backoff (the native 1 s default is unsuitable for interactive
 streams). SSE subscribes on demand and uses server-side recovery coordinates;
 normal data consumption never introduces a new batching delay.
+Seal commit notifications use the existing terminal Outbox's 50 ms idle poll and
+bounded delivery retries. Gateway performs no per-seal PG lookup; deferred
+successor display is limited to 8 MiB per Session / 64 MiB per Gateway. Exceeding
+that budget triggers resnapshot/replay, not unbounded buffering or a partition
+pause that would prevent consuming the notification. These are code-owned
+soft-state limits, not a second operator-configurable queue.
 Kafka retention must cover a maximum Turn plus settlement grace. Browser
 reconnect always receives a replacement PostgreSQL + Gateway-tail snapshot;
 there is no public cursor or HTTP 410 replay path. Volume queue wait must be

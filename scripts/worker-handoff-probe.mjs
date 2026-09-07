@@ -291,10 +291,7 @@ if (process.argv[2] === "ingress") {
         await projectTail(record);
         tailConsumedFactIds.add(fact.factId);
       } catch (error) {
-        if (
-          error.constructor.name !== "AcceptedFactProjectionPendingError" &&
-          !failedTailFacts.has(fact.factId)
-        ) {
+        if (!failedTailFacts.has(fact.factId)) {
           failedTailFacts.add(fact.factId);
           (report.tailFailures ??= []).push({
             factId: fact.factId,

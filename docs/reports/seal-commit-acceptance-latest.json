@@ -1,0 +1,63 @@
+{
+  "format": "pi-cloud.seal-commit-acceptance.v1",
+  "checkedAt": "2026-09-07T23:36:40.896Z",
+  "topology": "isolated PostgreSQL 2CPU/768MiB; existing R=3 Kafka; 3CPU/2GiB runner; no LLM",
+  "runs": 24,
+  "gatewaySealCommitQueries": 0,
+  "gatewayMetadataAndRecoveryQueries": 42,
+  "scenarios": [
+    {
+      "delayMs": 0,
+      "elapsedMs": 1216,
+      "runs": 8,
+      "baselineQueries": 22,
+      "pollTerminalMs": {
+        "p50": 79.14,
+        "p95": 116.16
+      },
+      "commitTerminalMs": {
+        "p50": 72.49,
+        "p95": 123.58
+      }
+    },
+    {
+      "delayMs": 100,
+      "elapsedMs": 1967,
+      "runs": 8,
+      "baselineQueries": 25,
+      "pollTerminalMs": {
+        "p50": 180.69,
+        "p95": 381.91
+      },
+      "commitTerminalMs": {
+        "p50": 136.93,
+        "p95": 257.43
+      }
+    },
+    {
+      "delayMs": 500,
+      "elapsedMs": 4074,
+      "runs": 8,
+      "baselineQueries": 56,
+      "pollTerminalMs": {
+        "p50": 1581.52,
+        "p95": 2584.71
+      },
+      "commitTerminalMs": {
+        "p50": 1381.78,
+        "p95": 1861.34
+      }
+    }
+  ],
+  "recovery": {
+    "commitSurvivedPublisherAbsence": true,
+    "canonicalConsumerRestarted": true,
+    "kafkaAckLost": true,
+    "commitDeliveryAttempts": 2,
+    "publicTerminalRows": 1
+  },
+  "pendingCommitBytes": 0,
+  "failures": [],
+  "revision": "3eb68459cf0b726e6e2597c10c773087fc36bd7d",
+  "workingTreeDirty": true
+}

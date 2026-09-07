@@ -23,7 +23,9 @@ import type {
   AcceptedExecutionSealFact,
   AcceptedPiSessionMutationFact,
   AcceptedFact,
+  AcceptedExecutionCommitFact,
 } from "../../runtime-core/src/accepted-fact.ts";
+import { executionCommitId } from "../../runtime-core/src/execution-stream-commit.ts";
 
 let pg: PGlite,
   socket: PGLiteSocketServer,
@@ -152,10 +154,108 @@ async function fixture() {
       clientId: crypto.randomUUID(),
       instanceId: crypto.randomUUID(),
     });
-  return { first, second, session, executor, seal, storage, mutation, delta, record, tail };
+  const commit = async (target = seal) => {
+    const row = await db
+      .selectFrom("outbox")
+      .select("payload")
+      .where("id", "=", executionCommitId(target.factId))
+      .executeTakeFirstOrThrow();
+    return parseKafkaAcceptedFact(JSON.stringify(row.payload)) as AcceptedExecutionCommitFact;
+  };
+  return { first, second, session, executor, seal, storage, mutation, delta, record, tail, commit };
 }
 
 describe.sequential("Execution stream closure", () => {
+  it("rolls back the terminal and closure when its commit notification cannot be stored", async () => {
+    const f = await fixture();
+    const first = f.record(f.delta(1, "keep me"), 10n),
+      seal = f.record(f.seal, 11n);
+    const broken = db.withPlugin({
+      transformQuery({ node, queryId }) {
+        const query = db.getExecutor().compileQuery(node, queryId).sql;
+        if (query.startsWith('insert into "outbox"'))
+          throw new Error("injected commit-outbox failure");
+        return node;
+      },
+      async transformResult({ result }) {
+        return result;
+      },
+    });
+    const failed = new ExecutionStreamProjector(broken);
+    await failed.project(first);
+    await expect(failed.project(seal)).rejects.toThrow("commit-outbox failure");
+    expect(
+      await db
+        .selectFrom("run_attempts")
+        .select("output_sealed_at")
+        .where("id", "=", f.seal.scope.attemptId)
+        .executeTakeFirst(),
+    ).toEqual({ output_sealed_at: null });
+    expect(
+      await db
+        .selectFrom("session_terminal_events")
+        .select("event_id")
+        .where("event_id", "=", f.seal.factId)
+        .executeTakeFirst(),
+    ).toBeUndefined();
+    const restored = new ExecutionStreamProjector(db);
+    await restored.project(first);
+    await restored.project(seal);
+    expect((await f.commit()).seal.offset).toBe("11");
+  });
+
+  it("persists commit-before-publish and re-arms the same ACK for a late duplicate seal", async () => {
+    const f = await fixture(),
+      projector = new ExecutionStreamProjector(db);
+    await projector.project(f.record(f.seal, 20n));
+    const original = await f.commit();
+    const pending = await db
+      .selectFrom("outbox")
+      .selectAll()
+      .where("id", "=", original.factId)
+      .executeTakeFirstOrThrow();
+    expect(pending.published_at).toBeNull(); // projector may now die; notification survived.
+    await db
+      .updateTable("outbox")
+      .set({ published_at: new Date(), attempts: 3 })
+      .where("id", "=", original.factId)
+      .execute();
+    const tail = f.tail(); // original seal/ACK are outside this reader's replay range.
+    await tail.projectRecord(f.record(f.seal, 80n));
+    expect(tail.statistics().pendingCommitSessions).toBe(1);
+    const restored = new ExecutionStreamProjector(db);
+    await restored.project(f.record(f.seal, 80n));
+    const rearmed = await db
+      .selectFrom("outbox")
+      .selectAll()
+      .where("id", "=", original.factId)
+      .executeTakeFirstOrThrow();
+    expect(rearmed.payload).toEqual(pending.payload);
+    expect(rearmed).toMatchObject({ published_at: null, attempts: 4 });
+    expect((await f.commit()).seal.offset).toBe("20"); // never move the first cutoff.
+    await restored.project(f.record(f.seal, 81n));
+    expect(
+      (
+        await db
+          .selectFrom("outbox")
+          .select("attempts")
+          .where("id", "=", original.factId)
+          .executeTakeFirst()
+      )?.attempts,
+    ).toBe(4);
+    await tail.projectRecord(f.record(original, 82n));
+    expect(tail.statistics().pendingCommitSessions).toBe(0);
+    await restored.project(f.record(original, 82n)); // an ACK cannot generate another ACK.
+    expect(await f.commit()).toEqual(original);
+    expect(
+      await db
+        .selectFrom("session_terminal_events")
+        .select("event_id")
+        .where("event_id", "=", f.seal.factId)
+        .execute(),
+    ).toHaveLength(1);
+  });
+
   it("does not reinterpret a rejected mutation after its receipt expires", async () => {
     const f = await fixture(),
       target = crypto.randomUUID();
@@ -248,6 +348,7 @@ describe.sequential("Execution stream closure", () => {
       subscription = tail.eventHub.subscribe(tenantId, f.session.sessionId);
     await tail.projectRecord(text);
     await tail.projectRecord(seal);
+    await tail.projectRecord(f.record(await f.commit(), 103n));
     expect((await subscription.next())?.event).toMatchObject({
       seq: 1,
       type: "assistant.text.delta",
@@ -291,10 +392,12 @@ describe.sequential("Execution stream closure", () => {
     await tail.projectRecord(text);
     const snapshot = tail.snapshot(tenantId, f.session.sessionId);
     await expect(f.executor.dispatchRun(f.second.runId)).resolves.toMatchObject({ status: "idle" });
-    await expect(tail.projectRecord(seal)).rejects.toThrow("projection is pending");
+    await expect(tail.projectRecord(seal)).resolves.toBeUndefined();
+    expect(tail.statistics().pendingCommitSessions).toBe(1);
     // Periodic progress deliberately remains zero, behind the actual Kafka seq=1.
     await projector.project(seal);
     await tail.projectRecord(seal);
+    await tail.projectRecord(f.record(await f.commit(), 12n));
     expect(tail.snapshot(tenantId, f.session.sessionId)).toMatchObject({
       canonicalThroughSequence: 2,
       events: [],

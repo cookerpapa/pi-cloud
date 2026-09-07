@@ -1,7 +1,6 @@
 import kafkaNative from "@confluentinc/kafka-javascript";
 import type { KafkaJS as KafkaTypes } from "@confluentinc/kafka-javascript";
 import type { AcceptedFact } from "./accepted-fact.ts";
-import { AcceptedFactProjectionPendingError } from "./accepted-fact.ts";
 import { parseKafkaAcceptedFact } from "./kafka-accepted-fact.ts";
 import type { KafkaPartitionBounds } from "./accepted-fact-recovery.ts";
 import { operationalLog } from "@pi-cloud/observability";
@@ -76,7 +75,27 @@ export class KafkaAcceptedFactConsumer {
       });
     }
     await this.#adminReady;
-    return (await this.#admin.fetchTopicOffsets(this.#options.topic)).map((p) => ({
+    // CreateTopics is acknowledged by the controller before every broker has
+    // the new partition metadata. A fresh deployment must not fail in that gap.
+    const deadline = Date.now() + 5000;
+    let offsets: Awaited<ReturnType<KafkaTypes.Admin["fetchTopicOffsets"]>>;
+    for (;;) {
+      try {
+        offsets = await this.#admin.fetchTopicOffsets(this.#options.topic);
+        break;
+      } catch (error) {
+        const code = (error as { code?: number }).code;
+        if (
+          this.#closing ||
+          Date.now() >= deadline ||
+          (code !== CODES.ERRORS.ERR_UNKNOWN_TOPIC_OR_PART &&
+            code !== CODES.ERRORS.ERR_LEADER_NOT_AVAILABLE)
+        )
+          throw error;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    return offsets.map((p) => ({
       partition: p.partition,
       low: BigInt(p.low ?? 0),
       high: BigInt(p.high ?? p.offset),
@@ -96,6 +115,13 @@ export class KafkaAcceptedFactConsumer {
   async start(): Promise<void> {
     if (this.#run) throw new Error("Kafka consumer can only start once");
     this.#run = this.#runForever();
+  }
+
+  /** Bounded soft-state overflow uses the ordinary durable replay path. */
+  requestReplay(): void {
+    this.#ready = false;
+    this.#epoch++;
+    this.#wake?.();
   }
 
   async #runForever(): Promise<void> {
@@ -258,7 +284,7 @@ export class KafkaAcceptedFactConsumer {
         const previous = this.#retries.get(batch.partition);
         const since = previous?.since ?? Date.now(),
           count = (previous?.count ?? 0) + 1;
-        if (!(error instanceof AcceptedFactProjectionPendingError) && !previous)
+        if (!previous)
           operationalLog({
             service: "pi-cloud-kafka-consumer",
             level: "error",

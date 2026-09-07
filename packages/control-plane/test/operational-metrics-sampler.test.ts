@@ -52,6 +52,9 @@ describe("operational metrics sampler", () => {
         acceptedEvents: 410,
         duplicateEvents: 1,
         evictedEvents: 400,
+        pendingCommitSessions: 0,
+        pendingCommitBytes: 0,
+        pendingCommitReplays: 0,
       },
     };
     const sampler = new OperationalMetricsSampler({

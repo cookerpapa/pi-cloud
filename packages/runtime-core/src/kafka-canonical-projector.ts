@@ -20,7 +20,7 @@ export class KafkaCanonicalProjector {
     this.#consumer = new KafkaAcceptedFactConsumer({
       brokers: options.brokers,
       clientId: `${options.clientId}-canonical-projector`,
-      groupId: options.groupId ?? "pi-cloud-canonical-projector-v3",
+      groupId: options.groupId ?? "pi-cloud-canonical-projector-v4",
       topic: options.topic,
       onReset: () => this.#projection.reset(),
       replayOffsets: (bounds, partitionCount) =>

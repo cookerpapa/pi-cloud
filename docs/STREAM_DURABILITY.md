@@ -9,6 +9,7 @@ state:
 - `T` — PostgreSQL settled the business Run and requested a seal through its Outbox;
 - `C` — the canonical consumer projected that seal, preserved the interrupted prefix
   and atomically committed the public terminal and closed RunAttempt;
+- `N` — its co-committed Outbox notification was acknowledged by Kafka;
 - `S` — Gateway sent a replacement snapshot containing PostgreSQL canonical
   messages plus the current incomplete Kafka tail.
 
@@ -18,6 +19,7 @@ The maintained invariants are:
 V implies K
 T(success) implies P
 next Run claim implies C(previous requested seals)
+live terminal publication implies N, which implies C
 record after an execution's first seal cannot change Pi context or live output
 the next model Step waits for its required P projection barrier
 an arbitrary Tool effect implies P(complete model output) and P(validated Tool intent)
@@ -84,12 +86,20 @@ opens the same endpoint and replaces its view from another snapshot. Recovered
 text is rendered immediately; only later deltas use progressive reveal.
 
 The settlement transaction requests an execution seal through the terminal Outbox.
-The canonical consumer commits interrupted text, the exact terminal sequence and
-Attempt closure before Gateway publishes that terminal event to
-already-open subscribers, then advances the canonical boundary and removes the
+The canonical consumer commits interrupted text, the exact terminal sequence,
+Attempt closure and a stable commit-notification Outbox row together. Its Relay
+publishes `execution_committed` to the same partition. Gateway closes the Attempt
+at the seal without querying PG, continues consuming, and temporarily buffers
+successor display for that Session. The commit notification supplies the exact
+terminal event to already-open subscribers, then advances the canonical boundary and removes the
 covered tail by pointer replacement. Existing responses retain their immutable
 snapshot references; slow clients have bounded queues and reconnect instead of
 pinning shared memory.
+No browser ACK or live-terminal notification is required to start the next Run;
+the existing canonical commit barrier remains. Delayed notifications cannot
+cause successor events to overtake an earlier terminal. Deferred display has
+8 MiB per-Session and 64 MiB total bounds; overflow requests durable replay and
+replacement snapshots instead of waiting on a paused Kafka partition.
 Heartbeats reuse the outstanding event read, so idle periods do not create
 another reader or force a reconnect. Consumers run partitions concurrently with
 bounded pending work; handlers and offset commits remain ordered within each
@@ -109,7 +119,11 @@ for duplicate/conflict lookup; out-of-order arrivals use ordered insertion.
 | after `T`, before seal append/projection | next Run remains queued | Outbox retries the stable seal; no context handoff until `C` |
 | old record before seal | it belongs to the closing execution | apply it before `C` |
 | old record after seal | it may remain in bounded Kafka history | neither PG lane nor SSE accepts it |
-| seal commit succeeded, ACK lost | closed execution stays closed | duplicate seal is a no-op |
+| seal commit succeeded, ACK lost | closed execution stays closed | duplicate seal re-arms its stable notification without another semantic effect |
+| `C`, before notification publication | old output is closed; live terminal may wait | co-committed Outbox survives and publishes `N` after restart |
+| `N`, before Relay records its ACK | terminal may already be visible | repeat the same notification ID; do not duplicate display or semantic state |
+| successor output before `N` | only its Session display waits | consume continuously and release ordered events when notification arrives |
+| late duplicate seal after original notification left replay range | no old mutation is reapplied | canonical consumer re-arms the same immutable notification |
 | `C` completed, queued successor starts | predecessor context includes its preserved prefix | old records cannot subsequently rewrite it |
 | canonical projector loss | volatile prefix is lost, canonical entries are not | seek to the minimum durable partition checkpoint/unsealed start; rebuild open prefixes and deduplicate already projected outcomes |
 | Gateway loss | no canonical loss | replacement Gateway rebuilds its soft tail from Kafka and PostgreSQL |

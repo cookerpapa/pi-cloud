@@ -90,11 +90,14 @@ AcceptedFact Authority Gate
        ▼
 Kafka (Session-keyed, replication factor 3, acks=all)
   ├─ canonical consumer ─────────────▶ PostgreSQL Pi SessionStorage + stream seal
+  │                                      └─ commit Outbox ─▶ Kafka commit notification
   └─ incomplete-Turn consumer ───────▶ rebuildable live tail ─────▶ SSE
        Both discard records after that execution's seal.
 
 Run settlement ─▶ PostgreSQL terminal Outbox ─▶ same Kafka partition: execution seal
 Next Run claim waits until that seal and its interrupted prefix are projected.
+Gateway closes on the seal, then announces completion on the commit notification;
+it does not poll PostgreSQL at the seal or delay other Sessions while waiting.
 
 Workspace browser: Browser ─▶ Control Plane ─▶ Tool Broker
                                                 ├─ elastic: Volume Gateway ─▶ persistent bytes
@@ -114,7 +117,9 @@ shared PostgreSQL notification connection. Gateways consume Kafka partitions
 concurrently and initialize the browser from one consistent history/live snapshot.
 The producer remains Platformatic; the consumer uses Confluent/librdkafka for
 partition-local pause, seek and bounded buffering. Canonical projection can run separately from the API/SSE process; the default
-deployment keeps them together. Tool infrastructure is activated on demand and
+deployment keeps them together. Terminal commit notifications reuse the existing
+Outbox and Kafka topic; Gateway buffers only that Session's successor display
+until confirmation and then releases the covered tail. Tool infrastructure is activated on demand and
 does not gate model-only conversation.
 
 Consumers recover from durable partition positions and unsealed execution starts.

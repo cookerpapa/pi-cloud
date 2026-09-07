@@ -26,11 +26,11 @@ Sign in again and set the model provider/key in the administrator page.
 
 ## Execution-seal protocol upgrade
 
-Migration 128 requires no active Runs, no unpublished terminal Outbox rows and
+Migration 129 requires no active Runs, no unpublished terminal Outbox rows and
 no seals waiting for canonical projection.
 Drain Workers, stop old Worker/Control Plane publishers, migrate, then start all
 new components. The default AcceptedFact topic changes to
-`pi-cloud.accepted-facts.v3`; a custom topic must likewise use a new generation.
+`pi-cloud.accepted-facts.v4`; a custom topic must likewise use a new generation.
 Do not mix old/new publishers or change a live topic's partition count. Existing
 PostgreSQL conversations and user-owned machines are preserved. Old Kafka data
 can age out under its existing retention policy. Rolling protocol upgrades are

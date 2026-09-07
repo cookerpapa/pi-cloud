@@ -784,6 +784,9 @@ cache before seeking, so a seal committed while idle cannot be bypassed. The pub
 frame replaces the browser view with PostgreSQL canonical messages plus an
 immutable snapshot of that tail; later frames contain new events. An execution
 seal is reduced to a public terminal only after its canonical PG transaction.
+The seal transaction also writes a stable commit notification to the existing
+Outbox. Gateway closes the Attempt at the Kafka seal position without a SELECT,
+continues consuming and waits for that notification before announcing the terminal.
 That terminal is sent to existing subscribers and unloads the covered tail. Slow
 connections have bounded queues and reconnect for another snapshot. A 15-second
 SSE heartbeat keeps an idle healthy connection open. The browser reconnects
@@ -811,12 +814,26 @@ only its partition rather than filling a shared promise queue. At the first seal
 preserves visible interrupted text not already in Pi, allocates the terminal
 sequence after actual accepted events, and commits the public terminal, Session
 boundary and Attempt closure together. Records after the seal cannot mutate the
-lane. Gateway follows the same closure rule and waits for this transaction before
-showing the terminal. Duplicate seals are harmless; a seal names one Attempt,
+lane. The same transaction inserts `execution_committed` into the terminal Outbox,
+carrying the exact public terminal and first seal coordinates. The existing Relay
+publishes it to the same Kafka partition. Gateway has no seal-time PostgreSQL
+query or retry polling: it immediately rejects post-seal old data, buffers only
+that Session's successor display events, then releases them after the canonical
+terminal arrives in the commit notification. It must continue consuming, never
+pause the partition before its own notification. Duplicate seals are harmless; a seal names one Attempt,
 never an entire Session or another Lane. Closure metadata is durable on the
 Attempt, including the first seal's Kafka offset. A live reader behind PG accepts
 records before that offset and rejects records after it; a currently-closed boolean
 is not a historical cutoff. RAM cache eviction cannot reopen a sealed execution.
+
+A duplicate seal re-arms the same immutable notification if already published;
+this lets a new Gateway recover when the original seal/notification precedes its
+replay floor. Pending Outbox claims are not replaced, and replaying a notification
+does not generate another notification. Commit IDs are domain-separated UUIDv8s
+derived from seal IDs, not another lease or authority. The Gateway's deferred
+display budget is 8 MiB per Session / 64 MiB total. Overflow invalidates soft state,
+resnapshots browsers and restarts durable replay rather than blocking receipt of
+the notification. Initial snapshots and recovery still read PostgreSQL.
 
 Canonical and live folds start at the minimum of a durable partition checkpoint
 and known unsealed execution starts. Kafka end positions are captured before PG

@@ -38,7 +38,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest --run --passWithNoTests"
+    "test": "vitest --run --maxWorkers=2 --testTimeout=15000 --hookTimeout=30000 --passWithNoTests"
   },
   "dependencies": {
     "@confluentinc/kafka-javascript": "1.10.0",

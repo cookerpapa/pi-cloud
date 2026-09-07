@@ -9,11 +9,16 @@ import {
 import { SessionEventHub } from "./session-event-hub.ts";
 import { loadFactReplayOffsets } from "./accepted-fact-recovery.ts";
 import { kafkaProducerLane } from "./kafka-accepted-fact.ts";
-import {
-  ExecutionStreamBoundary,
-  factEvents,
-  readProjectedSeal,
-} from "./execution-stream-projection.ts";
+import { ExecutionStreamBoundary, factEvents } from "./execution-stream-projection.ts";
+
+type PendingDisplayItem = { sealId?: string; event?: PiCloudEvent; bytes: number };
+type PendingDisplay = {
+  items: PendingDisplayItem[];
+  seals: Map<string, PendingDisplayItem>;
+  bytes: number;
+};
+const MAXIMUM_PENDING_SESSION_BYTES = 8 * 1024 * 1024;
+const MAXIMUM_PENDING_DISPLAY_BYTES = 64 * 1024 * 1024;
 
 type SessionTailState = {
   canonicalThroughSequence: number;
@@ -37,9 +42,11 @@ function stateKey(tenantId: string, sessionId: string): string {
 export class KafkaLiveSessionTail {
   readonly eventHub = new SessionEventHub();
   readonly #consumer: KafkaAcceptedFactConsumer;
-  readonly #database: Kysely<Database>;
   readonly #boundary: ExecutionStreamBoundary;
   readonly #sessions = new Map<string, SessionTailState>();
+  readonly #pendingDisplay = new Map<string, PendingDisplay>();
+  #pendingDisplayBytes = 0;
+  #pendingDisplayReplays = 0;
   readonly #maximumIdleMs: number;
   #partitions = 0;
   #sweepTimer: NodeJS.Timeout | undefined;
@@ -57,7 +64,6 @@ export class KafkaLiveSessionTail {
     retentionMs?: number;
   }) {
     this.#maximumIdleMs = options.maximumIdleMs ?? 30 * 60_000;
-    this.#database = options.database;
     this.#boundary = new ExecutionStreamBoundary(options.database);
     this.#consumer = new KafkaAcceptedFactConsumer({
       brokers: options.brokers,
@@ -69,6 +75,8 @@ export class KafkaLiveSessionTail {
       onReset: () => {
         this.#boundary.reset();
         this.#sessions.clear();
+        this.#pendingDisplay.clear();
+        this.#pendingDisplayBytes = 0;
         this.eventHub.resyncAll();
       },
       onPartitionReset: (partition) => {
@@ -77,6 +85,10 @@ export class KafkaLiveSessionTail {
           const sessionId = key.split("\0")[1]!;
           if (kafkaProducerLane(sessionId, this.#partitions) === partition)
             this.#sessions.delete(key);
+        }
+        for (const [key] of this.#pendingDisplay) {
+          if (kafkaProducerLane(key.split("\0")[1]!, this.#partitions) === partition)
+            this.#discardPending(key);
         }
       },
       replayOffsets: (bounds, partitionCount) =>
@@ -109,6 +121,8 @@ export class KafkaLiveSessionTail {
     this.eventHub.onApplicationShutdown();
     await this.#consumer.close();
     this.#sessions.clear();
+    this.#pendingDisplay.clear();
+    this.#pendingDisplayBytes = 0;
   }
 
   #sweep(): void {
@@ -135,18 +149,94 @@ export class KafkaLiveSessionTail {
   }
 
   project(fact: AcceptedFact): void {
-    for (const event of factEvents(fact)) this.#accept(fact.scope.tenantId, event);
+    for (const event of factEvents(fact)) {
+      const key = stateKey(fact.scope.tenantId, event.sessionId);
+      if (this.#pendingDisplay.has(key)) {
+        if (!this.#defer(key, { event, bytes: Buffer.byteLength(JSON.stringify(event), "utf8") }))
+          return;
+      } else this.#accept(fact.scope.tenantId, event);
+    }
   }
 
   async projectRecord(record: KafkaAcceptedFactRecord): Promise<void> {
     const { fact } = record;
     if (fact.kind === "execution_seal") {
-      const terminal = await readProjectedSeal(this.#database, fact);
       this.#boundary.close(fact.scope.attemptId, record.offset, record.partition);
-      if (terminal) this.#accept(fact.scope.tenantId, terminal);
+      const key = stateKey(fact.scope.tenantId, fact.scope.sessionId);
+      if ((this.#sessions.get(key)?.canonicalThroughSequence ?? 0) > fact.baseSequence) return;
+      if (this.#pendingDisplay.get(key)?.seals.has(fact.factId)) return;
+      this.#defer(key, { sealId: fact.factId, bytes: 128 });
+    } else if (fact.kind === "execution_committed") {
+      this.#boundary.close(fact.scope.attemptId, BigInt(fact.seal.offset), fact.seal.partition);
+      const key = stateKey(fact.scope.tenantId, fact.scope.sessionId);
+      const pending = this.#pendingDisplay.get(key);
+      const slot = pending?.seals.get(fact.seal.factId);
+      if (!slot) {
+        // Recovery may begin after the original seal. The notification is
+        // self-contained and old terminal sequences are idempotently ignored.
+        this.#accept(fact.scope.tenantId, fact.event);
+        return;
+      }
+      const bytes = Buffer.byteLength(JSON.stringify(fact.event), "utf8");
+      const increase = bytes - slot.bytes;
+      if (!this.#reserveDisplay(pending!, increase)) return;
+      pending!.bytes += increase;
+      this.#pendingDisplayBytes += increase;
+      slot.bytes = bytes;
+      slot.event = fact.event;
+      let consumed = 0;
+      for (const item of pending!.items) {
+        if (!item.event) break;
+        this.#accept(fact.scope.tenantId, item.event);
+        if (item.sealId) pending!.seals.delete(item.sealId);
+        pending!.bytes -= item.bytes;
+        this.#pendingDisplayBytes -= item.bytes;
+        consumed++;
+      }
+      pending!.items.splice(0, consumed);
+      if (!pending!.items.length) this.#pendingDisplay.delete(key);
     } else if (await this.#boundary.isOpen(record, false)) {
       this.project(fact);
     }
+  }
+
+  #discardPending(key: string): void {
+    this.#pendingDisplayBytes -= this.#pendingDisplay.get(key)?.bytes ?? 0;
+    this.#pendingDisplay.delete(key);
+  }
+
+  #reserveDisplay(pending: PendingDisplay, bytes: number): boolean {
+    if (
+      pending.bytes + bytes > MAXIMUM_PENDING_SESSION_BYTES ||
+      this.#pendingDisplayBytes + bytes > MAXIMUM_PENDING_DISPLAY_BYTES
+    ) {
+      // Never pause at the missing ACK: it is later in this same partition.
+      // Drop bounded soft state, resnapshot clients and seek durable PG floors.
+      this.#pendingDisplayReplays++;
+      this.#pendingDisplay.clear();
+      this.#pendingDisplayBytes = 0;
+      this.#sessions.clear();
+      this.#boundary.reset();
+      this.eventHub.resyncAll();
+      this.#consumer.requestReplay();
+      return false;
+    }
+    return true;
+  }
+
+  #defer(key: string, item: PendingDisplayItem): boolean {
+    const pending: PendingDisplay = this.#pendingDisplay.get(key) ?? {
+      items: [],
+      seals: new Map(),
+      bytes: 0,
+    };
+    if (!this.#reserveDisplay(pending, item.bytes)) return false;
+    pending.items.push(item);
+    if (item.sealId) pending.seals.set(item.sealId, item);
+    pending.bytes += item.bytes;
+    this.#pendingDisplayBytes += item.bytes;
+    this.#pendingDisplay.set(key, pending);
+    return true;
   }
 
   statistics() {
@@ -160,6 +250,9 @@ export class KafkaLiveSessionTail {
       acceptedEvents: this.#acceptedEvents,
       duplicateEvents: this.#duplicateEvents,
       evictedEvents: this.#evictedEvents,
+      pendingCommitSessions: this.#pendingDisplay.size,
+      pendingCommitBytes: this.#pendingDisplayBytes,
+      pendingCommitReplays: this.#pendingDisplayReplays,
     } as const;
   }
 
