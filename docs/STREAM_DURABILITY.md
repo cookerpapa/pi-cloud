@@ -26,6 +26,12 @@ keyed by opaque Session ID, so one Session remains in one Kafka partition.
 PostgreSQL stores complete Pi-native semantic state once. Gateway replicas consume
 Kafka into rebuildable memory containing incomplete active Turns only.
 
+Known handoff gap: the recovery barrier covers records already appended before
+it, not every in-memory Fact admitted by an old ingress. An ingress paused after
+its final lease check can publish after a replacement's barrier and alter the
+recovered lane. See [the process-level counterexample](reports/late-publisher-findings.md).
+Normal close draining does not establish partition-safe publisher replacement.
+
 The first Assistant text delta is published immediately; adjacent deltas in
 the same content block coalesce for up to 25ms. Semantic boundaries flush that
 buffer. Kafka's producer additionally batches network records without changing

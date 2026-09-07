@@ -283,9 +283,9 @@ admission. The snapshot is part of the frozen Cloud Turn context, selects which
 Pi `AgentTool` proxies enter one runtime, but does not eagerly create an elastic
 Cube. The first actual `read/write/edit/bash` call resolves one single-flight
 Sandbox activation and carries the frozen grant to Tool Broker. A Tool-capable
-Run against a pre-existing development machine reserves only its per-Run Tool
-binding before model sampling, so Harness World State can attest that the same
-physical machine survived. Each Sandbox operation then carries its trusted Pi Tool name;
+Run against a pre-existing development machine also reserves its per-Run Tool
+binding lazily. The observed physical continuity is reported at the next clean
+model boundary. Each Sandbox operation then carries its trusted Pi Tool name;
 Broker rejects both ungranted names and invalid Tool/operation combinations.
 Model visibility is therefore an affordance, while Broker authorization is the
 security boundary.
@@ -785,8 +785,12 @@ event produced by that exact semantic boundary. Gateway projects that attached
 event into the live tail from the same Kafka record; a shared Kafka consumer
 group applies complete entries, records and compaction facts idempotently to
 PostgreSQL. Before opening a Session, every Run appends a keyed recovery barrier
-and waits for its projection; all older accepted Session mutations have then
-been applied before the Worker reads PostgreSQL. Each semantic Pi write also
+and waits for its projection; earlier records already appended to that Kafka
+partition have then been applied before the Worker reads PostgreSQL. This does
+not currently fence a paused ingress that publishes an earlier admitted Fact
+after the barrier. A process-level counterexample is recorded in
+[late-publisher findings](reports/late-publisher-findings.md); partition-safe
+ownership handoff remains unresolved. Each semantic Pi write also
 waits for its own mutation result before the Agent Loop advances.
 PostgreSQL therefore stores semantic Pi state, not token fragments. Terminal
 Run state and a one-row event outbox commit in the same PostgreSQL transaction.
@@ -859,8 +863,10 @@ terminated because their VM crosses one Turn's timeout.
 
 - queue delivery is at-least-once; state commits are idempotent/fenced;
 - arbitrary shell start is not exactly-once and is never blindly replayed;
-- stale Workers cannot mutate Pi SessionStorage, execute Tools, commit a
-  terminal Run or advance a Workspace settlement;
+- current-authority checks guard Tool admission, terminal Run commits and
+  Workspace settlement. Accepted Pi mutations are projected without a new lease
+  check; the late-ingress publication gap above is a known limitation on
+  Session recovery, not a proven stale-publisher guarantee;
 - an unreachable Worker endpoint cannot strand a Session after its connection
   and lease expire: logical retirement proceeds under the durable fence, the
   interrupted Run and model reservation fail, terminal Tool ownership is

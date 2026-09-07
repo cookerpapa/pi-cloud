@@ -95,3 +95,7 @@ No host power loss or arbitrary network-partition proof is claimed. Draining a
 live ingress does not fence an already-dead publisher's late Kafka delivery.
 Each SSE Gateway still rebuilds its retained live tail; tail sharding is not part
 of this change. New Providers still require adapters and capability tests.
+
+Follow-up validation found a reproducible late-publisher handoff failure; see
+[the counterexample](late-publisher-findings.md). The passing checks above do
+not establish safe replacement of a paused ingress publisher.

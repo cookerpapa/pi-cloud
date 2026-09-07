@@ -1,0 +1,45 @@
+{
+  "format": "pi-cloud.late-publisher-probe.v1",
+  "checkedAt": "2026-09-07T05:55:02.276Z",
+  "counterexample": true,
+  "records": [
+    {
+      "factId": "a150cfef-dcee-479f-84ec-1d348ecbb1d2",
+      "fence": 2,
+      "kind": "projection_barrier",
+      "partition": 2,
+      "offset": "0"
+    },
+    {
+      "factId": "76371446-e102-492c-b012-2b998156f53e",
+      "fence": 2,
+      "kind": "append_entry",
+      "partition": 2,
+      "offset": "1"
+    },
+    {
+      "factId": "95acec6f-1677-45a7-a526-9921d2d46a31",
+      "fence": 1,
+      "kind": "append_entry",
+      "partition": 2,
+      "offset": "2"
+    },
+    {
+      "factId": "8827a2a3-18fe-49e4-aa31-83e744128c35",
+      "fence": 2,
+      "kind": "projection_barrier",
+      "partition": 2,
+      "offset": "3"
+    }
+  ],
+  "leafBeforeResume": "ef307e72-c574-4df4-b969-195e67a15c08",
+  "oldPublicationAccepted": true,
+  "oldFactProjected": true,
+  "leafAfterResume": "009218f0-188a-4200-9351-9c417e1d8b57",
+  "oldMessageBecameChildOfNewMessage": true,
+  "authorityStillNew": true,
+  "expected": "resuming an expired publisher does not change the recovered branch",
+  "scope": "real SIGSTOP/SIGCONT, full-schema PostgreSQL and R3 Kafka; fixture-driven authority handoff, no model or Cube",
+  "revision": "be748b39b7cfcdd4bc4796a794f58e31ff45d7f5",
+  "isolation": "temporary PostgreSQL, unique Kafka topic/group, production services not stopped"
+}

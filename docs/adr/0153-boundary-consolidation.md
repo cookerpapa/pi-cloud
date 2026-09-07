@@ -54,3 +54,6 @@ platform-only measurements separately from Provider latency. Clean up only
 acceptance-owned resources. Current progress lives in BACKLOG.md.
 
 Results and limitations: [boundary acceptance](../reports/boundary-consolidation-acceptance.md).
+Subsequent process-level validation reproduced the unresolved late-publisher
+gap described above; [evidence](../reports/late-publisher-findings.md). The drain
+fix remains valid for a live closing ingress, not partition-safe replacement.

@@ -5,6 +5,11 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [ ] Blocking counterexample: an ingress paused after the final Lease check
+      can publish after authority rotation and a projected recovery barrier,
+      changing the recovered Pi lane. Coordinate publication-generation closure
+      with durable append before claiming partition-safe recovery. See
+      [late-publisher evidence](reports/late-publisher-findings.md).
 - [x] ADR-0153.1–2: drain Fact publications before close; bounded transaction-free
       terminal Outbox publication, idempotent retries and consumer failure signals.
 - [x] ADR-0153.3: co-commit sampling start and Tool completion with native records.
@@ -104,6 +109,6 @@ Volume architecture. Historical experiments remain in Git history.
       upstream-compatible Child selector.
 - [x] Keep context inheritance, Workspace placement and local Tool grants
       explicit and independent.
-- [x] Activate elastic Cube only on the first actual local Tool operation,
-      while prebinding owned machines to preserve physical-continuity semantics.
+- [x] Bind elastic and owned-machine Tools on the first actual local operation;
+      observe physical continuity at the next clean model boundary.
 - [ ] Repeat shared-Workspace Subagent acceptance on a multi-node Cube cluster.
