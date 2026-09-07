@@ -94,7 +94,8 @@ class ServerFactChannel implements AcceptedFactChannelSession {
   #acknowledgedThroughSeq: number;
   #leaseDurationMs: number;
   #usableUntil = 0;
-  #publishing = false;
+  #inFlight: Promise<void> | undefined;
+  #closing: Promise<void> | undefined;
   #closed = false;
   #failure: DurableEventStoreError | undefined;
 
@@ -157,10 +158,6 @@ class ServerFactChannel implements AcceptedFactChannelSession {
       );
     }
     await this.#append({ kind: "agent_event", publication: message });
-    this.#acknowledgedThroughSeq = Math.max(
-      this.#acknowledgedThroughSeq,
-      message.payload.event.seq,
-    );
     return acknowledgement(message);
   }
 
@@ -168,16 +165,17 @@ class ServerFactChannel implements AcceptedFactChannelSession {
     mutation: CandidatePiSessionMutationFact,
   ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
     await this.#append({ kind: "pi_session_mutation", mutation });
-    for (const event of mutation.events) {
-      this.#acknowledgedThroughSeq = Math.max(this.#acknowledgedThroughSeq, event.seq);
-    }
     return { mutationId: mutation.mutationId, accepted: true };
   }
 
-  async close(): Promise<void> {
-    if (this.#closed) return;
-    this.#closed = true;
+  close(): Promise<void> {
+    return (this.#closing ??= this.#drainAndClose());
+  }
+
+  async #drainAndClose(): Promise<void> {
     try {
+      await this.#inFlight;
+      if (this.#failure !== undefined) throw this.#failure;
       const recorded = await this.#progress.recordMany([this.eventProgress]);
       if (!recorded.has(this.#scope.connectionId)) {
         throw new ExecutionLeaseAuthorityGateError(
@@ -189,6 +187,8 @@ class ServerFactChannel implements AcceptedFactChannelSession {
       await this.#authority.close(this.#scope);
     } catch (error: unknown) {
       throw factChannelError(error);
+    } finally {
+      this.#closed = true;
     }
   }
 
@@ -209,49 +209,75 @@ class ServerFactChannel implements AcceptedFactChannelSession {
     this.#usableUntil = performance.now() + Math.max(1, durationMs - safetyMarginMs);
   }
 
-  async #append(candidate: CandidateFact): Promise<void> {
-    await this.#ensureLease();
-    this.#assertUsable();
-    if (this.#publishing) {
-      throw new DurableEventStoreError(
-        "event_conflict",
-        "FactChannel accepts one publication at a time",
-        true,
+  #append(candidate: CandidateFact): Promise<void> {
+    if (this.#closing !== undefined || this.#closed) {
+      return Promise.reject(
+        new DurableEventStoreError("stale_session_lease", "FactChannel is closing"),
       );
     }
-    const accepted = this.#authority.accept(this.#scope, candidate);
-    this.#publishing = true;
-    try {
-      const deadline = Date.now() + 30_000;
-      let lastError: unknown;
-      for (let attempt = 1; Date.now() < deadline; attempt += 1) {
-        await this.#ensureLease();
-        this.#assertUsable();
-        try {
-          const receipt = await this.#bus.append(accepted);
-          if (!receipt.durable || receipt.factId !== accepted.factId) {
-            throw new Error("AcceptedFactBus returned an unrelated receipt");
-          }
-          lastError = undefined;
-          break;
-        } catch (error: unknown) {
-          lastError = error;
-          const remaining = deadline - Date.now();
-          if (remaining <= 0) break;
-          await new Promise<void>((resolve) =>
-            setTimeout(resolve, Math.min(remaining, Math.min(1_000, 100 * attempt))),
-          );
-        }
-      }
-      if (lastError !== undefined) {
-        throw new DurableEventStoreError(
-          "event_store_invariant",
-          "AcceptedFactBus did not durably acknowledge the Fact before its deadline",
+    if (this.#inFlight !== undefined) {
+      return Promise.reject(
+        new DurableEventStoreError(
+          "event_conflict",
+          "FactChannel accepts one publication at a time",
           true,
+        ),
+      );
+    }
+    const publication = this.#publish(candidate).then(() => {
+      const events =
+        candidate.kind === "agent_event"
+          ? [candidate.publication.payload.event]
+          : candidate.mutation.events;
+      for (const event of events)
+        this.#acknowledgedThroughSeq = Math.max(this.#acknowledgedThroughSeq, event.seq);
+    });
+    this.#inFlight = publication;
+    void publication.then(
+      () => {
+        if (this.#inFlight === publication) this.#inFlight = undefined;
+      },
+      (error: unknown) => {
+        this.#failure ??= factChannelError(error);
+        if (this.#inFlight === publication) this.#inFlight = undefined;
+      },
+    );
+    return publication;
+  }
+
+  async #publish(candidate: CandidateFact): Promise<void> {
+    await this.#ensureLease();
+    this.#assertUsable();
+    const accepted = this.#authority.accept(this.#scope, candidate);
+    const deadline = Date.now() + 30_000;
+    let lastError: unknown;
+    let acknowledged = false;
+    for (let attempt = 1; Date.now() < deadline; attempt += 1) {
+      await this.#ensureLease();
+      this.#assertUsable();
+      try {
+        const receipt = await this.#bus.append(accepted);
+        if (!receipt.durable || receipt.factId !== accepted.factId) {
+          throw new Error("AcceptedFactBus returned an unrelated receipt");
+        }
+        lastError = undefined;
+        acknowledged = true;
+        break;
+      } catch (error: unknown) {
+        lastError = error;
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, Math.min(remaining, Math.min(1_000, 100 * attempt))),
         );
       }
-    } finally {
-      this.#publishing = false;
+    }
+    if (!acknowledged || lastError !== undefined) {
+      throw new DurableEventStoreError(
+        "event_store_invariant",
+        "AcceptedFactBus did not durably acknowledge the Fact before its deadline",
+        true,
+      );
     }
   }
 
@@ -285,6 +311,7 @@ export class FactChannelService {
   #renewalCycles = 0;
   #renewalFailures = 0;
   #openingChannels = 0;
+  #closing: Promise<void> | undefined;
 
   constructor(options: FactChannelServiceOptions) {
     this.#authority = options.authority;
@@ -307,6 +334,7 @@ export class FactChannelService {
     connectionId: string,
     onFailure: (error: DurableEventStoreError) => void,
   ): Promise<AcceptedFactChannelSession> {
+    if (this.#closing !== undefined) throw new Error("FactChannel service is closing");
     if (this.#channels.size + this.#openingChannels >= this.#maximumActiveChannels) {
       throw new DurableEventStoreError(
         "event_store_invariant",
@@ -331,6 +359,10 @@ export class FactChannelService {
     } finally {
       this.#openingChannels -= 1;
     }
+    if (this.#closing !== undefined) {
+      await this.#authority.close(scope);
+      throw new Error("FactChannel service closed during admission");
+    }
     this.#openedChannels += 1;
     const channel = new ServerFactChannel({
       authority: this.#authority,
@@ -349,7 +381,7 @@ export class FactChannelService {
     });
     this.#channels.set(scope.connectionId, { channel, onFailure });
     this.#scheduleRenewal();
-    let closed = false;
+    let closing: Promise<void> | undefined;
     return {
       executionLease: channel.executionLease,
       sessionId: channel.sessionId,
@@ -362,12 +394,8 @@ export class FactChannelService {
       },
       ingest: (value) => channel.ingest(value),
       mutate: (mutation) => channel.mutate(mutation),
-      close: async () => {
-        if (closed) return;
-        closed = true;
-        this.#channels.delete(scope.connectionId);
-        await channel.close();
-      },
+      close: () =>
+        (closing ??= channel.close().finally(() => this.#channels.delete(scope.connectionId))),
     };
   }
 
@@ -375,12 +403,25 @@ export class FactChannelService {
     await this.#bus.checkHealth();
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    return (this.#closing ??= this.#drain());
+  }
+
+  async #drain(): Promise<void> {
+    const results = await Promise.allSettled(
+      [...this.#channels.values()].map(({ channel }) => channel.close()),
+    );
+    this.#channels.clear();
     if (this.#renewTimer !== undefined) clearTimeout(this.#renewTimer);
     await this.#renewing?.catch(() => undefined);
-    const channels = [...this.#channels.values()];
-    this.#channels.clear();
-    await Promise.allSettled(channels.map(({ channel }) => channel.close()));
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failures.length)
+      throw new AggregateError(
+        failures.map((result) => result.reason),
+        "FactChannel drain was not confirmed",
+      );
   }
 
   statistics(): Readonly<{

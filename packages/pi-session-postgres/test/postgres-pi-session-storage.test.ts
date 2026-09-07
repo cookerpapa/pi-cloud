@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
-import type { Kysely } from "kysely";
+import { CompiledQuery, type Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   PostgresPiSessionEntryPayloadCache,
@@ -39,6 +39,67 @@ afterAll(async () => {
 });
 
 describe.sequential("PostgresPiSessionStorage", () => {
+  it("stops latest-entry recursion after the requested match instead of traversing the full ancestry", async () => {
+    const sessionId = crypto.randomUUID();
+    const storage = await PostgresPiSessionStorage.create({
+      database,
+      tenantId: TENANT_ID,
+      sessionId,
+    });
+    let leaf = "";
+    for (let index = 0; index < 32; index++) {
+      leaf = crypto.randomUUID();
+      await storage.appendEntry(
+        { id: leaf, type: "custom", customType: "state", data: index },
+        "main",
+      );
+    }
+    let branchQuery: CompiledQuery | undefined;
+    const measured = new PostgresPiSessionStorage({
+      database: database.withPlugin({
+        transformQuery({ node, queryId }) {
+          const query = database.getExecutor().compileQuery(node, queryId);
+          if (query.sql.includes("with recursive visible")) branchQuery = query;
+          return node;
+        },
+        async transformResult({ result }) {
+          return result;
+        },
+      }),
+      tenantId: TENANT_ID,
+      sessionId,
+    });
+    const latest = await measured.findEntriesOnBranch({
+      start: leaf,
+      type: "custom",
+      customType: "state",
+      limit: 1,
+      order: "newestFirst",
+    });
+    expect(latest.map((entry) => entry.id)).toEqual([leaf]);
+    expect(branchQuery).toBeDefined();
+    const explained = await database.executeQuery(
+      CompiledQuery.raw(`explain (analyze, format json) ${branchQuery!.sql}`, [
+        ...branchQuery!.parameters,
+      ]),
+    );
+    const plans: Record<string, unknown>[] = [];
+    const visit = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(visit);
+        return;
+      }
+      if (node && typeof node === "object") {
+        const item = node as Record<string, unknown>;
+        if (item["Node Type"] === "Recursive Union") plans.push(item);
+        Object.values(item).forEach(visit);
+      }
+    };
+    visit(explained.rows);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!["Actual Rows"]).toBe(1);
+  });
+
   it("persists bounded branch context and durable operation records without a JSONL download", async () => {
     const storage = await PostgresPiSessionStorage.create({
       database,

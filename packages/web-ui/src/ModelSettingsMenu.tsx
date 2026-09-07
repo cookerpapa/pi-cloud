@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_NEW_CONVERSATION_MODEL } from "@pi-cloud/protocol";
 import type {
   ModelCatalogEntryResource,
   ModelCatalogResource,
@@ -42,7 +43,9 @@ export function defaultNewConversationSettings(
 ): SessionModelSelection | null {
   const model =
     catalog.models.find(
-      (candidate) => candidate.provider === "openai-codex" && candidate.modelId === "gpt-5.6-sol",
+      (candidate) =>
+        candidate.provider === DEFAULT_NEW_CONVERSATION_MODEL.provider &&
+        candidate.modelId === DEFAULT_NEW_CONVERSATION_MODEL.modelId,
     ) ?? catalog.models.find((candidate) => candidate.provider === "openai-codex");
   if (model === undefined) return null;
   return modelSelection(
@@ -100,10 +103,7 @@ export function ModelSettingsMenu({
   const [draft, setDraft] = useState(value);
   const selectedModel = catalog.models.find((model) => sameModel(model, value));
   const providers = useMemo(
-    () =>
-      (["openai-codex", "deepseek"] as const).filter((provider) =>
-        catalog.models.some((model) => model.provider === provider),
-      ),
+    () => [...new Set(catalog.models.map((model) => model.provider))],
     [catalog.models],
   );
   const providerModels =

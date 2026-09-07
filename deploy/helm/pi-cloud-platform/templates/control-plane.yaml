@@ -66,6 +66,7 @@ spec:
             - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
             - { name: PI_CLOUD_DATABASE_NOTIFICATION_URL_FILE, value: /run/pi-cloud-secrets/database-notification-url }
             - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ join "," .Values.external.kafka.brokers | quote }} }
+            - { name: PI_CLOUD_CANONICAL_PROJECTION_ENABLED, value: {{ .Values.controlPlane.canonicalProjectionEnabled | quote }} }
             - { name: PI_CLOUD_KAFKA_REPLICAS, value: {{ .Values.external.kafka.replicas | quote }} }
             - { name: PI_CLOUD_KAFKA_PARTITIONS, value: {{ .Values.external.kafka.partitions | quote }} }
             - { name: PI_CLOUD_ACCEPTED_FACT_RETENTION_MS, value: {{ .Values.external.kafka.acceptedFactRetentionMs | quote }} }

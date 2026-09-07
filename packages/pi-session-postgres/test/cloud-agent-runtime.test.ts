@@ -398,17 +398,22 @@ describe.sequential("CloudAgentRuntime", () => {
           async execute() {
             expect(reads).toHaveBeenCalledTimes(1);
             expect(checkpoints.map(({ sourceEvent }) => sourceEvent.type)).toEqual([
+              "sampling_start",
               "message_end",
               "tool_execution_start",
             ]);
             expect(checkpoints[0]?.operation).toMatchObject({
+              kind: "append_items",
+              items: [{ kind: "append_record", record: { type: "step_attempt" } }],
+            });
+            expect(checkpoints[1]?.operation).toMatchObject({
               kind: "append_items",
               items: [
                 { kind: "append_entry", entry: { type: "message" } },
                 { kind: "append_record", record: { type: "usage" } },
               ],
             });
-            expect(checkpoints[1]?.operation).toMatchObject({
+            expect(checkpoints[2]?.operation).toMatchObject({
               kind: "append_items",
               items: [{ kind: "append_record", record: { type: "tool_started" } }],
             });
@@ -462,9 +467,11 @@ describe.sequential("CloudAgentRuntime", () => {
       message: { role: "toolResult", toolCallId: "tool-1", isError: false },
     });
     expect(checkpoints.map(({ sourceEvent }) => sourceEvent.type)).toEqual([
+      "sampling_start",
       "message_end",
       "tool_execution_start",
-      "message_end",
+      "tool_execution_end",
+      "sampling_start",
       "message_end",
     ]);
   });

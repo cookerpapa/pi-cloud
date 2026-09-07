@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0153](0153-boundary-consolidation.md) — incremental consolidation of
+   stream close, terminal delivery, Session storage and component dependencies.
 1. [ADR-0152](0152-volume-deletion-and-tool-preparation.md) — native Volume
    deletion with retained authority and visible write/edit preparation.
 1. [ADR-0151](0151-development-machine-failure-boundaries.md) — separate Tool,

@@ -64,6 +64,7 @@ import {
   type SandboxWriteFileInput,
 } from "./sandbox-provider.ts";
 import { CubePersistentCapsuleCodec } from "./cube-persistent-capsule.ts";
+import { browseCubeWorkspace } from "./cubesandbox-workspace-browser.ts";
 
 const READY_TIMEOUT_MS = 60_000;
 const TOOL_RESPONSE_LIMIT_BYTES = 8 * 1_024 * 1_024;
@@ -1865,13 +1866,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     request: ToolBrokerListWorkspaceDirectoryRequest,
   ): Promise<ToolBrokerListWorkspaceDirectoryResponse> {
     const volumeId = workspaceVolumeId(request);
-    await this.#client.ensureVolume(volumeId, "picloud-posix");
-    await this.#workspaceVolumeGateway.prepare({
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-      sessionId: request.sessionId,
-      volumeId,
-    });
     const listed = await this.#workspaceVolumeGateway.listDirectory({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
@@ -1904,13 +1898,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     const volumeId = workspaceVolumeId(request);
-    await this.#client.ensureVolume(volumeId, "picloud-posix");
-    await this.#workspaceVolumeGateway.prepare({
-      tenantId: request.tenantId,
-      workspaceId: request.workspaceId,
-      sessionId: request.sessionId,
-      volumeId,
-    });
     const file = await this.#workspaceVolumeGateway.readFile({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
@@ -1938,6 +1925,40 @@ export class CubeSandboxProvider implements SandboxProvider {
       sha256: file.sha256,
       executable: file.executable,
       sizeBytes: file.bytes.byteLength,
+    });
+  }
+
+  async listMachineWorkspaceDirectory(
+    handle: SandboxHandle,
+    request: ToolBrokerListWorkspaceDirectoryRequest,
+  ): Promise<ToolBrokerListWorkspaceDirectoryResponse> {
+    const activation = await this.#owned(handle);
+    const data = await browseCubeWorkspace(this.#client, activation.instance, request);
+    return parseToolBrokerListWorkspaceDirectoryResponse({
+      toolBrokerProtocolVersion: 1,
+      type: "workspace.directory_listed",
+      requestId: request.requestId,
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      path: request.path,
+      ...data,
+    });
+  }
+
+  async readMachineWorkspaceFile(
+    handle: SandboxHandle,
+    request: ToolBrokerReadWorkspaceFileRequest,
+  ): Promise<ToolBrokerReadWorkspaceFileResponse> {
+    const activation = await this.#owned(handle);
+    const data = await browseCubeWorkspace(this.#client, activation.instance, request);
+    return parseToolBrokerReadWorkspaceFileResponse({
+      toolBrokerProtocolVersion: 1,
+      type: "workspace.file_read",
+      requestId: request.requestId,
+      tenantId: request.tenantId,
+      workspaceId: request.workspaceId,
+      path: request.path,
+      ...data,
     });
   }
 

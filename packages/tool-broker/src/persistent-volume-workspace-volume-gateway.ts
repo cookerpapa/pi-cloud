@@ -498,6 +498,15 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
   }> {
     const identity = validatedIdentity(input);
     return this.#withVolumeLock(identity.volumeId, async () => {
+      if (input.rootPath === "" && input.path === "") {
+        const present = await lstat(this.#volumeDirectory(identity.volumeId)).catch(
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return undefined;
+            throw error;
+          },
+        );
+        if (present === undefined) return { entries: [], truncated: false };
+      }
       const directory = await this.#validatedVolume(identity);
       const target = await this.#browseTarget(directory, input.rootPath, input.path, true);
       const metadata = await lstat(target.absolute);

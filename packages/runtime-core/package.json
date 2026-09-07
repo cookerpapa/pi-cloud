@@ -19,6 +19,7 @@
     "./kafka-accepted-fact-consumer": "./src/kafka-accepted-fact-consumer.ts",
     "./kafka-canonical-projector": "./src/kafka-canonical-projector.ts",
     "./kafka-event-runtime": "./src/kafka-event-runtime.ts",
+    "./kafka-projection-runtime": "./src/kafka-projection-runtime.ts",
     "./fact-channel-pi-session-mutation-producer": "./src/fact-channel-pi-session-mutation-producer.ts",
     "./kafka-live-session-tail": "./src/kafka-live-session-tail.ts",
     "./live-tail-terminal-projection": "./src/live-tail-terminal-projection.ts",

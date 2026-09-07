@@ -7,6 +7,8 @@ import {
 import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/accepted-fact-channel";
 import { DurableEventStoreError } from "@pi-cloud/runtime-core/durable-event-store";
 import Fastify from "fastify";
+import WebSocket from "ws";
+import { once } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AcceptedFactIngestGateway,
@@ -36,6 +38,81 @@ afterEach(async () => {
 });
 
 describe("AcceptedFactIngestGateway", () => {
+  it("closes authority acquired after the Worker disconnected during admission", async () => {
+    let release!: () => void;
+    const admission = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const close = vi.fn(async () => {});
+    const channels: FactChannelServicePort = {
+      checkHealth: async () => {},
+      statistics: () => ({}),
+      open: vi.fn(async (message) => {
+        await admission;
+        return {
+          executionLease: message.payload.executionLease,
+          sessionId: message.payload.sessionId,
+          turnId: message.payload.turnId,
+          acknowledgedThroughSeq: 0,
+          leaseDurationMs: 9000,
+          ingest: async () => {
+            throw new Error("No publication expected");
+          },
+          mutate: async () => {
+            throw new Error("No mutation expected");
+          },
+          close,
+        };
+      }),
+    };
+    const server = Fastify({ logger: false });
+    await server.register(fastifyWebsocket);
+    new AcceptedFactIngestGateway({ channels, serviceToken: TOKEN }).install(server);
+    const url = await server.listen({ host: "127.0.0.1", port: 0 });
+    const socket = new WebSocket(
+      url.replace("http", "ws") + "/internal/v1/accepted-facts/channel",
+      { headers: { authorization: `Bearer ${TOKEN}` } },
+    );
+    resources.push(async () => {
+      release();
+      socket.terminate();
+      await server.close();
+    });
+    await once(socket, "open");
+    socket.send(
+      JSON.stringify({
+        protocolVersion: 1,
+        streamId: crypto.randomUUID(),
+        payload: {
+          protocolVersion: 1,
+          type: "fact.channel.open",
+          messageId: crypto.randomUUID(),
+          sentAt: new Date().toISOString(),
+          payload: {
+            executionLease: GRANT,
+            sessionId: "session",
+            turnId: "turn",
+            piSession: { id: "session", lane: "main" },
+            nextEventSeq: 1,
+          },
+        },
+      }),
+    );
+    await vi.waitFor(() => expect(channels.open).toHaveBeenCalledOnce());
+    socket.terminate();
+    await vi.waitFor(async () =>
+      expect(
+        await (
+          await fetch(`${url}/internal/v1/accepted-facts/health`, {
+            headers: { authorization: `Bearer ${TOKEN}` },
+          })
+        ).json(),
+      ).toMatchObject({ activeConnections: 0 }),
+    );
+    release();
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+  });
+
   it("authenticates and multiplexes isolated Fact Streams", async () => {
     const closedLeases: string[] = [];
     const channels: FactChannelServicePort = {

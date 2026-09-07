@@ -553,7 +553,9 @@ export class ToolBroker {
   }
 
   async checkHealth(): Promise<void> {
-    await Promise.all([this.#provider.checkHealth(), this.#stateRepository.checkHealth()]);
+    // Broker can serve persistent files even while the Cube control plane is
+    // unavailable. Cube validates execution readiness during actual creation.
+    await this.#stateRepository.checkHealth();
   }
 
   async provisionDevelopmentEnvironment(
@@ -2134,6 +2136,16 @@ export class ToolBroker {
   async listWorkspaceDirectory(
     request: ToolBrokerListWorkspaceDirectoryRequest,
   ): Promise<ToolBrokerListWorkspaceDirectoryResponse> {
+    if (request.machine !== undefined) {
+      const handle = await this.#machineBrowserHandle(request);
+      if (!this.#provider.listMachineWorkspaceDirectory)
+        throw new ToolBrokerError(
+          "workspace_browser_unavailable",
+          "Machine directory browsing is unavailable",
+          false,
+        );
+      return this.#provider.listMachineWorkspaceDirectory(handle, request);
+    }
     if (this.#provider.listWorkspaceDirectory === undefined) {
       throw new ToolBrokerError(
         "workspace_browser_unavailable",
@@ -2148,6 +2160,16 @@ export class ToolBroker {
     request: ToolBrokerReadWorkspaceFileRequest,
     signal?: AbortSignal,
   ): Promise<ToolBrokerReadWorkspaceFileResponse> {
+    if (request.machine !== undefined) {
+      const handle = await this.#machineBrowserHandle(request);
+      if (!this.#provider.readMachineWorkspaceFile)
+        throw new ToolBrokerError(
+          "workspace_browser_unavailable",
+          "Machine file browsing is unavailable",
+          false,
+        );
+      return this.#provider.readMachineWorkspaceFile(handle, request);
+    }
     if (this.#provider.readWorkspaceFile === undefined) {
       throw new ToolBrokerError(
         "workspace_browser_unavailable",
@@ -2156,6 +2178,37 @@ export class ToolBroker {
       );
     }
     return this.#provider.readWorkspaceFile(request, signal);
+  }
+
+  async #machineBrowserHandle(
+    request: ToolBrokerListWorkspaceDirectoryRequest | ToolBrokerReadWorkspaceFileRequest,
+  ): Promise<SandboxHandle> {
+    const target = request.machine!;
+    const owner = await this.#stateRepository.developmentEnvironmentOwner(
+      request.tenantId,
+      target.userId,
+      target.environmentId,
+    );
+    if (owner.status === "redirect") throw new ToolBrokerOwnerRedirectError(owner.ownerBaseUrl);
+    if (
+      owner.status !== "owned" ||
+      owner.state !== "running" ||
+      owner.reservation.workspaceId !== request.workspaceId
+    ) {
+      throw new ToolBrokerError(
+        "workspace_browser_unavailable",
+        "Machine Workspace is not running or owned by this user",
+        false,
+      );
+    }
+    const machine = this.#developmentEnvironments.get(target.environmentId);
+    if (!machine)
+      throw new ToolBrokerError(
+        "workspace_browser_unavailable",
+        "Machine ownership recovery is pending",
+        true,
+      );
+    return machine.handle;
   }
 
   async authorizeSourceCredential(

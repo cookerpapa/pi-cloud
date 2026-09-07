@@ -679,7 +679,7 @@ export class ControlPlaneController {
     const path = pathValue === undefined ? "" : pathValue;
     if (typeof path !== "string") throw new TypeError("Workspace directory path is invalid");
     const identity = this.tenantRequestContext.resolve(request);
-    return this.workspaceBrowser.directory(identity.tenantId, sessionId, path);
+    return this.workspaceBrowser.directory(identity.tenantId, sessionId, path, identity.userId);
   }
 
   @Get("sessions/:sessionId/workspace/file")
@@ -692,7 +692,13 @@ export class ControlPlaneController {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     if (typeof path !== "string") throw new TypeError("Workspace file path is required");
     const identity = this.tenantRequestContext.resolve(request);
-    const file = await this.workspaceBrowser.file(identity.tenantId, sessionId, path, 512 * 1_024);
+    const file = await this.workspaceBrowser.file(
+      identity.tenantId,
+      sessionId,
+      path,
+      512 * 1_024,
+      identity.userId,
+    );
     reply
       .header("cache-control", "private, no-store")
       .header("content-type", "application/octet-stream")

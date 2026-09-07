@@ -49,6 +49,7 @@ export interface CloudAgentExecutionAuthority extends ExecutionAuthority {
 
 export type CloudAgentRuntimeEvent =
   | AgentEvent
+  | { type: "sampling_start" }
   | {
       type: "auto_retry_start";
       attempt: number;
@@ -340,6 +341,7 @@ export class CloudAgentRuntime {
           ? await this.#options.systemPrompt()
           : this.#options.systemPrompt;
       const resultEntryIds = new Map<string, string>();
+      const completedTools = new Map<string, Extract<AgentEvent, { type: "tool_execution_end" }>>();
       let assistantEntryId: string | undefined;
       let pendingAssistantEntryId: string | undefined;
       let deferredAssistantEntryId: string | undefined;
@@ -359,15 +361,23 @@ export class CloudAgentRuntime {
         await authority.assertCurrent();
         assistantAttempt += 1;
         pendingAssistantEntryId = this.#id();
-        await session.appendRecord({
-          id: this.#id(),
-          lane,
-          type: "step_attempt",
-          runId: operationId,
-          step: "assistant",
-          attempt: assistantAttempt,
-          resultEntryId: pendingAssistantEntryId,
-        });
+        await this.#appendItems(
+          [
+            {
+              kind: "append_record",
+              record: {
+                id: this.#id(),
+                lane,
+                type: "step_attempt",
+                runId: operationId,
+                step: "assistant",
+                attempt: assistantAttempt,
+                resultEntryId: pendingAssistantEntryId,
+              },
+            },
+          ],
+          { type: "sampling_start" },
+        );
         const headers = {
           ...(this.#options.streamOptions?.headers ?? {}),
           ...(options?.headers ?? {}),
@@ -427,6 +437,10 @@ export class CloudAgentRuntime {
       let retryAttempt = 0;
       const unsubscribe = agent.subscribe(async (event) => {
         let checkpointHandledEvent = false;
+        if (event.type === "tool_execution_end" && this.#options.commitCheckpoint !== undefined) {
+          completedTools.set(event.toolCallId, event);
+          checkpointHandledEvent = true;
+        }
         if (event.type === "message_end") {
           initialPath = undefined;
           await authority.assertCurrent();
@@ -446,7 +460,11 @@ export class CloudAgentRuntime {
           const durableMessage =
             message.role !== "assistant" ||
             (message.stopReason !== "error" && message.stopReason !== "aborted");
-          if (durableMessage && (await session.getEntry(entryId)) === undefined) {
+          if (
+            durableMessage &&
+            (this.#options.commitCheckpoint !== undefined ||
+              (await session.getEntry(entryId)) === undefined)
+          ) {
             const usageRecord = this.#usageRecord(operationId, entryId, message, assistantAttempt);
             if (this.#options.commitCheckpoint === undefined) {
               await session.appendEntry({ id: entryId, type: "message", message }, lane);
@@ -466,8 +484,11 @@ export class CloudAgentRuntime {
                       : [{ kind: "append_record" as const, record: usageRecord }]),
                   ],
                 },
-                event,
+                message.role === "toolResult"
+                  ? (completedTools.get(message.toolCallId) ?? event)
+                  : event,
               );
+              if (message.role === "toolResult") completedTools.delete(message.toolCallId);
               checkpointHandledEvent = true;
             }
           }
@@ -674,9 +695,12 @@ export class CloudAgentRuntime {
     return this.#context(await this.#loadBranch());
   }
 
-  async #appendItems(items: readonly PiSessionAppendOperation[]): Promise<void> {
+  async #appendItems(
+    items: readonly PiSessionAppendOperation[],
+    sourceEvent?: CloudAgentRuntimeEvent,
+  ): Promise<void> {
     if (this.#options.commitCheckpoint !== undefined) {
-      await this.#options.commitCheckpoint({ kind: "append_items", items });
+      await this.#options.commitCheckpoint({ kind: "append_items", items }, sourceEvent);
       return;
     }
     for (const item of items) {
@@ -890,7 +914,6 @@ export class CloudAgentRuntime {
           combinedSignal(signal, authority.signal),
           onUpdate,
         );
-        await authority.assertCurrent();
         return result;
       },
     };

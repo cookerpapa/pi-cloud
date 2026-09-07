@@ -88,7 +88,9 @@ Kafka (Session-keyed, replication factor 3, acks=all)
   ├─ canonical consumer ─────────────▶ PostgreSQL Pi SessionStorage
   └─ incomplete-Turn consumer ───────▶ rebuildable live tail ─────▶ SSE
 
-Workspace browser: Browser ─▶ Control Plane ─▶ Workspace Volume Gateway ─▶ Cube Volume
+Workspace browser: Browser ─▶ Control Plane ─▶ Tool Broker
+                                                ├─ elastic: Volume Gateway ─▶ persistent bytes
+                                                └─ owned machine: envd ─────▶ selected VM directory
 Human terminal:    Browser ─▶ Control Plane ─▶ Tool Broker PTY ───────────▶ Cube
 Owned machine SSH: SSH client ─▶ SSH Gateway ─▶ Tool Broker PTY ─────────▶ Cube
 ```
@@ -102,6 +104,9 @@ PostgreSQL.
 Session projection and its receipt commit together; Workers wait on their
 shared PostgreSQL notification connection. Gateways consume Kafka partitions
 concurrently and initialize the browser from one consistent history/live snapshot.
+Canonical projection can run separately from the API/SSE process; the default
+deployment keeps them together. Tool infrastructure is activated on demand and
+does not gate model-only conversation.
 
 There are three durable authorities:
 

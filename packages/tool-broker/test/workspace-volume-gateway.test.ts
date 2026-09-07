@@ -51,6 +51,19 @@ function identity(sessionId: string) {
 }
 
 describe("PersistentVolumeWorkspaceVolumeGateway", () => {
+  it("browses an unmaterialized root without creating storage", async () => {
+    const workspaceRoot = await root();
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    await expect(
+      mover.listDirectory({ ...identity("empty"), rootPath: "", path: "" }),
+    ).resolves.toEqual({ entries: [], truncated: false });
+    expect(await readdir(workspaceRoot)).toEqual([]);
+    await expect(
+      mover.listDirectory({ ...identity("empty"), rootPath: "", path: "missing" }),
+    ).rejects.toThrow();
+    await mover.close();
+  });
+
   it("binds one durable volume to a Workspace across Sessions", () => {
     expect(identity("session-a").volumeId).toBe(identity("session-b").volumeId);
   });

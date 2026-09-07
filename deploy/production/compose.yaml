@@ -42,6 +42,7 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   PI_CLOUD_GITLAB_WORKSPACE_BASE_URL: ${PI_CLOUD_GITLAB_WORKSPACE_BASE_URL:-}
   PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE: /run/pi-cloud-secrets/cube-egress-config-token
   PI_CLOUD_KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+  PI_CLOUD_CANONICAL_PROJECTION_ENABLED: ${PI_CLOUD_CANONICAL_PROJECTION_ENABLED:-true}
   PI_CLOUD_KAFKA_PARTITIONS: ${PI_CLOUD_KAFKA_PARTITIONS:-32}
   PI_CLOUD_KAFKA_REPLICAS: "3"
   PI_CLOUD_ACCEPTED_FACT_RETENTION_MS: ${PI_CLOUD_ACCEPTED_FACT_RETENTION_MS:-7200000}
@@ -295,6 +296,46 @@ services:
     pids_limit: 128
     mem_limit: 384m
     cpus: 1.0
+    logging: *bounded-logging
+
+  canonical-projector:
+    profiles: [event-projector]
+    image: pi-cloud/control-plane:${PI_CLOUD_IMAGE_VERSION:-production}
+    restart: unless-stopped
+    command: [/app/packages/control-plane/src/projection-main.ts]
+    user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
+      PI_CLOUD_KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+      PI_CLOUD_KAFKA_PARTITIONS: ${PI_CLOUD_KAFKA_PARTITIONS:-32}
+      PI_CLOUD_KAFKA_REPLICAS: "3"
+      PI_CLOUD_ACCEPTED_FACT_RETENTION_MS: ${PI_CLOUD_ACCEPTED_FACT_RETENTION_MS:-7200000}
+      PI_CLOUD_PROJECTION_DATABASE_CONNECTIONS: ${PI_CLOUD_PROJECTION_DATABASE_CONNECTIONS:-8}
+    volumes:
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/database-url
+        target: /run/pi-cloud-secrets/database-url
+        read_only: true
+    networks: [database, event-log, observability]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    <<: *application-security
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777,uid=${PI_CLOUD_APPLICATION_UID:-1000},gid=${PI_CLOUD_APPLICATION_GID:-1000}
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.5
+    stop_grace_period: 30s
     logging: *bounded-logging
 
   control-plane:
@@ -581,8 +622,6 @@ services:
       control-plane:
         condition: service_healthy
       cli-proxy-api:
-        condition: service_healthy
-      tool-broker:
         condition: service_healthy
       provider-egress-relay:
         condition: service_healthy

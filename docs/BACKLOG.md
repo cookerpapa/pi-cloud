@@ -5,6 +5,12 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] ADR-0153.1–2: drain Fact publications before close; bounded transaction-free
+      terminal Outbox publication, idempotent retries and consumer failure signals.
+- [x] ADR-0153.3: co-commit sampling start and Tool completion with native records.
+- [x] ADR-0153.4: compact idempotency receipts and bounded latest-state/branch reads.
+- [x] ADR-0153.5–6: optional canonical projection role and on-demand Tool dependencies.
+- [x] ADR-0153.7–8: direct Volume/full-VM browsing and one reviewed model catalog.
 - [x] Separate persistent machine, Tool and Preview failure boundaries
       (ADR-0151), preserve recovery capsules and first errors, and verify Guest
       execution on adoption; exercise real Cube/service restart acceptance.

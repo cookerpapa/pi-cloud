@@ -279,11 +279,20 @@ export const ToolSandboxStopResponseSchema = Type.Object(
 );
 
 const WorkspaceBrowserPathSchema = Type.String({ minLength: 0, maxLength: 512 });
+const MachineBrowserTargetSchema = Type.Object(
+  {
+    environmentId: UuidSchema,
+    userId: UuidSchema,
+    directory: Type.String({ minLength: 1, maxLength: 4096, pattern: "^/" }),
+  },
+  { additionalProperties: false },
+);
 
 export const ToolBrokerListWorkspaceDirectoryRequestSchema = Type.Object(
   {
     ...ToolSandboxEnvelope,
     type: Type.Literal("workspace.list_directory"),
+    machine: Type.Optional(MachineBrowserTargetSchema),
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
     workspaceId: OpaqueIdSchema,
@@ -328,6 +337,7 @@ export const ToolBrokerReadWorkspaceFileRequestSchema = Type.Object(
   {
     ...ToolSandboxEnvelope,
     type: Type.Literal("workspace.read_file"),
+    machine: Type.Optional(MachineBrowserTargetSchema),
     requestId: UuidSchema,
     tenantId: OpaqueIdSchema,
     workspaceId: OpaqueIdSchema,

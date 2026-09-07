@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { REVIEWED_MODELS } from "@pi-cloud/protocol";
 import type {
   CubeProxyConfigurationResource,
   ModelConfigurationResource,
@@ -10,13 +11,12 @@ import { errorMessage } from "./ui-errors.ts";
 import { useI18n } from "./i18n.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";
 
-const MODEL_OPTIONS: readonly (ProviderModelSelection & { label: string })[] = [
-  { provider: "openai-codex", modelId: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
-  { provider: "openai-codex", modelId: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
-  { provider: "openai-codex", modelId: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
-  { provider: "deepseek", modelId: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
-  { provider: "deepseek", modelId: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
-];
+const MODEL_OPTIONS: readonly (ProviderModelSelection & { label: string })[] = REVIEWED_MODELS.map(
+  (model) =>
+    model.provider === "deepseek"
+      ? { provider: model.provider, modelId: model.modelId, label: model.displayName }
+      : { provider: model.provider, modelId: model.modelId, label: model.displayName },
+);
 
 function selectionKey(selection: ProviderModelSelection): string {
   return `${selection.provider}:${selection.modelId}`;
@@ -54,7 +54,7 @@ export function AdminPage({
   );
   const [selectedModel, setSelectedModel] = useState<ProviderModelSelection>({
     provider: "openai-codex",
-    modelId: "gpt-5.6-terra",
+    modelId: REVIEWED_MODELS[0].modelId,
   });
   const [cubeProxyConfiguration, setCubeProxyConfiguration] =
     useState<CubeProxyConfigurationResource | null>(null);

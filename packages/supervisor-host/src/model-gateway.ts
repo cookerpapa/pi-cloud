@@ -1,3 +1,4 @@
+import { reviewedModel, type ReviewedModel } from "@pi-cloud/protocol";
 import {
   MODEL_SAMPLING_ATTEMPT_HEADER,
   MODEL_STEP_SEQUENCE_HEADER,
@@ -30,32 +31,16 @@ const PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS = 3;
 const PROVIDER_GATEWAY_RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
 
 type SupportedModel =
-  | Readonly<{
-      provider: "deepseek";
-      modelId: "deepseek-v4-flash" | "deepseek-v4-pro";
-      api: "openai-responses";
+  | (Extract<ReviewedModel, { provider: "deepseek" }> & {
       requestPath: typeof PROVIDER_RESPONSES_PATH;
       providerPath: typeof PROVIDER_RESPONSES_PATH;
       baseUrlPath: "/v1";
-      contextWindow: number;
-      autoCompactTokenLimit: number;
-      maxTokens: number;
-      inputModalities: readonly ["text"];
-      hostedTools: readonly ["web_search"];
-    }>
-  | Readonly<{
-      provider: "openai-codex";
-      modelId: "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6-sol";
-      api: "openai-codex-responses";
+    })
+  | (Extract<ReviewedModel, { provider: "openai-codex" }> & {
       requestPath: typeof CODEX_RESPONSES_PATH;
       providerPath: typeof PROVIDER_RESPONSES_PATH;
       baseUrlPath: "";
-      contextWindow: number;
-      autoCompactTokenLimit: number;
-      maxTokens: number;
-      inputModalities: readonly ["text", "image"];
-      hostedTools: readonly ["web_search"];
-    }>;
+    });
 
 type ActiveCapabilityFields = {
   tokenDigest: string;
@@ -320,43 +305,21 @@ async function retryDelay(attempt: number, signal: AbortSignal): Promise<void> {
 }
 
 function supportedModel(provider: string, modelId: string): SupportedModel | undefined {
-  if (
-    provider === "deepseek" &&
-    (modelId === "deepseek-v4-flash" || modelId === "deepseek-v4-pro")
-  ) {
-    return {
-      provider,
-      modelId,
-      api: "openai-responses",
-      requestPath: PROVIDER_RESPONSES_PATH,
-      providerPath: PROVIDER_RESPONSES_PATH,
-      baseUrlPath: "/v1",
-      contextWindow: 128_000,
-      autoCompactTokenLimit: 111_616,
-      maxTokens: 8_192,
-      inputModalities: ["text"],
-      hostedTools: ["web_search"],
-    };
-  }
-  if (
-    provider === "openai-codex" &&
-    (modelId === "gpt-5.6-luna" || modelId === "gpt-5.6-terra" || modelId === "gpt-5.6-sol")
-  ) {
-    return {
-      provider,
-      modelId,
-      api: "openai-codex-responses",
-      requestPath: CODEX_RESPONSES_PATH,
-      providerPath: PROVIDER_RESPONSES_PATH,
-      baseUrlPath: "",
-      contextWindow: 1_000_000,
-      autoCompactTokenLimit: 900_000,
-      maxTokens: 65_536,
-      inputModalities: ["text", "image"],
-      hostedTools: ["web_search"],
-    };
-  }
-  return undefined;
+  const model = reviewedModel(provider, modelId);
+  if (!model) return undefined;
+  return model.provider === "deepseek"
+    ? {
+        ...model,
+        requestPath: PROVIDER_RESPONSES_PATH,
+        providerPath: PROVIDER_RESPONSES_PATH,
+        baseUrlPath: "/v1",
+      }
+    : {
+        ...model,
+        requestPath: CODEX_RESPONSES_PATH,
+        providerPath: PROVIDER_RESPONSES_PATH,
+        baseUrlPath: "",
+      };
 }
 
 const FORWARDED_REQUEST_HEADERS = new Set([

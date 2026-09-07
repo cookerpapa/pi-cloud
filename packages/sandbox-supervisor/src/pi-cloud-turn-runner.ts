@@ -557,6 +557,44 @@ export class PiCloudTurnRunner {
           return parsed;
         };
 
+        let pendingSamplingStart: PiCloudEvent | undefined;
+        const preparePublicEvent = async (publicEvent: PiCloudEvent): Promise<PiCloudEvent> => {
+          if (
+            publicEvent.type === "tool.completed" &&
+            this.#options.persistToolOutputArtifact !== undefined
+          ) {
+            const artifactPath = resolve(
+              toolOutputDirectory,
+              `${createHash("sha256").update(publicEvent.payload.toolCallId, "utf8").digest("hex")}.output`,
+            );
+            const metadata = await lstat(artifactPath).catch((error: unknown) =>
+              isRecord(error) && error.code === "ENOENT" ? undefined : Promise.reject(error),
+            );
+            if (metadata !== undefined) {
+              if (
+                !metadata.isFile() ||
+                metadata.isSymbolicLink() ||
+                metadata.size > MAX_TOOL_OUTPUT_BYTES
+              ) {
+                throw new PiTurnError(
+                  "tool_output_artifact_invalid",
+                  "Trusted Tool output artifact was invalid",
+                  false,
+                );
+              }
+              const artifact = await this.#options.persistToolOutputArtifact({
+                toolCallId: publicEvent.payload.toolCallId,
+                bytes: await readFile(artifactPath),
+              });
+              publicEvent = {
+                ...publicEvent,
+                payload: { ...publicEvent.payload, outputArtifact: artifact },
+              };
+            }
+          }
+          return publicEvent;
+        };
+
         const publishMapped = async (
           source: unknown,
         ): Promise<ReturnType<PiAgentEventAdapter["adapt"]>> => {
@@ -583,41 +621,7 @@ export class PiCloudTurnRunner {
             samplingSteps.cancelScheduledRetry();
           }
           if (outcome.kind === "mapped") {
-            let publicEvent = outcome.event;
-            if (
-              publicEvent.type === "tool.completed" &&
-              this.#options.persistToolOutputArtifact !== undefined
-            ) {
-              const artifactPath = resolve(
-                toolOutputDirectory,
-                `${createHash("sha256").update(publicEvent.payload.toolCallId, "utf8").digest("hex")}.output`,
-              );
-              const metadata = await lstat(artifactPath).catch((error: unknown) =>
-                isRecord(error) && error.code === "ENOENT" ? undefined : Promise.reject(error),
-              );
-              if (metadata !== undefined) {
-                if (
-                  !metadata.isFile() ||
-                  metadata.isSymbolicLink() ||
-                  metadata.size > MAX_TOOL_OUTPUT_BYTES
-                ) {
-                  throw new PiTurnError(
-                    "tool_output_artifact_invalid",
-                    "Trusted Tool output artifact was invalid",
-                    false,
-                  );
-                }
-                const artifact = await this.#options.persistToolOutputArtifact({
-                  toolCallId: publicEvent.payload.toolCallId,
-                  bytes: await readFile(artifactPath),
-                });
-                publicEvent = {
-                  ...publicEvent,
-                  payload: { ...publicEvent.payload, outputArtifact: artifact },
-                };
-              }
-            }
-            await publishEvent(eventMessage(publicEvent));
+            await publishEvent(eventMessage(await preparePublicEvent(outcome.event)));
           }
           return outcome;
         };
@@ -695,18 +699,16 @@ export class PiCloudTurnRunner {
           captureSamplingStep: async (createFresh, captureOptions) => {
             const captured = await samplingSteps.captureAsync(createFresh);
             if (captureOptions?.publishEvent !== false) {
-              eventChain = eventChain.then(() =>
-                publishEvent(
-                  eventMessage(
-                    adapter.samplingStarted({
-                      stepSequence: captured.step.context.sequence,
-                      stepSha256: captured.step.sha256,
-                      samplingAttempt: captured.samplingAttempt,
-                    }),
-                  ),
-                ),
-              );
-              await eventChain;
+              const started = adapter.samplingStarted({
+                stepSequence: captured.step.context.sequence,
+                stepSha256: captured.step.sha256,
+                samplingAttempt: captured.samplingAttempt,
+              });
+              if (sessionHandle.mutationPublisher !== undefined) pendingSamplingStart = started;
+              else {
+                eventChain = eventChain.then(() => publishEvent(eventMessage(started)));
+                await eventChain;
+              }
               if (fatalError !== undefined) throw fatalError;
             }
             return captured;
@@ -849,6 +851,18 @@ export class PiCloudTurnRunner {
                     await sessionHandle.mutationPublisher!.mutate(operation);
                     return;
                   }
+                  if (sourceEvent.type === "sampling_start") {
+                    if (pendingSamplingStart === undefined)
+                      throw new PiTurnError(
+                        "pi_protocol_error",
+                        "Sampling Record is missing its Cloud Step boundary",
+                        false,
+                      );
+                    const started = pendingSamplingStart;
+                    pendingSamplingStart = undefined;
+                    await sessionHandle.mutationPublisher!.mutate(operation, [started]);
+                    return;
+                  }
                   const outcome = adapter.adapt(this.#adapterEvent(sourceEvent));
                   if (outcome.kind === "invalid") {
                     throw new PiTurnError("pi_protocol_error", outcome.reason, false);
@@ -862,7 +876,7 @@ export class PiCloudTurnRunner {
                   }
                   await sessionHandle.mutationPublisher!.mutate(
                     operation,
-                    outcome.kind === "mapped" ? [outcome.event] : [],
+                    outcome.kind === "mapped" ? [await preparePublicEvent(outcome.event)] : [],
                   );
                   observeRuntimeEvent(sourceEvent);
                 },

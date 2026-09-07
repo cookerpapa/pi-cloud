@@ -3,6 +3,7 @@ import type {
   PiSessionMutationOperation,
   PiSessionMutationPublisher,
 } from "@pi-cloud/pi-session-postgres";
+import { restorePiMutationResult } from "@pi-cloud/pi-session-postgres";
 import type { PiCloudEvent } from "@pi-cloud/protocol";
 import { SessionError } from "@earendil-works/pi-agent-core";
 import type { Kysely } from "kysely";
@@ -20,6 +21,7 @@ export type PiSessionMutationScope = Readonly<{
 
 type PendingProjection = {
   scope: PiSessionMutationScope;
+  operation: PiSessionMutationOperation;
   deadline: number;
   resolve(result: unknown): void;
   reject(error: unknown): void;
@@ -83,7 +85,13 @@ export class FactChannelPiSessionMutationProducer {
       occurredAt: new Date().toISOString(),
     };
     const result = new Promise<unknown>((resolve, reject) => {
-      this.#pending.set(mutationId, { scope, deadline: Date.now() + 120_000, resolve, reject });
+      this.#pending.set(mutationId, {
+        scope,
+        operation,
+        deadline: Date.now() + 120_000,
+        resolve,
+        reject,
+      });
     });
     // Notifications may precede the transport ACK. Register first, but do not
     // query a fresh ID until publication or a committed notification.
@@ -159,8 +167,13 @@ export class FactChannelPiSessionMutationProducer {
           )
             continue;
           this.#pending.delete(row.mutation_id);
-          if (row.state === "completed") pending.resolve(structuredClone(row.result));
-          else
+          if (row.state === "completed") {
+            try {
+              pending.resolve(restorePiMutationResult(pending.operation, row.result));
+            } catch (error) {
+              pending.reject(error);
+            }
+          } else
             pending.reject(
               new SessionError(
                 "storage",

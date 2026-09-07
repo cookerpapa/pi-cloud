@@ -494,12 +494,9 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       signal.addEventListener("abort", abortSandbox, { once: true });
       if (signal.aborted) abortSandbox();
 
-      if (!toolFree && command.payload.executionMode === "development_environment") {
-        // The machine already exists. Reserve only this Run's Tool binding so
-        // World State can attest physical continuity before model sampling;
-        // elastic Cube allocation remains lazy.
-        await ensureActivation();
-      }
+      // Both execution modes bind on the first actual Sandbox Tool. A pure
+      // chat must not reserve machine authority or depend on Broker uptime.
+      // recordActive receives the actual binding before the next clean Step.
 
       if (usesEmbeddedFake) {
         fakeModel = new FakeModelServer({ defaultScenario: scenario });
@@ -855,6 +852,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               observeEvent: (event) => {
                 if (
                   event.type !== "compaction_start" &&
+                  event.type !== "sampling_start" &&
                   event.type !== "compaction_end" &&
                   event.type !== "auto_retry_start" &&
                   event.type !== "auto_retry_end"

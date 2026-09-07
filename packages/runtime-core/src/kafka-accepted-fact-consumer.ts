@@ -7,6 +7,7 @@ import {
 import type { AcceptedFact } from "./accepted-fact.ts";
 import { parseKafkaAcceptedFact } from "./kafka-accepted-fact.ts";
 import { consumePartitioned } from "./partitioned-consumption.ts";
+import { operationalLog } from "@pi-cloud/observability";
 
 export type KafkaAcceptedFactRecord = Readonly<{
   fact: AcceptedFact;
@@ -32,6 +33,7 @@ export class KafkaAcceptedFactConsumer {
   #failure: unknown;
   #closing = false;
   readonly #processedOffsets = new Map<number, bigint>();
+  readonly #stalledPartitions = new Set<number>();
 
   constructor(options: {
     brokers: readonly string[];
@@ -81,6 +83,7 @@ export class KafkaAcceptedFactConsumer {
   }
 
   async #openAndConsume(): Promise<void> {
+    this.#stalledPartitions.clear();
     this.#stream = await this.#consumer.consume({
       topics: [this.#topic],
       mode: this.#mode,
@@ -117,7 +120,12 @@ export class KafkaAcceptedFactConsumer {
   }
 
   checkHealth(): void {
-    if (this.#run === undefined || this.#failure !== undefined || !this.#consumer.isActive()) {
+    if (
+      this.#run === undefined ||
+      this.#failure !== undefined ||
+      this.#stalledPartitions.size > 0 ||
+      !this.#consumer.isActive()
+    ) {
       throw new Error("Kafka AcceptedFact consumer is unhealthy");
     }
   }
@@ -174,6 +182,13 @@ export class KafkaAcceptedFactConsumer {
         while (!this.#closing && !generation.signal.aborted) {
           try {
             await this.#handle(message);
+            if (this.#stalledPartitions.delete(message.partition))
+              operationalLog({
+                service: "pi-cloud-kafka-consumer",
+                level: "info",
+                event: "partition.recovered",
+                attributes: { topic: this.#topic, partition: message.partition },
+              });
             if (this.#closing || generation.signal.aborted) return;
             this.#processedOffsets.set(message.partition, message.offset + 1n);
             if (this.#commitMessages) {
@@ -186,6 +201,14 @@ export class KafkaAcceptedFactConsumer {
             }
             break;
           } catch {
+            if (!this.#stalledPartitions.has(message.partition))
+              operationalLog({
+                service: "pi-cloud-kafka-consumer",
+                level: "error",
+                event: "partition.stalled",
+                attributes: { topic: this.#topic, partition: message.partition },
+              });
+            this.#stalledPartitions.add(message.partition);
             await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
             delayMs = Math.min(1_000, delayMs * 2);
           }

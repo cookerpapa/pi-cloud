@@ -1,4 +1,5 @@
 import type { Database } from "@pi-cloud/database";
+import { reviewedModel } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
 import type { ProductionBootstrapConfig } from "./production-config.ts";
 import { tenantApiTokenDigest } from "./tenant-identity.ts";
@@ -180,12 +181,7 @@ export async function bootstrapProductionDatabase(
       profile.model_id === "pi-cloud-fake" &&
       credentialVersion === 1;
     const ownerConfiguredProviderProfile =
-      ((profile.provider === "deepseek" &&
-        (profile.model_id === "deepseek-v4-flash" || profile.model_id === "deepseek-v4-pro")) ||
-        (profile.provider === "openai-codex" &&
-          (profile.model_id === "gpt-5.6-luna" ||
-            profile.model_id === "gpt-5.6-terra" ||
-            profile.model_id === "gpt-5.6-sol"))) &&
+      reviewedModel(profile.provider, profile.model_id) !== undefined &&
       Number.isSafeInteger(credentialVersion) &&
       credentialVersion >= 2;
     const expectedThinkingLevels = ownerConfiguredProviderProfile

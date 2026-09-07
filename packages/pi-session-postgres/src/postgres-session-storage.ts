@@ -306,7 +306,11 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
         .updateTable("pi_session_log")
         .set({
           mutation_id: this.#projectedMutationId,
-          mutation_result: result as unknown as Record<string, unknown>,
+          mutation_result: {
+            format: "log-result-v1",
+            shape: "items",
+            sequences: results.map((item) => item.seq),
+          },
         })
         .where("tenant_id", "=", this.#tenantId)
         .where("session_id", "=", this.#sessionId)
@@ -356,6 +360,11 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
     const oldestFirst = query.order === "oldestFirst";
     const direction = query.order === "oldestFirst" ? sql.raw("asc") : sql.raw("desc");
     const cursorOperator = query.order === "oldestFirst" ? sql.raw(">") : sql.raw("<");
+    const matches = (alias: string) => sql<number>`case when
+      (${query.type ?? null}::text is null or ${sql.ref(`${alias}.type`)} = ${query.type ?? null}::text)
+      and (${query.customType ?? null}::text is null or ${sql.ref(`${alias}.custom_type`)} = ${query.customType ?? null}::text)
+      and (${query.cursor?.afterSeq ?? null}::bigint is null or ${sql.ref(`${alias}.seq`)} ${cursorOperator} ${query.cursor?.afterSeq ?? null}::bigint)
+      then 1::bigint else 0::bigint end`;
     const result = await sql<{
       payload: Record<string, unknown> | null;
       seq: string | null;
@@ -368,7 +377,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
       cycle_detected: boolean;
       parent_missing: boolean;
     }>`
-      with recursive visible as (
+      with recursive visible as not materialized (
         select null::jsonb as payload,
                seq,
                parent_id,
@@ -404,7 +413,8 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
                custom_type,
                source_session_id,
                source_entry_id,
-               array[id] as path
+               array[id] as path,
+               ${matches("visible")} as matches
           from visible
          where id = ${query.start}::text
         union all
@@ -417,11 +427,13 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
                parent.custom_type,
                parent.source_session_id,
                parent.source_entry_id,
-               branch.path || parent.id
+               branch.path || parent.id,
+               branch.matches + ${matches("parent")}
           from visible parent
           join branch
             on parent.id = branch.parent_id
          where not parent.id = any(branch.path)
+           and (${oldestFirst} or branch.matches < ${maximum}::bigint)
            and (${oldestFirst}
                 or ((${query.stopAtId ?? null}::text is null or branch.id <> ${query.stopAtId ?? null}::text)
                     and (${query.stopAtType ?? null}::text is null or branch.type <> ${query.stopAtType ?? null}::text)))
@@ -860,7 +872,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
             .where("mutation_id", "=", this.#projectedMutationId)
             .executeTakeFirst();
           if (projected !== undefined) {
-            return payload<T>(projected.mutation_result);
+            return this.#readMutationResult<T>(transaction, projected.mutation_result);
           }
         }
         return effect(transaction);
@@ -990,9 +1002,41 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
         kind,
         payload: value,
         mutation_id: mutationId ?? null,
-        mutation_result: mutationResult as Record<string, unknown> | null,
+        mutation_result:
+          mutationId == null || mutationResult === null
+            ? null
+            : { format: "log-result-v1", shape: "one", sequences: [seq] },
       })
       .executeTakeFirst();
+  }
+
+  async #readMutationResult<T>(transaction: Transaction<Database>, value: unknown): Promise<T> {
+    if (value === null) return null as T;
+    const reference = value as { format?: string; shape?: string; sequences?: unknown[] };
+    if (
+      reference.format !== "log-result-v1" ||
+      !Array.isArray(reference.sequences) ||
+      reference.sequences.length === 0 ||
+      (reference.shape !== "one" && reference.shape !== "items") ||
+      reference.sequences.some((seq) => !Number.isSafeInteger(seq))
+    ) {
+      throw new SessionError("storage", "Pi mutation log result reference was invalid");
+    }
+    const rows = await transaction
+      .selectFrom("pi_session_log")
+      .select(["seq", "payload", "kind"])
+      .where("tenant_id", "=", this.#tenantId)
+      .where("session_id", "=", this.#sessionId)
+      .where("seq", "in", reference.sequences.map(String))
+      .execute();
+    const bySeq = new Map(rows.map((row) => [Number(row.seq), row]));
+    const items = reference.sequences.map((seq) => {
+      const row = bySeq.get(seq as number);
+      if (row === undefined || (row.kind !== "entry" && row.kind !== "record"))
+        throw new SessionError("storage", "Pi mutation result log item was missing");
+      return payload(row.kind === "entry" ? row.payload.entry : row.payload.record);
+    });
+    return (reference.shape === "items" ? { items } : items[0]) as T;
   }
 
   #publish(operation: PiSessionMutationOperation): Promise<unknown> {

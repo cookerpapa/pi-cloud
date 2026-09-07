@@ -155,7 +155,7 @@ describe("PiCloudTurnRunner integration", () => {
     }
   });
 
-  it("prebinds an existing development machine without reporting a renewed lease as a reset", async () => {
+  it("keeps owned-machine chat independent of Tool Broker without reporting a reset", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-cloud-development-continuity-"));
     const developmentCommand: ExecuteTurnCommandMessage = {
       ...command,
@@ -224,9 +224,9 @@ describe("PiCloudTurnRunner integration", () => {
       await expect(
         runner.run(developmentCommand, () => undefined, new AbortController().signal),
       ).resolves.toMatchObject({ stopReason: "stop" });
-      expect(create).toHaveBeenCalledTimes(1);
-      expect(capture).toHaveBeenCalledTimes(1);
-      expect(release).toHaveBeenCalledTimes(1);
+      expect(create).not.toHaveBeenCalled();
+      expect(capture).not.toHaveBeenCalled();
+      expect(release).not.toHaveBeenCalled();
       expect(
         (await session.findEntriesOnBranch()).filter(
           (entry) => entry.type === "custom" && entry.customType === PI_SANDBOX_RESET_CUSTOM_TYPE,
@@ -423,13 +423,15 @@ describe("PiCloudTurnRunner integration", () => {
             ),
           ).toBe(true);
         }
-        expect(create).toHaveBeenCalledTimes(1);
+        expect(create).toHaveBeenCalledTimes(toolFails ? 1 : 0);
         expect(capture).not.toHaveBeenCalled();
-        expect(release).toHaveBeenCalledWith(
-          "99999999-9999-4999-8999-999999999998",
-          expect.anything(),
-          { kind: "detach" },
-        );
+        if (toolFails)
+          expect(release).toHaveBeenCalledWith(
+            "99999999-9999-4999-8999-999999999998",
+            expect.anything(),
+            { kind: "detach" },
+          );
+        else expect(release).not.toHaveBeenCalled();
         expect(stop).not.toHaveBeenCalled();
         expect(modelLeaseRelease).toHaveBeenCalledTimes(1);
         expect(checkpointEvents.map((event) => event.type)).toContain("tool.started");

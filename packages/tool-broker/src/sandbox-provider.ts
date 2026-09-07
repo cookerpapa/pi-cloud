@@ -228,6 +228,14 @@ export interface SandboxProvider {
   detachPersistent?(handle: SandboxHandle): Promise<void>;
   /** Browse the tenant-owned guest filesystem without restoring a Session settlement. */
   listDirectory?(handle: SandboxHandle, path: string): Promise<SandboxDirectoryListing>;
+  listMachineWorkspaceDirectory?(
+    handle: SandboxHandle,
+    request: ToolBrokerListWorkspaceDirectoryRequest,
+  ): Promise<ToolBrokerListWorkspaceDirectoryResponse>;
+  readMachineWorkspaceFile?(
+    handle: SandboxHandle,
+    request: ToolBrokerReadWorkspaceFileRequest,
+  ): Promise<ToolBrokerReadWorkspaceFileResponse>;
   /** Create one user-owned directory and return its parent listing. */
   createDirectory?(
     handle: SandboxHandle,

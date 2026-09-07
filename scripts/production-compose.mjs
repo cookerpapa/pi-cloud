@@ -47,7 +47,7 @@ if (piWorkerDeployment !== "compose" && piWorkerDeployment !== "kubernetes") {
 if (new Set(["config", "run", "up"]).has(command)) {
   validateProductionRuntimeEnvironment({ ...runtimeEnvironment, ...process.env });
 }
-const supportedOptionalProfiles = new Set(["observability"]);
+const supportedOptionalProfiles = new Set(["observability", "event-projector"]);
 const requestedOptionalProfiles = (
   process.env.PI_CLOUD_PRODUCTION_PROFILES ??
   runtimeEnvironment.PI_CLOUD_PRODUCTION_PROFILES ??

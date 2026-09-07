@@ -661,6 +661,10 @@ export class ToolBrokerServer {
           }),
         );
       } catch (error: unknown) {
+        if (error instanceof ToolBrokerOwnerRedirectError) {
+          await reply.code(307).header("location", error.ownerBaseUrl).send();
+          return;
+        }
         await this.#failure(reply, error);
       }
     });

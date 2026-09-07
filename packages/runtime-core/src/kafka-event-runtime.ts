@@ -23,6 +23,7 @@ export type KafkaEventRuntimeOptions = Readonly<{
   retentionMs: number;
   factChannelLeaseMs?: number;
   factChannelMaximumActive?: number;
+  canonicalProjection?: boolean;
 }>;
 
 export class KafkaEventRuntime {
@@ -31,8 +32,8 @@ export class KafkaEventRuntime {
   readonly eventHub;
   readonly terminalTurnProjectionSource: LiveTailTerminalTurnProjectionSource;
   readonly #bus: KafkaAcceptedFactBus;
-  readonly #canonical: KafkaCanonicalProjector;
-  readonly #terminalRelay: AcceptedFactTerminalOutboxRelay;
+  readonly #canonical: KafkaCanonicalProjector | undefined;
+  readonly #terminalRelay: AcceptedFactTerminalOutboxRelay | undefined;
   #started = false;
 
   constructor(options: KafkaEventRuntimeOptions) {
@@ -53,12 +54,15 @@ export class KafkaEventRuntime {
       instanceId: options.instanceId,
     });
     this.eventHub = this.eventStore.eventHub;
-    this.#canonical = new KafkaCanonicalProjector({
-      database: options.database,
-      brokers: options.brokers,
-      topic,
-      clientId: options.instanceId,
-    });
+    this.#canonical =
+      options.canonicalProjection === false
+        ? undefined
+        : new KafkaCanonicalProjector({
+            database: options.database,
+            brokers: options.brokers,
+            topic,
+            clientId: options.instanceId,
+          });
     this.factChannels = new FactChannelService({
       authority: new PostgresExecutionLeaseAuthorityGate({
         database: options.database,
@@ -80,10 +84,13 @@ export class KafkaEventRuntime {
       database: options.database,
       events: this.eventStore,
     });
-    this.#terminalRelay = new AcceptedFactTerminalOutboxRelay({
-      database: options.database,
-      bus: this.#bus,
-    });
+    this.#terminalRelay =
+      options.canonicalProjection === false
+        ? undefined
+        : new AcceptedFactTerminalOutboxRelay({
+            database: options.database,
+            bus: this.#bus,
+          });
   }
 
   async start(): Promise<void> {
@@ -92,8 +99,8 @@ export class KafkaEventRuntime {
     try {
       await this.#bus.start();
       await this.eventStore.start();
-      await this.#canonical.start();
-      this.#terminalRelay.start();
+      await this.#canonical?.start();
+      this.#terminalRelay?.start();
     } catch (error: unknown) {
       await this.close();
       throw error;
@@ -104,9 +111,8 @@ export class KafkaEventRuntime {
     if (!this.#started) throw new Error("Kafka event runtime is not running");
     await this.#bus.checkHealth();
     this.eventStore.checkHealth();
-    this.#canonical.checkHealth();
-    this.#terminalRelay.checkHealth();
-    await this.factChannels.checkHealth();
+    this.#canonical?.checkHealth();
+    this.#terminalRelay?.checkHealth();
   }
 
   statistics() {
@@ -118,8 +124,8 @@ export class KafkaEventRuntime {
 
   async close(): Promise<void> {
     this.#started = false;
-    await this.#terminalRelay.close().catch(() => undefined);
-    await this.#canonical.close().catch(() => undefined);
+    await this.#terminalRelay?.close().catch(() => undefined);
+    await this.#canonical?.close().catch(() => undefined);
     await this.eventStore.close().catch(() => undefined);
     await this.factChannels.close().catch(() => undefined);
     await this.#bus.close().catch(() => undefined);

@@ -22,8 +22,11 @@ CLIProxyAPI is the only model-supply authority. Its private Volume contains
 ChatGPT OAuth records and API keys; its native page manages quota, cooldown and
 account health. PiCloud stores only the selected provider/model route.
 
-Users choose a conversation's initial model in the new-conversation dialog and
-may change its default from the conversation header while no Run is active.
+New conversations use the reviewed default GPT model, medium reasoning and Fast
+off. Users change this through the cascading composer menu while no Run is active.
+Reviewed routes and capabilities have one code-owned source in
+`packages/protocol/src/model-catalog.ts`; a new Provider still needs its adapter
+and capability tests, not just a catalog entry.
 Every accepted Turn freezes its own provider/model snapshot; changing the
 platform default or Session default never changes historical or in-flight Runs.
 
@@ -119,6 +122,8 @@ heartbeat must leave more than one missed interval before lease expiry.
 | `PI_CLOUD_ACCEPTED_FACT_RETENTION_MS` | `7200000` | Kafka AcceptedFact retention (2 hours) |
 | `PI_CLOUD_KAFKA_PARTITIONS` | `32` | Session-keyed AcceptedFact partitions |
 | `PI_CLOUD_KAFKA_REPLICAS` | `3` | Kafka Topic replication factor |
+| `PI_CLOUD_CANONICAL_PROJECTION_ENABLED` | `true` | run canonical projection and terminal relay inside Control Plane |
+| `PI_CLOUD_PROJECTION_DATABASE_CONNECTIONS` | `8` | connection budget for an optional standalone canonical projector |
 | `PI_CLOUD_FACT_CHANNEL_LEASE_MS` | `9000` | short PostgreSQL ownership lease for one active logical Fact Stream |
 | `PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE` | `128` | bounded active logical Fact Streams per Control Plane replica |
 | `PI_CLOUD_PREVIEW_ORIGIN_BASE_URL` | `http://preview.localhost:8080` | isolated application Preview base domain |
@@ -131,6 +136,18 @@ heartbeat must leave more than one missed interval before lease expiry.
 | `PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE` | `16` | deletions considered per scan |
 | `PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS` | empty | up to eight comma-separated RFC1918 `/24`–`/32` CIDRs that Cube guests may reach directly |
 | `PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS` | `120000` | Cube lifecycle/control request timeout |
+
+For an independent projection process, start the Compose `event-projector`
+profile and set `PI_CLOUD_CANONICAL_PROJECTION_ENABLED=false` in the private
+deployment `.env`, then recreate Control Plane. Both roles use the same canonical
+consumer group, so temporary overlap during cutover is safe. Never disable the
+embedded projector without running the independent role: semantic writes wait
+for its projection receipt. The standalone role has only the database secret and
+Kafka network; it serves readiness on port 3000 and metrics on 9470. Kubernetes
+can run the same Control Plane image with command
+`/app/packages/control-plane/src/projection-main.ts`; the equivalent API setting
+is `controlPlane.canonicalProjectionEnabled=false`. This is optional, not a
+requirement for a one-host deployment.
 
 The installer owns `PI_CLOUD_CUBESANDBOX_TEMPLATE_ID` and the mandatory
 `PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS` JSON map. The latter contains

@@ -1,37 +1,39 @@
 {
-  "format": "pi-cloud.postgres-session-projection-capacity.v2",
-  "generatedAt": "2026-09-04T11:11:38.808Z",
-  "revision": "0889f4e8371fb68db17f9b953ade7f7aa3bf72b7",
+  "format": "pi-cloud.postgres-session-projection-capacity.v3",
+  "projectionCommit": "atomic-entry-and-compact-receipt",
+  "worktreeDirty": true,
+  "generatedAt": "2026-09-07T04:58:35.791Z",
+  "revision": "b03391483f74969b38da4e384140bd8240fb0056",
   "workload": {
-    "sessionCount": 2000,
+    "sessionCount": 512,
     "mutationsPerSession": 4,
-    "concurrency": 256,
-    "completeMessages": 8000,
+    "concurrency": 32,
+    "completeMessages": 2048,
     "payloadBytes": 1024
   },
   "result": {
     "failures": [],
-    "persistedEntries": 8000,
-    "persistedResults": 8000,
-    "elapsedMs": 8851.59,
-    "messagesPerSecond": 903.79,
+    "persistedEntries": 2048,
+    "persistedResults": 2048,
+    "elapsedMs": 2231.12,
+    "messagesPerSecond": 917.93,
     "latencyMs": {
-      "p50": 273.47,
-      "p95": 355.05,
-      "p99": 496.06
+      "p50": 32.32,
+      "p95": 47.57,
+      "p99": 108.52
     },
-    "walBytes": 54479600,
-    "walBytesPerMessage": 6809.95,
+    "walBytes": 11077096,
+    "walBytesPerMessage": 5408.74,
     "logReplay": {
-      "sessions": 500,
-      "semanticEvents": 2000,
-      "elapsedMs": 78.25,
-      "sessionsPerSecond": 6389.47,
-      "eventsPerSecond": 25557.88,
+      "sessions": 512,
+      "semanticEvents": 2048,
+      "elapsedMs": 84.95,
+      "sessionsPerSecond": 6027.42,
+      "eventsPerSecond": 24109.69,
       "latencyMs": {
-        "p50": 36.53,
-        "p95": 45.5,
-        "p99": 51.17
+        "p50": 4.56,
+        "p95": 9.1,
+        "p99": 11.16
       }
     }
   },

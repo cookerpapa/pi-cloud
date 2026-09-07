@@ -1,5 +1,5 @@
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { PostgresPiSessionStorage } from "@pi-cloud/pi-session-postgres";
+import { PostgresPiSessionStorage, compactPiMutationResult } from "@pi-cloud/pi-session-postgres";
 import { spawnSync } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
@@ -140,36 +140,40 @@ try {
       const result = await parallelMap(sessions, concurrency, async (sessionId) => {
         const mutationId = randomUUID();
         const operationStarted = performance.now();
-        const storage = new PostgresPiSessionStorage({
-          database,
-          tenantId,
-          sessionId,
-          projectedMutationId: mutationId,
+        await database.transaction().execute(async (transaction) => {
+          const storage = new PostgresPiSessionStorage({
+            database: transaction,
+            tenantId,
+            sessionId,
+            projectedMutationId: mutationId,
+          });
+          const operation = {
+            kind: "append_entry" as const,
+            lane: "main",
+            entry: {
+              id: randomUUID(),
+              type: "custom" as const,
+              customType: "benchmark.complete_message",
+              data: { wave, text: "x".repeat(1024) },
+            },
+          };
+          const entry = await storage.appendEntry(operation.entry, operation.lane);
+          await transaction
+            .insertInto("pi_session_mutation_results")
+            .values({
+              mutation_id: mutationId,
+              tenant_id: tenantId,
+              session_id: sessionId,
+              run_id: randomUUID(),
+              attempt_id: randomUUID(),
+              state: "completed",
+              result: compactPiMutationResult(operation, entry) as Record<string, unknown>,
+              error_code: null,
+              error_message: null,
+              expires_at: new Date(Date.now() + 60 * 60_000),
+            })
+            .execute();
         });
-        const entry = await storage.appendEntry(
-          {
-            id: randomUUID(),
-            type: "custom",
-            customType: "benchmark.complete_message",
-            data: { wave, text: "x".repeat(1024) },
-          },
-          "main",
-        );
-        await database
-          .insertInto("pi_session_mutation_results")
-          .values({
-            mutation_id: mutationId,
-            tenant_id: tenantId,
-            session_id: sessionId,
-            run_id: randomUUID(),
-            attempt_id: randomUUID(),
-            state: "completed",
-            result: entry as unknown as Record<string, unknown>,
-            error_code: null,
-            error_message: null,
-            expires_at: new Date(Date.now() + 60 * 60_000),
-          })
-          .execute();
         return performance.now() - operationStarted;
       });
       durations.push(...result.durations);
@@ -212,7 +216,11 @@ try {
     `.execute(database);
     const walBytes = Number(wal.rows[0]!.bytes);
     const report = {
-      format: "pi-cloud.postgres-session-projection-capacity.v2",
+      format: "pi-cloud.postgres-session-projection-capacity.v3",
+      projectionCommit: "atomic-entry-and-compact-receipt",
+      worktreeDirty:
+        spawnSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).stdout.trim()
+          .length > 0,
       generatedAt: new Date().toISOString(),
       revision: spawnSync("git", ["rev-parse", "HEAD"], {
         cwd: root,

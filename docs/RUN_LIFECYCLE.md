@@ -98,6 +98,10 @@ the authoritative receipts, with one shared bounded fallback for missed hints.
 Each model Step reads its active branch once for both Compaction assessment
 and model context. The Run-start Record and user Entry share a checkpoint;
 Compaction Entry and Usage likewise commit together.
+Sampling-start and its Step Record share one mutation; complete Tool results and
+their public completion likewise share one mutation. The model-output and validated
+Tool-intent pre-effect barriers remain distinct. Mutation receipts return only
+server-assigned stamps rather than echoing full message or Tool-result bodies.
 
 ## Cancellation and failure
 

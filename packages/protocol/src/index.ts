@@ -1,4 +1,10 @@
 export {
+  REVIEWED_MODELS,
+  reviewedModel,
+  DEFAULT_NEW_CONVERSATION_MODEL,
+  type ReviewedModel,
+} from "./model-catalog.ts";
+export {
   ExecutionLeaseSchema,
   createExecutionLease,
   parseExecutionLease,

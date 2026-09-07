@@ -1,26 +1,32 @@
 {
-  "checkedAt": "2026-09-07T03:03:14.673Z",
+  "checkedAt": "2026-09-07T04:50:46.540Z",
   "runs": [
     {
-      "runId": "90d8076d-5dba-4c54-9def-4269fe505085",
-      "elapsedMs": 13039
+      "runId": "255ac7f3-c5d3-491a-a05a-247cb15c9cad",
+      "elapsedMs": 10162
     },
     {
-      "runId": "71c7ad41-8c6b-4dc4-98e2-437479a597cc",
-      "elapsedMs": 23124
+      "runId": "56e87244-e0c7-42b0-ab32-96d57d9f1ccf",
+      "elapsedMs": 1067
+    },
+    {
+      "runId": "629c8d82-9866-4455-945f-1b33fbf9d8a9",
+      "elapsedMs": 10154
     }
   ],
   "accepted": true,
   "hostPowerLossTested": false,
-  "environmentId": "a9b44170-7981-4b43-9168-7440cd1e6199",
+  "environmentId": "47836de6-c8e7-466b-a4cd-64fc35534e78",
   "stoppedApplicationDidNotStopMachine": true,
   "applicationRestarted": true,
+  "browserReadOutsideHome": true,
+  "chatWhileBrokerOffline": true,
   "brokerRestartPreservedRootFilesProcessAndPreview": true,
   "resetMarkers": 0,
   "usage": {
-    "input": 5519,
-    "output": 3869,
-    "cacheRead": 116864
+    "input": 2827,
+    "output": 2392,
+    "cacheRead": 88192
   },
   "rootOwnedDeletionFixture": true,
   "resourcesReleased": true,

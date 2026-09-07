@@ -17,6 +17,7 @@ export type ProductionControlPlaneConfig = {
   acceptedFactRetentionMs: number;
   factChannelLeaseMs: number;
   factChannelMaximumActive: number;
+  canonicalProjection: boolean;
   workerEventIngestToken: string;
   supervisorEnrollmentToken: string;
   supervisorManagementToken: string;
@@ -413,6 +414,9 @@ export async function loadProductionControlPlaneConfig(
   return {
     databaseUrl,
     databaseNotificationUrl,
+    canonicalProjection:
+      environment.PI_CLOUD_CANONICAL_PROJECTION_ENABLED === undefined ||
+      booleanValue(environment, "PI_CLOUD_CANONICAL_PROJECTION_ENABLED"),
     kafkaBrokers: boundedList(
       required(environment, "PI_CLOUD_KAFKA_BROKERS"),
       "PI_CLOUD_KAFKA_BROKERS",

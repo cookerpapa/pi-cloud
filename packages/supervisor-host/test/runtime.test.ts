@@ -328,7 +328,7 @@ describe("PiWorkerRuntime", () => {
       await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
       toolBrokerHealthy = false;
       await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 1_100));
-      await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(false);
+      await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
 
       const ledger = JSON.parse(await readFile(join(root, "boot", "boot-ledger.json"), "utf8")) as {
         state: { history: Array<{ bootId: string; status: string }> };

@@ -1,58 +1,34 @@
+import { REVIEWED_MODELS } from "@pi-cloud/protocol";
 import type { Database } from "@pi-cloud/database";
 import type {
-  ModelCatalogEntryResource,
   ProviderModelSelection,
   SessionModelSelection,
   TurnThinkingLevel,
 } from "@pi-cloud/protocol";
 import type { Transaction } from "kysely";
 
-const GPT_THINKING_LEVELS: TurnThinkingLevel[] = ["off", "low", "medium", "high", "xhigh", "max"];
-const DEEPSEEK_THINKING_LEVELS: TurnThinkingLevel[] = ["off", "low", "medium", "high", "max"];
-
-export const SUPPORTED_MODEL_CATALOG = Object.freeze([
-  {
-    provider: "openai-codex",
-    modelId: "gpt-5.6-terra",
-    displayName: "GPT-5.6 Terra",
-    thinkingLevels: GPT_THINKING_LEVELS,
-    defaultThinkingLevel: "medium",
-    fastModeAvailable: true,
-  },
-  {
-    provider: "openai-codex",
-    modelId: "gpt-5.6-sol",
-    displayName: "GPT-5.6 Sol",
-    thinkingLevels: GPT_THINKING_LEVELS,
-    defaultThinkingLevel: "low",
-    fastModeAvailable: true,
-  },
-  {
-    provider: "openai-codex",
-    modelId: "gpt-5.6-luna",
-    displayName: "GPT-5.6 Luna",
-    thinkingLevels: GPT_THINKING_LEVELS,
-    defaultThinkingLevel: "medium",
-    fastModeAvailable: true,
-  },
-  {
-    provider: "deepseek",
-    modelId: "deepseek-v4-flash",
-    displayName: "DeepSeek V4 Flash",
-    thinkingLevels: DEEPSEEK_THINKING_LEVELS,
-    defaultThinkingLevel: "off",
-    fastModeAvailable: false,
-  },
-  {
-    provider: "deepseek",
-    modelId: "deepseek-v4-pro",
-    displayName: "DeepSeek V4 Pro",
-    thinkingLevels: DEEPSEEK_THINKING_LEVELS,
-    defaultThinkingLevel: "off",
-    fastModeAvailable: false,
-  },
-] satisfies readonly Omit<ModelCatalogEntryResource, "default">[]);
-
+export const SUPPORTED_MODEL_CATALOG = Object.freeze(
+  REVIEWED_MODELS.map((model) => {
+    const common = {
+      displayName: model.displayName,
+      thinkingLevels: [...model.thinkingLevels] as TurnThinkingLevel[],
+      defaultThinkingLevel: model.defaultThinkingLevel,
+    };
+    return model.provider === "deepseek"
+      ? {
+          ...common,
+          provider: model.provider,
+          modelId: model.modelId,
+          fastModeAvailable: false as const,
+        }
+      : {
+          ...common,
+          provider: model.provider,
+          modelId: model.modelId,
+          fastModeAvailable: true as const,
+        };
+  }),
+);
 export function supportedModel(
   selection: ProviderModelSelection,
 ): (typeof SUPPORTED_MODEL_CATALOG)[number] | undefined {

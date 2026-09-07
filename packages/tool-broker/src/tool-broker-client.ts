@@ -546,7 +546,13 @@ export class ToolBrokerClient {
     );
   }
 
-  async #post(path: string, bearer: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
+  async #post(
+    path: string,
+    bearer: string,
+    body: unknown,
+    signal?: AbortSignal,
+    redirects = 0,
+  ): Promise<unknown> {
     const timeoutSignal = AbortSignal.timeout(this.#requestTimeoutMs);
     const combinedSignal =
       signal === undefined ? timeoutSignal : AbortSignal.any([signal, timeoutSignal]);
@@ -563,6 +569,7 @@ export class ToolBrokerClient {
         },
         body: JSON.stringify(body),
         signal: combinedSignal,
+        redirect: "manual",
       });
     } catch {
       throw new ToolBrokerClientError(
@@ -570,6 +577,26 @@ export class ToolBrokerClient {
         "Tool Broker request failed",
         true,
       );
+    }
+    if (
+      path === TOOL_BROKER_WORKSPACE_BROWSER_PATH &&
+      response.status === 307 &&
+      response.headers.get("location")
+    ) {
+      await response.body?.cancel();
+      if (redirects >= 3)
+        throw new ToolBrokerClientError(
+          "tool_broker_redirect_loop",
+          "Workspace owner routing did not converge",
+          false,
+        );
+      const owner = new ToolBrokerClient({
+        baseUrl: response.headers.get("location")!,
+        serviceToken: this.#serviceToken,
+        allowInsecureHttp: this.#allowInsecureHttp,
+        requestTimeoutMs: this.#requestTimeoutMs,
+      });
+      return owner.#post(path, bearer, body, signal, redirects + 1);
     }
     const value = await boundedJson(response);
     if (!response.ok) {

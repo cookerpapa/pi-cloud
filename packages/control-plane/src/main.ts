@@ -80,6 +80,7 @@ export async function startControlPlane(): Promise<void> {
       retentionMs: config.acceptedFactRetentionMs,
       factChannelLeaseMs: config.factChannelLeaseMs,
       factChannelMaximumActive: config.factChannelMaximumActive,
+      canonicalProjection: config.canonicalProjection,
     });
     const activeAgentEvents = agentEvents;
     await verifyBootstrap(database);
@@ -181,11 +182,7 @@ export async function startControlPlane(): Promise<void> {
       webSessionAuthenticator: webAuthentication,
       readiness: async () => {
         if (runtime?.state !== "running") return false;
-        await Promise.all([
-          activeAgentEvents.checkHealth(),
-          sql`select 1`.execute(database),
-          workspaceBrowserClient.checkHealth(),
-        ]);
+        await Promise.all([activeAgentEvents.checkHealth(), sql`select 1`.execute(database)]);
         return true;
       },
     });

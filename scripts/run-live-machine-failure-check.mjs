@@ -165,19 +165,17 @@ try {
   );
   console.log("[machine-failure] disposable machine ready; testing terminal and public preview");
   await terminal(
-    "mkdir -p /home/user/recovery-check; printf 'ROOT_SURVIVES\\n' > /etc/pi-cloud-recovery-check; printf '<!doctype html><title>Recovery check</title><button id=counter onclick=\"this.textContent=Number(this.textContent)+1\">0</button>APP_READY' > /home/user/recovery-check/index.html; nohup python3 -m http.server 5173 --bind 0.0.0.0 --directory /home/user/recovery-check </dev/null >/tmp/pi-cloud-recovery-http.log 2>&1 & echo $! > /tmp/pi-cloud-recovery-http.pid; sleep 1; kill -0 \"$(cat /tmp/pi-cloud-recovery-http.pid)\"",
+    "mkdir -p /opt/recovery-check; printf 'ROOT_SURVIVES\\n' > /etc/pi-cloud-recovery-check; printf '<!doctype html><title>Recovery check</title><button id=counter onclick=\"this.textContent=Number(this.textContent)+1\">0</button>APP_READY' > /opt/recovery-check/index.html; nohup python3 -m http.server 5173 --bind 0.0.0.0 --directory /opt/recovery-check </dev/null >/tmp/pi-cloud-recovery-http.log 2>&1 & echo $! > /tmp/pi-cloud-recovery-http.pid; sleep 1; kill -0 \"$(cat /tmp/pi-cloud-recovery-http.pid)\"",
   );
   assert.equal((await preview()).status, 200);
   // SSH runs as guest root; Agent Tools run as uid 1000. Avoid turning the
   // fixture into an unrelated ownership repair task (and root-owned residue).
-  await terminal("chown -R 1000:1000 /home/user/recovery-check");
+  await terminal("chown -R 1000:1000 /opt/recovery-check");
   await terminal('kill "$(cat /tmp/pi-cloud-recovery-http.pid)"; sleep 1');
   const stopped = await preview();
   assert.equal(stopped.status, 502);
   assert.match(stopped.body.toString(), /application port/);
-  await terminal(
-    "test -f /etc/pi-cloud-recovery-check; test -f /home/user/recovery-check/index.html",
-  );
+  await terminal("test -f /etc/pi-cloud-recovery-check; test -f /opt/recovery-check/index.html");
   assert.equal(
     await sql(
       `select runtime_id::text from development_environments where id=${sqlString(machine.environmentId)}`,
@@ -186,7 +184,7 @@ try {
   );
   report.stoppedApplicationDidNotStopMachine = true;
   await terminal(
-    'nohup python3 -m http.server 5173 --bind 0.0.0.0 --directory /home/user/recovery-check </dev/null >/tmp/pi-cloud-recovery-http.log 2>&1 & echo $! > /tmp/pi-cloud-recovery-http.pid; sleep 1; kill -0 "$(cat /tmp/pi-cloud-recovery-http.pid)"',
+    'nohup python3 -m http.server 5173 --bind 0.0.0.0 --directory /opt/recovery-check </dev/null >/tmp/pi-cloud-recovery-http.log 2>&1 & echo $! > /tmp/pi-cloud-recovery-http.pid; sleep 1; kill -0 "$(cat /tmp/pi-cloud-recovery-http.pid)"',
   );
   assert.equal((await preview()).status, 200);
   report.applicationRestarted = true;
@@ -196,7 +194,7 @@ try {
     `Recovery coding ${suffix}`,
     "development_environment",
     "starter",
-    "/home/user/recovery-check",
+    "/opt/recovery-check",
     { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "off", fastMode: false },
   );
   console.log("[machine-failure] real DeepSeek coding round 1");
@@ -204,14 +202,31 @@ try {
     "在当前目录编写 insertion_sort.py，实现插入排序并自带空数组、重复值、负数、逆序测试。运行 python3 insertion_sort.py，确认通过。保留已有 index.html 和 HTTP 服务，不使用子代理或搜索。",
   );
   await terminal(
-    'test -s /home/user/recovery-check/insertion_sort.py; cd /home/user/recovery-check; python3 insertion_sort.py; kill -0 "$(cat /tmp/pi-cloud-recovery-http.pid)"',
+    'test -s /opt/recovery-check/insertion_sort.py; cd /opt/recovery-check; python3 insertion_sort.py; kill -0 "$(cat /tmp/pi-cloud-recovery-http.pid)"',
   );
+  assert(
+    (await api.listWorkspaceDirectory(session.sessionId)).entries.some(
+      (item) => item.name === "insertion_sort.py",
+    ),
+  );
+  assert(
+    Buffer.from((await api.readWorkspaceFile(session.sessionId, "insertion_sort.py")).bytes)
+      .toString()
+      .includes("def "),
+  );
+  report.browserReadOutsideHome = true;
   const active = Number(await sql("select count(*) from runs where state = 'running'"));
   assert.equal(active, 0, "Refusing Broker restart while any user Run is active");
   console.log(
     "[machine-failure] restarting only Tool Broker; Guest and application must stay alive",
   );
-  await compose("restart", "tool-broker");
+  await compose("stop", "tool-broker");
+  try {
+    await run("本轮只聊天，绝对不要调用任何工具。请只回复：BROKER_OFFLINE_CHAT_OK。");
+    report.chatWhileBrokerOffline = true;
+  } finally {
+    await compose("up", "--detach", "--wait", "--no-deps", "tool-broker");
+  }
   for (let n = 0; n < 120; n++) {
     try {
       await compose(
@@ -230,7 +245,7 @@ try {
   }
   await waitForMachine();
   await terminal(
-    'test "$(cat /etc/pi-cloud-recovery-check)" = ROOT_SURVIVES; test -s /home/user/recovery-check/insertion_sort.py; kill -0 "$(cat /tmp/pi-cloud-recovery-http.pid)"',
+    'test "$(cat /etc/pi-cloud-recovery-check)" = ROOT_SURVIVES; test -s /opt/recovery-check/insertion_sort.py; kill -0 "$(cat /tmp/pi-cloud-recovery-http.pid)"',
   );
   assert.equal((await preview()).status, 200);
   assert.equal(
@@ -245,7 +260,7 @@ try {
     "先读取 insertion_sort.py，保留原实现和测试。新增 binary_search.py，实现二分查找并覆盖命中、不存在、空数组、重复值。执行 python3 insertion_sort.py && python3 binary_search.py。不要修改 index.html 或 HTTP 服务，不使用子代理或搜索。",
   );
   await terminal(
-    'cd /home/user/recovery-check; python3 insertion_sort.py; python3 binary_search.py; kill -0 "$(cat /tmp/pi-cloud-recovery-http.pid)"',
+    'cd /opt/recovery-check; python3 insertion_sort.py; python3 binary_search.py; kill -0 "$(cat /tmp/pi-cloud-recovery-http.pid)"',
   );
   report.resetMarkers = Number(
     await sql(

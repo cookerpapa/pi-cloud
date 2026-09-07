@@ -51,6 +51,8 @@ bootstrap:
 
 controlPlane:
   replicas: 3
+  # Disable only after an independently deployed projection-main.ts is Ready.
+  canonicalProjectionEnabled: true
   autoscaling:
     enabled: true
     minReplicas: 3

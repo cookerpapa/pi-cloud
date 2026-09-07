@@ -64,11 +64,12 @@ a notification received before the waiter is installed forces an immediate
 new claim instead of falling through to the one-second poll.
 
 A Worker with a disconnected ownership channel does not claim, and a Worker
-maintains Fact/Kafka, Tool Broker and Provider Gateway readiness in a one-second background
+maintains Fact/Kafka and Provider Gateway readiness in a one-second background
 monitor. Claim admission reads that local fail-closed state without issuing
 duplicate synchronous health requests for every Run. A short execution-plane
 outage therefore leaves the Run queued without creating an Attempt or starting
-a model call; the ExecutionLease, Fact Stream open and Tool Broker effect
+a model call. Tool Broker availability is checked only when Tools need it, so
+an unavailable Cube control plane does not block pure conversation. The ExecutionLease, Fact Stream open and Tool Broker effect
 boundary remain authoritative even within one monitor interval.
 
 The queue retains the existing domain protocol:
@@ -337,10 +338,10 @@ removes a communication path:
 
 - `none` creates a Tool-free child and never reserves Cube capacity;
 - `shared` keeps separate Pi contexts and gives parent and child independent
-  Tool bindings to the same Workspace runtime. Elastic bindings activate on
-  the first local Tool; a shared Child of a cloud development-machine Session
-  prebinds the existing machine to attest continuity and inherits its working
-  directory. Ordinary Linux concurrency governs their files, processes and ports;
+  Tool bindings to the same Workspace runtime. Both elastic and development-machine
+  bindings activate on the first local Tool. Children inherit the selected working
+  directory; the actual binding attests continuity when used. Ordinary Linux
+  concurrency governs their files, processes and ports;
 - upstream `worktree:true` maps to `isolated`: Tool Broker briefly excludes new
   Tool operations while
   the trusted Volume gateway makes an idempotent revision-bound internal
@@ -706,10 +707,12 @@ World State observed inside a Tool is published at the next clean sampling or
 settlement boundary, never between a Tool Call and Tool Result. This preserves
 Pi's native call/result pairing when provider adapters repair missing results.
 
-Source browsing lists and reads the current persistent Volume directly through
-the trusted Volume gateway. It neither creates a Cube nor consumes Cube
-admission capacity. Directory expansion performs one bounded directory read;
-opening a file performs one bounded file read and verifies that response.
+Elastic source browsing reads the current persistent Volume through the trusted
+Volume gateway without reinitializing it or calling Cube control. An unmaterialized
+root is empty. Full-VM browsing instead reads the owner's running machine through
+native envd, including selected roots outside `/home/user`. Only read-only browser
+requests may follow a Broker ownership redirect. Directory expansion and file
+opening each perform a bounded read; neither allocates a new Cube.
 
 ### Durable browser stream
 
@@ -740,7 +743,9 @@ Session leases publish concurrently, while one logical Stream keeps one Fact
 in flight. Stream ownership renews set-wise outside the Fact hot
 path. After PubAck, a separate progress store checkpoints the acknowledged
 Agent-event sequence set-wise and flushes it on normal Stream close; this is a
-terminal-stream boundary, not an admission decision. Normal settlement closes
+terminal-stream boundary, not an admission decision. Closing stops new publications,
+drains in-flight delivery and progress, and keeps renewal active until that drain
+finishes. A failed/unknown delivery cannot produce a successful close. Normal settlement closes
 the Stream before releasing the lease; crash recovery waits for its short
 lease rather than admitting overlapping generations. Workers have no Kafka
 credentials or network route.
@@ -754,7 +759,12 @@ causally depends on canonical Session state.
 The successful receipt and its Session mutation commit together. The existing
 Worker LISTEN connection receives an opaque mutation ID after commit; one
 shared receipt reader handles all pending mutations, with a one-second
-fallback if notification delivery is interrupted. A model Step reads its
+fallback if notification delivery is interrupted. Append receipts contain only
+server-assigned identity/sequence/timestamp/parent stamps; the Worker already owns
+the submitted body. Durable idempotency results refer to the self-contained log
+instead of storing another full copy. Newest-first limited branch queries stop
+after enough matches, while preserving filters, bounds and native Pi semantics.
+A model Step reads its
 active branch once for both Compaction assessment and model input. The first
 Step reuses its just-restored branch; a real compaction refreshes the result.
 
@@ -780,6 +790,18 @@ been applied before the Worker reads PostgreSQL. Each semantic Pi write also
 waits for its own mutation result before the Agent Loop advances.
 PostgreSQL therefore stores semantic Pi state, not token fragments. Terminal
 Run state and a one-row event outbox commit in the same PostgreSQL transaction.
+Outbox relays atomically claim a bounded set of Session heads, then publish outside
+the transaction. Claim-version CAS prevents stale ACK/error updates; stable Fact
+IDs permit redelivery. Different Sessions progress independently without letting
+one Session's terminal events overtake each other. Consumer failures surface in
+readiness and are retried, not silently skipped.
+
+Canonical projection and terminal publication default to the Control Plane
+process. They can instead run in the optional `canonical-projector` role, with
+only PostgreSQL/Kafka access and no live-tail replica. This is a composition split,
+not a second authority. Each SSE Gateway still rebuilds its own retained live
+tail; this change does not implement tail sharding. Configuration is in
+[CONFIGURATION.md](CONFIGURATION.md).
 Abnormal interruption recovery reads only the retained Kafka Session tail needed to
 preserve a visible prefix that never reached `message_end`.
 

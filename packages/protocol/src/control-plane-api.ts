@@ -1,5 +1,6 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
+import { DEEPSEEK_MODEL_IDS, GPT_MODEL_IDS } from "./model-catalog.ts";
 import {
   NonNegativeSafeIntegerSchema,
   PositiveSafeIntegerSchema,
@@ -41,16 +42,9 @@ export const TenantApiRoleSchema = Type.Union([
   Type.Literal("viewer"),
 ]);
 
-export const DeepSeekModelIdSchema = Type.Union([
-  Type.Literal("deepseek-v4-flash"),
-  Type.Literal("deepseek-v4-pro"),
-]);
+export const DeepSeekModelIdSchema = Type.Enum(DEEPSEEK_MODEL_IDS);
 
-export const OpenAICodexModelIdSchema = Type.Union([
-  Type.Literal("gpt-5.6-luna"),
-  Type.Literal("gpt-5.6-terra"),
-  Type.Literal("gpt-5.6-sol"),
-]);
+export const OpenAICodexModelIdSchema = Type.Enum(GPT_MODEL_IDS);
 
 export const ProviderModelSelectionSchema = Type.Union([
   Type.Object(

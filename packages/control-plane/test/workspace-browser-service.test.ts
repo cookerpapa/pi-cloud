@@ -55,6 +55,55 @@ afterAll(async () => {
 });
 
 describe.sequential("live Workspace browser", () => {
+  it("routes an owner's full-VM directory outside home and rejects another actor", async () => {
+    const environmentId = randomUUID(),
+      userId = randomUUID();
+    const row = {
+      workspaceId,
+      executionMode: "development_environment",
+      workingDirectory: "/opt/project",
+      environmentId,
+      ownerUserId: userId,
+    };
+    const query = {
+      innerJoin() {
+        return this;
+      },
+      select() {
+        return this;
+      },
+      where() {
+        return this;
+      },
+      executeTakeFirst: async () => row,
+    };
+    const browser = {
+      listWorkspaceDirectory: vi.fn(async (request) => ({
+        ...request,
+        type: "workspace.directory_listed" as const,
+        entries: [],
+        truncated: false,
+      })),
+      readWorkspaceFile: vi.fn(),
+    };
+    const service = new WorkspaceBrowserService({
+      database: { selectFrom: () => query } as unknown as Kysely<Database>,
+      browser,
+    });
+    await service.directory(tenant.tenantId, sessionId, "src", userId);
+    expect(browser.listWorkspaceDirectory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rootPath: "",
+        path: "src",
+        machine: { environmentId, userId, directory: "/opt/project" },
+      }),
+    );
+    await expect(
+      service.directory(tenant.tenantId, sessionId, "", randomUUID()),
+    ).rejects.toMatchObject({ code: "unavailable" });
+    expect(browser.listWorkspaceDirectory).toHaveBeenCalledOnce();
+  });
+
   it("lists one current directory and reads one current file without a historical catalog", async () => {
     const listWorkspaceDirectory = vi.fn(async (request) => ({
       toolBrokerProtocolVersion: 1 as const,

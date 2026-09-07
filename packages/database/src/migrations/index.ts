@@ -123,6 +123,8 @@ import * as removeUnusedRoutingState from "./121_remove_unused_routing_state.ts"
 import * as subagentPiSessionLanes from "./122_subagent_pi_session_lanes.ts";
 import * as subagentBranchContext from "./123_subagent_branch_context.ts";
 import * as selfContainedPiSessionLog from "./124_self_contained_pi_session_log.ts";
+import * as terminalOutboxSessionOrder from "./125_terminal_outbox_session_order.ts";
+import * as compactPiMutationResults from "./126_compact_pi_mutation_results.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -251,6 +253,8 @@ export const migrationProvider: MigrationProvider = {
       "122_subagent_pi_session_lanes": subagentPiSessionLanes,
       "123_subagent_branch_context": subagentBranchContext,
       "124_self_contained_pi_session_log": selfContainedPiSessionLog,
+      "125_terminal_outbox_session_order": terminalOutboxSessionOrder,
+      "126_compact_pi_mutation_results": compactPiMutationResults,
     };
   },
 };

@@ -340,11 +340,7 @@ export class PiWorkerRuntime {
     this.#managementServer = managementServer;
     try {
       await managementServer.listen();
-      await Promise.all([
-        sql`select 1`.execute(this.#database),
-        this.#objectStore.checkHealth(),
-        this.#toolBroker.checkHealth(),
-      ]);
+      await Promise.all([sql`select 1`.execute(this.#database), this.#objectStore.checkHealth()]);
 
       const secret = connectionSecret(this.#connectionSecretGenerator());
       const request: SupervisorBootProvisionRequest = {
@@ -422,11 +418,7 @@ export class PiWorkerRuntime {
       this.#sessionMutationProducer = sessionMutationProducer;
       const runClaimReadiness = new RunClaimReadinessMonitor({
         check: async () => {
-          await Promise.all([
-            factChannels.checkHealth?.(),
-            this.#toolBroker.checkHealth(),
-            modelGateway.checkProviderHealth(),
-          ]);
+          await Promise.all([factChannels.checkHealth?.(), modelGateway.checkProviderHealth()]);
         },
       });
       await runClaimReadiness.start();

@@ -240,6 +240,13 @@ export class AcceptedFactIngestGateway {
     stream.channel = await this.#channels.open(message, stream.authorityConnectionId, (error) => {
       this.#failStream(context, stream, error);
     });
+    // Admission may finish after socket cleanup has already visited this
+    // still-pending Stream. Do not leave the newly acquired lease orphaned.
+    if (context.closed || stream.closed) {
+      await stream.channel.close();
+      stream.channel = undefined;
+      return;
+    }
     const ready = parseControlToSupervisorMessage({
       protocolVersion: 1,
       messageId: globalThis.crypto.randomUUID(),

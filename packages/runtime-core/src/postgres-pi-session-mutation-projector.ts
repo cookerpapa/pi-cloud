@@ -1,5 +1,5 @@
 import type { Database } from "@pi-cloud/database";
-import { PostgresPiSessionStorage } from "@pi-cloud/pi-session-postgres";
+import { PostgresPiSessionStorage, compactPiMutationResult } from "@pi-cloud/pi-session-postgres";
 import { SessionError } from "@earendil-works/pi-agent-core";
 import { sql, type Kysely } from "kysely";
 import type { AcceptedPiSessionMutationFact } from "./accepted-fact.ts";
@@ -12,7 +12,7 @@ export class PostgresPiSessionMutationProjector {
     this.#database = database;
   }
 
-  async project(fact: AcceptedPiSessionMutationFact): Promise<void> {
+  async project(fact: AcceptedPiSessionMutationFact, requireProductSession = false): Promise<void> {
     this.#projectedSinceCleanup += 1;
     if (this.#projectedSinceCleanup >= 256) {
       this.#projectedSinceCleanup = 0;
@@ -23,12 +23,11 @@ export class PostgresPiSessionMutationProjector {
     }
     try {
       await this.#database.transaction().execute(async (transaction) => {
-        const existing = await transaction
-          .selectFrom("pi_session_mutation_results")
-          .select("mutation_id")
-          .where("mutation_id", "=", fact.factId)
-          .executeTakeFirst();
-        if (existing !== undefined) return;
+        const check = await sql<{ exists: boolean; projected: boolean }>`select
+          (not ${requireProductSession} or exists(select 1 from sessions where tenant_id=${fact.scope.tenantId}::uuid and id=${fact.scope.sessionId}::uuid)) as exists,
+          exists(select 1 from pi_session_mutation_results where mutation_id=${fact.factId}::uuid) as projected
+        `.execute(transaction);
+        if (!check.rows[0]?.exists || check.rows[0].projected) return;
         const storage = new PostgresPiSessionStorage({
           database: transaction,
           tenantId: fact.scope.tenantId,
@@ -64,7 +63,9 @@ export class PostgresPiSessionMutationProjector {
         run_id: fact.scope.runId,
         attempt_id: fact.scope.attemptId,
         state,
-        result: result as Record<string, unknown> | null,
+        result: (state === "completed"
+          ? compactPiMutationResult(fact.operation, result)
+          : null) as Record<string, unknown> | null,
         error_code: error?.code ?? null,
         error_message: error?.message ?? null,
         expires_at: new Date(Date.now() + 60 * 60_000),

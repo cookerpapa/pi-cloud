@@ -4,7 +4,6 @@ import { KafkaAcceptedFactConsumer } from "./kafka-accepted-fact-consumer.ts";
 import { PostgresPiSessionMutationProjector } from "./postgres-pi-session-mutation-projector.ts";
 
 export class KafkaCanonicalProjector {
-  readonly #database: Kysely<Database>;
   readonly #mutations: PostgresPiSessionMutationProjector;
   readonly #consumer: KafkaAcceptedFactConsumer;
 
@@ -14,7 +13,6 @@ export class KafkaCanonicalProjector {
     topic: string;
     clientId: string;
   }) {
-    this.#database = options.database;
     this.#mutations = new PostgresPiSessionMutationProjector(options.database);
     this.#consumer = new KafkaAcceptedFactConsumer({
       brokers: options.brokers,
@@ -25,14 +23,7 @@ export class KafkaCanonicalProjector {
       commitEvery: 64,
       handler: async (record) => {
         if (record.fact.kind === "pi_session_mutation") {
-          const session = await this.#database
-            .selectFrom("sessions")
-            .select("id")
-            .where("tenant_id", "=", record.fact.scope.tenantId)
-            .where("id", "=", record.fact.scope.sessionId)
-            .executeTakeFirst();
-          if (session === undefined) return;
-          await this.#mutations.project(record.fact);
+          await this.#mutations.project(record.fact, true);
         }
       },
     });

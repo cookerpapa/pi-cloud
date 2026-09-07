@@ -36,8 +36,8 @@ export class WorkspaceBrowserError extends Error {
   }
 }
 
-function relativeRoot(executionMode: "elastic" | "development_environment", directory: string) {
-  const prefix = executionMode === "elastic" ? "/workspace" : "/home/user";
+function relativeRoot(directory: string) {
+  const prefix = "/workspace";
   if (directory === prefix) return "";
   if (!directory.startsWith(`${prefix}/`)) {
     throw new WorkspaceBrowserError("unavailable", "Session Workspace root is invalid");
@@ -74,9 +74,11 @@ export class WorkspaceBrowserService {
     tenantId: string,
     sessionId: string,
     pathValue: string,
+    actorUserId?: string,
   ): Promise<WorkspaceDirectoryResource> {
     const path = browserPath(pathValue, true);
     const session = await this.#session(tenantId, sessionId);
+    const machine = this.#machine(session, actorUserId);
     let response: ToolBrokerListWorkspaceDirectoryResponse;
     try {
       response = await this.#browser.listWorkspaceDirectory({
@@ -86,7 +88,8 @@ export class WorkspaceBrowserService {
         tenantId,
         workspaceId: session.workspaceId,
         sessionId,
-        rootPath: relativeRoot(session.executionMode, session.workingDirectory),
+        ...(machine === undefined ? {} : { machine }),
+        rootPath: machine === undefined ? relativeRoot(session.workingDirectory) : "",
         path,
       });
     } catch {
@@ -106,6 +109,7 @@ export class WorkspaceBrowserService {
     sessionId: string,
     pathValue: string,
     maximumBytes: number,
+    actorUserId?: string,
   ): Promise<{ bytes: Uint8Array; sha256: string; executable: boolean }> {
     const path = browserPath(pathValue, false);
     if (
@@ -116,6 +120,7 @@ export class WorkspaceBrowserService {
       throw new WorkspaceBrowserError("file_too_large", "Workspace file size limit is invalid");
     }
     const session = await this.#session(tenantId, sessionId);
+    const machine = this.#machine(session, actorUserId);
     let response: ToolBrokerReadWorkspaceFileResponse;
     try {
       response = await this.#browser.readWorkspaceFile({
@@ -125,7 +130,8 @@ export class WorkspaceBrowserService {
         tenantId,
         workspaceId: session.workspaceId,
         sessionId,
-        rootPath: relativeRoot(session.executionMode, session.workingDirectory),
+        ...(machine === undefined ? {} : { machine }),
+        rootPath: machine === undefined ? relativeRoot(session.workingDirectory) : "",
         path,
         maximumBytes,
       });
@@ -136,6 +142,25 @@ export class WorkspaceBrowserService {
       bytes: Buffer.from(response.content, "base64"),
       sha256: response.sha256,
       executable: response.executable,
+    };
+  }
+
+  #machine(
+    session: {
+      executionMode: string;
+      workingDirectory: string;
+      environmentId: string | null;
+      ownerUserId: string | null;
+    },
+    actorUserId?: string,
+  ) {
+    if (session.executionMode !== "development_environment") return undefined;
+    if (!session.environmentId || !session.ownerUserId || actorUserId !== session.ownerUserId)
+      throw new WorkspaceBrowserError("unavailable", "Machine Workspace binding is unavailable");
+    return {
+      environmentId: session.environmentId,
+      userId: session.ownerUserId,
+      directory: session.workingDirectory,
     };
   }
 
@@ -151,6 +176,8 @@ export class WorkspaceBrowserService {
         "session_row.workspace_id as workspaceId",
         "session_row.execution_mode as executionMode",
         "session_row.working_directory as workingDirectory",
+        "session_row.development_environment_id as environmentId",
+        "session_row.created_by_user_id as ownerUserId",
       ])
       .where("session_row.tenant_id", "=", tenantId)
       .where("session_row.id", "=", sessionId)
