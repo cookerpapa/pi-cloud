@@ -25,8 +25,9 @@ in CubeSandbox KVM microVMs.
 PiCloud targets private or controlled enterprise deployments. It is not a
 hostile public-SaaS security or abuse-management product.
 
-Known recovery limitation: a paused ingress can publish after ownership changes
-and alter a recovered Session branch. See the [reproduction and current status](docs/reports/late-publisher-findings.md)
+Known recovery limitation: after a Run fails and its queued successor runs, a
+paused ingress can resume and alter the recovered Session branch. Ordinary
+Follow-up serialization works; see the [API/Worker reproduction](docs/reports/worker-handoff-findings.md)
 before relying on crash/partition-safe operation.
 
 ## Architecture

@@ -10,6 +10,9 @@ Volume architecture. Historical experiments remain in Git history.
       changing the recovered Pi lane. Coordinate publication-generation closure
       with durable append before claiming partition-safe recovery. See
       [late-publisher evidence](reports/late-publisher-findings.md).
+- [ ] Resolve terminal stream sequence collision observed during real Worker
+      loss with lagging persisted progress; preserve delivered Steer separately
+      from model consumption. [API handoff evidence](reports/worker-handoff-findings.md).
 - [x] ADR-0153.1–2: drain Fact publications before close; bounded transaction-free
       terminal Outbox publication, idempotent retries and consumer failure signals.
 - [x] ADR-0153.3: co-commit sampling start and Tool completion with native records.

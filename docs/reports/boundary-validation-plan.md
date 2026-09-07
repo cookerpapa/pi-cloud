@@ -23,3 +23,8 @@ Agent takeover. No model tokens are needed to establish this ordering property.
 
 Campaign paused at item 1: [reproducible late-publisher counterexample](late-publisher-findings.md).
 Items 2–5 remain pending; do not interpret the existence of this plan as test evidence.
+
+Follow-up: the [API/Worker handoff probe](worker-handoff-findings.md) validates
+ordinary input sequencing and reproduces late publication after automatic Run
+failure/retirement, without fixture Lease replacement. Publication protocol
+changes remain paused for discussion.

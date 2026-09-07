@@ -7,6 +7,11 @@ The validation campaign stopped at its first architecture-level failure. Other
 requested crash, scale, retention and long-context gates have not been newly
 validated by this campaign. Prior passing reports retain their original scope.
 
+The initial probe below used direct fixture authority replacement and did not
+prove a reachable Run takeover. A subsequent [public-API/Pi-Worker validation](worker-handoff-findings.md)
+now confirms the gap after real failure reconciliation while also confirming
+that ordinary Follow-up serialization and Steer consumption work.
+
 ## Reproduction
 
 ```bash

@@ -7,6 +7,12 @@ user message, Turn and ready Run row in one PostgreSQL transaction. The Run's
 unique Session/idempotency key prevents a retry from creating another Run.
 Same-Session Runs remain serialized by mailbox position.
 
+Queued Follow-up is a persisted input/Run, not yet a Pi user Entry or Kafka
+Session mutation. Steer is first stored in `turn_control_requests` and delivered
+to the running Pi queue; only native consumption creates its user Entry through
+the Fact path. A `delivered` response does not prove model consumption. See
+[the real API/Worker check](reports/worker-handoff-findings.md).
+
 ## Claim and execution
 
 All Pi Workers claim directly from the same ready `runs` rows. PostgreSQL sends
@@ -106,8 +112,10 @@ server-assigned stamps rather than echoing full message or Tool-result bodies.
 ## Cancellation and failure
 
 Cancellation revokes authority before trying to interrupt model/Tool work.
-Expired or superseded Workers cannot mutate Pi SessionStorage, execute another
-Tool or commit terminal state. A caught interruption writes Pi's minimal
+Current authority is required for new admissions, Tools and terminal state.
+A known gap allows a paused ingress's previously admitted semantic mutation to
+arrive after a failed Run has been retired and its queued successor completed;
+FIFO alone does not seal old publications. A caught interruption writes Pi's minimal
 abort/reset boundary. A hard Worker loss is reconciled from the retained Kafka
 prefix plus a factual interruption marker; no Tool result is invented. A
 normal failure/cancellation also fetches that trusted prefix from the Control

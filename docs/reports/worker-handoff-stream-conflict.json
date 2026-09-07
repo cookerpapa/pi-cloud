@@ -1,0 +1,18 @@
+{
+  "format": "pi-cloud.worker-handoff-observation.v1",
+  "checkedAt": "2026-09-07T07:43:13.612Z",
+  "revision": "c9c4376a80aa87ad8a684ef8254a8791696bc8d8",
+  "variant": "SIGSTOP ingress then immediate SIGKILL Worker, without the later 12-second wait",
+  "source": "observed excerpt of the completed probe output, not a full event trace",
+  "normalFollowupAndSteerPassed": true,
+  "oldRunFailure": "assignment_lost",
+  "replacementFollowupCompleted": true,
+  "latePublicationChangedBranch": true,
+  "tailFailure": {
+    "factId": "eda123e6-cd9c-48fa-b3c4-21f3dab819a6",
+    "runId": "c719fd4f-1e62-4289-b552-6b0297aaf93e",
+    "kind": "terminal_event",
+    "message": "Kafka Session tail contains conflicting events at one sequence",
+    "event": { "type": "turn.failed", "seq": 203 }
+  }
+}
