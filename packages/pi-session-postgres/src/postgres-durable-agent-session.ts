@@ -32,14 +32,6 @@ export type PostgresDurableAgentSession = Readonly<{
   mutationPublisher?: PiSessionMutationPublisher;
 }>;
 
-export async function synchronizePiSessionProjectionBeforeRead(
-  publisher: PiSessionMutationPublisher | undefined,
-  authority: Pick<PostgresRunExecutionAuthority, "assertCurrent">,
-): Promise<void> {
-  await publisher?.synchronize();
-  await authority.assertCurrent();
-}
-
 /**
  * Opens a Pi Session and the exact same opaque authority used by Session writes
  * and remote Tool effects.
@@ -60,7 +52,8 @@ export async function openPostgresDurableAgentSession(
   await authority.assertCurrent();
   authority.start();
   try {
-    await synchronizePiSessionProjectionBeforeRead(options.mutationPublisher, authority);
+    // Run claim already waits for the previous execution's projected seal.
+    // Another empty Kafka write here cannot fence a paused old publisher.
     const repository = new PostgresPiSessionRepository({
       database: options.database,
       tenantId: options.scope.tenantId,

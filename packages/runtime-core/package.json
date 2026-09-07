@@ -22,7 +22,6 @@
     "./kafka-projection-runtime": "./src/kafka-projection-runtime.ts",
     "./fact-channel-pi-session-mutation-producer": "./src/fact-channel-pi-session-mutation-producer.ts",
     "./kafka-live-session-tail": "./src/kafka-live-session-tail.ts",
-    "./live-tail-terminal-projection": "./src/live-tail-terminal-projection.ts",
     "./accepted-fact-terminal-outbox-relay": "./src/accepted-fact-terminal-outbox-relay.ts",
     "./accepted-fact-channel": "./src/accepted-fact-channel.ts",
     "./agent-run-execution-backend": "./src/agent-run-execution-backend.ts",
@@ -35,8 +34,7 @@
     "./session-event-stream": "./src/session-event-stream.ts",
     "./session-lease-coordinator": "./src/session-lease-coordinator.ts",
     "./structured-test-command": "./src/structured-test-command.ts",
-    "./terminal-turn-event": "./src/terminal-turn-event.ts",
-    "./terminal-turn-projection": "./src/terminal-turn-projection.ts"
+    "./execution-stream-seal": "./src/execution-stream-seal.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -15,10 +15,8 @@ export type PiSessionMutationOperation =
   | PiSessionAppendOperation
   | Readonly<{ kind: "append_items"; items: readonly PiSessionAppendOperation[] }>
   | Readonly<{ kind: "set_name"; name: string }>
-  | Readonly<{ kind: "set_label"; id: string; label?: string }>
-  | Readonly<{ kind: "projection_barrier" }>;
+  | Readonly<{ kind: "set_label"; id: string; label?: string }>;
 
 export interface PiSessionMutationPublisher {
   mutate(operation: PiSessionMutationOperation, events?: readonly PiCloudEvent[]): Promise<unknown>;
-  synchronize(): Promise<void>;
 }

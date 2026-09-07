@@ -1,7 +1,26 @@
-import type { AcceptedFact, AcceptedTerminalEventFact } from "../src/accepted-fact.ts";
+import type { AcceptedFact, AcceptedExecutionSealFact } from "../src/accepted-fact.ts";
 import { kafkaProducerLane } from "../src/kafka-accepted-fact.ts";
 import { KafkaLiveSessionTail } from "../src/kafka-live-session-tail.ts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { Database } from "@pi-cloud/database";
+import type { Kysely } from "kysely";
+const database = {} as Kysely<Database>;
+vi.mock("../src/execution-stream-projection.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/execution-stream-projection.ts")>();
+  return {
+    ...actual,
+    readProjectedSeal: async (_db: unknown, fact: AcceptedExecutionSealFact) => ({
+      schemaVersion: 1,
+      eventId: fact.factId,
+      sessionId: fact.scope.sessionId,
+      turnId: fact.scope.turnId,
+      agentId: fact.agentId,
+      seq: 2,
+      occurredAt: fact.occurredAt,
+      ...fact.terminal,
+    }),
+  };
+});
 
 const TENANT_ID = "10000000-0000-4000-8000-000000000001";
 const SESSION_ID = "10000000-0000-4000-8000-000000000002";
@@ -35,22 +54,14 @@ function delta(): AcceptedFact {
   };
 }
 
-function terminal(): AcceptedTerminalEventFact {
+function terminal(): AcceptedExecutionSealFact {
   return {
-    kind: "terminal_event",
+    kind: "execution_seal",
     factId: "10000000-0000-4000-8000-000000000007",
-    scope: { tenantId: TENANT_ID, sessionId: SESSION_ID, runId: RUN_ID, turnId: TURN_ID },
-    event: {
-      schemaVersion: 1,
-      eventId: "10000000-0000-4000-8000-000000000007",
-      sessionId: SESSION_ID,
-      turnId: TURN_ID,
-      agentId: "root",
-      seq: 2,
-      occurredAt: "2026-08-26T00:00:01.000Z",
-      type: "turn.completed",
-      payload: { stopReason: "stop" },
-    },
+    scope: delta().scope,
+    baseSequence: 0,
+    agentId: "root",
+    terminal: { type: "turn.completed", payload: { stopReason: "stop" } },
     occurredAt: "2026-08-26T00:00:01.000Z",
   };
 }
@@ -66,6 +77,7 @@ describe("Kafka Gateway live Session tail", () => {
 
   it("deduplicates, snapshots immutably and unloads only after terminal canonical state", async () => {
     const tail = new KafkaLiveSessionTail({
+      database,
       brokers: ["127.0.0.1:1"],
       topic: "unused",
       clientId: "test",
@@ -80,7 +92,7 @@ describe("Kafka Gateway live Session tail", () => {
     expect((await subscription.next())?.event?.eventId).toBe(first.factId);
 
     const completed = terminal();
-    tail.project(completed);
+    await tail.projectRecord({ fact: completed, topic: "unused", partition: 0, offset: 1n });
     expect((await subscription.next())?.event?.eventId).toBe(completed.factId);
     expect(tail.snapshot(TENANT_ID, SESSION_ID)).toMatchObject({
       canonicalThroughSequence: 2,
@@ -95,6 +107,7 @@ describe("Kafka Gateway live Session tail", () => {
 
   it("projects public events carried by one atomic Pi Session checkpoint Fact", async () => {
     const tail = new KafkaLiveSessionTail({
+      database,
       brokers: ["127.0.0.1:1"],
       topic: "unused",
       clientId: "test",
@@ -129,7 +142,7 @@ describe("Kafka Gateway live Session tail", () => {
         fencingToken: 1,
       },
       piSession: { id: SESSION_ID, lane: "main" },
-      operation: { kind: "projection_barrier" },
+      operation: { kind: "set_name", name: "test" },
       events: [event],
       occurredAt: event.occurredAt,
     });

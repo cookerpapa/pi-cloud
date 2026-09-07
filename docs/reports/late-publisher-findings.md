@@ -1,6 +1,8 @@
 # Late publisher changes a recovered Session lane
 
-Status: blocking correctness counterexample; production code unchanged.
+Status: historical pre-ADR-0154 correctness counterexample. The old fixture-only
+probe is retained in Git history; current validation uses the actual Worker/API
+probe and the ordered seal protocol.
 Base revision: `be748b39`. Date: 2026-09-07.
 
 The validation campaign stopped at its first architecture-level failure. Other

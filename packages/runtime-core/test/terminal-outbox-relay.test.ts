@@ -41,11 +41,20 @@ it("claims bounded Session heads without holding a connection during delivery an
           published_at: null,
           last_error: null,
           payload: {
-            kind: "terminal_event",
+            kind: "execution_seal",
             factId: id,
-            scope: { tenantId: tenant, sessionId, runId: crypto.randomUUID(), turnId },
+            scope: {
+              tenantId: tenant,
+              sessionId,
+              runId: crypto.randomUUID(),
+              turnId,
+              attemptId: crypto.randomUUID(),
+              fencingToken: 1,
+            },
             occurredAt: time.toISOString(),
-            event: {
+            baseSequence: seq - 1,
+            agentId: "root",
+            terminal: {
               schemaVersion: 1,
               eventId: id,
               sessionId,

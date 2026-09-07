@@ -1,10 +1,10 @@
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { KafkaAcceptedFactConsumer } from "./kafka-accepted-fact-consumer.ts";
-import { PostgresPiSessionMutationProjector } from "./postgres-pi-session-mutation-projector.ts";
+import { ExecutionStreamProjector } from "./execution-stream-projection.ts";
 
 export class KafkaCanonicalProjector {
-  readonly #mutations: PostgresPiSessionMutationProjector;
+  readonly #projection: ExecutionStreamProjector;
   readonly #consumer: KafkaAcceptedFactConsumer;
 
   constructor(options: {
@@ -12,20 +12,21 @@ export class KafkaCanonicalProjector {
     brokers: readonly string[];
     topic: string;
     clientId: string;
+    groupId?: string;
+    retentionMs: number;
   }) {
-    this.#mutations = new PostgresPiSessionMutationProjector(options.database);
+    this.#projection = new ExecutionStreamProjector(options.database, options.retentionMs);
     this.#consumer = new KafkaAcceptedFactConsumer({
       brokers: options.brokers,
       clientId: `${options.clientId}-canonical-projector`,
-      groupId: "pi-cloud-canonical-projector-v1",
+      groupId: options.groupId ?? "pi-cloud-canonical-projector-v2",
       topic: options.topic,
-      mode: "committed",
+      mode: "earliest",
+      // Commits expose operational lag. Recovery deliberately rebuilds the
+      // volatile prefix instead of treating an offset as a fold checkpoint.
       commitEvery: 64,
-      handler: async (record) => {
-        if (record.fact.kind === "pi_session_mutation") {
-          await this.#mutations.project(record.fact, true);
-        }
-      },
+      onReset: () => this.#projection.reset(),
+      handler: (record) => this.#projection.project(record),
     });
   }
 

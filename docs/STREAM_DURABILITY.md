@@ -6,7 +6,9 @@ state:
 - `K` — Kafka acknowledged an AcceptedFact with `acks=all`;
 - `V` — a browser observed that Fact through Gateway SSE;
 - `P` — the canonical projector committed a complete Pi mutation in PostgreSQL;
-- `T` — PostgreSQL committed terminal Run state and its terminal outbox Fact;
+- `T` — PostgreSQL settled the business Run and requested a seal through its Outbox;
+- `C` — the canonical consumer projected that seal, preserved the interrupted prefix
+  and atomically committed the public terminal and closed RunAttempt;
 - `S` — Gateway sent a replacement snapshot containing PostgreSQL canonical
   messages plus the current incomplete Kafka tail.
 
@@ -15,6 +17,8 @@ The maintained invariants are:
 ```text
 V implies K
 T(success) implies P
+next Run claim implies C(previous requested seals)
+record after an execution's first seal cannot change Pi context or live output
 the next model Step waits for its required P projection barrier
 an arbitrary Tool effect implies P(complete model output) and P(validated Tool intent)
 S contains no browser-supplied cursor
@@ -26,11 +30,12 @@ keyed by opaque Session ID, so one Session remains in one Kafka partition.
 PostgreSQL stores complete Pi-native semantic state once. Gateway replicas consume
 Kafka into rebuildable memory containing incomplete active Turns only.
 
-Known handoff gap: the recovery barrier covers records already appended before
-it, not every in-memory Fact admitted by an old ingress. An ingress paused after
-its final lease check can publish after a replacement's barrier and alter the
-recovered lane. See [the process-level counterexample](reports/late-publisher-findings.md).
-Normal close draining does not establish partition-safe publisher replacement.
+A lease check cannot be atomic with Kafka append. Closure therefore happens in
+the log itself: the first execution seal divides accepted old records from late
+records that cannot affect canonical or live state. The seal is published by the
+trusted terminal Outbox even when its Worker is dead. It names an exact Attempt,
+not every future Run or every Lane. Both paths use durable Attempt closure on
+restart; no lease-expiry inference or browser acknowledgement is required.
 
 The first Assistant text delta is published immediately; adjacent deltas in
 the same content block coalesce for up to 25ms. Semantic boundaries flush that
@@ -77,8 +82,9 @@ Subsequent frames carry new accepted events. On refresh or disconnect the browse
 opens the same endpoint and replaces its view from another snapshot. Recovered
 text is rendered immediately; only later deltas use progressive reveal.
 
-Terminal Facts are created by the PostgreSQL settlement transaction and reach
-Kafka through the terminal outbox. Gateway publishes that terminal event to
+The settlement transaction requests an execution seal through the terminal Outbox.
+The canonical consumer commits interrupted text, the exact terminal sequence and
+Attempt closure before Gateway publishes that terminal event to
 already-open subscribers, then advances the canonical boundary and removes the
 covered tail by pointer replacement. Existing responses retain their immutable
 snapshot references; slow clients have bounded queues and reconnect instead of
@@ -99,13 +105,19 @@ for duplicate/conflict lookup; out-of-order arrivals use ordered insertion.
 | after complete model `P`, before intent `P` | complete Tool call is canonical but no effect was admitted | recover as interrupted without marking that Tool effect `UNKNOWN` |
 | after intent `P`, before a durable Tool result | the specific Tool may have started | recover that Tool as `UNKNOWN`; later Tool calls in the same Assistant message remain unstarted |
 | complete `P`, before `T` | complete Pi message exists, Run is not terminal | stable mutation ID makes projection redelivery idempotent; terminal settlement retries under current authority |
-| after `T`, before terminal Kafka append | canonical result is complete | PostgreSQL terminal outbox retries the same terminal Fact |
-| canonical projector loss | Kafka group offset does not advance | replacement consumer reapplies idempotently and commits the offset |
+| after `T`, before seal append/projection | next Run remains queued | Outbox retries the stable seal; no context handoff until `C` |
+| old record before seal | it belongs to the closing execution | apply it before `C` |
+| old record after seal | it may remain in bounded Kafka history | neither PG lane nor SSE accepts it |
+| seal commit succeeded, ACK lost | closed execution stays closed | duplicate seal is a no-op |
+| `C` completed, queued successor starts | predecessor context includes its preserved prefix | old records cannot subsequently rewrite it |
+| canonical projector loss | volatile prefix is lost, canonical entries are not | replay retained Kafka from beginning; skip durably closed attempts, deduplicate semantic effects and rebuild open prefixes |
 | Gateway loss | no canonical loss | replacement Gateway rebuilds its soft tail from Kafka and PostgreSQL |
 | browser loss | no server-side acknowledgement is needed | reconnect receives `S`; no browser cursor survives |
 | Worker loss during arbitrary Tool work | outcome may be unknown | revoke authority, record `UNKNOWN`, never auto-run the Tool again |
 | Cube loss | process/memory state is gone | persistent Workspace Volume keeps files; the next model sees a minimal reset fact |
 
 Kafka retention must exceed maximum Turn time plus settlement/recovery grace.
-PostgreSQL Session heads record the terminal Kafka partition/offset for audit and
-bounded recovery; those coordinates are internal and never enter the browser API.
+RunAttempt rows retain closure and first/projected Kafka coordinates; none enter
+the browser API. If an unsealed Run is older than the configured retention window
+or replay is missing its recorded first offset, recovery stops for operator action.
+Finite retention is not a promise of recovery after an unlimited outage.

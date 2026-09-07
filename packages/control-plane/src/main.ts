@@ -26,7 +26,6 @@ import { createControlPlaneRuntime, type ControlPlaneRuntime } from "./control-p
 import { ReplicatedToolBrokerClient } from "@pi-cloud/tool-broker/client";
 import { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
-import { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gateway.ts";
 import { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import { AcceptedFactIngestGateway } from "./accepted-fact-ingest-gateway.ts";
@@ -168,10 +167,6 @@ export async function startControlPlane(): Promise<void> {
       enrollmentToken: config.supervisorEnrollmentToken,
     });
     const provisioningGateway = new SupervisorProvisioningGateway({ provisioner });
-    const terminalTurnProjectionGateway = new TerminalTurnProjectionGateway({
-      source: activeAgentEvents.terminalTurnProjectionSource,
-      authorize: (authorization) => provisioner.authorize(authorization),
-    });
     const acceptedFactIngestGateway = new AcceptedFactIngestGateway({
       channels: activeAgentEvents.factChannels,
       serviceToken: config.workerEventIngestToken,
@@ -267,7 +262,6 @@ export async function startControlPlane(): Promise<void> {
       eventRuntime: {
         eventHub: activeAgentEvents.eventHub,
         eventStore: activeAgentEvents.eventStore,
-        terminalTurnProjectionSource: activeAgentEvents.terminalTurnProjectionSource,
       },
       developmentEnvironmentService,
       sshAccessTicketService,
@@ -276,7 +270,6 @@ export async function startControlPlane(): Promise<void> {
       assignmentInventoryFactory: (identity) =>
         new RoutedHttpSandboxAssignmentInventory(resolveManagementClient, identity),
       supervisorProvisioningGateway: provisioningGateway,
-      terminalTurnProjectionGateway,
       acceptedFactIngestGateway,
       turnSteerBackendFactory: resolveSteerBackend,
       productionHttpGateway: httpGateway,

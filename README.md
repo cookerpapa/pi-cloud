@@ -25,10 +25,9 @@ in CubeSandbox KVM microVMs.
 PiCloud targets private or controlled enterprise deployments. It is not a
 hostile public-SaaS security or abuse-management product.
 
-Known recovery limitation: after a Run fails and its queued successor runs, a
-paused ingress can resume and alter the recovered Session branch. Ordinary
-Follow-up serialization works; see the [API/Worker reproduction](docs/reports/worker-handoff-findings.md)
-before relying on crash/partition-safe operation.
+Execution handoff waits for an ordered Kafka seal of the previous RunAttempt.
+Late records after that seal cannot alter recovered context or live output.
+This is semantic recovery, not automatic replay of arbitrary shell effects.
 
 ## Architecture
 
@@ -90,8 +89,12 @@ AcceptedFact Authority Gate
   └─ one PostgreSQL Lease/Fence admission per logical stream
        ▼
 Kafka (Session-keyed, replication factor 3, acks=all)
-  ├─ canonical consumer ─────────────▶ PostgreSQL Pi SessionStorage
+  ├─ canonical consumer ─────────────▶ PostgreSQL Pi SessionStorage + stream seal
   └─ incomplete-Turn consumer ───────▶ rebuildable live tail ─────▶ SSE
+       Both discard records after that execution's seal.
+
+Run settlement ─▶ PostgreSQL terminal Outbox ─▶ same Kafka partition: execution seal
+Next Run claim waits until that seal and its interrupted prefix are projected.
 
 Workspace browser: Browser ─▶ Control Plane ─▶ Tool Broker
                                                 ├─ elastic: Volume Gateway ─▶ persistent bytes
@@ -112,6 +115,9 @@ concurrently and initialize the browser from one consistent history/live snapsho
 Canonical projection can run separately from the API/SSE process; the default
 deployment keeps them together. Tool infrastructure is activated on demand and
 does not gate model-only conversation.
+
+Consumer restart rebuilds unsealed prefixes from the retained Kafka log; recovery
+must remain within its retention window. See [stream durability](docs/STREAM_DURABILITY.md).
 
 There are three durable authorities:
 

@@ -432,7 +432,10 @@ export async function appendInterruptedAssistantPrefix(
     .orderBy("seq", "asc")
     .execute();
   const canonicalText = existingRows
-    .flatMap((row) => textParts(messageFromEntry(row.payload)))
+    .flatMap((row) => {
+      const message = messageFromEntry(row.payload);
+      return message?.role === "assistant" ? textParts(message) : [];
+    })
     .join("");
   const missingText = visibleText.startsWith(canonicalText)
     ? visibleText.slice(canonicalText.length)

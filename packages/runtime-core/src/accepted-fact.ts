@@ -1,5 +1,5 @@
 import type { PiSessionMutationOperation } from "@pi-cloud/pi-session-postgres";
-import type { EventPublishMessage, PiCloudEvent } from "@pi-cloud/protocol";
+import type { EventPublishMessage, PiCloudEvent, PiCloudEventBody } from "@pi-cloud/protocol";
 
 export type CandidatePiSessionMutationFact = Readonly<{
   schemaVersion: 1;
@@ -39,16 +39,16 @@ export type AcceptedAgentEventFact = Readonly<{
   occurredAt: string;
 }>;
 
-export type AcceptedTerminalEventFact = Readonly<{
-  kind: "terminal_event";
+export type AcceptedExecutionSealFact = Readonly<{
+  kind: "execution_seal";
   factId: string;
-  scope: Readonly<{
-    tenantId: string;
-    sessionId: string;
-    runId: string;
-    turnId: string;
-  }>;
-  event: PiCloudEvent;
+  scope: AcceptedFactScope;
+  agentId: string;
+  baseSequence: number;
+  terminal: Extract<
+    PiCloudEventBody,
+    { type: "turn.completed" | "turn.failed" | "turn.cancelled" }
+  >;
   occurredAt: string;
 }>;
 
@@ -63,12 +63,15 @@ export type AcceptedPiSessionMutationFact = Readonly<{
 }>;
 
 export type AcceptedFact =
-  AcceptedAgentEventFact | AcceptedTerminalEventFact | AcceptedPiSessionMutationFact;
+  AcceptedAgentEventFact | AcceptedExecutionSealFact | AcceptedPiSessionMutationFact;
 
 export type AcceptedFactReceipt = Readonly<{
   factId: string;
   durable: true;
 }>;
+
+/** An ordered record is durable but its dependent canonical transaction is still in flight. */
+export class AcceptedFactProjectionPendingError extends Error {}
 
 export interface AcceptedFactBus {
   append(fact: AcceptedFact): Promise<AcceptedFactReceipt>;

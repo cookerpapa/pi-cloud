@@ -7,6 +7,8 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { sql, type Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
+import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
+import { parseKafkaAcceptedFact } from "../../runtime-core/src/kafka-accepted-fact.ts";
 
 let pglite: PGlite;
 let socket: PGLiteSocketServer;
@@ -115,6 +117,20 @@ describe.sequential("Run queue authority", () => {
       status: "completed",
       runId: first.runId,
     });
+    // Business completion is not the output handoff boundary.
+    await expect(executor.dispatchNext("conversation")).resolves.toEqual({ status: "idle" });
+    const seal = await database
+      .selectFrom("outbox")
+      .select("payload")
+      .where("aggregate_type", "=", "session_terminal_event")
+      .where(sql<boolean>`payload #>> '{scope,runId}' = ${first.runId}`)
+      .executeTakeFirstOrThrow();
+    await new ExecutionStreamProjector(database).project({
+      fact: parseKafkaAcceptedFact(JSON.stringify(seal.payload)),
+      topic: "queue-seal-test",
+      partition: 0,
+      offset: 0n,
+    });
     await expect(executor.dispatchNext("conversation")).resolves.toMatchObject({
       status: "completed",
       runId: second.runId,
@@ -208,9 +224,8 @@ describe.sequential("Run queue authority", () => {
     await expect(
       database
         .selectFrom("outbox")
-        .innerJoin("session_terminal_events as terminal", "terminal.event_id", "outbox.id")
         .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("terminal.session_id", "=", session.sessionId)
+        .where(sql<boolean>`payload #>> '{scope,sessionId}' = ${session.sessionId}`)
         .where("outbox.topic", "=", "session.event.accepted.v1")
         .executeTakeFirstOrThrow(),
     ).resolves.toEqual({ count: "1" });
@@ -341,6 +356,17 @@ describe.sequential("Run queue authority", () => {
       runId: root.runId,
     });
     expect(observed).toEqual([root.runId, child.runId]);
+    const rootSeal = await database
+      .selectFrom("outbox")
+      .select("payload")
+      .where(sql<boolean>`payload #>> '{scope,runId}' = ${root.runId}`)
+      .executeTakeFirstOrThrow();
+    await new ExecutionStreamProjector(database).project({
+      fact: parseKafkaAcceptedFact(JSON.stringify(rootSeal.payload)),
+      topic: "lane-seal-test",
+      partition: 0,
+      offset: 0n,
+    });
 
     const later = await store.acceptTurn(rootSession.sessionId, "lane-owner-later", {
       prompt: "later",

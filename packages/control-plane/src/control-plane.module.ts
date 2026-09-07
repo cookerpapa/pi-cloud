@@ -29,7 +29,6 @@ import type { TurnSteerBackend } from "./turn-steer.ts";
 import { ConversationTreeService } from "./conversation-tree-service.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
-import type { TerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
 import { SourceControlService } from "./source-control-service.ts";
 
 export type ControlPlaneModuleOptions = Omit<
@@ -55,7 +54,6 @@ export type ControlPlaneModuleOptions = Omit<
 export type ControlPlaneEventRuntime = {
   eventHub: SessionEventHub;
   eventStore: LiveSessionTailSource;
-  terminalTurnProjectionSource?: TerminalTurnProjectionSource;
 };
 
 @Module({})

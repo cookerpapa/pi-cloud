@@ -1,5 +1,9 @@
 # Public API / Pi Worker handoff validation
 
+This is historical failure evidence. The current
+[ordered-seal acceptance](execution-stream-seal-acceptance.md) records the fix;
+`worker-handoff-probe-latest.json` is the latest rerun, not the original failure.
+
 Date: 2026-09-07. Application revision: `c9c4376a`. Production implementation
 was not changed. Final probe started at 07:48 UTC; an earlier complete run at
 07:43 UTC reached the same late-publication result.

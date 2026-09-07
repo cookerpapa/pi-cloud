@@ -57,3 +57,5 @@ Results and limitations: [boundary acceptance](../reports/boundary-consolidation
 Subsequent process-level validation reproduced the unresolved late-publisher
 gap described above; [evidence](../reports/late-publisher-findings.md). The drain
 fix remains valid for a live closing ingress, not partition-safe replacement.
+ADR-0154 supersedes this unresolved handoff boundary with an in-band execution
+seal and removes the former empty Run-start barrier and best-effort prefix RPC.

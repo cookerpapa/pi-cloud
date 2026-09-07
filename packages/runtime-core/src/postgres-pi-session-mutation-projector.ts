@@ -12,7 +12,11 @@ export class PostgresPiSessionMutationProjector {
     this.#database = database;
   }
 
-  async project(fact: AcceptedPiSessionMutationFact, requireProductSession = false): Promise<void> {
+  async project(
+    fact: AcceptedPiSessionMutationFact,
+    requireProductSession = false,
+    offset?: bigint,
+  ): Promise<void> {
     this.#projectedSinceCleanup += 1;
     if (this.#projectedSinceCleanup >= 256) {
       this.#projectedSinceCleanup = 0;
@@ -23,6 +27,24 @@ export class PostgresPiSessionMutationProjector {
     }
     try {
       await this.#database.transaction().execute(async (transaction) => {
+        // Also serialize projection against the seal transaction. A rebalanced
+        // old consumer must not mutate a lane after the new owner closes it.
+        if (requireProductSession) {
+          const attempt = await transaction
+            .selectFrom("run_attempts")
+            .select(["output_sealed_at", "output_projected_offset"])
+            .where("tenant_id", "=", fact.scope.tenantId)
+            .where("id", "=", fact.scope.attemptId)
+            .forUpdate()
+            .executeTakeFirst();
+          if (!attempt || attempt.output_sealed_at !== null) return;
+          if (
+            offset !== undefined &&
+            attempt.output_projected_offset !== null &&
+            BigInt(attempt.output_projected_offset) >= offset
+          )
+            return;
+        }
         const check = await sql<{ exists: boolean; projected: boolean }>`select
           (not ${requireProductSession} or exists(select 1 from sessions where tenant_id=${fact.scope.tenantId}::uuid and id=${fact.scope.sessionId}::uuid)) as exists,
           exists(select 1 from pi_session_mutation_results where mutation_id=${fact.factId}::uuid) as projected
@@ -35,11 +57,14 @@ export class PostgresPiSessionMutationProjector {
           turnId: fact.scope.turnId,
           projectedMutationId: fact.factId,
         });
-        const result =
-          fact.operation.kind === "projection_barrier"
-            ? { kind: "projection_barrier" as const }
-            : await applyOperation(storage, fact.operation);
+        const result = await applyOperation(storage, fact.operation);
         await this.#recordResult(transaction, fact, "completed", result ?? null);
+        if (offset !== undefined)
+          await transaction
+            .updateTable("run_attempts")
+            .set({ output_projected_offset: offset.toString() })
+            .where("id", "=", fact.scope.attemptId)
+            .execute();
       });
     } catch (error: unknown) {
       if (!(error instanceof SessionError)) throw error;
@@ -100,8 +125,6 @@ async function applyOperation(
       return undefined;
     case "set_label":
       await storage.setLabel(operation.id, operation.label);
-      return undefined;
-    case "projection_barrier":
       return undefined;
   }
 }

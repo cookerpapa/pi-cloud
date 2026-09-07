@@ -16,6 +16,7 @@ export class KafkaProjectionRuntime {
   constructor(options: KafkaAcceptedFactConfiguration & { database: Kysely<Database> }) {
     this.#bus = new KafkaAcceptedFactBus(options);
     this.#canonical = new KafkaCanonicalProjector({
+      retentionMs: options.retentionMs,
       database: options.database,
       brokers: options.brokers,
       topic: options.topic ?? ACCEPTED_FACT_TOPIC,

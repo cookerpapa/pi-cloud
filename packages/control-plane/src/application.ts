@@ -14,7 +14,6 @@ import type { TrustedWorkspaceBrowser } from "./workspace-browser-service.ts";
 import type { WebAuthenticationService } from "./web-authentication.ts";
 import type { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
 import type { DevelopmentEnvironmentService } from "./development-environment-service.ts";
-import type { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gateway.ts";
 import type { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import type { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
 import type { AcceptedFactIngestGateway } from "./accepted-fact-ingest-gateway.ts";
@@ -40,7 +39,6 @@ export type ControlPlaneApplicationOptions = Omit<
   cubeEgressConfigToken?: string;
   workspaceTerminalGateway?: WorkspaceTerminalGateway;
   developmentEnvironmentService?: DevelopmentEnvironmentService;
-  terminalTurnProjectionGateway?: TerminalTurnProjectionGateway;
   sandboxPreviewGateway?: SandboxPreviewGateway;
   sshAccessTicketService?: SshAccessTicketService;
   acceptedFactIngestGateway?: AcceptedFactIngestGateway;
@@ -56,7 +54,6 @@ export async function createControlPlaneApplication(
   options.supervisorWebSocketGateway?.install(adapter.getInstance());
   options.workspaceTerminalGateway?.install(adapter.getInstance());
   options.sandboxPreviewGateway?.install(adapter.getInstance());
-  options.terminalTurnProjectionGateway?.install(adapter.getInstance());
   options.acceptedFactIngestGateway?.install(adapter.getInstance());
   let staticRequestIdentity;
   if (options.productionHttpGateway === undefined) {

@@ -20,11 +20,7 @@ import type {
   TurnExecutionRequest,
 } from "./run-executor.ts";
 import { transitionCurrentRunAttempt } from "./run-attempt-state.ts";
-import { commitTerminalTurnEvent } from "./terminal-turn-event.ts";
-import type {
-  PreparedTerminalTurnProjection,
-  TerminalTurnProjectionSource,
-} from "./terminal-turn-projection.ts";
+import { requestExecutionStreamSeal } from "./execution-stream-seal.ts";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
 const DEFAULT_RETRY_DELAY_MS = 1_000;
@@ -123,7 +119,6 @@ export type RunCancellationExecutorOptions = {
   retryDelayMs?: number;
   maxAttempts?: number;
   idGenerator?: () => string;
-  terminalTurnProjectionSource?: TerminalTurnProjectionSource;
 };
 
 type ClaimedCancellation = {
@@ -208,7 +203,6 @@ export class RunCancellationExecutor {
   readonly #retryDelayMs: number;
   readonly #maxAttempts: number;
   readonly #idGenerator: () => string;
-  readonly #terminalTurnProjectionSource: TerminalTurnProjectionSource | undefined;
 
   constructor(options: RunCancellationExecutorOptions) {
     this.#database = options.database;
@@ -225,7 +219,6 @@ export class RunCancellationExecutor {
     );
     this.#maxAttempts = positiveInteger(options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS, "maxAttempts");
     this.#idGenerator = options.idGenerator ?? randomUUID;
-    this.#terminalTurnProjectionSource = options.terminalTurnProjectionSource;
   }
 
   /**
@@ -631,26 +624,7 @@ export class RunCancellationExecutor {
       type: "turn.cancelled",
       payload: { reason: result.reason, forced: result.forced },
     } as const;
-    let preparedProjection: PreparedTerminalTurnProjection | undefined;
-    const initialEventSeq = Number(claim.request.target.nextEventSeq) - 1;
-    const hasVisibleTurnPrefix =
-      result.lastEventSeq !== undefined && result.lastEventSeq > initialEventSeq;
-    if (hasVisibleTurnPrefix) {
-      try {
-        preparedProjection = await this.#terminalTurnProjectionSource?.prepare({
-          tenantId: claim.request.target.tenantId,
-          sessionId: claim.request.target.sessionId,
-          turnId: claim.request.target.turnId,
-          runId: claim.request.target.runId,
-          agentId: "root",
-          body: terminalBody,
-          eventId: terminalEventId,
-          occurredAt: now.toISOString(),
-        });
-      } catch {
-        // Stream-prefix recovery is best effort for cancellation.
-      }
-    }
+
     await this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
       if (
@@ -752,7 +726,7 @@ export class RunCancellationExecutor {
         .where("state", "=", rows.sessionState)
         .executeTakeFirst();
       expectOne(sessionUpdate.numUpdatedRows, "settling a cancelled session");
-      await commitTerminalTurnEvent(transaction, {
+      await requestExecutionStreamSeal(transaction, {
         tenantId: claim.request.target.tenantId,
         sessionId: claim.request.target.sessionId,
         turnId: claim.request.target.turnId,
@@ -761,7 +735,6 @@ export class RunCancellationExecutor {
         body: terminalBody,
         now,
         eventId: terminalEventId,
-        ...(preparedProjection === undefined ? {} : { preparedProjection }),
       });
 
       await this.#executionAuthority.releaseCurrent(

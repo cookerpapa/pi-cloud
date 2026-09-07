@@ -790,6 +790,12 @@ export interface RunAttemptTable {
   settling_at: NullableTimestamp;
   last_heartbeat_at: NullableTimestamp;
   last_event_seq: GeneratedInt8;
+  output_seal_id: GeneratedNullable<string>;
+  output_sealed_at: NullableTimestamp;
+  output_first_topic: GeneratedNullable<string>;
+  output_first_partition: GeneratedNullable<number>;
+  output_first_offset: NullableInt8;
+  output_projected_offset: NullableInt8;
   settled_at: NullableTimestamp;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;

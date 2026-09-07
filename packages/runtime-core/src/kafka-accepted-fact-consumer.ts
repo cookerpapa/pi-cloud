@@ -5,6 +5,7 @@ import {
   type MessagesStream,
 } from "@platformatic/kafka";
 import type { AcceptedFact } from "./accepted-fact.ts";
+import { AcceptedFactProjectionPendingError } from "./accepted-fact.ts";
 import { parseKafkaAcceptedFact } from "./kafka-accepted-fact.ts";
 import { consumePartitioned } from "./partitioned-consumption.ts";
 import { operationalLog } from "@pi-cloud/observability";
@@ -28,6 +29,7 @@ export class KafkaAcceptedFactConsumer {
   readonly #mode: "committed" | "earliest";
   readonly #commitMessages: boolean;
   readonly #commitEvery: number;
+  readonly #onReset: (() => void) | undefined;
   #stream: MessagesStream<string, string, string, string> | undefined;
   #run: Promise<void> | undefined;
   #failure: unknown;
@@ -43,6 +45,7 @@ export class KafkaAcceptedFactConsumer {
     mode: "committed" | "earliest";
     commitMessages?: boolean;
     commitEvery?: number;
+    onReset?(): void;
     handler(record: KafkaAcceptedFactRecord): Promise<void>;
   }) {
     this.#topic = options.topic;
@@ -50,6 +53,7 @@ export class KafkaAcceptedFactConsumer {
     this.#mode = options.mode;
     this.#commitMessages = options.commitMessages ?? true;
     this.#commitEvery = options.commitEvery ?? 1;
+    this.#onReset = options.onReset;
     if (!Number.isSafeInteger(this.#commitEvery) || this.#commitEvery < 1) {
       throw new TypeError("Kafka consumer commitEvery is invalid");
     }
@@ -84,6 +88,7 @@ export class KafkaAcceptedFactConsumer {
 
   async #openAndConsume(): Promise<void> {
     this.#stalledPartitions.clear();
+    this.#onReset?.();
     this.#stream = await this.#consumer.consume({
       topics: [this.#topic],
       mode: this.#mode,
@@ -179,6 +184,7 @@ export class KafkaAcceptedFactConsumer {
     try {
       await consumePartitioned(stream, async (message) => {
         let delayMs = 50;
+        const startedAt = Date.now();
         while (!this.#closing && !generation.signal.aborted) {
           try {
             await this.#handle(message);
@@ -200,7 +206,16 @@ export class KafkaAcceptedFactConsumer {
               }
             }
             break;
-          } catch {
+          } catch (error) {
+            // The live consumer commonly reaches a seal a few milliseconds
+            // before the canonical consumer commits it. This is not an outage.
+            if (
+              error instanceof AcceptedFactProjectionPendingError &&
+              Date.now() - startedAt < 5_000
+            ) {
+              await new Promise<void>((resolve) => setTimeout(resolve, 50));
+              continue;
+            }
             if (!this.#stalledPartitions.has(message.partition))
               operationalLog({
                 service: "pi-cloud-kafka-consumer",

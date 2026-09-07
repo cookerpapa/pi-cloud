@@ -149,7 +149,7 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
           runId: SESSION_ID,
           executionLease: openMessage().payload.executionLease,
         },
-        operation: { kind: "projection_barrier" },
+        operation: { kind: "set_name", name: "test" },
         events: [],
         occurredAt: "2026-08-26T00:00:00.000Z",
       },

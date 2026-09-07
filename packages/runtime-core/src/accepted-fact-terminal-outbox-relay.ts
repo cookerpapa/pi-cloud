@@ -74,7 +74,7 @@ export class AcceptedFactTerminalOutboxRelay {
                 and predecessor.tenant_id = candidate.tenant_id
                 and predecessor.payload #>> '{scope,sessionId}' = candidate.payload #>> '{scope,sessionId}'
                 and predecessor.published_at is null
-                and (predecessor.payload #>> '{event,seq}')::bigint < (candidate.payload #>> '{event,seq}')::bigint
+                and (predecessor.created_at, predecessor.id) < (candidate.created_at, candidate.id)
            )
          order by candidate.created_at, candidate.id
          limit ${limit} for update of candidate skip locked
@@ -100,7 +100,7 @@ export class AcceptedFactTerminalOutboxRelay {
   async #publish(row: ClaimedTerminal): Promise<void> {
     try {
       const fact = parseKafkaAcceptedFact(JSON.stringify(row.payload));
-      if (fact.kind !== "terminal_event")
+      if (fact.kind !== "execution_seal")
         throw new Error("Terminal Outbox contains a non-terminal Fact");
       const receipt = await this.#bus.append(fact);
       if (!receipt.durable || receipt.factId !== fact.factId)

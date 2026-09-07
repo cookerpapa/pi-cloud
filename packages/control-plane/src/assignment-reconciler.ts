@@ -14,12 +14,8 @@ import type {
 import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
 import { transitionCurrentRunAttempt } from "@pi-cloud/runtime-core/run-attempt-state";
-import { commitTerminalTurnEvent } from "@pi-cloud/runtime-core/terminal-turn-event";
+import { requestExecutionStreamSeal } from "@pi-cloud/runtime-core/execution-stream-seal";
 import { createExecutionLease, parseExecutionLease } from "@pi-cloud/protocol";
-import type {
-  PreparedTerminalTurnProjection,
-  TerminalTurnProjectionSource,
-} from "@pi-cloud/runtime-core/terminal-turn-projection";
 
 const ASSIGNMENT_LOST = "assignment_lost";
 const ASSIGNMENT_LOST_MESSAGE =
@@ -34,7 +30,6 @@ export type AssignmentReconcilerOptions = {
   sandboxId: string;
   inventory: SandboxAssignmentInventory;
   clock?: () => Date;
-  terminalTurnProjectionSource?: TerminalTurnProjectionSource;
 };
 
 export type AssignmentReconciliationResult = {
@@ -133,7 +128,6 @@ export class AssignmentReconciler {
   readonly #sandboxId: string;
   readonly #inventory: SandboxAssignmentInventory;
   readonly #clock: () => Date;
-  readonly #terminalTurnProjectionSource: TerminalTurnProjectionSource | undefined;
 
   constructor(options: AssignmentReconcilerOptions) {
     if (options.sandboxId.trim().length === 0) {
@@ -143,7 +137,6 @@ export class AssignmentReconciler {
     this.#sandboxId = options.sandboxId;
     this.#inventory = options.inventory;
     this.#clock = options.clock ?? (() => new Date());
-    this.#terminalTurnProjectionSource = options.terminalTurnProjectionSource;
   }
 
   async reconcileExpiredAssignments(
@@ -537,23 +530,8 @@ export class AssignmentReconciler {
         retryable: false,
       },
     } as const;
-    let preparedProjection: PreparedTerminalTurnProjection | undefined;
-    try {
-      preparedProjection = await this.#terminalTurnProjectionSource?.prepare({
-        tenantId: session.tenant_id,
-        sessionId: candidate.sessionId,
-        turnId: turn.id,
-        runId: run.runId,
-        agentId: "root",
-        body: terminalBody,
-        eventId: terminalEventId,
-        occurredAt: now.toISOString(),
-      });
-    } catch {
-      // A lost Worker must still settle even when its optional stream prefix
-      // cannot be reconstructed immediately.
-    }
-    await commitTerminalTurnEvent(transaction, {
+
+    await requestExecutionStreamSeal(transaction, {
       tenantId: session.tenant_id,
       sessionId: candidate.sessionId,
       turnId: turn.id,
@@ -562,7 +540,6 @@ export class AssignmentReconciler {
       body: terminalBody,
       now,
       eventId: terminalEventId,
-      ...(preparedProjection === undefined ? {} : { preparedProjection }),
     });
     await this.#deleteLease(transaction, candidate, now);
     return "settled";

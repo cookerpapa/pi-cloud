@@ -274,7 +274,6 @@ export {
   SessionEventStream,
   type SessionEventStreamOptions,
 } from "@pi-cloud/runtime-core/session-event-stream";
-export { TerminalTurnProjectionGateway } from "./terminal-turn-projection-gateway.ts";
 export {
   ControlPlaneStore,
   ControlPlaneStoreError,

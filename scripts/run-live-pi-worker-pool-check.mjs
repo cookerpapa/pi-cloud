@@ -577,15 +577,15 @@ try {
     "The previous Run was interrupted. Do not call tools. Reply exactly RECOVERY-BARRIER-OK.",
   );
   assert(recovered.text.includes("RECOVERY-BARRIER-OK"));
-  const barrierCount = Number(
+  const sealedPredecessors = Number(
     await psql(
-      `select count(*)
-         from pi_session_mutation_results
-        where run_id = ${sqlLiteral(recovered.runId)}
-          and result ->> 'kind' = 'projection_barrier'`,
+      `select count(*) from run_attempts old_attempt
+       join runs successor on successor.id = ${sqlLiteral(recovered.runId)}
+       where old_attempt.run_id = ${sqlLiteral(crashed.runId)}
+         and old_attempt.output_sealed_at <= successor.started_at`,
     ),
   );
-  assert(barrierCount >= 1, "The replacement Worker did not cross its Session projection barrier");
+  assert(sealedPredecessors >= 1, "Replacement ran before the old execution seal was projected");
   const interruptedPrefixCount = Number(
     await psql(
       `select count(*)
@@ -666,7 +666,7 @@ try {
       firstVisibleSequence: crashed.firstVisibleSequence,
       terminalSequence: crashed.terminal.seq,
       acceptedPrefixProjected: interruptedPrefixCount >= 1,
-      sessionProjectionBarriers: barrierCount,
+      sealedPredecessors,
       replacementRunId: recovered.runId,
     },
     concurrency: {
@@ -701,7 +701,7 @@ try {
       `- Previous-turn marker recovered: ${String(report.failover.markerRecovered)}`,
       `- Active Worker crash terminal state: ${report.activeCrashRecovery.terminalState}`,
       `- Accepted prefix projected after crash: ${String(report.activeCrashRecovery.acceptedPrefixProjected)}`,
-      `- Replacement Session projection barriers: ${String(report.activeCrashRecovery.sessionProjectionBarriers)}`,
+      `- Projected predecessor seals: ${String(report.activeCrashRecovery.sealedPredecessors)}`,
       `- Concurrent Runs / distinct Workers: ${String(report.concurrency.runs)} / ${String(report.concurrency.distinctWorkers)}`,
       `- Concurrent assignment: ${report.concurrency.workerIds.join(", ")}`,
       `- Real requests/input/output tokens: ${String(report.totalUsage.requests)} / ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)}`,

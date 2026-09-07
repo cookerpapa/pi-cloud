@@ -10,7 +10,6 @@ import {
 } from "./kafka-accepted-fact.ts";
 import { KafkaCanonicalProjector } from "./kafka-canonical-projector.ts";
 import { KafkaLiveSessionTail } from "./kafka-live-session-tail.ts";
-import { LiveTailTerminalTurnProjectionSource } from "./live-tail-terminal-projection.ts";
 import { PostgresAcceptedFactProgressStore } from "./postgres-accepted-fact-progress.ts";
 
 export type KafkaEventRuntimeOptions = Readonly<{
@@ -30,7 +29,6 @@ export class KafkaEventRuntime {
   readonly factChannels: FactChannelService;
   readonly eventStore: KafkaLiveSessionTail;
   readonly eventHub;
-  readonly terminalTurnProjectionSource: LiveTailTerminalTurnProjectionSource;
   readonly #bus: KafkaAcceptedFactBus;
   readonly #canonical: KafkaCanonicalProjector | undefined;
   readonly #terminalRelay: AcceptedFactTerminalOutboxRelay | undefined;
@@ -48,6 +46,7 @@ export class KafkaEventRuntime {
     };
     this.#bus = new KafkaAcceptedFactBus(configuration);
     this.eventStore = new KafkaLiveSessionTail({
+      database: options.database,
       brokers: options.brokers,
       topic,
       clientId: options.instanceId,
@@ -58,6 +57,7 @@ export class KafkaEventRuntime {
       options.canonicalProjection === false
         ? undefined
         : new KafkaCanonicalProjector({
+            retentionMs: options.retentionMs,
             database: options.database,
             brokers: options.brokers,
             topic,
@@ -80,10 +80,6 @@ export class KafkaEventRuntime {
         ? {}
         : { maximumActiveChannels: options.factChannelMaximumActive }),
     });
-    this.terminalTurnProjectionSource = new LiveTailTerminalTurnProjectionSource({
-      database: options.database,
-      events: this.eventStore,
-    });
     this.#terminalRelay =
       options.canonicalProjection === false
         ? undefined
@@ -98,9 +94,9 @@ export class KafkaEventRuntime {
     this.#started = true;
     try {
       await this.#bus.start();
-      await this.eventStore.start();
       await this.#canonical?.start();
       this.#terminalRelay?.start();
+      await this.eventStore.start();
     } catch (error: unknown) {
       await this.close();
       throw error;

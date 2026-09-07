@@ -45,9 +45,6 @@ export class FactChannelPiSessionMutationProducer {
   scoped(scope: PiSessionMutationScope): PiSessionMutationPublisher {
     return {
       mutate: (operation, events = []) => this.#mutate(scope, operation, events),
-      synchronize: async () => {
-        await this.#mutate(scope, { kind: "projection_barrier" }, []);
-      },
     };
   }
 

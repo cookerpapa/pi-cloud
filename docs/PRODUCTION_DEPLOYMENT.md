@@ -24,6 +24,17 @@ npm run production:administrator -- --username <registered-username>
 
 Sign in again and set the model provider/key in the administrator page.
 
+## Execution-seal protocol upgrade
+
+Migration 127 requires no active Runs and no unpublished terminal Outbox rows.
+Drain Workers, stop old Worker/Control Plane publishers, migrate, then start all
+new components. The default AcceptedFact topic changes to
+`pi-cloud.accepted-facts.v2`; a custom topic must likewise use a new generation.
+Do not mix old/new publishers or change a live topic's partition count. Existing
+PostgreSQL conversations and user-owned machines are preserved. Old Kafka data
+can age out under its existing retention policy. Rolling protocol upgrades are
+not supported by this cutover.
+
 The safe default binds the Web/Preview entry to loopback. For a trusted LAN,
 set `PI_CLOUD_HTTP_BIND_ADDRESS=0.0.0.0` in the private production environment
 and access `http://<host-ip>:8080`. Internet publication should use a TLS

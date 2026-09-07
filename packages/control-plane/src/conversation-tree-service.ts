@@ -779,6 +779,20 @@ export class ConversationTreeService {
           .where("state", "in", ["queued", "running", "cancelling"])
           .limit(1)
           .executeTakeFirst();
+        const pendingSeal = await transaction
+          .selectFrom("run_attempts as attempt")
+          .innerJoin("runs as run", "run.id", "attempt.run_id")
+          .select("attempt.id")
+          .where("run.session_id", "=", sessionId)
+          .where("attempt.output_seal_id", "is not", null)
+          .where("attempt.output_sealed_at", "is", null)
+          .limit(1)
+          .executeTakeFirst();
+        if (pendingSeal)
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Wait for conversation output to settle before deleting later messages",
+          );
         if (unsettled !== undefined) {
           throw new ControlPlaneStoreError(
             "conflict",

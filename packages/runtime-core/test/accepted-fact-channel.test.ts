@@ -195,7 +195,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
           runId: id(1, 11),
           executionLease: event.payload.executionLease,
         },
-        operation: { kind: "projection_barrier" },
+        operation: { kind: "set_name", name: "test" },
         events: [
           {
             schemaVersion: 1,
@@ -259,7 +259,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
           runId: id(22, 11),
           executionLease: secondEvent.payload.executionLease,
         },
-        operation: { kind: "projection_barrier" },
+        operation: { kind: "set_name", name: "test" },
         events: [],
         occurredAt: "2026-08-26T00:00:00.000Z",
       }),

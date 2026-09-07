@@ -1,7 +1,17 @@
 import type { PiCloudEvent } from "@pi-cloud/protocol";
+import type { Database } from "@pi-cloud/database";
+import type { Kysely } from "kysely";
 import type { AcceptedFact } from "./accepted-fact.ts";
-import { KafkaAcceptedFactConsumer } from "./kafka-accepted-fact-consumer.ts";
+import {
+  KafkaAcceptedFactConsumer,
+  type KafkaAcceptedFactRecord,
+} from "./kafka-accepted-fact-consumer.ts";
 import { SessionEventHub } from "./session-event-hub.ts";
+import {
+  ExecutionStreamBoundary,
+  factEvents,
+  readProjectedSeal,
+} from "./execution-stream-projection.ts";
 
 type SessionTailState = {
   canonicalThroughSequence: number;
@@ -25,6 +35,8 @@ function stateKey(tenantId: string, sessionId: string): string {
 export class KafkaLiveSessionTail {
   readonly eventHub = new SessionEventHub();
   readonly #consumer: KafkaAcceptedFactConsumer;
+  readonly #database: Kysely<Database>;
+  readonly #boundary: ExecutionStreamBoundary;
   readonly #sessions = new Map<string, SessionTailState>();
   readonly #maximumIdleMs: number;
   #sweepTimer: NodeJS.Timeout | undefined;
@@ -33,6 +45,7 @@ export class KafkaLiveSessionTail {
   #evictedEvents = 0;
 
   constructor(options: {
+    database: Kysely<Database>;
     brokers: readonly string[];
     topic: string;
     clientId: string;
@@ -40,6 +53,8 @@ export class KafkaLiveSessionTail {
     maximumIdleMs?: number;
   }) {
     this.#maximumIdleMs = options.maximumIdleMs ?? 30 * 60_000;
+    this.#database = options.database;
+    this.#boundary = new ExecutionStreamBoundary(options.database);
     this.#consumer = new KafkaAcceptedFactConsumer({
       brokers: options.brokers,
       clientId: `${options.clientId}-live-tail`,
@@ -47,9 +62,8 @@ export class KafkaLiveSessionTail {
       topic: options.topic,
       mode: "earliest",
       commitMessages: false,
-      handler: async ({ fact }) => {
-        this.project(fact);
-      },
+      onReset: () => this.#boundary.reset(),
+      handler: (record) => this.projectRecord(record),
     });
   }
 
@@ -97,11 +111,18 @@ export class KafkaLiveSessionTail {
   }
 
   project(fact: AcceptedFact): void {
-    if (fact.kind === "agent_event" || fact.kind === "terminal_event") {
-      this.#accept(fact.scope.tenantId, fact.event);
-      return;
+    for (const event of factEvents(fact)) this.#accept(fact.scope.tenantId, event);
+  }
+
+  async projectRecord(record: KafkaAcceptedFactRecord): Promise<void> {
+    const { fact } = record;
+    if (fact.kind === "execution_seal") {
+      const terminal = await readProjectedSeal(this.#database, fact);
+      this.#boundary.close(fact.scope.attemptId);
+      if (terminal) this.#accept(fact.scope.tenantId, terminal);
+    } else if (await this.#boundary.isOpen(record, false)) {
+      this.project(fact);
     }
-    for (const event of fact.events) this.#accept(fact.scope.tenantId, event);
   }
 
   statistics() {

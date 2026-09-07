@@ -98,6 +98,8 @@ try {
     );
   const report = JSON.parse(line);
   report.revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
+  report.workingTreeDirty =
+    (await exec("git", ["status", "--porcelain"], { cwd: root })).stdout.trim().length > 0;
   await writeFile(
     new URL("../docs/reports/worker-handoff-probe-latest.json", import.meta.url),
     await format(JSON.stringify(report), { parser: "json" }),

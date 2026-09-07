@@ -5,14 +5,12 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
-- [ ] Blocking counterexample: an ingress paused after the final Lease check
-      can publish after authority rotation and a projected recovery barrier,
-      changing the recovered Pi lane. Coordinate publication-generation closure
-      with durable append before claiming partition-safe recovery. See
-      [late-publisher evidence](reports/late-publisher-findings.md).
-- [ ] Resolve terminal stream sequence collision observed during real Worker
-      loss with lagging persisted progress; preserve delivered Steer separately
-      from model consumption. [API handoff evidence](reports/worker-handoff-findings.md).
+- [x] Close each retired execution in Kafka order before a successor reads context;
+      reject late old records in canonical and SSE paths. Preserve visible prefixes
+      across consumer/Worker replacement (ADR-0154).
+- [x] Allocate terminal sequence from the accepted stream at its seal, not lagging
+      lease progress. Keep delivered Steer distinct from native consumption.
+      [Real API/Worker and Cube/browser evidence](reports/execution-stream-seal-acceptance.md).
 - [x] ADR-0153.1–2: drain Fact publications before close; bounded transaction-free
       terminal Outbox publication, idempotent retries and consumer failure signals.
 - [x] ADR-0153.3: co-commit sampling start and Tool completion with native records.
@@ -42,8 +40,9 @@ Volume architecture. Historical experiments remain in Git history.
       rows.
 - [ ] Kill one Kafka broker during concurrent Agent streams and verify
       `acks=all`, consumer recovery and snapshot replacement.
-- [ ] Kill the canonical projector after PostgreSQL commit but before Kafka
-      offset commit; verify idempotent redelivery.
+- [x] Restart the canonical consumer around an unsealed prefix and after seal;
+      replay idempotently without rewinding canonical state or losing visible text.
+      Group offsets are monitoring progress, not a durable prefix checkpoint.
 - [x] Kill/restart a Gateway after visible partial output; verify a new browser
       request receives PostgreSQL canonical messages plus the rebuilt Kafka tail.
 - [ ] Validate PostgreSQL/PgBouncer failover and Cube compute-node drain on a

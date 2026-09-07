@@ -29,7 +29,8 @@ Worker may proceed in parallel.
 - this is the Session's next runnable message;
 - cancellation has not won;
 - no current Attempt already owns the Run.
-- all active Lanes of the physical Pi Session have this Worker as owner.
+- all active Lanes of the physical Pi Session have this Worker as owner;
+- every requested predecessor execution seal for this product Session is projected.
 
 It creates a RunAttempt with a bounded claim lease. The Worker heartbeats that
 claim and obtains an opaque execution authority containing the current Attempt
@@ -81,9 +82,9 @@ the same stream only as complete Items. Each event's Kafka `acks=all` receipt is
 visibility boundary. Event ordering and duplicate handling belong to the
 Kafka/downstream adapter rather than the Authority Gate. Stream close flushes
 the post-PubAck event progress and releases short channel ownership
-before terminal settlement releases the lease. Terminal sequence allocation
-uses the maximum of Attempt progress and the separately projected channel
-progress, so a lagging projection cannot move the Session stream backwards.
+before terminal settlement releases the lease. Periodic progress is not used to
+allocate the terminal sequence. The ordered seal projector uses actual accepted
+events, preventing a late progress update from colliding with the terminal.
 
 Pi `message_end` submits a complete Session mutation and its matching reviewed
 public event through that same FactChannel. The unified PostgreSQL Gate
@@ -93,7 +94,10 @@ the accepted fact idempotently without another authority query, and the Worker
 waits at a read-your-writes barrier before the next model Step. On successful settlement, the Worker
 prepares the lightweight Workspace Volume settlement. The terminal transaction
 validates the current Attempt/fence, records the last Workspace settlement
-if applicable, writes a terminal event Outbox record and settles the Run. A
+if applicable, requests an execution seal in the Outbox and settles the business Run.
+The canonical consumer commits the public terminal and closes that Attempt only
+after all preceding accepted records are projected. A queued next Run waits for
+this closure before opening Pi context. A
 different Session settling the same Workspace first does not fail this Run. Kafka
 retention eventually removes hot fragments while canonical Pi
 messages remain in PostgreSQL.
@@ -113,13 +117,14 @@ server-assigned stamps rather than echoing full message or Tool-result bodies.
 
 Cancellation revokes authority before trying to interrupt model/Tool work.
 Current authority is required for new admissions, Tools and terminal state.
-A known gap allows a paused ingress's previously admitted semantic mutation to
-arrive after a failed Run has been retired and its queued successor completed;
-FIFO alone does not seal old publications. A caught interruption writes Pi's minimal
+An execution seal in the same Kafka partition closes a retired Attempt. A paused
+ingress can still append its old record, but if it arrives after the seal both
+canonical and live consumers discard it. Earlier accepted data is projected
+before the successor is allowed to claim. A caught interruption writes Pi's minimal
 abort/reset boundary. A hard Worker loss is reconciled from the retained Kafka
 prefix plus a factual interruption marker; no Tool result is invented. A
-normal failure/cancellation also fetches that trusted prefix from the Control
-Plane instead of trusting a possibly-behind Worker-local buffer.
+normal failure/cancellation uses the same ordered seal reducer, with no best-effort
+HTTP prefix fetch and no guessed terminal sequence.
 
 Cube loss discards processes, memory, sockets and PTYs. The persistent Workspace
 Volume survives and can attach to a fresh KVM. The next Pi step is told only

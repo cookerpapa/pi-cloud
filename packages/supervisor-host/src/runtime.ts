@@ -9,7 +9,6 @@ import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/accepted-f
 import { FactChannelPiSessionMutationProducer } from "@pi-cloud/runtime-core/fact-channel-pi-session-mutation-producer";
 import type { ActiveFactChannelResolver } from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
-import { HttpTerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { PostgresRunAttemptPhaseObserver } from "@pi-cloud/runtime-core/run-attempt-runtime";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
@@ -504,10 +503,6 @@ export class PiWorkerRuntime {
       client.setAcceptingAssignments(false);
       this.#client = client;
       await client.start();
-      const terminalTurnProjectionSource = new HttpTerminalTurnProjectionSource({
-        baseUrl: this.#config.controlPlaneBaseUrl,
-        serviceToken: this.#config.enrollmentToken,
-      });
       const leaseCoordinator = new SessionLeaseCoordinator({
         database: this.#database,
         sandboxId: identity.sandboxId,
@@ -545,7 +540,6 @@ export class PiWorkerRuntime {
           database: this.#database,
           backend: runBackend,
           executionAuthority: leaseCoordinator,
-          terminalTurnProjectionSource,
           claimOwnerId: runWorkerIdentity,
           ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
         }),
@@ -553,7 +547,6 @@ export class PiWorkerRuntime {
           database: this.#database,
           backend: runBackend,
           executionAuthority: leaseCoordinator,
-          terminalTurnProjectionSource,
         }),
         onFailure: (operation, error) =>
           operationalLog({

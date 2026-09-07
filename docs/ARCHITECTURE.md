@@ -743,11 +743,11 @@ Session leases publish concurrently, while one logical Stream keeps one Fact
 in flight. Stream ownership renews set-wise outside the Fact hot
 path. After PubAck, a separate progress store checkpoints the acknowledged
 Agent-event sequence set-wise and flushes it on normal Stream close; this is a
-terminal-stream boundary, not an admission decision. Closing stops new publications,
+diagnostic lower bound, not the terminal sequence or an admission decision. Closing stops new publications,
 drains in-flight delivery and progress, and keeps renewal active until that drain
 finishes. A failed/unknown delivery cannot produce a successful close. Normal settlement closes
-the Stream before releasing the lease; crash recovery waits for its short
-lease rather than admitting overlapping generations. Workers have no Kafka
+the Stream before releasing the lease. Retirement requests an in-band execution
+seal, and a queued successor waits until the canonical consumer projects it. Workers have no Kafka
 credentials or network route.
 
 There is no second mutation endpoint or mutation-specific authority. The Gate
@@ -771,8 +771,9 @@ Step reuses its just-restored branch; a real compaction refreshes the result.
 Each Gateway consumes the Kafka topic into a rebuildable in-memory tail holding
 incomplete active Turns only. The public SSE request carries no cursor. Its first
 frame replaces the browser view with PostgreSQL canonical messages plus an
-immutable snapshot of that tail; later frames contain new events. Terminal Facts
-are sent to existing subscribers and then unload the covered shared tail. Slow
+immutable snapshot of that tail; later frames contain new events. An execution
+seal is reduced to a public terminal only after its canonical PG transaction.
+That terminal is sent to existing subscribers and unloads the covered tail. Slow
 connections have bounded queues and reconnect for another snapshot. A 15-second
 SSE heartbeat keeps an idle healthy connection open. The browser reconnects
 immediately but delays its visible reconnect label for one second, preventing a
@@ -784,21 +785,31 @@ but no ExecutionLease. They may also carry the zero or one reviewed public
 event produced by that exact semantic boundary. Gateway projects that attached
 event into the live tail from the same Kafka record; a shared Kafka consumer
 group applies complete entries, records and compaction facts idempotently to
-PostgreSQL. Before opening a Session, every Run appends a keyed recovery barrier
-and waits for its projection; earlier records already appended to that Kafka
-partition have then been applied before the Worker reads PostgreSQL. This does
-not currently fence a paused ingress that publishes an earlier admitted Fact
-after the barrier. A process-level counterexample is recorded in
-[late-publisher findings](reports/late-publisher-findings.md); partition-safe
-ownership handoff remains unresolved. Each semantic Pi write also
-waits for its own mutation result before the Agent Loop advances.
-PostgreSQL therefore stores semantic Pi state, not token fragments. Terminal
-Run state and a one-row event outbox commit in the same PostgreSQL transaction.
-Outbox relays atomically claim a bounded set of Session heads, then publish outside
-the transaction. Claim-version CAS prevents stale ACK/error updates; stable Fact
-IDs permit redelivery. Different Sessions progress independently without letting
-one Session's terminal events overtake each other. Consumer failures surface in
-readiness and are retried, not silently skipped.
+PostgreSQL. Before a new Run is claimed, every requested predecessor seal for
+that product Session/Lane must have been projected. The former empty Run-start
+recovery barrier is removed: it could not close a paused old publisher. Every
+semantic Pi write still waits for its own mutation result before the loop advances.
+PostgreSQL stores semantic Pi state, not token fragments. The terminal business
+transaction requests an immutable RunAttempt seal through the existing Outbox.
+Relays claim bounded Session heads and publish outside the transaction. The seal
+uses the same Session key and fixed Kafka partition as all execution data.
+
+The canonical consumer folds records in partition order. At the first seal it
+preserves visible interrupted text not already in Pi, allocates the terminal
+sequence after actual accepted events, and commits the public terminal, Session
+boundary and Attempt closure together. Records after the seal cannot mutate the
+lane. Gateway follows the same closure rule and waits for this transaction before
+showing the terminal. Duplicate seals are harmless; a seal names one Attempt,
+never an entire Session or another Lane. Closure metadata is durable on the
+Attempt; RAM tombstone eviction or Kafka retention cannot reopen it.
+
+Canonical and live folds replay retained Kafka data on restart/reassignment,
+skipping closed executions. Complete mutation effects also carry a durable
+per-Attempt projected offset so replay cannot rewind an active lane when short
+receipt rows expire. Unsealed prefixes outside the configured retention window,
+or missing their recorded first offset, stop recovery. No consumer resumes at
+an offset while pretending its lost in-memory prefix still exists. This costs a
+bounded recovery scan; no token rows or new coordinator are introduced.
 
 Canonical projection and terminal publication default to the Control Plane
 process. They can instead run in the optional `canonical-projector` role, with
@@ -806,8 +817,8 @@ only PostgreSQL/Kafka access and no live-tail replica. This is a composition spl
 not a second authority. Each SSE Gateway still rebuilds its own retained live
 tail; this change does not implement tail sharding. Configuration is in
 [CONFIGURATION.md](CONFIGURATION.md).
-Abnormal interruption recovery reads only the retained Kafka Session tail needed to
-preserve a visible prefix that never reached `message_end`.
+The interrupted prefix is reduced by the canonical consumer at the seal, not
+fetched best-effort from a separate terminal-projection HTTP endpoint.
 
 ## State ownership
 

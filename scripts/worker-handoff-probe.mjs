@@ -20,8 +20,7 @@ import { PostgresAcceptedFactProgressStore } from "../packages/runtime-core/src/
 import { KafkaAcceptedFactBus } from "../packages/runtime-core/src/kafka-accepted-fact.ts";
 import { KafkaAcceptedFactConsumer } from "../packages/runtime-core/src/kafka-accepted-fact-consumer.ts";
 import { KafkaLiveSessionTail } from "../packages/runtime-core/src/kafka-live-session-tail.ts";
-import { LiveTailTerminalTurnProjectionSource } from "../packages/runtime-core/src/live-tail-terminal-projection.ts";
-import { PostgresPiSessionMutationProjector } from "../packages/runtime-core/src/postgres-pi-session-mutation-projector.ts";
+import { ExecutionStreamProjector } from "../packages/runtime-core/src/execution-stream-projection.ts";
 import { AcceptedFactTerminalOutboxRelay } from "../packages/runtime-core/src/accepted-fact-terminal-outbox-relay.ts";
 import { SessionLeaseCoordinator } from "../packages/runtime-core/src/session-lease-coordinator.ts";
 import { AcceptedFactIngestGateway } from "../packages/control-plane/src/accepted-fact-ingest-gateway.ts";
@@ -40,7 +39,6 @@ import {
   RoutedHttpSandboxAssignmentInventory,
   HttpSupervisorSteerBackend,
 } from "../packages/control-plane/src/http-supervisor-management.ts";
-import { TerminalTurnProjectionGateway } from "../packages/control-plane/src/terminal-turn-projection-gateway.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 
@@ -101,7 +99,13 @@ if (process.argv[2] === "ingress") {
           armed = undefined;
           await new Promise((resolve) =>
             process.send(
-              { type: "paused", factId: fact.factId, entryId: entry.id, runId: fact.scope.runId },
+              {
+                type: "paused",
+                factId: fact.factId,
+                entryId: entry.id,
+                runId: fact.scope.runId,
+                eventIds: fact.events.map((event) => event.eventId),
+              },
               resolve,
             ),
           );
@@ -218,6 +222,8 @@ if (process.argv[2] === "ingress") {
   let sample = 0;
   let faultInfo;
   let eventCount = 0;
+  const shownEventIds = new Set(),
+    tailConsumedFactIds = new Set();
   const spawn = async (role, input) => {
     const child = fork(new URL(import.meta.url), [role], {
       execArgv: ["--import", "tsx"],
@@ -244,34 +250,49 @@ if (process.argv[2] === "ingress") {
       initialModel: { provider: "deepseek", modelId: "deepseek-v4-flash" },
     });
     await bus.start();
-    const projector = new PostgresPiSessionMutationProjector(db);
-    consumer = new KafkaAcceptedFactConsumer({
+    const projector = new ExecutionStreamProjector(db);
+    const makeConsumer = () =>
+      new KafkaAcceptedFactConsumer({
+        brokers,
+        topic,
+        clientId: randomUUID(),
+        groupId,
+        mode: "earliest",
+        commitEvery: 64,
+        onReset: () => projector.reset(),
+        handler: async (record) => {
+          await projector.project(record);
+          if (record.fact.kind !== "agent_event")
+            report.facts.push({
+              factId: record.fact.factId,
+              runId: record.fact.scope.runId,
+              kind: record.fact.kind,
+              offset: String(record.offset),
+              partition: record.partition,
+            });
+        },
+      });
+    consumer = makeConsumer();
+    await consumer.start();
+    tail = new KafkaLiveSessionTail({
+      database: db,
       brokers,
       topic,
       clientId: randomUUID(),
-      groupId,
-      mode: "earliest",
-      handler: async (record) => {
-        if (record.fact.kind === "pi_session_mutation") await projector.project(record.fact, true);
-        if (record.fact.kind !== "agent_event")
-          report.facts.push({
-            factId: record.fact.factId,
-            runId: record.fact.scope.runId,
-            kind: record.fact.kind,
-            offset: String(record.offset),
-            partition: record.partition,
-          });
-      },
+      instanceId,
     });
-    await consumer.start();
-    tail = new KafkaLiveSessionTail({ brokers, topic, clientId: randomUUID(), instanceId });
-    const projectTail = tail.project.bind(tail),
+    const projectTail = tail.projectRecord.bind(tail),
       failedTailFacts = new Set();
-    tail.project = (fact) => {
+    tail.projectRecord = async (record) => {
+      const { fact } = record;
       try {
-        projectTail(fact);
+        await projectTail(record);
+        tailConsumedFactIds.add(fact.factId);
       } catch (error) {
-        if (!failedTailFacts.has(fact.factId)) {
+        if (
+          error.constructor.name !== "AcceptedFactProjectionPendingError" &&
+          !failedTailFacts.has(fact.factId)
+        ) {
           failedTailFacts.add(fact.factId);
           (report.tailFailures ??= []).push({
             factId: fact.factId,
@@ -289,7 +310,6 @@ if (process.argv[2] === "ingress") {
     await tail.start();
     relay = new AcceptedFactTerminalOutboxRelay({ database: db, bus });
     relay.start();
-    const source = new LiveTailTerminalTurnProjectionSource({ database: db, events: tail });
     const resolver = async (identity) => {
       const row = await db
         .selectFrom("supervisor_hosts")
@@ -315,17 +335,12 @@ if (process.argv[2] === "ingress") {
       eventRuntime: {
         eventHub: tail.eventHub,
         eventStore: tail,
-        terminalTurnProjectionSource: source,
       },
       supervisorAuthorizer: new PostgresSupervisorCredentialAuthorizer({ database: db }),
       supervisorOwnerBoundary: new RoutedHttpSupervisorOwnerBoundary(resolver),
       assignmentInventoryFactory: (identity) =>
         new RoutedHttpSandboxAssignmentInventory(resolver, identity),
       supervisorProvisioningGateway: new SupervisorProvisioningGateway({ provisioner }),
-      terminalTurnProjectionGateway: new TerminalTurnProjectionGateway({
-        source,
-        authorize: (value) => provisioner.authorize(value),
-      }),
       productionHttpGateway: new ProductionHttpGateway({
         authenticator: new PostgresTenantApiAuthenticator({ database: db }),
         publicRegistrationEnabled: true,
@@ -450,6 +465,18 @@ if (process.argv[2] === "ingress") {
         "Run terminal",
         240000,
       );
+      await waitFor(
+        async () =>
+          !!(
+            await db
+              .selectFrom("runs as run")
+              .innerJoin("run_attempts as attempt", "attempt.id", "run.current_attempt_id")
+              .select("attempt.output_sealed_at")
+              .where("run.id", "=", runId)
+              .executeTakeFirst()
+          )?.output_sealed_at,
+        "execution seal projected",
+      );
       return api.getRun(runId);
     };
     const normal = await makeSession("Normal Follow-up and Steer");
@@ -517,8 +544,9 @@ if (process.argv[2] === "ingress") {
       fetchImplementation: (path, init) => fetch(new URL(path, apiUrl), init),
       onSnapshot() {},
       onStatus() {},
-      onEvent() {
+      onEvent(event) {
         eventCount++;
+        shownEventIds.add(event.eventId);
       },
     });
     const old = await api.acceptTurn(
@@ -546,6 +574,14 @@ if (process.argv[2] === "ingress") {
       newIdempotencyKey("fault-steer"),
     );
     await waitFor(() => faultInfo, "ingress paused before complete assistant mutation");
+    // Lose only the canonical consumer's volatile fold while old text is in Kafka.
+    // Rejoining must replay it, even if group offsets were already committed.
+    await consumer.close();
+    consumer = makeConsumer();
+    const prefixEnds = await consumer.captureEndOffsets();
+    await consumer.start();
+    await consumer.waitUntilInitialReplay(prefixEnds);
+    report.fault.canonicalRestartDuringUnsealedPrefix = true;
     // Exceed the ingress's default 9-second lease while the real Worker still
     // heartbeats. A single paused ingress must not bypass the Run mailbox.
     await delay(12000);
@@ -586,7 +622,9 @@ if (process.argv[2] === "ingress") {
     );
     ingressA.child.kill("SIGCONT");
     await waitFor(
-      () => report.facts.some((f) => f.factId === faultInfo.factId),
+      () =>
+        report.facts.some((f) => f.factId === faultInfo.factId) &&
+        tailConsumedFactIds.has(faultInfo.factId),
       "late complete assistant fact consumed",
     );
     const after = await db
@@ -599,9 +637,57 @@ if (process.argv[2] === "ingress") {
       .selectFrom("pi_session_mutation_results")
       .select(["state", "error_code"])
       .where("mutation_id", "=", faultInfo.factId)
-      .executeTakeFirstOrThrow();
+      .executeTakeFirst();
     report.latePublicationChangedBranch = before.leaf_id !== after.leaf_id;
-    report.fault.lateMutation = late;
+    report.fault.lateMutation = late ?? { state: "discarded_after_seal" };
+    report.fault.lateEventsShown = faultInfo.eventIds.some((id) => shownEventIds.has(id));
+    assert.equal(report.fault.lateEventsShown, false);
+    const oldAttempt = await db
+      .selectFrom("run_attempts")
+      .select("output_sealed_at")
+      .where("run_id", "=", old.runId)
+      .executeTakeFirstOrThrow();
+    const newRun = await db
+      .selectFrom("runs")
+      .select("started_at")
+      .where("id", "=", next.runId)
+      .executeTakeFirstOrThrow();
+    report.fault.replacementStartedAfterSeal = newRun.started_at >= oldAttempt.output_sealed_at;
+    assert(report.fault.replacementStartedAfterSeal);
+    const prefixRow = (await rows(session.sessionId)).find(
+      (row) => row.payload.customType === "pi-cloud.interrupted_assistant_prefix",
+    );
+    assert(prefixRow?.payload.data.text.length > 0);
+    const prefix = JSON.stringify(prefixRow.payload.data.text).slice(1, -1);
+    report.fault.replacementModelReceivedVisiblePrefix = requests
+      .filter((r) => r.body.includes("FAULT_FOLLOWUP"))
+      .some((r) => r.body.includes(prefix));
+    assert(report.fault.replacementModelReceivedVisiblePrefix);
+    await consumer.close();
+    projector.reset();
+    consumer = new KafkaAcceptedFactConsumer({
+      brokers,
+      topic,
+      clientId: randomUUID(),
+      groupId,
+      mode: "earliest",
+      commitMessages: false,
+      onReset: () => projector.reset(),
+      handler: (record) => projector.project(record),
+    });
+    const ends = await consumer.captureEndOffsets();
+    await consumer.start();
+    await consumer.waitUntilInitialReplay(ends);
+    const replayedHead = await db
+      .selectFrom("pi_session_lanes")
+      .select("leaf_id")
+      .where("session_id", "=", session.sessionId)
+      .where("lane", "=", "main")
+      .executeTakeFirstOrThrow();
+    assert.equal(replayedHead.leaf_id, before.leaf_id);
+    report.fault.canonicalRestartKeptHead = true;
+    assert.equal(report.latePublicationChangedBranch, false);
+    assert.equal(late, undefined);
     report.fault.lateEntryBecameHead = after.leaf_id === faultInfo.entryId;
     const steerRow = await db
       .selectFrom("turn_control_requests")

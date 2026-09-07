@@ -32,7 +32,6 @@ import {
 } from "./supervisor-websocket-gateway.ts";
 import type { SupervisorProvisioningGateway } from "./supervisor-boot-provisioner.ts";
 import type { ProductionHttpGateway } from "./production-http-gateway.ts";
-import { UnavailableTerminalTurnProjectionSource } from "@pi-cloud/runtime-core/terminal-turn-projection";
 
 type ConnectionManagerConfiguration = Omit<
   SupervisorConnectionManagerOptions,
@@ -147,9 +146,6 @@ export async function createControlPlaneRuntime(
 ): Promise<ControlPlaneRuntime> {
   const eventHub = options.eventRuntime?.eventHub ?? new SessionEventHub();
   const eventStore = options.eventRuntime?.eventStore ?? new DurableEventStore();
-  const terminalTurnProjectionSource =
-    options.eventRuntime?.terminalTurnProjectionSource ??
-    new UnavailableTerminalTurnProjectionSource();
   const controlChannelRouter = new WorkerControlChannelRouter(options.controlChannelRouter);
   const connectionManager = new SupervisorConnectionManager({
     ...options.connectionManager,
@@ -161,7 +157,6 @@ export async function createControlPlaneRuntime(
         database: options.database,
         sandboxId: identity.sandboxId,
         inventory: options.assignmentInventoryFactory(identity),
-        terminalTurnProjectionSource,
       }),
   });
   const gateway = new SupervisorWebSocketGateway({
@@ -221,9 +216,6 @@ export async function createControlPlaneRuntime(
       ...(options.sshAccessTicketService === undefined
         ? {}
         : { sshAccessTicketService: options.sshAccessTicketService }),
-      ...(options.terminalTurnProjectionGateway === undefined
-        ? {}
-        : { terminalTurnProjectionGateway: options.terminalTurnProjectionGateway }),
       ...(options.acceptedFactIngestGateway === undefined
         ? {}
         : { acceptedFactIngestGateway: options.acceptedFactIngestGateway }),

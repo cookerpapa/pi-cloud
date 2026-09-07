@@ -9,7 +9,7 @@ import {
 import { parsePiCloudEvent } from "@pi-cloud/protocol";
 import type { AcceptedFact, AcceptedFactBus, AcceptedFactReceipt } from "./accepted-fact.ts";
 
-export const ACCEPTED_FACT_TOPIC = "pi-cloud.accepted-facts.v1";
+export const ACCEPTED_FACT_TOPIC = "pi-cloud.accepted-facts.v2";
 
 export type KafkaAcceptedFactConfiguration = Readonly<{
   brokers: readonly string[];
@@ -59,9 +59,10 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
   const parsed = JSON.parse(
     Buffer.isBuffer(value) ? value.toString("utf8") : value,
   ) as AcceptedFact;
-  if (parsed.kind === "agent_event" || parsed.kind === "terminal_event") {
+  if (parsed.kind === "agent_event") {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) };
   }
+  if (parsed.kind === "execution_seal") return parsed;
   if (parsed.kind === "pi_session_mutation") {
     return {
       ...parsed,
@@ -166,6 +167,9 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
         ],
       });
     }
+    const metadata = await this.#admin.metadata({ topics: [this.#topic], forceUpdate: true });
+    if (metadata.topics.get(this.#topic)?.partitionsCount !== this.#partitions)
+      throw new Error("AcceptedFact partition count cannot change within a topic generation");
     this.#started = true;
   }
 
@@ -190,6 +194,7 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
     lane.pending.push({ factId: fact.factId, receipt });
     lane.stream.write({
       topic: this.#topic,
+      partition: kafkaProducerLane(fact.scope.sessionId, this.#partitions),
       key: fact.scope.sessionId,
       value: JSON.stringify(fact),
       headers: { "pi-cloud-fact-id": fact.factId },

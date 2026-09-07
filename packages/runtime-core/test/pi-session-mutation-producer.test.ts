@@ -54,7 +54,9 @@ describe("shared Pi projection receipts", () => {
   it("publishes first and coalesces concurrent receipt reads without per-mutation polling", async () => {
     vi.useFakeTimers();
     const f = fixture();
-    const pending = Array.from({ length: 100 }, () => f.producer.scoped(scope).synchronize());
+    const pending = Array.from({ length: 100 }, () =>
+      f.producer.scoped(scope).mutate({ kind: "set_name", name: "test" }),
+    );
     expect(f.publications).toHaveLength(100);
     expect(f.reads).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(0);
@@ -73,7 +75,7 @@ describe("shared Pi projection receipts", () => {
     let settled = false;
     const pending = f.producer
       .scoped(scope)
-      .synchronize()
+      .mutate({ kind: "set_name", name: "test" })
       .then(() => {
         settled = true;
       });

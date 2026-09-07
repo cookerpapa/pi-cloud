@@ -234,9 +234,7 @@ export class PostgresExecutionLeaseAuthorityGate {
             : [];
     if (
       operationLanes.some((lane) => lane !== scope.piSessionLane) ||
-      (operationLanes.length === 0 &&
-        mutation.operation.kind !== "projection_barrier" &&
-        scope.piSessionLane !== "main")
+      (operationLanes.length === 0 && scope.piSessionLane !== "main")
     ) {
       throw new ExecutionLeaseAuthorityGateError(
         "stale_session_lease",

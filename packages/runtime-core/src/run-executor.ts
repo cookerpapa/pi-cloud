@@ -30,11 +30,7 @@ import {
   lockPiSessionWorkerOwnership,
   piSessionWorkerAvailable,
 } from "./pi-session-worker-ownership.ts";
-import { commitTerminalTurnEvent } from "./terminal-turn-event.ts";
-import type {
-  PreparedTerminalTurnProjection,
-  TerminalTurnProjectionSource,
-} from "./terminal-turn-projection.ts";
+import { requestExecutionStreamSeal } from "./execution-stream-seal.ts";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -220,7 +216,6 @@ export type RunExecutorOptions = {
   idGenerator?: () => string;
   executionAuthority?: TurnExecutionAuthority;
   metrics?: PiCloudMetrics;
-  terminalTurnProjectionSource?: TerminalTurnProjectionSource;
   agentRuntimeKind?: AgentRuntimeKind;
 };
 
@@ -340,7 +335,6 @@ export class RunExecutor {
   readonly #idGenerator: () => string;
   readonly #executionAuthority: TurnExecutionAuthority | undefined;
   readonly #metrics: PiCloudMetrics | undefined;
-  readonly #terminalTurnProjectionSource: TerminalTurnProjectionSource | undefined;
   readonly #agentRuntimeKind: AgentRuntimeKind;
 
   constructor(options: RunExecutorOptions) {
@@ -363,7 +357,6 @@ export class RunExecutor {
     this.#idGenerator = options.idGenerator ?? randomUUID;
     this.#executionAuthority = options.executionAuthority;
     this.#metrics = options.metrics;
-    this.#terminalTurnProjectionSource = options.terminalTurnProjectionSource;
     this.#agentRuntimeKind = options.agentRuntimeKind ?? "pi_sdk";
   }
 
@@ -604,6 +597,13 @@ export class RunExecutor {
           .where("candidate.available_at", "<=", now)
           .where("candidate.state", "in", ["queued", "claimed"])
           .where("candidate_session.state", "in", ["cold", "idle"])
+          .where(
+            sql<boolean>`not exists (
+            select 1 from run_attempts pending join runs prior on prior.id = pending.run_id
+            where prior.tenant_id = candidate.tenant_id and prior.session_id = candidate.session_id
+              and pending.output_seal_id is not null and pending.output_sealed_at is null
+          )`,
+          )
           .where("candidate_session.session_kind", "=", sessionKind!)
           .where("candidate_policy.enabled", "=", true)
           .where("candidate_agent.runtime_kind", "=", this.#agentRuntimeKind)
@@ -754,6 +754,13 @@ export class RunExecutor {
           query.where("session_row.session_kind", "=", sessionKind!),
         )
         .where("run.state", "in", ["queued", "claimed"])
+        .where(
+          sql<boolean>`not exists (
+          select 1 from run_attempts pending join runs prior on prior.id = pending.run_id
+          where prior.tenant_id = run.tenant_id and prior.session_id = run.session_id
+            and pending.output_seal_id is not null and pending.output_sealed_at is null
+        )`,
+        )
         .where("turn.state", "=", "queued")
         .where(
           piSessionWorkerAvailable(
@@ -1181,7 +1188,7 @@ export class RunExecutor {
         .where("state", "=", rows.sessionState)
         .executeTakeFirst();
       expectOne(sessionUpdate.numUpdatedRows, "settling a session");
-      await commitTerminalTurnEvent(transaction, {
+      await requestExecutionStreamSeal(transaction, {
         tenantId: claim.request.tenantId,
         sessionId: claim.request.sessionId,
         turnId: claim.request.turnId,
@@ -1219,27 +1226,6 @@ export class RunExecutor {
         retryable: failure.retryable,
       },
     } as const;
-    let preparedProjection: PreparedTerminalTurnProjection | undefined;
-    const initialEventSeq = Number(claim.request.nextEventSeq) - 1;
-    const hasVisibleTurnPrefix =
-      failure.lastEventSeq !== undefined && failure.lastEventSeq > initialEventSeq;
-    if (!shouldRetry && started && hasVisibleTurnPrefix) {
-      try {
-        preparedProjection = await this.#terminalTurnProjectionSource?.prepare({
-          tenantId: claim.request.tenantId,
-          sessionId: claim.request.sessionId,
-          turnId: claim.request.turnId,
-          runId: claim.request.runId,
-          agentId: "root",
-          body: terminalBody,
-          eventId: terminalEventId,
-          occurredAt: now.toISOString(),
-        });
-      } catch {
-        // Interrupted-prefix recovery is best effort and cannot control the
-        // authoritative Run/Session terminal transaction.
-      }
-    }
 
     await this.#database.transaction().execute(async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
@@ -1407,7 +1393,7 @@ export class RunExecutor {
         .where("state", "=", rows.turnState)
         .executeTakeFirst();
       expectOne(turnUpdate.numUpdatedRows, "failing a turn");
-      await commitTerminalTurnEvent(transaction, {
+      await requestExecutionStreamSeal(transaction, {
         tenantId: claim.request.tenantId,
         sessionId: claim.request.sessionId,
         turnId: claim.request.turnId,
@@ -1416,7 +1402,6 @@ export class RunExecutor {
         body: terminalBody,
         now,
         eventId: terminalEventId,
-        ...(preparedProjection === undefined ? {} : { preparedProjection }),
       });
 
       if (started) {
