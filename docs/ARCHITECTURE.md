@@ -214,6 +214,9 @@ effect boundary.
 
 The native Compaction Entry in `pi_session_log` is the recovery authority;
 `pi_session_entries` indexes that immutable fact for bounded branch reads.
+Cloud rejects a length-limited or empty summarization response before creating
+that Entry, preserving the previous context instead of accepting a partial
+summary as a successful compaction.
 Kafka's durable `context.compaction.*` facts provide live and audit evidence.
 The obsolete `context_compactions` governance ledger has been removed rather
 than maintained as a second, eventually inconsistent source of truth.

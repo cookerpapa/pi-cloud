@@ -850,7 +850,6 @@ export class CloudAgentRuntime {
       throw new Error("Automatic compaction requires Pi Models");
     }
     const transformHeaders = this.#options.transformHeaders;
-    if (transformHeaders === undefined) return models;
     return new Proxy(models, {
       get(target, property, receiver) {
         if (property !== "completeSimple") {
@@ -862,8 +861,29 @@ export class CloudAgentRuntime {
           context: Parameters<Models["completeSimple"]>[1],
           options?: SimpleStreamOptions,
         ) => {
-          const headers = await transformHeaders({ ...(options?.headers ?? {}) });
-          return target.completeSimple(model, context, { ...options, headers });
+          const headers = transformHeaders
+            ? await transformHeaders({ ...(options?.headers ?? {}) })
+            : options?.headers;
+          const response = await target.completeSimple(model, context, {
+            ...options,
+            ...(headers ? { headers } : {}),
+          });
+          // Pi 0.84 accepts a length-limited/empty summary as success. Replacing
+          // the branch with it would discard recoverable conversation context.
+          const hasText = response.content.some(
+            (part) => part.type === "text" && part.text.trim().length > 0,
+          );
+          if (response.stopReason === "length" || (response.stopReason === "stop" && !hasText)) {
+            return {
+              ...response,
+              stopReason: "error" as const,
+              errorMessage:
+                response.stopReason === "length"
+                  ? "Compaction summary exhausted its output budget; previous context was preserved"
+                  : "Compaction returned an empty summary; previous context was preserved",
+            };
+          }
+          return response;
         };
       },
     });

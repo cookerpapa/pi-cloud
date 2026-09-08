@@ -1093,6 +1093,53 @@ describe.sequential("CloudAgentRuntime", () => {
     },
   );
 
+  it.each(["empty", "length", "thinking-only"] as const)(
+    "preserves history when compaction is %s",
+    async (failure) => {
+      const storage = await createStorage();
+      const session = storage.asSession();
+      await session.appendMessage({
+        role: "user",
+        content: "important-history-".repeat(300),
+        timestamp: 1,
+      });
+      await session.appendMessage({
+        ...assistant("original answer"),
+        usage: { ...assistant("").usage, input: 50000, totalTokens: 50001 },
+      });
+      let sampling = 0;
+      const runtime = new CloudAgentRuntime({
+        session,
+        lane: "main",
+        authority: new TestAuthority(),
+        model: { ...getModel("openai", "gpt-4o-mini"), contextWindow: 256 },
+        models: {
+          streamSimple() {
+            sampling++;
+            throw new Error("Model must not continue with lost history");
+          },
+          async completeSimple() {
+            return failure === "length"
+              ? { ...assistant("truncated summary"), stopReason: "length" }
+              : failure === "thinking-only"
+                ? { ...assistant(""), content: [{ type: "thinking", thinking: "still thinking" }] }
+                : assistant("");
+          },
+        } as unknown as Models,
+        systemPrompt: "test",
+        compaction: { enabled: true, reserveTokens: 32, keepRecentTokens: 32 },
+      });
+      const result = await runtime.run("continue safely");
+      expect(result.kind).toBe("failed");
+      expect(result.error?.message).toMatch(/Compaction (summary exhausted|returned an empty)/);
+      expect(sampling).toBe(0);
+      expect(await storage.findEntries({ type: "compaction" })).toHaveLength(0);
+      expect(JSON.stringify(await session.view("main").findEntriesOnBranch())).toContain(
+        "important-history-",
+      );
+    },
+  );
+
   it.each([false, true])(
     "retains a Harness fact through Compaction and replacement (execution view=%s)",
     async (cached) => {
