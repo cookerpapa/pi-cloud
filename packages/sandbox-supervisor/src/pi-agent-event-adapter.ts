@@ -76,7 +76,15 @@ function boundedToolOutput(value: unknown, maximumBytes: number): unknown {
 function toolResultIsUnknown(value: unknown): boolean {
   try {
     const serialized = JSON.stringify(value);
-    return typeof serialized === "string" && serialized.includes("cubesandbox_tool_result_unknown");
+    return (
+      typeof serialized === "string" &&
+      [
+        "cubesandbox_tool_result_unknown",
+        "tool_operation_outcome_unknown",
+        "tool_result_released",
+        "tool_command_delivery_unknown",
+      ].some((code) => serialized.includes(code))
+    );
   } catch {
     return false;
   }

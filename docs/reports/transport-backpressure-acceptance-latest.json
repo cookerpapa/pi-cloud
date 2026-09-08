@@ -1,0 +1,20 @@
+{
+  "format": "pi-cloud.transport-backpressure.v1",
+  "checkedAt": "2026-09-08T06:04:26.842Z",
+  "topology": "R=3 private one-partition topic; quota only on one unique test producer ID; 2 CPU/1 GiB runner",
+  "offered": 6000,
+  "accepted": 4096,
+  "rejected": 1904,
+  "persisted": 4096,
+  "elapsedMs": 6934,
+  "pendingFacts": 0,
+  "pendingBytes": 0,
+  "peakPendingBytes": 3832749,
+  "drainWaits": 2,
+  "capacityRejections": 1904,
+  "maximumPendingBytes": 4194304,
+  "maximumPendingFacts": 4096,
+  "interpretation": "overload/recovery proof, not unthrottled throughput or whole-process memory guarantee",
+  "revision": "e8cd9a7390a2da2e008d3328d7f3507c74bc716d",
+  "workingTreeDirty": true
+}

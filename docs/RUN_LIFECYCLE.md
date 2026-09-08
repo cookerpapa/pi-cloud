@@ -57,12 +57,15 @@ binding, frozen Tool policy and Step context. The first binding lazily creates
 the Workspace-owned Cube; later bindings share it without provider rebind.
 Different Sessions may execute Tools concurrently in that Cube.
 
-There are exactly two causally necessary post-sampling durability barriers
-before the effect. First, one AcceptedFact atomically carries the complete Pi
+There are two native Session post-sampling commit boundaries in this flow.
+They are not the total number of transport/database acknowledgements before an
+effect: concrete operations additionally require Kafka command PubAck and Broker
+PostgreSQL execution admission. First, one AcceptedFact atomically carries the complete Pi
 Assistant Entry, its usage Record and `model.sampling.completed`. Pi then
 validates the Tool name and arguments. Second, one AcceptedFact carries the
 specific `tool_started` intent and public `tool.started`. Only after its
-PostgreSQL projection result returns does the bound Tool call Tool Broker. A
+PostgreSQL projection result returns does the bound Tool publish its concrete
+operation command for Broker consumption. A
 rejected Tool call never writes execution intent. This distinguishes a Tool
 that may have started from later calls that were merely present in the model
 message.

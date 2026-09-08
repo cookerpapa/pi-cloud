@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] ADR-0158: bound Producer queues, Broker execution/HTTP delivery and abandoned
+      readers; align configuration and measure publication versus PG receipt wait.
+      [Acceptance](reports/bounded-transport-acceptance.md).
+
 - [x] Retire Broker raw responses on native Kafka Tool Result, preserving
       scope/call correlation, no-replay metadata and a bounded retry cache.
       [Acceptance](reports/tool-result-retirement-acceptance.md).
@@ -68,6 +72,9 @@ Volume architecture. Historical experiments remain in Git history.
       physical multi-node deployment.
 
 ## Capacity
+
+- [ ] Remove Broker whole-log read amplification only after a separately reviewed
+      binding/partition ownership design; no unsafe consumer-group-only switch.
 
 - [x] Replace per-free-Slot scans with one concurrent claim probe per queue kind;
       wake immediately after a successful claim and preserve Child capacity.

@@ -179,6 +179,8 @@
             },
             "replicas": { "type": "integer", "minimum": 1, "maximum": 5 },
             "partitions": { "type": "integer", "minimum": 1, "maximum": 1024 },
+            "producerPendingBytes": { "type": "integer", "minimum": 1, "maximum": 1073741824 },
+            "producerPendingFacts": { "type": "integer", "minimum": 1, "maximum": 65536 },
             "acceptedFactRetentionMs": {
               "type": "integer",
               "minimum": 3600000,
@@ -298,6 +300,10 @@
         },
         "maximumActivePerReplica": { "type": "integer", "minimum": 1, "maximum": 4096 },
         "toolResultCacheBytes": { "type": "integer", "minimum": 1024, "maximum": 1073741824 },
+        "maximumActiveCommands": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "maximumResultReaders": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "resultSendingBytes": { "type": "integer", "minimum": 1024, "maximum": 1073741824 },
+        "resultSendTimeoutMs": { "type": "integer", "minimum": 1000, "maximum": 120000 },
         "maximumWarmWorkspaceRuntimesPerReplica": {
           "type": "integer",
           "minimum": 1,

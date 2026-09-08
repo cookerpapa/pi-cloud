@@ -411,6 +411,7 @@ export class PiWorkerRuntime {
         new FactChannelPiSessionMutationProducer({
           database: this.#database,
           channels: factChannelResolver(factChannels),
+          ...(this.#metrics ? { metrics: this.#metrics } : {}),
         });
       this.#ownsSessionMutationProducer = this.#configuredSessionMutationProducer === undefined;
       await sessionMutationProducer.checkHealth();

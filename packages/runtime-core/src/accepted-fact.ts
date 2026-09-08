@@ -90,6 +90,14 @@ export type AcceptedFactReceipt = Readonly<{
   durable: true;
 }>;
 
+export class AcceptedFactCapacityError extends Error {
+  readonly code = "event_capacity_exhausted";
+  readonly retryable = true;
+  constructor() {
+    super("AcceptedFact transport is at capacity; the Fact was not enqueued");
+  }
+}
+
 export interface AcceptedFactBus {
   append(fact: AcceptedFact): Promise<AcceptedFactReceipt>;
   checkHealth(): Promise<void>;

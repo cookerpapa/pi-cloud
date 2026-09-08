@@ -2129,7 +2129,12 @@ describe("provider-backed Tool Tool Broker", () => {
       ).resolves.toMatchObject({
         databaseUrl: "postgresql://pi-cloud:secret@postgres:5432/pi-cloud",
         kafkaBrokers: ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"],
-        acceptedFactTopic: "pi-cloud.accepted-facts.v5",
+        maximumActiveCommands: 32,
+        resultDelivery: {
+          maximumResultReaders: 128,
+          maximumSendingBytes: 33554432,
+          sendTimeoutMs: 30000,
+        },
         sandboxDomainId: "sandbox-domain-0001",
         advertisedBaseUrl: "http://tool-broker-0:4300/",
         maximumActiveSandboxes: 3,

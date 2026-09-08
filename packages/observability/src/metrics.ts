@@ -15,6 +15,13 @@ export class PiCloudMetrics {
   readonly toolDuration: Histogram<"tool" | "outcome">;
   readonly toolResultCacheBytes: Gauge;
   readonly toolResultCacheReleased: Counter<"reason">;
+  readonly toolResultReaders: Gauge;
+  readonly toolResultSendingBytes: Gauge;
+  readonly toolTransportRejected: Counter<"reason">;
+  readonly kafkaProducerPendingBytes: Gauge;
+  readonly kafkaProducerPendingFacts: Gauge;
+  readonly kafkaProducerRejected: Counter;
+  readonly sessionMutationWait: Histogram<"stage">;
   readonly workspaceSettlementDuration: Histogram<"outcome">;
   readonly workspaceSettlementRestoreDuration: Histogram<"outcome">;
   readonly runtimeObjectCacheAccess: Counter<"result">;
@@ -52,6 +59,28 @@ export class PiCloudMetrics {
   constructor(serviceName: string, collectProcessMetrics = false) {
     this.registry = new Registry();
     this.registry.setDefaultLabels({ service: serviceName });
+    this.sessionMutationWait = new Histogram({
+      name: "pi_cloud_session_mutation_wait_seconds",
+      help: "Kafka publication and subsequent PG receipt wait, excluding model time",
+      labelNames: ["stage"],
+      buckets: DURATION_BUCKETS,
+      registers: [this.registry],
+    });
+    this.kafkaProducerPendingBytes = new Gauge({
+      name: "pi_cloud_kafka_producer_pending_bytes",
+      help: "Encoded Fact bytes queued or awaiting Kafka ACK",
+      registers: [this.registry],
+    });
+    this.kafkaProducerPendingFacts = new Gauge({
+      name: "pi_cloud_kafka_producer_pending_facts",
+      help: "Facts queued or awaiting Kafka ACK",
+      registers: [this.registry],
+    });
+    this.kafkaProducerRejected = new Counter({
+      name: "pi_cloud_kafka_producer_rejected_total",
+      help: "Facts rejected before enqueue due to process capacity",
+      registers: [this.registry],
+    });
     if (collectProcessMetrics) collectDefaultMetrics({ register: this.registry });
     this.runs = new Counter({
       name: "pi_cloud_runs_total",
@@ -120,6 +149,22 @@ export class PiCloudMetrics {
     this.toolResultCacheReleased = new Counter({
       name: "pi_cloud_tool_result_cache_released_total",
       help: "Tool response copies released after native result, seal, binding loss or capacity",
+      labelNames: ["reason"],
+      registers: [this.registry],
+    });
+    this.toolResultReaders = new Gauge({
+      name: "pi_cloud_tool_result_readers",
+      help: "Admitted Tool HTTP deliveries including waiting readers",
+      registers: [this.registry],
+    });
+    this.toolResultSendingBytes = new Gauge({
+      name: "pi_cloud_tool_result_sending_bytes",
+      help: "Encoded Tool HTTP bodies held until finish or close",
+      registers: [this.registry],
+    });
+    this.toolTransportRejected = new Counter({
+      name: "pi_cloud_tool_transport_rejected_total",
+      help: "Process-local Tool transport capacity rejections",
       labelNames: ["reason"],
       registers: [this.registry],
     });

@@ -24,6 +24,7 @@ export const MAX_TOOL_RANGE_FILE_BYTES = 64 * 1_024 * 1_024;
 export const MAX_TOOL_READ_RANGE_BYTES = 50 * 1_024;
 export const MAX_TOOL_READ_RANGE_LINES = 2_000;
 export const MAX_TOOL_OUTPUT_BYTES = 1 * 1_024 * 1_024;
+export const MAX_TOOL_RESPONSE_BYTES = 5 * 1_024 * 1_024;
 
 const ToolSandboxEnvelope = {
   toolBrokerProtocolVersion: Type.Literal(1),

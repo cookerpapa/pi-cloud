@@ -30,6 +30,7 @@ import type {
   AcceptedFactWriter,
   PiSessionMutationPublishFrame,
 } from "./accepted-fact.ts";
+import { AcceptedFactCapacityError } from "./accepted-fact.ts";
 
 function acknowledgement(message: EventPublishMessage): EventAckMessage {
   const parsed = parseControlToSupervisorMessage({
@@ -279,6 +280,8 @@ class ServerFactChannel implements AcceptedFactChannelSession {
         acknowledged = true;
         break;
       } catch (error: unknown) {
+        if (error instanceof AcceptedFactCapacityError)
+          throw new DurableEventStoreError("event_capacity_exhausted", error.message, true);
         lastError = error;
         const remaining = deadline - Date.now();
         if (remaining <= 0) break;
@@ -669,6 +672,7 @@ function remoteStreamError(frame: FactStreamFailureFrame): DurableEventStoreErro
     "sequence_gap",
     "stale_session_lease",
     "event_store_invariant",
+    "event_capacity_exhausted",
   ].includes(frame.payload.code)
     ? (frame.payload.code as ConstructorParameters<typeof DurableEventStoreError>[0])
     : "event_store_invariant";

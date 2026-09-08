@@ -214,6 +214,12 @@ if (process.argv[2] !== "inside") {
       port: 0,
       broker,
       commands: consumer,
+      // The load probe deliberately opens 1,024 simultaneous tiny replies.
+      resultDelivery: {
+        maximumResultReaders: 2048,
+        maximumSendingBytes: 32 * 1024 * 1024,
+        sendTimeoutMs: 30000,
+      },
       serviceToken: "s".repeat(40),
     });
     servers.push(server);

@@ -276,6 +276,7 @@ async function waitForRun(api, runId) {
 
 async function runTurn(lane, prompt, round) {
   const submittedAt = performance.now();
+  const submittedWallAt = Date.now();
   const accepted = await lane.api.acceptTurn(
     lane.session.sessionId,
     prompt,
@@ -290,6 +291,12 @@ async function runTurn(lane, prompt, round) {
   );
   const text = [];
   let firstAssistantTextMs;
+  let terminalObservedAt;
+  let terminalWallElapsedMs;
+  const observeTerminalTime = () => {
+    terminalObservedAt = performance.now();
+    terminalWallElapsedMs = Date.now() - submittedWallAt;
+  };
   let terminal;
   let toolEvents = 0;
   const observeEvent = (event) => {
@@ -307,6 +314,7 @@ async function runTurn(lane, prompt, round) {
       event.type === "turn.cancelled"
     ) {
       terminal = event;
+      observeTerminalTime();
       controller.abort();
     }
   };
@@ -334,6 +342,7 @@ async function runTurn(lane, prompt, round) {
             type: `turn.${turn.state}`,
             payload: turn.transcript.failure ?? { stopReason: turn.transcript.stopReason },
           };
+          observeTerminalTime();
           controller.abort();
           return;
         }
@@ -359,7 +368,9 @@ async function runTurn(lane, prompt, round) {
       text: text.join(""),
       acceptedMs: Math.round(acceptedAt - submittedAt),
       firstAssistantTextMs,
-      settledMs: Math.round(performance.now() - submittedAt),
+      settledMs: Math.round(terminalObservedAt - submittedAt),
+      wallElapsedMs: terminalWallElapsedMs,
+      submittedWallAt,
       usage,
       attemptCount: run.attempts.length,
     };
@@ -372,20 +383,34 @@ async function runTurn(lane, prompt, round) {
 async function runEvidence(runId) {
   const row = await psql(
     `select s.supervisor_id || '|' ||
-            round(extract(epoch from (r.started_at - r.queued_at)) * 1000)::text || '|' ||
+            round(extract(epoch from (a.claimed_at - r.queued_at)) * 1000)::text || '|' ||
             a.attempt_number::text || '|' ||
-            a.state
+            a.state || '|' ||
+            round(extract(epoch from (r.settled_at - r.queued_at)) * 1000)::text || '|' ||
+            round(extract(epoch from r.queued_at) * 1000)::text || '|' ||
+            round(extract(epoch from (r.started_at - a.claimed_at)) * 1000)::text
        from runs r
        join run_attempts a on a.id = r.current_attempt_id
        join sandboxes s on s.id = a.sandbox_id
       where r.id = ${sqlLiteral(runId)}`,
   );
-  const [supervisorId, queueWaitMs, attemptNumber, attemptState] = row.split("|");
+  const [
+    supervisorId,
+    queueWaitMs,
+    attemptNumber,
+    attemptState,
+    serverElapsedMs,
+    queuedWallAt,
+    preparationMs,
+  ] = row.split("|");
   assert(supervisorId, `Run ${runId} has no Worker assignment`);
   assert.equal(attemptState, "completed");
   return {
     supervisorId,
     queueWaitMs: Number(queueWaitMs),
+    serverElapsedMs: Number(serverElapsedMs),
+    queuedWallAt: Number(queuedWallAt),
+    preparationMs: Number(preparationMs),
     attemptNumber: Number(attemptNumber),
   };
 }
@@ -478,6 +503,16 @@ try {
 
   const allResults = [...firstRound, ...secondRound];
   const evidence = await Promise.all(allResults.map(({ runId }) => runEvidence(runId)));
+  for (const [index, result] of allResults.entries()) {
+    assert(
+      Math.abs(result.wallElapsedMs - result.settledMs) < 500,
+      "Client wall/monotonic clocks diverged; latency sample is invalid",
+    );
+    assert(
+      evidence[index].serverElapsedMs <= result.wallElapsedMs + 200,
+      "Server/client elapsed times disagree; latency sample is invalid",
+    );
+  }
   const totalUsage = sumUsage(allResults);
   const streaming = await readStreamEvidence(allResults.map(({ runId }) => runId));
   const report = {
@@ -510,6 +545,13 @@ try {
       settled: distribution(allResults.map((result) => result.settledMs)),
       queueWait: distribution(evidence.map((item) => item.queueWaitMs)),
     },
+    timingEvidence: allResults.map((result, index) => ({
+      runId: result.runId,
+      clientMonotonicMs: result.settledMs,
+      clientWallMs: result.wallElapsedMs,
+      clientSubmitWallAt: result.submittedWallAt,
+      ...evidence[index],
+    })),
     workers: {
       distinct: [...new Set(evidence.map((item) => item.supervisorId))],
       assignments: Object.fromEntries(

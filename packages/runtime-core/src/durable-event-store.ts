@@ -8,6 +8,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { AcceptedFactWriter } from "./accepted-fact.ts";
 
 export type DurableEventStoreErrorCode =
+  | "event_capacity_exhausted"
   | "not_found"
   | "invalid_event"
   | "event_conflict"

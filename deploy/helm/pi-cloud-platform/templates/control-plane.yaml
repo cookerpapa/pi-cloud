@@ -69,6 +69,8 @@ spec:
             - { name: PI_CLOUD_CANONICAL_PROJECTION_ENABLED, value: {{ .Values.controlPlane.canonicalProjectionEnabled | quote }} }
             - { name: PI_CLOUD_KAFKA_REPLICAS, value: {{ .Values.external.kafka.replicas | quote }} }
             - { name: PI_CLOUD_KAFKA_PARTITIONS, value: {{ .Values.external.kafka.partitions | quote }} }
+            - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES, value: {{ .Values.external.kafka.producerPendingBytes | quote }} }
+            - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS, value: {{ .Values.external.kafka.producerPendingFacts | quote }} }
             - { name: PI_CLOUD_ACCEPTED_FACT_RETENTION_MS, value: {{ .Values.external.kafka.acceptedFactRetentionMs | quote }} }
             - { name: PI_CLOUD_FACT_CHANNEL_LEASE_MS, value: {{ .Values.external.kafka.factChannelLeaseMs | quote }} }
             - { name: PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE, value: {{ .Values.external.kafka.maximumActiveFactChannelsPerGateway | quote }} }

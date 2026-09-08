@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
 import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
 import { KafkaToolCommandConsumer } from "./kafka-tool-command-consumer.ts";
+import { ACCEPTED_FACT_TOPIC } from "@pi-cloud/event-log";
 
 const config = await loadToolBrokerConfig();
 const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
@@ -82,7 +83,8 @@ const broker = new ToolBroker({
 const commands = new KafkaToolCommandConsumer({
   broker,
   brokers: config.kafkaBrokers,
-  topic: config.acceptedFactTopic,
+  topic: ACCEPTED_FACT_TOPIC,
+  maximumActiveCommands: config.maximumActiveCommands,
   maximumResultBytes: config.maximumResultBytes,
   metrics: observability.metrics,
 });
@@ -96,6 +98,7 @@ const server = new ToolBrokerServer({
     : { workspaceServiceToken: config.workspaceServiceToken }),
   broker,
   commands,
+  resultDelivery: config.resultDelivery,
   metrics: observability.metrics,
 });
 

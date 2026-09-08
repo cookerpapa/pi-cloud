@@ -121,6 +121,8 @@ external:
       - kafka-2.kafka.svc.cluster.local:9092
     replicas: 3
     partitions: 32
+    producerPendingBytes: 67108864
+    producerPendingFacts: 4096
     acceptedFactRetentionMs: 7200000
     factChannelLeaseMs: 9000
     maximumActiveFactChannelsPerGateway: 128
@@ -155,6 +157,10 @@ sandboxPlane:
   volumeGatewayRequestTimeoutMs: 660000
   maximumActivePerReplica: 128
   toolResultCacheBytes: 67108864
+  maximumActiveCommands: 32
+  maximumResultReaders: 128
+  resultSendingBytes: 33554432
+  resultSendTimeoutMs: 30000
   maximumWarmWorkspaceRuntimesPerReplica: 128
   warmTtlMs: 900000
   workspace:

@@ -5,6 +5,7 @@ import type {
 } from "@pi-cloud/pi-session-postgres";
 import { restorePiMutationResult } from "@pi-cloud/pi-session-postgres";
 import type { PiCloudEvent } from "@pi-cloud/protocol";
+import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { SessionError } from "@earendil-works/pi-agent-core";
 import type { Kysely } from "kysely";
 import type { ActiveFactChannelResolver, CandidatePiSessionMutationFact } from "./accepted-fact.ts";
@@ -31,15 +32,21 @@ type PendingProjection = {
 export class FactChannelPiSessionMutationProducer {
   readonly #database: Kysely<Database>;
   readonly #channels: ActiveFactChannelResolver;
+  readonly #metrics: PiCloudMetrics | undefined;
   readonly #pending = new Map<string, PendingProjection>();
   #timer: NodeJS.Timeout | undefined;
   #checking: Promise<void> | undefined;
   #checkRequested = false;
   #closed = false;
 
-  constructor(options: { database: Kysely<Database>; channels: ActiveFactChannelResolver }) {
+  constructor(options: {
+    database: Kysely<Database>;
+    channels: ActiveFactChannelResolver;
+    metrics?: PiCloudMetrics;
+  }) {
     this.#database = options.database;
     this.#channels = options.channels;
+    this.#metrics = options.metrics;
   }
 
   scoped(scope: PiSessionMutationScope): PiSessionMutationPublisher {
@@ -96,11 +103,24 @@ export class FactChannelPiSessionMutationProducer {
     try {
       const channel = this.#channels.resolve(scope.executionLease);
       if (channel === undefined) throw new Error("Pi Session Fact Stream is unavailable");
+      const started = performance.now();
       const ack = await channel.mutate(request);
+      this.#metrics?.sessionMutationWait.observe(
+        { stage: "kafka_publish" },
+        (performance.now() - started) / 1000,
+      );
       if (ack.mutationId !== mutationId || !ack.accepted)
         throw new Error("Pi Session receipt identity changed");
       this.#requestCheck();
-      return await result;
+      const projected = performance.now();
+      try {
+        return await result;
+      } finally {
+        this.#metrics?.sessionMutationWait.observe(
+          { stage: "projection_receipt" },
+          (performance.now() - projected) / 1000,
+        );
+      }
     } finally {
       this.#pending.delete(mutationId);
       if (this.#pending.size === 0) clearTimeout(this.#timer);

@@ -1,7 +1,7 @@
 {
   "accepted": true,
-  "piCloudRevision": "907682e4034d9455b784dbb9c109068e53b7c799",
-  "checkedAt": "2026-09-08T01:19:30.588Z",
+  "piCloudRevision": "e8cd9a7390a2da2e008d3328d7f3507c74bc716d",
+  "checkedAt": "2026-09-08T06:34:56.919Z",
   "tenants": 3,
   "runs": 6,
   "model": { "provider": "deepseek", "modelId": "deepseek-v4-flash" },
@@ -15,32 +15,106 @@
     "maximumAttemptCount": 1
   },
   "latencyMs": {
-    "acceptance": { "minimum": 43, "p50": 48, "p95": 77, "maximum": 77 },
+    "acceptance": { "minimum": 23, "p50": 29, "p95": 34, "maximum": 34 },
     "firstAssistantText": {
-      "minimum": 1204,
-      "p50": 2166,
-      "p95": 8645,
-      "maximum": 8645
+      "minimum": 1293,
+      "p50": 1591,
+      "p95": 5169,
+      "maximum": 5169
     },
-    "settled": { "minimum": 2870, "p50": 4217, "p95": 11620, "maximum": 11620 },
-    "queueWait": { "minimum": 371, "p50": 3635, "p95": 7697, "maximum": 7697 }
+    "settled": { "minimum": 1756, "p50": 3260, "p95": 7870, "maximum": 7870 },
+    "queueWait": { "minimum": 12, "p50": 20, "p95": 4049, "maximum": 4049 }
   },
+  "timingEvidence": [
+    {
+      "runId": "7ee6f6e0-7997-4f89-a22c-58e7236526c4",
+      "clientMonotonicMs": 1756,
+      "clientWallMs": 1756,
+      "clientSubmitWallAt": 1788849284034,
+      "supervisorId": "pi-cloud-worker-2",
+      "queueWaitMs": 20,
+      "serverElapsedMs": 1619,
+      "queuedWallAt": 1788849284043,
+      "preparationMs": 277,
+      "attemptNumber": 1
+    },
+    {
+      "runId": "bfb48123-8fc6-41e2-814e-ece28bcf5ebf",
+      "clientMonotonicMs": 1891,
+      "clientWallMs": 1892,
+      "clientSubmitWallAt": 1788849284034,
+      "supervisorId": "pi-cloud-worker-1",
+      "queueWaitMs": 21,
+      "serverElapsedMs": 1732,
+      "queuedWallAt": 1788849284042,
+      "preparationMs": 271,
+      "attemptNumber": 1
+    },
+    {
+      "runId": "21ee46ad-95c7-4b49-b355-8aa28804696d",
+      "clientMonotonicMs": 3260,
+      "clientWallMs": 3259,
+      "clientSubmitWallAt": 1788849284035,
+      "supervisorId": "pi-cloud-worker-2",
+      "queueWaitMs": 1641,
+      "serverElapsedMs": 3127,
+      "queuedWallAt": 1788849284044,
+      "preparationMs": 167,
+      "attemptNumber": 1
+    },
+    {
+      "runId": "308c5792-3178-4f9f-9df4-ae00a59c2304",
+      "clientMonotonicMs": 7870,
+      "clientWallMs": 7869,
+      "clientSubmitWallAt": 1788849287711,
+      "supervisorId": "pi-cloud-worker-1",
+      "queueWaitMs": 4049,
+      "serverElapsedMs": 7742,
+      "queuedWallAt": 1788849287722,
+      "preparationMs": 168,
+      "attemptNumber": 1
+    },
+    {
+      "runId": "7a1e6dee-e092-4821-9f19-cbe68d4537a4",
+      "clientMonotonicMs": 4145,
+      "clientWallMs": 4145,
+      "clientSubmitWallAt": 1788849287711,
+      "supervisorId": "pi-cloud-worker-1",
+      "queueWaitMs": 12,
+      "serverElapsedMs": 4031,
+      "queuedWallAt": 1788849287721,
+      "preparationMs": 192,
+      "attemptNumber": 1
+    },
+    {
+      "runId": "da729922-ba26-4c9d-b2db-19dbf67307f8",
+      "clientMonotonicMs": 5267,
+      "clientWallMs": 5267,
+      "clientSubmitWallAt": 1788849287711,
+      "supervisorId": "pi-cloud-worker-2",
+      "queueWaitMs": 14,
+      "serverElapsedMs": 5158,
+      "queuedWallAt": 1788849287719,
+      "preparationMs": 194,
+      "attemptNumber": 1
+    }
+  ],
   "workers": {
-    "distinct": ["pi-cloud-worker-1", "pi-cloud-worker-2"],
-    "assignments": { "pi-cloud-worker-1": 5, "pi-cloud-worker-2": 1 }
+    "distinct": ["pi-cloud-worker-2", "pi-cloud-worker-1"],
+    "assignments": { "pi-cloud-worker-2": 3, "pi-cloud-worker-1": 3 }
   },
   "streaming": {
     "terminalCount": 6,
     "piEntryCount": 15,
     "messageCount": 12,
-    "canonicalPayloadBytes": 13795,
+    "canonicalPayloadBytes": 14716,
     "entriesPerRun": 2.5
   },
   "usage": {
     "requests": 6,
-    "inputTokens": 508,
-    "outputTokens": 800,
-    "cacheReadTokens": 35712,
+    "inputTokens": 740,
+    "outputTokens": 992,
+    "cacheReadTokens": 35456,
     "cacheWriteTokens": 0
   }
 }

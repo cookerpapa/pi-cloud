@@ -2,14 +2,18 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
-import { ACCEPTED_FACT_TOPIC } from "@pi-cloud/event-log";
+import {
+  DEFAULT_TOOL_TRANSPORT_CAPACITY,
+  type ToolDeliveryCapacity,
+} from "./tool-transport-capacity.ts";
 
 export type ToolBrokerConfig = {
   host: string;
   port: number;
   databaseUrl: string;
   kafkaBrokers: readonly string[];
-  acceptedFactTopic: string;
+  maximumActiveCommands: number;
+  resultDelivery: ToolDeliveryCapacity;
   maximumResultBytes: number;
   sandboxDomainId: string;
   advertisedBaseUrl: string;
@@ -220,7 +224,32 @@ export async function loadToolBrokerConfig(
     kafkaBrokers: required(environment, "PI_CLOUD_KAFKA_BROKERS")
       .split(",")
       .map((value) => value.trim()),
-    acceptedFactTopic: environment.PI_CLOUD_ACCEPTED_FACT_TOPIC ?? ACCEPTED_FACT_TOPIC,
+    maximumActiveCommands: integer(
+      environment.PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS,
+      DEFAULT_TOOL_TRANSPORT_CAPACITY.maximumActiveCommands,
+      1,
+      4096,
+    ),
+    resultDelivery: {
+      maximumResultReaders: integer(
+        environment.PI_CLOUD_TOOL_MAXIMUM_RESULT_READERS,
+        DEFAULT_TOOL_TRANSPORT_CAPACITY.maximumResultReaders,
+        1,
+        8192,
+      ),
+      maximumSendingBytes: integer(
+        environment.PI_CLOUD_TOOL_RESULT_SENDING_BYTES,
+        DEFAULT_TOOL_TRANSPORT_CAPACITY.maximumSendingBytes,
+        1024,
+        1073741824,
+      ),
+      sendTimeoutMs: integer(
+        environment.PI_CLOUD_TOOL_RESULT_SEND_TIMEOUT_MS,
+        DEFAULT_TOOL_TRANSPORT_CAPACITY.sendTimeoutMs,
+        1000,
+        120000,
+      ),
+    },
     maximumResultBytes: integer(
       environment.PI_CLOUD_TOOL_RESULT_CACHE_BYTES,
       64 * 1024 * 1024,

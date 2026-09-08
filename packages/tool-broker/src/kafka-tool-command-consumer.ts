@@ -10,6 +10,7 @@ import {
 import { ToolBrokerError } from "./sandbox-provider.ts";
 import type { ToolBroker } from "./tool-broker.ts";
 import { parseTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/observability";
+import { DEFAULT_TOOL_TRANSPORT_CAPACITY } from "./tool-transport-capacity.ts";
 
 type LogFact = {
   kind: string;
@@ -22,6 +23,7 @@ type Outcome = {
   hash: string;
   result?: Promise<ToolSandboxOperationResponse>;
   retired: boolean;
+  settled: boolean;
 };
 type CommandBroker = Pick<ToolBroker, "execute" | "ownsToolBinding" | "assertToolResultReader">;
 
@@ -57,6 +59,7 @@ export class KafkaToolCommandConsumer {
   >();
   readonly #completed = new Map<string, number>();
   readonly #maximumResultBytes: number;
+  readonly #maximumActiveCommands: number;
   #retainedBytes = 0;
   #peakRetainedBytes = 0;
   #releasedResults = 0;
@@ -74,11 +77,16 @@ export class KafkaToolCommandConsumer {
     instanceId?: string;
     metrics?: PiCloudMetrics;
     maximumResultBytes?: number;
+    maximumActiveCommands?: number;
   }) {
     this.#broker = options.broker;
     this.#metrics = options.metrics;
     this.#metrics?.toolResultCacheBytes.set(0);
     this.#maximumResultBytes = options.maximumResultBytes ?? 64 * 1024 * 1024;
+    this.#maximumActiveCommands =
+      options.maximumActiveCommands ?? DEFAULT_TOOL_TRANSPORT_CAPACITY.maximumActiveCommands;
+    if (!Number.isSafeInteger(this.#maximumActiveCommands) || this.#maximumActiveCommands < 1)
+      throw new TypeError("maximumActiveCommands must be a positive integer");
     if (!Number.isSafeInteger(this.#maximumResultBytes) || this.#maximumResultBytes < 1)
       throw new TypeError("maximumResultBytes must be a positive integer");
     const boot = options.instanceId ?? randomUUID();
@@ -180,6 +188,7 @@ export class KafkaToolCommandConsumer {
       attemptId: command.scope.attemptId,
       hash,
       retired: false,
+      settled: false,
     };
     this.#results.set(request.operationId, outcome);
     this.#commands++;
@@ -199,12 +208,14 @@ export class KafkaToolCommandConsumer {
             "Tool command belongs to a closed execution",
             false,
           );
-        if (this.#active >= 1024)
+        if (this.#active >= this.#maximumActiveCommands) {
+          this.#metrics?.toolTransportRejected.inc({ reason: "commands" });
           throw new ToolBrokerError(
             "tool_command_capacity_exhausted",
             "Tool command executor is at capacity",
             true,
           );
+        }
         this.#active++;
         const started = performance.now();
         try {
@@ -231,26 +242,40 @@ export class KafkaToolCommandConsumer {
           this.#active--;
         }
       },
-    }).then((response) => {
-      if (outcome.retired || this.#closed) return response;
-      if (!this.#broker.ownsToolBinding(outcome.activationId)) {
-        this.#release(request.operationId, "binding");
+    }).then(
+      (response) => {
+        outcome.settled = true;
+        // Wake existing deliveries before possibly evicting only their retry copy.
+        this.#wake(request.operationId);
+        if (outcome.retired || this.#closed) return response;
+        if (!this.#broker.ownsToolBinding(outcome.activationId)) {
+          this.#release(request.operationId, "binding");
+          return response;
+        }
+        const bytes = Buffer.byteLength(JSON.stringify(response));
+        this.#completed.set(request.operationId, bytes);
+        this.#retainedBytes += bytes;
+        // Retire only the retry copy. A reader already waiting on this Promise
+        // may finish normally; later reads cannot restart the effect.
+        while (this.#retainedBytes > this.#maximumResultBytes)
+          this.#release(this.#completed.keys().next().value!, "capacity");
+        this.#peakRetainedBytes = Math.max(this.#peakRetainedBytes, this.#retainedBytes);
+        this.#metrics?.toolResultCacheBytes.set(this.#retainedBytes);
         return response;
-      }
-      const bytes = Buffer.byteLength(JSON.stringify(response));
-      this.#completed.set(request.operationId, bytes);
-      this.#retainedBytes += bytes;
-      // Retire only the retry copy. A reader already waiting on this Promise
-      // may finish normally; later reads cannot restart the effect.
-      while (this.#retainedBytes > this.#maximumResultBytes)
-        this.#release(this.#completed.keys().next().value!, "capacity");
-      this.#peakRetainedBytes = Math.max(this.#peakRetainedBytes, this.#retainedBytes);
-      this.#metrics?.toolResultCacheBytes.set(this.#retainedBytes);
-      return response;
-    });
+      },
+      (error: unknown) => {
+        outcome.settled = true;
+        this.#wake(request.operationId);
+        throw error;
+      },
+    );
     void result.catch(() => undefined);
     outcome.result = result;
-    for (const wake of this.#waiters.get(request.operationId) ?? []) wake();
+    this.#wake(request.operationId);
+  }
+
+  #wake(operationId: string): void {
+    for (const wake of this.#waiters.get(operationId) ?? []) wake();
   }
 
   #release(
@@ -266,6 +291,7 @@ export class KafkaToolCommandConsumer {
     this.#releasedResults++;
     this.#metrics?.toolResultCacheBytes.set(this.#retainedBytes);
     this.#metrics?.toolResultCacheReleased.inc({ reason });
+    this.#wake(id);
   }
 
   async waitResult(
@@ -275,6 +301,7 @@ export class KafkaToolCommandConsumer {
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
     this.#broker.assertToolResultReader(activationId, executionLease);
+    signal?.throwIfAborted();
     const read = (): Outcome | undefined => {
       this.#broker.assertToolResultReader(activationId, executionLease);
       if (this.#sealed.has(parseExecutionLease(executionLease).attemptId))
@@ -299,13 +326,7 @@ export class KafkaToolCommandConsumer {
       return outcome;
     };
     const found = read();
-    if (found) return found.result!;
-    if (this.#waiters.size >= 1024)
-      throw new ToolBrokerError(
-        "tool_result_capacity_exhausted",
-        "Tool result readers are at capacity",
-        true,
-      );
+    if (found?.settled) return found.result!;
     return new Promise<ToolSandboxOperationResponse>((resolve, reject) => {
       const finish = (error?: unknown, outcome?: Outcome) => {
         clearTimeout(timer);
@@ -325,7 +346,8 @@ export class KafkaToolCommandConsumer {
               false,
             );
           const outcome = read();
-          if (outcome) finish(undefined, outcome);
+          if (outcome) clearTimeout(timer); // delivery occurred; the Tool owns its execution deadline
+          if (outcome?.settled) finish(undefined, outcome);
         } catch (error) {
           finish(error);
         }
@@ -357,6 +379,8 @@ export class KafkaToolCommandConsumer {
       consumedFacts: this.#consumed,
       acceptedCommands: this.#commands,
       activeCommands: this.#active,
+      maximumActiveCommands: this.#maximumActiveCommands,
+      waitingReaders: [...this.#waiters.values()].reduce((n, readers) => n + readers.size, 0),
       retainedResults: this.#completed.size,
       retainedResultBytes: this.#retainedBytes,
       peakRetainedResultBytes: this.#peakRetainedBytes,

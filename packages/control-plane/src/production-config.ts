@@ -3,6 +3,10 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import type { TenantQuotaConfiguration } from "./tenant-administration.ts";
+import {
+  loadProducerCapacity,
+  type ProducerCapacity,
+} from "@pi-cloud/runtime-core/kafka-accepted-fact";
 
 const MAX_SECRET_BYTES = 16 * 1_024;
 
@@ -14,6 +18,7 @@ export type ProductionControlPlaneConfig = {
   kafkaBrokers: readonly string[];
   kafkaPartitions: number;
   kafkaReplicas: number;
+  producerCapacity: ProducerCapacity;
   acceptedFactRetentionMs: number;
   factChannelLeaseMs: number;
   factChannelMaximumActive: number;
@@ -423,6 +428,7 @@ export async function loadProductionControlPlaneConfig(
     ),
     kafkaPartitions: integerValue(environment, "PI_CLOUD_KAFKA_PARTITIONS", 32, 1, 1_024),
     kafkaReplicas: integerValue(environment, "PI_CLOUD_KAFKA_REPLICAS", 3, 1, 5),
+    producerCapacity: loadProducerCapacity(environment),
     acceptedFactRetentionMs: integerValue(
       environment,
       "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS",

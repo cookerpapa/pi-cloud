@@ -399,7 +399,12 @@ describe("PiAgentEventAdapter", () => {
     },
   );
 
-  it("classifies an ambiguous Cube result as unknown instead of failed", () => {
+  it.each([
+    "cubesandbox_tool_result_unknown",
+    "tool_operation_outcome_unknown",
+    "tool_result_released",
+    "tool_command_delivery_unknown",
+  ])("classifies ambiguous result %s as unknown instead of failed", (code) => {
     const adapter = createAdapter();
     adapter.adapt({ type: "agent_start" });
     adapter.adapt({
@@ -413,7 +418,7 @@ describe("PiAgentEventAdapter", () => {
         type: "tool_execution_end",
         toolCallId: "call-unknown",
         toolName: "bash",
-        result: { error: "cubesandbox_tool_result_unknown: connection was lost" },
+        result: { error: `${code}: result could not be confirmed` },
         isError: true,
       }),
     ).toMatchObject({

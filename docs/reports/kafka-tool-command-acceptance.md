@@ -90,7 +90,7 @@ three markers, denied three cross-tenant reads, leaked no markers and used one
 Attempt per Run. First text p50/p95 was 2.166 / 8.645 seconds, including queue
 p95 7.697 seconds while coding shared the two local parent slots. Six model
 requests used 508 uncached input, 800 output and 35,712 cache-read tokens.
-[Evidence](multi-tenant-model-load-latest.json).
+[Evidence](https://github.com/cookerpapa/pi-cloud/blob/a7b658cf/docs/reports/multi-tenant-model-load-latest.json).
 
 An additional owned-VM Snake task used 14 Tools and the structured Preview Tool.
 After Run completion the host preview returned HTTP 200; real Chrome verified

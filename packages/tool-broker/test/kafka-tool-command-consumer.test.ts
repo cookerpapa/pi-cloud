@@ -74,7 +74,7 @@ const output = (c: AcceptedToolCommand): ToolSandboxOperationResponse => ({
   outputChunks: [],
   outputSha256: "d".repeat(64),
 });
-function fixture(maximumResultBytes?: number) {
+function fixture(maximumResultBytes?: number, maximumActiveCommands?: number) {
   const bindings = new Map<string, string>();
   const execute = vi.fn(async (_lease: string, request: AcceptedToolCommand["request"]) =>
     output({ ...command(), request }),
@@ -83,6 +83,7 @@ function fixture(maximumResultBytes?: number) {
     brokers: ["unused:9092"],
     topic: "test",
     ...(maximumResultBytes === undefined ? {} : { maximumResultBytes }),
+    ...(maximumActiveCommands === undefined ? {} : { maximumActiveCommands }),
     broker: {
       execute,
       ownsToolBinding: (id) => bindings.has(id),
@@ -117,6 +118,38 @@ function receipt(c: AcceptedToolCommand) {
 }
 
 describe("Kafka-driven Tool command execution", () => {
+  it("bounds execution and detaches cancelled readers without cancelling Tools", async () => {
+    const f = fixture(undefined, 1),
+      a = command(),
+      b = command();
+    f.own(a);
+    f.own(b);
+    let finish!: (value: ToolSandboxOperationResponse) => void;
+    f.execute.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await f.consumer.consume(record(a));
+    const controller = new AbortController();
+    const reader = f.consumer
+      .waitResult(lease(a), a.request.activationId, a.request.operationId, controller.signal)
+      .catch((error) => error);
+    expect(f.consumer.statistics().waitingReaders).toBe(1);
+    controller.abort();
+    await reader;
+    expect(f.consumer.statistics()).toMatchObject({ waitingReaders: 0, activeCommands: 1 });
+    await f.consumer.consume(record(b));
+    await expect(
+      f.consumer.waitResult(lease(b), b.request.activationId, b.request.operationId),
+    ).rejects.toMatchObject({ code: "tool_command_capacity_exhausted" });
+    expect(f.execute).toHaveBeenCalledOnce();
+    await f.consumer.consume(record({ kind: "execution_seal", scope: a.scope }));
+    finish(output(a));
+    await vi.waitFor(() => expect(f.consumer.statistics().activeCommands).toBe(0));
+    expect(f.consumer.statistics().retainedResultBytes).toBe(0);
+  });
   it("uses a native result as delivery ACK, releasing all operations but preserving dedup", async () => {
     const f = fixture(),
       a = command();
@@ -166,10 +199,12 @@ describe("Kafka-driven Tool command execution", () => {
         }),
     );
     await f.consumer.consume(record(c));
-    const reader = f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId);
+    const reader = f.consumer
+      .waitResult(lease(c), c.request.activationId, c.request.operationId)
+      .catch((error) => error);
     await f.consumer.consume(record(receipt(c)));
     finish(output(c));
-    expect(await reader).toMatchObject({ exitCode: 0 });
+    expect(await reader).toMatchObject({ code: "tool_result_released" });
     expect(f.consumer.statistics()).toMatchObject({ retainedResults: 0, retainedResultBytes: 0 });
     await f.consumer.consume(record(c));
     expect(f.execute).toHaveBeenCalledOnce();
@@ -266,7 +301,9 @@ describe("Kafka-driven Tool command execution", () => {
         }),
     );
     await f.consumer.consume(record(a));
-    const result = f.consumer.waitResult(lease(a), a.request.activationId, a.request.operationId);
+    const result = f.consumer
+      .waitResult(lease(a), a.request.activationId, a.request.operationId)
+      .catch((error) => error);
     await f.consumer.consume(record(b, 1n));
     expect(
       await f.consumer.waitResult(lease(b), b.request.activationId, b.request.operationId),
@@ -279,7 +316,7 @@ describe("Kafka-driven Tool command execution", () => {
     ).rejects.toMatchObject({ code: "tool_command_sealed" });
     expect(f.execute).toHaveBeenCalledTimes(2);
     finish(output(a));
-    await result; // a started effect may still finish; no automatic replay.
+    expect(await result).toMatchObject({ code: "tool_command_sealed" });
   });
   it("ignores another Broker's bindings and fails a reader after its binding disappears", async () => {
     const f = fixture(),

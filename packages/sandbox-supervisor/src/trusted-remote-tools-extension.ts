@@ -4,6 +4,7 @@ import {
   parseCloudToolCapabilitySnapshot,
   parseToolSandboxOperationResponse,
   CLOUD_TOOL_NAMES,
+  MAX_TOOL_RESPONSE_BYTES,
   type CloudToolCapabilitySnapshot,
   type CloudToolName,
   type ToolSandboxOperationRequest,
@@ -32,7 +33,6 @@ import { extname, isAbsolute, resolve, sep } from "node:path";
 import type { FrozenCloudStep } from "./cloud-context.ts";
 import type { PiWorldStateModelMessage } from "./pi-sandbox-continuity.ts";
 
-const MAX_RESPONSE_BYTES = 5 * 1_024 * 1_024;
 const MAX_PROJECT_INSTRUCTIONS_BYTES = 16 * 1_024;
 const HIDDEN_GIT_CREDENTIAL_FILE = ".git-credentials";
 const UNAVAILABLE_TOOL_CODES = new Set([
@@ -296,7 +296,7 @@ function modelOutputPreview(value: Buffer, maximumBytes: number, toolCallId: str
 
 function canonicalBase64(value: string): Buffer {
   const decoded = Buffer.from(value, "base64");
-  if (decoded.toString("base64") !== value || decoded.byteLength > MAX_RESPONSE_BYTES) {
+  if (decoded.toString("base64") !== value || decoded.byteLength > MAX_TOOL_RESPONSE_BYTES) {
     throw new RemoteToolError(
       "tool_protocol_error",
       "Tool Sandbox returned invalid binary output",
@@ -324,7 +324,7 @@ function orderedBashOutput(
     }
     const bytes = canonicalBase64(chunk.data);
     totalBytes += bytes.byteLength;
-    if (totalBytes > MAX_RESPONSE_BYTES) {
+    if (totalBytes > MAX_TOOL_RESPONSE_BYTES) {
       throw new RemoteToolError(
         "tool_protocol_error",
         "Tool Sandbox command output exceeded its trusted byte limit",
@@ -346,7 +346,7 @@ function orderedBashOutput(
 
 async function responseJson(response: Response): Promise<unknown> {
   const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength < 1 || bytes.byteLength > MAX_RESPONSE_BYTES) {
+  if (bytes.byteLength < 1 || bytes.byteLength > MAX_TOOL_RESPONSE_BYTES) {
     throw new RemoteToolError(
       "tool_protocol_error",
       "Tool Sandbox response was outside its byte limit",

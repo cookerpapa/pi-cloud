@@ -76,6 +76,8 @@ export async function startControlPlane(): Promise<void> {
       instanceId: controlPlaneInstanceId,
       partitions: config.kafkaPartitions,
       replicas: config.kafkaReplicas,
+      capacity: config.producerCapacity,
+      metrics: observability.metrics,
       retentionMs: config.acceptedFactRetentionMs,
       factChannelLeaseMs: config.factChannelLeaseMs,
       factChannelMaximumActive: config.factChannelMaximumActive,

@@ -103,6 +103,11 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT` | `3` | active descendants per root Run |
 | `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `3` | active Cubes owned by the one-host Broker; leaves two elastic slots beside one starter development machine |
 | `PI_CLOUD_TOOL_RESULT_CACHE_BYTES` | `67108864` | per-Broker completed response retry-cache budget (encoded bytes); native Kafka Tool Results release bodies; overflow drops oldest retry copies without re-executing effects; excludes in-flight/HTTP buffers; Helm: `sandboxPlane.toolResultCacheBytes` |
+| `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous executing operations per one-host Broker (standalone/Helm default 32); distinct from physical Cube allocations |
+| `PI_CLOUD_TOOL_MAXIMUM_RESULT_READERS` | `128` | HTTP result deliveries, including repeated readers of one running operation; Helm: `sandboxPlane.maximumResultReaders` |
+| `PI_CLOUD_TOOL_RESULT_SENDING_BYTES` | `33554432` | encoded response bytes held until HTTP finish/close; Helm: `sandboxPlane.resultSendingBytes` |
+| `PI_CLOUD_TOOL_RESULT_SEND_TIMEOUT_MS` | `30000` | stalled response send deadline, starts only after a Tool result exists; does not limit command execution |
+| `PI_CLOUD_TOOL_BROKER_MEMORY_LIMIT` / `PI_CLOUD_TOOL_BROKER_CPUS` | `384m` / `1.0` | one-host Broker resources; raise together with measured operation/delivery capacity; Helm uses workload resources |
 | `PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES` | `4` | idle warm Cube limit |
 | `PI_CLOUD_SANDBOX_WARM_TTL_MS` | `900000` | idle warm lifetime (15 minutes) |
 | `PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS` | `15000` | Broker replica ownership lease |
@@ -123,6 +128,8 @@ heartbeat must leave more than one missed interval before lease expiry.
 | `PI_CLOUD_ACCEPTED_FACT_RETENTION_MS` | `7200000` | Kafka AcceptedFact retention (2 hours) |
 | `PI_CLOUD_KAFKA_PARTITIONS` | `32` | Session-keyed AcceptedFact partitions |
 | `PI_CLOUD_KAFKA_REPLICAS` | `3` | Kafka Topic replication factor |
+| `PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES` | `67108864` | per-producer-instance encoded Fact body budget, including queued and submitted-unacknowledged Facts; Helm: `external.kafka.producerPendingBytes` |
+| `PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS` | `4096` | same budget in records; limit reached rejects before enqueue; Helm: `external.kafka.producerPendingFacts` |
 | `PI_CLOUD_CANONICAL_PROJECTION_ENABLED` | `true` | run canonical projection and terminal relay inside Control Plane |
 | `PI_CLOUD_PROJECTION_DATABASE_CONNECTIONS` | `8` | connection budget for an optional standalone canonical projector |
 | `PI_CLOUD_FACT_CHANNEL_LEASE_MS` | `9000` | short PostgreSQL ownership lease for one active logical Fact Stream |
@@ -143,8 +150,8 @@ profile and set `PI_CLOUD_CANONICAL_PROJECTION_ENABLED=false` in the private
 deployment `.env`, then recreate Control Plane. Both roles use the same canonical
 consumer group, so temporary overlap during cutover is safe. Never disable the
 embedded projector without running the independent role: semantic writes wait
-for its projection receipt. The standalone role has only the database secret and
-Kafka network; it serves readiness on port 3000 and metrics on 9470. Kubernetes
+for its projection receipt. The standalone role has database/metrics secrets and
+Kafka access; it serves readiness on port 3000 and protected metrics on 9470. Kubernetes
 can run the same Control Plane image with command
 `/app/packages/control-plane/src/projection-main.ts`; the equivalent API setting
 is `controlPlane.canonicalProjectionEnabled=false`. This is optional, not a
@@ -166,10 +173,13 @@ Consumers use Confluent's partition pause/seek with a 32 MiB native queue budget
 and a 5 ms fetch-queue backoff (the native 1 s default is unsuitable for interactive
 streams). SSE subscribes on demand and uses server-side recovery coordinates;
 normal data consumption never introduces a new batching delay.
-Tool Broker uses the same `PI_CLOUD_KAFKA_BROKERS` and accepted topic. It captures
-its boot start position before readiness, limits active commands/result waiters
-to 1,024, and retains results only while their Tool binding exists. Result arrival
-wait is 30 seconds; once observed, the existing Tool deadline controls execution.
+Tool Broker uses the same `PI_CLOUD_KAFKA_BROKERS` and code-owned accepted topic;
+there is no Broker-only topic override. It captures its boot start position before
+readiness. Active commands, HTTP readers, sending bytes and completed retry copies
+have separate limits above. A native Kafka Tool Result retires its raw copies;
+seals/retired bindings clean up incomplete calls. Command arrival wait is 30 seconds;
+once observed, the Tool execution deadline applies, followed by the response-send
+deadline only when the result exists. A disconnected reader does not kill a Tool.
 Each Broker boot reads the shared topic and filters its own binding IDs, so extra
 replicas add read traffic and have trusted access to the shared log. Guests and
 Pi Workers do not receive Kafka access.
@@ -330,6 +340,14 @@ npm run helm:check
 
 Service startup validates individual ranges; the Compose wrapper additionally
 validates cross-service concurrency, lease, retention and timeout relations.
+
+Producer limits include queued and submitted-unacknowledged encoded Fact bodies,
+not process RSS or all upstream objects. Capacity overflow rejects before enqueue;
+it can fail the current Run but never acknowledges missing data. Per-lane `drain`
+adds no fixed batching delay. The 10-second Producer close budget fits inside the
+process shutdown grace and reports failure if admitted data cannot drain.
+Broker limits must leave headroom for V8 objects, request decoding, native buffers
+and lightweight operation metadata. They are not tenant quotas or Workspace locks.
 
 ## Secrets
 

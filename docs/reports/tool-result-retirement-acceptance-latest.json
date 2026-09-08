@@ -1,6 +1,6 @@
 {
   "format": "pi-cloud.kafka-tool-command-acceptance.v2",
-  "checkedAt": "2026-09-08T02:45:06.067Z",
+  "checkedAt": "2026-09-08T06:14:02.352Z",
   "topology": "two real Kafka consumers + production result HTTP servers; R=3 four-partition private topic; 3 CPU/2 GiB runner",
   "scope": "accepted command -> Kafka -> Broker dispatch -> counting executor -> HTTP result -> native Kafka receipt; command latency ends at HTTP result, aggregate throughput includes receipt publication; no Gate SQL, model or Cube time",
   "resultRetirement": {
@@ -14,37 +14,37 @@
     {
       "sessions": 1,
       "commands": 3,
-      "commandsPerSecond": 10.8,
+      "commandsPerSecond": 19.3,
       "latencyMs": {
-        "p50": 8.88,
-        "p95": 246.75
+        "p50": 12.32,
+        "p95": 111.49
       }
     },
     {
       "sessions": 16,
       "commands": 48,
-      "commandsPerSecond": 76.6,
+      "commandsPerSecond": 135,
       "latencyMs": {
-        "p50": 16.23,
-        "p95": 79.16
+        "p50": 18.87,
+        "p95": 289.96
       }
     },
     {
       "sessions": 128,
       "commands": 384,
-      "commandsPerSecond": 324.9,
+      "commandsPerSecond": 540.6,
       "latencyMs": {
-        "p50": 74.78,
-        "p95": 1017.9
+        "p50": 33.35,
+        "p95": 575.11
       }
     },
     {
       "sessions": 1024,
       "commands": 3072,
-      "commandsPerSecond": 980.1,
+      "commandsPerSecond": 1021.1,
       "latencyMs": {
-        "p50": 28.14,
-        "p95": 2633.69
+        "p50": 25.18,
+        "p95": 2459.77
       }
     }
   ],
@@ -62,6 +62,8 @@
       "consumedFacts": 7523,
       "acceptedCommands": 2008,
       "activeCommands": 0,
+      "maximumActiveCommands": 32,
+      "waitingReaders": 0,
       "retainedResults": 0,
       "retainedResultBytes": 0,
       "peakRetainedResultBytes": 160454,
@@ -71,12 +73,14 @@
       "consumedFacts": 7523,
       "acceptedCommands": 1752,
       "activeCommands": 0,
+      "maximumActiveCommands": 32,
+      "waitingReaders": 0,
       "retainedResults": 0,
       "retainedResultBytes": 0,
       "peakRetainedResultBytes": 160768,
       "releasedResults": 1752
     }
   ],
-  "revision": "a7b658cf4b1c239978ff95496b47dd9826ebac09",
+  "revision": "e8cd9a7390a2da2e008d3328d7f3507c74bc716d",
   "workingTreeDirty": true
 }

@@ -59,7 +59,7 @@ Aggregate throughput now includes native receipt publication; command latency
 ends at HTTP response. They must not be compared as a speedup/regression against
 the previous command-only workload. The largest burst measured 980.1 commands/s
 and p50/p95 28.14/2,633.69 ms; it is not 1,024 real coding VMs or a Kafka limit.
-[Measured evidence](tool-result-retirement-acceptance-latest.json).
+[Measured evidence](https://github.com/cookerpapa/pi-cloud/blob/e8cd9a73/docs/reports/tool-result-retirement-acceptance-latest.json).
 
 ## Real DeepSeek / browser / Cube
 
@@ -83,7 +83,7 @@ initial test-failure text had shell exit zero; no result was fabricated by Broke
 PostgreSQL contains nine succeeded Broker operations. Broker's release counter
 records nine `native_result` retirements, not seal/binding cleanup. Fresh Worker
 metrics record Pi usage input 4,642, output 4,139 and cache-read 86,272 tokens.
-[Browser and cache evidence](tool-preparation-acceptance-latest.json).
+[Browser and cache evidence](https://github.com/cookerpapa/pi-cloud/blob/e8cd9a73/docs/reports/tool-preparation-acceptance-latest.json).
 
 An initial test setup omitted the protected metrics endpoint's bearer header and
 stopped before a model Run; the probe was corrected to read the mounted metrics

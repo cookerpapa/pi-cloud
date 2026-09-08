@@ -66,6 +66,8 @@ Kafka `acks=all` receipt and one idempotent PostgreSQL Session projection; only
 then may the Tool execute. These two barriers cannot be collapsed because an
 execution intent does not exist until Pi validation succeeds. Independent
 message, usage, lifecycle-event and intent barriers are deliberately avoided.
+These are two native Session boundaries, not all pre-effect ACKs: concrete
+operation command PubAck and Broker PostgreSQL admission are additional steps.
 The successful projection receipt commits with its Session mutation. Workers
 publish first, then read receipts when the shared LISTEN connection reports a
 committed mutation ID. A shared one-second fallback reads all pending IDs if
@@ -115,6 +117,14 @@ partition. The live-tail ordered path appends directly and uses a sequence index
 for duplicate/conflict lookup; out-of-order arrivals use ordered insertion.
 
 ## Failure matrix
+
+Producer queues are bounded in encoded bytes and record count until PubAck, and
+respect Writable drain per lane. Overflow rejects before enqueue rather than
+holding rejected data in another application retry queue. Stream failure or close
+timeout cannot acknowledge pending Facts. This preserves durability but overload
+may fail a Run. HTTP result delivery has independent reader/sending-byte bounds;
+disconnects and seals remove pending readers without replaying or implicitly
+cancelling the underlying command. Slow-send deadlines begin after results exist.
 
 | Crash boundary | Visible result | Recovery rule |
 | --- | --- | --- |

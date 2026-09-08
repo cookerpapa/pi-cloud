@@ -82,6 +82,7 @@ Every Worker
             ▼
 AcceptedFact Authority Gate
   └─ one PostgreSQL Lease/Fence admission per logical stream
+       (bounded Producer queues; per-lane Writable backpressure)
        ▼
 Kafka (Session-keyed, replication factor 3, acks=all)
   ├─ canonical consumer ─────────────▶ PostgreSQL Pi SessionStorage + stream seal

@@ -5,6 +5,7 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { loadProducerCapacity } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 
 const path = process.env.DATABASE_URL_FILE;
 if (!path) throw new Error("DATABASE_URL_FILE is required");
@@ -34,6 +35,8 @@ const observability = await startServiceObservability({
   defaultMetricsPort: 9470,
 });
 const runtime = new KafkaProjectionRuntime({
+  capacity: loadProducerCapacity(process.env),
+  metrics: observability.metrics,
   database,
   brokers,
   clientId: `projection-${randomUUID()}`,

@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [x] Bound Producer/Broker transport under slow downstreams, align capacity
+      configuration and measure native publication/PG receipt waits.
+
 - [x] Reuse native Kafka Tool Results as raw-response delivery acknowledgements;
       retire the duplicate execution cache and preserve no-replay semantics.
 

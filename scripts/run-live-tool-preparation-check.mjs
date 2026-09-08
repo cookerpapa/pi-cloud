@@ -55,6 +55,8 @@ async function resultCacheMetrics() {
   };
   return {
     bytes: sample("pi_cloud_tool_result_cache_bytes"),
+    readers: sample("pi_cloud_tool_result_readers"),
+    sendingBytes: sample("pi_cloud_tool_result_sending_bytes"),
     // A Counter with no native result yet has no labelled sample.
     nativeResults: stdout
       .split("\n")
@@ -178,6 +180,12 @@ try {
         "Broker did not retire results from native Kafka acknowledgements",
       );
       assert.equal(cacheAfter.bytes, 0, "Completed Tool bodies remain cached after Run completion");
+      assert.equal(cacheAfter.readers, 0, "HTTP result readers remain after completion");
+      assert.equal(
+        cacheAfter.sendingBytes,
+        0,
+        "HTTP response byte reservations remain after completion",
+      );
       report.runs.push({
         runId: accepted.runId,
         tool: expectedTool,

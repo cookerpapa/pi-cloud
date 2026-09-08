@@ -203,8 +203,10 @@ boundary. The complete Assistant Entry, its usage Record and
 PostgreSQL projection. After Pi validates a Tool call, its `tool_started`
 Record and public `tool.started` event share a second Fact. The Tool effect can
 begin only after that second projection succeeds. This leaves two causally
-necessary post-sampling barriers before an arbitrary Tool effect instead of
+necessary native Session post-sampling barriers instead of
 serially persisting the message, usage, public lifecycle event and Tool intent.
+Concrete operation command PubAck and Broker PostgreSQL admission remain separate;
+the two native checkpoints are not a count of every transport/database ACK.
 The Projector applies those accepted facts idempotently without rechecking a
 lease that may legitimately expire after PubAck. Direct administrative
 repository mutations remain transactionally authorized at their PostgreSQL
@@ -440,6 +442,12 @@ changes. Run completion settles only the PiCloud execution record. Git and
 provider delivery remain user-directed actions in a later conversation Turn.
 
 ### Tool Broker and Cube
+
+Operation concurrency, HTTP result reader count and in-flight response bytes are
+separate bounded resources. Abandoning a result GET unregisters its waiter without
+cancelling execution. A seal rejects pending old readers; bytes already being sent
+cannot be retracted. Only stalled sends time out under the response-delivery timer,
+which begins after a result exists, not while a legitimate Tool is still running.
 
 Agent file/shell commands enter the same AcceptedFact log through the Worker
 Fact connection and Authority Gate. `tool_command` contains canonical execution
@@ -756,6 +764,14 @@ requests may follow a Broker ownership redirect. Directory expansion and file
 opening each perform a bounded read; neither allocates a new Cube.
 
 ### Durable browser stream
+
+The adopted Kafka Writable's drain signal is respected per producer lane without
+serializing every Session on PubAck. Encoded queued/submitted-unacknowledged Fact
+bodies share byte/count admission bounds. Capacity rejection is before enqueue;
+the Gate does not retain that rejected payload in another retry queue. Overload can
+fail a Run but never fabricates a durable ACK or drops already-visible data. The
+PG read-your-writes barrier and native result checkpoint are unchanged. Embedded
+and standalone publishers share capacity configuration; the topic is code-owned.
 
 Pi exposes separate Assistant-message, Tool-execution and Agent lifecycle
 events. The public adapter intentionally ignores thinking fragments, streamed

@@ -61,8 +61,9 @@ the sole completed-result cache; after acknowledgement it retains lightweight
 operation-ID/request-hash tombstones until binding retirement. Duplicate commands
 cannot restart effects. Execution seals retire missing-result calls. Already
 admitted work may finish after retirement but cannot repopulate the cache or
-enter the sealed canonical stream. Existing HTTP readers may finish with their
-own references; this admits neither new readers nor new publications.
+enter the sealed canonical stream. ADR-0158 removes pending readers on seal or
+disconnect; already-transmitting responses may finish with their own references.
+Neither grants new readers nor new publications after closure.
 
 A total encoded-body byte budget bounds the completed-result cache. Overflow
 sheds oldest retry copies, preserving in-flight readers and no-replay tombstones;

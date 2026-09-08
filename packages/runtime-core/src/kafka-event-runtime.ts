@@ -1,5 +1,7 @@
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
+import type { ProducerCapacity } from "@pi-cloud/event-log";
+import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { AcceptedFactTerminalOutboxRelay } from "./accepted-fact-terminal-outbox-relay.ts";
 import { PostgresExecutionLeaseAuthorityGate } from "./session-lease-authority-gate.ts";
 import { FactChannelService } from "./accepted-fact-channel.ts";
@@ -20,6 +22,8 @@ export type KafkaEventRuntimeOptions = Readonly<{
   partitions: number;
   replicas: number;
   retentionMs: number;
+  capacity?: ProducerCapacity;
+  metrics?: PiCloudMetrics;
   factChannelLeaseMs?: number;
   factChannelMaximumActive?: number;
   canonicalProjection?: boolean;
@@ -43,6 +47,8 @@ export class KafkaEventRuntime {
       partitions: options.partitions,
       replicas: options.replicas,
       retentionMs: options.retentionMs,
+      ...(options.capacity ? { capacity: options.capacity } : {}),
+      ...(options.metrics ? { metrics: options.metrics } : {}),
     };
     this.#bus = new KafkaAcceptedFactBus(configuration);
     this.eventStore = new KafkaLiveSessionTail({

@@ -65,6 +65,21 @@ Prometheus scrapes four application endpoint groups:
 counts the same Run a second time. `pi_cloud_queued_runs` is sampled from the
 shared PostgreSQL Run queue rather than inferred from a local Worker.
 
+Transport capacity signals are process-local and should be summed across replicas:
+
+- `pi_cloud_kafka_producer_pending_bytes` / `_pending_facts`: queued and submitted
+  Facts awaiting PubAck; `_rejected_total` counts rejection before enqueue.
+- `pi_cloud_tool_result_readers` / `_sending_bytes`: outstanding HTTP deliveries;
+  cache bytes remain a separate gauge. `pi_cloud_tool_transport_rejected_total`
+  distinguishes command, reader and response-byte capacity.
+- `pi_cloud_session_mutation_wait_seconds{stage="kafka_publish"}` and
+  `{stage="projection_receipt"}` separate publication from the subsequent PG
+  receipt/notification wait. Both exclude model time; receipt wait is not just
+  PostgreSQL execution time. A receipt already available at PubAck may cost near zero.
+
+The optional standalone projector exposes the same Producer gauges on its
+authenticated port 9470; include that target only when the role is deployed.
+
 ## Alert policy
 
 Version-controlled Prometheus rules under `deploy/observability/alerts/`

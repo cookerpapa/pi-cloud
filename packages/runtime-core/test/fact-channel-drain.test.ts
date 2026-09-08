@@ -1,8 +1,21 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createExecutionLease, type EventPublishMessage } from "@pi-cloud/protocol";
 import { FactChannelService } from "../src/accepted-fact-channel.ts";
+import { AcceptedFactCapacityError } from "../src/accepted-fact.ts";
 
 afterEach(() => vi.useRealTimers());
+it("does not retain an overflowed Fact in an outer retry queue or report a durable ACK", async () => {
+  const f = fixture();
+  f.bus.append.mockRejectedValue(new AcceptedFactCapacityError());
+  const channel = await f.open();
+  await expect(channel.ingest(f.publication)).rejects.toMatchObject({
+    code: "event_capacity_exhausted",
+  });
+  expect(f.bus.append).toHaveBeenCalledOnce();
+  expect(channel.acknowledgedThroughSeq).toBe(0);
+  await expect(channel.close()).rejects.toMatchObject({ code: "event_capacity_exhausted" });
+  await f.service.close();
+});
 const id = (n: number) => `10000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 function fixture() {
   let deliver!: () => void;
