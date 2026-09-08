@@ -83,6 +83,7 @@ const commands = new KafkaToolCommandConsumer({
   broker,
   brokers: config.kafkaBrokers,
   topic: config.acceptedFactTopic,
+  maximumResultBytes: config.maximumResultBytes,
   metrics: observability.metrics,
 });
 const server = new ToolBrokerServer({

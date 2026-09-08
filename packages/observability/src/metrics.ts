@@ -13,6 +13,8 @@ export class PiCloudMetrics {
   readonly modelTokens: Counter<"provider" | "model" | "kind">;
   readonly modelCostMicrousd: Counter<"provider" | "model">;
   readonly toolDuration: Histogram<"tool" | "outcome">;
+  readonly toolResultCacheBytes: Gauge;
+  readonly toolResultCacheReleased: Counter<"reason">;
   readonly workspaceSettlementDuration: Histogram<"outcome">;
   readonly workspaceSettlementRestoreDuration: Histogram<"outcome">;
   readonly runtimeObjectCacheAccess: Counter<"result">;
@@ -108,6 +110,17 @@ export class PiCloudMetrics {
       help: "Remote tool execution duration",
       labelNames: ["tool", "outcome"],
       buckets: DURATION_BUCKETS,
+      registers: [this.registry],
+    });
+    this.toolResultCacheBytes = new Gauge({
+      name: "pi_cloud_tool_result_cache_bytes",
+      help: "Encoded response bytes retained for Tool result delivery (not process heap)",
+      registers: [this.registry],
+    });
+    this.toolResultCacheReleased = new Counter({
+      name: "pi_cloud_tool_result_cache_released_total",
+      help: "Tool response copies released after native result, seal, binding loss or capacity",
+      labelNames: ["reason"],
       registers: [this.registry],
     });
     this.workspaceSettlementDuration = new Histogram({

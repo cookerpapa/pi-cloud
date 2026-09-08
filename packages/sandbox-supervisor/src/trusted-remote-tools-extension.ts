@@ -43,6 +43,7 @@ const UNAVAILABLE_TOOL_CODES = new Set([
   "tool_command_executor_closed",
   "tool_command_sealed",
   "tool_operation_outcome_unknown",
+  "tool_result_released",
   "stale_session_lease",
   "ownership_lost",
 ]);
@@ -447,6 +448,7 @@ function registerTrustedRemoteTools(
 
   const operation = async (
     toolName: CloudToolName,
+    toolCallId: string,
     request: RemoteOperationInput,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> => {
@@ -475,6 +477,7 @@ function registerTrustedRemoteTools(
     signal?.throwIfAborted();
     await runtime.publishToolCommand({
       executionLease: runtime.executionLease,
+      toolCallId,
       request: candidate,
       occurredAt: new Date().toISOString(),
       ...(runtime.traceparent
@@ -572,21 +575,19 @@ function registerTrustedRemoteTools(
     await writeFile(target, value, { flag: "wx", mode: 0o600 });
   };
 
-  const readOperations = (toolName: "read" | "edit", toolCallId?: string): ReadOperations => ({
+  const readOperations = (toolName: "read" | "edit", toolCallId: string): ReadOperations => ({
     readFile: async (path) => {
       try {
         assertModelReadablePath(path);
-        const response = await operation(toolName, { operation: "file.read", path });
+        const response = await operation(toolName, toolCallId, { operation: "file.read", path });
         if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
         if (response.operation !== "file.read") throw new Error("Tool response kind changed");
         const content = canonicalBase64(response.content);
-        if (toolCallId !== undefined) {
-          await preserveLargeOutput(
-            toolCallId,
-            content,
-            Math.min(runtime.maximumToolOutputBytes, DEFAULT_MAX_BYTES),
-          );
-        }
+        await preserveLargeOutput(
+          toolCallId,
+          content,
+          Math.min(runtime.maximumToolOutputBytes, DEFAULT_MAX_BYTES),
+        );
         return content;
       } catch (error: unknown) {
         throw errorForPi(error);
@@ -594,7 +595,7 @@ function registerTrustedRemoteTools(
     },
     access: async (path) => {
       try {
-        const response = await operation(toolName, { operation: "file.access", path });
+        const response = await operation(toolName, toolCallId, { operation: "file.access", path });
         if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
       } catch (error: unknown) {
         throw errorForPi(error);
@@ -616,11 +617,15 @@ function registerTrustedRemoteTools(
       }
     },
   });
-  const writeOperations: WriteOperations = {
+  const writeOperations = (toolCallId: string): WriteOperations => ({
     writeFile: async (path, content) => {
       try {
         assertModelReadablePath(path);
-        const response = await operation("write", { operation: "file.write", path, content });
+        const response = await operation("write", toolCallId, {
+          operation: "file.write",
+          path,
+          content,
+        });
         if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
         if (response.operation !== "file.write") throw new Error("Tool response kind changed");
       } catch (error: unknown) {
@@ -632,62 +637,64 @@ function registerTrustedRemoteTools(
     mkdir: async (path) => {
       assertModelReadablePath(path);
     },
-  };
-  const editDigests = new Map<string, string>();
-  const editOperations: EditOperations = {
-    readFile: async (path) => {
-      try {
+  });
+  const editOperations = (toolCallId: string): EditOperations => {
+    const editDigests = new Map<string, string>();
+    return {
+      readFile: async (path) => {
+        try {
+          assertModelReadablePath(path);
+          const response = await operation("edit", toolCallId, { operation: "file.read", path });
+          if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
+          if (response.operation !== "file.read") throw new Error("Tool response kind changed");
+          const content = canonicalBase64(response.content);
+          const actual = createHash("sha256").update(content).digest("hex");
+          if (actual !== response.sha256) {
+            throw new RemoteToolError(
+              "tool_protocol_error",
+              "Tool Sandbox returned an invalid file digest",
+              false,
+            );
+          }
+          editDigests.set(path, response.sha256);
+          return content;
+        } catch (error: unknown) {
+          throw errorForPi(error);
+        }
+      },
+      writeFile: async (path, content) => {
         assertModelReadablePath(path);
-        const response = await operation("edit", { operation: "file.read", path });
-        if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
-        if (response.operation !== "file.read") throw new Error("Tool response kind changed");
-        const content = canonicalBase64(response.content);
-        const actual = createHash("sha256").update(content).digest("hex");
-        if (actual !== response.sha256) {
-          throw new RemoteToolError(
-            "tool_protocol_error",
-            "Tool Sandbox returned an invalid file digest",
-            false,
-          );
+        const expectedSha256 = editDigests.get(path);
+        editDigests.delete(path);
+        if (expectedSha256 === undefined) {
+          throw new Error("tool_edit_conflict: Edit did not read the current file revision");
         }
-        editDigests.set(path, response.sha256);
-        return content;
-      } catch (error: unknown) {
-        throw errorForPi(error);
-      }
-    },
-    writeFile: async (path, content) => {
-      assertModelReadablePath(path);
-      const expectedSha256 = editDigests.get(path);
-      editDigests.delete(path);
-      if (expectedSha256 === undefined) {
-        throw new Error("tool_edit_conflict: Edit did not read the current file revision");
-      }
-      try {
-        const response = await operation("edit", {
-          operation: "file.write",
-          path,
-          content,
-          expectedSha256,
-        });
-        if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
-        if (response.operation !== "file.write") throw new Error("Tool response kind changed");
-        const writtenSha256 = createHash("sha256").update(content, "utf8").digest("hex");
-        if (writtenSha256 !== response.sha256) {
-          throw new RemoteToolError(
-            "tool_protocol_error",
-            "Tool Sandbox returned an invalid written-file digest",
-            false,
-          );
+        try {
+          const response = await operation("edit", toolCallId, {
+            operation: "file.write",
+            path,
+            content,
+            expectedSha256,
+          });
+          if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
+          if (response.operation !== "file.write") throw new Error("Tool response kind changed");
+          const writtenSha256 = createHash("sha256").update(content, "utf8").digest("hex");
+          if (writtenSha256 !== response.sha256) {
+            throw new RemoteToolError(
+              "tool_protocol_error",
+              "Tool Sandbox returned an invalid written-file digest",
+              false,
+            );
+          }
+        } catch (error: unknown) {
+          throw errorForPi(error);
         }
-      } catch (error: unknown) {
-        throw errorForPi(error);
-      }
-    },
-    // A remote read already verifies existence and readability.
-    access: async (path) => {
-      assertModelReadablePath(path);
-    },
+      },
+      // A remote read already verifies existence and readability.
+      access: async (path) => {
+        assertModelReadablePath(path);
+      },
+    };
   };
   const bashOperations = (toolCallId: string): BashOperations => ({
     exec: async (command, cwd, { onData, signal, timeout }) => {
@@ -697,6 +704,7 @@ function registerTrustedRemoteTools(
         // trusted Pi/model environment and must never cross into Tool Sandbox.
         const response = await operation(
           "bash",
+          toolCallId,
           {
             operation: "bash.exec",
             command,
@@ -801,6 +809,7 @@ function registerTrustedRemoteTools(
         try {
           const response = await operation(
             "read",
+            id,
             {
               operation: "file.read_range",
               path: input.path,
@@ -844,7 +853,7 @@ function registerTrustedRemoteTools(
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();
-        return createWriteTool(toolRoot, { operations: writeOperations }).execute(
+        return createWriteTool(toolRoot, { operations: writeOperations(id) }).execute(
           id,
           params,
           signal,
@@ -859,7 +868,7 @@ function registerTrustedRemoteTools(
       executionMode: CLOUD_TOOL_EXECUTION_MODE,
       async execute(id, params, signal, onUpdate) {
         consumeToolCall();
-        return createEditTool(toolRoot, { operations: editOperations }).execute(
+        return createEditTool(toolRoot, { operations: editOperations(id) }).execute(
           id,
           params,
           signal,

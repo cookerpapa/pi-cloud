@@ -202,6 +202,7 @@ describe("WebSocketAcceptedFactIngestor", () => {
     await expect(
       writer.publishToolCommand({
         executionLease: event.payload.executionLease,
+        toolCallId: "bash-call-1",
         occurredAt: new Date().toISOString(),
         request: {
           toolBrokerProtocolVersion: 1,

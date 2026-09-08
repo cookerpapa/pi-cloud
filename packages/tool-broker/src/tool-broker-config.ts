@@ -10,6 +10,7 @@ export type ToolBrokerConfig = {
   databaseUrl: string;
   kafkaBrokers: readonly string[];
   acceptedFactTopic: string;
+  maximumResultBytes: number;
   sandboxDomainId: string;
   advertisedBaseUrl: string;
   ownershipLeaseMs: number;
@@ -220,6 +221,12 @@ export async function loadToolBrokerConfig(
       .split(",")
       .map((value) => value.trim()),
     acceptedFactTopic: environment.PI_CLOUD_ACCEPTED_FACT_TOPIC ?? ACCEPTED_FACT_TOPIC,
+    maximumResultBytes: integer(
+      environment.PI_CLOUD_TOOL_RESULT_CACHE_BYTES,
+      64 * 1024 * 1024,
+      1024,
+      1024 * 1024 * 1024,
+    ),
     sandboxDomainId: bounded(
       required(environment, "PI_CLOUD_SANDBOX_DOMAIN_ID"),
       "sandboxDomainId",

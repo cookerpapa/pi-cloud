@@ -39,6 +39,9 @@
 
 ## Current release gate
 
+- [x] Reuse native Kafka Tool Results as raw-response delivery acknowledgements;
+      retire the duplicate execution cache and preserve no-replay semantics.
+
 - [x] Consume Agent Tool commands in Broker after Kafka; retain native Session
       checkpoints, result redaction, duplicate protection and explicit UNKNOWN.
 - [x] Replace Gateway seal polling with co-committed Outbox/Kafka notifications;

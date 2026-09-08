@@ -64,7 +64,9 @@ tests, then read/edited the same file to add heap sort and reran tests. Final
 Bash outputs were `OK` for 9 and 16 tests. Write/edit preparation was animated,
 and refreshing during generation restored the same activity.
 Round totals were 23.641 / 20.409 seconds, including model time.
-[Evidence](tool-preparation-acceptance-latest.json).
+[Initial evidence](https://github.com/cookerpapa/pi-cloud/blob/a7b658cf/docs/reports/tool-preparation-acceptance-latest.json).
+The later [result-retirement acceptance](tool-result-retirement-acceptance.md)
+uses the updated probe and latest browser report.
 
 Read-only inspection matched all eight Kafka `tool_command` IDs to eight
 succeeded Broker operation rows for that exact acceptance tenant:

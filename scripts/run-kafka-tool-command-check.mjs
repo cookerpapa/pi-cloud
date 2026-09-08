@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, fork } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
@@ -50,7 +50,7 @@ if (process.argv[2] !== "inside") {
     report.revision = (await exec("git", ["rev-parse", "HEAD"])).stdout.trim();
     report.workingTreeDirty = true;
     await writeFile(
-      "docs/reports/kafka-tool-command-acceptance-latest.json",
+      "docs/reports/tool-result-retirement-acceptance-latest.json",
       JSON.stringify(report, null, 2) + "\n",
     );
     console.log(JSON.stringify(report));
@@ -100,14 +100,20 @@ if (process.argv[2] !== "inside") {
     operationId: request.operationId,
     operation: "bash.exec",
     exitCode: 0,
-    outputChunks: [],
-    outputSha256: "a".repeat(64),
+    outputChunks:
+      request.command === "large"
+        ? [{ seq: 1, stream: "stdout", data: Buffer.alloc(96 * 1024, 120).toString("base64") }]
+        : [],
+    outputSha256: createHash("sha256")
+      .update(request.command === "large" ? Buffer.alloc(96 * 1024, 120) : Buffer.alloc(0))
+      .digest("hex"),
   });
   const command = (scope, activationId) => {
     const operationId = randomUUID();
     return {
       kind: "tool_command",
       factId: operationId,
+      toolCallId: randomUUID(),
       scope,
       occurredAt: new Date().toISOString(),
       request: {
@@ -136,6 +142,44 @@ if (process.argv[2] !== "inside") {
     leaseId: randomUUID(),
     fencingToken: 1,
   });
+  const receipt = (c) => ({
+    kind: "pi_session_mutation",
+    factId: randomUUID(),
+    scope: c.scope,
+    piSession: { id: c.scope.sessionId, lane: "main" },
+    operation: {
+      kind: "append_items",
+      items: [
+        {
+          kind: "append_entry",
+          lane: "main",
+          entry: {
+            id: randomUUID(),
+            type: "message",
+            message: {
+              role: "toolResult",
+              toolCallId: c.toolCallId,
+              toolName: "bash",
+              content: [{ type: "text", text: "Harness-selected result" }],
+              isError: false,
+              timestamp: Date.now(),
+            },
+          },
+        },
+      ],
+    },
+    events: [
+      { type: "tool.completed", payload: { toolCallId: c.toolCallId, outcome: "completed" } },
+    ],
+    occurredAt: new Date().toISOString(),
+  });
+  const waitUntil = async (predicate) => {
+    const deadline = Date.now() + 30000;
+    while (!predicate()) {
+      if (Date.now() > deadline) throw new Error("Kafka result-retirement probe timed out");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
   const start = async (index) => {
     const broker = {
       providerId: "acceptance-counter",
@@ -204,6 +248,7 @@ if (process.argv[2] !== "inside") {
             assert.equal(result.operationId, c.factId);
             assert.equal(effects.get(c.factId), 1);
             roundTimes.push(performance.now() - before);
+            await bus.append(receipt(c));
           }
         }),
       );
@@ -222,9 +267,33 @@ if (process.argv[2] !== "inside") {
       times.push(...roundTimes);
     }
     const c = firstCommand;
+    await waitUntil(() =>
+      consumers.every((consumer) => consumer.statistics().retainedResults === 0),
+    );
     await bus.append(c);
-    await clients[0].operationResult(lease(c), c.request.activationId, c.factId);
+    await assert.rejects(
+      clients[0].operationResult(lease(c), c.request.activationId, c.factId),
+      /no longer retained/,
+    );
     assert.equal(effects.get(c.factId), 1);
+    // One unsealed Run, many Tools: acknowledgement frees every body before
+    // the next command. Raw responses differ from the Harness's final text.
+    const longScope = makeScope(),
+      longActivation = randomUUID();
+    const longFirst = command(longScope, longActivation);
+    bindings[0].set(longActivation, lease(longFirst));
+    const beforeLong = consumers[0].statistics().releasedResults;
+    for (let i = 0; i < 250; i++) {
+      const step = command(longScope, longActivation);
+      step.request.command = "large";
+      await bus.append(step);
+      await clients[0].operationResult(lease(step), longActivation, step.factId);
+      await bus.append(receipt(step));
+      await waitUntil(() => consumers[0].statistics().retainedResults === 0);
+    }
+    assert.equal(consumers[0].statistics().releasedResults - beforeLong, 250);
+    const longRunRetainedBytes = consumers[0].statistics().retainedResultBytes;
+    assert.equal(longRunRetainedBytes, 0);
     const forbidden = await fetch(`${urls[0]}/internal/v1/tool-operation`, {
       method: "POST",
       headers: { authorization: `Bearer ${lease(c)}`, "content-type": "application/json" },
@@ -308,14 +377,25 @@ if (process.argv[2] !== "inside") {
       old.messages.some((m) => m.type === "effect"),
       false,
     );
+    await bus.append(receipt(other));
+    await waitUntil(() =>
+      consumers.every((consumer) => consumer.statistics().retainedResults === 0),
+    );
     console.log(
       JSON.stringify({
-        format: "pi-cloud.kafka-tool-command-acceptance.v1",
+        format: "pi-cloud.kafka-tool-command-acceptance.v2",
         checkedAt: new Date().toISOString(),
         topology:
           "two real Kafka consumers + production result HTTP servers; R=3 four-partition private topic; 3 CPU/2 GiB runner",
         scope:
-          "accepted command -> Kafka -> Broker dispatch -> counting executor -> HTTP result; no Gate SQL, model or Cube time",
+          "accepted command -> Kafka -> Broker dispatch -> counting executor -> HTTP result -> native Kafka receipt; command latency ends at HTTP result, aggregate throughput includes receipt publication; no Gate SQL, model or Cube time",
+        resultRetirement: {
+          beforeRunSeal: true,
+          longRunTools: 250,
+          rawBytesPerLongRunTool: 96 * 1024,
+          retainedBytesAfterLongRun: longRunRetainedBytes,
+          duplicateAfterReleaseNotExecuted: true,
+        },
         progress,
         effects: effects.size,
         duplicateEffects: [...effects.values()].filter((n) => n !== 1).length,

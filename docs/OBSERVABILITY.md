@@ -58,7 +58,7 @@ Prometheus scrapes four application endpoint groups:
 | --- | --- | --- |
 | Control Plane | `control-plane:9464/metrics` | queue, event/session projection, cleanup, admission, process |
 | Pi Workers | `*:9465/metrics` | active Runs, model/Run latency, tokens, process |
-| Tool Broker | `tool-broker:9466/metrics` | Cube lifecycle, Tool calls, admission, process |
+| Tool Broker | `tool-broker:9466/metrics` | Cube lifecycle, Tool calls, admission, result-cache bytes/releases, process |
 | Workspace Volume Gateway | `workspace-volume-gateway:9469/metrics` | storage queue, latency, rejection, process |
 
 `pi_cloud_active_runs` counts Worker execution slots. The Pi adapter no longer

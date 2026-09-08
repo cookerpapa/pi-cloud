@@ -1,0 +1,82 @@
+{
+  "format": "pi-cloud.kafka-tool-command-acceptance.v2",
+  "checkedAt": "2026-09-08T02:45:06.067Z",
+  "topology": "two real Kafka consumers + production result HTTP servers; R=3 four-partition private topic; 3 CPU/2 GiB runner",
+  "scope": "accepted command -> Kafka -> Broker dispatch -> counting executor -> HTTP result -> native Kafka receipt; command latency ends at HTTP result, aggregate throughput includes receipt publication; no Gate SQL, model or Cube time",
+  "resultRetirement": {
+    "beforeRunSeal": true,
+    "longRunTools": 250,
+    "rawBytesPerLongRunTool": 98304,
+    "retainedBytesAfterLongRun": 0,
+    "duplicateAfterReleaseNotExecuted": true
+  },
+  "progress": [
+    {
+      "sessions": 1,
+      "commands": 3,
+      "commandsPerSecond": 10.8,
+      "latencyMs": {
+        "p50": 8.88,
+        "p95": 246.75
+      }
+    },
+    {
+      "sessions": 16,
+      "commands": 48,
+      "commandsPerSecond": 76.6,
+      "latencyMs": {
+        "p50": 16.23,
+        "p95": 79.16
+      }
+    },
+    {
+      "sessions": 128,
+      "commands": 384,
+      "commandsPerSecond": 324.9,
+      "latencyMs": {
+        "p50": 74.78,
+        "p95": 1017.9
+      }
+    },
+    {
+      "sessions": 1024,
+      "commands": 3072,
+      "commandsPerSecond": 980.1,
+      "latencyMs": {
+        "p50": 28.14,
+        "p95": 2633.69
+      }
+    }
+  ],
+  "effects": 3759,
+  "duplicateEffects": 0,
+  "directExecutionPostRejected": true,
+  "processFault": {
+    "killedBeforeEffect": true,
+    "replacementExecutedOnlyNewBinding": true
+  },
+  "longCommandDidNotBlockAnother": true,
+  "sealedCommandNotExecuted": true,
+  "consumerStatistics": [
+    {
+      "consumedFacts": 7523,
+      "acceptedCommands": 2008,
+      "activeCommands": 0,
+      "retainedResults": 0,
+      "retainedResultBytes": 0,
+      "peakRetainedResultBytes": 160454,
+      "releasedResults": 2007
+    },
+    {
+      "consumedFacts": 7523,
+      "acceptedCommands": 1752,
+      "activeCommands": 0,
+      "retainedResults": 0,
+      "retainedResultBytes": 0,
+      "peakRetainedResultBytes": 160768,
+      "releasedResults": 1752
+    }
+  ],
+  "revision": "a7b658cf4b1c239978ff95496b47dd9826ebac09",
+  "workingTreeDirty": true
+}

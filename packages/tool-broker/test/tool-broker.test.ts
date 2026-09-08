@@ -1189,12 +1189,14 @@ describe("provider-backed Tool Tool Broker", () => {
       policy: { network: { mode: "public_web_proxy_private_denied" } },
     });
     expect(fixture.createSpec).not.toHaveProperty("capability");
-    await expect(manager.execute(assignment.executionLease, request)).resolves.toMatchObject({
-      exitCode: 0,
+    // Completed bodies belong to the command consumer, not the execution map.
+    // A direct repeat hits the durable operation ledger and must not replay.
+    await expect(manager.execute(assignment.executionLease, request)).rejects.toMatchObject({
+      code: "tool_operation_outcome_unknown",
     });
     await expect(
       manager.execute(assignment.executionLease, { ...request, command: "whoami" }),
-    ).rejects.toMatchObject({ code: "tool_operation_identity_conflict" });
+    ).rejects.toMatchObject({ code: "tool_operation_outcome_unknown" });
     expect(fixture.exec).toHaveBeenCalledTimes(1);
 
     const secondStep = {
@@ -1205,8 +1207,8 @@ describe("provider-backed Tool Tool Broker", () => {
     await expect(manager.execute(assignment.executionLease, secondStep)).resolves.toMatchObject({
       exitCode: 0,
     });
-    await expect(manager.execute(assignment.executionLease, request)).resolves.toMatchObject({
-      exitCode: 0,
+    await expect(manager.execute(assignment.executionLease, request)).rejects.toMatchObject({
+      code: "step_context_mismatch",
     });
     await expect(
       manager.execute(assignment.executionLease, operation("10000000-0000-4000-8000-000000000019")),

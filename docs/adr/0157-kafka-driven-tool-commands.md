@@ -37,15 +37,46 @@ Broker is a trusted reader of the shared log, including non-command records;
 the new access is never extended to a Cube guest or Pi Worker.
 
 Tool work is detached from the partition handler so long Bash cannot hide its
-seal or block other Sessions. Bound active work and tie result retention to the
-binding lifetime, preserving exact operation-ID deduplication. A seal rejects
+seal or block other Sessions. Bound active work and preserve exact operation-ID
+deduplication. A seal rejects
 commands consumed after it. Work already handed to Broker admission may remain
 UNKNOWN, even if actual process launch has not yet occurred.
 Existing Broker/PG Lease, owner and operation checks remain for this stage.
 Moving dispatch after Kafka does not make Cube calls transactional or physically
 fenced. No automatic replay of unknown Bash or file effects is introduced.
 
+## Result delivery acknowledgement
+
+Commands carry the native `toolCallId` outside the Cube request. One Pi Tool can
+issue several concrete operations. Correlation uses the exact accepted execution
+scope and Tool call ID, never output text. Only a native `toolResult` Entry in
+an accepted Session mutation acknowledges semantic settlement; UI events alone
+do not. Broker reads the PiCloud `tool.completed` event co-published in that same
+Fact, not Pi Entry/Record internals. Consuming that fact retires the associated response
+bodies without another HTTP ACK or PostgreSQL query. Error/UNKNOWN results are
+terminal too; they do not necessarily prove receipt of every raw output byte.
+
+Broker's execution map owns only in-flight operations. The command consumer is
+the sole completed-result cache; after acknowledgement it retains lightweight
+operation-ID/request-hash tombstones until binding retirement. Duplicate commands
+cannot restart effects. Execution seals retire missing-result calls. Already
+admitted work may finish after retirement but cannot repopulate the cache or
+enter the sealed canonical stream. Existing HTTP readers may finish with their
+own references; this admits neither new readers nor new publications.
+
+A total encoded-body byte budget bounds the completed-result cache. Overflow
+sheds oldest retry copies, preserving in-flight readers and no-replay tombstones;
+new readers without a retained copy receive an explicit unavailable outcome,
+never an automatic effect retry. This bounds retention, not guest collection or
+HTTP buffers. Raw results are not a second durable transcript.
+
+Drain active Runs and update Worker/Gate/Broker together. No guest protocol,
+template or historical Session data migration is needed: new Broker boots skip
+historical commands and do not adopt old Tool bindings.
+
 ## Evidence and acceptance
+
+Result lifetime follow-up: [acceptance](../reports/tool-result-retirement-acceptance.md).
 
 Kafka [delivery semantics](https://kafka.apache.org/41/design/design/#message-delivery-semantics)
 distinguish a durable log from external effects; Kafka consumer ownership alone

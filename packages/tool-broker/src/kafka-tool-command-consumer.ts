@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { KafkaLogConsumer, type KafkaLogRecord } from "@pi-cloud/event-log";
 import {
   createExecutionLease,
+  parseExecutionLease,
   parseToolSandboxOperationRequest,
   type AcceptedToolCommand,
   type ToolSandboxOperationResponse,
@@ -10,14 +11,31 @@ import { ToolBrokerError } from "./sandbox-provider.ts";
 import type { ToolBroker } from "./tool-broker.ts";
 import { parseTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/observability";
 
-type LogFact = { kind: string; scope: { attemptId: string } };
+type LogFact = {
+  kind: string;
+  scope: Pick<AcceptedToolCommand["scope"], "attemptId"> & Partial<AcceptedToolCommand["scope"]>;
+  events?: readonly { type: string; payload: { toolCallId?: string } }[];
+};
 type Outcome = {
   activationId: string;
   attemptId: string;
   hash: string;
-  result: Promise<ToolSandboxOperationResponse>;
+  result?: Promise<ToolSandboxOperationResponse>;
+  retired: boolean;
 };
 type CommandBroker = Pick<ToolBroker, "execute" | "ownsToolBinding" | "assertToolResultReader">;
+
+function callKey(scope: LogFact["scope"], toolCallId: string): string {
+  return JSON.stringify([
+    scope.tenantId,
+    scope.sessionId,
+    scope.turnId,
+    scope.runId,
+    scope.attemptId,
+    scope.fencingToken,
+    toolCallId,
+  ]);
+}
 
 /** Boot-local bindings do not survive a Broker failure. Kafka reconnect can
  * redeliver within this boot; a new boot must never auto-replay an old effect. */
@@ -28,6 +46,20 @@ export class KafkaToolCommandConsumer {
   readonly #next = new Map<number, bigint>();
   readonly #sealed = new Set<string>();
   readonly #results = new Map<string, Outcome>();
+  readonly #calls = new Map<
+    string,
+    {
+      activationId: string;
+      attemptId: string;
+      operations: Set<string>;
+      closed: boolean;
+    }
+  >();
+  readonly #completed = new Map<string, number>();
+  readonly #maximumResultBytes: number;
+  #retainedBytes = 0;
+  #peakRetainedBytes = 0;
+  #releasedResults = 0;
   readonly #waiters = new Map<string, Set<() => void>>();
   readonly #sweeper: NodeJS.Timeout;
   #active = 0;
@@ -41,9 +73,14 @@ export class KafkaToolCommandConsumer {
     topic: string;
     instanceId?: string;
     metrics?: PiCloudMetrics;
+    maximumResultBytes?: number;
   }) {
     this.#broker = options.broker;
     this.#metrics = options.metrics;
+    this.#metrics?.toolResultCacheBytes.set(0);
+    this.#maximumResultBytes = options.maximumResultBytes ?? 64 * 1024 * 1024;
+    if (!Number.isSafeInteger(this.#maximumResultBytes) || this.#maximumResultBytes < 1)
+      throw new TypeError("maximumResultBytes must be a positive integer");
     const boot = options.instanceId ?? randomUUID();
     this.#consumer = new KafkaLogConsumer({
       brokers: options.brokers,
@@ -67,7 +104,12 @@ export class KafkaToolCommandConsumer {
     });
     this.#sweeper = setInterval(() => {
       for (const [id, outcome] of this.#results)
-        if (!this.#broker.ownsToolBinding(outcome.activationId)) this.#results.delete(id);
+        if (!this.#broker.ownsToolBinding(outcome.activationId)) {
+          this.#release(id, "binding");
+          this.#results.delete(id);
+        }
+      for (const [key, call] of this.#calls)
+        if (!this.#broker.ownsToolBinding(call.activationId)) this.#calls.delete(key);
       for (const listeners of this.#waiters.values()) for (const wake of listeners) wake();
     }, 1000);
     this.#sweeper.unref();
@@ -89,7 +131,23 @@ export class KafkaToolCommandConsumer {
       this.#sealed.add(fact.scope.attemptId);
       if (this.#sealed.size > 65_536) this.#sealed.delete(this.#sealed.values().next().value!);
       for (const [id, outcome] of this.#results)
-        if (outcome.attemptId === fact.scope.attemptId) this.#results.delete(id);
+        if (outcome.attemptId === fact.scope.attemptId) {
+          this.#release(id, "seal");
+          this.#results.delete(id);
+        }
+      for (const [key, call] of this.#calls)
+        if (call.attemptId === fact.scope.attemptId) this.#calls.delete(key);
+    } else if (fact.kind === "pi_session_mutation") {
+      // The trusted Harness co-publishes its native result and this platform
+      // completion in ONE Fact. Standalone UI events are not delivery ACKs.
+      // Broker need not know Pi Entry/Record/message internals.
+      for (const event of fact.events ?? []) {
+        if (event.type !== "tool.completed" || !event.payload.toolCallId) continue;
+        const call = this.#calls.get(callKey(fact.scope, event.payload.toolCallId));
+        if (!call) continue;
+        call.closed = true;
+        for (const id of call.operations) this.#release(id, "native_result");
+      }
     } else if (fact.kind === "tool_command") {
       const command = fact as AcceptedToolCommand;
       if (this.#broker.ownsToolBinding(command.request.activationId)) this.#dispatch(command);
@@ -99,13 +157,31 @@ export class KafkaToolCommandConsumer {
 
   #dispatch(command: AcceptedToolCommand): void {
     const request = parseToolSandboxOperationRequest(command.request);
-    const hash = createHash("sha256").update(JSON.stringify(request)).digest("hex");
+    const key = callKey(command.scope, command.toolCallId);
+    const hash = createHash("sha256")
+      .update(JSON.stringify([key, request]))
+      .digest("hex");
     const existing = this.#results.get(request.operationId);
     if (existing) {
       if (existing.hash !== hash)
         throw new Error("Tool command ID reused with different arguments");
       return;
     }
+    const call = this.#calls.get(key) ?? {
+      activationId: request.activationId,
+      attemptId: command.scope.attemptId,
+      operations: new Set<string>(),
+      closed: false,
+    };
+    this.#calls.set(key, call);
+    call.operations.add(request.operationId);
+    const outcome: Outcome = {
+      activationId: request.activationId,
+      attemptId: command.scope.attemptId,
+      hash,
+      retired: false,
+    };
+    this.#results.set(request.operationId, outcome);
     this.#commands++;
     const parent = parseTraceCarrier(command.traceContext ?? {});
     const result = withSpan({
@@ -117,7 +193,7 @@ export class KafkaToolCommandConsumer {
         "pi_cloud.tool.operation_id": request.operationId,
       },
       run: async () => {
-        if (this.#closed || this.#sealed.has(command.scope.attemptId))
+        if (this.#closed || this.#sealed.has(command.scope.attemptId) || call.closed)
           throw new ToolBrokerError(
             "tool_command_sealed",
             "Tool command belongs to a closed execution",
@@ -155,15 +231,41 @@ export class KafkaToolCommandConsumer {
           this.#active--;
         }
       },
+    }).then((response) => {
+      if (outcome.retired || this.#closed) return response;
+      if (!this.#broker.ownsToolBinding(outcome.activationId)) {
+        this.#release(request.operationId, "binding");
+        return response;
+      }
+      const bytes = Buffer.byteLength(JSON.stringify(response));
+      this.#completed.set(request.operationId, bytes);
+      this.#retainedBytes += bytes;
+      // Retire only the retry copy. A reader already waiting on this Promise
+      // may finish normally; later reads cannot restart the effect.
+      while (this.#retainedBytes > this.#maximumResultBytes)
+        this.#release(this.#completed.keys().next().value!, "capacity");
+      this.#peakRetainedBytes = Math.max(this.#peakRetainedBytes, this.#retainedBytes);
+      this.#metrics?.toolResultCacheBytes.set(this.#retainedBytes);
+      return response;
     });
     void result.catch(() => undefined);
-    this.#results.set(request.operationId, {
-      activationId: request.activationId,
-      attemptId: command.scope.attemptId,
-      hash,
-      result,
-    });
+    outcome.result = result;
     for (const wake of this.#waiters.get(request.operationId) ?? []) wake();
+  }
+
+  #release(
+    id: string,
+    reason: "native_result" | "seal" | "binding" | "capacity" | "shutdown",
+  ): void {
+    const outcome = this.#results.get(id);
+    if (!outcome || outcome.retired) return;
+    outcome.retired = true;
+    delete outcome.result;
+    this.#retainedBytes -= this.#completed.get(id) ?? 0;
+    this.#completed.delete(id);
+    this.#releasedResults++;
+    this.#metrics?.toolResultCacheBytes.set(this.#retainedBytes);
+    this.#metrics?.toolResultCacheReleased.inc({ reason });
   }
 
   async waitResult(
@@ -175,6 +277,12 @@ export class KafkaToolCommandConsumer {
     this.#broker.assertToolResultReader(activationId, executionLease);
     const read = (): Outcome | undefined => {
       this.#broker.assertToolResultReader(activationId, executionLease);
+      if (this.#sealed.has(parseExecutionLease(executionLease).attemptId))
+        throw new ToolBrokerError(
+          "tool_command_sealed",
+          "Tool command belongs to a closed execution",
+          false,
+        );
       const outcome = this.#results.get(operationId);
       if (outcome && outcome.activationId !== activationId)
         throw new ToolBrokerError(
@@ -182,10 +290,16 @@ export class KafkaToolCommandConsumer {
           "Tool result belongs to another binding",
           false,
         );
+      if (outcome?.retired)
+        throw new ToolBrokerError(
+          "tool_result_released",
+          "Tool response is no longer retained; the operation must not be restarted",
+          false,
+        );
       return outcome;
     };
     const found = read();
-    if (found) return found.result;
+    if (found) return found.result!;
     if (this.#waiters.size >= 1024)
       throw new ToolBrokerError(
         "tool_result_capacity_exhausted",
@@ -200,7 +314,7 @@ export class KafkaToolCommandConsumer {
         listeners?.delete(wake);
         if (!listeners?.size) this.#waiters.delete(operationId);
         if (error) reject(error);
-        else if (outcome) resolve(outcome.result);
+        else if (outcome) resolve(outcome.result!);
       };
       const wake = () => {
         try {
@@ -243,7 +357,10 @@ export class KafkaToolCommandConsumer {
       consumedFacts: this.#consumed,
       acceptedCommands: this.#commands,
       activeCommands: this.#active,
-      retainedResults: this.#results.size,
+      retainedResults: this.#completed.size,
+      retainedResultBytes: this.#retainedBytes,
+      peakRetainedResultBytes: this.#peakRetainedBytes,
+      releasedResults: this.#releasedResults,
     };
   }
   async close(): Promise<void> {
@@ -251,6 +368,8 @@ export class KafkaToolCommandConsumer {
     clearInterval(this.#sweeper);
     for (const listeners of this.#waiters.values()) for (const wake of listeners) wake();
     await this.#consumer.close();
+    for (const id of this.#results.keys()) this.#release(id, "shutdown");
     this.#results.clear();
+    this.#calls.clear();
   }
 }

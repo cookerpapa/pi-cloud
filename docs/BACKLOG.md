@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Retire Broker raw responses on native Kafka Tool Result, preserving
+      scope/call correlation, no-replay metadata and a bounded retry cache.
+      [Acceptance](reports/tool-result-retirement-acceptance.md).
+
 - [x] ADR-0157: route Agent Tool commands through the Fact Gate/Kafka; remove
       execution POST, retain read-only result waits and no-replay operation semantics.
 - [ ] Implement an approved Cube-native scoped launch-generation contract before

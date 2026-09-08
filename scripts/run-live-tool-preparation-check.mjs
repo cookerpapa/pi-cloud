@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { readFile, writeFile } from "node:fs/promises";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
@@ -31,6 +33,39 @@ const fetchApi = async (path, init = {}) => {
   return response;
 };
 const api = new PiCloudApi(fetchApi);
+const exec = promisify(execFile);
+async function resultCacheMetrics() {
+  const { stdout } = await exec(
+    "docker",
+    [
+      "exec",
+      "pi-cloud-production-tool-broker-1",
+      "node",
+      "-e",
+      "const token=require('node:fs').readFileSync(process.env.PI_CLOUD_METRICS_TOKEN_FILE,'utf8').trim();fetch('http://127.0.0.1:9466/metrics',{headers:{authorization:'Bearer '+token}}).then(r=>{if(!r.ok)throw new Error('Metrics HTTP '+r.status);return r.text()}).then(t=>process.stdout.write(t))",
+    ],
+    { timeout: 10000, maxBuffer: 1024 * 1024 },
+  );
+  const sample = (name, label = "") => {
+    const line = stdout
+      .split("\n")
+      .find((line) => line.startsWith(name + "{") && line.includes(label));
+    assert(line, `Missing Broker metric ${name} ${label}`);
+    return Number(line.split(" ").at(-1));
+  };
+  return {
+    bytes: sample("pi_cloud_tool_result_cache_bytes"),
+    // A Counter with no native result yet has no labelled sample.
+    nativeResults: stdout
+      .split("\n")
+      .filter(
+        (line) =>
+          line.startsWith("pi_cloud_tool_result_cache_released_total{") &&
+          line.includes('reason="native_result"'),
+      )
+      .reduce((sum, line) => sum + Number(line.split(" ").at(-1)), 0),
+  };
+}
 const events = [],
   report = { checkedAt: new Date().toISOString(), username, runs: [], accepted: false };
 const streamAbort = new AbortController();
@@ -83,6 +118,7 @@ try {
     };
     await select();
     async function run(prompt, expectedTool, reload) {
+      const cacheBefore = await resultCacheMetrics();
       const start = Date.now(),
         before = events.length;
       const accepted = await api.acceptTurn(
@@ -136,12 +172,23 @@ try {
         1,
       );
       assert(callEvents.some((event) => event.type === "tool.started"));
+      const cacheAfter = await resultCacheMetrics();
+      assert(
+        cacheAfter.nativeResults > cacheBefore.nativeResults,
+        "Broker did not retire results from native Kafka acknowledgements",
+      );
+      assert.equal(cacheAfter.bytes, 0, "Completed Tool bodies remain cached after Run completion");
       report.runs.push({
         runId: accepted.runId,
         tool: expectedTool,
         elapsedMs: Date.now() - start,
         preparation: seen,
         restoredAfterRefresh: reloaded,
+        resultCache: {
+          before: cacheBefore,
+          after: cacheAfter,
+          nativeAcknowledgedOperations: cacheAfter.nativeResults - cacheBefore.nativeResults,
+        },
       });
       console.log(
         `[tool-ui] ${expectedTool}: live animated preparation, execution and completion passed`,

@@ -726,6 +726,7 @@ describe("trusted remote tools extension governance", () => {
   });
 
   it("binds edit writes to the file revision that Pi actually read", async () => {
+    const callIds: string[] = [];
     const registered: ToolDefinition[] = [];
     const handlers = new Map<string, (...args: never[]) => unknown>();
     const original = Buffer.from("before\n", "utf8");
@@ -758,6 +759,7 @@ describe("trusted remote tools extension governance", () => {
         operation: request.operation,
       };
       if (request.operation === "file.read") {
+        callIds.push(latestPublishedCommand!.toolCallId);
         return new Response(
           JSON.stringify({
             ...common,
@@ -768,6 +770,7 @@ describe("trusted remote tools extension governance", () => {
         );
       }
       if (request.operation === "file.write") {
+        callIds.push(latestPublishedCommand!.toolCallId);
         expect(request.expectedSha256).toBe(originalSha256);
         written = request.content;
         return new Response(
@@ -806,5 +809,6 @@ describe("trusted remote tools extension governance", () => {
       content: [{ type: "text", text: "Successfully replaced 1 block(s) in example.txt." }],
     });
     expect(written).toBe("after\n");
+    expect(callIds).toEqual(["tool-call-atomic-edit", "tool-call-atomic-edit"]);
   });
 });

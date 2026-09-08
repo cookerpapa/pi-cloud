@@ -187,6 +187,7 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
     expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pcel1_");
     const tool = {
       executionLease: openMessage().payload.executionLease,
+      toolCallId: "bash-call-1",
       occurredAt: now.toISOString(),
       request: {
         toolBrokerProtocolVersion: 1 as const,
@@ -205,6 +206,7 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
       },
     };
     const acceptedTool = authority.accept(scope, { kind: "tool_command", command: tool });
+    expect(acceptedTool).toHaveProperty("toolCallId", "bash-call-1");
     expect(acceptedTool).toMatchObject({
       kind: "tool_command",
       factId: tool.request.operationId,

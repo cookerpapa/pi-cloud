@@ -154,6 +154,7 @@ sandboxPlane:
   workspaceDeletionReaperBatchSize: 16
   volumeGatewayRequestTimeoutMs: 660000
   maximumActivePerReplica: 128
+  toolResultCacheBytes: 67108864
   maximumWarmWorkspaceRuntimesPerReplica: 128
   warmTtlMs: 900000
   workspace:

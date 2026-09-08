@@ -30,6 +30,7 @@ function command(): AcceptedToolCommand {
   return {
     kind: "tool_command",
     factId: crypto.randomUUID(),
+    toolCallId: crypto.randomUUID(),
     scope: {
       tenantId: crypto.randomUUID(),
       sessionId: crypto.randomUUID(),
@@ -73,7 +74,7 @@ const output = (c: AcceptedToolCommand): ToolSandboxOperationResponse => ({
   outputChunks: [],
   outputSha256: "d".repeat(64),
 });
-function fixture() {
+function fixture(maximumResultBytes?: number) {
   const bindings = new Map<string, string>();
   const execute = vi.fn(async (_lease: string, request: AcceptedToolCommand["request"]) =>
     output({ ...command(), request }),
@@ -81,6 +82,7 @@ function fixture() {
   const consumer = new KafkaToolCommandConsumer({
     brokers: ["unused:9092"],
     topic: "test",
+    ...(maximumResultBytes === undefined ? {} : { maximumResultBytes }),
     broker: {
       execute,
       ownsToolBinding: (id) => bindings.has(id),
@@ -94,7 +96,148 @@ function fixture() {
   return { consumer, own, execute, bindings };
 }
 
+function receipt(c: AcceptedToolCommand) {
+  return {
+    kind: "pi_session_mutation",
+    scope: c.scope,
+    events: [{ type: "tool.completed", payload: { toolCallId: c.toolCallId } }],
+    operation: {
+      kind: "append_items",
+      items: [
+        {
+          kind: "append_entry",
+          entry: {
+            type: "message",
+            message: { role: "toolResult", toolCallId: c.toolCallId },
+          },
+        },
+      ],
+    },
+  };
+}
+
 describe("Kafka-driven Tool command execution", () => {
+  it("uses a native result as delivery ACK, releasing all operations but preserving dedup", async () => {
+    const f = fixture(),
+      a = command();
+    const b = { ...a, request: { ...a.request, operationId: crypto.randomUUID() } };
+    f.own(a);
+    for (const c of [a, b]) {
+      await f.consumer.consume(record(c));
+      await f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId);
+    }
+    expect(f.consumer.statistics().retainedResults).toBe(2);
+    expect(f.consumer.statistics().retainedResultBytes).toBeGreaterThan(0);
+    // A UI event and another execution's same tool ID are not acknowledgements.
+    await f.consumer.consume(record({ kind: "agent_event", scope: a.scope }));
+    for (const field of ["tenantId", "sessionId", "runId", "turnId", "attemptId"] as const) {
+      const other = { ...receipt(a), scope: { ...a.scope, [field]: crypto.randomUUID() } };
+      await f.consumer.consume(record(other));
+    }
+    expect(f.consumer.statistics().retainedResults).toBe(2);
+    await f.consumer.consume(record(receipt(a)));
+    await f.consumer.consume(record(receipt(a))); // duplicate receipt is harmless
+    expect(f.consumer.statistics()).toMatchObject({
+      retainedResults: 0,
+      retainedResultBytes: 0,
+      releasedResults: 2,
+    });
+    for (const c of [a, b]) {
+      await f.consumer.consume(record(c));
+      await expect(
+        f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId),
+      ).rejects.toMatchObject({ code: "tool_result_released" });
+    }
+    expect(f.execute).toHaveBeenCalledTimes(2);
+    await expect(f.consumer.consume(record({ ...a, toolCallId: "different" }))).rejects.toThrow(
+      "different arguments",
+    );
+  });
+
+  it("does not resurrect results when an UNKNOWN receipt arrives before a running effect finishes", async () => {
+    const f = fixture(),
+      c = command();
+    f.own(c);
+    let finish!: (result: ToolSandboxOperationResponse) => void;
+    f.execute.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await f.consumer.consume(record(c));
+    const reader = f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId);
+    await f.consumer.consume(record(receipt(c)));
+    finish(output(c));
+    expect(await reader).toMatchObject({ exitCode: 0 });
+    expect(f.consumer.statistics()).toMatchObject({ retainedResults: 0, retainedResultBytes: 0 });
+    await f.consumer.consume(record(c));
+    expect(f.execute).toHaveBeenCalledOnce();
+  });
+
+  it("seals release missing-result bodies and never affect another active lane", async () => {
+    const f = fixture(),
+      a = command(),
+      b = { ...command(), toolCallId: a.toolCallId };
+    for (const c of [a, b]) {
+      f.own(c);
+      await f.consumer.consume(record(c));
+      await f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId);
+    }
+    await f.consumer.consume(record({ kind: "execution_seal", scope: a.scope }));
+    expect(f.consumer.statistics().retainedResults).toBe(1);
+    await expect(
+      f.consumer.waitResult(lease(a), a.request.activationId, a.request.operationId),
+    ).rejects.toMatchObject({ code: "tool_command_sealed" });
+    await f.consumer.consume(record(receipt(a)));
+    expect(f.consumer.statistics().retainedResults).toBe(1);
+    await f.consumer.consume(record(receipt(b)));
+    expect(f.consumer.statistics().retainedResults).toBe(0);
+  });
+
+  it("bounds retry-body bytes without re-executing an evicted operation", async () => {
+    const c = command();
+    const bytes = Buffer.byteLength(JSON.stringify(output(c)));
+    const f = fixture(bytes + 1),
+      b = command();
+    for (const value of [c, b]) {
+      f.own(value);
+      await f.consumer.consume(record(value));
+      await f.consumer.waitResult(
+        lease(value),
+        value.request.activationId,
+        value.request.operationId,
+      );
+    }
+    expect(f.consumer.statistics()).toMatchObject({ retainedResults: 1, releasedResults: 1 });
+    expect(f.consumer.statistics().retainedResultBytes).toBeLessThanOrEqual(bytes + 1);
+    await f.consumer.consume(record(c));
+    await expect(
+      f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId),
+    ).rejects.toMatchObject({ code: "tool_result_released" });
+    expect(f.execute).toHaveBeenCalledTimes(2);
+    await f.consumer.consume(record(receipt(b)));
+    expect(f.consumer.statistics().retainedResultBytes).toBe(0);
+  });
+
+  it("a long Run releases each tool body before its eventual execution seal", async () => {
+    const f = fixture(),
+      first = command();
+    f.own(first);
+    for (let i = 0; i < 500; i++) {
+      const c = {
+        ...first,
+        toolCallId: `call-${i}`,
+        request: { ...first.request, operationId: crypto.randomUUID() },
+      };
+      await f.consumer.consume(record(c));
+      await f.consumer.waitResult(lease(c), c.request.activationId, c.request.operationId);
+      await f.consumer.consume(record(receipt(c)));
+      expect(f.consumer.statistics().retainedResultBytes).toBe(0);
+    }
+    expect(f.consumer.statistics()).toMatchObject({ releasedResults: 500, retainedResults: 0 });
+    expect(f.execute).toHaveBeenCalledTimes(500);
+  });
   it("a result read never starts a command; only consuming its log record does", async () => {
     const f = fixture(),
       c = command();

@@ -188,6 +188,7 @@ export class PostgresExecutionLeaseAuthorityGate {
       return {
         kind: "tool_command",
         factId: command.request.operationId,
+        toolCallId: command.toolCallId,
         scope: {
           tenantId: scope.tenantId,
           sessionId: scope.sessionId,

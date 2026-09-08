@@ -1618,6 +1618,7 @@ export class ToolBroker {
         ? operationController.signal
         : AbortSignal.any([signal, operationController.signal]);
     const durable = (async (): Promise<ToolSandboxOperationResponse> => {
+      let admitted = false;
       activation.activeOperations += 1;
       if (elasticRuntime !== undefined) elasticRuntime.activeOperations += 1;
       try {
@@ -1635,6 +1636,7 @@ export class ToolBroker {
             false,
           );
         }
+        admitted = true;
         const handle = await this.#materialize(activation, operationSignal);
         let response: ToolSandboxOperationResponse;
         try {
@@ -1665,6 +1667,7 @@ export class ToolBroker {
         await this.#stateRepository.settleOperation(request.operationId, "succeeded");
         return response;
       } catch (error: unknown) {
+        if (!admitted) throw error;
         await this.#stateRepository
           .settleOperation(
             request.operationId,
@@ -1687,6 +1690,11 @@ export class ToolBroker {
       result: durable,
       controller: operationController,
     });
+    // Only running operations belong here (cancellation and concurrent dedup).
+    // The Kafka command consumer owns delivered-result retention. Keeping a
+    // settled Promise here would retain its body after the consumer releases it.
+    const forget = () => activation.operations.delete(request.operationId);
+    void durable.then(forget, forget);
     return durable;
   }
 

@@ -112,7 +112,10 @@ Concrete Tool operations additionally travel as accepted Kafka commands. Broker
 starts them from its consumer, never from a Worker execution POST. The Worker
 waits on an authenticated read-only result endpoint and Pi persists the complete
 result through its existing native checkpoint. Long Tools do not block partition
-consumption. Command redelivery is deduplicated; Broker replacement does not
+consumption. That native result in Kafka also acknowledges delivery: Broker releases
+all corresponding raw operation results, retaining only no-replay metadata.
+Execution seals clean up missing-result calls; a byte budget bounds retained retry
+copies. Command redelivery is deduplicated; Broker replacement does not
 blindly replay effects for lost bindings. Lifecycle, terminal and Preview APIs
 remain separate management paths.
 

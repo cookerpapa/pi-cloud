@@ -451,6 +451,16 @@ included in latency measurements (one native edit can make several operations).
 Broker consumes commands and calls Cube asynchronously with respect to partition
 consumption. Workers use only `GET /internal/v1/tool-operation-result` to await
 results; the old execution POST has been removed, not retained as a fallback.
+Each command carries its native Tool call ID outside the guest request. Broker's
+execution map keeps only in-flight operations; the command consumer alone retains
+completed response bodies. A native Tool Result Entry in the same Kafka log is
+the delivery acknowledgement for all that call's operations in the exact execution
+scope. It releases bodies, not operation-ID/hash tombstones. UI-only events do not
+acknowledge delivery. Seals release missing-result calls; late completions cannot
+repopulate retired entries. The configured byte budget bounds completed retry
+copies; overflow evicts oldest copies and a later read returns unavailable without
+re-executing the command. Existing readers keep their own references. No extra
+ACK, PostgreSQL query, raw-result topic or model-visible metadata is introduced.
 Result bodies stay on the existing Worker redaction/Pi checkpoint path rather
 than being copied into a second PostgreSQL transcript. Management APIs, terminal,
 Preview and Code Host authorization are not Agent execution-command consumers.
