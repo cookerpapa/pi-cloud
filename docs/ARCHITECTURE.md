@@ -195,22 +195,24 @@ interleave only at this commit boundary. `pi_session_entries`,
 `pi_session_records`, `pi_session_lanes` and `pi_session_labels` are
 transactional query projections of that log. They keep branch and current-state
 reads bounded without becoming a second conversation authority.
-Active-Run mutations first cross the same PostgreSQL `ExecutionLease` authority
-as browser-visible events, then enter one accepted Session-keyed Kafka topic.
-One accepted mutation may carry the public event caused by that same Pi
-boundary. The complete Assistant Entry, its usage Record and
-`model.sampling.completed` therefore share one Kafka Fact and one atomic
-PostgreSQL projection. After Pi validates a Tool call, its `tool_started`
-Record and public `tool.started` event share a second Fact. The Tool effect can
-begin only after that second projection succeeds. This leaves two causally
-necessary native Session post-sampling barriers instead of
-serially persisting the message, usage, public lifecycle event and Tool intent.
-Concrete operation command PubAck and Broker PostgreSQL admission remain separate;
-the two native checkpoints are not a count of every transport/database ACK.
-The Projector applies those accepted facts idempotently without rechecking a
-lease that may legitimately expire after PubAck. Direct administrative
-repository mutations remain transactionally authorized at their PostgreSQL
-effect boundary.
+Active-Run native records, display events and Tool commands cross the same
+ExecutionLease gate and physical-Session-keyed Kafka log. One Worker-local native
+writer assigns complete IDs, parents, sequence and timestamps for all active
+Lanes before publication. A Lane's SessionStorage returns at Kafka ACK and keeps
+a bounded acknowledged view; it does not expose Kafka or PG polling to the
+Harness. Pi's public in-memory backend validates local operations, while canonical
+stamps remain unchanged when a compacted branch seeds its disposable query engine.
+
+Complete Assistant Entry, usage Record and model.sampling.completed share one
+Fact. After Pi validation, tool_started intent and tool.started share a second
+Fact. The Tool may proceed after these Kafka acknowledgements; native projection
+is no longer in the Step's critical path. Concrete command PubAck and Broker
+current-authority admission remain additional pre-effect boundaries.
+
+PostgreSQL projects exact prepared records and its Kafka position atomically,
+without reallocating metadata or returning a second receipt. A native protocol
+conflict stops that partition rather than skipping a sequence. Cold administrative
+mutations use the physical Session row lock and require quiescence.
 
 The native Compaction Entry in `pi_session_log` is the recovery authority;
 `pi_session_entries` indexes that immutable fact for bounded branch reads.
@@ -244,7 +246,7 @@ projection; cache contents are never authoritative.
 The production coding adapter is a deliberately thin `CloudAgentRuntime`. It
 loads only the newest native compaction plus its active suffix, constructs one
 Pi `Agent` for the active Run, and appends complete user, assistant and Tool
-result entries back to PostgreSQL. It reuses Pi's public Agent Loop and
+result entries through the Kafka-acknowledged SessionStorage port. It reuses Pi's public Agent Loop and
 compaction primitives rather than recreating the generic `AgentHarness`
 surface. No historical `session.jsonl` is downloaded, rewritten or used as
 model-context authority.
@@ -773,7 +775,7 @@ serializing every Session on PubAck. Encoded queued/submitted-unacknowledged Fac
 bodies share byte/count admission bounds. Capacity rejection is before enqueue;
 the Gate does not retain that rejected payload in another retry queue. Overload can
 fail a Run but never fabricates a durable ACK or drops already-visible data. The
-PG read-your-writes barrier and native result checkpoint are unchanged. Embedded
+native intent and result acknowledgement boundaries remain. Embedded
 and standalone publishers share capacity configuration; the topic is code-owned.
 
 Pi exposes separate Assistant-message, Tool-execution and Agent lifecycle
@@ -810,33 +812,22 @@ the Stream before releasing the lease. Retirement requests an in-band execution
 seal, and a queued successor waits until the canonical consumer projects it. Workers have no Kafka
 credentials or network route.
 
-There is no second mutation endpoint or mutation-specific authority. The Gate
-does not inspect event sequence, deduplicate, replay, choose a Stream or wait
-for a projector. Those responsibilities start after acceptance. Pi still waits
-for its mutation result/projection barrier when the next Agent operation
-causally depends on canonical Session state.
+There is no second mutation endpoint or mutation-specific credential. The Gate
+does not inspect event sequence, deduplicate, replay or wait for projection.
+Those responsibilities start after admission. Native append sequence belongs to
+the one active physical-Session writer, not the projector.
 
-Already-available Entry/Record items lock Lane heads, reserve one sequence range,
-check the shared ID namespace after acquiring the Session lock, and bulk-insert
-log/query projections in one transaction. This adds no batching timer. The successful receipt and its Session mutation commit together. The existing
-Worker LISTEN connection receives an opaque mutation ID after commit; one
-shared receipt reader handles all pending mutations, with a one-second
-fallback if notification delivery is interrupted. Append receipts contain only
-server-assigned identity/sequence/timestamp/parent stamps; the Worker already owns
-the submitted body. Durable idempotency results refer to the self-contained log
-instead of storing another full copy. Newest-first limited branch queries stop
-after enough matches, while preserving filters, bounds and native Pi semantics.
-A cold Run reads its active branch from PostgreSQL once. Its Run-scoped
-`CommittedLaneView` then observes successful mutation receipts and applies the
-server-assigned Entries to that Lane's in-memory path. Later Steps use private
-snapshots of this committed path for both Compaction assessment and model input.
-Native Compaction replaces the path with its summary/retained-tail Entry; another
-Lane's writes never enter it. Lane movement or an unexpected parent invalidates
-the view; a read racing a commit reloads before returning. Run completion drops
-the view, and a replacement Worker reads PostgreSQL. General SessionStorage
-queries, authority checks, durable Tool intent and PG projection receipts are
-unchanged. This is a bounded read materialization, not optimistic Session state
-or a claim that an active Step makes no PostgreSQL calls (ADR-0159).
+Cold restore reads the selected Lane's newest Compaction and suffix plus any
+unfinished operation ledger. Ordinary Steps read private snapshots of the
+acknowledged view. Compaction replaces that branch and releases old payloads;
+closing a Lane frees its view. General historical queries can wait for PG
+projection; they are not part of the ordinary sampling loop. A Child Lane is
+acknowledged from the parent's pre-prompt view before its queued Run is made
+runnable, so stopped projection cannot make its parent anchor disappear.
+
+The old PG mutation-result table, compact receipts, notification consumer and
+CommittedLaneView cache are removed. Projection and cold admin writes are
+separate adapters, not fallback execution modes.
 
 Each Gateway consumes only Kafka partitions currently needed by browser subscriptions.
 A first subscription locates the recovery floor and reconstructs that partition;
@@ -863,7 +854,7 @@ group applies complete entries, records and compaction facts idempotently to
 PostgreSQL. Before a new Run is claimed, every requested predecessor seal for
 that product Session/Lane must have been projected. The former empty Run-start
 recovery barrier is removed: it could not close a paused old publisher. Every
-semantic Pi write still waits for its own mutation result before the loop advances.
+semantic Pi write returns after Kafka ACK, without waiting for its PG projection.
 PostgreSQL stores semantic Pi state, not token fragments. The terminal business
 transaction requests an immutable RunAttempt seal through the existing Outbox.
 Relays claim bounded Session heads and publish outside the transaction. The seal
@@ -872,7 +863,8 @@ uses the same Session key and fixed Kafka partition as all execution data.
 The canonical consumer folds records in partition order. Confluent's bounded
 native consumer handles partition flow control; a failed record pauses/seeks
 only its partition rather than filling a shared promise queue. At the first seal it
-preserves visible interrupted text not already in Pi, allocates the terminal
+preserves visible interrupted text not already in Pi as a pending terminal
+recovery input, allocates the terminal
 sequence after actual accepted events, and commits the public terminal, Session
 boundary and Attempt closure together. Records after the seal cannot mutate the
 lane. The same transaction inserts `execution_committed` into the terminal Outbox,
@@ -881,8 +873,10 @@ publishes it to the same Kafka partition. Gateway has no seal-time PostgreSQL
 query or retry polling: it immediately rejects post-seal old data, buffers only
 that Session's successor display events, then releases them after the canonical
 terminal arrives in the commit notification. It must continue consuming, never
-pause the partition before its own notification. Duplicate seals are harmless; a seal names one Attempt,
-never an entire Session or another Lane. Closure metadata is durable on the
+pause the partition before its own notification. Duplicate seals are harmless.
+A drained seal names one Attempt; an unconfirmed stream retires its shared
+native writer incarnation so sibling appends cannot leave a sequence hole.
+Future incarnations are independent. Closure metadata is durable on the
 Attempt, including the first seal's Kafka offset. A live reader behind PG accepts
 records before that offset and rejects records after it; a currently-closed boolean
 is not a historical cutoff. RAM cache eviction cannot reopen a sealed execution.
@@ -900,8 +894,10 @@ Canonical and live folds start at the minimum of a durable partition checkpoint
 and known unsealed execution starts. Kafka end positions are captured before PG
 state is read, preventing a concurrent publication from being skipped. Checkpoints
 are co-committed only with semantic outcomes/seals; deltas create no PG rows.
-Complete mutation outcomes also carry a per-Attempt projected offset: expiring a
-short receipt cannot replay an old effect or reinterpret a rejected operation.
+Complete append outcomes carry a per-Attempt projected offset and stable append ID;
+no expiring receipt is needed for replay deduplication. Kafka automatic expiry is
+disabled. Reclamation stays behind PG's safe replay floor and retention grace;
+PG unavailability or missing projection progress stops deletion, not durability.
 Known missing prefixes block their partition, not unrelated partitions. API/ingest
 readiness is independent of consumer replay; SSE waits for its target partition.
 Ordinary idle TTL never discards an unsealed prefix being actively served.
@@ -940,7 +936,7 @@ fetched best-effort from a separate terminal-projection HTTP endpoint.
 | user Git metadata and Code Host tokens | persistent environment bytes under `.git` and hidden `.git-credentials`, visible to Cube/Agent |
 | live process tree | one Cube KVM only |
 | active in-memory `messages[]` | Pi SDK for one active Run |
-| active committed Lane read view | disposable Worker memory; rebuilt from PG and updated by PG receipts |
+| active acknowledged Lane view | disposable Worker memory; cold-seeded from PG and advanced by native Kafka ACKs |
 | development-environment ownership/lifecycle | PostgreSQL |
 | development-environment process/memory/rootfs state | one node-affine Cube KVM snapshot |
 | Agent definitions, immutable revisions and Session/Run routing | PostgreSQL |

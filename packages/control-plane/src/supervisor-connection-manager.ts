@@ -14,7 +14,10 @@ import {
 import { PINNED_PI_CODING_AGENT_VERSION } from "@pi-cloud/sandbox-supervisor/pi-turn-runtime";
 import { createHash } from "node:crypto";
 import type { Kysely, Transaction } from "kysely";
-import type { SandboxRetirementResult } from "./assignment-reconciler.ts";
+import type {
+  SandboxRetirementResult,
+  AssignmentReconciliationResult,
+} from "./assignment-reconciler.ts";
 import {
   SessionLeaseCoordinator,
   SessionLeaseCoordinatorError,
@@ -55,6 +58,7 @@ export interface SupervisorOwnerBoundary {
 
 export interface SupervisorAssignmentRetirer {
   retireSandbox(): Promise<SandboxRetirementResult>;
+  retireExpiredAssignments(limit?: number): Promise<AssignmentReconciliationResult>;
   retireFencedSandbox?(): Promise<SandboxRetirementResult>;
 }
 
@@ -100,6 +104,7 @@ export type SupervisorRetirementWorkResult =
 export type SupervisorMaintenanceCycleResult = {
   connections: SupervisorConnectionSweepResult;
   retirements: readonly Exclude<SupervisorRetirementWorkResult, { kind: "idle" }>[];
+  expiredAssignments: number;
 };
 
 export class SupervisorConnectionManagerError extends Error {
@@ -810,7 +815,28 @@ export class SupervisorConnectionManager {
       if (result.kind === "idle") break;
       retirements.push(result);
     }
-    return { connections, retirements };
+    const expired = await this.#database
+      .selectFrom("session_leases as lease")
+      .innerJoin("sandboxes as worker", "worker.id", "lease.sandbox_id")
+      .select([
+        "worker.id as sandboxId",
+        "worker.supervisor_id as supervisorId",
+        "worker.boot_id as bootId",
+      ])
+      .select((eb) => eb.fn.min<Date>("lease.valid_until").as("oldest"))
+      .where("lease.valid_until", "<=", validDate(this.#clock))
+      .where("worker.state", "in", ["ready", "leased"])
+      .groupBy(["worker.id", "worker.supervisor_id", "worker.boot_id"])
+      .orderBy("oldest")
+      .limit(retirementLimit)
+      .execute();
+    let expiredAssignments = 0;
+    for (const worker of expired) {
+      const result =
+        await this.#assignmentRetirerFactory(worker).retireExpiredAssignments(retirementLimit);
+      expiredAssignments += result.settledAssignments + result.requeuedAssignments;
+    }
+    return { connections, retirements, expiredAssignments };
   }
 
   #parseRegistration(value: unknown): SupervisorRegisterMessage {

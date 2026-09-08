@@ -6,12 +6,12 @@ export * from "./session-lease-authority-gate.ts";
 export * from "./accepted-fact-channel.ts";
 export * from "./accepted-fact.ts";
 export * from "./postgres-accepted-fact-progress.ts";
-export * from "./postgres-pi-session-mutation-projector.ts";
+export * from "./postgres-pi-session-append-projector.ts";
 export * from "./kafka-accepted-fact.ts";
 export * from "./kafka-accepted-fact-consumer.ts";
 export * from "./kafka-canonical-projector.ts";
 export * from "./kafka-event-runtime.ts";
-export * from "./fact-channel-pi-session-mutation-producer.ts";
+export * from "./fact-channel-pi-session-append-publisher.ts";
 export * from "./kafka-live-session-tail.ts";
 export * from "./accepted-fact-terminal-outbox-relay.ts";
 export * from "./agent-run-execution-backend.ts";
@@ -23,8 +23,9 @@ export * from "./session-event-hub.ts";
 export * from "./session-lease-coordinator.ts";
 export * from "./structured-test-command.ts";
 export * from "./execution-stream-seal.ts";
+export * from "./execution-stream-projection.ts";
 export {
   INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
-  appendInterruptedAssistantPrefix,
+  readInterruptedAssistantPrefix,
   readCanonicalPiTurnTranscripts,
 } from "./canonical-pi-conversation.ts";

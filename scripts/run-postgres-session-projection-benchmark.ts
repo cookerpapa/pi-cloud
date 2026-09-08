@@ -1,5 +1,8 @@
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { PostgresPiSessionStorage, compactPiMutationResult } from "@pi-cloud/pi-session-postgres";
+import {
+  PostgresPiSessionStorage,
+  projectNativeSessionAppend,
+} from "@pi-cloud/pi-session-postgres";
 import { spawnSync } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
@@ -70,6 +73,10 @@ try {
     "--rm",
     "--name",
     container,
+    "--cpus",
+    "2",
+    "--memory",
+    "768m",
     "--publish",
     "127.0.0.1::5432",
     "--env",
@@ -136,44 +143,29 @@ try {
     const durations: number[] = [];
     const failures: string[] = [];
     const startedAt = performance.now();
+    const heads = new Map<string, string>();
     for (let wave = 0; wave < mutationsPerSession; wave += 1) {
       const result = await parallelMap(sessions, concurrency, async (sessionId) => {
         const mutationId = randomUUID();
         const operationStarted = performance.now();
+        const entry = {
+          id: randomUUID(),
+          seq: wave + 1,
+          timestamp: Date.now(),
+          parentId: heads.get(sessionId) ?? null,
+          type: "custom" as const,
+          customType: "benchmark.complete_message",
+          data: { wave, text: "x".repeat(1024) },
+        };
         await database.transaction().execute(async (transaction) => {
-          const storage = new PostgresPiSessionStorage({
-            database: transaction,
+          await projectNativeSessionAppend(transaction, {
             tenantId,
             sessionId,
-            projectedMutationId: mutationId,
+            appendId: mutationId,
+            items: [{ kind: "entry", lane: "main", turnId: null, entry }],
           });
-          const operation = {
-            kind: "append_entry" as const,
-            lane: "main",
-            entry: {
-              id: randomUUID(),
-              type: "custom" as const,
-              customType: "benchmark.complete_message",
-              data: { wave, text: "x".repeat(1024) },
-            },
-          };
-          const entry = await storage.appendEntry(operation.entry, operation.lane);
-          await transaction
-            .insertInto("pi_session_mutation_results")
-            .values({
-              mutation_id: mutationId,
-              tenant_id: tenantId,
-              session_id: sessionId,
-              run_id: randomUUID(),
-              attempt_id: randomUUID(),
-              state: "completed",
-              result: compactPiMutationResult(operation, entry) as Record<string, unknown>,
-              error_code: null,
-              error_message: null,
-              expires_at: new Date(Date.now() + 60 * 60_000),
-            })
-            .execute();
         });
+        heads.set(sessionId, entry.id);
         return performance.now() - operationStarted;
       });
       durations.push(...result.durations);
@@ -205,8 +197,9 @@ try {
       .select(({ fn }) => fn.countAll<string>().as("count"))
       .executeTakeFirstOrThrow();
     const results = await database
-      .selectFrom("pi_session_mutation_results")
+      .selectFrom("pi_session_log")
       .select(({ fn }) => fn.countAll<string>().as("count"))
+      .where("append_id", "is not", null)
       .executeTakeFirstOrThrow();
     const wal = await sql<{ bytes: string }>`
       select pg_wal_lsn_diff(
@@ -216,8 +209,8 @@ try {
     `.execute(database);
     const walBytes = Number(wal.rows[0]!.bytes);
     const report = {
-      format: "pi-cloud.postgres-session-projection-capacity.v3",
-      projectionCommit: "atomic-entry-and-compact-receipt",
+      format: "pi-cloud.postgres-session-projection-capacity.v4",
+      projectionCommit: "exact-stamped-native-append",
       worktreeDirty:
         spawnSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).stdout.trim()
           .length > 0,
@@ -236,7 +229,7 @@ try {
       result: {
         failures,
         persistedEntries: Number(entries.count),
-        persistedResults: Number(results.count),
+        persistedAppends: Number(results.count),
         elapsedMs: Number(elapsedMs.toFixed(2)),
         messagesPerSecond: Number(((total * 1000) / elapsedMs).toFixed(2)),
         latencyMs: {
@@ -263,7 +256,7 @@ try {
       },
       scope: [
         "isolated single-node PostgreSQL",
-        "complete 1 KiB Pi semantic entries plus projection-result barriers",
+        "complete pre-stamped 1 KiB Pi semantic entries, without projection-result receipts",
         "no token deltas, model calls or Cube execution",
       ],
     };

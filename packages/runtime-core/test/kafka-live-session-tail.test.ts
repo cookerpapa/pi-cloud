@@ -32,6 +32,8 @@ function delta() {
     scope: {
       tenantId: TENANT_ID,
       sessionId: SESSION_ID,
+      piSessionId: SESSION_ID,
+      writerId: "10000000-0000-4000-8000-000000000006",
       runId: RUN_ID,
       turnId: TURN_ID,
       attemptId: "10000000-0000-4000-8000-000000000006",
@@ -58,6 +60,7 @@ function terminal(): AcceptedExecutionSealFact {
     factId: "10000000-0000-4000-8000-000000000007",
     scope: delta().scope,
     baseSequence: 0,
+    closesWriter: false,
     agentId: "root",
     terminal: { type: "turn.completed", payload: { stopReason: "stop" } },
     occurredAt: "2026-08-26T00:00:01.000Z",
@@ -226,12 +229,12 @@ describe("Kafka Gateway live Session tail", () => {
     const next = delta();
     if (next.kind !== "agent_event") throw new Error("fixture");
     tail.project({
-      kind: "pi_session_mutation",
+      kind: "pi_session_append",
       factId: crypto.randomUUID(),
       scope: next.scope,
-      piSession: { id: SESSION_ID, lane: "main" },
+      piSession: { id: SESSION_ID, lane: "main", writerId: "00000000-0000-4000-8000-000000000001" },
       occurredAt: next.occurredAt,
-      operation: { kind: "set_name", name: "overflow" },
+      items: [{ kind: "fact", fact: "name", name: "overflow", seq: 1 }],
       events: [
         { ...next.event, seq: 3, payload: { text: "x".repeat(8 * 1024 * 1024) } },
         { ...next.event, seq: 4, payload: { text: "must wait for replay too" } },
@@ -275,7 +278,7 @@ describe("Kafka Gateway live Session tail", () => {
       },
     };
     tail.project({
-      kind: "pi_session_mutation",
+      kind: "pi_session_append",
       factId: "10000000-0000-4000-8000-000000000009",
       scope: {
         tenantId: TENANT_ID,
@@ -284,9 +287,11 @@ describe("Kafka Gateway live Session tail", () => {
         turnId: TURN_ID,
         attemptId: "10000000-0000-4000-8000-000000000010",
         fencingToken: 1,
+        piSessionId: SESSION_ID,
+        writerId: "10000000-0000-4000-8000-000000000010",
       },
-      piSession: { id: SESSION_ID, lane: "main" },
-      operation: { kind: "set_name", name: "test" },
+      piSession: { id: SESSION_ID, lane: "main", writerId: "00000000-0000-4000-8000-000000000001" },
+      items: [{ kind: "fact", fact: "name", name: "test", seq: 1 }],
       events: [event],
       occurredAt: event.occurredAt,
     });

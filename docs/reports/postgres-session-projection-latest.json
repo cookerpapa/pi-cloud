@@ -1,12 +1,12 @@
 {
-  "format": "pi-cloud.postgres-session-projection-capacity.v3",
-  "projectionCommit": "atomic-entry-and-compact-receipt",
+  "format": "pi-cloud.postgres-session-projection-capacity.v4",
+  "projectionCommit": "exact-stamped-native-append",
   "worktreeDirty": true,
-  "generatedAt": "2026-09-07T04:58:35.791Z",
-  "revision": "b03391483f74969b38da4e384140bd8240fb0056",
+  "generatedAt": "2026-09-08T16:38:42.519Z",
+  "revision": "c2f2cc580e11571134e21be392b3ab6e7b3f29e4",
   "workload": {
-    "sessionCount": 512,
-    "mutationsPerSession": 4,
+    "sessionCount": 256,
+    "mutationsPerSession": 8,
     "concurrency": 32,
     "completeMessages": 2048,
     "payloadBytes": 1024
@@ -14,32 +14,32 @@
   "result": {
     "failures": [],
     "persistedEntries": 2048,
-    "persistedResults": 2048,
-    "elapsedMs": 2231.12,
-    "messagesPerSecond": 917.93,
+    "persistedAppends": 2048,
+    "elapsedMs": 7359.24,
+    "messagesPerSecond": 278.29,
     "latencyMs": {
-      "p50": 32.32,
-      "p95": 47.57,
-      "p99": 108.52
+      "p50": 102.33,
+      "p95": 177.5,
+      "p99": 454.07
     },
-    "walBytes": 11077096,
-    "walBytesPerMessage": 5408.74,
+    "walBytes": 9315288,
+    "walBytesPerMessage": 4548.48,
     "logReplay": {
-      "sessions": 512,
-      "semanticEvents": 2048,
-      "elapsedMs": 84.95,
-      "sessionsPerSecond": 6027.42,
-      "eventsPerSecond": 24109.69,
+      "sessions": 64,
+      "semanticEvents": 512,
+      "elapsedMs": 17.26,
+      "sessionsPerSecond": 3708.32,
+      "eventsPerSecond": 29666.57,
       "latencyMs": {
-        "p50": 4.56,
-        "p95": 9.1,
-        "p99": 11.16
+        "p50": 6.63,
+        "p95": 12.65,
+        "p99": 12.91
       }
     }
   },
   "scope": [
     "isolated single-node PostgreSQL",
-    "complete 1 KiB Pi semantic entries plus projection-result barriers",
+    "complete pre-stamped 1 KiB Pi semantic entries, without projection-result receipts",
     "no token deltas, model calls or Cube execution"
   ]
 }

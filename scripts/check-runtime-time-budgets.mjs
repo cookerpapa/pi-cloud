@@ -98,9 +98,8 @@ validateWorkerPolicy(
   "Compose Pi Worker",
 );
 assert.ok(
-  composeDefaultInteger(composeText, "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS") >=
-    composeInteger("PI_CLOUD_PI_TURN_TIMEOUT_MS") + WORKER_SETTLEMENT_GRACE_MS,
-  "Compose Kafka retention can omit a still-recoverable Run",
+  composeDefaultInteger(composeText, "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS") > 0,
+  "Compose Kafka retention grace must be positive; safe projection progress controls reclamation",
 );
 
 const composeVolumeGateway = composeText.slice(
@@ -184,9 +183,8 @@ assert.ok(
   "Platform Helm Cube lifecycle timeout is too short for a full-VM pause",
 );
 assert.ok(
-  platformValues.external.kafka.acceptedFactRetentionMs >=
-    platformValues["pi-workers"].runtime.timeouts.turnMs + WORKER_SETTLEMENT_GRACE_MS,
-  "Platform Kafka retention can omit a still-recoverable Run",
+  platformValues.external.kafka.acceptedFactRetentionMs > 0,
+  "Platform Kafka retention grace must be positive; safe projection progress controls reclamation",
 );
 
 process.stdout.write("runtime_time_budget_check_passed\n");

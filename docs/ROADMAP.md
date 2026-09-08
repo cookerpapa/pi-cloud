@@ -39,10 +39,12 @@
 
 ## Current release gate
 
-- [x] Reuse committed active Lane context in memory between Steps; retain PG
-      receipts and cold restore on the next Run or Worker replacement.
+- [x] Replace per-Step PG receipts with Kafka-acknowledged native Session writes;
+      retain bounded cold restore and exact asynchronous PG projection.
+- [x] Complete paid model/Cube, interrupted-prefix and process-fault acceptance
+      for the native append cutover; [evidence](reports/kafka-native-session-cutover.md).
 - [x] Bound Producer/Broker transport under slow downstreams, align capacity
-      configuration and measure native publication/PG receipt waits.
+      configuration and measure native publication independently from model time.
 
 - [x] Reuse native Kafka Tool Results as raw-response delivery acknowledgements;
       retire the duplicate execution cache and preserve no-replay semantics.

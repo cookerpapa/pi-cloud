@@ -17,7 +17,8 @@ import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   CloudAgentRuntime,
-  CommittedLaneView,
+  NativeSessionWriter,
+  projectNativeSessionAppend,
   PostgresPiSessionStorage,
   type CloudAgentExecutionAuthority,
   type CloudAgentRuntimeEvent,
@@ -115,53 +116,78 @@ async function createStorage() {
   });
 }
 
-// Exercise the production receipt boundary against actual PG transactions. Only
-// Kafka transport is omitted: the read view must not invent server metadata.
-async function withExecutionView(storage: PostgresPiSessionStorage, lane = "main") {
+// Exercise the production native writer and exact PG projector. Transport-level
+// ACK loss / paused projection have separate tests; this suite compares Harness
+// behavior against the upstream-compatible cold PG backend.
+async function withNativeSession(
+  storage: PostgresPiSessionStorage,
+  lane = "main",
+  shared?: NativeSessionWriter,
+) {
   const metadata = await storage.getMetadata();
-  const view = new CommittedLaneView({
-    lane,
-    readBranch: async () =>
-      (
-        await storage
-          .asSession()
-          .view(lane)
-          .findEntriesOnBranch({ stopAtType: "compaction", order: "newestFirst" })
-      ).reverse(),
-  });
-  const publisher = view.publisher({
-    mutate: async (operation) => {
-      switch (operation.kind) {
-        case "append_entry":
-          return storage.appendEntry(operation.entry, operation.lane);
-        case "append_record":
-          return storage.appendRecord(operation.record);
-        case "append_items":
-          return new PostgresPiSessionStorage({
-            database,
+  const heads = await storage.getLanes(),
+    head = heads.find((h) => h.lane === lane)!;
+  const seq = await database
+    .selectFrom("pi_sessions")
+    .select("next_seq")
+    .where("id", "=", metadata.id)
+    .executeTakeFirstOrThrow();
+  const writer =
+    shared ??
+    new NativeSessionWriter({
+      id: crypto.randomUUID(),
+      metadata,
+      nextSequence: Number(seq.next_seq),
+      lanes: heads,
+      hasId: async (id) =>
+        (await storage.getEntry(id)) !== undefined ||
+        (await storage.findRecords()).some((r) => r.id === id),
+      waitProjected: async () => {},
+      fail: async () => {},
+    });
+  const open = await storage.findOpenOperations(lane);
+  const oldTools = (
+    await Promise.all(
+      open.map((op) => storage.findRecords({ lane, type: "tool_started", runId: op.id })),
+    )
+  ).flat();
+  const native = await writer.open(
+    { lane, turnId: crypto.randomUUID(), attemptId: crypto.randomUUID() },
+    {
+      reader: storage,
+      branch: head.leafId
+        ? (
+            await storage.findEntriesOnBranch({
+              start: head.leafId,
+              stopAtType: "compaction",
+              order: "newestFirst",
+            })
+          ).reverse()
+        : [],
+      openOperations: open.map((record) => ({ record, turnId: null })),
+      records: oldTools,
+    },
+    {
+      publish: async (items) => {
+        await database.transaction().execute((tx) =>
+          projectNativeSessionAppend(tx, {
             tenantId: TENANT_ID,
             sessionId: metadata.id,
-            projectedMutationId: crypto.randomUUID(),
-          }).appendItems(operation.items);
-        case "move_lane":
-          return storage.moveLane(operation.lane, operation.to);
-        case "create_lane":
-          return storage.createLane(operation.lane, operation.at);
-        default:
-          throw new Error(`Unexpected test mutation: ${operation.kind}`);
-      }
+            appendId: crypto.randomUUID(),
+            items: items.map((item) =>
+              item.kind === "entry" || item.kind === "record" ? { ...item, turnId: null } : item,
+            ),
+          }),
+        );
+      },
     },
-  });
+  );
   return {
-    session: new PostgresPiSessionStorage({
-      database,
-      tenantId: TENANT_ID,
-      sessionId: metadata.id,
-      mutationPublisher: publisher,
-    }).asSession(),
-    executionView: view,
+    session: native.asSession(),
+    nativeWriter: writer,
+    idGenerator: writer.idGenerator,
     commitCheckpoint: async (operation: PiSessionMutationOperation) => {
-      await publisher.mutate(operation);
+      await native.mutate(operation);
     },
   };
 }
@@ -258,7 +284,7 @@ describe.sequential("CloudAgentRuntime", () => {
     expect(await storage.findOpenOperations("main", { limit: 2 })).toEqual([]);
   });
 
-  it.each([false, true])("isolates branched Lane context (execution view=%s)", async (cached) => {
+  it.each([false, true])("isolates branched Lane context (native append=%s)", async (cached) => {
     const storage = await createStorage();
     const session = storage.asSession();
     await session.appendMessage({ role: "user", content: "shared-root", timestamp: Date.now() });
@@ -267,9 +293,9 @@ describe.sequential("CloudAgentRuntime", () => {
     await session.createLane("child-b", forkPoint);
     const contextsA: Context[] = [];
     const contextsB: Context[] = [];
-
+    const executionA = cached ? await withNativeSession(storage, "child-a") : undefined;
     const first = new CloudAgentRuntime({
-      ...(cached ? await withExecutionView(storage, "child-a") : { session }),
+      ...(executionA ?? { session }),
       lane: "child-a",
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -278,7 +304,9 @@ describe.sequential("CloudAgentRuntime", () => {
       compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
     }).run("task-a");
     const second = new CloudAgentRuntime({
-      ...(cached ? await withExecutionView(storage, "child-b") : { session: storage.asSession() }),
+      ...(cached
+        ? await withNativeSession(storage, "child-b", executionA!.nativeWriter)
+        : { session: storage.asSession() }),
       lane: "child-b",
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
@@ -380,11 +408,11 @@ describe.sequential("CloudAgentRuntime", () => {
     );
   });
 
-  it.each([false, true])("restores a failed visible prefix (execution view=%s)", async (cached) => {
+  it.each([false, true])("restores a failed visible prefix (native append=%s)", async (cached) => {
     const storage = await createStorage();
     const failedRuntime = new CloudAgentRuntime({
       lane: "main",
-      ...(cached ? await withExecutionView(storage) : { session: storage.asSession() }),
+      ...(cached ? await withNativeSession(storage) : { session: storage.asSession() }),
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
       systemPrompt: "test",
@@ -409,7 +437,7 @@ describe.sequential("CloudAgentRuntime", () => {
     const contexts: Context[] = [];
     const resumed = new CloudAgentRuntime({
       lane: "main",
-      ...(cached ? await withExecutionView(storage) : { session: storage.asSession() }),
+      ...(cached ? await withNativeSession(storage) : { session: storage.asSession() }),
       authority: new TestAuthority(),
       model: getModel("openai", "gpt-4o-mini"),
       systemPrompt: "test",
@@ -422,7 +450,7 @@ describe.sequential("CloudAgentRuntime", () => {
   });
 
   it.each([false, true])(
-    "records Tool intent before the effect (execution view=%s)",
+    "records Tool intent before the effect (native append=%s)",
     async (cached) => {
       const storage = await createStorage();
       const reads = vi.spyOn(storage, "findEntriesOnBranch");
@@ -434,7 +462,7 @@ describe.sequential("CloudAgentRuntime", () => {
         sourceEvent: CloudAgentRuntimeEvent;
       }> = [];
       const execution = cached
-        ? await withExecutionView(storage)
+        ? await withNativeSession(storage)
         : { session: storage.asSession() };
       const { session } = execution;
       const runtime = new CloudAgentRuntime({
@@ -454,7 +482,7 @@ describe.sequential("CloudAgentRuntime", () => {
               additionalProperties: false,
             } as any,
             async execute() {
-              expect(reads).toHaveBeenCalledTimes(1);
+              expect(reads).toHaveBeenCalledTimes(cached ? 0 : 1);
               expect(checkpoints.map(({ sourceEvent }) => sourceEvent.type)).toEqual([
                 "sampling_start",
                 "message_end",
@@ -527,13 +555,7 @@ describe.sequential("CloudAgentRuntime", () => {
 
       expect(await runtime.run("change it")).toMatchObject({ kind: "completed" });
       expect(executed).toBe(true);
-      expect(reads).toHaveBeenCalledTimes(cached ? 1 : 2);
-      if ("executionView" in execution)
-        expect(execution.executionView.statistics()).toMatchObject({
-          storageReads: 1,
-          memoryReads: 1,
-          retainedEntries: 0,
-        });
+      expect(reads).toHaveBeenCalledTimes(cached ? 0 : 2);
       const [tool] = await storage.findRecords({ type: "tool_started" });
       expect(tool).toMatchObject({ toolCallId: "tool-1", toolName: "mutate", replay: "never" });
       expect(await storage.getEntry(tool!.resultEntryId)).toMatchObject({
@@ -551,104 +573,98 @@ describe.sequential("CloudAgentRuntime", () => {
     },
   );
 
-  it.each([false, true])(
-    "waits for Tool intent receipt before effect (reject=%s)",
-    async (reject) => {
-      const storage = await createStorage();
-      const execution = await withExecutionView(storage);
-      let reached!: () => void;
-      let release!: () => void;
-      const arrived = new Promise<void>((resolve) => {
-        reached = resolve;
-      });
-      const blocked = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      let effects = 0,
-        requests = 0;
-      const runtime = new CloudAgentRuntime({
-        ...execution,
-        lane: "main",
-        authority: new TestAuthority(),
-        model: getModel("openai", "gpt-4o-mini"),
-        systemPrompt: "test",
-        compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
-        tools: [
-          {
-            name: "mutate",
-            label: "Mutate",
-            description: "test effect",
-            parameters: { type: "object", properties: {} } as any,
-            async execute() {
-              effects++;
-              return { content: [{ type: "text", text: "done" }], details: {} };
-            },
+  it.each([false, true])("waits for Tool intent ACK before effect (reject=%s)", async (reject) => {
+    const storage = await createStorage();
+    const execution = await withNativeSession(storage);
+    let reached!: () => void;
+    let release!: () => void;
+    const arrived = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let effects = 0,
+      requests = 0;
+    const runtime = new CloudAgentRuntime({
+      ...execution,
+      lane: "main",
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      tools: [
+        {
+          name: "mutate",
+          label: "Mutate",
+          description: "test effect",
+          parameters: { type: "object", properties: {} } as any,
+          async execute() {
+            effects++;
+            return { content: [{ type: "text", text: "done" }], details: {} };
           },
-        ],
-        streamFn: () => {
-          const stream = new MockAssistantStream();
-          const message: AssistantMessage =
-            requests++ === 0
-              ? {
-                  ...assistant(""),
-                  content: [
-                    { type: "toolCall", id: "blocked-tool", name: "mutate", arguments: {} },
-                  ],
-                  stopReason: "toolUse",
-                }
-              : assistant("verified");
-          queueMicrotask(() =>
-            stream.push({
-              type: "done",
-              reason: message.stopReason as "toolUse" | "stop",
-              message,
-            }),
-          );
-          return stream;
         },
-        commitCheckpoint: async (operation, event) => {
-          if (event?.type === "tool_execution_start") {
-            reached();
-            await blocked;
-            if (reject) throw new Error("Intent projection rejected");
-          }
-          await execution.commitCheckpoint(operation);
-        },
-      });
-      const running = runtime.run("perform effect");
-      const outcome = running.then(
-        (value) => ({ value }),
-        (error: Error) => ({ error }),
-      );
-      await arrived;
-      expect(effects).toBe(0);
-      expect(requests).toBe(1);
-      expect(await storage.findRecords({ type: "tool_started" })).toHaveLength(0);
-      release();
-      const result = await outcome;
-      if (reject) {
-        expect(effects).toBe(0);
-        // Native Pi reports a rejected Tool as an error result; a model may
-        // still answer. The forbidden behavior is starting the actual effect.
-        const messages = await storage.findEntries({ type: "message" });
-        expect(messages).toContainEqual(
-          expect.objectContaining({
-            message: expect.objectContaining({
-              role: "toolResult",
-              toolCallId: "blocked-tool",
-              isError: true,
-              content: [{ type: "text", text: "Intent projection rejected" }],
-            }),
+      ],
+      streamFn: () => {
+        const stream = new MockAssistantStream();
+        const message: AssistantMessage =
+          requests++ === 0
+            ? {
+                ...assistant(""),
+                content: [{ type: "toolCall", id: "blocked-tool", name: "mutate", arguments: {} }],
+                stopReason: "toolUse",
+              }
+            : assistant("verified");
+        queueMicrotask(() =>
+          stream.push({
+            type: "done",
+            reason: message.stopReason as "toolUse" | "stop",
+            message,
           }),
         );
-        expect(await storage.findRecords({ type: "tool_started" })).toHaveLength(0);
-      } else {
-        expect(effects).toBe(1);
-      }
-      expect(result).toHaveProperty("value.kind", "completed");
-      expect(execution.executionView.statistics().retainedEntries).toBe(0);
-    },
-  );
+        return stream;
+      },
+      commitCheckpoint: async (operation, event) => {
+        if (event?.type === "tool_execution_start") {
+          reached();
+          await blocked;
+          if (reject) throw new Error("Intent append rejected");
+        }
+        await execution.commitCheckpoint(operation);
+      },
+    });
+    const running = runtime.run("perform effect");
+    const outcome = running.then(
+      (value) => ({ value }),
+      (error: Error) => ({ error }),
+    );
+    await arrived;
+    expect(effects).toBe(0);
+    expect(requests).toBe(1);
+    expect(await storage.findRecords({ type: "tool_started" })).toHaveLength(0);
+    release();
+    const result = await outcome;
+    if (reject) {
+      expect(effects).toBe(0);
+      // Native Pi reports a rejected Tool as an error result; a model may
+      // still answer. The forbidden behavior is starting the actual effect.
+      const messages = await storage.findEntries({ type: "message" });
+      expect(messages).toContainEqual(
+        expect.objectContaining({
+          message: expect.objectContaining({
+            role: "toolResult",
+            toolCallId: "blocked-tool",
+            isError: true,
+            content: [{ type: "text", text: "Intent append rejected" }],
+          }),
+        }),
+      );
+      expect(await storage.findRecords({ type: "tool_started" })).toHaveLength(0);
+    } else {
+      expect(effects).toBe(1);
+    }
+    expect(result).toHaveProperty("value.kind", "completed");
+  });
 
   it.each([{}, { path: "/workspace/file.txt", cwd: "/ignored" }])(
     "does not persist execution intent for Tool arguments rejected by Pi: %j",
@@ -727,14 +743,14 @@ describe.sequential("CloudAgentRuntime", () => {
   );
 
   it.each([false, true])(
-    "consumes product follow-up in the Run (execution view=%s)",
+    "consumes product follow-up in the Run (native append=%s)",
     async (cached) => {
       const storage = await createStorage();
       const contexts: Context[] = [];
       let followUpAvailable = true;
       const runtime = new CloudAgentRuntime({
         lane: "main",
-        ...(cached ? await withExecutionView(storage) : { session: storage.asSession() }),
+        ...(cached ? await withNativeSession(storage) : { session: storage.asSession() }),
         authority: new TestAuthority(),
         model: getModel("openai", "gpt-4o-mini"),
         systemPrompt: "test",
@@ -762,7 +778,7 @@ describe.sequential("CloudAgentRuntime", () => {
   );
 
   it.each([false, true])(
-    "excludes transient failed responses (execution view=%s)",
+    "excludes transient failed responses (native append=%s)",
     async (cached) => {
       const storage = await createStorage();
       const contexts: Context[] = [];
@@ -770,7 +786,7 @@ describe.sequential("CloudAgentRuntime", () => {
       let request = 0;
       const runtime = new CloudAgentRuntime({
         lane: "main",
-        ...(cached ? await withExecutionView(storage) : { session: storage.asSession() }),
+        ...(cached ? await withNativeSession(storage) : { session: storage.asSession() }),
         authority: new TestAuthority(),
         model: getModel("openai", "gpt-4o-mini"),
         systemPrompt: "test",
@@ -811,7 +827,7 @@ describe.sequential("CloudAgentRuntime", () => {
   );
 
   it.each([false, true])(
-    "retries sampling without replaying Tools (execution view=%s)",
+    "retries sampling without replaying Tools (native append=%s)",
     async (cached) => {
       const storage = await createStorage();
       const contexts: Context[] = [];
@@ -840,7 +856,7 @@ describe.sequential("CloudAgentRuntime", () => {
       let request = 0;
       const runtime = new CloudAgentRuntime({
         lane: "main",
-        ...(cached ? await withExecutionView(storage) : { session: storage.asSession() }),
+        ...(cached ? await withNativeSession(storage) : { session: storage.asSession() }),
         authority: new TestAuthority(),
         model: getModel("openai", "gpt-4o-mini"),
         systemPrompt: "test",
@@ -892,7 +908,7 @@ describe.sequential("CloudAgentRuntime", () => {
       const restored: Context[] = [];
       await new CloudAgentRuntime({
         lane: "main",
-        ...(cached ? await withExecutionView(storage) : { session: storage.asSession() }),
+        ...(cached ? await withNativeSession(storage) : { session: storage.asSession() }),
         authority: new TestAuthority(),
         model: getModel("openai", "gpt-4o-mini"),
         systemPrompt: "test",
@@ -972,7 +988,7 @@ describe.sequential("CloudAgentRuntime", () => {
   });
 
   it.each([false, true])(
-    "settles unresolved Tool as UNKNOWN (execution view=%s)",
+    "settles unresolved Tool as UNKNOWN (native append=%s)",
     async (cached) => {
       const storage = await createStorage();
       const session = storage.asSession();
@@ -1014,7 +1030,7 @@ describe.sequential("CloudAgentRuntime", () => {
       const contexts: Context[] = [];
       const runtime = new CloudAgentRuntime({
         lane: "main",
-        ...(cached ? await withExecutionView(storage) : { session }),
+        ...(cached ? await withNativeSession(storage) : { session }),
         authority: new TestAuthority(),
         model: getModel("openai", "gpt-4o-mini"),
         systemPrompt: "test",
@@ -1033,7 +1049,7 @@ describe.sequential("CloudAgentRuntime", () => {
   );
 
   it.each([false, true])(
-    "writes a native compaction entry before sampling (execution view=%s)",
+    "writes a native compaction entry before sampling (native append=%s)",
     async (cached) => {
       const storage = await createStorage();
       const session = storage.asSession();
@@ -1065,7 +1081,7 @@ describe.sequential("CloudAgentRuntime", () => {
       const events: CloudAgentRuntimeEvent[] = [];
       const runtime = new CloudAgentRuntime({
         lane: "main",
-        ...(cached ? await withExecutionView(storage) : { session }),
+        ...(cached ? await withNativeSession(storage) : { session }),
         authority: new TestAuthority(),
         model,
         models,
@@ -1141,7 +1157,7 @@ describe.sequential("CloudAgentRuntime", () => {
   );
 
   it.each([false, true])(
-    "retains a Harness fact through Compaction and replacement (execution view=%s)",
+    "retains a Harness fact through Compaction and replacement (native append=%s)",
     async (cached) => {
       const storage = await createStorage();
       const session = storage.asSession();
@@ -1196,7 +1212,7 @@ describe.sequential("CloudAgentRuntime", () => {
       const model = { ...getModel("openai", "gpt-4o-mini"), contextWindow: 256 };
       const first = new CloudAgentRuntime({
         lane: "main",
-        ...(cached ? await withExecutionView(storage) : { session }),
+        ...(cached ? await withNativeSession(storage) : { session }),
         authority: new TestAuthority(),
         model,
         models: {
@@ -1222,7 +1238,7 @@ describe.sequential("CloudAgentRuntime", () => {
       const replacementContexts: Context[] = [];
       const replacement = new CloudAgentRuntime({
         lane: "main",
-        ...(cached ? await withExecutionView(storage) : { session: storage.asSession() }),
+        ...(cached ? await withNativeSession(storage) : { session: storage.asSession() }),
         authority: new TestAuthority(),
         model,
         streamFn: scriptedStream(["replacement answer"], replacementContexts),

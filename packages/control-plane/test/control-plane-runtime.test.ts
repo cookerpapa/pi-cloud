@@ -89,6 +89,7 @@ describe.sequential("remote control-plane runtime composition", () => {
               expiredConnectionIds: [],
             },
             retirements: [],
+            expiredAssignments: 0,
           };
         },
       },
@@ -116,6 +117,7 @@ describe.sequential("remote control-plane runtime composition", () => {
         },
         {
           type: "maintenance.completed",
+          expiredAssignments: 0,
           scannedConnections: 0,
           expiredConnections: 0,
           retirements: 0,

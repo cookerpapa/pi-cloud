@@ -130,10 +130,12 @@ function database(): Kysely<Database> {
         type: "turn.completed",
         payload: { stopReason: "stop" },
         occurred_at: new Date("2026-08-24T00:00:01.000Z"),
+        interrupted_prefix: null,
       },
     ],
   };
   return {
+    isTransaction: true,
     selectFrom(table: string) {
       const query = {
         select() {

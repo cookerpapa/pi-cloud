@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(130);
+      expect(firstMigrationPass.rows).toHaveLength(132);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("130_kafka_tool_commands");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("132_opaque_conversation_entry_ids");
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
@@ -59,6 +59,7 @@ describe("current PiCloud schema", () => {
         expect(names.has(required), `missing current table ${required}`).toBe(true);
       }
       for (const retired of [
+        "pi_session_mutation_results",
         "workspace_sources",
         "workspace_repository_sources",
         "github_app_installations",
@@ -133,7 +134,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("130_kafka_tool_commands");
+      expect(applied.rows.at(-1)?.name).toBe("132_opaque_conversation_entry_ids");
 
       const sessionLogConstraint = await sql<{ definition: string }>`
         select pg_get_constraintdef(oid) as definition

@@ -200,7 +200,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
             "active_sessions",
           ])
           .where("id", "=", this.#sandboxId)
-          .forUpdate()
           .executeTakeFirst();
         if (
           sandbox === undefined ||
@@ -257,6 +256,23 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           observations.push({ observation, identity });
         }
 
+        // Child appends/settlement lock their own Attempt before the common
+        // writer anchor. A heartbeat must take children before that anchor too.
+        // Worker capacity is updated LAST, matching lease acquisition/release.
+        if (observations.length)
+          await transaction
+            .selectFrom("run_attempts")
+            .select("id")
+            .where(
+              "id",
+              "in",
+              observations.map((o) => o.identity.attemptId),
+            )
+            .orderBy("native_writer_id")
+            .orderBy(sql<number>`case when id=native_writer_id then 1 else 0 end`)
+            .orderBy("id")
+            .forNoKeyUpdate()
+            .execute();
         const grants =
           observations.length === 0
             ? []
@@ -281,7 +297,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
                 )
                 .where("grant.sandbox_id", "=", this.#sandboxId)
                 .orderBy("grant.lease_id", "asc")
-                .forUpdate(["grant", "execution"])
+                .forNoKeyUpdate("grant")
                 .execute();
         const grantById = new Map(grants.map((grant) => [grant.grantId, grant]));
         const accepted: Array<{
@@ -381,12 +397,20 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
             executionLease: observation.executionLease,
             validUntil: validUntil.toISOString(),
           }));
-        await transaction
+        const refreshed = await transaction
           .updateTable("sandboxes")
           .set({ updated_at: now })
           .where("id", "=", this.#sandboxId)
           .where("boot_id", "=", heartbeat.payload.bootId)
-          .executeTakeFirstOrThrow();
+          .where("state", "in", ["ready", "leased"])
+          .where("max_concurrent_sessions", "=", heartbeat.payload.maxConcurrentSessions)
+          .executeTakeFirst();
+        if (refreshed.numUpdatedRows !== 1n)
+          throw new SessionLeaseCoordinatorError(
+            "stale_supervisor",
+            "Supervisor retired during heartbeat",
+            false,
+          );
         return renewals;
       });
 

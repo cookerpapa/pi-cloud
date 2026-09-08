@@ -17,18 +17,18 @@ The maintained invariants are:
 
 ```text
 V implies K
-T(success) implies P
+T(success) implies K(required native records)
 next Run claim implies C(previous requested seals)
 live terminal publication implies N, which implies C
 record after an execution's first seal cannot change Pi context or live output
-the next model Step waits for its required P projection barrier
-an arbitrary Agent Tool effect implies P(complete model output), P(validated Tool intent), K(tool command)
+the next model Step reads the acknowledged in-memory native view
+an arbitrary Agent Tool effect implies K(complete model output), K(validated Tool intent), K(tool command)
 S contains no browser-supplied cursor
 arbitrary Tool effects are never inferred from K, V or an interrupted text prefix
 ```
 
 Kafka is a bounded recovery log, not the lifetime transcript. AcceptedFacts are
-keyed by opaque Session ID, so one Session remains in one Kafka partition.
+keyed by physical Pi Session ID, so every Lane and its seals share one Kafka partition.
 PostgreSQL stores complete Pi-native semantic state once. Gateway replicas consume
 only subscribed Kafka partitions into rebuildable memory.
 
@@ -43,8 +43,10 @@ existing redaction and Tool-result checkpoint path, not a second PG transcript.
 A lease check cannot be atomic with Kafka append. Closure therefore happens in
 the log itself: the first execution seal divides accepted old records from late
 records that cannot affect canonical or live state. The seal is published by the
-trusted terminal Outbox even when its Worker is dead. It names an exact Attempt,
-not every future Run or every Lane. Both paths use the durable first-seal position on
+trusted terminal Outbox even when its Worker is dead. A drained stream closes
+its own Attempt. An unconfirmed stream also closes the shared native writer
+incarnation, preventing sequence holes across sibling Lanes. It never closes
+future incarnations. Both paths use the durable first-seal position on
 restart; valid pre-seal records remain valid even when PG is ahead of a live reader; no lease-expiry inference or browser acknowledgement is required.
 
 The first Assistant text delta is published immediately; adjacent deltas in
@@ -62,18 +64,18 @@ At the end of a model sampling step, the complete Assistant Entry, usage Record
 and reviewed `model.sampling.completed` event are one AcceptedFact. After Pi
 validates the selected Tool and its arguments, the `tool_started` intent Record
 and reviewed `tool.started` event are a second AcceptedFact. Each Fact gets one
-Kafka `acks=all` receipt and one idempotent PostgreSQL Session projection; only
-then may the Tool execute. These two barriers cannot be collapsed because an
+Kafka `acks=all` receipt; PostgreSQL projects its already-stamped records
+asynchronously. Tool execution does not wait for that projection. These two
+native barriers cannot be collapsed because an
 execution intent does not exist until Pi validation succeeds. Independent
 message, usage, lifecycle-event and intent barriers are deliberately avoided.
 These are two native Session boundaries, not all pre-effect ACKs: concrete
 operation command PubAck and Broker PostgreSQL admission are additional steps.
-The successful projection receipt commits with its Session mutation. Workers
-publish first, then read receipts when the shared LISTEN connection reports a
-committed mutation ID. A shared one-second fallback reads all pending IDs if
-notifications are lost; neither a notification nor a transport ACK substitutes
-for the committed receipt. Queue admission and receipt notifications reuse one
-dedicated PostgreSQL connection per Worker.
+The Harness sees a SessionStorage port, not the projector. One native writer
+orders all active Lanes; their Agent Loops remain concurrent. Child creation
+uses acknowledged parent context before making its Run runnable. Projection
+applies exact IDs/parents/sequences/timestamps and co-commits its Kafka position.
+There is no projection-result table, receipt polling or per-Step PG download.
 
 ## Cursor-free browser handoff
 
@@ -130,13 +132,14 @@ cancelling the underlying command. Slow-send deadlines begin after results exist
 | --- | --- | --- |
 | before `K` | Fact was never shown | producer may retry the same stable Fact ID |
 | after `K`, before `V` | Fact may be unseen | Gateway consumer resumes from Kafka; reconnect receives a replacement snapshot |
-| after `V`, before complete `P` | visible prefix remains in Kafka | interruption projection records the bounded prefix and abort fact in Pi context |
-| after complete model `P`, before intent `P` | complete Tool call is canonical but no effect was admitted | recover as interrupted without marking that Tool effect `UNKNOWN` |
-| after intent `P`, before a durable Tool result | the specific Tool may have started | recover that Tool as `UNKNOWN`; later Tool calls in the same Assistant message remain unstarted |
+| after `V`, before complete `P` | visible prefix remains in Kafka | seal projection stores it with the terminal; the next writer materializes it into Pi before sampling |
+| after complete model `K`, before intent `K` | complete Tool call is durable but no effect was admitted | project before recovery, without marking that Tool effect `UNKNOWN` |
+| after intent `K`, before a durable Tool result | the specific Tool may have started | recover that Tool as `UNKNOWN`; later Tool calls in the same Assistant message remain unstarted |
 | complete `P`, before `T` | complete Pi message exists, Run is not terminal | stable mutation ID makes projection redelivery idempotent; terminal settlement retries under current authority |
 | after `T`, before seal append/projection | next Run remains queued | Outbox retries the stable seal; no context handoff until `C` |
 | old record before seal | it belongs to the closing execution | apply it before `C` |
 | old record after seal | it may remain in bounded Kafka history | neither PG lane nor SSE accepts it |
+| uncertain append in one Lane | sibling Lanes may share its native sequence range | retire that writer incarnation; reject every member's post-cut records and commands |
 | seal commit succeeded, ACK lost | closed execution stays closed | duplicate seal re-arms its stable notification without another semantic effect |
 | `C`, before notification publication | old output is closed; live terminal may wait | co-committed Outbox survives and publishes `N` after restart |
 | `N`, before Relay records its ACK | terminal may already be visible | repeat the same notification ID; do not duplicate display or semantic state |
@@ -149,9 +152,13 @@ cancelling the underlying command. Slow-send deadlines begin after results exist
 | Worker loss during arbitrary Tool work | outcome may be unknown | revoke authority, record `UNKNOWN`, never auto-run the Tool again |
 | Cube loss | process/memory state is gone | persistent Workspace Volume keeps files; the next model sees a minimal reset fact |
 
-Kafka retention must exceed maximum Turn time plus settlement/recovery grace.
+Kafka uses broker append timestamps and disables automatic time/size deletion.
+A periodic reaper uses one PG snapshot to bound deletion by both canonical
+progress and the oldest unsealed start, then applies the retention grace.
+An absent checkpoint or failed PG read prevents reclamation; accepted unprojected
+records may outlive the grace. Capacity monitoring/backpressure still matters:
+this does not turn finite disks into unlimited outage storage.
 RunAttempt rows retain first/seal/projected Kafka coordinates; partition checkpoints
 advance with semantic/seal transactions, never token fragments; none enter
-the browser API. If an unsealed Run is older than the configured retention window
-or replay is missing its recorded first offset, recovery stops for operator action.
-Finite retention is not a promise of recovery after an unlimited outage.
+the browser API. Missing a recorded first offset stops recovery for operator action;
+elapsed wall time alone does not discard an unprojected Run.

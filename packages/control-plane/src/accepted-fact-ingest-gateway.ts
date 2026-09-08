@@ -16,8 +16,8 @@ import {
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { RawData, WebSocket } from "ws";
 import type {
-  CandidatePiSessionMutationFact,
-  PiSessionMutationAcceptedFrame,
+  CandidatePiSessionAppendFact,
+  PiSessionAppendAcceptedFrame,
 } from "@pi-cloud/runtime-core/accepted-fact";
 
 const MAXIMUM_PENDING_CONNECTION_FRAMES = 1_024;
@@ -196,16 +196,16 @@ export class AcceptedFactIngestGateway {
     if (
       typeof value === "object" &&
       value !== null &&
-      (value as { type?: unknown }).type === "fact.pi_session_mutation.publish"
+      (value as { type?: unknown }).type === "fact.pi_session_append.publish"
     ) {
       if (stream.channel === undefined) throw new Error("Fact Stream must open first");
-      const frame = value as { messageId: string; payload: CandidatePiSessionMutationFact };
+      const frame = value as { messageId: string; payload: CandidatePiSessionAppendFact };
       const accepted = await stream.channel.mutate(frame.payload);
-      const acknowledgement: PiSessionMutationAcceptedFrame = {
+      const acknowledgement: PiSessionAppendAcceptedFrame = {
         protocolVersion: 1,
         messageId: globalThis.crypto.randomUUID(),
         sentAt: new Date().toISOString(),
-        type: "fact.pi_session_mutation.accepted",
+        type: "fact.pi_session_append.accepted",
         payload: {
           acknowledgedMessageId: frame.messageId,
           mutationId: accepted.mutationId,

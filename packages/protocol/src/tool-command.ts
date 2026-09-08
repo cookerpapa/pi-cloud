@@ -20,6 +20,8 @@ export type AcceptedToolCommand = Readonly<{
     attemptId: string;
     fencingToken: number;
     leaseId: string;
+    piSessionId: string;
+    writerId: string;
   }>;
   request: ToolSandboxOperationRequest;
   occurredAt: string;

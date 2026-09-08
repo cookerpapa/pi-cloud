@@ -29,8 +29,10 @@ import {
   conflictingPiSessionWorker,
   lockPiSessionWorkerOwnership,
   piSessionWorkerAvailable,
+  selectNativeSessionWriter,
 } from "./pi-session-worker-ownership.ts";
 import { requestExecutionStreamSeal } from "./execution-stream-seal.ts";
+import { retryTransaction } from "@pi-cloud/database";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -41,6 +43,7 @@ export type TurnExecutionRequest = {
   sessionId: string;
   piSessionId: string;
   piSessionLane: string;
+  piSessionWriterId: string;
   runId: string;
   turnId: string;
   attemptId: string;
@@ -832,6 +835,16 @@ export class RunExecutor {
       const remainingToolCalls = maximumToolCalls;
       const toolCapabilities = parseCloudToolCapabilitySnapshot(row.toolCapabilitySnapshot);
 
+      const attemptId = this.#idGenerator();
+      const piSessionWriterId = await selectNativeSessionWriter(transaction, {
+        tenantId: row.tenantId,
+        piSessionId: row.piSessionId,
+        runId: row.runId,
+        workerId: this.#claimOwnerId,
+        attemptId,
+        now,
+      });
+      if (!piSessionWriterId) return undefined;
       const attemptNumber = row.runAttemptCount + 1;
       if (row.currentAttemptId !== null) {
         const previous = await transaction
@@ -870,7 +883,6 @@ export class RunExecutor {
             .executeTakeFirstOrThrow();
         }
       }
-      const attemptId = this.#idGenerator();
       const transitionId = this.#idGenerator();
       const workspaceBaseSettlementId =
         row.forkedFromSessionId === null
@@ -884,11 +896,11 @@ export class RunExecutor {
         with inserted_attempt as (
           insert into run_attempts (
             id, tenant_id, run_id, attempt_number, state, claim_owner_id,
-            claim_expires_at, last_event_seq, claimed_at, created_at, updated_at
+            claim_expires_at, last_event_seq, claimed_at, created_at, updated_at, native_writer_anchor_id
           ) values (
             ${attemptId}::uuid, ${row.tenantId}::uuid, ${row.runId}::uuid,
             ${attemptNumber}, 'claimed', ${this.#claimOwnerId}, ${leaseUntil},
-            ${Math.max(0, Number(row.nextEventSeq) - 1)}::bigint, ${now}, ${now}, ${now}
+            ${Math.max(0, Number(row.nextEventSeq) - 1)}::bigint, ${now}, ${now}, ${now}, ${piSessionWriterId}::uuid
           )
           returning id
         ), inserted_transition as (
@@ -942,6 +954,7 @@ export class RunExecutor {
           sessionId: row.sessionId,
           piSessionId: row.piSessionId,
           piSessionLane: row.piSessionLane,
+          piSessionWriterId,
           runId: row.runId,
           turnId: row.turnId,
           attemptId,
@@ -1025,7 +1038,7 @@ export class RunExecutor {
     acknowledgement: TurnExecutionLease | undefined,
   ): Promise<void> {
     const now = safeDate(this.#clock);
-    await this.#database.transaction().execute(async (transaction) => {
+    await retryTransaction(this.#database, async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
       if (rows.runState !== "claimed" || rows.turnState !== "queued") {
         throw new RunExecutorInvariantError("Only a claimed Run with a queued Turn can start");
@@ -1109,7 +1122,7 @@ export class RunExecutor {
         stopReason: result.stopReason,
       },
     } as const;
-    await this.#database.transaction().execute(async (transaction) => {
+    await retryTransaction(this.#database, async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
       if (
         !["provisioning", "restoring", "running", "settling"].includes(rows.runState) ||
@@ -1232,7 +1245,7 @@ export class RunExecutor {
       },
     } as const;
 
-    await this.#database.transaction().execute(async (transaction) => {
+    await retryTransaction(this.#database, async (transaction) => {
       const rows = await this.#lockLifecycleRows(transaction, claim);
 
       if (shouldRetry) {
@@ -1529,7 +1542,7 @@ export class RunExecutor {
       .where("session_row.id", "=", claim.request.sessionId)
       .where("run.id", "=", claim.request.runId)
       .where("run_attempt.id", "=", claim.request.attemptId)
-      .forUpdate(["turn", "session_row", "run", "run_attempt"])
+      .forNoKeyUpdate(["turn", "session_row", "run", "run_attempt"])
       .executeTakeFirst();
 
     if (!row) {

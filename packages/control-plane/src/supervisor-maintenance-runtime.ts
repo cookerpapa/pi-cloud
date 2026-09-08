@@ -18,6 +18,7 @@ export type SupervisorMaintenanceActivity =
       scannedConnections: number;
       expiredConnections: number;
       retirements: number;
+      expiredAssignments: number;
     }
   | {
       type: "runtime.failure";
@@ -160,6 +161,7 @@ export class SupervisorMaintenanceRuntime {
           scannedConnections: result.connections.scannedConnections,
           expiredConnections: result.connections.expiredConnections,
           retirements: result.retirements.length,
+          expiredAssignments: result.expiredAssignments,
         });
       } catch (error: unknown) {
         this.#observe({

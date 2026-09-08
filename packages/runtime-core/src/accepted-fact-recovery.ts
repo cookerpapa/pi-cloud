@@ -1,6 +1,5 @@
 import type { Database } from "@pi-cloud/database";
 import { sql, type Kysely, type Transaction } from "kysely";
-import { kafkaProducerLane } from "./kafka-accepted-fact.ts";
 
 export type KafkaPartitionBounds = Readonly<{ partition: number; low: bigint; high: bigint }>;
 export type FactPosition = Readonly<{ topic: string; partition: number; offset: bigint }>;
@@ -22,7 +21,6 @@ export async function loadFactReplayOffsets(
   db: Kysely<Database>,
   topic: string,
   bounds: readonly KafkaPartitionBounds[],
-  options: { partitionCount?: number; retentionMs?: number } = {},
 ): Promise<ReadonlyMap<number, bigint | Error>> {
   const rows = await sql<{
     partition: number;
@@ -52,18 +50,6 @@ export async function loadFactReplayOffsets(
         ? new Error("Unsealed execution recovery position expired from Kafka")
         : start,
     );
-  }
-  const unknown = await sql<{ session_id: string }>`select run.session_id from run_attempts attempt
-    join runs run on run.id=attempt.run_id where attempt.output_sealed_at is null
-      and attempt.output_first_offset is null and (attempt.running_at is not null or attempt.output_seal_id is not null)
-      and attempt.claimed_at < now() - ${options.retentionMs ?? 7_200_000} * interval '1 millisecond'`.execute(
-    db,
-  );
-  const count = options.partitionCount ?? Math.max(1, ...bounds.map((b) => b.partition + 1));
-  for (const row of unknown.rows) {
-    const partition = kafkaProducerLane(row.session_id, count);
-    if (starts.has(partition))
-      starts.set(partition, new Error("Unobserved execution exceeds Kafka retention"));
   }
   return starts;
 }

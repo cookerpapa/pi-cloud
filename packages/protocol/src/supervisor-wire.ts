@@ -45,6 +45,7 @@ const PiSessionLaneBindingSchema = Type.Object(
   {
     id: OpaqueIdSchema,
     lane: Type.String({ minLength: 1, maxLength: 128 }),
+    writerId: UuidSchema,
   },
   { additionalProperties: false },
 );

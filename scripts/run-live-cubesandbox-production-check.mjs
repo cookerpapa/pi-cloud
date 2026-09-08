@@ -1160,8 +1160,8 @@ try {
   assert(terminalThroughSequence <= processCheck.throughSequence);
   const eventPlaneEvidence = await psql(
     `select (to_regclass('public.session_events') is null)::int || '|' ||
-            (select count(*) from pi_session_mutation_results
-              where tenant_id = ${sqlLiteral(tenantId)}) || '|' ||
+            (select count(*) from pi_session_log
+              where tenant_id = ${sqlLiteral(tenantId)} and append_id is not null) || '|' ||
             (select count(*)
                from outbox terminal_outbox
                join session_terminal_events terminal

@@ -674,6 +674,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         ])
         .where("lease_id", "=", execution.leaseId)
         .where("attempt_id", "=", execution.attemptId)
+        .where(
+          sql<boolean>`exists(select 1 from run_attempts a join run_attempts writer on writer.id=a.native_writer_id
+          where a.id=${execution.attemptId}::uuid and writer.native_writer_failed_at is null and writer.native_writer_sealed_at is null)`,
+        )
         .where("fencing_token", "=", String(execution.fencingToken))
         .where("valid_until", ">", now)
         .executeTakeFirst();
@@ -1659,6 +1663,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("activation.state", "in", ["reserved", "materializing", "active"])
         .where("authority.lease_id", "=", execution.leaseId)
         .where("authority.attempt_id", "=", execution.attemptId)
+        .where(
+          sql<boolean>`exists(select 1 from run_attempts a join run_attempts writer on writer.id=a.native_writer_id
+          where a.id=${execution.attemptId}::uuid and writer.native_writer_failed_at is null and writer.native_writer_sealed_at is null)`,
+        )
         .where("authority.fencing_token", "=", String(execution.fencingToken))
         .where("authority.session_id", "=", assignment.sessionId)
         .where("authority.run_id", "=", assignment.runId)

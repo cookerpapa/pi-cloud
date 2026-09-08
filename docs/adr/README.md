@@ -4,16 +4,16 @@ This directory contains only decisions that constrain the maintained Pi Cloud
 product. Superseded experiments and pre-release decisions are intentionally not
 kept beside current ADRs; Git history is their archive.
 
-Active experiment, **not deployed**: [ADR-0160](0160-kafka-native-session-append-experiment.md)
-tests Kafka ACK-only native Session append. Production still uses ADR-0159's PG
-receipt boundary until all Session writers and bounded recovery are integrated.
+The current append contract is [ADR-0161](0161-kafka-native-session-commit.md).
+Earlier PG receipt/cache experiments are preserved in Git history and their
+revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
-1. [ADR-0159](0159-committed-lane-execution-view.md) — active Lane read materialization
-   updated only after native PostgreSQL commits.
+1. [ADR-0161](0161-kafka-native-session-commit.md) — Kafka-acknowledged native
+   Session storage, shared Lane ordering, bounded restore and safe retention.
 1. [ADR-0158](0158-bounded-transport-backpressure.md) — bounded Producer/Broker
-   transport, shared configuration and unchanged semantic commit barriers.
+   transport and shared configuration; native commit placement follows ADR-0161.
 1. [ADR-0157](0157-kafka-driven-tool-commands.md) — Kafka-driven Agent Tool dispatch,
    read-only result waits and boot-local Broker command consumption.
 1. [ADR-0156](0156-durable-seal-commit-notifications.md) — durable commit notifications,

@@ -95,7 +95,11 @@ describe("AcceptedFactIngestGateway", () => {
             executionLease: GRANT,
             sessionId: "session",
             turnId: "turn",
-            piSession: { id: "session", lane: "main" },
+            piSession: {
+              id: "session",
+              lane: "main",
+              writerId: "00000000-0000-4000-8000-000000000001",
+            },
             nextEventSeq: 1,
           },
         },
@@ -190,21 +194,33 @@ describe("AcceptedFactIngestGateway", () => {
     const channel = await client.open({
       executionLease: GRANT,
       sessionId: "session-1",
-      piSession: { id: "session-1", lane: "main" },
+      piSession: {
+        id: "session-1",
+        lane: "main",
+        writerId: "00000000-0000-4000-8000-000000000001",
+      },
       turnId: "turn-1",
       nextEventSeq: 1,
     });
     const second = await client.open({
       executionLease: SECOND_GRANT,
       sessionId: "session-2",
-      piSession: { id: "session-2", lane: "main" },
+      piSession: {
+        id: "session-2",
+        lane: "main",
+        writerId: "00000000-0000-4000-8000-000000000001",
+      },
       turnId: "turn-2",
       nextEventSeq: 1,
     });
     const failed = await client.open({
       executionLease: FAILED_GRANT,
       sessionId: "session-failed",
-      piSession: { id: "session-failed", lane: "main" },
+      piSession: {
+        id: "session-failed",
+        lane: "main",
+        writerId: "00000000-0000-4000-8000-000000000001",
+      },
       turnId: "turn-failed",
       nextEventSeq: 1,
     });

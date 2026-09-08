@@ -281,7 +281,11 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         this.#factChannels.open({
           executionLease: acknowledgement!.executionLease,
           sessionId: request.sessionId,
-          piSession: { id: request.piSessionId, lane: request.piSessionLane },
+          piSession: {
+            id: request.piSessionId,
+            lane: request.piSessionLane,
+            writerId: request.piSessionWriterId,
+          },
           turnId: request.turnId,
           nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
         }),
@@ -297,7 +301,11 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           projectId: request.projectId,
           workspaceId: request.workspaceId,
           sessionId: request.sessionId,
-          piSession: { id: request.piSessionId, lane: request.piSessionLane },
+          piSession: {
+            id: request.piSessionId,
+            lane: request.piSessionLane,
+            writerId: request.piSessionWriterId,
+          },
           runId: request.runId,
           turnId: request.turnId,
           agentId: "root",

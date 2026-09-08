@@ -1,0 +1,67 @@
+{
+  "format": "pi-cloud.native-session-resume.v1",
+  "checkedAt": "2026-09-08T17:08:34.793Z",
+  "sessionId": "60325d6d-eff3-4ed6-ba91-17d3957c3ae4",
+  "rounds": [
+    {
+      "runId": "69d08c66-9b8e-4b63-afd8-af0c2f224688",
+      "turnId": "ed6a9397-a3e9-438f-bb3a-51a706e947fe",
+      "worker": "pi-cloud-worker-2",
+      "toolCalls": 0,
+      "hostedSearches": 0,
+      "firstVisibleMs": 1822,
+      "elapsedMs": 2321
+    },
+    {
+      "runId": "e29a37c4-fc4c-4b02-b608-47c782c0fb9a",
+      "turnId": "976597c0-8839-46cb-a829-7fd6f96488ea",
+      "worker": "pi-cloud-worker-2",
+      "toolCalls": 2,
+      "hostedSearches": 0,
+      "firstVisibleMs": 1894,
+      "elapsedMs": 7143
+    },
+    {
+      "runId": "9811d9d6-c0a6-4d51-9f28-acd0e331f275",
+      "turnId": "81c5440b-b319-4728-bf4d-7f0e420cdd70",
+      "worker": "pi-cloud-worker-1",
+      "toolCalls": 3,
+      "hostedSearches": 0,
+      "firstVisibleMs": 2243,
+      "elapsedMs": 11033
+    },
+    {
+      "runId": "29f9b5eb-9f45-4625-ae72-b65e6fef32f7",
+      "turnId": "da7d6b77-578b-4843-b60b-c3f32c9380ca",
+      "worker": "pi-cloud-worker-1",
+      "toolCalls": 0,
+      "hostedSearches": 1,
+      "firstVisibleMs": 7418,
+      "elapsedMs": 14595
+    }
+  ],
+  "accepted": true,
+  "compactions": [
+    {
+      "seq": 389,
+      "tokensBefore": 112123
+    },
+    {
+      "seq": 677,
+      "tokensBefore": 112236
+    }
+  ],
+  "recallPassed": true,
+  "crossWorkerPassed": true,
+  "independentTests": {
+    "exitCode": 0,
+    "tests": 339
+  },
+  "providerSwitchPassed": true,
+  "usage": {
+    "input": 393824,
+    "output": 196908,
+    "cacheRead": 9655808,
+    "cacheWrite": 0
+  }
+}

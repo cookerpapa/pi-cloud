@@ -4,8 +4,15 @@ import {
   ConversationTreeService,
   createPrivateTenant,
 } from "@pi-cloud/control-plane";
-import { PostgresPiSessionRepository } from "@pi-cloud/pi-session-postgres";
-import { createExecutionLease } from "@pi-cloud/protocol";
+import {
+  PostgresPiSessionRepository,
+  PostgresPiSessionStorage,
+  NativeSessionWriter,
+  type NativeLaneSessionStorage,
+  projectNativeSessionAppend,
+} from "@pi-cloud/pi-session-postgres";
+import { createExecutionLease, parseExecutionLease } from "@pi-cloud/protocol";
+import { ExecutionStreamProjector, type AcceptedFact } from "@pi-cloud/runtime-core";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -24,6 +31,83 @@ let parentRunId: string;
 let parentTurnId: string;
 let parentAttemptId: string;
 let parentSandboxId: string;
+let nativeWriter: NativeSessionWriter;
+const nativeByLane = new Map<string, NativeLaneSessionStorage>(),
+  nativeByLease = new Map<string, NativeLaneSessionStorage>();
+async function nativeLane(lane: string, turnId: string, lease?: string) {
+  let storage = nativeByLane.get(lane);
+  if (!storage) {
+    const reader = new PostgresPiSessionStorage({ database, tenantId, sessionId: parentSessionId });
+    const head = nativeWriter.lanes().find((l) => l.lane === lane)!;
+    storage = await nativeWriter.open(
+      {
+        lane,
+        turnId,
+        attemptId: lease ? parseExecutionLease(lease).attemptId : crypto.randomUUID(),
+      },
+      {
+        reader,
+        openOperations: [],
+        branch:
+          nativeWriter.seedFor(lane) ??
+          (head.leafId
+            ? (
+                await reader.findEntriesOnBranch({
+                  start: head.leafId,
+                  stopAtType: "compaction",
+                  order: "newestFirst",
+                })
+              ).reverse()
+            : []),
+      },
+      {
+        publish: (items) =>
+          database.transaction().execute((tx) =>
+            projectNativeSessionAppend(tx, {
+              tenantId,
+              sessionId: parentSessionId,
+              appendId: crypto.randomUUID(),
+              items,
+            }),
+          ),
+      },
+    );
+    nativeByLane.set(lane, storage);
+  }
+  if (lease) nativeByLease.set(lease, storage);
+  return storage.asSession();
+}
+const nativeLanes = {
+  childAnchor(lease: string, inherit: boolean) {
+    return inherit ? (nativeByLease.get(lease)!.baseContext().at(-1)?.id ?? null) : null;
+  },
+  async createChildLane({
+    executionLease,
+    lane,
+    at,
+  }: {
+    executionLease: string;
+    lane: string;
+    at: string | null;
+  }) {
+    const parent = nativeByLease.get(executionLease)!;
+    if (!(await parent.getLanes()).some((l) => l.lane === lane)) await parent.createLane(lane, at);
+  },
+};
+let sealOffset = 0n;
+async function projectSeal(runId: string) {
+  const records = await database
+    .selectFrom("outbox")
+    .select("payload")
+    .where("aggregate_type", "=", "session_terminal_event")
+    .execute();
+  const projector = new ExecutionStreamProjector(database);
+  for (const row of records) {
+    const fact = row.payload as unknown as AcceptedFact;
+    if (fact.kind === "execution_seal" && fact.scope.runId === runId)
+      await projector.project({ fact, topic: "subagent-test", partition: 0, offset: sealOffset++ });
+  }
+}
 
 const FENCE = 7;
 const PARENT_GRANT_ID = "90000000-0000-4000-8000-000000000001";
@@ -70,11 +154,12 @@ async function activateChildRun(
       .insertInto("run_attempts")
       .values({
         id: attemptId,
+        native_writer_anchor_id: parentAttemptId,
         tenant_id: tenantId,
         run_id: childRunId,
         attempt_number: 1,
         state: "running",
-        claim_owner_id: "recursive-test-worker",
+        claim_owner_id: "test-worker",
         claim_expires_at: new Date(Date.now() + 60_000),
         sandbox_id: parentSandboxId,
         lease_id: grantId,
@@ -112,7 +197,14 @@ async function activateChildRun(
       .where("child_run_id", "=", childRunId)
       .executeTakeFirstOrThrow();
   });
-  return createExecutionLease(grantId, attemptId, generation);
+  const lease = createExecutionLease(grantId, attemptId, generation);
+  const binding = await database
+    .selectFrom("sessions")
+    .select("pi_session_lane")
+    .where("id", "=", childSessionId)
+    .executeTakeFirstOrThrow();
+  await nativeLane(binding.pi_session_lane, run.turn_id, lease);
+  return lease;
 }
 
 beforeAll(async () => {
@@ -236,9 +328,26 @@ beforeAll(async () => {
       .where("id", "=", parentSessionId)
       .executeTakeFirstOrThrow();
   });
+  const reader = new PostgresPiSessionStorage({ database, tenantId, sessionId: parentSessionId });
+  const seq = await database
+    .selectFrom("pi_sessions")
+    .select("next_seq")
+    .where("id", "=", parentSessionId)
+    .executeTakeFirstOrThrow();
+  nativeWriter = new NativeSessionWriter({
+    id: parentAttemptId,
+    metadata: await reader.getMetadata(),
+    nextSequence: Number(seq.next_seq),
+    lanes: await reader.getLanes(),
+    hasId: async (id) => (await reader.getEntry(id)) !== undefined,
+    waitProjected: async () => {},
+    fail: async () => {},
+  });
+  await nativeLane("main", parentTurnId, parentExecutionLease());
 }, 30_000);
 
 afterAll(async () => {
+  for (const storage of nativeByLane.values()) storage.close();
   await database?.destroy();
   await socket?.stop();
   await pglite?.close();
@@ -246,7 +355,7 @@ afterAll(async () => {
 
 describe.sequential("PostgresSubagentJobProvider", () => {
   it("creates an idempotent Tool-free Child Lane Run for its owning Worker", async () => {
-    const provider = new PostgresSubagentJobProvider({ database });
+    const provider = new PostgresSubagentJobProvider({ database, nativeLanes });
     const request = {
       tenantId,
       parentSessionId,
@@ -339,15 +448,11 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     expect(dispatchedPiBindings).toEqual([
       { id: parentSessionId, lane: `subagent-${started.executionId}` },
     ]);
+    await projectSeal(started.childRunId);
   });
 
   it("branches Pi context, narrows tools and reads the terminal result from PostgreSQL", async () => {
-    const parentRepository = new PostgresPiSessionRepository({
-      database,
-      tenantId,
-      turnId: parentTurnId,
-    });
-    const parentPi = await parentRepository.openById(parentSessionId);
+    const parentPi = await nativeLane("main", parentTurnId, parentExecutionLease());
     await parentPi.appendMessage({
       role: "user",
       content: "Delegate repository inspection",
@@ -363,7 +468,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         .where("type", "=", "message")
         .execute(),
     ).resolves.toHaveLength(1);
-    const provider = new PostgresSubagentJobProvider({ database });
+    const provider = new PostgresSubagentJobProvider({ database, nativeLanes });
     const started = await provider.start({
       tenantId,
       parentSessionId,
@@ -433,6 +538,10 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         async execute(request, lifecycle) {
           dispatched.push(request.runId);
           await lifecycle.started();
+          const native = await nativeLane(request.piSessionLane, request.turnId);
+          await native
+            .view(request.piSessionLane)
+            .appendMessage(assistant("Subagent result from PostgreSQL"));
           return { stopReason: "stop" };
         },
       },
@@ -443,9 +552,10 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       runId: started.childRunId,
     });
     expect(dispatched).toEqual([started.childRunId]);
-    await childPi
-      .view(binding.piSessionLane)
-      .appendMessage(assistant("Subagent result from PostgreSQL"));
+    await expect(provider.status(tenantId, started.executionId)).resolves.toMatchObject({
+      state: "running",
+    });
+    await projectSeal(started.childRunId);
 
     await expect(provider.result(tenantId, started.executionId)).resolves.toMatchObject({
       state: "completed",
@@ -524,7 +634,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       .where("id", "=", parentSessionId)
       .executeTakeFirstOrThrow();
     try {
-      const provider = new PostgresSubagentJobProvider({ database });
+      const provider = new PostgresSubagentJobProvider({ database, nativeLanes });
       const child = await provider.start({
         tenantId,
         parentSessionId,
@@ -576,6 +686,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     const requests: Array<{ targetWorkspaceId: string; targetSessionId: string }> = [];
     const provider = new PostgresSubagentJobProvider({
       database,
+      nativeLanes,
       forkWorkspace: async (request) => {
         requests.push({
           targetWorkspaceId: request.target.workspaceId,
@@ -655,7 +766,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
   });
 
   it("cancels a queued Child Run durably before it consumes a Worker slot", async () => {
-    const provider = new PostgresSubagentJobProvider({ database });
+    const provider = new PostgresSubagentJobProvider({ database, nativeLanes });
     const started = await provider.start({
       tenantId,
       parentSessionId,
@@ -691,7 +802,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
   });
 
   it("persists Child progress and blocking supervisor replies for recovery", async () => {
-    const provider = new PostgresSubagentJobProvider({ database });
+    const provider = new PostgresSubagentJobProvider({ database, nativeLanes });
     const started = await provider.start({
       tenantId,
       parentSessionId,
@@ -753,6 +864,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
   it("keeps supervisor communication independent from fresh or branched context", async () => {
     const provider = new PostgresSubagentJobProvider({
       database,
+      nativeLanes,
       treePolicy: { maximumDepth: 4, maximumNodes: 32, maximumConcurrentSubagents: 32 },
     });
     const started = await provider.start({
@@ -827,6 +939,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
   it("creates a bounded recursive tree with one root budget and durable parent links", async () => {
     const provider = new PostgresSubagentJobProvider({
       database,
+      nativeLanes,
       treePolicy: { maximumDepth: 2, maximumNodes: 32, maximumConcurrentSubagents: 32 },
     });
     const child = await provider.start({
@@ -855,11 +968,11 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       .where("tenant_id", "=", tenantId)
       .where("id", "=", child.childRunId)
       .executeTakeFirstOrThrow();
-    const childSession = await new PostgresPiSessionRepository({
-      database,
-      tenantId,
-      turnId: childTurn.turnId,
-    }).openById(childBinding.piSessionId);
+    const childSession = await nativeLane(
+      childBinding.piSessionLane,
+      childTurn.turnId,
+      childExecutionLease,
+    );
     await childSession.view(childBinding.piSessionLane).appendMessage({
       role: "user",
       content: "Delegate one bounded verification task",
@@ -1007,7 +1120,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
   });
 
   it("rejects dispatch after the parent fencing authority changes", async () => {
-    const provider = new PostgresSubagentJobProvider({ database });
+    const provider = new PostgresSubagentJobProvider({ database, nativeLanes });
     await expect(
       provider.start({
         tenantId,

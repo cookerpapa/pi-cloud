@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
+import { assertIdleNativeSession, PostgresPiSessionStorage } from "@pi-cloud/pi-session-postgres";
 import type {
   ConversationForkResource,
   ConversationPruneResource,
@@ -967,6 +968,37 @@ export class ConversationTreeService {
             .execute();
         }
 
+        await assertIdleNativeSession(transaction, tenantId, sessionId);
+        if (prunedTurnIds.length) {
+          const native = new PostgresPiSessionStorage({
+            database: transaction,
+            tenantId,
+            sessionId,
+          });
+          const open = await native.findOpenOperations("main");
+          const pruned = await transaction
+            .selectFrom("pi_session_records")
+            .select("id")
+            .where("tenant_id", "=", tenantId)
+            .where("session_id", "=", sessionId)
+            .where("type", "=", "operation_started")
+            .where("turn_id", "in", prunedTurnIds)
+            .execute();
+          const ids = new Set(pruned.map((r) => r.id));
+          for (const operation of open)
+            if (ids.has(operation.id))
+              await native.appendRecord({
+                id: randomUUID(),
+                lane: "main",
+                type: "operation_finished",
+                runId: operation.id,
+                outcome: "aborted",
+                error: {
+                  code: "history_pruned",
+                  message: "The user pruned this operation from the active branch",
+                },
+              });
+        }
         const piSession = await transaction
           .selectFrom("pi_sessions")
           .select("next_seq as nextSequence")

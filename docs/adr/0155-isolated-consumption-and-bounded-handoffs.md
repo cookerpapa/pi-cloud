@@ -29,9 +29,9 @@ adding a broker, scheduler, resident guest controller or browser cursor.
   Live partitions are retained only while browser subscriptions need them;
   reopening seeks the current recovery floor and reconstructs an immutable
   snapshot. This avoids idle full-topic consumption without adding a routing tier.
-* Batch already-present native append items at the SQL level: lock Lane heads,
-  reserve a sequence range, check IDs/operation attribution and insert log/query
-  projections atomically. Preserve native ordering, rollback and idempotency.
+* Project already-prepared native append items at the SQL level. Under ADR-0161
+  the Worker, not PG, allocates sequence and identity; insert exact log/query
+  projections atomically. Preserve ordering, rollback and idempotency.
   This adds no batching delay and no cross-Run transaction.
 * Bound Worker claim probes by queue kind rather than free Slot count. Keep
   same-Session order, shared physical Session ownership and reserved Child slots.

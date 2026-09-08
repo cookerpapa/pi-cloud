@@ -60,7 +60,7 @@ afterEach(async () => {
 });
 function fact(sessionId = "a", name = "test"): AcceptedFact {
   return {
-    kind: "pi_session_mutation",
+    kind: "pi_session_append",
     factId: crypto.randomUUID(),
     scope: {
       tenantId: "tenant",
@@ -69,9 +69,11 @@ function fact(sessionId = "a", name = "test"): AcceptedFact {
       runId: "run",
       attemptId: "attempt",
       fencingToken: 1,
+      piSessionId: sessionId,
+      writerId: "attempt",
     },
-    piSession: { id: sessionId, lane: "main" },
-    operation: { kind: "set_name", name },
+    piSession: { id: sessionId, lane: "main", writerId: "00000000-0000-4000-8000-000000000001" },
+    items: [{ kind: "fact", fact: "name", name, seq: 1 }],
     events: [],
     occurredAt: new Date().toISOString(),
   };

@@ -133,41 +133,48 @@ if (process.argv[2] !== "inside") {
       },
     };
   };
-  const makeScope = () => ({
-    tenantId: randomUUID(),
-    sessionId: randomUUID(),
-    turnId: randomUUID(),
-    runId: randomUUID(),
-    attemptId: randomUUID(),
-    leaseId: randomUUID(),
-    fencingToken: 1,
-  });
+  const makeScope = () => {
+    const sessionId = randomUUID(),
+      attemptId = randomUUID();
+    return {
+      tenantId: randomUUID(),
+      sessionId,
+      piSessionId: sessionId,
+      turnId: randomUUID(),
+      runId: randomUUID(),
+      attemptId,
+      writerId: attemptId,
+      leaseId: randomUUID(),
+      fencingToken: 1,
+    };
+  };
   const receipt = (c) => ({
-    kind: "pi_session_mutation",
+    kind: "pi_session_append",
     factId: randomUUID(),
     scope: c.scope,
-    piSession: { id: c.scope.sessionId, lane: "main" },
-    operation: {
-      kind: "append_items",
-      items: [
-        {
-          kind: "append_entry",
-          lane: "main",
-          entry: {
-            id: randomUUID(),
-            type: "message",
-            message: {
-              role: "toolResult",
-              toolCallId: c.toolCallId,
-              toolName: "bash",
-              content: [{ type: "text", text: "Harness-selected result" }],
-              isError: false,
-              timestamp: Date.now(),
-            },
+    piSession: { id: c.scope.piSessionId, lane: "main", writerId: c.scope.writerId },
+    items: [
+      {
+        kind: "entry",
+        lane: "main",
+        turnId: c.scope.turnId,
+        entry: {
+          id: randomUUID(),
+          seq: 1,
+          parentId: null,
+          timestamp: Date.now(),
+          type: "message",
+          message: {
+            role: "toolResult",
+            toolCallId: c.toolCallId,
+            toolName: "bash",
+            content: [{ type: "text", text: "Harness-selected result" }],
+            isError: false,
+            timestamp: Date.now(),
           },
         },
-      ],
-    },
+      },
+    ],
     events: [
       { type: "tool.completed", payload: { toolCallId: c.toolCallId, outcome: "completed" } },
     ],

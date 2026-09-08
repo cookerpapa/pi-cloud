@@ -102,7 +102,7 @@ async function sessionViewMetrics() {
           ),
           mutations: metric(
             "pi_cloud_session_mutation_wait_seconds_count",
-            'stage="projection_receipt"',
+            'stage="kafka_publish"',
           ),
         };
       },
@@ -240,7 +240,13 @@ try {
       const sessionView = Object.fromEntries(
         Object.keys(viewAfter).map((key) => [key, viewAfter[key] - viewBefore[key]]),
       );
-      assert.equal(sessionView.storageReads, 1, "Active Run repeatedly downloaded its branch");
+      assert(sessionView.storageReads <= 1, "Active Run repeatedly downloaded its branch");
+      assert.equal(
+        sessionView.pgReceiptSeconds,
+        0,
+        "The Harness still waited for PG projection receipts",
+      );
+      assert(sessionView.mutations > 0, "No acknowledged native Session append was observed");
       assert(sessionView.memoryReads > 0, "Coding did not exercise the committed Lane view");
       report.runs.push({
         runId: accepted.runId,

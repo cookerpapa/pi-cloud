@@ -23,11 +23,16 @@ export async function requestExecutionStreamSeal(
   const execution = await transaction
     .selectFrom("runs as run")
     .innerJoin("run_attempts as attempt", "attempt.id", "run.current_attempt_id")
+    .innerJoin("run_attempts as writer", "writer.id", "attempt.native_writer_id")
     .innerJoin("sessions as session", "session.id", "run.session_id")
     .select([
       "attempt.id",
       "attempt.fencing_token",
       "attempt.output_seal_id",
+      "attempt.native_writer_id",
+      "attempt.native_output_drained",
+      "writer.native_writer_failed_at",
+      "session.pi_session_id",
       "session.next_event_seq",
     ])
     .where("run.tenant_id", "=", input.tenantId)
@@ -37,6 +42,15 @@ export async function requestExecutionStreamSeal(
     .forUpdate("attempt")
     .executeTakeFirstOrThrow();
   if (execution.output_seal_id !== null) return;
+  const closesWriter =
+    !execution.native_output_drained || execution.native_writer_failed_at !== null;
+  if (closesWriter)
+    await transaction
+      .updateTable("run_attempts")
+      .set({ native_writer_failed_at: input.now })
+      .where("id", "=", execution.native_writer_id)
+      .where("native_writer_failed_at", "is", null)
+      .execute();
   const fact: AcceptedExecutionSealFact = {
     kind: "execution_seal",
     factId: input.eventId,
@@ -47,8 +61,11 @@ export async function requestExecutionStreamSeal(
       turnId: input.turnId,
       attemptId: execution.id,
       fencingToken: Number(execution.fencing_token ?? 0),
+      piSessionId: execution.pi_session_id,
+      writerId: execution.native_writer_id,
     },
     agentId: input.agentId,
+    closesWriter,
     baseSequence: Number(execution.next_event_seq) - 1,
     terminal: input.body,
     occurredAt: input.now.toISOString(),

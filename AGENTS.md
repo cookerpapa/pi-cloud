@@ -39,11 +39,12 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Persist commands before acknowledging them.
 - Use idempotency keys, leases, and fencing tokens for distributed mutations.
 - Preserve per-session ordering without dedicating a process or OS thread to a cold session.
-- Treat Pi's PostgreSQL `SessionStorage` as conversation authority,
-  PostgreSQL as the sole Run/control authority and R=3 Kafka as the bounded
-  AcceptedFact authority. Any Pi JSONL compatibility
-  object must remain a bounded PostgreSQL-backed upstream adapter; it is never
-  a lifetime transcript or a second conversation authority.
+- PostgreSQL is the sole Run/control authority. Active Pi Session writes are
+  fully stamped by one physical-Session writer and acknowledged through R=3
+  Kafka; PostgreSQL materializes the exact native log for cold reads and long-term
+  history. Do not restore per-Step projection receipts or allocate sequence from
+  a second active writer. Cold administrative mutations require Session quiescence.
+  Bootstrap only the latest Compaction and active suffix, never lifetime JSONL.
 - Treat the persistent Cube Volume as the sole Workspace byte authority. Do
   not add a second per-Run archive/checkpoint head without measured recovery
   requirements and a new ADR.

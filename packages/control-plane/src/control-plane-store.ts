@@ -1882,6 +1882,11 @@ export class ControlPlaneStore {
       return { code, ...(message === null ? {} : { message }), retryable };
     };
 
+    const currentAttempt = attempts.find((a) => a.id === run.current_attempt_id);
+    const awaitingSeal =
+      currentAttempt?.output_seal_id !== null &&
+      currentAttempt?.output_seal_id !== undefined &&
+      currentAttempt.output_sealed_at === null;
     return {
       runId: run.id,
       projectId: run.project_id,
@@ -1889,7 +1894,10 @@ export class ControlPlaneStore {
       sessionId: run.session_id,
       turnId: run.turn_id,
       environment: environmentSnapshot(run),
-      state: run.state,
+      state:
+        awaitingSeal && ["completed", "failed", "cancelled", "timed_out"].includes(run.state)
+          ? "settling"
+          : run.state,
       traceId: run.trace_id,
       attemptCount: nonNegativeSafeInteger(run.attempt_count, "Run attempt count"),
       ...(run.current_attempt_id === null ? {} : { currentAttemptId: run.current_attempt_id }),

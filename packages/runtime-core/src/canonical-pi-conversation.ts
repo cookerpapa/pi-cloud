@@ -6,7 +6,7 @@ import {
   type ConversationTurnTranscriptResource,
 } from "@pi-cloud/protocol";
 import { normalizeProviderHostedWebSearchAction } from "@pi-cloud/protocol";
-import { sql, type Kysely, type Transaction } from "kysely";
+import type { Kysely, Transaction } from "kysely";
 
 export const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_assistant_prefix";
 
@@ -331,6 +331,11 @@ export async function readCanonicalPiTurnTranscripts(
   database: Kysely<Database>,
   input: { tenantId: string; turnIds: readonly string[] },
 ): Promise<ReadonlyMap<string, ConversationTurnTranscriptResource>> {
+  if (!database.isTransaction)
+    return database
+      .transaction()
+      .setIsolationLevel("repeatable read")
+      .execute((tx) => readCanonicalPiTurnTranscripts(tx, input));
   const turnIds = [...new Set(input.turnIds)];
   if (turnIds.length === 0) return new Map();
   const [entries, durableTerminalRows] = await Promise.all([
@@ -343,7 +348,7 @@ export async function readCanonicalPiTurnTranscripts(
       .execute(),
     database
       .selectFrom("session_terminal_events")
-      .select(["turn_id", "seq", "type", "payload", "occurred_at"])
+      .select(["turn_id", "seq", "type", "payload", "occurred_at", "interrupted_prefix"])
       .where("tenant_id", "=", input.tenantId)
       .where("turn_id", "in", turnIds)
       .execute(),
@@ -363,6 +368,17 @@ export async function readCanonicalPiTurnTranscripts(
     const terminalRow = terminalByTurn.get(turnId);
     if (terminalRow === undefined) continue;
     const piEntries = entriesByTurn.get(turnId) ?? [];
+    if (terminalRow.interrupted_prefix !== null)
+      piEntries.push({
+        turn_id: turnId,
+        seq: String(Number(piEntries.at(-1)?.seq ?? 0) + 1),
+        timestamp_ms: String(terminalRow.occurred_at.valueOf()),
+        payload: {
+          type: "custom",
+          customType: INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
+          data: { text: terminalRow.interrupted_prefix },
+        },
+      });
     if (piEntries.length > 0) {
       result.set(turnId, projectPiEntries(piEntries, terminalMetadata(terminalRow)));
       continue;
@@ -382,17 +398,15 @@ export async function readCanonicalPiTurnTranscripts(
   return result;
 }
 
-export async function appendInterruptedAssistantPrefix(
+export async function readInterruptedAssistantPrefix(
   transaction: Transaction<Database>,
   input: {
     tenantId: string;
     sessionId: string;
     turnId: string;
     transcript: ConversationTurnTranscriptResource;
-    now: Date;
-    entryId: string;
   },
-): Promise<boolean> {
+): Promise<string | null> {
   const visibleText = input.transcript.items
     .filter(
       (item): item is Extract<ConversationTranscriptItemResource, { kind: "text" }> =>
@@ -400,30 +414,7 @@ export async function appendInterruptedAssistantPrefix(
     )
     .map((item) => item.text)
     .join("");
-  if (visibleText.length === 0) return false;
-  const binding = await transaction
-    .selectFrom("sessions")
-    .select(["pi_session_id as piSessionId", "pi_session_lane as piSessionLane"])
-    .where("tenant_id", "=", input.tenantId)
-    .where("id", "=", input.sessionId)
-    .executeTakeFirst();
-  if (binding === undefined) return false;
-  const lane = await transaction
-    .selectFrom("pi_session_lanes")
-    .select("leaf_id")
-    .where("tenant_id", "=", input.tenantId)
-    .where("session_id", "=", binding.piSessionId)
-    .where("lane", "=", binding.piSessionLane)
-    .forUpdate()
-    .executeTakeFirst();
-  if (lane === undefined) return false;
-  const session = await transaction
-    .selectFrom("pi_sessions")
-    .select("next_seq")
-    .where("tenant_id", "=", input.tenantId)
-    .where("id", "=", binding.piSessionId)
-    .forUpdate()
-    .executeTakeFirstOrThrow();
+  if (visibleText.length === 0) return null;
   const existingRows = await transaction
     .selectFrom("pi_session_entries")
     .select("payload")
@@ -434,66 +425,13 @@ export async function appendInterruptedAssistantPrefix(
   const canonicalText = existingRows
     .flatMap((row) => {
       const message = messageFromEntry(row.payload);
-      return message?.role === "assistant" ? textParts(message) : [];
+      return message?.role === "assistant"
+        ? textParts(message)
+        : (interruptedPrefix(row.payload) ?? []);
     })
     .join("");
   const missingText = visibleText.startsWith(canonicalText)
     ? visibleText.slice(canonicalText.length)
     : visibleText;
-  if (missingText.length === 0) return false;
-  const sequence = safeInteger(session.next_seq, "Pi Session next sequence");
-  const timestampMs = input.now.valueOf();
-  const entry = {
-    id: input.entryId,
-    type: "custom",
-    customType: INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
-    data: { text: missingText },
-    parentId: lane.leaf_id,
-    seq: sequence,
-    timestamp: timestampMs,
-  };
-  await transaction
-    .insertInto("pi_session_entries")
-    .values({
-      tenant_id: input.tenantId,
-      session_id: binding.piSessionId,
-      id: input.entryId,
-      seq: sequence,
-      parent_id: lane.leaf_id,
-      type: "custom",
-      custom_type: INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE,
-      timestamp_ms: timestampMs,
-      payload: entry,
-      turn_id: input.turnId,
-    })
-    .executeTakeFirstOrThrow();
-  await transaction
-    .updateTable("pi_session_lanes")
-    .set({ leaf_id: input.entryId })
-    .where("tenant_id", "=", input.tenantId)
-    .where("session_id", "=", binding.piSessionId)
-    .where("lane", "=", binding.piSessionLane)
-    .executeTakeFirstOrThrow();
-  await transaction
-    .insertInto("pi_session_log")
-    .values({
-      tenant_id: input.tenantId,
-      session_id: binding.piSessionId,
-      seq: sequence,
-      kind: "entry",
-      payload: {
-        lane: binding.piSessionLane,
-        turnId: input.turnId,
-        entry,
-      },
-    })
-    .executeTakeFirstOrThrow();
-  await transaction
-    .updateTable("pi_sessions")
-    .set({ next_seq: sql<string>`${sql.ref("next_seq")} + 1` })
-    .where("tenant_id", "=", input.tenantId)
-    .where("id", "=", binding.piSessionId)
-    .where("next_seq", "=", session.next_seq)
-    .executeTakeFirstOrThrow();
-  return true;
+  return missingText || null;
 }

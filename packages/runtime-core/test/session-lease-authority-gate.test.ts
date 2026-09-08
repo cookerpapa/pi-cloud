@@ -35,7 +35,7 @@ function openMessage(): FactChannelOpenMessage {
     payload: {
       executionLease: createExecutionLease(GRANT_ID, EXECUTION_ID, 1),
       sessionId: SESSION_ID,
-      piSession: { id: SESSION_ID, lane: "main" },
+      piSession: { id: SESSION_ID, lane: "main", writerId: EXECUTION_ID },
       turnId: TURN_ID,
       nextEventSeq: 1,
     },
@@ -86,6 +86,12 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
         renewed_at timestamptz not null
       )
     `.execute(database);
+    await sql`create table run_attempts(id uuid primary key,tenant_id uuid,native_writer_id uuid,native_writer_failed_at timestamptz,native_writer_sealed_at timestamptz,native_output_drained boolean default true)`.execute(
+      database,
+    );
+    await sql`insert into run_attempts(id,tenant_id,native_writer_id) values(${EXECUTION_ID},${SESSION_ID},${EXECUTION_ID})`.execute(
+      database,
+    );
     await sql`
       insert into session_leases(
         session_id, lease_id, sandbox_id, fencing_token, tenant_id, project_id, workspace_id,
@@ -136,7 +142,7 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
     if (event.type !== "event.publish") throw new Error("Invalid event fixture");
     const acceptedEvent = authority.accept(scope, { kind: "agent_event", publication: event });
     const acceptedMutation = authority.accept(scope, {
-      kind: "pi_session_mutation",
+      kind: "pi_session_append",
       mutation: {
         schemaVersion: 1,
         mutationId: "10000000-0000-4000-8000-000000000011",
@@ -145,11 +151,12 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
           sessionId: SESSION_ID,
           piSessionId: SESSION_ID,
           piSessionLane: "main",
+          writerId: EXECUTION_ID,
           turnId: TURN_ID,
           runId: SESSION_ID,
           executionLease: openMessage().payload.executionLease,
         },
-        operation: { kind: "set_name", name: "test" },
+        items: [{ kind: "fact", fact: "name", name: "test", seq: 1 }],
         events: [],
         occurredAt: "2026-08-26T00:00:00.000Z",
       },
@@ -159,13 +166,13 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
       factId: "10000000-0000-4000-8000-000000000010",
     });
     expect(acceptedMutation).toMatchObject({
-      kind: "pi_session_mutation",
+      kind: "pi_session_append",
       factId: "10000000-0000-4000-8000-000000000011",
-      piSession: { id: SESSION_ID, lane: "main" },
+      piSession: { id: SESSION_ID, lane: "main", writerId: EXECUTION_ID },
     });
     expect(() =>
       authority.accept(scope, {
-        kind: "pi_session_mutation",
+        kind: "pi_session_append",
         mutation: {
           schemaVersion: 1,
           mutationId: "10000000-0000-4000-8000-000000000012",
@@ -174,11 +181,12 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
             sessionId: SESSION_ID,
             piSessionId: SESSION_ID,
             piSessionLane: "main",
+            writerId: EXECUTION_ID,
             turnId: TURN_ID,
             runId: SESSION_ID,
             executionLease: openMessage().payload.executionLease,
           },
-          operation: { kind: "move_lane", lane: "sibling", to: null },
+          items: [{ kind: "lane", lane: "sibling", leafId: null, create: false, seq: 1 }],
           events: [],
           occurredAt: "2026-08-26T00:00:00.000Z",
         },

@@ -31,6 +31,9 @@ import {
   parseTenantIdentityResource,
   parseTenantRegistrationResource,
   parseUuidPathParameter,
+  parseConversationTreeResource,
+  parseCreateConversationForkRequest,
+  parseCreateConversationPruneRequest,
 } from "../src/index.ts";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
@@ -46,6 +49,42 @@ const ENVIRONMENT_SNAPSHOT = {
 } as const;
 
 describe("control-plane public API schemas", () => {
+  it("keeps native Pi Entry IDs opaque across tree navigation, Fork and prune", () => {
+    const entryId = `pc-${UUID}-a`,
+      parentEntryId = `pc-${UUID}-9`;
+    expect(parseCreateConversationForkRequest({ turnId: UUID, entryId }).entryId).toBe(entryId);
+    expect(parseCreateConversationPruneRequest({ turnId: UUID, entryId }).entryId).toBe(entryId);
+    const tree = parseConversationTreeResource({
+      rootSessionId: UUID,
+      currentSessionId: UUID,
+      view: "focus",
+      delegatedSessions: [],
+      branches: [
+        {
+          kind: "conversation",
+          sessionId: UUID,
+          title: "Native",
+          parentSessionId: null,
+          forkedFromTurnId: null,
+          forkedFromEntryId: parentEntryId,
+          current: true,
+          entries: [
+            {
+              entryId,
+              parentEntryId,
+              turnId: UUID,
+              role: "assistant",
+              text: "answer",
+              finalAssistant: true,
+              createdAt: "2026-09-08T00:00:00.000Z",
+            },
+          ],
+        },
+      ],
+    });
+    expect(tree.branches[0]?.entries[0]?.entryId).toBe(entryId);
+    expect(() => parseCreateConversationForkRequest({ turnId: entryId, entryId })).toThrow();
+  });
   it("validates user-owned development environment resources and actions", () => {
     const createdAt = "2026-08-20T00:00:00.000Z";
     expect(

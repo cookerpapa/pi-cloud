@@ -51,7 +51,7 @@ function command(tenantId: string = IDS.tenant): ExecuteTurnCommandMessage {
       projectId: IDS.project,
       workspaceId: IDS.workspace,
       sessionId: IDS.session,
-      piSession: { id: IDS.session, lane: "main" },
+      piSession: { id: IDS.session, lane: "main", writerId: IDS.attempt },
       runId: IDS.run,
       turnId: IDS.turn,
       agentId: "root",

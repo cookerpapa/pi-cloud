@@ -154,6 +154,15 @@ describe("PiWorkerRuntime", () => {
       controlPlaneInstanceId: CONTROL_PLANE_ID,
       ownerBoundary: { async stopAndConfirm() {} },
       assignmentRetirerFactory: () => ({
+        async retireExpiredAssignments() {
+          return {
+            inspectedRuntimes: 0,
+            terminatedRuntimes: 0,
+            orphanRuntimes: 0,
+            settledAssignments: 0,
+            requeuedAssignments: 0,
+          };
+        },
         async retireSandbox() {
           return {
             inspectedRuntimes: 0,
@@ -267,7 +276,7 @@ describe("PiWorkerRuntime", () => {
         },
         sessionMutationProducer: {
           scoped() {
-            return { async mutate() {}, async synchronize() {} };
+            return { async publish() {} };
           },
           async checkHealth() {},
           async close() {},
@@ -295,7 +304,7 @@ describe("PiWorkerRuntime", () => {
         },
         sessionMutationProducer: {
           scoped() {
-            return { async mutate() {}, async synchronize() {} };
+            return { async publish() {} };
           },
           async checkHealth() {},
           async close() {},

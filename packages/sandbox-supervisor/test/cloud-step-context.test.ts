@@ -22,7 +22,11 @@ const command: ExecuteTurnCommandMessage = {
     projectId: "project-step",
     workspaceId: "workspace-step",
     sessionId: "session-step",
-    piSession: { id: "session-step", lane: "main" },
+    piSession: {
+      id: "session-step",
+      lane: "main",
+      writerId: "00000000-0000-4000-8000-000000000001",
+    },
     runId: "10000000-0000-4000-8000-000000000003",
     turnId: "turn-step",
     agentId: "root",

@@ -3,16 +3,16 @@ import { parsePiCloudEvent, type PiCloudEvent } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { AcceptedExecutionSealFact, AcceptedFact } from "./accepted-fact.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
-import { appendInterruptedAssistantPrefix } from "./canonical-pi-conversation.ts";
+import { readInterruptedAssistantPrefix } from "./canonical-pi-conversation.ts";
 import { projectConversationTurnTranscript } from "./conversation-turn-projection.ts";
-import { PostgresPiSessionMutationProjector } from "./postgres-pi-session-mutation-projector.ts";
+import { PostgresPiSessionAppendProjector } from "./postgres-pi-session-append-projector.ts";
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
 import { enqueueExecutionCommit } from "./execution-stream-commit.ts";
 
 export function factEvents(fact: AcceptedFact): readonly PiCloudEvent[] {
   return fact.kind === "agent_event"
     ? [fact.event]
-    : fact.kind === "pi_session_mutation"
+    : fact.kind === "pi_session_append"
       ? fact.events
       : [];
 }
@@ -24,26 +24,37 @@ export class ExecutionStreamBoundary {
   readonly #open = new Set<string>();
   readonly #closed = new Map<string, bigint>();
   readonly #partitions = new Map<string, number>();
-  readonly #retentionMs: number;
+  readonly #writers = new Map<string, { offset: bigint; partition: number }>();
 
-  constructor(database: Kysely<Database>, retentionMs = 24 * 60 * 60_000) {
+  constructor(database: Kysely<Database>) {
     this.#database = database;
-    this.#retentionMs = retentionMs;
   }
 
   reset(): void {
     this.#open.clear();
     this.#closed.clear();
     this.#partitions.clear();
+    this.#writers.clear();
   }
 
   resetPartition(partition: number): void {
+    for (const [id, writer] of this.#writers)
+      if (writer.partition === partition) this.#writers.delete(id);
     for (const [id, part] of this.#partitions)
       if (part === partition) {
         this.#open.delete(id);
         this.#closed.delete(id);
         this.#partitions.delete(id);
       }
+  }
+  closeWriter(writerId: string, offset: bigint, partition: number) {
+    const prior = this.#writers.get(writerId);
+    if (!prior || offset < prior.offset) this.#writers.set(writerId, { offset, partition });
+    // Open scopes must reload the durable group cutoff after eviction.
+    if (this.#writers.size > 65_536) {
+      this.#writers.delete(this.#writers.keys().next().value!);
+      this.#open.clear();
+    }
   }
 
   close(attemptId: string, offset = -1n, partition?: number): void {
@@ -61,6 +72,8 @@ export class ExecutionStreamBoundary {
 
   async isOpen(record: KafkaAcceptedFactRecord, canonical: boolean): Promise<boolean> {
     const { scope } = record.fact;
+    const writerCutoff = this.#writers.get(scope.writerId);
+    if (writerCutoff && record.offset >= writerCutoff.offset) return false;
     const cutoff = this.#closed.get(scope.attemptId);
     if (cutoff !== undefined) {
       this.#closed.delete(scope.attemptId);
@@ -71,6 +84,7 @@ export class ExecutionStreamBoundary {
     const attempt = await this.#database
       .selectFrom("run_attempts as attempt")
       .innerJoin("runs as run", "run.id", "attempt.run_id")
+      .innerJoin("run_attempts as writer", "writer.id", "attempt.native_writer_id")
       .select([
         "attempt.claimed_at",
         "attempt.output_sealed_at",
@@ -78,6 +92,8 @@ export class ExecutionStreamBoundary {
         "attempt.output_first_topic",
         "attempt.output_first_partition",
         "attempt.output_first_offset",
+        "attempt.native_writer_id",
+        "writer.native_writer_seal_offset",
       ])
       .where("attempt.id", "=", scope.attemptId)
       .where("attempt.tenant_id", "=", scope.tenantId)
@@ -85,14 +101,19 @@ export class ExecutionStreamBoundary {
       .where("run.session_id", "=", scope.sessionId)
       .where("run.turn_id", "=", scope.turnId)
       .executeTakeFirst();
+    if (attempt && attempt.native_writer_id !== scope.writerId)
+      throw new Error("Execution native writer identity changed");
+    if (attempt?.native_writer_seal_offset != null) {
+      const offset = BigInt(attempt.native_writer_seal_offset);
+      this.closeWriter(scope.writerId, offset, record.partition);
+      if (record.offset >= offset) return false;
+    }
     if (!attempt || attempt.output_sealed_at !== null) {
       const cutoff = attempt?.output_seal_offset == null ? -1n : BigInt(attempt.output_seal_offset);
       this.close(scope.attemptId, cutoff, record.partition);
       return !canonical && record.offset < cutoff;
     }
     if (canonical) {
-      if (attempt.claimed_at.valueOf() < Date.now() - this.#retentionMs)
-        throw new Error("Unsealed execution exceeds the Kafka recovery retention window");
       if (attempt.output_first_offset !== null) {
         if (
           attempt.output_first_topic !== record.topic ||
@@ -123,13 +144,13 @@ export class ExecutionStreamBoundary {
 export class ExecutionStreamProjector {
   readonly #database: Kysely<Database>;
   readonly #boundary: ExecutionStreamBoundary;
-  readonly #mutations: PostgresPiSessionMutationProjector;
+  readonly #mutations: PostgresPiSessionAppendProjector;
   readonly #prefixes = new Map<string, Map<number, PiCloudEvent>>();
 
-  constructor(database: Kysely<Database>, retentionMs?: number) {
+  constructor(database: Kysely<Database>) {
     this.#database = database;
-    this.#boundary = new ExecutionStreamBoundary(database, retentionMs);
-    this.#mutations = new PostgresPiSessionMutationProjector(database);
+    this.#boundary = new ExecutionStreamBoundary(database);
+    this.#mutations = new PostgresPiSessionAppendProjector(database);
   }
 
   reset(): void {
@@ -141,7 +162,18 @@ export class ExecutionStreamProjector {
     const { fact } = record;
     if (fact.kind === "execution_committed") return; // Notification, not another mutation.
     if (!(await this.#boundary.isOpen(record, true))) {
-      if (fact.kind === "execution_seal") await this.#seal(fact, record, []);
+      if (fact.kind === "execution_seal") {
+        const prefix = this.#prefixes.get(fact.scope.attemptId);
+        await this.#seal(
+          fact,
+          record,
+          [...(prefix?.values() ?? [])].sort((a, b) => a.seq - b.seq),
+        );
+        this.#boundary.close(fact.scope.attemptId, record.offset, record.partition);
+        if (fact.closesWriter)
+          this.#boundary.closeWriter(fact.scope.writerId, record.offset, record.partition);
+        this.#prefixes.delete(fact.scope.attemptId);
+      }
       return;
     }
     const prefix = this.#prefixes.get(fact.scope.attemptId) ?? new Map<number, PiCloudEvent>();
@@ -152,7 +184,7 @@ export class ExecutionStreamProjector {
         throw new Error("Execution stream has conflicting events at one sequence");
       prefix.set(event.seq, event);
     }
-    if (fact.kind === "pi_session_mutation") {
+    if (fact.kind === "pi_session_append") {
       await this.#mutations.project(fact, true, record);
     } else if (fact.kind === "execution_seal") {
       await this.#seal(
@@ -161,6 +193,8 @@ export class ExecutionStreamProjector {
         [...prefix.values()].sort((a, b) => a.seq - b.seq),
       );
       this.#boundary.close(fact.scope.attemptId, record.offset, record.partition);
+      if (fact.closesWriter)
+        this.#boundary.closeWriter(fact.scope.writerId, record.offset, record.partition);
       this.#prefixes.delete(fact.scope.attemptId);
     }
   }
@@ -180,11 +214,22 @@ export class ExecutionStreamProjector {
           "output_seal_offset",
           "output_first_topic",
           "output_first_partition",
+          "output_first_offset",
         ])
         .where("id", "=", fact.scope.attemptId)
-        .forUpdate()
+        .forNoKeyUpdate()
         .executeTakeFirst();
       if (!attempt) return;
+      // Terminal admission and native projection lock their own Attempt before
+      // the common writer anchor. Never take a sibling Attempt after that anchor.
+      const writer = await transaction
+        .selectFrom("run_attempts")
+        .select("native_writer_seal_offset")
+        .where("tenant_id", "=", fact.scope.tenantId)
+        .where("id", "=", fact.scope.writerId)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      if (!writer) return;
       if (
         attempt.output_seal_id !== fact.factId ||
         Number(attempt.fencing_token ?? 0) !== fact.scope.fencingToken
@@ -226,6 +271,21 @@ export class ExecutionStreamProjector {
         await recordFactProjection(transaction, position);
         return;
       }
+      if (
+        attempt.output_first_offset !== null &&
+        !this.#prefixes.has(fact.scope.attemptId) &&
+        BigInt(attempt.output_first_offset) !== position.offset
+      )
+        throw new Error("Unsealed execution prefix is missing before writer closure");
+      if (fact.closesWriter && writer.native_writer_seal_offset === null)
+        await transaction
+          .updateTable("run_attempts")
+          .set({
+            native_writer_sealed_at: new Date(),
+            native_writer_seal_offset: position.offset.toString(),
+          })
+          .where("id", "=", fact.scope.writerId)
+          .execute();
       const event = parsePiCloudEvent({
         schemaVersion: 1,
         eventId: fact.factId,
@@ -237,16 +297,15 @@ export class ExecutionStreamProjector {
         ...fact.terminal,
       });
       const now = new Date();
-      if (event.type !== "turn.completed") {
-        await appendInterruptedAssistantPrefix(transaction, {
-          tenantId: fact.scope.tenantId,
-          sessionId: fact.scope.sessionId,
-          turnId: fact.scope.turnId,
-          transcript: projectConversationTurnTranscript([...prefix, event]),
-          now,
-          entryId: globalThis.crypto.randomUUID(),
-        });
-      }
+      const interruptedPrefix =
+        event.type !== "turn.completed"
+          ? await readInterruptedAssistantPrefix(transaction, {
+              tenantId: fact.scope.tenantId,
+              sessionId: fact.scope.sessionId,
+              turnId: fact.scope.turnId,
+              transcript: projectConversationTurnTranscript([...prefix, event]),
+            })
+          : null;
       await transaction
         .insertInto("session_terminal_events")
         .values({
@@ -262,6 +321,7 @@ export class ExecutionStreamProjector {
           payload: event.payload,
           occurred_at: new Date(fact.occurredAt),
           persisted_at: now,
+          interrupted_prefix: interruptedPrefix,
         })
         .execute();
       await transaction
@@ -278,6 +338,9 @@ export class ExecutionStreamProjector {
         .set({
           output_sealed_at: now,
           output_seal_offset: position.offset.toString(),
+          output_first_topic: attempt.output_first_topic ?? position.topic,
+          output_first_partition: attempt.output_first_partition ?? position.partition,
+          output_first_offset: attempt.output_first_offset ?? position.offset.toString(),
           last_event_seq: event.seq,
         })
         .where("id", "=", fact.scope.attemptId)

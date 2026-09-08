@@ -13,11 +13,11 @@ import {
   factTransportEnvelope,
   parseFactTransportEnvelope,
 } from "../src/accepted-fact-channel.ts";
-import type { PiSessionMutationPublishFrame } from "../src/accepted-fact.ts";
+import type { PiSessionAppendPublishFrame } from "../src/accepted-fact.ts";
 
 type WorkerFactFrame =
   | ReturnType<typeof parseSupervisorToControlMessage>
-  | PiSessionMutationPublishFrame
+  | PiSessionAppendPublishFrame
   | ToolCommandPublishFrame;
 
 const resources: Array<() => Promise<void>> = [];
@@ -76,7 +76,7 @@ async function startServer(
       const envelope = parseFactTransportEnvelope(JSON.parse(data.toString("utf8")));
       const candidate = envelope.payload as WorkerFactFrame;
       const value =
-        candidate.type === "fact.pi_session_mutation.publish" ||
+        candidate.type === "fact.pi_session_append.publish" ||
         candidate.type === "fact.tool_command.publish"
           ? candidate
           : parseSupervisorToControlMessage(candidate);
@@ -164,12 +164,12 @@ function respondToFact(message: WorkerFactFrame, send: (value: unknown) => void)
         },
       }),
     );
-  } else if (message.type === "fact.pi_session_mutation.publish") {
+  } else if (message.type === "fact.pi_session_append.publish") {
     send({
       protocolVersion: 1,
       messageId: id(10, 4),
       sentAt: "2026-08-26T00:00:00.000Z",
-      type: "fact.pi_session_mutation.accepted",
+      type: "fact.pi_session_append.accepted",
       payload: {
         acknowledgedMessageId: message.messageId,
         mutationId: message.payload.mutationId,
@@ -191,7 +191,11 @@ describe("WebSocketAcceptedFactIngestor", () => {
     const writer = await ingestor.open({
       executionLease: event.payload.executionLease,
       sessionId: event.payload.event.sessionId,
-      piSession: { id: event.payload.event.sessionId, lane: "main" },
+      piSession: {
+        id: event.payload.event.sessionId,
+        lane: "main",
+        writerId: "00000000-0000-4000-8000-000000000001",
+      },
       turnId: event.payload.event.turnId!,
       nextEventSeq: 1,
     });
@@ -232,11 +236,12 @@ describe("WebSocketAcceptedFactIngestor", () => {
           sessionId: event.payload.event.sessionId,
           piSessionId: event.payload.event.sessionId,
           piSessionLane: "main",
+          writerId: "00000000-0000-4000-8000-000000000001",
           turnId: event.payload.event.turnId!,
           runId: id(1, 11),
           executionLease: event.payload.executionLease,
         },
-        operation: { kind: "set_name", name: "test" },
+        items: [{ kind: "fact", fact: "name", name: "test", seq: 1 }],
         events: [
           {
             schemaVersion: 1,
@@ -272,14 +277,22 @@ describe("WebSocketAcceptedFactIngestor", () => {
       ingestor.open({
         executionLease: firstEvent.payload.executionLease,
         sessionId: firstEvent.payload.event.sessionId,
-        piSession: { id: firstEvent.payload.event.sessionId, lane: "main" },
+        piSession: {
+          id: firstEvent.payload.event.sessionId,
+          lane: "main",
+          writerId: "00000000-0000-4000-8000-000000000001",
+        },
         turnId: firstEvent.payload.event.turnId!,
         nextEventSeq: 1,
       }),
       ingestor.open({
         executionLease: secondEvent.payload.executionLease,
         sessionId: secondEvent.payload.event.sessionId,
-        piSession: { id: secondEvent.payload.event.sessionId, lane: "main" },
+        piSession: {
+          id: secondEvent.payload.event.sessionId,
+          lane: "main",
+          writerId: "00000000-0000-4000-8000-000000000001",
+        },
         turnId: secondEvent.payload.event.turnId!,
         nextEventSeq: 1,
       }),
@@ -296,11 +309,12 @@ describe("WebSocketAcceptedFactIngestor", () => {
           sessionId: secondEvent.payload.event.sessionId,
           piSessionId: secondEvent.payload.event.sessionId,
           piSessionLane: "main",
+          writerId: "00000000-0000-4000-8000-000000000001",
           turnId: secondEvent.payload.event.turnId!,
           runId: id(22, 11),
           executionLease: secondEvent.payload.executionLease,
         },
-        operation: { kind: "set_name", name: "test" },
+        items: [{ kind: "fact", fact: "name", name: "test", seq: 1 }],
         events: [],
         occurredAt: "2026-08-26T00:00:00.000Z",
       }),
@@ -324,14 +338,22 @@ describe("WebSocketAcceptedFactIngestor", () => {
       ingestor.open({
         executionLease: firstOne.payload.executionLease,
         sessionId: firstOne.payload.event.sessionId,
-        piSession: { id: firstOne.payload.event.sessionId, lane: "main" },
+        piSession: {
+          id: firstOne.payload.event.sessionId,
+          lane: "main",
+          writerId: "00000000-0000-4000-8000-000000000001",
+        },
         turnId: firstOne.payload.event.turnId!,
         nextEventSeq: 1,
       }),
       ingestor.open({
         executionLease: firstTwo.payload.executionLease,
         sessionId: firstTwo.payload.event.sessionId,
-        piSession: { id: firstTwo.payload.event.sessionId, lane: "main" },
+        piSession: {
+          id: firstTwo.payload.event.sessionId,
+          lane: "main",
+          writerId: "00000000-0000-4000-8000-000000000001",
+        },
         turnId: firstTwo.payload.event.turnId!,
         nextEventSeq: 1,
       }),

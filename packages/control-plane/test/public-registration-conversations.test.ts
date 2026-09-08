@@ -598,8 +598,8 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
   });
 
   it("forks a settled Pi branch transactionally and renders inherited history", async () => {
-    const userEntryId = "10000000-0000-4000-8000-000000000001";
-    const assistantEntryId = "10000000-0000-4000-8000-000000000002";
+    const userEntryId = "pc-10000000-0000-4000-8000-000000000001-1";
+    const assistantEntryId = "pc-10000000-0000-4000-8000-000000000001-2";
     await database.transaction().execute(async (transaction) => {
       await transaction
         .updateTable("turns")

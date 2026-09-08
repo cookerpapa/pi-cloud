@@ -15,7 +15,6 @@ import {
   PI_MODEL_RETRY_CUSTOM_TYPE,
   type CloudAgentExecutionAuthority,
   type CloudAgentRuntimeEvent,
-  type CommittedLaneView,
   type PiSessionMutationOperation,
   type PiSessionMutationPublisher,
 } from "@pi-cloud/pi-session-postgres";
@@ -63,7 +62,6 @@ export type PiCloudSessionHandle = Readonly<{
   session: Session;
   lane: string;
   authority: CloudAgentExecutionAuthority;
-  executionView?: Pick<CommittedLaneView, "read" | "reset" | "close">;
   mutationPublisher?: PiSessionMutationPublisher;
 }>;
 
@@ -482,7 +480,6 @@ export class PiCloudTurnRunner {
     ]);
     if (modelPrepared.status === "rejected") {
       if (sessionPrepared.status === "fulfilled") {
-        sessionPrepared.value.executionView?.close();
         await sessionPrepared.value.authority.close().catch(() => undefined);
       }
       throw modelPrepared.reason;
@@ -608,11 +605,13 @@ export class PiCloudTurnRunner {
             outcome.kind === "mapped" &&
             outcome.event.type === "model.sampling.retry.scheduled"
           ) {
-            await sessionHandle.session.appendCustomEntry(PI_MODEL_RETRY_CUSTOM_TYPE, {
-              nextSamplingAttempt: outcome.event.payload.nextSamplingAttempt,
-              maximumSamplingAttempts: outcome.event.payload.maximumSamplingAttempts,
-              delayMs: outcome.event.payload.delayMs,
-            });
+            await sessionHandle.session
+              .view(sessionHandle.lane)
+              .appendCustomEntry(PI_MODEL_RETRY_CUSTOM_TYPE, {
+                nextSamplingAttempt: outcome.event.payload.nextSamplingAttempt,
+                maximumSamplingAttempts: outcome.event.payload.maximumSamplingAttempts,
+                delayMs: outcome.event.payload.delayMs,
+              });
           }
           if (outcome.kind === "mapped" && isRecord(source) && source.type === "auto_retry_start") {
             samplingSteps.scheduleRetry(source.attempt as number);
@@ -761,7 +760,7 @@ export class PiCloudTurnRunner {
         };
         const runtime = new CloudAgentRuntime({
           session: sessionHandle.session,
-          ...(sessionHandle.executionView ? { executionView: sessionHandle.executionView } : {}),
+          idGenerator: () => sessionHandle.session.idGenerator.next(),
           lane: sessionHandle.lane,
           authority: sessionHandle.authority,
           model,
@@ -905,7 +904,6 @@ export class PiCloudTurnRunner {
           ...(this.#options.prepareFollowUp === undefined
             ? {}
             : { prepareFollowUp: this.#options.prepareFollowUp }),
-          idGenerator: this.#id,
         });
         this.#activeRuntime = runtime;
         for (const waiter of this.#steerWaiters) waiter.resolve(runtime);
@@ -979,7 +977,6 @@ export class PiCloudTurnRunner {
           this.#steerWaiters.clear();
         }
       } finally {
-        sessionHandle.executionView?.close();
         await sessionHandle.authority.close();
         if (toolOutputDirectoryForCleanup !== undefined) {
           await rm(toolOutputDirectoryForCleanup, { recursive: true, force: true });

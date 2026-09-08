@@ -125,7 +125,7 @@ heartbeat must leave more than one missed interval before lease expiry.
 
 | Variable | Default | Meaning |
 | --- | ---: | --- |
-| `PI_CLOUD_ACCEPTED_FACT_RETENTION_MS` | `7200000` | Kafka AcceptedFact retention (2 hours) |
+| `PI_CLOUD_ACCEPTED_FACT_RETENTION_MS` | `7200000` | minimum Kafka retention grace (2 hours); the reaper also requires safe PG projection progress; unprojected facts do not automatically expire |
 | `PI_CLOUD_KAFKA_PARTITIONS` | `32` | Session-keyed AcceptedFact partitions |
 | `PI_CLOUD_KAFKA_REPLICAS` | `3` | Kafka Topic replication factor |
 | `PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES` | `67108864` | per-producer-instance encoded Fact body budget, including queued and submitted-unacknowledged Facts; Helm: `external.kafka.producerPendingBytes` |
@@ -149,8 +149,9 @@ For an independent projection process, start the Compose `event-projector`
 profile and set `PI_CLOUD_CANONICAL_PROJECTION_ENABLED=false` in the private
 deployment `.env`, then recreate Control Plane. Both roles use the same canonical
 consumer group, so temporary overlap during cutover is safe. Never disable the
-embedded projector without running the independent role: semantic writes wait
-for its projection receipt. The standalone role has database/metrics secrets and
+embedded projector without running the independent role: Workers can append,
+but canonical history, completion and subsequent Run admission cannot progress.
+The standalone role has database/metrics secrets and
 Kafka access; it serves readiness on port 3000 and protected metrics on 9470. Kubernetes
 can run the same Control Plane image with command
 `/app/packages/control-plane/src/projection-main.ts`; the equivalent API setting

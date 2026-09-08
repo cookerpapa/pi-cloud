@@ -14,12 +14,15 @@ import { DEFAULT_TOOL_TRANSPORT_CAPACITY } from "./tool-transport-capacity.ts";
 
 type LogFact = {
   kind: string;
-  scope: Pick<AcceptedToolCommand["scope"], "attemptId"> & Partial<AcceptedToolCommand["scope"]>;
+  scope: Pick<AcceptedToolCommand["scope"], "attemptId" | "writerId"> &
+    Partial<AcceptedToolCommand["scope"]>;
+  closesWriter?: boolean;
   events?: readonly { type: string; payload: { toolCallId?: string } }[];
 };
 type Outcome = {
   activationId: string;
   attemptId: string;
+  writerId: string;
   hash: string;
   result?: Promise<ToolSandboxOperationResponse>;
   retired: boolean;
@@ -47,12 +50,15 @@ export class KafkaToolCommandConsumer {
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #next = new Map<number, bigint>();
   readonly #sealed = new Set<string>();
+  readonly #sealedWriters = new Set<string>();
+  readonly #attemptWriters = new Map<string, string>();
   readonly #results = new Map<string, Outcome>();
   readonly #calls = new Map<
     string,
     {
       activationId: string;
       attemptId: string;
+      writerId: string;
       operations: Set<string>;
       closed: boolean;
     }
@@ -134,18 +140,31 @@ export class KafkaToolCommandConsumer {
 
   async consume(record: KafkaLogRecord<LogFact>): Promise<void> {
     const fact = record.fact;
+    this.#attemptWriters.set(fact.scope.attemptId, fact.scope.writerId);
+    if (this.#attemptWriters.size > 65_536)
+      this.#attemptWriters.delete(this.#attemptWriters.keys().next().value!);
     this.#consumed++;
     if (fact.kind === "execution_seal" || fact.kind === "execution_committed") {
       this.#sealed.add(fact.scope.attemptId);
+      if (fact.closesWriter) this.#sealedWriters.add(fact.scope.writerId);
+      if (this.#sealedWriters.size > 65_536)
+        this.#sealedWriters.delete(this.#sealedWriters.values().next().value!);
       if (this.#sealed.size > 65_536) this.#sealed.delete(this.#sealed.values().next().value!);
       for (const [id, outcome] of this.#results)
-        if (outcome.attemptId === fact.scope.attemptId) {
+        if (
+          outcome.attemptId === fact.scope.attemptId ||
+          (fact.closesWriter && outcome.writerId === fact.scope.writerId)
+        ) {
           this.#release(id, "seal");
           this.#results.delete(id);
         }
       for (const [key, call] of this.#calls)
-        if (call.attemptId === fact.scope.attemptId) this.#calls.delete(key);
-    } else if (fact.kind === "pi_session_mutation") {
+        if (
+          call.attemptId === fact.scope.attemptId ||
+          (fact.closesWriter && call.writerId === fact.scope.writerId)
+        )
+          this.#calls.delete(key);
+    } else if (fact.kind === "pi_session_append") {
       // The trusted Harness co-publishes its native result and this platform
       // completion in ONE Fact. Standalone UI events are not delivery ACKs.
       // Broker need not know Pi Entry/Record/message internals.
@@ -178,6 +197,7 @@ export class KafkaToolCommandConsumer {
     const call = this.#calls.get(key) ?? {
       activationId: request.activationId,
       attemptId: command.scope.attemptId,
+      writerId: command.scope.writerId,
       operations: new Set<string>(),
       closed: false,
     };
@@ -186,6 +206,7 @@ export class KafkaToolCommandConsumer {
     const outcome: Outcome = {
       activationId: request.activationId,
       attemptId: command.scope.attemptId,
+      writerId: command.scope.writerId,
       hash,
       retired: false,
       settled: false,
@@ -202,7 +223,7 @@ export class KafkaToolCommandConsumer {
         "pi_cloud.tool.operation_id": request.operationId,
       },
       run: async () => {
-        if (this.#closed || this.#sealed.has(command.scope.attemptId) || call.closed)
+        if (this.#closed || this.#isSealed(command.scope.attemptId) || call.closed)
           throw new ToolBrokerError(
             "tool_command_sealed",
             "Tool command belongs to a closed execution",
@@ -304,7 +325,7 @@ export class KafkaToolCommandConsumer {
     signal?.throwIfAborted();
     const read = (): Outcome | undefined => {
       this.#broker.assertToolResultReader(activationId, executionLease);
-      if (this.#sealed.has(parseExecutionLease(executionLease).attemptId))
+      if (this.#isSealed(parseExecutionLease(executionLease).attemptId))
         throw new ToolBrokerError(
           "tool_command_sealed",
           "Tool command belongs to a closed execution",
@@ -372,6 +393,12 @@ export class KafkaToolCommandConsumer {
       if (signal?.aborted) abort();
       else wake();
     });
+  }
+  #isSealed(attemptId: string) {
+    const writerId = this.#attemptWriters.get(attemptId);
+    return (
+      this.#sealed.has(attemptId) || (writerId !== undefined && this.#sealedWriters.has(writerId))
+    );
   }
 
   statistics() {

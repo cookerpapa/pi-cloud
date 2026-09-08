@@ -588,7 +588,14 @@ async function stopWorker(supervisorId) {
 }
 
 async function restoreWorker(service) {
-  await capture(process.execPath, ["scripts/production-compose.mjs", "start", service]);
+  await capture(process.execPath, [
+    "scripts/production-compose.mjs",
+    "up",
+    "-d",
+    "--no-deps",
+    "--wait",
+    service,
+  ]);
   await waitForWorkers(2);
 }
 

@@ -39,7 +39,17 @@ const command = {
 
 describe("PostgresTrustedToolRuntime", () => {
   it("exposes root-session Tools with explicit non-Sandbox execution planes", async () => {
-    const runtime = new PostgresTrustedToolRuntime({ database: rootSessionDatabase() });
+    const runtime = new PostgresTrustedToolRuntime({
+      database: rootSessionDatabase(),
+      nativeLanes: {
+        childAnchor() {
+          throw new Error("unused");
+        },
+        async createChildLane() {
+          throw new Error("unused");
+        },
+      },
+    });
     const tools = await runtime.create({
       command,
       refreshServices: async () => undefined,

@@ -1,4 +1,5 @@
 import type { Database } from "@pi-cloud/database";
+import { retryTransaction } from "@pi-cloud/database";
 import { parseExecutionLease } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
@@ -9,7 +10,7 @@ const DEFAULT_FACT_CHANNEL_LEASE_MS = 9_000;
 export type ExecutionLeaseAuthorityRequest = Readonly<{
   executionLease: string;
   sessionId: string;
-  piSession: Readonly<{ id: string; lane: string }>;
+  piSession: Readonly<{ id: string; lane: string; writerId: string }>;
   turnId: string;
 }>;
 
@@ -24,6 +25,7 @@ export type ExecutionLeaseAuthorityScope = Readonly<{
   sessionId: string;
   piSessionId: string;
   piSessionLane: string;
+  writerId: string;
   runId: string;
   turnId: string;
   leaseDurationMs: number;
@@ -92,9 +94,16 @@ export class PostgresExecutionLeaseAuthorityGate {
     request: ExecutionLeaseAuthorityRequest,
     identity: Readonly<{ connectionId: string; instanceId: string }>,
   ): Promise<ExecutionLeaseAuthorityScope> {
-    const now = validClockDate(this.#clock);
     const grantIdentity = parseExecutionLease(request.executionLease);
-    return this.#database.transaction().execute(async (transaction) => {
+    return retryTransaction(this.#database, async (transaction) => {
+      const now = validClockDate(this.#clock);
+      // Lifecycle/renewal also lock the Attempt before its lease row.
+      await transaction
+        .selectFrom("run_attempts")
+        .select("id")
+        .where("id", "=", grantIdentity.attemptId)
+        .forNoKeyUpdate()
+        .execute();
       const row = await transaction
         .selectFrom("session_leases")
         .selectAll()
@@ -111,6 +120,18 @@ export class PostgresExecutionLeaseAuthorityGate {
               .where("id", "=", request.sessionId)
               .executeTakeFirst();
       const grantExpiry = row === undefined ? now : new Date(row.valid_until);
+      const attempt = row
+        ? await transaction
+            .selectFrom("run_attempts as a")
+            .leftJoin("run_attempts as writer", "writer.id", "a.native_writer_id")
+            .select([
+              "a.native_writer_id",
+              "writer.native_writer_failed_at",
+              "writer.native_writer_sealed_at",
+            ])
+            .where("a.id", "=", row.attempt_id)
+            .executeTakeFirst()
+        : undefined;
       if (
         row === undefined ||
         row.attempt_id !== grantIdentity.attemptId ||
@@ -119,6 +140,9 @@ export class PostgresExecutionLeaseAuthorityGate {
         row.turn_id !== request.turnId ||
         session?.pi_session_id !== request.piSession.id ||
         session.pi_session_lane !== request.piSession.lane ||
+        attempt?.native_writer_id !== request.piSession.writerId ||
+        attempt.native_writer_failed_at !== null ||
+        attempt.native_writer_sealed_at !== null ||
         grantExpiry.valueOf() <= now.valueOf()
       ) {
         throw new ExecutionLeaseAuthorityGateError(
@@ -157,6 +181,11 @@ export class PostgresExecutionLeaseAuthorityGate {
           false,
         );
       }
+      await transaction
+        .updateTable("run_attempts")
+        .set({ native_output_drained: false })
+        .where("id", "=", row.attempt_id)
+        .execute();
       return {
         connectionId: identity.connectionId,
         instanceId: identity.instanceId,
@@ -168,6 +197,7 @@ export class PostgresExecutionLeaseAuthorityGate {
         sessionId: row.session_id,
         piSessionId: session.pi_session_id,
         piSessionLane: session.pi_session_lane,
+        writerId: attempt.native_writer_id,
         runId: row.run_id,
         turnId: row.turn_id,
         leaseDurationMs: validUntil.valueOf() - now.valueOf(),
@@ -197,6 +227,8 @@ export class PostgresExecutionLeaseAuthorityGate {
           attemptId: scope.attemptId,
           fencingToken: scope.fencingToken,
           leaseId: scope.leaseId,
+          piSessionId: scope.piSessionId,
+          writerId: scope.writerId,
         },
         request: command.request,
         occurredAt: command.occurredAt,
@@ -226,6 +258,8 @@ export class PostgresExecutionLeaseAuthorityGate {
           turnId: scope.turnId,
           attemptId: scope.attemptId,
           fencingToken: scope.fencingToken,
+          piSessionId: scope.piSessionId,
+          writerId: scope.writerId,
         },
         event: publication.payload.event,
         occurredAt: publication.payload.event.occurredAt,
@@ -238,6 +272,7 @@ export class PostgresExecutionLeaseAuthorityGate {
       mutation.scope.sessionId !== scope.sessionId ||
       mutation.scope.piSessionId !== scope.piSessionId ||
       mutation.scope.piSessionLane !== scope.piSessionLane ||
+      mutation.scope.writerId !== scope.writerId ||
       mutation.scope.runId !== scope.runId ||
       mutation.scope.turnId !== scope.turnId
     ) {
@@ -247,21 +282,18 @@ export class PostgresExecutionLeaseAuthorityGate {
         false,
       );
     }
-    const operationLanes =
-      mutation.operation.kind === "append_items"
-        ? mutation.operation.items.map((item) =>
-            item.kind === "append_entry" ? item.lane : item.record.lane,
-          )
-        : mutation.operation.kind === "append_entry" ||
-            mutation.operation.kind === "create_lane" ||
-            mutation.operation.kind === "move_lane"
-          ? [mutation.operation.lane]
-          : mutation.operation.kind === "append_record"
-            ? [mutation.operation.record.lane]
-            : [];
+    const operationLanes = mutation.items.flatMap((item) =>
+      item.kind === "entry"
+        ? [item.lane]
+        : item.kind === "record"
+          ? [item.record.lane]
+          : item.kind === "lane" && !item.create
+            ? [item.lane]
+            : [],
+    );
     if (
       operationLanes.some((lane) => lane !== scope.piSessionLane) ||
-      (operationLanes.length === 0 && scope.piSessionLane !== "main")
+      mutation.items.some((item) => item.kind === "fact" && scope.piSessionLane !== "main")
     ) {
       throw new ExecutionLeaseAuthorityGateError(
         "stale_session_lease",
@@ -281,7 +313,7 @@ export class PostgresExecutionLeaseAuthorityGate {
       );
     }
     return {
-      kind: "pi_session_mutation",
+      kind: "pi_session_append",
       factId: mutation.mutationId,
       scope: {
         tenantId: scope.tenantId,
@@ -290,9 +322,11 @@ export class PostgresExecutionLeaseAuthorityGate {
         turnId: scope.turnId,
         attemptId: scope.attemptId,
         fencingToken: scope.fencingToken,
+        piSessionId: scope.piSessionId,
+        writerId: scope.writerId,
       },
-      piSession: { id: scope.piSessionId, lane: scope.piSessionLane },
-      operation: mutation.operation,
+      piSession: { id: scope.piSessionId, lane: scope.piSessionLane, writerId: scope.writerId },
+      items: mutation.items,
       events: mutation.events,
       occurredAt: mutation.occurredAt,
     };
@@ -354,35 +388,48 @@ export class PostgresExecutionLeaseAuthorityGate {
   }
 
   async close(scope: ExecutionLeaseAuthorityScope): Promise<void> {
-    const updated = await this.#database
-      .updateTable("session_leases")
-      .set({
-        fact_channel_connection_id: null,
-        fact_channel_instance_id: null,
-        fact_channel_valid_until: null,
-      })
-      .where("lease_id", "=", scope.leaseId)
-      .where("attempt_id", "=", scope.attemptId)
-      .where("fencing_token", "=", String(scope.fencingToken))
-      .where("fact_channel_connection_id", "=", scope.connectionId)
-      .where("fact_channel_instance_id", "=", scope.instanceId)
-      .executeTakeFirst();
-    if (updated.numUpdatedRows !== 1n) {
-      const current = await this.#database
-        .selectFrom("session_leases")
-        .select("fact_channel_connection_id")
+    await retryTransaction(this.#database, async (transaction) => {
+      await transaction
+        .selectFrom("run_attempts")
+        .select("id")
+        .where("id", "=", scope.attemptId)
+        .forNoKeyUpdate()
+        .execute();
+      const updated = await transaction
+        .updateTable("session_leases")
+        .set({
+          fact_channel_connection_id: null,
+          fact_channel_instance_id: null,
+          fact_channel_valid_until: null,
+        })
         .where("lease_id", "=", scope.leaseId)
         .where("attempt_id", "=", scope.attemptId)
         .where("fencing_token", "=", String(scope.fencingToken))
+        .where("fact_channel_connection_id", "=", scope.connectionId)
+        .where("fact_channel_instance_id", "=", scope.instanceId)
         .executeTakeFirst();
-      if (current !== undefined && current.fact_channel_connection_id === null) {
-        return;
+      if (updated.numUpdatedRows !== 1n) {
+        const current = await transaction
+          .selectFrom("session_leases")
+          .select("fact_channel_connection_id")
+          .where("lease_id", "=", scope.leaseId)
+          .where("attempt_id", "=", scope.attemptId)
+          .where("fencing_token", "=", String(scope.fencingToken))
+          .executeTakeFirst();
+        if (current !== undefined && current.fact_channel_connection_id === null) {
+          return;
+        }
+        throw new ExecutionLeaseAuthorityGateError(
+          "stale_session_lease",
+          "FactChannel could not close stale ownership",
+          false,
+        );
       }
-      throw new ExecutionLeaseAuthorityGateError(
-        "stale_session_lease",
-        "FactChannel could not close stale ownership",
-        false,
-      );
-    }
+      await transaction
+        .updateTable("run_attempts")
+        .set({ native_output_drained: true })
+        .where("id", "=", scope.attemptId)
+        .execute();
+    });
   }
 }

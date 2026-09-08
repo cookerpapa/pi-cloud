@@ -80,7 +80,7 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
   if (parsed.kind === "execution_committed") {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) as typeof parsed.event };
   }
-  if (parsed.kind === "pi_session_mutation") {
+  if (parsed.kind === "pi_session_append") {
     return {
       ...parsed,
       events: (parsed.events ?? []).map((event) => parsePiCloudEvent(event)),
@@ -95,7 +95,6 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
   readonly #admin: Admin;
   readonly #partitions: number;
   readonly #replicas: number;
-  readonly #retentionMs: number;
   readonly #capacity: ProducerCapacity;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #closeTimeoutMs: number;
@@ -114,7 +113,7 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
     this.#topic = configuration.topic ?? ACCEPTED_FACT_TOPIC;
     this.#partitions = positiveInteger(configuration.partitions, "Kafka partitions");
     this.#replicas = positiveInteger(configuration.replicas, "Kafka replicas");
-    this.#retentionMs = positiveInteger(configuration.retentionMs, "Kafka retentionMs");
+    positiveInteger(configuration.retentionMs, "Kafka retentionMs");
     const capacity = configuration.capacity ?? DEFAULT_PRODUCER_CAPACITY;
     this.#capacity = {
       maximumPendingBytes: positiveInteger(capacity.maximumPendingBytes, "maximumPendingBytes"),
@@ -210,7 +209,9 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
         replicas: this.#replicas,
         configs: [
           { name: "cleanup.policy", value: "delete" },
-          { name: "retention.ms", value: String(this.#retentionMs) },
+          { name: "retention.ms", value: "-1" },
+          { name: "retention.bytes", value: "-1" },
+          { name: "message.timestamp.type", value: "LogAppendTime" },
           { name: "min.insync.replicas", value: String(Math.max(1, this.#replicas - 1)) },
         ],
       });
@@ -252,15 +253,15 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
     this.#pendingBytes += bytes;
     this.#peakPendingBytes = Math.max(this.#peakPendingBytes, this.#pendingBytes);
     this.#observe();
-    const lane = this.#lanes[kafkaProducerLane(fact.scope.sessionId, this.#lanes.length)]!;
+    const lane = this.#lanes[kafkaProducerLane(fact.scope.piSessionId, this.#lanes.length)]!;
     lane.writes = lane.writes
       .then(async () => {
         if (this.#streamFailure) throw this.#streamFailure;
         lane.pending.push({ factId: fact.factId, receipt });
         const writable = lane.stream.write({
           topic: this.#topic,
-          partition: kafkaProducerLane(fact.scope.sessionId, this.#partitions),
-          key: fact.scope.sessionId,
+          partition: kafkaProducerLane(fact.scope.piSessionId, this.#partitions),
+          key: fact.scope.piSessionId,
           value,
           headers: { "pi-cloud-fact-id": fact.factId },
         });

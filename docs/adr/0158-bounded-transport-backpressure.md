@@ -6,7 +6,7 @@ Accepted and implemented, 2026-09-08.
 Keep the existing authorities, two Pi semantic checkpoints, concrete Kafka Tool
 commands and ephemeral HTTP result return. This is process-local flow control,
 not another scheduler, tenant quota or Workspace lock. Broker routing and the
-PostgreSQL read-your-writes barrier are measured, not redesigned here.
+native append acknowledgement boundary follow ADR-0161.
 
 ## Producer
 

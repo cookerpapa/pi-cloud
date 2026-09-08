@@ -49,6 +49,73 @@ afterAll(async () => {
 });
 
 describe.sequential("Run queue authority", () => {
+  it("retries a rolled-back terminal commit without re-executing the Agent Loop", async () => {
+    const project = await store.createProject({
+      name: "terminal-retry",
+      source: { kind: "empty" },
+    });
+    await database
+      .updateTable("environment_versions")
+      .set({ state: "validated", validated_at: new Date() })
+      .where("id", "=", project.environment.environmentVersionId)
+      .execute();
+    const session = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "terminal-retry",
+      "elastic",
+    );
+    const accepted = await store.acceptTurn(session.sessionId, "terminal-retry", {
+      prompt: "one model execution",
+    });
+    let fail = true,
+      executions = 0;
+    const measured = database.withPlugin({
+      transformQuery({ node, queryId }) {
+        const query = database.getExecutor().compileQuery(node, queryId);
+        if (
+          fail &&
+          query.sql.startsWith('update "runs"') &&
+          query.parameters.includes("completed")
+        ) {
+          fail = false;
+          throw Object.assign(new Error("injected SQL rollback"), { code: "40P01" });
+        }
+        return node;
+      },
+      async transformResult({ result }) {
+        return result;
+      },
+    });
+    const executor = new RunExecutor({
+      database: measured,
+      claimOwnerId: "retry-worker",
+      backend: {
+        async execute(_request, lifecycle) {
+          executions++;
+          await lifecycle.started();
+          return { stopReason: "stop" };
+        },
+      },
+    });
+    expect(await executor.dispatchRun(accepted.runId)).toMatchObject({ status: "completed" });
+    expect(executions).toBe(1);
+    expect(fail).toBe(false);
+    expect(
+      await database
+        .selectFrom("run_attempts")
+        .select("id")
+        .where("run_id", "=", accepted.runId)
+        .execute(),
+    ).toHaveLength(1);
+    expect(
+      await database
+        .selectFrom("outbox")
+        .select("id")
+        .where(sql<boolean>`payload #>> '{scope,runId}' = ${accepted.runId}`)
+        .execute(),
+    ).toHaveLength(1);
+  });
   it("uses Run as the sole idempotent mailbox and serializes one Session", async () => {
     const project = await store.createProject({ name: "queue", source: { kind: "empty" } });
     await database
@@ -366,6 +433,17 @@ describe.sequential("Run queue authority", () => {
       topic: "lane-seal-test",
       partition: 0,
       offset: 0n,
+    });
+    const childSeal = await database
+      .selectFrom("outbox")
+      .select("payload")
+      .where(sql<boolean>`payload #>> '{scope,runId}' = ${child.runId}`)
+      .executeTakeFirstOrThrow();
+    await new ExecutionStreamProjector(database).project({
+      fact: parseKafkaAcceptedFact(JSON.stringify(childSeal.payload)),
+      topic: "lane-seal-test",
+      partition: 0,
+      offset: 1n,
     });
 
     const later = await store.acceptTurn(rootSession.sessionId, "lane-owner-later", {

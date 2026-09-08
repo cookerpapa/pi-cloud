@@ -42,7 +42,7 @@ function sessionSeed() {
     sessionId: randomUUID(),
     runId: randomUUID(),
     turnId: randomUUID(),
-    executionId: randomUUID(),
+    attemptId: randomUUID(),
   };
 }
 
@@ -55,9 +55,11 @@ function fact(seed, sequence, payloadBytes) {
     scope: {
       tenantId: seed.tenantId,
       sessionId: seed.sessionId,
+      piSessionId: seed.sessionId,
+      writerId: seed.attemptId,
       runId: seed.runId,
       turnId: seed.turnId,
-      executionId: seed.executionId,
+      attemptId: seed.attemptId,
       fencingToken: 1,
     },
     event: {

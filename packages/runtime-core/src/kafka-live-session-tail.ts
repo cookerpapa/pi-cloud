@@ -43,6 +43,8 @@ export class KafkaLiveSessionTail {
   readonly eventHub = new SessionEventHub();
   readonly #consumer: KafkaAcceptedFactConsumer;
   readonly #boundary: ExecutionStreamBoundary;
+  readonly #database: Kysely<Database>;
+  readonly #sessionPartitions = new Map<string, number>();
   readonly #sessions = new Map<string, SessionTailState>();
   readonly #pendingDisplay = new Map<string, PendingDisplay>();
   #pendingDisplayBytes = 0;
@@ -64,6 +66,7 @@ export class KafkaLiveSessionTail {
     retentionMs?: number;
   }) {
     this.#maximumIdleMs = options.maximumIdleMs ?? 30 * 60_000;
+    this.#database = options.database;
     this.#boundary = new ExecutionStreamBoundary(options.database);
     this.#consumer = new KafkaAcceptedFactConsumer({
       brokers: options.brokers,
@@ -77,25 +80,21 @@ export class KafkaLiveSessionTail {
         this.#sessions.clear();
         this.#pendingDisplay.clear();
         this.#pendingDisplayBytes = 0;
+        this.#sessionPartitions.clear();
         this.eventHub.resyncAll();
       },
       onPartitionReset: (partition) => {
         this.#boundary.resetPartition(partition);
         for (const [key] of this.#sessions) {
-          const sessionId = key.split("\0")[1]!;
-          if (kafkaProducerLane(sessionId, this.#partitions) === partition)
-            this.#sessions.delete(key);
+          if (this.#sessionPartitions.get(key) === partition) this.#sessions.delete(key);
         }
         for (const [key] of this.#pendingDisplay) {
-          if (kafkaProducerLane(key.split("\0")[1]!, this.#partitions) === partition)
-            this.#discardPending(key);
+          if (this.#sessionPartitions.get(key) === partition) this.#discardPending(key);
         }
+        for (const [key, p] of this.#sessionPartitions)
+          if (p === partition) this.#sessionPartitions.delete(key);
       },
-      replayOffsets: (bounds, partitionCount) =>
-        loadFactReplayOffsets(options.database, options.topic, bounds, {
-          partitionCount,
-          retentionMs: options.retentionMs ?? 7_200_000,
-        }),
+      replayOffsets: (bounds) => loadFactReplayOffsets(options.database, options.topic, bounds),
       handler: (record) => this.projectRecord(record),
     });
   }
@@ -111,8 +110,16 @@ export class KafkaLiveSessionTail {
     this.#consumer.checkHealth();
   }
 
-  async retainSession(_tenantId: string, sessionId: string): Promise<() => void> {
-    return this.#consumer.retainPartition(kafkaProducerLane(sessionId, this.#partitions));
+  async retainSession(tenantId: string, sessionId: string): Promise<() => void> {
+    const session = await this.#database
+      .selectFrom("sessions")
+      .select("pi_session_id")
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", sessionId)
+      .executeTakeFirstOrThrow();
+    return this.#consumer.retainPartition(
+      kafkaProducerLane(session.pi_session_id, this.#partitions),
+    );
   }
 
   async close(): Promise<void> {
@@ -123,6 +130,7 @@ export class KafkaLiveSessionTail {
     this.#sessions.clear();
     this.#pendingDisplay.clear();
     this.#pendingDisplayBytes = 0;
+    this.#sessionPartitions.clear();
   }
 
   #sweep(): void {
@@ -130,6 +138,9 @@ export class KafkaLiveSessionTail {
     for (const [key, state] of this.#sessions) {
       if (state.events.length === 0 && state.updatedAt < expiresBefore) this.#sessions.delete(key);
     }
+    for (const key of this.#sessionPartitions.keys())
+      if (!this.#sessions.has(key) && !this.#pendingDisplay.has(key))
+        this.#sessionPartitions.delete(key);
   }
 
   snapshot(tenantId: string, sessionId: string): LiveSessionTailSnapshot {
@@ -160,8 +171,14 @@ export class KafkaLiveSessionTail {
 
   async projectRecord(record: KafkaAcceptedFactRecord): Promise<void> {
     const { fact } = record;
+    this.#sessionPartitions.set(
+      stateKey(fact.scope.tenantId, fact.scope.sessionId),
+      record.partition,
+    );
     if (fact.kind === "execution_seal") {
       this.#boundary.close(fact.scope.attemptId, record.offset, record.partition);
+      if (fact.closesWriter)
+        this.#boundary.closeWriter(fact.scope.writerId, record.offset, record.partition);
       const key = stateKey(fact.scope.tenantId, fact.scope.sessionId);
       if ((this.#sessions.get(key)?.canonicalThroughSequence ?? 0) > fact.baseSequence) return;
       if (this.#pendingDisplay.get(key)?.seals.has(fact.factId)) return;

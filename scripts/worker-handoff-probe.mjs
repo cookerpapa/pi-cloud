@@ -88,10 +88,10 @@ if (process.argv[2] === "ingress") {
       checkHealth: () => bus.checkHealth(),
       append: async (fact) => {
         const entry =
-          fact.kind === "pi_session_mutation" && fact.operation.kind === "append_items"
-            ? fact.operation.items.find(
+          fact.kind === "pi_session_append"
+            ? fact.items.find(
                 (item) =>
-                  item.kind === "append_entry" &&
+                  item.kind === "entry" &&
                   item.entry.type === "message" &&
                   item.entry.message.role === "assistant",
               )?.entry
@@ -260,8 +260,7 @@ if (process.argv[2] === "ingress") {
         clientId: randomUUID(),
         groupId,
         onReset: () => projector.reset(),
-        replayOffsets: (bounds, partitionCount) =>
-          loadFactReplayOffsets(db, topic, bounds, { partitionCount, retentionMs: 3600000 }),
+        replayOffsets: (bounds) => loadFactReplayOffsets(db, topic, bounds),
         handler: async (record) => {
           await projector.project(record);
           if (record.fact.kind !== "agent_event")
@@ -673,9 +672,9 @@ if (process.argv[2] === "ingress") {
       .where("lane", "=", "main")
       .executeTakeFirstOrThrow();
     const late = await db
-      .selectFrom("pi_session_mutation_results")
-      .select(["state", "error_code"])
-      .where("mutation_id", "=", faultInfo.factId)
+      .selectFrom("pi_session_log")
+      .select("seq")
+      .where("append_id", "=", faultInfo.factId)
       .executeTakeFirst();
     report.latePublicationChangedBranch = before.leaf_id !== after.leaf_id;
     report.fault.lateMutation = late ?? { state: "discarded_after_seal" };
@@ -711,8 +710,7 @@ if (process.argv[2] === "ingress") {
       groupId,
       commitMessages: false,
       onReset: () => projector.reset(),
-      replayOffsets: (bounds, partitionCount) =>
-        loadFactReplayOffsets(db, topic, bounds, { partitionCount, retentionMs: 3600000 }),
+      replayOffsets: (bounds) => loadFactReplayOffsets(db, topic, bounds),
       handler: (record) => projector.project(record),
     });
     const ends = await consumer.captureEndOffsets();

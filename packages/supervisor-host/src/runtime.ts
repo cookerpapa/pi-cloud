@@ -6,7 +6,7 @@ import {
 } from "@pi-cloud/runtime-core/workspace-settlement-runtime";
 import type { FactChannelFactory } from "@pi-cloud/runtime-core/durable-event-store";
 import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/accepted-fact-channel";
-import { FactChannelPiSessionMutationProducer } from "@pi-cloud/runtime-core/fact-channel-pi-session-mutation-producer";
+import { FactChannelPiSessionAppendPublisher } from "@pi-cloud/runtime-core/fact-channel-pi-session-append-publisher";
 import type { ActiveFactChannelResolver } from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
@@ -16,7 +16,7 @@ import { createDatabase, type Database } from "@pi-cloud/database";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
 import {
   PostgresPiSessionEntryPayloadCache,
-  openPostgresDurableAgentSession,
+  PostgresNativeSessionHost,
 } from "@pi-cloud/pi-session-postgres";
 import type { SupervisorBootProvisionRequest } from "@pi-cloud/protocol";
 import { ReplicatedToolBrokerClient } from "@pi-cloud/tool-broker";
@@ -65,7 +65,7 @@ export type PiWorkerRuntimeOptions = {
     close?(): Promise<void>;
   };
   sessionMutationProducer?: Pick<
-    FactChannelPiSessionMutationProducer,
+    FactChannelPiSessionAppendPublisher,
     "scoped" | "checkHealth" | "close"
   >;
 };
@@ -160,10 +160,11 @@ export class PiWorkerRuntime {
   readonly #factChannels:
     (FactChannelFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
   readonly #configuredSessionMutationProducer:
-    Pick<FactChannelPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<FactChannelPiSessionAppendPublisher, "scoped" | "checkHealth" | "close"> | undefined;
   #sessionMutationProducer:
-    Pick<FactChannelPiSessionMutationProducer, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<FactChannelPiSessionAppendPublisher, "scoped" | "checkHealth" | "close"> | undefined;
   #ownsSessionMutationProducer = false;
+  #nativeSessions: PostgresNativeSessionHost | undefined;
   #activeFactChannels:
     (FactChannelFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
   #ownsFactChannels = false;
@@ -408,8 +409,7 @@ export class PiWorkerRuntime {
       await factChannels.checkHealth?.();
       const sessionMutationProducer =
         this.#configuredSessionMutationProducer ??
-        new FactChannelPiSessionMutationProducer({
-          database: this.#database,
+        new FactChannelPiSessionAppendPublisher({
           channels: factChannelResolver(factChannels),
           ...(this.#metrics ? { metrics: this.#metrics } : {}),
         });
@@ -424,8 +424,26 @@ export class PiWorkerRuntime {
       await runClaimReadiness.start();
       this.#runClaimReadiness = runClaimReadiness;
       const sessionEntryPayloadCache = new PostgresPiSessionEntryPayloadCache();
+      const nativeSessions = new PostgresNativeSessionHost({
+        database: this.#database,
+        entryPayloadCache: sessionEntryPayloadCache,
+        ...(this.#metrics
+          ? {
+              onViewRead: (sample) => {
+                this.#metrics!.sessionViewReads.inc({ source: sample.source });
+                this.#metrics!.sessionViewReadDuration.observe(
+                  { source: sample.source },
+                  sample.durationMs / 1000,
+                );
+                this.#metrics!.sessionViewStorageBytes.inc(sample.storageBytes);
+              },
+            }
+          : {}),
+      });
+      this.#nativeSessions = nativeSessions;
       const trustedTools = new PostgresTrustedToolRuntime({
         database: this.#database,
+        nativeLanes: nativeSessions,
         forkWorkspace: (request) => this.#toolBroker.forkWorkspace(request),
         scheduleOwnedSubagent: (runId) => {
           this.#runWorker?.scheduleOwnedSubagent?.(runId);
@@ -457,8 +475,7 @@ export class PiWorkerRuntime {
         trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
         settlementStore,
         openAgentSession: (command) =>
-          openPostgresDurableAgentSession({
-            database: this.#database,
+          nativeSessions.open({
             scope: {
               tenantId: command.payload.tenantId,
               sessionId: command.payload.sessionId,
@@ -468,24 +485,13 @@ export class PiWorkerRuntime {
               runId: command.payload.runId,
             },
             executionLease: command.payload.executionLease,
-            entryPayloadCache: sessionEntryPayloadCache,
-            ...(this.#metrics
-              ? {
-                  onViewRead: (sample) => {
-                    this.#metrics!.sessionViewReads.inc({ source: sample.source });
-                    this.#metrics!.sessionViewReadDuration.observe(
-                      { source: sample.source },
-                      sample.durationMs / 1000,
-                    );
-                    this.#metrics!.sessionViewStorageBytes.inc(sample.storageBytes);
-                  },
-                }
-              : {}),
-            mutationPublisher: sessionMutationProducer.scoped({
+            writerId: command.payload.piSession.writerId,
+            publisher: sessionMutationProducer.scoped({
               tenantId: command.payload.tenantId,
               sessionId: command.payload.sessionId,
               piSessionId: command.payload.piSession.id,
               piSessionLane: command.payload.piSession.lane,
+              writerId: command.payload.piSession.writerId,
               turnId: command.payload.turnId,
               runId: command.payload.runId,
               executionLease: command.payload.executionLease,
@@ -545,11 +551,6 @@ export class PiWorkerRuntime {
         database: this.#database,
         notificationConnectionString: this.#config.databaseNotificationUrl,
         identity: runWorkerIdentity,
-        onSessionProjection: (mutationId) => {
-          if (sessionMutationProducer instanceof FactChannelPiSessionMutationProducer) {
-            sessionMutationProducer.notifyProjected(mutationId);
-          }
-        },
         maximumConcurrentRuns: this.#config.maxConcurrentSessions,
         maximumConcurrentSubagents: this.#config.subagentMaximumConcurrent,
         canClaimRuns: () => this.#state === "ready" && client?.state === "connected",
@@ -620,6 +621,7 @@ export class PiWorkerRuntime {
     // owner replacement still uses stopCurrentBoot(), which revokes immediately.
     await this.#runWorker?.stop().catch(() => undefined);
     await this.#runSupervisor?.waitUntilAssignmentsSettled().catch(() => undefined);
+    this.#nativeSessions?.close();
     await this.#client?.stop().catch(() => undefined);
     await this.#managementServer?.close().catch(() => undefined);
     await this.#modelGateway?.close().catch(() => undefined);

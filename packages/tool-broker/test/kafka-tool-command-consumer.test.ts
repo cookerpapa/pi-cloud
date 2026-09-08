@@ -39,6 +39,8 @@ function command(): AcceptedToolCommand {
       attemptId: crypto.randomUUID(),
       leaseId: crypto.randomUUID(),
       fencingToken: 1,
+      piSessionId: crypto.randomUUID(),
+      writerId: crypto.randomUUID(),
     },
     request: {
       toolBrokerProtocolVersion: 1,
@@ -99,7 +101,7 @@ function fixture(maximumResultBytes?: number, maximumActiveCommands?: number) {
 
 function receipt(c: AcceptedToolCommand) {
   return {
-    kind: "pi_session_mutation",
+    kind: "pi_session_append",
     scope: c.scope,
     events: [{ type: "tool.completed", payload: { toolCallId: c.toolCallId } }],
     operation: {
@@ -118,6 +120,52 @@ function receipt(c: AcceptedToolCommand) {
 }
 
 describe("Kafka-driven Tool command execution", () => {
+  it("retires sibling responses and refuses later commands after a native writer seal", async () => {
+    const f = fixture(),
+      parent = command(),
+      rawChild = command();
+    const child = {
+      ...rawChild,
+      scope: {
+        ...rawChild.scope,
+        piSessionId: parent.scope.piSessionId,
+        writerId: parent.scope.writerId,
+      },
+    };
+    f.own(parent);
+    f.own(child);
+    await f.consumer.consume(record(parent));
+    await f.consumer.consume(record(child));
+    await f.consumer.waitResult(
+      lease(parent),
+      parent.request.activationId,
+      parent.request.operationId,
+    );
+    await f.consumer.waitResult(
+      lease(child),
+      child.request.activationId,
+      child.request.operationId,
+    );
+    expect(f.consumer.statistics().retainedResults).toBe(2);
+    await f.consumer.consume(
+      record({ kind: "execution_seal", scope: child.scope, closesWriter: true }),
+    );
+    expect(f.consumer.statistics().retainedResultBytes).toBe(0);
+    await expect(
+      f.consumer.waitResult(lease(parent), parent.request.activationId, parent.request.operationId),
+    ).rejects.toMatchObject({ code: "tool_command_sealed" });
+    const later = {
+      ...parent,
+      factId: crypto.randomUUID(),
+      toolCallId: crypto.randomUUID(),
+      request: { ...parent.request, operationId: crypto.randomUUID() },
+    };
+    await f.consumer.consume(record(later));
+    await expect(
+      f.consumer.waitResult(lease(later), later.request.activationId, later.request.operationId),
+    ).rejects.toMatchObject({ code: "tool_command_sealed" });
+    expect(f.execute).toHaveBeenCalledTimes(2);
+  });
   it("bounds execution and detaches cancelled readers without cancelling Tools", async () => {
     const f = fixture(undefined, 1),
       a = command(),
@@ -339,7 +387,9 @@ describe("Kafka-driven Tool command execution", () => {
     const bounds = (high: bigint) => [{ partition: 0, low: 0n, high }];
     expect((await options.replayOffsets(bounds(10n))).get(0)).toBe(10n);
     expect((await options.replayOffsets(bounds(20n))).get(0)).toBe(10n);
-    await f.consumer.consume(record({ kind: "ignored", scope: { attemptId: "a" } }, 12n));
+    await f.consumer.consume(
+      record({ kind: "ignored", scope: { attemptId: "a", writerId: "writer" } }, 12n),
+    );
     expect((await options.replayOffsets(bounds(20n))).get(0)).toBe(13n);
     fixture();
     expect((await transport.options.at(-1).replayOffsets(bounds(20n))).get(0)).toBe(20n);

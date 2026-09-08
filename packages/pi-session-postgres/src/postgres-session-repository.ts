@@ -9,8 +9,8 @@ import {
 import { uuidv7 } from "@earendil-works/pi-ai";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { ExecutionAuthority } from "./execution-authority.ts";
+import { assertIdleNativeSession } from "./idle-session-mutation.ts";
 import type { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
-import type { PiSessionMutationPublisher } from "./session-mutation.ts";
 import {
   PostgresPiSessionStorage,
   type PiCloudPiSessionMetadata,
@@ -22,7 +22,6 @@ export type PostgresPiSessionRepositoryOptions = {
   turnId?: string;
   authority?: ExecutionAuthority;
   entryPayloadCache?: PostgresPiSessionEntryPayloadCache;
-  mutationPublisher?: PiSessionMutationPublisher;
 };
 
 export type PostgresPiSessionCreateOptions = SessionCreateOptions;
@@ -48,6 +47,7 @@ export async function createPostgresPiSessionLaneInTransaction(
     at: string | null;
   },
 ): Promise<void> {
+  await assertIdleNativeSession(transaction, input.tenantId, input.sessionId);
   if (input.lane.length < 1 || input.lane.length > 128) {
     throw new SessionError("invalid_lane", "Pi lane name is invalid");
   }
@@ -111,7 +111,6 @@ export class PostgresPiSessionRepository implements SessionRepo<
   readonly #turnId: string | undefined;
   readonly #authority: ExecutionAuthority | undefined;
   readonly #entryPayloadCache: PostgresPiSessionEntryPayloadCache | undefined;
-  readonly #mutationPublisher: PiSessionMutationPublisher | undefined;
 
   constructor(options: PostgresPiSessionRepositoryOptions) {
     this.#database = options.database;
@@ -119,7 +118,6 @@ export class PostgresPiSessionRepository implements SessionRepo<
     this.#turnId = options.turnId;
     this.#authority = options.authority;
     this.#entryPayloadCache = options.entryPayloadCache;
-    this.#mutationPublisher = options.mutationPublisher;
   }
 
   async create(
@@ -137,9 +135,6 @@ export class PostgresPiSessionRepository implements SessionRepo<
       ...(this.#entryPayloadCache === undefined
         ? {}
         : { entryPayloadCache: this.#entryPayloadCache }),
-      ...(this.#mutationPublisher === undefined
-        ? {}
-        : { mutationPublisher: this.#mutationPublisher }),
     });
     return storage.asSession();
   }
@@ -231,9 +226,6 @@ export class PostgresPiSessionRepository implements SessionRepo<
       ...(this.#entryPayloadCache === undefined
         ? {}
         : { entryPayloadCache: this.#entryPayloadCache }),
-      ...(this.#mutationPublisher === undefined
-        ? {}
-        : { mutationPublisher: this.#mutationPublisher }),
     });
   }
 

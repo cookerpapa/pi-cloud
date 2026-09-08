@@ -1,4 +1,5 @@
 import type { Database } from "@pi-cloud/database";
+import { retryTransaction } from "@pi-cloud/database";
 import {
   transitionRun,
   transitionRunAttempt,
@@ -137,6 +138,29 @@ export class AssignmentReconciler {
     this.#sandboxId = options.sandboxId;
     this.#inventory = options.inventory;
     this.#clock = options.clock ?? (() => new Date());
+  }
+
+  /** An expired Run lease is sufficient authority for semantic retirement. A
+   * healthy boot must not retain a lost Run forever. Do not inspect/kill other
+   * assignments or quarantine the boot; late facts/commands meet its Kafka seal. */
+  async retireExpiredAssignments(
+    limit = DEFAULT_RECONCILIATION_LIMIT,
+  ): Promise<AssignmentReconciliationResult> {
+    const now = validDate(this.#clock),
+      result = emptyResult(0);
+    const targets = (await this.#loadDurableAssignments())
+      .filter((a) => a.validUntil <= now)
+      .slice(0, positiveInteger(limit, "limit"));
+    for (const target of targets) {
+      const finalized = await retryTransaction(this.#database, async (tx) => {
+        const outcome = await this.#finalizeLease(tx, target, validDate(this.#clock), true);
+        if (outcome !== "skipped") await this.#synchronizeCapacity(tx, validDate(this.#clock));
+        return outcome;
+      });
+      if (finalized === "requeued") result.requeuedAssignments++;
+      else if (finalized !== "skipped") result.settledAssignments++;
+    }
+    return result;
   }
 
   async reconcileExpiredAssignments(
@@ -314,6 +338,21 @@ export class AssignmentReconciler {
     requireExpired: boolean,
   ): Promise<Finalization> {
     const execution = parseExecutionLease(candidate.executionLease);
+    // Match lifecycle lock order before touching the lease. A stale candidate
+    // must not hold a new owner's lease while waiting for its Run rows.
+    const current = await transaction
+      .selectFrom("turns as turn")
+      .innerJoin("sessions as session", "session.id", "turn.session_id")
+      .innerJoin("runs as run", "run.turn_id", "turn.id")
+      .innerJoin("run_attempts as attempt", "attempt.id", "run.current_attempt_id")
+      .select("run.id")
+      .where("turn.id", "=", candidate.turnId)
+      .where("session.id", "=", candidate.sessionId)
+      .where("run.id", "=", candidate.runId)
+      .where("attempt.id", "=", execution.attemptId)
+      .forNoKeyUpdate(["turn", "session", "run", "attempt"])
+      .executeTakeFirst();
+    if (!current) return "skipped";
     const grant = await transaction
       .selectFrom("session_leases")
       .select(["lease_id", "attempt_id", "sandbox_id", "fencing_token", "valid_until"])

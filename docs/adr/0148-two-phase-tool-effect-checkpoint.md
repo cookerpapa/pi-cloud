@@ -31,8 +31,8 @@ first call could have started.
   checkpoint.
 - The bound Tool wrapper then submits a second atomic mutation containing one
   `tool_started` Record. The same Fact carries public `tool.started`.
-- The Tool implementation may run only after the second mutation has been
-  projected to PostgreSQL and acknowledged to the Worker.
+- The Tool implementation may run only after the second native append has been
+  acknowledged by Kafka. PG projection is asynchronous under ADR-0161.
 - Invalid Tool calls produce Pi's validation result without a `tool_started`
   Record.
 - Tool intent uses `replay: never`. If the Worker disappears after intent but
@@ -50,7 +50,7 @@ first call could have started.
 - Assistant message plus usage and Tool intent plus Tool-start visibility are
   each internally atomic.
 - Kafka redelivery keeps both checkpoints idempotent through their stable
-  mutation IDs and the PostgreSQL Session log mutation index.
+  append IDs and the PostgreSQL Session log append index.
 - A crash can distinguish the one Tool whose effect is uncertain from later
   Tool calls that never crossed the intent boundary.
 - This is semantic recovery, not process-memory restoration or exactly-once

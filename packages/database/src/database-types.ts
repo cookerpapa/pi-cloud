@@ -797,6 +797,12 @@ export interface RunAttemptTable {
   output_first_partition: GeneratedNullable<number>;
   output_first_offset: NullableInt8;
   output_projected_offset: NullableInt8;
+  native_writer_anchor_id: GeneratedNullable<string>;
+  native_writer_id: Generated<string>;
+  native_output_drained: Generated<boolean>;
+  native_writer_failed_at: NullableTimestamp;
+  native_writer_sealed_at: NullableTimestamp;
+  native_writer_seal_offset: NullableInt8;
   settled_at: NullableTimestamp;
   created_at: GeneratedTimestamp;
   updated_at: GeneratedTimestamp;
@@ -940,6 +946,7 @@ export interface SessionTerminalEventTable {
   schema_version: number;
   type: "turn.completed" | "turn.failed" | "turn.cancelled";
   payload: JsonObject;
+  interrupted_prefix: GeneratedNullable<string>;
   occurred_at: Timestamp;
   persisted_at: GeneratedTimestamp;
 }
@@ -1100,6 +1107,7 @@ export interface PiSessionTable {
   parent_session_id: string | null;
   next_seq: GeneratedInt8;
   name: string | null;
+  active_writer_id: GeneratedNullable<string>;
 }
 
 export interface PiSessionLaneTable {
@@ -1169,22 +1177,7 @@ export interface PiSessionLogTable {
   seq: Int8;
   kind: string;
   payload: JsonObject;
-  mutation_id: string | null;
-  mutation_result: JsonValue | null;
-}
-
-export interface PiSessionMutationResultTable {
-  mutation_id: string;
-  tenant_id: string;
-  session_id: string;
-  run_id: string;
-  attempt_id: string;
-  state: "completed" | "failed";
-  result: JsonValue | null;
-  error_code: string | null;
-  error_message: string | null;
-  created_at: GeneratedTimestamp;
-  expires_at: Timestamp;
+  append_id: string | null;
 }
 
 export interface RuntimeObjectTable {
@@ -1264,6 +1257,5 @@ export interface Database {
   pi_session_records: PiSessionRecordTable;
   pi_session_labels: PiSessionLabelTable;
   pi_session_log: PiSessionLogTable;
-  pi_session_mutation_results: PiSessionMutationResultTable;
   runtime_objects: RuntimeObjectTable;
 }

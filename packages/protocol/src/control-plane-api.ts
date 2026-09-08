@@ -19,6 +19,8 @@ import {
   ProjectEnvironmentResourceSchema,
 } from "./environment.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
+// Pi's native Entry identity is opaque; product Session/Run IDs remain UUIDs.
+const PiEntryIdSchema = Type.String({ minLength: 1, maxLength: 512 });
 
 export const TurnThinkingLevelSchema = Type.Union([
   Type.Literal("off"),
@@ -774,7 +776,7 @@ export const ConversationTurnResourceSchema = Type.Object(
     transcript: Type.Optional(ConversationTurnTranscriptResourceSchema),
     acceptedAt: UtcTimestampSchema,
     originSessionId: Type.Optional(UuidSchema),
-    forkEntryId: Type.Optional(UuidSchema),
+    forkEntryId: Type.Optional(PiEntryIdSchema),
   },
   { additionalProperties: false },
 );
@@ -814,8 +816,8 @@ export const ConversationTreeViewSchema = Type.Union([Type.Literal("focus"), Typ
 
 export const ConversationTreeEntryResourceSchema = Type.Object(
   {
-    entryId: UuidSchema,
-    parentEntryId: Type.Union([UuidSchema, Type.Null()]),
+    entryId: PiEntryIdSchema,
+    parentEntryId: Type.Union([PiEntryIdSchema, Type.Null()]),
     turnId: UuidSchema,
     role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
     text: Type.String({ maxLength: 100_000 }),
@@ -832,7 +834,7 @@ export const ConversationTreeBranchResourceSchema = Type.Object(
     title: Type.String({ minLength: 1, maxLength: 256 }),
     parentSessionId: Type.Union([UuidSchema, Type.Null()]),
     forkedFromTurnId: Type.Union([UuidSchema, Type.Null()]),
-    forkedFromEntryId: Type.Union([UuidSchema, Type.Null()]),
+    forkedFromEntryId: Type.Union([PiEntryIdSchema, Type.Null()]),
     current: Type.Boolean(),
     contextMode: Type.Optional(DelegatedSessionContextModeSchema),
     workspaceMode: Type.Optional(DelegatedSessionWorkspaceModeSchema),
@@ -856,7 +858,7 @@ export const ConversationTreeResourceSchema = Type.Object(
 export const CreateConversationForkRequestSchema = Type.Object(
   {
     turnId: UuidSchema,
-    entryId: UuidSchema,
+    entryId: PiEntryIdSchema,
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
   },
   { additionalProperties: false },
@@ -867,7 +869,7 @@ export const ConversationForkResourceSchema = Type.Object(
     session: SessionResourceSchema,
     parentSessionId: UuidSchema,
     forkedFromTurnId: UuidSchema,
-    forkedFromEntryId: UuidSchema,
+    forkedFromEntryId: PiEntryIdSchema,
     replayed: Type.Boolean(),
   },
   { additionalProperties: false },
@@ -876,7 +878,7 @@ export const ConversationForkResourceSchema = Type.Object(
 export const CreateConversationPruneRequestSchema = Type.Object(
   {
     turnId: UuidSchema,
-    entryId: UuidSchema,
+    entryId: PiEntryIdSchema,
   },
   { additionalProperties: false },
 );
@@ -885,7 +887,7 @@ export const ConversationPruneResourceSchema = Type.Object(
   {
     sessionId: UuidSchema,
     anchorTurnId: UuidSchema,
-    anchorEntryId: UuidSchema,
+    anchorEntryId: PiEntryIdSchema,
     prunedTurnCount: NonNegativeSafeIntegerSchema,
     archivedSessionCount: NonNegativeSafeIntegerSchema,
     replayed: Type.Boolean(),

@@ -40,6 +40,7 @@ export interface TrustedToolRuntime {
 
 export type PostgresTrustedToolRuntimeOptions = Readonly<{
   database: Kysely<Database>;
+  nativeLanes: import("./postgres-subagent-job-provider.ts").NativeSubagentLanes;
   forkWorkspace?: (
     request: ToolBrokerWorkspaceForkRequest,
   ) => Promise<ToolBrokerWorkspaceForkResponse>;
@@ -91,6 +92,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
     this.#database = options.database;
     this.#jobs = new PostgresSubagentJobProvider({
       database: options.database,
+      nativeLanes: options.nativeLanes,
       ...(options.forkWorkspace === undefined ? {} : { forkWorkspace: options.forkWorkspace }),
       ...(options.treePolicy === undefined ? {} : { treePolicy: options.treePolicy }),
     });

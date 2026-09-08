@@ -25,10 +25,10 @@ import type {
   AcceptedFactProgressStore,
   ActiveFactChannelResolver,
   CandidateFact,
-  CandidatePiSessionMutationFact,
-  PiSessionMutationAcceptedFrame,
+  CandidatePiSessionAppendFact,
+  PiSessionAppendAcceptedFrame,
   AcceptedFactWriter,
-  PiSessionMutationPublishFrame,
+  PiSessionAppendPublishFrame,
 } from "./accepted-fact.ts";
 import { AcceptedFactCapacityError } from "./accepted-fact.ts";
 
@@ -56,7 +56,7 @@ export type AcceptedFactChannelSession = Readonly<{
   leaseDurationMs: number;
   ingest(value: unknown): Promise<EventAckMessage>;
   mutate(
-    mutation: CandidatePiSessionMutationFact,
+    mutation: CandidatePiSessionAppendFact,
   ): Promise<Readonly<{ mutationId: string; accepted: true }>>;
   publishToolCommand(
     command: CandidateToolCommand,
@@ -169,9 +169,9 @@ class ServerFactChannel implements AcceptedFactChannelSession {
   }
 
   async mutate(
-    mutation: CandidatePiSessionMutationFact,
+    mutation: CandidatePiSessionAppendFact,
   ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
-    await this.#append({ kind: "pi_session_mutation", mutation });
+    await this.#append({ kind: "pi_session_append", mutation });
     return { mutationId: mutation.mutationId, accepted: true };
   }
 
@@ -242,7 +242,7 @@ class ServerFactChannel implements AcceptedFactChannelSession {
       const events =
         candidate.kind === "agent_event"
           ? [candidate.publication.payload.event]
-          : candidate.kind === "pi_session_mutation"
+          : candidate.kind === "pi_session_append"
             ? candidate.mutation.events
             : [];
       for (const event of events)
@@ -621,7 +621,7 @@ type PendingRemoteExchange = {
     | "fact.channel.ready"
     | "event.ack"
     | "fact.channel.closed"
-    | "fact.pi_session_mutation.accepted"
+    | "fact.pi_session_append.accepted"
     | "fact.tool_command.accepted";
   settle: (result: { message: RemoteFactChannelResponse } | { error: Error }) => void;
   timer: NodeJS.Timeout;
@@ -629,7 +629,7 @@ type PendingRemoteExchange = {
 
 type RemoteFactChannelResponse =
   | ReturnType<typeof parseControlToSupervisorMessage>
-  | PiSessionMutationAcceptedFrame
+  | PiSessionAppendAcceptedFrame
   | ToolCommandAcceptedFrame;
 
 function remoteFactResponse(value: unknown): RemoteFactChannelResponse | FactStreamFailureFrame {
@@ -657,9 +657,9 @@ function remoteFactResponse(value: unknown): RemoteFactChannelResponse | FactStr
   if (
     typeof value === "object" &&
     value !== null &&
-    (value as { type?: unknown }).type === "fact.pi_session_mutation.accepted"
+    (value as { type?: unknown }).type === "fact.pi_session_append.accepted"
   ) {
-    return value as PiSessionMutationAcceptedFrame;
+    return value as PiSessionAppendAcceptedFrame;
   }
   return parseControlToSupervisorMessage(value);
 }
@@ -907,7 +907,7 @@ class RemoteFactChannel implements FactChannel {
   }
 
   mutate(
-    mutation: CandidatePiSessionMutationFact,
+    mutation: CandidatePiSessionAppendFact,
   ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
     return this.#serialize(() => this.#mutate(mutation));
   }
@@ -962,14 +962,14 @@ class RemoteFactChannel implements FactChannel {
   }
 
   async #mutate(
-    mutation: CandidatePiSessionMutationFact,
+    mutation: CandidatePiSessionAppendFact,
   ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
     this.#assertOpen();
-    const frame: PiSessionMutationPublishFrame = {
+    const frame: PiSessionAppendPublishFrame = {
       protocolVersion: 1,
       messageId: globalThis.crypto.randomUUID(),
       sentAt: new Date().toISOString(),
-      type: "fact.pi_session_mutation.publish",
+      type: "fact.pi_session_append.publish",
       payload: mutation,
     };
     const deadline = Date.now() + 120_000;
@@ -981,7 +981,7 @@ class RemoteFactChannel implements FactChannel {
       const exchanged = await this.#transport.exchange(
         this.#streamId,
         frame,
-        "fact.pi_session_mutation.accepted",
+        "fact.pi_session_append.accepted",
         deadline,
       );
       if ("error" in exchanged) {
@@ -994,7 +994,7 @@ class RemoteFactChannel implements FactChannel {
       }
       const response = exchanged.message;
       if (
-        response.type === "fact.pi_session_mutation.accepted" &&
+        response.type === "fact.pi_session_append.accepted" &&
         response.payload.acknowledgedMessageId === frame.messageId &&
         response.payload.mutationId === mutation.mutationId &&
         response.payload.accepted

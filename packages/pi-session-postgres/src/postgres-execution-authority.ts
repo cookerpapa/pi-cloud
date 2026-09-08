@@ -22,7 +22,8 @@ function positiveInteger(value: number, name: string): number {
   return value;
 }
 
-/** Opaque Run authority checked at each durable Pi Session effect boundary. */
+/** Cloud liveness watch. Step checks use only the observed lease deadline;
+ * Kafka Gate and Tool Broker remain the actual effect admission boundaries. */
 export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
   readonly #database: Kysely<Database>;
   readonly #tenantId: string;
@@ -35,6 +36,7 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
   readonly #abort = new AbortController();
   #watch: Promise<void> | undefined;
   #closed = false;
+  #validUntil: Date | undefined;
 
   constructor(options: PostgresRunExecutionAuthorityOptions) {
     this.#database = options.database;
@@ -60,18 +62,30 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
     if (this.#closed || this.#abort.signal.aborted) {
       throw new SessionError("storage", "Pi Session execution authority is no longer active");
     }
-    const authority = database ?? this.#database;
+    if (database || this.#validUntil === undefined) return this.#verify(database ?? this.#database);
+    if (this.#validUntil <= this.#clock()) {
+      const error = new SessionError("storage", "Observed execution lease expired");
+      this.#abort.abort(error);
+      throw error;
+    }
+  }
+
+  async #verify(authority: Kysely<Database>) {
     const row = await authority
       .selectFrom("session_leases")
-      .select("lease_id")
-      .where("lease_id", "=", this.#executionLease.leaseId)
-      .where("attempt_id", "=", this.#executionLease.attemptId)
-      .where("fencing_token", "=", String(this.#executionLease.fencingToken))
-      .where("tenant_id", "=", this.#tenantId)
-      .where("session_id", "=", this.#sessionId)
-      .where("run_id", "=", this.#runId)
-      .where("turn_id", "=", this.#turnId)
+      .innerJoin("run_attempts as attempt", "attempt.id", "session_leases.attempt_id")
+      .innerJoin("run_attempts as writer", "writer.id", "attempt.native_writer_id")
+      .select("session_leases.valid_until")
+      .where("session_leases.lease_id", "=", this.#executionLease.leaseId)
+      .where("session_leases.attempt_id", "=", this.#executionLease.attemptId)
+      .where("session_leases.fencing_token", "=", String(this.#executionLease.fencingToken))
+      .where("session_leases.tenant_id", "=", this.#tenantId)
+      .where("session_leases.session_id", "=", this.#sessionId)
+      .where("session_leases.run_id", "=", this.#runId)
+      .where("session_leases.turn_id", "=", this.#turnId)
       .where("valid_until", ">", this.#clock())
+      .where("writer.native_writer_failed_at", "is", null)
+      .where("writer.native_writer_sealed_at", "is", null)
       .executeTakeFirst();
     if (row === undefined) {
       const error = new SessionError(
@@ -81,6 +95,7 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
       this.#abort.abort(error);
       throw error;
     }
+    this.#validUntil = row.valid_until;
   }
 
   async close(): Promise<void> {
@@ -107,8 +122,9 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
       });
       if (this.#closed || this.#abort.signal.aborted) return;
       try {
-        await this.assertCurrent();
-      } catch {
+        await this.#verify(this.#database);
+      } catch (error) {
+        this.#abort.abort(error);
         return;
       }
     }

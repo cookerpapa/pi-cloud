@@ -64,7 +64,7 @@ PostgreSQL execution admission. First, one AcceptedFact atomically carries the c
 Assistant Entry, its usage Record and `model.sampling.completed`. Pi then
 validates the Tool name and arguments. Second, one AcceptedFact carries the
 specific `tool_started` intent and public `tool.started`. Only after its
-PostgreSQL projection result returns does the bound Tool publish its concrete
+Kafka acknowledgement returns does the bound Tool publish its concrete
 operation command for Broker consumption. A
 rejected Tool call never writes execution intent. This distinguishes a Tool
 that may have started from later calls that were merely present in the model
@@ -94,7 +94,7 @@ public event through that same FactChannel. The unified PostgreSQL Gate
 validates current writer authority once and removes the lease before the
 AcceptedFactBus performs Kafka append. The PostgreSQL projector then applies
 the accepted fact idempotently without another authority query, and the Worker
-waits at a read-your-writes barrier before the next model Step. On successful settlement, the Worker
+continues from its acknowledged native view without a PG receipt wait. On successful settlement, the Worker
 prepares the lightweight Workspace Volume settlement. The terminal transaction
 validates the current Attempt/fence, records the last Workspace settlement
 if applicable, requests an execution seal in the Outbox and settles the business Run.
@@ -105,21 +105,25 @@ different Session settling the same Workspace first does not fail this Run. Kafk
 retention eventually removes hot fragments while canonical Pi
 messages remain in PostgreSQL.
 
-Session mutations and successful receipts commit in one transaction. Workers
-use commit-delayed notifications on their existing LISTEN connection to read
-the authoritative receipts, with one shared bounded fallback for missed hints.
-Each model Step reads its active branch once for both Compaction assessment
-and model context. The Run-start Record and user Entry share a checkpoint;
+The Worker assigns immutable native stamps and returns after Kafka ACK;
+PostgreSQL projects those exact records, with no receipt table or notification
+round trip. Each model Step reads its active branch from the current native view
+for Compaction assessment and model context. The Run-start Record and user Entry share a checkpoint;
 Compaction Entry and Usage likewise commit together.
 Sampling-start and its Step Record share one mutation; complete Tool results and
 their public completion likewise share one mutation. The model-output and validated
-Tool-intent pre-effect barriers remain distinct. Mutation receipts return only
-server-assigned stamps rather than echoing full message or Tool-result bodies.
+Tool-intent pre-effect barriers remain distinct. Public Run resources remain
+settling until the canonical seal is committed; business execution completion
+alone no longer means the history projection is ready.
 
 ## Cancellation and failure
 
 Cancellation revokes authority before trying to interrupt model/Tool work.
 Current authority is required for new admissions, Tools and terminal state.
+The existing maintenance loop also retires expired Run leases on healthy Workers.
+It conditionally removes only that lease and publishes its seal; it neither
+quarantines the boot nor kills unrelated Sessions. Already admitted shell effects
+remain UNKNOWN. SQL-only lifecycle retries cannot re-execute the Agent Loop.
 An execution seal in the same Kafka partition closes a retired Attempt. A paused
 ingress can still append its old record, but if it arrives after the seal both
 canonical and live consumers discard it. Earlier accepted data is projected

@@ -18,7 +18,12 @@ it("does not turn interleaved closed execution replay into a metadata query per 
     },
     async executeTakeFirst() {
       reads++;
-      return { claimed_at: new Date(), output_sealed_at: new Date(), output_seal_offset: "10" };
+      return {
+        native_writer_id: "writer",
+        claimed_at: new Date(),
+        output_sealed_at: new Date(),
+        output_seal_offset: "10",
+      };
     },
   };
   const db = { selectFrom: () => query } as unknown as Kysely<Database>;
@@ -37,6 +42,8 @@ it("does not turn interleaved closed execution replay into a metadata query per 
       runId: crypto.randomUUID(),
       attemptId: ids[0]!,
       fencingToken: 1,
+      piSessionId: sessionId,
+      writerId: "writer",
     },
     event: {
       schemaVersion: 1,

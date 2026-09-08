@@ -97,6 +97,20 @@ try {
       `Probe produced no report: ${result.stdout.slice(-4000)} ${result.stderr.slice(-1000)}`,
     );
   const report = JSON.parse(line);
+  const pgLogs = await exec("docker", ["logs", "--tail", "100", pg], {
+    timeout: 10000,
+    maxBuffer: 256 * 1024,
+  });
+  const databaseLog = pgLogs.stdout + pgLogs.stderr;
+  report.databaseDeadlocks = (databaseLog.match(/ERROR:.*deadlock detected/g) ?? []).length;
+  if (report.databaseDeadlocks)
+    report.databaseLockDiagnostics = databaseLog
+      .split("\n")
+      .filter((line) =>
+        /deadlock detected|waits for|blocked by|Process [0-9]+:|STATEMENT:/.test(line),
+      )
+      .map((line) => line.slice(0, 500))
+      .slice(-20);
   report.revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
   report.workingTreeDirty =
     (await exec("git", ["status", "--porcelain"], { cwd: root })).stdout.trim().length > 0;

@@ -72,10 +72,9 @@ Transport capacity signals are process-local and should be summed across replica
 - `pi_cloud_tool_result_readers` / `_sending_bytes`: outstanding HTTP deliveries;
   cache bytes remain a separate gauge. `pi_cloud_tool_transport_rejected_total`
   distinguishes command, reader and response-byte capacity.
-- `pi_cloud_session_mutation_wait_seconds{stage="kafka_publish"}` and
-  `{stage="projection_receipt"}` separate publication from the subsequent PG
-  receipt/notification wait. Both exclude model time; receipt wait is not just
-  PostgreSQL execution time. A receipt already available at PubAck may cost near zero.
+- `pi_cloud_session_mutation_wait_seconds{stage="kafka_publish"}` measures native
+  append acknowledgement, excluding model time. There is no active
+  `projection_receipt` stage; PG projection lag is a cloud-consumer concern.
 - `pi_cloud_session_view_reads_total{source="storage"|"memory"}` and
   `pi_cloud_session_view_read_seconds` distinguish cold branch loads from
   committed in-memory snapshots. `pi_cloud_session_view_storage_bytes_total`

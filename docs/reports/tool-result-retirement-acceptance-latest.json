@@ -1,6 +1,6 @@
 {
   "format": "pi-cloud.kafka-tool-command-acceptance.v2",
-  "checkedAt": "2026-09-08T06:14:02.352Z",
+  "checkedAt": "2026-09-08T16:38:40.983Z",
   "topology": "two real Kafka consumers + production result HTTP servers; R=3 four-partition private topic; 3 CPU/2 GiB runner",
   "scope": "accepted command -> Kafka -> Broker dispatch -> counting executor -> HTTP result -> native Kafka receipt; command latency ends at HTTP result, aggregate throughput includes receipt publication; no Gate SQL, model or Cube time",
   "resultRetirement": {
@@ -14,37 +14,37 @@
     {
       "sessions": 1,
       "commands": 3,
-      "commandsPerSecond": 19.3,
+      "commandsPerSecond": 20.7,
       "latencyMs": {
-        "p50": 12.32,
-        "p95": 111.49
+        "p50": 11.28,
+        "p95": 104.36
       }
     },
     {
       "sessions": 16,
       "commands": 48,
-      "commandsPerSecond": 135,
+      "commandsPerSecond": 65.5,
       "latencyMs": {
-        "p50": 18.87,
-        "p95": 289.96
+        "p50": 16.04,
+        "p95": 691.97
       }
     },
     {
       "sessions": 128,
       "commands": 384,
-      "commandsPerSecond": 540.6,
+      "commandsPerSecond": 571.4,
       "latencyMs": {
-        "p50": 33.35,
-        "p95": 575.11
+        "p50": 37.25,
+        "p95": 567.61
       }
     },
     {
       "sessions": 1024,
       "commands": 3072,
-      "commandsPerSecond": 1021.1,
+      "commandsPerSecond": 931.4,
       "latencyMs": {
-        "p50": 25.18,
-        "p95": 2459.77
+        "p50": 29.44,
+        "p95": 2780.53
       }
     }
   ],
@@ -66,7 +66,7 @@
       "waitingReaders": 0,
       "retainedResults": 0,
       "retainedResultBytes": 0,
-      "peakRetainedResultBytes": 160454,
+      "peakRetainedResultBytes": 160768,
       "releasedResults": 2007
     },
     {
@@ -77,10 +77,10 @@
       "waitingReaders": 0,
       "retainedResults": 0,
       "retainedResultBytes": 0,
-      "peakRetainedResultBytes": 160768,
+      "peakRetainedResultBytes": 160140,
       "releasedResults": 1752
     }
   ],
-  "revision": "e8cd9a7390a2da2e008d3328d7f3507c74bc716d",
+  "revision": "c2f2cc580e11571134e21be392b3ab6e7b3f29e4",
   "workingTreeDirty": true
 }

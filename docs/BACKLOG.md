@@ -23,8 +23,8 @@ Volume architecture. Historical experiments remain in Git history.
       bounded successor buffering, duplicate delivery and restart recovery.
 - [x] ADR-0155: classify live records by the actual seal position, isolate paused
       partitions, restore from durable recovery floors and invalidate idle OPEN caches.
-- [x] Batch native append SQL without a timer; preserve concurrent Lane ID uniqueness
-      and rejected-operation outcomes beyond short receipt retention.
+- [x] Project prepared native append batches without a timer; preserve Lane ID
+      uniqueness and stable append deduplication without a receipt ledger.
 - [x] Decouple verified warm Tool execution from per-operation Cube inspection;
       retain private ingress identity and lifecycle checks.
       [ADR-0155 acceptance](reports/isolated-handoffs-acceptance.md).
@@ -37,7 +37,7 @@ Volume architecture. Historical experiments remain in Git history.
 - [x] ADR-0153.1–2: drain Fact publications before close; bounded transaction-free
       terminal Outbox publication, idempotent retries and consumer failure signals.
 - [x] ADR-0153.3: co-commit sampling start and Tool completion with native records.
-- [x] ADR-0153.4: compact idempotency receipts and bounded latest-state/branch reads.
+- [x] Bound latest-state/branch reads; ADR-0161 removes the old receipt mechanism.
 - [x] ADR-0153.5–6: optional canonical projection role and on-demand Tool dependencies.
 - [x] ADR-0153.7–8: direct Volume/full-VM browsing and one reviewed model catalog.
 - [x] Separate persistent machine, Tool and Preview failure boundaries
@@ -76,16 +76,13 @@ Volume architecture. Historical experiments remain in Git history.
 - [x] ADR-0160: isolate and test Kafka ACK-only native Session append, including
       stopped/restarted projection, lost ACKs, multiple Lanes and real Cube coding.
       This experiment is not the deployed backend; [evidence](reports/kafka-native-session-append-experiment.md).
-- [ ] Before Kafka-native production cutover, unify active append, Child Lane
+- [x] For Kafka-native production cutover, unify active append, Child Lane
       creation and seal-time repair ordering; provide bounded seed/recovery,
       align physical-Session Kafka keys and protect retention against projection lag.
-- [x] ADR-0159: materialize the committed active Lane in Run memory, retaining PG
-      write barriers and cold restoration. Cover native Compaction, branch
-      isolation, retry/interruption, rejected commits and clone isolation.
-      [Ablation and paid coding acceptance](reports/committed-lane-view-acceptance.md).
-- [ ] Remove PG projection waits only after an explicit replacement contract for
-      canonical acceptance, assigned metadata and before-effect Tool admission;
-      a context cache alone does not replace these guarantees.
+- [x] Replace the old PG-receipt read cache with the acknowledged native Session
+      writer. Preserve Compaction, interruption, branch isolation and cold restore.
+- [x] Remove per-Step PG waits; preserve Kafka intent before Tool effects, exact
+      native projection and seal-gated recovery (ADR-0161).
 - [ ] Remove Broker whole-log read amplification only after a separately reviewed
       binding/partition ownership design; no unsafe consumer-group-only switch.
 

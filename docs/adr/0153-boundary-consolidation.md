@@ -21,9 +21,9 @@ review as independently tested slices; do not remove product features.
    its reviewed public completion. Keep complete model output and validated
    Tool intent as two distinct pre-effect barriers. Reduce redundant queries
    only where a stronger existing atomic boundary performs the same check.
-4. Keep native SessionStorage conformance and the self-contained log, while
-   replacing duplicate mutation-result bodies with immutable references and
-   making hot branch/latest-state reads bounded.
+4. Keep native SessionStorage conformance and the self-contained log. ADR-0161
+   replaces the former receipts with exact prepared native append projection
+   and bounded acknowledged branch views.
 5. Separate ingest, live-tail and canonical-projection composition roles before
    splitting deployment processes. Expose stalled consumers; never skip an
    accepted semantic Fact merely to report healthy progress.

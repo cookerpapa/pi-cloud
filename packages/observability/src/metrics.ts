@@ -82,7 +82,7 @@ export class PiCloudMetrics {
     });
     this.sessionMutationWait = new Histogram({
       name: "pi_cloud_session_mutation_wait_seconds",
-      help: "Kafka publication and subsequent PG receipt wait, excluding model time",
+      help: "Native Session Kafka append acknowledgement wait, excluding model time",
       labelNames: ["stage"],
       buckets: DURATION_BUCKETS,
       registers: [this.registry],

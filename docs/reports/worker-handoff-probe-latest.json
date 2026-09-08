@@ -1,6 +1,6 @@
 {
   "format": "pi-cloud.worker-handoff-probe.v1",
-  "checkedAt": "2026-09-07T23:31:17.854Z",
+  "checkedAt": "2026-09-08T16:30:30.942Z",
   "normal": {
     "passed": true,
     "followupQueued": true,
@@ -31,8 +31,8 @@
       "textStillPersisted": true
     },
     "replacementModelSawSteer": false,
-    "sseEvents": 230,
-    "lateFactId": "05166b22-8030-40a8-9c0f-f89573ae68c2"
+    "sseEvents": 263,
+    "lateFactId": "77936782-c302-46a7-b1e2-692386d9f2cf"
   },
   "maintenance": [
     {
@@ -44,235 +44,249 @@
   ],
   "facts": [
     {
-      "factId": "acea08ea-0419-4794-bd17-9dc5b2f054ba",
-      "runId": "19a2fc67-8e35-4d16-a5e6-7ebd84ffad44",
-      "kind": "pi_session_mutation",
+      "factId": "d1345549-f1ca-4198-9644-befd7892c7a8",
+      "runId": "053d024f-b15f-49b6-a98d-f9366bfeb453",
+      "kind": "pi_session_append",
       "offset": "0",
       "partition": 1
     },
     {
-      "factId": "6ba76bbf-f100-4faa-b914-36fea5b8a12c",
-      "runId": "19a2fc67-8e35-4d16-a5e6-7ebd84ffad44",
-      "kind": "pi_session_mutation",
+      "factId": "848ad247-254d-440f-9a22-e3cd9ac77ca8",
+      "runId": "053d024f-b15f-49b6-a98d-f9366bfeb453",
+      "kind": "pi_session_append",
       "offset": "1",
       "partition": 1
     },
     {
-      "factId": "f07555d5-c067-4de3-8b13-3c15bb36b2a7",
-      "runId": "19a2fc67-8e35-4d16-a5e6-7ebd84ffad44",
-      "kind": "pi_session_mutation",
+      "factId": "54946af8-10b0-4dbf-8b69-6ebeab9e38a8",
+      "runId": "053d024f-b15f-49b6-a98d-f9366bfeb453",
+      "kind": "pi_session_append",
       "offset": "3",
       "partition": 1
     },
     {
-      "factId": "a48adcab-6d0d-4bd6-aa83-193e89008495",
-      "runId": "19a2fc67-8e35-4d16-a5e6-7ebd84ffad44",
-      "kind": "pi_session_mutation",
-      "offset": "148",
+      "factId": "d9fe2fb6-2260-4efa-ab44-bbec02a99881",
+      "runId": "053d024f-b15f-49b6-a98d-f9366bfeb453",
+      "kind": "pi_session_append",
+      "offset": "201",
       "partition": 1
     },
     {
-      "factId": "198e32b5-7f4f-450b-95a8-00d6eab51dfe",
-      "runId": "19a2fc67-8e35-4d16-a5e6-7ebd84ffad44",
-      "kind": "pi_session_mutation",
-      "offset": "149",
+      "factId": "1b1d50fc-7db2-4043-9f39-e0f710ef4d14",
+      "runId": "053d024f-b15f-49b6-a98d-f9366bfeb453",
+      "kind": "pi_session_append",
+      "offset": "202",
       "partition": 1
     },
     {
-      "factId": "3f91c491-d036-4946-9a44-19e2aa87093e",
-      "runId": "19a2fc67-8e35-4d16-a5e6-7ebd84ffad44",
-      "kind": "pi_session_mutation",
-      "offset": "150",
+      "factId": "7d3ccf50-c3ea-45e7-b94e-5e1ab089f8ae",
+      "runId": "053d024f-b15f-49b6-a98d-f9366bfeb453",
+      "kind": "pi_session_append",
+      "offset": "203",
       "partition": 1
     },
     {
-      "factId": "ce67446a-b798-475b-84f0-cd910e079648",
-      "runId": "19a2fc67-8e35-4d16-a5e6-7ebd84ffad44",
-      "kind": "pi_session_mutation",
-      "offset": "153",
+      "factId": "9d31fc52-48b2-4cbd-912e-f7d323ba0e2a",
+      "runId": "053d024f-b15f-49b6-a98d-f9366bfeb453",
+      "kind": "pi_session_append",
+      "offset": "206",
       "partition": 1
     },
     {
-      "factId": "992f2341-c6b4-42bf-a89d-5a70dd769051",
-      "runId": "19a2fc67-8e35-4d16-a5e6-7ebd84ffad44",
-      "kind": "pi_session_mutation",
-      "offset": "154",
+      "factId": "e716d7b7-a7ac-4047-9183-8bc51e7749d8",
+      "runId": "053d024f-b15f-49b6-a98d-f9366bfeb453",
+      "kind": "pi_session_append",
+      "offset": "207",
       "partition": 1
     },
     {
-      "factId": "12da1682-f75d-40e4-8032-9f589ed748f4",
-      "runId": "19a2fc67-8e35-4d16-a5e6-7ebd84ffad44",
+      "factId": "066d5b3c-e9f1-4bd5-af3b-fba43f09bdb1",
+      "runId": "053d024f-b15f-49b6-a98d-f9366bfeb453",
       "kind": "execution_seal",
-      "offset": "155",
+      "offset": "208",
       "partition": 1
     },
     {
-      "factId": "fca7399d-9452-8064-a9d7-5f25e2064c1c",
-      "runId": "19a2fc67-8e35-4d16-a5e6-7ebd84ffad44",
+      "factId": "bd4dfe47-a515-8bf5-99ba-ba4dc51e84e2",
+      "runId": "053d024f-b15f-49b6-a98d-f9366bfeb453",
       "kind": "execution_committed",
-      "offset": "156",
+      "offset": "209",
       "partition": 1
     },
     {
-      "factId": "6f342298-b278-4479-822f-68a255ee987e",
-      "runId": "2a779d97-e3b0-4353-b562-48ab5b2b615b",
-      "kind": "pi_session_mutation",
-      "offset": "157",
+      "factId": "6bffcbf8-e817-4e83-aa00-62b066b61864",
+      "runId": "c839ec93-64e1-4abb-8260-439a634c2057",
+      "kind": "pi_session_append",
+      "offset": "210",
       "partition": 1
     },
     {
-      "factId": "4059a69a-9b4a-4d68-9634-c68dd646f0d7",
-      "runId": "2a779d97-e3b0-4353-b562-48ab5b2b615b",
-      "kind": "pi_session_mutation",
-      "offset": "159",
+      "factId": "83bbbda5-301b-4dc2-aa22-9f3a5ee50325",
+      "runId": "c839ec93-64e1-4abb-8260-439a634c2057",
+      "kind": "pi_session_append",
+      "offset": "212",
       "partition": 1
     },
     {
-      "factId": "6670e4bc-7f8a-4a4f-b4f8-c1577634bc35",
-      "runId": "2a779d97-e3b0-4353-b562-48ab5b2b615b",
-      "kind": "pi_session_mutation",
-      "offset": "162",
+      "factId": "05985044-4795-4a2d-b4c3-4308a82b818b",
+      "runId": "c839ec93-64e1-4abb-8260-439a634c2057",
+      "kind": "pi_session_append",
+      "offset": "215",
       "partition": 1
     },
     {
-      "factId": "fa780cc1-5c70-4673-9ef0-08bd98413363",
-      "runId": "2a779d97-e3b0-4353-b562-48ab5b2b615b",
-      "kind": "pi_session_mutation",
-      "offset": "163",
+      "factId": "3227dd02-5914-4b98-a712-01a18bfde044",
+      "runId": "c839ec93-64e1-4abb-8260-439a634c2057",
+      "kind": "pi_session_append",
+      "offset": "216",
       "partition": 1
     },
     {
-      "factId": "be7f8079-7d76-4684-8653-cd89e34db783",
-      "runId": "2a779d97-e3b0-4353-b562-48ab5b2b615b",
+      "factId": "ec662480-8e55-45b1-a12b-3638f55194db",
+      "runId": "c839ec93-64e1-4abb-8260-439a634c2057",
       "kind": "execution_seal",
-      "offset": "164",
+      "offset": "217",
       "partition": 1
     },
     {
-      "factId": "e2713bc9-d867-8dd8-a0b4-de4f5969306d",
-      "runId": "2a779d97-e3b0-4353-b562-48ab5b2b615b",
+      "factId": "64eb8334-627c-89c0-9dd7-0697876a2dbb",
+      "runId": "c839ec93-64e1-4abb-8260-439a634c2057",
       "kind": "execution_committed",
-      "offset": "165",
+      "offset": "218",
       "partition": 1
     },
     {
-      "factId": "54f58bb0-3baf-4415-b752-ef26a1b1fa50",
-      "runId": "7288cb12-9683-4239-bf93-5f9bbdd953c4",
-      "kind": "pi_session_mutation",
-      "offset": "166",
+      "factId": "b9ba2f60-b9ab-4896-b6a9-58e55efa59f3",
+      "runId": "ad6c64f6-4b8e-4d39-bd20-c330eb33f130",
+      "kind": "pi_session_append",
+      "offset": "0",
+      "partition": 2
+    },
+    {
+      "factId": "1df866be-92bd-4145-999b-ca468fa64eac",
+      "runId": "ad6c64f6-4b8e-4d39-bd20-c330eb33f130",
+      "kind": "pi_session_append",
+      "offset": "1",
+      "partition": 2
+    },
+    {
+      "factId": "cfbc39c7-b084-44cf-8972-ba6d3b4d0a0d",
+      "runId": "ad6c64f6-4b8e-4d39-bd20-c330eb33f130",
+      "kind": "pi_session_append",
+      "offset": "3",
+      "partition": 2
+    },
+    {
+      "factId": "b9ba2f60-b9ab-4896-b6a9-58e55efa59f3",
+      "runId": "ad6c64f6-4b8e-4d39-bd20-c330eb33f130",
+      "kind": "pi_session_append",
+      "offset": "0",
+      "partition": 2
+    },
+    {
+      "factId": "1df866be-92bd-4145-999b-ca468fa64eac",
+      "runId": "ad6c64f6-4b8e-4d39-bd20-c330eb33f130",
+      "kind": "pi_session_append",
+      "offset": "1",
+      "partition": 2
+    },
+    {
+      "factId": "cfbc39c7-b084-44cf-8972-ba6d3b4d0a0d",
+      "runId": "ad6c64f6-4b8e-4d39-bd20-c330eb33f130",
+      "kind": "pi_session_append",
+      "offset": "3",
+      "partition": 2
+    },
+    {
+      "factId": "64eb8334-627c-89c0-9dd7-0697876a2dbb",
+      "runId": "c839ec93-64e1-4abb-8260-439a634c2057",
+      "kind": "execution_committed",
+      "offset": "218",
       "partition": 1
     },
     {
-      "factId": "41423b58-863f-4ba9-8114-2404282824d0",
-      "runId": "7288cb12-9683-4239-bf93-5f9bbdd953c4",
-      "kind": "pi_session_mutation",
-      "offset": "167",
-      "partition": 1
-    },
-    {
-      "factId": "2eae5a32-e2f9-4170-8b62-53e702f66af2",
-      "runId": "7288cb12-9683-4239-bf93-5f9bbdd953c4",
-      "kind": "pi_session_mutation",
-      "offset": "169",
-      "partition": 1
-    },
-    {
-      "factId": "54f58bb0-3baf-4415-b752-ef26a1b1fa50",
-      "runId": "7288cb12-9683-4239-bf93-5f9bbdd953c4",
-      "kind": "pi_session_mutation",
-      "offset": "166",
-      "partition": 1
-    },
-    {
-      "factId": "41423b58-863f-4ba9-8114-2404282824d0",
-      "runId": "7288cb12-9683-4239-bf93-5f9bbdd953c4",
-      "kind": "pi_session_mutation",
-      "offset": "167",
-      "partition": 1
-    },
-    {
-      "factId": "2eae5a32-e2f9-4170-8b62-53e702f66af2",
-      "runId": "7288cb12-9683-4239-bf93-5f9bbdd953c4",
-      "kind": "pi_session_mutation",
-      "offset": "169",
-      "partition": 1
-    },
-    {
-      "factId": "3cea00dd-04f2-43d0-98e8-64c5b4d1178b",
-      "runId": "7288cb12-9683-4239-bf93-5f9bbdd953c4",
+      "factId": "2d0611bd-32bc-42fa-ab79-cb05dd38dba4",
+      "runId": "ad6c64f6-4b8e-4d39-bd20-c330eb33f130",
       "kind": "execution_seal",
-      "offset": "391",
-      "partition": 1
+      "offset": "258",
+      "partition": 2
     },
     {
-      "factId": "b7ef1dba-784c-80c6-a877-ae0f57e3729e",
-      "runId": "7288cb12-9683-4239-bf93-5f9bbdd953c4",
+      "factId": "73714c6a-d826-8e76-8a10-7ca62f7315f7",
+      "runId": "ad6c64f6-4b8e-4d39-bd20-c330eb33f130",
       "kind": "execution_committed",
-      "offset": "392",
-      "partition": 1
+      "offset": "259",
+      "partition": 2
     },
     {
-      "factId": "f8b5c75b-97b3-4d76-a4b4-e1b90339f93e",
-      "runId": "492ada12-6b46-4025-a691-a3412c7a24ed",
-      "kind": "pi_session_mutation",
-      "offset": "393",
-      "partition": 1
+      "factId": "66d7c119-c46a-424c-8e8a-c0b680174a5f",
+      "runId": "d3135a45-b08b-4363-b7c3-e9edcce57135",
+      "kind": "pi_session_append",
+      "offset": "260",
+      "partition": 2
     },
     {
-      "factId": "454dc70b-409e-4deb-a75f-e5f928f02d27",
-      "runId": "492ada12-6b46-4025-a691-a3412c7a24ed",
-      "kind": "pi_session_mutation",
-      "offset": "394",
-      "partition": 1
+      "factId": "844e8930-467d-4b8a-bec1-6a155fe54f7a",
+      "runId": "d3135a45-b08b-4363-b7c3-e9edcce57135",
+      "kind": "pi_session_append",
+      "offset": "261",
+      "partition": 2
     },
     {
-      "factId": "cb343c5a-5d08-40f0-9fbe-fe71f772d33f",
-      "runId": "492ada12-6b46-4025-a691-a3412c7a24ed",
-      "kind": "pi_session_mutation",
-      "offset": "395",
-      "partition": 1
+      "factId": "013ee376-bfd9-42e6-a9aa-fad13296df2c",
+      "runId": "d3135a45-b08b-4363-b7c3-e9edcce57135",
+      "kind": "pi_session_append",
+      "offset": "262",
+      "partition": 2
     },
     {
-      "factId": "1c000c2f-1207-48fd-850d-63e1a8110f9c",
-      "runId": "492ada12-6b46-4025-a691-a3412c7a24ed",
-      "kind": "pi_session_mutation",
-      "offset": "397",
-      "partition": 1
+      "factId": "31270ef7-2615-4eda-b6c6-476b37a8c257",
+      "runId": "d3135a45-b08b-4363-b7c3-e9edcce57135",
+      "kind": "pi_session_append",
+      "offset": "263",
+      "partition": 2
     },
     {
-      "factId": "6cd13162-32e0-41f3-b25d-a8dee07f31a4",
-      "runId": "492ada12-6b46-4025-a691-a3412c7a24ed",
-      "kind": "pi_session_mutation",
-      "offset": "400",
-      "partition": 1
+      "factId": "3c9d6a7f-0de3-41dc-bd51-18d91cde7d9c",
+      "runId": "d3135a45-b08b-4363-b7c3-e9edcce57135",
+      "kind": "pi_session_append",
+      "offset": "265",
+      "partition": 2
     },
     {
-      "factId": "b2aa56d4-2be2-4ab2-927f-14686b2abd98",
-      "runId": "492ada12-6b46-4025-a691-a3412c7a24ed",
-      "kind": "pi_session_mutation",
-      "offset": "401",
-      "partition": 1
+      "factId": "f052f5e3-ca8f-4210-acf1-e0433171add0",
+      "runId": "d3135a45-b08b-4363-b7c3-e9edcce57135",
+      "kind": "pi_session_append",
+      "offset": "268",
+      "partition": 2
     },
     {
-      "factId": "e19e28aa-2b47-49c8-95af-aaeb1c1f0904",
-      "runId": "492ada12-6b46-4025-a691-a3412c7a24ed",
+      "factId": "a96ee278-539d-49c0-98cf-58553db82a04",
+      "runId": "d3135a45-b08b-4363-b7c3-e9edcce57135",
+      "kind": "pi_session_append",
+      "offset": "269",
+      "partition": 2
+    },
+    {
+      "factId": "c5fc03c5-b855-4ed8-b435-9ada341b9011",
+      "runId": "d3135a45-b08b-4363-b7c3-e9edcce57135",
       "kind": "execution_seal",
-      "offset": "402",
-      "partition": 1
+      "offset": "270",
+      "partition": 2
     },
     {
-      "factId": "05166b22-8030-40a8-9c0f-f89573ae68c2",
-      "runId": "7288cb12-9683-4239-bf93-5f9bbdd953c4",
-      "kind": "pi_session_mutation",
-      "offset": "403",
-      "partition": 1
-    },
-    {
-      "factId": "40574441-af13-89a9-b67f-43c9b91dbeb9",
-      "runId": "492ada12-6b46-4025-a691-a3412c7a24ed",
+      "factId": "a8dae694-cb54-8734-a89b-19292500ccd7",
+      "runId": "d3135a45-b08b-4363-b7c3-e9edcce57135",
       "kind": "execution_committed",
-      "offset": "404",
-      "partition": 1
+      "offset": "271",
+      "partition": 2
+    },
+    {
+      "factId": "77936782-c302-46a7-b1e2-692386d9f2cf",
+      "runId": "ad6c64f6-4b8e-4d39-bd20-c330eb33f130",
+      "kind": "pi_session_append",
+      "offset": "272",
+      "partition": 2
     }
   ],
   "usage": [
@@ -285,11 +299,11 @@
         "cacheWrite": 0
       },
       "input": 112,
-      "output": 672,
+      "output": 901,
       "cacheRead": 6784,
-      "reasoning": 60,
+      "reasoning": 32,
       "cacheWrite": 0,
-      "totalTokens": 7568
+      "totalTokens": 7797
     },
     {
       "cost": {
@@ -299,12 +313,12 @@
         "cacheRead": 0,
         "cacheWrite": 0
       },
-      "input": 804,
+      "input": 137,
       "output": 4,
-      "cacheRead": 6784,
+      "cacheRead": 7680,
       "reasoning": 0,
       "cacheWrite": 0,
-      "totalTokens": 7592
+      "totalTokens": 7821
     },
     {
       "cost": {
@@ -314,12 +328,12 @@
         "cacheRead": 0,
         "cacheWrite": 0
       },
-      "input": 802,
+      "input": 1031,
       "output": 5,
       "cacheRead": 6784,
       "reasoning": 0,
       "cacheWrite": 0,
-      "totalTokens": 7591
+      "totalTokens": 7820
     },
     {
       "cost": {
@@ -329,18 +343,19 @@
         "cacheRead": 0,
         "cacheWrite": 0
       },
-      "input": 1231,
+      "input": 1435,
       "output": 4,
       "cacheRead": 6784,
       "reasoning": 0,
       "cacheWrite": 0,
-      "totalTokens": 8019
+      "totalTokens": 8223
     }
   ],
   "latePublicationChangedBranch": false,
   "steerDeliveryWasNotConsumption": true,
   "scope": "real REST API, PiWorkerRuntime/Pi SDK, PostgreSQL queue/leases, maintenance/reconciler, Kafka R3 and SSE; SIGSTOP ingress plus SIGKILL Worker; no direct lifecycle/lease SQL writes; no Cube operations",
   "providerRequests": 5,
-  "revision": "3eb68459cf0b726e6e2597c10c773087fc36bd7d",
+  "databaseDeadlocks": 0,
+  "revision": "c2f2cc580e11571134e21be392b3ab6e7b3f29e4",
   "workingTreeDirty": true
 }
