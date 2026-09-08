@@ -76,6 +76,11 @@ Transport capacity signals are process-local and should be summed across replica
   `{stage="projection_receipt"}` separate publication from the subsequent PG
   receipt/notification wait. Both exclude model time; receipt wait is not just
   PostgreSQL execution time. A receipt already available at PubAck may cost near zero.
+- `pi_cloud_session_view_reads_total{source="storage"|"memory"}` and
+  `pi_cloud_session_view_read_seconds` distinguish cold branch loads from
+  committed in-memory snapshots. `pi_cloud_session_view_storage_bytes_total`
+  estimates materialized Entry JSON bytes, not PostgreSQL wire traffic. There
+  are no Session-ID labels; cached context is released at Run completion.
 
 The optional standalone projector exposes the same Producer gauges on its
 authenticated port 9470; include that target only when the role is deployed.

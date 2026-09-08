@@ -68,6 +68,53 @@ async function resultCacheMetrics() {
       .reduce((sum, line) => sum + Number(line.split(" ").at(-1)), 0),
   };
 }
+async function sessionViewMetrics() {
+  const samples = await Promise.all(
+    ["pi-cloud-production-supervisor-host-1", "pi-cloud-production-supervisor-host-1-1"].map(
+      async (container) => {
+        const { stdout } = await exec(
+          "docker",
+          [
+            "exec",
+            container,
+            "node",
+            "-e",
+            "const token=require('node:fs').readFileSync(process.env.PI_CLOUD_METRICS_TOKEN_FILE,'utf8').trim();fetch('http://127.0.0.1:9465/metrics',{headers:{authorization:'Bearer '+token}}).then(r=>{if(!r.ok)throw new Error('Metrics HTTP '+r.status);return r.text()}).then(t=>process.stdout.write(t))",
+          ],
+          { timeout: 10000, maxBuffer: 1024 * 1024 },
+        );
+        const metric = (name, label = "") =>
+          stdout
+            .split("\n")
+            .filter((line) => line.startsWith(name + "{") && line.includes(label))
+            .reduce((sum, line) => sum + Number(line.split(" ").at(-1)), 0);
+        return {
+          storageReads: metric("pi_cloud_session_view_reads_total", 'source="storage"'),
+          memoryReads: metric("pi_cloud_session_view_reads_total", 'source="memory"'),
+          storageBytes: metric("pi_cloud_session_view_storage_bytes_total"),
+          kafkaSeconds: metric(
+            "pi_cloud_session_mutation_wait_seconds_sum",
+            'stage="kafka_publish"',
+          ),
+          pgReceiptSeconds: metric(
+            "pi_cloud_session_mutation_wait_seconds_sum",
+            'stage="projection_receipt"',
+          ),
+          mutations: metric(
+            "pi_cloud_session_mutation_wait_seconds_count",
+            'stage="projection_receipt"',
+          ),
+        };
+      },
+    ),
+  );
+  return Object.fromEntries(
+    Object.keys(samples[0]).map((key) => [
+      key,
+      samples.reduce((sum, sample) => sum + sample[key], 0),
+    ]),
+  );
+}
 const events = [],
   report = { checkedAt: new Date().toISOString(), username, runs: [], accepted: false };
 const streamAbort = new AbortController();
@@ -121,6 +168,7 @@ try {
     await select();
     async function run(prompt, expectedTool, reload) {
       const cacheBefore = await resultCacheMetrics();
+      const viewBefore = await sessionViewMetrics();
       const start = Date.now(),
         before = events.length;
       const accepted = await api.acceptTurn(
@@ -131,7 +179,8 @@ try {
       );
       let seen,
         reloaded = false,
-        completed = false;
+        completed = false,
+        settledAfterMs;
       for (let i = 0; i < 1600; i++) {
         const preparing = await page.evaluate(
           `Array.from(document.querySelectorAll('.product-tool-preparing')).filter(e=>e.querySelector('code')?.textContent===${JSON.stringify(expectedTool)}).map(e=>({id:e.dataset.toolCallId,text:e.innerText,animation:getComputedStyle(e.querySelector('.product-tool-preparing-spinner')).animationName}))`,
@@ -151,6 +200,7 @@ try {
         const state = await api.getRun(accepted.runId);
         if (state.state === "completed") {
           completed = true;
+          settledAfterMs = Date.now() - start;
           break;
         }
         if (["failed", "cancelled", "timed_out", "superseded"].includes(state.state))
@@ -186,10 +236,17 @@ try {
         0,
         "HTTP response byte reservations remain after completion",
       );
+      const viewAfter = await sessionViewMetrics();
+      const sessionView = Object.fromEntries(
+        Object.keys(viewAfter).map((key) => [key, viewAfter[key] - viewBefore[key]]),
+      );
+      assert.equal(sessionView.storageReads, 1, "Active Run repeatedly downloaded its branch");
+      assert(sessionView.memoryReads > 0, "Coding did not exercise the committed Lane view");
       report.runs.push({
         runId: accepted.runId,
         tool: expectedTool,
-        elapsedMs: Date.now() - start,
+        elapsedMs: settledAfterMs,
+        sessionView,
         preparation: seen,
         restoredAfterRefresh: reloaded,
         resultCache: {
@@ -222,9 +279,18 @@ try {
   if (project)
     await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete-tool-ui-workspace"));
   report.resourcesReleased = true;
+  const evidence = {
+    checkedAt: report.checkedAt,
+    accepted: report.accepted,
+    resourcesReleased: report.resourcesReleased,
+    runs: report.runs.map(({ runId, preparation: { id, ...preparation }, ...run }) => ({
+      ...run,
+      preparation,
+    })),
+  };
   await writeFile(
     "docs/reports/tool-preparation-acceptance-latest.json",
-    JSON.stringify(report, null, 2) + "\n",
+    JSON.stringify(evidence, null, 2) + "\n",
   );
   console.log(JSON.stringify(report));
 }

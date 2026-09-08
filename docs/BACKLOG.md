@@ -73,6 +73,13 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Capacity
 
+- [x] ADR-0159: materialize the committed active Lane in Run memory, retaining PG
+      write barriers and cold restoration. Cover native Compaction, branch
+      isolation, retry/interruption, rejected commits and clone isolation.
+      [Ablation and paid coding acceptance](reports/committed-lane-view-acceptance.md).
+- [ ] Remove PG projection waits only after an explicit replacement contract for
+      canonical acceptance, assigned metadata and before-effect Tool admission;
+      a context cache alone does not replace these guarantees.
 - [ ] Remove Broker whole-log read amplification only after a separately reviewed
       binding/partition ownership design; no unsafe consumer-group-only switch.
 

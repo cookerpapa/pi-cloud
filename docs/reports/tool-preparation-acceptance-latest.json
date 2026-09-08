@@ -1,16 +1,18 @@
 {
-  "checkedAt": "2026-09-08T06:15:35.103Z",
-  "username": "tool.ui.mts9zqv3",
+  "checkedAt": "2026-09-08T11:07:43.536Z",
+  "accepted": true,
+  "resourcesReleased": true,
   "runs": [
     {
-      "runId": "0f543fef-605b-4b39-bb1c-0fabf984601e",
       "tool": "write",
-      "elapsedMs": 18962,
-      "preparation": {
-        "id": "call_00_wvcZwQlo4KYSxfc6Nslj0877|68149b37-9549-4025-a2ec-f2a87c98414d",
-        "text": "Generating file contents\nwrite\nWaiting 0s",
-        "animation": "product-tool-preparing-spin",
-        "visibleAfterMs": 1939
+      "elapsedMs": 17868,
+      "sessionView": {
+        "storageReads": 1,
+        "memoryReads": 2,
+        "storageBytes": 1207,
+        "kafkaSeconds": 0.11681630199999198,
+        "pgReceiptSeconds": 0.3282258590000129,
+        "mutations": 14
       },
       "restoredAfterRefresh": true,
       "resultCache": {
@@ -18,26 +20,32 @@
           "bytes": 0,
           "readers": 0,
           "sendingBytes": 0,
-          "nativeResults": 0
+          "nativeResults": 6
         },
         "after": {
           "bytes": 0,
           "readers": 0,
           "sendingBytes": 0,
-          "nativeResults": 2
+          "nativeResults": 8
         },
         "nativeAcknowledgedOperations": 2
+      },
+      "preparation": {
+        "text": "Generating file contents\nwrite\nWaiting 0s",
+        "animation": "product-tool-preparing-spin",
+        "visibleAfterMs": 2526
       }
     },
     {
-      "runId": "9eb1a353-ce4d-4e9c-b986-ecfb85ed7a4c",
       "tool": "edit",
-      "elapsedMs": 14837,
-      "preparation": {
-        "id": "call_00_0sT16gSeI7Wvjz8ow1qw8538|64185e3c-29ae-4ce2-81b6-3dbdb4e913f2",
-        "text": "Generating code changes\nedit\nWaiting 0s",
-        "animation": "product-tool-preparing-spin",
-        "visibleAfterMs": 3369
+      "elapsedMs": 11750,
+      "sessionView": {
+        "storageReads": 1,
+        "memoryReads": 3,
+        "storageBytes": 13481,
+        "kafkaSeconds": 0.11821542700001729,
+        "pgReceiptSeconds": 0.3989552179999446,
+        "mutations": 18
       },
       "restoredAfterRefresh": false,
       "resultCache": {
@@ -45,19 +53,21 @@
           "bytes": 0,
           "readers": 0,
           "sendingBytes": 0,
-          "nativeResults": 2
+          "nativeResults": 8
         },
         "after": {
           "bytes": 0,
           "readers": 0,
           "sendingBytes": 0,
-          "nativeResults": 6
+          "nativeResults": 12
         },
         "nativeAcknowledgedOperations": 4
+      },
+      "preparation": {
+        "text": "Generating code changes\nedit\nWaiting 0s",
+        "animation": "product-tool-preparing-spin",
+        "visibleAfterMs": 3264
       }
     }
-  ],
-  "accepted": true,
-  "sessionId": "2e363a48-e7cb-4ad4-a289-765272f63138",
-  "resourcesReleased": true
+  ]
 }

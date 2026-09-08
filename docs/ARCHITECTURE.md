@@ -823,9 +823,17 @@ server-assigned identity/sequence/timestamp/parent stamps; the Worker already ow
 the submitted body. Durable idempotency results refer to the self-contained log
 instead of storing another full copy. Newest-first limited branch queries stop
 after enough matches, while preserving filters, bounds and native Pi semantics.
-A model Step reads its
-active branch once for both Compaction assessment and model input. The first
-Step reuses its just-restored branch; a real compaction refreshes the result.
+A cold Run reads its active branch from PostgreSQL once. Its Run-scoped
+`CommittedLaneView` then observes successful mutation receipts and applies the
+server-assigned Entries to that Lane's in-memory path. Later Steps use private
+snapshots of this committed path for both Compaction assessment and model input.
+Native Compaction replaces the path with its summary/retained-tail Entry; another
+Lane's writes never enter it. Lane movement or an unexpected parent invalidates
+the view; a read racing a commit reloads before returning. Run completion drops
+the view, and a replacement Worker reads PostgreSQL. General SessionStorage
+queries, authority checks, durable Tool intent and PG projection receipts are
+unchanged. This is a bounded read materialization, not optimistic Session state
+or a claim that an active Step makes no PostgreSQL calls (ADR-0159).
 
 Each Gateway consumes only Kafka partitions currently needed by browser subscriptions.
 A first subscription locates the recovery floor and reconstructs that partition;
@@ -929,6 +937,7 @@ fetched best-effort from a separate terminal-projection HTTP endpoint.
 | user Git metadata and Code Host tokens | persistent environment bytes under `.git` and hidden `.git-credentials`, visible to Cube/Agent |
 | live process tree | one Cube KVM only |
 | active in-memory `messages[]` | Pi SDK for one active Run |
+| active committed Lane read view | disposable Worker memory; rebuilt from PG and updated by PG receipts |
 | development-environment ownership/lifecycle | PostgreSQL |
 | development-environment process/memory/rootfs state | one node-affine Cube KVM snapshot |
 | Agent definitions, immutable revisions and Session/Run routing | PostgreSQL |

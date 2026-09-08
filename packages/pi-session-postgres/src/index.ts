@@ -1,4 +1,5 @@
 export { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
+export { CommittedLaneView, type LaneViewRead } from "./committed-lane-view.ts";
 export { isIncompleteModelStreamError } from "./model-stream-error.ts";
 export { rebuildPostgresPiSessionProjections } from "./postgres-session-projection-rebuilder.ts";
 export {

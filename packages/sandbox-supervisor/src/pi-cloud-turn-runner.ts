@@ -15,6 +15,7 @@ import {
   PI_MODEL_RETRY_CUSTOM_TYPE,
   type CloudAgentExecutionAuthority,
   type CloudAgentRuntimeEvent,
+  type CommittedLaneView,
   type PiSessionMutationOperation,
   type PiSessionMutationPublisher,
 } from "@pi-cloud/pi-session-postgres";
@@ -62,6 +63,7 @@ export type PiCloudSessionHandle = Readonly<{
   session: Session;
   lane: string;
   authority: CloudAgentExecutionAuthority;
+  executionView?: Pick<CommittedLaneView, "read" | "reset" | "close">;
   mutationPublisher?: PiSessionMutationPublisher;
 }>;
 
@@ -480,6 +482,7 @@ export class PiCloudTurnRunner {
     ]);
     if (modelPrepared.status === "rejected") {
       if (sessionPrepared.status === "fulfilled") {
+        sessionPrepared.value.executionView?.close();
         await sessionPrepared.value.authority.close().catch(() => undefined);
       }
       throw modelPrepared.reason;
@@ -758,6 +761,7 @@ export class PiCloudTurnRunner {
         };
         const runtime = new CloudAgentRuntime({
           session: sessionHandle.session,
+          ...(sessionHandle.executionView ? { executionView: sessionHandle.executionView } : {}),
           lane: sessionHandle.lane,
           authority: sessionHandle.authority,
           model,
@@ -975,6 +979,7 @@ export class PiCloudTurnRunner {
           this.#steerWaiters.clear();
         }
       } finally {
+        sessionHandle.executionView?.close();
         await sessionHandle.authority.close();
         if (toolOutputDirectoryForCleanup !== undefined) {
           await rm(toolOutputDirectoryForCleanup, { recursive: true, force: true });

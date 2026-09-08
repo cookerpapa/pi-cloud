@@ -39,6 +39,8 @@
 
 ## Current release gate
 
+- [x] Reuse committed active Lane context in memory between Steps; retain PG
+      receipts and cold restore on the next Run or Worker replacement.
 - [x] Bound Producer/Broker transport under slow downstreams, align capacity
       configuration and measure native publication/PG receipt waits.
 

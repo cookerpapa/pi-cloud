@@ -61,7 +61,7 @@ PostgreSQL ready Runs
 Trusted Pi Worker pool (replaceable, bounded slots)
   ├─ one active owner per physical Pi Session
   ├─ parallel main/Subagent Lane Agent Loops + native Compaction
-  ├─ bounded Session context read from PostgreSQL
+  ├─ cold context from PostgreSQL; committed Run/Lane view in memory
   ├─ Worker-local capability Model Gateway
   │    └─ frozen Provider/model/reasoning/Fast/modalities/Hosted Tools
   │          ▼
@@ -108,6 +108,11 @@ boundaries: complete model output plus usage, then Pi-validated Tool intent.
 Each boundary is one Session mutation with its matching public event in the
 same Kafka AcceptedFact; the Tool runs only after the intent is projected to
 PostgreSQL.
+
+Within an active Run, subsequent Steps reuse an in-memory Lane view updated only
+after successful projection receipts. Compaction replaces the active branch;
+Run completion drops the view and a replacement Worker restores from PostgreSQL.
+This removes repeated context downloads, not durable write barriers.
 
 Concrete Tool operations additionally travel as accepted Kafka commands. Broker
 starts them from its consumer, never from a Worker execution POST. The Worker

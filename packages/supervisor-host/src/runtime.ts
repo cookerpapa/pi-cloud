@@ -469,6 +469,18 @@ export class PiWorkerRuntime {
             },
             executionLease: command.payload.executionLease,
             entryPayloadCache: sessionEntryPayloadCache,
+            ...(this.#metrics
+              ? {
+                  onViewRead: (sample) => {
+                    this.#metrics!.sessionViewReads.inc({ source: sample.source });
+                    this.#metrics!.sessionViewReadDuration.observe(
+                      { source: sample.source },
+                      sample.durationMs / 1000,
+                    );
+                    this.#metrics!.sessionViewStorageBytes.inc(sample.storageBytes);
+                  },
+                }
+              : {}),
             mutationPublisher: sessionMutationProducer.scoped({
               tenantId: command.payload.tenantId,
               sessionId: command.payload.sessionId,

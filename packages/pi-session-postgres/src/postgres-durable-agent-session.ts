@@ -5,6 +5,7 @@ import { PostgresRunExecutionAuthority } from "./postgres-execution-authority.ts
 import { PostgresPiSessionRepository } from "./postgres-session-repository.ts";
 import type { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
 import type { PiSessionMutationPublisher } from "./session-mutation.ts";
+import { CommittedLaneView, type LaneViewRead } from "./committed-lane-view.ts";
 
 export type CloudAgentExecutionScope = Readonly<{
   tenantId: string;
@@ -23,12 +24,14 @@ export type OpenPostgresDurableAgentSessionOptions = Readonly<{
   clock?: () => Date;
   entryPayloadCache?: PostgresPiSessionEntryPayloadCache;
   mutationPublisher?: PiSessionMutationPublisher;
+  onViewRead?: (sample: LaneViewRead) => void;
 }>;
 
 export type PostgresDurableAgentSession = Readonly<{
   session: Session;
   lane: string;
   authority: PostgresRunExecutionAuthority;
+  executionView?: CommittedLaneView;
   mutationPublisher?: PiSessionMutationPublisher;
 }>;
 
@@ -51,6 +54,21 @@ export async function openPostgresDurableAgentSession(
   });
   await authority.assertCurrent();
   authority.start();
+  let session: Session;
+  const executionView = options.mutationPublisher
+    ? new CommittedLaneView({
+        lane: options.scope.piSessionLane,
+        readBranch: async () =>
+          (
+            await session
+              .view(options.scope.piSessionLane)
+              .findEntriesOnBranch({ stopAtType: "compaction", order: "newestFirst" })
+          ).reverse(),
+        ...(options.onViewRead ? { onRead: options.onViewRead } : {}),
+      })
+    : undefined;
+  const mutationPublisher =
+    options.mutationPublisher && executionView?.publisher(options.mutationPublisher);
   try {
     // Run claim already waits for the previous execution's projected seal.
     // Another empty Kafka write here cannot fence a paused old publisher.
@@ -62,11 +80,9 @@ export async function openPostgresDurableAgentSession(
       ...(options.entryPayloadCache === undefined
         ? {}
         : { entryPayloadCache: options.entryPayloadCache }),
-      ...(options.mutationPublisher === undefined
-        ? {}
-        : { mutationPublisher: options.mutationPublisher }),
+      ...(mutationPublisher === undefined ? {} : { mutationPublisher }),
     });
-    const session = await repository.openById(options.scope.piSessionId);
+    session = await repository.openById(options.scope.piSessionId);
     const lane = (await session.getLanes()).find(
       (candidate) => candidate.lane === options.scope.piSessionLane,
     );
@@ -77,11 +93,11 @@ export async function openPostgresDurableAgentSession(
       session,
       lane: lane.lane,
       authority,
-      ...(options.mutationPublisher === undefined
-        ? {}
-        : { mutationPublisher: options.mutationPublisher }),
+      ...(executionView ? { executionView } : {}),
+      ...(mutationPublisher === undefined ? {} : { mutationPublisher }),
     };
   } catch (error: unknown) {
+    executionView?.close();
     await authority.close();
     throw error;
   }

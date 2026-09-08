@@ -22,6 +22,7 @@ import {
   type ThinkingLevel,
   type ToolExecutionMode,
 } from "@earendil-works/pi-agent-core";
+import type { CommittedLaneView } from "./committed-lane-view.ts";
 import type {
   Api,
   AssistantMessage,
@@ -73,6 +74,7 @@ export type CloudAgentRuntimeEvent =
 
 export type CloudAgentRuntimeOptions = Readonly<{
   session: Session;
+  executionView?: Pick<CommittedLaneView, "read" | "reset">;
   lane: string;
   authority: CloudAgentExecutionAuthority;
   model: Model<Api>;
@@ -298,6 +300,7 @@ export class CloudAgentRuntime {
     if (this.#closed) throw new Error("Cloud Agent Runtime is closed");
     if (this.#agent !== undefined) throw new Error("Cloud Agent Runtime is already active");
     if (text.trim().length === 0) throw new TypeError("Cloud Agent prompt must not be empty");
+    this.#options.executionView?.reset();
 
     const authority = this.#options.authority;
     const session = this.#options.session;
@@ -674,6 +677,7 @@ export class CloudAgentRuntime {
       throw error;
     } finally {
       removeAuthorityAbort?.();
+      this.#options.executionView?.reset();
       this.#agent = undefined;
       this.#closed = true;
     }
@@ -711,6 +715,7 @@ export class CloudAgentRuntime {
   }
 
   async #loadBranch(): Promise<Entry[]> {
+    if (this.#options.executionView) return this.#options.executionView.read();
     return (
       await this.#options.session
         .view(this.#options.lane)

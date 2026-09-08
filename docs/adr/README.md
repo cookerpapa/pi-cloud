@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0159](0159-committed-lane-execution-view.md) — active Lane read materialization
+   updated only after native PostgreSQL commits.
 1. [ADR-0158](0158-bounded-transport-backpressure.md) — bounded Producer/Broker
    transport, shared configuration and unchanged semantic commit barriers.
 1. [ADR-0157](0157-kafka-driven-tool-commands.md) — Kafka-driven Agent Tool dispatch,

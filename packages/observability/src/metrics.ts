@@ -22,6 +22,9 @@ export class PiCloudMetrics {
   readonly kafkaProducerPendingFacts: Gauge;
   readonly kafkaProducerRejected: Counter;
   readonly sessionMutationWait: Histogram<"stage">;
+  readonly sessionViewReads: Counter<"source">;
+  readonly sessionViewReadDuration: Histogram<"source">;
+  readonly sessionViewStorageBytes: Counter;
   readonly workspaceSettlementDuration: Histogram<"outcome">;
   readonly workspaceSettlementRestoreDuration: Histogram<"outcome">;
   readonly runtimeObjectCacheAccess: Counter<"result">;
@@ -59,6 +62,24 @@ export class PiCloudMetrics {
   constructor(serviceName: string, collectProcessMetrics = false) {
     this.registry = new Registry();
     this.registry.setDefaultLabels({ service: serviceName });
+    this.sessionViewReads = new Counter({
+      name: "pi_cloud_session_view_reads_total",
+      help: "Active Lane branch reads by source",
+      labelNames: ["source"],
+      registers: [this.registry],
+    });
+    this.sessionViewReadDuration = new Histogram({
+      name: "pi_cloud_session_view_read_seconds",
+      help: "Active Lane branch storage loads or memory snapshots",
+      labelNames: ["source"],
+      buckets: DURATION_BUCKETS,
+      registers: [this.registry],
+    });
+    this.sessionViewStorageBytes = new Counter({
+      name: "pi_cloud_session_view_storage_bytes_total",
+      help: "Estimated JSON Entry bytes materialized by active Lane storage reads",
+      registers: [this.registry],
+    });
     this.sessionMutationWait = new Histogram({
       name: "pi_cloud_session_mutation_wait_seconds",
       help: "Kafka publication and subsequent PG receipt wait, excluding model time",
