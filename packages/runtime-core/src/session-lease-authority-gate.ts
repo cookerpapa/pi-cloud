@@ -176,6 +176,32 @@ export class PostgresExecutionLeaseAuthorityGate {
   }
 
   accept(scope: ExecutionLeaseAuthorityScope, candidate: CandidateFact): AcceptedFact {
+    if (candidate.kind === "tool_command") {
+      const command = candidate.command;
+      if (command.executionLease !== scope.executionLease) {
+        throw new ExecutionLeaseAuthorityGateError(
+          "stale_session_lease",
+          "Tool command does not belong to its ExecutionLease",
+          false,
+        );
+      }
+      return {
+        kind: "tool_command",
+        factId: command.request.operationId,
+        scope: {
+          tenantId: scope.tenantId,
+          sessionId: scope.sessionId,
+          turnId: scope.turnId,
+          runId: scope.runId,
+          attemptId: scope.attemptId,
+          fencingToken: scope.fencingToken,
+          leaseId: scope.leaseId,
+        },
+        request: command.request,
+        occurredAt: command.occurredAt,
+        ...(command.traceContext ? { traceContext: command.traceContext } : {}),
+      };
+    }
     if (candidate.kind === "agent_event") {
       const publication = candidate.publication;
       if (

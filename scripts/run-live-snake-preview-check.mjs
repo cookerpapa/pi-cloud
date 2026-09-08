@@ -257,7 +257,7 @@ async function runCodingWithPreparationBrowser(api, browser, sessionId) {
         return {id:row.dataset.toolCallId, text:row.textContent, title:row.title,
           animation:getComputedStyle(row.querySelector('.product-tool-preparing-spinner')).animationName};
       })()`);
-      assert(initial.text.includes("正在准备工具调用"));
+      assert(initial.text.includes("正在生成文件内容"));
       assert(initial.title.includes("尚未执行"));
       assert.equal(initial.animation, "product-tool-preparing-spin");
       const selector = `.product-tool-preparing[data-tool-call-id=${JSON.stringify(initial.id)}]`;
@@ -466,7 +466,7 @@ try {
       process.env.PI_CLOUD_SNAKE_MODEL_ID === undefined
         ? undefined
         : {
-            provider: "openai-codex",
+            provider: process.env.PI_CLOUD_SNAKE_PROVIDER ?? "openai-codex",
             modelId: process.env.PI_CLOUD_SNAKE_MODEL_ID,
             thinkingLevel: "off",
             fastMode: false,

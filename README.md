@@ -73,13 +73,8 @@ Trusted Pi Worker pool (replaceable, bounded slots)
   │    ├─ platform: Preview publication
   │    ├─ orchestration: Subagent + supervisor channel
   │    └─ integration: reserved external-system executor
-  └─ leased read/write/edit/bash RPC
-         ▼
-      Tool Broker replicas
-      Cube lifecycle + Tool binding + Workspace runtime ownership
-         ▼
-      CubeSandbox KVM microVM ───────▶ persistent Cube Workspace Volume
-      untrusted code and processes
+  └─ read/write/edit/bash command publication through the Fact connection
+       └─ read-only operation-result wait back from the owning Tool Broker
 
 Every Worker
   └─ one authenticated multiplexed Fact connection
@@ -91,8 +86,9 @@ AcceptedFact Authority Gate
 Kafka (Session-keyed, replication factor 3, acks=all)
   ├─ canonical consumer ─────────────▶ PostgreSQL Pi SessionStorage + stream seal
   │                                      └─ commit Outbox ─▶ Kafka commit notification
-  └─ incomplete-Turn consumer ───────▶ rebuildable live tail ─────▶ SSE
-       Both discard records after that execution's seal.
+  ├─ incomplete-Turn consumer ───────▶ rebuildable live tail ─────▶ SSE
+  └─ Tool Broker command consumer ──▶ Cube KVM ──▶ persistent Workspace Volume
+       Canonical/live reject post-seal records; Broker rejects post-seal commands.
 
 Run settlement ─▶ PostgreSQL terminal Outbox ─▶ same Kafka partition: execution seal
 Next Run claim waits until that seal and its interrupted prefix are projected.
@@ -106,11 +102,19 @@ Human terminal:    Browser ─▶ Control Plane ─▶ Tool Broker PTY ───
 Owned machine SSH: SSH client ─▶ SSH Gateway ─▶ Tool Broker PTY ─────────▶ Cube
 ```
 
-Before an arbitrary Tool effect, the Worker crosses two atomic durability
+Before an arbitrary Tool effect, the Worker crosses two native Session commit
 boundaries: complete model output plus usage, then Pi-validated Tool intent.
 Each boundary is one Session mutation with its matching public event in the
 same Kafka AcceptedFact; the Tool runs only after the intent is projected to
 PostgreSQL.
+
+Concrete Tool operations additionally travel as accepted Kafka commands. Broker
+starts them from its consumer, never from a Worker execution POST. The Worker
+waits on an authenticated read-only result endpoint and Pi persists the complete
+result through its existing native checkpoint. Long Tools do not block partition
+consumption. Command redelivery is deduplicated; Broker replacement does not
+blindly replay effects for lost bindings. Lifecycle, terminal and Preview APIs
+remain separate management paths.
 
 Session projection and its receipt commit together; Workers wait on their
 shared PostgreSQL notification connection. Gateways consume Kafka partitions

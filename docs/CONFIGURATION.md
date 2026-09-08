@@ -165,6 +165,13 @@ Consumers use Confluent's partition pause/seek with a 32 MiB native queue budget
 and a 5 ms fetch-queue backoff (the native 1 s default is unsuitable for interactive
 streams). SSE subscribes on demand and uses server-side recovery coordinates;
 normal data consumption never introduces a new batching delay.
+Tool Broker uses the same `PI_CLOUD_KAFKA_BROKERS` and accepted topic. It captures
+its boot start position before readiness, limits active commands/result waiters
+to 1,024, and retains results only while their Tool binding exists. Result arrival
+wait is 30 seconds; once observed, the existing Tool deadline controls execution.
+Each Broker boot reads the shared topic and filters its own binding IDs, so extra
+replicas add read traffic and have trusted access to the shared log. Guests and
+Pi Workers do not receive Kafka access.
 Seal commit notifications use the existing terminal Outbox's 50 ms idle poll and
 bounded delivery retries. Gateway performs no per-seal PG lookup; deferred
 successor display is limited to 8 MiB per Session / 64 MiB per Gateway. Exceeding

@@ -9,6 +9,7 @@ import { PostgresWorkspaceRuntimeStateRepository } from "./workspace-runtime-sta
 import { randomUUID } from "node:crypto";
 import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
 import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
+import { KafkaToolCommandConsumer } from "./kafka-tool-command-consumer.ts";
 
 const config = await loadToolBrokerConfig();
 const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
@@ -78,6 +79,12 @@ const broker = new ToolBroker({
       event: "maintenance.failed",
     }),
 });
+const commands = new KafkaToolCommandConsumer({
+  broker,
+  brokers: config.kafkaBrokers,
+  topic: config.acceptedFactTopic,
+  metrics: observability.metrics,
+});
 const server = new ToolBrokerServer({
   host: config.host,
   port: config.port,
@@ -87,10 +94,12 @@ const server = new ToolBrokerServer({
     ? {}
     : { workspaceServiceToken: config.workspaceServiceToken }),
   broker,
+  commands,
   metrics: observability.metrics,
 });
 
 await broker.recoverPersistentDevelopmentEnvironments();
+await commands.start();
 await server.listen();
 deletionReaper.start();
 process.stdout.write("PiCloud Tool Broker ready\n");
@@ -99,6 +108,7 @@ let closing: Promise<void> | undefined;
 const close = (): Promise<void> => {
   closing ??= deletionReaper
     .close()
+    .then(() => commands.close())
     .then(() => server.close())
     .finally(() => database.destroy())
     .finally(() => observability.close());

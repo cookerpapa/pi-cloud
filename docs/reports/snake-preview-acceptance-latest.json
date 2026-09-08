@@ -1,13 +1,13 @@
 {
   "accepted": true,
-  "piCloudRevision": "6b9952ae365a2c8f8150a6d675b9e26739fa98f4",
+  "piCloudRevision": "907682e4034d9455b784dbb9c109068e53b7c799",
   "workingTreeDirty": true,
-  "checkedAt": "2026-09-05T03:19:09.901Z",
-  "account": "snake.acceptance.mtnt8dpk",
-  "sessionId": "4e45cfe2-17c8-4fad-b468-a96dd325bba9",
-  "workspaceId": "ed9f9363-a857-44e7-afa4-5c8823e59e30",
-  "developmentEnvironmentId": "3b46994b-5bd3-438d-897c-fd1e0371ec81",
-  "runId": "3d36b191-aa13-4a6e-8e04-73d617c4fb6c",
+  "checkedAt": "2026-09-08T01:36:42.242Z",
+  "account": "snake.acceptance.mtrzzjlm",
+  "sessionId": "1b4046b4-b6b4-4592-99e4-1c99d35bb70e",
+  "workspaceId": "71db4bec-cd70-4b3c-8b5b-c12051a1ff72",
+  "developmentEnvironmentId": "0164497c-f671-4099-a889-dfd3022082eb",
+  "runId": "b3f6546c-32d5-4eaf-a279-96f8bc518159",
   "toolCalls": 14,
   "toolPreparations": 14,
   "preparationBrowser": {
@@ -17,13 +17,13 @@
     "cleared": true
   },
   "previewToolUsed": true,
-  "firstDurableActivityMs": 3548,
-  "firstToolStartedMs": 5572,
-  "firstAssistantTextMs": 3548,
-  "settledMs": 203674,
+  "firstDurableActivityMs": 1002,
+  "firstToolStartedMs": 7210,
+  "firstAssistantTextMs": 1002,
+  "settledMs": 59332,
   "hostPreviewStatus": 200,
-  "previewOrigin": "http://p-985ef477655b67c708e8c009.preview.localhost:8080",
-  "previewRoute": "/v1/conversations/4e45cfe2-17c8-4fad-b468-a96dd325bba9/preview/4173",
+  "previewOrigin": "http://p-f7bde926969d535d20ebd38f.preview.localhost:8080",
+  "previewRoute": "/v1/conversations/1b4046b4-b6b4-4592-99e4-1c99d35bb70e/preview/4173",
   "browserInteraction": {
     "before": {
       "headX": 10,
@@ -34,24 +34,24 @@
     },
     "after": {
       "headX": 10,
-      "headY": 15,
+      "headY": 14,
       "score": 0,
       "running": true,
-      "tick": 5
+      "tick": 4
     },
     "paused": {
       "headX": 10,
-      "headY": 15,
+      "headY": 14,
       "score": 0,
       "running": false,
-      "tick": 5
+      "tick": 4
     },
     "pausedAfterWait": {
       "headX": 10,
-      "headY": 15,
+      "headY": 14,
       "score": 0,
       "running": false,
-      "tick": 5
+      "tick": 4
     },
     "reset": {
       "headX": 10,

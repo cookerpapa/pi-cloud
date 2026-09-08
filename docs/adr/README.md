@@ -6,6 +6,8 @@ kept beside current ADRs; Git history is their archive.
 
 Read the documents in this order:
 
+1. [ADR-0157](0157-kafka-driven-tool-commands.md) — Kafka-driven Agent Tool dispatch,
+   read-only result waits and boot-local Broker command consumption.
 1. [ADR-0156](0156-durable-seal-commit-notifications.md) — durable commit notifications,
    query-free Gateway seals and bounded successor display ordering.
 1. [ADR-0155](0155-isolated-consumption-and-bounded-handoffs.md) — positioned seals,

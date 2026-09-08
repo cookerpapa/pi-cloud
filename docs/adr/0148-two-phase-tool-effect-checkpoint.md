@@ -44,8 +44,9 @@ first call could have started.
 
 ## Consequences
 
-- An arbitrary Tool effect has exactly two causally necessary post-sampling
-  durability barriers.
+- An arbitrary Tool effect has two causally necessary post-sampling native
+  Session commit barriers. ADR-0157 additionally transports each concrete remote
+  operation through Kafka; its transport acknowledgement is not another Pi checkpoint.
 - Assistant message plus usage and Tool intent plus Tool-start visibility are
   each internally atomic.
 - Kafka redelivery keeps both checkpoints idempotent through their stable

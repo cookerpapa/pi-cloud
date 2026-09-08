@@ -23,7 +23,6 @@ import {
   type ToolSandboxCaptureResponse,
   type ToolSandboxCreateRequest,
   type ToolSandboxCreateResponse,
-  type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
   type ToolSandboxReleaseResponse,
   type SourceControlWorkspaceCredentialAuthorizeRequest,
@@ -38,7 +37,7 @@ import { activeTraceCarrier } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
 
 export const TOOL_BROKER_SERVICE_PATH = "/internal/v1/tool-broker";
-export const TOOL_BROKER_OPERATION_PATH = "/internal/v1/tool-operation";
+export const TOOL_BROKER_OPERATION_RESULT_PATH = "/internal/v1/tool-operation-result";
 export const TOOL_BROKER_INVENTORY_PATH = "/internal/v1/sandbox-inventory";
 export const TOOL_BROKER_WORKSPACE_BROWSER_PATH = "/internal/v1/workspace-browser";
 export const TOOL_BROKER_SOURCE_CONTROL_PATH = "/internal/v1/source-control";
@@ -135,12 +134,12 @@ export class ToolBrokerClient {
     this.#idGenerator = options.idGenerator ?? randomUUID;
   }
 
-  get operationUrl(): string {
-    return new URL(TOOL_BROKER_OPERATION_PATH, this.#baseUrl).toString();
+  get operationResultUrl(): string {
+    return new URL(TOOL_BROKER_OPERATION_RESULT_PATH, this.#baseUrl).toString();
   }
 
-  operationUrlFor(_activationId: string): string {
-    return this.operationUrl;
+  operationResultUrlFor(_activationId: string): string {
+    return this.operationResultUrl;
   }
 
   async checkHealth(): Promise<void> {
@@ -319,17 +318,23 @@ export class ToolBrokerClient {
     }
   }
 
-  async operation(
+  async operationResult(
     executionLease: string,
-    request: ToolSandboxOperationRequest,
+    activationId: string,
+    operationId: string,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
-    const response = await this.#post(TOOL_BROKER_OPERATION_PATH, executionLease, request, signal);
+    const query = new URLSearchParams({ activationId, operationId });
+    const response = await this.#request(
+      `${TOOL_BROKER_OPERATION_RESULT_PATH}?${query}`,
+      executionLease,
+      undefined,
+      signal,
+      0,
+      "GET",
+    );
     const parsed = parseToolSandboxOperationResponse(response);
-    if (
-      parsed.activationId !== request.activationId ||
-      parsed.operationId !== request.operationId
-    ) {
+    if (parsed.activationId !== activationId || parsed.operationId !== operationId) {
       throw new ToolBrokerClientError(
         "tool_broker_protocol_error",
         "Tool operation response identity did not match",
@@ -363,7 +368,7 @@ export class ToolBrokerClient {
     signal?: AbortSignal,
   ): Promise<ToolBrokerListWorkspaceDirectoryResponse> {
     const response = parseToolBrokerListWorkspaceDirectoryResponse(
-      await this.#post(TOOL_BROKER_WORKSPACE_BROWSER_PATH, this.#serviceToken, request, signal),
+      await this.#request(TOOL_BROKER_WORKSPACE_BROWSER_PATH, this.#serviceToken, request, signal),
     );
     if (
       response.requestId !== request.requestId ||
@@ -385,7 +390,7 @@ export class ToolBrokerClient {
     signal?: AbortSignal,
   ): Promise<ToolBrokerReadWorkspaceFileResponse> {
     const response = parseToolBrokerReadWorkspaceFileResponse(
-      await this.#post(TOOL_BROKER_WORKSPACE_BROWSER_PATH, this.#serviceToken, request, signal),
+      await this.#request(TOOL_BROKER_WORKSPACE_BROWSER_PATH, this.#serviceToken, request, signal),
     );
     if (
       response.requestId !== request.requestId ||
@@ -423,7 +428,7 @@ export class ToolBrokerClient {
     signal?: AbortSignal,
   ): Promise<SourceControlWorkspaceCredentialResponse> {
     const response = parseSourceControlWorkspaceCredentialResponse(
-      await this.#post(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
+      await this.#request(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
     );
     if (
       response.requestId !== request.requestId ||
@@ -444,7 +449,7 @@ export class ToolBrokerClient {
     signal?: AbortSignal,
   ): Promise<SourceControlWorkspaceCredentialListResponse> {
     const response = parseSourceControlWorkspaceCredentialListResponse(
-      await this.#post(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
+      await this.#request(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
     );
     if (response.requestId !== request.requestId || response.workspaceId !== request.workspaceId) {
       throw new ToolBrokerClientError(
@@ -461,7 +466,7 @@ export class ToolBrokerClient {
     signal?: AbortSignal,
   ): Promise<SourceControlWorkspaceCredentialDisconnectResponse> {
     const response = parseSourceControlWorkspaceCredentialDisconnectResponse(
-      await this.#post(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
+      await this.#request(TOOL_BROKER_SOURCE_CONTROL_PATH, this.#serviceToken, request, signal),
     );
     if (
       response.requestId !== request.requestId ||
@@ -536,22 +541,23 @@ export class ToolBrokerClient {
 
   async #service(request: ToolBrokerRequest, signal?: AbortSignal): Promise<ToolBrokerResponse> {
     return parseToolBrokerResponse(
-      await this.#post(TOOL_BROKER_SERVICE_PATH, this.#serviceToken, request, signal),
+      await this.#request(TOOL_BROKER_SERVICE_PATH, this.#serviceToken, request, signal),
     );
   }
 
   async #inventory(request: SupervisorManagementRequest): Promise<SupervisorManagementResponse> {
     return parseSupervisorManagementResponse(
-      await this.#post(TOOL_BROKER_INVENTORY_PATH, this.#serviceToken, request),
+      await this.#request(TOOL_BROKER_INVENTORY_PATH, this.#serviceToken, request),
     );
   }
 
-  async #post(
+  async #request(
     path: string,
     bearer: string,
     body: unknown,
     signal?: AbortSignal,
     redirects = 0,
+    method: "POST" | "GET" = "POST",
   ): Promise<unknown> {
     const timeoutSignal = AbortSignal.timeout(this.#requestTimeoutMs);
     const combinedSignal =
@@ -560,7 +566,7 @@ export class ToolBrokerClient {
     try {
       const trace = activeTraceCarrier();
       response = await fetch(new URL(path, this.#baseUrl), {
-        method: "POST",
+        method,
         headers: {
           authorization: `Bearer ${bearer}`,
           "content-type": "application/json",
@@ -596,7 +602,7 @@ export class ToolBrokerClient {
         allowInsecureHttp: this.#allowInsecureHttp,
         requestTimeoutMs: this.#requestTimeoutMs,
       });
-      return owner.#post(path, bearer, body, signal, redirects + 1);
+      return owner.#request(path, bearer, body, signal, redirects + 1);
     }
     const value = await boundedJson(response);
     if (!response.ok) {
@@ -661,8 +667,8 @@ export class ReplicatedToolBrokerClient {
     });
   }
 
-  operationUrlFor(activationId: string): string {
-    return this.#ownedClient(activationId).operationUrlFor(activationId);
+  operationResultUrlFor(activationId: string): string {
+    return this.#ownedClient(activationId).operationResultUrlFor(activationId);
   }
 
   async checkHealth(): Promise<void> {
@@ -720,12 +726,18 @@ export class ReplicatedToolBrokerClient {
     }
   }
 
-  operation(
+  operationResult(
     executionLease: string,
-    request: ToolSandboxOperationRequest,
+    activationId: string,
+    operationId: string,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
-    return this.#ownedClient(request.activationId).operation(executionLease, request, signal);
+    return this.#ownedClient(activationId).operationResult(
+      executionLease,
+      activationId,
+      operationId,
+      signal,
+    );
   }
 
   forkWorkspace(request: ToolBrokerWorkspaceForkRequest): Promise<ToolBrokerWorkspaceForkResponse> {

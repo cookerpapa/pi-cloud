@@ -4,9 +4,12 @@ PiCloud's default deployment is the shortest production path required for
 the conversation product:
 
 ```text
-Web → Control Plane → PostgreSQL queue → Pi Worker → Tool Broker → Cube
-                    ↘ PostgreSQL Session storage
-Worker → Authority Gate → Kafka acks=all → Gateway snapshot-first SSE
+Web → Control Plane → PostgreSQL queue → Pi Worker
+Worker → Authority Gate → Kafka acks=all
+                           ├→ PostgreSQL Session storage
+                           ├→ Gateway snapshot-first SSE
+                           └→ Tool Broker command consumer → Cube
+Worker ← read-only Tool result wait ← Tool Broker
 ```
 
 The Control Plane exposes authentication, model/proxy settings, projects,

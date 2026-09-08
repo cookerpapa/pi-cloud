@@ -6,9 +6,13 @@
 | Control Plane | PostgreSQL | yes | product/Run authority |
 | Control Plane | Tool Broker | yes | authenticated Workspace terminal proxy |
 | Pi Worker | PostgreSQL | yes | queue, Session and lifecycle state |
-| Pi Worker | Tool Broker | yes | fenced Tool RPC |
+| Pi Worker | Control Plane Gate | yes | accepted events, Session mutations and Tool commands |
+| Pi Worker | Tool Broker | yes | binding/lifecycle APIs and read-only Tool-result waits |
+| Pi Worker | Kafka | no | only the Gate publishes Worker facts |
 | Pi Worker | provider proxy/model provider | yes | model requests |
 | Tool Broker | PostgreSQL | yes | Workspace runtime ownership and Tool authority state |
+| Tool Broker | Kafka | yes | consume commands/seals; never replay a vanished binding |
+| Control Plane | Kafka | yes | AcceptedFact publication and canonical/live consumption |
 | Tool Broker | Cube API | yes | KVM lifecycle |
 | Volume gateway | PostgreSQL/RWX Workspace storage | yes | revision/Volume coordination |
 | Cube guest | egress proxy | optional | governed public HTTP/HTTPS |

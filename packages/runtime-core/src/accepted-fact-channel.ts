@@ -4,6 +4,9 @@ import {
   type EventAckMessage,
   type EventPublishMessage,
   type FactChannelOpenMessage,
+  type CandidateToolCommand,
+  type ToolCommandAcceptedFrame,
+  type ToolCommandPublishFrame,
 } from "@pi-cloud/protocol";
 import {
   ExecutionLeaseAuthorityGateError,
@@ -24,7 +27,7 @@ import type {
   CandidateFact,
   CandidatePiSessionMutationFact,
   PiSessionMutationAcceptedFrame,
-  PiSessionMutationFactChannel,
+  AcceptedFactWriter,
   PiSessionMutationPublishFrame,
 } from "./accepted-fact.ts";
 
@@ -54,6 +57,9 @@ export type AcceptedFactChannelSession = Readonly<{
   mutate(
     mutation: CandidatePiSessionMutationFact,
   ): Promise<Readonly<{ mutationId: string; accepted: true }>>;
+  publishToolCommand(
+    command: CandidateToolCommand,
+  ): Promise<Readonly<{ operationId: string; accepted: true }>>;
   close(): Promise<void>;
 }>;
 
@@ -168,6 +174,13 @@ class ServerFactChannel implements AcceptedFactChannelSession {
     return { mutationId: mutation.mutationId, accepted: true };
   }
 
+  async publishToolCommand(
+    command: CandidateToolCommand,
+  ): Promise<Readonly<{ operationId: string; accepted: true }>> {
+    await this.#append({ kind: "tool_command", command });
+    return { operationId: command.request.operationId, accepted: true };
+  }
+
   close(): Promise<void> {
     return (this.#closing ??= this.#drainAndClose());
   }
@@ -228,7 +241,9 @@ class ServerFactChannel implements AcceptedFactChannelSession {
       const events =
         candidate.kind === "agent_event"
           ? [candidate.publication.payload.event]
-          : candidate.mutation.events;
+          : candidate.kind === "pi_session_mutation"
+            ? candidate.mutation.events
+            : [];
       for (const event of events)
         this.#acknowledgedThroughSeq = Math.max(this.#acknowledgedThroughSeq, event.seq);
     });
@@ -394,6 +409,7 @@ export class FactChannelService {
       },
       ingest: (value) => channel.ingest(value),
       mutate: (mutation) => channel.mutate(mutation),
+      publishToolCommand: (command) => channel.publishToolCommand(command),
       close: () =>
         (closing ??= channel.close().finally(() => this.#channels.delete(scope.connectionId))),
     };
@@ -602,15 +618,24 @@ type PendingRemoteExchange = {
     | "fact.channel.ready"
     | "event.ack"
     | "fact.channel.closed"
-    | "fact.pi_session_mutation.accepted";
+    | "fact.pi_session_mutation.accepted"
+    | "fact.tool_command.accepted";
   settle: (result: { message: RemoteFactChannelResponse } | { error: Error }) => void;
   timer: NodeJS.Timeout;
 };
 
 type RemoteFactChannelResponse =
-  ReturnType<typeof parseControlToSupervisorMessage> | PiSessionMutationAcceptedFrame;
+  | ReturnType<typeof parseControlToSupervisorMessage>
+  | PiSessionMutationAcceptedFrame
+  | ToolCommandAcceptedFrame;
 
 function remoteFactResponse(value: unknown): RemoteFactChannelResponse | FactStreamFailureFrame {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { type?: unknown }).type === "fact.tool_command.accepted"
+  )
+    return value as ToolCommandAcceptedFrame;
   if (
     typeof value === "object" &&
     value !== null &&
@@ -881,6 +906,55 @@ class RemoteFactChannel implements FactChannel {
     mutation: CandidatePiSessionMutationFact,
   ): Promise<Readonly<{ mutationId: string; accepted: true }>> {
     return this.#serialize(() => this.#mutate(mutation));
+  }
+
+  publishToolCommand(
+    command: CandidateToolCommand,
+  ): Promise<Readonly<{ operationId: string; accepted: true }>> {
+    return this.#serialize(async () => {
+      this.#assertOpen();
+      const frame: ToolCommandPublishFrame = {
+        protocolVersion: 1,
+        messageId: crypto.randomUUID(),
+        sentAt: new Date().toISOString(),
+        type: "fact.tool_command.publish",
+        payload: command,
+      };
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        if (!(await this.#ensureOpened(deadline))) {
+          await new Promise((r) => setTimeout(r, 100));
+          continue;
+        }
+        const exchanged = await this.#transport.exchange(
+          this.#streamId,
+          frame,
+          "fact.tool_command.accepted",
+          deadline,
+        );
+        if ("error" in exchanged) {
+          this.#openedGeneration = 0;
+          if (exchanged.error instanceof DurableEventStoreError && !exchanged.error.retryable)
+            throw exchanged.error;
+          await new Promise((r) => setTimeout(r, 100));
+          continue;
+        }
+        const response = exchanged.message;
+        if (
+          response.type === "fact.tool_command.accepted" &&
+          response.payload.acknowledgedMessageId === frame.messageId &&
+          response.payload.operationId === command.request.operationId &&
+          response.payload.accepted
+        )
+          return { operationId: command.request.operationId, accepted: true };
+        throw new Error("Tool command receipt identity changed");
+      }
+      throw new DurableEventStoreError(
+        "event_store_invariant",
+        "Tool command acceptance timed out",
+        true,
+      );
+    });
   }
 
   async #mutate(
@@ -1154,7 +1228,7 @@ export class WebSocketAcceptedFactIngestor
     }
   }
 
-  resolve(executionLease: string): PiSessionMutationFactChannel | undefined {
+  resolve(executionLease: string): AcceptedFactWriter | undefined {
     return this.#channels.get(executionLease);
   }
 

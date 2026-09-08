@@ -39,6 +39,8 @@
 
 ## Current release gate
 
+- [x] Consume Agent Tool commands in Broker after Kafka; retain native Session
+      checkpoints, result redaction, duplicate protection and explicit UNKNOWN.
 - [x] Replace Gateway seal polling with co-committed Outbox/Kafka notifications;
       preserve successor ordering and recover after notification delivery loss.
 - [x] Use positioned execution seals, demand-driven partition tails and bounded

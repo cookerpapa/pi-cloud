@@ -32,6 +32,9 @@ function fixture() {
     channels: {
       async checkHealth() {},
       resolve: () => ({
+        async publishToolCommand() {
+          throw new Error("Tool commands are outside this fixture");
+        },
         async mutate(request) {
           publications.push(request);
           return { mutationId: request.mutationId, accepted: true };

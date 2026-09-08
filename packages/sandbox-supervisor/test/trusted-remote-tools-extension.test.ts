@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { validateToolArguments } from "@earendil-works/pi-ai";
-import { createExecutionLease } from "@pi-cloud/protocol";
+import { createExecutionLease, type CandidateToolCommand } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -56,8 +56,20 @@ async function captureContext(handlers: Map<string, (...args: never[]) => unknow
   await handler({ type: "context", messages: [] } as never);
 }
 
+let latestPublishedCommand: CandidateToolCommand | undefined;
+function publishedRequest(init: RequestInit) {
+  expect(init.method).toBe("GET");
+  expect(init.body).toBeUndefined();
+  if (!latestPublishedCommand)
+    throw new Error("HTTP result read preceded Kafka command publication");
+  return latestPublishedCommand.request;
+}
 const BASE_CONFIGURATION = {
-  operationUrl: "http://127.0.0.1:4999/v1/tool-operations",
+  async publishToolCommand(command: CandidateToolCommand) {
+    latestPublishedCommand = command;
+    return { operationId: command.request.operationId, accepted: true as const };
+  },
+  operationResultUrl: "http://127.0.0.1:4999/v1/tool-operations",
   activationId: "10000000-0000-4000-8000-000000000001",
   executionLease: EXECUTION_LEASE,
   turnContextSha256: TURN_CONTEXT_SHA256,
@@ -79,6 +91,7 @@ function installInlineExtension(
 }
 
 afterEach(() => {
+  latestPublishedCommand = undefined;
   vi.unstubAllGlobals();
 });
 
@@ -166,15 +179,15 @@ describe("trusted remote tools extension governance", () => {
   it("resolves the physical Sandbox only when the model actually calls a local Tool", async () => {
     const {
       activationId: _activationId,
-      operationUrl: _operationUrl,
+      operationResultUrl: _operationUrl,
       ...configuration
     } = BASE_CONFIGURATION;
     const resolveOperationTarget = vi.fn(async () => ({
       activationId: "10000000-0000-4000-8000-000000000077",
-      operationUrl: "http://127.0.0.1:4999/v1/tool-operations",
+      operationResultUrl: "http://127.0.0.1:4999/v1/tool-operations",
     }));
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-      const request = JSON.parse(String(init.body)) as {
+      const request = publishedRequest(init) as {
         activationId: string;
         operationId: string;
       };
@@ -238,7 +251,8 @@ describe("trusted remote tools extension governance", () => {
     const registered: ToolDefinition[] = [];
     const handlers = new Map<string, (...args: never[]) => unknown>();
     const extension = createTrustedRemoteToolsExtension({
-      operationUrl: "http://127.0.0.1:4999/v1/tool-operations",
+      publishToolCommand: BASE_CONFIGURATION.publishToolCommand,
+      operationResultUrl: "http://127.0.0.1:4999/v1/tool-operations",
       activationId: "10000000-0000-4000-8000-000000000099",
       executionLease: EXECUTION_LEASE,
       turnContextSha256: TURN_CONTEXT_SHA256,
@@ -310,7 +324,7 @@ describe("trusted remote tools extension governance", () => {
       },
     } as unknown as ExtensionAPI;
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-      requestBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+      requestBody = publishedRequest(init) as Record<string, unknown>;
       return new Response(
         JSON.stringify({
           toolBrokerProtocolVersion: 1,
@@ -489,7 +503,7 @@ describe("trusted remote tools extension governance", () => {
       } as unknown as ExtensionAPI;
       vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
         expect(new Headers(init.headers).get("traceparent")).toBe(BASE_CONFIGURATION.traceparent);
-        const request = JSON.parse(String(init.body)) as {
+        const request = publishedRequest(init) as {
           activationId: string;
           operationId: string;
           operation: string;
@@ -587,7 +601,7 @@ describe("trusted remote tools extension governance", () => {
         },
       } as unknown as ExtensionAPI;
       vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-        const request = JSON.parse(String(init.body)) as {
+        const request = publishedRequest(init) as {
           activationId: string;
           operationId: string;
           operation: string;
@@ -668,7 +682,7 @@ describe("trusted remote tools extension governance", () => {
       },
     } as unknown as ExtensionAPI;
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-      const request = JSON.parse(String(init.body)) as {
+      const request = publishedRequest(init) as {
         activationId: string;
         operationId: string;
       };
@@ -729,7 +743,7 @@ describe("trusted remote tools extension governance", () => {
       },
     } as unknown as ExtensionAPI;
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-      const request = JSON.parse(String(init.body)) as {
+      const request = publishedRequest(init) as {
         activationId: string;
         operationId: string;
         operation: string;

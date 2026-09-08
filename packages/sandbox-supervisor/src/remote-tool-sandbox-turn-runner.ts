@@ -98,7 +98,7 @@ export interface ToolBrokerBoundary {
       { kind: "detach" } | { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
   ): Promise<{ retained: boolean }>;
   stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
-  operationUrlFor(activationId: string): string;
+  operationResultUrlFor(activationId: string): string;
 }
 
 export type RemoteToolSandboxTurnRunnerOptions = {
@@ -110,6 +110,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   workspaceSeedResolver?: AgentWorkspaceSeedResolver;
   settlementStore?: WorkspaceSettlementStore;
   openAgentSession: (command: ExecuteTurnCommandMessage) => Promise<PiCloudSessionHandle>;
+  publishToolCommand?: import("@pi-cloud/protocol").ToolCommandPublisher["publishToolCommand"];
   createTrustedTools?: (
     command: ExecuteTurnCommandMessage,
     context: Readonly<{
@@ -172,6 +173,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
   readonly #settlementStore: WorkspaceSettlementStore | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
+  readonly #publishToolCommand: RemoteToolSandboxTurnRunnerOptions["publishToolCommand"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
   readonly #runAttemptPhaseObserver: RunAttemptPhaseObserver | undefined;
   readonly #requestTimeoutMs: number | undefined;
@@ -197,6 +199,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#workspaceSeedResolver = options.workspaceSeedResolver;
     this.#settlementStore = options.settlementStore;
     this.#openAgentSession = options.openAgentSession;
+    this.#publishToolCommand = options.publishToolCommand;
     this.#createTrustedTools = options.createTrustedTools;
     this.#runAttemptPhaseObserver = options.runAttemptPhaseObserver;
     this.#requestTimeoutMs = options.requestTimeoutMs;
@@ -775,11 +778,16 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           }
           let stepSequence = 0;
           const remoteTools = createTrustedRemoteAgentTools({
+            publishToolCommand: (command) => {
+              if (!this.#publishToolCommand)
+                throw new Error("Tool command publisher is unavailable");
+              return this.#publishToolCommand(command);
+            },
             resolveOperationTarget: async () => {
               const active = await ensureActivation();
               return {
                 activationId: active.activationId,
-                operationUrl: this.#broker.operationUrlFor(active.activationId),
+                operationResultUrl: this.#broker.operationResultUrlFor(active.activationId),
               };
             },
             executionLease: toolAssignment.executionLease,

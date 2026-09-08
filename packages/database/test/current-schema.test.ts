@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(129);
+      expect(firstMigrationPass.rows).toHaveLength(130);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("129_execution_commit_notifications");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("130_kafka_tool_commands");
       await runMigrations(database, "up");
 
       const tables = await sql<{ table_name: string }>`
@@ -133,7 +133,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("129_execution_commit_notifications");
+      expect(applied.rows.at(-1)?.name).toBe("130_kafka_tool_commands");
 
       const sessionLogConstraint = await sql<{ definition: string }>`
         select pg_get_constraintdef(oid) as definition

@@ -22,7 +22,7 @@ next Run claim implies C(previous requested seals)
 live terminal publication implies N, which implies C
 record after an execution's first seal cannot change Pi context or live output
 the next model Step waits for its required P projection barrier
-an arbitrary Tool effect implies P(complete model output) and P(validated Tool intent)
+an arbitrary Agent Tool effect implies P(complete model output), P(validated Tool intent), K(tool command)
 S contains no browser-supplied cursor
 arbitrary Tool effects are never inferred from K, V or an interrupted text prefix
 ```
@@ -31,6 +31,14 @@ Kafka is a bounded recovery log, not the lifetime transcript. AcceptedFacts are
 keyed by opaque Session ID, so one Session remains in one Kafka partition.
 PostgreSQL stores complete Pi-native semantic state once. Gateway replicas consume
 only subscribed Kafka partitions into rebuildable memory.
+
+Agent file/shell execution commands use that same log. Broker's boot-local
+consumer dispatches only bindings it owns and never waits for a long command
+inside a partition callback. Worker result GETs cannot start an operation.
+Duplicate delivery shares an operation outcome and the durable operation ledger
+rejects blind re-execution. A replacement Broker has no old Tool bindings; its
+fresh consumer does not revive them from history. Result bodies return to Pi's
+existing redaction and Tool-result checkpoint path, not a second PG transcript.
 
 A lease check cannot be atomic with Kafka append. Closure therefore happens in
 the log itself: the first execution seal divides accepted old records from late

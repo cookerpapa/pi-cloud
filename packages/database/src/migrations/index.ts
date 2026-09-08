@@ -128,6 +128,7 @@ import * as compactPiMutationResults from "./126_compact_pi_mutation_results.ts"
 import * as executionStreamSeals from "./127_execution_stream_seals.ts";
 import * as positionedStreamRecovery from "./128_positioned_stream_recovery.ts";
 import * as executionCommitNotifications from "./129_execution_commit_notifications.ts";
+import * as kafkaToolCommands from "./130_kafka_tool_commands.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -261,6 +262,7 @@ export const migrationProvider: MigrationProvider = {
       "127_execution_stream_seals": executionStreamSeals,
       "128_positioned_stream_recovery": positionedStreamRecovery,
       "129_execution_commit_notifications": executionCommitNotifications,
+      "130_kafka_tool_commands": kafkaToolCommands,
     };
   },
 };

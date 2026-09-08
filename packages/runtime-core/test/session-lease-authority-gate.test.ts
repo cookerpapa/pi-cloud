@@ -185,6 +185,43 @@ describe("PostgresExecutionLeaseAuthorityGate", () => {
       }),
     ).toThrow(ExecutionLeaseAuthorityGateError);
     expect(JSON.stringify([acceptedEvent, acceptedMutation])).not.toContain("pcel1_");
+    const tool = {
+      executionLease: openMessage().payload.executionLease,
+      occurredAt: now.toISOString(),
+      request: {
+        toolBrokerProtocolVersion: 1 as const,
+        type: "tool_sandbox.operation" as const,
+        operationId: crypto.randomUUID(),
+        activationId: crypto.randomUUID(),
+        turnContextSha256: "a".repeat(64),
+        attemptContextSha256: "a".repeat(64),
+        stepContextSequence: 1,
+        stepContextSha256: "a".repeat(64),
+        toolName: "bash" as const,
+        operation: "bash.exec" as const,
+        command: "pwd",
+        cwd: "/workspace",
+        timeoutMs: 1000,
+      },
+    };
+    const acceptedTool = authority.accept(scope, { kind: "tool_command", command: tool });
+    expect(acceptedTool).toMatchObject({
+      kind: "tool_command",
+      factId: tool.request.operationId,
+      scope: {
+        tenantId: scope.tenantId,
+        runId: scope.runId,
+        attemptId: scope.attemptId,
+        leaseId: scope.leaseId,
+      },
+    });
+    expect(JSON.stringify(acceptedTool)).not.toContain("pcel1_");
+    expect(() =>
+      authority.accept(scope, {
+        kind: "tool_command",
+        command: { ...tool, executionLease: "stale" },
+      }),
+    ).toThrow(ExecutionLeaseAuthorityGateError);
     const recorded = await new PostgresAcceptedFactProgressStore(database).recordMany([
       {
         leaseId: scope.leaseId,

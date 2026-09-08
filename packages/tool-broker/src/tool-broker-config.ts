@@ -2,11 +2,14 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
+import { ACCEPTED_FACT_TOPIC } from "@pi-cloud/event-log";
 
 export type ToolBrokerConfig = {
   host: string;
   port: number;
   databaseUrl: string;
+  kafkaBrokers: readonly string[];
+  acceptedFactTopic: string;
   sandboxDomainId: string;
   advertisedBaseUrl: string;
   ownershipLeaseMs: number;
@@ -213,6 +216,10 @@ export async function loadToolBrokerConfig(
     host: bounded(environment.PI_CLOUD_TOOL_BROKER_HOST ?? "127.0.0.1", "host", 256),
     port: integer(environment.PI_CLOUD_TOOL_BROKER_PORT, 4_300, 1, 65_535),
     databaseUrl: await readDatabaseUrl(required(environment, "DATABASE_URL_FILE")),
+    kafkaBrokers: required(environment, "PI_CLOUD_KAFKA_BROKERS")
+      .split(",")
+      .map((value) => value.trim()),
+    acceptedFactTopic: environment.PI_CLOUD_ACCEPTED_FACT_TOPIC ?? ACCEPTED_FACT_TOPIC,
     sandboxDomainId: bounded(
       required(environment, "PI_CLOUD_SANDBOX_DOMAIN_ID"),
       "sandboxDomainId",

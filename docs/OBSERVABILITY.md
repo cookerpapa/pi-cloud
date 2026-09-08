@@ -82,7 +82,7 @@ email, webhook or on-call receiver before relying on unattended notification.
 ## Traces and logs
 
 The Control Plane assigns a W3C trace identity to each accepted Run. The
-trusted path propagates it through Worker execution, model requests, Tool RPC,
+trusted path propagates it through Worker execution, model requests, Kafka Tool commands,
 Tool Broker and Cube lifecycle operations. Prompts, Tool output and provider
 credentials are never span attributes. Jaeger is retained because it makes a
 single slow/failed Run explainable; it is not required for alert correctness.

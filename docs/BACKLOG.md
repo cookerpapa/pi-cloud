@@ -5,6 +5,11 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] ADR-0157: route Agent Tool commands through the Fact Gate/Kafka; remove
+      execution POST, retain read-only result waits and no-replay operation semantics.
+- [ ] Implement an approved Cube-native scoped launch-generation contract before
+      claiming physical execution fencing; [research and policy tradeoffs](reports/cube-execution-generation-study.md)
+      are complete, implementation is not part of the Kafka transport upgrade.
 - [x] ADR-0156: close at the Kafka seal and announce the terminal on its durable
       commit notification, without Gateway per-seal SELECT/polling. Preserve
       bounded successor buffering, duplicate delivery and restart recovery.

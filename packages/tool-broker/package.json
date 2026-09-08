@@ -13,6 +13,7 @@
     "test": "vitest --run"
   },
   "dependencies": {
+    "@pi-cloud/event-log": "0.1.0",
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/observability": "0.1.0",
     "@pi-cloud/protocol": "0.1.0",

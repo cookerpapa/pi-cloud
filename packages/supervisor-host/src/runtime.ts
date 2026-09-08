@@ -87,7 +87,7 @@ function factChannelResolver(value: FactChannelFactory): ActiveFactChannelResolv
 
 export type SupervisorToolBroker = Pick<
   ReplicatedToolBrokerClient,
-  | "operationUrlFor"
+  | "operationResultUrlFor"
   | "checkHealth"
   | "create"
   | "capture"
@@ -446,6 +446,11 @@ export class PiWorkerRuntime {
       await trustedTools.start();
       this.#trustedTools = trustedTools;
       const runner = new RemoteToolSandboxTurnRunner({
+        publishToolCommand: (command) => {
+          const channel = factChannelResolver(factChannels).resolve(command.executionLease);
+          if (!channel) throw new Error("Tool command Fact Stream is unavailable");
+          return channel.publishToolCommand(command);
+        },
         broker: this.#toolBroker,
         runtimeIdentity: identity,
         trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,

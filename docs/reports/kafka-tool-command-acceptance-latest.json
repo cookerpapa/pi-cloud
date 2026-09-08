@@ -1,0 +1,69 @@
+{
+  "format": "pi-cloud.kafka-tool-command-acceptance.v1",
+  "checkedAt": "2026-09-08T01:23:40.426Z",
+  "topology": "two real Kafka consumers + production result HTTP servers; R=3 four-partition private topic; 3 CPU/2 GiB runner",
+  "scope": "accepted command -> Kafka -> Broker dispatch -> counting executor -> HTTP result; no Gate SQL, model or Cube time",
+  "progress": [
+    {
+      "sessions": 1,
+      "commands": 3,
+      "commandsPerSecond": 2.9,
+      "latencyMs": {
+        "p50": 10.45,
+        "p95": 1009.88
+      }
+    },
+    {
+      "sessions": 16,
+      "commands": 48,
+      "commandsPerSecond": 301.3,
+      "latencyMs": {
+        "p50": 19.52,
+        "p95": 123.53
+      }
+    },
+    {
+      "sessions": 128,
+      "commands": 384,
+      "commandsPerSecond": 641.9,
+      "latencyMs": {
+        "p50": 34.8,
+        "p95": 521.55
+      }
+    },
+    {
+      "sessions": 1024,
+      "commands": 3072,
+      "commandsPerSecond": 1589.5,
+      "latencyMs": {
+        "p50": 20.33,
+        "p95": 1528.41
+      }
+    }
+  ],
+  "effects": 3509,
+  "duplicateEffects": 0,
+  "directExecutionPostRejected": true,
+  "processFault": {
+    "killedBeforeEffect": true,
+    "replacementExecutedOnlyNewBinding": true
+  },
+  "longCommandDidNotBlockAnother": true,
+  "sealedCommandNotExecuted": true,
+  "consumerStatistics": [
+    {
+      "consumedFacts": 3515,
+      "acceptedCommands": 1758,
+      "activeCommands": 0,
+      "retainedResults": 1757
+    },
+    {
+      "consumedFacts": 3515,
+      "acceptedCommands": 1752,
+      "activeCommands": 0,
+      "retainedResults": 1752
+    }
+  ],
+  "revision": "907682e4034d9455b784dbb9c109068e53b7c799",
+  "workingTreeDirty": true
+}

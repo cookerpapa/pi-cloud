@@ -5,7 +5,7 @@ import {
   type PiCloudEvent,
 } from "@pi-cloud/protocol";
 import { isDeepStrictEqual } from "node:util";
-import type { PiSessionMutationFactChannel } from "./accepted-fact.ts";
+import type { AcceptedFactWriter } from "./accepted-fact.ts";
 
 export type DurableEventStoreErrorCode =
   | "not_found"
@@ -35,7 +35,7 @@ export type FactChannelOpenRequest = Readonly<{
   nextEventSeq: number;
 }>;
 
-export interface FactChannel extends PiSessionMutationFactChannel {
+export interface FactChannel extends AcceptedFactWriter {
   readonly acknowledgedThroughSeq: number;
   ingest(value: unknown): Promise<EventAckMessage>;
   close(): Promise<void>;
@@ -113,6 +113,12 @@ export class DurableEventStore implements FactChannelFactory {
         throw new DurableEventStoreError(
           "event_store_invariant",
           "The deterministic event log cannot project Pi Session mutations",
+        );
+      },
+      publishToolCommand: async () => {
+        throw new DurableEventStoreError(
+          "event_store_invariant",
+          "The deterministic event log cannot execute Tool commands",
         );
       },
       close: async () => {

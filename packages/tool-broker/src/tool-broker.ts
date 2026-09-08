@@ -1690,6 +1690,14 @@ export class ToolBroker {
     return durable;
   }
 
+  ownsToolBinding(activationId: string): boolean {
+    return this.#toolBindings.has(activationId);
+  }
+
+  assertToolResultReader(activationId: string, executionLease: string): void {
+    this.#authorizedBinding(activationId, executionLease);
+  }
+
   async refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
     const activation = this.#ownedBinding(activationId, assignment);
     if (this.#provider.discoverHttpServices === undefined)

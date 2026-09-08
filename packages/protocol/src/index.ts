@@ -601,3 +601,4 @@ export {
 
 export { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC } from "./terminal-event-outbox.ts";
 export { normalizeProviderHostedWebSearchAction } from "./hosted-search-action.ts";
+export * from "./tool-command.ts";

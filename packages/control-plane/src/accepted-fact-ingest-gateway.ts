@@ -10,6 +10,8 @@ import {
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
   type FactChannelOpenMessage,
+  type CandidateToolCommand,
+  type ToolCommandAcceptedFrame,
 } from "@pi-cloud/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { RawData, WebSocket } from "ws";
@@ -173,6 +175,24 @@ export class AcceptedFactIngestGateway {
   }
 
   async #process(context: ConnectionContext, stream: StreamContext, value: unknown): Promise<void> {
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      (value as { type?: unknown }).type === "fact.tool_command.publish"
+    ) {
+      if (!stream.channel) throw new Error("Fact Stream must open first");
+      const frame = value as { messageId: string; payload: CandidateToolCommand };
+      const accepted = await stream.channel.publishToolCommand(frame.payload);
+      const ack: ToolCommandAcceptedFrame = {
+        protocolVersion: 1,
+        messageId: crypto.randomUUID(),
+        sentAt: new Date().toISOString(),
+        type: "fact.tool_command.accepted",
+        payload: { acknowledgedMessageId: frame.messageId, ...accepted },
+      };
+      await send(context.socket, stream.streamId, ack);
+      return;
+    }
     if (
       typeof value === "object" &&
       value !== null &&

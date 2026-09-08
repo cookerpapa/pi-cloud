@@ -11,7 +11,6 @@ import {
   parseToolBrokerListWorkspaceDirectoryRequest,
   parseToolBrokerReadWorkspaceFileRequest,
   parseSupervisorManagementRequest,
-  parseToolSandboxOperationRequest,
   parseSourceControlWorkspaceCredentialRequest,
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,
   PREVIEW_SCOPE_HEADER,
@@ -30,13 +29,14 @@ import {
   TOOL_BROKER_INVENTORY_PATH,
   TOOL_BROKER_LIVE_PATH,
   TOOL_BROKER_WORKSPACE_BROWSER_PATH,
-  TOOL_BROKER_OPERATION_PATH,
+  TOOL_BROKER_OPERATION_RESULT_PATH,
   TOOL_BROKER_READY_PATH,
   TOOL_BROKER_SERVICE_PATH,
   TOOL_BROKER_SOURCE_CONTROL_PATH,
 } from "./tool-broker-client.ts";
 import { ToolBrokerError } from "./sandbox-provider.ts";
 import { ToolBrokerOwnerRedirectError, type ToolBroker } from "./tool-broker.ts";
+import type { KafkaToolCommandConsumer } from "./kafka-tool-command-consumer.ts";
 
 const DEFAULT_BODY_LIMIT = 5 * 1_024 * 1_024;
 const DEFAULT_TERMINAL_SEND_BUFFER_BYTES = 1 * 1_024 * 1_024;
@@ -49,6 +49,7 @@ export type ToolBrokerServerOptions = {
   workspaceServiceToken?: string;
   terminalToken?: string;
   broker: ToolBrokerBackend;
+  commands: Pick<KafkaToolCommandConsumer, "waitResult" | "checkHealth">;
   bodyLimit?: number;
   metrics?: PiCloudMetrics;
 };
@@ -62,7 +63,6 @@ export type ToolBrokerBackend = Pick<
   | "forkWorkspace"
   | "release"
   | "stop"
-  | "execute"
   | "listWorkspaceDirectory"
   | "readWorkspaceFile"
   | "listAssignments"
@@ -175,6 +175,7 @@ export class ToolBrokerServer {
   readonly #workspaceServiceDigest: Buffer | undefined;
   readonly #terminalDigest: Buffer | undefined;
   readonly #broker: ToolBrokerBackend;
+  readonly #commands: ToolBrokerServerOptions["commands"];
   readonly #server: FastifyInstance;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #capacityMetrics: NodeJS.Timeout;
@@ -199,6 +200,7 @@ export class ToolBrokerServer {
         ? undefined
         : digest(validServiceToken(options.terminalToken));
     this.#broker = options.broker;
+    this.#commands = options.commands;
     this.#metrics = options.metrics;
     this.#server = Fastify({
       logger: false,
@@ -289,6 +291,7 @@ export class ToolBrokerServer {
   async listen(): Promise<string> {
     if (this.#address !== undefined) throw new Error("Tool Broker is already listening");
     await this.#broker.checkHealth();
+    this.#commands.checkHealth();
     this.#recordCapacityMetrics();
     this.#address = await this.#server.listen({ host: this.#host, port: this.#port });
     this.#ready = true;
@@ -418,6 +421,7 @@ export class ToolBrokerServer {
       if (healthy) {
         try {
           await this.#broker.checkHealth();
+          this.#commands.checkHealth();
         } catch {
           healthy = false;
         }
@@ -755,7 +759,7 @@ export class ToolBrokerServer {
       }
     });
 
-    this.#server.post(TOOL_BROKER_OPERATION_PATH, async (request, reply) => {
+    this.#server.get(TOOL_BROKER_OPERATION_RESULT_PATH, async (request, reply) => {
       const executionLease = bearer(request.headers.authorization);
       if (
         executionLease === undefined ||
@@ -771,15 +775,29 @@ export class ToolBrokerServer {
         return;
       }
       try {
-        const message = parseToolSandboxOperationRequest(request.body);
+        const message = request.query as { activationId?: string; operationId?: string };
+        if (
+          !message.activationId ||
+          !message.operationId ||
+          ![message.activationId, message.operationId].every((id) =>
+            /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id),
+          )
+        )
+          throw new ToolBrokerError(
+            "invalid_tool_result_request",
+            "Tool result requires activationId and operationId",
+            false,
+          );
+        const activationId = message.activationId,
+          operationId = message.operationId;
         const response = await this.#observed({
           request,
-          spanName: `tool.${message.operation}`,
-          operation: message.operation,
-          kind: "tool",
+          spanName: "tool.result",
+          operation: "tool_result_read",
+          kind: "sandbox",
           // Tool execution is owned by operationId and the Run lease, not by
           // this particular HTTP connection. Explicit stop/cancel revokes it.
-          run: () => this.#broker.execute(executionLease, message),
+          run: () => this.#commands.waitResult(executionLease, activationId, operationId),
         });
         this.#metrics?.sandboxActive.set(
           { provider: this.#broker.providerId },

@@ -1,0 +1,16 @@
+{
+  "name": "@pi-cloud/event-log",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@confluentinc/kafka-javascript": "1.10.0",
+    "@pi-cloud/observability": "0.1.0"
+  }
+}

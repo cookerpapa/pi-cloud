@@ -19,7 +19,7 @@ execution authorization boundary.
 - Turn admission copies that grant into an immutable Run capability snapshot.
 - Every Attempt carries the same Run snapshot to the Agent Host.
 - The Host registers only the granted Pi `AgentTool` proxies.
-- Every Tool RPC includes the trusted Pi Tool name as well as the low-level
+- Every accepted Tool command includes the trusted Pi Tool name as well as the low-level
   operation kind.
 - Tool Broker binds the Run to the Workspace runtime through the Session lease
   and Run snapshot, then rejects an ungranted Tool or an operation which does
@@ -34,8 +34,8 @@ code inside the trusted Host.
 ## Consequences
 
 - Two Agent runtimes in one Host can receive different visible Tool sets.
-- A forged Tool RPC still fails at Tool Broker even if a caller obtains an
-  operation route.
+- A forged Tool command still fails its effect admission at Tool Broker. The
+  removed execution POST route cannot bypass Kafka (ADR-0157).
 - Policy changes affect later Runs and never mutate an already accepted Run.
 - Protocol and database migrations are required, together with Host/Broker
   contract tests.

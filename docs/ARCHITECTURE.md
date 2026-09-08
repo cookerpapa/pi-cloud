@@ -441,6 +441,30 @@ provider delivery remain user-directed actions in a later conversation Turn.
 
 ### Tool Broker and Cube
 
+Agent file/shell commands enter the same AcceptedFact log through the Worker
+Fact connection and Authority Gate. `tool_command` contains canonical execution
+identity and the concrete operation, but no bearer token. Pi's two native
+semantic barriers remain; each resulting remote operation uses a durable command
+publication instead of a direct execution RPC. This extra transport ACK must be
+included in latency measurements (one native edit can make several operations).
+
+Broker consumes commands and calls Cube asynchronously with respect to partition
+consumption. Workers use only `GET /internal/v1/tool-operation-result` to await
+results; the old execution POST has been removed, not retained as a fallback.
+Result bodies stay on the existing Worker redaction/Pi checkpoint path rather
+than being copied into a second PostgreSQL transcript. Management APIs, terminal,
+Preview and Code Host authorization are not Agent execution-command consumers.
+
+Each Broker boot has a separate consumer group because live Tool bindings belong
+to that boot. It executes only its own activation IDs, captures the starting log
+position before readiness, and retains observed progress across consumer reconnect.
+A replacement boot does not replay commands for vanished bindings. This multiplies
+read traffic by Broker replicas; it is not exclusive global partition routing.
+The shared `event-log` package owns only the adopted Kafka transport and does not
+bring Pi/Agent Runtime into the Broker. A seal rejects later commands; commands
+already admitted may remain UNKNOWN. Existing PG owner/Lease and operation-ID
+checks remain, and Cube final-entry fencing is a separate research boundary.
+
 The Broker validates opaque Tool authority, resolves a Workspace's Sandbox
 Domain and reconciles Cube lifecycle. Pi cannot choose a Sandbox ID, image,
 mount, runtime class, resource limit or network policy.

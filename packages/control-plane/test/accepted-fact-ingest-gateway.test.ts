@@ -58,6 +58,9 @@ describe("AcceptedFactIngestGateway", () => {
           ingest: async () => {
             throw new Error("No publication expected");
           },
+          publishToolCommand: async () => {
+            throw new Error("No Tool commands in this fixture");
+          },
           mutate: async () => {
             throw new Error("No mutation expected");
           },
@@ -152,6 +155,9 @@ describe("AcceptedFactIngestGateway", () => {
             });
             if (ack.type !== "event.ack") throw new Error("Invalid ACK fixture");
             return ack;
+          },
+          publishToolCommand: async () => {
+            throw new Error("No Tool commands in this fixture");
           },
           mutate: async (mutation) => ({ mutationId: mutation.mutationId, accepted: true }),
           close: vi.fn(async () => {

@@ -9,7 +9,8 @@ import {
 import { parsePiCloudEvent } from "@pi-cloud/protocol";
 import type { AcceptedFact, AcceptedFactBus, AcceptedFactReceipt } from "./accepted-fact.ts";
 
-export const ACCEPTED_FACT_TOPIC = "pi-cloud.accepted-facts.v4";
+import { ACCEPTED_FACT_TOPIC } from "@pi-cloud/event-log";
+export { ACCEPTED_FACT_TOPIC };
 
 export type KafkaAcceptedFactConfiguration = Readonly<{
   brokers: readonly string[];
@@ -62,7 +63,7 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
   if (parsed.kind === "agent_event") {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) };
   }
-  if (parsed.kind === "execution_seal") return parsed;
+  if (parsed.kind === "execution_seal" || parsed.kind === "tool_command") return parsed;
   if (parsed.kind === "execution_committed") {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) as typeof parsed.event };
   }

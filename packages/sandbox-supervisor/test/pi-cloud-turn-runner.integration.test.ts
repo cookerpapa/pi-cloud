@@ -130,7 +130,7 @@ describe("PiCloudTurnRunner integration", () => {
         throw new Error("unused");
       },
       async stop() {},
-      operationUrlFor() {
+      operationResultUrlFor() {
         return "http://tool-broker.test/internal/v1/tool-operation";
       },
     } as ToolBrokerBoundary;
@@ -205,7 +205,7 @@ describe("PiCloudTurnRunner integration", () => {
       async refreshServices() {},
       release,
       async stop() {},
-      operationUrlFor() {
+      operationResultUrlFor() {
         return "http://tool-broker.test/internal/v1/tool-operation";
       },
     } as ToolBrokerBoundary;
@@ -309,11 +309,15 @@ describe("PiCloudTurnRunner integration", () => {
         release,
         stop,
         async refreshServices() {},
-        operationUrlFor() {
+        operationResultUrlFor() {
           return "http://tool-broker.test/internal/v1/tool-operation";
         },
       } as ToolBrokerBoundary;
       const runner = new RemoteToolSandboxTurnRunner({
+        publishToolCommand: async (command) => ({
+          operationId: command.request.operationId,
+          accepted: true,
+        }),
         broker,
         runtimeIdentity: {
           supervisorId: "supervisor-development-failure-test",

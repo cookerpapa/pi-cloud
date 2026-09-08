@@ -8,6 +8,7 @@ import {
   type CloudToolName,
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
+  type ToolCommandPublisher,
 } from "@pi-cloud/protocol";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
@@ -34,6 +35,17 @@ import type { PiWorldStateModelMessage } from "./pi-sandbox-continuity.ts";
 const MAX_RESPONSE_BYTES = 5 * 1_024 * 1_024;
 const MAX_PROJECT_INSTRUCTIONS_BYTES = 16 * 1_024;
 const HIDDEN_GIT_CREDENTIAL_FILE = ".git-credentials";
+const UNAVAILABLE_TOOL_CODES = new Set([
+  "cubesandbox_tool_result_unknown",
+  "cubesandbox_tool_unavailable",
+  "tool_sandbox_identity_mismatch",
+  "tool_command_delivery_unknown",
+  "tool_command_executor_closed",
+  "tool_command_sealed",
+  "tool_operation_outcome_unknown",
+  "stale_session_lease",
+  "ownership_lost",
+]);
 
 export function redactToolSecrets(value: Buffer): Buffer {
   const source = value.toString("utf8");
@@ -92,11 +104,12 @@ class RemoteToolError extends Error {
 }
 
 export type TrustedRemoteToolsRuntimeConfiguration = {
-  operationUrl?: string;
+  publishToolCommand: ToolCommandPublisher["publishToolCommand"];
+  operationResultUrl?: string;
   activationId?: string;
   resolveOperationTarget?: () =>
-    | Promise<Readonly<{ operationUrl: string; activationId: string }>>
-    | Readonly<{ operationUrl: string; activationId: string }>;
+    | Promise<Readonly<{ operationResultUrl: string; activationId: string }>>
+    | Readonly<{ operationResultUrl: string; activationId: string }>;
   executionLease: string;
   turnContextSha256: string;
   attemptContextSha256: string;
@@ -132,16 +145,16 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
 
 type ValidatedRemoteToolsRuntimeConfiguration = Omit<
   TrustedRemoteToolsRuntimeConfiguration,
-  "operationUrl" | "activationId" | "resolveOperationTarget"
+  "operationResultUrl" | "activationId" | "resolveOperationTarget"
 > & {
-  resolveOperationTarget(): Promise<Readonly<{ operationUrl: string; activationId: string }>>;
+  resolveOperationTarget(): Promise<Readonly<{ operationResultUrl: string; activationId: string }>>;
 };
 
 function validateOperationTarget(target: {
-  operationUrl: string;
+  operationResultUrl: string;
   activationId: string;
-}): Readonly<{ operationUrl: string; activationId: string }> {
-  const parsed = new URL(target.operationUrl);
+}): Readonly<{ operationResultUrl: string; activationId: string }> {
+  const parsed = new URL(target.operationResultUrl);
   if (
     (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
     parsed.username ||
@@ -154,17 +167,17 @@ function validateOperationTarget(target: {
   ) {
     throw new Error("Trusted Tool Sandbox operation target is invalid");
   }
-  return { operationUrl: parsed.toString(), activationId: target.activationId };
+  return { operationResultUrl: parsed.toString(), activationId: target.activationId };
 }
 
 function validateRuntimeConfiguration(
   candidate: TrustedRemoteToolsRuntimeConfiguration,
 ): ValidatedRemoteToolsRuntimeConfiguration {
   const staticTarget =
-    candidate.operationUrl === undefined || candidate.activationId === undefined
+    candidate.operationResultUrl === undefined || candidate.activationId === undefined
       ? undefined
       : validateOperationTarget({
-          operationUrl: candidate.operationUrl,
+          operationResultUrl: candidate.operationResultUrl,
           activationId: candidate.activationId,
         });
   if ((staticTarget === undefined) === (candidate.resolveOperationTarget === undefined)) {
@@ -231,6 +244,7 @@ function validateRuntimeConfiguration(
     throw new Error("Trusted trace state is invalid");
   }
   return {
+    publishToolCommand: candidate.publishToolCommand,
     resolveOperationTarget,
     executionLease,
     turnContextSha256,
@@ -436,6 +450,7 @@ function registerTrustedRemoteTools(
     request: RemoteOperationInput,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> => {
+    signal?.throwIfAborted();
     if (currentStep === undefined) {
       throw new RemoteToolError(
         "step_context_unavailable",
@@ -457,16 +472,32 @@ function registerTrustedRemoteTools(
       toolName,
       ...request,
     } as ToolSandboxOperationRequest;
+    signal?.throwIfAborted();
+    await runtime.publishToolCommand({
+      executionLease: runtime.executionLease,
+      request: candidate,
+      occurredAt: new Date().toISOString(),
+      ...(runtime.traceparent
+        ? {
+            traceContext: {
+              traceparent: runtime.traceparent,
+              ...(runtime.tracestate ? { tracestate: runtime.tracestate } : {}),
+            },
+          }
+        : {}),
+    });
+    const resultUrl = new URL(target.operationResultUrl);
+    resultUrl.searchParams.set("activationId", target.activationId);
+    resultUrl.searchParams.set("operationId", candidate.operationId);
     const requestOnce = async (): Promise<{ response: Response; value: unknown }> => {
-      const response = await fetch(target.operationUrl, {
-        method: "POST",
+      const response = await fetch(resultUrl, {
+        method: "GET",
         headers: {
           authorization: `Bearer ${runtime.executionLease}`,
           "content-type": "application/json",
           ...(runtime.traceparent === undefined ? {} : { traceparent: runtime.traceparent }),
           ...(runtime.tracestate === undefined ? {} : { tracestate: runtime.tracestate }),
         },
-        body: JSON.stringify(candidate),
         ...(signal === undefined ? {} : { signal }),
       });
       return { response, value: await responseJson(response) };
@@ -487,13 +518,7 @@ function registerTrustedRemoteTools(
     if (!response.ok) {
       try {
         const failure = parseInternalServiceError(value).error;
-        if (
-          [
-            "cubesandbox_tool_result_unknown",
-            "cubesandbox_tool_unavailable",
-            "tool_sandbox_identity_mismatch",
-          ].includes(failure.code)
-        ) {
+        if (UNAVAILABLE_TOOL_CODES.has(failure.code)) {
           await runtime.onToolOperationUnavailable?.(failure);
         }
         throw new RemoteToolError(failure.code, failure.message, failure.retryable);
@@ -518,13 +543,7 @@ function registerTrustedRemoteTools(
       );
     }
     if (parsed.type === "tool_sandbox.operation_failed") {
-      if (
-        [
-          "cubesandbox_tool_result_unknown",
-          "cubesandbox_tool_unavailable",
-          "tool_sandbox_identity_mismatch",
-        ].includes(parsed.code)
-      ) {
+      if (UNAVAILABLE_TOOL_CODES.has(parsed.code)) {
         await runtime.onToolOperationUnavailable?.(parsed);
       }
       throwFailure(parsed);

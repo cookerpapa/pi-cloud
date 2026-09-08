@@ -1,5 +1,10 @@
 import type { PiSessionMutationOperation } from "@pi-cloud/pi-session-postgres";
 import type { EventPublishMessage, PiCloudEvent, PiCloudEventBody } from "@pi-cloud/protocol";
+import type {
+  AcceptedToolCommand,
+  CandidateToolCommand,
+  ToolCommandPublisher,
+} from "@pi-cloud/protocol";
 
 export type CandidatePiSessionMutationFact = Readonly<{
   schemaVersion: 1;
@@ -19,6 +24,7 @@ export type CandidatePiSessionMutationFact = Readonly<{
 }>;
 
 export type CandidateFact =
+  | Readonly<{ kind: "tool_command"; command: CandidateToolCommand }>
   | Readonly<{ kind: "agent_event"; publication: EventPublishMessage }>
   | Readonly<{ kind: "pi_session_mutation"; mutation: CandidatePiSessionMutationFact }>;
 
@@ -73,6 +79,7 @@ export type AcceptedPiSessionMutationFact = Readonly<{
 }>;
 
 export type AcceptedFact =
+  | AcceptedToolCommand
   | AcceptedAgentEventFact
   | AcceptedExecutionSealFact
   | AcceptedExecutionCommitFact
@@ -128,6 +135,8 @@ export interface PiSessionMutationFactChannel {
 }
 
 export interface ActiveFactChannelResolver {
-  resolve(executionLease: string): PiSessionMutationFactChannel | undefined;
+  resolve(executionLease: string): AcceptedFactWriter | undefined;
   checkHealth(): Promise<void>;
 }
+
+export interface AcceptedFactWriter extends PiSessionMutationFactChannel, ToolCommandPublisher {}

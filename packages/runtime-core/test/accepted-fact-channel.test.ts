@@ -3,6 +3,7 @@ import {
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
   type EventPublishMessage,
+  type ToolCommandPublishFrame,
 } from "@pi-cloud/protocol";
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,7 +16,9 @@ import {
 import type { PiSessionMutationPublishFrame } from "../src/accepted-fact.ts";
 
 type WorkerFactFrame =
-  ReturnType<typeof parseSupervisorToControlMessage> | PiSessionMutationPublishFrame;
+  | ReturnType<typeof parseSupervisorToControlMessage>
+  | PiSessionMutationPublishFrame
+  | ToolCommandPublishFrame;
 
 const resources: Array<() => Promise<void>> = [];
 
@@ -73,7 +76,8 @@ async function startServer(
       const envelope = parseFactTransportEnvelope(JSON.parse(data.toString("utf8")));
       const candidate = envelope.payload as WorkerFactFrame;
       const value =
-        candidate.type === "fact.pi_session_mutation.publish"
+        candidate.type === "fact.pi_session_mutation.publish" ||
+        candidate.type === "fact.tool_command.publish"
           ? candidate
           : parseSupervisorToControlMessage(candidate);
       onMessage(value, (response) =>
@@ -101,6 +105,20 @@ async function startServer(
 }
 
 function respondToFact(message: WorkerFactFrame, send: (value: unknown) => void): void {
+  if (message.type === "fact.tool_command.publish") {
+    send({
+      protocolVersion: 1,
+      messageId: id(10, 5),
+      sentAt: new Date().toISOString(),
+      type: "fact.tool_command.accepted",
+      payload: {
+        acknowledgedMessageId: message.messageId,
+        operationId: message.payload.request.operationId,
+        accepted: true,
+      },
+    });
+    return;
+  }
   if (message.type === "fact.channel.open") {
     send(
       parseControlToSupervisorMessage({
@@ -181,6 +199,28 @@ describe("WebSocketAcceptedFactIngestor", () => {
       type: "event.ack",
       payload: { acknowledgedThroughSeq: 1 },
     });
+    await expect(
+      writer.publishToolCommand({
+        executionLease: event.payload.executionLease,
+        occurredAt: new Date().toISOString(),
+        request: {
+          toolBrokerProtocolVersion: 1,
+          type: "tool_sandbox.operation",
+          activationId: id(1, 30),
+          operationId: id(1, 31),
+          turnContextSha256: "a".repeat(64),
+          attemptContextSha256: "a".repeat(64),
+          stepContextSequence: 1,
+          stepContextSha256: "a".repeat(64),
+          toolName: "bash",
+          operation: "bash.exec",
+          command: "pwd",
+          cwd: "/workspace",
+          timeoutMs: 1000,
+        },
+      }),
+    ).resolves.toEqual({ operationId: id(1, 31), accepted: true });
+    expect(writer.acknowledgedThroughSeq).toBe(1); // commands are not extra UI events.
     expect(writer.acknowledgedThroughSeq).toBe(1);
     await expect(
       ingestor.resolve(event.payload.executionLease)?.mutate({

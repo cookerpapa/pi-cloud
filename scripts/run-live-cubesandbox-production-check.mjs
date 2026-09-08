@@ -314,7 +314,7 @@ async function kafkaState() {
     "--bootstrap-server",
     "kafka-1:9092",
     "--topic",
-    "pi-cloud.accepted-facts.v4",
+    "pi-cloud.accepted-facts.v5",
     "--time",
     "-1",
   ]);
