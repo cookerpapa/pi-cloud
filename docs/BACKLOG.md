@@ -73,6 +73,12 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Capacity
 
+- [x] ADR-0160: isolate and test Kafka ACK-only native Session append, including
+      stopped/restarted projection, lost ACKs, multiple Lanes and real Cube coding.
+      This experiment is not the deployed backend; [evidence](reports/kafka-native-session-append-experiment.md).
+- [ ] Before Kafka-native production cutover, unify active append, Child Lane
+      creation and seal-time repair ordering; provide bounded seed/recovery,
+      align physical-Session Kafka keys and protect retention against projection lag.
 - [x] ADR-0159: materialize the committed active Lane in Run memory, retaining PG
       write barriers and cold restoration. Cover native Compaction, branch
       isolation, retry/interruption, rejected commits and clone isolation.

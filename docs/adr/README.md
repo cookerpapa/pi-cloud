@@ -4,6 +4,10 @@ This directory contains only decisions that constrain the maintained Pi Cloud
 product. Superseded experiments and pre-release decisions are intentionally not
 kept beside current ADRs; Git history is their archive.
 
+Active experiment, **not deployed**: [ADR-0160](0160-kafka-native-session-append-experiment.md)
+tests Kafka ACK-only native Session append. Production still uses ADR-0159's PG
+receipt boundary until all Session writers and bounded recovery are integrated.
+
 Read the documents in this order:
 
 1. [ADR-0159](0159-committed-lane-execution-view.md) — active Lane read materialization
