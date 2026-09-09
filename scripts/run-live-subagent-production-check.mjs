@@ -499,6 +499,32 @@ try {
   assert.equal(focusedTree.rootSessionId, recursiveEvidence[1].childSessionId);
   assert.equal(focusedTree.currentSessionId, recursiveEvidence[1].childSessionId);
 
+  const detailEvidence = [];
+  for (const child of [
+    noneEvidence,
+    lazyEvidence,
+    ...parallelEvidence,
+    sharedEvidence,
+    isolatedEvidence,
+    ...recursiveEvidence,
+  ]) {
+    const detail = await api.getConversation(child.childSessionId);
+    assert.equal(detail.session.sessionId, child.childSessionId);
+    assert(
+      detail.turns.some((turn) => turn.state === "completed"),
+      "Child detail did not contain its completed Run",
+    );
+    assert.equal(
+      detail.inheritedMessages.length > 0,
+      child.contextBaseEntryId != null,
+      "Child inherited history did not match its lane anchor",
+    );
+    detailEvidence.push({
+      sessionId: child.childSessionId,
+      inheritedMessages: detail.inheritedMessages.length,
+    });
+  }
+
   const tenantId = await psql(
     `select tenant_id::text from sessions where id = ${sqlLiteral(session.sessionId)}`,
   );
@@ -525,6 +551,7 @@ try {
     },
     recursiveTree: recursiveEvidence,
     productProjection: {
+      detailEvidence,
       listContainsEveryRecursiveSession: true,
       fullTreePreservesNestedParent: true,
       nestedFocusRoot: focusedTree.rootSessionId,

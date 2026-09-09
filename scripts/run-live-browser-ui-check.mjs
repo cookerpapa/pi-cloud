@@ -305,6 +305,18 @@ try {
         30_000,
       );
       const openingRequests = [];
+      const openingDiagnostics = new Map();
+      const stopDiagnostics = page.onNetworkEvent((method, params) => {
+        if (
+          method === "Network.requestWillBeSent" &&
+          new URL(params.request.url).pathname.endsWith("/events")
+        )
+          openingDiagnostics.set(params.requestId, { url: params.request.url });
+        const entry = openingDiagnostics.get(params.requestId);
+        if (!entry) return;
+        if (method === "Network.responseReceived") entry.status = params.response.status;
+        if (method === "Network.loadingFailed") entry.error = params.errorText;
+      });
       const stopOpeningObserver = page.onRequest((url) =>
         openingRequests.push(new URL(url).pathname),
       );
@@ -322,8 +334,9 @@ try {
           (path) => path === `/v1/sessions/${elasticConversation.sessionId}/events`,
         ).length,
         1,
-        "Opening a Session did not use one snapshot stream",
+        `Opening a Session did not use one snapshot stream: ${JSON.stringify([...openingDiagnostics.values()])}`,
       );
+      stopDiagnostics();
       assert.equal(
         openingRequests.filter(
           (path) => path === `/v1/conversations/${elasticConversation.sessionId}`,
@@ -331,6 +344,57 @@ try {
         0,
         "Opening a Session redundantly downloaded REST history",
       );
+      if (process.argv.includes("--reopen-only")) {
+        for (let iteration = 0; iteration < 10; iteration++) {
+          await setValue(
+            ".product-composer textarea",
+            "Do not call tools. Reply with exactly BROWSER-UI-CHAT-OK.",
+          );
+          await click(".product-send-button", `composer.reopenRound${iteration}`);
+          await waitFor(
+            async () => {
+              const current = await api.getConversation(elasticConversation.sessionId);
+              return (
+                current.turns.length >= iteration + 2 && current.turns.at(-1)?.state === "completed"
+              );
+            },
+            "fresh completed Run before reopening",
+            180000,
+          );
+          await page.waitFor(
+            `document.querySelectorAll(".product-turn").length>=${iteration + 2} && !document.querySelector(".product-composer .product-model-menu-trigger").disabled`,
+            30000,
+          );
+          const requests = new Map();
+          const stop = page.onNetworkEvent((method, params) => {
+            if (
+              method === "Network.requestWillBeSent" &&
+              new URL(params.request.url).pathname.endsWith("/events")
+            )
+              requests.set(params.requestId, { url: params.request.url });
+            const item = requests.get(params.requestId);
+            if (!item) return;
+            if (method === "Network.responseReceived") item.status = params.response.status;
+            if (method === "Network.loadingFailed") item.error = params.errorText;
+          });
+          await clickText(
+            ".product-conversation-row > button:first-child",
+            `UI acceptance ${suffix}`,
+            `conversation.reopen${iteration}`,
+          );
+          await page.waitFor(
+            '!document.querySelector(".product-conversation-row.active > button:first-child").disabled',
+          );
+          await page.wait(50);
+          stop();
+          assert.equal(
+            requests.size,
+            1,
+            `Repeated opening: ${JSON.stringify([...requests.values()])}`,
+          );
+        }
+        return;
+      }
       await click(".product-composer .product-model-menu-trigger", "conversation.modelMenuOpen");
       await clickText(
         ".product-model-menu-panel:first-child button",
@@ -765,12 +829,14 @@ const report = {
     userSubmitToFirstAssistantText: chatFirstAssistantTextMs,
     userSubmitToCompleteReply: chatCompleteVisibleMs,
   },
-  screenshotCaptured: true,
+  testMode: process.argv.includes("--reopen-only") ? "reopen" : "full",
+  screenshotCaptured: !process.argv.includes("--reopen-only"),
   cleanupCompleted: true,
 };
-await writeFile(
-  resolve(repositoryRoot, "docs/reports/browser-ui-acceptance-latest.json"),
-  `${JSON.stringify(report, null, 2)}\n`,
-  "utf8",
-);
+if (!process.argv.includes("--reopen-only"))
+  await writeFile(
+    resolve(repositoryRoot, "docs/reports/browser-ui-acceptance-latest.json"),
+    `${JSON.stringify(report, null, 2)}\n`,
+    "utf8",
+  );
 process.stdout.write(`${JSON.stringify(report)}\n`);

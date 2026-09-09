@@ -129,6 +129,14 @@ export async function withChromePage(
     });
     const page = {
       send: cdp.send,
+      onNetworkEvent(listener) {
+        const observe = (raw) => {
+          const message = JSON.parse(String(raw));
+          if (message.method?.startsWith("Network.")) listener(message.method, message.params);
+        };
+        cdp.socket.on("message", observe);
+        return () => cdp.socket.off("message", observe);
+      },
       onRequest(listener) {
         const observe = (raw) => {
           const message = JSON.parse(String(raw));
