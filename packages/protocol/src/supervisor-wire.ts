@@ -397,74 +397,6 @@ export const EventPublishMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const FactChannelOpenMessageSchema = Type.Object(
-  {
-    ...WireEnvelopeProperties,
-    type: Type.Literal("fact.channel.open"),
-    payload: Type.Object(
-      {
-        executionLease: ExecutionLeaseSchema,
-        sessionId: OpaqueIdSchema,
-        piSession: PiSessionLaneBindingSchema,
-        turnId: OpaqueIdSchema,
-        nextEventSeq: PositiveSafeIntegerSchema,
-      },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
-
-export const FactChannelReadyMessageSchema = Type.Object(
-  {
-    ...WireEnvelopeProperties,
-    type: Type.Literal("fact.channel.ready"),
-    payload: Type.Object(
-      {
-        acknowledgedMessageId: UuidSchema,
-        executionLease: ExecutionLeaseSchema,
-        sessionId: OpaqueIdSchema,
-        turnId: OpaqueIdSchema,
-        acknowledgedThroughSeq: NonNegativeSafeIntegerSchema,
-        leaseDurationMs: PositiveSafeIntegerSchema,
-      },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
-
-export const FactChannelCloseMessageSchema = Type.Object(
-  {
-    ...WireEnvelopeProperties,
-    type: Type.Literal("fact.channel.close"),
-    payload: Type.Object(
-      {
-        executionLease: ExecutionLeaseSchema,
-        acknowledgedThroughSeq: NonNegativeSafeIntegerSchema,
-      },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
-
-export const FactChannelClosedMessageSchema = Type.Object(
-  {
-    ...WireEnvelopeProperties,
-    type: Type.Literal("fact.channel.closed"),
-    payload: Type.Object(
-      {
-        acknowledgedMessageId: UuidSchema,
-        executionLease: ExecutionLeaseSchema,
-        acknowledgedThroughSeq: NonNegativeSafeIntegerSchema,
-      },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
-
 export const EventAckMessageSchema = Type.Object(
   {
     ...WireEnvelopeProperties,
@@ -560,8 +492,6 @@ export const SupervisorToControlMessageSchema = Type.Union([
   CommandAckMessageSchema,
   CommandResultMessageSchema,
   EventPublishMessageSchema,
-  FactChannelOpenMessageSchema,
-  FactChannelCloseMessageSchema,
   SupervisorHeartbeatMessageSchema,
 ]);
 
@@ -574,8 +504,6 @@ export const ControlToSupervisorMessageSchema = Type.Union([
   CommandReleaseMessageSchema,
   EventAckMessageSchema,
   EventRejectedMessageSchema,
-  FactChannelReadyMessageSchema,
-  FactChannelClosedMessageSchema,
   SupervisorHeartbeatAckMessageSchema,
 ]);
 
@@ -591,10 +519,6 @@ export type CommandResultMessage = Static<typeof CommandResultMessageSchema>;
 export type EventPublishMessage = Static<typeof EventPublishMessageSchema>;
 export type EventAckMessage = Static<typeof EventAckMessageSchema>;
 export type EventRejectedMessage = Static<typeof EventRejectedMessageSchema>;
-export type FactChannelOpenMessage = Static<typeof FactChannelOpenMessageSchema>;
-export type FactChannelReadyMessage = Static<typeof FactChannelReadyMessageSchema>;
-export type FactChannelCloseMessage = Static<typeof FactChannelCloseMessageSchema>;
-export type FactChannelClosedMessage = Static<typeof FactChannelClosedMessageSchema>;
 export type SupervisorHeartbeatMessage = Static<typeof SupervisorHeartbeatMessageSchema>;
 export type SupervisorHeartbeatAckMessage = Static<typeof SupervisorHeartbeatAckMessageSchema>;
 
@@ -603,8 +527,6 @@ export type SupervisorToControlMessage =
   | CommandAckMessage
   | CommandResultMessage
   | EventPublishMessage
-  | FactChannelOpenMessage
-  | FactChannelCloseMessage
   | SupervisorHeartbeatMessage;
 
 export type ControlToSupervisorMessage =
@@ -616,8 +538,6 @@ export type ControlToSupervisorMessage =
   | CommandReleaseMessage
   | EventAckMessage
   | EventRejectedMessage
-  | FactChannelReadyMessage
-  | FactChannelClosedMessage
   | SupervisorHeartbeatAckMessage;
 
 export class PiCloudWireProtocolError extends Error {

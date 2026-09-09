@@ -7,7 +7,6 @@ import { readInterruptedAssistantPrefix } from "./canonical-pi-conversation.ts";
 import { projectConversationTurnTranscript } from "./conversation-turn-projection.ts";
 import { PostgresPiSessionAppendProjector } from "./postgres-pi-session-append-projector.ts";
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
-import { enqueueExecutionCommit } from "./execution-stream-commit.ts";
 
 export function factEvents(fact: AcceptedFact): readonly PiCloudEvent[] {
   return fact.kind === "agent_event"
@@ -158,13 +157,16 @@ export class ExecutionStreamProjector {
     this.#prefixes.clear();
   }
 
-  async project(record: KafkaAcceptedFactRecord): Promise<void> {
+  accepts(record: KafkaAcceptedFactRecord): Promise<boolean> {
+    return this.#boundary.isOpen(record, false);
+  }
+
+  async project(record: KafkaAcceptedFactRecord): Promise<PiCloudEvent | undefined> {
     const { fact } = record;
-    if (fact.kind === "execution_committed") return; // Notification, not another mutation.
     if (!(await this.#boundary.isOpen(record, true))) {
       if (fact.kind === "execution_seal") {
         const prefix = this.#prefixes.get(fact.scope.attemptId);
-        await this.#seal(
+        const terminal = await this.#seal(
           fact,
           record,
           [...(prefix?.values() ?? [])].sort((a, b) => a.seq - b.seq),
@@ -173,6 +175,7 @@ export class ExecutionStreamProjector {
         if (fact.closesWriter)
           this.#boundary.closeWriter(fact.scope.writerId, record.offset, record.partition);
         this.#prefixes.delete(fact.scope.attemptId);
+        return terminal;
       }
       return;
     }
@@ -187,7 +190,7 @@ export class ExecutionStreamProjector {
     if (fact.kind === "pi_session_append") {
       await this.#mutations.project(fact, true, record);
     } else if (fact.kind === "execution_seal") {
-      await this.#seal(
+      const terminal = await this.#seal(
         fact,
         record,
         [...prefix.values()].sort((a, b) => a.seq - b.seq),
@@ -196,6 +199,7 @@ export class ExecutionStreamProjector {
       if (fact.closesWriter)
         this.#boundary.closeWriter(fact.scope.writerId, record.offset, record.partition);
       this.#prefixes.delete(fact.scope.attemptId);
+      return terminal;
     }
   }
 
@@ -203,8 +207,8 @@ export class ExecutionStreamProjector {
     fact: AcceptedExecutionSealFact,
     position: FactPosition,
     prefix: readonly PiCloudEvent[],
-  ): Promise<void> {
-    await this.#database.transaction().execute(async (transaction) => {
+  ): Promise<PiCloudEvent | undefined> {
+    const committed = await this.#database.transaction().execute(async (transaction) => {
       const attempt = await transaction
         .selectFrom("run_attempts")
         .select([
@@ -258,18 +262,8 @@ export class ExecutionStreamProjector {
           event.type !== "turn.cancelled"
         )
           throw new Error("Stored execution terminal has an invalid type");
-        await enqueueExecutionCommit(
-          transaction,
-          fact,
-          {
-            topic: attempt.output_first_topic!,
-            partition: attempt.output_first_partition!,
-            offset: BigInt(attempt.output_seal_offset!),
-          },
-          event,
-        );
         await recordFactProjection(transaction, position);
-        return;
+        return event;
       }
       if (
         attempt.output_first_offset !== null &&
@@ -352,9 +346,10 @@ export class ExecutionStreamProjector {
         event.type !== "turn.cancelled"
       )
         throw new Error("Execution seal must carry a terminal event");
-      await enqueueExecutionCommit(transaction, fact, position, event);
       await sql`select pg_notify('pi_cloud_run_queue', id::text) from runs
         where session_id = ${fact.scope.sessionId}::uuid and state = 'queued'`.execute(transaction);
+      return event;
     });
+    return committed;
   }
 }

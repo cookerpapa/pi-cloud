@@ -7,10 +7,10 @@
   Worker ownership and shared Worker queue;
 - Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with one self-contained
   append-only semantic log per physical Session and native Compaction;
-- one multiplexed Fact connection per Worker, logical per-Run Streams and a PostgreSQL Authority Gate;
+- direct signed Worker append under a PG-issued publication identity;
 - lossless PostgreSQL queue wake-up and background fail-closed execution-plane readiness;
 - Kafka `acks=all` AcceptedFact log keyed by Session;
-- rebuildable Gateway live tails and cursor-free snapshot-first SSE;
+- one partitioned Session Projector group and cursor-free snapshot-first SSE;
 - CubeSandbox KVM-only Tool execution and persistent Workspace Volumes;
 - bounded-warm elastic Cubes and user-owned development machines with SSH;
 - same-Session FIFO, concurrent cross-Session Agent Loops and one Workspace-owned
@@ -39,8 +39,8 @@
 
 ## Current release gate
 
-- [x] Shard Tool command consumption through one Kafka group per Sandbox Domain;
-      forward commands/control notices to exact owner boots and keep result GETs direct.
+- [x] Unify native history, live views and Tool routing in one Projector group;
+      keep executor results owner-direct and remove Fact Gateway/channel leases.
 - [x] Replace per-Step PG receipts with Kafka-acknowledged native Session writes;
       retain bounded cold restore and exact asynchronous PG projection.
 - [x] Complete paid model/Cube, interrupted-prefix and process-fault acceptance
@@ -53,8 +53,8 @@
 
 - [x] Consume Agent Tool commands in Broker after Kafka; retain native Session
       checkpoints, result redaction, duplicate protection and explicit UNKNOWN.
-- [x] Replace Gateway seal polling with co-committed Outbox/Kafka notifications;
-      preserve successor ordering and recover after notification delivery loss.
+- [x] Commit the seal/terminal once and update the local view directly;
+      preserve successor ordering without a second Kafka notification.
 - [x] Use positioned execution seals, demand-driven partition tails and bounded
       recovery offsets; remove the shared consumer queue and free-Slot claim storms.
 - [x] Remove JetStream, browser cursors and replay-specific Gateway state.

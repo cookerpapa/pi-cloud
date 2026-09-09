@@ -10,22 +10,19 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
-1. [ADR-0162](0162-sharded-tool-command-routing.md) — shared-group Tool routing,
-   exact owner boots and direct result reads, replacing per-boot whole-log consumption.
+1. [ADR-0163](0163-direct-log-and-unified-projector.md) — direct signed Worker log,
+   one Session Projector group, direct terminal projection and owner-routed SSE.
+
+1. [ADR-0162](0162-sharded-tool-command-routing.md) — positioned owner routing,
+   exact owner boots and direct result reads.
 1. [ADR-0161](0161-kafka-native-session-commit.md) — Kafka-acknowledged native
    Session storage, shared Lane ordering, bounded restore and safe retention.
 1. [ADR-0158](0158-bounded-transport-backpressure.md) — bounded Producer/Broker
    transport and shared configuration; native commit placement follows ADR-0161.
 1. [ADR-0157](0157-kafka-driven-tool-commands.md) — Kafka-driven Agent Tool dispatch,
-   read-only result waits; Broker consumption follows ADR-0162.
-1. [ADR-0156](0156-durable-seal-commit-notifications.md) — durable commit notifications,
-   query-free Gateway seals and bounded successor display ordering.
-1. [ADR-0155](0155-isolated-consumption-and-bounded-handoffs.md) — positioned seals,
-   partition-local consumption, bounded replay, SQL batching and demand-driven tails.
+   read-only result waits; unified consumption follows ADR-0163.
 1. [ADR-0154](0154-ordered-execution-stream-seals.md) — ordered RunAttempt closure
    before handoff, shared canonical/live cutoff and interrupted-prefix recovery.
-1. [ADR-0153](0153-boundary-consolidation.md) — incremental consolidation of
-   stream close, terminal delivery, Session storage and component dependencies.
 1. [ADR-0152](0152-volume-deletion-and-tool-preparation.md) — native Volume
    deletion with retained authority and visible write/edit preparation.
 1. [ADR-0151](0151-development-machine-failure-boundaries.md) — separate Tool,
@@ -74,13 +71,6 @@ Read the documents in this order:
    execution queue, typed Cancel/Steer control requests and terminal-only Outbox.
 1. [ADR-0130](0130-user-managed-workspace-concurrency.md) — same-Session FIFO
    with user-managed concurrency across Sessions, terminals and shared files.
-1. [ADR-0129](0129-multiplexed-worker-fact-connection.md) — one physical Fact
-   connection per Worker with independently authorized logical Run Streams.
-1. [ADR-0128](0128-kafka-soft-state-session-gateway.md) — Kafka AcceptedFact
-   durability, rebuildable Gateway hot tails and cursor-free snapshot-first SSE.
-1. [ADR-0127](0127-authority-gate-and-accepted-fact-bus.md) — one
-   ExecutionLease Authority Gate, one logical per-Run FactChannel and a
-   broker-neutral AcceptedFactBus before independent downstream projections.
 1. [ADR-0124](0124-session-lease-fencing-authority.md) — one durable Session
    lease with a monotonically increasing fence across every Run effect boundary.
 1. [ADR-0123](0123-isolated-preview-origins.md) — target-scoped capabilities

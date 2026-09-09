@@ -1,16 +1,16 @@
 import type { PiSessionAppendPublisher } from "@pi-cloud/pi-session-postgres";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
-import type { ActiveFactChannelResolver, CandidatePiSessionAppendFact } from "./accepted-fact.ts";
+import type { ActiveExecutionLogResolver, CandidatePiSessionAppendFact } from "./accepted-fact.ts";
 
 export type PiSessionAppendScope = CandidatePiSessionAppendFact["scope"];
 
 /** The Harness append boundary ends at Kafka replication ACK. There is no
  * PG receipt map, polling loop, second payload copy or per-Step read barrier. */
-export class FactChannelPiSessionAppendPublisher {
-  readonly #channels: ActiveFactChannelResolver;
+export class NativeSessionLogPublisher {
+  readonly #channels: ActiveExecutionLogResolver;
   readonly #metrics: PiCloudMetrics | undefined;
   #closed = false;
-  constructor(options: { channels: ActiveFactChannelResolver; metrics?: PiCloudMetrics }) {
+  constructor(options: { channels: ActiveExecutionLogResolver; metrics?: PiCloudMetrics }) {
     this.#channels = options.channels;
     this.#metrics = options.metrics;
   }

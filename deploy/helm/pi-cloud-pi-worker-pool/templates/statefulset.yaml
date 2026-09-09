@@ -133,8 +133,12 @@ spec:
               value: /run/pi-cloud-secrets/database-url
             - name: DATABASE_NOTIFICATION_URL_FILE
               value: /run/pi-cloud-secrets/database-notification-url
-            - name: PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE
-              value: /run/pi-cloud-secrets/worker-event-ingest-token
+            - name: PI_CLOUD_KAFKA_BROKERS
+              value: {{ join "," .Values.global.kafka.brokers | quote }}
+            - name: PI_CLOUD_KAFKA_PARTITIONS
+              value: {{ .Values.global.kafka.partitions | quote }}
+            - name: PI_CLOUD_KAFKA_REPLICAS
+              value: {{ .Values.global.kafka.replicas | quote }}
             - name: PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP
               value: {{ .Values.runtime.allowInsecureInternalHttp | quote }}
             - name: PI_CLOUD_CONTROL_PLANE_URL
@@ -275,10 +279,6 @@ spec:
               subPath: tool-broker-token
               readOnly: true
             - name: secrets
-              mountPath: /run/pi-cloud-secrets/worker-event-ingest-token
-              subPath: worker-event-ingest-token
-              readOnly: true
-            - name: secrets
               mountPath: /run/pi-cloud-secrets/provider-gateway-api-key
               subPath: provider-gateway-api-key
               readOnly: true
@@ -310,8 +310,6 @@ spec:
                 path: supervisor-management-token
               - key: {{ .Values.credentials.toolBrokerTokenKey }}
                 path: tool-broker-token
-              - key: {{ .Values.credentials.workerEventIngestTokenKey }}
-                path: worker-event-ingest-token
               - key: {{ .Values.credentials.providerGatewayApiKeyKey }}
                 path: provider-gateway-api-key
               - key: {{ .Values.credentials.metricsTokenKey }}

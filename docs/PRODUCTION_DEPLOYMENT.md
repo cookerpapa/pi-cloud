@@ -26,11 +26,11 @@ Sign in again and set the model provider/key in the administrator page.
 
 ## Execution-seal protocol upgrade
 
-Migration 130 requires no active Runs, no unpublished terminal Outbox rows and
+Migration 134 requires no active Runs, no unpublished terminal Outbox rows and
 no seals waiting for canonical projection.
 Drain Workers, stop old Worker/Control Plane publishers, migrate, then start all
 new components. The default AcceptedFact topic changes to
-`pi-cloud.accepted-facts.v5`; a custom topic must likewise use a new generation.
+`pi-cloud.execution-log.v7`; a custom topic must likewise use a new generation.
 Do not mix old/new publishers or change a live topic's partition count. Existing
 PostgreSQL conversations and user-owned machines are preserved. Old Kafka data
 can age out under its existing retention policy. Rolling protocol upgrades are
@@ -38,11 +38,12 @@ not supported by this cutover. The pinned Confluent consumer uses a native
 prebuilt addon: `dependencies:harden` and the image builds explicitly rebuild
 that package after `npm ci --ignore-scripts`.
 
-Tool Broker also needs access to `PI_CLOUD_KAFKA_BROKERS` and the same accepted
-topic as the Control Plane. Its consumer must be ready before creating bindings.
-Compose starts the Control Plane/topic before Broker; Kubernetes must permit the
-external Kafka endpoints in Broker egress policy. Agent operation POST is no
-longer supported; operation results use the authenticated read-only GET endpoint.
+Workers append directly and Control Plane's Session Projector is the sole log
+consumer group. Tool Broker no longer needs Kafka connectivity. Kubernetes shares
+Kafka settings under `global.kafka`; allow Worker/Projector Kafka access and
+Projector-to-executor TCP/4300. The dispatch secret belongs only to Projectors
+and executors. Each Projector advertises a unique internal URL for SSE owner
+routing. Operation results remain owner-direct authenticated GETs.
 
 The safe default binds the Web/Preview entry to loopback. For a trusted LAN,
 set `PI_CLOUD_HTTP_BIND_ADDRESS=0.0.0.0` in the private production environment

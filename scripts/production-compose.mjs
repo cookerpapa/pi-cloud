@@ -47,7 +47,7 @@ if (piWorkerDeployment !== "compose" && piWorkerDeployment !== "kubernetes") {
 if (new Set(["config", "run", "up"]).has(command)) {
   validateProductionRuntimeEnvironment({ ...runtimeEnvironment, ...process.env });
 }
-const supportedOptionalProfiles = new Set(["observability", "event-projector"]);
+const supportedOptionalProfiles = new Set(["observability"]);
 const requestedOptionalProfiles = (
   process.env.PI_CLOUD_PRODUCTION_PROFILES ??
   runtimeEnvironment.PI_CLOUD_PRODUCTION_PROFILES ??
@@ -82,7 +82,6 @@ const applicationSecretNames = [
   "source-control-credential-master-key",
   "tool-broker-token",
   "tool-dispatch-token",
-  "worker-event-ingest-token",
   "workspace-service-token",
   "workspace-terminal-token",
   "cube-persistent-state-key",

@@ -8,7 +8,7 @@ proved the append boundary but is not the production implementation.
 The trusted Worker hosts one native log writer for every active physical Pi
 Session. All Lane operations share its ordered append queue, not an Agent Loop
 thread or a global queue. It assigns native IDs, parents, sequence and timestamps,
-publishes complete semantic records through the existing authority gate and
+publishes complete semantic records through its direct signed log writer and
 returns after Kafka ACK. PG materializes exactly those records asynchronously.
 The Pi Harness sees a SessionStorage port, never Kafka or PG polling.
 
@@ -27,7 +27,8 @@ the current writer before the next Run. Cold administrative mutations require
 a quiescent physical Session under the same PG lock used by Run claim.
 
 All facts for a physical Pi Session use one Kafka partition key, including its
-Lane UI events, Tool commands, seals and commit notifications. A native writer
+Lane UI events, Tool commands and seals. Transport and unified projection follow
+[ADR-0163](0163-direct-log-and-unified-projector.md). A native writer
 incarnation is identified by the first RunAttempt ID of that active ownership
 period; this is log identity, not another lease/credential. Every member retains
 its own existing ExecutionLease and Tool admission checks.
@@ -36,7 +37,7 @@ A verified drained logical stream may seal its Run independently, preserving
 normal Child completion/cancellation. An unconfirmed stream or uncertain native
 append retires the whole native writer incarnation: late data must not create
 a hole in the shared native sequence while sibling Lanes continue. The first
-writer-closing seal is the cutoff in canonical, live and Broker consumers.
+writer-closing seal is the cutoff in the unified Projector and effect receivers.
 Uncertain native publication stops that writer's other Lanes, not unrelated
 Sessions. New ownership waits for all affected Run seals to be projected.
 Existing in-flight arbitrary shell effects remain UNKNOWN and are not replayed.

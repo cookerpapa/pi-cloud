@@ -1,1017 +1,282 @@
 # Architecture
 
-## Product boundary
+PiCloud is a private/self-hosted multi-tenant Coding Agent. Pi owns the Agent
+Loop, model context, Tool selection and Compaction. PiCloud owns durable input,
+execution authority, distributed placement, output projection and Cube lifetimes.
+CubeSandbox KVM is the only untrusted execution backend.
 
-Pi owns the Agent Loop, model messages, compaction and Tool selection.
-PiCloud owns durable admission, multi-tenancy, Worker execution authority,
-remote Tool routing, Workspace lifetime, streaming and recovery.
-
-CubeSandbox KVM is the only untrusted execution runtime. PostgreSQL is the only
-business/Run-state authority, Kafka is the bounded AcceptedFact log, CLIProxyAPI
-is the model-supply authority, and there is no second workflow scheduler.
-
-## Source-of-truth and terminology guardrail
-
-This document describes the maintained production path. Historical migrations
-must remain executable from an empty database, so their source files still
-show when retired columns were introduced and later removed. Superseded ADRs
-are kept only in Git history. Implementation logs, discussions and research are
-background evidence and never reactivate a component in the current topology.
-
-The current Worker invariant is deliberately precise:
-
-- there is one shared PostgreSQL ready-Run queue;
-- a cold physical Pi Session has no Worker affinity and may be acquired by any
-  healthy Worker with a free conversation slot;
-- while any Lane is active, all unexpired Attempts bound to that
-  `(tenant_id, pi_session_id)` have one never-reused Worker boot identity;
-- Run Claim briefly locks the shared `pi_sessions` row, so concurrent claims
-  cannot elect two active owners;
-- main and delegated Lanes may execute concurrently on the owning Worker, with
-  separately bounded conversation and Child capacity;
-- every Lane operation retains its own versioned `ExecutionLease`; active
-  Session ownership is placement, not a second effect authority;
-- after all Attempts expire or settle, a later Turn may restore the Session on
-  another Worker from PostgreSQL.
-
-## Components
-
-### Web and Control Plane
-
-The Web product provides authentication, resizable conversation/tree panels,
-focused or whole-tree navigation, conversation forks, recursive subtree
-deletion, settled-message tail pruning, named Workspaces, snapshot-first output,
-file browsing, user-owned full-VM development environments, authenticated service
-previews, one-time SSH access, Workspace rebinding and administrator settings. The Control Plane
-commits each idempotent message and its Run in one PostgreSQL transaction. It
-enforces durable-resource admission and same-Session
-serialization. Different Sessions may intentionally share a Workspace without
-becoming scheduler locks for one another.
-
-### PostgreSQL Run queue
-
-Ready `runs` rows are the sole Worker queue. All Pi Workers query that table
-directly. A lightweight indexed `FOR UPDATE SKIP LOCKED` query locks one Run,
-then the claimant briefly locks its physical `pi_sessions` row and rejects a
-different live Worker owner before loading the immutable execution snapshot.
-Attempt creation, its first transition and the Run update are one CTE statement
-in the same transaction. There is no separate read-then-claim dispatcher or
-owner table. `RunExecutor` makes competing claims and duplicate wakeups
-harmless. A Worker probes each queue kind at most once concurrently, not once per
-free Slot. A successful claim wakes the next probe immediately; an empty claim
-waits for a notification or poll. `LISTEN/NOTIFY` is a
-best-effort wakeup hint with periodic polling as the correctness fallback. A
-monotonic process-local notification generation covers the claim-to-wait race:
-a notification received before the waiter is installed forces an immediate
-new claim instead of falling through to the one-second poll.
-
-A Worker with a disconnected ownership channel does not claim, and a Worker
-maintains Fact/Kafka and Provider Gateway readiness in a one-second background
-monitor. Claim admission reads that local fail-closed state without issuing
-duplicate synchronous health requests for every Run. A short execution-plane
-outage therefore leaves the Run queued without creating an Attempt or starting
-a model call. Tool Broker availability is checked only when Tools need it, so
-an unavailable Cube control plane does not block pure conversation. The ExecutionLease, Fact Stream open and Tool Broker effect
-boundary remain authoritative even within one monitor interval.
-
-The queue retains the existing domain protocol:
+## One message
 
 ```text
-Run -> RunAttempt -> claim lease -> execution authority/fence -> terminal commit
+Browser → Control Plane → PostgreSQL ready Run
+                            ↓ claim + ExecutionLease
+                         Pi Worker
+                         ├─ native Session Host / concurrent Lanes
+                         ├─ Model Gateway → CLIProxyAPI → Provider
+                         └─ direct signed log append → Kafka ACK
+                                                        ↓
+                                             Session Projector group
+                                             ├─ PG semantic projection
+                                             ├─ live view / SSE
+                                             └─ Tool command routing
+                                                       ↓
+                                             owning Tool executor → Cube
+                                                       ↓
+                                                 result → Worker/Pi
+
+Control authority → PG seal Outbox → Kafka seal → PG terminal + closure
+                                                    ↓
+                                               next Run eligible
 ```
 
-KEDA uses only the count of ready Run and cancellation-control rows to scale
-Workers; it does not own delivery semantics. Execution commands and their
-historical queue Outbox no longer exist. The remaining Outbox is reserved for
-terminal PostgreSQL-to-Kafka publication, where a transactional handoff is
-actually required.
-
-### Trusted Pi Worker pool
-
-Workers are horizontally replaceable. A conversation slot claims a cold
-physical Pi Session or another Run for a Session it already owns. Cold Sessions
-have no process or thread. An active Session's main and delegated Lanes stay on
-that Worker until their Attempts settle or lose authority.
-
-One Worker process is an Agent Host that owns several active Sessions. It has
-separately bounded conversation and Child Lane capacity, so a Parent waiting on
-recursive delegation cannot consume the only slot able to start its Child.
-Each active Lane currently constructs an independent Pi `Agent`, model
-capability and Tool set from the accepted Run. This is a temporary adapter for
-Pi 0.84's unfinished high-level AgentHarness; the Worker ownership boundary and
-PostgreSQL Session/Lane contract already match Harness V2. Process-wide
-registries contain trusted definitions only and never widen one Lane's tools.
-
-The Agent Host consumes one `TrustedToolRuntime` interface rather than building
-platform Tools itself. The maintained PostgreSQL implementation supplies
-execution-plane-tagged Tool definitions:
-
-```text
-platform       Preview publication
-orchestration  Subagent dispatch and parent/child communication
-integration    reserved for external-system effect executors
-```
-
-These Tools currently execute as trusted modules in the Worker process; the
-interface does not imply another deployment service. `RemoteToolSandboxTurnRunner`
-merges their schemas with the Cube Tool proxies but never routes their execution
-through Cube. This boundary lets a later Integration Executor move out of
-process without changing Pi's Agent Loop or the Sandbox protocol.
-
-The slot sees only a short-lived PiCloud Model Gateway capability. That local
-Gateway validates the accepted provider/model, Cloud Step identity, cancellation
-and request count, then forwards the provider-native protocol to CLIProxyAPI.
-DeepSeek stays on native OpenAI Responses; OpenAI Codex stays on Codex Responses
-rather than either route being flattened to Chat Completions. CLIProxyAPI alone
-owns upstream OAuth/API credentials, refresh, quota/cooldown and concrete account selection.
-It receives Pi's stable Session ID and applies soft Session affinity so later
-Turns prefer the same account/cache route. Losing that affinity changes only
-performance: PostgreSQL Pi SessionStorage remains the recovery authority.
-
-Every Session pins one immutable, deployment-owned `AgentRevision` and a
-separately selectable default Model Profile; every Run copies both as its
-routing snapshot. The Session also stores the desired reasoning level and
-nullable GPT Fast service tier. A user may change the complete settings only
-while no Run is active, so the change applies to the next Turn without
-rewriting history or an in-flight retry. Turn admission copies Provider, model,
-reasoning, service tier and credential binding into one immutable row. The
-Agent Revision independently names the Runtime, Harness
-version and native Session Storage contract. The Pi Worker queue only claims `pi_sdk` Revisions and
-the Runner rejects a non-Pi Session Storage contract, so another Agent family
-may share product tables or the PostgreSQL cluster without reinterpreting
-`pi_session_*` rows.
-
-Each issued model-runtime capability also freezes the effective input
-modalities and Provider-hosted Tool set for that route. Pi function Tools remain
-the immutable Run Tool snapshot and execute through Tool Broker. Hosted Tools
-are merged into the Provider-native Responses payload through Pi's public
-`onPayload` hook and execute entirely at the Provider. They are enabled only
-after an end-to-end probe through the pinned Provider Gateway. The current
-OpenAI Codex and DeepSeek Responses routes enable `web_search`. Changing models
-may still change the hosted Tool set at the next Turn boundary, but never inside
-an active Agent Loop. PiCloud emits no synthetic capability notice to the user
-or model. The Model Gateway publishes per-call Hosted Tool start/completion
-boundaries and portable `search/open_page/find_in_page` display actions through
-the current Run's Kafka live tail. The UI updates one stable activity row per
-Provider item, preserving repeated searches as an ordered list while changing
-each row in place from searching to searched. Those progress events never
-become Tool Broker operations or a parallel Session sidecar. At the terminal
-Responses boundary, the trusted adapter binds completed native search actions
-and URL citations to the issuing sampling identity and stores them inside that
-Pi assistant message. Exact Provider/API/model replay
-preserves the native item; model handoff retains only portable assistant text,
-reasoning and citation links. Provider-hidden page contents are not returned
-under `store:false` and are not claimed as durable.
-
-The trusted Model Gateway also supplies model-specific context metadata to Pi.
-GPT-5.6 Luna, Terra and Sol use a 1,000,000-token working window and begin
-native Pi Compaction near 900,000 tokens, matching the deployment's local Codex
-baseline. DeepSeek retains its independent 128,000-token window. These limits
-are runtime capabilities, not user-controlled prompt fields.
-
-Image understanding is an input modality, not a Tool. Provider image generation
-is intentionally not exposed until Pi's Agent message contract can preserve and
-restore the generated image result; PiCloud does not replace that missing
-contract with a trusted in-process image Tool.
-
-Before a Worker becomes Ready it preloads the governed `pi-subagents` Tool
-contract and two empty Pi `ModelRuntime` slots. An active Lane operation
-exclusively owns one slot and injects its short-lived Model Gateway capability
-only after checkout; concurrent Lanes never share a mutable model runtime. The
-slot returns to the Worker-local pool after settlement, while additional slots
-are created lazily. This moves module/provider initialization out of
-user-visible first-token latency without making cold-Session placement sticky.
-
-For an accepted Run, Pi Session open and Model Runtime acquisition begin
-concurrently because neither consumes the other's state. World State capture
-still follows Session open, and Pi execution still waits for both preparations;
-no durability or authority boundary is removed for latency.
-
-Pi 0.84's official `SessionStorage` interface is implemented by
-`@pi-cloud/pi-session-postgres`. One physical Pi Session owns one
-self-contained append-only `pi_session_log`: every Entry, operation Record,
-Lane move and fact shares its Session-local sequence, and all active Lanes
-interleave only at this commit boundary. `pi_session_entries`,
-`pi_session_records`, `pi_session_lanes` and `pi_session_labels` are
-transactional query projections of that log. They keep branch and current-state
-reads bounded without becoming a second conversation authority.
-Active-Run native records, display events and Tool commands cross the same
-ExecutionLease gate and physical-Session-keyed Kafka log. One Worker-local native
-writer assigns complete IDs, parents, sequence and timestamps for all active
-Lanes before publication. A Lane's SessionStorage returns at Kafka ACK and keeps
-a bounded acknowledged view; it does not expose Kafka or PG polling to the
-Harness. Pi's public in-memory backend validates local operations, while canonical
-stamps remain unchanged when a compacted branch seeds its disposable query engine.
-
-Complete Assistant Entry, usage Record and model.sampling.completed share one
-Fact. After Pi validation, tool_started intent and tool.started share a second
-Fact. The Tool may proceed after these Kafka acknowledgements; native projection
-is no longer in the Step's critical path. Concrete command PubAck and Broker
-current-authority admission remain additional pre-effect boundaries.
-
-PostgreSQL projects exact prepared records and its Kafka position atomically,
-without reallocating metadata or returning a second receipt. A native protocol
-conflict stops that partition rather than skipping a sequence. Cold administrative
-mutations use the physical Session row lock and require quiescence.
-
-The native Compaction Entry in `pi_session_log` is the recovery authority;
-`pi_session_entries` indexes that immutable fact for bounded branch reads.
-Cloud rejects a length-limited or empty summarization response before creating
-that Entry, preserving the previous context instead of accepting a partial
-summary as a successful compaction.
-Kafka's durable `context.compaction.*` facts provide live and audit evidence.
-The obsolete `context_compactions` governance ledger has been removed rather
-than maintained as a second, eventually inconsistent source of truth.
-The browser's settled transcript reconstructs completed Compaction and model
-retry notices from native Compaction entries and a presentation-only Pi custom
-entry; it does not retain a second lifetime copy of live Kafka fragments or
-inject the retry notice into model context.
-
-The same package implements Pi's tenant-scoped `SessionRepo`; Workers open or
-create Sessions through that repository rather than through a second
-PiCloud-only lifecycle. Pi's pinned, unmodified backend conformance suite
-defines the baseline CRUD, fork, query, ledger and ordering semantics. Opaque
-Pi identifiers are stored as `text`; PiCloud product UUIDs are one valid
-subset. Tenant isolation and exact `ExecutionLease` validation are additional cloud
-contracts layered around the official port.
-
-Human conversation forks use copy-on-write query projections. Their independent
-Pi Session log nevertheless receives complete, self-contained Entry facts for
-the selected branch; a destination can therefore replay its history without
-the source projection. Delegated Agents instead share the root conversation's
-Pi Entry DAG through unique lane heads and create neither a new Pi Session nor
-per-Entry references. A per-Worker 64 MiB LRU may accelerate the fork query
-projection; cache contents are never authoritative.
-
-The production coding adapter is a deliberately thin `CloudAgentRuntime`. It
-loads only the newest native compaction plus its active suffix, constructs one
-Pi `Agent` for the active Run, and appends complete user, assistant and Tool
-result entries through the Kafka-acknowledged SessionStorage port. It reuses Pi's public Agent Loop and
-compaction primitives rather than recreating the generic `AgentHarness`
-surface. No historical `session.jsonl` is downloaded, rewritten or used as
-model-context authority.
-
-The Harness captures a credential-free execution World State before the user
-prompt reaches the provider. The stable Workspace binding is hashed separately
-from both the Workspace content revision and physical Cube continuity. Releasing
-and renewing a Tool lease against the same physical runtime is not a reset.
-Recreating Cube for the same Volume emits `sandbox_reset`; rebinding the Session
-to a different Workspace emits one hidden `workspace_changed` fact and
-suppresses the conflicting file-preservation claim. Selected Harness facts are
-carried in the native Compaction retained tail, so a later Worker sees one
-current fact rather than losing it or replaying internal identifiers.
-
-Human tree navigation is a bounded projection of the same parent-linked Pi
-entries. Forking a settled final response creates a child product/Pi Session
-and transactionally records references to the selected root-to-leaf branch.
-The child shares the Workspace and begins with no open operation records. Tree
-navigation is not exposed to the model or added to its context.
-
-Deleting a parent archives its whole human descendant subtree and their typed
-Subagent execution views after proving every Run has settled. Pruning after a settled
-final response keeps that response, marks later product Turns invisible and
-moves Pi's native `main` lane back to the retained entry. Later immutable
-entries remain audit evidence but are unreachable from UI and model context;
-Workspace bytes are deliberately not rolled back.
-
-The runtime keeps only the cloud behavior the product needs: automatic
-compaction, model retry, active steer, reviewed event mapping, remote Tools,
-world-state changes and terminal Workspace settlement. A Tool intent is
-written only after Pi validates the Tool name and arguments, and always before
-its effect. If a Worker disappears before the Tool result is known, the next
-Run records an unknown-effect result and interruption fact instead of replaying
-arbitrary shell or file mutations. A validation failure creates an ordinary Pi
-Tool error result but no execution intent because no effect was admitted.
-The remote Bash proxy closes Pi's top-level argument schema: only `command`
-and optional `timeout` are accepted. Unknown fields such as `cwd` are rejected
-by Pi before intent or Sandbox activation; changing directory belongs in the
-shell command, not an ignored extra property.
-
-Session Tool grants are copied into immutable Run capability snapshots during
-admission. The snapshot is part of the frozen Cloud Turn context, selects which
-Pi `AgentTool` proxies enter one runtime, but does not eagerly create an elastic
-Cube. The first actual `read/write/edit/bash` call resolves one single-flight
-Sandbox activation and carries the frozen grant to Tool Broker. A Tool-capable
-Run against a pre-existing development machine also reserves its per-Run Tool
-binding lazily. The observed physical continuity is reported at the next clean
-model boundary. Each Sandbox operation then carries its trusted Pi Tool name;
-Broker rejects both ungranted names and invalid Tool/operation combinations.
-Model visibility is therefore an affordance, while Broker authorization is the
-security boundary.
-
-### Durable Pi subagents
-
-PiCloud pins the public `pi-subagents` package and preserves its model-visible
-Tool schema and workflow-script runtime. Upstream persona/role profiles are
-disabled. The required internal agent selector has one neutral `cloud-child`
-value whose prompt only establishes the Child execution boundary; behavior
-comes from the delegated task plus explicit context, Workspace, Tool, model and
-thinking settings. A narrow
-`PI_SUBAGENT_PI_BINARY` adapter replaces only local child execution. Every child
-gets an independently addressable `session_kind=subagent` execution scope, Run
-and RunAttempt in PostgreSQL. The physical Pi Session's owning Worker claims it
-from reserved Child capacity; another Worker skips it.
-That scope binds to a unique lane in the root conversation's physical Pi
-Session; it is not another Pi Session. The product
-projects it beneath the causal parent Turn with explicit context and Workspace
-mode labels; its native transcript is inspectable but read-only. Focused tree
-navigation roots itself at the selected Child and shows inherited Pi context,
-while whole-tree navigation attaches every Child to its causal parent Turn. It
-never masquerades as a normal human conversation fork. A child never inherits
-more Tools than the immutable parent Run snapshot.
-
-Children may recursively delegate through the same cloud Tool contract. Every
-execution stores its root Session/Run, immediate parent execution and depth;
-all descendants share one deployment-owned tree budget. Defaults are depth 4,
-32 total nodes and 3 simultaneously active descendants. The Tool is omitted at
-the fixed depth/node boundary, while a concurrent-spawn race is rejected under
-the root-Run lock. These bounds can be configured per Worker deployment but are
-never model-controlled. Nested Child Runs use the same PostgreSQL queue,
-physical Session owner, RunAttempt fence, Tool Broker authorization and Cube
-Workspace modes as the first generation. Cancelling or archiving a parent
-covers its full descendant execution subtree. Worker admission reserves the
-configured Child concurrency from total Lane capacity so waiting ancestors
-cannot block their descendants.
-
-The upstream native supervisor channel is local-file based, so PiCloud persists
-its `contact_supervisor`/`subagent_supervisor` state in PostgreSQL. Parent and
-Child normally communicate inside the same owning Worker; the durable row is a
-recovery record rather than a cross-Worker execution path. Progress updates are
-non-blocking. Decision/interview requests pause the Child Tool, surface in the
-parent Tool stream and wake the same Child Run after reply.
-
-Context, Parent/Child communication, allowed Tools and Workspace modes are
-explicit and independent. `fresh` and `branch` use the same supervisor channel,
-Run queue and Lane lifecycle; changing the context anchor never grants or
-removes a communication path:
-
-- `none` creates a Tool-free child and never reserves Cube capacity;
-- `shared` keeps separate Pi contexts and gives parent and child independent
-  Tool bindings to the same Workspace runtime. Both elastic and development-machine
-  bindings activate on the first local Tool. Children inherit the selected working
-  directory; the actual binding attests continuity when used. Ordinary Linux
-  concurrency governs their files, processes and ports;
-- upstream `worktree:true` maps to `isolated`: Tool Broker briefly excludes new
-  Tool operations while
-  the trusted Volume gateway makes an idempotent revision-bound internal
-  Workspace copy, and the child keeps its resolved `fresh` or `branch` Pi context
-  while running concurrently in another Cube. Its semantic result is returned
-  to the parent; Git branches or explicit file operations are user-managed.
-  The internal Workspace is hidden from product lists and retired after
-  terminal settlement. Child Sandbox retention is always ephemeral even when
-  the parent conversation is persistent.
-
-For `context=branch`, PiCloud creates the Child lane at the exact Entry before the
-current parent prompt that requested delegation, then appends the deployment-
-owned Child task on that lane. `context=fresh` starts the lane at `null`.
-Earlier conversation and compaction state are shared through the immutable
-Entry DAG, while the orchestration request is not copied as another executable
-Child instruction.
-
-RunAttempt fences and the Tool Broker operation ledger remain the side-effect
-authority across parent and child bindings; envd carries no Session identity
-or ownership secret. Session-local fence numbers are never compared as if they
-were one global sequence. Each Worker Host keeps at least one slot out
-of ordinary-parent admission when subagents are enabled, so parents waiting in
-the upstream workflow cannot occupy every slot needed by their children.
-
-### Worker Control Channel
-
-The authenticated Supervisor WebSocket carries registration, heartbeat,
-durable event ACKs and active steer. It is not a second Run dispatcher. A brief
-channel disconnect does not revoke a healthy database lease; an expired lease,
-stale fence or non-retryable identity failure fails closed.
-
-### Model Gateway
-
-The model gateway is local to the trusted Worker boundary. It injects provider
-credentials, binds model requests to Run/Step identity and records usage. Cube
-cannot reach or authenticate to it. Its issued runtime descriptor includes the
-frozen input modalities and Provider-hosted Tool names. The Gateway validates
-the accepted Provider/model/protocol but does not execute hosted Tools or
-rewrite them as Pi function calls. Waiting for Provider response headers and
-waiting for the next streaming byte use separate timeouts. Stream activity
-renews the idle deadline; only the enclosing Pi Turn owns total model duration.
-An idle stream ends with a Responses-compatible error event so Pi retains a
-bounded diagnostic instead of seeing an unexplained transport termination.
-Premature Responses EOF/disconnection enters the existing bounded model retry
-policy. Only the failed sampling is retried; complete Tool results remain in
-SessionStorage and incomplete Tool arguments are never executed. Visible text
-from an interrupted sampling is retained as an existing prefix fact before the
-retry. Its retry counter resets when a successful sampling returns Tool calls,
-so a later Cloud Step starts its own retry sequence.
-
-The CONNECT egress relay limits connection establishment, not the age of an
-established TLS tunnel. Model Gateway owns streaming idle timeout and the Turn
-owns cancellation. Relay audit records the initiating half-close; CLIProxyAPI
-logs whether the authenticated upstream sent an error event, the HTTP body
-ended without a terminal event, or a read/cancellation error occurred. These
-diagnostics omit prompts, response text and credentials.
-
-### Source-control App and Issue automation
-
-Source control is an optional trusted-plane adapter, not a Tool exposed to the
-model. The current user-facing provider is a self-managed GitLab project
-connection; a GitHub App adapter remains available to deployments that enable
-it outside the current Web surface. A GitHub installation callback is bound
-to the logged-in tenant by a one-use state value; PostgreSQL stores the
-installation and selected repository identities. The App private key and
-Webhook HMAC secret remain deployment secrets, while one-repository
-installation access tokens exist only for the duration of trusted API work.
-
-PiCloud never clones a repository or creates a Git branch. A selected execution
-environment must pass `git ls-remote` before its Issue Run starts. The user
-connects GitLab or GitHub by Origin from the conversation UI; the token is
-written directly to the environment's hidden `.git-credentials` file and is
-never stored in PostgreSQL. Git uses ordinary host-level credential matching,
-and the Agent performs visible `git clone` and branch commands.
-
-GitLab Project Webhooks use a Standard Webhooks HMAC signing token and stable
-`webhook-id`; deployment project access tokens are encrypted in PostgreSQL and
-only unsealed for trusted GitLab API work. They are distinct from user Code Host
-credentials. GitHub Issue and
-Issue-comment Webhooks enter through their native raw-body HMAC gate. Provider
-delivery IDs are idempotency keys. Only the configured label or exact
-`/picloud solve` collaborator command creates a pending Issue request. Any
-authorized PiCloud tenant user may record a non-exclusive
-claim, then explicitly choose elastic compute or an existing Workspace, or a
-directory in an owned development machine.
-The user also names the resulting conversation. The coordinator
-provisions an ordinary Project/Workspace when needed, then creates one Session
-and Run under that user's identity and observes the existing PostgreSQL Run
-queue. It is not a second scheduler.
-
-The initial Issue prompt requires implementation and tests but explicitly
-forbids commit, push, Merge/Pull Request creation, Issue comments and state
-changes. Run completion settles only the PiCloud execution record. Git and
-provider delivery remain user-directed actions in a later conversation Turn.
-
-### Tool Broker and Cube
-
-Operation concurrency, HTTP result reader count and in-flight response bytes are
-separate bounded resources. Abandoning a result GET unregisters its waiter without
-cancelling execution. A seal rejects pending old readers; bytes already being sent
-cannot be retracted. Only stalled sends time out under the response-delivery timer,
-which begins after a result exists, not while a legitimate Tool is still running.
-
-Agent file/shell commands enter the same AcceptedFact log through the Worker
-Fact connection and Authority Gate. `tool_command` contains canonical execution
-identity and the concrete operation, but no bearer token. Pi's two native
-semantic barriers remain; each resulting remote operation uses a durable command
-publication instead of a direct execution RPC. This extra transport ACK must be
-included in latency measurements (one native edit can make several operations).
-
-Broker consumes commands and calls Cube asynchronously with respect to partition
-consumption. Workers use only `GET /internal/v1/tool-operation-result` to await
-results; the old execution POST has been removed, not retained as a fallback.
-Each command carries its native Tool call ID outside the guest request. Broker's
-execution map keeps only in-flight operations; the command consumer alone retains
-completed response bodies. A native Tool Result Entry in the same Kafka log is
-the delivery acknowledgement for all that call's operations in the exact execution
-scope. It releases bodies, not operation-ID/hash tombstones. UI-only events do not
-acknowledge delivery. Seals release missing-result calls; late completions cannot
-repopulate retired entries. The configured byte budget bounds completed retry
-copies; overflow evicts oldest copies and a later read returns unavailable without
-re-executing the command. Existing readers keep their own references. No extra
-ACK, PostgreSQL query, raw-result topic or model-visible metadata is introduced.
-Result bodies stay on the existing Worker redaction/Pi checkpoint path rather
-than being copied into a second PostgreSQL transcript. Management APIs, terminal,
-Preview and Code Host authorization are not Agent execution-command consumers.
-
-Broker replicas in one Sandbox Domain share the stable
-`pi-cloud-tool-dispatch-<domain>` Kafka consumer group. librdkafka assigns disjoint
-partitions and resumes committed delivery offsets. The router reads each partition
-once per group, ignores deltas and forwards commands plus small native-result/seal
-notifications to the binding's exact owner. Routes are persisted once at binding
-creation in `tool_broker_binding_routes` and positive Attempt lookups are cached.
-Seals query the relevant Attempt or all bindings of a closing native writer.
-This metadata is routing, not a second execution authority. Multiple domains use
-separate groups because they have independent Cube authority and credentials.
-
-Owner admission folds Kafka positions synchronously before acknowledging HTTP;
-guest work remains asynchronous. Retries/rebalance duplicates and delayed lower
-offsets cannot cross a seal or restart a command. A replacement Broker boot never
-adopts the old binding. Live-owner transport failure stalls only its source
-partition; expired owners are abandoned with UNKNOWN semantics. Worker result
-GETs remain owner-direct and raw response bytes never pass through the router.
-The internal relay uses a Broker-only secret, not Worker service credentials.
-HTTP listens before group readiness to avoid peer startup deadlocks (ADR-0162).
-The shared `event-log` package owns only the adopted Kafka transport and does not
-bring Pi/Agent Runtime into the Broker. A seal rejects later commands; commands
-already admitted may remain UNKNOWN. Existing PG owner/Lease and operation-ID
-checks remain, and Cube final-entry fencing is a separate research boundary.
-
-The Broker validates opaque Tool authority, resolves a Workspace's Sandbox
-Domain and reconciles Cube lifecycle. Pi cannot choose a Sandbox ID, image,
-mount, runtime class, resource limit or network policy.
-
-PostgreSQL records one physical Workspace runtime per elastic Workspace. Every
-Run receives a separate in-memory Tool binding whose Lease/Fence is validated
-again when an operation starts. If the Broker disappears, bindings expire with
-their Session leases and an unadopted elastic runtime is destroyed; persistent
-Workspace bytes are unaffected.
-
-Cube mounts only the `workspace/` child of a trusted persistent Volume. The
-guest contains normal development tools but no model, database, Kafka or Cube
-control credential. Repository credentials deliberately belong to the selected
-execution environment's origin-scoped `.git-credentials` store and are visible
-to its Agent just as they would be after `glab auth login`; the Agent owns the
-resulting `.git` tree.
-The trusted Volume envelope holds only identity, generation and optional fork
-origin metadata; it does not track Git state or file changes.
-
-Run Claim does not lock a Workspace. The first Tool operation lazily creates one
-Workspace-owned Cube and attaches its Volume. Different Sessions then use
-independently fenced Tool bindings in that same Cube concurrently. A connected
-human terminal uses the same runtime. File overwrites, process visibility and
-port conflicts are ordinary user-managed Linux behavior. The Workspace pointer
-records the last settled observation, while each Session keeps its own
-settlement lineage.
-
-### Workspace Web Terminal
-
-The authenticated public path
-`/v1/conversations/:sessionId/terminal` is a WebSocket proxy, not a public Cube
-port. The Control Plane resolves tenant, Project, Workspace, Sandbox Domain and
-active environment from PostgreSQL. A newly-created deployment-owned
-environment may still be `pending`, matching the first Agent Run's admission
-rule; a `failed` environment is rejected. Terminal readiness is not persisted
-as Agent environment-validation evidence because that evidence remains bound
-to a fenced Run/Attempt. The Control Plane sends the trusted descriptor over a
-dedicated service credential to the Tool Broker, which lazily creates a Cube
-and opens a UID 1000 PTY in `/workspace` through Cube's standard envd process
-API. Cube-agent starts envd through the VM's vsock control path. The generic
-guest agent is transport only: tenant identity, writer admission, ExecutionLease
-and operation idempotency remain in PostgreSQL and the external Tool Broker.
-
-Human terminal authority is deliberately separate from Agent ExecutionLeases
-and Tool policy snapshots. It does not advance or revoke a Session's Agent
-fence. Opening a terminal reuses the Workspace runtime when it exists, or
-creates that one runtime when it does not. Agent Tool bindings and the PTY may
-remain active together. Conflicting file/process operations
-use ordinary user-managed Linux semantics. No in-guest secret is an ownership
-authority. Input, output and resize frames are bounded; terminal transcripts
-are not persisted.
-
-### User-owned development environments
-
-`DevelopmentEnvironment` is a PostgreSQL product allocation keyed by tenant,
-owner user and an internal `development_environment` Workspace. This storage
-kind is rejected by elastic Session and Workspace APIs. Public REST and WebSocket handlers always derive the
-owner from authenticated request identity; responses contain no Cube runtime
-ID, traffic token or Broker credential. Tool Broker is the only CubeAPI client.
-
-Creation synchronously checks tenant durable-resource admission,
-Sandbox-Domain capacity and the real Cube scheduling result. The API returns `201` only after
-the requested profile is running; capacity exhaustion returns a structured
-retryable error and the rejected machine allocation is retired. A reconciler
-removes a `requested` row abandoned by a Control Plane crash before provisioning.
-
-Provisioning eagerly creates one Cube KVM with the deployment-owned template,
-resource policy and network boundary. Its private persistent file Volume is
-mounted at `/home/user`; the elastic-only `/workspace` path is removed during
-machine initialization. The Cube timeout is disabled for this explicit
-allocation. A terminal opens inside the existing KVM, and disconnect kills only
-the PTY. Pause snapshots VM memory/filesystem; resume reconnects the same Cube
-identity. Release destroys the Cube and tombstones its machine-owned Workspace;
-the Volume reaper deletes the complete home Volume after every activation has
-retired.
-
-The user selects one deployment-owned immutable template profile (starter,
-standard or performance). CPU, memory and system-disk values come from the
-registered Cube template catalog; arbitrary template IDs and resource overrides
-are never accepted from the browser.
-
-The product calls this allocation a cloud development machine. It is requested
-independently from elastic Workspaces. The Control Plane allocates its private
-machine Volume and internal project identity transactionally; neither ever
-enters the elastic Workspace inventory. Several conversations may select
-working directories from the complete guest filesystem. The directory is a
-Session binding, not another Volume. The machine permits one active Agent
-authority and one human terminal/SSH session at the same time; pause and release
-still wait for both.
-
-The authenticated folder chooser may create one bounded child directory in an
-owned running machine. Control Plane binds tenant/user identity, Tool Broker
-validates the parent/name and asks envd to start a bounded, root-owned one-shot
-filesystem helper. It may run alongside an Agent or terminal under ordinary
-filesystem semantics. The helper exits after returning the directory result.
-The browser never sends a shell command or receives Cube authority.
-
-Guest evidence includes a bounded control-protocol version. Broker and guest
-must match the current version exactly; an older exclusive machine is released
-instead of carrying a compatibility execution path or silently rebuilding a
-different machine. Users create a new machine explicitly after release.
-
-The allocation participates in Sandbox-Domain capacity. `agent_activation_id`
-and `terminal_active` are independent durable ownership facts. Tool Broker
-grants a temporary Agent Tool binding to the existing machine and returns that
-binding without changing the Cube's physical identity. Completing, cancelling
-or failing an Agent Run detaches only that temporary binding. It never destroys
-the user-owned KVM and a model-only failure does not create a sandbox-reset
-World State fact. Only the explicit development-environment release operation
-destroys the machine. A
-planned Broker shutdown stores an encrypted reconnect capsule, detaches its
-process-local handle and leaves each cloud development machine in its existing
-physical state. It does not pause a running VM. A replacement Broker validates
-the capsule, PostgreSQL ownership and Cube metadata before it adopts the same
-runtime; already-running processes, SSH and Preview therefore do not share the
-Broker process lifetime. Healthy replicas periodically reconcile machines whose
-owner lease ended, so takeover does not require restarting the replacement. An
-explicit user pause remains paused across takeover. The capsule is pinned to
-the machine's own guest image revision, not the deployment's current default
-template. A template upgrade therefore affects only newly created machines;
-recovery still requires the capsule, environment evidence, short-lived Tool
-Worker report and physical Cube metadata to agree on the old machine's exact
-revision. The Tool report is produced by a short-lived uid-1000 worker, not a
-resident PiCloud daemon. Elastic Cubes retain fail-closed orphan cleanup.
-
-Broker replacement is not transparent exactly-once migration for an in-flight
-Tool RPC. The old Run loses its external authority and records an interruption
-or unknown effect, while an already-started guest process may continue as part
-of the user-owned machine. The replacement adopts the VM under machine
-authority before any later Agent or terminal receives a new writer lease.
-
-Pausing a full VM is a long Cube operation. If CubeAPI returns its standard-route
-HTTP 408 while CubeMaster is still snapshotting, Tool Broker treats the response
-as uncertain and polls the same physical Sandbox identity. It commits `paused`
-only after Cube reports that state; disappearance or a bounded wait expiry stays
-an error. Production and Helm timeout policies keep at least a two-minute Cube
-lifecycle budget so deployment overrides cannot silently restore the former
-30-second failure mode.
-
-### Authenticated Sandbox service preview
-
-The main-origin Preview link authenticates the user and resolves the current
-Workspace or owned development machine. It issues a fifteen-minute capability
-bound to user, target, Workspace and application port. The isolated origin
-exchanges it for a host-only HttpOnly Cookie and redirects to the original
-application path. Rebinding a Workspace changes the hostname and invalidates
-the old binding; release prevents later access.
-
-Caddy routes every Preview-host path to a dedicated listener in the existing
-Control Plane process (internal port 3001). No Preview request, including `/v1`,
-can enter the main application's API or SPA fallback. The listener uses pinned
-`httpxy` for streaming HTTP and WebSocket upgrade. Platform cookies and reserved
-headers are removed; application cookies remain host-scoped. Dynamic styles
-and development scripts work inside the isolated origin, including HTTPS static
-assets. Network/form access remains self-scoped and framing is denied.
-
-An authenticated HTTP CONNECT to Tool Broker selects only the authorized guest
-loopback port. Broker resolves current ownership and opens a provider-neutral
-byte stream. Cube's envd Start/SendInput stream carries a short-lived unprivileged
-Node TCP relay, without a PTY, listening port, resident controller or credential
-in the guest. Backpressure is stream-based; application responses are not encoded
-as whole JSON/base64 objects. Expiry, disconnect and service shutdown close the
-connection and relay, not the application process. The guest relay also has a
-bounded orphan lifetime. HTTP, SSE, binary data and WebSockets use this same
-transport. No HTML/base-tag/script rewriting or special Vite base is required.
-
-The immutable template exposes and probes only envd, so PiCloud does not reserve
-fixed application ports or depend on Cube host-port mappings. At Preview Tool
-publication, Cube Provider uses its trusted management channel to run a fixed,
-credential-free listener probe inside the VM. The probe reads the VM's
-listening-socket table and checks bounded unprivileged candidates as HTTP; it
-does not change the Agent Tool response contract or depend on the guest's PiCloud
-image revision. Tool Broker persists that evidence against the physical runtime
-and conversation/development-environment target. A trusted `preview` Tool
-resolves a model-selected verified port into an authenticated conversation
-route, and its structured Tool result renders the application link inline in
-the transcript. There is no persistent top-bar application hint and no parsing
-of assistant text. The Agent never calculates a public IP, signed URL or NAT
-mapping.
-
-Verified warm Tool execution uses the Sandbox-ID hostname and private ingress
-token directly. Control-plane inspection remains on create, recovery and explicit
-inspection, not every Tool operation or Volume settlement. Failure never silently
-reroutes an uncertain command to another instance. Large requests still use envd
-file upload plus process start; they are not embedded in argv.
-Ordinary Bash does not wait for service discovery. One guest invocation also
-cleans up its request file before exiting, avoiding a separate cleanup RPC.
-Remote writes create their parent directories in the same operation; edits
-read the file directly without a separate access check. Broker effect admission
-and edit conflict detection still apply. An already-active development-machine
-binding does not rewrite its unchanged runtime handle for every operation.
-
-Cube's ordinary Sandbox ingress is HTTP/WebSocket-oriented. PiCloud does not
-expose Sandbox port 22. A separate trusted SSH gateway validates a one-time
-PostgreSQL ticket and translates a standard SSH shell channel to the existing
-Tool Broker PTY protocol. Tickets are issued only for an owned, running cloud
-development machine with no other human terminal. An unused ticket lasts
-24 hours by default, but the first successful authentication consumes it. The
-gateway has no CubeAPI or model credential.
-
-### Independent resource lifetimes
-
-A Session freezes `executionMode=elastic|development_environment`. The first
-requires a `user` Workspace and gets a disposable/bounded-warm Cube on demand;
-the second requires a live owned development machine and borrows that exact
-Cube. The removed `ephemeral/persistent` retention protocol has no runtime
-compatibility path.
-
-A Session's Pi entries and tree remain in PostgreSQL when its Workspace is
-soft-deleted. The Session reports `workspaceState=missing`, accepts no new Turn
-and can be rebound idempotently to another live tenant Workspace. Historical
-Runs keep the original Workspace foreign key; a new Run freezes the new
-binding. Workspace deletion never archives a Session or Subagent transcript
-merely to release storage.
-The browser opens this rebind chooser immediately when such a Session is
-selected, instead of waiting for the user to submit a Turn that must fail.
-
-### Persistent Workspace Volume gateway
-
-Workspace Volume Gateway is a narrow trusted POSIX data service. It does not
-copy Workspaces to Kopia or object storage. It:
-
-- prepares and verifies the stable tenant/Workspace Volume identity;
-- initializes an empty/imported Workspace once;
-- prepares generation-bound deletion authority only when asked by the Broker;
-- finalizes its trusted metadata only after Cube has deleted the user file tree;
-- records a lightweight provider settlement revision without walking the file tree;
-- lists one current directory or reads one current file for the UI;
-- rejects traversal and symlink escapes and hides platform/Git metadata;
-- serializes operations with a process lock and PostgreSQL advisory lock;
-- creates revision-bound internal Volume copies for isolated Subagent lanes.
-
-The deletion coordinator runs in Tool Broker because only that service holds
-CubeAPI authority. It waits for the Workspace runtime, Tool bindings and human terminals,
-asks the gateway to persist a deletion marker, then calls Cube Volume DELETE.
-Cube's existing Controller plugin refuses an unmarked generation and removes
-only `workspace/` using its storage privileges, including root-owned Guest files.
-The gateway remains uid 1000 and retains identity metadata throughout failures.
-After Cube deletion, it atomically retires its envelope before removing metadata;
-Broker then commits `storage_purged_at`. Repeated cleanup is idempotent across
-Cube 409, partial file deletion, lost ACKs and finalizer crashes (ADR-0152).
-
-Creating an elastic Workspace reserves its tenant/project identity but not CPU
-or memory. Compute admission occurs on the first Tool-using Run, so an idle
-Workspace consumes storage only. A cloud development machine differs: its
-selected CPU/memory/system-disk template is synchronously admitted at creation.
-
-Stopping an elastic Cube loses its processes and memory. A new elastic Cube
-attaches the same persistent Volume, so project files and dependencies remain.
-A cloud development machine is paused and adopted as the same machine; its
-rootfs, memory and process state are node-affine Cube state. Its `/home/user`
-Volume belongs to that machine and is deleted on explicit release. Conversation
-history remains independent and reports a missing Workspace until the user
-rebinds it.
-
-Tool transport failure quarantines the binding without destroying an owned VM
-or discarding its encrypted reconnect capsule. A subsequent reconcile probes
-native Guest execution before readmitting the same machine. The observed Guest
-boot ID survives Broker replacement in the capsule; renewing a Lease or losing
-one TCP connection is not evidence of a sandbox reset. Only observed execution
-continuity changes produce a model-visible reset fact. Preview CONNECT waits
-for the actual application socket, distinguishing a stopped app from Guest
-execution failure (ADR-0151). Host shutdown is not equivalent to an explicit
-pause: rootfs/process recovery requires surviving native Cube state, whereas
-Volume bytes have a separate durability boundary.
-
-Elastic continuity uses the allocation ID both before materialization and during
-warm reuse; it does not switch to a different identifier after the first Tool.
-The Runner replaces its initial placeholder with the actual Broker binding.
-World State observed inside a Tool is published at the next clean sampling or
-settlement boundary, never between a Tool Call and Tool Result. This preserves
-Pi's native call/result pairing when provider adapters repair missing results.
-
-Elastic source browsing reads the current persistent Volume through the trusted
-Volume gateway without reinitializing it or calling Cube control. An unmaterialized
-root is empty. Full-VM browsing instead reads the owner's running machine through
-native envd, including selected roots outside `/home/user`. Only read-only browser
-requests may follow a Broker ownership redirect. Directory expansion and file
-opening each perform a bounded read; neither allocates a new Cube.
-
-### Durable browser stream
-
-The adopted Kafka Writable's drain signal is respected per producer lane without
-serializing every Session on PubAck. Encoded queued/submitted-unacknowledged Fact
-bodies share byte/count admission bounds. Capacity rejection is before enqueue;
-the Gate does not retain that rejected payload in another retry queue. Overload can
-fail a Run but never fabricates a durable ACK or drops already-visible data. The
-native intent and result acknowledgement boundaries remain. Embedded
-and standalone publishers share capacity configuration; the topic is code-owned.
-
-Pi exposes separate Assistant-message, Tool-execution and Agent lifecycle
-events. The public adapter intentionally ignores thinking fragments, streamed
-Tool-call JSON and partial Tool stdout. At `toolcall_start` it publishes one
-argument-free `assistant.tool_call.preparing` activity so a large function-call
-payload does not look stalled; the validated `tool.started` event replaces that
-row in place. Write/edit display generation-specific activity. Provider adapters
-may complete the Tool identity on a later delta; no argument fragments are
-published. The browser explicitly labels preparation as not yet executed
-and shows elapsed waiting time from the durable event timestamp, including
-after refresh. Validation rejection replaces it directly with a failed Tool
-result without leaving a spinner or claiming execution. This transient activity is omitted from the settled PostgreSQL
-transcript. The adapter otherwise publishes Assistant text deltas, complete
-Tool start/result Items and low-frequency lifecycle boundaries.
-
-After PostgreSQL issues the current Session lease, the Worker opens one logical
-Fact Stream bound to that lease, Session and Turn. All active Streams in one
-Worker share one service-authenticated WebSocket to the ingest Gateway. The
-Gateway records a distinct short channel lease for every logical Stream on its
-Session lease row. Both Agent events and complete Pi Session mutations cross
-that multiplexed Worker connection. A single PostgreSQL Authority Gate binds
-canonical scope and removes the lease;
-the resulting AcceptedFact is appended through a broker-neutral bus. The
-Kafka adapter keys every Fact by Session ID and uses `acks=all`. Different
-Session leases publish concurrently, while one logical Stream keeps one Fact
-in flight. Stream ownership renews set-wise outside the Fact hot
-path. After PubAck, a separate progress store checkpoints the acknowledged
-Agent-event sequence set-wise and flushes it on normal Stream close; this is a
-diagnostic lower bound, not the terminal sequence or an admission decision. Closing stops new publications,
-drains in-flight delivery and progress, and keeps renewal active until that drain
-finishes. A failed/unknown delivery cannot produce a successful close. Normal settlement closes
-the Stream before releasing the lease. Retirement requests an in-band execution
-seal, and a queued successor waits until the canonical consumer projects it. Workers have no Kafka
-credentials or network route.
-
-There is no second mutation endpoint or mutation-specific credential. The Gate
-does not inspect event sequence, deduplicate, replay or wait for projection.
-Those responsibilities start after admission. Native append sequence belongs to
-the one active physical-Session writer, not the projector.
-
-Cold restore reads the selected Lane's newest Compaction and suffix plus any
-unfinished operation ledger. Ordinary Steps read private snapshots of the
-acknowledged view. Compaction replaces that branch and releases old payloads;
-closing a Lane frees its view. General historical queries can wait for PG
-projection; they are not part of the ordinary sampling loop. A Child Lane is
-acknowledged from the parent's pre-prompt view before its queued Run is made
-runnable, so stopped projection cannot make its parent anchor disappear.
-
-The old PG mutation-result table, compact receipts, notification consumer and
-CommittedLaneView cache are removed. Projection and cold admin writes are
-separate adapters, not fallback execution modes.
-
-Each Gateway consumes only Kafka partitions currently needed by browser subscriptions.
-A first subscription locates the recovery floor and reconstructs that partition;
-the last disconnect pauses it and drops its quiescent soft tail. Reopening invalidates the partition's old OPEN
-cache before seeking, so a seal committed while idle cannot be bypassed. The public SSE request carries no cursor. Its first
-frame replaces the browser view with PostgreSQL canonical messages plus an
-immutable snapshot of that tail; later frames contain new events. An execution
-seal is reduced to a public terminal only after its canonical PG transaction.
-The seal transaction also writes a stable commit notification to the existing
-Outbox. Gateway closes the Attempt at the Kafka seal position without a SELECT,
-continues consuming and waits for that notification before announcing the terminal.
-That terminal is sent to existing subscribers and unloads the covered tail. Slow
-connections have bounded queues and reconnect for another snapshot. A 15-second
-SSE heartbeat keeps an idle healthy connection open. The browser reconnects
-immediately but delays its visible reconnect label for one second, preventing a
-brief transport replacement from flickering the top bar.
-
-Accepted Pi Session mutations contain immutable logical Run identity for result
-correlation plus the Authority-Gate-resolved physical Pi Session/lane target,
-but no ExecutionLease. They may also carry the zero or one reviewed public
-event produced by that exact semantic boundary. Gateway projects that attached
-event into the live tail from the same Kafka record; a shared Kafka consumer
-group applies complete entries, records and compaction facts idempotently to
-PostgreSQL. Before a new Run is claimed, every requested predecessor seal for
-that product Session/Lane must have been projected. The former empty Run-start
-recovery barrier is removed: it could not close a paused old publisher. Every
-semantic Pi write returns after Kafka ACK, without waiting for its PG projection.
-PostgreSQL stores semantic Pi state, not token fragments. The terminal business
-transaction requests an immutable RunAttempt seal through the existing Outbox.
-Relays claim bounded Session heads and publish outside the transaction. The seal
-uses the same Session key and fixed Kafka partition as all execution data.
-
-The canonical consumer folds records in partition order. Confluent's bounded
-native consumer handles partition flow control; a failed record pauses/seeks
-only its partition rather than filling a shared promise queue. At the first seal it
-preserves visible interrupted text not already in Pi as a pending terminal
-recovery input, allocates the terminal
-sequence after actual accepted events, and commits the public terminal, Session
-boundary and Attempt closure together. Records after the seal cannot mutate the
-lane. The same transaction inserts `execution_committed` into the terminal Outbox,
-carrying the exact public terminal and first seal coordinates. The existing Relay
-publishes it to the same Kafka partition. Gateway has no seal-time PostgreSQL
-query or retry polling: it immediately rejects post-seal old data, buffers only
-that Session's successor display events, then releases them after the canonical
-terminal arrives in the commit notification. It must continue consuming, never
-pause the partition before its own notification. Duplicate seals are harmless.
-A drained seal names one Attempt; an unconfirmed stream retires its shared
-native writer incarnation so sibling appends cannot leave a sequence hole.
-Future incarnations are independent. Closure metadata is durable on the
-Attempt, including the first seal's Kafka offset. A live reader behind PG accepts
-records before that offset and rejects records after it; a currently-closed boolean
-is not a historical cutoff. RAM cache eviction cannot reopen a sealed execution.
-
-A duplicate seal re-arms the same immutable notification if already published;
-this lets a new Gateway recover when the original seal/notification precedes its
-replay floor. Pending Outbox claims are not replaced, and replaying a notification
-does not generate another notification. Commit IDs are domain-separated UUIDv8s
-derived from seal IDs, not another lease or authority. The Gateway's deferred
-display budget is 8 MiB per Session / 64 MiB total. Overflow invalidates soft state,
-resnapshots browsers and restarts durable replay rather than blocking receipt of
-the notification. Initial snapshots and recovery still read PostgreSQL.
-
-Canonical and live folds start at the minimum of a durable partition checkpoint
-and known unsealed execution starts. Kafka end positions are captured before PG
-state is read, preventing a concurrent publication from being skipped. Checkpoints
-are co-committed only with semantic outcomes/seals; deltas create no PG rows.
-Complete append outcomes carry a per-Attempt projected offset and stable append ID;
-no expiring receipt is needed for replay deduplication. Kafka automatic expiry is
-disabled. Reclamation stays behind PG's safe replay floor and retention grace;
-PG unavailability or missing projection progress stops deletion, not durability.
-Known missing prefixes block their partition, not unrelated partitions. API/ingest
-readiness is independent of consumer replay; SSE waits for its target partition.
-Ordinary idle TTL never discards an unsealed prefix being actively served.
-
-Canonical projection and terminal publication default to the Control Plane
-process. They can instead run in the optional `canonical-projector` role, with
-only PostgreSQL/Kafka access and no live-tail replica. This is a composition split,
-not a second authority. Gateways retain only subscribed partitions, but two replicas
-serving the same partition still duplicate its consumption; this is not exclusive
-partition-to-Gateway routing. Configuration is in
-[CONFIGURATION.md](CONFIGURATION.md).
-The interrupted prefix is reduced by the canonical consumer at the seal, not
-fetched best-effort from a separate terminal-projection HTTP endpoint.
-
-## State ownership
-
-| State | Authority |
+The Projector currently runs in the Control Plane process. Its modules remain
+separate from authentication, resource APIs and the Agent Loop. There is one
+execution-log consumer group, not separate canonical, live and Tool groups.
+The old Fact Gateway, Fact WebSocket, secondary channel lease/progress store,
+independent projection service and execution-committed notification are removed.
+Historical migrations/reports describe their named revisions, not alternate modes.
+
+## Durable input and scheduling
+
+PostgreSQL is the sole Run and execution authority. The public API authenticates
+the user, persists input/Turn/Run together and deduplicates admission by Session
+and idempotency key. Follow-up remains a queued input; Steer first lives in
+`turn_control_requests`. Neither becomes a native Pi user Entry until consumed.
+
+Workers claim `runs` with `FOR UPDATE SKIP LOCKED`. Claim enforces same-Lane
+mailbox order, cancellation and predecessor seal completion. It briefly locks
+the physical `pi_sessions` row to keep all active Lanes on one Worker boot.
+Cold Sessions have no Worker affinity or permanent process. Successful claims
+wake the next free slot; LISTEN/NOTIFY reduces idle latency and periodic polling
+covers missed wakeups. There is no Temporal or competing dispatcher.
+
+An active physical Session has one Worker-local native log writer, while main
+and Child Agent Loops run concurrently. Only native append order is shared.
+Child slots are reserved independently so a waiting Parent cannot occupy every
+slot its descendants need. KEDA scales from the PG ready-Run backlog; Cube
+compute capacity scales separately from Pi Worker slots.
+
+The current ExecutionLease identifies one Attempt and its monotonic Session
+fence. Heartbeats renew that authority. Losing a Worker/Run lease requests an
+ordered seal; the successor cannot read context until closure is projected.
+Workspace access across different Sessions is deliberately ordinary user-managed
+Linux concurrency, not a scheduling lock or tenant concurrency quota.
+
+## Direct execution log
+
+At Run opening the PG authority freezes a publication identity/public key against
+the exact Lease, Attempt, native writer and Lane. The trusted Worker keeps an
+ephemeral Ed25519 private key, appends an opening record, then appends signed
+semantic records, display events and concrete Tool commands directly to Kafka.
+The signing identity is provenance, not a second renewable lease. It cannot be
+reopened with a different key inside the same Attempt.
+
+The Projector loads the recorded permit, checks scope/signature and requires the
+ordered opening before data. The exact seal payload must match the control
+authority's PG Outbox request. A Worker cannot invent a higher valid fence or
+forge closure by changing JSON fields. Permit lookup is cached; no token requires
+a remote authority RPC or a fresh Lease-expiry SELECT. Expiry triggers retirement;
+the precise output cutoff is the seal's log position, not wall-clock expiry.
+
+Kafka ACK means durable append, not guaranteed application of a stale record.
+Records physically after their seal cannot alter PG context, live output or
+Tool dispatch, even if an old producer finally receives its ACK. The Worker
+still stops on lease loss to avoid wasted work. A normally drained Run closes
+only its execution; uncertain native publication also closes its shared writer
+incarnation. Unrelated Sessions and later writer incarnations stay independent.
+
+The code-owned topic is `pi-cloud.execution-log.v7`. Physical Pi Session ID is
+the immutable partition key, shared by all Lanes and control boundaries. Do not
+change its partition count in place. Producers use RF3/acks-all and bounded
+pending bytes/records, respecting transport backpressure. Worker opening/drain
+are one-time authority operations; its ordinary append path only signs and
+produces. Provider/guest credentials never enter these records.
+
+## Unified projection and recovery
+
+One `pi-cloud-session-projector-v1` consumer group assigns disjoint partitions.
+After provenance admission, a record updates native PG state, its disposable
+live view and the Tool routing module as applicable. Guest execution itself is
+never awaited by the partition handler. PG or live-owner delivery failure stalls
+that partition; it does not serialize unrelated partitions.
+
+Native Entry/Record IDs, parents, sequence and timestamps are assigned by the
+Worker before Kafka publication. PostgreSQL applies those exact records and
+updates projection progress in the same transaction. A crash before commit
+replays the record; a crash after commit can redeliver it without changing its
+meaning. Native sequence conflicts stop recovery rather than being skipped.
+PG transaction-time closure checks remain: a stale Projector handler cannot
+overwrite a successor merely because it cached an older OPEN state.
+
+Recovery starts at the minimum of PG's canonical/unsealed-prefix floor and the
+group's completed delivery position. This protects both volatile text and a
+record whose PG mutation committed before Tool routing finished. Kafka fetching
+is not acknowledgement. Complete message/seal transactions advance PG progress;
+token fragments create no PG rows. Rebalance invalidates old subscriptions and
+rebuilds the assigned prefix before its Projector serves snapshots.
+
+At a seal, one PG transaction stores the exact public terminal, interrupted
+visible prefix, Attempt closure and recovery progress. The Projector then updates
+the local live view directly. There is no second Kafka commit notice or buffer
+waiting for such a notice. A successor is released by the PG closure, not by a
+browser ACK. Incomplete Tools remain UNKNOWN; no successful result is invented.
+
+Kafka automatic time/size expiry is disabled. Safe retention stays behind
+canonical progress and every unsealed start, with an additional grace interval.
+Missing progress or PG failure stops reclamation. A known missing unsealed
+prefix is an operator-visible failure. Kafka is not the lifetime transcript or
+an unlimited outage buffer; PG retains semantic history and bounded recovery
+metadata, while Cube Volumes retain files.
+
+## Browser view
+
+The public SSE request has no cursor. The assigned Projector subscribes to live
+wakes, reads canonical history and takes an immutable tail snapshot. It retries
+if terminal eviction overtook that PG snapshot; no transaction spans a network
+write. The first frame replaces the page with complete history plus materialized
+partial output. Recovered text renders immediately; only new deltas animate.
+
+A request arriving on another API replica is proxied to the partition owner
+discovered from Kafka group membership. Each replica advertises a unique internal
+HTTP URL; Kubernetes derives it from Pod IP. There is no PG partition-owner ring
+or second Kafka consumer in this proxy. Both endpoints enforce user/tenant auth.
+Internal forwarding bypasses the external Provider HTTP proxy.
+
+Existing readers retain their own snapshot/event references when terminal
+projection removes a shared tail. Slow readers have bounded queues and reconnect
+for a fresh snapshot. SSE heartbeats keep idle connections open. Pi's first text
+delta is sent promptly; adjacent text can coalesce for 25 ms. Tool argument JSON,
+thinking fragments and Tool stdout deltas are not public streams. One durable,
+argument-free preparation event marks a long Tool-call generation interval, then
+the complete Tool start/result replaces it.
+
+## Native Pi state and Harness
+
+The pinned public Pi SessionRepo/SessionStorage adapter stores one self-contained
+append-only `pi_session_log` per physical Session. Entries, operation Records,
+Lane moves and facts share a Session-local sequence. Entry/Record/Lane/label
+tables are query projections. Official Pi backend conformance tests define the
+base contract; tenant and cloud ownership checks are additional constraints.
+
+Cold restore reads the newest Compaction and active suffix, not lifetime JSONL.
+The active native writer maintains acknowledged Lane views. Each Step reads that
+view and returns from writes at Kafka ACK, without PG receipt polling. Pi's
+public Agent and Compaction primitives implement the loop; PiCloud does not fork
+the unfinished upstream high-level Harness implementation.
+
+Complete model output/usage form one native boundary; Pi-validated Tool intent
+forms another. A concrete remote command additionally requires durable publication
+and executor admission. Invalid arguments never create execution intent. Native
+Compaction retains relevant interruption/World State facts and refuses truncated
+or empty summaries. Model retries do not replay completed Tools.
+
+The Harness compares credential-free World State at clean sampling boundaries.
+Renewing a lease against the same Cube is not a reset. Recreated compute around
+the same Volume emits `sandbox_reset`; replacing the Workspace emits
+`workspace_changed`. Facts are minimal, hidden from ordinary UI messages and
+preserved through Compaction. A hard interruption's visible prefix is materialized
+into the next native context before sampling, together with an interruption fact.
+
+Human Fork creates an independent Session with inherited history; delegated
+Branch creates a Lane. Cold administrative mutations require Session quiescence.
+Pruning hides later immutable history and moves a Lane head; it never rolls back
+Workspace bytes. Deleting a parent includes its descendant transcript views.
+
+## Tools and Cube
+
+Tool Broker is now an execution/lifecycle service, not a Kafka consumer. Its
+immutable PG Attempt/binding routes point to one Broker boot. Projector forwards
+only commands and small result-retirement/seal notifications through an internal
+credential unavailable to the Worker. The receiver folds positions synchronously
+and acknowledges admission, not guest completion. Replayed/delayed lower offsets
+and reused operation IDs cannot start another effect. Old bindings are never
+adopted by a replacement boot. Worker result GETs go directly to the actual owner.
+
+Broker validates the existing Lease/fence, frozen Tool policy and Cloud Step,
+then the provider adapter calls Cube's native envd/vsock facilities. Pi cannot
+choose arbitrary Pod/VM identities, images, mounts or network policy. No platform
+controller or bearer credential is injected into the guest. `read/write/edit/bash`
+are the remote tools; Bash accepts only its declared command/timeout parameters.
+
+Completed raw results live in a bounded owner retry cache. Pi performs its usual
+redaction/truncation and appends the native Tool Result. Projector forwards the
+matching small acknowledgement to retire raw bytes; seals/binding retirement
+also release them. Already-admitted work may finish after closure but cannot
+repopulate the cache or enter the sealed transcript. UNKNOWN never triggers
+automatic shell replay. Kafka fencing cannot undo an already-issued Cube request
+or roll back a running process.
+
+`TrustedToolRuntime` supplies code-owned Preview, Subagent and supervisor tools
+inside the Worker. These do not execute in Cube. Integration executors are a
+separate extension boundary; user-supplied Worker extensions are not supported.
+
+## Workspaces and development machines
+
+An elastic Workspace owns one persistent Cube Volume and at most one bounded-warm
+physical Cube. Different Sessions receive independently fenced Tool bindings to
+that same environment. Files, ports and processes are shared intentionally. Human
+terminals may use it concurrently. Pure chat does not reserve compute. Ordinary
+directory/file browsing reads current bytes, not a per-Run file index or archive.
+
+A user-owned development machine is allocated independently, with a selected
+CPU/memory/disk template. It retains node-affine full-VM state and has its own home
+Volume. Sessions select directories in it. Pause/resume uses Cube state; host
+shutdown is not an automatic snapshot. Broker replacement preserves a running
+machine's state and uses its encrypted reconnect capsule for validated adoption.
+Completing a Run detaches its temporary binding, not the VM. Release deletes the
+machine and its Volume, not conversation history.
+
+Deleting an environment/Workspace makes dependent Sessions require rebinding.
+Existing messages remain readable. Rebinding is allowed after resource deletion
+and only while no Run is active; a new Run freezes the new Workspace. A trusted
+deletion coordinator and Cube Volume Controller remove actual bytes, including
+root-owned files, before committing purge completion. There is no Kopia/S3
+Workspace authority or platform-managed Git tree.
+
+Preview is published by a trusted tool after an actual listening-service probe.
+Authenticated isolated origins proxy HTTP/WebSocket traffic through Broker's
+credential-free guest relay. There is no localhost replacement in model text or
+fixed application-port reservation. Human Web Terminal and one-use SSH tickets
+use independent product authority; they are not Agent execution commands.
+
+## Models, Subagents and integrations
+
+CLIProxyAPI owns upstream subscription/API credentials and account affinity.
+Workers see only scoped model-runtime access through their local Model Gateway.
+Provider/model/reasoning/Fast settings are immutable per accepted Turn. Hosted
+search stays provider-native; verified GPT/DeepSeek actions and citations are
+stored in native assistant messages, with portable replay across providers.
+Image input/generation remain outside the current public feature boundary.
+
+The upstream pi-subagents contract is adapted to durable Lane Runs, not personas.
+Fresh context and inherited context are independent of shared/isolated Workspace
+selection. All active Lanes share one physical Session owner; PG holds durable
+parent/child communication and cancellation state. Defaults bound recursive depth
+to 4, total nodes to 32 and simultaneous descendants to 3. Isolated children use
+internal Workspace copies; the context/communication model is unchanged.
+
+Optional GitLab Issue intake uses ordinary Run admission after the user chooses
+an execution environment. The platform never clones or commits automatically.
+Environment-local origin-scoped Git credentials belong to the Agent's Linux
+environment, not the conversation database. Provider Webhook/project credentials
+remain separate trusted integration secrets. No GitLab is required for ordinary
+PiCloud deployment or local-account login.
+
+## Authorities and scaling
+
+| Concern | Authority |
 | --- | --- |
-| tenants, users, sessions, durable-resource admission | PostgreSQL |
-| local PiCloud identities and non-exclusive Issue claims | PostgreSQL |
-| Runs, Attempts, leases, fences, ready queue | PostgreSQL |
-| Pi Session semantic event log | PostgreSQL `pi_session_log` |
-| Pi Entry/Lane/Record/label query projections | PostgreSQL SessionStorage projections |
-| Session desired model/reasoning/Fast settings and immutable Turn snapshots | PostgreSQL |
-| Session Tool grants and immutable Run capability snapshots | PostgreSQL |
-| conversation parent/fork graph | PostgreSQL |
-| canonical completed conversation | PostgreSQL |
-| bounded accepted live facts | Kafka topic keyed by Session ID |
-| incomplete browser view | rebuildable Gateway memory |
-| elastic Workspace bytes | persistent Cube Volume |
-| elastic Workspace runtime identity/owner | PostgreSQL `tool_broker_workspace_runtimes` |
-| active Run Tool bindings | Tool Broker memory + PostgreSQL Session leases/operation rows |
-| binding delivery route | immutable PostgreSQL Attempt/binding-to-Broker-boot row |
-| cloud development machine guest root, memory and processes | one Cube pause snapshot on its compute node |
-| encrypted machine reconnect capsule | PostgreSQL; key held only by Tool Broker |
-| Workspace settlement/reference | PostgreSQL + trusted Volume envelope |
-| user Git metadata and Code Host tokens | persistent environment bytes under `.git` and hidden `.git-credentials`, visible to Cube/Agent |
-| live process tree | one Cube KVM only |
-| active in-memory `messages[]` | Pi SDK for one active Run |
-| active acknowledged Lane view | disposable Worker memory; cold-seeded from PG and advanced by native Kafka ACKs |
-| development-environment ownership/lifecycle | PostgreSQL |
-| development-environment process/memory/rootfs state | one node-affine Cube KVM snapshot |
-| Agent definitions, immutable revisions and Session/Run routing | PostgreSQL |
-| source-control connections/repository grants and Issue Jobs | PostgreSQL |
-| GitLab project token and Webhook signing token | encrypted PostgreSQL credential row |
-| GitHub App private key and Webhook secret | deployment Secret files |
-| deployment provider token plaintext | ephemeral trusted API memory only |
+| users, resources, Runs, leases and fences | PostgreSQL |
+| publication scope/public key and ordered closure | PG-issued metadata + execution log |
+| not-yet-reclaimed output records | Kafka |
+| semantic Session history and query projections | PostgreSQL |
+| native active Lane context and browser tail | rebuildable Worker/Projector memory |
+| Workspace bytes | persistent Cube Volume |
+| guest processes/memory | the live Cube or a surviving native VM snapshot |
+| model account credentials/selection | CLIProxyAPI |
 
-## First and later messages
-
-For the first message, the Control Plane creates/uses a Workspace and Pi
-Session, then queues the Run. Pure conversation stays entirely in the trusted
-plane. If Pi chooses a Tool, the Broker lazily creates Cube and mounts the
-Workspace Volume.
-
-For a later message, the current owner handles it while another Lane remains
-active; otherwise any Worker may acquire and restore the cold Pi Session. It
-waits for predecessor output seals at claim, verifies its execution authority,
-then Pi reconstructs the active model context and respects its native
-compaction boundary. If the Workspace Cube is still warm, the Run receives a
-new Tool binding without changing physical identity; otherwise a new KVM mounts
-the same persistent Volume. Process state is not
-claimed as durable. Cube has no competing absolute lifetime: Broker idle TTL is
-the sole elastic-compute expiry policy, so continuously active Sessions are not
-terminated because their VM crosses one Turn's timeout.
-
-## Failure rules
-
-- queue delivery is at-least-once; state commits are idempotent/fenced;
-- arbitrary shell start is not exactly-once and is never blindly replayed;
-- current-authority checks guard Tool admission, terminal Run commits and
-  Workspace settlement. Accepted Pi mutations are projected without a new lease
-  check; the first ordered execution seal excludes late old records from canonical
-  and live state. This is not physical Cube process fencing;
-- an unreachable Worker endpoint cannot strand a Session after its connection
-  and lease expire: logical retirement proceeds under the durable fence, the
-  interrupted Run and model reservation fail, terminal Tool ownership is
-  retired before the next writer, and the Session returns to idle for a
-  seal-gated next Run;
-- cancellation revokes authority before process termination;
-- during `cancel_requested`, Tool authority is revoked while the current
-  ExecutionLease retains narrowly bounded Pi Session write authority to commit
-  interruption and unknown-effect facts; terminal cancellation then closes it;
-- visible live events are durable before SSE; successful terminal messages are
-  Pi-native and canonical before completion;
-- interruption and Sandbox reset boundaries are minimal model-visible facts;
-  an unfinished Tool becomes an explicit unknown effect, never a fabricated
-  success or an automatic replay;
-- Cube/process loss preserves files only; the next model is told when the
-execution world materially changed.
-
-A conversation fork resumes through the same path as any other Session. Its
-Pi branch already contains the selected inherited context, while its product
-transcript renders the parent history through the fork Turn followed by child
-Turns. SSE sequence numbers remain local to the child Session.
-
-## Scaling
-
-Control Plane, Pi Worker and Tool Broker are independent replica sets.
-PostgreSQL/PgBouncer, Workspace storage and Cube are external authorities.
-Scaling the Worker pool adds Agent Loop slots;
-scaling Cube compute adds concurrent Tool environments. No Cell abstraction or
-private per-Worker queue is required; active Session ownership is derived from
-the shared RunAttempt authority.
+Worker replicas add Agent Loop slots; Projector replicas divide Kafka partitions;
+Tool executors and Cube nodes add execution capacity. Cross-owner result and SSE
+routes remain explicit. No Cell, worker-affinity queue or second scheduler is
+required. See [run lifecycle](RUN_LIFECYCLE.md), [crash contracts](STREAM_DURABILITY.md)
+and [configuration](CONFIGURATION.md) for operational boundaries.

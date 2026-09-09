@@ -16,7 +16,6 @@ import type { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
 import type { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import type { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import type { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
-import type { AcceptedFactIngestGateway } from "./accepted-fact-ingest-gateway.ts";
 import type { SourceControlService } from "./source-control-service.ts";
 
 export type ControlPlaneApplicationOptions = Omit<
@@ -41,7 +40,6 @@ export type ControlPlaneApplicationOptions = Omit<
   developmentEnvironmentService?: DevelopmentEnvironmentService;
   sandboxPreviewGateway?: SandboxPreviewGateway;
   sshAccessTicketService?: SshAccessTicketService;
-  acceptedFactIngestGateway?: AcceptedFactIngestGateway;
   sourceControlService?: SourceControlService;
 };
 
@@ -54,7 +52,6 @@ export async function createControlPlaneApplication(
   options.supervisorWebSocketGateway?.install(adapter.getInstance());
   options.workspaceTerminalGateway?.install(adapter.getInstance());
   options.sandboxPreviewGateway?.install(adapter.getInstance());
-  options.acceptedFactIngestGateway?.install(adapter.getInstance());
   let staticRequestIdentity;
   if (options.productionHttpGateway === undefined) {
     if (options.tenantId === undefined || options.defaultModelProfileId === undefined) {

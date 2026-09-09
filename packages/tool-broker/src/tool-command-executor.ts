@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import type { KafkaLogRecord } from "@pi-cloud/event-log";
+export type ToolLogRecord<T> = Readonly<{
+  fact: T;
+  topic: string;
+  partition: number;
+  offset: bigint;
+}>;
 import {
   createExecutionLease,
   parseExecutionLease,
@@ -17,7 +22,7 @@ export type ToolLogFact = {
   scope: Pick<AcceptedToolCommand["scope"], "attemptId" | "writerId"> &
     Partial<AcceptedToolCommand["scope"]>;
   closesWriter?: boolean;
-  events?: readonly { type: string; payload: { toolCallId?: string } }[];
+  events?: readonly { type: string; payload: { toolCallId?: string; [key: string]: unknown } }[];
 };
 type Outcome = {
   activationId: string;
@@ -108,7 +113,7 @@ export class ToolCommandExecutor {
     if (this.#closed) throw new Error("Tool command executor stopped");
   }
 
-  receive(record: KafkaLogRecord<ToolLogFact>): void {
+  receive(record: ToolLogRecord<ToolLogFact>): void {
     this.checkHealth();
     const positionKey = `${record.topic}:${record.partition}`;
     if (record.offset <= (this.#positions.get(positionKey) ?? -1n)) return;
@@ -116,13 +121,13 @@ export class ToolCommandExecutor {
     this.#positions.set(positionKey, record.offset);
   }
 
-  consume(record: KafkaLogRecord<ToolLogFact>): void {
+  consume(record: ToolLogRecord<ToolLogFact>): void {
     const fact = record.fact;
     this.#attemptWriters.set(fact.scope.attemptId, fact.scope.writerId);
     if (this.#attemptWriters.size > 65_536)
       this.#attemptWriters.delete(this.#attemptWriters.keys().next().value!);
     this.#consumed++;
-    if (fact.kind === "execution_seal" || fact.kind === "execution_committed") {
+    if (fact.kind === "execution_seal") {
       this.#sealed.add(fact.scope.attemptId);
       if (fact.closesWriter) this.#sealedWriters.add(fact.scope.writerId);
       if (this.#sealedWriters.size > 65_536)

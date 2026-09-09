@@ -89,8 +89,6 @@ export function validateProductionRuntimeEnvironment(environment) {
     MINIMUM_EVENT_RETENTION_MS,
     30 * 24 * 60 * 60_000,
   );
-  integer(environment, "PI_CLOUD_FACT_CHANNEL_LEASE_MS", 9_000, 3_000, 30_000);
-  integer(environment, "PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE", 128, 1, 10_000);
   integer(environment, "PI_CLOUD_KAFKA_PARTITIONS", 32, 1, 1_024);
   integer(environment, "PI_CLOUD_KAFKA_REPLICAS", 3, 1, 5);
   if (eventRetentionMs < PI_TURN_TIMEOUT_MS + SETTLEMENT_GRACE_MS) {

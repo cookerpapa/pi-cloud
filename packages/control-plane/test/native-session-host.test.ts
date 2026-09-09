@@ -12,10 +12,9 @@ import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { RunExecutor, TurnExecutionBackendError } from "../../runtime-core/src/run-executor.ts";
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { transitionCurrentRunAttempt } from "../../runtime-core/src/run-attempt-state.ts";
-import { PostgresExecutionLeaseAuthorityGate } from "../../runtime-core/src/session-lease-authority-gate.ts";
-import { FactChannelService } from "../../runtime-core/src/accepted-fact-channel.ts";
-import { FactChannelPiSessionAppendPublisher } from "../../runtime-core/src/fact-channel-pi-session-append-publisher.ts";
-import { PostgresAcceptedFactProgressStore } from "../../runtime-core/src/postgres-accepted-fact-progress.ts";
+import { DirectExecutionLog } from "../../runtime-core/src/direct-execution-log.ts";
+import { ExecutionPublicationVerifier } from "../../runtime-core/src/execution-publication.ts";
+import { NativeSessionLogPublisher } from "../../runtime-core/src/native-session-log-publisher.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import type { AcceptedFact, AcceptedFactWriter } from "../../runtime-core/src/accepted-fact.ts";
 import { PostgresSubagentJobProvider } from "../../trusted-tool-runtime/src/postgres-subagent-job-provider.ts";
@@ -32,19 +31,14 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
   let host = new PostgresNativeSessionHost({ database: db });
   const facts: AcceptedFact[] = [],
     channels = new Map<string, AcceptedFactWriter>();
-  const service = new FactChannelService({
-    authority: new PostgresExecutionLeaseAuthorityGate({ database: db }),
-    bus: {
-      append: async (fact) => {
-        facts.push(fact);
-        return { factId: fact.factId, durable: true };
-      },
-      checkHealth: async () => {},
+  const service = new DirectExecutionLog(db, {
+    append: async (fact) => {
+      facts.push(fact);
+      return { factId: fact.factId, durable: true };
     },
-    progress: new PostgresAcceptedFactProgressStore(db),
-    instanceId: crypto.randomUUID(),
+    checkHealth: async () => {},
   });
-  const publisher = new FactChannelPiSessionAppendPublisher({
+  const publisher = new NativeSessionLogPublisher({
     channels: { resolve: (lease) => channels.get(lease), checkHealth: async () => {} },
   });
   try {
@@ -106,27 +100,17 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                 turnId: request.turnId,
                 runId: request.runId,
               };
-              const channel = await service.open(
-                {
-                  protocolVersion: 1,
-                  messageId: crypto.randomUUID(),
-                  sentAt: new Date().toISOString(),
-                  type: "fact.channel.open",
-                  payload: {
-                    executionLease: grant.executionLease,
-                    sessionId: request.sessionId,
-                    turnId: request.turnId,
-                    nextEventSeq: Number(request.nextEventSeq),
-                    piSession: {
-                      id: request.piSessionId,
-                      lane: request.piSessionLane,
-                      writerId: request.piSessionWriterId,
-                    },
-                  },
+              const channel = await service.open({
+                executionLease: grant.executionLease,
+                sessionId: request.sessionId,
+                turnId: request.turnId,
+                nextEventSeq: Number(request.nextEventSeq),
+                piSession: {
+                  id: request.piSessionId,
+                  lane: request.piSessionLane,
+                  writerId: request.piSessionWriterId,
                 },
-                crypto.randomUUID(),
-                () => {},
-              );
+              });
               channels.set(grant.executionLease, channel);
               const session = await host.open({
                 scope,
@@ -362,23 +346,49 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
     );
     expect(new Set(facts.map((f) => f.scope.writerId))).toEqual(new Set([parentWriterId]));
     const projector = new ExecutionStreamProjector(db);
+    const verifier = new ExecutionPublicationVerifier(db);
     let offset = 0n;
     const projectReady = async () => {
-      for (const fact of facts.splice(0))
-        await projector.project({ fact, topic: "native-host", partition: 0, offset: offset++ });
+      for (const fact of facts.splice(0)) {
+        const record = { fact, topic: "native-host", partition: 0, offset: offset++ };
+        expect(fact.signature).toBeTypeOf("string");
+        expect(await verifier.accept({ ...record, fact: { ...fact, signature: "invalid" } })).toBe(
+          false,
+        );
+        expect(
+          await verifier.accept({
+            ...record,
+            fact: {
+              ...fact,
+              scope: { ...fact.scope, fencingToken: fact.scope.fencingToken + 1 },
+            } as AcceptedFact,
+          }),
+        ).toBe(false);
+        expect(await verifier.accept(record)).toBe(true);
+        await projector.project(record);
+      }
       const terminals = await db
         .selectFrom("outbox")
         .select("payload")
         .where("aggregate_type", "=", "session_terminal_event")
         .orderBy("created_at")
         .execute();
-      for (const row of terminals)
-        await projector.project({
+      for (const row of terminals) {
+        const record = {
           fact: row.payload as unknown as AcceptedFact,
           topic: "native-host",
           partition: 0,
           offset: offset++,
-        });
+        };
+        expect(await verifier.accept(record)).toBe(true);
+        expect(
+          await verifier.accept({
+            ...record,
+            fact: { ...record.fact, occurredAt: "2000-01-01T00:00:00.000Z" },
+          }),
+        ).toBe(false);
+        await projector.project(record);
+      }
     };
     await projectReady();
     expect(childId).toBeDefined();

@@ -2,17 +2,11 @@ export * from "./runtime-object-cache.ts";
 export * from "./workspace-settlement-store.ts";
 export * from "./conversation-turn-projection.ts";
 export * from "./durable-event-store.ts";
-export * from "./session-lease-authority-gate.ts";
-export * from "./accepted-fact-channel.ts";
 export * from "./accepted-fact.ts";
-export * from "./postgres-accepted-fact-progress.ts";
 export * from "./postgres-pi-session-append-projector.ts";
 export * from "./kafka-accepted-fact.ts";
 export * from "./kafka-accepted-fact-consumer.ts";
-export * from "./kafka-canonical-projector.ts";
-export * from "./kafka-event-runtime.ts";
-export * from "./fact-channel-pi-session-append-publisher.ts";
-export * from "./kafka-live-session-tail.ts";
+export * from "./native-session-log-publisher.ts";
 export * from "./accepted-fact-terminal-outbox-relay.ts";
 export * from "./agent-run-execution-backend.ts";
 export * from "./run-attempt-runtime.ts";
@@ -29,3 +23,5 @@ export {
   readInterruptedAssistantPrefix,
   readCanonicalPiTurnTranscripts,
 } from "./canonical-pi-conversation.ts";
+export * from "./direct-execution-log.ts";
+export * from "./session-projector.ts";

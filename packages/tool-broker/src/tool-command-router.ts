@@ -1,8 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { KafkaLogConsumer, type KafkaLogRecord } from "@pi-cloud/event-log";
 import type { AcceptedToolCommand } from "@pi-cloud/protocol";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
-import type { ToolLogFact } from "./tool-command-executor.ts";
+import { Agent, fetch as internalFetch } from "undici";
+import type { ToolLogFact, ToolLogRecord } from "./tool-command-executor.ts";
 import type { ToolCommandRoute, ToolCommandRoutes } from "./tool-command-routes.ts";
 
 export const TOOL_BROKER_LOG_DELIVERY_PATH = "/internal/v1/tool-log-delivery";
@@ -16,7 +15,7 @@ export type ToolLogDelivery = Readonly<{
 
 export function toolDeliveryFact(fact: ToolLogFact): ToolLogFact | undefined {
   if (fact.kind === "tool_command") return fact;
-  if (fact.kind === "execution_seal" || fact.kind === "execution_committed")
+  if (fact.kind === "execution_seal")
     return { kind: fact.kind, scope: fact.scope, closesWriter: fact.closesWriter === true };
   if (fact.kind !== "pi_session_append") return undefined;
   const events = (fact.events ?? [])
@@ -26,10 +25,11 @@ export function toolDeliveryFact(fact: ToolLogFact): ToolLogFact | undefined {
 }
 
 /** Partition ownership is independent from boot-local Cube ownership. */
-export class KafkaToolCommandConsumer {
-  readonly #consumer: KafkaLogConsumer<ToolLogFact>;
+export class ToolCommandRouter {
   readonly #routes: ToolCommandRoutes;
-  readonly #deliver: (route: ToolCommandRoute, delivery: ToolLogDelivery) => Promise<void>;
+  readonly #deliver: ((route: ToolCommandRoute, delivery: ToolLogDelivery) => Promise<void>) & {
+    close?(): Promise<void>;
+  };
   readonly #cache = new Map<string, readonly ToolCommandRoute[]>();
   #consumed = 0;
   #delivered = 0;
@@ -38,9 +38,6 @@ export class KafkaToolCommandConsumer {
   readonly #instanceId: string | undefined;
 
   constructor(options: {
-    brokers: readonly string[];
-    topic: string;
-    groupId: string;
     instanceId?: string;
     metrics?: PiCloudMetrics;
     routes: ToolCommandRoutes;
@@ -50,30 +47,14 @@ export class KafkaToolCommandConsumer {
     this.#metrics = options.metrics;
     this.#instanceId = options.instanceId;
     this.#deliver = options.deliver;
-    this.#consumer = new KafkaLogConsumer({
-      brokers: options.brokers,
-      topic: options.topic,
-      groupId: options.groupId,
-      clientId: `tool-router-${options.instanceId ?? randomUUID()}`,
-      groupRecovery: true,
-      decode: (value) => JSON.parse(value.toString()) as ToolLogFact,
-      handler: (record) => this.consume(record),
-    });
-  }
-  async start(): Promise<void> {
-    await this.#consumer.start();
-    await this.#consumer.waitUntilAssigned();
-  }
-  checkHealth(): void {
-    this.#consumer.checkHealth();
   }
 
-  async consume(record: KafkaLogRecord<ToolLogFact>): Promise<void> {
+  async consume(record: ToolLogRecord<ToolLogFact>, current?: () => boolean): Promise<void> {
     this.#consumed++;
     const fact = toolDeliveryFact(record.fact);
     this.#metrics?.toolLogConsumed.inc({ kind: fact?.kind ?? "ignored" });
     if (!fact) return;
-    const seal = fact.kind === "execution_seal" || fact.kind === "execution_committed";
+    const seal = fact.kind === "execution_seal";
     const key = `${fact.scope.tenantId}:${fact.scope.attemptId}`;
     let routes = seal ? undefined : this.#cache.get(key);
     // A second binding may have been created since a prior result. Never cache
@@ -94,6 +75,7 @@ export class KafkaToolCommandConsumer {
       routes = routes.filter(
         (r) => r.bindingId === (fact as AcceptedToolCommand).request.activationId,
       );
+    if (current?.() === false) return;
     const owners = new Map(routes.map((r) => [r.instanceId, r]));
     await Promise.all(
       [...owners.values()].map(async (route) => {
@@ -134,14 +116,16 @@ export class KafkaToolCommandConsumer {
     };
   }
   async close(): Promise<void> {
-    await this.#consumer.close();
     this.#cache.clear();
+    await this.#deliver.close?.();
   }
 }
 
 export function httpToolLogDelivery(token: string) {
-  return async (route: ToolCommandRoute, delivery: ToolLogDelivery): Promise<void> => {
-    const response = await fetch(new URL(TOOL_BROKER_LOG_DELIVERY_PATH, route.baseUrl), {
+  const dispatcher = new Agent();
+  const deliver = async (route: ToolCommandRoute, delivery: ToolLogDelivery): Promise<void> => {
+    const response = await internalFetch(new URL(TOOL_BROKER_LOG_DELIVERY_PATH, route.baseUrl), {
+      dispatcher,
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(delivery),
@@ -151,4 +135,5 @@ export function httpToolLogDelivery(token: string) {
     await response.body?.cancel();
     if (!response.ok) throw new Error(`Tool log delivery failed: HTTP ${response.status}`);
   };
+  return Object.assign(deliver, { close: () => dispatcher.destroy() });
 }

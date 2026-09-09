@@ -9,10 +9,7 @@ import { PostgresWorkspaceRuntimeStateRepository } from "./workspace-runtime-sta
 import { randomUUID } from "node:crypto";
 import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
 import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
-import { KafkaToolCommandConsumer, httpToolLogDelivery } from "./kafka-tool-command-consumer.ts";
 import { ToolCommandExecutor } from "./tool-command-executor.ts";
-import { PostgresToolCommandRoutes } from "./tool-command-routes.ts";
-import { ACCEPTED_FACT_TOPIC } from "@pi-cloud/event-log";
 
 const config = await loadToolBrokerConfig();
 const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
@@ -89,23 +86,10 @@ const commands = new ToolCommandExecutor({
   maximumResultBytes: config.maximumResultBytes,
   metrics: observability.metrics,
 });
-const forward = httpToolLogDelivery(config.dispatchToken);
-const receive = (delivery: import("./kafka-tool-command-consumer.ts").ToolLogDelivery) => {
+const receive = (delivery: import("./tool-command-router.ts").ToolLogDelivery) => {
   workspaceRuntimeState.assertLocalOwnership();
   commands.receive({ ...delivery, offset: BigInt(delivery.offset) });
 };
-const router = new KafkaToolCommandConsumer({
-  brokers: config.kafkaBrokers,
-  topic: ACCEPTED_FACT_TOPIC,
-  groupId: `pi-cloud-tool-dispatch-${config.sandboxDomainId}`,
-  instanceId,
-  metrics: observability.metrics,
-  routes: new PostgresToolCommandRoutes(database, config.sandboxDomainId),
-  deliver: async (route, delivery) => {
-    if (route.instanceId === instanceId) receive(delivery);
-    else await forward(route, delivery);
-  },
-});
 const server = new ToolBrokerServer({
   host: config.host,
   port: config.port,
@@ -120,7 +104,7 @@ const server = new ToolBrokerServer({
     instanceId,
     token: config.dispatchToken,
     receive,
-    checkHealth: () => router.checkHealth(),
+    checkHealth: () => commands.checkHealth(),
   },
   resultDelivery: config.resultDelivery,
   metrics: observability.metrics,
@@ -128,7 +112,6 @@ const server = new ToolBrokerServer({
 
 await broker.recoverPersistentDevelopmentEnvironments();
 await server.listen();
-await router.start();
 deletionReaper.start();
 process.stdout.write("PiCloud Tool Broker ready\n");
 
@@ -136,7 +119,6 @@ let closing: Promise<void> | undefined;
 const close = (): Promise<void> => {
   closing ??= deletionReaper
     .close()
-    .then(() => router.close())
     .then(() => commands.close())
     .then(() => server.close())
     .finally(() => database.destroy())

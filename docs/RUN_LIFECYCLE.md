@@ -52,7 +52,7 @@ same binding do not append another fact, and Compaction retains the newest
 material fact for recovery after Session ownership moves to another Worker.
 
 For a Tool call, the Worker presents the same Session lease used by the
-FactChannel. Tool Broker verifies its expiry and fence together with the Tool
+execution publication. Tool Broker verifies its expiry and fence together with the Tool
 binding, frozen Tool policy and Step context. The first binding lazily creates
 the Workspace-owned Cube; later bindings share it without provider rebind.
 Different Sessions may execute Tools concurrently in that Cube.
@@ -76,45 +76,23 @@ result is `UNKNOWN`.
 
 ## Events and terminal commit
 
-The Worker opens one short-leased logical Fact Stream for its opaque
-ExecutionLease before Pi starts. Streams from all active Runs in that Worker
-share one physical Fact WebSocket. The first text delta publishes immediately,
-and adjacent text deltas coalesce for up to 25ms; one lease remains ordered while
-different leases publish concurrently. Tool arguments and Tool results enter
-the same stream only as complete Items. Each event's Kafka `acks=all` receipt is the
-visibility boundary. Event ordering and duplicate handling belong to the
-Kafka/downstream adapter rather than the Authority Gate. Stream close flushes
-the post-PubAck event progress and releases short channel ownership
-before terminal settlement releases the lease. Periodic progress is not used to
-allocate the terminal sequence. The ordered seal projector uses actual accepted
-events, preventing a late progress update from colliding with the terminal.
+At opening, PG binds an immutable publication scope/public key to the current
+ExecutionLease. The Worker appends the opening and subsequent signed records
+directly to Kafka. There is no Fact WebSocket or second renewable channel lease.
+One Projector group verifies provenance and same-partition seals, applies native
+PG state, updates the live view and routes Tool commands to their owners.
+The Worker continues at Kafka ACK without waiting for per-Step PG receipts.
 
-Pi `message_end` submits a complete Session mutation and its matching reviewed
-public event through that same FactChannel. The unified PostgreSQL Gate
-validates current writer authority once and removes the lease before the
-AcceptedFactBus performs Kafka append. The PostgreSQL projector then applies
-the accepted fact idempotently without another authority query, and the Worker
-continues from its acknowledged native view without a PG receipt wait. On successful settlement, the Worker
-prepares the lightweight Workspace Volume settlement. The terminal transaction
-validates the current Attempt/fence, records the last Workspace settlement
-if applicable, requests an execution seal in the Outbox and settles the business Run.
-The canonical consumer commits the public terminal and closes that Attempt only
-after all preceding accepted records are projected. A queued next Run waits for
-this closure before opening Pi context. A
-different Session settling the same Workspace first does not fail this Run. Kafka
-retention eventually removes hot fragments while canonical Pi
-messages remain in PostgreSQL.
+Complete native state and projection position commit atomically. At completion,
+the Worker drains its append queue, records the Workspace observation and the
+authority requests a seal through Outbox. Projector commits the seal, interrupted
+prefix if any and public terminal, then updates its live view directly. A queued
+successor waits for this PG closure. No second Kafka commit notice is needed.
 
-The Worker assigns immutable native stamps and returns after Kafka ACK;
-PostgreSQL projects those exact records, with no receipt table or notification
-round trip. Each model Step reads its active branch from the current native view
-for Compaction assessment and model context. The Run-start Record and user Entry share a checkpoint;
-Compaction Entry and Usage likewise commit together.
-Sampling-start and its Step Record share one mutation; complete Tool results and
-their public completion likewise share one mutation. The model-output and validated
-Tool-intent pre-effect barriers remain distinct. Public Run resources remain
-settling until the canonical seal is committed; business execution completion
-alone no longer means the history projection is ready.
+Lanes share one native append sequence while their Agent Loops remain concurrent.
+Cold restore reads the latest Compaction and active suffix; active Steps read
+the acknowledged in-memory view. Model-output and validated-intent boundaries
+remain distinct. Public Run state stays settling until its seal is projected.
 
 ## Cancellation and failure
 
@@ -124,8 +102,8 @@ The existing maintenance loop also retires expired Run leases on healthy Workers
 It conditionally removes only that lease and publishes its seal; it neither
 quarantines the boot nor kills unrelated Sessions. Already admitted shell effects
 remain UNKNOWN. SQL-only lifecycle retries cannot re-execute the Agent Loop.
-An execution seal in the same Kafka partition closes a retired Attempt. A paused
-ingress can still append its old record, but if it arrives after the seal both
+An execution seal in the same Kafka partition closes a retired Attempt. A delayed
+Worker producer can still append its old record, but if it arrives after the seal both
 canonical and live consumers discard it. Earlier accepted data is projected
 before the successor is allowed to claim. A caught interruption writes Pi's minimal
 abort/reset boundary. A hard Worker loss is reconciled from the retained Kafka
@@ -145,10 +123,10 @@ without retaining scarce admission capacity.
 
 ```text
 Run table queue        at-least-once wakeup + transactional claim
-Pi Session mutation    Authority Gate + Kafka + idempotent PostgreSQL projection
+Pi Session mutation    Publication provenance + Kafka + idempotent PostgreSQL projection
 Tool start              no blind retry; UNKNOWN if ambiguous
 Workspace settlement    fenced last observation; persistent Volume owns bytes
 terminal Run commit     idempotent current-Attempt transaction
 Cube create/delete      idempotent reconcile
-live AcceptedFact       Authority Gate + Kafka acks=all + Gateway fact-id/sequence projection
+live AcceptedFact       Publication provenance + Kafka acks=all + Projector fact-id/sequence projection
 ```

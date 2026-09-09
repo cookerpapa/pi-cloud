@@ -1,7 +1,7 @@
 import type { Database } from "@pi-cloud/database";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import { SESSION_TERMINAL_EVENT_OUTBOX_TOPIC } from "@pi-cloud/protocol";
-import type { KafkaEventRuntime } from "@pi-cloud/runtime-core/kafka-event-runtime";
+import type { SessionProjector } from "@pi-cloud/runtime-core/session-projector";
 import type { Kysely } from "kysely";
 
 const DEFAULT_SAMPLE_INTERVAL_MS = 10_000;
@@ -16,7 +16,7 @@ function count(value: string | number | bigint): number {
 
 export class OperationalMetricsSampler {
   readonly #database: Kysely<Database>;
-  readonly #events: Pick<KafkaEventRuntime, "statistics">;
+  readonly #events: Pick<SessionProjector, "statistics">;
   readonly #metrics: PiCloudMetrics;
   readonly #sampleIntervalMs: number;
   readonly #onError: ((source: "postgresql" | "kafka", error: unknown) => void) | undefined;
@@ -25,7 +25,7 @@ export class OperationalMetricsSampler {
 
   constructor(options: {
     database: Kysely<Database>;
-    events: Pick<KafkaEventRuntime, "statistics">;
+    events: Pick<SessionProjector, "statistics">;
     metrics: PiCloudMetrics;
     sampleIntervalMs?: number;
     onError?: (source: "postgresql" | "kafka", error: unknown) => void;
@@ -101,9 +101,6 @@ export class OperationalMetricsSampler {
   async #sampleKafka(): Promise<void> {
     try {
       const snapshot = this.#events.statistics();
-      this.#metrics.factChannelsActive.set(snapshot.factChannels.activeChannels);
-      this.#metrics.factChannelsLimit.set(snapshot.factChannels.maximumActiveChannels);
-      this.#metrics.factChannelRenewalFailures.set(snapshot.factChannels.renewalFailures);
       this.#metrics.kafkaLiveTailSessions.set(snapshot.liveTail.activeSessionTails);
       this.#metrics.kafkaLiveTailEvents.set(snapshot.liveTail.cachedEvents);
       this.#metrics.kafkaLiveTailBytes.set(snapshot.liveTail.cachedBytes);

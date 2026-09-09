@@ -37,14 +37,6 @@ describe("operational metrics sampler", () => {
     const metrics = new PiCloudMetrics("control-plane-test");
     const errors: unknown[] = [];
     const snapshot = {
-      factChannels: {
-        openedChannels: 12,
-        activeChannels: 7,
-        publishedFacts: 410,
-        renewalCycles: 3,
-        renewalFailures: 0,
-        maximumActiveChannels: 128,
-      },
       liveTail: {
         activeSessionTails: 2,
         cachedEvents: 9,
@@ -75,8 +67,6 @@ describe("operational metrics sampler", () => {
     expect(output).toContain(
       'pi_cloud_workspace_storage_purge_pending{service="control-plane-test"} 0',
     );
-    expect(output).toContain('pi_cloud_fact_channels_active{service="control-plane-test"} 7');
-    expect(output).toContain('pi_cloud_fact_channels_limit{service="control-plane-test"} 128');
     expect(output).toMatch(
       /pi_cloud_operational_sample_timestamp_seconds\{source="postgresql",service="control-plane-test"\} \d+/u,
     );

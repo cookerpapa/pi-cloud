@@ -1,5 +1,9 @@
 global:
   imagePullSecrets: []
+  kafka:
+    brokers: [kafka-1:9092, kafka-2:9092, kafka-3:9092]
+    partitions: 32
+    replicas: 3
 
 workerPool:
   name: primary
@@ -51,7 +55,6 @@ credentials:
   supervisorEnrollmentTokenKey: supervisor-enrollment-token
   supervisorManagementTokenKey: supervisor-management-token
   toolBrokerTokenKey: tool-broker-token
-  workerEventIngestTokenKey: worker-event-ingest-token
   providerGatewayApiKeyKey: cli-proxy-api-key
   metricsTokenKey: metrics-token
 
@@ -91,7 +94,7 @@ networkPolicy:
   trustedNamespaceLabel:
     key: pi-cloud.io/trusted-plane
     value: "true"
-  trustedTcpPorts: [443, 3000, 3129, 4300, 4400, 4318, 5432, 8317]
+  trustedTcpPorts: [443, 3000, 3129, 4300, 4400, 4318, 5432, 8317, 9092]
   externalEgressCidrs: []
 
 disruptionBudget:

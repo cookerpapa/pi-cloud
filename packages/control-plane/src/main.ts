@@ -11,7 +11,9 @@ import {
 } from "./http-supervisor-management.ts";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
 import { PostgresRuntimeObjectStore } from "@pi-cloud/runtime-core/postgres-runtime-object-store";
-import { KafkaEventRuntime } from "@pi-cloud/runtime-core/kafka-event-runtime";
+import { SessionProjector } from "@pi-cloud/runtime-core/session-projector";
+import { ToolCommandRouter, httpToolLogDelivery } from "@pi-cloud/tool-broker/command-router";
+import { PostgresToolCommandRoutes } from "@pi-cloud/tool-broker/command-routes";
 import {
   PostgresSupervisorCredentialAuthorizer,
   SupervisorBootProvisioner,
@@ -28,7 +30,6 @@ import { WorkspaceTerminalGateway } from "./workspace-terminal-gateway.ts";
 import { DevelopmentEnvironmentService } from "./development-environment-service.ts";
 import { SandboxPreviewGateway } from "./sandbox-preview-gateway.ts";
 import { SshAccessTicketService } from "./ssh-access-ticket-service.ts";
-import { AcceptedFactIngestGateway } from "./accepted-fact-ingest-gateway.ts";
 import { OperationalMetricsSampler } from "./operational-metrics-sampler.ts";
 import { GitHubAppClient } from "./github-app-client.ts";
 import { SourceControlService } from "./source-control-service.ts";
@@ -62,7 +63,7 @@ export async function startControlPlane(): Promise<void> {
   const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
   const objectStore = new PostgresRuntimeObjectStore(database);
   const controlPlaneInstanceId = randomUUID();
-  let agentEvents: KafkaEventRuntime | undefined;
+  let agentEvents: SessionProjector | undefined;
   let runtime: ControlPlaneRuntime | undefined;
   let developmentEnvironmentService: DevelopmentEnvironmentService | undefined;
   let operationalMetrics: OperationalMetricsSampler | undefined;
@@ -70,18 +71,21 @@ export async function startControlPlane(): Promise<void> {
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
   let closing = false;
   try {
-    agentEvents = new KafkaEventRuntime({
+    agentEvents = new SessionProjector({
       database,
       brokers: config.kafkaBrokers,
-      instanceId: controlPlaneInstanceId,
+      clientId: controlPlaneInstanceId,
+      advertisedBaseUrl: config.projectorAdvertisedBaseUrl,
+      toolCommands: new ToolCommandRouter({
+        routes: new PostgresToolCommandRoutes(database),
+        deliver: httpToolLogDelivery(config.toolDispatchToken),
+        metrics: observability.metrics,
+      }),
       partitions: config.kafkaPartitions,
       replicas: config.kafkaReplicas,
       capacity: config.producerCapacity,
       metrics: observability.metrics,
       retentionMs: config.acceptedFactRetentionMs,
-      factChannelLeaseMs: config.factChannelLeaseMs,
-      factChannelMaximumActive: config.factChannelMaximumActive,
-      canonicalProjection: config.canonicalProjection,
     });
     const activeAgentEvents = agentEvents;
     await verifyBootstrap(database);
@@ -169,10 +173,6 @@ export async function startControlPlane(): Promise<void> {
       enrollmentToken: config.supervisorEnrollmentToken,
     });
     const provisioningGateway = new SupervisorProvisioningGateway({ provisioner });
-    const acceptedFactIngestGateway = new AcceptedFactIngestGateway({
-      channels: activeAgentEvents.factChannels,
-      serviceToken: config.workerEventIngestToken,
-    });
     const httpGateway = new ProductionHttpGateway({
       authenticator: new PostgresTenantApiAuthenticator({ database }),
       publicRegistrationEnabled: config.publicRegistration.enabled,
@@ -272,7 +272,6 @@ export async function startControlPlane(): Promise<void> {
       assignmentInventoryFactory: (identity) =>
         new RoutedHttpSandboxAssignmentInventory(resolveManagementClient, identity),
       supervisorProvisioningGateway: provisioningGateway,
-      acceptedFactIngestGateway,
       turnSteerBackendFactory: resolveSteerBackend,
       productionHttpGateway: httpGateway,
       publicRegistration: registrationConfiguration,

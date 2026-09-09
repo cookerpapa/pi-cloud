@@ -21,7 +21,7 @@ export type SupervisorHostConfig = {
   providerGatewayApiKey: string;
   databaseUrl: string;
   databaseNotificationUrl: string;
-  workerEventIngestToken: string;
+  kafka: { brokers: readonly string[]; partitions: number; replicas: number; retentionMs: number };
   managementHost: string;
   managementPort: number;
   managementAdvertisedBaseUrl: string;
@@ -371,11 +371,20 @@ export async function loadSupervisorHostConfig(
     ),
     databaseUrl,
     databaseNotificationUrl,
-    workerEventIngestToken: await secret(
-      environment,
-      "PI_CLOUD_WORKER_EVENT_INGEST_TOKEN",
-      allowInlineSecrets,
-    ),
+    kafka: {
+      brokers: required(environment, "PI_CLOUD_KAFKA_BROKERS")
+        .split(",")
+        .map((s) => s.trim()),
+      partitions: integerValue(environment, "PI_CLOUD_KAFKA_PARTITIONS", 32, 1, 1024),
+      replicas: integerValue(environment, "PI_CLOUD_KAFKA_REPLICAS", 3, 1, 5),
+      retentionMs: integerValue(
+        environment,
+        "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS",
+        7200000,
+        3600000,
+        604800000,
+      ),
+    },
     managementHost: bounded(
       environment.PI_CLOUD_SUPERVISOR_MANAGEMENT_HOST ?? "127.0.0.1",
       "PI_CLOUD_SUPERVISOR_MANAGEMENT_HOST",

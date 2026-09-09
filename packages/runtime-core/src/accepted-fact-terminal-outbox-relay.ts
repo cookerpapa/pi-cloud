@@ -100,7 +100,7 @@ export class AcceptedFactTerminalOutboxRelay {
   async #publish(row: ClaimedTerminal): Promise<void> {
     try {
       const fact = parseKafkaAcceptedFact(JSON.stringify(row.payload));
-      if (fact.kind !== "execution_seal" && fact.kind !== "execution_committed")
+      if (fact.kind !== "execution_seal")
         throw new Error("Terminal Outbox contains a non-terminal Fact");
       const receipt = await this.#bus.append(fact);
       if (!receipt.durable || receipt.factId !== fact.factId)

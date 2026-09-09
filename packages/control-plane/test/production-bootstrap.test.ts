@@ -224,11 +224,12 @@ describe.sequential("production bootstrap and configuration", () => {
         "http://{supervisorId}:4100,http://{supervisorId}.workers.example:4100",
       PI_CLOUD_IMAGE_REVISION: "sha-0123456789abcdef",
       PI_CLOUD_KAFKA_BROKERS: "kafka-1:9092,kafka-2:9092",
+      PI_CLOUD_PROJECTOR_ADVERTISED_URL: "http://control-plane:3000",
       PI_CLOUD_KAFKA_REPLICAS: "1",
       PI_CLOUD_PREVIEW_ORIGIN_BASE_URL: "http://preview.localhost:8080",
-      PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: await secret(
+      PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE: await secret(
         root,
-        "worker-event-ingest",
+        "tool-dispatch",
         `event-ingest-${"i".repeat(48)}`,
       ),
       PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true",

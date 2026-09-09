@@ -8,6 +8,7 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -89,15 +90,45 @@ function executeCompose(args, timeoutMs = 180_000) {
   });
 }
 
+let recordsProducedWhileProjectorDown = 0;
 async function replaceControlPlane() {
   if (faultMode === "kafka-broker") {
     await executeCompose(["kill", "--signal", "SIGKILL", "kafka-1"]);
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_000));
-    await executeCompose(["up", "--detach", "--wait", "kafka-1"]);
+    await executeCompose(["up", "--detach", "--no-deps", "--wait", "kafka-1"]);
     return;
   }
+  const workers = [
+    "pi-cloud-production-supervisor-host-1",
+    "pi-cloud-production-supervisor-host-1-1",
+  ];
+  const boots = () =>
+    execFileSync("docker", ["inspect", "--format", "{{.State.StartedAt}}", ...workers], {
+      encoding: "utf8",
+    });
+  const beforeBoots = boots();
+  const logHead = () =>
+    Number(
+      execFileSync(
+        "docker",
+        [
+          "exec",
+          workers[0],
+          "node",
+          "--input-type=module",
+          "-e",
+          `const n=await import('@confluentinc/kafka-javascript');const a=new n.default.KafkaJS.Kafka({kafkaJS:{brokers:['kafka-1:9092'],clientId:'projector-outage-check',logLevel:0}}).admin();await a.connect();const o=await a.fetchTopicOffsets(${JSON.stringify(ACCEPTED_FACT_TOPIC)});console.log(o.reduce((n,p)=>n+Number(p.high),0));await a.disconnect();`,
+        ],
+        { encoding: "utf8" },
+      ).trim(),
+    );
+  const beforeHead = logHead();
   await executeCompose(["kill", "--signal", "SIGKILL", "control-plane"]);
-  await executeCompose(["up", "--detach", "--wait", "control-plane"]);
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  recordsProducedWhileProjectorDown = logHead() - beforeHead;
+  await executeCompose(["up", "--detach", "--no-deps", "--wait", "control-plane"]);
+  assert.equal(boots(), beforeBoots, "Projector failure test restarted a Worker");
+  assert(recordsProducedWhileProjectorDown > 0, "Worker did not append during Projector outage");
 }
 
 async function waitForCompletedRun(api, runId) {
@@ -244,6 +275,7 @@ try {
     sseReconnects: reconnects,
     attemptCount: run.attempts.length,
     faultMode,
+    recordsProducedWhileProjectorDown,
     elapsedMs: Math.round(performance.now() - startedAt),
   };
   if (writeReport) {

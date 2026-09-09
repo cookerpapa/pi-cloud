@@ -22,12 +22,20 @@ Broker has no model credential.
 
 ### Tenant and stale-Worker isolation
 
-Every product read/write includes tenant ownership. Tool and Session mutation
-boundaries validate the current, unexpired Session lease. Browser event
-writers acquire and renew a shorter PostgreSQL ownership lease under that same
-lease before Kafka accepts their Facts.
-A paused or partitioned old Worker cannot resume useful effects after the
-authority replaces or revokes its lease.
+Every product read/write includes tenant ownership. PG issues one immutable
+publication identity under the current ExecutionLease; an ephemeral Worker key
+proves each record's origin. The unified Projector checks scope and ordered
+opening/seal boundaries before native state, UI or command dispatch. There is no
+second channel lease or per-token authority query. Old data can reach Kafka after
+retirement but cannot take effect after its seal. Tool Broker retains current
+Lease/fence and operation-ID admission; an already-issued Cube operation can
+continue and remains UNKNOWN when its result is unavailable.
+
+Workers now have private Kafka producer connectivity; Cube/browser never do.
+The deployment must restrict Kafka network/ACL access to trusted roles, especially
+Projector consumer-group membership used for internal SSE owner discovery.
+Compromised trusted Worker/PG credentials are outside this tenant-isolation claim;
+record signatures do not turn a fully compromised trusted plane into a safe one.
 
 ### Durable authorities
 
@@ -52,7 +60,7 @@ head.
 | user invokes or tampers with envd inside their own VM | envd is credential-free tenant-local transport; Cube traffic/envd tokens, operation admission and every cross-resource authority remain outside the VM |
 | Broker replacement loses, pauses or swaps an exclusive VM | shutdown leaves physical state unchanged; encrypted reconnect capsule plus PostgreSQL owner CAS and Cube physical metadata/runtime identity validation before adoption |
 | directory picker exposes another runtime | tenant/user/environment authorization at Control Plane and Tool Broker; listing is read from the selected live Cube only |
-| stale Worker mutation | PostgreSQL authority before Kafka `acks=all` and monotonically increasing execution authority |
+| stale Worker mutation | PG-issued publication provenance, same-partition opening/seal cutoff and executor Lease/fence checks |
 | duplicate queue delivery | idempotent command plus transactional RunAttempt claim |
 | ambiguous shell result | `UNKNOWN`; no automatic replay |
 | SSRF/data exfiltration to internal network | private access denied except deployment-owned direct CIDRs; public HTTP uses governed egress proxy |

@@ -15,6 +15,10 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
 
 {{- define "pi-cloud-platform.secretMounts" -}}
 - name: platform-secrets
+  mountPath: /run/pi-cloud-secrets/tool-dispatch-token
+  subPath: tool-dispatch-token
+  readOnly: true
+- name: platform-secrets
   mountPath: /run/pi-cloud-secrets/database-url
   subPath: {{ .Values.external.database.secretKey }}
   readOnly: true

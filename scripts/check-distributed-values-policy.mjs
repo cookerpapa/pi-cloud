@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { validateDistributedDeploymentValues } from "./distributed-values-policy.mjs";
 
 const valid = {
-  global: { imageRevision: "a".repeat(40) },
+  global: {
+    imageRevision: "a".repeat(40),
+    kafka: { brokers: ["kafka.internal:9092"], acceptedFactRetentionMs: 7_200_000 },
+  },
   images: Object.fromEntries(
     ["controlPlane", "web", "toolBroker", "sshGateway"].map((name) => [
       name,
@@ -11,7 +14,6 @@ const valid = {
   ),
   external: {
     providerProxyUrl: "https://provider.internal:3129",
-    kafka: { brokers: ["kafka.internal:9092"], acceptedFactRetentionMs: 7_200_000 },
   },
   sandboxPlane: {
     cube: { apiUrl: "https://cube.internal", templateId: `tpl-${"a".repeat(24)}` },

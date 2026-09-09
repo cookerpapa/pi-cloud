@@ -33,17 +33,3 @@ export interface ToolCommandPublisher {
     command: CandidateToolCommand,
   ): Promise<Readonly<{ operationId: string; accepted: true }>>;
 }
-export type ToolCommandPublishFrame = Readonly<{
-  protocolVersion: 1;
-  messageId: string;
-  sentAt: string;
-  type: "fact.tool_command.publish";
-  payload: CandidateToolCommand;
-}>;
-export type ToolCommandAcceptedFrame = Readonly<{
-  protocolVersion: 1;
-  messageId: string;
-  sentAt: string;
-  type: "fact.tool_command.accepted";
-  payload: Readonly<{ acknowledgedMessageId: string; operationId: string; accepted: true }>;
-}>;

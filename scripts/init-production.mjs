@@ -137,23 +137,6 @@ async function ensureToolBrokerToken(runtimeDirectory, name = "tool-broker-token
   return true;
 }
 
-async function ensureWorkerEventIngestToken(runtimeDirectory) {
-  const path = resolve(runtimeDirectory, "secrets/worker-event-ingest-token");
-  try {
-    const existing = (await readPrivateFile(path)).trim();
-    if (!/^[A-Za-z0-9_-]{64}$/.test(existing)) {
-      throw new Error("Production Worker event ingest token is invalid");
-    }
-    return false;
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
-  await writePrivateFile(path, `${randomSecret()}\n`);
-  const application = applicationIdentity();
-  if (application.changeOwnership) await chown(path, application.uid, application.gid);
-  return true;
-}
-
 async function ensureWorkspaceServiceToken(runtimeDirectory) {
   const path = resolve(runtimeDirectory, "secrets/workspace-service-token");
   try {
@@ -555,7 +538,6 @@ if (await validateExisting(runtimeDirectory)) {
   const cubePersistentStateKeyCreated = await ensureCubePersistentStateKey(runtimeDirectory);
   const toolBrokerTokenCreated = await ensureToolBrokerToken(runtimeDirectory);
   await ensureToolBrokerToken(runtimeDirectory, "tool-dispatch-token");
-  const workerEventIngestTokenCreated = await ensureWorkerEventIngestToken(runtimeDirectory);
   const workspaceServiceTokenCreated = await ensureWorkspaceServiceToken(runtimeDirectory);
   const workspaceTerminalTokenCreated = await ensureWorkspaceTerminalToken(runtimeDirectory);
   const sshHostKeyCreated = await ensureSshHostKey(runtimeDirectory);
@@ -572,7 +554,6 @@ if (await validateExisting(runtimeDirectory)) {
       sourceControlCredentialMasterKeyCreated,
       cubePersistentStateKeyCreated,
       toolBrokerTokenCreated,
-      workerEventIngestTokenCreated,
       workspaceServiceTokenCreated,
       workspaceTerminalTokenCreated,
       sshHostKeyCreated,
@@ -673,10 +654,6 @@ await writePrivateFile(
 );
 await writePrivateFile(resolve(secretsDirectory, "tool-broker-token"), `${randomSecret()}\n`);
 await writePrivateFile(resolve(secretsDirectory, "tool-dispatch-token"), `${randomSecret()}\n`);
-await writePrivateFile(
-  resolve(secretsDirectory, "worker-event-ingest-token"),
-  `${randomSecret()}\n`,
-);
 await writePrivateFile(resolve(secretsDirectory, "workspace-service-token"), `${randomSecret()}\n`);
 await writePrivateFile(
   resolve(secretsDirectory, "workspace-terminal-token"),
@@ -747,8 +724,6 @@ const environment = [
   `PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS=${publicTenantMaximumSessions}`,
   "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS=7200000",
   "PI_CLOUD_KAFKA_PARTITIONS=32",
-  "PI_CLOUD_FACT_CHANNEL_LEASE_MS=9000",
-  "PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE=128",
   "PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS=15000",
   "PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS=5000",
   "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES=3",

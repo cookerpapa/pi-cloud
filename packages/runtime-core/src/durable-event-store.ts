@@ -28,7 +28,7 @@ export class DurableEventStoreError extends Error {
   }
 }
 
-export type FactChannelOpenRequest = Readonly<{
+export type ExecutionLogOpenRequest = Readonly<{
   executionLease: string;
   sessionId: string;
   piSession: Readonly<{ id: string; lane: string; writerId: string }>;
@@ -36,14 +36,14 @@ export type FactChannelOpenRequest = Readonly<{
   nextEventSeq: number;
 }>;
 
-export interface FactChannel extends AcceptedFactWriter {
+export interface ExecutionLogWriter extends AcceptedFactWriter {
   readonly acknowledgedThroughSeq: number;
   ingest(value: unknown): Promise<EventAckMessage>;
   close(): Promise<void>;
 }
 
-export interface FactChannelFactory {
-  open(request: FactChannelOpenRequest): Promise<FactChannel>;
+export interface ExecutionLogFactory {
+  open(request: ExecutionLogOpenRequest): Promise<ExecutionLogWriter>;
 }
 
 /**
@@ -51,7 +51,7 @@ export interface FactChannelFactory {
  * maintained production path injects KafkaLiveSessionTail and never constructs
  * this class.
  */
-export class DurableEventStore implements FactChannelFactory {
+export class DurableEventStore implements ExecutionLogFactory {
   readonly #events = new Map<string, PiCloudEvent[]>();
 
   snapshot(_tenantId: string, sessionId: string) {
@@ -73,7 +73,7 @@ export class DurableEventStore implements FactChannelFactory {
     };
   }
 
-  async open(request: FactChannelOpenRequest): Promise<FactChannel> {
+  async open(request: ExecutionLogOpenRequest): Promise<ExecutionLogWriter> {
     let acknowledgedThroughSeq = request.nextEventSeq - 1;
     let closed = false;
     return {

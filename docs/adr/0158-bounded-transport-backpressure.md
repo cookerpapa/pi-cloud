@@ -32,9 +32,9 @@ remain as in ADR-0157. Limits describe application buffers, not a hard RSS cap.
 
 ## Configuration and evidence
 
-Producer defaults/loading are shared by embedded and standalone projection roles.
-The AcceptedFact topic is one code-owned generation; remove Broker's unsupported
-single-service topic override. Expose restart-bound limits through Compose/Helm
+Producer defaults/loading are shared by Workers and the Projector's control publisher.
+The execution-log topic is one code-owned generation; Tool Broker has no Kafka
+client or topic override. Expose restart-bound limits through Compose/Helm
 and document complete semantic checkpoints separately from command PubAck and PG
 effect admission. Keep credentials and guest protocols unchanged.
 

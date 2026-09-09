@@ -5,10 +5,10 @@ and [Cube execution-entry study](../reports/cube-execution-generation-study.md).
 
 ## Decision
 
-Route Agent file/shell operation commands through the existing Worker Fact
-connection, Authority Gate and Session-keyed Kafka log. Remove the public-to-
-Worker direct operation POST path. Tool Broker consumes commands and invokes
-Cube; the Worker only awaits the authenticated operation result and gives it
+Route Agent file/shell operation commands through the signed Worker execution
+log and unified Projector ([ADR-0163](0163-direct-log-and-unified-projector.md)).
+There is no Worker direct operation POST. Projector routes admitted commands to
+the owning Tool executor, which invokes Cube; the Worker awaits its result and gives it
 back to Pi, whose existing Tool-result checkpoint remains authoritative.
 Human terminals, Preview, credentials and lifecycle APIs are unchanged.
 
@@ -16,21 +16,17 @@ Keep Pi's complete-model-output and validated-intent checkpoints. A command
 publication is the durable transport for a concrete remote operation, not a
 replacement for its parent Pi Tool intent (one Pi edit may perform several
 remote operations). Measure the added transport ACK separately from model time.
-Workers still have no Kafka credentials. Candidate commands carry their lease
-only to the Gate; accepted commands contain canonical execution identity and
-the destination binding, never a bearer token. Results do not create a second
+Workers have private Kafka producer access. Logged commands contain canonical
+execution identity and the destination binding, not a bearer header. Results do not create a second
 PostgreSQL transcript or bypass Pi's redaction/checkpoint path.
 
-Extract the existing Kafka consumer into a lightweight transport package shared
-by Runtime Core and Broker. Do not import Agent Runtime/SessionStorage into the
-Broker or implement another Kafka client. Keep Confluent/librdkafka partition
-flow control and Platformatic production.
+Keep Kafka transport in the execution-log/Projector layer, not Tool Broker.
+Do not import Agent Runtime/SessionStorage into the executor or implement
+another Kafka client. Keep the adopted Kafka clients behind their ports.
 
 Bindings belong to one Broker boot. [ADR-0162](0162-sharded-tool-command-routing.md)
-replaces independent full-log consumption with a shared consumer group and
-positioned owner forwarding. A replacement boot never adopts vanished bindings.
-Broker is a trusted reader of the shared log, including non-command records;
-the new access is never extended to a Cube guest or Pi Worker.
+defines positioned owner forwarding. A replacement boot never adopts vanished
+bindings. Projector is the sole consumer; Cube never receives Kafka access.
 
 Tool work is detached from the partition handler so long Bash cannot hide its
 seal or block other Sessions. Bound active work and preserve exact operation-ID
@@ -52,7 +48,7 @@ Fact, not Pi Entry/Record internals. Consuming that fact retires the associated 
 bodies without another HTTP ACK or PostgreSQL query. Error/UNKNOWN results are
 terminal too; they do not necessarily prove receipt of every raw output byte.
 
-Broker's execution map owns only in-flight operations. The command consumer is
+Broker's execution map owns only in-flight operations. The executor is
 the sole completed-result cache; after acknowledgement it retains lightweight
 operation-ID/request-hash tombstones until binding retirement. Duplicate commands
 cannot restart effects. Execution seals retire missing-result calls. Already
@@ -67,7 +63,7 @@ new readers without a retained copy receive an explicit unavailable outcome,
 never an automatic effect retry. This bounds retention, not guest collection or
 HTTP buffers. Raw results are not a second durable transcript.
 
-Drain active Runs and update Worker/Gate/Broker together. No guest protocol,
+Drain active Runs and update Worker/Projector/executor together. No guest protocol,
 template or historical Session data rewrite is needed. ADR-0162 adds binding
 route metadata; old Tool bindings are not adopted.
 
@@ -80,7 +76,7 @@ distinguish a durable log from external effects; Kafka consumer ownership alone
 cannot revoke an envd process request. Reuse the adopted clients and operation
 ledger rather than add a workflow engine or another message bus.
 
-Validate Gate scope/lease removal, Kafka-before-execution, duplicate delivery,
+Validate publication scope/provenance, Kafka-before-execution, duplicate delivery,
 consumer reconnect, cancelled/sealed queued work, lost result connections,
 Broker replacement, concurrent Sessions, native read/write/edit/bash semantics,
 real multi-round coding and model-free command latency. Drain the old protocol

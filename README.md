@@ -38,18 +38,17 @@ PostgreSQL Run queue
             ├─ one ordered native log writer per active physical Session
             └─ model requests → local Model Gateway → CLIProxyAPI → Provider
 
-Pi semantic records + display events + concrete Tool commands
-  └─ multiplexed Worker Fact connection
-       └─ Authority Gate (current ExecutionLease)
-            └─ Kafka: physical-Session key, RF=3, acks=all
-                 ├─ canonical projector → PG native log + query projections
-                 │                        + terminal/commit Outbox
-                 ├─ live-tail consumer → immutable snapshot + SSE → Browser
-                 └─ Broker consumer group → owner routing → Tool executor → Cube KVM
-                                             raw result → Worker/Pi → same Fact path
+Pi Worker
+  └─ PG-issued execution opening + signed semantic/display/Tool records
+       └─ direct Kafka append: physical-Session key, RF=3, acks=all
+            └─ one partitioned Session Projector consumer group
+                 ├─ PG native log + query projections + recovery progress
+                 ├─ immutable live view + snapshot-first SSE → Browser
+                 └─ command routing → owner Tool executor → Cube KVM
+                                        raw result → Worker/Pi → same log
 
-Run settlement → PG Outbox → Kafka execution seal
-  → canonical closure → PG Outbox → Kafka commit notification → Browser
+Run settlement → PG Outbox → Kafka seal
+  → Projector commits terminal/interrupted prefix → next Run may start
 ```
 
 The Harness consumes a `SessionStorage` port. Its active writer assigns immutable
@@ -70,11 +69,16 @@ commands then reach Tool Broker through Kafka. Broker retains bounded raw result
 for the Worker; the subsequent native Tool Result retires those copies. There is
 no second raw-result transcript or automatic command replay.
 
-Broker replicas share partition consumption within a Sandbox Domain. The consumer
-forwards commands and small seal/result-retirement notifications to the binding's
-exact owning boot; Worker result reads go directly to that owner. Kafka partition
-reassignment does not move VMs or re-execute old bindings.
+Projector replicas share partition consumption. Commands and small seal/result
+notifications go to the exact owning Tool Broker boot; Worker result reads go
+directly to that owner. Tool Broker does not consume Kafka. SSE requests arriving
+at another API replica are proxied to the partition owner discovered through Kafka
+membership; no second routing authority or browser cursor is required.
 
+A Run opens one publication identity under its current PostgreSQL Lease. Its
+Worker holds an ephemeral signing key, and the Projector checks recorded scope
+and provenance. There is no Fact Gateway, secondary channel lease or per-token
+authority query. Kafka ACK means persisted, not necessarily valid after a seal.
 A cleanly drained Run seals independently. An uncertain native publication retires
 the shared writer incarnation, including its other Lanes. Canonical, live and
 Tool consumers reject later records from that incarnation. The next ownership
@@ -149,10 +153,11 @@ npm run production:restore
 npm run production:down
 ```
 
-**Existing installations:** the native-append cutover requires drained Workers
-and fully projected predecessor seals/Outbox before migration 131. Do not mix
-old/new Worker and Gateway protocols during a rolling upgrade. Existing PG
-semantic history is preserved; no old-protocol fallback is retained.
+**Existing installations:** drain Workers and project predecessor seals/Outbox
+before migration 134, then replace Workers, Control Plane/Projector and Tool Broker
+together. This removes the old Fact transport and starts the v7 execution log.
+Existing PG semantic history and Workspace bytes are preserved; there is no
+mixed-protocol or old-Gateway fallback.
 
 ## Kubernetes
 

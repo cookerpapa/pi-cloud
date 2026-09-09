@@ -79,15 +79,6 @@ groups:
 
   - name: pi-cloud-capacity
     rules:
-      - alert: PiCloudFactChannelCapacityHigh
-        expr: max(pi_cloud_fact_channels_active) / clamp_min(max(pi_cloud_fact_channels_limit), 1) > 0.9
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "FactChannel capacity is nearly exhausted"
-          description: "More than 90% of configured FactChannel capacity is active."
-
       - alert: PiCloudSandboxAdmissionWaiting
         expr: max(pi_cloud_sandbox_admission_waiting) > 0
         for: 5m

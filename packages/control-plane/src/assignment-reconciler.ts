@@ -587,7 +587,7 @@ export class AssignmentReconciler {
   async #deleteLease(
     transaction: Transaction<Database>,
     assignment: DurableAssignment,
-    now: Date,
+    _now: Date,
   ): Promise<void> {
     const execution = parseExecutionLease(assignment.executionLease);
     const deleted = await transaction
@@ -596,12 +596,6 @@ export class AssignmentReconciler {
       .where("lease_id", "=", execution.leaseId)
       .where("sandbox_id", "=", this.#sandboxId)
       .where("fencing_token", "=", String(execution.fencingToken))
-      .where((expression) =>
-        expression.or([
-          expression("fact_channel_valid_until", "is", null),
-          expression("fact_channel_valid_until", "<=", now),
-        ]),
-      )
       .executeTakeFirst();
     if (deleted.numDeletedRows !== 1n) {
       throw new AssignmentReconcilerError(

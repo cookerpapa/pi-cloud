@@ -805,6 +805,8 @@ export interface RunAttemptTable {
   output_first_offset: NullableInt8;
   output_projected_offset: NullableInt8;
   native_writer_anchor_id: GeneratedNullable<string>;
+  output_publication: GeneratedNullable<Record<string, unknown>>;
+  output_open_offset: NullableInt8;
   native_writer_id: Generated<string>;
   native_output_drained: Generated<boolean>;
   native_writer_failed_at: NullableTimestamp;
@@ -850,9 +852,6 @@ export interface SessionLeaseTable {
   turn_id: string;
   attempt_id: string;
   last_event_seq: GeneratedInt8;
-  fact_channel_connection_id: GeneratedNullable<string>;
-  fact_channel_instance_id: GeneratedNullable<string>;
-  fact_channel_valid_until: NullableTimestamp;
   valid_until: Timestamp;
   acquired_at: GeneratedTimestamp;
   renewed_at: GeneratedTimestamp;

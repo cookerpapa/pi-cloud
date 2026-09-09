@@ -9,6 +9,14 @@ global:
   storageClassName: replicated-rwo
   trustedNodeSelector:
     pi-cloud.io/node-pool: trusted
+  kafka:
+    brokers:
+      - kafka-0.kafka.example.internal:9092
+      - kafka-1.kafka.example.internal:9092
+      - kafka-2.kafka.example.internal:9092
+    replicas: 3
+    partitions: 32
+    acceptedFactRetentionMs: 7200000
 
 images:
   controlPlane:
@@ -54,16 +62,6 @@ web:
     tlsSecretName: pi-cloud-web-tls
 
 external:
-  kafka:
-    brokers:
-      - kafka-0.kafka.example.internal:9092
-      - kafka-1.kafka.example.internal:9092
-      - kafka-2.kafka.example.internal:9092
-    replicas: 3
-    partitions: 32
-    acceptedFactRetentionMs: 7200000
-    factChannelLeaseMs: 9000
-    maximumActiveFactChannelsPerGateway: 128
   providerProxyUrl: https://provider-proxy.example.com:3129
 
 networkPolicy:

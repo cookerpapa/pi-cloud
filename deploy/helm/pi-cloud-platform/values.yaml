@@ -18,6 +18,16 @@ global:
   storageClassName: ""
   trustedNodeSelector: {}
   trustedTolerations: []
+  kafka:
+    brokers:
+      - kafka-0.kafka.svc.cluster.local:9092
+      - kafka-1.kafka.svc.cluster.local:9092
+      - kafka-2.kafka.svc.cluster.local:9092
+    replicas: 3
+    partitions: 32
+    producerPendingBytes: 67108864
+    producerPendingFacts: 4096
+    acceptedFactRetentionMs: 7200000
 
 images:
   controlPlane:
@@ -51,8 +61,6 @@ bootstrap:
 
 controlPlane:
   replicas: 3
-  # Disable only after an independently deployed projection-main.ts is Ready.
-  canonicalProjectionEnabled: true
   autoscaling:
     enabled: true
     minReplicas: 3
@@ -114,18 +122,6 @@ web:
     limits: { cpu: 500m, memory: 256Mi }
 
 external:
-  kafka:
-    brokers:
-      - kafka-0.kafka.svc.cluster.local:9092
-      - kafka-1.kafka.svc.cluster.local:9092
-      - kafka-2.kafka.svc.cluster.local:9092
-    replicas: 3
-    partitions: 32
-    producerPendingBytes: 67108864
-    producerPendingFacts: 4096
-    acceptedFactRetentionMs: 7200000
-    factChannelLeaseMs: 9000
-    maximumActiveFactChannelsPerGateway: 128
   database:
     # database-url should target PgBouncer transaction pooling. The separate
     # database-notification-url Secret key must target PostgreSQL directly.
@@ -226,7 +222,6 @@ pi-workers:
     supervisorEnrollmentTokenKey: supervisor-enrollment-token
     supervisorManagementTokenKey: supervisor-management-token
     toolBrokerTokenKey: tool-broker-token
-    workerEventIngestTokenKey: worker-event-ingest-token
     providerGatewayApiKeyKey: cli-proxy-api-key
     metricsTokenKey: metrics-token
   runtime:

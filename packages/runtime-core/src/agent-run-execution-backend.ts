@@ -31,8 +31,8 @@ import {
 } from "./run-executor.ts";
 import {
   DurableEventStoreError,
-  type FactChannel,
-  type FactChannelFactory,
+  type ExecutionLogWriter,
+  type ExecutionLogFactory,
 } from "./durable-event-store.ts";
 import {
   SessionLeaseCoordinator,
@@ -42,7 +42,7 @@ import {
 export type AgentRunExecutionBackendOptions = {
   supervisor: AgentRunSupervisor;
   leaseCoordinator: SessionLeaseCoordinator;
-  factChannels: FactChannelFactory;
+  executionLogs: ExecutionLogFactory;
   onEvent?: (message: EventPublishMessage) => Promise<void> | void;
   clock?: () => Date;
   idGenerator?: () => string;
@@ -54,7 +54,7 @@ export type AgentRunExecutionBackendOptions = {
 type TrackedLeaseExecution = {
   prepared: ReturnType<AgentRunSupervisor["prepare"]>;
   execution: Promise<TurnExecutionResult>;
-  writer: FactChannel;
+  writer: ExecutionLogWriter;
   writerClosing?: Promise<void>;
   failure?: TurnExecutionBackendError;
 };
@@ -236,7 +236,7 @@ function validateCancellationAck(
 export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCancellationBackend {
   readonly #supervisor: AgentRunSupervisor;
   readonly #leaseCoordinator: SessionLeaseCoordinator;
-  readonly #factChannels: FactChannelFactory;
+  readonly #executionLogs: ExecutionLogFactory;
   readonly #onEvent: ((message: EventPublishMessage) => Promise<void> | void) | undefined;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
@@ -251,7 +251,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   constructor(options: AgentRunExecutionBackendOptions) {
     this.#supervisor = options.supervisor;
     this.#leaseCoordinator = options.leaseCoordinator;
-    this.#factChannels = options.factChannels;
+    this.#executionLogs = options.executionLogs;
     this.#onEvent = options.onEvent;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
@@ -268,7 +268,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     lifecycle: TurnExecutionLifecycle,
   ): Promise<TurnExecutionResult> {
     let acknowledgement: { executionLease: string } | undefined;
-    let factChannel: FactChannel | undefined;
+    let executionLog: ExecutionLogWriter | undefined;
     let prepared: ReturnType<AgentRunSupervisor["prepare"]> | undefined;
     let tracked: TrackedLeaseExecution | undefined;
     let durableStarted = false;
@@ -277,8 +277,8 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       acknowledgement = await this.#measurePreparation("execution_lease", () =>
         this.#leaseCoordinator.acquire(request),
       );
-      factChannel = await this.#measurePreparation("fact_channel", () =>
-        this.#factChannels.open({
+      executionLog = await this.#measurePreparation("log_open", () =>
+        this.#executionLogs.open({
           executionLease: acknowledgement!.executionLease,
           sessionId: request.sessionId,
           piSession: {
@@ -360,7 +360,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
             false,
           );
         }
-        const eventAck = validateEventAck(eventMessage, await factChannel!.ingest(eventMessage));
+        const eventAck = validateEventAck(eventMessage, await executionLog!.ingest(eventMessage));
         await this.#onEvent?.(eventMessage);
         return eventAck;
       });
@@ -380,7 +380,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       await this.#measurePreparation("durable_started", () => lifecycle.started(acknowledgement));
       durableStarted = true;
       const execution = prepared.run();
-      tracked = this.#registerGrantExecution(request.sessionId, prepared, execution, factChannel);
+      tracked = this.#registerGrantExecution(request.sessionId, prepared, execution, executionLog);
       try {
         let result: TurnExecutionResult;
         try {
@@ -401,9 +401,9 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     } catch (error: unknown) {
       if (!durableStarted) {
         prepared?.releaseBeforeStart();
-        if (factChannel !== undefined) {
-          await factChannel.close().catch(() => undefined);
-          factChannel = undefined;
+        if (executionLog !== undefined) {
+          await executionLog.close().catch(() => undefined);
+          executionLog = undefined;
         }
         if (acknowledgement !== undefined) {
           await this.#leaseCoordinator.releaseAcquired(request, acknowledgement).catch(() => {
@@ -423,7 +423,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       }
       throw normalized;
     } finally {
-      if (factChannel !== undefined && tracked === undefined) await factChannel.close();
+      if (executionLog !== undefined && tracked === undefined) await executionLog.close();
     }
   }
 
@@ -504,7 +504,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     sessionId: string,
     prepared: ReturnType<AgentRunSupervisor["prepare"]>,
     execution: Promise<TurnExecutionResult>,
-    writer: FactChannel,
+    writer: ExecutionLogWriter,
   ): TrackedLeaseExecution {
     const tracked: TrackedLeaseExecution = { prepared, execution, writer };
     if (this.#trackedLeaseExecutions.has(sessionId)) {

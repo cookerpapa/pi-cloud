@@ -30,7 +30,7 @@ export function validateDistributedDeploymentValues(values) {
   deploymentString(values["pi-workers"]?.image?.repository, "pi-workers.image.repository");
   deploymentString(values["pi-workers"]?.image?.tag, "pi-workers.image.tag");
   deploymentString(values.external?.providerProxyUrl, "external.providerProxyUrl");
-  const servers = values.external?.kafka?.brokers;
+  const servers = values.global?.kafka?.brokers;
   if (!Array.isArray(servers) || servers.length < 1) {
     throw new Error("Kafka brokers are required");
   }
@@ -80,7 +80,7 @@ export function validateDistributedDeploymentValues(values) {
     throw new Error("Pi Worker termination grace is shorter than the Run drain budget");
   }
   const retentionMs = integer(
-    values.external?.kafka?.acceptedFactRetentionMs,
+    values.global?.kafka?.acceptedFactRetentionMs,
     "Kafka AcceptedFact retention",
   );
   if (retentionMs < turnMs + 5 * 60_000) {

@@ -62,16 +62,6 @@ export type AcceptedExecutionSealFact = Readonly<{
   occurredAt: string;
 }>;
 
-/** A canonical transaction's durable notification, never produced by a Worker. */
-export type AcceptedExecutionCommitFact = Readonly<{
-  kind: "execution_committed";
-  factId: string;
-  scope: AcceptedFactScope;
-  seal: Readonly<{ factId: string; topic: string; partition: number; offset: string }>;
-  event: Extract<PiCloudEvent, { type: "turn.completed" | "turn.failed" | "turn.cancelled" }>;
-  occurredAt: string;
-}>;
-
 export type AcceptedPiSessionAppendFact = Readonly<{
   kind: "pi_session_append";
   factId: string;
@@ -82,12 +72,26 @@ export type AcceptedPiSessionAppendFact = Readonly<{
   occurredAt: string;
 }>;
 
-export type AcceptedFact =
+export type ExecutionPublication = Readonly<{
+  id: string;
+  scope: AcceptedFactScope & { leaseId: string; piSessionLane: string };
+  publicKey: string;
+}>;
+export type ExecutionOpenedFact = Readonly<{
+  kind: "execution_opened";
+  factId: string;
+  scope: AcceptedFactScope;
+  publication: ExecutionPublication;
+  occurredAt: string;
+}>;
+
+export type AcceptedFact = (
+  | ExecutionOpenedFact
   | AcceptedToolCommand
   | AcceptedAgentEventFact
   | AcceptedExecutionSealFact
-  | AcceptedExecutionCommitFact
-  | AcceptedPiSessionAppendFact;
+  | AcceptedPiSessionAppendFact
+) & { signature?: string };
 
 export type AcceptedFactReceipt = Readonly<{
   factId: string;
@@ -107,48 +111,15 @@ export interface AcceptedFactBus {
   checkHealth(): Promise<void>;
 }
 
-export type AcceptedAgentEventProgress = Readonly<{
-  leaseId: string;
-  attemptId: string;
-  fencingToken: number;
-  channelConnectionId: string;
-  channelInstanceId: string;
-  acknowledgedThroughSeq: number;
-}>;
-
-export interface AcceptedFactProgressStore {
-  recordMany(progress: readonly AcceptedAgentEventProgress[]): Promise<ReadonlySet<string>>;
-}
-
-export type PiSessionAppendPublishFrame = Readonly<{
-  protocolVersion: 1;
-  messageId: string;
-  sentAt: string;
-  type: "fact.pi_session_append.publish";
-  payload: CandidatePiSessionAppendFact;
-}>;
-
-export type PiSessionAppendAcceptedFrame = Readonly<{
-  protocolVersion: 1;
-  messageId: string;
-  sentAt: string;
-  type: "fact.pi_session_append.accepted";
-  payload: Readonly<{
-    acknowledgedMessageId: string;
-    mutationId: string;
-    accepted: true;
-  }>;
-}>;
-
-export interface PiSessionAppendFactChannel {
+export interface PiSessionLogAppender {
   mutate(
     mutation: CandidatePiSessionAppendFact,
   ): Promise<Readonly<{ mutationId: string; accepted: true }>>;
 }
 
-export interface ActiveFactChannelResolver {
+export interface ActiveExecutionLogResolver {
   resolve(executionLease: string): AcceptedFactWriter | undefined;
   checkHealth(): Promise<void>;
 }
 
-export interface AcceptedFactWriter extends PiSessionAppendFactChannel, ToolCommandPublisher {}
+export interface AcceptedFactWriter extends PiSessionLogAppender, ToolCommandPublisher {}

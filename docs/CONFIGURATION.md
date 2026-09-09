@@ -128,12 +128,8 @@ heartbeat must leave more than one missed interval before lease expiry.
 | `PI_CLOUD_ACCEPTED_FACT_RETENTION_MS` | `7200000` | minimum Kafka retention grace (2 hours); the reaper also requires safe PG projection progress; unprojected facts do not automatically expire |
 | `PI_CLOUD_KAFKA_PARTITIONS` | `32` | Session-keyed AcceptedFact partitions |
 | `PI_CLOUD_KAFKA_REPLICAS` | `3` | Kafka Topic replication factor |
-| `PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES` | `67108864` | per-producer-instance encoded Fact body budget, including queued and submitted-unacknowledged Facts; Helm: `external.kafka.producerPendingBytes` |
-| `PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS` | `4096` | same budget in records; limit reached rejects before enqueue; Helm: `external.kafka.producerPendingFacts` |
-| `PI_CLOUD_CANONICAL_PROJECTION_ENABLED` | `true` | run canonical projection and terminal relay inside Control Plane |
-| `PI_CLOUD_PROJECTION_DATABASE_CONNECTIONS` | `8` | connection budget for an optional standalone canonical projector |
-| `PI_CLOUD_FACT_CHANNEL_LEASE_MS` | `9000` | short PostgreSQL ownership lease for one active logical Fact Stream |
-| `PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE` | `128` | bounded active logical Fact Streams per Control Plane replica |
+| `PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES` | `67108864` | per-producer-instance encoded Fact body budget, including queued and submitted-unacknowledged Facts; Helm: `global.kafka.producerPendingBytes` |
+| `PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS` | `4096` | same budget in records; limit reached rejects before enqueue; Helm: `global.kafka.producerPendingFacts` |
 | `PI_CLOUD_PREVIEW_ORIGIN_BASE_URL` | `http://preview.localhost:8080` | isolated application Preview base domain |
 | `PI_CLOUD_PREVIEW_PORT` | `3001` | internal Control Plane Preview listener; Compose wires Caddy to it automatically; not an application port or a new public port |
 | `PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS` | `2` | trusted Volume operations in flight |
@@ -145,18 +141,12 @@ heartbeat must leave more than one missed interval before lease expiry.
 | `PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS` | empty | up to eight comma-separated RFC1918 `/24`–`/32` CIDRs that Cube guests may reach directly |
 | `PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS` | `120000` | Cube lifecycle/control request timeout |
 
-For an independent projection process, start the Compose `event-projector`
-profile and set `PI_CLOUD_CANONICAL_PROJECTION_ENABLED=false` in the private
-deployment `.env`, then recreate Control Plane. Both roles use the same canonical
-consumer group, so temporary overlap during cutover is safe. Never disable the
-embedded projector without running the independent role: Workers can append,
-but canonical history, completion and subsequent Run admission cannot progress.
-The standalone role has database/metrics secrets and
-Kafka access; it serves readiness on port 3000 and protected metrics on 9470. Kubernetes
-can run the same Control Plane image with command
-`/app/packages/control-plane/src/projection-main.ts`; the equivalent API setting
-is `controlPlane.canonicalProjectionEnabled=false`. This is optional, not a
-requirement for a one-host deployment.
+Worker and Projector use the same Kafka settings. Helm stores these once under
+`global.kafka`, inherited by the Worker subchart. Each Control Plane/Projector
+advertises a unique internal URL through `PI_CLOUD_PROJECTOR_ADVERTISED_URL`;
+Kubernetes derives it from Pod IP and HTTP port. Browsers use the public endpoint,
+not these URLs. Projector runs in Control Plane; the independent event-projector
+profile and per-token Fact channel settings are removed.
 
 The installer owns `PI_CLOUD_CUBESANDBOX_TEMPLATE_ID` and the mandatory
 `PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS` JSON map. The latter contains
@@ -170,32 +160,19 @@ The one-host deployment assigns each combined KRaft Broker/Controller 4 CPU,
 is required for native allocations and Linux page cache; the container limit
 must never be lower than `-Xmx`.
 
-Consumers use Confluent's partition pause/seek with a 32 MiB native queue budget
-and a 5 ms fetch-queue backoff (the native 1 s default is unsuitable for interactive
-streams). SSE subscribes on demand and uses server-side recovery coordinates;
-normal data consumption never introduces a new batching delay.
-Tool Broker uses the same `PI_CLOUD_KAFKA_BROKERS` and code-owned accepted topic;
-there is no Broker-only topic override. Replicas within one Sandbox Domain use
-the stable `pi-cloud-tool-dispatch-<domain>` group and Kafka-committed delivery
-positions. Active commands, HTTP readers, sending bytes and completed retry copies
-have separate limits above. A native Kafka Tool Result retires its raw copies;
-seals/retired bindings clean up incomplete calls. Command arrival wait is 30 seconds;
-once observed, the Tool execution deadline applies, followed by the response-send
-deadline only when the result exists. A disconnected reader does not kill a Tool.
-Replicas divide partition reads and forward relevant records to exact owner boots.
-Results go directly from owner to Worker. `PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE`
-points to the private `tool-dispatch-token`, mounted only in Brokers; replicas of
-one domain share it. The installer creates it and Kubernetes requires that key
-in its deployment Secret. Broker-to-Broker TCP/4300 must be allowed. Guests and
-Pi Workers receive neither this secret nor Kafka access. Forwarding times out
-after 5 seconds, then retries the same positioned record while its owner is live;
-a stopped/expired owner cannot transfer old commands to another boot.
-Seal commit notifications use the existing terminal Outbox's 50 ms idle poll and
-bounded delivery retries. Gateway performs no per-seal PG lookup; deferred
-successor display is limited to 8 MiB per Session / 64 MiB per Gateway. Exceeding
-that budget triggers resnapshot/replay, not unbounded buffering or a partition
-pause that would prevent consuming the notification. These are code-owned
-soft-state limits, not a second operator-configurable queue.
+One Projector group consumes the execution log, using partition pause/seek, a
+32 MiB native queue and a 5 ms fetch-queue backoff. Tool Broker has no Kafka
+connection. Result readers, active commands and response bytes retain their
+separate limits. Command arrival wait is 30 seconds; after admission the Tool
+deadline applies, followed by a send deadline only once the result exists.
+
+`PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE` points to `tool-dispatch-token`, shared by
+Projectors and executors, never Workers or Cube. Internal TCP/4300 must be
+reachable. Native result/seal notices retire raw-result copies. A five-second
+delivery timeout retries the same positioned record while its owner is live;
+a vanished boot does not cause execution on another machine. The seal Outbox
+polls every 50 ms. There is no second Kafka commit-notification round trip.
+
 Kafka retention must cover a maximum Turn plus settlement grace. Browser
 reconnect always receives a replacement PostgreSQL + Gateway-tail snapshot;
 there is no public cursor or HTTP 410 replay path. Volume queue wait must be
@@ -325,7 +302,7 @@ Changing these requires editing the deployment policy and running
 The distributed chart uses `values.yaml` for non-secret topology and a named
 Kubernetes Secret for credentials. Important value groups are:
 
-- `external.database`, `external.kafka` and `external.providerProxyUrl`;
+- `external.database`, `global.kafka` and `external.providerProxyUrl`;
 - `pi-workers.services.providerGatewayUrl` and its API-key Secret entry;
 - `sandboxPlane` for Cube, Workspace storage and Broker/Volume capacity;
 - `pi-workers.workerPool`, `autoscaling`, `runtime` and `lifecycle`;

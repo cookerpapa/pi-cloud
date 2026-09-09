@@ -22,7 +22,6 @@ kubectl -n pi-cloud-workers create secret generic pi-cloud-pi-worker-secrets \
   --from-file=supervisor-enrollment-token=/private/supervisor-enrollment-token \
   --from-file=supervisor-management-token=/private/supervisor-management-token \
   --from-file=tool-broker-token=/private/tool-broker-token \
-  --from-file=worker-event-ingest-token=/private/worker-event-ingest-token \
   --from-file=cli-proxy-api-key=/private/cli-proxy-api-key \
   --from-file=metrics-token=/private/metrics-token
 ```

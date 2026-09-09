@@ -47,11 +47,7 @@ async function validEnvironment(root: string): Promise<Record<string, string>> {
     PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
     PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY: "/workspace",
     PI_CLOUD_BOOT_STATE_DIRECTORY: "/var/lib/pi-cloud/boot",
-    PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: await secret(
-      root,
-      "worker-event-ingest",
-      `event-ingest-${"i".repeat(48)}`,
-    ),
+    PI_CLOUD_KAFKA_BROKERS: "kafka-1:9092,kafka-2:9092,kafka-3:9092",
     PI_CLOUD_MODEL_GATEWAY_ADVERTISED_URL: "http://127.0.0.1:4200",
   };
 }
@@ -98,11 +94,7 @@ describe("Supervisor host production configuration", () => {
       PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
       PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY: "/workspace",
       PI_CLOUD_BOOT_STATE_DIRECTORY: "/var/lib/pi-cloud/boot",
-      PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: await secret(
-        root,
-        "worker-event-ingest",
-        `event-ingest-${"i".repeat(48)}`,
-      ),
+      PI_CLOUD_KAFKA_BROKERS: "kafka-1:9092,kafka-2:9092,kafka-3:9092",
       PI_CLOUD_SUPERVISOR_CAPACITY: "4",
       PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS: "7",
       PI_CLOUD_MODEL_GATEWAY_ADVERTISED_URL: "http://127.0.0.1:4200",
@@ -230,11 +222,7 @@ describe("Supervisor host production configuration", () => {
         PI_CLOUD_TOOL_BROKER_URLS: "http://tool-broker:4300",
         PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY: "/workspace",
         PI_CLOUD_BOOT_STATE_DIRECTORY: "/var/lib/pi-cloud/boot",
-        PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: await secret(
-          root,
-          "worker-event-ingest",
-          `event-ingest-${"i".repeat(48)}`,
-        ),
+        PI_CLOUD_KAFKA_BROKERS: "kafka-1:9092,kafka-2:9092,kafka-3:9092",
         PI_CLOUD_MODEL_GATEWAY_ADVERTISED_URL: "http://127.0.0.1:4200",
       }),
     ).resolves.toMatchObject({ enrollmentToken: `enroll-${"e".repeat(48)}` });

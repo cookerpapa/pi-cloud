@@ -31,6 +31,7 @@ export type KafkaAcceptedFactConfiguration = Readonly<{
   capacity?: ProducerCapacity;
   closeTimeoutMs?: number;
   metrics?: PiCloudMetrics;
+  manageTopic?: boolean;
 }>;
 
 type PendingAcceptedFact = {
@@ -76,10 +77,13 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
   if (parsed.kind === "agent_event") {
     return { ...parsed, event: parsePiCloudEvent(parsed.event) };
   }
-  if (parsed.kind === "execution_seal" || parsed.kind === "tool_command") return parsed;
-  if (parsed.kind === "execution_committed") {
-    return { ...parsed, event: parsePiCloudEvent(parsed.event) as typeof parsed.event };
-  }
+  if (
+    parsed.kind === "execution_opened" ||
+    parsed.kind === "execution_seal" ||
+    parsed.kind === "tool_command"
+  )
+    return parsed;
+
   if (parsed.kind === "pi_session_append") {
     return {
       ...parsed,
@@ -95,6 +99,7 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
   readonly #admin: Admin;
   readonly #partitions: number;
   readonly #replicas: number;
+  readonly #manageTopic: boolean;
   readonly #capacity: ProducerCapacity;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #closeTimeoutMs: number;
@@ -109,6 +114,7 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
   readonly #pending = new Map<string, PendingAcceptedFact>();
 
   constructor(configuration: KafkaAcceptedFactConfiguration) {
+    this.#manageTopic = configuration.manageTopic !== false;
     const bootstrapBrokers = brokers(configuration.brokers);
     this.#topic = configuration.topic ?? ACCEPTED_FACT_TOPIC;
     this.#partitions = positiveInteger(configuration.partitions, "Kafka partitions");
@@ -201,8 +207,8 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
   async start(): Promise<void> {
     if (this.#started || this.#closing)
       throw new Error("Kafka AcceptedFactBus can only start once");
-    const topics = await this.#admin.listTopics();
-    if (!topics.includes(this.#topic)) {
+    const topics = this.#manageTopic ? await this.#admin.listTopics() : [this.#topic];
+    if (this.#manageTopic && !topics.includes(this.#topic)) {
       await this.#admin.createTopics({
         topics: [this.#topic],
         partitions: this.#partitions,

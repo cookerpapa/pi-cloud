@@ -60,11 +60,14 @@ COPY packages/runtime-core/package.json packages/runtime-core/package.json
 COPY packages/runtime-core/src packages/runtime-core/src
 COPY packages/tool-broker/package.json packages/tool-broker/package.json
 COPY packages/tool-broker/src/tool-broker-client.ts packages/tool-broker/src/tool-broker-client.ts
+COPY packages/tool-broker/src/tool-command-router.ts packages/tool-broker/src/tool-command-router.ts
+COPY packages/tool-broker/src/tool-command-routes.ts packages/tool-broker/src/tool-command-routes.ts
 COPY packages/sandbox-supervisor/package.json packages/sandbox-supervisor/package.json
 COPY packages/sandbox-supervisor/src packages/sandbox-supervisor/src
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 COPY packages/workspace-runtime/src packages/workspace-runtime/src
-RUN rm -rf /usr/local/lib/node_modules/npm \
+RUN node --import tsx --input-type=module --eval "await import('@pi-cloud/tool-broker/command-router'); await import('@pi-cloud/tool-broker/command-routes'); await import('@pi-cloud/runtime-core/session-projector')" \
+    && rm -rf /usr/local/lib/node_modules/npm \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 STOPSIGNAL SIGTERM

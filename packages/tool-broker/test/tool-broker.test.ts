@@ -2104,7 +2104,6 @@ describe("provider-backed Tool Tool Broker", () => {
       await expect(
         loadToolBrokerConfig({
           DATABASE_URL_FILE: databaseUrlPath,
-          PI_CLOUD_KAFKA_BROKERS: "kafka-1:9092,kafka-2:9092,kafka-3:9092",
           PI_CLOUD_SANDBOX_DOMAIN_ID: "sandbox-domain-0001",
           PI_CLOUD_TOOL_BROKER_ADVERTISED_URL: "http://tool-broker-0:4300",
           PI_CLOUD_TOOL_BROKER_TOKEN_FILE: tokenPath,
@@ -2129,7 +2128,6 @@ describe("provider-backed Tool Tool Broker", () => {
         }),
       ).resolves.toMatchObject({
         databaseUrl: "postgresql://pi-cloud:secret@postgres:5432/pi-cloud",
-        kafkaBrokers: ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"],
         maximumActiveCommands: 32,
         resultDelivery: {
           maximumResultReaders: 128,

@@ -207,7 +207,7 @@ describe("PiWorkerRuntime", () => {
       providerGatewayApiKey: `provider-${"k".repeat(48)}`,
       databaseUrl: connectionString,
       databaseNotificationUrl: connectionString,
-      workerEventIngestToken: `event-ingest-${"i".repeat(48)}`,
+      kafka: { brokers: ["unused:9092"], partitions: 32, replicas: 3, retentionMs: 7200000 },
       managementHost: "127.0.0.1",
       managementPort: 0,
       managementAdvertisedBaseUrl: `http://${SUPERVISOR_ID}:4100`,
@@ -268,7 +268,7 @@ describe("PiWorkerRuntime", () => {
         objectStore: objectStore(),
         toolBroker: runtimeToolBroker,
         runWorkerFactory,
-        factChannels: {
+        executionLogs: {
           async open() {
             throw new Error("unused");
           },
@@ -296,7 +296,7 @@ describe("PiWorkerRuntime", () => {
         objectStore: objectStore(),
         toolBroker: runtimeToolBroker,
         runWorkerFactory,
-        factChannels: {
+        executionLogs: {
           async open() {
             throw new Error("unused");
           },

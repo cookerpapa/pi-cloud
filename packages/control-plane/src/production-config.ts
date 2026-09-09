@@ -20,10 +20,8 @@ export type ProductionControlPlaneConfig = {
   kafkaReplicas: number;
   producerCapacity: ProducerCapacity;
   acceptedFactRetentionMs: number;
-  factChannelLeaseMs: number;
-  factChannelMaximumActive: number;
-  canonicalProjection: boolean;
-  workerEventIngestToken: string;
+  projectorAdvertisedBaseUrl: string;
+  toolDispatchToken: string;
   supervisorEnrollmentToken: string;
   supervisorManagementToken: string;
   cubeEgressConfigToken: string;
@@ -419,9 +417,16 @@ export async function loadProductionControlPlaneConfig(
   return {
     databaseUrl,
     databaseNotificationUrl,
-    canonicalProjection:
-      environment.PI_CLOUD_CANONICAL_PROJECTION_ENABLED === undefined ||
-      booleanValue(environment, "PI_CLOUD_CANONICAL_PROJECTION_ENABLED"),
+    projectorAdvertisedBaseUrl: managementUrl(
+      environment.PI_CLOUD_PROJECTOR_ADVERTISED_URL ??
+        `http://${required(environment, "POD_IP").includes(":") ? `[${environment.POD_IP}]` : environment.POD_IP}:${environment.PORT ?? "3000"}`,
+      true,
+    ),
+    toolDispatchToken: await secret(
+      environment,
+      "PI_CLOUD_TOOL_DISPATCH_TOKEN",
+      allowInlineSecrets,
+    ),
     kafkaBrokers: boundedList(
       required(environment, "PI_CLOUD_KAFKA_BROKERS"),
       "PI_CLOUD_KAFKA_BROKERS",
@@ -435,25 +440,6 @@ export async function loadProductionControlPlaneConfig(
       2 * 60 * 60_000,
       60 * 60_000,
       7 * 24 * 60 * 60_000,
-    ),
-    factChannelLeaseMs: integerValue(
-      environment,
-      "PI_CLOUD_FACT_CHANNEL_LEASE_MS",
-      9_000,
-      3_000,
-      30_000,
-    ),
-    factChannelMaximumActive: integerValue(
-      environment,
-      "PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE",
-      128,
-      1,
-      10_000,
-    ),
-    workerEventIngestToken: await secret(
-      environment,
-      "PI_CLOUD_WORKER_EVENT_INGEST_TOKEN",
-      allowInlineSecrets,
     ),
     supervisorEnrollmentToken: await secret(
       environment,

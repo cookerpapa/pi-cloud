@@ -4,10 +4,14 @@ import {
   PostgresWorkspaceSettlementStore,
   TtlRuntimeObjectStore,
 } from "@pi-cloud/runtime-core/workspace-settlement-runtime";
-import type { FactChannelFactory } from "@pi-cloud/runtime-core/durable-event-store";
-import { WebSocketAcceptedFactIngestor } from "@pi-cloud/runtime-core/accepted-fact-channel";
-import { FactChannelPiSessionAppendPublisher } from "@pi-cloud/runtime-core/fact-channel-pi-session-append-publisher";
-import type { ActiveFactChannelResolver } from "@pi-cloud/runtime-core/accepted-fact";
+import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/durable-event-store";
+import { DirectExecutionLog } from "@pi-cloud/runtime-core/direct-execution-log";
+import {
+  KafkaAcceptedFactBus,
+  loadProducerCapacity,
+} from "@pi-cloud/runtime-core/kafka-accepted-fact";
+import { NativeSessionLogPublisher } from "@pi-cloud/runtime-core/native-session-log-publisher";
+import type { ActiveExecutionLogResolver } from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { PostgresRunAttemptPhaseObserver } from "@pi-cloud/runtime-core/run-attempt-runtime";
@@ -60,14 +64,11 @@ export type PiWorkerRuntimeOptions = {
   connectionSecretGenerator?: () => string;
   metrics?: PiCloudMetrics;
   runWorkerFactory?: (options: PostgresPiWorkerOptions) => SupervisorRunWorker;
-  factChannels?: FactChannelFactory & {
+  executionLogs?: ExecutionLogFactory & {
     checkHealth?(): Promise<void>;
     close?(): Promise<void>;
   };
-  sessionMutationProducer?: Pick<
-    FactChannelPiSessionAppendPublisher,
-    "scoped" | "checkHealth" | "close"
-  >;
+  sessionMutationProducer?: Pick<NativeSessionLogPublisher, "scoped" | "checkHealth" | "close">;
 };
 
 export type SupervisorRunWorker = {
@@ -77,12 +78,12 @@ export type SupervisorRunWorker = {
   scheduleOwnedSubagent?(runId: string): boolean;
 };
 
-function factChannelResolver(value: FactChannelFactory): ActiveFactChannelResolver {
-  const candidate = value as Partial<ActiveFactChannelResolver>;
+function executionLogResolver(value: ExecutionLogFactory): ActiveExecutionLogResolver {
+  const candidate = value as Partial<ActiveExecutionLogResolver>;
   if (typeof candidate.resolve !== "function" || typeof candidate.checkHealth !== "function") {
-    throw new TypeError("Production FactChannel factory does not expose active channels");
+    throw new TypeError("Production ExecutionLogWriter factory does not expose active channels");
   }
-  return candidate as ActiveFactChannelResolver;
+  return candidate as ActiveExecutionLogResolver;
 }
 
 export type SupervisorToolBroker = Pick<
@@ -157,17 +158,17 @@ export class PiWorkerRuntime {
   readonly #connectionSecretGenerator: () => string;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #runWorkerFactory: (options: PostgresPiWorkerOptions) => SupervisorRunWorker;
-  readonly #factChannels:
-    (FactChannelFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
+  readonly #executionLogs:
+    (ExecutionLogFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
   readonly #configuredSessionMutationProducer:
-    Pick<FactChannelPiSessionAppendPublisher, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<NativeSessionLogPublisher, "scoped" | "checkHealth" | "close"> | undefined;
   #sessionMutationProducer:
-    Pick<FactChannelPiSessionAppendPublisher, "scoped" | "checkHealth" | "close"> | undefined;
+    Pick<NativeSessionLogPublisher, "scoped" | "checkHealth" | "close"> | undefined;
   #ownsSessionMutationProducer = false;
   #nativeSessions: PostgresNativeSessionHost | undefined;
-  #activeFactChannels:
-    (FactChannelFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
-  #ownsFactChannels = false;
+  #activeExecutionLogs:
+    (ExecutionLogFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
+  #ownsExecutionLogs = false;
   readonly #ownerStoppedPromise: Promise<void>;
   readonly #resolveOwnerStopped: () => void;
   readonly #terminalPromise: Promise<SupervisorHostTerminalReason>;
@@ -240,7 +241,7 @@ export class PiWorkerRuntime {
     this.#metrics = options.metrics;
     this.#runWorkerFactory =
       options.runWorkerFactory ?? ((workerOptions) => new PostgresPiWorker(workerOptions));
-    this.#factChannels = options.factChannels;
+    this.#executionLogs = options.executionLogs;
     this.#configuredSessionMutationProducer = options.sessionMutationProducer;
     let resolveOwnerStopped!: () => void;
     this.#ownerStoppedPromise = new Promise((resolvePromise) => {
@@ -397,20 +398,32 @@ export class PiWorkerRuntime {
       await modelGateway.checkProviderHealth();
       this.#modelGateway = modelGateway;
       const runWorkerIdentity = `postgres:${identity.supervisorId}:${identity.bootId}`;
-      const factChannels =
-        this.#factChannels ??
-        new WebSocketAcceptedFactIngestor({
-          baseUrl: this.#config.controlPlaneBaseUrl,
-          serviceToken: this.#config.workerEventIngestToken,
-          allowInsecureHttp: this.#config.allowInsecureInternalHttp,
+      let executionLogs = this.#executionLogs;
+      if (!executionLogs) {
+        const bus = new KafkaAcceptedFactBus({
+          manageTopic: false,
+          brokers: this.#config.kafka.brokers,
+          partitions: this.#config.kafka.partitions,
+          replicas: this.#config.kafka.replicas,
+          retentionMs: this.#config.kafka.retentionMs,
+          clientId: runWorkerIdentity,
+          capacity: loadProducerCapacity(process.env),
+          ...(this.#metrics ? { metrics: this.#metrics } : {}),
         });
-      this.#activeFactChannels = factChannels;
-      this.#ownsFactChannels = this.#factChannels === undefined;
-      await factChannels.checkHealth?.();
+        await bus.start();
+        executionLogs = new DirectExecutionLog(
+          this.#database!,
+          bus,
+          loadProducerCapacity(process.env),
+        );
+      }
+      this.#activeExecutionLogs = executionLogs;
+      this.#ownsExecutionLogs = this.#executionLogs === undefined;
+      await executionLogs.checkHealth?.();
       const sessionMutationProducer =
         this.#configuredSessionMutationProducer ??
-        new FactChannelPiSessionAppendPublisher({
-          channels: factChannelResolver(factChannels),
+        new NativeSessionLogPublisher({
+          channels: executionLogResolver(executionLogs),
           ...(this.#metrics ? { metrics: this.#metrics } : {}),
         });
       this.#ownsSessionMutationProducer = this.#configuredSessionMutationProducer === undefined;
@@ -418,7 +431,7 @@ export class PiWorkerRuntime {
       this.#sessionMutationProducer = sessionMutationProducer;
       const runClaimReadiness = new RunClaimReadinessMonitor({
         check: async () => {
-          await Promise.all([factChannels.checkHealth?.(), modelGateway.checkProviderHealth()]);
+          await Promise.all([executionLogs.checkHealth?.(), modelGateway.checkProviderHealth()]);
         },
       });
       await runClaimReadiness.start();
@@ -466,7 +479,7 @@ export class PiWorkerRuntime {
       this.#trustedTools = trustedTools;
       const runner = new RemoteToolSandboxTurnRunner({
         publishToolCommand: (command) => {
-          const channel = factChannelResolver(factChannels).resolve(command.executionLease);
+          const channel = executionLogResolver(executionLogs).resolve(command.executionLease);
           if (!channel) throw new Error("Tool command Fact Stream is unavailable");
           return channel.publishToolCommand(command);
         },
@@ -534,7 +547,7 @@ export class PiWorkerRuntime {
       const runBackend = new AgentRunExecutionBackend({
         supervisor: runSupervisor,
         leaseCoordinator,
-        factChannels,
+        executionLogs,
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
         onUnexpectedError: (error) =>
           operationalLog({
@@ -628,8 +641,8 @@ export class PiWorkerRuntime {
     if (this.#ownsSessionMutationProducer) {
       await this.#sessionMutationProducer?.close().catch(() => undefined);
     }
-    if (this.#ownsFactChannels) {
-      await this.#activeFactChannels?.close?.().catch(() => undefined);
+    if (this.#ownsExecutionLogs) {
+      await this.#activeExecutionLogs?.close?.().catch(() => undefined);
     }
     this.#objectStore.destroy();
     if (this.#ownsDatabase) await this.#database.destroy();

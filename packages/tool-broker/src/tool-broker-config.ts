@@ -11,7 +11,6 @@ export type ToolBrokerConfig = {
   host: string;
   port: number;
   databaseUrl: string;
-  kafkaBrokers: readonly string[];
   maximumActiveCommands: number;
   resultDelivery: ToolDeliveryCapacity;
   maximumResultBytes: number;
@@ -222,9 +221,6 @@ export async function loadToolBrokerConfig(
     host: bounded(environment.PI_CLOUD_TOOL_BROKER_HOST ?? "127.0.0.1", "host", 256),
     port: integer(environment.PI_CLOUD_TOOL_BROKER_PORT, 4_300, 1, 65_535),
     databaseUrl: await readDatabaseUrl(required(environment, "DATABASE_URL_FILE")),
-    kafkaBrokers: required(environment, "PI_CLOUD_KAFKA_BROKERS")
-      .split(",")
-      .map((value) => value.trim()),
     maximumActiveCommands: integer(
       environment.PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS,
       DEFAULT_TOOL_TRANSPORT_CAPACITY.maximumActiveCommands,

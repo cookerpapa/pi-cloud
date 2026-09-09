@@ -120,7 +120,7 @@ export {
 export {
   DurableEventStore,
   DurableEventStoreError,
-  type FactChannelFactory,
+  type ExecutionLogFactory,
   type DurableEventStoreErrorCode,
 } from "@pi-cloud/runtime-core/durable-event-store";
 export { projectConversationTurnTranscript } from "@pi-cloud/runtime-core/conversation-turn-projection";

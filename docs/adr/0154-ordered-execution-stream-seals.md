@@ -4,11 +4,11 @@ Status: accepted.
 
 ## Decision
 
-Lease validation and Kafka append are not one atomic operation. A paused ingress
+Lease validation and Kafka append are not one atomic operation. A delayed producer
 can publish an old assistant mutation after a replacement Worker has read its
 context. Expiring the lease or killing the Worker does not retract that request.
 
-Keep the authority gate and Kafka decoupled. The Run terminal transaction requests
+Use the direct publication and Projector contract in ADR-0163. The Run terminal transaction requests
 an immutable `execution_seal` through the existing terminal Outbox. It identifies
 the exact RunAttempt. Data and seals use the same Session key and a fixed Kafka
 partition count. The first seal in partition order closes that execution stream.
@@ -18,7 +18,7 @@ The canonical consumer applies semantic records preceding the seal, preserves an
 visible interrupted text not already in Pi, then atomically records the seal and
 the public terminal event. Its sequence follows the actual accepted events, not
 the periodic lease progress report. Claiming another Run in that Session waits
-for this projection. The Gateway uses the same closed-execution boundary and
+for this projection. The same Projector updates its live view and
 publishes the terminal only after the canonical transaction has committed.
 
 An ACK-lost seal may be appended again; the execution's first committed seal wins.

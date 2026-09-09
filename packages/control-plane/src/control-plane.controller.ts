@@ -1,3 +1,6 @@
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { Agent, fetch as internalFetch } from "undici";
 import {
   Body,
   Controller,
@@ -94,6 +97,10 @@ import { SourceControlService } from "./source-control-service.ts";
 
 @Controller("v1")
 export class ControlPlaneController {
+  readonly #projectorHttp = new Agent();
+  async onApplicationShutdown(): Promise<void> {
+    await this.#projectorHttp.destroy();
+  }
   constructor(
     @Inject(ControlPlaneStoreFactory) private readonly controlPlaneStores: ControlPlaneStoreFactory,
     @Inject(PublicTenantRegistrationService)
@@ -792,6 +799,47 @@ export class ControlPlaneController {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     const identity = this.tenantRequestContext.resolve(request);
     const store = this.controlPlaneStores.forIdentity(identity);
+    const owner = await this.sessionEventStream.owner(identity.tenantId, sessionId);
+    if (owner) {
+      if (request.headers["x-pi-cloud-projector-hop"]) {
+        await reply.code(503).send();
+        return;
+      }
+      const abort = new AbortController();
+      const close = () => abort.abort();
+      reply.raw.once("close", close);
+      try {
+        const upstream = await internalFetch(new URL(`/v1/sessions/${sessionId}/events`, owner), {
+          dispatcher: this.#projectorHttp,
+          headers: {
+            "x-pi-cloud-projector-hop": "1",
+            ...(request.headers.authorization
+              ? { authorization: request.headers.authorization }
+              : {}),
+            ...(request.headers.cookie ? { cookie: request.headers.cookie } : {}),
+          },
+          signal: abort.signal,
+          redirect: "error",
+        });
+        if (!upstream.ok || !upstream.body) {
+          await upstream.body?.cancel();
+          await reply.code(503).send();
+          return;
+        }
+        reply.hijack();
+        reply.raw.writeHead(200, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          "x-accel-buffering": "no",
+        });
+        reply.raw.flushHeaders();
+        await pipeline(Readable.fromWeb(upstream.body as never), reply.raw);
+      } finally {
+        reply.raw.off("close", close);
+        abort.abort();
+      }
+      return;
+    }
     const stream = await this.sessionEventStream.open({
       tenantId: identity.tenantId,
       sessionId,

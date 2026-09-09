@@ -14,6 +14,7 @@ import {
 } from "../packages/tool-broker/src/index.ts";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -314,16 +315,16 @@ async function kafkaState() {
     "--bootstrap-server",
     "kafka-1:9092",
     "--topic",
-    "pi-cloud.accepted-facts.v5",
+    ACCEPTED_FACT_TOPIC,
     "--time",
     "-1",
   ]);
-  const acceptedFacts = offsets
+  const logEndOffsetSum = offsets
     .trim()
     .split("\n")
     .filter(Boolean)
     .reduce((total, line) => total + Number(line.split(":").at(-1) ?? 0), 0);
-  return { acceptedFacts };
+  return { topic: ACCEPTED_FACT_TOPIC, logEndOffsetSum };
 }
 
 async function runUsageEvidence(runId) {
@@ -1177,7 +1178,15 @@ try {
   assert(projectedSessionMutations > 0);
   assert.equal(publishedTerminalEvents, terminalCount);
   const kafka = await kafkaState();
-  assert(kafka.acceptedFacts > 0);
+  assert(kafka.logEndOffsetSum > 0);
+  assert(
+    Number(
+      await psql(
+        `select count(*) from run_attempts where tenant_id=${sqlLiteral(tenantId)} and output_first_topic=${sqlLiteral(ACCEPTED_FACT_TOPIC)} and output_open_offset is not null`,
+      ),
+    ) > 0,
+    "The test never entered the current execution log",
+  );
 
   const foreignApi = bootstrapApi;
   const foreignProject = await foreignApi.createProject(`Foreign Cube project ${suffix}`);
@@ -1422,7 +1431,7 @@ try {
         `- Large Workspace fresh-VM cold restore: ${String(report.largeWorkspace.freshCubeMicroVm)}`,
         `- Real input/output/cache-read tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)}`,
         `- Canonical conversation: ${String(report.canonicalConversation.terminalCount)} terminal Turns / ${String(report.canonicalConversation.piEntryCount)} Pi entries / ${String(report.canonicalConversation.canonicalPayloadBytes)} bytes`,
-        `- Kafka AcceptedFacts / published terminal outbox facts: ${String(report.eventPlane.kafka.acceptedFacts)} / ${String(report.eventPlane.publishedTerminalEvents)}`,
+        `- Current Kafka topic / end-offset sum / published seals: ${report.eventPlane.kafka.topic} / ${String(report.eventPlane.kafka.logEndOffsetSum)} / ${String(report.eventPlane.publishedTerminalEvents)}`,
         `- PostgreSQL hot-event table absent / projected Session mutations: ${String(report.eventPlane.postgresHotEventTableAbsent)} / ${String(report.eventPlane.projectedSessionMutations)}`,
         `- Scheduler / Worker pool: ${report.scheduler.authority} / ${report.scheduler.workerPool}`,
         `- Cross-tenant conversation hidden: ${String(report.multiTenant.crossTenantConversationHidden)}`,

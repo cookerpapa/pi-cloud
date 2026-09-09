@@ -4,7 +4,7 @@ import type {
   SessionViewSnapshotResource,
 } from "@pi-cloud/protocol";
 import type { ServerResponse } from "node:http";
-import type { LiveSessionTailSnapshot } from "./kafka-live-session-tail.ts";
+import type { LiveSessionTailSnapshot } from "./session-live-view.ts";
 import { SessionEventHub, type SessionEventSubscription } from "./session-event-hub.ts";
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
@@ -14,6 +14,7 @@ export type SessionEventStreamOptions = Readonly<{
 }>;
 
 export interface LiveSessionTailSource {
+  owner?(tenantId: string, sessionId: string): Promise<string | undefined>;
   retainSession?(tenantId: string, sessionId: string): Promise<() => void>;
   snapshot(tenantId: string, sessionId: string): LiveSessionTailSnapshot;
 }
@@ -120,6 +121,9 @@ export class OpenSessionEventStream {
 }
 
 export class SessionEventStream {
+  owner(tenantId: string, sessionId: string): Promise<string | undefined> {
+    return this.#tails.owner?.(tenantId, sessionId) ?? Promise.resolve(undefined);
+  }
   readonly #tails: LiveSessionTailSource;
   readonly #hub: SessionEventHub;
   readonly #heartbeatIntervalMs: number;

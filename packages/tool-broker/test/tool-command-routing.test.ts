@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { createExecutionLease, type AcceptedToolCommand } from "@pi-cloud/protocol";
 import {
-  KafkaToolCommandConsumer,
+  ToolCommandRouter,
   httpToolLogDelivery,
   toolDeliveryFact,
   TOOL_BROKER_LOG_DELIVERY_PATH,
-} from "../src/kafka-tool-command-consumer.ts";
+} from "../src/tool-command-router.ts";
 import { ToolCommandExecutor } from "../src/tool-command-executor.ts";
 import { ToolBrokerServer, type ToolBrokerBackend } from "../src/tool-broker-server.ts";
 
@@ -71,10 +71,7 @@ describe("sharded Tool routing", () => {
       };
     const find = vi.fn(async () => [route]),
       deliver = vi.fn(async () => {});
-    const router = new KafkaToolCommandConsumer({
-      brokers: ["unused:9092"],
-      topic: "test",
-      groupId: "shared",
+    const router = new ToolCommandRouter({
       routes: { find, isAlive: async () => true },
       deliver,
     });
@@ -91,6 +88,13 @@ describe("sharded Tool routing", () => {
       events: [{ type: "tool.completed", payload: { toolCallId: c.toolCallId } }],
     });
     expect(toolDeliveryFact({ kind: "pi_session_append", scope: c.scope })).toBeUndefined();
+    let current = true;
+    find.mockImplementationOnce(async () => {
+      current = false;
+      return [route];
+    });
+    await router.consume(record({ kind: "execution_seal", scope: c.scope }, 3n), () => current);
+    expect(deliver).toHaveBeenCalledTimes(2); // rebalance during route lookup cannot dispatch
   });
 
   it("rebuilds routes after dispatcher replacement and refreshes all owners at a writer seal", async () => {
@@ -110,10 +114,7 @@ describe("sharded Tool routing", () => {
       receipt(c),
       { kind: "execution_seal", scope: c.scope, closesWriter: true },
     ]) {
-      const router = new KafkaToolCommandConsumer({
-        brokers: ["unused:9092"],
-        topic: "test",
-        groupId: "shared",
+      const router = new ToolCommandRouter({
         routes: { find, isAlive: async () => true },
         deliver,
       });
@@ -135,10 +136,7 @@ describe("sharded Tool routing", () => {
       deliver = vi.fn(async () => {
         throw new Error("lost ACK");
       });
-    const router = new KafkaToolCommandConsumer({
-      brokers: ["unused:9092"],
-      topic: "test",
-      groupId: "shared",
+    const router = new ToolCommandRouter({
       routes: { find: async () => [route], isAlive },
       deliver,
     });

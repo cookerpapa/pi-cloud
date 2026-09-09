@@ -293,57 +293,6 @@ describe("supervisor/control-plane wire protocol", () => {
     ).toThrow(PiCloudWireProtocolError);
   });
 
-  it("opens and closes one bounded FactChannel around ordered publications", () => {
-    const open = {
-      ...envelope(),
-      type: "fact.channel.open",
-      payload: {
-        executionLease: EXECUTION_LEASE,
-        sessionId: "session-1",
-        piSession: {
-          id: "session-1",
-          lane: "main",
-          writerId: "00000000-0000-4000-8000-000000000001",
-        },
-        turnId: "turn-1",
-        nextEventSeq: 11,
-      },
-    } as const;
-    const ready = {
-      ...envelope(),
-      type: "fact.channel.ready",
-      payload: {
-        acknowledgedMessageId: IDS.message,
-        executionLease: EXECUTION_LEASE,
-        sessionId: "session-1",
-        turnId: "turn-1",
-        acknowledgedThroughSeq: 10,
-        leaseDurationMs: 9_000,
-      },
-    } as const;
-    const close = {
-      ...envelope(),
-      type: "fact.channel.close",
-      payload: { executionLease: EXECUTION_LEASE, acknowledgedThroughSeq: 12 },
-    } as const;
-    const closed = {
-      ...envelope(),
-      type: "fact.channel.closed",
-      payload: {
-        acknowledgedMessageId: IDS.message,
-        executionLease: EXECUTION_LEASE,
-        acknowledgedThroughSeq: 12,
-      },
-    } as const;
-
-    expect(parseSupervisorToControlMessage(open)).toEqual(open);
-    expect(parseControlToSupervisorMessage(ready)).toEqual(ready);
-    expect(parseSupervisorToControlMessage(close)).toEqual(close);
-    expect(parseControlToSupervisorMessage(closed)).toEqual(closed);
-    expect(() => parseControlToSupervisorMessage(open)).toThrow(PiCloudWireProtocolError);
-    expect(() => parseSupervisorToControlMessage(ready)).toThrow(PiCloudWireProtocolError);
-  });
-
   it("returns a closed permanent rejection without pretending the event was acknowledged", () => {
     const rejected = {
       ...envelope(),

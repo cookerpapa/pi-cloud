@@ -28,7 +28,7 @@ export type KafkaLogConsumerOptions<T> = {
     bounds: readonly KafkaPartitionBounds[],
     partitionCount: number,
   ): Promise<ReadonlyMap<number, bigint | Error>>;
-  handler(record: KafkaLogRecord<T>): Promise<void>;
+  handler(record: KafkaLogRecord<T>, current?: () => boolean): Promise<void>;
 };
 
 /** librdkafka owns bounded buffering, assignments and partition flow control.
@@ -53,6 +53,7 @@ export class KafkaLogConsumer<T> {
   readonly #fetching = new Set<number>();
   readonly #activating = new Map<number, Promise<void>>();
   readonly #blocked = new Map<number, Error>();
+  #memberCache: { until: number; owners: Map<number, string> } | undefined;
 
   constructor(options: KafkaLogConsumerOptions<T>) {
     this.#options = options;
@@ -164,6 +165,7 @@ export class KafkaLogConsumer<T> {
           for (const retry of this.#retries.values()) clearTimeout(retry.timer);
           this.#retries.clear();
           if (error.code !== CODES.ERRORS.ERR__ASSIGN_PARTITIONS) {
+            this.#options.onReset?.();
             functions.unassign(assignments);
             return;
           }
@@ -185,7 +187,7 @@ export class KafkaLogConsumer<T> {
                 t.partitions.map((p) => [p.partition, BigInt(p.offset)] as const),
               ),
             );
-            const offsets = this.#options.groupRecovery
+            const offsets: Map<number, bigint | Error> = this.#options.groupRecovery
               ? new Map(
                   bounds.map((b) => {
                     const saved = groupOffsets.get(b.partition) ?? -1n;
@@ -204,6 +206,22 @@ export class KafkaLogConsumer<T> {
               : this.#options.replayOffsets
                 ? new Map(await this.#options.replayOffsets(bounds, allBounds.length))
                 : new Map(bounds.map((b) => [b.partition, b.low]));
+            if (this.#options.groupRecovery && this.#options.replayOffsets) {
+              const recovery = await this.#options.replayOffsets(bounds, allBounds.length);
+              for (const [partition, floor] of recovery) {
+                const delivery = offsets.get(partition)!;
+                offsets.set(
+                  partition,
+                  floor instanceof Error
+                    ? floor
+                    : delivery instanceof Error
+                      ? delivery
+                      : floor < delivery
+                        ? floor
+                        : delivery,
+                );
+              }
+            }
             for (const b of bounds) {
               const offset = offsets.get(b.partition)!;
               if (offset instanceof Error) this.#blocked.set(b.partition, offset);
@@ -294,12 +312,15 @@ export class KafkaLogConsumer<T> {
       try {
         if (message.value === null) throw new Error("AcceptedFact cannot be a Kafka tombstone");
         const fact = this.#options.decode(message.value);
-        await this.#options.handler({
-          fact,
-          topic: batch.topic,
-          partition: batch.partition,
-          offset: BigInt(message.offset),
-        });
+        await this.#options.handler(
+          {
+            fact,
+            topic: batch.topic,
+            partition: batch.partition,
+            offset: BigInt(message.offset),
+          },
+          () => !this.#closing && epoch === this.#epoch && this.#ready && !payload.isStale(),
+        );
         if (epoch !== this.#epoch || payload.isStale()) return;
         payload.resolveOffset(message.offset);
         this.#processedOffsets.set(batch.partition, BigInt(message.offset) + 1n);
@@ -391,6 +412,23 @@ export class KafkaLogConsumer<T> {
 
   async partitionCount(): Promise<number> {
     return (await this.#bounds()).length;
+  }
+
+  ownsPartition(partition: number): boolean {
+    return this.#ready && this.#fetching.has(partition);
+  }
+
+  async ownerClientId(partition: number): Promise<string | undefined> {
+    if (!this.#memberCache || this.#memberCache.until < Date.now()) {
+      await this.#bounds();
+      const description = await this.#admin.describeGroups([this.#options.groupId]);
+      const owners = new Map<number, string>();
+      for (const member of description.groups[0]?.members ?? [])
+        for (const p of member.assignment.topicPartitions)
+          if (p.topic === this.#options.topic) owners.set(p.partition, member.clientId);
+      this.#memberCache = { owners, until: Date.now() + 1000 };
+    }
+    return this.#memberCache.owners.get(partition);
   }
 
   async retainPartition(partition: number): Promise<() => void> {

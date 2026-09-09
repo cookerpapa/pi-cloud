@@ -82,7 +82,6 @@ spec:
             - { name: broker, containerPort: 4300 }
             - { name: metrics, containerPort: 9466 }
           env:
-            - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ join "," .Values.external.kafka.brokers | quote }} }
             - { name: NODE_ENV, value: production }
             - name: POD_NAME
               valueFrom: { fieldRef: { fieldPath: metadata.name } }

@@ -16,7 +16,7 @@ export interface ToolCommandRoutes {
 export class PostgresToolCommandRoutes implements ToolCommandRoutes {
   constructor(
     readonly database: Kysely<Database>,
-    readonly sandboxDomainId: string,
+    readonly sandboxDomainId?: string,
   ) {}
 
   async find(
@@ -32,8 +32,9 @@ export class PostgresToolCommandRoutes implements ToolCommandRoutes {
         "owner.instance_id as instanceId",
         "owner.owner_base_url as baseUrl",
       ])
-      .where("route.tenant_id", "=", scope.tenantId!)
-      .where("owner.sandbox_domain_id", "=", this.sandboxDomainId);
+      .where("route.tenant_id", "=", scope.tenantId!);
+    if (this.sandboxDomainId)
+      query = query.where("owner.sandbox_domain_id", "=", this.sandboxDomainId);
     query = wholeWriter
       ? query.where("attempt.native_writer_id", "=", scope.writerId)
       : query.where("route.attempt_id", "=", scope.attemptId);
@@ -45,7 +46,6 @@ export class PostgresToolCommandRoutes implements ToolCommandRoutes {
       .selectFrom("tool_broker_instances")
       .select("instance_id")
       .where("instance_id", "=", instanceId)
-      .where("sandbox_domain_id", "=", this.sandboxDomainId)
       .where("state", "=", "ready")
       .where("lease_expires_at", ">", sql<Date>`clock_timestamp()`)
       .executeTakeFirst();

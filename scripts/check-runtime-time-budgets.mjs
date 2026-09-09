@@ -183,7 +183,7 @@ assert.ok(
   "Platform Helm Cube lifecycle timeout is too short for a full-VM pause",
 );
 assert.ok(
-  platformValues.external.kafka.acceptedFactRetentionMs > 0,
+  platformValues.global.kafka.acceptedFactRetentionMs > 0,
   "Platform Kafka retention grace must be positive; safe projection progress controls reclamation",
 );
 

@@ -29,6 +29,8 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   HTTPS_PROXY: http://provider-egress-relay:3129
   NO_PROXY: 127.0.0.1,localhost,gitlab.localhost,gitlab.internal,host.docker.internal,postgres,control-plane,tool-broker,cli-proxy-api,kafka-1,kafka-2,kafka-3
   PI_CLOUD_IMAGE_REVISION: ${PI_CLOUD_IMAGE_REVISION:-unknown}
+  PI_CLOUD_PROJECTOR_ADVERTISED_URL: http://control-plane:3000
+  PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE: /run/pi-cloud-secrets/tool-dispatch-token
   HOST: 0.0.0.0
   PORT: "3000"
   DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
@@ -42,15 +44,11 @@ x-control-plane-runtime-environment: &control-plane-runtime-environment
   PI_CLOUD_GITLAB_WORKSPACE_BASE_URL: ${PI_CLOUD_GITLAB_WORKSPACE_BASE_URL:-}
   PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE: /run/pi-cloud-secrets/cube-egress-config-token
   PI_CLOUD_KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
-  PI_CLOUD_CANONICAL_PROJECTION_ENABLED: ${PI_CLOUD_CANONICAL_PROJECTION_ENABLED:-true}
   PI_CLOUD_KAFKA_PARTITIONS: ${PI_CLOUD_KAFKA_PARTITIONS:-32}
   PI_CLOUD_KAFKA_REPLICAS: "3"
   PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES: ${PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES:-67108864}
   PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS: ${PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS:-4096}
   PI_CLOUD_ACCEPTED_FACT_RETENTION_MS: ${PI_CLOUD_ACCEPTED_FACT_RETENTION_MS:-7200000}
-  PI_CLOUD_FACT_CHANNEL_LEASE_MS: ${PI_CLOUD_FACT_CHANNEL_LEASE_MS:-9000}
-  PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE: ${PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE:-128}
-  PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: /run/pi-cloud-secrets/worker-event-ingest-token
   PI_CLOUD_TOOL_BROKER_URLS: http://tool-broker:4300
   PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE: /run/pi-cloud-secrets/workspace-service-token
   PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: /run/pi-cloud-secrets/workspace-terminal-token
@@ -129,8 +127,8 @@ x-control-plane-runtime-secrets: &control-plane-runtime-secrets
     target: /run/pi-cloud-secrets/workspace-terminal-token
     read_only: true
   - type: bind
-    source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/worker-event-ingest-token
-    target: /run/pi-cloud-secrets/worker-event-ingest-token
+    source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/tool-dispatch-token
+    target: /run/pi-cloud-secrets/tool-dispatch-token
     read_only: true
   - type: bind
     source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/metrics-token
@@ -298,53 +296,6 @@ services:
     pids_limit: 128
     mem_limit: 384m
     cpus: 1.0
-    logging: *bounded-logging
-
-  canonical-projector:
-    profiles: [event-projector]
-    image: pi-cloud/control-plane:${PI_CLOUD_IMAGE_VERSION:-production}
-    restart: unless-stopped
-    command: [/app/packages/control-plane/src/projection-main.ts]
-    user: "${PI_CLOUD_APPLICATION_UID:-1000}:${PI_CLOUD_APPLICATION_GID:-1000}"
-    environment:
-      NODE_ENV: production
-      DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
-      PI_CLOUD_KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
-      PI_CLOUD_KAFKA_PARTITIONS: ${PI_CLOUD_KAFKA_PARTITIONS:-32}
-      PI_CLOUD_KAFKA_REPLICAS: "3"
-      PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES: ${PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES:-67108864}
-      PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS: ${PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS:-4096}
-      PI_CLOUD_ACCEPTED_FACT_RETENTION_MS: ${PI_CLOUD_ACCEPTED_FACT_RETENTION_MS:-7200000}
-      PI_CLOUD_PROJECTION_DATABASE_CONNECTIONS: ${PI_CLOUD_PROJECTION_DATABASE_CONNECTIONS:-8}
-      PI_CLOUD_METRICS_TOKEN_FILE: /run/pi-cloud-secrets/metrics-token
-    volumes:
-      - type: bind
-        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/database-url
-        target: /run/pi-cloud-secrets/database-url
-        read_only: true
-      - type: bind
-        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/metrics-token
-        target: /run/pi-cloud-secrets/metrics-token
-        read_only: true
-    networks: [database, event-log, observability]
-    healthcheck:
-      test:
-        [
-          CMD,
-          node,
-          -e,
-          "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    <<: *application-security
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777,uid=${PI_CLOUD_APPLICATION_UID:-1000},gid=${PI_CLOUD_APPLICATION_GID:-1000}
-    pids_limit: 128
-    mem_limit: 512m
-    cpus: 1.5
-    stop_grace_period: 30s
     logging: *bounded-logging
 
   control-plane:
@@ -643,13 +594,15 @@ services:
       HTTPS_PROXY: http://provider-egress-relay:3129
       NO_PROXY: 127.0.0.1,localhost,control-plane,tool-broker,cli-proxy-api,jaeger,postgres,supervisor-host,supervisor-host-1,pi-cloud-worker-1,pi-cloud-worker-2
       DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
-      PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE: /run/pi-cloud-secrets/worker-event-ingest-token
       PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true"
       PI_CLOUD_CONTROL_PLANE_URL: http://control-plane:3000
       PI_CLOUD_SUPERVISOR_ID: ${PI_CLOUD_SUPERVISOR_ID_PREFIX:-pi-cloud-worker-}1
       PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE: /run/pi-cloud-secrets/supervisor-enrollment-token
       PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE: /run/pi-cloud-secrets/supervisor-management-token
       PI_CLOUD_TOOL_BROKER_TOKEN_FILE: /run/pi-cloud-secrets/tool-broker-token
+      PI_CLOUD_KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+      PI_CLOUD_KAFKA_PARTITIONS: ${PI_CLOUD_KAFKA_PARTITIONS:-32}
+      PI_CLOUD_KAFKA_REPLICAS: "3"
       PI_CLOUD_TOOL_BROKER_URLS: http://tool-broker:4300
       PI_CLOUD_TOOL_BROKER_REQUEST_TIMEOUT_MS: "360000"
       PI_CLOUD_PROVIDER_GATEWAY_URL: http://cli-proxy-api:8317
@@ -699,10 +652,6 @@ services:
         target: /run/pi-cloud-secrets/tool-broker-token
         read_only: true
       - type: bind
-        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/worker-event-ingest-token
-        target: /run/pi-cloud-secrets/worker-event-ingest-token
-        read_only: true
-      - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/cli-proxy-api-key
         target: /run/pi-cloud-secrets/cli-proxy-api-key
         read_only: true
@@ -715,6 +664,7 @@ services:
         aliases:
           - ${PI_CLOUD_SUPERVISOR_ID_PREFIX:-pi-cloud-worker-}1
       database: {}
+      event-log: {}
       sandbox-control: {}
       model-egress: {}
       observability: {}
@@ -886,7 +836,6 @@ services:
       DATABASE_URL_FILE: /run/pi-cloud-secrets/database-url
       PI_CLOUD_SANDBOX_DOMAIN_ID: sandbox-domain-0001
       PI_CLOUD_TOOL_BROKER_ADVERTISED_URL: http://tool-broker:4300
-      PI_CLOUD_KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
       PI_CLOUD_TOOL_BROKER_HOST: 0.0.0.0
       PI_CLOUD_TOOL_BROKER_PORT: "4300"
       PI_CLOUD_SANDBOX_WARM_TTL_MS: ${PI_CLOUD_SANDBOX_WARM_TTL_MS:-900000}
@@ -953,7 +902,6 @@ services:
       - database
       - sandbox-control
       - observability
-      - event-log
     healthcheck:
       test:
         [

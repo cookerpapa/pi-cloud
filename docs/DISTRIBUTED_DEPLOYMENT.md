@@ -32,10 +32,12 @@ Ingress -> Web / Control Plane
                          │
               persistent Workspace storage
 
-Worker facts -> multiplexed Worker connection / per-Lease Stream -> PostgreSQL Authority Gate -> AcceptedFactBus
-AcceptedFacts -> Kafka keyed by Session
-              ├-> Gateway soft tail -> snapshot-first SSE
-              └-> canonical consumer group -> PostgreSQL SessionStorage
+PG-issued publication scope -> Worker signed append -> Kafka keyed by physical Session
+                                                       ↓
+                                              Session Projector group
+                                              ├-> PG SessionStorage
+                                              ├-> live view / SSE
+                                              └-> owner Tool executor -> Cube
 ```
 
 There are no execution Cells, private Worker queues or persistent cold-Session

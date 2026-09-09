@@ -43,9 +43,6 @@ export class PiCloudMetrics {
   readonly kafkaLiveTailSessions: Gauge;
   readonly kafkaLiveTailEvents: Gauge;
   readonly kafkaLiveTailBytes: Gauge;
-  readonly factChannelsActive: Gauge;
-  readonly factChannelsLimit: Gauge;
-  readonly factChannelRenewalFailures: Gauge;
   readonly operationalSampleTimestamp: Gauge<"source">;
   readonly operationalSampleFailures: Counter<"source">;
   readonly sandboxActive: Gauge<"provider">;
@@ -294,21 +291,6 @@ export class PiCloudMetrics {
     this.kafkaLiveTailBytes = new Gauge({
       name: "pi_cloud_kafka_live_tail_bytes",
       help: "Approximate bytes held by incomplete Gateway Session tails",
-      registers: [this.registry],
-    });
-    this.factChannelsActive = new Gauge({
-      name: "pi_cloud_fact_channels_active",
-      help: "Active FactChannels in this Control Plane replica",
-      registers: [this.registry],
-    });
-    this.factChannelsLimit = new Gauge({
-      name: "pi_cloud_fact_channels_limit",
-      help: "Maximum FactChannels admitted by this Control Plane replica",
-      registers: [this.registry],
-    });
-    this.factChannelRenewalFailures = new Gauge({
-      name: "pi_cloud_fact_channel_renewal_failures",
-      help: "FactChannel renewal failures observed by this process",
       registers: [this.registry],
     });
     this.operationalSampleTimestamp = new Gauge({

@@ -7,12 +7,11 @@ import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { kafkaProducerLane } from "../packages/runtime-core/src/kafka-accepted-fact.ts";
 import { ACCEPTED_FACT_TOPIC } from "@pi-cloud/event-log";
 
-if (process.env.PI_CLOUD_LIVE_TOOL_SHARD_CHECK !== "1")
-  throw new Error("Opt in to real model/Cube usage with PI_CLOUD_LIVE_TOOL_SHARD_CHECK=1");
-// Run with a second Broker on production's existing domain/group. Its current
+if (process.env.PI_CLOUD_LIVE_PROJECTOR_CHECK !== "1")
+  throw new Error("Opt in to real model/Cube usage with PI_CLOUD_LIVE_PROJECTOR_CHECK=1");
+// Run with a second Control Plane/Projector in the production group. Its current
 // assignment is independently checked with kafka-consumer-groups --members.
-const replica =
-  process.env.PI_CLOUD_TEST_BROKER_CONTAINER ?? "pi-cloud-tool-broker-shard-acceptance";
+const replica = process.env.PI_CLOUD_TEST_PROJECTOR_CONTAINER ?? "pi-cloud-projector-acceptance";
 const exec = promisify(execFile),
   sessions = [];
 const env = Object.fromEntries(
@@ -52,7 +51,7 @@ const sql = async (query) =>
     ])
   ).stdout.trim();
 async function metrics() {
-  const code = `const t=require('node:fs').readFileSync(process.env.PI_CLOUD_METRICS_TOKEN_FILE,'utf8').trim();fetch('http://127.0.0.1:9466/metrics',{headers:{authorization:'Bearer '+t}}).then(r=>{if(!r.ok)throw Error('metrics');return r.text()}).then(t=>console.log(t))`;
+  const code = `const t=require('node:fs').readFileSync(process.env.PI_CLOUD_METRICS_TOKEN_FILE,'utf8').trim();fetch('http://127.0.0.1:9464/metrics',{headers:{authorization:'Bearer '+t}}).then(r=>{if(!r.ok)throw Error('metrics');return r.text()}).then(t=>console.log(t))`;
   const text = (await exec("docker", ["exec", replica, "node", "-e", code])).stdout;
   const sample = (name) =>
     text
@@ -73,12 +72,8 @@ const report = { accepted: false, checkedAt: new Date().toISOString(), runs: [] 
   abort = new AbortController();
 let stream;
 try {
-  const owner = (
-    await sql(
-      `select instance_id || '|' || sandbox_domain_id from tool_broker_instances where state='ready' and owner_base_url='http://${replica.replaceAll("'", "''")}:4300/'`,
-    )
-  ).split("|");
-  assert(owner.length === 2, "Start a second Broker and set PI_CLOUD_TEST_BROKER_CONTAINER");
+  const owner =
+    "pi-cloud-projector@" + Buffer.from(`http://${replica}:3000/`).toString("base64url");
   const membership = (
     await exec("docker", [
       "exec",
@@ -88,7 +83,7 @@ try {
       "kafka-1:9092",
       "--describe",
       "--group",
-      `pi-cloud-tool-dispatch-${owner[1]}`,
+      "pi-cloud-session-projector-v1",
       "--members",
       "--verbose",
     ])
@@ -100,15 +95,13 @@ try {
       line,
       partitions: line.split(`${ACCEPTED_FACT_TOPIC}:`)[1].split(/\s/)[0].split(",").map(Number),
     }));
-  const assigned = new Set(
-    assignments.find((a) => a.line.includes(`tool-router-${owner[0]}`))?.partitions,
-  );
+  const assigned = new Set(assignments.find((a) => a.line.includes(owner))?.partitions);
   const partitionCount = 1 + Math.max(...assignments.flatMap((a) => a.partitions));
   assert(
     assigned.size > 0 && assigned.size < partitionCount,
     "The test requires two Ready partition owners",
   );
-  await api.registerAccount(username, "Broker sharding acceptance", `Shard ${suffix} !9`);
+  await api.registerAccount(username, "Projector acceptance", `Shard ${suffix} !9`);
   workspace = await api.createProject(`Shard check ${suffix}`);
   // Select a partition currently owned by the remote router, not a guessed half.
   for (let i = 0; i < 16; i++) {
@@ -192,7 +185,7 @@ try {
 }
 report.resourcesReleased = true;
 await writeFile(
-  "docs/reports/tool-command-sharding-live-latest.json",
+  "docs/reports/session-projector-live-latest.json",
   JSON.stringify(report, null, 2) + "\n",
 );
 console.log(JSON.stringify({ ...report, cleanupUsername: username }));

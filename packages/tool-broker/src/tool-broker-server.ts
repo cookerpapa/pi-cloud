@@ -37,10 +37,7 @@ import {
 } from "./tool-broker-client.ts";
 import { ToolBrokerError } from "./sandbox-provider.ts";
 import { ToolBrokerOwnerRedirectError, type ToolBroker } from "./tool-broker.ts";
-import {
-  TOOL_BROKER_LOG_DELIVERY_PATH,
-  type ToolLogDelivery,
-} from "./kafka-tool-command-consumer.ts";
+import { TOOL_BROKER_LOG_DELIVERY_PATH, type ToolLogDelivery } from "./tool-command-router.ts";
 import type { ToolCommandExecutor } from "./tool-command-executor.ts";
 import {
   ToolResultDeliveryBudget,

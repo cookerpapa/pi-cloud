@@ -45,6 +45,12 @@ protocol, record the decision under `docs/adr/` before implementation.
   history. Do not restore per-Step projection receipts or allocate sequence from
   a second active writer. Cold administrative mutations require Session quiescence.
   Bootstrap only the latest Compaction and active suffix, never lifetime JSONL.
+- Workers append directly to Kafka under a PG-issued publication identity. One
+  Session Projector consumer group verifies provenance/seals and drives native
+  history, live views and Tool routing. Do not restore a Fact Gateway, another
+  channel lease, separate live/Tool consumers or a commit-notification round trip.
+  Tool executors remain independently authorized external-effect endpoints;
+  replaying a projection must never imply replaying arbitrary shell work.
 - Treat the persistent Cube Volume as the sole Workspace byte authority. Do
   not add a second per-Run archive/checkpoint head without measured recovery
   requirements and a new ADR.

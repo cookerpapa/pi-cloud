@@ -216,9 +216,6 @@ export async function createControlPlaneRuntime(
       ...(options.sshAccessTicketService === undefined
         ? {}
         : { sshAccessTicketService: options.sshAccessTicketService }),
-      ...(options.acceptedFactIngestGateway === undefined
-        ? {}
-        : { acceptedFactIngestGateway: options.acceptedFactIngestGateway }),
       ...(options.sourceControlService === undefined
         ? {}
         : { sourceControlService: options.sourceControlService }),

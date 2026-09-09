@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { FactChannelPiSessionAppendPublisher } from "../src/fact-channel-pi-session-append-publisher.ts";
+import { NativeSessionLogPublisher } from "../src/native-session-log-publisher.ts";
 import type { AcceptedFactWriter, CandidatePiSessionAppendFact } from "../src/accepted-fact.ts";
 
 const scope = {
@@ -23,7 +23,7 @@ it("finishes at Kafka ACK without a PG client, receipt reader or polling", async
       return { mutationId: request.mutationId, accepted: true };
     },
   };
-  const publisher = new FactChannelPiSessionAppendPublisher({
+  const publisher = new NativeSessionLogPublisher({
     channels: { resolve: () => channel, checkHealth: async () => {} },
   });
   await Promise.all(
@@ -48,7 +48,7 @@ it("does not acknowledge a failed or mismatched durable append", async () => {
       throw new Error("unused");
     },
   };
-  const publisher = new FactChannelPiSessionAppendPublisher({
+  const publisher = new NativeSessionLogPublisher({
     channels: { resolve: () => channel, checkHealth: async () => {} },
   });
   await expect(publisher.scoped(scope).publish([])).rejects.toThrow("Kafka unavailable");

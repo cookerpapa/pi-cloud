@@ -891,26 +891,6 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     generation: string | number | bigint,
     now: Date,
   ): Promise<void> {
-    const writer = await transaction
-      .selectFrom("session_leases")
-      .select(["fact_channel_connection_id", "fact_channel_valid_until"])
-      .where("session_id", "=", sessionId)
-      .where("lease_id", "=", grantId)
-      .where("fencing_token", "=", String(generation))
-      .forUpdate()
-      .executeTakeFirst();
-    if (
-      writer?.fact_channel_connection_id !== null &&
-      writer?.fact_channel_connection_id !== undefined &&
-      writer.fact_channel_valid_until !== null &&
-      new Date(writer.fact_channel_valid_until).valueOf() > now.valueOf()
-    ) {
-      throw new SessionLeaseCoordinatorError(
-        "fact_channel_active",
-        "ExecutionLease still has an active FactChannel",
-        true,
-      );
-    }
     const sandbox = await transaction
       .selectFrom("sandboxes")
       .select(["state", "active_sessions"])

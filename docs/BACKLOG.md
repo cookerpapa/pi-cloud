@@ -13,15 +13,14 @@ Volume architecture. Historical experiments remain in Git history.
       scope/call correlation, no-replay metadata and a bounded retry cache.
       [Acceptance](reports/tool-result-retirement-acceptance.md).
 
-- [x] ADR-0157: route Agent Tool commands through the Fact Gate/Kafka; remove
+- [x] ADR-0157/0163: route Agent Tool commands through the execution log/Projector; remove
       execution POST, retain read-only result waits and no-replay operation semantics.
 - [ ] Implement an approved Cube-native scoped launch-generation contract before
       claiming physical execution fencing; [research and policy tradeoffs](reports/cube-execution-generation-study.md)
       are complete, implementation is not part of the Kafka transport upgrade.
-- [x] ADR-0156: close at the Kafka seal and announce the terminal on its durable
-      commit notification, without Gateway per-seal SELECT/polling. Preserve
-      bounded successor buffering, duplicate delivery and restart recovery.
-- [x] ADR-0155: classify live records by the actual seal position, isolate paused
+- [x] ADR-0163: close at the Kafka seal, commit the terminal/prefix and update
+      the same Projector's live view; remove the second commit notification.
+- [x] Classify live records by the actual seal position, isolate paused
       partitions, restore from durable recovery floors and invalidate idle OPEN caches.
 - [x] Project prepared native append batches without a timer; preserve Lane ID
       uniqueness and stable append deduplication without a receipt ledger.
@@ -73,6 +72,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Capacity
 
+- [x] ADR-0163: direct Worker append, cached publication provenance and one
+      Projector group for PG/live/Tool projections; validate cross-replica SSE,
+      live Projector/Worker failure and signed-record throughput.
+      [Acceptance](reports/unified-projector-acceptance.md).
 - [x] ADR-0160: isolate and test Kafka ACK-only native Session append, including
       stopped/restarted projection, lost ACKs, multiple Lanes and real Cube coding.
       This experiment is not the deployed backend; [evidence](reports/kafka-native-session-append-experiment.md).

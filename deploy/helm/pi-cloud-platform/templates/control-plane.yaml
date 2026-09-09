@@ -62,19 +62,18 @@ spec:
           env:
             - { name: NODE_ENV, value: production }
             - { name: HOST, value: 0.0.0.0 }
+            - name: POD_IP
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            - { name: PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE, value: /run/pi-cloud-secrets/tool-dispatch-token }
             - { name: PORT, value: "3000" }
             - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
             - { name: PI_CLOUD_DATABASE_NOTIFICATION_URL_FILE, value: /run/pi-cloud-secrets/database-notification-url }
-            - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ join "," .Values.external.kafka.brokers | quote }} }
-            - { name: PI_CLOUD_CANONICAL_PROJECTION_ENABLED, value: {{ .Values.controlPlane.canonicalProjectionEnabled | quote }} }
-            - { name: PI_CLOUD_KAFKA_REPLICAS, value: {{ .Values.external.kafka.replicas | quote }} }
-            - { name: PI_CLOUD_KAFKA_PARTITIONS, value: {{ .Values.external.kafka.partitions | quote }} }
-            - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES, value: {{ .Values.external.kafka.producerPendingBytes | quote }} }
-            - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS, value: {{ .Values.external.kafka.producerPendingFacts | quote }} }
-            - { name: PI_CLOUD_ACCEPTED_FACT_RETENTION_MS, value: {{ .Values.external.kafka.acceptedFactRetentionMs | quote }} }
-            - { name: PI_CLOUD_FACT_CHANNEL_LEASE_MS, value: {{ .Values.external.kafka.factChannelLeaseMs | quote }} }
-            - { name: PI_CLOUD_FACT_CHANNEL_MAXIMUM_ACTIVE, value: {{ .Values.external.kafka.maximumActiveFactChannelsPerGateway | quote }} }
-            - { name: PI_CLOUD_WORKER_EVENT_INGEST_TOKEN_FILE, value: /run/pi-cloud-secrets/worker-event-ingest-token }
+            - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ join "," .Values.global.kafka.brokers | quote }} }
+            - { name: PI_CLOUD_KAFKA_REPLICAS, value: {{ .Values.global.kafka.replicas | quote }} }
+            - { name: PI_CLOUD_KAFKA_PARTITIONS, value: {{ .Values.global.kafka.partitions | quote }} }
+            - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES, value: {{ .Values.global.kafka.producerPendingBytes | quote }} }
+            - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS, value: {{ .Values.global.kafka.producerPendingFacts | quote }} }
+            - { name: PI_CLOUD_ACCEPTED_FACT_RETENTION_MS, value: {{ .Values.global.kafka.acceptedFactRetentionMs | quote }} }
             - { name: PI_CLOUD_PREVIEW_ORIGIN_BASE_URL, value: {{ printf "https://preview.%s" .Values.web.ingress.host | quote }} }
             - { name: PI_CLOUD_PUBLIC_ORIGIN_BASE_URL, value: {{ .Values.controlPlane.publicOriginBaseUrl | quote }} }
             - { name: NODE_USE_ENV_PROXY, value: "1" }

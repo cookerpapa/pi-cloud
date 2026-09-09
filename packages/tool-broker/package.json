@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./client": "./src/tool-broker-client.ts"
+    "./client": "./src/tool-broker-client.ts",
+    "./command-router": "./src/tool-command-router.ts",
+    "./command-routes": "./src/tool-command-routes.ts"
   },
   "scripts": {
     "start": "tsx src/main.ts",
@@ -13,7 +15,6 @@
     "test": "vitest --run"
   },
   "dependencies": {
-    "@pi-cloud/event-log": "0.1.0",
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/observability": "0.1.0",
     "@pi-cloud/protocol": "0.1.0",
