@@ -10,12 +10,14 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0162](0162-sharded-tool-command-routing.md) — shared-group Tool routing,
+   exact owner boots and direct result reads, replacing per-boot whole-log consumption.
 1. [ADR-0161](0161-kafka-native-session-commit.md) — Kafka-acknowledged native
    Session storage, shared Lane ordering, bounded restore and safe retention.
 1. [ADR-0158](0158-bounded-transport-backpressure.md) — bounded Producer/Broker
    transport and shared configuration; native commit placement follows ADR-0161.
 1. [ADR-0157](0157-kafka-driven-tool-commands.md) — Kafka-driven Agent Tool dispatch,
-   read-only result waits and boot-local Broker command consumption.
+   read-only result waits; Broker consumption follows ADR-0162.
 1. [ADR-0156](0156-durable-seal-commit-notifications.md) — durable commit notifications,
    query-free Gateway seals and bounded successor display ordering.
 1. [ADR-0155](0155-isolated-consumption-and-bounded-handoffs.md) — positioned seals,

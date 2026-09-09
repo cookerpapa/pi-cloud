@@ -19,6 +19,8 @@ export type KafkaLogConsumerOptions<T> = {
   groupId: string;
   topic: string;
   commitMessages?: boolean;
+  /** Router delivery resumes Kafka's committed group position, not a PG projection. */
+  groupRecovery?: boolean;
   onReset?(): void;
   demandDriven?: boolean;
   onPartitionReset?(partition: number): void;
@@ -172,9 +174,36 @@ export class KafkaLogConsumer<T> {
             const bounds = allBounds.filter((b) =>
               assignments.some((a) => a.partition === b.partition),
             );
-            const offsets = this.#options.replayOffsets
-              ? new Map(await this.#options.replayOffsets(bounds, allBounds.length))
-              : new Map(bounds.map((b) => [b.partition, b.low]));
+            const committed = this.#options.groupRecovery
+              ? await this.#admin.fetchOffsets({
+                  groupId: this.#options.groupId,
+                  topics: [this.#options.topic],
+                })
+              : [];
+            const groupOffsets = new Map(
+              committed.flatMap((t) =>
+                t.partitions.map((p) => [p.partition, BigInt(p.offset)] as const),
+              ),
+            );
+            const offsets = this.#options.groupRecovery
+              ? new Map(
+                  bounds.map((b) => {
+                    const saved = groupOffsets.get(b.partition) ?? -1n;
+                    // The Tool router is not the recovery authority. Safe log
+                    // reclamation has already closed/projected this prefix;
+                    // an offline router must not require its deleted records.
+                    const offset = saved < b.low ? b.low : saved;
+                    return [
+                      b.partition,
+                      offset > b.high
+                        ? new Error("Kafka group delivery position is outside retention")
+                        : offset,
+                    ] as const;
+                  }),
+                )
+              : this.#options.replayOffsets
+                ? new Map(await this.#options.replayOffsets(bounds, allBounds.length))
+                : new Map(bounds.map((b) => [b.partition, b.low]));
             for (const b of bounds) {
               const offset = offsets.get(b.partition)!;
               if (offset instanceof Error) this.#blocked.set(b.partition, offset);
@@ -319,6 +348,15 @@ export class KafkaLogConsumer<T> {
       [...this.#retries.values()].some((r) => Date.now() - r.since > 5000)
     )
       throw new Error("Kafka AcceptedFact consumer is unhealthy");
+  }
+
+  async waitUntilAssigned(timeoutMs = 120_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!this.#closing && Date.now() < deadline) {
+      if (this.#ready && this.#blocked.size === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("Kafka consumer group assignment is unavailable");
   }
 
   async waitUntilInitialReplay(offsets: readonly bigint[], timeoutMs = 120_000): Promise<void> {

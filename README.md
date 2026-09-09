@@ -45,8 +45,8 @@ Pi semantic records + display events + concrete Tool commands
                  ├─ canonical projector → PG native log + query projections
                  │                        + terminal/commit Outbox
                  ├─ live-tail consumer → immutable snapshot + SSE → Browser
-                 └─ Tool Broker → Cube KVM → persistent Volume
-                       └─ raw result → Worker/Pi result handling → same Fact path
+                 └─ Broker consumer group → owner routing → Tool executor → Cube KVM
+                                             raw result → Worker/Pi → same Fact path
 
 Run settlement → PG Outbox → Kafka execution seal
   → canonical closure → PG Outbox → Kafka commit notification → Browser
@@ -69,6 +69,11 @@ intent cross two native Kafka acknowledgement boundaries. Concrete execution
 commands then reach Tool Broker through Kafka. Broker retains bounded raw results
 for the Worker; the subsequent native Tool Result retires those copies. There is
 no second raw-result transcript or automatic command replay.
+
+Broker replicas share partition consumption within a Sandbox Domain. The consumer
+forwards commands and small seal/result-retirement notifications to the binding's
+exact owning boot; Worker result reads go directly to that owner. Kafka partition
+reassignment does not move VMs or re-execute old bindings.
 
 A cleanly drained Run seals independently. An uncertain native publication retires
 the shared writer incarnation, including its other Lanes. Canonical, live and

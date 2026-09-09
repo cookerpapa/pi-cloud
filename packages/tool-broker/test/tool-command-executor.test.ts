@@ -4,24 +4,9 @@ import {
   type AcceptedToolCommand,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
-const transport = vi.hoisted(() => ({ options: [] as any[] }));
-vi.mock("@pi-cloud/event-log", () => ({
-  KafkaLogConsumer: class {
-    constructor(options: unknown) {
-      transport.options.push(options);
-    }
-    async captureEndOffsets() {
-      return [0n];
-    }
-    async start() {}
-    async waitUntilInitialReplay() {}
-    checkHealth() {}
-    async close() {}
-  },
-}));
-import { KafkaToolCommandConsumer } from "../src/kafka-tool-command-consumer.ts";
+import { ToolCommandExecutor } from "../src/tool-command-executor.ts";
 
-const instances: KafkaToolCommandConsumer[] = [];
+const instances: ToolCommandExecutor[] = [];
 afterEach(async () => {
   for (const instance of instances.splice(0)) await instance.close();
   vi.useRealTimers();
@@ -81,9 +66,7 @@ function fixture(maximumResultBytes?: number, maximumActiveCommands?: number) {
   const execute = vi.fn(async (_lease: string, request: AcceptedToolCommand["request"]) =>
     output({ ...command(), request }),
   );
-  const consumer = new KafkaToolCommandConsumer({
-    brokers: ["unused:9092"],
-    topic: "test",
+  const consumer = new ToolCommandExecutor({
     ...(maximumResultBytes === undefined ? {} : { maximumResultBytes }),
     ...(maximumActiveCommands === undefined ? {} : { maximumActiveCommands }),
     broker: {
@@ -230,7 +213,7 @@ describe("Kafka-driven Tool command execution", () => {
       ).rejects.toMatchObject({ code: "tool_result_released" });
     }
     expect(f.execute).toHaveBeenCalledTimes(2);
-    await expect(f.consumer.consume(record({ ...a, toolCallId: "different" }))).rejects.toThrow(
+    expect(() => f.consumer.consume(record({ ...a, toolCallId: "different" }))).toThrow(
       "different arguments",
     );
   });
@@ -381,30 +364,27 @@ describe("Kafka-driven Tool command execution", () => {
     await f.consumer.close();
     expect(await result).toBeInstanceOf(Error);
   });
-  it("keeps the first boot floor on reconnect, but a new boot starts at a new floor", async () => {
+  it("ignores replayed and delayed lower offsets after receiver admission", async () => {
     const f = fixture(),
-      options = transport.options.at(-1);
-    const bounds = (high: bigint) => [{ partition: 0, low: 0n, high }];
-    expect((await options.replayOffsets(bounds(10n))).get(0)).toBe(10n);
-    expect((await options.replayOffsets(bounds(20n))).get(0)).toBe(10n);
-    await f.consumer.consume(
-      record({ kind: "ignored", scope: { attemptId: "a", writerId: "writer" } }, 12n),
+      c = command();
+    f.own(c);
+    f.consumer.receive(record(c, 10n));
+    f.consumer.receive(record(c, 10n));
+    f.consumer.receive(record({ kind: "execution_seal", scope: c.scope }, 12n));
+    f.consumer.receive(
+      record({ ...c, request: { ...c.request, operationId: crypto.randomUUID() } }, 11n),
     );
-    expect((await options.replayOffsets(bounds(20n))).get(0)).toBe(13n);
-    fixture();
-    expect((await transport.options.at(-1).replayOffsets(bounds(20n))).get(0)).toBe(20n);
-    expect(
-      (await options.replayOffsets([{ partition: 0, low: 14n, high: 20n }])).get(0),
-    ).toBeInstanceOf(Error);
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.consumer.statistics().retainedResultBytes).toBe(0);
   });
   it("rejects a reused command ID with different arguments", async () => {
     const f = fixture(),
       c = command();
     f.own(c);
     await f.consumer.consume(record(c));
-    await expect(
+    expect(() =>
       f.consumer.consume(record({ ...c, request: { ...c.request, command: "different" } }, 1n)),
-    ).rejects.toThrow("different arguments");
+    ).toThrow("different arguments");
     expect(f.execute).toHaveBeenCalledOnce();
   });
 });

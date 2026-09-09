@@ -18,6 +18,8 @@ export class PiCloudMetrics {
   readonly toolResultReaders: Gauge;
   readonly toolResultSendingBytes: Gauge;
   readonly toolTransportRejected: Counter<"reason">;
+  readonly toolLogConsumed: Counter<"kind">;
+  readonly toolLogDelivery: Histogram<"route" | "outcome">;
   readonly kafkaProducerPendingBytes: Gauge;
   readonly kafkaProducerPendingFacts: Gauge;
   readonly kafkaProducerRejected: Counter;
@@ -165,6 +167,19 @@ export class PiCloudMetrics {
     this.toolResultCacheBytes = new Gauge({
       name: "pi_cloud_tool_result_cache_bytes",
       help: "Encoded response bytes retained for Tool result delivery (not process heap)",
+      registers: [this.registry],
+    });
+    this.toolLogConsumed = new Counter({
+      name: "pi_cloud_tool_log_consumed_total",
+      help: "Partition-sharded Broker log records",
+      labelNames: ["kind"],
+      registers: [this.registry],
+    });
+    this.toolLogDelivery = new Histogram({
+      name: "pi_cloud_tool_log_delivery_seconds",
+      help: "Owner admission latency excluding guest execution",
+      labelNames: ["route", "outcome"],
+      buckets: DURATION_BUCKETS,
       registers: [this.registry],
     });
     this.toolResultCacheReleased = new Counter({

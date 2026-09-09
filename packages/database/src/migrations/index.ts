@@ -131,6 +131,7 @@ import * as executionCommitNotifications from "./129_execution_commit_notificati
 import * as kafkaToolCommands from "./130_kafka_tool_commands.ts";
 import * as kafkaNativeSessionAppend from "./131_kafka_native_session_append.ts";
 import * as opaqueConversationEntryIds from "./132_opaque_conversation_entry_ids.ts";
+import * as toolBindingRoutes from "./133_tool_binding_routes.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -267,6 +268,7 @@ export const migrationProvider: MigrationProvider = {
       "130_kafka_tool_commands": kafkaToolCommands,
       "131_kafka_native_session_append": kafkaNativeSessionAppend,
       "132_opaque_conversation_entry_ids": opaqueConversationEntryIds,
+      "133_tool_binding_routes": toolBindingRoutes,
     };
   },
 };

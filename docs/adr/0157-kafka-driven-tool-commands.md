@@ -26,13 +26,9 @@ by Runtime Core and Broker. Do not import Agent Runtime/SessionStorage into the
 Broker or implement another Kafka client. Keep Confluent/librdkafka partition
 flow control and Platformatic production.
 
-Bindings currently belong to one Broker boot. Each boot consumes the shared
-log independently and executes only its own binding IDs; this avoids a second
-dispatcher or a mutable partition-to-VM ownership ring. It does multiply Kafka
-read traffic by Broker replicas and must be measured, not described as exclusive
-global sharding. Readiness establishes the starting log position before any
-binding can be created. In-process consumer reconnect resumes observed progress;
-a replacement boot never replays commands for vanished bindings.
+Bindings belong to one Broker boot. [ADR-0162](0162-sharded-tool-command-routing.md)
+replaces independent full-log consumption with a shared consumer group and
+positioned owner forwarding. A replacement boot never adopts vanished bindings.
 Broker is a trusted reader of the shared log, including non-command records;
 the new access is never extended to a Cube guest or Pi Worker.
 
@@ -72,8 +68,8 @@ never an automatic effect retry. This bounds retention, not guest collection or
 HTTP buffers. Raw results are not a second durable transcript.
 
 Drain active Runs and update Worker/Gate/Broker together. No guest protocol,
-template or historical Session data migration is needed: new Broker boots skip
-historical commands and do not adopt old Tool bindings.
+template or historical Session data rewrite is needed. ADR-0162 adds binding
+route metadata; old Tool bindings are not adopted.
 
 ## Evidence and acceptance
 

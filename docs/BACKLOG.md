@@ -83,8 +83,8 @@ Volume architecture. Historical experiments remain in Git history.
       writer. Preserve Compaction, interruption, branch isolation and cold restore.
 - [x] Remove per-Step PG waits; preserve Kafka intent before Tool effects, exact
       native projection and seal-gated recovery (ADR-0161).
-- [ ] Remove Broker whole-log read amplification only after a separately reviewed
-      binding/partition ownership design; no unsafe consumer-group-only switch.
+- [x] ADR-0162: shared-group Broker consumption with immutable boot routes,
+      owner-direct results and positioned forwarding; [Kafka/Cube acceptance](reports/tool-command-sharding.md).
 
 - [x] Replace per-free-Slot scans with one concurrent claim probe per queue kind;
       wake immediately after a successful claim and preserve Child capacity.

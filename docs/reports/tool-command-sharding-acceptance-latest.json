@@ -1,0 +1,105 @@
+{
+  "format": "pi-cloud.tool-command-sharding.v1",
+  "checkedAt": "2026-09-09T00:12:37.203Z",
+  "topology": "two process-isolated shared-group routers + two owner HTTP servers; R=3 four-partition private topic; 3 CPU/2 GiB runner",
+  "scope": "accepted command -> Kafka -> router -> owner HTTP -> counting executor -> owner-direct HTTP result -> native Kafka receipt; route lookup fixture via IPC, no PG/Gate/model/Cube time",
+  "resultRetirement": {
+    "beforeRunSeal": true,
+    "longRunTools": 250,
+    "rawBytesPerLongRunTool": 98304,
+    "retainedBytesAfterLongRun": 0,
+    "duplicateAfterReleaseNotExecuted": true
+  },
+  "progress": [
+    {
+      "sessions": 1,
+      "commands": 3,
+      "commandsPerSecond": 31.1,
+      "latencyMs": {
+        "p50": 11.86,
+        "p95": 58.53
+      }
+    },
+    {
+      "sessions": 16,
+      "commands": 48,
+      "commandsPerSecond": 226.2,
+      "latencyMs": {
+        "p50": 36.93,
+        "p95": 110.69
+      }
+    },
+    {
+      "sessions": 128,
+      "commands": 384,
+      "commandsPerSecond": 368.6,
+      "latencyMs": {
+        "p50": 307.32,
+        "p95": 360.88
+      }
+    },
+    {
+      "sessions": 1024,
+      "commands": 3072,
+      "commandsPerSecond": 496.4,
+      "latencyMs": {
+        "p50": 1684.21,
+        "p95": 2539.42
+      }
+    }
+  ],
+  "effects": 3762,
+  "duplicateEffects": 0,
+  "directExecutionPostRejected": true,
+  "steadyPartitions": [
+    ["2", "3"],
+    ["0", "1"]
+  ],
+  "steadyRouterStatistics": [
+    {
+      "consumedFacts": 3492,
+      "deliveredRecords": 3492,
+      "abandonedDeliveries": 0
+    },
+    {
+      "consumedFacts": 3522,
+      "deliveredRecords": 3522,
+      "abandonedDeliveries": 0
+    }
+  ],
+  "maximumForwardedControlBytes": 721,
+  "processFault": {
+    "dispatcherKilledAfterOwnerAck": true,
+    "rebalanceRetiredResult": true,
+    "noDuplicateEffect": true
+  },
+  "lostHttpAckNoReplay": true,
+  "longCommandDidNotBlockAnother": true,
+  "sealedCommandNotExecuted": true,
+  "consumerStatistics": [
+    {
+      "consumedFacts": 4020,
+      "acceptedCommands": 2010,
+      "activeCommands": 0,
+      "maximumActiveCommands": 2048,
+      "waitingReaders": 0,
+      "retainedResults": 0,
+      "retainedResultBytes": 0,
+      "peakRetainedResultBytes": 160768,
+      "releasedResults": 2009
+    },
+    {
+      "consumedFacts": 3506,
+      "acceptedCommands": 1753,
+      "activeCommands": 0,
+      "maximumActiveCommands": 2048,
+      "waitingReaders": 0,
+      "retainedResults": 0,
+      "retainedResultBytes": 0,
+      "peakRetainedResultBytes": 160768,
+      "releasedResults": 1753
+    }
+  ],
+  "revision": "f23800a4de30c8b5e4e36f49b40ff128b3f11615",
+  "workingTreeDirty": true
+}

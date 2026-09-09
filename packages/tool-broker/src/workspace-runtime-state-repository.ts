@@ -109,6 +109,7 @@ export interface WorkspaceRuntimeStateRepository {
   checkHealth(): Promise<void>;
   assertLocalOwnership(): void;
   reserve(input: WorkspaceRuntimeReservation): Promise<WorkspaceRuntimeReservationResult>;
+  registerToolBinding(bindingId: string, assignment: ToolSandboxAssignment): Promise<void>;
   returnDevelopmentEnvironment(
     environmentId: string,
     activationId: string,
@@ -197,6 +198,10 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   >();
 
   async start(): Promise<void> {}
+  async registerToolBinding(
+    _bindingId: string,
+    _assignment: ToolSandboxAssignment,
+  ): Promise<void> {}
   async checkHealth(): Promise<void> {}
   assertLocalOwnership(): void {}
   async reserve(input: WorkspaceRuntimeReservation): Promise<WorkspaceRuntimeReservationResult> {
@@ -455,6 +460,18 @@ function developmentProfileKey(value: string): DevelopmentEnvironmentProfileKey 
 }
 
 export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntimeStateRepository {
+  async registerToolBinding(bindingId: string, assignment: ToolSandboxAssignment): Promise<void> {
+    this.assertLocalOwnership();
+    await this.#database
+      .insertInto("tool_broker_binding_routes")
+      .values({
+        binding_id: bindingId,
+        tenant_id: assignment.tenantId,
+        attempt_id: executionIdentity(assignment).attemptId,
+        owner_instance_id: this.#instanceId,
+      })
+      .executeTakeFirstOrThrow();
+  }
   readonly #database: Kysely<Database>;
   readonly #sandboxDomainId: string;
   readonly #instanceId: string;

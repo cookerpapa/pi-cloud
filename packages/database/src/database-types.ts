@@ -319,6 +319,13 @@ export interface ToolBrokerOperationTable {
   settled_at: NullableTimestamp;
 }
 
+export interface ToolBrokerBindingRouteTable {
+  binding_id: string;
+  tenant_id: string;
+  attempt_id: string;
+  owner_instance_id: string;
+}
+
 export type SandboxHttpServiceTargetKind = "conversation" | "development_environment";
 export type SandboxHttpServiceState = "active" | "ended";
 
@@ -1203,6 +1210,7 @@ export interface Database {
   tool_broker_instances: ToolBrokerInstanceTable;
   tool_broker_workspace_runtimes: ToolBrokerWorkspaceRuntimeTable;
   tool_broker_operations: ToolBrokerOperationTable;
+  tool_broker_binding_routes: ToolBrokerBindingRouteTable;
   sandbox_http_services: SandboxHttpServiceTable;
   workspace_terminal_sessions: WorkspaceTerminalSessionTable;
   development_environments: DevelopmentEnvironmentTable;

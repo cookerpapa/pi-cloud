@@ -1,0 +1,26 @@
+{
+  "accepted": true,
+  "checkedAt": "2026-09-09T00:19:02.206Z",
+  "runs": [
+    {
+      "elapsedMs": 9853,
+      "firstTextMs": 9112,
+      "completedTools": 2
+    },
+    {
+      "elapsedMs": 7262,
+      "firstTextMs": 1858,
+      "completedTools": 3
+    }
+  ],
+  "partition": 7,
+  "remoteDeliveries": 15,
+  "remoteAdmissionMeanMs": 3.7337679333286364,
+  "usage": {
+    "requests": 7,
+    "input": 1909,
+    "output": 1989,
+    "cacheRead": 58240
+  },
+  "resourcesReleased": true
+}

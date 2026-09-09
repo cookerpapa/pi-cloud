@@ -37,7 +37,11 @@ import {
 } from "./tool-broker-client.ts";
 import { ToolBrokerError } from "./sandbox-provider.ts";
 import { ToolBrokerOwnerRedirectError, type ToolBroker } from "./tool-broker.ts";
-import type { KafkaToolCommandConsumer } from "./kafka-tool-command-consumer.ts";
+import {
+  TOOL_BROKER_LOG_DELIVERY_PATH,
+  type ToolLogDelivery,
+} from "./kafka-tool-command-consumer.ts";
+import type { ToolCommandExecutor } from "./tool-command-executor.ts";
 import {
   ToolResultDeliveryBudget,
   DEFAULT_TOOL_TRANSPORT_CAPACITY,
@@ -55,7 +59,13 @@ export type ToolBrokerServerOptions = {
   workspaceServiceToken?: string;
   terminalToken?: string;
   broker: ToolBrokerBackend;
-  commands: Pick<KafkaToolCommandConsumer, "waitResult" | "checkHealth">;
+  commands: Pick<ToolCommandExecutor, "waitResult" | "checkHealth">;
+  logDelivery?: {
+    instanceId: string;
+    token: string;
+    receive(delivery: ToolLogDelivery): void;
+    checkHealth(): void;
+  };
   bodyLimit?: number;
   metrics?: PiCloudMetrics;
   resultDelivery?: ToolDeliveryCapacity;
@@ -183,6 +193,8 @@ export class ToolBrokerServer {
   readonly #terminalDigest: Buffer | undefined;
   readonly #broker: ToolBrokerBackend;
   readonly #commands: ToolBrokerServerOptions["commands"];
+  readonly #logDelivery: ToolBrokerServerOptions["logDelivery"];
+  readonly #deliveryDigest: Buffer | undefined;
   readonly #server: FastifyInstance;
   readonly #metrics: PiCloudMetrics | undefined;
   readonly #resultDelivery: ToolResultDeliveryBudget;
@@ -213,6 +225,9 @@ export class ToolBrokerServer {
         : digest(validServiceToken(options.terminalToken));
     this.#broker = options.broker;
     this.#commands = options.commands;
+    this.#logDelivery = options.logDelivery;
+    this.#deliveryDigest =
+      options.logDelivery && digest(validServiceToken(options.logDelivery.token));
     this.#metrics = options.metrics;
     this.#server = Fastify({
       logger: false,
@@ -425,6 +440,30 @@ export class ToolBrokerServer {
   }
 
   #installRoutes(): void {
+    this.#server.post(TOOL_BROKER_LOG_DELIVERY_PATH, async (request, reply) => {
+      const credential = bearer(request.headers.authorization);
+      if (
+        !this.#logDelivery ||
+        !this.#deliveryDigest ||
+        !credential ||
+        !timingSafeEqual(digest(credential), this.#deliveryDigest)
+      ) {
+        await reply.code(401).send();
+        return;
+      }
+      const delivery = request.body as ToolLogDelivery;
+      if (delivery.instanceId !== this.#logDelivery.instanceId) {
+        await reply.code(410).send();
+        return;
+      }
+      try {
+        // Folding is synchronous; acknowledgement never waits on a guest Tool.
+        this.#logDelivery.receive(delivery);
+        await reply.code(204).send();
+      } catch (error) {
+        await this.#failure(reply, error);
+      }
+    });
     this.#server.get(TOOL_BROKER_LIVE_PATH, async (_request, reply) => {
       await reply.code(200).send({ status: "ok" });
     });
@@ -434,6 +473,7 @@ export class ToolBrokerServer {
         try {
           await this.#broker.checkHealth();
           this.#commands.checkHealth();
+          this.#logDelivery?.checkHealth();
         } catch {
           healthy = false;
         }

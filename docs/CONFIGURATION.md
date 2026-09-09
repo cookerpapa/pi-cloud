@@ -175,15 +175,21 @@ and a 5 ms fetch-queue backoff (the native 1 s default is unsuitable for interac
 streams). SSE subscribes on demand and uses server-side recovery coordinates;
 normal data consumption never introduces a new batching delay.
 Tool Broker uses the same `PI_CLOUD_KAFKA_BROKERS` and code-owned accepted topic;
-there is no Broker-only topic override. It captures its boot start position before
-readiness. Active commands, HTTP readers, sending bytes and completed retry copies
+there is no Broker-only topic override. Replicas within one Sandbox Domain use
+the stable `pi-cloud-tool-dispatch-<domain>` group and Kafka-committed delivery
+positions. Active commands, HTTP readers, sending bytes and completed retry copies
 have separate limits above. A native Kafka Tool Result retires its raw copies;
 seals/retired bindings clean up incomplete calls. Command arrival wait is 30 seconds;
 once observed, the Tool execution deadline applies, followed by the response-send
 deadline only when the result exists. A disconnected reader does not kill a Tool.
-Each Broker boot reads the shared topic and filters its own binding IDs, so extra
-replicas add read traffic and have trusted access to the shared log. Guests and
-Pi Workers do not receive Kafka access.
+Replicas divide partition reads and forward relevant records to exact owner boots.
+Results go directly from owner to Worker. `PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE`
+points to the private `tool-dispatch-token`, mounted only in Brokers; replicas of
+one domain share it. The installer creates it and Kubernetes requires that key
+in its deployment Secret. Broker-to-Broker TCP/4300 must be allowed. Guests and
+Pi Workers receive neither this secret nor Kafka access. Forwarding times out
+after 5 seconds, then retries the same positioned record while its owner is live;
+a stopped/expired owner cannot transfer old commands to another boot.
 Seal commit notifications use the existing terminal Outbox's 50 ms idle poll and
 bounded delivery retries. Gateway performs no per-seal PG lookup; deferred
 successor display is limited to 8 MiB per Session / 64 MiB per Gateway. Exceeding
@@ -354,7 +360,7 @@ and lightweight operation metadata. They are not tenant quotas or Workspace lock
 
 Keep database URLs, Provider Gateway API/management keys and OAuth Volume,
 Worker enrollment/management tokens,
-Tool Broker token, Worker Event Ingest token, Cube API key, SSH host key and
+Tool Broker service/dispatch tokens, Worker Event Ingest token, Cube API key, SSH host key and
 Kafka TLS/SASL material and source-control credential master key in the
 generated private files or Kubernetes Secrets. Cube receives none of them.
 When GitHub integration is enabled, the App private key and Webhook secret are

@@ -5,6 +5,7 @@ import { createExecutionLease } from "@pi-cloud/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import { PostgresWorkspaceRuntimeStateRepository } from "../src/index.ts";
 import { CubePersistentCapsuleCodec } from "../src/cube-persistent-capsule.ts";
+import { PostgresToolCommandRoutes } from "../src/tool-command-routes.ts";
 
 const resources: Array<() => Promise<void>> = [];
 
@@ -420,6 +421,23 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .where("lease_id", "=", "20000000-0000-4000-8000-000000000009")
       .executeTakeFirstOrThrow();
     await expect(repository.reserve(childActivation)).resolves.toEqual({ status: "reserved" });
+    // Persistent machines can reuse a physical binding ID in later Attempts.
+    // Routing must retain exact Attempt/boot identity, not overwrite by VM ID.
+    await repository.registerToolBinding(activation.activationId, activation.assignment);
+    await repository.registerToolBinding(activation.activationId, childActivation.assignment);
+    const routes = new PostgresToolCommandRoutes(database, "sandbox-domain-0001");
+    const routeScope = { tenantId, attemptId: activationAttemptId, writerId: activationAttemptId };
+    const parentRoutes = await routes.find(routeScope, false);
+    expect(parentRoutes).toHaveLength(1);
+    expect(parentRoutes[0]!.bindingId).toBe(activation.activationId);
+    expect(await routes.isAlive(parentRoutes[0]!.instanceId)).toBe(true);
+    expect(await routes.find({ ...routeScope, tenantId: crypto.randomUUID() }, false)).toEqual([]);
+    await database
+      .updateTable("run_attempts")
+      .set({ native_writer_anchor_id: activationAttemptId })
+      .where("id", "=", childAttemptId)
+      .execute();
+    expect(await routes.find(routeScope, true)).toHaveLength(2);
     await expect(
       database
         .selectFrom("tool_broker_workspace_runtimes")

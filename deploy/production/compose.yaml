@@ -899,6 +899,7 @@ services:
       PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES: ${PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES:-4}
       PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS: ${PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS:-15000}
       PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS: ${PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS:-5000}
+      PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE: /run/pi-cloud-secrets/tool-dispatch-token
       PI_CLOUD_TOOL_BROKER_TOKEN_FILE: /run/pi-cloud-secrets/tool-broker-token
       PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE: /run/pi-cloud-secrets/workspace-service-token
       PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: /run/pi-cloud-secrets/workspace-terminal-token
@@ -923,6 +924,10 @@ services:
       - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/tool-broker-token
         target: /run/pi-cloud-secrets/tool-broker-token
+        read_only: true
+      - type: bind
+        source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/tool-dispatch-token
+        target: /run/pi-cloud-secrets/tool-dispatch-token
         read_only: true
       - type: bind
         source: ${PI_CLOUD_RUNTIME_DIRECTORY:?run npm run production:init first}/secrets/workspace-service-token

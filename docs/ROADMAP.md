@@ -39,6 +39,8 @@
 
 ## Current release gate
 
+- [x] Shard Tool command consumption through one Kafka group per Sandbox Domain;
+      forward commands/control notices to exact owner boots and keep result GETs direct.
 - [x] Replace per-Step PG receipts with Kafka-acknowledged native Session writes;
       retain bounded cold restore and exact asynchronous PG projection.
 - [x] Complete paid model/Cube, interrupted-prefix and process-fault acceptance

@@ -478,11 +478,24 @@ Result bodies stay on the existing Worker redaction/Pi checkpoint path rather
 than being copied into a second PostgreSQL transcript. Management APIs, terminal,
 Preview and Code Host authorization are not Agent execution-command consumers.
 
-Each Broker boot has a separate consumer group because live Tool bindings belong
-to that boot. It executes only its own activation IDs, captures the starting log
-position before readiness, and retains observed progress across consumer reconnect.
-A replacement boot does not replay commands for vanished bindings. This multiplies
-read traffic by Broker replicas; it is not exclusive global partition routing.
+Broker replicas in one Sandbox Domain share the stable
+`pi-cloud-tool-dispatch-<domain>` Kafka consumer group. librdkafka assigns disjoint
+partitions and resumes committed delivery offsets. The router reads each partition
+once per group, ignores deltas and forwards commands plus small native-result/seal
+notifications to the binding's exact owner. Routes are persisted once at binding
+creation in `tool_broker_binding_routes` and positive Attempt lookups are cached.
+Seals query the relevant Attempt or all bindings of a closing native writer.
+This metadata is routing, not a second execution authority. Multiple domains use
+separate groups because they have independent Cube authority and credentials.
+
+Owner admission folds Kafka positions synchronously before acknowledging HTTP;
+guest work remains asynchronous. Retries/rebalance duplicates and delayed lower
+offsets cannot cross a seal or restart a command. A replacement Broker boot never
+adopts the old binding. Live-owner transport failure stalls only its source
+partition; expired owners are abandoned with UNKNOWN semantics. Worker result
+GETs remain owner-direct and raw response bytes never pass through the router.
+The internal relay uses a Broker-only secret, not Worker service credentials.
+HTTP listens before group readiness to avoid peer startup deadlocks (ADR-0162).
 The shared `event-log` package owns only the adopted Kafka transport and does not
 bring Pi/Agent Runtime into the Broker. A seal rejects later commands; commands
 already admitted may remain UNKNOWN. Existing PG owner/Lease and operation-ID
@@ -930,6 +943,7 @@ fetched best-effort from a separate terminal-projection HTTP endpoint.
 | elastic Workspace bytes | persistent Cube Volume |
 | elastic Workspace runtime identity/owner | PostgreSQL `tool_broker_workspace_runtimes` |
 | active Run Tool bindings | Tool Broker memory + PostgreSQL Session leases/operation rows |
+| binding delivery route | immutable PostgreSQL Attempt/binding-to-Broker-boot row |
 | cloud development machine guest root, memory and processes | one Cube pause snapshot on its compute node |
 | encrypted machine reconnect capsule | PostgreSQL; key held only by Tool Broker |
 | Workspace settlement/reference | PostgreSQL + trusted Volume envelope |

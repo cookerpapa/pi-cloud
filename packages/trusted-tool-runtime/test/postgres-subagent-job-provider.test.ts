@@ -18,7 +18,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PostgresSubagentJobError, PostgresSubagentJobProvider } from "../src/index.ts";
 import { PostgresSubagentSupervisorChannel } from "../src/postgres-subagent-supervisor-channel.ts";
 
@@ -439,11 +439,15 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         },
       },
     });
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    await expect(dispatcher.dispatchRun(persisted.runId)).resolves.toMatchObject({
-      status: "completed",
-      runId: started.childRunId,
-    });
+    await vi.waitFor(
+      async () => {
+        expect(await dispatcher.dispatchRun(persisted.runId)).toMatchObject({
+          status: "completed",
+          runId: started.childRunId,
+        });
+      },
+      { timeout: 3000 },
+    );
     expect(dispatched).toEqual([started.childRunId]);
     expect(dispatchedPiBindings).toEqual([
       { id: parentSessionId, lane: `subagent-${started.executionId}` },
@@ -546,11 +550,15 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         },
       },
     });
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    await expect(dispatcher.dispatchRun(child.id)).resolves.toMatchObject({
-      status: "completed",
-      runId: started.childRunId,
-    });
+    await vi.waitFor(
+      async () => {
+        expect(await dispatcher.dispatchRun(child.id)).toMatchObject({
+          status: "completed",
+          runId: started.childRunId,
+        });
+      },
+      { timeout: 3000 },
+    );
     expect(dispatched).toEqual([started.childRunId]);
     await expect(provider.status(tenantId, started.executionId)).resolves.toMatchObject({
       state: "running",

@@ -1388,6 +1388,7 @@ export class ToolBroker {
         false,
       );
     }
+    await this.#stateRepository.registerToolBinding(activationId, request.assignment);
     runtime.bindingIds.add(activationId);
     runtime.initialBindingIssued = true;
     this.#toolBindings.set(activationId, {
@@ -1501,6 +1502,7 @@ export class ToolBroker {
         true,
       );
     }
+    await this.#stateRepository.registerToolBinding(activationId, request.assignment);
     environment.bindingIds.add(activationId);
     this.#toolBindings.set(activationId, {
       activationId,

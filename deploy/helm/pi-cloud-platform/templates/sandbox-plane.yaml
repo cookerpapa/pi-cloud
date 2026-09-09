@@ -101,6 +101,7 @@ spec:
             - { name: PI_CLOUD_TOOL_RESULT_SEND_TIMEOUT_MS, value: {{ .Values.sandboxPlane.resultSendTimeoutMs | quote }} }
             - { name: PI_CLOUD_MAXIMUM_WARM_WORKSPACE_RUNTIMES, value: {{ .Values.sandboxPlane.maximumWarmWorkspaceRuntimesPerReplica | quote }} }
             - { name: PI_CLOUD_TOOL_BROKER_TOKEN_FILE, value: /run/pi-cloud-secrets/tool-broker-token }
+            - { name: PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE, value: /run/pi-cloud-secrets/tool-dispatch-token }
             - { name: PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-service-token }
             - { name: PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-terminal-token }
             - { name: PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE, value: /run/pi-cloud-secrets/cube-persistent-state-key }
@@ -135,6 +136,7 @@ spec:
           volumeMounts:
             - { name: secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: database-url, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/tool-broker-token, subPath: tool-broker-token, readOnly: true }
+            - { name: secrets, mountPath: /run/pi-cloud-secrets/tool-dispatch-token, subPath: tool-dispatch-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/workspace-service-token, subPath: workspace-service-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/workspace-terminal-token, subPath: workspace-terminal-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/cube-persistent-state-key, subPath: cube-persistent-state-key, readOnly: true }

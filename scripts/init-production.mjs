@@ -120,8 +120,8 @@ async function ensureCubePersistentStateKey(runtimeDirectory) {
   return true;
 }
 
-async function ensureToolBrokerToken(runtimeDirectory) {
-  const path = resolve(runtimeDirectory, "secrets/tool-broker-token");
+async function ensureToolBrokerToken(runtimeDirectory, name = "tool-broker-token") {
+  const path = resolve(runtimeDirectory, "secrets", name);
   try {
     const existing = (await readPrivateFile(path)).trim();
     if (!/^[A-Za-z0-9_-]{64}$/.test(existing)) {
@@ -554,6 +554,7 @@ if (await validateExisting(runtimeDirectory)) {
     await ensureSourceControlCredentialMasterKey(runtimeDirectory);
   const cubePersistentStateKeyCreated = await ensureCubePersistentStateKey(runtimeDirectory);
   const toolBrokerTokenCreated = await ensureToolBrokerToken(runtimeDirectory);
+  await ensureToolBrokerToken(runtimeDirectory, "tool-dispatch-token");
   const workerEventIngestTokenCreated = await ensureWorkerEventIngestToken(runtimeDirectory);
   const workspaceServiceTokenCreated = await ensureWorkspaceServiceToken(runtimeDirectory);
   const workspaceTerminalTokenCreated = await ensureWorkspaceTerminalToken(runtimeDirectory);
@@ -671,6 +672,7 @@ await writePrivateFile(
   `${randomSecret()}\n`,
 );
 await writePrivateFile(resolve(secretsDirectory, "tool-broker-token"), `${randomSecret()}\n`);
+await writePrivateFile(resolve(secretsDirectory, "tool-dispatch-token"), `${randomSecret()}\n`);
 await writePrivateFile(
   resolve(secretsDirectory, "worker-event-ingest-token"),
   `${randomSecret()}\n`,

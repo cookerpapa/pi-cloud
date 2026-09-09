@@ -81,6 +81,7 @@ const applicationSecretNames = [
   "metrics-token",
   "source-control-credential-master-key",
   "tool-broker-token",
+  "tool-dispatch-token",
   "worker-event-ingest-token",
   "workspace-service-token",
   "workspace-terminal-token",

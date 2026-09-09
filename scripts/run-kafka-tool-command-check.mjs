@@ -4,6 +4,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
+const partitionCount = Number(process.env.PI_CLOUD_TOOL_COMMAND_PARTITIONS ?? 4);
+assert(Number.isSafeInteger(partitionCount) && partitionCount >= 2 && partitionCount <= 64);
+
 if (process.env.PI_CLOUD_LIVE_TOOL_COMMAND_CHECK !== "1")
   throw new Error("Set PI_CLOUD_LIVE_TOOL_COMMAND_CHECK=1 for private Kafka command acceptance");
 if (process.argv[2] !== "inside") {
@@ -29,6 +32,8 @@ if (process.argv[2] !== "inside") {
         "/app",
         "-e",
         "PI_CLOUD_LIVE_TOOL_COMMAND_CHECK",
+        "-e",
+        `PI_CLOUD_TOOL_COMMAND_PARTITIONS=${partitionCount}`,
         "node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d",
         "node",
         "--import",
@@ -36,7 +41,7 @@ if (process.argv[2] !== "inside") {
         "scripts/run-kafka-tool-command-check.mjs",
         "inside",
       ],
-      { timeout: 240000, maxBuffer: 4 * 1024 * 1024 },
+      { timeout: 360000, maxBuffer: 4 * 1024 * 1024 },
     );
     const line = result.stdout
       .trim()
@@ -50,7 +55,7 @@ if (process.argv[2] !== "inside") {
     report.revision = (await exec("git", ["rev-parse", "HEAD"])).stdout.trim();
     report.workingTreeDirty = true;
     await writeFile(
-      "docs/reports/tool-result-retirement-acceptance-latest.json",
+      `docs/reports/tool-command-sharding-p${partitionCount}-latest.json`,
       JSON.stringify(report, null, 2) + "\n",
     );
     console.log(JSON.stringify(report));
@@ -61,8 +66,8 @@ if (process.argv[2] !== "inside") {
   const { Admin } = await import("@platformatic/kafka");
   const { KafkaAcceptedFactBus } =
     await import("../packages/runtime-core/src/kafka-accepted-fact.ts");
-  const { KafkaToolCommandConsumer } =
-    await import("../packages/tool-broker/src/kafka-tool-command-consumer.ts");
+  const { ToolCommandExecutor } =
+    await import("../packages/tool-broker/src/tool-command-executor.ts");
   const { ToolBrokerServer } = await import("../packages/tool-broker/src/tool-broker-server.ts");
   const { ToolBrokerClient } = await import("../packages/tool-broker/src/tool-broker-client.ts");
   const { createExecutionLease } = await import("@pi-cloud/protocol");
@@ -72,7 +77,7 @@ if (process.argv[2] !== "inside") {
   const bus = new KafkaAcceptedFactBus({
     brokers,
     topic,
-    partitions: 4,
+    partitions: partitionCount,
     replicas: 3,
     retentionMs: 3600000,
     clientId: randomUUID(),
@@ -82,7 +87,12 @@ if (process.argv[2] !== "inside") {
     servers = [],
     clients = [];
   const children = [],
-    childGroups = [];
+    routes = new Map(),
+    ownerUrls = [],
+    groupId = `${topic}.dispatch`,
+    dispatchToken = "d".repeat(64);
+  let loseAckFor;
+  let maximumControlBytes = 0;
   const bindings = [new Map(), new Map()],
     effects = new Map(),
     times = [],
@@ -109,6 +119,15 @@ if (process.argv[2] !== "inside") {
       .digest("hex"),
   });
   const command = (scope, activationId) => {
+    // The fixture registry replaces only the production PG route lookup.
+    const owner = bindings.findIndex((b) => b.has(activationId));
+    if (owner >= 0)
+      routes.set(activationId, {
+        bindingId: activationId,
+        instanceId: ids[owner],
+        baseUrl: ownerUrls[owner],
+        scope,
+      });
     const operationId = randomUUID();
     return {
       kind: "tool_command",
@@ -208,19 +227,30 @@ if (process.argv[2] !== "inside") {
         return resultFor(request);
       },
     };
-    const consumer = new KafkaToolCommandConsumer({
-      broker,
-      brokers,
-      topic,
-      instanceId: ids[index],
-    });
+    const consumer = new ToolCommandExecutor({ broker, maximumActiveCommands: 2048 });
     consumers.push(consumer);
-    await consumer.start();
     const server = new ToolBrokerServer({
       host: "0.0.0.0",
       port: 0,
       broker,
       commands: consumer,
+      logDelivery: {
+        instanceId: ids[index],
+        token: dispatchToken,
+        checkHealth: () => {},
+        receive: (delivery) => {
+          if (delivery.fact.kind !== "tool_command")
+            maximumControlBytes = Math.max(
+              maximumControlBytes,
+              Buffer.byteLength(JSON.stringify(delivery)),
+            );
+          consumer.receive({ ...delivery, offset: BigInt(delivery.offset) });
+          if (loseAckFor && delivery.fact.request?.operationId === loseAckFor) {
+            loseAckFor = undefined;
+            throw new Error("injected lost admission ACK");
+          }
+        },
+      },
       // The load probe deliberately opens 1,024 simultaneous tiny replies.
       resultDelivery: {
         maximumResultReaders: 2048,
@@ -231,6 +261,7 @@ if (process.argv[2] !== "inside") {
     });
     servers.push(server);
     const url = await server.listen();
+    ownerUrls[index] = url;
     const client = new ToolBrokerClient({
       baseUrl: url,
       serviceToken: "s".repeat(40),
@@ -239,9 +270,53 @@ if (process.argv[2] !== "inside") {
     clients.push(client);
     return url;
   };
+  const register = (c, index) => {
+    bindings[index].set(c.request.activationId, lease(c));
+    routes.set(c.request.activationId, {
+      bindingId: c.request.activationId,
+      instanceId: ids[index],
+      baseUrl: ownerUrls[index],
+      scope: c.scope,
+    });
+  };
+  const startRouter = async () => {
+    const child = fork(new URL("./kafka-tool-command-fault-child.mjs", import.meta.url), [], {
+      execArgv: ["--import", "tsx"],
+      stdio: ["ignore", "inherit", "inherit", "ipc"],
+    });
+    const state = { child, messages: [] };
+    children.push(state);
+    child.on("message", (message) => {
+      state.messages.push(message);
+      if (message.type !== "query") return;
+      const value =
+        message.kind === "alive"
+          ? ids.includes(message.value.instanceId)
+          : [...routes.values()].filter(
+              (r) =>
+                r.scope.tenantId === message.value.scope.tenantId &&
+                (message.value.wholeWriter
+                  ? r.scope.writerId === message.value.scope.writerId
+                  : r.scope.attemptId === message.value.scope.attemptId),
+            );
+      if (child.connected) child.send({ type: "answer", id: message.id, value });
+    });
+    child.send({ brokers, topic, groupId, token: dispatchToken });
+    await waitUntil(() => state.messages.some((m) => m.type === "ready"));
+    return state;
+  };
+  const routerStats = async (state) => {
+    const id = randomUUID();
+    state.child.send({ type: "stats", id });
+    await waitUntil(() => state.messages.some((m) => m.id === id));
+    return state.messages.find((m) => m.id === id);
+  };
   try {
     await bus.start();
     const urls = [await start(0), await start(1)];
+    const r1 = await startRouter(),
+      r2 = await startRouter();
+    await new Promise((r) => setTimeout(r, 1500));
     for (const concurrency of [1, 16, 128, 1024]) {
       const roundTimes = [],
         started = performance.now();
@@ -251,7 +326,7 @@ if (process.argv[2] !== "inside") {
             scope = makeScope(),
             activationId = randomUUID();
           const first = command(scope, activationId);
-          bindings[index].set(activationId, lease(first));
+          register(first, index);
           firstCommand ??= first;
           for (let round = 0; round < 3; round++) {
             const c = round === 0 ? first : command(scope, activationId),
@@ -283,6 +358,10 @@ if (process.argv[2] !== "inside") {
     await waitUntil(() =>
       consumers.every((consumer) => consumer.statistics().retainedResults === 0),
     );
+    const steady = [await routerStats(r1), await routerStats(r2)];
+    const partitions = steady.map((r) => Object.keys(r.partitions));
+    assert(partitions.every((p) => p.length > 0));
+    assert.equal(partitions[0].filter((p) => partitions[1].includes(p)).length, 0);
     await bus.append(c);
     await assert.rejects(
       clients[0].operationResult(lease(c), c.request.activationId, c.factId),
@@ -294,7 +373,7 @@ if (process.argv[2] !== "inside") {
     const longScope = makeScope(),
       longActivation = randomUUID();
     const longFirst = command(longScope, longActivation);
-    bindings[0].set(longActivation, lease(longFirst));
+    register(longFirst, 0);
     const beforeLong = consumers[0].statistics().releasedResults;
     for (let i = 0; i < 250; i++) {
       const step = command(longScope, longActivation);
@@ -321,7 +400,7 @@ if (process.argv[2] !== "inside") {
     assert.equal(resultPost.status, 404);
     const heldCommand = command(makeScope(), randomUUID());
     heldCommand.request.command = "hold";
-    bindings[0].set(heldCommand.request.activationId, lease(heldCommand));
+    register(heldCommand, 0);
     await bus.append(heldCommand);
     const heldResult = clients[0].operationResult(
       lease(heldCommand),
@@ -329,7 +408,7 @@ if (process.argv[2] !== "inside") {
       heldCommand.factId,
     );
     const other = command(makeScope(), randomUUID());
-    bindings[0].set(other.request.activationId, lease(other));
+    register(other, 0);
     await bus.append(other);
     await clients[0].operationResult(lease(other), other.request.activationId, other.factId);
     assert.equal(effects.get(other.factId), 1);
@@ -351,57 +430,47 @@ if (process.argv[2] !== "inside") {
       /closed execution/,
     );
     assert.equal(effects.has(late.factId), false);
-    const spawnBroker = async (c, hold) => {
-      const boot = randomUUID(),
-        child = fork(new URL("./kafka-tool-command-fault-child.mjs", import.meta.url), [], {
-          execArgv: ["--import", "tsx"],
-          stdio: ["ignore", "inherit", "inherit", "ipc"],
-        });
-      const messages = [];
-      child.on("message", (message) => messages.push(message));
-      children.push(child);
-      childGroups.push(`pi-cloud-tool-commands-${boot}`);
-      child.send({ boot, command: c, brokers, topic, hold });
-      const wait = async (predicate) => {
-        const deadline = Date.now() + 45000;
-        while (!predicate()) {
-          if (Date.now() > deadline) throw new Error("Broker process probe timed out");
-          await new Promise((r) => setTimeout(r, 20));
-        }
-      };
-      await wait(() => messages.some((m) => m.type === "ready"));
-      return { child, messages, wait };
-    };
-    const abandoned = command(makeScope(), randomUUID()),
-      replaced = command(makeScope(), randomUUID());
-    const old = await spawnBroker(abandoned, true);
-    await bus.append(abandoned);
-    await old.wait(() => old.messages.some((m) => m.type === "entered"));
-    old.child.kill("SIGKILL");
-    await old.wait(() => old.child.signalCode === "SIGKILL");
-    const replacement = await spawnBroker(replaced, false);
-    await bus.append(abandoned);
-    await bus.append(replaced);
-    await replacement.wait(() => replacement.messages.some((m) => m.type === "effect"));
-    replacement.child.send({ type: "stats" });
-    await replacement.wait(() => replacement.messages.some((m) => m.type === "stats"));
-    assert.equal(replacement.messages.find((m) => m.type === "stats").effects, 1);
-    assert.equal(
-      old.messages.some((m) => m.type === "effect"),
-      false,
-    );
     await bus.append(receipt(other));
+    const lost = command(makeScope(), randomUUID());
+    register(lost, 0);
+    loseAckFor = lost.factId;
+    await bus.append(lost);
+    await clients[0].operationResult(lease(lost), lost.request.activationId, lost.factId);
+    await bus.append(receipt(lost));
+    await waitUntil(() => consumers[0].statistics().retainedResults === 0);
+    assert.equal(effects.get(lost.factId), 1);
+
+    const crash = command(makeScope(), randomUUID());
+    register(crash, 0);
+    for (const r of [r1, r2]) r.child.send({ type: "freeze", operationId: crash.factId });
+    await bus.append(crash);
+    await waitUntil(() => [r1, r2].some((r) => r.messages.some((m) => m.type === "frozen")));
+    const victim = [r1, r2].find((r) => r.messages.some((m) => m.type === "frozen"));
+    for (const r of [r1, r2]) if (r !== victim) r.child.send({ type: "freeze", operationId: null });
+    victim.child.kill("SIGKILL");
+    await waitUntil(() => victim.child.signalCode === "SIGKILL");
+    await clients[0].operationResult(lease(crash), crash.request.activationId, crash.factId);
+    await bus.append(receipt(crash));
+    await waitUntil(() => consumers[0].statistics().retainedResults === 0);
+    assert.equal(effects.get(crash.factId), 1);
+    await startRouter();
+    const resumed = command(makeScope(), randomUUID());
+    register(resumed, 1);
+    await bus.append(resumed);
+    await clients[1].operationResult(lease(resumed), resumed.request.activationId, resumed.factId);
+    await bus.append(receipt(resumed));
     await waitUntil(() =>
       consumers.every((consumer) => consumer.statistics().retainedResults === 0),
     );
     console.log(
       JSON.stringify({
-        format: "pi-cloud.kafka-tool-command-acceptance.v2",
+        format: "pi-cloud.tool-command-sharding.v1",
         checkedAt: new Date().toISOString(),
+        partitionCount,
         topology:
-          "two real Kafka consumers + production result HTTP servers; R=3 four-partition private topic; 3 CPU/2 GiB runner",
+          "two process-isolated shared-group routers + two owner HTTP servers; R=3 private topic; 3 CPU/2 GiB runner",
         scope:
-          "accepted command -> Kafka -> Broker dispatch -> counting executor -> HTTP result -> native Kafka receipt; command latency ends at HTTP result, aggregate throughput includes receipt publication; no Gate SQL, model or Cube time",
+          "accepted command -> Kafka -> router -> owner HTTP -> counting executor -> owner-direct HTTP result -> native Kafka receipt; route lookup fixture via IPC, no PG/Gate/model/Cube time",
         resultRetirement: {
           beforeRunSeal: true,
           longRunTools: 250,
@@ -413,7 +482,15 @@ if (process.argv[2] !== "inside") {
         effects: effects.size,
         duplicateEffects: [...effects.values()].filter((n) => n !== 1).length,
         directExecutionPostRejected: true,
-        processFault: { killedBeforeEffect: true, replacementExecutedOnlyNewBinding: true },
+        steadyPartitions: partitions,
+        steadyRouterStatistics: steady.map((r) => r.statistics),
+        maximumForwardedControlBytes: maximumControlBytes,
+        processFault: {
+          dispatcherKilledAfterOwnerAck: true,
+          rebalanceRetiredResult: true,
+          noDuplicateEffect: true,
+        },
+        lostHttpAckNoReplay: true,
         longCommandDidNotBlockAnother: true,
         sealedCommandNotExecuted: true,
         consumerStatistics: consumers.map((c) => c.statistics()),
@@ -421,16 +498,18 @@ if (process.argv[2] !== "inside") {
     );
   } finally {
     releaseHeld();
-    for (const child of children) {
+    for (const { child } of children) {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill("SIGTERM");
+        const watchdog = setTimeout(() => child.kill("SIGKILL"), 5000);
         await new Promise((resolve) => child.once("exit", resolve));
+        clearTimeout(watchdog);
       }
     }
     for (const c of consumers) await c.close();
     for (const s of servers) await s.close();
     await bus.close();
-    const groups = [...ids.map((id) => `pi-cloud-tool-commands-${id}`), ...childGroups];
+    const groups = [groupId];
     const alreadyGone = (error) =>
       error?.apiId === "GROUP_ID_NOT_FOUND" ||
       (Array.isArray(error?.errors) && error.errors.length > 0 && error.errors.every(alreadyGone));

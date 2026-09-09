@@ -72,6 +72,10 @@ Transport capacity signals are process-local and should be summed across replica
 - `pi_cloud_tool_result_readers` / `_sending_bytes`: outstanding HTTP deliveries;
   cache bytes remain a separate gauge. `pi_cloud_tool_transport_rejected_total`
   distinguishes command, reader and response-byte capacity.
+- `pi_cloud_tool_log_consumed_total` counts each router's partition reads;
+  `pi_cloud_tool_log_delivery_seconds{route="local"|"remote"}` measures owner
+  admission, excluding guest execution. Its outcome distinguishes delivery,
+  retry and abandoned dead-owner delivery. Compare these with Kafka group lag.
 - `pi_cloud_session_mutation_wait_seconds{stage="kafka_publish"}` measures native
   append acknowledgement, excluding model time. There is no active
   `projection_receipt` stage; PG projection lag is a cloud-consumer concern.

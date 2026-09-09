@@ -2108,6 +2108,7 @@ describe("provider-backed Tool Tool Broker", () => {
           PI_CLOUD_SANDBOX_DOMAIN_ID: "sandbox-domain-0001",
           PI_CLOUD_TOOL_BROKER_ADVERTISED_URL: "http://tool-broker-0:4300",
           PI_CLOUD_TOOL_BROKER_TOKEN_FILE: tokenPath,
+          PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE: tokenPath,
           PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: terminalTokenPath,
           PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE: persistentStateKeyPath,
           PI_CLOUD_IMAGE_REVISION: "development",

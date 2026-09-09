@@ -136,6 +136,7 @@ function preflight(namespace, values) {
     "metrics-token",
     "cli-proxy-api-key",
     "tool-broker-token",
+    "tool-dispatch-token",
     "workspace-service-token",
     "workspace-terminal-token",
     "cube-persistent-state-key",
