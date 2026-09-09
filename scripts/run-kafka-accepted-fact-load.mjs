@@ -64,6 +64,8 @@ await writeFile(
     `- Application microbatch: ${String(report.applicationMicrobatch)}`,
     `- Producer delivery report: ${String(report.producerDeliveryReportMode)}`,
     `- Producer lanes: ${String(report.producerLanes)}`,
+    `- Record trust: ${report.recordAuthentication}`,
+    `- Measurement scope: ${report.scope}`,
     "",
     "| Case | Events | Events/s | ACK p50 | ACK p95 | ACK p99 |",
     "| --- | ---: | ---: | ---: | ---: | ---: |",

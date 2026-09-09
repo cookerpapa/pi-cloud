@@ -13,7 +13,7 @@ import { RunExecutor, TurnExecutionBackendError } from "../../runtime-core/src/r
 import { SessionLeaseCoordinator } from "../../runtime-core/src/session-lease-coordinator.ts";
 import { transitionCurrentRunAttempt } from "../../runtime-core/src/run-attempt-state.ts";
 import { DirectExecutionLog } from "../../runtime-core/src/direct-execution-log.ts";
-import { ExecutionPublicationVerifier } from "../../runtime-core/src/execution-publication.ts";
+import { ExecutionPublicationBoundary } from "../../runtime-core/src/execution-publication.ts";
 import { NativeSessionLogPublisher } from "../../runtime-core/src/native-session-log-publisher.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import type { AcceptedFact, AcceptedFactWriter } from "../../runtime-core/src/accepted-fact.ts";
@@ -346,17 +346,24 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
     );
     expect(new Set(facts.map((f) => f.scope.writerId))).toEqual(new Set([parentWriterId]));
     const projector = new ExecutionStreamProjector(db);
-    const verifier = new ExecutionPublicationVerifier(db);
+    const boundary = new ExecutionPublicationBoundary(db);
     let offset = 0n;
     const projectReady = async () => {
-      for (const fact of facts.splice(0)) {
+      const pending = facts.splice(0);
+      for (const fact of pending) {
         const record = { fact, topic: "native-host", partition: 0, offset: offset++ };
-        expect(fact.signature).toBeTypeOf("string");
-        expect(await verifier.accept({ ...record, fact: { ...fact, signature: "invalid" } })).toBe(
-          false,
-        );
+        expect(fact).not.toHaveProperty("signature");
+        if (fact.kind === "execution_opened") {
+          expect(fact.publication).not.toHaveProperty("publicKey");
+          const unopened = new ExecutionPublicationBoundary(db);
+          const data = pending.find(
+            (f) => f.kind !== "execution_opened" && f.scope.attemptId === fact.scope.attemptId,
+          )!;
+          expect(data).toBeDefined();
+          expect(await unopened.accept({ ...record, fact: data })).toBe(false);
+        }
         expect(
-          await verifier.accept({
+          await boundary.accept({
             ...record,
             fact: {
               ...fact,
@@ -364,7 +371,10 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
             } as AcceptedFact,
           }),
         ).toBe(false);
-        expect(await verifier.accept(record)).toBe(true);
+        expect(await boundary.accept(record)).toBe(true);
+        expect(await boundary.accept({ ...record, partition: 1 })).toBe(false);
+        boundary.reset();
+        expect(await boundary.accept(record)).toBe(true);
         await projector.project(record);
       }
       const terminals = await db
@@ -380,15 +390,22 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
           partition: 0,
           offset: offset++,
         };
-        expect(await verifier.accept(record)).toBe(true);
+        expect(await boundary.accept(record)).toBe(true);
         expect(
-          await verifier.accept({
+          await boundary.accept({
             ...record,
             fact: { ...record.fact, occurredAt: "2000-01-01T00:00:00.000Z" },
           }),
         ).toBe(false);
         await projector.project(record);
       }
+      const late = pending.find((f) => f.kind === "pi_session_append")!;
+      const lateRecord = { fact: late, topic: "native-host", partition: 0, offset: offset++ };
+      // A genuine old identity is not sufficient after its seal, with or without signatures.
+      boundary.reset();
+      expect(await boundary.accept(lateRecord)).toBe(true);
+      expect(await projector.accepts(lateRecord)).toBe(false);
+      expect(await projector.project(lateRecord)).toBeUndefined();
     };
     await projectReady();
     expect(childId).toBeDefined();

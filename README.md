@@ -39,7 +39,7 @@ PostgreSQL Run queue
             └─ model requests → local Model Gateway → CLIProxyAPI → Provider
 
 Pi Worker
-  └─ PG-issued execution opening + signed semantic/display/Tool records
+  └─ PG-issued execution opening + semantic/display/Tool records
        └─ direct Kafka append: physical-Session key, RF=3, acks=all
             └─ one partitioned Session Projector consumer group
                  ├─ PG native log + query projections + recovery progress
@@ -76,8 +76,9 @@ at another API replica are proxied to the partition owner discovered through Kaf
 membership; no second routing authority or browser cursor is required.
 
 A Run opens one publication identity under its current PostgreSQL Lease. Its
-Worker holds an ephemeral signing key, and the Projector checks recorded scope
-and provenance. There is no Fact Gateway, secondary channel lease or per-token
+Worker publishes on private Kafka, and the Projector checks recorded scope
+and ordered boundaries. No record signing or cryptographic verification is used.
+There is no Fact Gateway, secondary channel lease or per-token
 authority query. Kafka ACK means persisted, not necessarily valid after a seal.
 A cleanly drained Run seals independently. An uncertain native publication retires
 the shared writer incarnation, including its other Lanes. Canonical, live and

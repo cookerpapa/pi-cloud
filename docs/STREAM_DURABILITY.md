@@ -25,17 +25,17 @@ S requires no browser-provided cursor
 ```
 
 Kafka ACK is persistence, not automatic acceptance. An old Worker may still
-append a signed record after its seal; Projector rejects its application.
-Publication scope/key is issued once under the current ExecutionLease. Cached
-provenance checks replace remote per-record authority admission, not the sole PG
+append a record after its seal; Projector rejects its application.
+Publication scope is recorded once under the current ExecutionLease. Cached
+scope/opening checks replace remote per-record authority admission, not the sole PG
 authority. Only the exact PG-requested seal is valid. Normal closure affects one
 Run/Lane; uncertain shared native-writer failure also fences its sibling Lanes.
 
 ## One ordered consumer
 
 Physical Pi Session ID keys data and boundaries to one immutable Kafka partition.
-Projector replicas share one consumer group. The per-partition handler verifies
-provenance, applies canonical state, updates the live view and delivers relevant
+Projector replicas share one consumer group. The per-partition handler checks
+scope and opening order, applies canonical state, updates the live view and delivers relevant
 commands/control notices to exact owner boots. It never waits for a guest Bash
 to finish. Different partitions run concurrently.
 
@@ -82,7 +82,7 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 | Failure point | Required outcome |
 | --- | --- |
 | before Kafka ACK | not shown; an uncertain native append fails its writer rather than inventing success |
-| after ACK, before Projector | replay accepted positions; signature alone does not bypass the seal |
+| after ACK, before Projector | replay accepted positions; a matching execution identity does not bypass its seal |
 | visible partial output, before complete message | rebuild from Kafka; closure saves interrupted text |
 | model message before validated intent | no effect admitted for that Tool |
 | intent without durable Tool result | that Tool may be UNKNOWN; later unstarted Tools stay unstarted |
@@ -106,7 +106,7 @@ progress blocks reclamation. A known missing active prefix is an error, not a
 reason to quietly continue with older context. Capacity limits remain necessary.
 
 Workers and Projectors are trusted platform code; Cube and browser have no Kafka
-access. Use private networks and appropriate producer/consumer ACLs. Publication
-signatures prevent record identity substitution; they do not protect a deployment
-whose trusted PG authority itself is compromised. Kafka fencing never retracts
+access. Use private networks and appropriate producer/consumer ACLs. There are
+no record signatures: a compromised trusted producer can impersonate another
+recorded execution, which is outside this deployment's threat model. Kafka fencing never retracts
 an already-issued Cube request or guarantees exactly-once external side effects.

@@ -9,7 +9,7 @@ import {
   type KafkaAcceptedFactConfiguration,
 } from "./kafka-accepted-fact.ts";
 import { ExecutionStreamProjector, factEvents } from "./execution-stream-projection.ts";
-import { ExecutionPublicationVerifier } from "./execution-publication.ts";
+import { ExecutionPublicationBoundary } from "./execution-publication.ts";
 import { SessionLiveView } from "./session-live-view.ts";
 import { AcceptedFactTerminalOutboxRelay } from "./accepted-fact-terminal-outbox-relay.ts";
 import { KafkaSafeRetention } from "./kafka-safe-retention.ts";
@@ -26,7 +26,7 @@ export class SessionProjector {
   readonly #relay: AcceptedFactTerminalOutboxRelay;
   readonly #retention: KafkaSafeRetention;
   readonly #projection: ExecutionStreamProjector;
-  readonly #authorization: ExecutionPublicationVerifier;
+  readonly #publication: ExecutionPublicationBoundary;
   #partitions = 0;
   #ready = false;
   constructor(
@@ -49,7 +49,7 @@ export class SessionProjector {
       return () => {};
     });
     this.eventHub = this.eventStore.eventHub;
-    this.#authorization = new ExecutionPublicationVerifier(options.database);
+    this.#publication = new ExecutionPublicationBoundary(options.database);
     this.#projection = new ExecutionStreamProjector(options.database);
     this.#consumer = new KafkaLogConsumer({
       brokers: options.brokers,
@@ -62,11 +62,11 @@ export class SessionProjector {
       replayOffsets: (bounds) => loadFactReplayOffsets(options.database, topic, bounds),
       onReset: () => {
         this.#projection.reset();
-        this.#authorization.reset();
+        this.#publication.reset();
         this.eventStore.reset();
       },
       handler: async (record, current) => {
-        if (!(await this.#authorization.accept(record)) || current?.() === false) return;
+        if (!(await this.#publication.accept(record)) || current?.() === false) return;
         const fact = parseKafkaAcceptedFact(JSON.stringify(record.fact));
         const accepted = { ...record, fact };
         const terminal = await this.#projection.project(accepted);

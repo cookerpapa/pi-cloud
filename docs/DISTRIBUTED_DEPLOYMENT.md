@@ -32,7 +32,7 @@ Ingress -> Web / Control Plane
                          │
               persistent Workspace storage
 
-PG-issued publication scope -> Worker signed append -> Kafka keyed by physical Session
+PG-issued publication scope -> Worker direct append -> Kafka keyed by physical Session
                                                        ↓
                                               Session Projector group
                                               ├-> PG SessionStorage

@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import { parseSupervisorToControlMessage } from "@pi-cloud/protocol";
@@ -13,7 +13,7 @@ import type {
   ExecutionLogFactory,
   ExecutionLogOpenRequest,
 } from "./durable-event-store.ts";
-import { openExecutionPublication, signExecutionFact } from "./execution-publication.ts";
+import { openExecutionPublication } from "./execution-publication.ts";
 import { prepareExecutionFact } from "./prepare-execution-fact.ts";
 import { DEFAULT_PRODUCER_CAPACITY, type ProducerCapacity } from "@pi-cloud/event-log";
 import { AcceptedFactCapacityError } from "./accepted-fact.ts";
@@ -36,12 +36,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
   }
   async open(request: ExecutionLogOpenRequest): Promise<ExecutionLogWriter> {
     if (this.#writers.has(request.executionLease)) throw new Error("Execution writer already open");
-    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-    const permit = await openExecutionPublication(
-      this.database,
-      request,
-      publicKey.export({ type: "spki", format: "der" }).toString("base64url"),
-    );
+    const permit = await openExecutionPublication(this.database, request);
     const { leaseId: _leaseId, piSessionLane: _lane, ...scope } = permit.scope;
     const opening: ExecutionOpenedFact = {
       kind: "execution_opened",
@@ -50,7 +45,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       publication: permit,
       occurredAt: new Date().toISOString(),
     };
-    await this.bus.append(signExecutionFact(opening, privateKey));
+    await this.bus.append(opening);
     let closing = false,
       failure: unknown,
       tail = Promise.resolve(),
@@ -62,7 +57,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         { ...permit.scope, executionLease: request.executionLease },
         candidate,
       );
-      const bytes = Buffer.byteLength(JSON.stringify(fact)) + 128;
+      const bytes = Buffer.byteLength(JSON.stringify(fact));
       if (
         this.#queuedFacts >= this.capacity.maximumPendingFacts ||
         this.#queuedBytes + bytes > this.capacity.maximumPendingBytes
@@ -75,8 +70,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       const pending = tail
         .then(async () => {
           if (failure) throw failure;
-          const signed = signExecutionFact(fact, privateKey);
-          const receipt = await this.bus.append(signed);
+          const receipt = await this.bus.append(fact);
           if (!receipt.durable || receipt.factId !== fact.factId)
             throw new Error("Kafka acknowledgement did not match the appended record");
         })

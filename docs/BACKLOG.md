@@ -5,6 +5,9 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] ADR-0164: remove per-record signature/key work from private Worker publication;
+      keep exact scope, ordered opening/seals and Tool no-replay boundaries.
+
 - [x] ADR-0158: bound Producer queues, Broker execution/HTTP delivery and abandoned
       readers; align configuration and measure publication versus PG receipt wait.
       [Acceptance](reports/bounded-transport-acceptance.md).
@@ -72,9 +75,9 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Capacity
 
-- [x] ADR-0163: direct Worker append, cached publication provenance and one
+- [x] ADR-0163: direct Worker append, cached publication scope and one
       Projector group for PG/live/Tool projections; validate cross-replica SSE,
-      live Projector/Worker failure and signed-record throughput.
+      live Projector/Worker failure and publication throughput.
       [Acceptance](reports/unified-projector-acceptance.md).
 - [x] ADR-0160: isolate and test Kafka ACK-only native Session append, including
       stopped/restarted projection, lost ACKs, multiple Lanes and real Cube coding.

@@ -1,30 +1,17 @@
-import { createPublicKey, sign, verify, randomUUID, type KeyObject } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { retryTransaction, type Database } from "@pi-cloud/database";
 import { parseExecutionLease } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
-import type { AcceptedFact, ExecutionPublication } from "./accepted-fact.ts";
+import type { ExecutionPublication } from "./accepted-fact.ts";
 import type { ExecutionLogOpenRequest } from "./durable-event-store.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import { recordFactProjection } from "./accepted-fact-recovery.ts";
-
-function unsigned(fact: AcceptedFact): AcceptedFact {
-  const { signature: _signature, ...record } = fact;
-  return record;
-}
-export function signExecutionFact(fact: AcceptedFact, privateKey: KeyObject): AcceptedFact {
-  const record = unsigned(fact);
-  return {
-    ...record,
-    signature: sign(null, Buffer.from(JSON.stringify(record)), privateKey).toString("base64url"),
-  };
-}
 
 /** Authority is a one-time PG operation. There is no channel lease or token-time SELECT. */
 export async function openExecutionPublication(
   database: Kysely<Database>,
   request: ExecutionLogOpenRequest,
-  publicKey: string,
 ): Promise<ExecutionPublication> {
   const lease = parseExecutionLease(request.executionLease);
   return retryTransaction(database, async (tx) => {
@@ -68,7 +55,6 @@ export async function openExecutionPublication(
       throw new Error("An Attempt cannot reopen its publication identity");
     const permit: ExecutionPublication = {
       id: randomUUID(),
-      publicKey,
       scope: {
         tenantId: row.tenant_id,
         sessionId: row.session_id,
@@ -91,11 +77,11 @@ export async function openExecutionPublication(
   });
 }
 
-/** The production consumer validates provenance before any PG/UI/Tool fold. */
-export class ExecutionPublicationVerifier {
+/** Check attribution and opening order for trusted producers, not cryptographic origin. */
+export class ExecutionPublicationBoundary {
   readonly #cache = new Map<
     string,
-    { permit: ExecutionPublication; key: KeyObject; openedAt: bigint | null; partition: number }
+    { permit: ExecutionPublication; openedAt: bigint | null; partition: number }
   >();
   constructor(readonly database: Kysely<Database>) {}
   reset(): void {
@@ -110,7 +96,7 @@ export class ExecutionPublicationVerifier {
         .where("id", "=", fact.factId)
         .where("tenant_id", "=", fact.scope.tenantId)
         .executeTakeFirst();
-      return !!requested && isDeepStrictEqual(requested.payload, unsigned(fact));
+      return !!requested && isDeepStrictEqual(requested.payload, fact);
     }
     const id = fact.scope.attemptId;
     let authority = this.#cache.get(id);
@@ -125,11 +111,6 @@ export class ExecutionPublicationVerifier {
       const permit = row.output_publication as unknown as ExecutionPublication;
       authority = {
         permit,
-        key: createPublicKey({
-          key: Buffer.from(permit.publicKey, "base64url"),
-          format: "der",
-          type: "spki",
-        }),
         openedAt: row.output_open_offset === null ? null : BigInt(row.output_open_offset),
         partition: row.output_first_partition ?? record.partition,
       };
@@ -138,20 +119,7 @@ export class ExecutionPublicationVerifier {
     }
     const { leaseId, piSessionLane, ...scope } = authority.permit.scope;
     const actualScope = fact.kind === "tool_command" ? { ...scope, leaseId } : scope;
-    if (
-      !isDeepStrictEqual(actualScope, fact.scope) ||
-      !fact.signature ||
-      authority.partition !== record.partition
-    )
-      return false;
-    if (
-      !verify(
-        null,
-        Buffer.from(JSON.stringify(unsigned(fact))),
-        authority.key,
-        Buffer.from(fact.signature, "base64url"),
-      )
-    )
+    if (!isDeepStrictEqual(actualScope, fact.scope) || authority.partition !== record.partition)
       return false;
     if (fact.kind === "execution_opened") {
       if (

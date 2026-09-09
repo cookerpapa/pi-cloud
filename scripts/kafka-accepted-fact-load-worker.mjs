@@ -1,6 +1,5 @@
 import { Admin } from "@platformatic/kafka";
-import { randomUUID, generateKeyPairSync } from "node:crypto";
-import { signExecutionFact } from "../packages/runtime-core/src/execution-publication.ts";
+import { randomUUID } from "node:crypto";
 import { cpus, totalmem } from "node:os";
 import { performance } from "node:perf_hooks";
 import { KafkaAcceptedFactBus } from "../packages/runtime-core/src/kafka-accepted-fact.ts";
@@ -39,7 +38,6 @@ async function mapConcurrent(values, concurrency, operation) {
 
 function sessionSeed() {
   return {
-    privateKey: generateKeyPairSync("ed25519").privateKey,
     tenantId: randomUUID(),
     sessionId: randomUUID(),
     runId: randomUUID(),
@@ -51,35 +49,32 @@ function sessionSeed() {
 function fact(seed, sequence, payloadBytes) {
   const eventId = randomUUID();
   const occurredAt = new Date().toISOString();
-  return signExecutionFact(
-    {
-      kind: "agent_event",
-      factId: eventId,
-      scope: {
-        tenantId: seed.tenantId,
-        sessionId: seed.sessionId,
-        piSessionId: seed.sessionId,
-        writerId: seed.attemptId,
-        runId: seed.runId,
-        turnId: seed.turnId,
-        attemptId: seed.attemptId,
-        fencingToken: 1,
-      },
-      event: {
-        schemaVersion: 1,
-        eventId,
-        sessionId: seed.sessionId,
-        turnId: seed.turnId,
-        agentId: "root",
-        seq: sequence,
-        occurredAt,
-        type: "assistant.text.delta",
-        payload: { text: "x".repeat(payloadBytes) },
-      },
-      occurredAt,
+  return {
+    kind: "agent_event",
+    factId: eventId,
+    scope: {
+      tenantId: seed.tenantId,
+      sessionId: seed.sessionId,
+      piSessionId: seed.sessionId,
+      writerId: seed.attemptId,
+      runId: seed.runId,
+      turnId: seed.turnId,
+      attemptId: seed.attemptId,
+      fencingToken: 1,
     },
-    seed.privateKey,
-  );
+    event: {
+      schemaVersion: 1,
+      eventId,
+      sessionId: seed.sessionId,
+      turnId: seed.turnId,
+      agentId: "root",
+      seq: sequence,
+      occurredAt,
+      type: "assistant.text.delta",
+      payload: { text: "x".repeat(payloadBytes) },
+    },
+    occurredAt,
+  };
 }
 
 const bus = new KafkaAcceptedFactBus({
@@ -140,9 +135,9 @@ try {
       applicationMicrobatch: false,
       producerDeliveryReportMode: "batch",
       producerLanes: 4,
-      recordAuthentication: "Ed25519",
+      recordAuthentication: "trusted-private-producer",
       scope:
-        "signed Worker record -> Kafka ACK; excludes permit issuance, Projector verification, PostgreSQL, model and Cube",
+        "unsigned Worker record -> Kafka ACK; excludes publication opening, Projector, PostgreSQL, model and Cube",
       cases,
     })}\n`,
   );

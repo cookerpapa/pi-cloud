@@ -8,7 +8,7 @@ proved the append boundary but is not the production implementation.
 The trusted Worker hosts one native log writer for every active physical Pi
 Session. All Lane operations share its ordered append queue, not an Agent Loop
 thread or a global queue. It assigns native IDs, parents, sequence and timestamps,
-publishes complete semantic records through its direct signed log writer and
+publishes complete semantic records through its direct log writer and
 returns after Kafka ACK. PG materializes exactly those records asynchronously.
 The Pi Harness sees a SessionStorage port, never Kafka or PG polling.
 

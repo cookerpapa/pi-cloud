@@ -10,7 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
-1. [ADR-0163](0163-direct-log-and-unified-projector.md) — direct signed Worker log,
+1. [ADR-0164](0164-trusted-private-log-publication.md) — unsigned publication on
+   trusted private infrastructure; retain scope/opening/seal boundaries.
+1. [ADR-0163](0163-direct-log-and-unified-projector.md) — direct Worker log,
    one Session Projector group, direct terminal projection and owner-routed SSE.
 
 1. [ADR-0162](0162-sharded-tool-command-routing.md) — positioned owner routing,

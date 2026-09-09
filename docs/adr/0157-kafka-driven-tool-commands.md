@@ -5,7 +5,7 @@ and [Cube execution-entry study](../reports/cube-execution-generation-study.md).
 
 ## Decision
 
-Route Agent file/shell operation commands through the signed Worker execution
+Route Agent file/shell operation commands through the trusted Worker's execution
 log and unified Projector ([ADR-0163](0163-direct-log-and-unified-projector.md)).
 There is no Worker direct operation POST. Projector routes admitted commands to
 the owning Tool executor, which invokes Cube; the Worker awaits its result and gives it
@@ -76,7 +76,7 @@ distinguish a durable log from external effects; Kafka consumer ownership alone
 cannot revoke an envd process request. Reuse the adopted clients and operation
 ledger rather than add a workflow engine or another message bus.
 
-Validate publication scope/provenance, Kafka-before-execution, duplicate delivery,
+Validate publication scope, Kafka-before-execution, duplicate delivery,
 consumer reconnect, cancelled/sealed queued work, lost result connections,
 Broker replacement, concurrent Sessions, native read/write/edit/bash semantics,
 real multi-round coding and model-free command latency. Drain the old protocol

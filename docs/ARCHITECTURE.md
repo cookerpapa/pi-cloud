@@ -13,7 +13,7 @@ Browser → Control Plane → PostgreSQL ready Run
                          Pi Worker
                          ├─ native Session Host / concurrent Lanes
                          ├─ Model Gateway → CLIProxyAPI → Provider
-                         └─ direct signed log append → Kafka ACK
+                         └─ direct log append → Kafka ACK
                                                         ↓
                                              Session Projector group
                                              ├─ PG semantic projection
@@ -64,19 +64,19 @@ Linux concurrency, not a scheduling lock or tenant concurrency quota.
 
 ## Direct execution log
 
-At Run opening the PG authority freezes a publication identity/public key against
-the exact Lease, Attempt, native writer and Lane. The trusted Worker keeps an
-ephemeral Ed25519 private key, appends an opening record, then appends signed
-semantic records, display events and concrete Tool commands directly to Kafka.
-The signing identity is provenance, not a second renewable lease. It cannot be
-reopened with a different key inside the same Attempt.
+At Run opening the PG authority freezes publication scope against the exact
+Lease, Attempt, native writer and Lane. The trusted Worker appends an opening
+record, then semantic records, display events and concrete Tool commands directly
+to private Kafka. An Attempt opens once; there are no signing keys or per-record
+signatures.
 
-The Projector loads the recorded permit, checks scope/signature and requires the
-ordered opening before data. The exact seal payload must match the control
-authority's PG Outbox request. A Worker cannot invent a higher valid fence or
-forge closure by changing JSON fields. Permit lookup is cached; no token requires
-a remote authority RPC or a fresh Lease-expiry SELECT. Expiry triggers retirement;
-the precise output cutoff is the seal's log position, not wall-clock expiry.
+The Projector caches the recorded scope and requires the ordered opening before
+data. The exact seal payload must match the control authority's PG Outbox request.
+These checks catch misattributed/stale records; they do not authenticate a hostile
+producer. Workers, PG and Kafka are trusted deployment services, inaccessible to
+guests and browsers. No token requires a remote authority RPC or a fresh
+Lease-expiry SELECT. Expiry triggers retirement; the precise output cutoff is
+the seal's log position, not wall-clock expiry.
 
 Kafka ACK means durable append, not guaranteed application of a stale record.
 Records physically after their seal cannot alter PG context, live output or
@@ -89,13 +89,13 @@ The code-owned topic is `pi-cloud.execution-log.v7`. Physical Pi Session ID is
 the immutable partition key, shared by all Lanes and control boundaries. Do not
 change its partition count in place. Producers use RF3/acks-all and bounded
 pending bytes/records, respecting transport backpressure. Worker opening/drain
-are one-time authority operations; its ordinary append path only signs and
-produces. Provider/guest credentials never enter these records.
+are one-time authority operations; its ordinary append path only produces.
+Provider/guest credentials never enter these records.
 
 ## Unified projection and recovery
 
 One `pi-cloud-session-projector-v1` consumer group assigns disjoint partitions.
-After provenance admission, a record updates native PG state, its disposable
+After scope/opening checks, a record updates native PG state, its disposable
 live view and the Tool routing module as applicable. Guest execution itself is
 never awaited by the partition handler. PG or live-owner delivery failure stalls
 that partition; it does not serialize unrelated partitions.
@@ -267,7 +267,7 @@ PiCloud deployment or local-account login.
 | Concern | Authority |
 | --- | --- |
 | users, resources, Runs, leases and fences | PostgreSQL |
-| publication scope/public key and ordered closure | PG-issued metadata + execution log |
+| publication scope and ordered closure | PG-issued metadata + execution log |
 | not-yet-reclaimed output records | Kafka |
 | semantic Session history and query projections | PostgreSQL |
 | native active Lane context and browser tail | rebuildable Worker/Projector memory |

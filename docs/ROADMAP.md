@@ -7,7 +7,7 @@
   Worker ownership and shared Worker queue;
 - Pi `SessionRepo`/`SessionStorage` PostgreSQL adapter with one self-contained
   append-only semantic log per physical Session and native Compaction;
-- direct signed Worker append under a PG-issued publication identity;
+- direct Worker append under a PG-issued publication identity;
 - lossless PostgreSQL queue wake-up and background fail-closed execution-plane readiness;
 - Kafka `acks=all` AcceptedFact log keyed by Session;
 - one partitioned Session Projector group and cursor-free snapshot-first SSE;
@@ -39,6 +39,8 @@
 
 ## Current release gate
 
+- [x] Remove per-record signatures for trusted private deployment; keep PG opening,
+      scope and ordered seal checks (ADR-0164).
 - [x] Unify native history, live views and Tool routing in one Projector group;
       keep executor results owner-direct and remove Fact Gateway/channel leases.
 - [x] Replace per-Step PG receipts with Kafka-acknowledged native Session writes;

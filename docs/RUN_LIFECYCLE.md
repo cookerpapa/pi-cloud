@@ -76,10 +76,10 @@ result is `UNKNOWN`.
 
 ## Events and terminal commit
 
-At opening, PG binds an immutable publication scope/public key to the current
-ExecutionLease. The Worker appends the opening and subsequent signed records
+At opening, PG binds an immutable publication scope to the current
+ExecutionLease. The Worker appends the opening and subsequent records
 directly to Kafka. There is no Fact WebSocket or second renewable channel lease.
-One Projector group verifies provenance and same-partition seals, applies native
+One Projector group checks recorded scope and same-partition seals, applies native
 PG state, updates the live view and routes Tool commands to their owners.
 The Worker continues at Kafka ACK without waiting for per-Step PG receipts.
 
@@ -123,10 +123,10 @@ without retaining scarce admission capacity.
 
 ```text
 Run table queue        at-least-once wakeup + transactional claim
-Pi Session mutation    Publication provenance + Kafka + idempotent PostgreSQL projection
+Pi Session mutation    Recorded publication scope + Kafka + idempotent PostgreSQL projection
 Tool start              no blind retry; UNKNOWN if ambiguous
 Workspace settlement    fenced last observation; persistent Volume owns bytes
 terminal Run commit     idempotent current-Attempt transaction
 Cube create/delete      idempotent reconcile
-live AcceptedFact       Publication provenance + Kafka acks=all + Projector fact-id/sequence projection
+live AcceptedFact       Recorded publication scope + Kafka acks=all + Projector fact-id/sequence projection
 ```

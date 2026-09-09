@@ -4,6 +4,9 @@
 ADR-0163 implementation commit. Production schema 134, topic
 `pi-cloud.execution-log.v7`. No Cube template or native Pi history rewrite.
 
+This report describes the original signed-record implementation. The current
+private deployment removes signatures under [ADR-0164](../adr/0164-trusted-private-log-publication.md).
+
 ## Delivered contract
 
 Worker obtains one PG-issued publication scope/public key, appends the opening
@@ -63,7 +66,7 @@ Evidence: [Cube](cubesandbox-production-acceptance-latest.json),
 
 ## Publication performance
 
-The [signed producer benchmark](kafka-accepted-fact-load-latest.json) uses 256-byte
+The [signed producer benchmark](https://github.com/cookerpapa/pi-cloud/blob/24ab9dc2/docs/reports/kafka-accepted-fact-load-latest.json) uses 256-byte
 text fragments, per-Session Ed25519 signing, one Node producer process, four
 producer lanes and 32 Kafka partitions/RF3. Per-case key creation is outside the
 timed loop. At 1,024 logical Sessions, 262,144 sustained records achieved about

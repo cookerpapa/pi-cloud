@@ -1,21 +1,20 @@
 # ADR-0163 — Direct Worker log and unified Session Projector
 
-Status: accepted; implemented and [verified](../reports/unified-projector-acceptance.md). Supersedes the remote Fact ingress
+Status: accepted; implemented and [verified](../reports/unified-projector-acceptance.md).
+Publication signing was removed by [ADR-0164](0164-trusted-private-log-publication.md).
+Supersedes the remote Fact ingress
 and independent canonical/live/Tool consumer topology, not Cube effect semantics.
 
 ## Decision
 
 Workers append directly to the existing Kafka transport. PostgreSQL remains the
 only Run/Lease authority. Opening an execution binds one immutable publication
-permit to that exact Attempt, Lane and native writer. The Worker holds an ephemeral
-Ed25519 private key; the authority persists only its public key and frozen scope.
-An ordered opening record precedes data. Each data record proves possession of
-that permit's key. A Projector loads/caches permits, verifies scope/signature and
-applies in-log seals; it never rechecks wall-clock Lease expiry per token. Only
-the exact control-plane-requested seal payload in PG is a valid control record.
-Worker code cannot invent a larger valid fence or forge a seal by filling fields.
-This preserves the trusted-Worker threat model; Kafka access is private and never
-granted to Cube, browser or untrusted extensions.
+scope to that exact Attempt, Lane and native writer. An ordered opening record
+precedes data. A Projector loads/caches scope and applies in-log seals; it never
+rechecks wall-clock Lease expiry per token. Only the exact control-plane-requested
+seal payload in PG is a valid control record. Kafka access is private and never
+granted to Cube, browser or untrusted extensions. ADR-0164 removes cryptographic
+origin checks under this trusted-Worker/private-infrastructure threat model.
 
 Run opening/closing are authority operations, not a data gateway. Remove the
 Fact WebSocket, its second channel lease/renewal/progress state and remote ACKs.
@@ -51,14 +50,13 @@ The existing owner-direct raw-result path and Cube lifecycle interfaces remain.
 ## Adopt before build
 
 Reuse Kafka/librdkafka group membership, ordered partitions, delivery checkpoints
-and the existing producer, HTTP server and Pi SessionStorage adapter. Use Node's
-standard Ed25519 implementation, not a custom signature algorithm. Kafka ordinary
-ACLs do not attest arbitrary JSON Session/epoch fields. Per-permit verification
-is cached; no per-token authority SELECT or remote admission service remains.
+and the existing producer, HTTP server and Pi SessionStorage adapter. Ordinary
+Kafka ACLs protect transport access, not arbitrary JSON Session/epoch fields;
+the deployment trusts its producers. Publication scope is cached; no per-token
+authority SELECT or remote admission service remains.
 
 References: [Kafka delivery semantics](https://kafka.apache.org/41/design/design/#message-delivery-semantics),
-[Confluent JavaScript client](https://docs.confluent.io/kafka-clients/javascript/current/overview.html),
-[Node signature verification](https://nodejs.org/api/crypto.html#cryptoverifyalgorithm-data-key-signature-callback).
+[Confluent JavaScript client](https://docs.confluent.io/kafka-clients/javascript/current/overview.html).
 
 ## Cutover and verification
 
@@ -67,7 +65,7 @@ topic and remove old transport entry points/configuration rather than support
 mixed protocols. Preserve PG semantic history and user Volumes; no user-data
 reset is necessary for the additive publication metadata.
 
-Verify signature/scope rejection; opened/sealed ordering; normal versus shared
+Verify scope rejection; opened/sealed ordering; normal versus shared
 writer closure; partial-output reconstruction; failures before/after PG commit;
 lost delivery ACK and replay; cross-replica SSE; effect deduplication and UNKNOWN;
 multi-Lane/provider/Compaction contracts; paid multi-round Cube coding; model-free
