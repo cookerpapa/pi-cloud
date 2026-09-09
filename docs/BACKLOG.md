@@ -5,6 +5,11 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [ ] Explain the original isolated duplicate SSE opening. A focused real-browser
+      investigation found 197 ordinary single-request openings and separately
+      reproduced the intentional input/snapshot invalidation path, not the
+      historical cause. [Evidence](reports/stream-reopen-investigation-20260909.md).
+
 - [x] Review follow-up: make execution openings idempotent across lost PG replies;
       exercise delegated detail reads; replace stale fault targets and verify
       them in CI; bound live snapshots with message-level recovery and SSE framing.

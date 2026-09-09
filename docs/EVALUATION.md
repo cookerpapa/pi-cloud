@@ -31,6 +31,11 @@ prefix still survives Worker replacement.
 
 ## Live-event durability
 
+For focused real-browser reconnect diagnostics, see the
+[double-request investigation](reports/stream-reopen-investigation-20260909.md).
+It distinguishes an intentional stale-snapshot replacement from duplicate live
+subscriptions and does not claim the original intermittent condition fixed.
+
 ```bash
 npm run eval:postgres-session-projection
 PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
