@@ -5,9 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
-- [ ] Review follow-up: make execution openings idempotent across lost PG replies;
+- [x] Review follow-up: make execution openings idempotent across lost PG replies;
       exercise delegated detail reads; replace stale fault targets and verify
       them in CI; bound live snapshots with message-level recovery and SSE framing.
+      [Acceptance](reports/review-repair-acceptance-20260909.md).
 
 - [x] ADR-0164: remove per-record signature/key work from private Worker publication;
       keep exact scope, ordered opening/seals and Tool no-replay boundaries.

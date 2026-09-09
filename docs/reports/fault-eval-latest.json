@@ -1,122 +1,146 @@
 {
   "format": "pi-cloud.fault-eval-report.v1",
-  "piCloudRevision": "15d30f6b249e10d2251501cd834e05d797b4f72a",
-  "generatedAt": "2026-09-02T05:07:23.769Z",
+  "piCloudRevision": "59b0ea55e9ec9cfee49602f53cd6c205f4341708",
+  "generatedAt": "2026-09-09T14:51:46.419Z",
   "methodology": "deterministic_targeted_fault_injection",
   "liveChaosExperiment": false,
-  "caseCount": 18,
-  "successful": 18,
+  "caseCount": 22,
+  "successful": 22,
   "successRate": 1,
-  "p50DurationMs": 2687,
-  "p95DurationMs": 7884,
+  "p50DurationMs": 5150,
+  "p95DurationMs": 14138,
   "results": [
+    {
+      "id": "message-level-display-recovery",
+      "success": true,
+      "invariant": "Committed text leaves live memory before the Run ends; an unfinished suffix remains exact after failure.",
+      "durationMs": 15179
+    },
+    {
+      "id": "interrupted-framed-snapshot",
+      "success": true,
+      "invariant": "A partial snapshot never appears in the browser or leaks into the replacement snapshot.",
+      "durationMs": 1118
+    },
     {
       "id": "duplicate-command",
       "success": true,
       "invariant": "Duplicate delivery does not execute one Agent command twice.",
-      "durationMs": 3477
+      "durationMs": 3362
     },
     {
       "id": "stale-execution-lease",
       "success": true,
       "invariant": "A released Worker cannot reuse an obsolete ExecutionLease.",
-      "durationMs": 2572
+      "durationMs": 3658
     },
     {
       "id": "stale-accepted-fact-authority",
       "success": true,
-      "invariant": "Only the current PostgreSQL ExecutionLease can admit CandidateFacts into the durable log.",
-      "durationMs": 3950
+      "invariant": "Only the recorded execution scope after its opening is projectable; no per-delta authority query.",
+      "durationMs": 5140
     },
     {
       "id": "session-mutation-redelivery",
       "success": true,
       "invariant": "Kafka redelivery creates one canonical Pi Session mutation.",
-      "durationMs": 5304
+      "durationMs": 11462
     },
     {
-      "id": "session-projection-barrier-before-read",
+      "id": "seal-before-successor-read",
       "success": true,
       "invariant": "A replacement Worker observes every older accepted Session mutation before reading context.",
-      "durationMs": 1220
+      "durationMs": 12399
     },
     {
       "id": "message-stream-independence",
       "success": true,
       "invariant": "A live-stream failure cannot roll back a complete native Pi message.",
-      "durationMs": 5447
+      "durationMs": 8380
     },
     {
       "id": "interrupted-visible-prefix",
       "success": true,
       "invariant": "A browser-visible interrupted prefix remains model-visible after Worker replacement.",
-      "durationMs": 5327
+      "durationMs": 14138
     },
     {
       "id": "terminal-tail-unload",
       "success": true,
       "invariant": "Terminal projection unloads shared live-tail memory without invalidating an in-flight browser snapshot.",
-      "durationMs": 1579
+      "durationMs": 734
     },
     {
-      "id": "multiplexed-fact-reconnect",
+      "id": "projector-prefix-rebuild",
       "success": true,
-      "invariant": "One broken Worker transport reconnects logical Fact Streams without changing their authorities.",
-      "durationMs": 1292
+      "invariant": "A replacement Projector reconstructs the unsealed prefix without repeating native mutations.",
+      "durationMs": 11627
+    },
+    {
+      "id": "opening-commit-reply-loss",
+      "success": true,
+      "invariant": "A lost PG COMMIT reply cannot poison opening state or cause later records to be skipped.",
+      "durationMs": 5150
+    },
+    {
+      "id": "opening-rollback",
+      "success": true,
+      "invariant": "An opening is effective only after its transaction commits, and retries can make progress.",
+      "durationMs": 5158
     },
     {
       "id": "control-plane-process-sigkill",
       "success": true,
       "invariant": "Control Plane process replacement does not revoke a healthy Agent Loop.",
-      "durationMs": 2687
+      "durationMs": 3459
     },
     {
       "id": "stale-worker-socket",
       "success": true,
       "invariant": "A stale Worker Control Channel cannot reclaim current ownership.",
-      "durationMs": 7884
+      "durationMs": 12048
     },
     {
       "id": "abandoned-development-environment",
       "success": true,
       "invariant": "A Control Plane failure before provisioning cannot leak a requested development machine.",
-      "durationMs": 6086
+      "durationMs": 9439
     },
     {
       "id": "tool-broker-owner-fence",
       "success": true,
       "invariant": "A replacement Tool Broker fences the expired owner before serving its Workspace runtime.",
-      "durationMs": 6129
+      "durationMs": 7448
     },
     {
       "id": "ambiguous-tool-transport",
       "success": true,
       "invariant": "An ambiguous Tool transport never blindly replays an arbitrary command.",
-      "durationMs": 1755
+      "durationMs": 1479
     },
     {
       "id": "stale-workspace-settlement",
       "success": true,
       "invariant": "A stale or foreign settlement cannot become the Workspace head.",
-      "durationMs": 1806
+      "durationMs": 1506
     },
     {
       "id": "cancel-stop-failure",
       "success": true,
       "invariant": "Cancellation revokes Tool authority before uncertain process cleanup returns.",
-      "durationMs": 1801
+      "durationMs": 1446
     },
     {
       "id": "shared-runtime-loss",
       "success": true,
       "invariant": "Loss of one Workspace Cube cannot leave a surviving logical Tool binding.",
-      "durationMs": 1852
+      "durationMs": 1505
     },
     {
       "id": "workspace-volume-delete-race",
       "success": true,
       "invariant": "Workspace bytes are not deleted while a live Cube still owns the Volume.",
-      "durationMs": 5713
+      "durationMs": 5805
     }
   ]
 }

@@ -39,6 +39,8 @@
 
 ## Current release gate
 
+- [x] Idempotent opening recovery, real Child detail reads, message-level display
+      coverage, framed snapshots and the maintained CI fault gate (ADR-0165).
 - [x] Remove per-record signatures for trusted private deployment; keep PG opening,
       scope and ordered seal checks (ADR-0164).
 - [x] Unify native history, live views and Tool routing in one Projector group;

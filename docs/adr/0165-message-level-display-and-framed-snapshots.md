@@ -1,6 +1,6 @@
 # ADR-0165 — Message-level display recovery and framed snapshots
 
-Status: accepted; implementation in progress.
+Status: implemented and [verified](../reports/review-repair-acceptance-20260909.md).
 
 ## Decision
 
