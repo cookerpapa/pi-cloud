@@ -12,10 +12,9 @@ on the inherited branch. Message payloads were not duplicated, but creating a
 Child still performed work proportional to the inherited branch length and a
 remote Worker had to resolve a second Session-shaped reference layer.
 
-Pi's public SessionStorage already models an immutable Entry DAG with named
-lane heads. Agent loops are independently schedulable, so sharing an Entry tree
-must not imply sharing one Worker process, one in-memory Agent, one Run lease or
-one Tool authority.
+Pi's public SessionStorage models an immutable Entry DAG with named lane heads.
+Each Lane has its own in-memory Agent and Run authority. Active Lanes of one
+physical Session share a Worker-local native writer; a cold Session can move.
 
 ## Decision
 
@@ -42,10 +41,9 @@ implicitly merged into the parent lane.
 
 The logical Child execution scope remains the Run, event, cancellation, UI and
 ExecutionLease identity. The accepted Pi mutation protocol separately carries
-the physical Pi Session target. The PostgreSQL Authority Gate resolves the
-committed execution-scope binding and rejects a different Pi Session or lane
-before Kafka accepts the mutation. Projectors do not recheck an expired lease
-after durable acceptance.
+the physical Pi Session target. PG freezes this binding when publication opens;
+the trusted Worker stamps it and Projector checks its attribution and ordered
+closure. Projector does not recheck an expired lease after durable acceptance.
 
 Human “from this response” conversation forks remain separate Pi Sessions with
 copy-on-write Entry query projections and complete destination log facts. They
@@ -58,9 +56,9 @@ lanes.
   inherited Entry.
 - Parent and Child run concurrently on the physical Pi Session's one active
   Worker, while PostgreSQL remains the durable Session authority.
-- Pi Session sequence allocation is shared across lanes and briefly serializes
-  commits on one PostgreSQL row. The bounded Subagent concurrency limit keeps
-  this cost explicit and measurable.
+- Native sequence allocation and Kafka acknowledgement are ordered by the
+  Worker-local Session writer. PG asynchronously projects those exact stamps;
+  ordinary Steps do not wait for PG receipts.
 - Worker runtimes, Compaction, recovery and World State must always use the
   command's immutable lane binding; `main` is not an implicit fallback.
 - Archiving a Child hides its product execution view but retains its lane and immutable

@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0165](0165-message-level-display-and-framed-snapshots.md) — idempotent
+   openings, message-level display coverage and bounded SSE snapshot framing.
 1. [ADR-0164](0164-trusted-private-log-publication.md) — unsigned publication on
    trusted private infrastructure; retain scope/opening/seal boundaries.
 1. [ADR-0163](0163-direct-log-and-unified-projector.md) — direct Worker log,
@@ -81,8 +83,6 @@ Read the documents in this order:
    state, restart adoption and the elastic/exclusive durability split.
 1. [ADR-0118](0118-session-workspace-environment-and-ssh.md) — independent
    Session/Workspace/compute lifetimes, exclusive Cube Tool bindings and SSH access.
-1. [ADR-0111](0111-current-production-architecture.md) — current end-to-end
-   architecture, state authorities and scaling boundary.
 1. [ADR-0112](0112-run-scoped-tool-capabilities.md) — Session grants, immutable
    Run Tool snapshots and Broker-side execution authorization.
 1. [ADR-0113](0113-cloud-native-pi-subagents.md) — upstream-compatible Pi

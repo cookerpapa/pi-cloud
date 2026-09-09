@@ -5,7 +5,7 @@ import {
   type ConversationTranscriptItemResource,
   type ConversationTurnTranscriptResource,
 } from "@pi-cloud/protocol";
-import { normalizeProviderHostedWebSearchAction } from "@pi-cloud/protocol";
+import { normalizeProviderHostedWebSearchAction, toolResultIsUnknown } from "@pi-cloud/protocol";
 import type { Kysely, Transaction } from "kysely";
 
 export const INTERRUPTED_ASSISTANT_PREFIX_CUSTOM_TYPE = "pi-cloud.interrupted_assistant_prefix";
@@ -29,7 +29,7 @@ type DraftItem =
       toolName: string;
       input: unknown;
       output?: unknown;
-      status: "running" | "completed" | "failed";
+      status: "running" | "completed" | "failed" | "unknown";
       startedAt: string;
       completedAt?: string;
     }
@@ -179,9 +179,28 @@ function projectPiEntries(
 ): ConversationTurnTranscriptResource {
   const drafts: DraftItem[] = [];
   const tools = new Map<string, number>();
+  const proposed = new Map<string, { name: string; input: unknown }>();
   for (const row of rows) {
     const payload = record(row.payload);
     const occurredAt = timestamp(safeInteger(row.timestamp_ms, "Pi entry timestamp"));
+    if (
+      payload?.type === "tool_started" &&
+      typeof payload.toolCallId === "string" &&
+      typeof payload.toolName === "string"
+    ) {
+      if (!tools.has(payload.toolCallId)) {
+        tools.set(payload.toolCallId, drafts.length);
+        drafts.push({
+          kind: "tool",
+          toolCallId: payload.toolCallId,
+          toolName: payload.toolName,
+          input: payload.effectiveArgs ?? null,
+          status: "running",
+          startedAt: occurredAt,
+        });
+      }
+      continue;
+    }
     if (payload?.type === "compaction") {
       drafts.push({
         kind: "compaction",
@@ -233,15 +252,9 @@ function projectPiEntries(
           typeof candidate.id === "string" &&
           typeof candidate.name === "string"
         ) {
-          tools.set(candidate.id, drafts.length);
-          drafts.push({
-            kind: "tool",
-            toolCallId: candidate.id,
-            toolName: candidate.name,
-            input: candidate.arguments ?? null,
-            status: "running",
-            startedAt: occurredAt,
-          });
+          // A proposed call is not an execution intent. Its arguments can still
+          // explain a validation-failure result which never acquired an intent.
+          proposed.set(candidate.id, { name: candidate.name, input: candidate.arguments ?? null });
         }
       }
       continue;
@@ -252,14 +265,19 @@ function projectPiEntries(
       typeof message.toolName === "string"
     ) {
       const index = tools.get(message.toolCallId);
-      const status = message.isError === true ? "failed" : "completed";
+      const status =
+        message.isError === true
+          ? toolResultIsUnknown(message)
+            ? "unknown"
+            : "failed"
+          : "completed";
       if (index === undefined) {
         tools.set(message.toolCallId, drafts.length);
         drafts.push({
           kind: "tool",
           toolCallId: message.toolCallId,
           toolName: message.toolName,
-          input: null,
+          input: proposed.get(message.toolCallId)?.input ?? null,
           output: outputValue(message),
           status,
           startedAt: occurredAt,
@@ -338,7 +356,7 @@ export async function readCanonicalPiTurnTranscripts(
       .execute((tx) => readCanonicalPiTurnTranscripts(tx, input));
   const turnIds = [...new Set(input.turnIds)];
   if (turnIds.length === 0) return new Map();
-  const [entries, durableTerminalRows] = await Promise.all([
+  const [entries, intentRecords, durableTerminalRows, activeRows] = await Promise.all([
     database
       .selectFrom("pi_session_entries")
       .select(["turn_id", "seq", "timestamp_ms", "payload"])
@@ -347,18 +365,41 @@ export async function readCanonicalPiTurnTranscripts(
       .orderBy("seq", "asc")
       .execute(),
     database
+      .selectFrom("pi_session_records")
+      .select(["turn_id", "seq", "timestamp_ms", "payload"])
+      .where("tenant_id", "=", input.tenantId)
+      .where("turn_id", "in", turnIds)
+      .where("type", "=", "tool_started")
+      .orderBy("seq", "asc")
+      .execute(),
+    database
       .selectFrom("session_terminal_events")
       .select(["turn_id", "seq", "type", "payload", "occurred_at", "interrupted_prefix"])
       .where("tenant_id", "=", input.tenantId)
       .where("turn_id", "in", turnIds)
       .execute(),
+    database
+      .selectFrom("runs as run")
+      .innerJoin("run_attempts as attempt", "attempt.id", "run.current_attempt_id")
+      .select(["run.turn_id", "attempt.output_display_seq", "attempt.output_display_native_seq"])
+      .where("run.tenant_id", "=", input.tenantId)
+      .where("run.turn_id", "in", turnIds)
+      .execute(),
   ]);
+  const activeByTurn = new Map(activeRows.map((r) => [r.turn_id, r]));
   const terminalByTurn = new Map<string, (typeof durableTerminalRows)[number]>(
     durableTerminalRows.map((row) => [row.turn_id, row]),
   );
   const entriesByTurn = new Map<string, typeof entries>();
-  for (const entry of entries) {
+  for (const entry of [...entries, ...intentRecords].sort(
+    (a, b) => Number(a.seq) - Number(b.seq),
+  )) {
     if (entry.turn_id === null) continue;
+    if (
+      !terminalByTurn.has(entry.turn_id) &&
+      Number(entry.seq) > Number(activeByTurn.get(entry.turn_id)?.output_display_native_seq ?? 0)
+    )
+      continue;
     const existing = entriesByTurn.get(entry.turn_id) ?? [];
     existing.push(entry);
     entriesByTurn.set(entry.turn_id, existing);
@@ -366,8 +407,23 @@ export async function readCanonicalPiTurnTranscripts(
   const result = new Map<string, ConversationTurnTranscriptResource>();
   for (const turnId of turnIds) {
     const terminalRow = terminalByTurn.get(turnId);
-    if (terminalRow === undefined) continue;
     const piEntries = entriesByTurn.get(turnId) ?? [];
+    if (terminalRow === undefined) {
+      const active = activeByTurn.get(turnId);
+      if (active && Number(active.output_display_seq) > 0)
+        result.set(
+          turnId,
+          projectPiEntries(piEntries, {
+            throughSequence: Number(active.output_display_seq),
+            terminalSequence: null,
+            stopReason: null,
+            failure: null,
+            cancellation: null,
+            occurredAt: new Date().toISOString(),
+          }),
+        );
+      continue;
+    }
     if (terminalRow.interrupted_prefix !== null)
       piEntries.push({
         turn_id: turnId,

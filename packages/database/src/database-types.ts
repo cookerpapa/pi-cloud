@@ -804,6 +804,8 @@ export interface RunAttemptTable {
   output_first_partition: GeneratedNullable<number>;
   output_first_offset: NullableInt8;
   output_projected_offset: NullableInt8;
+  output_display_seq: GeneratedInt8;
+  output_display_native_seq: GeneratedInt8;
   native_writer_anchor_id: GeneratedNullable<string>;
   output_publication: GeneratedNullable<Record<string, unknown>>;
   output_open_offset: NullableInt8;

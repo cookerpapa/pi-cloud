@@ -3,6 +3,9 @@ import {
   ControlPlaneStore,
   ConversationTreeService,
   createPrivateTenant,
+  createControlPlaneApplication,
+  ProductionHttpGateway,
+  PostgresTenantApiAuthenticator,
 } from "@pi-cloud/control-plane";
 import {
   PostgresPiSessionRepository,
@@ -31,6 +34,9 @@ let parentRunId: string;
 let parentTurnId: string;
 let parentAttemptId: string;
 let parentSandboxId: string;
+let application: Awaited<ReturnType<typeof createControlPlaneApplication>>;
+let apiToken: string;
+let foreignApiToken: string;
 let nativeWriter: NativeSessionWriter;
 const nativeByLane = new Map<string, NativeLaneSessionStorage>(),
   nativeByLease = new Map<string, NativeLaneSessionStorage>();
@@ -225,6 +231,20 @@ beforeAll(async () => {
     },
   });
   tenantId = tenant.tenantId;
+  apiToken = tenant.credential.token;
+  const foreign = await createPrivateTenant(database, {
+    slug: "subagent-foreign",
+    ownerDisplayName: "Foreign",
+  });
+  foreignApiToken = foreign.credential.token;
+  application = await createControlPlaneApplication({
+    database,
+    productionHttpGateway: new ProductionHttpGateway({
+      authenticator: new PostgresTenantApiAuthenticator({ database }),
+      readiness: () => true,
+    }),
+  });
+  await application.listen(0, "127.0.0.1");
   await database
     .insertInto("sandbox_domains")
     .values({
@@ -348,10 +368,32 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const storage of nativeByLane.values()) storage.close();
+  await application?.close();
   await database?.destroy();
   await socket?.stop();
   await pglite?.close();
 });
+
+async function assertChildDetail(sessionId: string, inheritedText: string[]) {
+  const http = application.getHttpAdapter().getInstance();
+  const url = `/v1/conversations/${sessionId}`;
+  const response = await http.inject({
+    method: "GET",
+    url,
+    headers: { authorization: `Bearer ${apiToken}` },
+  });
+  expect(response.statusCode, response.body).toBe(200);
+  expect(response.json().session.sessionId).toBe(sessionId);
+  expect(response.json().inheritedMessages.map((m: { text: string }) => m.text)).toEqual(
+    inheritedText,
+  );
+  const foreign = await http.inject({
+    method: "GET",
+    url,
+    headers: { authorization: `Bearer ${foreignApiToken}` },
+  });
+  expect(foreign.statusCode).toBe(404);
+}
 
 describe.sequential("PostgresSubagentJobProvider", () => {
   it("creates an idempotent Tool-free Child Lane Run for its owning Worker", async () => {
@@ -371,6 +413,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     };
     const started = await provider.start(request);
     expect(await provider.start(request)).toEqual(started);
+    await assertChildDetail(started.childSessionId, []);
     await expect(
       provider.start({ ...request, prompt: "A conflicting retry" }),
     ).rejects.toMatchObject({ code: "idempotency_conflict" });
@@ -574,6 +617,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       started.childSessionId,
       "focus",
     );
+    await assertChildDetail(started.childSessionId, ["Earlier context", "Earlier answer"]);
     expect(focusTree).toMatchObject({
       rootSessionId: started.childSessionId,
       currentSessionId: started.childSessionId,

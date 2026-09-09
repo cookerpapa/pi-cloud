@@ -33,6 +33,7 @@ function toolMarkdown(item: Extract<ConversationTranscriptItemResource, { kind: 
 }
 
 function transcriptItemMarkdown(item: ConversationTranscriptItemResource): string {
+  if (item.kind === "tool_preparing") return "";
   if (item.kind === "text") return item.text;
   if (item.kind === "hosted_search") {
     const detail =

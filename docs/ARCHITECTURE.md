@@ -105,6 +105,13 @@ Worker before Kafka publication. PostgreSQL applies those exact records and
 updates projection progress in the same transaction. A crash before commit
 replays the record; a crash after commit can redeliver it without changing its
 meaning. Native sequence conflicts stop recovery rather than being skipped.
+Native message/Tool-intent projection co-commits display event/native positions
+on the Attempt. Active conversation reads stop at that semantic boundary. A
+proposed Tool is not rendered as running until its native execution intent exists.
+Only text covered by the native content is evicted; mismatched/incomplete text
+remains pending for interruption recovery. These metadata updates are not a
+second transcript or a per-delta PG write.
+
 PG transaction-time closure checks remain: a stale Projector handler cannot
 overwrite a successor merely because it cached an older OPEN state.
 
@@ -131,10 +138,19 @@ metadata, while Cube Volumes retain files.
 ## Browser view
 
 The public SSE request has no cursor. The assigned Projector subscribes to live
-wakes, reads canonical history and takes an immutable tail snapshot. It retries
-if terminal eviction overtook that PG snapshot; no transaction spans a network
-write. The first frame replaces the page with complete history plus materialized
-partial output. Recovered text renders immediately; only new deltas animate.
+wakes, captures an immutable tail and then reads primary PG. That PG snapshot
+cannot precede coverage already committed and observed by the tail. It merges
+canonical messages with uncovered spans into one presentation, not a replay of
+raw deltas. No transaction spans a network write.
+
+Snapshots and large complete events use begin/part/end SSE framing with bounded
+parts and incremental JSON encoding/decoding. A disconnected partial value is
+discarded; only a complete replacement is applied. Small live events remain
+immediate. The browser does not submit Kafka offsets or Last-Event-ID. A local
+POST which raced with an older snapshot invalidates that UI request, not the Run.
+History opens on the latest 40 Turns; earlier pages use an owned Turn identity.
+Tree jumps load missing pages, and export traverses them. These history anchors
+are not stream recovery cursors.
 
 A request arriving on another API replica is proxied to the partition owner
 discovered from Kafka group membership. Each replica advertises a unique internal
@@ -142,9 +158,12 @@ HTTP URL; Kubernetes derives it from Pod IP. There is no PG partition-owner ring
 or second Kafka consumer in this proxy. Both endpoints enforce user/tenant auth.
 Internal forwarding bypasses the external Provider HTTP proxy.
 
-Existing readers retain their own snapshot/event references when terminal
-projection removes a shared tail. Slow readers have bounded queues and reconnect
-for a fresh snapshot. SSE heartbeats keep idle connections open. Pi's first text
+Existing readers retain immutable references while semantic commits remove
+covered spans. Completed snapshot objects are released after sending, not held
+for the lifetime of an SSE connection. Blocked writes have a 30-second deadline;
+slow readers disconnect without blocking Kafka or other viewers. Pending text
+still needs memory proportional to its actual content, not constant RAM for
+unbounded output. SSE heartbeats keep idle connections open. Pi's first text
 delta is sent promptly; adjacent text can coalesce for 25 ms. Tool argument JSON,
 thinking fragments and Tool stdout deltas are not public streams. One durable,
 argument-free preparation event marks a long Tool-call generation interval, then

@@ -176,6 +176,14 @@ export default function ChatApp() {
   const [authPhase, setAuthPhase] = useState<AuthPhase>("checking");
   const [identity, setIdentity] = useState<TenantIdentityResource | null>(null);
   const [state, setState] = useState(createInitialSessionView);
+  const renderedState = useRef(state);
+  renderedState.current = state;
+  const inputRevision = useRef(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const historyRequest = useRef(false);
+  const historyScroll = useRef<{ sessionId: string; anchor: HTMLElement; top: number } | null>(
+    null,
+  );
   const [streamSessionId, setStreamSessionId] = useState<string | null>(null);
   const currentStreamSession = useRef(streamSessionId);
   currentStreamSession.current = streamSessionId;
@@ -340,10 +348,54 @@ export default function ChatApp() {
   }, [conversationTree]);
 
   const update = useCallback((action: Parameters<typeof sessionViewReducer>[1]) => {
+    if (
+      action.type === "turn.accepted" ||
+      action.type === "session.created" ||
+      (action.type === "conversation.loaded" && !action.preserveOlderHistory)
+    )
+      inputRevision.current++;
     if (action.type === "conversation.loaded")
       setStreamSessionId(action.conversation.session.sessionId);
     setState((current) => sessionViewReducer(current, action));
   }, []);
+
+  const loadEarlierHistory = useCallback(async () => {
+    const current = renderedState.current,
+      sessionId = current.session?.sessionId,
+      before = current.turns[0]?.turnId;
+    if (!sessionId || !before || !current.historyTruncated || historyRequest.current) return;
+    historyRequest.current = true;
+    setHistoryLoading(true);
+    try {
+      const page = await api.getConversation(sessionId, before);
+      if (currentStreamSession.current !== sessionId) return;
+      const anchor = chatScrollerRef.current?.querySelector<HTMLElement>(
+        `[data-conversation-turn-id="${before}"]`,
+      );
+      if (anchor)
+        historyScroll.current = { sessionId, anchor, top: anchor.getBoundingClientRect().top };
+      update({ type: "history.prepended", conversation: page });
+    } catch (error) {
+      update({ type: "api.error", message: errorMessage(error, t) });
+    } finally {
+      historyRequest.current = false;
+      setHistoryLoading(false);
+    }
+  }, [api, t, update]);
+
+  useLayoutEffect(() => {
+    const pending = historyScroll.current,
+      scroll = chatScrollerRef.current;
+    if (
+      pending &&
+      scroll &&
+      state.session?.sessionId === pending.sessionId &&
+      pending.anchor.isConnected
+    ) {
+      scroll.scrollTop += pending.anchor.getBoundingClientRect().top - pending.top;
+    }
+    historyScroll.current = null;
+  }, [state.turns, state.session?.sessionId]);
 
   const focusComposer = useCallback((): void => {
     requestAnimationFrame(() => {
@@ -572,15 +624,23 @@ export default function ChatApp() {
     const sessionId = streamSessionId;
     if (sessionId === null || authPhase !== "authenticated") return;
     const controller = new AbortController();
+    let snapshotInputRevision = inputRevision.current;
     void streamSessionEvents({
       sessionId,
       signal: controller.signal,
       onSnapshot(snapshot) {
         if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
+        // Reject a snapshot which raced with an accepted local input. This is
+        // request invalidation, not a persisted or server-supplied stream cursor.
+        if (snapshotInputRevision !== inputRevision.current) {
+          controller.abort();
+          setReconnectGeneration((v) => v + 1);
+          return;
+        }
         update({
           type: "conversation.loaded",
           conversation: snapshot.conversation,
-          liveEvents: snapshot.liveEvents,
+          preserveOlderHistory: true,
         });
         setConversationLoading(null);
         if (snapshot.conversation.session.workspaceState === "missing") {
@@ -595,6 +655,25 @@ export default function ChatApp() {
         if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
         update({ type: "stream.event", event });
         if (
+          event.type === "turn.started" &&
+          !renderedState.current.turns.some((turn) => turn.turnId === event.turnId && turn.runId)
+        ) {
+          void api
+            .getConversation(sessionId)
+            .then((conversation) => {
+              const turn = conversation.turns.find((turn) => turn.turnId === event.turnId);
+              if (turn && !controller.signal.aborted)
+                update({ type: "turn.discovered", sessionId, turn });
+            })
+            .catch((error) => {
+              if (!controller.signal.aborted)
+                update({
+                  type: "api.error",
+                  message: errorMessage(error, streamPresentation.current.t),
+                });
+            });
+        }
+        if (
           event.type === "turn.completed" ||
           event.type === "turn.failed" ||
           event.type === "turn.cancelled"
@@ -607,6 +686,9 @@ export default function ChatApp() {
         }
       },
       onStatus(status) {
+        if (controller.signal.aborted) return;
+        if (status.phase === "connecting" || status.phase === "reconnecting")
+          snapshotInputRevision = inputRevision.current;
         update({ type: "stream.status", status });
       },
     }).catch(() => {
@@ -707,13 +789,25 @@ export default function ChatApp() {
 
   useEffect(() => {
     if (pendingTreeJump === null) return;
+    followConversationTail(false);
     const target = chatScrollerRef.current?.querySelector<HTMLElement>(
       `[data-conversation-entry-id="${pendingTreeJump.entryId}"], [data-conversation-turn-id="${pendingTreeJump.turnId}"]`,
     );
-    if (target === undefined || target === null) return;
+    if (target === undefined || target === null) {
+      if (state.historyTruncated && !historyLoading) void loadEarlierHistory();
+      return;
+    }
     target.scrollIntoView({ behavior: "smooth", block: "start" });
     setPendingTreeJump(null);
-  }, [pendingTreeJump, state.session?.sessionId, state.turns.length]);
+  }, [
+    pendingTreeJump,
+    state.session?.sessionId,
+    state.turns.length,
+    state.historyTruncated,
+    historyLoading,
+    loadEarlierHistory,
+    followConversationTail,
+  ]);
 
   function resetConversation(): void {
     currentStreamSession.current = null;
@@ -1091,7 +1185,7 @@ export default function ChatApp() {
     setOperation("downloading");
     update({ type: "api.error.cleared" });
     try {
-      const conversation = await api.getConversation(sessionId);
+      const conversation = await api.getCompleteConversation(sessionId);
       const exportedAt = new Date();
       downloadConversationMarkdown(
         conversationExportFilename(conversation.session.title, exportedAt),
@@ -2025,6 +2119,16 @@ export default function ChatApp() {
               <div className="product-chat-empty" aria-hidden="true" />
             ) : (
               <div className="product-transcript">
+                {state.historyTruncated ? (
+                  <button
+                    type="button"
+                    className="product-history-more"
+                    disabled={historyLoading}
+                    onClick={() => void loadEarlierHistory()}
+                  >
+                    {historyLoading ? t("common.loading") : t("chat.loadEarlier")}
+                  </button>
+                ) : null}
                 {state.inheritedMessages.length === 0 ? null : (
                   <section className="product-inherited-context">
                     <header>

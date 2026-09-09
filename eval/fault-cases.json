@@ -3,6 +3,20 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "message-level-display-recovery",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/execution-stream-seal.test.ts",
+      "test": "evicts committed message spans before Run completion and preserves a repeated unfinished prefix",
+      "invariant": "Committed text leaves live memory before the Run ends; an unfinished suffix remains exact after failure."
+    },
+    {
+      "id": "interrupted-framed-snapshot",
+      "workspace": "@pi-cloud/web-ui",
+      "file": "test/sse.test.ts",
+      "test": "discards an interrupted snapshot and applies only the complete replacement",
+      "invariant": "A partial snapshot never appears in the browser or leaks into the replacement snapshot."
+    },
+    {
       "id": "duplicate-command",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/agent-run-supervisor.test.ts",
@@ -19,25 +33,22 @@
     {
       "id": "stale-accepted-fact-authority",
       "workspace": "@pi-cloud/runtime-core",
-      "file": "test/session-lease-authority-gate.test.ts",
-      "test": "admits one FactChannel, accepts both Fact kinds, renews and closes idempotently",
-      "invariant": "Only the current PostgreSQL ExecutionLease can admit CandidateFacts into the durable log."
+      "file": "test/execution-publication.test.ts",
+      "test": "requires the opening and exact scope but does not query PostgreSQL for each delta",
+      "invariant": "Only the recorded execution scope after its opening is projectable; no per-delta authority query."
     },
     {
       "id": "session-mutation-redelivery",
-      "workspace": "@pi-cloud/pi-session-postgres",
-      "file": "test/postgres-pi-session-storage.test.ts",
-      "test": "replays one projected mutation ID as one PostgreSQL effect",
-      "setupTests": [
-        "persists bounded branch context and durable operation records without a JSONL download"
-      ],
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/execution-stream-seal.test.ts",
+      "test": "does not rewind canonical state on old append replay without a second receipt ledger",
       "invariant": "Kafka redelivery creates one canonical Pi Session mutation."
     },
     {
-      "id": "session-projection-barrier-before-read",
-      "workspace": "@pi-cloud/pi-session-postgres",
-      "file": "test/postgres-durable-agent-session.test.ts",
-      "test": "waits for older Session mutations before rechecking the current ExecutionLease",
+      "id": "seal-before-successor-read",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/execution-stream-seal.test.ts",
+      "test": "waits for ordered projection, saves the visible prefix and rejects a late old writer in both paths",
       "invariant": "A replacement Worker observes every older accepted Session mutation before reading context."
     },
     {
@@ -49,24 +60,38 @@
     },
     {
       "id": "interrupted-visible-prefix",
-      "workspace": "@pi-cloud/pi-session-postgres",
-      "file": "test/cloud-agent-runtime.test.ts",
-      "test": "keeps a failed visible assistant prefix in the next native Pi context",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/native-session-host.test.ts",
+      "test": "runs claimed Parent/Child Lanes with PG projection paused, then cold-restores on a replacement Host",
       "invariant": "A browser-visible interrupted prefix remains model-visible after Worker replacement."
     },
     {
       "id": "terminal-tail-unload",
       "workspace": "@pi-cloud/runtime-core",
-      "file": "test/kafka-live-session-tail.test.ts",
-      "test": "deduplicates, snapshots immutably and unloads only after terminal canonical state",
+      "file": "test/session-live-view.test.ts",
+      "test": "keeps an in-flight snapshot when committed content is evicted",
       "invariant": "Terminal projection unloads shared live-tail memory without invalidating an in-flight browser snapshot."
     },
     {
-      "id": "multiplexed-fact-reconnect",
+      "id": "projector-prefix-rebuild",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/execution-stream-seal.test.ts",
+      "test": "rebuilds an interrupted prefix after consumer restart, never duplicates a semantic append",
+      "invariant": "A replacement Projector reconstructs the unsealed prefix without repeating native mutations."
+    },
+    {
+      "id": "opening-commit-reply-loss",
       "workspace": "@pi-cloud/runtime-core",
-      "file": "test/accepted-fact-channel.test.ts",
-      "test": "reopens every logical Run stream after the shared Worker socket reconnects",
-      "invariant": "One broken Worker transport reconnects logical Fact Streams without changing their authorities."
+      "file": "test/execution-publication.test.ts",
+      "test": "replays an opening after PostgreSQL committed but its acknowledgement was lost",
+      "invariant": "A lost PG COMMIT reply cannot poison opening state or cause later records to be skipped."
+    },
+    {
+      "id": "opening-rollback",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/execution-publication.test.ts",
+      "test": "retries a rolled-back opening without caching a negative decision",
+      "invariant": "An opening is effective only after its transaction commits, and retries can make progress."
     },
     {
       "id": "control-plane-process-sigkill",

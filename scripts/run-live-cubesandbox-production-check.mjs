@@ -14,6 +14,7 @@ import {
 } from "../packages/tool-broker/src/index.ts";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -763,6 +764,7 @@ async function runTurn(sessionId, prompt, expectTools) {
     controller.abort(timeoutFailure);
   }, 10 * 60_000);
   const events = [];
+  let snapshotEvidence;
   let firstDurableActivityAt;
   let firstToolStartedAt;
   let firstAssistantTextAt;
@@ -794,7 +796,20 @@ async function runTurn(sessionId, prompt, expectTools) {
       retryDelayMs: 100,
       onStatus() {},
       onSnapshot(snapshot) {
-        for (const event of snapshot.liveEvents) observeEvent(event);
+        snapshotEvidence = snapshotTurn(snapshot, accepted.turnId);
+        if (!snapshotEvidence) return;
+        if (snapshotEvidence.text) {
+          firstDurableActivityAt ??= performance.now();
+          firstAssistantTextAt ??= performance.now();
+        }
+        if (snapshotEvidence.tools.length) {
+          firstDurableActivityAt ??= performance.now();
+          firstToolStartedAt ??= performance.now();
+        }
+        if (snapshotEvidence.terminal) {
+          terminal = snapshotEvidence.terminal;
+          controller.abort();
+        }
       },
       onEvent(event) {
         observeEvent(event);
@@ -816,12 +831,18 @@ async function runTurn(sessionId, prompt, expectTools) {
     assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
     assert(firstDurableActivityAt !== undefined, "Turn did not publish a durable Agent activity");
     assert(firstAssistantTextAt !== undefined, "Turn did not stream assistant text");
-    const toolCalls = events.filter((event) => event.type === "tool.started").length;
+    const toolCalls = new Set([
+      ...events
+        .filter((event) => event.type === "tool.started")
+        .map((event) => event.payload.toolCallId),
+      ...(snapshotEvidence?.tools ?? []).map((tool) => tool.toolCallId),
+    ]).size;
     if (expectTools) {
       assert(toolCalls > 0, "Coding turn did not execute a Tool operation");
       assert(firstToolStartedAt !== undefined, "Coding turn did not publish its first Tool start");
       assert(
-        events.some((event) => event.type === "tool.completed"),
+        events.some((event) => event.type === "tool.completed") ||
+          snapshotEvidence?.tools.some((tool) => tool.status !== "running"),
         "Coding turn did not complete a Tool operation",
       );
     } else {
@@ -836,7 +857,11 @@ async function runTurn(sessionId, prompt, expectTools) {
     const activations = await observer.stop();
     return {
       accepted,
-      throughSequence: Math.max(0, ...events.map((event) => event.seq)),
+      throughSequence: Math.max(
+        terminal.seq ?? 0,
+        snapshotEvidence?.throughSequence ?? 0,
+        ...events.map((event) => event.seq),
+      ),
       events,
       terminal,
       toolCalls,

@@ -611,10 +611,18 @@ export class ControlPlaneController {
   async getConversation(
     @Req() request: FastifyRequest,
     @Param("sessionId") sessionIdValue: unknown,
+    @Query("beforeTurnId") beforeTurnIdValue: unknown,
   ): Promise<ConversationDetailResource> {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     const identity = this.tenantRequestContext.resolve(request);
-    return this.controlPlaneStores.forIdentity(identity).getConversation(sessionId);
+    return this.controlPlaneStores
+      .forIdentity(identity)
+      .getConversation(
+        sessionId,
+        beforeTurnIdValue === undefined
+          ? undefined
+          : parseUuidPathParameter(beforeTurnIdValue, "beforeTurnId"),
+      );
   }
 
   @Get("conversations/:sessionId/tree")

@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -30,67 +31,89 @@ const outputJson = resolve(
 );
 const outputMarkdown = outputJson.replace(/\.json$/, ".md");
 
-function executeCase(faultCase) {
-  return new Promise((resolvePromise) => {
-    const startedAt = performance.now();
-    const escapeRegularExpression = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const testPattern = [...(faultCase.setupTests ?? []), faultCase.test]
-      .map(escapeRegularExpression)
-      .join("|");
-    const child = spawn(
-      "npm",
-      [
-        "run",
-        "test",
-        "--workspace",
-        faultCase.workspace,
-        "--",
-        faultCase.file,
-        "-t",
-        testPattern,
-        "--reporter=verbose",
-      ],
-      {
-        cwd: repositoryRoot,
-        env: { ...process.env, FORCE_COLOR: "0" },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let output = "";
-    const collect = (chunk) => {
-      output += chunk.toString("utf8");
-      if (output.length > 64_000) output = output.slice(-64_000);
-    };
-    child.stdout.on("data", collect);
-    child.stderr.on("data", collect);
-    child.once("error", (error) => {
-      resolvePromise({
-        id: faultCase.id,
-        success: false,
-        invariant: faultCase.invariant,
-        durationMs: Math.round(performance.now() - startedAt),
-        failure: error.message,
+async function executeCase(faultCase) {
+  const temporary = await mkdtemp(join(tmpdir(), "pi-cloud-fault-"));
+  const resultFile = join(temporary, "result.json");
+  try {
+    return await new Promise((resolvePromise) => {
+      const startedAt = performance.now();
+      const escapeRegularExpression = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const testPattern = [...(faultCase.setupTests ?? []), faultCase.test]
+        .map(escapeRegularExpression)
+        .join("|");
+      const child = spawn(
+        process.execPath,
+        [
+          resolve(repositoryRoot, "node_modules/vitest/vitest.mjs"),
+          "run",
+          resolve(
+            repositoryRoot,
+            "packages",
+            faultCase.workspace.split("/").at(-1),
+            faultCase.file,
+          ),
+          "-t",
+          testPattern,
+          "--reporter=json",
+          "--outputFile",
+          resultFile,
+          "--maxWorkers=1",
+          "--testTimeout=30000",
+          "--hookTimeout=60000",
+        ],
+        {
+          cwd: repositoryRoot,
+          env: { ...process.env, FORCE_COLOR: "0" },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let output = "";
+      const collect = (chunk) => {
+        output += chunk.toString("utf8");
+        if (output.length > 64_000) output = output.slice(-64_000);
+      };
+      child.stdout.on("data", collect);
+      child.stderr.on("data", collect);
+      child.once("error", (error) => {
+        resolvePromise({
+          id: faultCase.id,
+          success: false,
+          invariant: faultCase.invariant,
+          durationMs: Math.round(performance.now() - startedAt),
+          failure: error.message,
+        });
+      });
+      child.once("exit", async (code, signal) => {
+        let assertions = [];
+        try {
+          const report = JSON.parse(await readFile(resultFile, "utf8"));
+          assertions = report.testResults.flatMap((file) => file.assertionResults);
+        } catch {
+          /* A missing/invalid test report is a failure, never a zero-test pass. */
+        }
+        const targets = assertions.filter((test) => test.title === faultCase.test);
+        const targetExecuted =
+          targets.length > 0 && targets.every((test) => test.status === "passed");
+        const success = code === 0 && targetExecuted;
+        resolvePromise({
+          id: faultCase.id,
+          success,
+          invariant: faultCase.invariant,
+          durationMs: Math.round(performance.now() - startedAt),
+          ...(success
+            ? {}
+            : {
+                failure: targetExecuted
+                  ? `exit=${String(code)}, signal=${String(signal)}`
+                  : `target test missing, skipped or failed: ${faultCase.test}`,
+                outputTail: output.trim().slice(-4_000),
+              }),
+        });
       });
     });
-    child.once("exit", (code, signal) => {
-      const targetExecuted = output.includes(`> ${faultCase.test}`);
-      const success = code === 0 && targetExecuted;
-      resolvePromise({
-        id: faultCase.id,
-        success,
-        invariant: faultCase.invariant,
-        durationMs: Math.round(performance.now() - startedAt),
-        ...(success
-          ? {}
-          : {
-              failure: targetExecuted
-                ? `exit=${String(code)}, signal=${String(signal)}`
-                : `target test was not executed: ${faultCase.test}`,
-              outputTail: output.trim().slice(-4_000),
-            }),
-      });
-    });
-  });
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
 }
 
 const results = [];

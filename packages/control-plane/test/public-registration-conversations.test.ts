@@ -1123,6 +1123,53 @@ describe.sequential("opt-in registration and tenant conversation discovery", () 
     ]);
   });
 
+  it("pages conversation history by a tenant-scoped Turn anchor", async () => {
+    const created = await http.inject({
+      method: "POST",
+      url: `/v1/projects/${alphaProject.projectId}/sessions`,
+      headers: authorization(alpha.apiToken),
+      payload: { workspaceId: alphaProject.workspaceId, title: "History pages" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const session = created.json<SessionResource>();
+    const ids: string[] = [];
+    for (let i = 0; i < 45; i++) {
+      const accepted = await http.inject({
+        method: "POST",
+        url: `/v1/sessions/${session.sessionId}/turns`,
+        headers: { ...authorization(alpha.apiToken), "idempotency-key": `page-${i}` },
+        payload: { prompt: `page prompt ${i}` },
+      });
+      expect(accepted.statusCode, accepted.body).toBe(202);
+      ids.push(accepted.json<AcceptedTurnResource>().turnId);
+    }
+    const recent = await http.inject({
+      method: "GET",
+      url: `/v1/conversations/${session.sessionId}`,
+      headers: authorization(alpha.apiToken),
+    });
+    expect(recent.statusCode, recent.body).toBe(200);
+    const page = recent.json<ConversationDetailResource>();
+    expect(page.historyTruncated).toBe(true);
+    expect(page.turns.map((t) => t.turnId)).toEqual(ids.slice(5));
+    const older = await http.inject({
+      method: "GET",
+      url: `/v1/conversations/${session.sessionId}?beforeTurnId=${page.turns[0]!.turnId}`,
+      headers: authorization(alpha.apiToken),
+    });
+    expect(older.statusCode, older.body).toBe(200);
+    expect(older.json<ConversationDetailResource>().turns.map((t) => t.turnId)).toEqual(
+      ids.slice(0, 5),
+    );
+    expect(older.json<ConversationDetailResource>().historyTruncated).toBe(false);
+    const foreign = await http.inject({
+      method: "GET",
+      url: `/v1/conversations/${bravoSession.sessionId}?beforeTurnId=${ids[5]}`,
+      headers: authorization(bravo.apiToken),
+    });
+    expect(foreign.statusCode).toBe(404);
+  }, 60000);
+
   it("serializes concurrent registration at the configured total-tenant cap", async () => {
     const results = await Promise.all([
       register("capacity-charlie", "Charlie"),

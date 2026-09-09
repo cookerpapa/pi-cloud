@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { format } from "prettier";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { snapshotTurn } from "./lib/session-snapshot.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 if (process.env.PI_CLOUD_LIVE_WORKER_POOL_CHECK !== "1") {
@@ -244,7 +245,12 @@ async function runTurn(sessionId, prompt) {
       retryDelayMs: 100,
       onStatus() {},
       onSnapshot(snapshot) {
-        for (const event of snapshot.liveEvents) observeEvent(event);
+        const restored = snapshotTurn(snapshot, accepted.turnId);
+        text.splice(0, text.length, ...(restored?.text ? [restored.text] : []));
+        if (restored?.terminal) {
+          terminal = restored.terminal;
+          controller.abort();
+        }
       },
       onEvent: observeEvent,
     });
@@ -413,7 +419,15 @@ async function crashStreamingTurn(sessionId) {
       retryDelayMs: 100,
       onStatus() {},
       onSnapshot(snapshot) {
-        for (const event of snapshot.liveEvents) observeEvent(event);
+        const restored = snapshotTurn(snapshot, accepted.turnId);
+        visibleText.splice(0, visibleText.length, ...(restored?.text ? [restored.text] : []));
+        if (restored?.text && !restored.terminal && crash === undefined) {
+          firstVisibleSequence = restored.throughSequence;
+          crash = runEvidence(accepted.runId).then(async (evidence) => ({
+            evidence,
+            stopped: await killWorker(evidence.supervisorId),
+          }));
+        }
         const turn = snapshot.conversation.turns.find(
           (candidate) => candidate.turnId === accepted.turnId,
         );

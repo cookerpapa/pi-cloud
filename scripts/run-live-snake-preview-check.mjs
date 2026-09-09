@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_EXCLUSIVE_WORKING_DIRECTORY } from "../packages/protocol/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -144,6 +145,7 @@ async function runCodingTurn(api, browser, sessionId) {
     10 * 60_000,
   );
   const events = [];
+  let snapshotEvidence;
   let terminal;
   let firstDurableActivityAt;
   let firstToolStartedAt;
@@ -179,14 +181,32 @@ async function runCodingTurn(api, browser, sessionId) {
       retryDelayMs: 100,
       onStatus() {},
       onSnapshot(snapshot) {
-        for (const event of snapshot.liveEvents) observeEvent(event);
+        snapshotEvidence = snapshotTurn(snapshot, accepted.turnId);
+        if (!snapshotEvidence) return;
+        if (snapshotEvidence.text) {
+          firstDurableActivityAt ??= performance.now();
+          firstAssistantTextAt ??= performance.now();
+        }
+        if (snapshotEvidence.tools.length) {
+          firstDurableActivityAt ??= performance.now();
+          firstToolStartedAt ??= performance.now();
+        }
+        if (snapshotEvidence.terminal) {
+          terminal = snapshotEvidence.terminal;
+          controller.abort();
+        }
       },
       onEvent: observeEvent,
     });
     assert(terminal, "Snake coding Run did not publish a terminal event");
     assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
     const run = await waitForRun(api, accepted.runId);
-    const toolStarts = events.filter((event) => event.type === "tool.started").length;
+    const toolStarts = new Set([
+      ...events
+        .filter((event) => event.type === "tool.started")
+        .map((event) => event.payload.toolCallId),
+      ...(snapshotEvidence?.tools ?? []).map((tool) => tool.toolCallId),
+    ]).size;
     assert(toolStarts >= 3, "Snake coding Run did not exercise the Tool path");
     const toolPreparations = events.filter(
       (event) => event.type === "assistant.tool_call.preparing",

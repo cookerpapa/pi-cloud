@@ -10,6 +10,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
 import { describe, expect, it } from "vitest";
+import { projectConversationTurnTranscript } from "../../runtime-core/src/conversation-turn-projection.ts";
 import {
   activeTurn,
   createInitialSessionView,
@@ -20,6 +21,22 @@ import {
 const SESSION_ID = "10000000-0000-4000-8000-000000000001";
 const TURN_ID = "20000000-0000-4000-8000-000000000001";
 const CREATED_AT = "2026-07-19T00:00:00.000Z";
+
+function materialize(
+  conversation: ConversationDetailResource,
+  events: PiCloudEvent[],
+): ConversationDetailResource {
+  return {
+    ...conversation,
+    turns: conversation.turns.map((turn) => ({
+      ...turn,
+      transcript: projectConversationTurnTranscript(
+        events.filter((e) => e.turnId === turn.turnId),
+        turn.transcript,
+      ),
+    })),
+  };
+}
 
 const project: ProjectResource = {
   projectId: "30000000-0000-4000-8000-000000000001",
@@ -184,10 +201,9 @@ describe("session transcript reducer", () => {
     };
     let state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
-      conversation,
-      liveEvents: [
+      conversation: materialize(conversation, [
         envelope(9, { type: "assistant.text.delta", payload: { text: "Already durable." } }),
-      ],
+      ]),
     });
     expect(state).toMatchObject({
       turns: [
@@ -210,31 +226,42 @@ describe("session transcript reducer", () => {
     ]);
   });
 
-  it("keeps a Turn accepted between the canonical and live snapshot reads", () => {
+  it("includes a newly admitted Turn in the materialized snapshot", () => {
     const liveTurnId = "20000000-0000-4000-8000-000000000009";
     const state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
-      conversation: {
-        project,
-        inheritedMessages: [],
-        session: {
-          ...session,
-          state: "running",
-          updatedAt: CREATED_AT,
-          lastActiveAt: CREATED_AT,
-        },
-        turns: [],
-        historyTruncated: false,
-      },
-      liveEvents: [
+      conversation: materialize(
         {
-          ...envelope(8, {
-            type: "assistant.text.delta",
-            payload: { text: "Cross-request race" },
-          }),
-          turnId: liveTurnId,
+          project,
+          inheritedMessages: [],
+          session: {
+            ...session,
+            state: "running",
+            updatedAt: CREATED_AT,
+            lastActiveAt: CREATED_AT,
+          },
+          turns: [
+            {
+              turnId: liveTurnId,
+              runId: accepted.runId,
+              mailboxPosition: 1,
+              prompt: "New prompt",
+              state: "running",
+              acceptedAt: CREATED_AT,
+            },
+          ],
+          historyTruncated: false,
         },
-      ],
+        [
+          {
+            ...envelope(8, {
+              type: "assistant.text.delta",
+              payload: { text: "Cross-request race" },
+            }),
+            turnId: liveTurnId,
+          },
+        ],
+      ),
     });
 
     expect(state).toMatchObject({
@@ -592,13 +619,12 @@ describe("session transcript reducer", () => {
     };
     const state = sessionViewReducer(createInitialSessionView(), {
       type: "conversation.loaded",
-      conversation,
-      liveEvents: [
+      conversation: materialize(conversation, [
         envelope(9, {
           type: "provider.hosted_tool.started",
           payload: { toolName: "web_search", activityId: "ws-live" },
         }),
-      ],
+      ]),
     });
     expect(state.turns[0]?.items).toEqual([
       expect.objectContaining({
@@ -607,6 +633,90 @@ describe("session transcript reducer", () => {
         status: "running",
       }),
     ]);
+  });
+
+  it("keeps loaded older history on reconnect without duplicating live text", () => {
+    const olderId = "20000000-0000-4000-8000-000000000002";
+    const current: ConversationDetailResource = {
+      project,
+      inheritedMessages: [],
+      session: { ...session, state: "running", updatedAt: CREATED_AT, lastActiveAt: CREATED_AT },
+      turns: [
+        {
+          turnId: TURN_ID,
+          runId: accepted.runId,
+          mailboxPosition: 2,
+          prompt: "current",
+          state: "running",
+          acceptedAt: CREATED_AT,
+        },
+      ],
+      historyTruncated: true,
+    };
+    let state = sessionViewReducer(createInitialSessionView(), {
+      type: "conversation.loaded",
+      conversation: current,
+    });
+    state = sessionViewReducer(state, {
+      type: "history.prepended",
+      conversation: {
+        ...current,
+        turns: [
+          {
+            ...current.turns[0]!,
+            turnId: olderId,
+            mailboxPosition: 1,
+            prompt: "older",
+            state: "completed",
+          },
+        ],
+        historyTruncated: false,
+      },
+    });
+    const recovered = materialize(current, [
+      envelope(8, { type: "assistant.text.delta", payload: { text: "saved" } }),
+    ]);
+    state = sessionViewReducer(state, {
+      type: "conversation.loaded",
+      conversation: recovered,
+      preserveOlderHistory: true,
+    });
+    expect(state.turns.map((t) => t.prompt)).toEqual(["older", "current"]);
+    expect(state.historyTruncated).toBe(false);
+    state = sessionViewReducer(state, {
+      type: "stream.event",
+      event: envelope(9, { type: "assistant.text.delta", payload: { text: " new" } }),
+    });
+    expect(state.turns[1]!.items[0]).toMatchObject({ text: "saved new", recoveredTextLength: 5 });
+    state = sessionViewReducer(state, {
+      type: "conversation.loaded",
+      conversation: { ...recovered, turns: [] },
+    });
+    expect(state.turns).toEqual([]);
+  });
+
+  it("fills another browser's accepted input without replacing its live output", () => {
+    let state = preparedState();
+    state = sessionViewReducer(state, {
+      type: "stream.event",
+      event: envelope(10, { type: "assistant.text.delta", payload: { text: "already flowing" } }),
+    });
+    state = sessionViewReducer(state, {
+      type: "turn.discovered",
+      sessionId: SESSION_ID,
+      turn: {
+        turnId: TURN_ID,
+        runId: accepted.runId,
+        mailboxPosition: 1,
+        prompt: "peer prompt",
+        state: "running",
+        acceptedAt: CREATED_AT,
+      },
+    });
+    expect(state.turns[0]).toMatchObject({
+      prompt: "peer prompt",
+      items: [{ text: "already flowing" }],
+    });
   });
 
   it("marks cancellation intent before terminal confirmation", () => {

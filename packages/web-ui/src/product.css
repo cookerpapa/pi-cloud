@@ -1082,6 +1082,21 @@ body.product-panel-resizing {
   min-height: 100%;
 }
 
+.product-history-more {
+  display: block;
+  margin: 0 auto 24px;
+  padding: 6px 12px;
+  color: #aaa;
+  background: transparent;
+  border-color: transparent;
+  font-size: 12px;
+}
+
+.product-history-more:hover {
+  color: #ececec;
+  background: #242424;
+}
+
 .product-transcript {
   width: min(100%, 820px);
   margin: 0 auto;

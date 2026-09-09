@@ -8,6 +8,7 @@ import { format } from "prettier";
 import { workspaceVolumeId } from "../packages/tool-broker/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { snapshotTurn } from "./lib/session-snapshot.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 if (process.env.PI_CLOUD_LIVE_SUBAGENT_CHECK !== "1") {
@@ -154,7 +155,12 @@ async function runTurn(sessionId, prompt) {
       retryDelayMs: 100,
       onStatus() {},
       onSnapshot(snapshot) {
-        for (const event of snapshot.liveEvents) observeEvent(event);
+        const restored = snapshotTurn(snapshot, accepted.turnId);
+        text.splice(0, text.length, ...(restored?.text ? [restored.text] : []));
+        if (restored?.terminal) {
+          terminal = restored.terminal;
+          controller.abort();
+        }
       },
       onEvent: observeEvent,
     });

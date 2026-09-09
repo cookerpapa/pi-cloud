@@ -4,12 +4,11 @@ import {
   type PiCloudEvent,
   type SessionViewSnapshotResource,
 } from "@pi-cloud/protocol";
+import { SESSION_STREAM_MAX_FRAME_BYTES } from "@pi-cloud/protocol";
+import { parseChunked } from "@discoveryjs/json-ext";
 
-// A replacement snapshot includes the canonical transcript as well as the
-// incomplete live tail. Long Pi Sessions routinely exceed 1 MiB before native
-// Compaction, so this bound must cover the supported product projection while
-// still rejecting an unbounded or malformed stream.
-const MAX_PENDING_FRAME_BYTES = 16 * 1_024 * 1_024;
+// Bound a frame, not an entire conversation or a TCP chunk containing many frames.
+const MAX_PENDING_FRAME_BYTES = SESSION_STREAM_MAX_FRAME_BYTES;
 const DEFAULT_RETRY_DELAY_MS = 300;
 const MAX_RETRY_DELAY_MS = 5_000;
 
@@ -49,19 +48,19 @@ export class SseFrameParser {
       if (chunk.startsWith("\uFEFF")) chunk = chunk.slice(1);
     }
     this.#buffer += chunk;
-    if (new TextEncoder().encode(this.#buffer).byteLength > MAX_PENDING_FRAME_BYTES) {
-      throw new SessionStreamError("SSE frame exceeded the browser buffer limit", false);
-    }
-
     const frames: SseFrame[] = [];
     let boundary = /\r?\n\r?\n/.exec(this.#buffer);
     while (boundary !== null) {
       const raw = this.#buffer.slice(0, boundary.index);
+      if (new TextEncoder().encode(raw).byteLength > MAX_PENDING_FRAME_BYTES)
+        throw new SessionStreamError("SSE frame exceeded the browser buffer limit", false);
       this.#buffer = this.#buffer.slice(boundary.index + boundary[0].length);
       const frame = parseFrame(raw);
       if (frame !== undefined) frames.push(frame);
       boundary = /\r?\n\r?\n/.exec(this.#buffer);
     }
+    if (new TextEncoder().encode(this.#buffer).byteLength > MAX_PENDING_FRAME_BYTES)
+      throw new SessionStreamError("SSE frame exceeded the browser buffer limit", false);
     return frames;
   }
 }
@@ -134,37 +133,68 @@ async function consumeResponse(
   const reader = response.body.getReader();
   let serverRetryMs: number | undefined;
   let snapshotReceived = false;
-  try {
+  async function* readFrames() {
     while (!options.signal.aborted) {
       const chunk = await reader.read();
-      if (chunk.done) break;
-      for (const frame of parser.push(decoder.decode(chunk.value, { stream: true }))) {
-        if (frame.retry !== undefined) serverRetryMs = frame.retry;
-        let value: unknown;
-        try {
-          value = JSON.parse(frame.data) as unknown;
-        } catch {
-          throw new SessionStreamError("SSE frame contained malformed JSON", false);
-        }
-        if (frame.event === "session.snapshot") {
-          const snapshot = parseSessionViewSnapshotResource(value);
-          if (snapshot.conversation.session.sessionId !== options.sessionId) {
-            throw new SessionStreamError("SSE snapshot belongs to a different Session", false);
+      if (chunk.done) return;
+      yield* parser.push(decoder.decode(chunk.value, { stream: true }));
+    }
+  }
+  const frames = readFrames();
+  const json = (data: string): unknown => {
+    try {
+      return JSON.parse(data) as unknown;
+    } catch {
+      throw new SessionStreamError("SSE frame contained malformed JSON", false);
+    }
+  };
+  try {
+    for await (const frame of frames) {
+      if (frame.retry !== undefined) serverRetryMs = frame.retry;
+      let value: unknown = json(frame.data);
+      let kind: "snapshot" | "event" = "event";
+      let framed = false;
+      if (frame.event === "stream.begin") {
+        const header = value as { kind?: unknown };
+        if (header?.kind !== "snapshot" && header?.kind !== "event")
+          throw new SessionStreamError("Invalid stream value kind", false);
+        kind = header.kind;
+        framed = true;
+        value = await parseChunked(async function* () {
+          for (;;) {
+            const next = await frames.next();
+            if (next.done)
+              throw new SessionStreamError("Session value interrupted before stream.end", true);
+            if (next.value.event === "stream.end") return;
+            if (next.value.event !== "stream.part")
+              throw new SessionStreamError("Unexpected frame within Session value", false);
+            const part = json(next.value.data);
+            if (typeof part !== "string")
+              throw new SessionStreamError("Invalid Session value part", false);
+            yield part;
           }
-          options.onSnapshot(snapshot);
-          snapshotReceived = true;
-          options.onStatus({ phase: "live", attempt: 0 });
-          continue;
-        }
-        if (!snapshotReceived) {
-          throw new SessionStreamError("SSE live event arrived before its Session snapshot", false);
-        }
-        const event = parsePiCloudEvent(value);
-        if (event.sessionId !== options.sessionId || frame.event !== event.type) {
-          throw new SessionStreamError("SSE event identity is invalid", false);
-        }
-        options.onEvent(event);
+        });
+      } else if (frame.event?.startsWith("stream.")) {
+        throw new SessionStreamError("Session value part has no beginning", false);
       }
+      if (kind === "snapshot") {
+        const snapshot = parseSessionViewSnapshotResource(value);
+        if (snapshot.conversation.session.sessionId !== options.sessionId) {
+          throw new SessionStreamError("SSE snapshot belongs to a different Session", false);
+        }
+        options.onSnapshot(snapshot);
+        snapshotReceived = true;
+        options.onStatus({ phase: "live", attempt: 0 });
+        continue;
+      }
+      if (!snapshotReceived) {
+        throw new SessionStreamError("SSE live event arrived before its Session snapshot", false);
+      }
+      const event = parsePiCloudEvent(value);
+      if (event.sessionId !== options.sessionId || (!framed && frame.event !== event.type)) {
+        throw new SessionStreamError("SSE event identity is invalid", false);
+      }
+      options.onEvent(event);
     }
   } finally {
     await reader.cancel().catch(() => undefined);

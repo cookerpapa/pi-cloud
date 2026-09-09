@@ -114,8 +114,8 @@ async function round(prompt, tools) {
       onStatus() {},
       onEvent: observe,
       onSnapshot: (s) => {
-        for (const event of s.liveEvents) observe(event);
         const turn = s.conversation.turns.find((t) => t.turnId === accepted.turnId);
+        if (turn?.transcript?.items.length) firstVisible ??= performance.now();
         if (turn?.transcript && ["completed", "failed", "cancelled"].includes(turn.state)) {
           terminal = `turn.${turn.state}`;
           abort.abort();

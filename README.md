@@ -75,6 +75,12 @@ directly to that owner. Tool Broker does not consume Kafka. SSE requests arrivin
 at another API replica are proxied to the partition owner discovered through Kafka
 membership; no second routing authority or browser cursor is required.
 
+Conversation snapshots arrive as bounded SSE parts and render once complete;
+ordinary live deltas remain immediate. Complete native messages are readable
+before their Run ends, allowing their fragments to leave the live cache. The
+initial history window is 40 Turns; earlier history loads on demand, and export
+collects the complete history rather than only the current window.
+
 A Run opens one publication identity under its current PostgreSQL Lease. Its
 Worker publishes on private Kafka, and the Projector checks recorded scope
 and ordered boundaries. No record signing or cryptographic verification is used.
@@ -154,11 +160,10 @@ npm run production:restore
 npm run production:down
 ```
 
-**Existing installations:** drain Workers and project predecessor seals/Outbox
-before migration 134, then replace Workers, Control Plane/Projector and Tool Broker
-together. This removes the old Fact transport and starts the v7 execution log.
-Existing PG semantic history and Workspace bytes are preserved; there is no
-mixed-protocol or old-Gateway fallback.
+**Existing installations:** drain Runs and project predecessor seals/Outbox,
+apply migration 135, and deploy matching Worker, Control Plane/Projector and Web
+images. Reload open browser pages for SSE v2. The v7 Kafka log, native history
+and Workspace bytes are preserved; there is no legacy snapshot decoder.
 
 ## Kubernetes
 

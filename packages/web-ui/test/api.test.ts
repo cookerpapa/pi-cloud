@@ -5,6 +5,30 @@ import {
 } from "@pi-cloud/protocol";
 
 import { PiCloudApi } from "../src/api.ts";
+import type { ConversationDetailResource } from "@pi-cloud/protocol";
+
+it("collects all history pages for export without a stream recovery cursor", async () => {
+  const api = new PiCloudApi();
+  const first = {
+    session: { sessionId: "session" },
+    turns: [{ turnId: "later" }],
+    historyTruncated: true,
+  } as unknown as ConversationDetailResource;
+  const older = {
+    ...first,
+    turns: [{ turnId: "earlier" }],
+    historyTruncated: false,
+  } as ConversationDetailResource;
+  const read = vi
+    .spyOn(api, "getConversation")
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce(older);
+  expect((await api.getCompleteConversation("session")).turns.map((turn) => turn.turnId)).toEqual([
+    "earlier",
+    "later",
+  ]);
+  expect(read.mock.calls).toEqual([["session"], ["session", "later"]]);
+});
 
 const environment = {
   environmentVersionId: "90000000-0000-4000-8000-000000000001",

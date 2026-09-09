@@ -123,7 +123,13 @@ export type SessionViewAction =
   | {
       type: "conversation.loaded";
       conversation: ConversationDetailResource;
-      liveEvents?: readonly PiCloudEvent[];
+      preserveOlderHistory?: boolean;
+    }
+  | { type: "history.prepended"; conversation: ConversationDetailResource }
+  | {
+      type: "turn.discovered";
+      sessionId: string;
+      turn: ConversationDetailResource["turns"][number];
     }
   | { type: "project.environment.refreshed"; environment: ProjectEnvironmentResource }
   | { type: "turn.accepted"; accepted: AcceptedTurnResource; prompt: string }
@@ -202,6 +208,7 @@ function transcriptItem(
   item: NonNullable<ConversationDetailResource["turns"][number]["transcript"]>["items"][number],
   recovered = false,
 ): TranscriptItem {
+  if (item.kind === "tool_preparing") return { ...item, key: `tool-preparing:${item.toolCallId}` };
   if (item.kind === "text") {
     return {
       ...item,
@@ -579,6 +586,32 @@ export function sessionViewReducer(
   state: SessionViewState,
   action: SessionViewAction,
 ): SessionViewState {
+  if (action.type === "history.prepended") {
+    if (state.session?.sessionId !== action.conversation.session.sessionId) return state;
+    const loaded = sessionViewReducer(createInitialSessionView(), {
+      type: "conversation.loaded",
+      conversation: action.conversation,
+    });
+    const known = new Set(state.turns.map((t) => t.turnId));
+    return {
+      ...state,
+      turns: [...loaded.turns.filter((t) => !known.has(t.turnId)), ...state.turns],
+      historyTruncated: action.conversation.historyTruncated,
+    };
+  }
+  if (action.type === "turn.discovered") {
+    if (state.session?.sessionId !== action.sessionId) return state;
+    return {
+      ...state,
+      turns: updateTurn(state.turns, action.turn.turnId, (current) => ({
+        ...current,
+        prompt: action.turn.prompt,
+        runId: action.turn.runId,
+        mailboxPosition: action.turn.mailboxPosition,
+        acceptedAt: action.turn.acceptedAt,
+      })),
+    };
+  }
   if (action.type === "session.created") {
     return {
       ...createInitialSessionView(),
@@ -631,15 +664,24 @@ export function sessionViewReducer(
       historyTruncated: action.conversation.historyTruncated,
       connection: { phase: "offline", attempt: 0, message: "Opening durable event stream" },
     };
-    const withLiveEvents = (action.liveEvents ?? []).reduce(applyEvent, loaded);
+    const anchor = loaded.turns[0]?.turnId;
+    const at =
+      action.preserveOlderHistory && state.session?.sessionId === loaded.session?.sessionId
+        ? state.turns.findIndex((turn) => turn.turnId === anchor)
+        : -1;
+    const older = at > 0 ? state.turns.slice(0, at) : [];
     return {
-      ...withLiveEvents,
-      turns: withLiveEvents.turns.map((turn) => ({
-        ...turn,
-        items: turn.items.map((item) =>
-          item.kind === "text" ? { ...item, recoveredTextLength: item.text.length } : item,
-        ),
-      })),
+      ...loaded,
+      historyTruncated: older.length ? state.historyTruncated : loaded.historyTruncated,
+      turns: [
+        ...older,
+        ...loaded.turns.map((turn) => ({
+          ...turn,
+          items: turn.items.map((item) =>
+            item.kind === "text" ? { ...item, recoveredTextLength: item.text.length } : item,
+          ),
+        })),
+      ],
     };
   }
   if (action.type === "project.environment.refreshed") {
@@ -664,6 +706,11 @@ export function sessionViewReducer(
       if (turn.status === "completed" || turn.status === "failed" || turn.status === "cancelled") {
         return turn;
       }
+      if (
+        turn.startedSequence !== null &&
+        ["completed", "failed", "cancelled", "timed_out", "superseded"].includes(action.run.state)
+      )
+        return turn;
       if (action.run.state === "completed") {
         // Once the durable event stream has started this Turn, its ordered
         // terminal event is the only authority allowed to end presentation.

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { format } from "prettier";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { snapshotTurn } from "./lib/session-snapshot.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -347,7 +348,12 @@ async function runTurn(lane, prompt, round) {
           return;
         }
         text.length = 0;
-        for (const event of snapshot.liveEvents) observeEvent(event);
+        const partial = snapshotTurn(snapshot, accepted.turnId);
+        if (partial?.text) {
+          text.push(partial.text);
+          firstAssistantTextMs ??= Math.round(performance.now() - submittedAt);
+        }
+        toolEvents += partial?.tools.length ?? 0;
       },
       onEvent: observeEvent,
     });

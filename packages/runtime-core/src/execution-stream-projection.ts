@@ -7,6 +7,43 @@ import { readInterruptedAssistantPrefix } from "./canonical-pi-conversation.ts";
 import { projectConversationTurnTranscript } from "./conversation-turn-projection.ts";
 import { PostgresPiSessionAppendProjector } from "./postgres-pi-session-append-projector.ts";
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
+import { CompactEventTail } from "./compact-event-tail.ts";
+
+export type ExecutionProjectionResult = {
+  terminal?: PiCloudEvent;
+  canonicalThroughSequence?: number;
+};
+
+function displayCoverage(fact: AcceptedFact, tail: CompactEventTail): number | undefined {
+  if (fact.kind !== "pi_session_append" || tail.highWaterMark === 0) return;
+  let visible = false;
+  const texts: string[] = [];
+  for (const item of fact.items) {
+    if (item.kind === "record" && item.record.type === "tool_started") visible = true;
+    if (item.kind !== "entry") continue;
+    const entry = item.entry;
+    if (entry.type === "compaction") visible = true;
+    if (
+      entry.type === "message" &&
+      (entry.message.role === "assistant" || entry.message.role === "toolResult")
+    ) {
+      visible = true;
+      if (entry.message.role === "assistant")
+        for (const part of entry.message.content) if (part.type === "text") texts.push(part.text);
+    }
+    if (entry.type === "custom" && entry.customType === "pi-cloud.interrupted_assistant_prefix") {
+      const data = entry.data as { text?: unknown };
+      if (typeof data?.text === "string") {
+        visible = true;
+        texts.push(data.text);
+      }
+    }
+  }
+  const pending = tail.text();
+  // Never evict displayed text merely because an unrelated native write landed.
+  if (!visible || (pending.length > 0 && !texts.join("").startsWith(pending))) return;
+  return tail.highWaterMark;
+}
 
 export function factEvents(fact: AcceptedFact): readonly PiCloudEvent[] {
   return fact.kind === "agent_event"
@@ -144,7 +181,7 @@ export class ExecutionStreamProjector {
   readonly #database: Kysely<Database>;
   readonly #boundary: ExecutionStreamBoundary;
   readonly #mutations: PostgresPiSessionAppendProjector;
-  readonly #prefixes = new Map<string, Map<number, PiCloudEvent>>();
+  readonly #prefixes = new Map<string, CompactEventTail>();
 
   constructor(database: Kysely<Database>) {
     this.#database = database;
@@ -161,52 +198,46 @@ export class ExecutionStreamProjector {
     return this.#boundary.isOpen(record, false);
   }
 
-  async project(record: KafkaAcceptedFactRecord): Promise<PiCloudEvent | undefined> {
+  async project(record: KafkaAcceptedFactRecord): Promise<ExecutionProjectionResult | undefined> {
     const { fact } = record;
     if (!(await this.#boundary.isOpen(record, true))) {
       if (fact.kind === "execution_seal") {
         const prefix = this.#prefixes.get(fact.scope.attemptId);
-        const terminal = await this.#seal(
-          fact,
-          record,
-          [...(prefix?.values() ?? [])].sort((a, b) => a.seq - b.seq),
-        );
+        const terminal = await this.#seal(fact, record, prefix);
         this.#boundary.close(fact.scope.attemptId, record.offset, record.partition);
         if (fact.closesWriter)
           this.#boundary.closeWriter(fact.scope.writerId, record.offset, record.partition);
         this.#prefixes.delete(fact.scope.attemptId);
-        return terminal;
+        return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
       }
       return;
     }
-    const prefix = this.#prefixes.get(fact.scope.attemptId) ?? new Map<number, PiCloudEvent>();
+    const prefix = this.#prefixes.get(fact.scope.attemptId) ?? new CompactEventTail();
     this.#prefixes.set(fact.scope.attemptId, prefix);
     for (const event of factEvents(fact)) {
-      const previous = prefix.get(event.seq);
-      if (previous && previous.eventId !== event.eventId)
-        throw new Error("Execution stream has conflicting events at one sequence");
-      prefix.set(event.seq, event);
+      prefix.accept(event);
     }
     if (fact.kind === "pi_session_append") {
-      await this.#mutations.project(fact, true, record);
+      const through = displayCoverage(fact, prefix);
+      await this.#mutations.project(fact, true, record, through);
+      if (through !== undefined) {
+        prefix.cover(through);
+        return { canonicalThroughSequence: through };
+      }
     } else if (fact.kind === "execution_seal") {
-      const terminal = await this.#seal(
-        fact,
-        record,
-        [...prefix.values()].sort((a, b) => a.seq - b.seq),
-      );
+      const terminal = await this.#seal(fact, record, prefix);
       this.#boundary.close(fact.scope.attemptId, record.offset, record.partition);
       if (fact.closesWriter)
         this.#boundary.closeWriter(fact.scope.writerId, record.offset, record.partition);
       this.#prefixes.delete(fact.scope.attemptId);
-      return terminal;
+      return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
     }
   }
 
   async #seal(
     fact: AcceptedExecutionSealFact,
     position: FactPosition,
-    prefix: readonly PiCloudEvent[],
+    prefix: CompactEventTail | undefined,
   ): Promise<PiCloudEvent | undefined> {
     const committed = await this.#database.transaction().execute(async (transaction) => {
       const attempt = await transaction
@@ -286,19 +317,21 @@ export class ExecutionStreamProjector {
         sessionId: fact.scope.sessionId,
         turnId: fact.scope.turnId,
         agentId: fact.agentId,
-        seq: Math.max(fact.baseSequence, prefix.at(-1)?.seq ?? 0) + 1,
+        seq: Math.max(fact.baseSequence, prefix?.highWaterMark ?? 0) + 1,
         occurredAt: fact.occurredAt,
         ...fact.terminal,
       });
       const now = new Date();
       const interruptedPrefix =
         event.type !== "turn.completed"
-          ? await readInterruptedAssistantPrefix(transaction, {
-              tenantId: fact.scope.tenantId,
-              sessionId: fact.scope.sessionId,
-              turnId: fact.scope.turnId,
-              transcript: projectConversationTurnTranscript([...prefix, event]),
-            })
+          ? prefix && prefix.coveredThrough > 0
+            ? prefix.text() || null
+            : await readInterruptedAssistantPrefix(transaction, {
+                tenantId: fact.scope.tenantId,
+                sessionId: fact.scope.sessionId,
+                turnId: fact.scope.turnId,
+                transcript: projectConversationTurnTranscript([...(prefix?.events ?? []), event]),
+              })
           : null;
       await transaction
         .insertInto("session_terminal_events")

@@ -13,13 +13,16 @@ function response() {
     destroyed: false,
     writableEnded: false,
     frames: [] as string[],
-    write(chunk: string) {
+    write(chunk: string): boolean {
       this.frames.push(chunk);
       return true;
     },
     close() {
       this.destroyed = true;
       emitter.emit("close");
+    },
+    destroy() {
+      this.close();
     },
   });
 }
@@ -37,7 +40,7 @@ describe("Session snapshot and live stream", () => {
       tenantId: "t",
       sessionId: "s",
       loadCanonical: async () => ({
-        conversation: {} as ConversationDetailResource,
+        conversation: { turns: [] } as unknown as ConversationDetailResource,
         canonicalThroughSequence: 0,
       }),
     });
@@ -64,32 +67,70 @@ describe("Session snapshot and live stream", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("reloads canonical state when terminal eviction overtakes the database snapshot", async () => {
+  it("captures the immutable tail before PG so concurrent eviction needs no read retry", async () => {
     const hub = new SessionEventHub();
     let loads = 0;
+    let captured = false;
     const stream = new SessionEventStream(
-      { snapshot: () => ({ canonicalThroughSequence: 4, highWaterMark: 4, events: [] }) },
+      {
+        snapshot: () => {
+          captured = true;
+          return { canonicalThroughSequence: 0, highWaterMark: 0, events: [] };
+        },
+      },
       hub,
     );
     const opened = await stream.open({
       tenantId: "t",
       sessionId: "s",
-      loadCanonical: async () => ({
-        conversation: {
-          marker: ++loads === 1 ? "old" : "completed",
-        } as unknown as ConversationDetailResource,
-        canonicalThroughSequence: loads === 1 ? 0 : 4,
-      }),
+      loadCanonical: async () => {
+        expect(captured).toBe(true);
+        loads++;
+        return {
+          conversation: { marker: "completed", turns: [] } as unknown as ConversationDetailResource,
+          canonicalThroughSequence: 4,
+        };
+      },
     });
     const output = response();
     output.write = (chunk) => {
       output.frames.push(chunk);
-      output.close();
+      if (chunk.includes("stream.end")) output.close();
       return true;
     };
     await opened.pipe(output as unknown as ServerResponse);
-    expect(loads).toBe(2);
-    expect(output.frames[0]).toContain("completed");
+    expect(loads).toBe(1);
+    expect(output.frames.join("")).toContain("completed");
     hub.onApplicationShutdown();
+  });
+
+  it("releases a stalled socket without holding another reader or the snapshot", async () => {
+    vi.useFakeTimers();
+    const hub = new SessionEventHub(),
+      release = vi.fn();
+    const stream = new SessionEventStream(
+      {
+        retainSession: async () => release,
+        snapshot: () => ({ canonicalThroughSequence: 0, highWaterMark: 0, events: [] }),
+      },
+      hub,
+      { sendTimeoutMs: 5 },
+    );
+    const opened = await stream.open({
+      tenantId: "t",
+      sessionId: "s",
+      loadCanonical: async () => ({
+        conversation: { turns: [] } as unknown as ConversationDetailResource,
+        canonicalThroughSequence: 0,
+      }),
+    });
+    const output = response();
+    output.write = () => false;
+    const running = opened.pipe(output as unknown as ServerResponse);
+    await vi.advanceTimersByTimeAsync(6);
+    await running;
+    expect(output.destroyed).toBe(true);
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -48,7 +48,7 @@ export interface ExecutionLogFactory {
 
 /**
  * Deterministic process-local event log for unit/development composition. The
- * maintained production path injects KafkaLiveSessionTail and never constructs
+ * maintained production path injects SessionLiveView and never constructs
  * this class.
  */
 export class DurableEventStore implements ExecutionLogFactory {

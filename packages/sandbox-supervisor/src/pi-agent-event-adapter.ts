@@ -5,6 +5,7 @@ import type {
   ModelSamplingIdentity,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
+import { toolResultIsUnknown } from "@pi-cloud/protocol";
 import { isIncompleteModelStreamError } from "@pi-cloud/pi-session-postgres";
 
 type JsonRecord = Record<string, unknown>;
@@ -71,23 +72,6 @@ function boundedToolOutput(value: unknown, maximumBytes: number): unknown {
     truncated: true,
     preview: `${Buffer.from(serialized, "utf8").subarray(0, previewBytes).toString("utf8")}${marker}`,
   };
-}
-
-function toolResultIsUnknown(value: unknown): boolean {
-  try {
-    const serialized = JSON.stringify(value);
-    return (
-      typeof serialized === "string" &&
-      [
-        "cubesandbox_tool_result_unknown",
-        "tool_operation_outcome_unknown",
-        "tool_result_released",
-        "tool_command_delivery_unknown",
-      ].some((code) => serialized.includes(code))
-    );
-  } catch {
-    return false;
-  }
 }
 
 function isRecord(value: unknown): value is JsonRecord {

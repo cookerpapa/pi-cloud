@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { format } from "prettier";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { snapshotTurn } from "./lib/session-snapshot.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 if (process.env.PI_CLOUD_LIVE_LONG_CONTEXT_CHECK !== "1") {
@@ -465,7 +466,12 @@ async function runTurn(sessionId, prompt, expectedTools) {
       retryDelayMs: 100,
       onStatus() {},
       onSnapshot(snapshot) {
-        for (const event of snapshot.liveEvents) observeEvent(event);
+        const partial = snapshotTurn(snapshot, accepted.turnId);
+        text.splice(0, text.length, ...(partial?.text ? [partial.text] : []));
+        if (partial?.text) {
+          firstResponseAt ??= performance.now();
+          firstTextAt ??= performance.now();
+        }
         const recovered = snapshot.conversation.turns.find(
           (turn) => turn.turnId === accepted.turnId,
         );

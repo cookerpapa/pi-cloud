@@ -175,7 +175,7 @@ describe("conversation turn projection", () => {
     ]);
   });
 
-  it("keeps Hosted Tool progress out of the canonical conversation transcript", () => {
+  it("restores Hosted Tool status and action in the presentation transcript", () => {
     const projected = projectConversationTurnTranscript(
       events([
         { type: "turn.started", payload: { inputKind: "prompt" } },
@@ -200,11 +200,47 @@ describe("conversation turn projection", () => {
     expect(projected.throughSequence).toBe(5);
     expect(projected.items).toEqual([
       {
+        kind: "hosted_search",
+        activityId: "ws-1",
+        status: "completed",
+        action: { type: "search", queries: ["official source"] },
+        firstSequence: 2,
+        lastSequence: 3,
+      },
+      {
         kind: "text",
         text: "Grounded answer.",
         firstSequence: 4,
         lastSequence: 4,
       },
     ]);
+  });
+
+  it("refines a committed compaction with its later public completion instead of duplicating it", () => {
+    const base = projectConversationTurnTranscript(
+      events([
+        { type: "context.compaction.started", payload: { reason: "threshold" } },
+        {
+          type: "context.compaction.completed",
+          payload: { reason: "threshold", status: "completed", willRetry: false },
+        },
+      ]),
+    );
+    const [detail] = events([
+      {
+        type: "context.compaction.completed",
+        payload: { reason: "threshold", status: "completed", willRetry: false, tokensBefore: 100 },
+      },
+    ]);
+    const result = projectConversationTurnTranscript(
+      [{ ...detail!, seq: base.throughSequence + 1 }],
+      base,
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      kind: "compaction",
+      status: "completed",
+      tokensBefore: 100,
+    });
   });
 });

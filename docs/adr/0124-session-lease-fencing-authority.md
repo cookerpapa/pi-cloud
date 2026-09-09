@@ -28,15 +28,15 @@ Run atomically:
 
 The trusted Worker carries one versioned `ExecutionLease` string containing the
 lease ID, Attempt ID and fencing token. It is never placed in model context,
-the browser, Cube, or an AcceptedFact. Heartbeat extends only `valid_until`;
+the browser or Cube. Heartbeat extends only `valid_until`;
 replacement creates a new lease ID and higher fencing token.
 
 The same lease is presented at the three Run effect boundaries:
 
-- FactChannel open/renew before CandidateFacts enter Kafka;
+- one-time publication opening before Worker direct Kafka append;
 - Tool Broker before an operation is durably marked running and injected into
   Cube; and
-- terminal/Pi Session/Workspace commits in PostgreSQL.
+- Run settlement and Workspace control mutations in PostgreSQL.
 
 Tool Broker no longer mints or persists a `pcts_*` capability. Its management
 API still uses a machine service credential, while the Tool operation endpoint
@@ -44,15 +44,18 @@ uses the Session lease as its only Run authority. The Tool binding stores the
 allowed Tool snapshot and frozen Turn/Attempt context; those are policy and
 causal bindings, not additional credentials.
 
-AcceptedFacts are grant-free/lease-free. After the Authority Gate has accepted
-a fact and Kafka has acknowledged it, downstream Gateway and projector code
-must not recheck a lease that may legitimately expire later.
+Kafka records carry the frozen execution scope; concrete Tool commands include
+the lease identity for executor admission. Projector checks recorded scope and
+opening/seal positions, not current wall-clock expiry. Native PG projection is
+coordinated with seals rather than a lease that may legitimately expire after
+Kafka ACK. There is no second channel lease or record signature.
 
 ## Failure semantics
 
 - Missing heartbeat: the lease expires and no new effect may start.
 - Replacement: a higher fencing token makes every old lease stale.
-- Old Worker resumes: FactChannel, Tool Broker and terminal commit reject it.
+- Old Worker resumes: records after its seal cannot change any projection;
+  Tool Broker and control-state commits reject its obsolete authority.
 - Tool transport becomes ambiguous: the operation is `UNKNOWN`; arbitrary
   Shell is not replayed.
 - Command was already running when the lease expired: takeover retires the old

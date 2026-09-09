@@ -9,7 +9,6 @@ import {
   UuidSchema,
 } from "./protocol-primitives.ts";
 import {
-  PiCloudEventSchema,
   ProviderHostedWebSearchActionSchema,
   SessionStateSchema,
   TurnCancellationReasonSchema,
@@ -652,12 +651,26 @@ export const DevelopmentEnvironmentListResourceSchema = Type.Object(
 export const ConversationTranscriptItemResourceSchema = Type.Union([
   Type.Object(
     {
+      kind: Type.Literal("tool_preparing"),
+      toolCallId: Type.String({ minLength: 1, maxLength: 1024 }),
+      toolName: Type.String({ minLength: 1, maxLength: 1024 }),
+      firstSequence: PositiveSafeIntegerSchema,
+      startedAt: UtcTimestampSchema,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
       kind: Type.Literal("hosted_search"),
       activityId: Type.String({ minLength: 1, maxLength: 256 }),
-      status: Type.Union([Type.Literal("completed"), Type.Literal("failed")]),
+      status: Type.Union([
+        Type.Literal("running"),
+        Type.Literal("completed"),
+        Type.Literal("failed"),
+      ]),
       action: Type.Optional(ProviderHostedWebSearchActionSchema),
       firstSequence: PositiveSafeIntegerSchema,
-      lastSequence: PositiveSafeIntegerSchema,
+      lastSequence: Type.Optional(PositiveSafeIntegerSchema),
     },
     { additionalProperties: false },
   ),
@@ -805,9 +818,8 @@ export const ConversationDetailResourceSchema = Type.Object(
 
 export const SessionViewSnapshotResourceSchema = Type.Object(
   {
-    schemaVersion: Type.Literal(1),
+    schemaVersion: Type.Literal(2),
     conversation: ConversationDetailResourceSchema,
-    liveEvents: Type.Array(PiCloudEventSchema, { maxItems: 100_000 }),
   },
   { additionalProperties: false },
 );

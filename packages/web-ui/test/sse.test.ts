@@ -6,6 +6,9 @@ import {
 } from "@pi-cloud/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { SseFrameParser, streamSessionEvents, type SessionStreamStatus } from "../src/sse.ts";
+import { sessionJsonFrames } from "../../runtime-core/src/session-stream-framing.ts";
+import { projectConversationTurnTranscript } from "../../runtime-core/src/conversation-turn-projection.ts";
+import { SESSION_STREAM_MAX_FRAME_BYTES } from "@pi-cloud/protocol";
 
 const SESSION_ID = "10000000-0000-4000-8000-000000000001";
 const TURN_ID = "20000000-0000-4000-8000-000000000001";
@@ -26,7 +29,10 @@ it("stops reconnecting for a deleted or unauthorized Session", async () => {
   expect(request).toHaveBeenCalledTimes(1);
 });
 
-function event(sequence: number, text: string): PiCloudEvent {
+function event(
+  sequence: number,
+  text: string,
+): Extract<PiCloudEvent, { type: "assistant.text.delta" }> {
   return {
     schemaVersion: 1,
     eventId: `30000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`,
@@ -42,7 +48,7 @@ function event(sequence: number, text: string): PiCloudEvent {
 
 function snapshot(liveEvents: PiCloudEvent[] = []): SessionViewSnapshotResource {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     conversation: {
       project: {
         projectId: "40000000-0000-4000-8000-000000000001",
@@ -80,14 +86,26 @@ function snapshot(liveEvents: PiCloudEvent[] = []): SessionViewSnapshotResource 
         lastActiveAt: CREATED_AT,
       },
       inheritedMessages: [],
-      turns: [],
+      turns: liveEvents.length
+        ? [
+            {
+              turnId: TURN_ID,
+              runId: "80000000-0000-4000-8000-000000000001",
+              mailboxPosition: 1,
+              prompt: "Continue",
+              state: "running",
+              acceptedAt: CREATED_AT,
+              transcript: projectConversationTurnTranscript(liveEvents),
+            },
+          ]
+        : [],
       historyTruncated: false,
     },
-    liveEvents,
   };
 }
 
 function frame(name: string, value: unknown): string {
+  if (name === "session.snapshot") return [...sessionJsonFrames(value, "snapshot")].join("");
   return `event: ${name}\ndata: ${JSON.stringify(value)}\n\n`;
 }
 
@@ -96,9 +114,10 @@ function eventStream(body: string): Response {
   return new Response(
     new ReadableStream<Uint8Array>({
       start(controller) {
-        const midpoint = Math.floor(body.length / 2);
-        controller.enqueue(encoder.encode(body.slice(0, midpoint)));
-        controller.enqueue(encoder.encode(body.slice(midpoint)));
+        const bytes = encoder.encode(body),
+          midpoint = Math.floor(bytes.length / 2);
+        controller.enqueue(bytes.subarray(0, midpoint));
+        controller.enqueue(bytes.subarray(midpoint));
         controller.close();
       },
     }),
@@ -115,12 +134,102 @@ describe("cursor-free SSE Session client", () => {
     ]);
   });
 
-  it("accepts a bounded long-session snapshot frame larger than one MiB", () => {
+  it("bounds individual frames without limiting a network chunk containing many frames", () => {
     const parser = new SseFrameParser();
-    const payload = "x".repeat(2 * 1_024 * 1_024);
-    expect(parser.push(`event: snapshot\ndata: ${payload}\n\n`)).toEqual([
-      { event: "snapshot", data: payload },
-    ]);
+    expect(parser.push(frame("note", "x".repeat(1000)).repeat(1000))).toHaveLength(1000);
+    expect(() => parser.push(frame("note", "x".repeat(SESSION_STREAM_MAX_FRAME_BYTES)))).toThrow(
+      "buffer limit",
+    );
+  });
+
+  it("materializes a snapshot over twenty MiB through bounded frames without replaying text", async () => {
+    const payload = '中文🙂\\"\n'.repeat(2_000_000);
+    const value = snapshot([event(1, "placeholder")]);
+    const item = value.conversation.turns[0]!.transcript!.items[0]!;
+    if (item.kind !== "text") throw new Error("Missing text fixture");
+    item.text = payload;
+    const frames = [...sessionJsonFrames(value, "snapshot")];
+    expect(frames.every((part) => Buffer.byteLength(part) <= SESSION_STREAM_MAX_FRAME_BYTES)).toBe(
+      true,
+    );
+    expect(Buffer.byteLength(frames.join(""))).toBeGreaterThan(20 * 1024 * 1024);
+    const abort = new AbortController();
+    let snapshots = 0;
+    await streamSessionEvents({
+      sessionId: SESSION_ID,
+      signal: abort.signal,
+      fetchImplementation: async () => eventStream(frames.join("")),
+      onStatus() {},
+      onEvent() {
+        throw new Error("Snapshot must not become replayed live events");
+      },
+      onSnapshot(received) {
+        snapshots++;
+        expect(received).toEqual(value);
+        abort.abort();
+      },
+    });
+    expect(snapshots).toBe(1);
+  }, 30000);
+
+  it("discards an interrupted snapshot and applies only the complete replacement", async () => {
+    const value = snapshot([event(1, "whole value")]);
+    const complete = [...sessionJsonFrames(value, "snapshot")];
+    const abort = new AbortController();
+    let calls = 0,
+      applied = 0;
+    await streamSessionEvents({
+      sessionId: SESSION_ID,
+      signal: abort.signal,
+      retryDelayMs: 0,
+      onStatus() {},
+      onEvent() {},
+      fetchImplementation: async () =>
+        eventStream((++calls === 1 ? complete.slice(0, -1) : complete).join("")),
+      onSnapshot(received) {
+        applied++;
+        expect(received).toEqual(value);
+        abort.abort();
+      },
+    });
+    expect(calls).toBe(2);
+    expect(applied).toBe(1);
+  });
+
+  it("delivers a large complete Tool call once after its last frame", async () => {
+    const abort = new AbortController(),
+      delivered: PiCloudEvent[] = [];
+    const value: PiCloudEvent = {
+      ...event(1, ""),
+      type: "tool.started",
+      payload: {
+        toolCallId: "large",
+        toolName: "write",
+        input: JSON.parse(
+          JSON.stringify({ content: "代码🙂".repeat(100_000) }).slice(0, -1) +
+            ',"__proto__":{"keep":true},"nested":{"__proto__":17}}',
+        ),
+      },
+    };
+    const body = [
+      ...sessionJsonFrames(snapshot(), "snapshot"),
+      ...sessionJsonFrames(value, "event", value.type),
+    ].join("");
+    await streamSessionEvents({
+      sessionId: SESSION_ID,
+      signal: abort.signal,
+      onStatus() {},
+      onSnapshot() {},
+      fetchImplementation: async () => eventStream(body),
+      onEvent(e) {
+        delivered.push(e);
+        abort.abort();
+      },
+    });
+    expect(delivered).toEqual([value]);
+    expect(Object.getPrototypeOf((delivered[0]!.payload as { input: unknown }).input)).toBe(
+      Object.prototype,
+    );
   });
 
   it("reconnects with a replacement snapshot and never sends a browser cursor", async () => {

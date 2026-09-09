@@ -114,6 +114,7 @@ type ConversationHistoryRow = {
   inputKind: string;
   prompt: string | null;
   turnState: ConversationTurnState;
+  waitingForSeal: boolean;
   mailboxPosition: string | null;
   acceptedAt: Date | string;
 };
@@ -258,7 +259,7 @@ const DEFAULT_CANCELLATION_GRACE_PERIOD_MS = 1_000;
 const MAX_CONVERSATION_SUMMARIES = 100;
 const MAX_DELEGATED_SESSION_SUMMARIES = 500;
 const MAX_WORKSPACE_SUMMARIES = 100;
-const MAX_CONVERSATION_TURNS = 200;
+const MAX_CONVERSATION_TURNS = 40;
 const MAX_INHERITED_MESSAGES = 10_000;
 const TURN_ACCEPTING_SESSION_STATES = new Set<SessionState>([
   "cold",
@@ -1429,11 +1430,17 @@ export class ControlPlaneStore {
     };
   }
 
-  async getConversation(sessionId: string): Promise<ConversationDetailResource> {
-    return (await this.getConversationView(sessionId)).conversation;
+  async getConversation(
+    sessionId: string,
+    beforeTurnId?: string,
+  ): Promise<ConversationDetailResource> {
+    return (await this.getConversationView(sessionId, beforeTurnId)).conversation;
   }
 
-  async getConversationView(sessionId: string): Promise<{
+  async getConversationView(
+    sessionId: string,
+    beforeTurnId?: string,
+  ): Promise<{
     conversation: ConversationDetailResource;
     canonicalThroughSequence: number;
   }> {
@@ -1447,11 +1454,14 @@ export class ControlPlaneStore {
           defaultModelProfileId: this.#defaultModelProfileId,
           environmentImageRevision: this.#environmentImageRevision,
         });
-        return reader.#readConversation(sessionId);
+        return reader.#readConversation(sessionId, beforeTurnId);
       });
   }
 
-  async #readConversation(sessionId: string): Promise<{
+  async #readConversation(
+    sessionId: string,
+    beforeTurnId?: string,
+  ): Promise<{
     conversation: ConversationDetailResource;
     canonicalThroughSequence: number;
   }> {
@@ -1502,8 +1512,29 @@ export class ControlPlaneStore {
         ? await this.#conversationLineage(sessionId)
         : [{ sessionId, parentSessionId: null, forkTurnId: null }];
     const lineageTurnRows: ConversationHistoryRow[] = [];
-    for (let index = 0; index < lineage.length; index += 1) {
+    const anchor =
+      beforeTurnId === undefined
+        ? undefined
+        : await this.#database
+            .selectFrom("runs as anchor")
+            .innerJoin("turns as anchor_turn", "anchor_turn.id", "anchor.turn_id")
+            .select(["anchor.session_id", "anchor.mailbox_position"])
+            .where("anchor.tenant_id", "=", this.#tenantId)
+            .where("anchor.turn_id", "=", beforeTurnId)
+            .where("anchor_turn.pruned_at", "is", null)
+            .executeTakeFirst();
+    if (
+      beforeTurnId !== undefined &&
+      (!anchor || !lineage.some((node) => node.sessionId === anchor.session_id))
+    )
+      throw new ControlPlaneStoreError("not_found", "History anchor is not in this conversation");
+    let reachedAnchor = anchor === undefined;
+    for (let index = lineage.length - 1; index >= 0; index -= 1) {
       const node = lineage[index]!;
+      if (!reachedAnchor) {
+        if (node.sessionId !== anchor!.session_id) continue;
+        reachedAnchor = true;
+      }
       const child = lineage[index + 1];
       const forkMailboxPosition =
         child?.forkTurnId === null || child?.forkTurnId === undefined
@@ -1525,11 +1556,21 @@ export class ControlPlaneStore {
           "Conversation fork Turn is missing from its parent Session",
         );
       }
+      if (
+        anchor?.session_id === node.sessionId &&
+        forkMailboxPosition &&
+        BigInt(anchor.mailbox_position) > BigInt(forkMailboxPosition.mailbox_position)
+      )
+        throw new ControlPlaneStoreError(
+          "not_found",
+          "History anchor is beyond the conversation fork",
+        );
       const newestRows = await this.#database
         .selectFrom("runs as run")
         .innerJoin("turns as turn", (join) =>
           join.onRef("turn.tenant_id", "=", "run.tenant_id").onRef("turn.id", "=", "run.turn_id"),
         )
+        .leftJoin("run_attempts as view_attempt", "view_attempt.id", "run.current_attempt_id")
         .select([
           "run.session_id as originSessionId",
           "run.id as runId",
@@ -1537,6 +1578,9 @@ export class ControlPlaneStore {
           "turn.input_kind as inputKind",
           "turn.input_text as prompt",
           "turn.state as turnState",
+          sql<boolean>`(view_attempt.output_seal_id is not null and view_attempt.output_sealed_at is null)`.as(
+            "waitingForSeal",
+          ),
           "run.mailbox_position as mailboxPosition",
           "run.created_at as acceptedAt",
         ])
@@ -1544,28 +1588,25 @@ export class ControlPlaneStore {
         .where("run.session_id", "=", node.sessionId)
         .where("turn.pruned_at", "is", null)
         .where("run.mailbox_position", "is not", null)
+        .$if(anchor?.session_id === node.sessionId, (query) =>
+          query.where("run.mailbox_position", "<", anchor!.mailbox_position),
+        )
         .$if(forkMailboxPosition !== null && forkMailboxPosition !== undefined, (query) =>
           query.where("run.mailbox_position", "<=", forkMailboxPosition!.mailbox_position!),
         )
         .orderBy("run.mailbox_position", "desc")
         .orderBy("run.id", "desc")
-        .limit(MAX_CONVERSATION_TURNS + 1)
+        .limit(MAX_CONVERSATION_TURNS + 1 - lineageTurnRows.length)
         .execute();
-      lineageTurnRows.push(...newestRows.reverse());
+      lineageTurnRows.push(...newestRows);
+      if (lineageTurnRows.length > MAX_CONVERSATION_TURNS) break;
     }
     const historyTruncated = lineageTurnRows.length > MAX_CONVERSATION_TURNS;
-    const includedRows = lineageTurnRows.slice(-MAX_CONVERSATION_TURNS);
-    const terminalTurnIds = includedRows
-      .filter(
-        (row) =>
-          row.turnState === "completed" ||
-          row.turnState === "failed" ||
-          row.turnState === "cancelled",
-      )
-      .map((row) => row.turnId);
+    const includedRows = lineageTurnRows.slice(0, MAX_CONVERSATION_TURNS).reverse();
+    const turnIds = includedRows.map((row) => row.turnId);
     const transcriptByTurnId = await readCanonicalPiTurnTranscripts(this.#database, {
       tenantId: this.#tenantId,
-      turnIds: terminalTurnIds,
+      turnIds,
     });
     const turns = includedRows.map((row) => {
       if (row.inputKind !== "prompt" || row.prompt === null || row.mailboxPosition === null) {
@@ -1579,7 +1620,14 @@ export class ControlPlaneStore {
         turnId: row.turnId,
         mailboxPosition: positiveSafeInteger(row.mailboxPosition, "Conversation mailbox position"),
         prompt: row.prompt,
-        state: row.turnState,
+        state:
+          row.waitingForSeal &&
+          (row.turnState === "completed" ||
+            row.turnState === "failed" ||
+            row.turnState === "cancelled") &&
+          transcriptByTurnId.get(row.turnId)?.terminalSequence == null
+            ? ("running" as const)
+            : row.turnState,
         ...(transcriptByTurnId.has(row.turnId)
           ? { transcript: transcriptByTurnId.get(row.turnId)! }
           : {}),
@@ -1588,12 +1636,16 @@ export class ControlPlaneStore {
       };
     });
 
-    const canonicalThroughSequence =
+    const canonicalThroughSequence = Math.max(
       nonNegativeSafeInteger(conversation.nextEventSequence, "Conversation next event sequence") -
-      1;
+        1,
+      ...includedRows
+        .filter((row) => row.originSessionId === sessionId)
+        .map((row) => transcriptByTurnId.get(row.turnId)?.throughSequence ?? 0),
+    );
     const environment = await this.#loadActiveProjectEnvironment(conversation.projectId);
     const inheritedMessages =
-      conversation.sessionKind === "subagent"
+      conversation.sessionKind === "subagent" && beforeTurnId === undefined
         ? await this.#delegatedInheritedMessages(sessionId)
         : [];
     return {
@@ -1650,8 +1702,8 @@ export class ControlPlaneStore {
         "execution.pi_context_base_entry_id as contextBaseEntryId",
         "child.pi_session_id as piSessionId",
       ])
-      .where("tenant_id", "=", this.#tenantId)
-      .where("child_session_id", "=", sessionId)
+      .where("execution.tenant_id", "=", this.#tenantId)
+      .where("execution.child_session_id", "=", sessionId)
       .executeTakeFirst();
     if (execution === undefined) {
       throw new ControlPlaneStoreError(

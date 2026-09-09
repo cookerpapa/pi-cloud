@@ -26,6 +26,14 @@ Sign in again and set the model provider/key in the administrator page.
 
 ## Execution-seal protocol upgrade
 
+The current display upgrade is migration 135 plus SSE v2. Drain active Runs and
+project their seals, migrate, then deploy matching Control Plane/Worker/Web
+images and reload browser pages. It adds only display coverage metadata; the
+v7 topic, native semantic history and Cube Volumes remain intact. Snapshots and
+large complete events use bounded begin/part/end frames; no old decoder remains.
+
+For installations predating direct Worker publication:
+
 Migration 134 requires no active Runs, no unpublished terminal Outbox rows and
 no seals waiting for canonical projection.
 Drain Workers, stop old Worker/Control Plane publishers, migrate, then start all

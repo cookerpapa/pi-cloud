@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +15,25 @@ const piRoots = [
   ),
 ].filter((path) => existsSync(path));
 const checkOnly = process.argv.slice(2).includes("--check");
+
+// Preserve JSON.parse's own __proto__ keys when json-ext merges object chunks.
+// The fixed-version/source check keeps this one-line correction reproducible.
+const jsonRoot = join(repositoryRoot, "node_modules", "@discoveryjs", "json-ext");
+if (existsSync(jsonRoot)) {
+  if (readPackageVersion(jsonRoot) !== "1.1.0")
+    throw new Error("Review json-ext preparation for this version");
+  const original = "Object.assign(currentRootValueCursor.value, JSON.parse(fragment));";
+  const corrected =
+    "Object.defineProperties(currentRootValueCursor.value, Object.getOwnPropertyDescriptors(JSON.parse(fragment)));";
+  for (const file of ["src/parse-chunked.js", "cjs/parse-chunked.cjs"]) {
+    const path = join(jsonRoot, file),
+      source = readFileSync(path, "utf8");
+    if (source.includes(corrected)) continue;
+    if (checkOnly || !source.includes(original))
+      throw new Error(`json-ext object merge is not prepared: ${file}`);
+    writeFileSync(path, source.replace(original, corrected));
+  }
+}
 
 const patchSpecs = [
   {

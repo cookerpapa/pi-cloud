@@ -1,6 +1,6 @@
 import type { Database } from "@pi-cloud/database";
-import { projectNativeSessionAppend } from "@pi-cloud/pi-session-postgres";
-import type { Kysely } from "kysely";
+import { projectNativeSessionAppend, committedItemSequence } from "@pi-cloud/pi-session-postgres";
+import { sql, type Kysely } from "kysely";
 import type { AcceptedPiSessionAppendFact } from "./accepted-fact.ts";
 import { recordFactProjection, type FactPosition } from "./accepted-fact-recovery.ts";
 
@@ -11,6 +11,7 @@ export class PostgresPiSessionAppendProjector {
     fact: AcceptedPiSessionAppendFact,
     requireProductSession = false,
     position?: FactPosition,
+    displayThrough?: number,
   ): Promise<void> {
     await this.database.transaction().execute(async (tx) => {
       if (requireProductSession) {
@@ -53,7 +54,15 @@ export class PostgresPiSessionAppendProjector {
       if (position) {
         await tx
           .updateTable("run_attempts")
-          .set({ output_projected_offset: position.offset.toString() })
+          .set({
+            output_projected_offset: position.offset.toString(),
+            ...(displayThrough === undefined
+              ? {}
+              : {
+                  output_display_seq: sql<string>`greatest(output_display_seq, ${displayThrough})`,
+                  output_display_native_seq: sql<string>`greatest(output_display_native_seq, ${committedItemSequence(fact.items.at(-1)!)})`,
+                }),
+          })
           .where("tenant_id", "=", fact.scope.tenantId)
           .where("id", "=", fact.scope.attemptId)
           .execute();

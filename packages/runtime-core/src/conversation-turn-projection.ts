@@ -13,15 +13,16 @@ function toolItemIndex(
 }
 
 /**
- * Reduces the durable public event history for one Turn into the bounded
- * semantic transcript used by conversation discovery. Pi SessionStorage
- * remains the model-context authority; PostgreSQL supplies the bounded live
- * tail and stores the canonical terminal view.
+ * Reduces public display spans onto a canonical presentation seed. This does
+ * not write Pi SessionStorage or turn UI search/preparation rows into model
+ * tools. Native PG history remains the model-context authority.
  */
 export function projectConversationTurnTranscript(
   events: readonly PiCloudEvent[],
+  base?: ConversationTurnTranscriptResource,
 ): ConversationTurnTranscriptResource {
   if (events.length === 0) {
+    if (base) return base;
     throw new TypeError("A conversation turn projection requires at least one event");
   }
   const first = events[0]!;
@@ -29,13 +30,13 @@ export function projectConversationTurnTranscript(
     throw new TypeError("A conversation turn projection cannot contain a session-level event");
   }
 
-  const items: ConversationTranscriptItemResource[] = [];
-  let previousSequence = 0;
-  let startedSequence: number | null = null;
-  let terminalSequence: number | null = null;
-  let stopReason: string | null = null;
-  let failure: ConversationTurnTranscriptResource["failure"] = null;
-  let cancellation: ConversationTurnTranscriptResource["cancellation"] = null;
+  const items: ConversationTranscriptItemResource[] = [...(base?.items ?? [])];
+  let previousSequence = base?.throughSequence ?? 0;
+  let startedSequence: number | null = base?.startedSequence ?? null;
+  let terminalSequence: number | null = base?.terminalSequence ?? null;
+  let stopReason: string | null = base?.stopReason ?? null;
+  let failure: ConversationTurnTranscriptResource["failure"] = base?.failure ?? null;
+  let cancellation: ConversationTurnTranscriptResource["cancellation"] = base?.cancellation ?? null;
 
   for (const event of events) {
     if (
@@ -72,11 +73,49 @@ export function projectConversationTurnTranscript(
       continue;
     }
     if (event.type === "assistant.tool_call.preparing") {
-      // This live-only row covers the interval while Pi validates streamed
-      // arguments. Canonical history begins at the complete Tool boundary.
+      if (
+        !items.some(
+          (item) => item.kind === "tool_preparing" && item.toolCallId === event.payload.toolCallId,
+        )
+      )
+        items.push({
+          kind: "tool_preparing",
+          toolCallId: event.payload.toolCallId,
+          toolName: event.payload.toolName,
+          firstSequence: event.seq,
+          startedAt: event.occurredAt,
+        });
+      continue;
+    }
+    if (
+      event.type === "provider.hosted_tool.started" ||
+      event.type === "provider.hosted_tool.completed"
+    ) {
+      const at = items.findIndex(
+        (item) => item.kind === "hosted_search" && item.activityId === event.payload.activityId,
+      );
+      const old = at < 0 ? undefined : items[at];
+      const next: ConversationTranscriptItemResource = {
+        kind: "hosted_search",
+        activityId: event.payload.activityId,
+        firstSequence: old && "firstSequence" in old ? old.firstSequence : event.seq,
+        status: event.type === "provider.hosted_tool.started" ? "running" : event.payload.outcome,
+        ...(event.type === "provider.hosted_tool.completed"
+          ? {
+              lastSequence: event.seq,
+              ...(event.payload.action === undefined ? {} : { action: event.payload.action }),
+            }
+          : {}),
+      };
+      if (at < 0) items.push(next);
+      else items[at] = next;
       continue;
     }
     if (event.type === "tool.started") {
+      const preparing = items.findIndex(
+        (item) => item.kind === "tool_preparing" && item.toolCallId === event.payload.toolCallId,
+      );
+      if (preparing >= 0) items.splice(preparing, 1);
       const index = toolItemIndex(items, event.payload.toolCallId);
       if (index < 0) {
         items.push({
@@ -102,6 +141,10 @@ export function projectConversationTurnTranscript(
       continue;
     }
     if (event.type === "tool.completed") {
+      const preparing = items.findIndex(
+        (item) => item.kind === "tool_preparing" && item.toolCallId === event.payload.toolCallId,
+      );
+      if (preparing >= 0) items.splice(preparing, 1);
       const index = toolItemIndex(items, event.payload.toolCallId);
       if (index < 0) {
         items.push({
@@ -156,6 +199,16 @@ export function projectConversationTurnTranscript(
           index = itemIndex;
           break;
         }
+      }
+      // PG may already contain the completed Compaction Entry while its later
+      // public completion detail remains in the tail. Refine that item instead
+      // of displaying the same compaction twice after a refresh.
+      if (index < 0 && event.payload.status === "completed" && base) {
+        for (let i = base.items.length - 1; i >= 0; i--)
+          if (items[i]?.kind === "compaction") {
+            index = i;
+            break;
+          }
       }
       const existing = index < 0 ? undefined : items[index];
       const completed = {
@@ -240,7 +293,20 @@ export function projectConversationTurnTranscript(
   return parseConversationTurnTranscriptResource({
     schemaVersion: 1,
     throughSequence: events.at(-1)!.seq,
-    items,
+    items:
+      terminalSequence === null
+        ? items
+        : items
+            .filter((item) => item.kind !== "tool_preparing")
+            .map((item) =>
+              item.kind === "hosted_search" && item.status === "running"
+                ? {
+                    ...item,
+                    status: failure || cancellation ? "failed" : "completed",
+                    lastSequence: terminalSequence,
+                  }
+                : item,
+            ),
     startedSequence,
     terminalSequence,
     stopReason,

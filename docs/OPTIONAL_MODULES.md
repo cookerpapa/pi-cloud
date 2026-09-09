@@ -5,10 +5,10 @@ the conversation product:
 
 ```text
 Web → Control Plane → PostgreSQL queue → Pi Worker
-Worker → Authority Gate → Kafka acks=all
+Worker → Kafka acks=all → Session Projector
                            ├→ PostgreSQL Session storage
-                           ├→ Gateway snapshot-first SSE
-                           └→ Tool Broker command consumer → Cube
+                           ├→ snapshot-first SSE
+                           └→ Tool executor → Cube
 Worker ← read-only Tool result wait ← Tool Broker
 ```
 

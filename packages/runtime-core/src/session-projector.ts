@@ -69,14 +69,20 @@ export class SessionProjector {
         if (!(await this.#publication.accept(record)) || current?.() === false) return;
         const fact = parseKafkaAcceptedFact(JSON.stringify(record.fact));
         const accepted = { ...record, fact };
-        const terminal = await this.#projection.project(accepted);
+        const projected = await this.#projection.project(accepted);
         if (current?.() === false) return;
         const applicable =
           fact.kind === "execution_seal" || (await this.#projection.accepts(accepted));
         if (current?.() === false) return;
-        if (terminal) this.eventStore.accept(fact.scope.tenantId, terminal);
+        if (projected?.terminal) this.eventStore.accept(fact.scope.tenantId, projected.terminal);
         if (applicable) {
           for (const event of factEvents(fact)) this.eventStore.accept(fact.scope.tenantId, event);
+          if (projected?.canonicalThroughSequence !== undefined)
+            this.eventStore.cover(
+              fact.scope.tenantId,
+              fact.scope.sessionId,
+              projected.canonicalThroughSequence,
+            );
           await options.toolCommands.consume(accepted, current);
         }
       },

@@ -14,6 +14,7 @@ export type UiLanguage = "zh-CN" | "en-US";
 const STORAGE_KEY = "pi-cloud:ui-language";
 
 const zhCN = {
+  "chat.loadEarlier": "加载更早的消息",
   "language.label": "界面语言",
   "language.zh": "中文",
   "language.en": "English",
@@ -405,6 +406,7 @@ const zhCN = {
 export type UiTextKey = keyof typeof zhCN;
 
 const enUS: Record<UiTextKey, string> = {
+  "chat.loadEarlier": "Load earlier messages",
   "language.label": "Interface language",
   "language.zh": "中文",
   "language.en": "English",

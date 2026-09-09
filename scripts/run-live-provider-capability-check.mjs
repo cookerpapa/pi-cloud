@@ -200,9 +200,8 @@ try {
     signal: streamAbort.signal,
     authorizationToken: bootstrapToken,
     fetchImplementation: cookieFetch.fetch,
-    onSnapshot(snapshot) {
-      observedEvents.push(...snapshot.liveEvents);
-    },
+    // This check attaches before submitting work and audits actual wire events.
+    onSnapshot() {},
     onEvent(event) {
       observedEvents.push(event);
     },

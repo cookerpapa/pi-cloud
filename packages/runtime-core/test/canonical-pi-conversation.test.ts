@@ -141,6 +141,9 @@ function database(): Kysely<Database> {
         select() {
           return this;
         },
+        innerJoin() {
+          return this;
+        },
         where() {
           return this;
         },

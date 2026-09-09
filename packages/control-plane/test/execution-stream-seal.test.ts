@@ -167,8 +167,8 @@ async function fixture() {
     return Object.assign(view, {
       async projectRecord(r: ReturnType<typeof record>) {
         if (r.fact.kind === "execution_seal") {
-          const terminal = await new ExecutionStreamProjector(db).project(r);
-          if (terminal) view.accept(tenantId, terminal);
+          const result = await new ExecutionStreamProjector(db).project(r);
+          if (result?.terminal) view.accept(tenantId, result.terminal);
         } else if (await boundary.isOpen(r, false)) {
           for (const event of factEvents(r.fact)) view.accept(r.fact.scope.tenantId, event);
         }
@@ -179,6 +179,98 @@ async function fixture() {
 }
 
 describe.sequential("Execution stream closure", () => {
+  it("evicts committed message spans before Run completion and preserves a repeated unfinished prefix", async () => {
+    const f = await fixture(),
+      projector = new ExecutionStreamProjector(db),
+      view = new SessionLiveView(async () => () => {});
+    const count = 2048,
+      piece = "hello ",
+      text = piece.repeat(count);
+    // This fixture stops before any environment attestation. Keep its product
+    // view in the honest pending state rather than inventing validation evidence.
+    await db
+      .updateTable("environment_versions")
+      .set({ state: "pending", validated_at: null })
+      .where("project_id", "=", f.session.projectId)
+      .execute();
+    try {
+      for (let seq = 1; seq <= count; seq++) {
+        const fact = f.delta(seq, piece);
+        await projector.project(f.record(fact, BigInt(seq)));
+        view.accept(tenantId, fact.event);
+      }
+      expect(view.statistics().cachedEvents).toBe(1);
+      const borrowed = view.snapshot(tenantId, f.session.sessionId);
+      const fact = f.mutation("message"),
+        old = fact.items[0]!;
+      if (old.kind !== "entry") throw new Error("Missing Entry");
+      const message: AcceptedPiSessionAppendFact = {
+        ...fact,
+        items: [
+          {
+            ...old,
+            entry: {
+              id: old.entry.id,
+              parentId: old.entry.parentId,
+              seq: old.entry.seq,
+              timestamp: old.entry.timestamp,
+              type: "message",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text }],
+                api: "openai-completions",
+                provider: "test",
+                model: "test",
+                stopReason: "stop",
+                timestamp: Date.now(),
+                usage: {
+                  input: 1,
+                  output: 1,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  totalTokens: 2,
+                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                },
+              },
+            },
+          },
+        ],
+      };
+      const result = await projector.project(f.record(message, BigInt(count + 1)));
+      expect(result).toEqual({ canonicalThroughSequence: count });
+      view.cover(tenantId, f.session.sessionId, result!.canonicalThroughSequence!);
+      expect(view.statistics().cachedBytes).toBe(0);
+      expect(borrowed.events[0]).toMatchObject({ payload: { text } });
+      const active = await store.getConversation(f.session.sessionId);
+      expect(active.turns[0]).toMatchObject({
+        state: "running",
+        transcript: {
+          terminalSequence: null,
+          throughSequence: count,
+          items: [{ kind: "text", text }],
+        },
+      });
+      const pending = text + "unfinished";
+      await projector.project(f.record(f.delta(count + 1, pending), BigInt(count + 2)));
+      await projector.project(f.record(f.seal, BigInt(count + 3)));
+      const terminal = await db
+        .selectFrom("session_terminal_events")
+        .select("interrupted_prefix")
+        .where("event_id", "=", f.seal.factId)
+        .executeTakeFirstOrThrow();
+      expect(terminal.interrupted_prefix).toBe(pending);
+      const recovered = await store.getConversation(f.session.sessionId);
+      expect(
+        recovered.turns[0]?.transcript?.items
+          .filter((i) => i.kind === "text")
+          .map((i) => i.text)
+          .join(""),
+      ).toBe(text + pending);
+    } finally {
+      view.close();
+    }
+  });
+
   it.each([false, true])(
     "keeps sibling prefixes and closes the shared writer only when uncertain=%s",
     async (closesWriter) => {
@@ -382,7 +474,7 @@ describe.sequential("Execution stream closure", () => {
     const restored = new ExecutionStreamProjector(db);
     await restored.project(first);
     await restored.project(seal);
-    expect(await restored.project(seal)).toMatchObject({ type: "turn.failed" });
+    expect(await restored.project(seal)).toMatchObject({ terminal: { type: "turn.failed" } });
   });
 
   it("returns the committed terminal directly and never appends another commit notification", async () => {
@@ -391,7 +483,7 @@ describe.sequential("Execution stream closure", () => {
     const first = await projector.project(f.record(f.seal, 20n));
     const repeated = await new ExecutionStreamProjector(db).project(f.record(f.seal, 21n));
     expect(repeated).toEqual(first);
-    expect(first).toMatchObject({ type: "turn.failed" });
+    expect(first).toMatchObject({ terminal: { type: "turn.failed" } });
     const rows = await db
       .selectFrom("outbox")
       .select("payload")
@@ -685,7 +777,7 @@ describe.sequential("Execution stream closure", () => {
       .execute();
     await expect(
       new ExecutionStreamProjector(db).project(f.record(f.seal, 80n)),
-    ).resolves.toMatchObject({ type: "turn.failed" });
+    ).resolves.toMatchObject({ terminal: { type: "turn.failed" } });
   });
 
   it("does not close a new Run when a duplicate old seal arrives", async () => {

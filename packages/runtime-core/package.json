@@ -36,10 +36,11 @@
     "test": "vitest --run --maxWorkers=2 --testTimeout=15000 --hookTimeout=30000 --passWithNoTests"
   },
   "dependencies": {
-    "@pi-cloud/event-log": "0.1.0",
+    "@discoveryjs/json-ext": "1.1.0",
     "@earendil-works/pi-agent-core": "0.84.1",
     "@pi-cloud/database": "0.1.0",
     "@pi-cloud/domain": "0.1.0",
+    "@pi-cloud/event-log": "0.1.0",
     "@pi-cloud/observability": "0.1.0",
     "@pi-cloud/pi-session-postgres": "0.1.0",
     "@pi-cloud/protocol": "0.1.0",

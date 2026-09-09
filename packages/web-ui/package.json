@@ -11,6 +11,7 @@
     "test": "vitest --run"
   },
   "dependencies": {
+    "@discoveryjs/json-ext": "1.1.0",
     "@pi-cloud/protocol": "0.1.0",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",

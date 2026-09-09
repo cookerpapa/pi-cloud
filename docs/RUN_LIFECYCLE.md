@@ -83,6 +83,12 @@ One Projector group checks recorded scope and same-partition seals, applies nati
 PG state, updates the live view and routes Tool commands to their owners.
 The Worker continues at Kafka ACK without waiting for per-Step PG receipts.
 
+Projector also co-commits message-level display coverage, so an active Run's
+complete messages are queryable before its terminal. Covered spans leave the
+live cache. Presentation becomes terminal only after its requested seal commits,
+not merely because a Worker reported completion. Snapshots are framed values;
+partial transport values never become user-visible messages.
+
 Complete native state and projection position commit atomically. At completion,
 the Worker drains its append queue, records the Workspace observation and the
 authority requests a seal through Outbox. Projector commits the seal, interrupted

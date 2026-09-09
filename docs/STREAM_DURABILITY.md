@@ -60,11 +60,17 @@ locates the assigned Projector; another API replica proxies the authenticated
 request without consuming Kafka. On ownership loss, existing subscriptions close
 and reconnect to an owner whose assigned replay has reached its startup boundary.
 
-The owner subscribes to live events, reads canonical history and takes an
-immutable tail snapshot. It retries if a terminal overtook that PG read. The
-first frame replaces the page with full history plus already-produced partial
-output. Recovered text renders immediately; subsequent deltas animate. No PG
-transaction remains open while sending SSE.
+The owner subscribes to live events, captures an immutable tail, then reads
+primary PG. Message-level event/native coverage commits in the same transaction
+as the native semantic append; active Run history can therefore replace covered
+spans before the Run ends. The captured tail cannot refer to coverage newer than
+the subsequent primary-PG snapshot. No PG transaction spans a network write.
+
+The v2 snapshot is an already-materialized conversation, sent in bounded
+begin/part/end frames rather than one giant JSON frame. The browser applies it
+only after end, then animates future live deltas. Interrupted partial values are
+discarded. Normal small events retain their immediate path; a large complete
+event is framed as one atomic presentation value as well.
 
 On committed closure, the same Projector immediately announces the terminal and
 releases covered fragments. There is no second Kafka commit notification or
@@ -81,6 +87,9 @@ Tool argument generation visible; the complete Tool boundary replaces it.
 
 | Failure point | Required outcome |
 | --- | --- |
+| opening PG commit succeeds, reply lost | reload/adopt the first committed opening; never cache an unconfirmed negative state |
+| semantic message PG commit | retire covered live spans, preserve borrowed reader references and uncovered suffix |
+| connection lost mid-snapshot | discard only the partial browser value; request a new snapshot without a cursor |
 | before Kafka ACK | not shown; an uncertain native append fails its writer rather than inventing success |
 | after ACK, before Projector | replay accepted positions; a matching execution identity does not bypass its seal |
 | visible partial output, before complete message | rebuild from Kafka; closure saves interrupted text |

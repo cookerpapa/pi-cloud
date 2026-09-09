@@ -8,6 +8,7 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -229,7 +230,12 @@ try {
       if (status.phase === "reconnecting") reconnects += 1;
     },
     onSnapshot(snapshot) {
-      for (const event of snapshot.liveEvents) observeEvent(event);
+      const partial = snapshotTurn(snapshot, accepted.turnId);
+      text.splice(0, text.length, ...(partial?.text ? [partial.text] : []));
+      if (partial?.text && !partial.terminal && replacement === undefined) {
+        firstTextSequence = partial.throughSequence;
+        replacement = replaceControlPlane();
+      }
       const recovered = snapshot.conversation.turns.find(
         (turn) => turn.turnId === accepted.turnId && turn.state === "completed",
       );

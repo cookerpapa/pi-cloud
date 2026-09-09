@@ -584,15 +584,32 @@ export class PiCloudApi {
     );
   }
 
-  async getConversation(sessionId: string): Promise<ConversationDetailResource> {
+  async getConversation(
+    sessionId: string,
+    beforeTurnId?: string,
+  ): Promise<ConversationDetailResource> {
     return parseConversationDetailResource(
       await request(
         this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}`,
+        `/v1/conversations/${encodeURIComponent(sessionId)}${beforeTurnId === undefined ? "" : `?beforeTurnId=${encodeURIComponent(beforeTurnId)}`}`,
         { method: "GET" },
         this.#authorizationToken,
       ),
     );
+  }
+
+  async getCompleteConversation(sessionId: string): Promise<ConversationDetailResource> {
+    const latest = await this.getConversation(sessionId);
+    let page = latest;
+    const pages = [latest.turns];
+    while (page.historyTruncated) {
+      const before = page.turns[0]?.turnId;
+      if (!before) throw new Error("Conversation history did not provide an anchor");
+      page = await this.getConversation(sessionId, before);
+      if (page.turns[0]?.turnId === before) throw new Error("Conversation history did not advance");
+      pages.unshift(page.turns);
+    }
+    return { ...latest, turns: pages.flat(), historyTruncated: false };
   }
 
   async getConversationTree(

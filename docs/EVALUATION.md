@@ -19,7 +19,9 @@ settlement and tenant isolation without spending model tokens.
 
 `eval:faults` selects named process/protocol failure cases from
 `eval/fault-cases.json`. Every manifest entry must refer to a test that exists
-in the current tree. The suite is deterministic fault injection, not a
+in the current tree and has a passed assertion in Vitest's machine-readable
+report; missing or skipped targets fail the gate. CI executes this gate as well
+as the general suite. The suite is deterministic fault injection, not a
 multi-node chaos claim. The latest current-topology run is recorded in the
 [fault evaluation report](reports/fault-eval-latest.md).
 
@@ -37,10 +39,12 @@ PI_CLOUD_LIVE_CUBESANDBOX_CHECK=1 npm run production:check
 The production stream is:
 
 ```text
-Pi event ─┐
-          ├-> per-Run Fact Stream / multiplexed Worker connection -> Authority Gate -> AcceptedFactBus
-Pi entry ─┘                                      ├-> Gateway live tail -> snapshot-first SSE
-                                                 └-> Kafka consumer group -> PostgreSQL SessionStorage
+Pi event / native Entry / Tool command
+    -> trusted Worker direct Kafka append
+    -> one Session Projector group
+         ├-> PostgreSQL SessionStorage
+         ├-> live view -> snapshot-first SSE
+         └-> owning Tool executor -> Cube
 ```
 
 Kafka `acks=all` precedes visibility. Kafka retains a bounded

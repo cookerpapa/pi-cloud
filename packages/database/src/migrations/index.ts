@@ -133,6 +133,7 @@ import * as kafkaNativeSessionAppend from "./131_kafka_native_session_append.ts"
 import * as opaqueConversationEntryIds from "./132_opaque_conversation_entry_ids.ts";
 import * as toolBindingRoutes from "./133_tool_binding_routes.ts";
 import * as executionPublications from "./134_execution_publications.ts";
+import * as messageDisplayCoverage from "./135_message_display_coverage.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -271,6 +272,7 @@ export const migrationProvider: MigrationProvider = {
       "132_opaque_conversation_entry_ids": opaqueConversationEntryIds,
       "133_tool_binding_routes": toolBindingRoutes,
       "134_execution_publications": executionPublications,
+      "135_message_display_coverage": messageDisplayCoverage,
     };
   },
 };

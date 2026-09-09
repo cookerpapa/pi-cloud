@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { parseWorkspaceTerminalServerFrame } from "../packages/protocol/src/index.ts";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import WebSocket from "ws";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -162,6 +163,7 @@ async function runTurn({
   const acceptedAt = performance.now();
   const controller = new AbortController();
   const events = [];
+  let snapshotEvidence;
   let terminal;
   let firstDurableActivityAt;
   let firstToolStartedAt;
@@ -201,7 +203,27 @@ async function runTurn({
       retryDelayMs: 100,
       onStatus() {},
       onSnapshot(snapshot) {
-        for (const event of snapshot.liveEvents) observeEvent(event);
+        snapshotEvidence = snapshotTurn(snapshot, accepted.turnId);
+        if (!snapshotEvidence) return;
+        if (snapshotEvidence.text) {
+          firstDurableActivityAt ??= performance.now();
+          firstAssistantTextAt ??= performance.now();
+        }
+        if (snapshotEvidence.tools.length) {
+          firstDurableActivityAt ??= performance.now();
+          firstToolStartedAt ??= performance.now();
+        }
+        if (
+          !snapshotEvidence.terminal &&
+          snapshotEvidence.tools.some((tool) => tool.status === "running") &&
+          intervention === undefined &&
+          onToolStarted
+        )
+          intervention = Promise.resolve(onToolStarted(accepted));
+        if (snapshotEvidence.terminal) {
+          terminal = snapshotEvidence.terminal;
+          controller.abort();
+        }
       },
       onEvent: observeEvent,
     });
@@ -212,9 +234,12 @@ async function runTurn({
     if (expectedTerminal === "turn.completed") {
       assert(firstAssistantTextAt !== undefined, "Completed Turn did not stream assistant text");
     }
-    const toolCalls = events.filter(
-      (event) => event.turnId === accepted.turnId && event.type === "tool.started",
-    ).length;
+    const toolCalls = new Set([
+      ...events
+        .filter((event) => event.turnId === accepted.turnId && event.type === "tool.started")
+        .map((event) => event.payload.toolCallId),
+      ...(snapshotEvidence?.tools ?? []).map((tool) => tool.toolCallId),
+    ]).size;
     assert.equal(toolCalls > 0, expectTools, "Turn Tool behavior did not match its contract");
     if (expectTools) assert(firstToolStartedAt !== undefined, "Coding turn had no Tool start");
     const expectedRunState = expectedTerminal === "turn.cancelled" ? "cancelled" : "completed";

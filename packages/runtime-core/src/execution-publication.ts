@@ -81,7 +81,7 @@ export async function openExecutionPublication(
 export class ExecutionPublicationBoundary {
   readonly #cache = new Map<
     string,
-    { permit: ExecutionPublication; openedAt: bigint | null; partition: number }
+    { permit: ExecutionPublication; openedAt: bigint | null; topic: string; partition: number }
   >();
   constructor(readonly database: Kysely<Database>) {}
   reset(): void {
@@ -103,7 +103,12 @@ export class ExecutionPublicationBoundary {
     if (!authority) {
       const row = await this.database
         .selectFrom("run_attempts")
-        .select(["output_publication", "output_open_offset", "output_first_partition"])
+        .select([
+          "output_publication",
+          "output_open_offset",
+          "output_first_topic",
+          "output_first_partition",
+        ])
         .where("id", "=", id)
         .where("tenant_id", "=", fact.scope.tenantId)
         .executeTakeFirst();
@@ -112,14 +117,17 @@ export class ExecutionPublicationBoundary {
       authority = {
         permit,
         openedAt: row.output_open_offset === null ? null : BigInt(row.output_open_offset),
+        topic: row.output_first_topic ?? record.topic,
         partition: row.output_first_partition ?? record.partition,
       };
-      this.#cache.set(id, authority);
-      if (this.#cache.size > 65_536) this.#cache.delete(this.#cache.keys().next().value!);
     }
     const { leaseId, piSessionLane, ...scope } = authority.permit.scope;
     const actualScope = fact.kind === "tool_command" ? { ...scope, leaseId } : scope;
-    if (!isDeepStrictEqual(actualScope, fact.scope) || authority.partition !== record.partition)
+    if (
+      !isDeepStrictEqual(actualScope, fact.scope) ||
+      authority.partition !== record.partition ||
+      authority.topic !== record.topic
+    )
       return false;
     if (fact.kind === "execution_opened") {
       if (
@@ -144,15 +152,38 @@ export class ExecutionPublicationBoundary {
               sql<boolean>`not exists(select 1 from run_attempts writer where writer.id=run_attempts.native_writer_id and writer.native_writer_sealed_at is not null)`,
             )
             .executeTakeFirst();
-          if (updated.numUpdatedRows === 0n) return false;
-          await recordFactProjection(tx, record);
-          return true;
+          if (updated.numUpdatedRows > 0n) {
+            await recordFactProjection(tx, record);
+            return record.offset;
+          }
+          // A concurrent consumer or a lost COMMIT reply may have opened it.
+          // Zero updated rows is not an authority rejection. Preserve the first
+          // durable position; only an unopened, retired identity is refused.
+          const existing = await tx
+            .selectFrom("run_attempts")
+            .select(["output_open_offset", "output_first_topic", "output_first_partition"])
+            .where("id", "=", id)
+            .where("tenant_id", "=", fact.scope.tenantId)
+            .executeTakeFirst();
+          return existing?.output_open_offset !== null &&
+            existing?.output_open_offset !== undefined &&
+            existing.output_first_topic === record.topic &&
+            existing.output_first_partition === record.partition
+            ? BigInt(existing.output_open_offset)
+            : null;
         });
-        if (!opened) return false;
-        authority.openedAt = record.offset;
+        if (opened === null) return false;
+        authority.openedAt = opened;
       }
-      return true;
+      if (record.offset < authority.openedAt) return false;
     }
+    // Never cache an unconfirmed opening: a rolled-back transaction or lost
+    // COMMIT reply must reload PG on retry, not pin an obsolete negative cache.
+    if (authority.openedAt !== null) {
+      this.#cache.set(id, authority);
+      if (this.#cache.size > 65_536) this.#cache.delete(this.#cache.keys().next().value!);
+    }
+    if (fact.kind === "execution_opened") return true;
     if (authority.openedAt === null || record.offset <= authority.openedAt) return false;
     if (fact.kind === "agent_event")
       return fact.event.sessionId === scope.sessionId && fact.event.turnId === scope.turnId;
