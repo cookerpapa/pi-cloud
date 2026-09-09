@@ -1,6 +1,7 @@
 # ADR-0164 — Trusted private log publication without record signatures
 
-Status: accepted. Refines ADR-0163's publication authentication only.
+Status: implemented and [verified](../reports/unsigned-publication-acceptance.md).
+Refines ADR-0163's publication authentication only.
 
 ## Decision
 

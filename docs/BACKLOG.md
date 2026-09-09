@@ -7,6 +7,7 @@ Volume architecture. Historical experiments remain in Git history.
 
 - [x] ADR-0164: remove per-record signature/key work from private Worker publication;
       keep exact scope, ordered opening/seals and Tool no-replay boundaries.
+      [Acceptance](reports/unsigned-publication-acceptance.md).
 
 - [x] ADR-0158: bound Producer queues, Broker execution/HTTP delivery and abandoned
       readers; align configuration and measure publication versus PG receipt wait.
