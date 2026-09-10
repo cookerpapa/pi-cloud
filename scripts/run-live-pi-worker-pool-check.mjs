@@ -395,10 +395,10 @@ async function crashStreamingTurn(sessionId) {
       visibleText.push(event.payload.text);
       if (crash === undefined) {
         firstVisibleSequence = event.seq;
-        crash = runEvidence(accepted.runId).then(async (evidence) => ({
-          evidence,
-          stopped: await killWorker(evidence.supervisorId),
-        }));
+        crash = runEvidence(accepted.runId).then(async (evidence) => {
+          stoppedWorker = await killWorker(evidence.supervisorId);
+          return { evidence, stopped: stoppedWorker };
+        });
       }
     }
     if (
@@ -423,10 +423,10 @@ async function crashStreamingTurn(sessionId) {
         visibleText.splice(0, visibleText.length, ...(restored?.text ? [restored.text] : []));
         if (restored?.text && !restored.terminal && crash === undefined) {
           firstVisibleSequence = restored.throughSequence;
-          crash = runEvidence(accepted.runId).then(async (evidence) => ({
-            evidence,
-            stopped: await killWorker(evidence.supervisorId),
-          }));
+          crash = runEvidence(accepted.runId).then(async (evidence) => {
+            stoppedWorker = await killWorker(evidence.supervisorId);
+            return { evidence, stopped: stoppedWorker };
+          });
         }
         const turn = snapshot.conversation.turns.find(
           (candidate) => candidate.turnId === accepted.turnId,
@@ -612,10 +612,22 @@ try {
     interruptedPrefixCount >= 1,
     "The Accepted prefix was not projected into Pi context after Worker loss",
   );
+  const recoveredPrefixes = JSON.parse(
+    await psql(
+      `select coalesce(json_agg(payload #>> '{data,text}'), '[]'::json)
+       from pi_session_entries
+      where session_id = (select pi_session_id from sessions where id = ${sqlLiteral(crashSession.sessionId)})
+        and custom_type = 'pi-cloud.interrupted_assistant_prefix'`,
+    ),
+  );
+  assert(
+    recoveredPrefixes.includes(crashed.visibleText),
+    "Pi context did not retain the exact already-visible interrupted prefix",
+  );
   await restoreWorker(stoppedWorker);
   stoppedWorker = undefined;
 
-  const concurrent = await Promise.all(
+  const concurrentResults = await Promise.allSettled(
     Array.from({ length: 4 }, async (_, index) => {
       const concurrentProject = await api.createProject(`Pi pool lane ${index + 1} ${suffix}`);
       const concurrentSession = await api.createSession(
@@ -637,6 +649,10 @@ try {
       return { turn, evidence: await runEvidence(turn.runId) };
     }),
   );
+  const concurrent = concurrentResults.map((result) => {
+    if (result.status === "rejected") throw result.reason;
+    return result.value;
+  });
   const concurrentWorkerIds = [...new Set(concurrent.map(({ evidence }) => evidence.supervisorId))];
   assert(
     concurrentWorkerIds.every((workerId) => initialWorkers.includes(workerId)),
@@ -680,6 +696,7 @@ try {
       firstVisibleSequence: crashed.firstVisibleSequence,
       terminalSequence: crashed.terminal.seq,
       acceptedPrefixProjected: interruptedPrefixCount >= 1,
+      exactVisiblePrefixPreservedInContext: true,
       sealedPredecessors,
       replacementRunId: recovered.runId,
     },

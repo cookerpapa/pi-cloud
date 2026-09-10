@@ -22,6 +22,11 @@ This targets private or controlled enterprise deployments, not hostile public Sa
 Recovery preserves conversation meaning and reports uncertain Tool effects;
 it does **not** automatically replay arbitrary shell commands or restore lost process memory.
 
+**Security review pending:** scripted Subagent workflows currently use Node `vm`
+inside the trusted Worker. This is not a security boundary for untrusted JavaScript.
+Do not expose this deployment to untrusted workloads until the workflow execution
+boundary is resolved. See the [review status](docs/reports/full-review-20260910.md).
+
 ## Architecture
 
 ```mermaid

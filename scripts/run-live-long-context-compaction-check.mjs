@@ -488,12 +488,12 @@ async function activeWorkers() {
 
 async function turnModelSnapshot(turnId) {
   const row = await psql(
-    `select provider || '|' || model_id || '|' || thinking_level || '|' || coalesce(service_tier, 'standard')
+    `select json_build_object('provider',provider,'modelId',model_id,
+                              'thinkingLevel',thinking_level,'serviceTier',service_tier)::text
        from turns
       where id = ${sqlLiteral(turnId)}`,
   );
-  const [provider, modelId, thinkingLevel, serviceTier] = row.split("|");
-  return { provider, modelId, thinkingLevel, serviceTier };
+  return JSON.parse(row);
 }
 
 async function waitForWorkers(expectedCount) {
@@ -779,6 +779,30 @@ try {
   progress(
     `starting ${model.provider}/${model.modelId} Session ${session.sessionId} on ${initialWorkers.length} Workers`,
   );
+  await api.updateSessionModel(session.sessionId, {
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
+    thinkingLevel: "low",
+    fastMode: false,
+  });
+  const searchBeforeCompaction = await runTurn(
+    session.sessionId,
+    "开始编码前，请用供应商内置网页搜索核对 Python 当前最新稳定版本的发布日期及 unittest 官方文档页标题，给出真实查到的来源和链接。不要用本地函数工具。最后写 SEARCH-BEFORE-COMPACTION。",
+    false,
+  );
+  assert(
+    searchBeforeCompaction.hostedSearches >= 1,
+    "Pre-compaction research did not execute Hosted Web Search",
+  );
+  assert.equal(searchBeforeCompaction.toolCalls, 0);
+  const searchBeforeUsage = await usageForRun(searchBeforeCompaction.runId);
+  progress(`pre-compaction Pro research: hosted-search=${searchBeforeCompaction.hostedSearches}`);
+  await api.updateSessionModel(session.sessionId, {
+    provider: "deepseek",
+    modelId: "deepseek-v4-flash",
+    thinkingLevel: "off",
+    fastMode: false,
+  });
   const selectedTasks = algorithmTasks.slice(0, maximumCodingTurns);
   taskLoop: for (const [index, task] of selectedTasks.entries()) {
     for (let continuation = 0; continuation <= 1; continuation += 1) {
@@ -955,6 +979,37 @@ try {
   await restoreWorker(stoppedWorkerService);
   stoppedWorkerService = undefined;
 
+  stoppedWorkerService = await stopWorker(providerSwitchEvidence.supervisorId);
+  await waitForWorkers(1);
+  await api.updateSessionModel(session.sessionId, {
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
+    thinkingLevel: "high",
+    fastMode: false,
+  });
+  const switchBack = await runTurn(
+    session.sessionId,
+    `请用供应商内置网页搜索核对 Python unittest 官方文档的当前页面标题并引用链接。不要调用本地函数工具。最后回答 SWITCH-BACK-SEARCH-OK 和已有项目标记 ${marker}。`,
+    false,
+  );
+  const switchBackUsage = await usageForRun(switchBack.runId);
+  const switchBackEvidence = await runEvidence(switchBack.runId);
+  const switchBackModel = await turnModelSnapshot(switchBack.turnId);
+  assert.notEqual(switchBackEvidence.supervisorId, providerSwitchEvidence.supervisorId);
+  assert(switchBack.hostedSearches >= 1, "Post-compaction switch back did not search");
+  assert.match(switchBack.text, /SWITCH-BACK-SEARCH-OK/);
+  assert.deepEqual(switchBackModel, {
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
+    thinkingLevel: "high",
+    serviceTier: null,
+  });
+  progress(
+    `post-compaction switch back: ${switchBackEvidence.supervisorId}, Pro high, Fast disabled, searches=${switchBack.hostedSearches}`,
+  );
+  await restoreWorker(stoppedWorkerService);
+  stoppedWorkerService = undefined;
+
   const [algolabDirectory, testsDirectory] = await Promise.all([
     api.listWorkspaceDirectory(session.sessionId, "algolab"),
     api.listWorkspaceDirectory(session.sessionId, "tests"),
@@ -972,6 +1027,8 @@ try {
   const compactions = rounds.flatMap((round) => round.eventCompactions);
   const totalUsage = [
     ...rounds.map((round) => round.usage),
+    searchBeforeUsage,
+    switchBackUsage,
     recallUsage,
     postCompactionUsage,
     crossWorkerUsage,
@@ -1022,6 +1079,11 @@ try {
         algolabDirectory.entries.length + testsDirectory.entries.length,
     },
     rounds,
+    searchBeforeCompaction: {
+      runId: searchBeforeCompaction.runId,
+      hostedSearches: searchBeforeCompaction.hostedSearches,
+      usage: searchBeforeUsage,
+    },
     compactions,
     compaction: {
       ...completedCompaction,
@@ -1032,6 +1094,13 @@ try {
       triggeringRunMaximumInputTokens: beforeCompaction.usage.maximumRequestInputTokens,
     },
     postCompaction: {
+      switchBack: {
+        runId: switchBack.runId,
+        worker: switchBackEvidence.supervisorId,
+        model: switchBackModel,
+        hostedSearches: switchBack.hostedSearches,
+        usage: switchBackUsage,
+      },
       recall: {
         runId: recall.runId,
         markerRecovered: true,

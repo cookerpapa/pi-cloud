@@ -1,6 +1,6 @@
 # Pi Worker pool production acceptance
 
-- Checked at: 2026-09-09T05:37:22.579Z
+- Checked at: 2026-09-10T15:18:42.296Z
 - Provider/model: openai-codex / gpt-5.6-terra
 - Worker deployment: compose
 - Active Workers: pi-cloud-worker-1, pi-cloud-worker-2
@@ -11,7 +11,7 @@
 - Accepted prefix projected after crash: true
 - Projected predecessor seals: 1
 - Concurrent Runs / distinct Workers: 4 / 2
-- Concurrent assignment: pi-cloud-worker-1, pi-cloud-worker-2, pi-cloud-worker-1, pi-cloud-worker-2
-- Real requests/input/output tokens: 7 / 22498 / 729
+- Concurrent assignment: pi-cloud-worker-2, pi-cloud-worker-1, pi-cloud-worker-1, pi-cloud-worker-2
+- Real requests/input/output tokens: 7 / 12265 / 721
 
 The owning Pi Worker was stopped after the first real-model Turn. The surviving Worker rebuilt Pi's active model context directly from PostgreSQL SessionStorage, recovered the previous-turn marker and appended the follow-up incrementally. Further concurrent real-model Runs completed through the independently ready Worker pool; allocation is reported as evidence rather than assumed to be round-robin.

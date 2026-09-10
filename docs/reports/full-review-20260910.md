@@ -1,8 +1,25 @@
-# Whole-repository review — in progress
+# Whole-repository review — paused for an architectural decision
 
 Base revision: `cb7bdc9a`. This is a work-in-progress record, not a claim that
 every source line or requested live scenario has passed. The wider campaign
 includes Compaction, provider switching, UI, Cube, load and process-fault checks.
+
+## Blocking architectural finding
+
+Pinned `pi-subagents` evaluates model-supplied `workflowScript` with Node `vm`
+inside a Worker thread. The cloud adapter retains that evaluator in the trusted
+Pi Worker. A read-only, network-disabled disposable-container canary demonstrated
+access to the evaluator process environment without launching a Child Agent.
+No real credentials or user files were mounted or read in this reproduction.
+Node explicitly states that [vm is not a security mechanism](https://nodejs.org/api/vm.html).
+
+This requires a boundary decision, not a constructor/property denylist: retain
+scripted workflows in a genuinely isolated evaluator, or expose only structured
+Subagent requests. Implementation is paused for the owner's choice, as requested.
+The probe is not an assertion of compromise, nor proof of complete isolation
+elsewhere. The whole-repository review is **not complete**; the recorded explicit
+full-read inventory covered 131 files / 24,145 lines, not every repository file.
+The resume has not been updated while this boundary is unresolved.
 
 ## First reviewed slice
 
@@ -191,3 +208,39 @@ simultaneous real Agent Loops. An isolated 2-CPU PG test projected 8,000 complet
 bytes/message; its 256-way offered concurrency includes connection-pool queue
 time. The two measurements are different stages and must not be combined into
 an end-to-end throughput claim.
+
+## Final checks before the pause
+
+- The remote CI for `aec69366` passed every job, including all nine image gates
+  and the actual-browser zero-token rendering check. The gRPC exclusion list
+  remains empty.
+- The strengthened real Worker crash gate passed: exact already-visible text
+  was present in the successor's native interrupted-prefix entry, predecessor
+  closure preceded successor execution, and four later concurrent Runs used
+  both Workers. This is semantic recovery, not continuation of the crashed
+  model request.
+- The enhanced search-before/after-Compaction campaign completed 24 real Runs,
+  with 18 coding rounds and two Compactions (116,102 → 24,562 and
+  114,263 → 23,934 estimated tokens). Pro research preceded coding; another
+  Worker later used GPT medium/Fast and two searches, then switched to Pro high
+  with no Fast tier on another Worker. Its last assertion failed because the
+  measurement helper changed SQL NULL into the string `standard`. Direct PG
+  verification confirmed the actual model/reasoning/tier values; the helper now
+  reads their JSON types unchanged. The entire enhanced script still needs a
+  repeat after the architectural decision, so it is not reported as a full pass.
+
+Cleanup removed the review's 57 test users/tenants, 158 logical Sessions, 341
+Runs, 72 Workspaces/projects, five released machines and their associated native
+records, artifacts and operations. All test Volume purges had completed first.
+All 32 Kafka partition heads equalled PG recovery and completed-delivery positions,
+with no active Runs, leases or pending seals; the already-processed transport
+prefix was reclaimed without deleting the topic or resetting offsets.
+
+Original users/passwords, one Session/six Runs, native Session rows, Workspace
+and platform/model settings matched baseline hashes. The original machine remains
+running; its owner-boot operational metadata naturally changed on Broker adoption.
+Worker capacity and PostgreSQL CPU quota were restored to their pre-test values.
+Application services were recreated and are healthy. Private test logs, probes,
+screenshots, downloaded diagnostic dependencies and temporary containers are
+removed after extracting this redacted summary. Provider account credentials and
+real usage accounting are not erased as if the paid calls never happened.
