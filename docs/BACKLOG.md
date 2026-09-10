@@ -5,6 +5,12 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [ ] Complete the September 10 whole-repository/user-flow review. Current slice
+      removes retired demand-driven Kafka/SSE lifecycle code, repairs relay health
+      recovery and cancels stalled model-response writes on disconnect. Real
+      multi-round/search/Compaction/UI/load/fault acceptance is still in progress.
+      [Current evidence and open measurements](reports/full-review-20260910.md).
+
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;
       retain adopted capacity accounting. Add Projector handoff contracts and

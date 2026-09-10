@@ -59,8 +59,7 @@ export class ExecutionStreamBoundary {
   readonly #database: Kysely<Database>;
   readonly #open = new Set<string>();
   readonly #closed = new Map<string, bigint>();
-  readonly #partitions = new Map<string, number>();
-  readonly #writers = new Map<string, { offset: bigint; partition: number }>();
+  readonly #writers = new Map<string, bigint>();
 
   constructor(database: Kysely<Database>) {
     this.#database = database;
@@ -69,23 +68,12 @@ export class ExecutionStreamBoundary {
   reset(): void {
     this.#open.clear();
     this.#closed.clear();
-    this.#partitions.clear();
     this.#writers.clear();
   }
 
-  resetPartition(partition: number): void {
-    for (const [id, writer] of this.#writers)
-      if (writer.partition === partition) this.#writers.delete(id);
-    for (const [id, part] of this.#partitions)
-      if (part === partition) {
-        this.#open.delete(id);
-        this.#closed.delete(id);
-        this.#partitions.delete(id);
-      }
-  }
-  closeWriter(writerId: string, offset: bigint, partition: number) {
+  closeWriter(writerId: string, offset: bigint) {
     const prior = this.#writers.get(writerId);
-    if (!prior || offset < prior.offset) this.#writers.set(writerId, { offset, partition });
+    if (prior === undefined || offset < prior) this.#writers.set(writerId, offset);
     // Open scopes must reload the durable group cutoff after eviction.
     if (this.#writers.size > 65_536) {
       this.#writers.delete(this.#writers.keys().next().value!);
@@ -93,8 +81,7 @@ export class ExecutionStreamBoundary {
     }
   }
 
-  close(attemptId: string, offset = -1n, partition?: number): void {
-    if (partition !== undefined) this.#partitions.set(attemptId, partition);
+  close(attemptId: string, offset: bigint): void {
     this.#open.delete(attemptId);
     const previous = this.#closed.get(attemptId);
     this.#closed.delete(attemptId);
@@ -102,14 +89,13 @@ export class ExecutionStreamBoundary {
     if (this.#closed.size > 65_536) {
       const oldest = this.#closed.keys().next().value!;
       this.#closed.delete(oldest);
-      this.#partitions.delete(oldest);
     }
   }
 
   async isOpen(record: KafkaAcceptedFactRecord, canonical: boolean): Promise<boolean> {
     const { scope } = record.fact;
     const writerCutoff = this.#writers.get(scope.writerId);
-    if (writerCutoff && record.offset >= writerCutoff.offset) return false;
+    if (writerCutoff !== undefined && record.offset >= writerCutoff) return false;
     const cutoff = this.#closed.get(scope.attemptId);
     if (cutoff !== undefined) {
       this.#closed.delete(scope.attemptId);
@@ -141,12 +127,12 @@ export class ExecutionStreamBoundary {
       throw new Error("Execution native writer identity changed");
     if (attempt?.native_writer_seal_offset != null) {
       const offset = BigInt(attempt.native_writer_seal_offset);
-      this.closeWriter(scope.writerId, offset, record.partition);
+      this.closeWriter(scope.writerId, offset);
       if (record.offset >= offset) return false;
     }
     if (!attempt || attempt.output_sealed_at !== null) {
       const cutoff = attempt?.output_seal_offset == null ? -1n : BigInt(attempt.output_seal_offset);
-      this.close(scope.attemptId, cutoff, record.partition);
+      this.close(scope.attemptId, cutoff);
       return !canonical && record.offset < cutoff;
     }
     if (canonical) {
@@ -171,7 +157,6 @@ export class ExecutionStreamBoundary {
       }
     }
     this.#open.add(scope.attemptId);
-    this.#partitions.set(scope.attemptId, record.partition);
     return true;
   }
 }
@@ -204,9 +189,8 @@ export class ExecutionStreamProjector {
       if (fact.kind === "execution_seal") {
         const prefix = this.#prefixes.get(fact.scope.attemptId);
         const terminal = await this.#seal(fact, record, prefix);
-        this.#boundary.close(fact.scope.attemptId, record.offset, record.partition);
-        if (fact.closesWriter)
-          this.#boundary.closeWriter(fact.scope.writerId, record.offset, record.partition);
+        this.#boundary.close(fact.scope.attemptId, record.offset);
+        if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
         this.#prefixes.delete(fact.scope.attemptId);
         return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
       }
@@ -226,9 +210,8 @@ export class ExecutionStreamProjector {
       }
     } else if (fact.kind === "execution_seal") {
       const terminal = await this.#seal(fact, record, prefix);
-      this.#boundary.close(fact.scope.attemptId, record.offset, record.partition);
-      if (fact.closesWriter)
-        this.#boundary.closeWriter(fact.scope.writerId, record.offset, record.partition);
+      this.#boundary.close(fact.scope.attemptId, record.offset);
+      if (fact.closesWriter) this.#boundary.closeWriter(fact.scope.writerId, record.offset);
       this.#prefixes.delete(fact.scope.attemptId);
       return terminal ? { terminal, canonicalThroughSequence: terminal.seq } : undefined;
     }

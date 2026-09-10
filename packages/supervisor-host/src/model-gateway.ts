@@ -14,7 +14,12 @@ import type {
   ProviderHostedTranscript,
   TrustedModelRuntimeLease,
 } from "@pi-cloud/sandbox-supervisor";
-import { parseTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/observability";
+import {
+  operationalLog,
+  parseTraceCarrier,
+  withSpan,
+  type PiCloudMetrics,
+} from "@pi-cloud/observability";
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -283,11 +288,17 @@ function parseBody(bytes: Buffer, contentEncoding: string | undefined): Record<s
   return value as Record<string, unknown>;
 }
 
-async function writeChunk(response: ServerResponse, chunk: Uint8Array): Promise<void> {
-  if (!response.write(chunk)) await once(response, "drain");
+async function writeChunk(
+  response: ServerResponse,
+  chunk: Uint8Array,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  if (!response.write(chunk)) await once(response, "drain", { signal });
 }
 
 async function retryDelay(attempt: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
   await new Promise<void>((resolvePromise, rejectPromise) => {
     const settle = (): void => {
       signal.removeEventListener("abort", abort);
@@ -634,6 +645,8 @@ export class TenantModelGateway {
   }
 
   async #handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const startedAt = performance.now();
+    const receivedAtMs = Date.now();
     const path = new URL(request.url ?? "/", "http://model-gateway.invalid").pathname;
     if (request.method === "GET" && path === "/health/live") {
       sendJson(response, 200, { status: "ok" });
@@ -728,9 +741,17 @@ export class TenantModelGateway {
     response.once("close", abortOnResponse);
     active.requestControllers.add(controller);
     let hostedActivity: ResponsesHostedActivityObserver | undefined;
+    const timing: Record<string, number> = {};
+    const elapsed = () => Math.round((performance.now() - startedAt) * 1000) / 1000;
+    let upstreamAttempts = 0,
+      responseBytes = 0,
+      upstreamStatus: number | null = null;
+    let transportCompleted = false;
     try {
       let upstream: Response | undefined;
+      timing.upstreamStartMs = elapsed();
       for (let attempt = 1; attempt <= PROVIDER_GATEWAY_MAXIMUM_ATTEMPTS; attempt += 1) {
+        upstreamAttempts = attempt;
         try {
           armUpstreamTimeout("connect", this.#upstreamConnectTimeoutMs);
           upstream = await this.#fetch(`${this.#providerGatewayBaseUrl}${active.providerPath}`, {
@@ -758,6 +779,8 @@ export class TenantModelGateway {
         await retryDelay(attempt, controller.signal);
       }
       if (upstream === undefined) throw new Error("Provider Gateway returned no response");
+      timing.upstreamHeadersMs = elapsed();
+      upstreamStatus = upstream.status;
       response.writeHead(upstream.status, {
         "cache-control": "no-store",
         "content-type": upstream.headers.get("content-type") ?? "text/event-stream; charset=utf-8",
@@ -769,6 +792,7 @@ export class TenantModelGateway {
           : { "x-request-id": upstream.headers.get("x-request-id")! }),
       });
       if (upstream.body === null) {
+        transportCompleted = true;
         response.end();
         return;
       }
@@ -782,10 +806,13 @@ export class TenantModelGateway {
             ...requestSamplingIdentity,
             items,
           }),
+        (kind) => {
+          timing[`first${kind}Ms`] = elapsed();
+        },
       );
-      let responseBytes = 0;
       armUpstreamTimeout("idle", this.#upstreamIdleTimeoutMs);
       for await (const rawChunk of upstream.body) {
+        timing.firstByteMs ??= elapsed();
         armUpstreamTimeout("idle", this.#upstreamIdleTimeoutMs);
         const chunk = rawChunk instanceof Uint8Array ? rawChunk : new Uint8Array(rawChunk);
         responseBytes += chunk.byteLength;
@@ -798,10 +825,11 @@ export class TenantModelGateway {
           );
         }
         hostedActivity.push(chunk);
-        await writeChunk(response, chunk);
+        await writeChunk(response, chunk, controller.signal);
       }
       clearUpstreamTimeout();
       hostedActivity.finish("completed");
+      transportCompleted = true;
       response.end();
     } catch (error: unknown) {
       hostedActivity?.finish("failed");
@@ -826,6 +854,26 @@ export class TenantModelGateway {
       request.off("aborted", abortOnRequest);
       response.off("close", abortOnResponse);
       active.requestControllers.delete(controller);
+      operationalLog({
+        service: "pi-cloud-model-gateway",
+        level: "info",
+        event: "model.transport.timing",
+        attributes: {
+          runId: active.runId,
+          attemptId: active.attemptId,
+          stepSequence: requestSamplingIdentity.stepSequence,
+          samplingAttempt: requestSamplingIdentity.samplingAttempt,
+          provider: active.provider,
+          model: active.modelId,
+          receivedAtMs,
+          ...timing,
+          elapsedMs: elapsed(),
+          upstreamAttempts,
+          upstreamStatus,
+          responseBytes,
+          transportCompleted,
+        },
+      });
     }
   }
 

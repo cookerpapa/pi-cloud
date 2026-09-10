@@ -162,7 +162,7 @@ async function fixture() {
     offset,
   });
   const tail = () => {
-    const view = new SessionLiveView(async () => () => {});
+    const view = new SessionLiveView(async () => {});
     const boundary = new ExecutionStreamBoundary(db);
     return Object.assign(view, {
       async projectRecord(r: ReturnType<typeof record>) {
@@ -182,7 +182,7 @@ describe.sequential("Execution stream closure", () => {
   it("evicts committed message spans before Run completion and preserves a repeated unfinished prefix", async () => {
     const f = await fixture(),
       projector = new ExecutionStreamProjector(db),
-      view = new SessionLiveView(async () => () => {});
+      view = new SessionLiveView(async () => {});
     const count = 2048,
       piece = "hello ",
       text = piece.repeat(count);
@@ -512,7 +512,7 @@ describe.sequential("Execution stream closure", () => {
         .executeTakeFirst(),
     ).toEqual({ output_projected_offset: null });
   });
-  it("invalidates an OPEN cache when an idle live partition is resumed", async () => {
+  it("reloads durable closure after a Projector assignment reset", async () => {
     const f = await fixture(),
       boundary = new ExecutionStreamBoundary(db),
       projector = new ExecutionStreamProjector(db);
@@ -520,7 +520,7 @@ describe.sequential("Execution stream closure", () => {
     expect(await boundary.isOpen(text, false)).toBe(true);
     await projector.project(text);
     await projector.project(f.record(f.seal, 91n));
-    boundary.resetPartition(0);
+    boundary.reset();
     expect(await boundary.isOpen(f.record(f.delta(2, "late"), 92n), false)).toBe(false);
     expect(await boundary.isOpen(text, false)).toBe(true);
   });

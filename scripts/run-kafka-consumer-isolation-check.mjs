@@ -54,14 +54,14 @@ if (process.argv[2] !== "inside") {
   }
 } else {
   const { Admin } = await import("@platformatic/kafka");
+  const { default: native } = await import("@confluentinc/kafka-javascript");
   const { KafkaAcceptedFactBus, kafkaProducerLane } =
     await import("../packages/runtime-core/src/kafka-accepted-fact.ts");
   const { KafkaAcceptedFactConsumer } =
     await import("../packages/runtime-core/src/kafka-accepted-fact-consumer.ts");
   const brokers = ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"],
     topic = `pi-cloud.consumer-check.${randomUUID()}`;
-  const groupId = `consumer-check-${randomUUID()}`,
-    demandGroup = `consumer-demand-${randomUUID()}`;
+  const groupId = `consumer-check-${randomUUID()}`;
   const bus = new KafkaAcceptedFactBus({
     brokers,
     topic,
@@ -71,6 +71,9 @@ if (process.argv[2] !== "inside") {
     clientId: randomUUID(),
   });
   const admin = new Admin({ bootstrapBrokers: brokers, clientId: randomUUID() });
+  const offsetsAdmin = new native.KafkaJS.Kafka({
+    kafkaJS: { brokers, clientId: randomUUID(), logLevel: native.KafkaJS.logLevel.NOTHING },
+  }).admin();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const wait = async (fn, label) => {
     const deadline = Date.now() + 45000;
@@ -89,6 +92,8 @@ if (process.argv[2] !== "inside") {
   const scope = (part) => ({
     tenantId: randomUUID(),
     sessionId: sessions[part],
+    piSessionId: sessions[part],
+    writerId: randomUUID(),
     runId: randomUUID(),
     turnId: randomUUID(),
     attemptId: randomUUID(),
@@ -118,12 +123,11 @@ if (process.argv[2] !== "inside") {
   };
   let consumer,
     peer,
-    demand,
-    release,
     unblock = false;
   const seen = [new Set(), new Set()];
   try {
     await bus.start();
+    await offsetsAdmin.connect();
     consumer = new KafkaAcceptedFactConsumer({
       brokers,
       topic,
@@ -172,6 +176,14 @@ if (process.argv[2] !== "inside") {
     await bus.append(fact(0, 514));
     await bus.append(fact(1, 2));
     await wait(() => seen[0].has(514) && seen[1].has(2), "progress after group rebalance");
+    const ends = await consumer.captureEndOffsets();
+    await wait(async () => {
+      const saved = await offsetsAdmin.fetchOffsets({ groupId, topics: [topic] });
+      return (
+        saved[0]?.partitions.length === 2 &&
+        saved[0].partitions.every((p) => BigInt(p.offset) === ends[p.partition])
+      );
+    }, "completed delivery offsets committed");
     await peer.close();
     peer = undefined;
     await consumer.close();
@@ -182,69 +194,74 @@ if (process.argv[2] !== "inside") {
       topic,
       groupId,
       clientId: randomUUID(),
+      groupRecovery: true,
       replayOffsets: async (bounds) => new Map(bounds.map((b) => [b.partition, b.high - 1n])),
       handler: async (record) => {
         replayed.push(record);
       },
     });
-    const ends = await consumer.captureEndOffsets();
     await consumer.start();
     await consumer.waitUntilInitialReplay(ends);
     assert.equal(replayed.length, 2);
     await consumer.close();
     consumer = undefined;
-    const delivered = [];
-    demand = new KafkaAcceptedFactConsumer({
+    // Simulate PG commit followed by a failed external delivery. The PG floor
+    // alone would skip this record; completed group delivery must keep it live.
+    await bus.append(fact(0, 515));
+    let failedDelivery = false;
+    consumer = new KafkaAcceptedFactConsumer({
       brokers,
       topic,
-      groupId: demandGroup,
+      groupId,
       clientId: randomUUID(),
-      demandDriven: true,
-      replayOffsets: async (bounds) => new Map(bounds.map((b) => [b.partition, b.high - 1n])),
-      handler: async (r) => {
-        delivered.push(r.partition);
+      groupRecovery: true,
+      replayOffsets: async (bounds) => new Map(bounds.map((b) => [b.partition, b.high])),
+      handler: async () => {
+        failedDelivery = true;
+        throw new Error("PG projected but owner delivery did not complete");
       },
     });
-    await demand.start();
-    await wait(() => {
-      try {
-        demand.checkHealth();
-        return true;
-      } catch {
-        return false;
-      }
-    }, "demand consumer ready");
-    await sleep(200);
-    assert.equal(delivered.length, 0);
-    release = await demand.retainPartition(0);
-    assert.deepEqual(delivered, [0]);
-    release();
-    release = undefined;
-    await bus.append(fact(0, 515));
-    await sleep(200);
-    assert.deepEqual(delivered, [0]);
+    await consumer.start();
+    await wait(() => failedDelivery, "post-projection delivery failure");
+    await consumer.close();
+    consumer = undefined;
+    const redelivered = [];
+    consumer = new KafkaAcceptedFactConsumer({
+      brokers,
+      topic,
+      groupId,
+      clientId: randomUUID(),
+      groupRecovery: true,
+      replayOffsets: async (bounds) => new Map(bounds.map((b) => [b.partition, b.high])),
+      handler: async (record) => {
+        redelivered.push(record.fact.event.seq);
+      },
+    });
+    const recoveredEnds = await consumer.captureEndOffsets();
+    await consumer.start();
+    await consumer.waitUntilInitialReplay(recoveredEnds);
+    assert.deepEqual(redelivered, [515]);
     console.log(
       JSON.stringify({
-        format: "pi-cloud.consumer-isolation.v1",
+        format: "pi-cloud.consumer-isolation.v2",
         checkedAt: new Date().toISOString(),
         passed: true,
         heldPartitionRecords: 513,
         otherPartitionMs,
         allHeldRecordsRecovered: true,
         recoveryRecordsRead: replayed.length,
-        demandOnlySubscribedPartition: true,
-        idlePartitionPaused: true,
+        projectionFloorReplayedDespiteCommittedGroup: true,
+        incompleteDeliveryReplayedDespiteProjectedFloor: true,
         consumerRebalance: true,
       }),
     );
   } finally {
     unblock = true;
-    release?.();
     await peer?.close();
     await consumer?.close();
-    await demand?.close();
     await bus.close();
-    await admin.deleteGroups({ groups: [groupId, demandGroup] }).catch(() => {});
+    await offsetsAdmin.disconnect();
+    await admin.deleteGroups({ groups: [groupId] }).catch(() => {});
     await admin.deleteTopics({ topics: [topic] });
     await admin.close();
   }

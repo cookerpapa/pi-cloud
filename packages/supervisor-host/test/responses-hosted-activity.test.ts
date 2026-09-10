@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import { ResponsesHostedActivityObserver } from "../src/index.ts";
 
 describe("ResponsesHostedActivityObserver", () => {
+  it("separates first response frame, nonempty text, Tool arguments and hosted search without recording content", () => {
+    const first: string[] = [];
+    const observer = new ResponsesHostedActivityObserver(
+      () => {},
+      () => {},
+      (kind) => first.push(kind),
+    );
+    const push = (value: unknown) =>
+      observer.push(new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`));
+    push({ type: "response.created" });
+    push({ type: "response.output_text.delta", delta: "" });
+    expect(first).toEqual(["Frame"]);
+    push({ type: "response.output_item.added", item: { type: "function_call" } });
+    push({ type: "response.web_search_call.searching", item_id: "search" });
+    push({ type: "response.output_text.delta", delta: "private text" });
+    push({ type: "response.output_text.delta", delta: "more private text" });
+    expect(first).toEqual(["Frame", "Tool", "Search", "Text"]);
+  });
   it("recognizes split SSE search lifecycle events and emits the Codex-style action", () => {
     const activities: unknown[] = [];
     const observer = new ResponsesHostedActivityObserver((activity) => activities.push(activity));

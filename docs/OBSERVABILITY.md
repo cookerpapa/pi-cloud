@@ -116,6 +116,16 @@ operators can inspect `npm run production:logs`, while an enterprise
 deployment can forward the same JSON with its existing Fluent Bit, Vector or
 OpenTelemetry pipeline.
 
+Each authorized model HTTP request emits one `model.transport.timing` record,
+not a log per token. It identifies the Run/Step and records request receipt,
+upstream dispatch/headers, first byte, first parsed frame, first nonempty text,
+Tool preparation and hosted-search activity when present. Durations are measured
+on the same monotonic clock; `receivedAtMs` permits correlation with the UI/Run
+timeline on clock-synchronized hosts. No prompt, response text or Tool arguments
+are logged. `transportCompleted` means the HTTP body ended, not that the model
+or Run succeeded. Upstream timing includes CLIProxyAPI and its provider route;
+it is not a measurement of the provider's internal inference alone.
+
 ## Privacy and cardinality
 
 - no tenant, Session, Run, prompt, path, repository or exception text is a

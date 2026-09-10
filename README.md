@@ -24,88 +24,91 @@ it does **not** automatically replay arbitrary shell commands or restore lost pr
 
 ## Architecture
 
-```text
-Browser ── Caddy ── Control Plane
-                     ├─ authentication, conversations, resources, model settings
-                     ├─ PostgreSQL: durable Run queue + ExecutionLease/Fence
-                     └─ snapshot-first SSE / Terminal / isolated Preview gateway
-
-PostgreSQL Run queue
-  └─ claim by a free Pi Worker (SKIP LOCKED + LISTEN/NOTIFY)
-       └─ Native Session Host
-            ├─ cold bootstrap: latest Compaction + active suffix from PG
-            ├─ concurrent main/Subagent Lane Agent Loops
-            ├─ one ordered native log writer per active physical Session
-            └─ model requests → local Model Gateway → CLIProxyAPI → Provider
-
-Pi Worker
-  └─ PG-issued execution opening + semantic/display/Tool records
-       └─ direct Kafka append: physical-Session key, RF=3, acks=all
-            └─ one partitioned Session Projector consumer group
-                 ├─ PG native log + query projections + recovery progress
-                 ├─ immutable live view + snapshot-first SSE → Browser
-                 └─ command routing → owner Tool executor → Cube KVM
-                                        raw result → Worker/Pi → same log
-
-Run settlement → PG Outbox → Kafka seal
-  → Projector commits terminal/interrupted prefix → next Run may start
+```mermaid
+flowchart TD
+  B["Browser"] <--> E["Caddy"]
+  subgraph CP["Control Plane service — one process"]
+    API["Auth / Run admission / resources / model settings"]
+    P["Session Projector — one Kafka consumer group"]
+    O["Seal Outbox relay"]
+    G["Web Terminal / isolated Preview gateways"]
+  end
+  E -->|"REST"| API
+  E <-->|"Terminal / Preview"| G
+  P -->|"snapshot-first SSE"| E
+  PG[("PostgreSQL: Run queue + Lease/Fence<br/>native Session log + query projections")]
+  API --> PG
+  PG --> O
+  subgraph WPOOL["Trusted Pi Worker pool"]
+    W["Pi SDK loops + Native Session Host<br/>concurrent main/Subagent Lanes"]
+    M["Local Model Gateway"]
+    W --> M
+  end
+  PG -->|"Workers claim; cold context restore"| W
+  W -.->|"registration / control channel"| API
+  M --> C["CLIProxyAPI — provider credentials"]
+  C --> L["GPT / DeepSeek + hosted search"]
+  W -->|"direct append; acks=all"| K[("Kafka — RF=3")]
+  O -->|"ordered execution seals"| K
+  K --> P
+  P -->|"semantic records + progress"| PG
+  P -->|"Tool commands / seal / result receipt"| TB["Tool Broker"]
+  TB -->|"raw result read by Worker"| W
+  API -->|"resource lifecycle"| TB
+  G --> TB
+  S["SSH client"] --> SG["SSH Gateway"] --> TB
+  TB --> CC["Cube control plane<br/>internal MySQL / Redis"]
+  CC --> VM["Cubelet / KVM microVM"]
+  VM <--> V["Cube Volume Plugin / persistent POSIX storage"]
+  TB --> VG["Workspace Volume Gateway"] --> V
+  GL["Optional GitLab Issue intake"] -.-> API
 ```
 
-The Harness consumes a `SessionStorage` port. Its active writer assigns immutable
-Entry/Record IDs, parents, sequences and timestamps **before** publication, and
-returns after Kafka ACK. PostgreSQL projects those exact records asynchronously;
-ordinary model Steps neither reload their branch nor wait for PG projection receipts.
-Cold history queries and a replacement Worker still use PostgreSQL.
+PostgreSQL accepts user inputs and owns Run scheduling and execution authority.
+Workers pull ready Runs; notifications only reduce queue latency. A cold Session
+occupies no slot. Active Lanes share one physical Session writer on one Worker,
+while their Agent Loops run concurrently. The Harness consumes a `SessionStorage`
+port: active context is an acknowledged in-memory view; cold recovery loads the
+latest Compaction and active suffix, not lifetime JSONL.
 
-All active Lanes of one physical Pi Session stay on one Worker, but their Agent
-Loops run concurrently. Only native append order is shared. A cold Session can
-move to any healthy Worker. Creating a Child Lane uses acknowledged parent context,
-not a query for a possibly unprojected parent prompt. Human Fork creates an
-independent Session; Subagent Branch creates another Lane.
+Workers stamp native records before appending directly to Kafka. One partitioned
+Projector group checks recorded openings/seals, projects complete semantic data to
+PG, maintains the live view, and routes Tool commands to the owning executor.
+There is no Fact Gateway, second scheduler, separate live/Tool consumer group,
+record signature or per-token PG authority query. Ordinary Steps return at Kafka
+ACK rather than waiting for a PG projection receipt.
 
-Before an arbitrary Tool effect, complete model output and Pi-validated Tool
-intent cross two native Kafka acknowledgement boundaries. Concrete execution
-commands then reach Tool Broker through Kafka. Broker retains bounded raw results
-for the Worker; the subsequent native Tool Result retires those copies. There is
-no second raw-result transcript or automatic command replay.
+A browser opens a materialized snapshot of complete history plus pending output,
+then receives new SSE events. Complete native messages and display coverage commit
+together, allowing covered fragments to leave memory before Run end. Snapshots are
+framed; interrupted values are discarded. The browser holds no Kafka cursor.
+Requests on a non-owning API replica proxy to the partition owner. History opens
+on the latest 40 Turns and older pages load on demand.
 
-Projector replicas share partition consumption. Commands and small seal/result
-notifications go to the exact owning Tool Broker boot; Worker result reads go
-directly to that owner. Tool Broker does not consume Kafka. SSE requests arriving
-at another API replica are proxied to the partition owner discovered through Kafka
-membership; no second routing authority or browser cursor is required.
+Complete model output and validated Tool intent have separate native durability
+boundaries. Concrete commands also require Kafka publication and Broker admission;
+the Projector does not wait for guest execution. Raw results return to the Worker
+for Harness processing, then the native Tool Result follows the same Kafka path
+and retires the Broker's bounded retry copy. Platform Tools and provider-hosted
+search do not become arbitrary guest shell commands.
 
-Conversation snapshots arrive as bounded SSE parts and render once complete;
-ordinary live deltas remain immediate. Complete native messages are readable
-before their Run ends, allowing their fragments to leave the live cache. The
-initial history window is 40 Turns; earlier history loads on demand, and export
-collects the complete history rather than only the current window.
+At settlement, PG requests an ordered Kafka seal. Projector commits the terminal
+and any uncovered interrupted text before a successor can restore context. Late
+records after closure cannot affect history, UI or new Tool dispatch. Already-issued
+Cube effects may remain UNKNOWN: this is semantic recovery, not exactly-once shell
+execution or restoration of lost process memory. Kafka retention follows safe PG
+recovery progress plus a grace interval; token fragments do not become PG rows.
 
-A Run opens one publication identity under its current PostgreSQL Lease. Its
-Worker publishes on private Kafka, and the Projector checks recorded scope
-and ordered boundaries. No record signing or cryptographic verification is used.
-There is no Fact Gateway, secondary channel lease or per-token
-authority query. Kafka ACK means persisted, not necessarily valid after a seal.
-A cleanly drained Run seals independently. An uncertain native publication retires
-the shared writer incarnation, including its other Lanes. Canonical, live and
-Tool consumers reject later records from that incarnation. The next ownership
-period waits for the affected seals to be projected. Interrupted visible text is
-saved with the terminal, then incorporated into the next native context through
-the current writer. Run authority remains the existing PostgreSQL ExecutionLease;
-writer identity is not another credential.
+Workspace files belong to persistent Cube Volumes. Development-machine snapshots
+are node-affine; deleting compute does not delete conversations. Cube's internal
+MySQL/Redis manage Cube, not PiCloud Runs. Provider account credentials remain in
+CLIProxyAPI. Optional GitLab and Prometheus/Grafana/Alertmanager/Jaeger integrations
+are outside the core scheduling/log authorities. One-host relays supply network
+reachability, not additional event-processing stages.
 
-Kafka owns accepted, not-yet-reclaimed facts. PostgreSQL retains the self-contained
-semantic Session log and business state; it does not store token-fragment rows.
-Broker automatic expiry is disabled for the active topic. A reaper deletes only
-behind PG's safe recovery position **and** the retention grace, so a stopped
-projector does not silently lose accepted data. Gateway memory is rebuildable.
-
-Elastic Workspace bytes belong to a persistent Cube Volume. A development
-machine's full-VM snapshot is node-affine; host shutdown is not an automatic
-snapshot. Releasing resources never deletes conversations: users can rebind them.
-
-See [Architecture](docs/ARCHITECTURE.md), [Run lifecycle](docs/RUN_LIFECYCLE.md)
-and [stream durability](docs/STREAM_DURABILITY.md) for boundaries and failure rules.
+See [Architecture](docs/ARCHITECTURE.md), [Run lifecycle](docs/RUN_LIFECYCLE.md),
+[stream durability](docs/STREAM_DURABILITY.md) and
+[deployment](docs/PRODUCTION_DEPLOYMENT.md) for implementation boundaries.
 
 ## One-host deployment
 

@@ -47,9 +47,8 @@ function boundedCacheInteger(
 /**
  * A Worker-local, bounded cache for immutable runtime objects.
  *
- * PostgreSQL still resolves and rechecks the current Workspace settlement head on every
- * Run. This cache only avoids reading an already-selected immutable Workspace,
- * Tool-output, or compact Pi Session-reference object again.
+ * Caches selected immutable runtime artifacts, not Workspace files or the
+ * authoritative native Session log. Cube Volumes and SessionStorage own those.
  */
 export class TtlRuntimeObjectStore implements RuntimeObjectStore {
   readonly #objectStore: RuntimeObjectStore;

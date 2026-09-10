@@ -127,6 +127,8 @@ if (process.argv[2] !== "inside") {
     const scope = {
       tenantId: randomUUID(),
       sessionId: randomUUID(),
+      piSessionId: randomUUID(),
+      writerId: randomUUID(),
       runId: randomUUID(),
       turnId: randomUUID(),
       attemptId: randomUUID(),

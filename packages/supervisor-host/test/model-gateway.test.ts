@@ -7,6 +7,8 @@ import {
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import { zstdCompressSync } from "node:zlib";
+import { request as httpRequest } from "node:http";
+import { PiCloudMetrics } from "@pi-cloud/observability";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TenantModelGateway } from "../src/index.ts";
 
@@ -102,7 +104,11 @@ afterEach(async () => {
 function createGateway(
   fetchImplementation: typeof fetch,
   maximumRequestsPerTurn = 8,
-  timeouts: { upstreamConnectTimeoutMs?: number; upstreamIdleTimeoutMs?: number } = {},
+  timeouts: {
+    upstreamConnectTimeoutMs?: number;
+    upstreamIdleTimeoutMs?: number;
+    metrics?: PiCloudMetrics;
+  } = {},
 ) {
   const gateway = new TenantModelGateway({
     host: "127.0.0.1",
@@ -460,6 +466,58 @@ describe("tenant model gateway", () => {
       body: JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }),
     });
     expect(await response.text()).toContain("provider_gateway_idle_timeout");
+  });
+
+  it("releases a backpressured Provider response when the Pi client disconnects", async () => {
+    const metrics = new PiCloudMetrics("gateway-disconnect-test");
+    const observe = vi.spyOn(metrics.modelDuration, "observe");
+    const cancelled = vi.fn();
+    const chunk = new TextEncoder().encode(
+      `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "x".repeat(8 * 1024 * 1024) })}\n\n`,
+    );
+    const gateway = createGateway(
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              controller.enqueue(chunk);
+            },
+            cancel: cancelled,
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+      8,
+      { metrics },
+    );
+    await gateway.start();
+    const lease = gateway.issue(command());
+    const client = httpRequest(`http://127.0.0.1:${gateway.listeningPort}/v1/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${lease.runtime.capability}`, ...samplingHeaders() },
+    });
+    try {
+      const connected = new Promise<void>((resolve, reject) => {
+        client.once("response", (response) => {
+          response.pause();
+          resolve();
+        });
+        client.once("error", reject);
+      });
+      client.end(JSON.stringify({ model: "deepseek-v4-flash", stream: true, input: [] }));
+      await connected;
+      expect(observe).not.toHaveBeenCalled();
+      client.destroy();
+      await vi.waitFor(() => expect(cancelled).toHaveBeenCalledOnce());
+      await vi.waitFor(() =>
+        expect(observe).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: "failed" }),
+          expect.any(Number),
+        ),
+      );
+    } finally {
+      client.destroy();
+      await lease.release();
+    }
   });
 
   it("rejects protocol, model, Step identity and request-count violations before forwarding", async () => {

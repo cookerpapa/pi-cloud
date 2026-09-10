@@ -26,6 +26,9 @@ const tenantCount = Number(process.env.PI_CLOUD_LIVE_MULTI_TENANT_COUNT ?? "6");
 if (!Number.isSafeInteger(tenantCount) || tenantCount < 2 || tenantCount > 12) {
   throw new Error("PI_CLOUD_LIVE_MULTI_TENANT_COUNT must be an integer from 2 to 12");
 }
+const sessionsPerTenant = Number(process.env.PI_CLOUD_LIVE_SESSIONS_PER_TENANT ?? "2");
+if (!Number.isSafeInteger(sessionsPerTenant) || sessionsPerTenant < 1 || sessionsPerTenant > 8)
+  throw new Error("PI_CLOUD_LIVE_SESSIONS_PER_TENANT must be an integer from 1 to 8");
 
 const runtimeDirectory = resolve(
   repositoryRoot,
@@ -229,31 +232,40 @@ async function registerTenant(index, suffix) {
   const model = await api.getModelConfiguration();
   assert.equal(model.mode, "real", `${tenantSlug} did not inherit the platform real model`);
   const project = await api.createProject(`Multi-tenant model load ${suffix}`);
-  const session = await api.createSession(
-    project.projectId,
-    project.workspaceId,
-    `Multi-tenant model load ${suffix}`,
-    "elastic",
-    "starter",
-    "/workspace",
-    { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "off", fastMode: false },
+  const sessions = await Promise.all(
+    Array.from({ length: sessionsPerTenant }, (_, sessionIndex) =>
+      api.createSession(
+        project.projectId,
+        project.workspaceId,
+        `Multi-tenant model load ${suffix} / ${sessionIndex + 1}`,
+        "elastic",
+        "starter",
+        "/workspace",
+        {
+          provider: "deepseek",
+          modelId: "deepseek-v4-flash",
+          thinkingLevel: "off",
+          fastMode: false,
+        },
+      ),
+    ),
   );
   await psql(
     `update sessions
         set tool_capabilities = '[]'::jsonb,
             updated_at = now()
       where tenant_id = ${sqlLiteral(body.tenantId)}
-        and id = ${sqlLiteral(session.sessionId)}`,
+        and id in (${sessions.map((session) => sqlLiteral(session.sessionId)).join(",")})`,
   );
-  return {
+  return sessions.map((session, sessionIndex) => ({
     tenantSlug,
     tenantId: body.tenantId,
     token: body.apiToken,
     api,
     model: { ...model, provider: "deepseek", modelId: "deepseek-v4-flash" },
     session,
-    marker: `TENANT-${String(index + 1)}-${suffix.toUpperCase()}`,
-  };
+    marker: `TENANT-${index + 1}-SESSION-${sessionIndex + 1}-${suffix.toUpperCase()}`,
+  }));
 }
 
 async function waitForRun(api, runId) {
@@ -450,21 +462,41 @@ function sumUsage(results) {
 }
 
 const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`;
-const lanes = await Promise.all(
-  Array.from({ length: tenantCount }, (_, index) => registerTenant(index, suffix)),
+const registeredWorkers = JSON.parse(
+  await psql(`select json_agg(json_build_object(
+  'supervisorId', h.supervisor_id, 'capacity', h.maximum_capacity))
+  from supervisor_hosts h where exists(select 1 from supervisor_connections c
+    where c.supervisor_id=h.supervisor_id and c.state='active' and c.expires_at>now())`),
 );
+assert(registeredWorkers?.length > 0, "No registered Workers available");
+const lanes = (
+  await Promise.all(
+    Array.from({ length: tenantCount }, (_, index) => registerTenant(index, suffix)),
+  )
+).flat();
+
+async function runWave(tasks) {
+  const results = await Promise.allSettled(tasks);
+  const failures = results.filter((result) => result.status === "rejected");
+  if (failures.length)
+    throw new AggregateError(
+      failures.map((result) => result.reason),
+      "Live model wave failed",
+    );
+  return results.map((result) => result.value);
+}
 
 try {
   for (let index = 0; index < lanes.length; index += 1) {
     const current = lanes[index];
-    const foreign = lanes[(index + 1) % lanes.length];
+    const foreign = lanes.find((lane) => lane.tenantId !== current.tenantId);
     await assert.rejects(
       current.api.getConversation(foreign.session.sessionId),
       (error) => error instanceof PiCloudApiError && error.status === 404,
     );
   }
 
-  const firstRound = await Promise.all(
+  const firstRound = await runWave(
     lanes.map((lane) =>
       runTurn(
         lane,
@@ -480,7 +512,7 @@ try {
     );
   }
 
-  const secondRound = await Promise.all(
+  const secondRound = await runWave(
     lanes.map((lane) =>
       runTurn(
         lane,
@@ -526,6 +558,8 @@ try {
     piCloudRevision: testedRevision,
     checkedAt: new Date().toISOString(),
     tenants: tenantCount,
+    sessionsPerTenant,
+    sessions: lanes.length,
     runs: allResults.length,
     model: {
       provider: lanes[0].model.provider,
@@ -559,6 +593,7 @@ try {
       ...evidence[index],
     })),
     workers: {
+      registered: registeredWorkers,
       distinct: [...new Set(evidence.map((item) => item.supervisorId))],
       assignments: Object.fromEntries(
         [...new Set(evidence.map((item) => item.supervisorId))].map((worker) => [
@@ -572,7 +607,12 @@ try {
   };
 
   assert.equal(report.correctness.maximumAttemptCount, 1);
-  assert.equal(report.workers.distinct.length, 2);
+  assert(
+    report.workers.distinct.every((worker) =>
+      registeredWorkers.some((row) => row.supervisorId === worker),
+    ),
+    "A Run used an unregistered Worker",
+  );
   assert.equal(report.streaming.terminalCount, allResults.length);
   assert(report.streaming.piEntryCount >= report.streaming.messageCount);
   assert(totalUsage.requests >= allResults.length);
@@ -592,7 +632,7 @@ try {
       "",
       `- Checked at: ${report.checkedAt}`,
       `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
-      `- Tenants / Runs: ${String(report.tenants)} / ${String(report.runs)}`,
+      `- Tenants / Sessions / Runs: ${report.tenants} / ${report.sessions} / ${report.runs}`,
       `- Completed / failed: ${String(report.correctness.completedRuns)} / ${String(report.correctness.failedRuns)}`,
       `- Marker restores / cross-tenant leaks: ${String(report.correctness.markerRestores)} / ${String(report.correctness.crossTenantMarkerLeaks)}`,
       `- Worker assignments: ${Object.entries(report.workers.assignments)
@@ -606,7 +646,7 @@ try {
       `- Pi entries per Run / canonical payload bytes: ${String(report.streaming.entriesPerRun)} / ${String(report.streaming.canonicalPayloadBytes)}`,
       `- Real requests/input/output/cache-read tokens: ${String(report.usage.requests)} / ${String(report.usage.inputTokens)} / ${String(report.usage.outputTokens)} / ${String(report.usage.cacheReadTokens)}`,
       "",
-      "Every tenant used an independent API credential, Project, Workspace and Pi SessionStorage state. All first and follow-up Runs were submitted concurrently through the shared PostgreSQL queue and two capacity-one Pi Workers. The follow-up restored only its own marker, foreign Session reads returned 404, no Tool Sandbox was activated, and every Run completed with one Attempt.",
+      "Each tenant used an independent API credential and Project/Workspace, with multiple independent Sessions. First and follow-up Runs were submitted in concurrent waves through the shared PG queue. Worker capacity and actual assignments are recorded, not assumed to be two capacity-one processes. Each follow-up restored only its own Session marker, foreign-tenant Session reads returned 404, no Tool Sandbox was activated, and every Run completed with one Attempt.",
       "",
     ].join("\n"),
     "utf8",
@@ -617,8 +657,9 @@ try {
     await lane.api
       .deleteConversation(lane.session.sessionId, newIdempotencyKey("cleanup-conversation"))
       .catch(() => undefined);
+  }
+  for (const lane of new Map(lanes.map((lane) => [lane.session.workspaceId, lane])).values())
     await lane.api
       .deleteWorkspace(lane.session.workspaceId, newIdempotencyKey("cleanup-workspace"))
       .catch(() => undefined);
-  }
 }

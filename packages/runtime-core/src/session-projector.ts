@@ -46,7 +46,6 @@ export class SessionProjector {
       if (!this.#consumer.ownsPartition(p))
         throw new Error("Session Projector assignment changed; reconnect");
       await this.#consumer.waitForPartition(p);
-      return () => {};
     });
     this.eventHub = this.eventStore.eventHub;
     this.#publication = new ExecutionPublicationBoundary(options.database);

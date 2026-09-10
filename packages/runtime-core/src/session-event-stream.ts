@@ -16,7 +16,7 @@ export type SessionEventStreamOptions = Readonly<{
 
 export interface LiveSessionTailSource {
   owner?(tenantId: string, sessionId: string): Promise<string | undefined>;
-  retainSession?(tenantId: string, sessionId: string): Promise<() => void>;
+  waitForSession?(tenantId: string, sessionId: string): Promise<void>;
   snapshot(tenantId: string, sessionId: string): LiveSessionTailSnapshot;
 }
 
@@ -75,7 +75,6 @@ export class OpenSessionEventStream {
   #snapshot: SessionViewSnapshotResource | undefined;
   readonly #highWaterMark: number;
   readonly #heartbeatIntervalMs: number;
-  readonly #release: (() => void) | undefined;
   readonly #sendTimeoutMs: number;
 
   constructor(options: {
@@ -83,14 +82,12 @@ export class OpenSessionEventStream {
     snapshot: SessionViewSnapshotResource;
     highWaterMark: number;
     heartbeatIntervalMs: number;
-    release?: () => void;
     sendTimeoutMs?: number;
   }) {
     this.#subscription = options.subscription;
     this.#snapshot = options.snapshot;
     this.#highWaterMark = options.highWaterMark;
     this.#heartbeatIntervalMs = options.heartbeatIntervalMs;
-    this.#release = options.release;
     this.#sendTimeoutMs = options.sendTimeoutMs ?? SESSION_STREAM_SEND_TIMEOUT_MS;
   }
 
@@ -140,7 +137,6 @@ export class OpenSessionEventStream {
     } finally {
       response.off("close", close);
       this.#subscription.close();
-      this.#release?.();
     }
   }
 }
@@ -175,7 +171,7 @@ export class SessionEventStream {
     sessionId: string;
     loadCanonical(): Promise<CanonicalSessionView>;
   }): Promise<OpenSessionEventStream> {
-    const release = await this.#tails.retainSession?.(options.tenantId, options.sessionId);
+    await this.#tails.waitForSession?.(options.tenantId, options.sessionId);
     const subscription = this.#hub.subscribe(options.tenantId, options.sessionId);
     try {
       // Capture before reading primary PG. The database cannot precede a
@@ -213,11 +209,9 @@ export class SessionEventStream {
           Math.max(canonical.canonicalThroughSequence, tail.canonicalThroughSequence),
         heartbeatIntervalMs: this.#heartbeatIntervalMs,
         sendTimeoutMs: this.#sendTimeoutMs,
-        ...(release === undefined ? {} : { release }),
       });
     } catch (error: unknown) {
       subscription.close();
-      release?.();
       throw error;
     }
   }

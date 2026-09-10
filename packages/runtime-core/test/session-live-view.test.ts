@@ -3,7 +3,7 @@ import type { PiCloudEvent } from "@pi-cloud/protocol";
 import { SessionLiveView } from "../src/session-live-view.ts";
 
 it("keeps an in-flight snapshot when committed content is evicted", () => {
-  const view = new SessionLiveView(async () => () => {});
+  const view = new SessionLiveView(async () => {});
   const base = {
     schemaVersion: 1 as const,
     sessionId: crypto.randomUUID(),

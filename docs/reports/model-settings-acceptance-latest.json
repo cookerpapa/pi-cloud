@@ -1,7 +1,7 @@
 {
   "accepted": true,
-  "piCloudRevision": "2d79609e7f95012a7f2d455b6d97455628290976",
-  "checkedAt": "2026-09-02T03:40:12.447Z",
+  "piCloudRevision": "cb7bdc9a3c2677d87211e34807aeb5e2433afd93",
+  "checkedAt": "2026-09-10T11:03:40.225Z",
   "assertions": {
     "gptFastRequestCompleted": true,
     "activeTurnSettingsMutationRejected": true,
@@ -11,7 +11,7 @@
     "cleanupCompleted": true
   },
   "latencyMs": {
-    "gptFastTurn": 2919,
-    "deepSeekHighTurn": 2168
+    "gptFastTurn": 7706,
+    "deepSeekHighTurn": 1942
   }
 }

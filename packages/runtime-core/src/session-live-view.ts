@@ -20,7 +20,7 @@ export class SessionLiveView {
   #duplicates = 0;
   #evicted = 0;
   readonly #sweep: NodeJS.Timeout;
-  constructor(readonly retainSession: (tenant: string, session: string) => Promise<() => void>) {
+  constructor(readonly waitForSession: (tenant: string, session: string) => Promise<void>) {
     this.#sweep = setInterval(() => {
       for (const [id, t] of this.#tails)
         if (!t.content.size && t.touched < Date.now() - 300000) this.#tails.delete(id);
@@ -66,9 +66,6 @@ export class SessionLiveView {
       before = content.size;
     content.cover(through);
     this.#evicted += before - content.size;
-  }
-  readTurn(tenant: string, session: string, turn: string) {
-    return this.snapshot(tenant, session).events.filter((e) => e.turnId === turn);
   }
   statistics() {
     return {

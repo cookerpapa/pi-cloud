@@ -135,8 +135,8 @@ export class AcceptedFactTerminalOutboxRelay {
       let waitMs = this.#pollIntervalMs;
       try {
         const count = await this.#dispatch(this.#batchSize);
+        this.#failure = undefined;
         if (count > 0) {
-          this.#failure = undefined;
           continue;
         }
       } catch (error: unknown) {

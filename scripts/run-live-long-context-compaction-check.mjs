@@ -7,7 +7,8 @@ import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { format } from "prettier";
-import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { reviewedModel } from "../packages/protocol/src/model-catalog.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
 
@@ -22,9 +23,9 @@ const maximumCodingTurns = Number(process.env.PI_CLOUD_LONG_CONTEXT_MAX_TURNS ??
 if (
   !Number.isSafeInteger(maximumCodingTurns) ||
   maximumCodingTurns < 8 ||
-  maximumCodingTurns > 64
+  maximumCodingTurns > 32
 ) {
-  throw new Error("PI_CLOUD_LONG_CONTEXT_MAX_TURNS must be an integer between 8 and 64");
+  throw new Error("PI_CLOUD_LONG_CONTEXT_MAX_TURNS must be an integer between 8 and 32");
 }
 const writeReport = process.env.PI_CLOUD_LONG_CONTEXT_REPORT !== "0";
 const runtimeDirectory = resolve(
@@ -69,9 +70,6 @@ const connectHost = bindAddress === "0.0.0.0" || bindAddress === "::" ? "127.0.0
 const baseUrl = new URL(
   `http://${connectHost.includes(":") ? `[${connectHost}]` : connectHost}:${port}`,
 );
-const bootstrapToken = (
-  await readPrivate(resolve(runtimeDirectory, "secrets/api-token"), 4_096, "Production API token")
-).trim();
 const databaseUrl = new URL(
   (
     await readPrivate(
@@ -95,8 +93,8 @@ const fetchFromProduction = (input, init = {}) =>
     ...init,
     signal: init.signal ?? AbortSignal.timeout(20 * 60_000),
   });
-let api = new PiCloudApi(fetchFromProduction, bootstrapToken);
-let authorizationToken = bootstrapToken;
+let api;
+let authorizationToken;
 let tenantId;
 
 function capture(command, args, timeoutMs = 120_000) {
@@ -151,59 +149,10 @@ async function psql(query) {
 }
 
 async function acceptanceIdentity(suffix) {
-  try {
-    return await new PiCloudApi(fetchFromProduction).registerTenant(
-      `long-context-${suffix}`.replaceAll(/[^a-z0-9-]/g, "-").slice(0, 63),
-      "Long-context compaction acceptance",
-    );
-  } catch (error) {
-    if (!(error instanceof PiCloudApiError) || error.status !== 429) throw error;
-  }
-  const reusable = await psql(
-    `select tenant.id::text || '|' || tenant.slug || '|' || user_row.id::text
-       from tenants tenant
-       join users user_row on user_row.tenant_id = tenant.id
-       join tenant_runtime_policies policy on policy.tenant_id = tenant.id
-       left join projects project on project.tenant_id = tenant.id
-      where tenant.slug like 'long-context-%'
-      group by tenant.id, tenant.slug, tenant.created_at, user_row.id, user_row.created_at,
-               policy.maximum_projects
-      having count(project.id) < policy.maximum_projects
-      order by tenant.created_at desc, user_row.created_at asc
-      limit 1`,
+  return new PiCloudApi(fetchFromProduction).registerTenant(
+    `long-context-${suffix}`.replaceAll(/[^a-z0-9-]/g, "-").slice(0, 63),
+    "Long-context compaction acceptance",
   );
-  if (reusable.length === 0) throw new Error("No reusable long-context acceptance tenant exists");
-  const [reusableTenantId, tenantSlug, userId] = reusable.split("|");
-  assert(reusableTenantId && tenantSlug && userId, "Reusable acceptance identity is invalid");
-  const issued = JSON.parse(
-    await capture(process.execPath, [
-      "scripts/production-compose.mjs",
-      "exec",
-      "-T",
-      "control-plane",
-      "node",
-      "packages/control-plane/src/tenant-admin.ts",
-      "issue",
-      "--tenant",
-      tenantSlug,
-      "--user-id",
-      userId,
-      "--label",
-      `long-context-${suffix}`.slice(0, 128),
-      "--role",
-      "owner",
-    ]),
-  );
-  const token = issued?.credential?.token;
-  assert.equal(typeof token, "string", "Tenant administration did not issue an API token");
-  return {
-    tenantId: reusableTenantId,
-    tenantSlug,
-    userId,
-    displayName: "Long-context compaction acceptance",
-    role: "owner",
-    apiToken: token,
-  };
 }
 
 async function revokeAcceptanceCredential(registration) {
@@ -267,8 +216,7 @@ async function usageForRun(runId) {
             coalesce((entry.payload #>> '{message,usage,input}')::bigint, 0) || '|' ||
             coalesce((entry.payload #>> '{message,usage,output}')::bigint, 0) || '|' ||
             coalesce((entry.payload #>> '{message,usage,cacheRead}')::bigint, 0) || '|' ||
-            coalesce((entry.payload #>> '{message,usage,cacheWrite}')::bigint, 0) ||
-            '|completed||200'
+            coalesce((entry.payload #>> '{message,usage,cacheWrite}')::bigint, 0)
        from runs run
        join pi_session_entries entry
          on entry.tenant_id = run.tenant_id
@@ -284,25 +232,14 @@ async function usageForRun(runId) {
     rows.length === 0
       ? []
       : rows.split(/\r?\n/).map((row) => {
-          const [
-            sequence,
-            inputTokens,
-            outputTokens,
-            cacheReadTokens,
-            cacheWriteTokens,
-            state,
-            failureCode,
-            upstreamStatus,
-          ] = row.split("|");
+          const [sequence, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens] =
+            row.split("|");
           const parsed = {
             sequence: Number(sequence),
             inputTokens: Number(inputTokens),
             outputTokens: Number(outputTokens),
             cacheReadTokens: Number(cacheReadTokens),
             cacheWriteTokens: Number(cacheWriteTokens),
-            state,
-            failureCode: failureCode || undefined,
-            upstreamStatus: Number(upstreamStatus) || undefined,
           };
           assert(
             [
@@ -319,39 +256,15 @@ async function usageForRun(runId) {
           return parsed;
         });
   assert(requests.length > 0, `Run ${runId} did not record a model request`);
-  const completedRequests = requests.filter((request) => request.state === "completed");
-  const recoveredFailures = requests.filter((request) => request.state === "failed");
-  assert(completedRequests.length > 0, `Run ${runId} did not complete a model request`);
-  assert(
-    requests.every((request) => request.state === "completed" || request.state === "failed"),
-    `Run ${runId} retained a denied, reserved, or aborted model request`,
-  );
-  assert(
-    recoveredFailures.every((request) => request.failureCode !== "budget_denied"),
-    `Run ${runId} crossed a governance budget`,
-  );
   return {
     requests,
-    attemptCount: requests.length,
-    requestCount: completedRequests.length,
-    recoveredFailures: recoveredFailures.map((request) => ({
-      sequence: request.sequence,
-      failureCode: request.failureCode,
-      upstreamStatus: request.upstreamStatus,
-    })),
-    inputTokens: completedRequests.reduce((total, request) => total + request.inputTokens, 0),
-    outputTokens: completedRequests.reduce((total, request) => total + request.outputTokens, 0),
-    cacheReadTokens: completedRequests.reduce(
-      (total, request) => total + request.cacheReadTokens,
-      0,
-    ),
-    cacheWriteTokens: completedRequests.reduce(
-      (total, request) => total + request.cacheWriteTokens,
-      0,
-    ),
-    maximumRequestInputTokens: Math.max(
-      ...completedRequests.map((request) => request.contextInputTokens),
-    ),
+    requestCount: requests.length,
+    scope: "Pi-native assistant usage; excludes unrecorded retries and Compaction requests",
+    inputTokens: requests.reduce((total, request) => total + request.inputTokens, 0),
+    outputTokens: requests.reduce((total, request) => total + request.outputTokens, 0),
+    cacheReadTokens: requests.reduce((total, request) => total + request.cacheReadTokens, 0),
+    cacheWriteTokens: requests.reduce((total, request) => total + request.cacheWriteTokens, 0),
+    maximumRequestInputTokens: Math.max(...requests.map((request) => request.contextInputTokens)),
   };
 }
 
@@ -366,6 +279,7 @@ async function runEvidence(runId) {
             coalesce(pi.active_bytes, 0) || '|' ||
             coalesce(pi.active_entries, 0)
        from runs run
+       join sessions product_session on product_session.id = run.session_id
        join run_attempts attempt on attempt.id = run.current_attempt_id
        join sandboxes sandbox on sandbox.id = attempt.sandbox_id
        left join tool_broker_workspace_runtimes activation
@@ -386,11 +300,11 @@ async function runEvidence(runId) {
              select max(candidate.seq) as latest_seq
                from pi_session_entries candidate
               where candidate.tenant_id = run.tenant_id
-                and candidate.session_id = run.session_id::text
+                and candidate.session_id = product_session.pi_session_id
                 and candidate.type = 'compaction'
            ) compaction
           where entry.tenant_id = run.tenant_id
-            and entry.session_id = run.session_id::text
+            and entry.session_id = product_session.pi_session_id
        ) pi on true
       where run.id = ${sqlLiteral(runId)}
       order by activation.created_at desc nulls last
@@ -817,34 +731,13 @@ function codingPrompt(task, index, marker) {
 }
 
 const initialWorkers = await waitForWorkers(2);
-const bootstrapApi = api;
 const suffix = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const marker = `ALGO-LAB-${suffix.toUpperCase()}`;
 const registration = await acceptanceIdentity(suffix);
 api = new PiCloudApi(fetchFromProduction, registration.apiToken);
 authorizationToken = registration.apiToken;
 tenantId = registration.tenantId;
-const platformModel = await api.getModelConfiguration();
-assert.equal(platformModel.mode, "real", "Long-context acceptance requires a real model");
-const project = await api.createProject(`Long-context algorithm lab ${suffix}`);
-const session = await api.createSession(
-  project.projectId,
-  project.workspaceId,
-  `Long-context algorithm lab ${suffix}`,
-  "elastic",
-  "standard",
-  "/workspace",
-  {
-    provider: "deepseek",
-    modelId: "deepseek-v4-flash",
-    thinkingLevel: "off",
-    fastMode: false,
-  },
-);
-const model = await api.getSessionModel(session.sessionId);
-assert.equal(model.provider, "deepseek");
-assert.equal(model.modelId, "deepseek-v4-flash");
-
+let project, session;
 const rounds = [];
 let completedCompaction;
 const requiredCompactions = 2;
@@ -852,6 +745,26 @@ let stoppedWorkerService;
 let cleanupCompleted = false;
 
 try {
+  const platformModel = await api.getModelConfiguration();
+  assert.equal(platformModel.mode, "real", "Long-context acceptance requires a real model");
+  project = await api.createProject(`Long-context algorithm lab ${suffix}`);
+  session = await api.createSession(
+    project.projectId,
+    project.workspaceId,
+    `Long-context algorithm lab ${suffix}`,
+    "elastic",
+    "standard",
+    "/workspace",
+    {
+      provider: "deepseek",
+      modelId: "deepseek-v4-flash",
+      thinkingLevel: "off",
+      fastMode: false,
+    },
+  );
+  const model = await api.getSessionModel(session.sessionId);
+  assert.equal(model.provider, "deepseek");
+  assert.equal(model.modelId, "deepseek-v4-flash");
   progress(
     `starting ${model.provider}/${model.modelId} Session ${session.sessionId} on ${initialWorkers.length} Workers`,
   );
@@ -1053,8 +966,6 @@ try {
   ].reduce(
     (total, usage) => ({
       modelRequests: total.modelRequests + usage.requestCount,
-      modelAttempts: total.modelAttempts + usage.attemptCount,
-      recoveredRequestFailures: total.recoveredRequestFailures + usage.recoveredFailures.length,
       inputTokens: total.inputTokens + usage.inputTokens,
       outputTokens: total.outputTokens + usage.outputTokens,
       cacheReadTokens: total.cacheReadTokens + usage.cacheReadTokens,
@@ -1062,8 +973,6 @@ try {
     }),
     {
       modelRequests: 0,
-      modelAttempts: 0,
-      recoveredRequestFailures: 0,
       inputTokens: 0,
       outputTokens: 0,
       cacheReadTokens: 0,
@@ -1085,7 +994,7 @@ try {
     model: {
       provider: model.provider,
       modelId: model.modelId,
-      configuredContextWindow: 128_000,
+      configuredContextWindow: reviewedModel(model.provider, model.modelId).contextWindow,
       compactionReserveTokens: 16_384,
       compactionKeepRecentTokens: 20_000,
     },
@@ -1192,7 +1101,7 @@ try {
         `- Same bounded-warm Cube runtime rebound: ${String(report.postCompaction.crossWorker.sameCubeRuntimeRebound)}`,
         `- Post-compaction Provider/Worker switch: ${report.postCompaction.providerSwitch.from} -> ${report.postCompaction.providerSwitch.to}, ${report.postCompaction.providerSwitch.model.provider}/${report.postCompaction.providerSwitch.model.modelId}, Fast=${String(report.postCompaction.providerSwitch.model.serviceTier === "fast")}`,
         `- Post-compaction Hosted Web Search first-response/settled: ${String(report.postCompaction.providerSwitch.firstResponseMs)} / ${String(report.postCompaction.providerSwitch.settledMs)} ms`,
-        `- Real model attempts/completed/recovered failures: ${String(report.totalUsage.modelAttempts)} / ${String(report.totalUsage.modelRequests)} / ${String(report.totalUsage.recoveredRequestFailures)}`,
+        `- Pi-native assistant usage records: ${String(report.totalUsage.modelRequests)} (excludes unrecorded retry and Compaction usage)`,
         `- Real input/output/cache-read/cache-write tokens: ${String(report.totalUsage.inputTokens)} / ${String(report.totalUsage.outputTokens)} / ${String(report.totalUsage.cacheReadTokens)} / ${String(report.totalUsage.cacheWriteTokens)}`,
         `- Final Pi SessionStorage bytes/entries: ${String(report.postCompaction.crossWorker.sessionBytes)} / ${String(report.postCompaction.crossWorker.sessionEntries)}`,
         `- Final active context bytes/entries: ${String(report.postCompaction.crossWorker.activeContextBytes)} / ${String(report.postCompaction.crossWorker.activeContextEntries)}`,
@@ -1214,15 +1123,14 @@ try {
     await restoreWorker(stoppedWorkerService).catch(() => undefined);
   }
   if (!cleanupCompleted) {
-    await api
-      .deleteConversation(session.sessionId, newIdempotencyKey("delete"))
-      .catch(() => undefined);
-    await api
-      .deleteWorkspace(project.workspaceId, newIdempotencyKey("delete-workspace"))
-      .catch(() => undefined);
+    if (session)
+      await api
+        .deleteConversation(session.sessionId, newIdempotencyKey("delete"))
+        .catch(() => undefined);
+    if (project)
+      await api
+        .deleteWorkspace(project.workspaceId, newIdempotencyKey("delete-workspace"))
+        .catch(() => undefined);
   }
   await revokeAcceptanceCredential(registration).catch(() => undefined);
-  // Keep bootstrap identity reachable so accidental reassignment is visible in
-  // static analysis; test traffic always uses the isolated acceptance tenant.
-  void bootstrapApi;
 }

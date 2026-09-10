@@ -19,11 +19,9 @@ export type KafkaLogConsumerOptions<T> = {
   groupId: string;
   topic: string;
   commitMessages?: boolean;
-  /** Router delivery resumes Kafka's committed group position, not a PG projection. */
+  /** Include completed delivery as well as the durable projection recovery floor. */
   groupRecovery?: boolean;
   onReset?(): void;
-  demandDriven?: boolean;
-  onPartitionReset?(partition: number): void;
   replayOffsets?(
     bounds: readonly KafkaPartitionBounds[],
     partitionCount: number,
@@ -38,7 +36,6 @@ export class KafkaLogConsumer<T> {
   readonly #kafka: KafkaTypes.Kafka;
   #admin: KafkaTypes.Admin;
   #adminReady: Promise<void> | undefined;
-  #consumer: KafkaTypes.Consumer | undefined;
   #run: Promise<void> | undefined;
   #wake: (() => void) | undefined;
   #closing = false;
@@ -48,10 +45,8 @@ export class KafkaLogConsumer<T> {
   readonly #processedOffsets = new Map<number, bigint>();
   readonly #initialTargets = new Map<number, bigint>();
   readonly #retries = new Map<number, { since: number; count: number; timer: NodeJS.Timeout }>();
-  readonly #inflight = new Map<Promise<void>, number>();
-  readonly #references = new Map<number, number>();
-  readonly #fetching = new Set<number>();
-  readonly #activating = new Map<number, Promise<void>>();
+  readonly #inflight = new Set<Promise<void>>();
+  readonly #assigned = new Set<number>();
   readonly #blocked = new Map<number, Error>();
   #memberCache: { until: number; owners: Map<number, string> } | undefined;
 
@@ -120,13 +115,6 @@ export class KafkaLogConsumer<T> {
     this.#run = this.#runForever();
   }
 
-  /** Bounded soft-state overflow uses the ordinary durable replay path. */
-  requestReplay(): void {
-    this.#ready = false;
-    this.#epoch++;
-    this.#wake?.();
-  }
-
   async #runForever(): Promise<void> {
     while (!this.#closing) {
       let restart!: () => void;
@@ -160,7 +148,7 @@ export class KafkaLogConsumer<T> {
         ) => {
           this.#epoch++;
           this.#ready = false;
-          this.#fetching.clear();
+          this.#assigned.clear();
           this.#blocked.clear();
           for (const retry of this.#retries.values()) clearTimeout(retry.timer);
           this.#retries.clear();
@@ -170,7 +158,7 @@ export class KafkaLogConsumer<T> {
             return;
           }
           try {
-            await Promise.allSettled([...this.#inflight.keys()]);
+            await Promise.allSettled([...this.#inflight]);
             this.#options.onReset?.();
             const allBounds = await this.#bounds();
             const bounds = allBounds.filter((b) =>
@@ -191,9 +179,8 @@ export class KafkaLogConsumer<T> {
               ? new Map(
                   bounds.map((b) => {
                     const saved = groupOffsets.get(b.partition) ?? -1n;
-                    // The Tool router is not the recovery authority. Safe log
-                    // reclamation has already closed/projected this prefix;
-                    // an offline router must not require its deleted records.
+                    // Safe reclamation has already closed/projected this prefix.
+                    // Completed group delivery can lag that reclaimed position.
                     const offset = saved < b.low ? b.low : saved;
                     return [
                       b.partition,
@@ -238,16 +225,13 @@ export class KafkaLogConsumer<T> {
                 ),
               })),
             );
-            const idle = assignments
-              .filter(
-                (a) =>
-                  this.#blocked.has(a.partition) ||
-                  (this.#options.demandDriven && !this.#references.has(a.partition)),
-              )
+            const blocked = assignments
+              .filter((a) => this.#blocked.has(a.partition))
               .map((a) => a.partition);
-            if (idle.length) consumer.pause([{ topic: this.#options.topic, partitions: idle }]);
+            if (blocked.length)
+              consumer.pause([{ topic: this.#options.topic, partitions: blocked }]);
             for (const a of assignments)
-              if (!idle.includes(a.partition)) this.#fetching.add(a.partition);
+              if (!this.#blocked.has(a.partition)) this.#assigned.add(a.partition);
             this.#failure = undefined;
             this.#ready = true;
           } catch (failure) {
@@ -259,7 +243,6 @@ export class KafkaLogConsumer<T> {
           }
         },
       });
-      this.#consumer = consumer;
       try {
         const partitions = (await this.#bounds()).length;
         await consumer.connect();
@@ -269,7 +252,7 @@ export class KafkaLogConsumer<T> {
           eachBatchAutoResolve: false,
           eachBatch: (payload) => {
             const task = this.#batch(consumer, payload, this.#epoch);
-            this.#inflight.set(task, payload.batch.partition);
+            this.#inflight.add(task);
             void task.finally(() => this.#inflight.delete(task)).catch(() => undefined);
             return task;
           },
@@ -295,10 +278,7 @@ export class KafkaLogConsumer<T> {
   ): Promise<void> {
     const { batch } = payload;
     if (this.#closing || epoch !== this.#epoch || payload.isStale() || !this.#ready) return;
-    if (
-      this.#blocked.has(batch.partition) ||
-      (this.#options.demandDriven && !this.#fetching.has(batch.partition))
-    ) {
+    if (this.#blocked.has(batch.partition)) {
       consumer.pause([{ topic: batch.topic, partitions: [batch.partition] }]);
       consumer.seek({
         topic: batch.topic,
@@ -345,11 +325,7 @@ export class KafkaLogConsumer<T> {
         consumer.seek({ topic: batch.topic, partition: batch.partition, offset: message.offset });
         const timer = setTimeout(
           () => {
-            if (
-              !this.#closing &&
-              epoch === this.#epoch &&
-              (!this.#options.demandDriven || this.#fetching.has(batch.partition))
-            )
+            if (!this.#closing && epoch === this.#epoch)
               consumer.resume([{ topic: batch.topic, partitions: [batch.partition] }]);
           },
           Math.min(1000, 25 * 2 ** Math.min(count - 1, 6)),
@@ -415,7 +391,7 @@ export class KafkaLogConsumer<T> {
   }
 
   ownsPartition(partition: number): boolean {
-    return this.#ready && this.#fetching.has(partition);
+    return this.#ready && this.#assigned.has(partition);
   }
 
   async ownerClientId(partition: number): Promise<string | undefined> {
@@ -431,82 +407,11 @@ export class KafkaLogConsumer<T> {
     return this.#memberCache.owners.get(partition);
   }
 
-  async retainPartition(partition: number): Promise<() => void> {
-    this.#references.set(partition, (this.#references.get(partition) ?? 0) + 1);
-    const release = () => {
-      const left = (this.#references.get(partition) ?? 1) - 1;
-      if (left > 0) this.#references.set(partition, left);
-      else {
-        this.#references.delete(partition);
-        this.#fetching.delete(partition);
-        if (this.#ready && !this.#closing)
-          this.#consumer?.pause([{ topic: this.#options.topic, partitions: [partition] }]);
-        // No browser owns this soft tail. Drop it after outstanding handlers
-        // quiesce; a later subscriber reconstructs from the durable recovery floor.
-        void Promise.allSettled(
-          [...this.#inflight].filter(([, p]) => p === partition).map(([task]) => task),
-        ).then(() => {
-          if (!this.#references.has(partition) && !this.#fetching.has(partition))
-            this.#options.onPartitionReset?.(partition);
-        });
-      }
-    };
-    try {
-      let activation = this.#activating.get(partition);
-      if (!activation) {
-        activation = this.#activate(partition);
-        this.#activating.set(partition, activation);
-        void activation.finally(() => this.#activating.delete(partition)).catch(() => undefined);
-      }
-      await activation;
-      await this.waitForPartition(partition);
-      let released = false;
-      return () => {
-        if (!released) {
-          released = true;
-          release();
-        }
-      };
-    } catch (error) {
-      release();
-      throw error;
-    }
-  }
-
-  async #activate(partition: number): Promise<void> {
-    const deadline = Date.now() + 120_000;
-    while (!this.#ready && !this.#closing && Date.now() < deadline)
-      await new Promise((r) => setTimeout(r, 10));
-    if (!this.#ready || !this.#consumer) throw new Error("Kafka live partition is unavailable");
-    if (this.#fetching.has(partition)) return;
-    const epoch = this.#epoch,
-      consumer = this.#consumer;
-    await Promise.allSettled(
-      [...this.#inflight].filter(([, p]) => p === partition).map(([task]) => task),
-    );
-    const allBounds = await this.#bounds(),
-      bounds = allBounds.filter((b) => b.partition === partition);
-    const offsets = this.#options.replayOffsets
-      ? await this.#options.replayOffsets(bounds, allBounds.length)
-      : new Map(bounds.map((b) => [b.partition, b.low]));
-    if (epoch !== this.#epoch) throw new Error("Kafka assignment changed while opening Session");
-    this.#options.onPartitionReset?.(partition);
-    const offset = offsets.get(partition)!;
-    if (offset instanceof Error) throw offset;
-    this.#blocked.delete(partition);
-    this.#processedOffsets.set(partition, offset);
-    this.#initialTargets.set(partition, bounds[0]!.high);
-    consumer.seek({ topic: this.#options.topic, partition, offset: offset.toString() });
-    this.#fetching.add(partition);
-    consumer.resume([{ topic: this.#options.topic, partitions: [partition] }]);
-  }
-
   async close(): Promise<void> {
     this.#closing = true;
     this.#epoch++;
     this.#wake?.();
     await this.#run;
     if (this.#adminReady) await this.#admin.disconnect();
-    this.#consumer = undefined;
   }
 }

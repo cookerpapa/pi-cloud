@@ -106,11 +106,9 @@ describe("Session snapshot and live stream", () => {
 
   it("releases a stalled socket without holding another reader or the snapshot", async () => {
     vi.useFakeTimers();
-    const hub = new SessionEventHub(),
-      release = vi.fn();
+    const hub = new SessionEventHub();
     const stream = new SessionEventStream(
       {
-        retainSession: async () => release,
         snapshot: () => ({ canonicalThroughSequence: 0, highWaterMark: 0, events: [] }),
       },
       hub,
@@ -130,7 +128,6 @@ describe("Session snapshot and live stream", () => {
     await vi.advanceTimersByTimeAsync(6);
     await running;
     expect(output.destroyed).toBe(true);
-    expect(release).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -39,14 +39,6 @@ export class SessionEventSubscription {
     return this.#closed;
   }
 
-  notifyThrough(throughSequence: number): void {
-    if (this.#closed) return;
-    if (!Number.isSafeInteger(throughSequence) || throughSequence < 1) {
-      throw new TypeError("throughSequence must be a positive safe integer");
-    }
-    this.#push({ throughSequence });
-  }
-
   notifyEvent(event: PiCloudEvent): void {
     if (this.#closed) return;
     if (event.sessionId !== this.#sessionId) {
@@ -123,12 +115,6 @@ export class SessionEventHub {
     const current = this.#subscriptions.get(this.#key(tenantId, event.sessionId));
     if (current === undefined) return;
     for (const subscription of [...current]) subscription.notifyEvent(event);
-  }
-
-  notifyThrough(tenantId: string, sessionId: string, throughSequence: number): void {
-    const current = this.#subscriptions.get(this.#key(tenantId, sessionId));
-    if (current === undefined) return;
-    for (const subscription of [...current]) subscription.notifyThrough(throughSequence);
   }
 
   resyncAll(): void {

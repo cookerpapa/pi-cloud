@@ -157,3 +157,39 @@ it("claims bounded Session heads without holding a connection during delivery an
     await pg.close();
   }
 }, 30000);
+
+it("recovers relay health after a transient PG error even when the Outbox is empty", async () => {
+  const pg = await PGlite.create();
+  const socket = new PGLiteSocketServer({ db: pg, host: "127.0.0.1", port: 0 });
+  await socket.start();
+  const db = createDatabase({
+    connectionString: `postgresql://postgres@${socket.getServerConn()}/postgres?sslmode=disable`,
+    maxConnections: 1,
+  });
+  const append = vi.fn();
+  const relay = new AcceptedFactTerminalOutboxRelay({
+    database: db,
+    bus: { checkHealth: async () => {}, append },
+    pollIntervalMs: 10,
+  });
+  let execute: ReturnType<typeof vi.spyOn> | undefined;
+  try {
+    await runMigrations(db, "up");
+    execute = vi.spyOn(db.getExecutor(), "executeQuery");
+    execute.mockRejectedValue(new Error("temporary PG connection failure"));
+    relay.start();
+    await vi.waitFor(() => {
+      expect(execute).toHaveBeenCalled();
+      expect(() => relay.checkHealth()).toThrow("unhealthy");
+    });
+    execute.mockRestore();
+    await vi.waitFor(() => expect(() => relay.checkHealth()).not.toThrow());
+    expect(append).not.toHaveBeenCalled();
+  } finally {
+    execute?.mockRestore();
+    await relay.close();
+    await db.destroy();
+    await socket.stop();
+    await pg.close();
+  }
+}, 30000);

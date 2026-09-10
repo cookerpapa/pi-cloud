@@ -1,12 +1,12 @@
 {
-  "format": "pi-cloud.consumer-isolation.v1",
-  "checkedAt": "2026-09-07T12:34:27.250Z",
+  "format": "pi-cloud.consumer-isolation.v2",
+  "checkedAt": "2026-09-10T11:01:31.462Z",
   "passed": true,
   "heldPartitionRecords": 513,
-  "otherPartitionMs": 56.7314779999997,
+  "otherPartitionMs": 69.52527700000019,
   "allHeldRecordsRecovered": true,
   "recoveryRecordsRead": 2,
-  "demandOnlySubscribedPartition": true,
-  "idlePartitionPaused": true,
+  "projectionFloorReplayedDespiteCommittedGroup": true,
+  "incompleteDeliveryReplayedDespiteProjectedFloor": true,
   "consumerRebalance": true
 }

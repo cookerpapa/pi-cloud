@@ -5,6 +5,7 @@ import type {
 import { normalizeProviderHostedWebSearchAction } from "@pi-cloud/protocol";
 
 type JsonRecord = Record<string, unknown>;
+type FirstResponseKind = "Frame" | "Text" | "Tool" | "Search";
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -18,6 +19,8 @@ function isRecord(value: unknown): value is JsonRecord {
 export class ResponsesHostedActivityObserver {
   readonly #emit: (activity: ProviderHostedActivity) => void;
   readonly #emitTranscript: (items: readonly ProviderHostedTranscriptItem[]) => void;
+  readonly #first: (kind: FirstResponseKind) => void;
+  readonly #observed = new Set<FirstResponseKind>();
   readonly #decoder = new TextDecoder();
   #buffer = "";
   #eventData: string[] = [];
@@ -35,9 +38,11 @@ export class ResponsesHostedActivityObserver {
   constructor(
     emit: (activity: ProviderHostedActivity) => void,
     emitTranscript: (items: readonly ProviderHostedTranscriptItem[]) => void = () => undefined,
+    first: (kind: FirstResponseKind) => void = () => undefined,
   ) {
     this.#emit = emit;
     this.#emitTranscript = emitTranscript;
+    this.#first = first;
   }
 
   push(chunk: Uint8Array): void {
@@ -85,6 +90,19 @@ export class ResponsesHostedActivityObserver {
       return;
     }
     if (!isRecord(value) || typeof value.type !== "string") return;
+    this.#observeFirst("Frame");
+    if (
+      value.type === "response.output_text.delta" &&
+      typeof value.delta === "string" &&
+      value.delta.length > 0
+    )
+      this.#observeFirst("Text");
+    if (
+      value.type === "response.output_item.added" &&
+      isRecord(value.item) &&
+      value.item.type === "function_call"
+    )
+      this.#observeFirst("Tool");
 
     if (
       value.type === "response.web_search_call.in_progress" ||
@@ -189,6 +207,7 @@ export class ResponsesHostedActivityObserver {
   }
 
   #start(candidate?: unknown): string {
+    this.#observeFirst("Search");
     const activityId = this.#activityId(candidate);
     if (this.#searches.has(activityId)) return activityId;
     this.#searches.set(activityId, { completed: false });
@@ -222,5 +241,11 @@ export class ResponsesHostedActivityObserver {
     for (const [activityId, state] of this.#searches) {
       if (!state.completed) this.#complete(activityId, outcome);
     }
+  }
+
+  #observeFirst(kind: FirstResponseKind): void {
+    if (this.#observed.has(kind)) return;
+    this.#observed.add(kind);
+    this.#first(kind);
   }
 }
