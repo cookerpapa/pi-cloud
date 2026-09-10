@@ -41,8 +41,9 @@
 
 - [x] Internal conversation/admission module boundaries, shutdown admission
       regression and unified-Projector handoff tests; no new service or protocol.
-- [ ] Roll out this consolidation after restoring the deployment disk-headroom
-      minimum; [verification and rollout status](reports/architecture-consolidation-20260910.md).
+- [x] Roll out the consolidation after approved PiCloud build-cache cleanup
+      restored the disk-headroom minimum;
+      [verification and rollout status](reports/architecture-consolidation-20260910.md).
 
 - [x] Idempotent opening recovery, real Child detail reads, message-level display
       coverage, framed snapshots and the maintained CI fault gate (ADR-0165).
