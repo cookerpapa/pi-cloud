@@ -155,6 +155,34 @@
       "file": "test/workspace-volume-deletion-reaper.integration.test.ts",
       "test": "waits for the live Cube activation before purging POSIX Workspace data",
       "invariant": "Workspace bytes are not deleted while a live Cube still owns the Volume."
+    },
+    {
+      "id": "projector-owner-ack-loss",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-handoffs.test.ts",
+      "test": "retries the same record after delivery ACK loss without duplicating its live event",
+      "invariant": "A failed owner delivery retries the same positioned record without emitting its live event twice; this test simulates PG/transport."
+    },
+    {
+      "id": "projector-rebalance-after-pg",
+      "workspace": "@pi-cloud/runtime-core",
+      "file": "test/session-projector-handoffs.test.ts",
+      "test": "stops a retired partition handler after a PG await, before UI or Tool delivery",
+      "invariant": "A no-longer-current consumer handler cannot continue live or Tool delivery after its pending PG operation completes."
+    },
+    {
+      "id": "broker-shutdown-admission",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/tool-broker.test.ts",
+      "test": "closes queued materialization before shutdown releases physical capacity",
+      "invariant": "Broker shutdown rejects pending VM creation before freeing existing capacity; it never launches the waiter during teardown."
+    },
+    {
+      "id": "broker-adopted-capacity",
+      "workspace": "@pi-cloud/tool-broker",
+      "file": "test/sandbox-admission.test.ts",
+      "test": "accounts for adopted machines above a lowered limit before admitting new work",
+      "invariant": "Existing adopted machines count against a lowered capacity; new work remains queued until a physical slot is free."
     }
   ]
 }

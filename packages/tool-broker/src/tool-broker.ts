@@ -1,3 +1,4 @@
+import { SandboxAdmission } from "./sandbox-admission.ts";
 import type {
   AgentWorkspaceSeed,
   DevelopmentEnvironmentBrokerResponse,
@@ -168,15 +169,6 @@ type ManagedDevelopmentEnvironment = {
   terminal?: SandboxTerminalSession;
   bindingIds: Set<string>;
   failure?: ToolBrokerError;
-};
-
-type AdmissionWaiter = {
-  activationId: string;
-  assignment: ToolSandboxAssignment;
-  signal?: AbortSignal;
-  resolve: () => void;
-  reject: (error: ToolBrokerError) => void;
-  abort?: () => void;
 };
 
 const DEFAULT_WARM_TTL_MS = 15 * 60_000;
@@ -356,9 +348,8 @@ export class ToolBroker {
   readonly #warm = new Map<string, ManagedElasticRuntime>();
   readonly #terminals = new Map<string, ManagedWorkspaceTerminal>();
   readonly #developmentEnvironments = new Map<string, ManagedDevelopmentEnvironment>();
-  readonly #admitted = new Map<string, ToolSandboxAssignment>();
+  readonly #admission: SandboxAdmission;
   readonly #workspaceRuntimeProvisioningTails = new Map<string, Promise<void>>();
-  readonly #admissionWaiters: AdmissionWaiter[] = [];
   readonly #reaper: NodeJS.Timeout;
   #developmentEnvironmentRecovery: Promise<number> | undefined;
 
@@ -376,6 +367,12 @@ export class ToolBroker {
       "maximumActiveSandboxes",
       1_000,
     );
+    this.#admission = new SandboxAdmission(this.#maximumActiveSandboxes, async () => {
+      const oldest = [...this.#warm.entries()].sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt)[0];
+      if (!oldest) return false;
+      await this.#discardWarm(oldest[0], oldest[1]);
+      return true;
+    });
     this.#warmTtlMs = positiveInteger(
       options.warmTtlMs ?? DEFAULT_WARM_TTL_MS,
       "warmTtlMs",
@@ -429,11 +426,11 @@ export class ToolBroker {
   }
 
   get admittedCount(): number {
-    return this.#admitted.size;
+    return this.#admission.size;
   }
 
   get admissionWaitingCount(): number {
-    return this.#admissionWaiters.length;
+    return this.#admission.waitingCount;
   }
 
   get maximumActiveSandboxes(): number {
@@ -527,7 +524,7 @@ export class ToolBroker {
           handle,
           bindingIds: new Set(),
         });
-        this.#admitted.set(candidate.reservation.environmentId, expected);
+        this.#admission.restore(candidate.reservation.environmentId, expected);
         recovered += 1;
       } catch (error: unknown) {
         if (handle !== undefined) {
@@ -633,7 +630,7 @@ export class ToolBroker {
     let handle: SandboxHandle | undefined;
     let admitted = false;
     try {
-      await this.#acquireAdmission(request.environmentId, assignment);
+      await this.#admission.acquire(request.environmentId, assignment);
       admitted = true;
       handle = await this.#provider.create({
         activationId: request.environmentId,
@@ -682,7 +679,7 @@ export class ToolBroker {
       };
     } catch (error: unknown) {
       if (handle !== undefined) await this.#provider.destroy(handle).catch(() => undefined);
-      if (admitted) this.#releaseAdmission(request.environmentId);
+      if (admitted) this.#admission.release(request.environmentId);
       await this.#stateRepository
         .setDevelopmentEnvironmentState(request.environmentId, "failed", {
           failureCode: operationFailureCode(error),
@@ -733,7 +730,7 @@ export class ToolBroker {
           .catch(() => undefined);
         throw error;
       }
-      this.#releaseAdmission(request.environmentId);
+      this.#admission.release(request.environmentId);
       await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "released");
       return {
         developmentEnvironmentProtocolVersion: 1,
@@ -844,7 +841,7 @@ export class ToolBroker {
       throw error;
     }
     this.#developmentEnvironments.delete(request.environmentId);
-    this.#releaseAdmission(request.environmentId);
+    this.#admission.release(request.environmentId);
     await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "released");
     return {
       developmentEnvironmentProtocolVersion: 1,
@@ -1082,7 +1079,7 @@ export class ToolBroker {
       }
       await this.#stateRepository.setTerminalState(terminalId, "materializing");
       if (workspaceRuntime === undefined) {
-        await this.#acquireAdmission(terminalId, assignment);
+        await this.#admission.acquire(terminalId, assignment);
         admitted = true;
         handle = await this.#provider.create({
           activationId: terminalId,
@@ -1149,7 +1146,7 @@ export class ToolBroker {
       } else if (handle !== undefined) {
         await this.#provider.destroy(handle).catch(() => undefined);
       }
-      if (admitted) this.#releaseAdmission(terminalId);
+      if (admitted) this.#admission.release(terminalId);
       await this.#stateRepository
         .setTerminalState(terminalId, "unknown", { failureCode: operationFailureCode(error) })
         .catch(() => undefined);
@@ -1693,7 +1690,7 @@ export class ToolBroker {
       controller: operationController,
     });
     // Only running operations belong here (cancellation and concurrent dedup).
-    // The Kafka command consumer owns delivered-result retention. Keeping a
+    // The Tool command executor owns delivered-result retention. Keeping a
     // settled Promise here would retain its body after the consumer releases it.
     const forget = () => activation.operations.delete(request.operationId);
     void durable.then(forget, forget);
@@ -1915,7 +1912,7 @@ export class ToolBroker {
       await this.#provider.stop(runtime.handle);
       await this.#serviceRegistry?.endRuntime(runtime.handle.runtimeId).catch(() => undefined);
     }
-    this.#releaseAdmission(runtime.physicalActivationId);
+    this.#admission.release(runtime.physicalActivationId);
     await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "released");
     return {
       toolBrokerProtocolVersion: 1,
@@ -1943,9 +1940,9 @@ export class ToolBroker {
     if (activation === undefined) {
       // A completed/failed binding may share the machine's activation ID.
       if (this.#developmentEnvironments.has(activationId)) return;
-      if (this.#admitted.has(activationId)) {
+      if (this.#admission.has(activationId)) {
         await this.#provider.destroyRuntime(activationId, assignment);
-        this.#releaseAdmission(activationId);
+        this.#admission.release(activationId);
         await this.#stateRepository
           .setWorkspaceRuntimeState(activationId, "released")
           .catch(() => undefined);
@@ -2043,7 +2040,7 @@ export class ToolBroker {
       await this.#provider.stop(runtime.handle);
       await this.#serviceRegistry?.endRuntime(runtime.handle.runtimeId).catch(() => undefined);
     }
-    this.#releaseAdmission(runtime.physicalActivationId);
+    this.#admission.release(runtime.physicalActivationId);
     await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "released");
   }
 
@@ -2127,7 +2124,7 @@ export class ToolBroker {
     );
     for (const [activationId] of managed) this.#revokeBinding(activationId);
     const terminatedActivationIds = new Set(
-      [...this.#admitted.entries()]
+      [...this.#admission.entries()]
         .filter(([, admittedAssignment]) =>
           sameSupervisorAssignment(admittedAssignment, assignment),
         )
@@ -2143,7 +2140,7 @@ export class ToolBroker {
     await this.#provider.terminateAndConfirmAbsent(assignment);
     await this.#stateRepository.releaseRuntimeAssignment(assignment);
     for (const activationId of terminatedActivationIds) {
-      this.#releaseAdmission(activationId);
+      this.#admission.release(activationId);
     }
   }
 
@@ -2282,6 +2279,7 @@ export class ToolBroker {
   }
 
   async close(): Promise<void> {
+    this.#admission.close();
     clearInterval(this.#reaper);
     await this.#developmentEnvironmentRecovery?.catch(() => undefined);
     await Promise.all(
@@ -2372,7 +2370,7 @@ export class ToolBroker {
           .catch(() => undefined);
         await this.#provider.detachPersistent?.(detachableHandle).catch(() => undefined);
       }
-      this.#releaseAdmission(environmentId);
+      this.#admission.release(environmentId);
     }
     this.#developmentEnvironments.clear();
     const ownedActivationIds = new Set<string>();
@@ -2386,13 +2384,6 @@ export class ToolBroker {
       this.#revokeBinding(activationId);
     }
     this.#warm.clear();
-    for (const waiter of this.#admissionWaiters.splice(0)) {
-      this.#removeAbortListener(waiter);
-      waiter.reject(
-        new ToolBrokerError("tool_binding_admission_closed", "Tool binding admission closed", true),
-      );
-    }
-    this.#admitted.clear();
     try {
       await this.#provider.close();
       for (const activationId of ownedActivationIds) {
@@ -2461,7 +2452,7 @@ export class ToolBroker {
 
   #revokeBinding(activationId: string): void {
     this.#toolBindings.delete(activationId);
-    this.#cancelAdmissionWaiter(activationId);
+    this.#admission.cancel(activationId);
   }
 
   async #materialize(activation: ManagedToolBinding, signal?: AbortSignal): Promise<SandboxHandle> {
@@ -2522,7 +2513,7 @@ export class ToolBroker {
         runtime.physicalActivationId,
         "materializing",
       );
-      await this.#acquireAdmission(runtime.physicalActivationId, runtime.spec.assignment, signal);
+      await this.#admission.acquire(runtime.physicalActivationId, runtime.spec.assignment, signal);
       try {
         const handle = await this.#provider.create(runtime.spec);
         if (
@@ -2552,7 +2543,7 @@ export class ToolBroker {
         );
         return handle;
       } catch (error: unknown) {
-        this.#releaseAdmission(runtime.physicalActivationId);
+        this.#admission.release(runtime.physicalActivationId);
         await this.#stateRepository
           .setWorkspaceRuntimeState(runtime.physicalActivationId, "unknown", {
             failureCode: operationFailureCode(error),
@@ -2593,7 +2584,7 @@ export class ToolBroker {
         .catch(() => undefined);
       delete runtime.workspaceTerminalId;
     }
-    this.#releaseAdmission(runtime.physicalActivationId);
+    this.#admission.release(runtime.physicalActivationId);
     await this.#stateRepository
       .setWorkspaceRuntimeState(runtime.physicalActivationId, "unknown", {
         failureCode: failure.code,
@@ -2635,7 +2626,7 @@ export class ToolBroker {
     for (const orphan of orphaned) {
       const local = this.#toolBindings.get(orphan.activationId);
       if (local !== undefined) this.#revokeBinding(orphan.activationId);
-      this.#releaseAdmission(orphan.activationId);
+      this.#admission.release(orphan.activationId);
       try {
         await this.#provider.destroyRuntime(orphan.activationId, orphan.assignment);
         await this.#stateRepository.setWorkspaceRuntimeState(orphan.activationId, "released");
@@ -2780,15 +2771,15 @@ export class ToolBroker {
         const [activationId, activation] = borrower;
         if (activation.elasticRuntime !== undefined) {
           delete activation.elasticRuntime.workspaceTerminalId;
-        } else if (this.#admitted.delete(terminalId)) {
-          this.#admitted.set(activationId, activation.assignment);
+        } else {
+          this.#admission.transfer(terminalId, activationId, activation.assignment);
         }
         await this.#stateRepository.setTerminalState(terminalId, "released");
         return;
       }
       try {
         await this.#provider.destroy(terminal.handle);
-        this.#releaseAdmission(terminalId);
+        this.#admission.release(terminalId);
         await this.#stateRepository.setTerminalState(terminalId, "released");
       } catch (error: unknown) {
         await this.#stateRepository
@@ -2802,72 +2793,13 @@ export class ToolBroker {
     return terminal.closing;
   }
 
-  async #acquireAdmission(
-    activationId: string,
-    assignment: ToolSandboxAssignment,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (this.#admitted.has(activationId)) return;
-    if (signal?.aborted) {
-      throw new ToolBrokerError(
-        "tool_binding_admission_cancelled",
-        "Tool binding admission was cancelled",
-        false,
-      );
-    }
-    while (this.#admitted.size >= this.#maximumActiveSandboxes) {
-      const oldest = [...this.#warm.entries()].sort(
-        (left, right) => left[1].lastUsedAt - right[1].lastUsedAt,
-      )[0];
-      if (oldest === undefined) break;
-      if (this.#warm.get(oldest[0]) !== oldest[1]) continue;
-      await this.#discardWarm(oldest[0], oldest[1]);
-      if (signal?.aborted) {
-        throw new ToolBrokerError(
-          "tool_binding_admission_cancelled",
-          "Tool binding admission was cancelled",
-          false,
-        );
-      }
-    }
-    if (this.#admitted.size < this.#maximumActiveSandboxes) {
-      this.#admitted.set(activationId, assignment);
-      return;
-    }
-    await new Promise<void>((resolvePromise, rejectPromise) => {
-      const waiter: AdmissionWaiter = {
-        activationId,
-        assignment,
-        ...(signal === undefined ? {} : { signal }),
-        resolve: resolvePromise,
-        reject: rejectPromise,
-      };
-      if (signal !== undefined) {
-        waiter.abort = () => {
-          const index = this.#admissionWaiters.indexOf(waiter);
-          if (index >= 0) this.#admissionWaiters.splice(index, 1);
-          this.#removeAbortListener(waiter);
-          rejectPromise(
-            new ToolBrokerError(
-              "tool_binding_admission_cancelled",
-              "Tool binding admission was cancelled",
-              false,
-            ),
-          );
-        };
-        signal.addEventListener("abort", waiter.abort, { once: true });
-      }
-      this.#admissionWaiters.push(waiter);
-    });
-  }
-
   async #discardWarm(key: string, warm: ManagedElasticRuntime): Promise<void> {
     if (this.#warm.get(key) === warm) this.#warm.delete(key);
     if (warm.handle !== undefined) {
       await this.#provider.stop(warm.handle);
       await this.#serviceRegistry?.endRuntime(warm.handle.runtimeId).catch(() => undefined);
     }
-    this.#releaseAdmission(warm.physicalActivationId);
+    this.#admission.release(warm.physicalActivationId);
     await this.#stateRepository.setWorkspaceRuntimeState(warm.physicalActivationId, "released");
   }
 
@@ -2891,42 +2823,6 @@ export class ToolBroker {
       if (this.#workspaceRuntimeProvisioningTails.get(key) === tail) {
         this.#workspaceRuntimeProvisioningTails.delete(key);
       }
-    }
-  }
-
-  #releaseAdmission(activationId: string): void {
-    if (!this.#admitted.delete(activationId)) return;
-    while (this.#admissionWaiters.length > 0) {
-      const waiter = this.#admissionWaiters.shift();
-      if (waiter === undefined) return;
-      this.#removeAbortListener(waiter);
-      if (waiter.signal?.aborted) continue;
-      this.#admitted.set(waiter.activationId, waiter.assignment);
-      waiter.resolve();
-      return;
-    }
-  }
-
-  #cancelAdmissionWaiter(activationId: string): void {
-    const index = this.#admissionWaiters.findIndex(
-      (waiter) => waiter.activationId === activationId,
-    );
-    if (index < 0) return;
-    const [waiter] = this.#admissionWaiters.splice(index, 1);
-    if (waiter === undefined) return;
-    this.#removeAbortListener(waiter);
-    waiter.reject(
-      new ToolBrokerError(
-        "tool_binding_admission_cancelled",
-        "Tool binding admission was cancelled",
-        false,
-      ),
-    );
-  }
-
-  #removeAbortListener(waiter: AdmissionWaiter): void {
-    if (waiter.signal !== undefined && waiter.abort !== undefined) {
-      waiter.signal.removeEventListener("abort", waiter.abort);
     }
   }
 

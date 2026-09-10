@@ -39,6 +39,11 @@
 
 ## Current release gate
 
+- [x] Internal conversation/admission module boundaries, shutdown admission
+      regression and unified-Projector handoff tests; no new service or protocol.
+- [ ] Roll out this consolidation after restoring the deployment disk-headroom
+      minimum; [verification and rollout status](reports/architecture-consolidation-20260910.md).
+
 - [x] Idempotent opening recovery, real Child detail reads, message-level display
       coverage, framed snapshots and the maintained CI fault gate (ADR-0165).
 - [x] Remove per-record signatures for trusted private deployment; keep PG opening,
@@ -55,7 +60,7 @@
 - [x] Reuse native Kafka Tool Results as raw-response delivery acknowledgements;
       retire the duplicate execution cache and preserve no-replay semantics.
 
-- [x] Consume Agent Tool commands in Broker after Kafka; retain native Session
+- [x] Route Agent Tool commands from the Kafka Projector to Broker; retain native Session
       checkpoints, result redaction, duplicate protection and explicit UNKNOWN.
 - [x] Commit the seal/terminal once and update the local view directly;
       preserve successor ordering without a second Kafka notification.

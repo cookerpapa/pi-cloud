@@ -18,6 +18,15 @@ const files = [
 
 for (const file of files) {
   const text = readFileSync(file, "utf8");
+  // These are retired operational instructions, not a ban on mentioning past
+  // designs in ADRs/reports. Keep the normal setup/monitoring surfaces unambiguous.
+  for (const retired of [
+    /Worker Event Ingest token/iu,
+    /logical Fact Stream utilization and Stream-lease renewal/iu,
+    /optional standalone projector exposes/iu,
+    /POST \/sessions\/\{id\}\/messages/u,
+  ])
+    assert.ok(!retired.test(text), `${file}: retired runtime guidance ${retired}`);
   for (const match of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/gu)) {
     const target = match[1]?.trim();
     if (

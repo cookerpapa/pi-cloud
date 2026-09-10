@@ -36,6 +36,11 @@ The old Fact Gateway, Fact WebSocket, secondary channel lease/progress store,
 independent projection service and execution-committed notification are removed.
 Historical migrations/reports describe their named revisions, not alternate modes.
 
+Within Control Plane, `ConversationReader` owns tenant-scoped history/list reads;
+Run admission and resource mutations stay in `ControlPlaneStore`. A conversation
+snapshot, inherited history and display coverage still share one repeatable-read
+transaction. This is an internal code boundary, not another service or database.
+
 ## Durable input and scheduling
 
 PostgreSQL is the sole Run and execution authority. The public API authenticates
@@ -217,6 +222,13 @@ choose arbitrary Pod/VM identities, images, mounts or network policy. No platfor
 controller or bearer credential is injected into the guest. `read/write/edit/bash`
 are the remote tools; Bash accepts only its declared command/timeout parameters.
 
+Physical capacity and FIFO allocation waiters belong to `SandboxAdmission`;
+Broker retains warm eviction and Cube lifecycle ownership. Shutdown closes
+admission before detaching machines, so freed slots cannot launch queued creates.
+Recovered machines count even above a newly lowered capacity; new allocation
+waits until usage falls below the limit. This is not a Workspace write lock or
+tenant scheduling quota.
+
 Completed raw results live in a bounded owner retry cache. Pi performs its usual
 redaction/truncation and appends the native Tool Result. Projector forwards the
 matching small acknowledgement to retire raw bytes; seals/binding retirement
@@ -299,3 +311,18 @@ Tool executors and Cube nodes add execution capacity. Cross-owner result and SSE
 routes remain explicit. No Cell, worker-affinity queue or second scheduler is
 required. See [run lifecycle](RUN_LIFECYCLE.md), [crash contracts](STREAM_DURABILITY.md)
 and [configuration](CONFIGURATION.md) for operational boundaries.
+
+## Intentional coupling and unverified boundaries
+
+API and Projector share a process. PG or live-owner admission failure stalls its
+Kafka partition, though guest execution does not; other partition handlers can
+proceed. Active Lanes share one native writer/Worker, not arbitrary placement
+across Workers. History outside the in-memory active branch still waits for PG
+projection before reading. These are explicit tradeoffs, not independent-HA claims.
+
+Executor admission and log seals do not atomically revoke a request already
+sent to Cube or kill guest processes. The Cube-native launch-generation contract
+remains unimplemented; existing no-replay/UNKNOWN tests do not prove physical
+execution fencing. PG failover, Cube node drain and full multi-node HA remain
+separate deployment acceptance work. The isolated duplicate SSE opening remains
+unexplained; reproducing intentional stale-snapshot cancellation is not its fix.

@@ -5,6 +5,12 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] Separate conversation reads from command/resource writes and physical
+      Sandbox admission from Broker lifecycle. Close admission before shutdown;
+      retain adopted capacity accounting. Add Projector handoff contracts and
+      remove obsolete operational guidance.
+      [Consolidation evidence](reports/architecture-consolidation-20260910.md).
+
 - [ ] Explain the original isolated duplicate SSE opening. A focused real-browser
       investigation found 197 ordinary single-request openings and separately
       reproduced the intentional input/snapshot invalidation path, not the
@@ -51,7 +57,8 @@ Volume architecture. Historical experiments remain in Git history.
       terminal Outbox publication, idempotent retries and consumer failure signals.
 - [x] ADR-0153.3: co-commit sampling start and Tool completion with native records.
 - [x] Bound latest-state/branch reads; ADR-0161 removes the old receipt mechanism.
-- [x] ADR-0153.5–6: optional canonical projection role and on-demand Tool dependencies.
+- [x] On-demand Tool dependencies; the former standalone canonical role was
+      superseded by the unified Session Projector in ADR-0163.
 - [x] ADR-0153.7–8: direct Volume/full-VM browsing and one reviewed model catalog.
 - [x] Separate persistent machine, Tool and Preview failure boundaries
       (ADR-0151), preserve recovery capsules and first errors, and verify Guest
@@ -100,8 +107,9 @@ Volume architecture. Historical experiments remain in Git history.
       writer. Preserve Compaction, interruption, branch isolation and cold restore.
 - [x] Remove per-Step PG waits; preserve Kafka intent before Tool effects, exact
       native projection and seal-gated recovery (ADR-0161).
-- [x] ADR-0162: shared-group Broker consumption with immutable boot routes,
-      owner-direct results and positioned forwarding; [Kafka/Cube acceptance](reports/tool-command-sharding.md).
+- [x] Immutable Broker boot routes and owner-direct results; ADR-0163 moved
+      Kafka consumption into the Session Projector while retaining positioned
+      command delivery. [Earlier routing acceptance](reports/tool-command-sharding.md).
 
 - [x] Replace per-free-Slot scans with one concurrent claim probe per queue kind;
       wake immediately after a successful claim and preserve Child capacity.

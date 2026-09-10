@@ -343,7 +343,7 @@ and lightweight operation metadata. They are not tenant quotas or Workspace lock
 
 Keep database URLs, Provider Gateway API/management keys and OAuth Volume,
 Worker enrollment/management tokens,
-Tool Broker service/dispatch tokens, Worker Event Ingest token, Cube API key, SSH host key and
+Tool Broker service/dispatch tokens, Cube API key, SSH host key and
 Kafka TLS/SASL material and source-control credential master key in the
 generated private files or Kubernetes Secrets. Cube receives none of them.
 When GitHub integration is enabled, the App private key and Webhook secret are

@@ -1341,6 +1341,54 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(manager.admittedCount).toBe(0);
   });
 
+  it("closes queued materialization before shutdown releases physical capacity", async () => {
+    const fixture = providerFixture();
+    const manager = testBroker({ provider: fixture.provider, maximumActiveSandboxes: 1 });
+    await manager.provisionDevelopmentEnvironment({
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.provision",
+      requestId: "61111111-1111-4111-8111-111111111111",
+      environmentId: ACTIVATION_ID,
+      tenantId: assignment.tenantId,
+      userId: "77777777-7777-4777-8777-777777777777",
+      projectId: assignment.projectId,
+      workspaceId: assignment.workspaceId,
+      generation: 1,
+      profileKey: "standard",
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+    });
+    const otherAssignment = {
+      ...assignment,
+      workspaceId: "workspace-shutdown-waiter",
+      sessionId: "session-shutdown-waiter",
+      executionLease: createExecutionLease(
+        "20000000-0000-4000-8000-000000000003",
+        "20000000-0000-4000-8000-000000000003",
+        6,
+      ),
+    };
+    const second = await manager.create({
+      ...createRequest,
+      requestId: "20000000-0000-4000-8000-000000000011",
+      assignment: otherAssignment,
+    });
+    const waiting = manager
+      .execute(otherAssignment.executionLease, {
+        ...operation("20000000-0000-4000-8000-000000000013"),
+        activationId: second.activationId,
+      })
+      .catch((error) => error);
+    await vi.waitFor(() => expect(manager.admissionWaitingCount).toBe(1));
+    await manager.close();
+    expect(await waiting).toMatchObject({ code: "tool_binding_admission_closed" });
+    expect(fixture.createCount).toBe(1);
+    expect(fixture.detachPersistent).toHaveBeenCalledOnce();
+    expect(fixture.pause).not.toHaveBeenCalled();
+    expect(manager.admittedCount).toBe(0);
+    expect(manager.admissionWaitingCount).toBe(0);
+  });
+
   it("reads current Workspace files without consuming Cube admission capacity", async () => {
     const fixture = providerFixture();
     const manager = testBroker({

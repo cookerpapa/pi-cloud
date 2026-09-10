@@ -2,7 +2,7 @@
 
 ## Admission
 
-`POST /sessions/{id}/messages` authenticates tenant ownership and writes the
+`POST /v1/sessions/{id}/turns` authenticates tenant ownership and writes the
 user message, Turn and ready Run row in one PostgreSQL transaction. The Run's
 unique Session/idempotency key prevents a retry from creating another Run.
 Same-Session Runs remain serialized by mailbox position.
@@ -65,7 +65,7 @@ Assistant Entry, its usage Record and `model.sampling.completed`. Pi then
 validates the Tool name and arguments. Second, one AcceptedFact carries the
 specific `tool_started` intent and public `tool.started`. Only after its
 Kafka acknowledgement returns does the bound Tool publish its concrete
-operation command for Broker consumption. A
+operation command for Projector routing to the owning Broker. A
 rejected Tool call never writes execution intent. This distinguishes a Tool
 that may have started from later calls that were merely present in the model
 message.

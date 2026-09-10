@@ -43,7 +43,7 @@ user-visible Run:
 - Tool failures and Cube lifecycle/admission capacity;
 - Workspace Volume Gateway queue, latency, rejection and cleanup backlog;
 - Kafka consumer health and Gateway incomplete-tail sessions/events/bytes;
-- logical Fact Stream utilization and Stream-lease renewal failures;
+- direct Kafka Producer queue occupancy/rejections and Run-lease failures;
 - settled terminal events still waiting to reach Kafka.
 
 The Control Plane samples PostgreSQL and Kafka/Gateway state every ten seconds. These
@@ -85,8 +85,8 @@ Transport capacity signals are process-local and should be summed across replica
   estimates materialized Entry JSON bytes, not PostgreSQL wire traffic. There
   are no Session-ID labels; cached context is released at Run completion.
 
-The optional standalone projector exposes the same Producer gauges on its
-authenticated port 9470; include that target only when the role is deployed.
+The Session Projector runs in Control Plane and uses its authenticated metrics
+endpoint. There is no separate Projector metrics service or renewable output-stream lease.
 
 ## Alert policy
 
