@@ -17,9 +17,12 @@ function deferred() {
   });
   return { promise, resolve };
 }
-async function fixture(branch: Entry[] = [], nextSequence = 1) {
-  const reader = new InMemorySessionStorage(metadata);
-  const waitProjected = vi.fn(async () => {
+async function fixture(
+  branch: Entry[] = [],
+  nextSequence = 1,
+  reader = new InMemorySessionStorage(metadata),
+) {
+  const waitProjected = vi.fn<() => Promise<void>>(async () => {
     throw new Error("projection intentionally stopped");
   });
   const fail = vi.fn(async () => {});
@@ -48,6 +51,144 @@ async function fixture(branch: Entry[] = [], nextSequence = 1) {
 }
 
 describe("Kafka-acknowledged native Session writer", () => {
+  it("matches upstream branch-query semantics across order, bounds, filters and cursors", async () => {
+    const reader = new InMemorySessionStorage(metadata);
+    const entries: Entry[] = [];
+    for (let i = 0; i < 6; i++) {
+      entries.push(
+        await reader.appendEntry(
+          i === 2 || i === 4
+            ? {
+                id: `e${i}`,
+                type: "compaction",
+                summary: "state",
+                retainedTail: [],
+                tokensBefore: 10,
+              }
+            : { ...value(`e${i}`), customType: i === 3 ? "other" : "state" },
+          "main",
+        ),
+      );
+    }
+    const f = await fixture(entries.slice(4), 7, reader);
+    f.waitProjected.mockResolvedValue(undefined);
+    for (const start of entries.map((entry) => entry.id))
+      for (const order of [undefined, "newestFirst", "oldestFirst"] as const)
+        for (const customType of [undefined, "state", "other", ""])
+          for (const cursor of [undefined, { afterSeq: 3 }])
+            for (const stopAtType of [undefined, "compaction", "custom"] as const)
+              for (const limit of [undefined, 1, 2]) {
+                const query = {
+                  start,
+                  ...(order ? { order } : {}),
+                  ...(customType === undefined ? {} : { customType }),
+                  ...(cursor ? { cursor } : {}),
+                  ...(stopAtType ? { stopAtType } : {}),
+                  ...(limit ? { limit } : {}),
+                };
+                expect(await f.main.findEntriesOnBranch(query), JSON.stringify(query)).toEqual(
+                  await reader.findEntriesOnBranch(query),
+                );
+              }
+  });
+  it("does not return a newer custom state for a historical branch anchor", async () => {
+    const reader = new InMemorySessionStorage(metadata);
+    const before = await reader.appendEntry(value("before"), "main");
+    const summary = await reader.appendEntry(
+      {
+        id: "summary",
+        type: "compaction",
+        summary: "state",
+        retainedTail: [],
+        tokensBefore: 100,
+      },
+      "main",
+    );
+    const f = await fixture([summary], summary.seq + 1, reader);
+    const later = await f.main.appendEntry(value(f.writer.idGenerator()), "main");
+    expect(
+      await f.main.findEntriesOnBranch({ start: later.id, customType: "state", limit: 1 }),
+    ).toEqual([later]);
+    expect(f.waitProjected).not.toHaveBeenCalled();
+    f.waitProjected.mockResolvedValue(undefined);
+    expect(
+      await f.main.findEntriesOnBranch({ start: summary.id, customType: "state", limit: 1 }),
+    ).toEqual([before]);
+  });
+
+  it("keeps custom-state fallback on the moved branch, not the original Run base", async () => {
+    const reader = new InMemorySessionStorage(metadata);
+    const before = await reader.appendEntry(value("before"), "main");
+    const summary = await reader.appendEntry(
+      {
+        id: "summary",
+        type: "compaction",
+        summary: "state",
+        retainedTail: [],
+        tokensBefore: 100,
+      },
+      "main",
+    );
+    const f = await fixture([summary], summary.seq + 1, reader);
+    const later = await f.main.appendEntry(value(f.writer.idGenerator()), "main");
+    await reader.appendEntry(value(later.id), "main");
+    await f.main.appendRecord({
+      id: f.writer.idGenerator(),
+      lane: "main",
+      type: "operation_started",
+      sourceLeafId: later.id,
+      intent: { kind: "run", originalPrompt: [], initialMessages: [] },
+    });
+    await f.main.moveLane("main", summary.id);
+    f.waitProjected.mockResolvedValue(undefined);
+    expect(
+      await f.main.findEntriesOnBranch({ start: summary.id, customType: "state", limit: 1 }),
+    ).toEqual([before]);
+  });
+  it("matches native newest-first cursors within the active context", async () => {
+    const f = await fixture();
+    const entries: Entry[] = [];
+    for (let i = 0; i < 3; i++)
+      entries.push(await f.main.appendEntry(value(f.writer.idGenerator()), "main"));
+    expect(
+      await f.main.findEntriesOnBranch({
+        start: entries[2]!.id,
+        stopAtType: "compaction",
+        order: "newestFirst",
+        cursor: { afterSeq: entries[1]!.seq },
+      }),
+    ).toEqual([entries[0]]);
+    expect(f.waitProjected).not.toHaveBeenCalled();
+  });
+
+  it("uses native oldest-first bounds rather than reversing the latest Compaction suffix", async () => {
+    const reader = new InMemorySessionStorage(metadata);
+    await reader.appendEntry(value("oldest"), "main");
+    const summary = await reader.appendEntry(
+      { id: "summary", type: "compaction", summary: "state", retainedTail: [], tokensBefore: 10 },
+      "main",
+    );
+    const tail = await reader.appendEntry(value("latest"), "main");
+    const f = await fixture([summary, tail], tail.seq + 1, reader);
+    f.waitProjected.mockResolvedValue(undefined);
+    const query = {
+      start: tail.id,
+      stopAtType: "compaction" as const,
+      order: "oldestFirst" as const,
+    };
+    expect(await f.main.findEntriesOnBranch(query)).toEqual(
+      await reader.findEntriesOnBranch(query),
+    );
+    const oldestCustom = {
+      start: tail.id,
+      customType: "state",
+      limit: 1,
+      order: "oldestFirst" as const,
+    };
+    expect(await f.main.findEntriesOnBranch(oldestCustom)).toEqual(
+      await reader.findEntriesOnBranch(oldestCustom),
+    );
+  });
   it("restores only a compaction suffix while preserving original stamps and parent", async () => {
     const branch: Entry[] = [
       {
@@ -68,9 +209,9 @@ describe("Kafka-acknowledged native Session writer", () => {
     const path = await f.main.findEntriesOnBranch({
       start: written.id,
       stopAtType: "compaction",
-      order: "oldestFirst",
+      order: "newestFirst",
     });
-    expect(path).toEqual([...branch, written]);
+    expect(path.reverse()).toEqual([...branch, written]);
     if (written.type !== "custom") throw new Error("custom fixture");
     written.data = "mutated by caller";
     expect(await f.main.getEntry(written.id)).toMatchObject({ data: { text: written.id } });
@@ -141,9 +282,11 @@ describe("Kafka-acknowledged native Session writer", () => {
         await inherited.findEntriesOnBranch({
           start: entries[0]!.id,
           stopAtType: "compaction",
-          order: "oldestFirst",
+          order: "newestFirst",
         })
-      ).map((e) => e.id),
+      )
+        .reverse()
+        .map((e) => e.id),
     ).toEqual([before.id, entries[0]!.id]);
     expect(f.waitProjected).not.toHaveBeenCalled();
   });
@@ -220,9 +363,11 @@ describe("Kafka-acknowledged native Session writer", () => {
         await f.main.findEntriesOnBranch({
           start: next.id,
           stopAtType: "compaction",
-          order: "oldestFirst",
+          order: "newestFirst",
         })
-      ).map((e) => e.id),
+      )
+        .reverse()
+        .map((e) => e.id),
     ).toEqual([summary.id, next.id]);
     expect(summary.parentId).toBe(old.id);
     await f.main.moveLane("main", summary.id);
@@ -233,9 +378,11 @@ describe("Kafka-acknowledged native Session writer", () => {
         await f.main.findEntriesOnBranch({
           start: replaced.id,
           stopAtType: "compaction",
-          order: "oldestFirst",
+          order: "newestFirst",
         })
-      ).map((e) => e.id),
+      )
+        .reverse()
+        .map((e) => e.id),
     ).toEqual([summary.id, replaced.id]);
     f.main.close();
     expect(f.writer.activeLanes).toBe(0);

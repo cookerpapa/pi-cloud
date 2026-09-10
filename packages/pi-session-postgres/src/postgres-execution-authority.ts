@@ -23,7 +23,7 @@ function positiveInteger(value: number, name: string): number {
 }
 
 /** Cloud liveness watch. Step checks use only the observed lease deadline;
- * Kafka Gate and Tool Broker remain the actual effect admission boundaries. */
+ * Ordered Projector closure and Tool Broker guard the actual effects. */
 export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
   readonly #database: Kysely<Database>;
   readonly #tenantId: string;

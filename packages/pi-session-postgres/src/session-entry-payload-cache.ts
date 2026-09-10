@@ -18,9 +18,9 @@ function key(tenantId: string, sourceSessionId: string, sourceEntryId: string): 
 /**
  * Bounded per-Worker cache for immutable Pi entry payloads.
  *
- * Fork Sessions store only source references. A colocated Child can therefore
- * reuse payloads its parent already materialized; another Worker simply misses
- * and loads the same immutable rows from PostgreSQL.
+ * Human Forks retain source references; delegated Lanes share their physical
+ * Session. Cold reads may reuse immutable payloads already loaded on this
+ * Worker, but placement and recovery never depend on a cache hit.
  */
 export class PostgresPiSessionEntryPayloadCache {
   readonly #maximumBytes: number;

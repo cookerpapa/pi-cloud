@@ -10,6 +10,11 @@ import { format } from "prettier";
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
+import {
+  maximumRunOverlap,
+  readWorkerModelTimings,
+  runStageTiming,
+} from "./lib/live-run-timing.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const testedRevision = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -304,6 +309,7 @@ async function runTurn(lane, prompt, round) {
   );
   const text = [];
   let firstAssistantTextMs;
+  let firstAssistantTextEmittedAtMs;
   let terminalObservedAt;
   let terminalWallElapsedMs;
   const observeTerminalTime = () => {
@@ -317,6 +323,7 @@ async function runTurn(lane, prompt, round) {
     if (event.type === "assistant.text.delta") {
       if (firstAssistantTextMs === undefined) {
         firstAssistantTextMs = Math.round(performance.now() - submittedAt);
+        firstAssistantTextEmittedAtMs = Date.parse(event.occurredAt);
       }
       text.push(event.payload.text);
     }
@@ -371,11 +378,6 @@ async function runTurn(lane, prompt, round) {
     });
     assert(terminal, "Turn did not publish a terminal event");
     assert.equal(terminal.type, "turn.completed", JSON.stringify(terminal.payload));
-    const run = await waitForRun(lane.api, accepted.runId);
-    const usage = await readRunUsage(accepted.runId);
-    assert(usage.requests > 0);
-    assert(usage.inputTokens > 0);
-    assert(usage.outputTokens > 0);
     assert.equal(toolEvents, 0, "Pure-chat load unexpectedly invoked a Tool");
     return {
       tenantId: lane.tenantId,
@@ -386,11 +388,10 @@ async function runTurn(lane, prompt, round) {
       text: text.join(""),
       acceptedMs: Math.round(acceptedAt - submittedAt),
       firstAssistantTextMs,
+      firstAssistantTextEmittedAtMs,
       settledMs: Math.round(terminalObservedAt - submittedAt),
       wallElapsedMs: terminalWallElapsedMs,
       submittedWallAt,
-      usage,
-      attemptCount: run.attempts.length,
     };
   } finally {
     clearTimeout(timer);
@@ -540,8 +541,24 @@ try {
   }
 
   const allResults = [...firstRound, ...secondRound];
-  const evidence = await Promise.all(allResults.map(({ runId }) => runEvidence(runId)));
+  // Audit only after every measured stream has settled. Launching Compose/psql
+  // collectors while peers are generating text adds artificial system load.
+  const evidence = [];
+  for (const result of allResults) {
+    const lane = lanes.find((lane) => lane.tenantId === result.tenantId);
+    const run = await waitForRun(lane.api, result.runId);
+    result.attemptCount = run.attempts.length;
+    result.usage = await readRunUsage(result.runId);
+    assert(
+      result.usage.requests > 0 && result.usage.inputTokens > 0 && result.usage.outputTokens > 0,
+    );
+    evidence.push(await runEvidence(result.runId));
+  }
   for (const [index, result] of allResults.entries()) {
+    if (Math.abs(result.wallElapsedMs - result.settledMs) >= 500)
+      process.stdout.write(
+        `${JSON.stringify({ event: "clock_sample_invalid", runId: result.runId, wallMs: result.wallElapsedMs, monotonicMs: result.settledMs })}\n`,
+      );
     assert(
       Math.abs(result.wallElapsedMs - result.settledMs) < 500,
       "Client wall/monotonic clocks diverged; latency sample is invalid",
@@ -553,6 +570,10 @@ try {
   }
   const totalUsage = sumUsage(allResults);
   const streaming = await readStreamEvidence(allResults.map(({ runId }) => runId));
+  const modelTimings = await readWorkerModelTimings(
+    allResults.map((result) => result.runId),
+    Math.min(...allResults.map((result) => result.submittedWallAt)),
+  );
   const report = {
     accepted: true,
     piCloudRevision: testedRevision,
@@ -561,6 +582,7 @@ try {
     sessionsPerTenant,
     sessions: lanes.length,
     runs: allResults.length,
+    peakActiveRunAttempts: maximumRunOverlap(evidence),
     model: {
       provider: lanes[0].model.provider,
       modelId: lanes[0].model.modelId,
@@ -590,6 +612,11 @@ try {
       clientMonotonicMs: result.settledMs,
       clientWallMs: result.wallElapsedMs,
       clientSubmitWallAt: result.submittedWallAt,
+      firstAssistantTextMs: result.firstAssistantTextMs,
+      flow: runStageTiming(
+        result,
+        modelTimings.filter((request) => request.runId === result.runId),
+      ),
       ...evidence[index],
     })),
     workers: {
@@ -633,6 +660,7 @@ try {
       `- Checked at: ${report.checkedAt}`,
       `- Provider/model: ${report.model.provider} / ${report.model.modelId}`,
       `- Tenants / Sessions / Runs: ${report.tenants} / ${report.sessions} / ${report.runs}`,
+      `- Peak claimed-to-settled Run overlap: ${report.peakActiveRunAttempts}`,
       `- Completed / failed: ${String(report.correctness.completedRuns)} / ${String(report.correctness.failedRuns)}`,
       `- Marker restores / cross-tenant leaks: ${String(report.correctness.markerRestores)} / ${String(report.correctness.crossTenantMarkerLeaks)}`,
       `- Worker assignments: ${Object.entries(report.workers.assignments)

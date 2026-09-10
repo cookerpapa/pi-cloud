@@ -20,7 +20,7 @@ import { createExecutionLease, parseExecutionLease } from "@pi-cloud/protocol";
 
 const ASSIGNMENT_LOST = "assignment_lost";
 const ASSIGNMENT_LOST_MESSAGE =
-  "The sandbox assignment disappeared before the turn reached a durable terminal state";
+  "The Worker lost its active Run assignment before durable completion";
 const DEFAULT_RECONCILIATION_LIMIT = 100;
 
 const ACTIVE_SESSION_STATES = new Set(["starting", "running", "cancelling"]);
@@ -635,7 +635,7 @@ export class AssignmentReconciler {
         .selectFrom("sandboxes")
         .select("state")
         .where("id", "=", this.#sandboxId)
-        .forUpdate()
+        .forNoKeyUpdate()
         .executeTakeFirstOrThrow();
       if (row.state === "terminated") return;
       if (row.state !== "draining" && row.state !== "failed" && row.state !== "provisioning") {
@@ -665,7 +665,7 @@ export class AssignmentReconciler {
       .selectFrom("sandboxes")
       .select(["state"])
       .where("id", "=", this.#sandboxId)
-      .forUpdate()
+      .forNoKeyUpdate()
       .executeTakeFirstOrThrow();
     const remaining = await transaction
       .selectFrom("session_leases")
@@ -693,7 +693,7 @@ export class AssignmentReconciler {
         .selectFrom("sandboxes")
         .select(["state"])
         .where("id", "=", this.#sandboxId)
-        .forUpdate()
+        .forNoKeyUpdate()
         .executeTakeFirst();
       if (sandbox === undefined) {
         throw new AssignmentReconcilerError(
@@ -728,7 +728,7 @@ export class AssignmentReconciler {
         .selectFrom("sandboxes")
         .select(["state"])
         .where("id", "=", this.#sandboxId)
-        .forUpdate()
+        .forNoKeyUpdate()
         .executeTakeFirst();
       if (sandbox === undefined || sandbox.state === "failed" || sandbox.state === "terminated") {
         return;

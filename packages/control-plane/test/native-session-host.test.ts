@@ -196,7 +196,8 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                   expect(request.piSessionWriterId).not.toBe(parentWriterId);
                   const path = await session.session
                     .view("main")
-                    .findEntriesOnBranch({ stopAtType: "compaction", order: "oldestFirst" });
+                    .findEntriesOnBranch({ stopAtType: "compaction", order: "newestFirst" });
+                  path.reverse();
                   expect(path[0]?.type).toBe("compaction");
                   expect(JSON.stringify(path)).toContain("parent-answer");
                   expect(JSON.stringify(path)).not.toContain("child-answer");

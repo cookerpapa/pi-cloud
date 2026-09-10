@@ -100,7 +100,7 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS` | `4` | bounded PostgreSQL pool per Compose Worker; tune independently from slots |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH` | `4` | recursive Agent-tree depth |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_NODES` | `32` | total descendants per root Run |
-| `PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT` | `3` | active descendants per root Run |
+| `PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT` | `3` | active descendants per root Run, also the reserved Child-slot count per Worker |
 | `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `3` | active Cubes owned by the one-host Broker; leaves two elastic slots beside one starter development machine |
 | `PI_CLOUD_TOOL_RESULT_CACHE_BYTES` | `67108864` | per-Broker completed response retry-cache budget (encoded bytes); native Kafka Tool Results release bodies; overflow drops oldest retry copies without re-executing effects; excludes in-flight/HTTP buffers; Helm: `sandboxPlane.toolResultCacheBytes` |
 | `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous executing operations per one-host Broker (standalone/Helm default 32); distinct from physical Cube allocations |
@@ -120,6 +120,13 @@ half the slot count with a floor of four, observe pool wait time, and use a
 connection proxy before multiplying connections across many replicas. Broker
 heartbeat must leave more than one missed interval before lease expiry.
 `production:config` rejects incoherent lease combinations.
+
+The default `4` total slots minus `3` reserved Child slots leaves **one ordinary
+conversation slot per Worker**. Raising the total provides more ordinary Run
+capacity; it does not automatically enlarge the database pool or container memory.
+Slots count active asynchronous Agent Loops, not dedicated database connections.
+Size them against the context/output workload and process memory, not merely the
+number of simultaneous HTTP submissions. Several Worker processes can share a host.
 
 ### Streaming and Workspace operations
 

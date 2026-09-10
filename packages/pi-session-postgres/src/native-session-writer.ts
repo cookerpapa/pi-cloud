@@ -621,20 +621,29 @@ export class NativeLaneSessionStorage implements SessionStorage {
     await this.#ready();
     const started = performance.now();
     const index = this.#branch.findIndex((e) => e.id === query.start);
+    const latestCustomAtHead =
+      index === this.#branch.length - 1 &&
+      query.limit === 1 &&
+      query.customType !== undefined &&
+      (query.type === undefined || query.type === "custom") &&
+      query.cursor === undefined &&
+      query.stopAtId === undefined &&
+      query.stopAtType === undefined;
     if (
       index >= 0 &&
-      (query.stopAtType === "compaction" || (query.limit === 1 && query.customType))
+      query.order !== "oldestFirst" &&
+      (query.stopAtType === "compaction" || latestCustomAtHead)
     ) {
       let path = this.#branch.slice(0, index + 1).reverse();
       const stop = path.findIndex((e) => e.id === query.stopAtId || e.type === query.stopAtType);
       if (stop >= 0) path = path.slice(0, stop + 1);
       path = path.filter(
         (e) =>
-          (!query.type || e.type === query.type) &&
-          (!query.customType || (e.type === "custom" && e.customType === query.customType)) &&
-          (!query.cursor || e.seq > query.cursor.afterSeq),
+          (query.type === undefined || e.type === query.type) &&
+          (query.customType === undefined ||
+            (e.type === "custom" && e.customType === query.customType)) &&
+          (!query.cursor || e.seq < query.cursor.afterSeq),
       );
-      if (query.order === "oldestFirst") path.reverse();
       if (query.limit) path = path.slice(0, query.limit);
       if (path.length || query.stopAtType === "compaction") {
         const snapshot = structuredClone(path);
@@ -648,7 +657,10 @@ export class NativeLaneSessionStorage implements SessionStorage {
       }
       const key = query.customType!;
       if (!this.#latest.has(key)) {
-        const base = this.#baseBranch.at(-1)?.id;
+        // Only the unseen ancestry before this bounded branch remains. The
+        // original Run base may now be on another branch after moveLane().
+        const base = this.#branch[0]?.parentId;
+        if (base && this.#writer.hasWrittenId(base)) await this.#writer.waitProjected();
         this.#latest.set(
           key,
           base

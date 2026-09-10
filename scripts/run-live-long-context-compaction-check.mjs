@@ -335,7 +335,7 @@ async function runEvidence(runId) {
 
 async function runTurn(sessionId, prompt, expectedTools) {
   const submittedAt = performance.now();
-  const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("turn"), "off");
+  const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("turn"));
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(new Error("Long-context live turn timed out")),
@@ -345,6 +345,8 @@ async function runTurn(sessionId, prompt, expectedTools) {
   const text = [];
   let firstTextAt;
   let firstResponseAt;
+  let firstToolPreparingAt;
+  let firstToolStartedAt;
   let terminal;
   let canonicalTerminal;
   const observeEvent = (event) => {
@@ -353,11 +355,14 @@ async function runTurn(sessionId, prompt, expectedTools) {
     events.push(event);
     if (
       event.type === "assistant.text.delta" ||
+      event.type === "assistant.tool_call.preparing" ||
       event.type === "tool.started" ||
       event.type === "provider.hosted_tool.started"
     ) {
       firstResponseAt ??= performance.now();
     }
+    if (event.type === "assistant.tool_call.preparing") firstToolPreparingAt ??= performance.now();
+    if (event.type === "tool.started") firstToolStartedAt ??= performance.now();
     if (event.type === "assistant.text.delta") {
       firstTextAt ??= performance.now();
       text.push(event.payload.text);
@@ -454,6 +459,12 @@ async function runTurn(sessionId, prompt, expectedTools) {
       hostedSearches,
       stopReason,
       firstResponseMs: Math.round(firstResponseAt - submittedAt),
+      firstToolPreparingMs:
+        firstToolPreparingAt === undefined
+          ? undefined
+          : Math.round(firstToolPreparingAt - submittedAt),
+      firstToolStartedMs:
+        firstToolStartedAt === undefined ? undefined : Math.round(firstToolStartedAt - submittedAt),
       firstTextMs: firstTextAt === undefined ? undefined : Math.round(firstTextAt - submittedAt),
       settledMs: Math.round(performance.now() - submittedAt),
       eventCompactions,
@@ -793,6 +804,8 @@ try {
         stopReason: turn.stopReason,
         toolCalls: turn.toolCalls,
         firstResponseMs: turn.firstResponseMs,
+        firstToolPreparingMs: turn.firstToolPreparingMs,
+        firstToolStartedMs: turn.firstToolStartedMs,
         firstTextMs: turn.firstTextMs,
         settledMs: turn.settledMs,
         usage,

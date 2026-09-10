@@ -56,3 +56,56 @@ Workspace and one running development machine. These are excluded from test
 cleanup. Tests use separately identified resources. Final resource/database/log
 cleanup, complete review coverage, UI/load/fault acceptance and resume update
 are not complete yet.
+
+## Follow-up findings
+
+The first long-context gate executed 16 coding rounds, two native Compactions,
+early-marker recall and continued coding on another Worker. It also completed
+GPT Fast hosted search, but the gate's final settings assertion failed: its own
+submission helper forced `thinkingLevel=off`, overriding the desired `medium`.
+That override is removed; the complete gate must be repeated. Recorded assistant
+usage was 208,388 input, 8,705,024 cache-read and 187,910 output tokens, excluding
+unrecorded Compaction usage. This is not a blanket gate pass.
+
+The active native Session adapter returned newer custom state for a historical
+anchor or moved Lane. It also used the wrong newest-first cursor direction and
+treated an empty custom-type filter as absent. The corrected fast path is scoped
+to current-leaf latest-state or newest-first bounded-context queries; broader
+queries retain the native reader semantics. Differential tests compare 1,296
+query combinations with pinned Pi, alongside its 29 backend conformance cases.
+
+Increasing test capacity to 16 per Worker exposed two `assignment_lost` failures
+in an 18-Run wave. A real PostgreSQL reproduction found a lock-upgrade deadlock:
+repeated RunAttempt updates acquire FK `KEY SHARE` locks, then finishers requested
+`FOR UPDATE` on the common Worker capacity row. Non-key state/counter mutations
+now use `FOR NO KEY UPDATE`, which still serializes writers without conflicting
+with key references. See PostgreSQL's [lock modes](https://www.postgresql.org/docs/current/explicit-locking.html)
+and [referential-integrity checks](https://github.com/postgres/postgres/blob/REL_17_STABLE/src/backend/utils/adt/ri_triggers.c).
+The deterministic real-PG test asserts two executions and exactly two settlement
+attempts; the preceding implementation needed a third attempt after deadlock.
+
+After this fix the 36-Run repeat passed with peak claimed-to-settled overlap 14,
+balanced 18/18 Worker assignments and no new deadlocks. Latency still failed the
+desired target: queue p95 7.061 s, text p95 9.580 s. Model transport timing confirms
+substantial pre-model system time, not just slow model output. EXPLAIN isolated
+about 103 ms planning versus 0.8 ms execution for the large Run-details JOIN.
+Splitting core identity and fixed-ID configuration into smaller queries in the
+same transaction reduced core planning to about 14 ms. Live retesting is pending;
+no PostgreSQL-wide planner setting was changed.
+
+The smaller-join rollout passed 36 Runs with peak overlap 18. After moving
+validation/usage collectors out of the measured streaming window, queue p95 was
+1.500 s and text p95 3.204 s on the original 1.5-CPU PostgreSQL quota. System-only
+TTFT was still 1.488/2.088 s p50/p95, so this is not a blanket low-latency pass.
+A temporary 4-CPU PG quota repeat gave system-only 1.267/1.998 s and provider-route
+1.368/3.167 s p50/p95. An intervening sample failed the wall/monotonic clock
+consistency check and is excluded; no benefit is claimed from that invalid run.
+
+The real browser gate passed 92 recorded interactions, including model/reasoning/
+Fast selection, copy/download, Tool-active Steer/Stop, prune, Fork, live directory
+and terminal, named-machine create/pause/resume/release, folder selection, SSH
+ticket copying and logout. Steer must now produce the replacement response in
+canonical history, not merely an old-or-new response. Browser first text was
+3.624 s for its GPT request; this includes provider time. This gate does not yet
+cover playable Snake, actual SSH login, every optional integration or the later
+multi-service/crash scenarios.

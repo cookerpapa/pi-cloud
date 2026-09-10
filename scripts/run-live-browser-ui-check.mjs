@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
@@ -92,12 +93,12 @@ const record = (name) => {
   clicked.push(name);
   process.stdout.write(`[browser-ui-check] ${name}\n`);
 };
-const screenshotPath = resolve("/tmp", "pi-cloud-browser-ui-latest.png");
-const transcriptScreenshotPath = resolve("/tmp", "pi-cloud-browser-ui-transcript-latest.png");
-const directoryScreenshotPath = resolve("/tmp", "pi-cloud-directory-picker-latest.png");
-const downloadDirectory = resolve("/tmp", "pi-cloud-browser-download-latest");
-await rm(downloadDirectory, { recursive: true, force: true });
-await mkdir(downloadDirectory, { recursive: true });
+const artifactsDirectory = await mkdtemp(resolve(tmpdir(), "pi-cloud-browser-acceptance-"));
+const screenshotPath = resolve(artifactsDirectory, "page.png");
+const transcriptScreenshotPath = resolve(artifactsDirectory, "transcript.png");
+const directoryScreenshotPath = resolve(artifactsDirectory, "directory.png");
+const downloadDirectory = resolve(artifactsDirectory, "downloads");
+await mkdir(downloadDirectory);
 
 function selectorExpression(selector) {
   return `document.querySelector(${JSON.stringify(selector)})`;
@@ -513,7 +514,10 @@ try {
       );
       await page.waitFor('!document.querySelector(".product-send-button").disabled');
       await click(".product-send-button", "composer.sendForSteer");
-      await page.waitFor('document.querySelector(".product-steer-button")', 60_000);
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-turn")].at(-1)?.querySelector(".product-tool-running[data-tool-name=bash]")',
+        120_000,
+      );
       await setValue(
         ".product-composer textarea",
         "Replace the final reply with exactly BROWSER-UI-STEER-OK.",
@@ -521,9 +525,17 @@ try {
       await click(".product-steer-button", "composer.steer");
       await page.waitFor('!document.querySelector(".product-stop-button")', 180_000);
       const steerSettled = await page.evaluate(
-        '[...document.querySelectorAll(".product-agent-answer")].some(element=>element.innerText.includes("BROWSER-UI-STEER-OK")||element.innerText.includes("OLD-BROWSER-UI-STEER"))',
+        '[...document.querySelectorAll(".product-turn")].at(-1)?.innerText.includes("BROWSER-UI-STEER-OK")',
       );
-      assert.equal(steerSettled, true, "Steered Turn did not settle with an assistant response");
+      assert.equal(steerSettled, true, "Steered Turn did not apply the replacement request");
+      const steered = await api.getConversation(elasticConversation.sessionId);
+      assert.match(
+        steered.turns
+          .at(-1)
+          .transcript.items.filter((item) => item.kind === "text")
+          .at(-1).text,
+        /BROWSER-UI-STEER-OK/u,
+      );
       const piStyleTranscript = await page.evaluate(
         'document.querySelectorAll(".product-avatar").length===0 && [...document.querySelectorAll(".product-tool")].every(element=>element.querySelector(".product-tool-line")!==null)',
       );
@@ -537,7 +549,10 @@ try {
       );
       await page.waitFor('!document.querySelector(".product-send-button").disabled');
       await click(".product-send-button", "composer.sendForStop");
-      await page.waitFor('document.querySelector(".product-stop-button")', 60_000);
+      await page.waitFor(
+        '[...document.querySelectorAll(".product-turn")].at(-1)?.querySelector(".product-tool-running[data-tool-name=bash]")',
+        120_000,
+      );
       await click(".product-stop-button", "composer.stop");
       await page.waitFor(
         '[...document.querySelectorAll(".product-muted-line,.product-turn-error")].some(element=>element.innerText.includes("停止")||element.innerText.includes("失败"))',
@@ -809,12 +824,7 @@ assert.equal(
   false,
   "Development environment cleanup failed",
 );
-await rm(downloadDirectory, { recursive: true, force: true });
-await Promise.all(
-  [screenshotPath, transcriptScreenshotPath, directoryScreenshotPath].map((path) =>
-    rm(path, { force: true }),
-  ),
-);
+await rm(artifactsDirectory, { recursive: true });
 
 if (acceptanceError !== undefined) throw acceptanceError;
 

@@ -172,10 +172,10 @@ it("recovers relay health after a transient PG error even when the Outbox is emp
     bus: { checkHealth: async () => {}, append },
     pollIntervalMs: 10,
   });
-  let execute: ReturnType<typeof vi.spyOn> | undefined;
+  const execute = vi.spyOn(db.getExecutor(), "executeQuery");
   try {
     await runMigrations(db, "up");
-    execute = vi.spyOn(db.getExecutor(), "executeQuery");
+    execute.mockClear();
     execute.mockRejectedValue(new Error("temporary PG connection failure"));
     relay.start();
     await vi.waitFor(() => {
@@ -186,7 +186,7 @@ it("recovers relay health after a transient PG error even when the Outbox is emp
     await vi.waitFor(() => expect(() => relay.checkHealth()).not.toThrow());
     expect(append).not.toHaveBeenCalled();
   } finally {
-    execute?.mockRestore();
+    execute.mockRestore();
     await relay.close();
     await db.destroy();
     await socket.stop();

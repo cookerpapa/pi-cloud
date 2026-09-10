@@ -442,7 +442,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         .selectFrom("sandboxes")
         .select(["state"])
         .where("id", "=", this.#sandboxId)
-        .forUpdate()
+        .forNoKeyUpdate()
         .executeTakeFirst();
       if (sandbox === undefined || sandbox.state === "failed" || sandbox.state === "terminated") {
         return;
@@ -606,7 +606,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
           "max_concurrent_sessions",
         ])
         .where("id", "=", this.#sandboxId)
-        .forUpdate()
+        .forNoKeyUpdate()
         .executeTakeFirst();
       if (sandbox === undefined || (sandbox.state !== "ready" && sandbox.state !== "leased")) {
         throw new SessionLeaseCoordinatorError(
@@ -895,7 +895,10 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       .selectFrom("sandboxes")
       .select(["state", "active_sessions"])
       .where("id", "=", sandboxId)
-      .forUpdate()
+      // RunAttempt updates can already hold FK KEY SHARE locks on this row.
+      // Only counters/state change here; upgrading both finishers to UPDATE
+      // deadlocks. NO KEY UPDATE still serializes capacity writers.
+      .forNoKeyUpdate()
       .executeTakeFirst();
     if (
       sandbox === undefined ||

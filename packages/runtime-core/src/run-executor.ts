@@ -655,18 +655,8 @@ export class RunExecutor {
         if (candidate === undefined) return undefined;
         selectedRunId = candidate.id;
       }
-      const row = await transaction
+      const context = await transaction
         .selectFrom("runs as run")
-        .innerJoin(
-          "agent_revisions as agent_revision",
-          "agent_revision.id",
-          "run.agent_revision_id",
-        )
-        .innerJoin(
-          "agent_definitions as agent_definition",
-          "agent_definition.id",
-          "agent_revision.definition_id",
-        )
         .innerJoin("turns as turn", (join) =>
           join
             .onRef("turn.tenant_id", "=", "run.tenant_id")
@@ -683,21 +673,11 @@ export class RunExecutor {
             .onRef("workspace_row.tenant_id", "=", "session_row.tenant_id")
             .onRef("workspace_row.id", "=", "session_row.workspace_id"),
         )
-        .innerJoin("environment_versions as environment", (join) =>
-          join
-            .onRef("environment.tenant_id", "=", "run.tenant_id")
-            .onRef("environment.project_id", "=", "run.project_id")
-            .onRef("environment.id", "=", "run.environment_version_id"),
-        )
-        .innerJoin("tenant_runtime_policies as policy", "policy.tenant_id", "run.tenant_id")
         .select([
           "run.tenant_id as tenantId",
           "run.agent_revision_id as agentRevisionId",
-          "agent_definition.key as agentDefinitionKey",
-          "agent_revision.runtime_kind as agentRuntimeKind",
-          "agent_revision.runtime_version as agentRuntimeVersion",
-          "agent_revision.harness_version as agentHarnessVersion",
-          "agent_revision.session_storage_kind as agentSessionStorageKind",
+          "run.environment_version_id as environmentVersionId",
+          "run.project_id as environmentProjectId",
           "run.idempotency_key as idempotencyKey",
           "run.mailbox_position as mailboxPosition",
           "turn.id as turnId",
@@ -734,28 +714,9 @@ export class RunExecutor {
           "run.current_attempt_id as currentAttemptId",
           "run.attempt_count as runAttemptCount",
           "run.row_version as runVersion",
-          "environment.id as environmentVersionId",
-          "environment.version_number as environmentVersionNumber",
-          "environment.profile_key as environmentProfileKey",
-          "environment.profile_version as environmentProfileVersion",
-          "environment.image_revision as environmentImageRevision",
-          "environment.spec_sha256 as environmentSpecSha256",
-          "environment.recipe as environmentRecipe",
-          "environment.recipe_sha256 as environmentRecipeSha256",
-          "policy.maximum_model_requests_per_run as maximumModelRequests",
-          "policy.maximum_cost_microusd_per_run as maximumCostMicrousd",
-          "policy.daily_token_budget as dailyTokenBudget",
-          "policy.monthly_cost_microusd_budget as monthlyCostMicrousdBudget",
-          "policy.maximum_tool_calls_per_run as maximumToolCalls",
-          "policy.maximum_tool_output_bytes as maximumToolOutputBytes",
-          "policy.maximum_run_duration_ms as maximumRunDurationMs",
-          "policy.compaction_reserve_tokens as compactionReserveTokens",
-          "policy.compaction_keep_recent_tokens as compactionKeepRecentTokens",
         ])
         .where("workspace_row.deleted_at", "is", null)
-        .where("agent_revision.runtime_kind", "=", this.#agentRuntimeKind)
         .whereRef("session_row.agent_revision_id", "=", "run.agent_revision_id")
-        .where("policy.enabled", "=", true)
         .where("run.available_at", "<=", now)
         .where("run.id", "=", selectedRunId)
         .$if(sessionKind !== undefined, (query) =>
@@ -809,7 +770,55 @@ export class RunExecutor {
         .skipLocked()
         .executeTakeFirst();
 
-      if (!row) return undefined;
+      if (!context) return undefined;
+
+      // Fixed-ID configuration lookup stays in the claim transaction. Keeping
+      // it separate avoids planning one large join/anti-join graph per Run.
+      const configuration = await transaction
+        .selectFrom("agent_revisions as agent_revision")
+        .innerJoin(
+          "agent_definitions as agent_definition",
+          "agent_definition.id",
+          "agent_revision.definition_id",
+        )
+        .innerJoin("environment_versions as environment", (join) =>
+          join
+            .on("environment.id", "=", context.environmentVersionId)
+            .on("environment.tenant_id", "=", context.tenantId)
+            .on("environment.project_id", "=", context.environmentProjectId),
+        )
+        .innerJoin("tenant_runtime_policies as policy", (join) =>
+          join.on("policy.tenant_id", "=", context.tenantId),
+        )
+        .select([
+          "agent_definition.key as agentDefinitionKey",
+          "agent_revision.runtime_kind as agentRuntimeKind",
+          "agent_revision.runtime_version as agentRuntimeVersion",
+          "agent_revision.harness_version as agentHarnessVersion",
+          "agent_revision.session_storage_kind as agentSessionStorageKind",
+          "environment.version_number as environmentVersionNumber",
+          "environment.profile_key as environmentProfileKey",
+          "environment.profile_version as environmentProfileVersion",
+          "environment.image_revision as environmentImageRevision",
+          "environment.spec_sha256 as environmentSpecSha256",
+          "environment.recipe as environmentRecipe",
+          "environment.recipe_sha256 as environmentRecipeSha256",
+          "policy.maximum_model_requests_per_run as maximumModelRequests",
+          "policy.maximum_cost_microusd_per_run as maximumCostMicrousd",
+          "policy.daily_token_budget as dailyTokenBudget",
+          "policy.monthly_cost_microusd_budget as monthlyCostMicrousdBudget",
+          "policy.maximum_tool_calls_per_run as maximumToolCalls",
+          "policy.maximum_tool_output_bytes as maximumToolOutputBytes",
+          "policy.maximum_run_duration_ms as maximumRunDurationMs",
+          "policy.compaction_reserve_tokens as compactionReserveTokens",
+          "policy.compaction_keep_recent_tokens as compactionKeepRecentTokens",
+        ])
+        .where("agent_revision.id", "=", context.agentRevisionId)
+        .where("agent_revision.runtime_kind", "=", this.#agentRuntimeKind)
+        .where("policy.enabled", "=", true)
+        .executeTakeFirst();
+      if (!configuration) return undefined;
+      const row = { ...context, ...configuration };
 
       await lockPiSessionWorkerOwnership(transaction, row.tenantId, row.piSessionId);
       const conflictingWorker = await conflictingPiSessionWorker(transaction, {
