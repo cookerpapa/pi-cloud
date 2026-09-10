@@ -109,3 +109,85 @@ canonical history, not merely an old-or-new response. Browser first text was
 3.624 s for its GPT request; this includes provider time. This gate does not yet
 cover playable Snake, actual SSH login, every optional integration or the later
 multi-service/crash scenarios.
+
+## Subsequent verification
+
+- The corrected long-context gate passed: 15 coding rounds, two native
+  Compactions (114,725 → 25,705 and 111,696 → 24,179 estimated tokens), early
+  recall, continued coding on another Worker, then GPT Luna medium/Fast hosted
+  search on a different Worker. Recorded assistant usage: 259,895 input,
+  11,059,968 cache-read and 208,898 output tokens. These totals exclude
+  unrecorded Compaction/retry requests.
+- Real Snake acceptance passed authenticated host Preview and browser
+  start/movement/pause/reset. Its GPT Run used 19 Tools, first assistant text
+  was 3.734 s and the complete coding task took 410.734 s. The test machine was
+  released, not retained as proof of a permanently available service.
+- Two simultaneous Sessions used identical guest ports 3000/8000 without
+  cross-Session content leakage; one Session added a 5173 service on its next
+  Turn while retaining its original page.
+- Control Plane SIGKILL after visible text: Workers retained their boots,
+  appended another 35 Kafka records while the Projector was down, and finished
+  with one Attempt. One Kafka broker SIGKILL also passed with one Attempt;
+  its reconnected/live result exactly matched canonical history and preserved
+  the visible pre-failure prefix.
+- Owned-machine acceptance passed actual SSH login before/after Tool Broker
+  restart, root-filesystem and background-process continuity, pause/resume,
+  shared-Workspace Subagent coding, conversation deletion without releasing
+  compute, and explicit release with native Volume metadata/byte purge.
+  The test's obsolete single-hop Preview client initially mistook the current
+  303 Cookie exchange for failure; it now uses the common isolated-origin client.
+- Frozen full Vitest: 779 passed, 7 environment-gated cases skipped. A separate
+  real PostgreSQL run passed all 35 selected cases, including official backend
+  conformance, concurrent settlement, long-ancestry plans and advisory-lock
+  connection loss. Typecheck, Helm/config/install checks passed. The dependency
+  audit has no high/critical findings; two moderate test-only Vitest findings
+  remain (this is not a zero-vulnerability claim).
+
+Additional repairs preserve the current architecture:
+
+- Native ancestry follows strictly decreasing parent sequence with exact-key
+  lookups, rather than building an ever-growing visited-ID array and repeatedly
+  scanning the Session. On an analyzed isolated 1-CPU PG fixture, 2,000 entries
+  took about 26 ms SQL versus 2,716 ms before; 10,000 took about 160 ms. Fresh
+  un-analyzed statistics still produced a slower first query; these are not
+  unconditional latency guarantees.
+- Volume Gateway keeps advisory locks on dedicated direct PG connections, not
+  PgBouncer transaction pooling; uncertain unlock sessions are discarded. Helm
+  now mounts the configured direct endpoint for this process.
+- Live directory enumeration skips entries removed between listing and stat,
+  without swallowing unrelated filesystem errors.
+- SSH output uses a backpressured stream and explicit disconnect/readiness
+  failure. Snapshot reconnects jump to the already-visible text prefix; React
+  StrictMode no longer leaves animation cancelled. First-use sidebar sizing and
+  cancelled/unmounted drag cleanup have real-browser regressions.
+- Removed the old Markdown localhost-to-Preview rewrite; formal Preview Tool
+  results remain the application-link authority.
+- Retired the unused ACK-only experimental backend/sink and its obsolete
+  production-cutover guidance. Production NativeSessionWriter/Projector tests
+  retain ACK isolation, uncertain append, concurrent Lanes, Compaction and
+  replay coverage; the earlier prototype remains in Git history.
+
+The normal fact-and-citation hosted-search gate passed on DeepSeek Pro → GPT
+Luna: 9 and 2 native search/open-page activities, matched live start/completion
+pairs, persisted native items/citations and a successful context handoff. The
+old marker-only prompt did not reliably induce real search; it is not used as
+proof of that capability. Flash returned no search items even in direct
+official-endpoint probes with an explicit search choice. That route remains
+unverified; the Pro result must not be generalized to Flash.
+Whole-repository coverage, remaining pressure/fault/integration scenarios, final
+cleanup and resume update are still outstanding.
+
+The last remote CI failure was isolated to the Web image's transitive gRPC-Go
+dependency (`CVE-2026-84445`), not TypeScript/tests or the other image gates.
+The Caddy build now pins 1.83.2, the upstream
+[security patch](https://github.com/grpc/grpc-go/releases/tag/v1.83.2), rather than
+adding a vulnerability exclusion. Image rebuild and remote verification follow.
+
+The model-free Worker→Kafka test sustained 22,789/38,488/35,794 records/s with
+256/512/1,024 logical Sessions respectively (RF=3, `acks=all`, 256-byte text).
+This excludes Projector/PG/Cube/model execution and is not a claim of that many
+simultaneous real Agent Loops. An isolated 2-CPU PG test projected 8,000 complete
+1-KiB semantic entries at 292.61 messages/s, with no errors and about 4,578 WAL
+bytes/message; its 256-way offered concurrency includes connection-pool queue
+time. The two measurements are different stages and must not be combined into
+an end-to-end throughput claim.

@@ -75,7 +75,15 @@ function useProgressiveText(
   useEffect(() => {
     targetRef.current = text;
     if (streaming) animated.current = true;
-    const current = visibleRef.current;
+    let current = visibleRef.current;
+    // A reconnect Snapshot is already-visible history, including when React
+    // retains this item. Only the live suffix should be animated.
+    const recovered = initialProgressiveText(text, true, recoveredTextLength);
+    if (recovered.length > current.length && recovered.startsWith(current)) {
+      current = recovered;
+      visibleRef.current = recovered;
+      setVisible(recovered);
+    }
     const reduceMotion =
       document.visibilityState === "hidden" ||
       (typeof window.matchMedia === "function" &&
@@ -97,11 +105,12 @@ function useProgressiveText(
       frameRef.current = nextIndex < target.length ? requestAnimationFrame(advance) : null;
     };
     frameRef.current = requestAnimationFrame(advance);
-  }, [streaming, text]);
+  }, [streaming, text, recoveredTextLength]);
 
   useEffect(
     () => () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
     },
     [],
   );
@@ -117,13 +126,11 @@ function useProgressiveText(
 
 function AssistantTextItem({
   item,
-  sessionId,
   onPresentationProgress,
   processNarration,
   streaming,
 }: {
   item: Extract<TranscriptItem, { kind: "text" }>;
-  sessionId: string | undefined;
   onPresentationProgress: (() => void) | undefined;
   processNarration: boolean;
   streaming: boolean;
@@ -136,10 +143,7 @@ function AssistantTextItem({
   );
   return (
     <div className={processNarration ? "product-agent-stage" : "product-agent-answer"}>
-      <Markdown
-        sessionId={sessionId}
-        streaming={streaming || visibleText.length < item.text.length}
-      >
+      <Markdown streaming={streaming || visibleText.length < item.text.length}>
         {visibleText}
       </Markdown>
     </div>
@@ -360,7 +364,6 @@ function OtherItem({
 
 export function ConversationTurn({
   turn,
-  sessionId,
   canFork = false,
   onFork,
   canPrune = false,
@@ -368,7 +371,6 @@ export function ConversationTurn({
   onPresentationProgress,
 }: {
   turn: TurnView;
-  sessionId?: string | undefined;
   canFork?: boolean;
   onFork?: () => void;
   canPrune?: boolean;
@@ -423,7 +425,6 @@ export function ConversationTurn({
                     key={row.key}
                     onPresentationProgress={onPresentationProgress}
                     processNarration={row.processNarration}
-                    sessionId={sessionId}
                     streaming={working}
                   />
                 );

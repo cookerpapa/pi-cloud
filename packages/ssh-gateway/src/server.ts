@@ -2,6 +2,7 @@ import ssh2, { type ServerChannel, type Session, type Connection, type Server } 
 import type { SshGatewayConfig } from "./config.ts";
 import { SshTicketAuthority, type SshTerminalGrant } from "./ticket-authority.ts";
 import { openToolBrokerTerminal } from "./tool-broker-terminal.ts";
+import { once } from "node:events";
 
 function boundedDimension(value: number | undefined, fallback: number, maximum: number): number {
   return Number.isSafeInteger(value) && value !== undefined && value >= 2 && value <= maximum
@@ -16,6 +17,7 @@ export function createSshGateway(options: {
 }): Server {
   const openTerminal = options.openTerminal ?? openToolBrokerTerminal;
   return new ssh2.Server({ hostKeys: [options.config.hostKey] }, (client: Connection) => {
+    client.on("error", () => client.end());
     let grant: SshTerminalGrant | undefined;
     client.on("authentication", (context) => {
       if (context.method !== "password") {
@@ -57,9 +59,11 @@ export function createSshGateway(options: {
           }
           const channel: ServerChannel = acceptShell();
           let channelClosed = false;
+          const closed = new AbortController();
           channel.pause();
           channel.once("close", () => {
             channelClosed = true;
+            closed.abort(new Error("SSH channel closed"));
             void terminal?.close();
           });
           void openTerminal({
@@ -83,15 +87,19 @@ export function createSshGateway(options: {
               try {
                 for await (const chunk of opened.output) {
                   if (!channel.write(Buffer.from(chunk))) {
-                    await new Promise<void>((resolve) => channel.once("drain", resolve));
+                    await once(channel, "drain", { signal: closed.signal });
                   }
                 }
                 channel.exit(0);
                 channel.end();
               } catch {
-                channel.stderr.write("PiCloud SSH terminal disconnected.\r\n");
-                channel.exit(1);
-                channel.end();
+                if (!channelClosed) {
+                  channel.stderr.write("PiCloud SSH terminal disconnected.\r\n");
+                  channel.exit(1);
+                  channel.end();
+                }
+              } finally {
+                await opened.close();
               }
             },
             () => {

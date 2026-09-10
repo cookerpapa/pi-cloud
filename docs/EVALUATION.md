@@ -11,11 +11,16 @@ current architecture ADR.
 ```bash
 npm run check
 npm run eval:faults
+npm run browser:presentation:check
 ```
 
 The ordinary test suite covers queue claims, Session ordering, leases/fences,
 Pi SessionStorage, event ordering, cancellation, Tool ambiguity, Workspace
 settlement and tenant isolation without spending model tokens.
+
+The presentation check uses installed Chrome/Chromium and actual React effects,
+without accounts or model calls: progressive text under StrictMode, immediate
+reconnect-prefix presentation, first-use panel sizing and resize cleanup.
 
 `eval:faults` selects named process/protocol failure cases from
 `eval/fault-cases.json`. Every manifest entry must refer to a test that exists

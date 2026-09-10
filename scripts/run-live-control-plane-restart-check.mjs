@@ -197,6 +197,7 @@ const deadline = setTimeout(
 );
 let replacement;
 let firstTextSequence;
+let visiblePrefixBeforeFailure;
 let terminal;
 let snapshotTerminalSequence;
 let reconnects = 0;
@@ -207,6 +208,7 @@ const observeEvent = (event) => {
     text.push(event.payload.text);
     if (replacement === undefined) {
       firstTextSequence = event.seq;
+      visiblePrefixBeforeFailure = text.join("");
       replacement = replaceControlPlane();
     }
   }
@@ -234,6 +236,7 @@ try {
       text.splice(0, text.length, ...(partial?.text ? [partial.text] : []));
       if (partial?.text && !partial.terminal && replacement === undefined) {
         firstTextSequence = partial.throughSequence;
+        visiblePrefixBeforeFailure = partial.text;
         replacement = replaceControlPlane();
       }
       const recovered = snapshot.conversation.turns.find(
@@ -267,6 +270,22 @@ try {
   assert(text.join("").includes(marker), "Replayed output omitted the expected marker");
   const run = await waitForCompletedRun(api, accepted.runId);
   assert.equal(run.attempts.length, 1, "Control Plane replacement created another Run Attempt");
+  const conversation = await api.getConversation(session.sessionId);
+  const canonical = conversation.turns.find((turn) => turn.turnId === accepted.turnId)?.transcript;
+  assert(canonical, "Completed Run has no canonical transcript");
+  const canonicalText = canonical.items
+    .filter((item) => item.kind === "text")
+    .map((item) => item.text)
+    .join("");
+  assert(
+    visiblePrefixBeforeFailure && canonicalText.startsWith(visiblePrefixBeforeFailure),
+    "Recovery changed an already displayed text prefix",
+  );
+  assert.equal(
+    text.join(""),
+    canonicalText,
+    "Reconnected live view differs from canonical history",
+  );
 
   const report = {
     accepted: true,
@@ -282,6 +301,8 @@ try {
     attemptCount: run.attempts.length,
     faultMode,
     recordsProducedWhileProjectorDown,
+    visiblePrefixPreserved: true,
+    liveMatchesCanonical: true,
     elapsedMs: Math.round(performance.now() - startedAt),
   };
   if (writeReport) {

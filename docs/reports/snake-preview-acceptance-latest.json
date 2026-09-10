@@ -1,15 +1,15 @@
 {
   "accepted": true,
-  "piCloudRevision": "4f10f3481ca5bd7b70065003d3e54993f289b668",
+  "piCloudRevision": "260e1fba3f954e5dd86d8793ee01b02665feb102",
   "workingTreeDirty": true,
-  "checkedAt": "2026-09-09T14:31:46.088Z",
-  "account": "snake.acceptance.mtu72lh5",
-  "sessionId": "a3292bc8-c799-4d6a-9355-c1343e794c08",
-  "workspaceId": "827870c7-e237-4bd9-8897-6ed560ebe60d",
-  "developmentEnvironmentId": "7e817ad5-349a-4e3d-9f9a-2af004d2cd51",
-  "runId": "ca7ca6d2-34e2-4a27-b070-f12b44ced003",
-  "toolCalls": 11,
-  "toolPreparations": 11,
+  "checkedAt": "2026-09-10T14:05:09.275Z",
+  "account": "snake.acceptance.mtvlecyh",
+  "sessionId": "56b96691-26db-4775-b540-0600fa1d046b",
+  "workspaceId": "454e0493-6e94-4062-a85f-be4aa4d1e5ef",
+  "developmentEnvironmentId": "accc4005-40e6-4776-bd92-f0b709ae41ad",
+  "runId": "a0434eb6-ba09-4254-908a-add3f2751f68",
+  "toolCalls": 19,
+  "toolPreparations": 19,
   "preparationBrowser": {
     "before": 3,
     "recovered": 3,
@@ -17,45 +17,45 @@
     "cleared": true
   },
   "previewToolUsed": true,
-  "firstDurableActivityMs": 3818,
-  "firstToolStartedMs": 13314,
-  "firstAssistantTextMs": 3818,
-  "settledMs": 141694,
+  "firstDurableActivityMs": 3734,
+  "firstToolStartedMs": 8270,
+  "firstAssistantTextMs": 3734,
+  "settledMs": 410734,
   "hostPreviewStatus": 200,
-  "previewOrigin": "http://p-7cbbaa824488f8d0e844f17f.preview.localhost:8080",
-  "previewRoute": "/v1/conversations/a3292bc8-c799-4d6a-9355-c1343e794c08/preview/4173",
+  "previewOrigin": "http://p-b6a5a9795384e7f3015f9011.preview.localhost:8080",
+  "previewRoute": "/v1/conversations/56b96691-26db-4775-b540-0600fa1d046b/preview/4173",
   "browserInteraction": {
     "before": {
-      "headX": 10,
-      "headY": 10,
+      "headX": 12,
+      "headY": 12,
       "score": 0,
       "running": false,
       "tick": 0
     },
     "after": {
-      "headX": 10,
-      "headY": 15,
+      "headX": 13,
+      "headY": 17,
       "score": 0,
       "running": true,
-      "tick": 5
+      "tick": 6
     },
     "paused": {
-      "headX": 10,
-      "headY": 15,
+      "headX": 13,
+      "headY": 17,
       "score": 0,
       "running": false,
-      "tick": 5
+      "tick": 6
     },
     "pausedAfterWait": {
-      "headX": 10,
-      "headY": 15,
+      "headX": 13,
+      "headY": 17,
       "score": 0,
       "running": false,
-      "tick": 5
+      "tick": 6
     },
     "reset": {
-      "headX": 10,
-      "headY": 10,
+      "headX": 12,
+      "headY": 12,
       "score": 0,
       "running": false,
       "tick": 0

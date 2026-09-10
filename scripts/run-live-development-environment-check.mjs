@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { mkdir, open, writeFile } from "node:fs/promises";
-import { request as httpRequest } from "node:http";
+import { readPreviewDocument } from "./lib/preview-client.mjs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -67,32 +67,9 @@ const fetchFromProduction = async (input, init = {}) => {
   if (response.status < 300 || response.status >= 400 || location === null) return response;
   const target = new URL(location, request);
   if (!target.hostname.endsWith(".preview.localhost")) return response;
-  return new Promise((resolvePromise, rejectPromise) => {
-    const forwarded = httpRequest(
-      {
-        hostname: connectHost,
-        port: target.port,
-        path: `${target.pathname}${target.search}`,
-        method: init.method ?? "GET",
-        headers: { ...Object.fromEntries(new Headers(init.headers)), host: target.host },
-        signal: init.signal,
-      },
-      (incoming) => {
-        const chunks = [];
-        incoming.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-        incoming.once("end", () =>
-          resolvePromise(
-            new Response(Buffer.concat(chunks), {
-              status: incoming.statusCode ?? 500,
-              headers: incoming.headers,
-            }),
-          ),
-        );
-      },
-    );
-    forwarded.once("error", rejectPromise);
-    forwarded.end();
-  });
+  await response.body?.cancel();
+  const preview = await readPreviewDocument(target, connectHost);
+  return new Response(preview.body, { status: preview.status, headers: preview.headers });
 };
 const api = new PiCloudApi(fetchFromProduction, token);
 
@@ -268,6 +245,7 @@ async function terminalCommand(path, command, marker) {
         if (output.includes(marker)) finish();
       } else if (frame.type === "workspace_terminal.error") {
         clearInterval(timeout);
+        socket.terminate();
         rejectPromise(new Error(`${frame.code}: ${frame.message}`));
       }
     });
@@ -276,7 +254,12 @@ async function terminalCommand(path, command, marker) {
       rejectPromise(error);
     });
     socket.once("close", () => {
-      if (!closing || finished) return;
+      clearInterval(timeout);
+      if (!closing) {
+        rejectPromise(new Error(`Terminal closed without ${marker}`));
+        return;
+      }
+      if (finished) return;
       finished = true;
       clearInterval(timeout);
       resolvePromise(output);
@@ -352,85 +335,90 @@ const cube = new OfficialCubeSandboxRuntimeClient({
 
 const suffix = Date.now().toString(36);
 const previewPort = 5_173;
-const development = await api.createDevelopmentEnvironment(
-  `Recovery machine ${suffix}`,
-  "standard",
-  newIdempotencyKey("environment"),
-);
-await waitForEnvironment(development.environmentId, "running");
-const runtimeName = await psql(
-  `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
-);
-assert(runtimeName, "Development environment did not persist its Cube identity");
-await terminalCommand(
-  `/v1/development-environments/${development.environmentId}/terminal`,
-  `test "$(id -u)" = 0; test ! -e /workspace; printf 'EXCLUSIVE_ROOTFS_OK\\n' > /etc/pi-cloud-exclusive-marker; mkdir -p /home/user/empty-project/src; printf 'public final class Calculator { public static int add(int left, int right) { return left - right; } }\\n' > /home/user/empty-project/src/Calculator.java; printf '#!/usr/bin/env bash\\nset -eu\\ngrep -F "return left + right;" src/Calculator.java\\n' > /home/user/empty-project/test.sh; chmod 0755 /home/user/empty-project/test.sh; chown -R 1000:1000 /home/user; printf 'EXCLUSIVE_FILE_OK\\n' > /home/user/exclusive.txt; printf '<!doctype html><html><head><title>PiCloud Preview</title></head><body>PI_CLOUD_PREVIEW_OK</body></html>\\n' > /home/user/index.html; setsid sh -c 'while true; do date +%s > /var/tmp/pi-cloud-exclusive-heartbeat; sleep 1; done' </dev/null >/tmp/exclusive-loop.log 2>&1 & echo $! > /var/tmp/pi-cloud-exclusive.pid; setsid python3 -m http.server ${String(previewPort)} --bind 0.0.0.0 --directory /home/user </dev/null >/tmp/preview.log 2>&1 & echo EXCLUSIVE_FIRST_OK`,
-  "EXCLUSIVE_FIRST_OK",
-);
-const rootDirectory = await api.listDevelopmentEnvironmentDirectory(development.environmentId, "/");
-assert(rootDirectory.entries.some((entry) => entry.name === "etc" && entry.kind === "directory"));
-const homeDirectory = await api.listDevelopmentEnvironmentDirectory(
-  development.environmentId,
-  "/home/user",
-);
-assert(
-  homeDirectory.entries.some(
-    (entry) => entry.name === "empty-project" && entry.kind === "directory",
-  ),
-);
-await wait(2_000);
-const preview = await fetchFromProduction(
-  `/v1/development-environments/${development.environmentId}/preview/${String(previewPort)}/`,
-  { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
-);
-assert.equal(preview.status, 200);
-assert.match(await preview.text(), /PI_CLOUD_PREVIEW_OK/);
-await terminalCommand(
-  `/v1/development-environments/${development.environmentId}/terminal`,
-  'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && test "$(cat /home/user/exclusive.txt)" = EXCLUSIVE_FILE_OK && test ! -e /workspace && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_RECONNECT_OK',
-  "EXCLUSIVE_RECONNECT_OK",
-);
+let development, session, replacementSession;
+try {
+  development = await api.createDevelopmentEnvironment(
+    `Recovery machine ${suffix}`,
+    "standard",
+    newIdempotencyKey("environment"),
+  );
+  await waitForEnvironment(development.environmentId, "running");
+  const runtimeName = await psql(
+    `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
+  );
+  assert(runtimeName, "Development environment did not persist its Cube identity");
+  await terminalCommand(
+    `/v1/development-environments/${development.environmentId}/terminal`,
+    `test "$(id -u)" = 0; test ! -e /workspace; printf 'EXCLUSIVE_ROOTFS_OK\\n' > /etc/pi-cloud-exclusive-marker; mkdir -p /home/user/empty-project/src; printf 'public final class Calculator { public static int add(int left, int right) { return left - right; } }\\n' > /home/user/empty-project/src/Calculator.java; printf '#!/usr/bin/env bash\\nset -eu\\ngrep -F "return left + right;" src/Calculator.java\\n' > /home/user/empty-project/test.sh; chmod 0755 /home/user/empty-project/test.sh; chown -R 1000:1000 /home/user; printf 'EXCLUSIVE_FILE_OK\\n' > /home/user/exclusive.txt; printf '<!doctype html><html><head><title>PiCloud Preview</title></head><body>PI_CLOUD_PREVIEW_OK</body></html>\\n' > /home/user/index.html; setsid sh -c 'while true; do date +%s > /var/tmp/pi-cloud-exclusive-heartbeat; sleep 1; done' </dev/null >/tmp/exclusive-loop.log 2>&1 & echo $! > /var/tmp/pi-cloud-exclusive.pid; setsid python3 -m http.server ${String(previewPort)} --bind 0.0.0.0 --directory /home/user </dev/null >/tmp/preview.log 2>&1 & echo EXCLUSIVE_FIRST_OK`,
+    "EXCLUSIVE_FIRST_OK",
+  );
+  const rootDirectory = await api.listDevelopmentEnvironmentDirectory(
+    development.environmentId,
+    "/",
+  );
+  assert(rootDirectory.entries.some((entry) => entry.name === "etc" && entry.kind === "directory"));
+  const homeDirectory = await api.listDevelopmentEnvironmentDirectory(
+    development.environmentId,
+    "/home/user",
+  );
+  assert(
+    homeDirectory.entries.some(
+      (entry) => entry.name === "empty-project" && entry.kind === "directory",
+    ),
+  );
+  await wait(2_000);
+  const preview = await fetchFromProduction(
+    `/v1/development-environments/${development.environmentId}/preview/${String(previewPort)}/`,
+    { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
+  );
+  assert.equal(preview.status, 200);
+  assert.match(await preview.text(), /PI_CLOUD_PREVIEW_OK/);
+  await terminalCommand(
+    `/v1/development-environments/${development.environmentId}/terminal`,
+    'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && test "$(cat /home/user/exclusive.txt)" = EXCLUSIVE_FILE_OK && test ! -e /workspace && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_RECONNECT_OK',
+    "EXCLUSIVE_RECONNECT_OK",
+  );
 
-const session = await api.createSession(
-  development.projectId,
-  development.workspaceId,
-  `Agent binding to exclusive environment ${suffix}`,
-  "development_environment",
-  "standard",
-  "/home/user/empty-project",
-);
-const agentRun = await api.acceptTurn(
-  session.sessionId,
-  "Fix the pre-seeded Calculator implementation and run its test script.",
-  newIdempotencyKey("turn"),
-  "off",
-);
-await waitForRun(agentRun.runId);
-const continuityRun = await api.acceptTurn(
-  session.sessionId,
-  "Verify the repaired Calculator again without changing it.",
-  newIdempotencyKey("turn"),
-  "off",
-);
-await waitForRun(continuityRun.runId);
-await api.updateSessionModel(session.sessionId, {
-  provider: "openai-codex",
-  modelId: "gpt-5.6-luna",
-  thinkingLevel: "low",
-  fastMode: false,
-});
-const sharedSubagentRun = await api.acceptTurn(
-  session.sessionId,
-  [
-    "Call the subagent Tool exactly once.",
-    'Use this exact workflowScript: return runs.run("development-shared", {agent:"cloud-child", context:"fresh", tools:["read","bash"], task:"Use bash to confirm the current directory is /home/user/empty-project and ./test.sh passes, then reply exactly DEVELOPMENT-SUBAGENT-OK"})',
-    "After it finishes, reply exactly DEVELOPMENT-SUBAGENT-OK.",
-  ].join(" "),
-  newIdempotencyKey("turn"),
-  "off",
-);
-await waitForRun(sharedSubagentRun.runId);
-const sharedSubagentEvidenceValue = await psql(`
+  session = await api.createSession(
+    development.projectId,
+    development.workspaceId,
+    `Agent binding to exclusive environment ${suffix}`,
+    "development_environment",
+    "standard",
+    "/home/user/empty-project",
+  );
+  const agentRun = await api.acceptTurn(
+    session.sessionId,
+    "Fix the pre-seeded Calculator implementation and run its test script.",
+    newIdempotencyKey("turn"),
+    "off",
+  );
+  await waitForRun(agentRun.runId);
+  const continuityRun = await api.acceptTurn(
+    session.sessionId,
+    "Verify the repaired Calculator again without changing it.",
+    newIdempotencyKey("turn"),
+    "off",
+  );
+  await waitForRun(continuityRun.runId);
+  await api.updateSessionModel(session.sessionId, {
+    provider: "openai-codex",
+    modelId: "gpt-5.6-luna",
+    thinkingLevel: "low",
+    fastMode: false,
+  });
+  const sharedSubagentRun = await api.acceptTurn(
+    session.sessionId,
+    [
+      "Call the subagent Tool exactly once.",
+      'Use this exact workflowScript: return runs.run("development-shared", {agent:"cloud-child", context:"fresh", tools:["read","bash"], task:"Use bash to confirm the current directory is /home/user/empty-project and ./test.sh passes, then reply exactly DEVELOPMENT-SUBAGENT-OK"})',
+      "After it finishes, reply exactly DEVELOPMENT-SUBAGENT-OK.",
+    ].join(" "),
+    newIdempotencyKey("turn"),
+    "off",
+  );
+  await waitForRun(sharedSubagentRun.runId);
+  const sharedSubagentEvidenceValue = await psql(`
     select json_build_object(
       'workspaceMode', execution.workspace_mode,
       'executionMode', child_session.execution_mode,
@@ -445,191 +433,210 @@ const sharedSubagentEvidenceValue = await psql(`
     order by execution.created_at desc
     limit 1
   `);
-assert(sharedSubagentEvidenceValue, "Development-machine parent created no Subagent execution");
-const sharedSubagentEvidence = JSON.parse(sharedSubagentEvidenceValue);
-assert.deepEqual(sharedSubagentEvidence, {
-  workspaceMode: "shared",
-  executionMode: "development_environment",
-  developmentEnvironmentId: development.environmentId,
-  workingDirectory: "/home/user/empty-project",
-  childRunState: "completed",
-});
-const discoveredPreviewResponse = await fetchFromProduction(
-  `/v1/conversations/${session.sessionId}/preview/${String(previewPort)}/`,
-  { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
-);
-assert.equal(discoveredPreviewResponse.status, 200);
-assert.match(await discoveredPreviewResponse.text(), /PI_CLOUD_PREVIEW_OK/);
-assert.equal(
-  await psql(
-    `select count(*)
+  assert(sharedSubagentEvidenceValue, "Development-machine parent created no Subagent execution");
+  const sharedSubagentEvidence = JSON.parse(sharedSubagentEvidenceValue);
+  assert.deepEqual(sharedSubagentEvidence, {
+    workspaceMode: "shared",
+    executionMode: "development_environment",
+    developmentEnvironmentId: development.environmentId,
+    workingDirectory: "/home/user/empty-project",
+    childRunState: "completed",
+  });
+  const discoveredPreviewResponse = await fetchFromProduction(
+    `/v1/conversations/${session.sessionId}/preview/${String(previewPort)}/`,
+    { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
+  );
+  assert.equal(discoveredPreviewResponse.status, 200);
+  assert.match(await discoveredPreviewResponse.text(), /PI_CLOUD_PREVIEW_OK/);
+  assert.equal(
+    await psql(
+      `select count(*)
        from pi_session_entries
       where tenant_id = ${sqlLiteral(bootstrapTenantId)}
-        and session_id = ${sqlLiteral(session.sessionId)}
+        and session_id = (select pi_session_id from sessions where id = ${sqlLiteral(session.sessionId)})
         and custom_type = 'pi-cloud.sandbox_reset'`,
-  ),
-  "0",
-  "A renewed Agent Tool lease incorrectly reported a physical Sandbox reset",
-);
-assert.equal(
-  await psql(
-    `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
-  ),
-  runtimeName,
-);
-assert.equal(
-  await psql(
-    `select state || ':' || coalesce(agent_activation_id::text, 'idle') from development_environments where id = ${sqlLiteral(development.environmentId)}`,
-  ),
-  "running:idle",
-);
-await terminalCommand(
-  `/v1/conversations/${session.sessionId}/terminal`,
-  'grep -F "return left + right;" /home/user/empty-project/src/Calculator.java >/dev/null && (cd /home/user/empty-project && bash ./test.sh) && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_AGENT_RETURN_OK',
-  "EXCLUSIVE_AGENT_RETURN_OK",
-);
-const sshTicket = await api.issueSshAccessTicket(session.sessionId);
-await sshCommand(
-  sshTicket,
-  'test "$(id -u)" = 0 && grep -F "return left + right;" /home/user/empty-project/src/Calculator.java >/dev/null && echo EXCLUSIVE_SSH_OK',
-  "EXCLUSIVE_SSH_OK",
-);
+    ),
+    "0",
+    "A renewed Agent Tool lease incorrectly reported a physical Sandbox reset",
+  );
+  assert.equal(
+    await psql(
+      `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
+    ),
+    runtimeName,
+  );
+  assert.equal(
+    await psql(
+      `select state || ':' || coalesce(agent_activation_id::text, 'idle') from development_environments where id = ${sqlLiteral(development.environmentId)}`,
+    ),
+    "running:idle",
+  );
+  await terminalCommand(
+    `/v1/conversations/${session.sessionId}/terminal`,
+    'grep -F "return left + right;" /home/user/empty-project/src/Calculator.java >/dev/null && (cd /home/user/empty-project && bash ./test.sh) && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_AGENT_RETURN_OK',
+    "EXCLUSIVE_AGENT_RETURN_OK",
+  );
+  const sshTicket = await api.issueSshAccessTicket(session.sessionId);
+  await sshCommand(
+    sshTicket,
+    'test "$(id -u)" = 0 && grep -F "return left + right;" /home/user/empty-project/src/Calculator.java >/dev/null && echo EXCLUSIVE_SSH_OK',
+    "EXCLUSIVE_SSH_OK",
+  );
 
-await capture(
-  process.execPath,
-  ["scripts/production-compose.mjs", "restart", "tool-broker"],
-  5 * 60_000,
-);
-await waitForToolBrokerReady();
-const recoveredAfterBrokerRestart = await waitForEnvironment(development.environmentId, "running");
-assert.equal(
-  await psql(
-    `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
-  ),
-  runtimeName,
-);
-assert.equal((await cube.read(runtimeName))?.state, "running");
-await terminalCommand(
-  `/v1/development-environments/${development.environmentId}/terminal`,
-  'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_BROKER_RECOVERY_OK',
-  "EXCLUSIVE_BROKER_RECOVERY_OK",
-);
-const previewAfterBrokerRestart = await fetchFromProduction(
-  `/v1/development-environments/${development.environmentId}/preview/${String(previewPort)}/`,
-  { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
-);
-assert.equal(previewAfterBrokerRestart.status, 200);
-assert.match(await previewAfterBrokerRestart.text(), /PI_CLOUD_PREVIEW_OK/);
-const sshAfterBrokerRestart = await api.issueSshAccessTicket(session.sessionId);
-await sshCommand(
-  sshAfterBrokerRestart,
-  'kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_BROKER_SSH_OK',
-  "EXCLUSIVE_BROKER_SSH_OK",
-);
+  await capture(
+    process.execPath,
+    ["scripts/production-compose.mjs", "restart", "tool-broker"],
+    5 * 60_000,
+  );
+  await waitForToolBrokerReady();
+  const recoveredAfterBrokerRestart = await waitForEnvironment(
+    development.environmentId,
+    "running",
+  );
+  assert.equal(
+    await psql(
+      `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
+    ),
+    runtimeName,
+  );
+  assert.equal((await cube.read(runtimeName))?.state, "running");
+  await terminalCommand(
+    `/v1/development-environments/${development.environmentId}/terminal`,
+    'test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_BROKER_RECOVERY_OK',
+    "EXCLUSIVE_BROKER_RECOVERY_OK",
+  );
+  const previewAfterBrokerRestart = await fetchFromProduction(
+    `/v1/development-environments/${development.environmentId}/preview/${String(previewPort)}/`,
+    { headers: { authorization: `Bearer ${token}`, accept: "text/html" } },
+  );
+  assert.equal(previewAfterBrokerRestart.status, 200);
+  assert.match(await previewAfterBrokerRestart.text(), /PI_CLOUD_PREVIEW_OK/);
+  const sshAfterBrokerRestart = await api.issueSshAccessTicket(session.sessionId);
+  await sshCommand(
+    sshAfterBrokerRestart,
+    'kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && echo EXCLUSIVE_BROKER_SSH_OK',
+    "EXCLUSIVE_BROKER_SSH_OK",
+  );
 
-const paused = await api.developmentEnvironmentAction(
-  development.environmentId,
-  "pause",
-  newIdempotencyKey("environment"),
-);
-assert.equal(paused.state, "paused");
-assert.equal((await cube.read(runtimeName))?.state, "paused");
-const resumed = await api.developmentEnvironmentAction(
-  development.environmentId,
-  "resume",
-  newIdempotencyKey("environment"),
-);
-assert.equal(resumed.state, "running");
-assert.equal(
-  await psql(
-    `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
-  ),
-  runtimeName,
-);
-await terminalCommand(
-  `/v1/development-environments/${development.environmentId}/terminal`,
-  'kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && echo EXCLUSIVE_RESUME_OK',
-  "EXCLUSIVE_RESUME_OK",
-);
+  const paused = await api.developmentEnvironmentAction(
+    development.environmentId,
+    "pause",
+    newIdempotencyKey("environment"),
+  );
+  assert.equal(paused.state, "paused");
+  assert.equal((await cube.read(runtimeName))?.state, "paused");
+  const resumed = await api.developmentEnvironmentAction(
+    development.environmentId,
+    "resume",
+    newIdempotencyKey("environment"),
+  );
+  assert.equal(resumed.state, "running");
+  assert.equal(
+    await psql(
+      `select runtime_name from development_environments where id = ${sqlLiteral(development.environmentId)}`,
+    ),
+    runtimeName,
+  );
+  await terminalCommand(
+    `/v1/development-environments/${development.environmentId}/terminal`,
+    'kill -0 "$(cat /var/tmp/pi-cloud-exclusive.pid)" && test "$(cat /etc/pi-cloud-exclusive-marker)" = EXCLUSIVE_ROOTFS_OK && echo EXCLUSIVE_RESUME_OK',
+    "EXCLUSIVE_RESUME_OK",
+  );
 
-await api.deleteConversation(session.sessionId, newIdempotencyKey("delete-conversation"));
-const replacementSession = await api.createSession(
-  development.projectId,
-  development.workspaceId,
-  `Replacement conversation ${suffix}`,
-  "development_environment",
-  "standard",
-  "/home/user/empty-project",
-);
-assert.equal(
-  (await api.getConversation(replacementSession.sessionId)).session.sessionId,
-  replacementSession.sessionId,
-);
+  await api.deleteConversation(session.sessionId, newIdempotencyKey("delete-conversation"));
+  replacementSession = await api.createSession(
+    development.projectId,
+    development.workspaceId,
+    `Replacement conversation ${suffix}`,
+    "development_environment",
+    "standard",
+    "/home/user/empty-project",
+  );
+  assert.equal(
+    (await api.getConversation(replacementSession.sessionId)).session.sessionId,
+    replacementSession.sessionId,
+  );
 
-const released = await api.developmentEnvironmentAction(
-  development.environmentId,
-  "release",
-  newIdempotencyKey("environment"),
-);
-assert.equal(released.state, "released");
-assert.equal(await cube.read(runtimeName), undefined);
-assert(
-  !(await api.listWorkspaces()).workspaces.some(
-    (workspace) => workspace.workspaceId === development.workspaceId,
-  ),
-  "Released machine Volume leaked into the elastic Workspace inventory",
-);
-assert.equal(
-  (await api.getConversation(replacementSession.sessionId)).session.workspaceState,
-  "missing",
-);
-await waitForWorkspacePurge(development.workspaceId);
-const deletedVolume = await fetch(
-  `http://${cluster.api.host}:${String(cluster.api.port)}/volumes/${workspaceVolumeId({ tenantId: bootstrapTenantId, workspaceId: development.workspaceId })}`,
-  { headers: { authorization: `Bearer ${cubeApiKey}` }, signal: AbortSignal.timeout(30_000) },
-);
-await deletedVolume.body?.cancel();
-await api.deleteConversation(
-  replacementSession.sessionId,
-  newIdempotencyKey("delete-replacement-conversation"),
-);
-assert.equal(deletedVolume.status, 404, "Released machine retained Cube Volume metadata");
+  const released = await api.developmentEnvironmentAction(
+    development.environmentId,
+    "release",
+    newIdempotencyKey("environment"),
+  );
+  assert.equal(released.state, "released");
+  assert.equal(await cube.read(runtimeName), undefined);
+  assert(
+    !(await api.listWorkspaces()).workspaces.some(
+      (workspace) => workspace.workspaceId === development.workspaceId,
+    ),
+    "Released machine Volume leaked into the elastic Workspace inventory",
+  );
+  assert.equal(
+    (await api.getConversation(replacementSession.sessionId)).session.workspaceState,
+    "missing",
+  );
+  await waitForWorkspacePurge(development.workspaceId);
+  const deletedVolume = await fetch(
+    `http://${cluster.api.host}:${String(cluster.api.port)}/volumes/${workspaceVolumeId({ tenantId: bootstrapTenantId, workspaceId: development.workspaceId })}`,
+    { headers: { authorization: `Bearer ${cubeApiKey}` }, signal: AbortSignal.timeout(30_000) },
+  );
+  await deletedVolume.body?.cancel();
+  await api.deleteConversation(
+    replacementSession.sessionId,
+    newIdempotencyKey("delete-replacement-conversation"),
+  );
+  assert.equal(deletedVolume.status, 404, "Released machine retained Cube Volume metadata");
 
-const report = {
-  accepted: true,
-  piCloudRevision: await capture("git", ["rev-parse", "HEAD"]),
-  checkedAt: new Date().toISOString(),
-  developmentEnvironmentId: development.environmentId,
-  workspaceId: development.workspaceId,
-  ipAddress: (await api.listDevelopmentEnvironments()).environments.find(
-    (environment) => environment.environmentId === development.environmentId,
-  )?.ipAddress,
-  cubeIdentityStableAcrossPause: true,
-  processSurvivedTerminalReconnect: true,
-  processSurvivedPauseResume: true,
-  agentRunBorrowedAndReturnedSameCube: true,
-  sharedSubagentInheritedDevelopmentEnvironment: true,
-  consecutiveAgentRunsPreservedPhysicalContinuity: true,
-  machineVolumeDeletedOnRelease: true,
-  cubeVolumeMetadataDeleted: true,
-  conversationSurvivedRelease: true,
-  releasedWorkspaceRequiresRebind: true,
-  authenticatedHttpPreviewPassed: true,
-  structuredServiceDiscoveryPassed: true,
-  previewPort,
-  rootFilesystemPreserved: true,
-  elasticWorkspaceRootAbsent: true,
-  brokerRestartKeptMachineRunning: recoveredAfterBrokerRestart.state === "running",
-  emptyDirectoryBrowsePassed: true,
-  archivedSessionDidNotReleaseMachine: true,
-  oneTimeSshGatewayPassed: true,
-  selectedProfile: development.profileKey,
-};
-await cube.close();
-await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
-await writeFile(
-  resolve(repositoryRoot, "docs/reports/development-environment-acceptance-latest.json"),
-  `${JSON.stringify(report, null, 2)}\n`,
-  "utf8",
-);
-process.stdout.write(`${JSON.stringify(report)}\n`);
+  const report = {
+    accepted: true,
+    piCloudRevision: await capture("git", ["rev-parse", "HEAD"]),
+    checkedAt: new Date().toISOString(),
+    developmentEnvironmentId: development.environmentId,
+    workspaceId: development.workspaceId,
+    ipAddress: (await api.listDevelopmentEnvironments()).environments.find(
+      (environment) => environment.environmentId === development.environmentId,
+    )?.ipAddress,
+    cubeIdentityStableAcrossPause: true,
+    processSurvivedTerminalReconnect: true,
+    processSurvivedPauseResume: true,
+    agentRunBorrowedAndReturnedSameCube: true,
+    sharedSubagentInheritedDevelopmentEnvironment: true,
+    consecutiveAgentRunsPreservedPhysicalContinuity: true,
+    machineVolumeDeletedOnRelease: true,
+    cubeVolumeMetadataDeleted: true,
+    conversationSurvivedRelease: true,
+    releasedWorkspaceRequiresRebind: true,
+    authenticatedHttpPreviewPassed: true,
+    conversationPreviewRoutePassed: true,
+    previewPort,
+    rootFilesystemPreserved: true,
+    elasticWorkspaceRootAbsent: true,
+    brokerRestartKeptMachineRunning: recoveredAfterBrokerRestart.state === "running",
+    emptyDirectoryBrowsePassed: true,
+    deletedConversationDidNotReleaseMachine: true,
+    oneTimeSshGatewayPassed: true,
+    selectedProfile: development.profileKey,
+  };
+  await mkdir(resolve(repositoryRoot, "docs/reports"), { recursive: true });
+  await writeFile(
+    resolve(repositoryRoot, "docs/reports/development-environment-acceptance-latest.json"),
+    `${JSON.stringify(report, null, 2)}\n`,
+    "utf8",
+  );
+  process.stdout.write(`${JSON.stringify(report)}\n`);
+} finally {
+  for (const created of [replacementSession, session]) {
+    if (created)
+      await api
+        .deleteConversation(created.sessionId, newIdempotencyKey("delete-acceptance-session"))
+        .catch(() => undefined);
+  }
+  if (development)
+    await api
+      .developmentEnvironmentAction(
+        development.environmentId,
+        "release",
+        newIdempotencyKey("release-acceptance-machine"),
+      )
+      .catch(() => undefined);
+  await cube.close();
+}

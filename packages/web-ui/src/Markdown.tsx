@@ -4,30 +4,6 @@ import remarkGfm from "remark-gfm";
 import { HighlightedCode } from "./HighlightedCode.tsx";
 import { useI18n, type Translate } from "./i18n.tsx";
 
-export function conversationPreviewHref(
-  href: string | undefined,
-  sessionId: string | undefined,
-): string | undefined {
-  if (href === undefined || sessionId === undefined) return href;
-  try {
-    const target = new URL(href);
-    const port = Number(target.port || (target.protocol === "https:" ? 443 : 80));
-    if (
-      target.protocol !== "http:" ||
-      !new Set(["localhost", "127.0.0.1", "0.0.0.0"]).has(target.hostname) ||
-      !Number.isSafeInteger(port) ||
-      port < 1_024 ||
-      port > 65_535 ||
-      port === 49_983
-    ) {
-      return href;
-    }
-    return `/v1/conversations/${encodeURIComponent(sessionId)}/preview/${String(port)}${target.pathname}${target.search}${target.hash}`;
-  } catch {
-    return href;
-  }
-}
-
 function MarkdownCode({ className, children }: { className?: string; children?: ReactNode }) {
   const text = String(children ?? "").replace(/\n$/u, "");
   const language = /(?:^|\s)language-([^\s]+)/u.exec(className ?? "")?.[1] ?? null;
@@ -43,37 +19,20 @@ function MarkdownCode({ className, children }: { className?: string; children?: 
 
 const StableMarkdownBody = memo(function StableMarkdownBody({
   text,
-  sessionId,
   t,
 }: {
   text: string;
-  sessionId: string | undefined;
   t: Translate;
 }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        a: ({ children, href }) => {
-          const resolved = conversationPreviewHref(href, sessionId);
-          const previewPort =
-            resolved !== href
-              ? /\/preview\/([0-9]{4,5})(?:\/|$)/u.exec(resolved ?? "")?.[1]
-              : undefined;
-          const childText =
-            typeof children === "string"
-              ? children
-              : Array.isArray(children) && children.every((child) => typeof child === "string")
-                ? children.join("")
-                : undefined;
-          return (
-            <a href={resolved} rel="noreferrer noopener" target="_blank">
-              {previewPort !== undefined && childText === href
-                ? t("turn.openPreview", { port: previewPort })
-                : children}
-            </a>
-          );
-        },
+        a: ({ children, href }) => (
+          <a href={href} rel="noreferrer noopener" target="_blank">
+            {children}
+          </a>
+        ),
         code: ({ className, children }) => (
           <MarkdownCode {...(className === undefined ? {} : { className })}>
             {children}
@@ -123,11 +82,9 @@ export function streamingMarkdownBlocks(text: string): readonly string[] {
 
 export function Markdown({
   children,
-  sessionId,
   streaming = false,
 }: {
   children: string;
-  sessionId?: string | undefined;
   streaming?: boolean;
 }) {
   const { t } = useI18n();
@@ -140,7 +97,6 @@ export function Markdown({
       {blocks.map((block, index) => (
         <StableMarkdownBody
           key={streaming ? `stream-block:${String(index)}` : "final"}
-          sessionId={sessionId}
           t={t}
           text={block}
         />

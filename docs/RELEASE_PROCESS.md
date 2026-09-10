@@ -1,6 +1,6 @@
 # Release evidence process
 
-PiCloud's supported release process binds a clean Git revision to seven
+PiCloud's supported release process binds a clean Git revision to six
 application images and the three images owned by its CubeSandbox execution
 plane, plus machine-readable dependency/security evidence. It does not
 currently push, sign, or publish images; registry policy and signing need a
@@ -50,7 +50,7 @@ pi-cloud-root.cdx.json
 images/control-plane.cdx.json
 images/control-plane.vulnerabilities.json
 images/control-plane.policy-vulnerabilities.json
-... one SBOM/two-report set for each of ten images
+... one SBOM/two-report set for each of nine images
 ```
 
 `manifest.json` records:
@@ -88,19 +88,19 @@ and rationale are recorded in `manifest.json`. CI deliberately performs the
 unrestricted image scan, including language packages.
 
 The Web runtime compiles Caddy 2.11.4 from its verified release commit with a
-pinned Go 1.26.6 builder and the fixed `google.golang.org/grpc@v1.83.1`, then
+pinned Go 1.26.6 builder and the fixed `google.golang.org/grpc@v1.83.2`, then
 copies the static binary into a pinned minimal Alpine runtime. This avoids
 inheriting stale packages from an older prebuilt Caddy image while preserving
 the standard Caddy module set. The actual final image, not either build stage,
 is what the release gate scans.
 
-CI independently builds a matrix of all ten images, generates CycloneDX with
+CI independently builds the same nine-image matrix, generates CycloneDX with
 Anchore SBOM Action, records all HIGH/CRITICAL findings with Trivy, runs the same
 fixable-finding gate, and uploads each evidence set for 14 days. Checkout,
 Node, Anchore, Trivy, Gitleaks, and artifact Actions are pinned to immutable
 commits in `.github/workflows/ci.yml`.
 
-GitHub-hosted CI runs deterministic zero-token checks plus the ten-image SBOM
+GitHub-hosted CI runs deterministic zero-token checks plus the nine-image SBOM
 and vulnerability matrix. The matrix still builds the Cube Tool image, but the
 full `cubesandbox:template-check` is a release-host precondition: rebuilding the
 same large toolchain a second time on every push exceeded the hosted Runner's

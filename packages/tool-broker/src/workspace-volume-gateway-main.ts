@@ -5,8 +5,8 @@ import {
   PersistentVolumeWorkspaceVolumeGateway,
   WorkspaceVolumeGatewayServer,
 } from "./workspace-volume-gateway.ts";
-import { createDatabase } from "@pi-cloud/database";
-import { startServiceObservability } from "@pi-cloud/observability";
+import { Pool } from "pg";
+import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
 import { PostgresWorkspaceVolumeGatewayLock } from "./postgres-workspace-volume-gateway-lock.ts";
 
 function required(name: string): string {
@@ -38,10 +38,17 @@ async function secret(path: string): Promise<string> {
   }
 }
 
-const database = createDatabase({
+const database = new Pool({
   connectionString: await secret(required("DATABASE_URL_FILE")),
-  maxConnections: 4,
+  max: 4,
 });
+database.on("error", () =>
+  operationalLog({
+    service: "pi-cloud-workspace-volume-gateway",
+    level: "error",
+    event: "volume.lock_connection.failed",
+  }),
+);
 const observability = await startServiceObservability({
   serviceName: "pi-cloud-workspace-volume-gateway",
   defaultMetricsPort: 9_469,
@@ -78,7 +85,7 @@ const server = new WorkspaceVolumeGatewayServer({
 try {
   await server.listen();
 } catch (error: unknown) {
-  await Promise.allSettled([server.close(), observability.close(), database.destroy()]);
+  await Promise.allSettled([server.close(), observability.close(), database.end()]);
   throw error;
 }
 process.stdout.write("PiCloud Workspace Volume Gateway ready\n");
@@ -87,7 +94,7 @@ let closing: Promise<void> | undefined;
 const closeService = (): Promise<void> =>
   (closing ??= server
     .close()
-    .finally(() => Promise.allSettled([observability.close(), database.destroy()]))
+    .finally(() => Promise.allSettled([observability.close(), database.end()]))
     .then(() => undefined));
 process.once("SIGTERM", () => void closeService());
 process.once("SIGINT", () => void closeService());

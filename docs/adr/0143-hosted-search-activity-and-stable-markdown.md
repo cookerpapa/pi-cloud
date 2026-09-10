@@ -29,8 +29,8 @@ frame, so citation-heavy text could reshape previously rendered links.
 - Keep completed Provider-native items in the Pi assistant message. The
   canonical conversation projector reconstructs settled Web Search activity
   from that message, so a reload does not depend on retained live Kafka tails.
-- Render adjacent calls as one compact activity group with a count and action
-  details. A running call remains the same keyed row when it completes.
+- Render each call as a compact activity row with its action details. Adjacent
+  rows share a container; a running call keeps the same key when it completes.
 - Split in-flight Markdown into completed blank-line-delimited blocks and one
   mutable tail. Memoized completed blocks no longer reparse as new deltas
   arrive; the final answer still receives one complete Markdown parse. Fenced
@@ -47,4 +47,3 @@ frame, so citation-heavy text could reshape previously rendered links.
   authorized viewers, matching the Agent activity users already requested.
 - A Provider that omits action details still renders a correctly paired generic
   search activity.
-

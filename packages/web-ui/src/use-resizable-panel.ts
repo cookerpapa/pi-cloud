@@ -1,8 +1,16 @@
-import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 function storedNumber(key: string, fallback: number): number {
   try {
-    const value = Number(globalThis.localStorage?.getItem(key));
+    const stored = globalThis.localStorage?.getItem(key);
+    if (stored == null || stored.trim() === "") return fallback;
+    const value = Number(stored);
     return Number.isFinite(value) ? value : fallback;
   } catch {
     return fallback;
@@ -32,6 +40,7 @@ export function useResizablePanel(options: {
     clamp(storedNumber(`${storageKey}:width`, initialWidth)),
   );
   const [collapsed, setCollapsed] = useState(() => storedBoolean(`${storageKey}:collapsed`));
+  const stopResize = useRef<(() => void) | undefined>(undefined);
 
   const setWidth = useCallback(
     (value: number) => {
@@ -62,6 +71,7 @@ export function useResizablePanel(options: {
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (collapsed) return;
       event.preventDefault();
+      stopResize.current?.();
       const startX = event.clientX;
       const startWidth = width;
       const move = (pointerEvent: PointerEvent): void => {
@@ -70,18 +80,24 @@ export function useResizablePanel(options: {
       const finish = (): void => {
         globalThis.removeEventListener("pointermove", move);
         globalThis.removeEventListener("pointerup", finish);
+        globalThis.removeEventListener("pointercancel", finish);
+        globalThis.removeEventListener("blur", finish);
         document.body.classList.remove("product-panel-resizing");
+        stopResize.current = undefined;
       };
       document.body.classList.add("product-panel-resizing");
       globalThis.addEventListener("pointermove", move);
       globalThis.addEventListener("pointerup", finish, { once: true });
+      globalThis.addEventListener("pointercancel", finish, { once: true });
+      globalThis.addEventListener("blur", finish, { once: true });
+      stopResize.current = finish;
     },
     [collapsed, setWidth, width],
   );
 
   useEffect(
     () => () => {
-      document.body.classList.remove("product-panel-resizing");
+      stopResize.current?.();
     },
     [],
   );

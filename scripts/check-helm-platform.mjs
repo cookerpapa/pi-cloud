@@ -42,4 +42,33 @@ assert.equal(
 assert.match(environment.PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES, /\{supervisorId\}/);
 assert(find("StatefulSet", "pi-cloud-pi-worker-primary-v1"));
 assert(find("Deployment", "pi-cloud-workspace-volume-gateway"));
+const customDatabaseKeys = parseAllDocuments(
+  run([
+    "template",
+    "pi-cloud",
+    chart,
+    "--namespace",
+    "pi-cloud-system",
+    "--set",
+    "external.database.secretKey=pooled-database",
+    "--set",
+    "external.database.notificationSecretKey=direct-database",
+  ]),
+)
+  .map((document) => document.toJSON())
+  .filter(Boolean);
+for (const [kind, name, key] of [
+  ["StatefulSet", "pi-cloud-tool-broker", "pooled-database"],
+  ["Deployment", "pi-cloud-workspace-volume-gateway", "direct-database"],
+]) {
+  const workload = customDatabaseKeys.find(
+    (resource) => resource.kind === kind && resource.metadata.name === name,
+  );
+  assert.equal(
+    workload.spec.template.spec.containers[0].volumeMounts.find(
+      (mount) => mount.mountPath === "/run/pi-cloud-secrets/database-url",
+    ).subPath,
+    key,
+  );
+}
 process.stdout.write("Platform Helm chart matches the PostgreSQL/Cube Volume architecture.\n");

@@ -5,6 +5,7 @@ import {
 } from "@pi-cloud/protocol";
 import { randomUUID } from "node:crypto";
 import WebSocket, { type RawData } from "ws";
+import { PassThrough } from "node:stream";
 import type { SshTerminalGrant } from "./ticket-authority.ts";
 
 function websocketUrl(baseUrl: string): string {
@@ -44,10 +45,12 @@ export async function openToolBrokerTerminal(options: {
     headers: { authorization: `Bearer ${options.terminalToken}` },
     maxPayload: MAX_WORKSPACE_TERMINAL_FRAME_BYTES * 2,
     perMessageDeflate: false,
+    handshakeTimeout: 30_000,
   });
   await new Promise<void>((resolve, reject) => {
     socket.once("open", resolve);
     socket.once("error", reject);
+    socket.once("close", () => reject(new Error("Tool Broker closed before connecting")));
   });
   socket.send(
     JSON.stringify({
@@ -62,47 +65,62 @@ export async function openToolBrokerTerminal(options: {
     }),
   );
 
-  const queued: Uint8Array[] = [];
-  const waiters: Array<(value: IteratorResult<Uint8Array>) => void> = [];
+  const output = new PassThrough({ highWaterMark: 128 * 1024 });
+  output.on("drain", () => socket.resume());
+  // A protocol failure can arrive before the caller attaches its iterator.
+  output.on("error", () => {});
   let ended = false;
+  let opened = false;
   let readyResolve: (() => void) | undefined;
   let readyReject: ((error: Error) => void) | undefined;
   const ready = new Promise<void>((resolve, reject) => {
     readyResolve = resolve;
     readyReject = reject;
   });
-  const finish = (): void => {
+  const finish = (error?: Error): void => {
     if (ended) return;
     ended = true;
-    for (const waiter of waiters.splice(0)) waiter({ done: true, value: undefined });
+    if (!opened) readyReject?.(error ?? new Error("Tool Broker closed before terminal readiness"));
+    if (error) output.destroy(error);
+    else output.end();
   };
   socket.on("message", (data) => {
     try {
       const frame = parseWorkspaceTerminalServerFrame(JSON.parse(text(data)) as unknown);
       if (frame.type === "workspace_terminal.ready") {
+        opened = true;
         readyResolve?.();
       } else if (frame.type === "workspace_terminal.output") {
         const chunk = Buffer.from(frame.data, "base64");
-        const waiter = waiters.shift();
-        if (waiter === undefined) queued.push(chunk);
-        else waiter({ done: false, value: chunk });
+        if (!output.write(chunk)) socket.pause();
       } else if (frame.type === "workspace_terminal.error") {
-        readyReject?.(new Error(frame.message));
-        finish();
+        finish(new Error(frame.message));
       } else if (frame.type === "workspace_terminal.exit") {
         finish();
+      } else if (frame.type === "workspace_terminal.owner_redirect") {
+        finish(new Error("Terminal owner changed; reconnect for a fresh route"));
       }
     } catch (error: unknown) {
-      readyReject?.(error instanceof Error ? error : new Error("Terminal protocol failed"));
-      finish();
+      finish(error instanceof Error ? error : new Error("Terminal protocol failed"));
     }
   });
-  socket.once("close", finish);
+  socket.once("close", () => finish(new Error("Tool Broker terminal disconnected")));
   socket.once("error", (error) => {
-    readyReject?.(error);
-    finish();
+    finish(error);
   });
-  await ready;
+  const timer = setTimeout(() => {
+    finish(new Error("Tool Broker terminal readiness timed out"));
+    socket.terminate();
+  }, 30_000);
+  timer.unref();
+  try {
+    await ready;
+  } catch (error) {
+    socket.terminate();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   const send = async (frame: unknown): Promise<void> => {
     if (socket.readyState !== WebSocket.OPEN) throw new Error("Terminal is closed");
     await new Promise<void>((resolve, reject) =>
@@ -110,18 +128,7 @@ export async function openToolBrokerTerminal(options: {
     );
   };
   return {
-    output: {
-      [Symbol.asyncIterator]() {
-        return {
-          next: async (): Promise<IteratorResult<Uint8Array>> => {
-            const chunk = queued.shift();
-            if (chunk !== undefined) return { done: false, value: chunk };
-            if (ended) return { done: true, value: undefined };
-            return new Promise((resolve) => waiters.push(resolve));
-          },
-        };
-      },
-    },
+    output,
     input: (data) =>
       send({
         workspaceTerminalProtocolVersion: 1,
@@ -131,6 +138,8 @@ export async function openToolBrokerTerminal(options: {
     resize: (rows, cols) =>
       send({ workspaceTerminalProtocolVersion: 1, type: "workspace_terminal.resize", rows, cols }),
     close: async () => {
+      // A paused websocket must resume to finish its closing handshake.
+      socket.resume();
       if (socket.readyState === WebSocket.OPEN) {
         await send({ workspaceTerminalProtocolVersion: 1, type: "workspace_terminal.close" }).catch(
           () => undefined,
@@ -140,6 +149,7 @@ export async function openToolBrokerTerminal(options: {
         socket.terminate();
       }
       finish();
+      output.destroy();
     },
   };
 }

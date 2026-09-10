@@ -26,7 +26,8 @@ if (c.mode === 'list') {
     if (entries.length === 4096) { truncated = true; break; }
     const kind = item.isDirectory() ? 'directory' : item.isSymbolicLink() ? 'symlink' : item.isFile() ? 'file' : null;
     if (!kind) continue;
-    const stat = fs.lstatSync(path.join(target,item.name));
+    let stat; try { stat = fs.lstatSync(path.join(target,item.name)); }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
     entries.push({name:item.name,path:c.path ? c.path+'/'+item.name : item.name,kind,sizeBytes:stat.size,executable:(stat.mode & 73)!==0});
   } } finally { directory.closeSync(); }
   entries.sort((a,b)=>a.name.localeCompare(b.name)); result = {entries,truncated};

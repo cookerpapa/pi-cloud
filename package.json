@@ -82,6 +82,7 @@
     "production:vite-preview-check": "node scripts/run-live-vite-preview-check.mjs",
     "production:preview-isolation-check": "node scripts/run-live-preview-isolation-check.mjs",
     "production:browser-ui-check": "node scripts/run-live-browser-ui-check.mjs",
+    "browser:presentation:check": "node scripts/run-browser-presentation-check.mjs",
     "production:directory-picker-check": "node scripts/run-live-directory-picker-check.mjs",
     "production:subagents-check": "node scripts/run-live-subagent-production-check.mjs",
     "production:code-host-check": "node scripts/run-live-code-host-issue-check.mjs",

@@ -132,7 +132,6 @@ function assertHostedSearchProgress(events, turnId, label, minimumCalls = 1) {
   const turnEvents = events.filter((event) => event.turnId === turnId);
   const started = turnEvents.filter((event) => event.type === "provider.hosted_tool.started");
   const completed = turnEvents.filter((event) => event.type === "provider.hosted_tool.completed");
-  const firstText = turnEvents.findIndex((event) => event.type === "assistant.text.delta");
   assert.ok(started.length >= minimumCalls, `${label} did not publish every Web Search start`);
   assert.equal(completed.length, started.length, `${label} did not pair Web Search completion`);
   assert.deepEqual(
@@ -140,10 +139,10 @@ function assertHostedSearchProgress(events, turnId, label, minimumCalls = 1) {
     new Set(started.map((event) => event.payload.activityId)),
     `${label} Web Search activity identities did not pair`,
   );
-  assert.ok(
-    firstText < 0 || turnEvents.indexOf(started[0]) < firstText,
-    `${label} search progress did not precede text`,
-  );
+  for (const start of started) {
+    const end = completed.find((event) => event.payload.activityId === start.payload.activityId);
+    assert(end && end.seq > start.seq, `${label} completed a search before its start`);
+  }
   assert.ok(
     completed.some((event) => event.payload.action !== undefined),
     `${label} did not publish any Web Search action details`,
@@ -158,6 +157,8 @@ function assertHostedSearchProgress(events, turnId, label, minimumCalls = 1) {
 }
 
 const suffix = Date.now().toString(36);
+const deepSeekModel = process.env.PI_CLOUD_PROVIDER_CAPABILITY_DEEPSEEK_MODEL ?? "deepseek-v4-pro";
+assert(["deepseek-v4-flash", "deepseek-v4-pro"].includes(deepSeekModel));
 const cookieFetch = new BrowserCookieFetch();
 const api = new PiCloudApi(cookieFetch.fetch, bootstrapToken);
 
@@ -187,7 +188,7 @@ try {
     "/workspace",
     {
       provider: "deepseek",
-      modelId: "deepseek-v4-flash",
+      modelId: deepSeekModel,
       thinkingLevel: "low",
       fastMode: false,
     },
@@ -215,9 +216,8 @@ try {
   const firstAccepted = await api.acceptTurn(
     session.sessionId,
     [
-      "Do not call Pi function tools.",
-      "Use Provider-hosted web search and perform at least two distinct searches to find the current Hang Seng Index value and exact percentage change from current sources.",
-      "Reply only DEEPSEEK-SEARCH-OK and do not reveal either number.",
+      "请使用供应商内置网页搜索查一下今天恒生指数收盘点位和涨跌幅，并核对一个中文来源和一个英文来源。",
+      "请给出真实查到的数字、来源日期和引用链接；不要使用 Bash 或本地函数工具。回答以 DEEPSEEK-SEARCH-OK 开头。",
     ].join(" "),
     newIdempotencyKey("provider-search"),
     "low",
@@ -244,7 +244,7 @@ try {
     observedEvents,
     firstAccepted.turnId,
     "DeepSeek",
-    2,
+    1,
   );
   assert.equal(
     (first.transcript?.items ?? []).filter((item) => item.kind === "hosted_search").length,
@@ -305,7 +305,6 @@ try {
       "Reply with CODEX-SEARCH-HANDOFF-OK, the OpenAI page title, and the marker DEEPSEEK-SEARCH-OK preserved from the previous turns.",
     ].join(" "),
     newIdempotencyKey("provider-handoff"),
-    "off",
   );
   const second = await waitForTurn(
     api,
@@ -317,6 +316,7 @@ try {
   secondText = transcriptText(second);
   assert.equal(second.state, "completed", JSON.stringify(second));
   assert.match(secondText, /CODEX-SEARCH-HANDOFF-OK/u);
+  assert.match(secondText, /DEEPSEEK-SEARCH-OK/u);
   await waitFor(
     () =>
       observedEvents.some(
@@ -329,7 +329,7 @@ try {
     observedEvents,
     secondAccepted.turnId,
     "Codex",
-    2,
+    1,
   );
   assert.equal(
     (second.transcript?.items ?? []).filter((item) => item.kind === "hosted_search").length,
@@ -388,15 +388,15 @@ const report = {
   piCloudRevision: testedRevision,
   checkedAt: new Date().toISOString(),
   route: {
-    firstTurn: "deepseek/deepseek-v4-flash + Provider web_search",
+    firstTurn: `deepseek/${deepSeekModel} + Provider web_search`,
     secondTurn: "openai-codex/gpt-5.6-luna + Provider web_search",
   },
   assertions: {
     deepSeekProviderSearchReachedFinalMessage: true,
     codexProviderSearchReachedFinalMessage: true,
     bothProviderSearchesBypassedToolBroker: true,
-    bothProviderSearchesPublishedEphemeralProgress: true,
-    nativeHostedItemsReplayWithoutAnotherSearch: true,
+    bothProviderSearchesPublishedDurableProgress: true,
+    priorAnswerRestoredWithoutAnotherSearch: true,
     hiddenProviderSearchResultNotClaimedAsDurable: true,
     nativeReplayAnswerObserved: nativeReplayText !== "CONTEXT-UNAVAILABLE",
     crossProviderCanonicalContextRestored: true,

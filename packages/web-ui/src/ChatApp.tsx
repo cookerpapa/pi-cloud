@@ -2155,9 +2155,7 @@ export default function ChatApp() {
                         ) : (
                           <div className="product-inherited-assistant">
                             <div className="product-assistant-content">
-                              <Markdown sessionId={selectedDelegatedSession?.sessionId}>
-                                {message.text}
-                              </Markdown>
+                              <Markdown>{message.text}</Markdown>
                               <div className="product-answer-actions">
                                 <MessageCopyButton
                                   copiedLabel={t("turn.copied")}
@@ -2194,7 +2192,6 @@ export default function ChatApp() {
                       }
                       key={turn.turnId}
                       onPresentationProgress={followProgressiveText}
-                      sessionId={selectedDelegatedSession?.sessionId ?? state.session?.sessionId}
                       {...(target === undefined
                         ? {}
                         : {

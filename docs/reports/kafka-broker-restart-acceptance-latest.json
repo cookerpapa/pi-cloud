@@ -1,15 +1,18 @@
 {
   "accepted": true,
-  "piCloudRevision": "8b79bab061318cd5d5d434c1154fe4c5a1d4cf19",
-  "checkedAt": "2026-09-05T01:31:21.234Z",
+  "piCloudRevision": "260e1fba3f954e5dd86d8793ee01b02665feb102",
+  "checkedAt": "2026-09-10T14:46:27.810Z",
   "provider": "openai-codex",
   "modelId": "gpt-5.6-terra",
-  "runId": "179ed5f3-1dc8-4c76-a69c-09137edd7f68",
-  "turnId": "555a3b73-1a16-451a-9fa0-25c8cb91546a",
+  "runId": "164c167a-7f03-48a6-ba83-52f801ebc4a0",
+  "turnId": "5a90f537-2e24-4bdd-82dd-136d5b288fe0",
   "firstTextSequence": 3,
-  "terminalSequence": 229,
+  "terminalSequence": 219,
   "sseReconnects": 0,
   "attemptCount": 1,
   "faultMode": "kafka-broker",
-  "elapsedMs": 26259
+  "recordsProducedWhileProjectorDown": 0,
+  "visiblePrefixPreserved": true,
+  "liveMatchesCanonical": true,
+  "elapsedMs": 25999
 }

@@ -39,6 +39,53 @@ afterAll(async () => {
 });
 
 describe.sequential("PostgresPiSessionStorage", () => {
+  it("rejects cyclic, missing and non-chronological parents without ancestry arrays", async () => {
+    const sessionId = crypto.randomUUID();
+    const storage = await PostgresPiSessionStorage.create({
+      database,
+      tenantId: TENANT_ID,
+      sessionId,
+    });
+    const a = await storage.appendEntry(
+      { id: "a", type: "custom", customType: "state", data: 1 },
+      "main",
+    );
+    const b = await storage.appendEntry(
+      { id: "b", type: "custom", customType: "state", data: 2 },
+      "main",
+    );
+    await storage.createLane("other", null);
+    const c = await storage.appendEntry(
+      { id: "c", type: "custom", customType: "state", data: 3 },
+      "other",
+    );
+    const parent = (id: string, parentId: string | null) =>
+      database
+        .updateTable("pi_session_entries")
+        .set({ parent_id: parentId })
+        .where("tenant_id", "=", TENANT_ID)
+        .where("session_id", "=", sessionId)
+        .where("id", "=", id)
+        .execute();
+    await parent(a.id, b.id);
+    await expect(storage.findEntriesOnBranch({ start: b.id })).rejects.toMatchObject({
+      code: "invalid_entry",
+    });
+    await parent(a.id, null);
+    await parent(b.id, "missing");
+    await expect(storage.findEntriesOnBranch({ start: b.id })).rejects.toMatchObject({
+      code: "invalid_entry",
+    });
+    await parent(b.id, c.id); // not a cycle, but impossible for append-only ancestry
+    await expect(storage.findEntriesOnBranch({ start: b.id })).rejects.toMatchObject({
+      code: "invalid_entry",
+    });
+    await parent(b.id, a.id);
+    expect((await storage.findEntriesOnBranch({ start: b.id })).map((e) => e.id)).toEqual([
+      b.id,
+      a.id,
+    ]);
+  });
   it("stops latest-entry recursion after the requested match instead of traversing the full ancestry", async () => {
     const sessionId = crypto.randomUUID();
     const storage = await PostgresPiSessionStorage.create({
@@ -59,7 +106,7 @@ describe.sequential("PostgresPiSessionStorage", () => {
       database: database.withPlugin({
         transformQuery({ node, queryId }) {
           const query = database.getExecutor().compileQuery(node, queryId);
-          if (query.sql.includes("with recursive visible")) branchQuery = query;
+          if (query.sql.includes("with recursive scope")) branchQuery = query;
           return node;
         },
         async transformResult({ result }) {

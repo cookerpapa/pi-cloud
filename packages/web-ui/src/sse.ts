@@ -230,6 +230,7 @@ export async function streamSessionEvents(options: StreamSessionEventsOptions): 
         },
       );
       if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
         throw new SessionStreamError(
           `SSE request failed with HTTP ${String(response.status)}`,
           response.status >= 500 || response.status === 408 || response.status === 429,

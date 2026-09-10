@@ -5,7 +5,7 @@ import { AuthScreen } from "../src/AuthScreen.tsx";
 import ChatApp, { connectionPhaseDisplayDelayMs } from "../src/ChatApp.tsx";
 import { ConversationTreeNavigator } from "../src/ConversationTreeNavigator.tsx";
 import { ConversationTurn } from "../src/ConversationTurn.tsx";
-import { conversationPreviewHref, Markdown } from "../src/Markdown.tsx";
+import { Markdown } from "../src/Markdown.tsx";
 import { ToolActivity } from "../src/ToolActivity.tsx";
 import { PiCloudApi } from "../src/api.ts";
 import { ResourceManagementPage, resourceRefreshPending } from "../src/ResourceManagementPage.tsx";
@@ -55,27 +55,11 @@ describe("product chat experience", () => {
     expect(resourceRefreshPending([{ ...environment, state: "running" }])).toBe(false);
   });
 
-  it("maps arbitrary localhost application links through the authenticated conversation gateway", () => {
-    const sessionId = "10000000-0000-4000-8000-000000000001";
-    expect(conversationPreviewHref("http://localhost:5173/game?mode=demo", sessionId)).toBe(
-      `/v1/conversations/${sessionId}/preview/5173/game?mode=demo`,
-    );
-    expect(conversationPreviewHref("https://example.com/app", sessionId)).toBe(
-      "https://example.com/app",
-    );
-    expect(conversationPreviewHref("http://localhost:49983/health", sessionId)).toBe(
-      "http://localhost:49983/health",
-    );
-  });
-
-  it("renders a bare localhost URL as an authenticated application action", () => {
-    const sessionId = "10000000-0000-4000-8000-000000000099";
-    const markup = renderToStaticMarkup(
-      <Markdown sessionId={sessionId}>http://127.0.0.1:8000/snake.html</Markdown>,
-    );
-    expect(markup).toContain("打开应用（端口 8000）↗");
-    expect(markup).toContain(`/v1/conversations/${sessionId}/preview/8000/snake.html`);
-    expect(markup).not.toContain(">http://127.0.0.1:8000/snake.html<");
+  it("does not fabricate Preview actions by rewriting model-authored localhost links", () => {
+    const markup = renderToStaticMarkup(<Markdown>http://127.0.0.1:8000/snake.html</Markdown>);
+    expect(markup).not.toContain("/preview/");
+    expect(markup).toContain('href="http://127.0.0.1:8000/snake.html"');
+    expect(markup).toContain(">http://127.0.0.1:8000/snake.html<");
   });
 
   it("restores a durable login without rendering the old operator console", () => {

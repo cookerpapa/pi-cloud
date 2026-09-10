@@ -1,22 +1,22 @@
 {
-  "checkedAt": "2026-09-07T04:50:46.540Z",
+  "checkedAt": "2026-09-10T15:09:28.692Z",
   "runs": [
     {
-      "runId": "255ac7f3-c5d3-491a-a05a-247cb15c9cad",
-      "elapsedMs": 10162
+      "runId": "c9a56db5-2acb-49b7-8ac7-0650544d6cd0",
+      "elapsedMs": 11493
     },
     {
-      "runId": "56e87244-e0c7-42b0-ab32-96d57d9f1ccf",
-      "elapsedMs": 1067
+      "runId": "59da27b3-492d-47be-887d-cc7fc5fac3c8",
+      "elapsedMs": 1404
     },
     {
-      "runId": "629c8d82-9866-4455-945f-1b33fbf9d8a9",
-      "elapsedMs": 10154
+      "runId": "adb95598-1497-435d-b567-6c78548313c8",
+      "elapsedMs": 12241
     }
   ],
   "accepted": true,
   "hostPowerLossTested": false,
-  "environmentId": "47836de6-c8e7-466b-a4cd-64fc35534e78",
+  "environmentId": "40ee835e-265f-425d-9dfc-f0c49d0469db",
   "stoppedApplicationDidNotStopMachine": true,
   "applicationRestarted": true,
   "browserReadOutsideHome": true,
@@ -24,9 +24,9 @@
   "brokerRestartPreservedRootFilesProcessAndPreview": true,
   "resetMarkers": 0,
   "usage": {
-    "input": 2827,
-    "output": 2392,
-    "cacheRead": 88192
+    "input": 10844,
+    "output": 3409,
+    "cacheRead": 119424
   },
   "rootOwnedDeletionFixture": true,
   "resourcesReleased": true,

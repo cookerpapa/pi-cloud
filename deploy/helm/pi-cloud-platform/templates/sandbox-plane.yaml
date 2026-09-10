@@ -133,7 +133,7 @@ spec:
             capabilities: { drop: [ALL] }
           resources: {{- toYaml .Values.sandboxPlane.toolBrokerResources | nindent 12 }}
           volumeMounts:
-            - { name: secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: database-url, readOnly: true }
+            - { name: secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: {{ .Values.external.database.secretKey }}, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/tool-broker-token, subPath: tool-broker-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/tool-dispatch-token, subPath: tool-dispatch-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/workspace-service-token, subPath: workspace-service-token, readOnly: true }
@@ -224,7 +224,8 @@ spec:
           volumeMounts:
             - { name: workspace-rwx, mountPath: /data/workspaces }
             - { name: gateway-state, mountPath: /var/lib/pi-cloud }
-            - { name: secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: database-url, readOnly: true }
+            # Session-level advisory locks need a direct PostgreSQL connection.
+            - { name: secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: {{ .Values.external.database.notificationSecretKey }}, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/workspace-volume-gateway-token, subPath: workspace-volume-gateway-token, readOnly: true }
             - { name: secrets, mountPath: /run/pi-cloud-secrets/metrics-token, subPath: metrics-token, readOnly: true }
             - { name: tmp, mountPath: /tmp }

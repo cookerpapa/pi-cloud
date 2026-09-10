@@ -324,7 +324,10 @@ Kubernetes Secret for credentials. Important value groups are:
 
 The database URL may use PgBouncer transaction pooling. The separate
 notification URL must connect directly to PostgreSQL because `LISTEN` is
-session-scoped. Workspace storage must support ReadWriteMany for replicated
+session-scoped. The Volume Gateway also mounts this direct Secret key for its
+session-scoped advisory locks; transaction-pooling endpoints must not be used
+there. Its dedicated lock pool discards a connection if cleanup is uncertain.
+Workspace storage must support ReadWriteMany for replicated
 Volume gateways.
 
 ## Validate changes

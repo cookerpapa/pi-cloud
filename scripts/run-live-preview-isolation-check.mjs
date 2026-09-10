@@ -156,7 +156,11 @@ try {
       "off",
     ),
   ]);
-  await Promise.all([waitForRun(api, acceptedA.runId), waitForRun(api, acceptedB.runId)]);
+  const completions = await Promise.allSettled([
+    waitForRun(api, acceptedA.runId),
+    waitForRun(api, acceptedB.runId),
+  ]);
+  for (const result of completions) if (result.status === "rejected") throw result.reason;
 
   const [aUi, aApi, bUi, bApi] = await Promise.all([
     preview(browser, sessionA.sessionId, 3_000),
@@ -183,12 +187,18 @@ try {
     "off",
   );
   await waitForRun(api, third.runId);
-  const [aUiAfter, aThird] = await Promise.all([
+  const [aUiAfter, aApiAfter, aThird, bUiAfter, bApiAfter] = await Promise.all([
     preview(browser, sessionA.sessionId, 3_000),
+    preview(browser, sessionA.sessionId, 8_000),
     preview(browser, sessionA.sessionId, 5_173),
+    preview(browser, sessionB.sessionId, 3_000),
+    preview(browser, sessionB.sessionId, 8_000),
   ]);
   assert.match(aUiAfter, /SESSION-A-UI-3000/u);
+  assert.match(aApiAfter, /SESSION-A-API-8000/u);
   assert.match(aThird, /SESSION-A-THIRD-5173/u);
+  assert.match(bUiAfter, /SESSION-B-UI-3000/u);
+  assert.match(bApiAfter, /SESSION-B-API-8000/u);
   progress("one Session retained three simultaneous services across Turns");
 
   const report = {

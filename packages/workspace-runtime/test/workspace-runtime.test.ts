@@ -85,6 +85,10 @@ describe("shared workspace runtime", () => {
     });
     expect(() => parseWorkspaceSeed(settlement)).toThrow(/portable file bytes/);
 
+    const invalid = JSON.parse(Buffer.from(settlement).toString("utf8"));
+    invalid.fencingToken = 0;
+    expect(() => createWorkspaceVolumeSettlement(invalid)).toThrow(/reference is invalid/);
+
     const withUnexpectedField = JSON.parse(Buffer.from(settlement).toString("utf8")) as Record<
       string,
       unknown

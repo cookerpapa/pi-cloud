@@ -81,7 +81,7 @@ export function createWorkspaceVolumeSettlement(
   });
   const encoded = Buffer.from(JSON.stringify(value), "utf8");
   if (encoded.byteLength > MAX_WORKSPACE_BLOB_BYTES) fail();
-  parseWorkspaceVolumeSettlement(encoded);
+  if (parseWorkspaceVolumeSettlement(encoded) === undefined) fail();
   return encoded;
 }
 

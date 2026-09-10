@@ -519,6 +519,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       }
       const listed = (await readdir(target.absolute, { withFileTypes: true }))
         .filter((entry) => entry.name !== ".git" && entry.name !== WORKSPACE_GIT_CREDENTIALS_FILE)
+        .filter((entry) => entry.isDirectory() || entry.isFile() || entry.isSymbolicLink())
         .sort((left, right) => left.name.localeCompare(right.name));
       const entries = await Promise.all(
         listed.slice(0, 4_096).map(async (entry) => {
@@ -526,7 +527,13 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
             target.relative.length === 0 ? entry.name : `${target.relative}/${entry.name}`;
           if (entry.isSymbolicLink()) return { name: entry.name, path, kind: "symlink" as const };
           if (entry.isDirectory()) return { name: entry.name, path, kind: "directory" as const };
-          const file = await lstat(join(target.absolute, entry.name));
+          const file = await lstat(join(target.absolute, entry.name)).catch(
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return undefined;
+              throw error;
+            },
+          );
+          if (!file) return undefined;
           return {
             name: entry.name,
             path,
@@ -536,7 +543,10 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
           };
         }),
       );
-      return { entries, truncated: listed.length > entries.length };
+      return {
+        entries: entries.filter((entry): entry is NonNullable<typeof entry> => entry !== undefined),
+        truncated: listed.length > 4_096,
+      };
     });
   }
 

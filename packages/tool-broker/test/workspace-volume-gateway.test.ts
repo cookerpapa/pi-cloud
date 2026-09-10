@@ -14,7 +14,15 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as fileSystem from "node:fs/promises";
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    lstat: (...args: Parameters<typeof actual.lstat>) => Reflect.apply(actual.lstat, actual, args),
+  };
+});
 import {
   HttpWorkspaceVolumeGateway,
   PersistentVolumeWorkspaceVolumeGateway,
@@ -51,6 +59,32 @@ function identity(sessionId: string) {
 }
 
 describe("PersistentVolumeWorkspaceVolumeGateway", () => {
+  it("does not fail the whole directory when a concurrently deleted file disappears", async () => {
+    const workspaceRoot = await root();
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const scope = identity("directory-race");
+    await mover.prepare(scope);
+    const directory = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
+    const vanished = join(directory, "vanished.tmp");
+    await writeFile(vanished, "gone");
+    await writeFile(join(directory, "code.py"), "print(42)");
+    const original = fileSystem.lstat;
+    const inspect = vi.spyOn(fileSystem, "lstat").mockImplementation(async (...args) => {
+      if (String(args[0]) === vanished) await rm(vanished);
+      return Reflect.apply(original, fileSystem, args);
+    });
+    try {
+      await expect(
+        mover.listDirectory({ ...scope, rootPath: "", path: "" }),
+      ).resolves.toMatchObject({
+        entries: [{ name: "code.py", kind: "file" }],
+        truncated: false,
+      });
+    } finally {
+      inspect.mockRestore();
+      await mover.close();
+    }
+  });
   it("browses an unmaterialized root without creating storage", async () => {
     const workspaceRoot = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });

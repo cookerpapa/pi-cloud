@@ -2,7 +2,7 @@
 
 Accepted and implemented, 2026-09-09; replaces the PG receipt/cache boundary.
 [Production acceptance](../reports/kafka-native-session-cutover.md).
-The earlier [isolated experiment](../reports/kafka-native-session-append-experiment.md)
+The earlier isolated experiment (archived in Git before this production cutover)
 proved the append boundary but is not the production implementation.
 
 The trusted Worker hosts one native log writer for every active physical Pi

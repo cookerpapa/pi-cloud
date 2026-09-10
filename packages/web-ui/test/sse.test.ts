@@ -29,6 +29,22 @@ it("stops reconnecting for a deleted or unauthorized Session", async () => {
   expect(request).toHaveBeenCalledTimes(1);
 });
 
+it("releases an error response before retrying or failing the SSE request", async () => {
+  const cancel = vi.fn();
+  await expect(
+    streamSessionEvents({
+      sessionId: SESSION_ID,
+      signal: new AbortController().signal,
+      fetchImplementation: async () =>
+        new Response(new ReadableStream({ cancel }), { status: 404 }),
+      onSnapshot() {},
+      onEvent() {},
+      onStatus() {},
+    }),
+  ).rejects.toThrow("404");
+  expect(cancel).toHaveBeenCalledOnce();
+});
+
 function event(
   sequence: number,
   text: string,

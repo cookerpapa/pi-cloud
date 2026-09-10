@@ -293,6 +293,13 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
       and (${query.customType ?? null}::text is null or ${sql.ref(`${alias}.custom_type`)} = ${query.customType ?? null}::text)
       and (${query.cursor?.afterSeq ?? null}::bigint is null or ${sql.ref(`${alias}.seq`)} ${cursorOperator} ${query.cursor?.afterSeq ?? null}::bigint)
       then 1::bigint else 0::bigint end`;
+    // Every valid parent predates its child in the append log, including COW
+    // Forks. Decreasing sequence detects cycles without copying an O(depth)
+    // visited-ID array into every recursive row (quadratic transient storage).
+    // LATERAL/OFFSET 0 keeps each parent lookup parameterized by its exact ID;
+    // pulling the UNION into a hash join can rescan the whole Session per hop.
+    // Materialize only the one-row scope, not lifetime entries. This avoids
+    // rare-new-Session selectivity overriding the exact parent-ID lookup.
     const result = await sql<{
       payload: Record<string, unknown> | null;
       seq: string | null;
@@ -302,10 +309,11 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
       source_entry_id: string | null;
       diagnostic: boolean;
       start_missing: boolean;
-      cycle_detected: boolean;
-      parent_missing: boolean;
+      ancestry_invalid: boolean;
     }>`
-      with recursive visible as not materialized (
+      with recursive scope as materialized (
+        select ${this.#tenantId}::uuid as tenant, ${this.#sessionId}::text as session
+      ), visible as not materialized (
         select null::jsonb as payload,
                seq,
                parent_id,
@@ -315,9 +323,8 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
                custom_type,
                session_id as source_session_id,
                id as source_entry_id
-          from pi_session_entries
-         where tenant_id = ${this.#tenantId}::uuid
-           and session_id = ${this.#sessionId}::text
+          from pi_session_entries, scope
+         where tenant_id = scope.tenant and session_id = scope.session
         union all
         select null::jsonb as payload,
                seq,
@@ -328,9 +335,8 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
                custom_type,
                source_session_id,
                source_entry_id
-          from pi_session_entry_refs
-         where tenant_id = ${this.#tenantId}::uuid
-           and session_id = ${this.#sessionId}::text
+          from pi_session_entry_refs, scope
+         where tenant_id = scope.tenant and session_id = scope.session
       ), branch as (
         select payload,
                seq,
@@ -341,7 +347,6 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
                custom_type,
                source_session_id,
                source_entry_id,
-               array[id] as path,
                ${matches("visible")} as matches
           from visible
          where id = ${query.start}::text
@@ -355,12 +360,12 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
                parent.custom_type,
                parent.source_session_id,
                parent.source_entry_id,
-               branch.path || parent.id,
                branch.matches + ${matches("parent")}
-          from visible parent
-          join branch
-            on parent.id = branch.parent_id
-         where not parent.id = any(branch.path)
+          from branch
+          cross join lateral (
+            select * from visible where id = branch.parent_id offset 0
+          ) parent
+         where parent.seq < branch.seq
            and (${oldestFirst} or branch.matches < ${maximum}::bigint)
            and (${oldestFirst}
                 or ((${query.stopAtId ?? null}::text is null or branch.id <> ${query.stopAtId ?? null}::text)
@@ -369,18 +374,12 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
         select not exists (select 1 from branch) as start_missing,
                exists (
                  select 1 from branch child
-                  where child.parent_id is not null
-                    and child.parent_id = any(child.path)
-               ) as cycle_detected,
-               exists (
-                 select 1 from branch child
-                  where child.parent_id is not null
-                    and not child.parent_id = any(child.path)
-                    and not exists (
-                      select 1 from visible parent
-                       where parent.id = child.parent_id
-                    )
-               ) as parent_missing
+                 left join lateral (
+                   select seq from visible where id = child.parent_id offset 0
+                 ) parent on true
+                 where child.parent_id is not null
+                   and (parent.seq is null or parent.seq >= child.seq)
+               ) as ancestry_invalid
       ), boundary as (
         select case when ${oldestFirst}
                     then min(branch.seq)
@@ -415,14 +414,12 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
              selected.source_entry_id,
              false as diagnostic,
              diagnostics.start_missing,
-             diagnostics.cycle_detected,
-             diagnostics.parent_missing
+             diagnostics.ancestry_invalid
         from selected cross join diagnostics
       union all
       select null, null, null, null, null, null, true,
              diagnostics.start_missing,
-             diagnostics.cycle_detected,
-             diagnostics.parent_missing
+             diagnostics.ancestry_invalid
         from diagnostics
        where not exists (select 1 from selected)
       order by diagnostic asc, seq ${direction}
@@ -431,7 +428,7 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
     if (diagnostics.start_missing) {
       throw new SessionError("not_found", `Pi entry was not found: ${query.start}`);
     }
-    if (diagnostics.cycle_detected || diagnostics.parent_missing) {
+    if (diagnostics.ancestry_invalid) {
       throw new SessionError("invalid_entry", "Pi Session branch is corrupt");
     }
     const selectedRows = result.rows

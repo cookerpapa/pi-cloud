@@ -1,11 +1,11 @@
 # PostgreSQL Session projection acceptance
 
-- Complete messages: 2048
-- Throughput: 278.29 messages/s
-- Latency p50/p95/p99: 102.33 / 177.5 / 454.07 ms
-- WAL: 9315288 bytes (4548.48 bytes/message)
-- Log replay: 3708.32 Sessions/s, 29666.57 events/s
-- Log replay latency p50/p95/p99: 6.63 / 12.65 / 12.91 ms
+- Complete messages: 8000
+- Throughput: 292.61 messages/s
+- Latency p50/p95/p99: 798.83 / 1108.78 / 1940.54 ms
+- WAL: 36622400 bytes (4577.8 bytes/message)
+- Log replay: 2465.32 Sessions/s, 9861.27 events/s
+- Log replay latency p50/p95/p99: 93.02 / 124.43 / 137.35 ms
 - Failures: 0
 
 This measures complete semantic Session projection, not token deltas.
