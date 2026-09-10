@@ -122,6 +122,14 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Operations
 
+- [ ] Reconcile Cube Volume node refcounts after host/guest loss: the approved
+      reset found three references with no remaining instance or mount.
+- [ ] Resolve Cube template/artifact cleanup addresses from stable node identity;
+      obsolete Pod-IP locators blocked deletion until offline correction.
+- [ ] Choose an explicit local Cube MySQL binlog retention policy. The current
+      30-day default accumulated about 113 GiB; cleanup did not change that policy.
+      [Reset findings and verification](reports/environment-reset-20260910.md).
+
 - [ ] Run the one-host installer on a clean machine.
 - [ ] Add deployment-specific Kafka TLS/SASL/ACL examples.
 - [ ] Validate backup/restore and retention changes with active Runs.
