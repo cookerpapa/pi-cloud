@@ -11,7 +11,7 @@ import {
   parseExecutionLease,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
-import { PassThrough } from "node:stream";
+import { Duplex, PassThrough, Writable } from "node:stream";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1619,6 +1619,101 @@ describe("provider-backed Tool Tool Broker", () => {
       manager.execute(assignment.executionLease, operation("73400000-0000-4000-8000-000000000005")),
     ).resolves.toMatchObject({ exitCode: 0 });
     expect(fixture.forkWorkspace).toHaveBeenCalledTimes(1);
+    await manager.stop(parent.activationId, assignment);
+  });
+
+  it("allows a waiting workflow to fork while still rejecting active filesystem Tools, and deduplicates fork replies", async () => {
+    const fixture = providerFixture(),
+      output = new PassThrough();
+    const stream = Duplex.from({
+      readable: output,
+      writable: new Writable({
+        write(_chunk, _encoding, done) {
+          done();
+        },
+      }),
+    });
+    const manager = testBroker({
+      provider: { ...fixture.provider, openWorkflow: async () => stream },
+      idGenerator: () => ACTIVATION_ID,
+    });
+    const parent = await manager.create(createRequest);
+    const base = operation(crypto.randomUUID());
+    if (base.operation !== "bash.exec") throw new Error("Expected Bash fixture");
+    const { command: _command, ...envelope } = base;
+    const request = {
+      ...envelope,
+      operation: "workflow.exec" as const,
+      script: "await runs.run('child', {task:'inspect'})",
+      timeoutMs: 10000,
+    };
+    const running = manager.execute(assignment.executionLease, request);
+    let observed!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    const controller = new AbortController();
+    const bridge = await manager.attachWorkflow(
+      parent.activationId,
+      request.operationId,
+      assignment.executionLease,
+      (frame) => {
+        if (frame.type === "call") observed();
+      },
+      controller.signal,
+    );
+    output.write(
+      JSON.stringify({
+        type: "call",
+        id: 1,
+        method: "run",
+        args: { key: "child", task: { task: "inspect", workspace: "isolated" } },
+      }) + "\n",
+    );
+    await waiting;
+    const fork = {
+      toolBrokerProtocolVersion: 1 as const,
+      type: "workspace.fork" as const,
+      requestId: crypto.randomUUID(),
+      sourceActivationId: parent.activationId,
+      sourceAssignment: assignment,
+      target: {
+        tenantId: assignment.tenantId,
+        projectId: assignment.projectId,
+        workspaceId: crypto.randomUUID(),
+        sessionId: crypto.randomUUID(),
+      },
+    };
+    let started!: () => void, release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const execute = fixture.exec.getMockImplementation()!;
+    fixture.exec.mockImplementationOnce(async (...args) => {
+      started();
+      await gate;
+      return execute(...args);
+    });
+    const writing = manager.execute(assignment.executionLease, operation(crypto.randomUUID()));
+    await startedPromise;
+    await expect(manager.forkWorkspace(fork)).rejects.toMatchObject({
+      code: "workspace_runtime_busy",
+    });
+    release();
+    await writing;
+    const first = await manager.forkWorkspace(fork);
+    await expect(manager.forkWorkspace(fork)).resolves.toEqual(first);
+    expect(fixture.forkWorkspace).toHaveBeenCalledTimes(1);
+    output.write(JSON.stringify({ type: "complete", ok: true, value: "done" }) + "\n");
+    await expect(running).resolves.toMatchObject({
+      operation: "workflow.exec",
+      ok: true,
+      value: "done",
+    });
+    bridge.close();
     await manager.stop(parent.activationId, assignment);
   });
 

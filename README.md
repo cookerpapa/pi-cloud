@@ -22,10 +22,9 @@ This targets private or controlled enterprise deployments, not hostile public Sa
 Recovery preserves conversation meaning and reports uncertain Tool effects;
 it does **not** automatically replay arbitrary shell commands or restore lost process memory.
 
-**Security review pending:** scripted Subagent workflows currently use Node `vm`
-inside the trusted Worker. This is not a security boundary for untrusted JavaScript.
-Do not expose this deployment to untrusted workloads until the workflow execution
-boundary is resolved. See the [review status](docs/reports/full-review-20260910.md).
+Subagent control requests follow the ordered Kafka log. Workflow JavaScript runs
+inside Cube, never in the trusted Worker or Projector. See [Subagents](docs/SUBAGENTS.md)
+for the execution contract and its recovery limits.
 
 ## Architecture
 
@@ -57,8 +56,9 @@ flowchart TD
   O -->|"ordered execution seals"| K
   K --> P
   P -->|"semantic records + progress"| PG
+  P -->|"Subagent admission / Lane commands / input / result notifications"| W
   P -->|"Tool commands / seal / result receipt"| TB["Tool Broker"]
-  TB -->|"raw result read by Worker"| W
+  TB <-->|"owner-direct results / workflow duplex IO"| W
   API -->|"resource lifecycle"| TB
   G --> TB
   S["SSH client"] --> SG["SSH Gateway"] --> TB
@@ -169,7 +169,7 @@ npm run production:down
 ```
 
 **Existing installations:** drain Runs and project predecessor seals/Outbox,
-apply migration 135, and deploy matching Worker, Control Plane/Projector and Web
+apply migration 136, and deploy matching Worker, Control Plane/Projector and Broker
 images. Reload open browser pages for SSE v2. The v7 Kafka log, native history
 and Workspace bytes are preserved; there is no legacy snapshot decoder.
 
@@ -215,4 +215,5 @@ their named revision and topology, not timeless throughput or HA guarantees.
 
 [Map](docs/README.md) · [Configuration](docs/CONFIGURATION.md) ·
 [Threat model](docs/THREAT_MODEL.md) · [Cube](docs/CUBESANDBOX_PROVIDER.md) ·
+[Subagents](docs/SUBAGENTS.md) ·
 [ADRs](docs/adr/README.md) · [Roadmap](docs/ROADMAP.md) · [Backlog](docs/BACKLOG.md)

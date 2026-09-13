@@ -3,6 +3,7 @@ import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
 import type { Kysely } from "kysely";
 import { describe, expect, it } from "vitest";
 import { PostgresTrustedToolRuntime } from "../src/index.ts";
+import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
 
 function rootSessionDatabase(): Kysely<Database> {
   const query = {
@@ -41,6 +42,7 @@ describe("PostgresTrustedToolRuntime", () => {
   it("exposes root-session Tools with explicit non-Sandbox execution planes", async () => {
     const runtime = new PostgresTrustedToolRuntime({
       database: rootSessionDatabase(),
+      control: new SubagentControlClient(() => undefined),
       nativeLanes: {
         childAnchor() {
           throw new Error("unused");

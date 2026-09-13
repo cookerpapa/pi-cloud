@@ -76,6 +76,10 @@ export type CubeSandboxGuestCommandResult = Readonly<{
 }>;
 
 export interface CubeSandboxRuntimeClient {
+  openProgram?(
+    instance: CubeSandboxInstance,
+    input: { script: string; cwd: string },
+  ): Promise<Duplex>;
   openTcp?(instance: CubeSandboxInstance, port: number): Promise<Duplex>;
   checkHealth(): Promise<void>;
   ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume>;
@@ -801,9 +805,6 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     ) {
       throw new CubeRuntimeClientError("Invalid application port");
     }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.#requestTimeoutMs);
-    timeout.unref();
     // A connection-scoped byte relay, not a PTY or a resident control service.
     // No authority/credential is sent to the guest; the only target is loopback.
     const script = `const s=require('node:net').connect(${port},'127.0.0.1');
@@ -811,6 +812,30 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       s.on('error',()=>process.stderr.write('PI_CLOUD_TCP_FAILED\\n',()=>process.exit(1)));s.on('end',()=>process.stdout.end(()=>process.exit(0)));
       process.stdout.on('error',()=>process.exit(0));process.on('SIGTERM',()=>s.end());
       setTimeout(()=>process.exit(0),${PREVIEW_ACCESS_TTL_MS}).unref();`;
+    return this.#openProgram(instance, script, "/tmp", "PI_CLOUD_TCP_CONNECTED\n");
+  }
+
+  async openProgram(
+    instance: CubeSandboxInstance,
+    input: { script: string; cwd: string },
+  ): Promise<Duplex> {
+    return this.#openProgram(
+      instance,
+      input.script,
+      this.#guestPath(input.cwd),
+      "PI_CLOUD_WORKFLOW_READY\n",
+    );
+  }
+
+  async #openProgram(
+    instance: CubeSandboxInstance,
+    script: string,
+    cwd: string,
+    readyMarker: string,
+  ): Promise<Duplex> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.#requestTimeoutMs);
+    timeout.unref();
     let killRelay: (() => Promise<void>) | undefined;
     try {
       const response = await this.#dataFetch(
@@ -839,7 +864,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
                     "-e",
                     script,
                   ],
-                  cwd: "/tmp",
+                  cwd,
                   envs: {},
                 },
                 stdin: true,
@@ -886,7 +911,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       let connectionReport = "";
       // envd's start event proves only that the relay process exists. Do not
       // ACK CONNECT until that relay confirms the application's TCP socket.
-      while (!connectionReport.includes("PI_CLOUD_TCP_CONNECTED\n")) {
+      while (!connectionReport.includes(readyMarker)) {
         const next = await frames.next();
         if (next.done) throw new CubeRuntimeClientError("Guest TCP relay ended before connecting");
         if ((next.value.flags & CONNECT_END_STREAM_FLAG) !== 0) {
@@ -902,7 +927,10 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         const data = record(event.data ?? {}, "envd TCP data");
         if (typeof data.stderr === "string")
           connectionReport += Buffer.from(data.stderr, "base64").toString("utf8");
-        if (connectionReport.includes("PI_CLOUD_TCP_FAILED\n"))
+        if (
+          readyMarker === "PI_CLOUD_TCP_CONNECTED\n" &&
+          connectionReport.includes("PI_CLOUD_TCP_FAILED\n")
+        )
           throw new CubeApplicationPortError();
         if (connectionReport.length > 1024)
           throw new CubeRuntimeClientError("Guest TCP relay handshake was invalid");

@@ -175,14 +175,17 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Subagent execution
 
+- [x] ADR-0166: ordered Projector-driven child admission and communication,
+      Worker-owned native Lanes, event-driven result delivery, isolated Cube
+      workflow scripts; remove CLI emulation and validate the cutover live.
 - [x] Bind every delegated execution scope to a unique lane in its root Pi
       Session while retaining independent Run, event and ExecutionLease identity.
 - [x] Keep every active Lane of one physical Pi Session on one Worker, while
       preserving cold-Session reassignment after authority expiry.
 - [ ] Measure shared Pi Session sequence-row contention at the maximum supported
       concurrent Child count before raising the default tree concurrency.
-- [x] Remove persona/role profiles from the cloud contract and keep one neutral
-      upstream-compatible Child selector.
+- [x] Remove persona/role profiles from the cloud contract and keep one
+      task-based Subagent Tool, with no CLI or fake Session adapter.
 - [x] Keep context inheritance, Workspace placement and local Tool grants
       explicit and independent.
 - [x] Bind elastic and owned-machine Tools on the first actual local operation;

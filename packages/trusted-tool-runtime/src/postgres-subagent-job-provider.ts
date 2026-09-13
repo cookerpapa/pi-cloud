@@ -5,7 +5,6 @@ import type {
   SubagentExecutionState,
   SubagentWorkspaceMode,
 } from "@pi-cloud/database";
-import { PostgresPiSessionRepository } from "@pi-cloud/pi-session-postgres";
 import {
   parseCloudToolCapabilitySnapshot,
   parseExecutionLease,
@@ -31,6 +30,8 @@ export type StartCloudSubagentJobInput = Readonly<{
   contextMode: SubagentContextMode;
   workspaceMode: SubagentWorkspaceMode;
   requestedToolCapabilities?: CloudToolCapabilitySnapshot;
+  /** Frozen by the owning Session Host before the control command is logged. */
+  contextAnchor?: string | null;
   parentActivation?: Readonly<{
     activationId: string;
     assignment: ToolSandboxAssignment;
@@ -133,6 +134,7 @@ function requestSha256(input: StartCloudSubagentJobInput, tools: readonly string
       JSON.stringify({
         agentName: input.agentName,
         contextMode: input.contextMode,
+        contextAnchor: input.contextAnchor,
         parentExecutionId: parentExecution.attemptId,
         parentRunId: input.parentRunId,
         parentSessionId: input.parentSessionId,
@@ -228,7 +230,10 @@ export class PostgresSubagentJobProvider {
     this.#treePolicy = { ...treePolicy };
   }
 
-  async start(input: StartCloudSubagentJobInput): Promise<CloudSubagentJobHandle> {
+  async start(
+    input: StartCloudSubagentJobInput,
+    deferPreparation = false,
+  ): Promise<CloudSubagentJobHandle> {
     nonEmpty(input.parentToolCallId, "Parent Tool call", 256);
     nonEmpty(input.workflowRunId, "Subagent workflow Run", 256);
     nonEmpty(input.agentName, "Subagent name", 128);
@@ -256,27 +261,6 @@ export class PostgresSubagentJobProvider {
     }
 
     const pending = await this.#database.transaction().execute(async (transaction) => {
-      const replay = await transaction
-        .selectFrom("subagent_executions as execution")
-        .innerJoin("runs as child_run", (join) =>
-          join
-            .onRef("child_run.tenant_id", "=", "execution.tenant_id")
-            .onRef("child_run.id", "=", "execution.child_run_id"),
-        )
-        .select([
-          "execution.id",
-          "execution.child_session_id",
-          "execution.child_run_id",
-          "execution.state",
-          "execution.request_sha256",
-        ])
-        .where("execution.tenant_id", "=", input.tenantId)
-        .where("execution.parent_run_id", "=", input.parentRunId)
-        .where("execution.parent_tool_call_id", "=", input.parentToolCallId)
-        .where("execution.workflow_run_id", "=", input.workflowRunId)
-        .where("execution.step_index", "=", input.stepIndex)
-        .executeTakeFirst();
-
       const parent = await transaction
         .selectFrom("runs as parent_run")
         .innerJoin("run_attempts as parent_attempt", (join) =>
@@ -312,6 +296,7 @@ export class PostgresSubagentJobProvider {
           "parent_attempt.state as attemptState",
           "parent_attempt.lease_id as executionLeaseId",
           "parent_attempt.fencing_token as fencingToken",
+          "parent_attempt.output_sealed_at as outputSealedAt",
           "parent_session.id as sessionId",
           "parent_session.pi_session_id as piSessionId",
           "parent_session.desired_model_profile_id as modelProfileId",
@@ -349,6 +334,27 @@ export class PostgresSubagentJobProvider {
         input.workspaceMode,
       );
       const fingerprint = requestSha256(input, tools);
+      const replay = await transaction
+        .selectFrom("subagent_executions as execution")
+        .innerJoin("runs as child_run", (join) =>
+          join
+            .onRef("child_run.tenant_id", "=", "execution.tenant_id")
+            .onRef("child_run.id", "=", "execution.child_run_id"),
+        )
+        .select([
+          "execution.id",
+          "execution.child_session_id",
+          "execution.child_run_id",
+          "execution.state",
+          "execution.request_sha256",
+        ])
+        .where("execution.tenant_id", "=", input.tenantId)
+        .where("execution.parent_run_id", "=", input.parentRunId)
+        .where("execution.parent_tool_call_id", "=", input.parentToolCallId)
+        .where("execution.workflow_run_id", "=", input.workflowRunId)
+        .where("execution.step_index", "=", input.stepIndex)
+        .executeTakeFirst();
+
       if (replay !== undefined) {
         if (replay.request_sha256 !== fingerprint) {
           throw new PostgresSubagentJobError(
@@ -366,6 +372,7 @@ export class PostgresSubagentJobProvider {
 
       if (
         parent.currentAttemptId !== parentGrant.attemptId ||
+        parent.outputSealedAt !== null ||
         parent.runState !== "running" ||
         parent.attemptState !== "running" ||
         parent.executionLeaseId !== parentGrant.leaseId ||
@@ -475,10 +482,13 @@ export class PostgresSubagentJobProvider {
       }
 
       const executionId = this.#id();
-      const childLaneStart = this.#nativeLanes.childAnchor(
-        input.parentExecutionLease,
-        input.contextMode === "branch",
-      );
+      const childLaneStart =
+        input.contextAnchor !== undefined
+          ? input.contextAnchor
+          : this.#nativeLanes.childAnchor(
+              input.parentExecutionLease,
+              input.contextMode === "branch",
+            );
       const childSessionId = this.#id();
       const childPiSessionLane = `subagent-${executionId}`;
       const childTurnId = this.#id();
@@ -650,11 +660,12 @@ export class PostgresSubagentJobProvider {
         state: "preparing" as const,
       };
     });
-    if (pending.state === "preparing") return this.#prepareChild(input, pending);
+    if (pending.state === "preparing" && !deferPreparation)
+      return this.prepareChild(input, pending);
     return pending;
   }
 
-  async #prepareChild(
+  async prepareChild(
     input: StartCloudSubagentJobInput,
     pending: CloudSubagentJobHandle,
   ): Promise<CloudSubagentJobHandle> {
@@ -778,6 +789,8 @@ export class PostgresSubagentJobProvider {
         return { ...pending, state: "queued" as const };
       });
     } catch (error: unknown) {
+      if (error && typeof error === "object" && "retryable" in error && error.retryable === true)
+        throw error;
       await this.#failPreparation(input.tenantId, pending, "child_preparation_failed").catch(
         () => undefined,
       );
@@ -1002,20 +1015,32 @@ export class PostgresSubagentJobProvider {
       .where("tenant_id", "=", tenantId)
       .where("id", "=", status.childSessionId)
       .executeTakeFirstOrThrow();
-    const repository = new PostgresPiSessionRepository({ database: this.#database, tenantId });
-    const session = await repository.openById(binding.piSessionId);
-    const entries = await session
-      .view(binding.piSessionLane)
-      .findEntriesOnBranch({ order: "newestFirst" });
-    const final = entries.find(
-      (
-        entry,
-      ): entry is typeof entry & {
-        type: "message";
-        message: Extract<AgentMessage, { role: "assistant" }>;
-      } => entry.type === "message" && entry.message.role === "assistant",
-    );
-    const assistantOutput = final === undefined ? undefined : assistantText(final.message);
+    const run = await this.#database
+      .selectFrom("runs")
+      .select("turn_id")
+      .where("id", "=", status.childRunId)
+      .where("tenant_id", "=", tenantId)
+      .executeTakeFirstOrThrow();
+    const final = await this.#database
+      .selectFrom("pi_session_entries")
+      .select(["id", "payload"])
+      .where("tenant_id", "=", tenantId)
+      .where("session_id", "=", binding.piSessionId)
+      .where("turn_id", "=", run.turn_id)
+      .where("type", "=", "message")
+      .where(sql<string>`payload->'message'->>'role'`, "=", "assistant")
+      .orderBy("seq", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    const message = (final?.payload as { message?: AgentMessage } | undefined)?.message;
+    const assistantOutput = message?.role === "assistant" ? assistantText(message) : undefined;
+    if (final)
+      await this.#database
+        .updateTable("subagent_executions")
+        .set({ result_entry_id: final.id })
+        .where("tenant_id", "=", tenantId)
+        .where("id", "=", executionId)
+        .execute();
     return { ...status, ...(assistantOutput === undefined ? {} : { output: assistantOutput }) };
   }
 
@@ -1111,6 +1136,7 @@ export class PostgresSubagentJobProvider {
           completed_at: null,
           failure_code: null,
         })
+        .onConflict((conflict) => conflict.doNothing())
         .executeTakeFirstOrThrow();
     });
     return this.status(tenantId, executionId);

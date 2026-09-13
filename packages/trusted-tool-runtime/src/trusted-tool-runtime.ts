@@ -1,77 +1,50 @@
 import type { Database } from "@pi-cloud/database";
-import {
-  parseCloudToolCapabilitySnapshot,
-  type ExecuteTurnCommandMessage,
-  type ToolBrokerWorkspaceForkRequest,
-  type ToolBrokerWorkspaceForkResponse,
-  type ToolSandboxAssignment,
+import type {
+  ExecuteTurnCommandMessage,
+  SubagentControlRequest,
+  ToolSandboxAssignment,
 } from "@pi-cloud/protocol";
 import {
-  createPiSubagentsCloudTool,
-  PI_CLOUD_NEUTRAL_SUBAGENT,
-  preloadPiSubagentsCloudToolContract,
+  createCloudSubagentTool,
+  validateSubagentTask,
+  validateSubagentControl,
+  type CloudSubagentToolRuntime,
+  type SubagentControlClient,
+  type SubagentTask,
   type TrustedAgentTool,
+  type WorkflowExecutor,
+  type WorkflowHostCall,
 } from "@pi-cloud/sandbox-supervisor";
 import type { Kysely } from "kysely";
 import {
   PostgresSubagentJobProvider,
+  type NativeSubagentLanes,
   type CloudSubagentTreePolicy,
 } from "./postgres-subagent-job-provider.ts";
 import {
   createCloudContactSupervisorTool,
   createCloudSubagentSupervisorTool,
-  PostgresSubagentSupervisorChannel,
-} from "./postgres-subagent-supervisor-channel.ts";
+} from "./subagent-supervisor-tools.ts";
 import { createCloudPreviewTool } from "./postgres-preview-tool.ts";
 
+export type WorkflowCall = WorkflowHostCall;
 export type TrustedToolRunContext = Readonly<{
   command: ExecuteTurnCommandMessage;
   refreshServices(): Promise<void>;
   ensureActivation(): Promise<
     Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>
   >;
+  executeWorkflow?: WorkflowExecutor;
 }>;
-
 export interface TrustedToolRuntime {
-  start(): Promise<void>;
-  close(): void;
   create(context: TrustedToolRunContext): Promise<readonly TrustedAgentTool[]>;
 }
-
 export type PostgresTrustedToolRuntimeOptions = Readonly<{
   database: Kysely<Database>;
-  nativeLanes: import("./postgres-subagent-job-provider.ts").NativeSubagentLanes;
-  forkWorkspace?: (
-    request: ToolBrokerWorkspaceForkRequest,
-  ) => Promise<ToolBrokerWorkspaceForkResponse>;
-  scheduleOwnedSubagent?: (runId: string) => void;
+  nativeLanes: NativeSubagentLanes;
+  control: SubagentControlClient;
   treePolicy?: CloudSubagentTreePolicy;
-  onBackgroundError?: (error: unknown) => void;
-  reaperIntervalMs?: number;
 }>;
-
-function option(options: Record<string, unknown>, name: string): string | undefined {
-  const value = options[name];
-  return typeof value === "string" ? value : undefined;
-}
-
-function externalState(state: string) {
-  switch (state) {
-    case "completed":
-      return "completed" as const;
-    case "failed":
-      return "failed" as const;
-    case "cancelled":
-      return "stopped" as const;
-    case "unknown":
-      return "blocked" as const;
-    case "running":
-      return "running" as const;
-    default:
-      return "queued" as const;
-  }
-}
-
 function trusted(
   executionPlane: TrustedAgentTool["executionPlane"],
   tool: TrustedAgentTool["tool"],
@@ -79,199 +52,149 @@ function trusted(
   return { executionPlane, tool };
 }
 
+/** Worker composition: native context and log publication, never child admission. */
 export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
-  readonly #database: Kysely<Database>;
   readonly #jobs: PostgresSubagentJobProvider;
-  readonly #supervisor: PostgresSubagentSupervisorChannel;
-  readonly #scheduleOwnedSubagent: ((runId: string) => void) | undefined;
-  readonly #onBackgroundError: ((error: unknown) => void) | undefined;
-  readonly #reaperIntervalMs: number;
-  #reaper: NodeJS.Timeout | undefined;
-
-  constructor(options: PostgresTrustedToolRuntimeOptions) {
-    this.#database = options.database;
-    this.#jobs = new PostgresSubagentJobProvider({
-      database: options.database,
-      nativeLanes: options.nativeLanes,
-      ...(options.forkWorkspace === undefined ? {} : { forkWorkspace: options.forkWorkspace }),
-      ...(options.treePolicy === undefined ? {} : { treePolicy: options.treePolicy }),
-    });
-    this.#supervisor = new PostgresSubagentSupervisorChannel(options.database);
-    this.#scheduleOwnedSubagent = options.scheduleOwnedSubagent;
-    this.#onBackgroundError = options.onBackgroundError;
-    this.#reaperIntervalMs = options.reaperIntervalMs ?? 60_000;
+  constructor(readonly options: PostgresTrustedToolRuntimeOptions) {
+    this.#jobs = new PostgresSubagentJobProvider(options);
   }
-
-  async start(): Promise<void> {
-    await Promise.all([preloadPiSubagentsCloudToolContract(), this.#reapStalePreparations()]);
-    this.#reaper = setInterval(() => void this.#reapStalePreparations(), this.#reaperIntervalMs);
-    this.#reaper.unref();
-  }
-
-  close(): void {
-    if (this.#reaper !== undefined) clearInterval(this.#reaper);
-    this.#reaper = undefined;
-  }
-
-  async create({
-    command,
-    ensureActivation,
-    refreshServices,
-  }: TrustedToolRunContext): Promise<readonly TrustedAgentTool[]> {
+  async create(context: TrustedToolRunContext): Promise<readonly TrustedAgentTool[]> {
+    const { command, ensureActivation, refreshServices } = context;
+    const scope = command.payload;
+    const requests = new Map<
+      string,
+      { specification: string; published: Promise<void>; promise: Promise<Record<string, unknown>> }
+    >();
+    const control = async (
+      toolCallId: string,
+      request: SubagentControlRequest,
+      signal?: AbortSignal,
+      onPublished?: () => void,
+    ) => {
+      if ("target" in request)
+        await requests.get(JSON.stringify([toolCallId, request.target]))?.published;
+      return this.options.control.request({
+        executionLease: scope.executionLease,
+        toolCallId,
+        workflowId: toolCallId,
+        request,
+        ...(signal ? { signal } : {}),
+        ...(onPublished ? { onPublished } : {}),
+      });
+    };
     const preview = trusted(
       "platform",
       createCloudPreviewTool({
         refreshServices,
-        database: this.#database,
-        tenantId: command.payload.tenantId,
-        sessionId: command.payload.sessionId,
+        database: this.options.database,
+        tenantId: scope.tenantId,
+        sessionId: scope.sessionId,
       }),
     );
-    const session = await this.#database
+    const session = await this.options.database
       .selectFrom("sessions")
       .select("session_kind")
-      .where("tenant_id", "=", command.payload.tenantId)
-      .where("id", "=", command.payload.sessionId)
+      .where("tenant_id", "=", scope.tenantId)
+      .where("id", "=", scope.sessionId)
       .executeTakeFirstOrThrow();
-    const treeContext =
+    const tree =
       session.session_kind === "subagent"
-        ? await this.#jobs.treeContext(command.payload.tenantId, command.payload.runId)
+        ? await this.#jobs.treeContext(scope.tenantId, scope.runId)
         : undefined;
-    const contact =
-      treeContext === undefined
-        ? undefined
-        : trusted(
-            "orchestration",
-            createCloudContactSupervisorTool({
-              channel: this.#supervisor,
-              tenantId: command.payload.tenantId,
-              childSessionId: command.payload.sessionId,
-              childRunId: command.payload.runId,
-            }),
-          );
-    const supervisor = trusted(
-      "orchestration",
-      createCloudSubagentSupervisorTool({
-        channel: this.#supervisor,
-        jobs: this.#jobs,
-        tenantId: command.payload.tenantId,
-        parentSessionId: command.payload.sessionId,
-      }),
-    );
-    if (treeContext !== undefined && !treeContext.canSpawnChildren) {
-      return [preview, ...(contact === undefined ? [] : [contact]), supervisor];
-    }
+    const contact = tree
+      ? trusted("orchestration", createCloudContactSupervisorTool(control))
+      : undefined;
+    const supervisor = trusted("orchestration", createCloudSubagentSupervisorTool(control));
+    const tools = [preview, ...(contact ? [contact] : [])];
+    if (tree && !tree.canSpawnChildren) return [...tools, supervisor];
 
-    const delegation = trusted(
-      "orchestration",
-      await createPiSubagentsCloudTool({
-        context: {
-          parentSessionId: command.payload.sessionId,
-          model: {
-            provider: command.payload.model.provider,
-            id: command.payload.model.modelId,
+    const run: CloudSubagentToolRuntime["run"] = (toolCallId, task, signal) => {
+      validateSubagentTask(task);
+      const key = JSON.stringify([toolCallId, task.key]);
+      const specification = JSON.stringify({
+        task: task.task,
+        context: task.context ?? "fresh",
+        workspace: task.workspace ?? "shared",
+        tools: task.tools?.slice().sort() ?? null,
+      });
+      const previous = requests.get(key);
+      if (previous) {
+        if (previous.specification !== specification)
+          return Promise.reject(new Error("Workflow key reused with different task arguments"));
+        return previous.promise;
+      }
+      const anchor = this.options.nativeLanes.childAnchor(
+        scope.executionLease,
+        task.context === "branch",
+      );
+      let published!: () => void, failed!: (error: unknown) => void;
+      const publication = new Promise<void>((resolve, reject) => {
+        published = resolve;
+        failed = reject;
+      });
+      void publication.catch(() => {});
+      const promise = (async () => {
+        const parentActivation =
+          task.workspace === "isolated" ? await ensureActivation() : undefined;
+        const started = await control(
+          toolCallId,
+          {
+            action: "start",
+            key: task.key,
+            task: task.task,
+            context: task.context ?? "fresh",
+            workspace:
+              task.workspace === "isolated"
+                ? "isolated"
+                : task.tools?.length === 0
+                  ? "none"
+                  : "shared",
+            anchor,
+            ...(task.tools ? { tools: task.tools } : {}),
+            ...(parentActivation ? { parentActivation } : {}),
           },
-          thinkingLevel: command.payload.model.thinkingLevel,
-        },
-        coordinator: {
-          start: async (input, parentToolCallId) => {
-            if (input.agent !== PI_CLOUD_NEUTRAL_SUBAGENT) {
-              throw new Error("PiCloud role profiles were removed; use the neutral cloud child");
+          signal,
+          published,
+        );
+        if (typeof started.executionId !== "string")
+          throw new Error("Subagent admission did not return an execution identity");
+        return control(toolCallId, { action: "wait", target: started.executionId }, signal);
+      })();
+      void promise.catch(failed);
+      requests.set(key, { specification, published: publication, promise });
+      return promise;
+    };
+    const runtime: CloudSubagentToolRuntime = {
+      run,
+      control,
+      workflow: async (toolCallId, script, signal, onUpdate) => {
+        if (!context.executeWorkflow) throw new Error("Isolated workflow execution is unavailable");
+        return context.executeWorkflow(
+          toolCallId,
+          script,
+          async (method, args, callSignal) => {
+            if (method === "run") {
+              if (typeof args.key !== "string" || !args.task || typeof args.task !== "object")
+                throw new Error("runs.run requires a key and task specification");
+              return run(
+                toolCallId,
+                { ...args.task, key: args.key } as SubagentTask,
+                callSignal ?? signal,
+              );
             }
-            const contextMode = option(input.options, "contextMode");
-            const workspaceMode = option(input.options, "workspaceMode");
-            if (contextMode !== "fresh" && contextMode !== "branch") {
-              throw new Error("pi-subagents provided an invalid context mode");
-            }
-            if (
-              workspaceMode !== "none" &&
-              workspaceMode !== "shared" &&
-              workspaceMode !== "isolated"
-            ) {
-              throw new Error("pi-subagents provided an unsupported Workspace mode");
-            }
-            const tools = parseCloudToolCapabilitySnapshot(input.options.requestedToolCapabilities);
-            const systemPrompt = option(input.options, "systemPrompt");
-            const parentActivation =
-              workspaceMode === "isolated" ? await ensureActivation() : undefined;
-            const child = await this.#jobs.start({
-              tenantId: command.payload.tenantId,
-              parentSessionId: command.payload.sessionId,
-              parentRunId: command.payload.runId,
-              parentExecutionLease: command.payload.executionLease,
-              parentToolCallId,
-              workflowRunId: input.runId,
-              stepIndex: input.stepIndex,
-              agentName: input.agent,
-              prompt: input.prompt,
-              ...(systemPrompt === undefined ? {} : { systemPrompt }),
-              contextMode,
-              workspaceMode,
-              requestedToolCapabilities: tools,
-              ...(parentActivation === undefined ? {} : { parentActivation }),
-            });
-            this.#scheduleOwnedSubagent?.(child.childRunId);
-            return {
-              providerJobId: child.executionId,
-              state: externalState(child.state),
-            };
-          },
-          status: async (providerJobId) => {
-            const child = await this.#jobs.status(command.payload.tenantId, providerJobId);
-            const coordination = await this.#supervisor.latestForExecution(
-              command.payload.tenantId,
-              providerJobId,
+            if (!["status", "wait", "cancel", "send"].includes(method))
+              throw new Error("Unknown workflow control method");
+            return control(
+              toolCallId,
+              validateSubagentControl({ ...args, action: method }),
+              callSignal ?? signal,
             );
-            return {
-              providerJobId,
-              state: coordination?.expectsReply === true ? "blocked" : externalState(child.state),
-              ...(coordination === undefined
-                ? {}
-                : {
-                    coordinationRequest: {
-                      requestId: coordination.requestId,
-                      reason: coordination.reason,
-                      message: coordination.message,
-                      expectsReply: coordination.expectsReply,
-                    },
-                  }),
-              ...(child.failureCode === undefined ? {} : { failureCode: child.failureCode }),
-              ...(child.failureMessage === undefined
-                ? {}
-                : { failureMessage: child.failureMessage }),
-            };
           },
-          result: async (providerJobId) => {
-            const child = await this.#jobs.result(command.payload.tenantId, providerJobId);
-            return {
-              providerJobId,
-              state: externalState(child.state),
-              ...(child.output === undefined ? {} : { output: child.output }),
-              ...(child.failureCode === undefined ? {} : { failureCode: child.failureCode }),
-              ...(child.failureMessage === undefined
-                ? {}
-                : { failureMessage: child.failureMessage }),
-            };
-          },
-          reattach: async (providerJobId) => {
-            const child = await this.#jobs.status(command.payload.tenantId, providerJobId);
-            return { providerJobId, state: externalState(child.state) };
-          },
-          cancel: async (providerJobId) => {
-            const child = await this.#jobs.cancel(command.payload.tenantId, providerJobId);
-            return { providerJobId, state: externalState(child.state) };
-          },
-        },
-      }),
-    );
-    return [preview, ...(contact === undefined ? [] : [contact]), delegation, supervisor];
-  }
-
-  async #reapStalePreparations(): Promise<void> {
-    try {
-      await this.#jobs.reapStalePreparations();
-    } catch (error: unknown) {
-      this.#onBackgroundError?.(error);
-    }
+          signal,
+          onUpdate,
+        );
+      },
+    };
+    return [...tools, trusted("orchestration", createCloudSubagentTool(runtime)), supervisor];
   }
 }

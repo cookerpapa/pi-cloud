@@ -281,6 +281,10 @@ export class PostgresNativeSessionHost {
     if (!parent || parent.closed) throw new Error("Parent native Session writer is unavailable");
     return inherit ? (parent.baseContext().at(-1)?.id ?? null) : null;
   }
+  hasLease(executionLease: string): boolean {
+    const lane = this.#leases.get(executionLease);
+    return !!lane && !lane.closed;
+  }
 
   async createChildLane(input: { executionLease: string; lane: string; at: string | null }) {
     const parent = this.#leases.get(input.executionLease);

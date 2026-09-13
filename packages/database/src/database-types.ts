@@ -679,6 +679,25 @@ export interface SubagentExecutionTable {
   settled_at: NullableTimestamp;
 }
 
+export interface SubagentControlCommandTable {
+  id: string;
+  ordinal: GeneratedInt8;
+  tenant_id: string;
+  run_id: string;
+  attempt_id: string;
+  partition: number;
+  command: Record<string, unknown>;
+  child_execution_id: GeneratedNullable<string>;
+  supervisor_request_id: GeneratedNullable<string>;
+  target_session_id: GeneratedNullable<string>;
+  input_attempt_id: GeneratedNullable<string>;
+  input_consumed_at: NullableTimestamp;
+  response: GeneratedNullable<Record<string, unknown>>;
+  delivered_at: NullableTimestamp;
+  created_at: GeneratedTimestamp;
+  updated_at: GeneratedTimestamp;
+}
+
 export interface SubagentSupervisorRequestTable {
   id: string;
   tenant_id: string;
@@ -1236,6 +1255,7 @@ export interface Database {
   model_profiles: ModelProfileTable;
   sessions: SessionTable;
   subagent_executions: SubagentExecutionTable;
+  subagent_control_commands: SubagentControlCommandTable;
   subagent_supervisor_requests: SubagentSupervisorRequestTable;
   conversation_prune_operations: ConversationPruneOperationTable;
   turns: TurnTable;

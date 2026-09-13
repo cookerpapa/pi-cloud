@@ -1,61 +1,60 @@
 {
   "accepted": true,
-  "piCloudRevision": "260e1fba3f954e5dd86d8793ee01b02665feb102",
+  "piCloudRevision": "ba3a4bcfd00db08702c2f4800e6d0f5e5ac9ad51",
   "workingTreeDirty": true,
-  "checkedAt": "2026-09-10T14:05:09.275Z",
-  "account": "snake.acceptance.mtvlecyh",
-  "sessionId": "56b96691-26db-4775-b540-0600fa1d046b",
-  "workspaceId": "454e0493-6e94-4062-a85f-be4aa4d1e5ef",
-  "developmentEnvironmentId": "accc4005-40e6-4776-bd92-f0b709ae41ad",
-  "runId": "a0434eb6-ba09-4254-908a-add3f2751f68",
-  "toolCalls": 19,
-  "toolPreparations": 19,
+  "checkedAt": "2026-09-13T14:03:24.869Z",
+  "account": "snake.acceptance.mtzvvbs3",
+  "sessionId": "a2707f58-674f-4644-9516-5002b809119c",
+  "workspaceId": "03214ade-736f-4d09-9979-2ae9d90478a7",
+  "developmentEnvironmentId": "781ccdee-ba56-4120-9539-48c335fe920b",
+  "runId": "e05a30ac-e83d-41f3-84c3-47b1244bff60",
+  "toolCalls": 15,
+  "toolPreparations": 15,
   "preparationBrowser": {
-    "before": 3,
-    "recovered": 3,
+    "observed": 15,
     "spinner": true,
     "cleared": true
   },
   "previewToolUsed": true,
-  "firstDurableActivityMs": 3734,
-  "firstToolStartedMs": 8270,
-  "firstAssistantTextMs": 3734,
-  "settledMs": 410734,
+  "firstDurableActivityMs": 2095,
+  "firstToolStartedMs": 11740,
+  "firstAssistantTextMs": 2095,
+  "settledMs": 51696,
   "hostPreviewStatus": 200,
-  "previewOrigin": "http://p-b6a5a9795384e7f3015f9011.preview.localhost:8080",
-  "previewRoute": "/v1/conversations/56b96691-26db-4775-b540-0600fa1d046b/preview/4173",
+  "previewOrigin": "http://p-c7fcf7d3e46789cccd9eacb3.preview.localhost:8080",
+  "previewRoute": "/v1/conversations/a2707f58-674f-4644-9516-5002b809119c/preview/4173",
   "browserInteraction": {
     "before": {
-      "headX": 12,
-      "headY": 12,
+      "headX": 10,
+      "headY": 10,
       "score": 0,
       "running": false,
       "tick": 0
     },
     "after": {
-      "headX": 13,
-      "headY": 17,
+      "headX": 11,
+      "headY": 14,
       "score": 0,
       "running": true,
-      "tick": 6
+      "tick": 5
     },
     "paused": {
-      "headX": 13,
-      "headY": 17,
+      "headX": 11,
+      "headY": 14,
       "score": 0,
       "running": false,
-      "tick": 6
+      "tick": 5
     },
     "pausedAfterWait": {
-      "headX": 13,
-      "headY": 17,
+      "headX": 11,
+      "headY": 14,
       "score": 0,
       "running": false,
-      "tick": 6
+      "tick": 5
     },
     "reset": {
-      "headX": 12,
-      "headY": 12,
+      "headX": 10,
+      "headY": 10,
       "score": 0,
       "running": false,
       "tick": 0

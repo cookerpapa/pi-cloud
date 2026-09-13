@@ -888,13 +888,19 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       message: "The repository inspection has started.",
     });
 
-    const waiting = channel.contact({
+    const contact = {
       tenantId,
       childSessionId: started.childSessionId,
       childRunId: started.childRunId,
-      reason: "need_decision",
+      reason: "need_decision" as const,
       message: "Should the public API remain backward compatible?",
-    });
+      requestId: crypto.randomUUID(),
+    };
+    const [waiting, duplicate] = await Promise.all([
+      channel.contact(contact),
+      channel.contact(contact),
+    ]);
+    expect(duplicate).toEqual(waiting);
     let pending = await channel.pendingForParent(tenantId, parentSessionId);
     for (let attempt = 0; pending.length === 0 && attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 25));
@@ -907,7 +913,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       requestId: pending[0]!.requestId,
       message: "No compatibility layer is required for unreleased data.",
     });
-    await expect(waiting).resolves.toMatchObject({
+    await expect(channel.request(tenantId, waiting.requestId)).resolves.toMatchObject({
       reason: "need_decision",
       replyMessage: "No compatibility layer is required for unreleased data.",
     });

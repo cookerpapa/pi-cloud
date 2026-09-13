@@ -185,6 +185,10 @@ export type SandboxTerminalSession = Readonly<{
  * handle or require the Agent Runner to know provider-specific arguments.
  */
 export interface SandboxProvider {
+  openWorkflow?(
+    handle: SandboxHandle,
+    input: { script: string; operationId: string; cwd: string },
+  ): Promise<Duplex>;
   openPreviewConnection?(handle: SandboxHandle, port: number): Promise<Duplex>;
   readonly providerId: string;
   readonly cleanPrewarmCount?: number;

@@ -1,3 +1,4 @@
+import { SubagentController } from "./subagent-controller.ts";
 import { createDatabase } from "@pi-cloud/database";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
@@ -70,12 +71,27 @@ export async function startControlPlane(): Promise<void> {
   let issueCoordinator: SourceControlIssueCoordinator | undefined;
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
   let closing = false;
+  const subagents = new SubagentController({
+    database,
+    managementToken: config.supervisorManagementToken,
+    allowInsecureHttp: config.allowInsecureInternalHttp,
+    ownsPartition: (partition) => agentEvents?.ownsPartition(partition) === true,
+    treePolicy: config.subagentTreePolicy,
+    onError: (error) =>
+      operationalLog({
+        service: "pi-cloud-control-plane",
+        level: "warn",
+        event: "subagent.delivery_retry",
+        attributes: { reason: error instanceof Error ? error.message : "unknown" },
+      }),
+  });
   try {
     agentEvents = new SessionProjector({
       database,
       brokers: config.kafkaBrokers,
       clientId: controlPlaneInstanceId,
       advertisedBaseUrl: config.projectorAdvertisedBaseUrl,
+      subagentCommands: subagents,
       toolCommands: new ToolCommandRouter({
         routes: new PostgresToolCommandRoutes(database),
         deliver: httpToolLogDelivery(config.toolDispatchToken),

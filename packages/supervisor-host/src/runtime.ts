@@ -1,3 +1,4 @@
+import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
 import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
 import {
   type RuntimeObjectStore,
@@ -166,6 +167,8 @@ export class PiWorkerRuntime {
     Pick<NativeSessionLogPublisher, "scoped" | "checkHealth" | "close"> | undefined;
   #ownsSessionMutationProducer = false;
   #nativeSessions: PostgresNativeSessionHost | undefined;
+  #subagentControl: SubagentControlClient | undefined;
+  #agentRunner: RemoteToolSandboxTurnRunner | undefined;
   #activeExecutionLogs:
     (ExecutionLogFactory & { checkHealth?(): Promise<void>; close?(): Promise<void> }) | undefined;
   #ownsExecutionLogs = false;
@@ -181,7 +184,6 @@ export class PiWorkerRuntime {
   #modelGateway: TenantModelGateway | undefined;
   #runWorker: SupervisorRunWorker | undefined;
   #runClaimReadiness: RunClaimReadinessMonitor | undefined;
-  #trustedTools: PostgresTrustedToolRuntime | undefined;
   #closing: Promise<void> | undefined;
   #ownerStopSettled = false;
   #terminalSettled = false;
@@ -318,6 +320,35 @@ export class PiWorkerRuntime {
       },
       assignmentInventory: this.#toolBroker,
       artifactStore: this.#objectStore,
+      subagentCommand: async (command) => {
+        if (!this.#nativeSessions || !this.#subagentControl)
+          throw new Error("Subagent runtime is not ready");
+        if (command.action === "input") {
+          if (!this.#nativeSessions.hasLease(command.executionLease) || !this.#agentRunner)
+            throw Object.assign(new Error("Target Agent execution is not ready on this Worker"), {
+              retryable: true,
+            });
+          return this.#agentRunner.agentInput(
+            command.runId,
+            command.requestId,
+            command.message,
+            command.delivery,
+            command.executionLease,
+          );
+        } else if (command.action === "fork_workspace") {
+          return this.#toolBroker.forkWorkspace(command.request);
+        } else if (command.action === "prepare_lane") {
+          await this.#nativeSessions.createChildLane({
+            executionLease: command.executionLease,
+            lane: command.lane,
+            at: command.anchor,
+          });
+        } else if (command.action === "result") {
+          this.#subagentControl.receive(command.executionLease, command.response);
+        } else {
+          this.#runWorker?.scheduleOwnedSubagent?.(command.runId);
+        }
+      },
       steerCommand: async (command) => {
         const local = this.#runSupervisor;
         if (local === undefined) {
@@ -454,29 +485,19 @@ export class PiWorkerRuntime {
           : {}),
       });
       this.#nativeSessions = nativeSessions;
+      this.#subagentControl = new SubagentControlClient((lease) =>
+        executionLogResolver(executionLogs).resolve(lease),
+      );
       const trustedTools = new PostgresTrustedToolRuntime({
         database: this.#database,
         nativeLanes: nativeSessions,
-        forkWorkspace: (request) => this.#toolBroker.forkWorkspace(request),
-        scheduleOwnedSubagent: (runId) => {
-          this.#runWorker?.scheduleOwnedSubagent?.(runId);
-        },
+        control: this.#subagentControl,
         treePolicy: {
           maximumDepth: this.#config.subagentMaximumDepth,
           maximumNodes: this.#config.subagentMaximumNodes,
           maximumConcurrentSubagents: this.#config.subagentMaximumConcurrent,
         },
-        onBackgroundError: (error) => {
-          operationalLog({
-            service: "pi-cloud-trusted-tool-runtime",
-            level: "warn",
-            event: "subagent-preparation-reaper.failed",
-            attributes: { name: error instanceof Error ? error.name : "UnknownError" },
-          });
-        },
       });
-      await trustedTools.start();
-      this.#trustedTools = trustedTools;
       const runner = new RemoteToolSandboxTurnRunner({
         publishToolCommand: (command) => {
           const channel = executionLogResolver(executionLogs).resolve(command.executionLease);
@@ -521,6 +542,7 @@ export class PiWorkerRuntime {
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
       });
       await runner.warm();
+      this.#agentRunner = runner;
       const runSupervisor = new AgentRunSupervisor({
         runner,
         maxConcurrentSessions: this.#config.maxConcurrentSessions,
@@ -627,14 +649,13 @@ export class PiWorkerRuntime {
     this.#client?.setAcceptingAssignments(false);
     this.#runClaimReadiness?.close();
     this.#runClaimReadiness = undefined;
-    this.#trustedTools?.close();
-    this.#trustedTools = undefined;
     // A Kubernetes scale-in is a drain, not a fencing event. Stop queue
     // polling first and give the active Runs their bounded settlement window;
     // owner replacement still uses stopCurrentBoot(), which revokes immediately.
     await this.#runWorker?.stop().catch(() => undefined);
     await this.#runSupervisor?.waitUntilAssignmentsSettled().catch(() => undefined);
     this.#nativeSessions?.close();
+    this.#subagentControl?.close();
     await this.#client?.stop().catch(() => undefined);
     await this.#managementServer?.close().catch(() => undefined);
     await this.#modelGateway?.close().catch(() => undefined);

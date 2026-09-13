@@ -1,3 +1,4 @@
+import { WorkflowChannels, type WorkflowFrame } from "./workflow-channels.ts";
 import { SandboxAdmission } from "./sandbox-admission.ts";
 import type {
   AgentWorkspaceSeed,
@@ -110,6 +111,7 @@ type ManagedToolBinding = {
     }>
   >;
   seenCaptureIds: Set<string>;
+  forks?: Map<string, { hash: string; result: Promise<ToolBrokerWorkspaceForkResponse> }>;
   elasticRuntime?: ManagedElasticRuntime;
   developmentEnvironmentId?: string;
 };
@@ -196,7 +198,7 @@ const TOOL_OPERATIONS: Readonly<Record<CloudToolName, ReadonlySet<string>>> = {
   read: new Set(["file.read", "file.read_range", "file.access"]),
   write: new Set(["file.write", "file.mkdir"]),
   edit: new Set(["file.read", "file.write", "file.access"]),
-  bash: new Set(["bash.exec"]),
+  bash: new Set(["bash.exec", "workflow.exec"]),
 };
 
 function sameEnvironment(
@@ -333,6 +335,7 @@ function developmentEnvironmentAssignment(
 }
 
 export class ToolBroker {
+  readonly #workflowChannels = new WorkflowChannels();
   readonly #provider: SandboxProvider;
   readonly #ownerBaseUrl: string;
   readonly #stateRepository: WorkspaceRuntimeStateRepository;
@@ -1639,14 +1642,38 @@ export class ToolBroker {
         const handle = await this.#materialize(activation, operationSignal);
         let response: ToolSandboxOperationResponse;
         try {
-          response = await this.#provider.exec(
-            handle,
-            request,
-            operationSignal,
-            activation.spec.toolRoot,
-          );
+          if (request.operation === "workflow.exec") {
+            if (!this.#provider.openWorkflow)
+              throw new ToolBrokerError(
+                "workflow_unavailable",
+                "Isolated workflow execution is unavailable",
+                false,
+              );
+            const stream = await this.#provider.openWorkflow(handle, {
+              script: request.script,
+              operationId: request.operationId,
+              cwd: activation.spec.toolRoot ?? handle.workspaceRoot,
+            });
+            try {
+              response = await this.#workflowChannels.run(request, stream, operationSignal);
+            } catch (error) {
+              throw new ToolBrokerError(
+                "workflow_result_unknown",
+                "Workflow ended without a confirmed result; inspect effects before retrying",
+                false,
+                error,
+              );
+            }
+          } else {
+            response = await this.#provider.exec(
+              handle,
+              request,
+              operationSignal,
+              activation.spec.toolRoot,
+            );
+          }
         } catch (error: unknown) {
-          if (elasticRuntime !== undefined) {
+          if (elasticRuntime !== undefined && request.operation !== "workflow.exec") {
             await this.#markElasticRuntimeLost(elasticRuntime, error);
           } else if (
             activation.developmentEnvironmentId !== undefined &&
@@ -1670,7 +1697,8 @@ export class ToolBroker {
         await this.#stateRepository
           .settleOperation(
             request.operationId,
-            error instanceof ToolBrokerError && error.code === "cubesandbox_tool_result_unknown"
+            error instanceof ToolBrokerError &&
+              ["cubesandbox_tool_result_unknown", "workflow_result_unknown"].includes(error.code)
               ? "unknown"
               : operationSignal.aborted
                 ? "cancelled"
@@ -1699,6 +1727,17 @@ export class ToolBroker {
 
   ownsToolBinding(activationId: string): boolean {
     return this.#toolBindings.has(activationId);
+  }
+
+  async attachWorkflow(
+    activationId: string,
+    operationId: string,
+    executionLease: string,
+    send: (frame: WorkflowFrame) => void,
+    signal: AbortSignal,
+  ) {
+    this.assertToolResultReader(activationId, executionLease);
+    return this.#workflowChannels.attach(activationId, operationId, send, signal);
   }
 
   assertToolResultReader(activationId: string, executionLease: string): void {
@@ -1757,13 +1796,37 @@ export class ToolBroker {
       );
     }
     const activation = this.#ownedBinding(request.sourceActivationId, request.sourceAssignment);
+    const hash = createHash("sha256").update(JSON.stringify(request)).digest("hex");
+    const previous = activation.forks?.get(request.requestId);
+    if (previous) {
+      if (previous.hash !== hash)
+        throw new ToolBrokerError(
+          "workspace_fork_identity_conflict",
+          "Workspace fork identity was reused",
+          false,
+        );
+      return previous.result;
+    }
     const elasticRuntime = activation.elasticRuntime;
+    // A coordinator awaiting a child is not a filesystem Tool holding the fork
+    // barrier. Background user processes remain ordinary Linux concurrency;
+    // this file copy has never been an atomic VM/filesystem snapshot.
+    const waitingHere = this.#workflowChannels.waitingCount(new Set([request.sourceActivationId]));
+    const peers = new Set(
+      [...this.#toolBindings.entries()]
+        .filter(
+          ([, binding]) =>
+            binding.elasticRuntime === elasticRuntime && elasticRuntime !== undefined,
+        )
+        .map(([id]) => id),
+    );
+    const waitingPeers = this.#workflowChannels.waitingCount(peers);
     if (
       activation.exclusiveOperation ||
-      activation.activeOperations !== 0 ||
+      activation.activeOperations - waitingHere !== 0 ||
       activation.materializing !== undefined ||
       elasticRuntime?.exclusiveOperation ||
-      (elasticRuntime?.activeOperations ?? 0) !== 0 ||
+      (elasticRuntime?.activeOperations ?? 0) - waitingPeers !== 0 ||
       elasticRuntime?.materializing !== undefined
     ) {
       throw new ToolBrokerError(
@@ -1774,25 +1837,37 @@ export class ToolBroker {
     }
     activation.exclusiveOperation = true;
     if (elasticRuntime !== undefined) elasticRuntime.exclusiveOperation = true;
-    try {
-      const handle = await this.#materialize(activation);
-      const forked = await this.#provider.forkWorkspace(handle, request);
-      if (elasticRuntime === undefined) activation.handle = forked.sourceHandle;
-      else elasticRuntime.handle = forked.sourceHandle;
-      activation.usedPhysicalRuntime = true;
-      return {
-        toolBrokerProtocolVersion: 1,
-        type: "workspace.forked",
-        requestId: request.requestId,
-        sourceActivationId: request.sourceActivationId,
-        targetWorkspaceId: request.target.workspaceId,
-        sourceSettlementRevision: forked.sourceSettlementRevision,
-        targetSettlementRevision: forked.targetSettlementRevision,
-      };
-    } finally {
-      activation.exclusiveOperation = false;
-      if (elasticRuntime !== undefined) elasticRuntime.exclusiveOperation = false;
-    }
+    const result = (async (): Promise<ToolBrokerWorkspaceForkResponse> => {
+      try {
+        const handle = await this.#materialize(activation);
+        const forked = await this.#provider.forkWorkspace!(handle, request);
+        if (elasticRuntime === undefined) activation.handle = forked.sourceHandle;
+        else elasticRuntime.handle = forked.sourceHandle;
+        activation.usedPhysicalRuntime = true;
+        return {
+          toolBrokerProtocolVersion: 1,
+          type: "workspace.forked",
+          requestId: request.requestId,
+          sourceActivationId: request.sourceActivationId,
+          targetWorkspaceId: request.target.workspaceId,
+          sourceSettlementRevision: forked.sourceSettlementRevision,
+          targetSettlementRevision: forked.targetSettlementRevision,
+        };
+      } catch (error) {
+        if (error instanceof ToolBrokerError && !error.retryable) throw error;
+        throw new ToolBrokerError(
+          "workspace_fork_outcome_unknown",
+          "Workspace fork outcome could not be confirmed; it will not be replayed",
+          false,
+          error,
+        );
+      } finally {
+        activation.exclusiveOperation = false;
+        if (elasticRuntime !== undefined) elasticRuntime.exclusiveOperation = false;
+      }
+    })();
+    (activation.forks ??= new Map()).set(request.requestId, { hash, result });
+    return result;
   }
 
   async release(request: ToolSandboxReleaseRequest): Promise<ToolSandboxReleaseResponse> {

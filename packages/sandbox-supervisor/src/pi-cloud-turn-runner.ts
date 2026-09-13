@@ -447,6 +447,18 @@ export class PiCloudTurnRunner {
       }));
     runtime.steer(text);
   }
+  async agentInput(
+    id: string,
+    text: string,
+    delivery: "notify" | "steer" | "follow_up",
+  ): Promise<void> {
+    const runtime =
+      this.#activeRuntime ??
+      (await new Promise<CloudAgentRuntime>((resolve, reject) => {
+        this.#steerWaiters.add({ resolve, reject });
+      }));
+    await runtime.agentInput(id, text, delivery);
+  }
 
   async run(
     command: ExecuteTurnCommandMessage,

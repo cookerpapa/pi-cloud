@@ -26,6 +26,7 @@ import { parseTraceCarrier, withSpan, type PiCloudMetrics } from "@pi-cloud/obse
 import { createHash, timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { RawData, WebSocket } from "ws";
+import { TOOL_WORKFLOW_PATH } from "./workflow-channels.ts";
 import {
   TOOL_BROKER_INVENTORY_PATH,
   TOOL_BROKER_LIVE_PATH,
@@ -93,6 +94,7 @@ export type ToolBrokerBackend = Pick<
   Partial<
     Pick<
       ToolBroker,
+      | "attachWorkflow"
       | "openTerminal"
       | "provisionDevelopmentEnvironment"
       | "developmentEnvironmentLifecycle"
@@ -234,7 +236,7 @@ export class ToolBrokerServer {
     });
     this.#server.register(fastifyWebsocket, {
       options: {
-        maxPayload: MAX_WORKSPACE_TERMINAL_FRAME_BYTES * 2,
+        maxPayload: Math.max(MAX_WORKSPACE_TERMINAL_FRAME_BYTES * 2, 5 * 1024 * 1024),
         perMessageDeflate: false,
       },
     });
@@ -437,6 +439,71 @@ export class ToolBrokerServer {
   }
 
   #installRoutes(): void {
+    // Register after the websocket plugin has installed its route hook.
+    this.#server.register(async (scope) => {
+      scope.get(TOOL_WORKFLOW_PATH, { websocket: true }, (socket, request) => {
+        const query = request.query as { activationId?: string; operationId?: string };
+        const lease = bearer(request.headers.authorization);
+        if (!lease || !query.activationId || !query.operationId || !this.#broker.attachWorkflow) {
+          socket.close(1008, "Invalid workflow attachment");
+          return;
+        }
+        const controller = new AbortController();
+        let attached:
+          Awaited<ReturnType<NonNullable<ToolBrokerBackend["attachWorkflow"]>>> | undefined;
+        const send = (frame: unknown) => {
+          if (socket.readyState !== 1) return;
+          if (socket.bufferedAmount > DEFAULT_TERMINAL_SEND_BUFFER_BYTES) {
+            socket.close(1013, "Workflow reader is too slow");
+            return;
+          }
+          socket.send(JSON.stringify(frame));
+        };
+        const fail = (error: unknown) => {
+          send({
+            type: "error",
+            message: error instanceof Error ? error.message : "Workflow channel failed",
+          });
+          socket.close(1011);
+          controller.abort();
+        };
+        socket.on("close", () => {
+          controller.abort();
+          attached?.close();
+        });
+        socket.on("error", () => {
+          controller.abort();
+          attached?.close();
+        });
+        socket.on("message", (data: RawData) => {
+          try {
+            if (!attached) throw new Error("Workflow is not attached");
+            attached.respond(JSON.parse(data.toString()));
+          } catch (error) {
+            fail(error);
+          }
+        });
+        void this.#broker
+          .attachWorkflow(query.activationId, query.operationId, lease, send, controller.signal)
+          .then((channel) => {
+            attached = channel;
+            if (controller.signal.aborted) channel.close();
+          })
+          .catch((error) => {
+            if (!controller.signal.aborted) fail(error);
+          });
+        void this.#commands
+          .waitResult(lease, query.activationId, query.operationId, controller.signal)
+          .then((response) => {
+            send({ type: "result", response });
+            socket.close(1000);
+            controller.abort();
+          })
+          .catch((error) => {
+            if (!controller.signal.aborted) fail(error);
+          });
+      });
+    });
     this.#server.post(TOOL_BROKER_LOG_DELIVERY_PATH, async (request, reply) => {
       const credential = bearer(request.headers.authorization);
       if (

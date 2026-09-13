@@ -37,6 +37,10 @@ export class SessionProjector {
         consume(record: KafkaAcceptedFactRecord, current?: () => boolean): Promise<void>;
         close?(): Promise<void>;
       };
+      subagentCommands?: {
+        consume(record: KafkaAcceptedFactRecord, current?: () => boolean): Promise<void>;
+        close?(): Promise<void>;
+      };
     },
   ) {
     const topic = options.topic ?? ACCEPTED_FACT_TOPIC;
@@ -83,6 +87,7 @@ export class SessionProjector {
               projected.canonicalThroughSequence,
             );
           await options.toolCommands.consume(accepted, current);
+          await options.subagentCommands?.consume(accepted, current);
         }
       },
     });
@@ -114,6 +119,9 @@ export class SessionProjector {
       throw new Error("Session Projector assignment is settling");
     return owner;
   }
+  ownsPartition(partition: number): boolean {
+    return this.#consumer.ownsPartition(partition);
+  }
   async start(): Promise<void> {
     await this.#bus.start();
     this.#partitions = await this.#consumer.partitionCount();
@@ -140,6 +148,7 @@ export class SessionProjector {
     await this.#relay.close();
     await this.#consumer.close();
     await this.options.toolCommands.close?.();
+    await this.options.subagentCommands?.close?.();
     await this.#retention.close();
     this.eventStore.close();
     await this.#bus.close();

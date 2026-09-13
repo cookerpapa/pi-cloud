@@ -114,6 +114,9 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
         await publish({ kind: "tool_command", command });
         return { operationId: command.request.operationId, accepted: true };
       },
+      publishSubagentCommand: async (command) => {
+        await publish({ kind: "subagent_command", command });
+      },
       close: async () => {
         closing = true;
         await tail;

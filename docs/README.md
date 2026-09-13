@@ -10,6 +10,7 @@ Use documentation in this order:
    invariants; [`THREAT_MODEL.md`](THREAT_MODEL.md) — security boundaries.
    [`CUBESANDBOX_PROVIDER.md`](CUBESANDBOX_PROVIDER.md) defines the current Tool
    execution boundary.
+   [`SUBAGENTS.md`](SUBAGENTS.md) defines delegation, scripts and communication.
 4. [`CONFIGURATION.md`](CONFIGURATION.md),
    [`PRODUCTION_DEPLOYMENT.md`](PRODUCTION_DEPLOYMENT.md) and
    [`DISTRIBUTED_DEPLOYMENT.md`](DISTRIBUTED_DEPLOYMENT.md) — operations;

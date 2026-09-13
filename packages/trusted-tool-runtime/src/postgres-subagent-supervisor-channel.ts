@@ -1,14 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Database, SubagentSupervisorReason } from "@pi-cloud/database";
-import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { sql, type Kysely } from "kysely";
-import { Type } from "typebox";
-import type { PostgresSubagentJobProvider } from "./postgres-subagent-job-provider.ts";
 
 const MAX_MESSAGE_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 10 * 60 * 1_000;
-const CHILD_RESULT_TIMEOUT_MS = 120_000;
-const POLL_MS = 250;
 
 export type CloudSupervisorRequest = Readonly<{
   requestId: string;
@@ -30,26 +25,6 @@ function boundedMessage(value: unknown, label: string): string {
     throw new Error(`${label} is too large`);
   }
   return normalized;
-}
-
-function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    const cleanup = (): void => signal?.removeEventListener("abort", onAbort);
-    const onAbort = (): void => {
-      clearTimeout(timer);
-      cleanup();
-      reject(signal?.reason);
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, milliseconds);
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 function resource(row: {
@@ -81,20 +56,25 @@ export class PostgresSubagentSupervisorChannel {
     this.#database = database;
   }
 
-  async contact(
-    input: {
-      tenantId: string;
-      childSessionId: string;
-      childRunId: string;
-      reason: SubagentSupervisorReason;
-      message: string;
-      interview?: Record<string, unknown>;
-    },
-    signal?: AbortSignal,
-  ): Promise<CloudSupervisorRequest> {
+  async contact(input: {
+    tenantId: string;
+    childSessionId: string;
+    childRunId: string;
+    reason: SubagentSupervisorReason;
+    message: string;
+    interview?: Record<string, unknown>;
+    requestId?: string;
+  }): Promise<CloudSupervisorRequest> {
     const message = boundedMessage(input.message, "Supervisor message");
     const expectsReply = input.reason !== "progress_update";
-    const requestId = randomUUID();
+    const requestId = input.requestId ?? randomUUID();
+    const prior = await this.#database
+      .selectFrom("subagent_supervisor_requests")
+      .select("id")
+      .where("tenant_id", "=", input.tenantId)
+      .where("id", "=", requestId)
+      .executeTakeFirst();
+    if (prior) return this.request(input.tenantId, requestId);
     const created = await this.#database.transaction().execute(async (transaction) => {
       const execution = await transaction
         .selectFrom("subagent_executions as execution")
@@ -109,6 +89,24 @@ export class PostgresSubagentSupervisorChannel {
         .where("execution.child_run_id", "=", input.childRunId)
         .forUpdate(["execution"])
         .executeTakeFirst();
+      // Two Projector boots can overlap during handoff. Recheck after taking
+      // the execution lock, not only before entering the transaction.
+      const existing = await transaction
+        .selectFrom("subagent_supervisor_requests")
+        .select([
+          "id",
+          "execution_id as executionId",
+          "reason",
+          "message",
+          "expects_reply as expectsReply",
+          "created_at as createdAt",
+          "expires_at as expiresAt",
+          "reply_message as replyMessage",
+        ])
+        .where("tenant_id", "=", input.tenantId)
+        .where("id", "=", requestId)
+        .executeTakeFirst();
+      if (existing) return resource(existing);
       if (
         execution === undefined ||
         (execution.state !== "running" && execution.childRunState !== "running")
@@ -151,15 +149,7 @@ export class PostgresSubagentSupervisorChannel {
         replyMessage: null,
       });
     });
-    if (!expectsReply) return created;
-
-    while (Date.now() < new Date(created.expiresAt!).valueOf()) {
-      if (signal?.aborted) throw signal.reason;
-      const current = await this.request(input.tenantId, requestId);
-      if (current.replyMessage !== undefined) return current;
-      await delay(POLL_MS, signal);
-    }
-    throw new Error("Timed out waiting for the parent Agent reply");
+    return created;
   }
 
   async request(tenantId: string, requestId: string): Promise<CloudSupervisorRequest> {
@@ -305,7 +295,11 @@ export class PostgresSubagentSupervisorChannel {
       if (request === undefined || request.parentSessionId !== input.parentSessionId) {
         throw new Error("Supervisor request was not found for this parent Session");
       }
-      if (request.replyMessage !== null) return;
+      if (request.replyMessage !== null) {
+        if (request.replyMessage !== message)
+          throw new Error("Supervisor request already has a different reply");
+        return;
+      }
       if (request.expiresAt === null || request.expiresAt.valueOf() <= Date.now()) {
         throw new Error("Supervisor request has expired");
       }
@@ -319,162 +313,4 @@ export class PostgresSubagentSupervisorChannel {
     });
     return this.request(input.tenantId, input.requestId);
   }
-}
-
-const ContactSupervisorSchema = Type.Object(
-  {
-    reason: Type.Union([
-      Type.Literal("need_decision"),
-      Type.Literal("interview_request"),
-      Type.Literal("progress_update"),
-    ]),
-    message: Type.Optional(Type.String({ minLength: 1, maxLength: 65_536 })),
-    interview: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-  },
-  { additionalProperties: false },
-);
-
-export function createCloudContactSupervisorTool(options: {
-  channel: PostgresSubagentSupervisorChannel;
-  tenantId: string;
-  childSessionId: string;
-  childRunId: string;
-}): AgentTool {
-  return {
-    name: "contact_supervisor",
-    label: "Contact Supervisor",
-    description:
-      "Contact the parent/supervisor Agent for a blocking decision, structured interview, or meaningful progress update.",
-    parameters: ContactSupervisorSchema,
-    async execute(_toolCallId, raw, signal) {
-      const input = raw as {
-        reason: SubagentSupervisorReason;
-        message?: string;
-        interview?: Record<string, unknown>;
-      };
-      const request = await options.channel.contact(
-        {
-          tenantId: options.tenantId,
-          childSessionId: options.childSessionId,
-          childRunId: options.childRunId,
-          reason: input.reason,
-          message:
-            input.message ??
-            (input.reason === "interview_request"
-              ? "The Subagent requests structured supervisor input."
-              : "Subagent progress update."),
-          ...(input.interview === undefined ? {} : { interview: input.interview }),
-        },
-        signal,
-      );
-      return {
-        content: [
-          {
-            type: "text",
-            text:
-              request.replyMessage === undefined
-                ? "Supervisor progress update persisted."
-                : `**Reply from supervisor:**\n${request.replyMessage}`,
-          },
-        ],
-        details: { requestId: request.requestId, reason: request.reason },
-      };
-    },
-  };
-}
-
-const SupervisorSchema = Type.Object(
-  {
-    action: Type.Union([Type.Literal("pending"), Type.Literal("reply"), Type.Literal("wait")]),
-    replyTo: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-    message: Type.Optional(Type.String({ minLength: 1, maxLength: 65_536 })),
-  },
-  { additionalProperties: false },
-);
-
-function toolText(text: string, details: Record<string, unknown>): AgentToolResult<unknown> {
-  return { content: [{ type: "text", text }], details };
-}
-
-export function createCloudSubagentSupervisorTool(options: {
-  channel: PostgresSubagentSupervisorChannel;
-  jobs: PostgresSubagentJobProvider;
-  tenantId: string;
-  parentSessionId: string;
-}): AgentTool {
-  const waitForResult = async (
-    request: CloudSupervisorRequest,
-    signal?: AbortSignal,
-  ): Promise<AgentToolResult<unknown>> => {
-    const deadline = Date.now() + CHILD_RESULT_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      const result = await options.jobs.result(options.tenantId, request.executionId);
-      if (result.state === "completed") {
-        return toolText(result.output ?? "Subagent completed without a text result.", {
-          requestId: request.requestId,
-          state: result.state,
-        });
-      }
-      if (["failed", "cancelled", "unknown"].includes(result.state)) {
-        return toolText(result.failureMessage ?? `Subagent ended in state ${result.state}.`, {
-          requestId: request.requestId,
-          state: result.state,
-        });
-      }
-      await delay(POLL_MS, signal);
-    }
-    return toolText("Supervisor reply was delivered; the Subagent is still running.", {
-      requestId: request.requestId,
-      state: "running",
-    });
-  };
-
-  return {
-    name: "subagent_supervisor",
-    label: "Subagent Supervisor",
-    description:
-      "Inspect and answer durable requests from cloud Subagents. Reply to blocking requests, then wait for the Child result.",
-    parameters: SupervisorSchema,
-    async execute(_toolCallId, raw, signal) {
-      const input = raw as {
-        action: "pending" | "reply" | "wait";
-        replyTo?: string;
-        message?: string;
-      };
-      if (input.action === "pending") {
-        const pending = await options.channel.pendingForParent(
-          options.tenantId,
-          options.parentSessionId,
-        );
-        return toolText(
-          pending.length === 0
-            ? "No pending Subagent supervisor requests."
-            : pending
-                .map(
-                  (request) =>
-                    `${request.requestId}: ${request.reason}\n${request.message}\nReply with subagent_supervisor({ action: \"reply\", replyTo: \"${request.requestId}\", message: \"...\" }).`,
-                )
-                .join("\n\n"),
-          {
-            pending: pending.map(({ executionId: _executionId, ...request }) => request),
-          },
-        );
-      }
-      if (input.replyTo === undefined) throw new Error("replyTo is required");
-      const request =
-        input.action === "reply"
-          ? await options.channel.reply({
-              tenantId: options.tenantId,
-              parentSessionId: options.parentSessionId,
-              requestId: input.replyTo,
-              message: boundedMessage(input.message, "Supervisor reply"),
-            })
-          : await options.channel.requestForParent(
-              options.tenantId,
-              options.parentSessionId,
-              input.replyTo,
-            );
-      return waitForResult(request, signal);
-    },
-  };
 }

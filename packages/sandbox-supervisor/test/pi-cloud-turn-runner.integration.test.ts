@@ -637,6 +637,9 @@ describe("PiCloudTurnRunner integration", () => {
         },
         createAgentTools: ({ captureSamplingStep, stepWorldState }) => ({
           tools: [],
+          executeWorkflow: async () => {
+            throw new Error("unused in this test");
+          },
           async systemPrompt(base) {
             receivedSystemPrompt = base;
             return base;

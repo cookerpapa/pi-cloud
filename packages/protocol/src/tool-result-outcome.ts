@@ -6,6 +6,8 @@ export function toolResultIsUnknown(value: unknown): boolean {
       typeof serialized === "string" &&
       [
         "cubesandbox_tool_result_unknown",
+        "workflow_result_unknown",
+        "subagent_result_unknown",
         "tool_operation_outcome_unknown",
         "tool_result_released",
         "tool_command_delivery_unknown",

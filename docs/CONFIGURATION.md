@@ -114,7 +114,11 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS` | `5000` | Broker ownership heartbeat |
 
 Worker capacity must leave room for a root Run and its configured active
-children. The Worker database pool is intentionally not proportional to slots:
+children. Subagent depth/node/concurrency settings apply to both Projector
+admission and Worker capacity; Compose shares the variables, and Helm's control
+plane reads the same `pi-workers.runtime.subagents` values. Internal Worker management
+RPC uses a dedicated direct connection pool, not the Provider HTTP proxy.
+The Worker database pool is intentionally not proportional to slots:
 one connection can serve many model-waiting Runs. For Kubernetes, start near
 half the slot count with a floor of four, observe pool wait time, and use a
 connection proxy before multiplying connections across many replicas. Broker

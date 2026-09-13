@@ -116,6 +116,9 @@ export class DurableEventStore implements ExecutionLogFactory {
           "The deterministic event log cannot project Pi Session mutations",
         );
       },
+      publishSubagentCommand: async () => {
+        throw new Error("The in-memory event store cannot dispatch Subagent commands");
+      },
       publishToolCommand: async () => {
         throw new DurableEventStoreError(
           "event_store_invariant",

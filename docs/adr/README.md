@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0166](0166-log-driven-subagents.md) — Projector-admitted Subagent control,
+   Worker-native Lanes and Cube-isolated workflows.
 1. [ADR-0165](0165-message-level-display-and-framed-snapshots.md) — idempotent
    openings, message-level display coverage and bounded SSE snapshot framing.
 1. [ADR-0164](0164-trusted-private-log-publication.md) — unsigned publication on
@@ -85,8 +87,6 @@ Read the documents in this order:
    Session/Workspace/compute lifetimes, exclusive Cube Tool bindings and SSH access.
 1. [ADR-0112](0112-run-scoped-tool-capabilities.md) — Session grants, immutable
    Run Tool snapshots and Broker-side execution authorization.
-1. [ADR-0113](0113-cloud-native-pi-subagents.md) — upstream-compatible Pi
-   subagents on durable Child lanes/Runs with explicit Workspace modes.
 1. [ADR-0114](0114-conversation-subtree-delete-and-tail-prune.md) — recursive
    tree deletion and Pi-native conversation tail pruning.
 1. [ADR-0115](0115-user-owned-development-environments.md) — tenant-aware,

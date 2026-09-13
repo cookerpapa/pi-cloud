@@ -113,6 +113,9 @@ spec:
             - { name: PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP, value: "true" }
             - { name: PI_CLOUD_SUPERVISOR_ID_PREFIX, value: {{ .Values.controlPlane.supervisorIdPrefix | quote }} }
             - { name: PI_CLOUD_SUPERVISOR_MAXIMUM_CAPACITY, value: {{ (index .Values "pi-workers").workerPool.capacity | quote }} }
+            - { name: PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH, value: {{ (index .Values "pi-workers").runtime.subagents.maximumDepth | quote }} }
+            - { name: PI_CLOUD_SUBAGENT_MAXIMUM_NODES, value: {{ (index .Values "pi-workers").runtime.subagents.maximumNodes | quote }} }
+            - { name: PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT, value: {{ (index .Values "pi-workers").runtime.subagents.maximumConcurrent | quote }} }
             - name: PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES
               value: {{ printf "http://{supervisorId}.pi-cloud-pi-worker-%s.%s.svc.%s:4100" (index .Values "pi-workers").workerPool.name .Release.Namespace .Values.global.clusterDomain | quote }}
             - { name: PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID, value: {{ .Values.controlPlane.platformModelSourceTenantId | quote }} }

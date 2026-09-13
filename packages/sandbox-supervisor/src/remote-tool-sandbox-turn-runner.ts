@@ -1,3 +1,4 @@
+import type { WorkflowExecutor } from "./workflow-transport.ts";
 import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server";
 import {
   activeTraceCarrier,
@@ -114,6 +115,7 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   createTrustedTools?: (
     command: ExecuteTurnCommandMessage,
     context: Readonly<{
+      executeWorkflow: WorkflowExecutor;
       refreshServices(): Promise<void>;
       ensureActivation(): Promise<
         Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>
@@ -185,6 +187,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     string,
     {
       ready: Promise<PiCloudTurnRunner>;
+      executionLease: string;
       resolve: (runner: PiCloudTurnRunner) => void;
       reject: (error: Error) => void;
     }
@@ -231,7 +234,12 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       rejectRunner = rejectPromise;
     });
     void ready.catch(() => undefined);
-    const slot = { ready, resolve: resolveRunner, reject: rejectRunner };
+    const slot = {
+      ready,
+      resolve: resolveRunner,
+      reject: rejectRunner,
+      executionLease: command.payload.executionLease,
+    };
     this.#activePiRunners.set(command.payload.runId, slot);
     try {
       return await withSpan({
@@ -279,6 +287,22 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       );
     }
     await runner.steer(text);
+  }
+  async agentInput(
+    runId: string,
+    id: string,
+    text: string,
+    delivery: "notify" | "steer" | "follow_up",
+    executionLease: string,
+  ): Promise<void> {
+    const slot = this.#activePiRunners.get(runId);
+    if (!slot) throw new Error("Target Agent is not running on this Worker");
+    if (slot.executionLease !== executionLease)
+      throw new Error("Target Agent input authority mismatch");
+    const runner = await slot.ready;
+    if (this.#activePiRunners.get(runId) !== slot)
+      throw new Error("Target Agent ended before input delivery");
+    await runner.agentInput(id, text, delivery);
   }
 
   async #run(
@@ -624,8 +648,13 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         settlementPolicy === undefined
           ? undefined
           : new PiSettlementGateController(settlementPolicy);
+      let executeWorkflow: WorkflowExecutor | undefined;
       const trustedToolBindings =
         (await this.#createTrustedTools?.(command, {
+          executeWorkflow: (...args) => {
+            if (!executeWorkflow) throw new Error("Remote workflow runtime is not ready");
+            return executeWorkflow(...args);
+          },
           refreshServices: async () => {
             const active = await ensureActivation();
             await this.#broker.refreshServices(active.activationId, toolAssignment);
@@ -716,8 +745,12 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               currentSamplingHeadersIssued = false;
               return captured;
             };
+            executeWorkflow = async () => {
+              throw new Error("Workflow code requires Bash execution capability");
+            };
             return {
               tools: [...trustedTools],
+              executeWorkflow,
               async systemPrompt(base: string) {
                 return trustedTools.length === 0
                   ? base
@@ -830,6 +863,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                     : { tracestate: downstreamTrace.tracestate }),
                 }),
           });
+          executeWorkflow = remoteTools.executeWorkflow;
           if (trustedTools.length === 0) return remoteTools;
           return {
             ...remoteTools,

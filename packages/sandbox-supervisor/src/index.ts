@@ -45,12 +45,12 @@ export {
   type TrustedRemoteToolsRuntimeConfiguration,
 } from "./trusted-remote-tools-extension.ts";
 export {
-  PI_CLOUD_NEUTRAL_SUBAGENT,
-  preloadPiSubagentsCloudToolContract,
-  createPiSubagentsCloudTool,
-  type PiSubagentCloudCoordinator,
-  type PiSubagentCloudToolContext,
-} from "./pi-subagents-cloud-tool.ts";
+  createCloudSubagentTool,
+  validateSubagentTask,
+  validateSubagentControl,
+  type CloudSubagentToolRuntime,
+  type SubagentTask,
+} from "./subagent-tool.ts";
 
 export {
   CLOUD_ATTEMPT_CONTEXT_SCHEMA_VERSION,
@@ -167,3 +167,5 @@ export {
   type SupervisorWebSocketConnection,
   type SupervisorWebSocketConnectionFactory,
 } from "./reconnecting-supervisor-websocket-client.ts";
+export { SubagentControlClient } from "./subagent-control-client.ts";
+export type { WorkflowExecutor, WorkflowHostCall } from "./workflow-transport.ts";

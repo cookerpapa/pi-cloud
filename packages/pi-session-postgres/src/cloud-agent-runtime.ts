@@ -283,6 +283,8 @@ export class CloudAgentRuntime {
   readonly #id: () => string;
   readonly #compaction: CompactionSettings;
   #agent: Agent | undefined;
+  readonly #agentInputIds = new WeakMap<object, string>();
+  readonly #queuedAgentInputs = new Set<string>();
   #closed = false;
 
   constructor(options: CloudAgentRuntimeOptions) {
@@ -455,7 +457,7 @@ export class CloudAgentRuntime {
           } else if (message.role === "toolResult") {
             entryId = resultEntryIds.get(message.toolCallId) ?? this.#id();
           } else {
-            entryId = this.#id();
+            entryId = this.#agentInputIds.get(event.message) ?? this.#id();
           }
           const durableMessage =
             message.role !== "assistant" ||
@@ -685,6 +687,24 @@ export class CloudAgentRuntime {
     }
     if (this.#agent === undefined) throw new Error("Cloud Agent Run is not active");
     this.#agent.steer(createUserMessage(text));
+  }
+
+  async agentInput(
+    id: string,
+    text: string,
+    delivery: "notify" | "steer" | "follow_up",
+  ): Promise<void> {
+    await this.#options.authority.assertCurrent();
+    if (!this.#agent) throw new Error("Target Agent is not running");
+    const entryId = `pc-agent-input-${id}`;
+    if (this.#queuedAgentInputs.has(entryId) || (await this.#options.session.getEntry(entryId)))
+      return;
+    if (this.#queuedAgentInputs.has(entryId)) return;
+    const message = createUserMessage(text);
+    this.#agentInputIds.set(message, entryId);
+    this.#queuedAgentInputs.add(entryId);
+    if (delivery === "follow_up") this.#agent.followUp(message);
+    else this.#agent.steer(message);
   }
 
   abort(): void {

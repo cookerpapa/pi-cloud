@@ -1,3 +1,5 @@
+import { SUBAGENT_HOST_PATH, type SubagentHostRequest } from "@pi-cloud/protocol";
+import { Agent, fetch as internalFetch } from "undici";
 import {
   parseInternalServiceError,
   parseControlToSupervisorMessage,
@@ -130,12 +132,40 @@ export class HttpSupervisorManagementClient {
       options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
       "requestTimeoutMs",
     );
-    this.#fetch = options.fetchImplementation ?? globalThis.fetch.bind(globalThis);
+    this.#fetch = options.fetchImplementation ?? managementFetch;
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
   }
 
   requestId(): string {
     return this.#idGenerator();
+  }
+
+  async subagent(command: SubagentHostRequest): Promise<unknown> {
+    let response: Response;
+    try {
+      response = await this.#fetch(new URL(SUBAGENT_HOST_PATH, this.#url), {
+        method: "POST",
+        redirect: "error",
+        headers: { authorization: this.#authorization, "content-type": "application/json" },
+        signal: AbortSignal.timeout(this.#requestTimeoutMs),
+        body: JSON.stringify(command),
+      });
+    } catch {
+      throw new HttpSupervisorManagementError(
+        "subagent_host_unavailable",
+        "Subagent Worker delivery is unconfirmed",
+        true,
+      );
+    }
+    if (!response.ok) {
+      const body = await response.text();
+      throw new HttpSupervisorManagementError(
+        "subagent_host_rejected",
+        `Subagent host rejected control (${response.status}): ${body.slice(0, 1024)}`,
+        response.status >= 500,
+      );
+    }
+    return ((await response.json()) as { result?: unknown }).result;
   }
 
   async request(message: SupervisorManagementRequest) {
@@ -484,3 +514,10 @@ export class RoutedHttpSandboxAssignmentInventory implements SandboxAssignmentIn
     ).terminateAndConfirmAbsent(assignment);
   }
 }
+
+// Management uses the private network, never the model egress proxy.
+const managementDispatcher = new Agent({ connections: 4 });
+const managementFetch: typeof fetch = async (url, init) =>
+  (await internalFetch(String(url), { ...init, dispatcher: managementDispatcher } as Parameters<
+    typeof internalFetch
+  >[1])) as unknown as Response;

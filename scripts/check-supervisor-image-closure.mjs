@@ -88,9 +88,9 @@ assert(
   "Supervisor image must not depend on an npm-hoisting-specific Tool Broker node_modules path",
 );
 assert(
-  dockerfile.includes("await import('pi-subagents')") &&
+  dockerfile.includes("await import('./src/subagent-tool.ts')") &&
     dockerfile.includes("await import('@earendil-works/pi-coding-agent')"),
-  "Supervisor image must verify the pinned Subagent runtime closure",
+  "Supervisor image must verify its native Subagent adapter closure",
 );
 
 const dockerfileCandidates = [

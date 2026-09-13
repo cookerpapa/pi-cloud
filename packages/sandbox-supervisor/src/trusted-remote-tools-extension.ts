@@ -3,6 +3,7 @@ import {
   parseInternalServiceError,
   parseCloudToolCapabilitySnapshot,
   parseToolSandboxOperationResponse,
+  parseToolSandboxOperationRequest,
   CLOUD_TOOL_NAMES,
   MAX_TOOL_RESPONSE_BYTES,
   type CloudToolCapabilitySnapshot,
@@ -32,6 +33,11 @@ import { writeFile } from "node:fs/promises";
 import { extname, isAbsolute, resolve, sep } from "node:path";
 import type { FrozenCloudStep } from "./cloud-context.ts";
 import type { PiWorldStateModelMessage } from "./pi-sandbox-continuity.ts";
+import {
+  readWorkflowResult,
+  type WorkflowHostCall,
+  type WorkflowExecutor,
+} from "./workflow-transport.ts";
 
 const MAX_PROJECT_INSTRUCTIONS_BYTES = 16 * 1_024;
 const HIDDEN_GIT_CREDENTIAL_FILE = ".git-credentials";
@@ -376,6 +382,7 @@ function errorForPi(error: unknown, timeoutSeconds?: number): Error {
 }
 
 type TrustedRemoteToolBindings = Readonly<{
+  executeWorkflow: WorkflowExecutor;
   transformContext(
     messages: readonly AgentMessage[],
     purpose: "agent" | "context_maintenance",
@@ -451,6 +458,8 @@ function registerTrustedRemoteTools(
     toolCallId: string,
     request: RemoteOperationInput,
     signal?: AbortSignal,
+    workflowCall?: WorkflowHostCall,
+    workflowProgress?: (value: unknown) => void,
   ): Promise<ToolSandboxOperationResponse> => {
     signal?.throwIfAborted();
     if (currentStep === undefined) {
@@ -462,7 +471,7 @@ function registerTrustedRemoteTools(
     }
     const target = await runtime.resolveOperationTarget();
     await runtime.onToolOperationStarted?.();
-    const candidate = {
+    const candidate = parseToolSandboxOperationRequest({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.operation",
       activationId: target.activationId,
@@ -473,7 +482,7 @@ function registerTrustedRemoteTools(
       stepContextSha256: currentStep.sha256,
       toolName,
       ...request,
-    } as ToolSandboxOperationRequest;
+    });
     signal?.throwIfAborted();
     await runtime.publishToolCommand({
       executionLease: runtime.executionLease,
@@ -492,6 +501,18 @@ function registerTrustedRemoteTools(
     const resultUrl = new URL(target.operationResultUrl);
     resultUrl.searchParams.set("activationId", target.activationId);
     resultUrl.searchParams.set("operationId", candidate.operationId);
+    if (candidate.operation === "workflow.exec") {
+      if (!workflowCall) throw new Error("Workflow host bridge is unavailable");
+      return readWorkflowResult({
+        resultUrl,
+        executionLease: runtime.executionLease,
+        activationId: target.activationId,
+        operationId: candidate.operationId,
+        call: workflowCall,
+        ...(signal ? { signal } : {}),
+        ...(workflowProgress ? { progress: workflowProgress } : {}),
+      });
+    }
     const requestOnce = async (): Promise<{ response: Response; value: unknown }> => {
       const response = await fetch(resultUrl, {
         method: "GET",
@@ -905,6 +926,34 @@ function registerTrustedRemoteTools(
   }
   return {
     transformContext: (messages, purpose) => transformContext({ messages }, purpose),
+    executeWorkflow: (async (toolCallId, script, call, signal, onUpdate) => {
+      if (!allowedTools.has("bash"))
+        throw new Error("Workflow code requires the Bash execution capability");
+      consumeToolCall();
+      const result = await operation(
+        "bash",
+        toolCallId,
+        {
+          operation: "workflow.exec",
+          script,
+          cwd: toolRoot,
+          timeoutMs: 300_000,
+        },
+        signal,
+        call,
+        (value) =>
+          onUpdate?.({
+            content: [
+              { type: "text", text: typeof value === "string" ? value : JSON.stringify(value) },
+            ],
+            details: {},
+          }),
+      );
+      if (result.type !== "tool_sandbox.operation_result" || result.operation !== "workflow.exec")
+        throw new Error("Workflow returned an invalid response");
+      if (!result.ok) throw new Error(result.error ?? "Workflow failed");
+      return result.value;
+    }) satisfies WorkflowExecutor,
   };
 }
 
@@ -918,6 +967,7 @@ export function createTrustedRemoteToolsExtension(
 }
 
 export type TrustedRemoteAgentTools = Readonly<{
+  executeWorkflow: WorkflowExecutor;
   tools: readonly AgentTool[];
   systemPrompt(base: string): Promise<string>;
   transformContext(
@@ -959,6 +1009,7 @@ export function createTrustedRemoteAgentTools(
 
   return {
     tools,
+    executeWorkflow: bindings.executeWorkflow,
     async systemPrompt(base) {
       const result = await requireHandler("before_agent_start")({ systemPrompt: base });
       if (

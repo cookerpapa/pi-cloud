@@ -1,3 +1,5 @@
+import { workflowGuestSource } from "./workflow-guest-source.ts";
+import type { Duplex } from "node:stream";
 import {
   isExpectedDefaultToolchain,
   parseEnvironmentToolchainReport,
@@ -1250,6 +1252,23 @@ export class CubeSandboxProvider implements SandboxProvider {
         await terminal.kill();
       },
       disconnect: () => terminal.disconnect(),
+    });
+  }
+
+  async openWorkflow(
+    handle: SandboxHandle,
+    input: { script: string; operationId: string; cwd: string },
+  ): Promise<Duplex> {
+    const activation = this.#dataOwned(handle);
+    if (!this.#client.openProgram)
+      throw new ToolBrokerError(
+        "workflow_unavailable",
+        "Cube process transport is unavailable",
+        false,
+      );
+    return this.#client.openProgram(activation.instance, {
+      script: workflowGuestSource(input),
+      cwd: input.cwd,
     });
   }
 

@@ -4,6 +4,22 @@ export function prepareExecutionFact(
   scope: ExecutionPublication["scope"] & { executionLease: string },
   candidate: CandidateFact,
 ): AcceptedFact {
+  if (candidate.kind === "subagent_command") {
+    const command = candidate.command;
+    if (command.executionLease !== scope.executionLease)
+      throw new Error("Subagent command does not belong to its ExecutionLease");
+    const { leaseId: _lease, piSessionLane: _lane, executionLease, ...identity } = scope;
+    return {
+      kind: "subagent_command",
+      factId: command.requestId,
+      scope: identity,
+      executionLease,
+      toolCallId: command.toolCallId,
+      workflowId: command.workflowId,
+      request: command.request,
+      occurredAt: command.occurredAt,
+    };
+  }
   if (candidate.kind === "tool_command") {
     const command = candidate.command;
     if (command.executionLease !== scope.executionLease) {

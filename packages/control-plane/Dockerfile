@@ -16,6 +16,7 @@ COPY packages/pi-session-postgres/package.json packages/pi-session-postgres/pack
 COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/runtime-core/package.json packages/runtime-core/package.json
 COPY packages/tool-broker/package.json packages/tool-broker/package.json
+COPY packages/trusted-tool-runtime/package.json packages/trusted-tool-runtime/package.json
 COPY packages/sandbox-supervisor/package.json packages/sandbox-supervisor/package.json
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
@@ -62,6 +63,8 @@ COPY packages/tool-broker/package.json packages/tool-broker/package.json
 COPY packages/tool-broker/src/tool-broker-client.ts packages/tool-broker/src/tool-broker-client.ts
 COPY packages/tool-broker/src/tool-command-router.ts packages/tool-broker/src/tool-command-router.ts
 COPY packages/tool-broker/src/tool-command-routes.ts packages/tool-broker/src/tool-command-routes.ts
+COPY packages/trusted-tool-runtime/package.json packages/trusted-tool-runtime/package.json
+COPY packages/trusted-tool-runtime/src packages/trusted-tool-runtime/src
 COPY packages/sandbox-supervisor/package.json packages/sandbox-supervisor/package.json
 COPY packages/sandbox-supervisor/src packages/sandbox-supervisor/src
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json

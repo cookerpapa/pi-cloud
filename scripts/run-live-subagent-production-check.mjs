@@ -71,6 +71,7 @@ const fetchFromProduction = (input, init) => fetch(new URL(String(input), baseUr
 const bootstrapApi = new PiCloudApi(fetchFromProduction, token);
 let api = bootstrapApi;
 let authorizationToken = token;
+const measurements = [];
 
 function capture(command, args, timeoutMs = 120_000) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -128,6 +129,11 @@ async function waitForRun(runId) {
 }
 
 async function runTurn(sessionId, prompt) {
+  const startedAt = performance.now();
+  const sequence = measurements.length + 1;
+  let firstVisibleMs = null,
+    firstTextMs = null;
+  process.stdout.write(`subagent_live_turn_started ${sequence}\n`);
   const accepted = await api.acceptTurn(
     sessionId,
     prompt,
@@ -135,11 +141,19 @@ async function runTurn(sessionId, prompt) {
     "off",
   );
   const controller = new AbortController();
+  const admissionMs = performance.now() - startedAt;
   const timer = setTimeout(() => controller.abort(), 10 * 60_000);
   const text = [];
   let terminal;
   const observeEvent = (event) => {
     if (event.turnId !== accepted.turnId) return;
+    if (
+      ["assistant.text.delta", "tool.preparing", "tool.started"].includes(event.type) &&
+      firstVisibleMs === null
+    )
+      firstVisibleMs = performance.now() - startedAt;
+    if (event.type === "assistant.text.delta" && firstTextMs === null)
+      firstTextMs = performance.now() - startedAt;
     if (event.type === "assistant.text.delta") text.push(event.payload.text);
     if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type)) {
       terminal = event;
@@ -156,6 +170,10 @@ async function runTurn(sessionId, prompt) {
       onStatus() {},
       onSnapshot(snapshot) {
         const restored = snapshotTurn(snapshot, accepted.turnId);
+        if (restored?.text && firstTextMs === null) {
+          firstTextMs = performance.now() - startedAt;
+          firstVisibleMs ??= firstTextMs;
+        }
         text.splice(0, text.length, ...(restored?.text ? [restored.text] : []));
         if (restored?.terminal) {
           terminal = restored.terminal;
@@ -166,6 +184,15 @@ async function runTurn(sessionId, prompt) {
     });
     assert.equal(terminal?.type, "turn.completed", JSON.stringify(terminal?.payload));
     await waitForRun(accepted.runId);
+    const timing = {
+      sequence,
+      admissionMs,
+      firstVisibleMs,
+      firstTextMs,
+      settledMs: performance.now() - startedAt,
+    };
+    measurements.push(timing);
+    process.stdout.write(`subagent_live_turn_finished ${JSON.stringify(timing)}\n`);
     return { accepted, text: text.join("") };
   } finally {
     clearTimeout(timer);
@@ -320,15 +347,18 @@ async function parallelExecutionEvidence(parentRunId) {
   return JSON.parse(value);
 }
 
-async function childCreatedToolRuntime(childRunId) {
+async function childUsedLocalTools(childRunId) {
   const value = await psql(`
     select exists (
       select 1
-      from tool_broker_workspace_runtimes
-      where run_id = ${sqlLiteral(childRunId)}
+      from pi_session_entries pe join runs r on r.turn_id=pe.turn_id
+      where r.id = ${sqlLiteral(childRunId)} and pe.type='message'
+        and pe.payload->'message'->>'role'='toolResult'
+        and pe.payload->'message'->>'toolName' in ('read','write','edit','bash')
+        and pe.payload->'message'->>'isError'='false'
     )::text
   `);
-  return value === "t";
+  return value === "true";
 }
 
 function assertLaneBacked(evidence, rootPiSessionId) {
@@ -364,13 +394,16 @@ const session = await api.createSession(
   "elastic",
 );
 await api.updateSessionModel(session.sessionId, acceptanceModel);
+process.stdout.write(
+  `${JSON.stringify({ event: "subagent_acceptance_fixture", sessionId: session.sessionId, workspaceId: project.workspaceId })}\n`,
+);
 
 try {
   const none = await runTurn(
     session.sessionId,
     [
       "Call the subagent Tool exactly once and do not call any file or bash Tool.",
-      'Use this exact workflowScript: return runs.run("none", {agent:"cloud-child", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-NONE-OK"})',
+      'Use subagent with action:"run", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-NONE-OK". Do not use workflow.',
       "After it finishes, reply with SUBAGENT-NONE-OK.",
     ].join(" "),
   );
@@ -384,7 +417,7 @@ try {
     session.sessionId,
     [
       "Call the subagent Tool exactly once and do not call any file or bash Tool yourself.",
-      'Use this exact workflowScript: return runs.run("lazy", {agent:"cloud-child", context:"fresh", tools:["read","write","edit","bash"], task:"Do not call any local Tool. Reply exactly SUBAGENT-LAZY-OK"})',
+      'Use subagent with action:"run", context:"fresh", workspace:"shared", task:"Do not call any local Tool. Reply exactly SUBAGENT-LAZY-OK".',
       "After it finishes, reply with SUBAGENT-LAZY-OK.",
     ].join(" "),
   );
@@ -394,16 +427,23 @@ try {
   assert.equal(lazyEvidence.contextBaseEntryId, null);
   assertLaneBacked(lazyEvidence, session.sessionId);
   assert.equal(
-    await childCreatedToolRuntime(lazyEvidence.childRunId),
+    await childUsedLocalTools(lazyEvidence.childRunId),
     false,
-    "A Tool-capable Child that used no local Tool eagerly created Cube capacity",
+    "A pure research Child unexpectedly used local Tools",
+  );
+  assert.equal(
+    await psql(
+      `select count(*) from tool_broker_workspace_runtimes where workspace_id=${sqlLiteral(project.workspaceId)}`,
+    ),
+    "0",
+    "The first two research-only Turns eagerly activated Cube",
   );
 
   const parallel = await runTurn(
     session.sessionId,
     [
       "Call the subagent Tool exactly once and run exactly two independent children in parallel.",
-      'Use this exact workflowScript: return runs.all([{key:"left", agent:"cloud-child", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-PARALLEL-LEFT"}, {key:"right", agent:"cloud-child", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-PARALLEL-RIGHT"}])',
+      'Use subagent action:"workflow" with script: return runs.all([{key:"left", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-PARALLEL-LEFT"}, {key:"right", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-PARALLEL-RIGHT"}]);',
       "After both finish, reply exactly SUBAGENT-PARALLEL-OK.",
     ].join(" "),
   );
@@ -420,8 +460,8 @@ try {
     session.sessionId,
     [
       "First use bash to write exactly SHARED-PARENT-OK into /workspace/shared-parent-marker.txt.",
-      "Then call the subagent Tool exactly once with worktree:false.",
-      'Use this exact workflowScript: return runs.run("shared", {agent:"cloud-child", context:"fresh", tools:["read","bash"], task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK"})',
+      "Then call the subagent Tool exactly once with action:run and workspace:shared.",
+      'Use subagent with action:"run", context:"fresh", workspace:"shared", task:"Use bash to read /workspace/shared-parent-marker.txt and reply exactly SHARED-CHILD-OK if it contains SHARED-PARENT-OK".',
       "After it finishes, reply with SHARED-CHILD-OK.",
     ].join(" "),
   );
@@ -435,8 +475,8 @@ try {
   const isolated = await runTurn(
     session.sessionId,
     [
-      "Call the subagent Tool exactly once with worktree:true.",
-      'Use this exact workflowScript: return runs.run("isolated", {agent:"cloud-child", context:"branch", tools:["read","write","edit","bash"], worktree:true, task:"Use bash to create /workspace/isolated-child-only.txt containing ISOLATED-CHILD-OK, read it back, and reply exactly ISOLATED-CHILD-OK"})',
+      "Call the subagent Tool exactly once with action:workflow; its child must use workspace:isolated.",
+      'Use subagent action:"workflow" with script: return runs.run("isolated", {context:"branch", workspace:"isolated", task:"Use bash to create /workspace/isolated-child-only.txt containing ISOLATED-CHILD-OK, read it back, and reply exactly ISOLATED-CHILD-OK"});',
       "Do not create isolated-child-only.txt yourself. After the child finishes, reply with ISOLATED-CHILD-OK.",
     ].join(" "),
   );
@@ -450,14 +490,14 @@ try {
 
   const nestedTask = [
     "Call the subagent Tool exactly once and do not call file or bash Tools.",
-    'Use this exact workflowScript: return runs.run("nested", {agent:"cloud-child", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-NESTED-LEAF-OK"})',
+    'Use subagent with action:"run", context:"fresh", tools:[], task:"Reply exactly SUBAGENT-NESTED-LEAF-OK".',
     "After it finishes, reply exactly SUBAGENT-NESTED-PARENT-OK.",
   ].join(" ");
   const recursive = await runTurn(
     session.sessionId,
     [
       "Create a two-level recursive Agent tree.",
-      `Call the subagent Tool exactly once with this exact workflowScript: return runs.run("recursive-parent", {agent:"cloud-child", context:"fresh", tools:[], task:${JSON.stringify(nestedTask)}})`,
+      `Call the subagent Tool exactly once with action:"run", context:"fresh", tools:[], task:${JSON.stringify(nestedTask)}.`,
       "After it finishes, reply exactly SUBAGENT-RECURSIVE-OK.",
     ].join(" "),
   );
@@ -478,6 +518,95 @@ try {
   );
   assert.equal(recursiveEvidence[0].parentExecutionId, null);
   assert.equal(recursiveEvidence[1].parentExecutionId, recursiveEvidence[0].executionId);
+
+  const coding = await runTurn(
+    session.sessionId,
+    [
+      'Use subagent action:"workflow" and runs.all to delegate two parallel fresh/shared coding tasks.',
+      "One child must create insertion_sort.py with an insertion_sort function and executable unittest cases for empty, sorted, reversed, negative and duplicate inputs.",
+      "The other must create binary_search.py with binary_search returning an index or -1, with executable unittest cases for hits, misses, empty and duplicate inputs.",
+      "Each child must write its own file and run python3 on that file. The workflow must return both child results.",
+      "Then YOU must use bash to run python3 insertion_sort.py && python3 binary_search.py in the current workspace.",
+      "Only after observing both pass, answer SUBAGENT-CODING-OK. Do not recreate the files yourself.",
+    ].join(" "),
+  );
+  const codingEvidence = await parallelExecutionEvidence(coding.accepted.runId);
+  assert.equal(codingEvidence.length, 2);
+  assert(codingEvidence.every((child) => child.childRunState === "completed"));
+  assert.match(coding.text, /SUBAGENT-CODING-OK/u);
+  for (const child of codingEvidence) {
+    assertLaneBacked(child, session.sessionId);
+    assert.equal(await childUsedLocalTools(child.childRunId), true);
+  }
+
+  const messageMarker = `MAILBOX-${suffix}`;
+  const messageScript = `const child = runs.run("receiver", {context:"fresh",workspace:"shared",task:"First use bash to sleep 3 seconds. Then reply with the secret code received in an Agent message. The code is not in this initial task. Do not read files to look for the code. If no message arrives, say MISSING and finish."}); const receipt = await runs.send("receiver", ${JSON.stringify(messageMarker)}, "steer"); return {receipt, child:await child};`;
+  const messaging = await runTurn(
+    session.sessionId,
+    `Call subagent action:workflow exactly once with this script: ${messageScript} Then briefly report the child result.`,
+  );
+  const messagingEvidence = await executionEvidence(messaging.accepted.runId);
+  assert.equal(messagingEvidence.childRunState, "completed");
+  const mailboxEvidence = JSON.parse(
+    await psql(`select json_build_object(
+    'commands', count(*), 'consumed', count(input_consumed_at),
+    'nativeEntries', (select count(*) from pi_session_entries where session_id=${sqlLiteral(session.sessionId)}
+      and id like 'pc-agent-input-%')) from subagent_control_commands
+    where run_id=${sqlLiteral(messaging.accepted.runId)} and command->'request'->>'action'='send'`),
+  );
+  assert.equal(mailboxEvidence.commands, 1);
+  assert.equal(mailboxEvidence.consumed, 1);
+  assert.equal(mailboxEvidence.nativeEntries, 1);
+  assert.match(messaging.text, new RegExp(messageMarker));
+
+  const supervisor = await runTurn(
+    session.sessionId,
+    [
+      "Delegate one fresh child with tools:[] using action:run.",
+      "Its task is: Call contact_supervisor with reason need_decision and ask for the approved colour; wait for the reply and answer with that colour.",
+      'When the child returns blocked, use subagent_supervisor action:reply with its replyTo request ID and message "APPROVED-TEAL".',
+      "Do not launch another child. Wait for the actual child response, then answer SUPERVISOR-TEAL-OK.",
+    ].join(" "),
+  );
+  const supervisorEvidence = await executionEvidence(supervisor.accepted.runId);
+  assert.equal(supervisorEvidence.childRunState, "completed");
+  assert.match(supervisor.text, /SUPERVISOR-TEAL-OK/u);
+  const supervisorReplied = await psql(
+    `select count(*) from subagent_supervisor_requests where execution_id=${sqlLiteral(supervisorEvidence.executionId)} and reply_message='APPROVED-TEAL'`,
+  );
+  assert.equal(supervisorReplied, "1");
+
+  const cancelled = await runTurn(
+    session.sessionId,
+    [
+      "Call subagent action:workflow exactly once with this script:",
+      'const child=runs.run("cancel-me", {context:"fresh",tools:[],task:"Write a detailed 6000-word comparison of sorting algorithms. Do not use tools."}).catch(error => error.result || {state:"failed",error:error.message}); await new Promise(resolve=>setTimeout(resolve,2000)); const cancellation=await runs.cancel("cancel-me"); return {cancellation,child:await child};',
+      "After cancellation is confirmed, reply SUBAGENT-CANCEL-OK. Do not start replacement work.",
+    ].join(" "),
+  );
+  const cancellationEvidence = await executionEvidence(cancelled.accepted.runId);
+  assert.equal(cancellationEvidence.childRunState, "cancelled");
+  assert.match(cancelled.text, /SUBAGENT-CANCEL-OK/u);
+
+  const boundary = await runTurn(
+    session.sessionId,
+    [
+      "Call subagent action:workflow with exactly this script and report the returned object:",
+      "return {cwd:process.cwd(), hostname:process.env.HOSTNAME||null, uid:process.getuid(), leakedKeys:Object.keys(process.env).filter(k=>/^(DATABASE_URL|KAFKA_BROKERS|OPENAI_API_KEY|DEEPSEEK_API_KEY|PI_CLOUD_TOOL_BROKER_TOKEN)$/.test(k))};",
+    ].join(" "),
+  );
+  const boundaryEntries = JSON.parse(
+    await psql(`select coalesce(json_agg(payload->'message'),'[]') from pi_session_entries
+    where turn_id=${sqlLiteral(boundary.accepted.turnId)} and type='message'
+      and payload->'message'->>'role'='toolResult' and payload->'message'->>'toolName'='subagent'`),
+  );
+  assert.equal(boundaryEntries.length, 1);
+  const boundaryResult = JSON.parse(
+    boundaryEntries[0].content.find((part) => part.type === "text").text,
+  );
+  assert.equal(boundaryResult.cwd, "/workspace");
+  assert.deepEqual(boundaryResult.leakedKeys, []);
+  assert(!String(boundaryResult.hostname).includes("pi-cloud-worker"));
   const conversationList = await api.listConversations();
   const projectedRecursiveSessions = new Set(
     conversationList.delegatedSessions
@@ -538,6 +667,16 @@ try {
   await assert.rejects(access(possibleParentFile), (error) => error?.code === "ENOENT");
 
   const report = {
+    architecture: "log-driven-subagents-v1",
+    timings: measurements,
+    usage: JSON.parse(
+      await psql(`select json_build_object(
+      'input',coalesce(sum((payload->'message'->'usage'->>'input')::bigint),0),
+      'output',coalesce(sum((payload->'message'->'usage'->>'output')::bigint),0),
+      'cacheRead',coalesce(sum((payload->'message'->'usage'->>'cacheRead')::bigint),0),
+      'cacheWrite',coalesce(sum((payload->'message'->'usage'->>'cacheWrite')::bigint),0))
+      from pi_session_entries where session_id=${sqlLiteral(session.sessionId)} and type='message' and payload->'message'->>'role'='assistant'`),
+    ),
     accepted: true,
     checkedAt: new Date().toISOString(),
     model: acceptanceModel,
@@ -550,6 +689,11 @@ try {
       isolated: isolatedEvidence,
     },
     recursiveTree: recursiveEvidence,
+    coding: codingEvidence,
+    messaging: { child: messagingEvidence, ...mailboxEvidence },
+    supervisor: supervisorEvidence,
+    cancellation: cancellationEvidence,
+    guestBoundary: boundaryResult,
     productProjection: {
       detailEvidence,
       listContainsEveryRecursiveSession: true,
@@ -565,10 +709,8 @@ try {
   );
   process.stdout.write(`${JSON.stringify(report)}\n`);
 } finally {
-  await api
-    .deleteConversation(session.sessionId, newIdempotencyKey("delete"))
-    .catch(() => undefined);
-  await api
-    .deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"))
-    .catch(() => undefined);
+  if (process.env.PI_CLOUD_LIVE_KEEP_FIXTURES !== "1") {
+    await api.deleteConversation(session.sessionId, newIdempotencyKey("delete"));
+    await api.deleteWorkspace(project.workspaceId, newIdempotencyKey("delete"));
+  }
 }

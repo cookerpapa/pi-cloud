@@ -4,6 +4,9 @@ import type {
   AcceptedToolCommand,
   CandidateToolCommand,
   ToolCommandPublisher,
+  CandidateSubagentCommand,
+  SubagentCommandPublisher,
+  SubagentControlRequest,
 } from "@pi-cloud/protocol";
 
 export type CandidatePiSessionAppendFact = Readonly<{
@@ -26,6 +29,7 @@ export type CandidatePiSessionAppendFact = Readonly<{
 
 export type CandidateFact =
   | Readonly<{ kind: "tool_command"; command: CandidateToolCommand }>
+  | Readonly<{ kind: "subagent_command"; command: CandidateSubagentCommand }>
   | Readonly<{ kind: "agent_event"; publication: EventPublishMessage }>
   | Readonly<{ kind: "pi_session_append"; mutation: CandidatePiSessionAppendFact }>;
 
@@ -89,7 +93,19 @@ export type AcceptedFact =
   | AcceptedToolCommand
   | AcceptedAgentEventFact
   | AcceptedExecutionSealFact
-  | AcceptedPiSessionAppendFact;
+  | AcceptedPiSessionAppendFact
+  | AcceptedSubagentCommand;
+
+export type AcceptedSubagentCommand = Readonly<{
+  kind: "subagent_command";
+  factId: string;
+  scope: AcceptedFactScope;
+  executionLease: string;
+  toolCallId: string;
+  workflowId: string;
+  request: SubagentControlRequest;
+  occurredAt: string;
+}>;
 
 export type AcceptedFactReceipt = Readonly<{
   factId: string;
@@ -120,4 +136,5 @@ export interface ActiveExecutionLogResolver {
   checkHealth(): Promise<void>;
 }
 
-export interface AcceptedFactWriter extends PiSessionLogAppender, ToolCommandPublisher {}
+export interface AcceptedFactWriter
+  extends PiSessionLogAppender, ToolCommandPublisher, SubagentCommandPublisher {}

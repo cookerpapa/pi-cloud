@@ -4,6 +4,9 @@ import {
   type SupervisorManagementResponse,
   type SupervisorRuntimeAssignment,
   type SteerTurnCommandMessage,
+  SUBAGENT_HOST_PATH,
+  MAX_TOOL_RESPONSE_BYTES,
+  type SubagentHostRequest,
 } from "@pi-cloud/protocol";
 import {
   validateRuntimeObjectKey,
@@ -35,6 +38,7 @@ export type SupervisorManagementServerOptions = {
   assignmentInventory: SupervisorAssignmentInventory;
   artifactStore?: Pick<RuntimeObjectStore, "get">;
   steerCommand?: (command: SteerTurnCommandMessage) => Promise<void>;
+  subagentCommand?: (command: SubagentHostRequest) => Promise<unknown>;
   bodyLimit?: number;
 };
 
@@ -117,6 +121,7 @@ export class SupervisorManagementServer {
   readonly #assignmentInventory: SupervisorAssignmentInventory;
   readonly #artifactStore: Pick<RuntimeObjectStore, "get"> | undefined;
   readonly #steerCommand: ((command: SteerTurnCommandMessage) => Promise<void>) | undefined;
+  readonly #subagentCommand: ((command: SubagentHostRequest) => Promise<unknown>) | undefined;
   #stopOperation: Promise<void> | undefined;
   #address: string | undefined;
 
@@ -135,6 +140,7 @@ export class SupervisorManagementServer {
     this.#assignmentInventory = options.assignmentInventory;
     this.#artifactStore = options.artifactStore;
     this.#steerCommand = options.steerCommand;
+    this.#subagentCommand = options.subagentCommand;
     this.#server = Fastify({
       logger: false,
       bodyLimit: positiveInteger(options.bodyLimit ?? DEFAULT_BODY_LIMIT, "bodyLimit", 1024 * 1024),
@@ -161,6 +167,36 @@ export class SupervisorManagementServer {
   }
 
   #installRoutes(): void {
+    this.#server.post(
+      SUBAGENT_HOST_PATH,
+      { bodyLimit: MAX_TOOL_RESPONSE_BYTES + 64 * 1024 },
+      async (request, reply) => {
+        const token = bearerToken(request.headers.authorization);
+        if (!token || !timingSafeEqual(this.#managementDigest, digest(token)))
+          return reply.code(401).send({ error: "Unauthorized Subagent control" });
+        if (!this.#subagentCommand)
+          return reply.code(503).send({ error: "Subagent host is unavailable" });
+        const body = request.body as SubagentHostRequest;
+        if (
+          !body ||
+          !["prepare_lane", "schedule", "result", "fork_workspace", "input"].includes(body.action)
+        )
+          return reply.code(400).send({ error: "Invalid Subagent control request" });
+        try {
+          const result = await this.#subagentCommand(body);
+          return reply.send({ accepted: true, result });
+        } catch (error) {
+          const retryable =
+            !!error &&
+            typeof error === "object" &&
+            "retryable" in error &&
+            error.retryable === true;
+          return reply
+            .code(retryable ? 503 : 409)
+            .send({ error: error instanceof Error ? error.message : "Subagent control failed" });
+        }
+      },
+    );
     this.#server.get(SUPERVISOR_HOST_LIVE_PATH, async (_request, reply) => {
       await reply.code(200).send({ status: "ok" });
     });

@@ -15,6 +15,9 @@ const scope = {
 it("finishes at Kafka ACK without a PG client, receipt reader or polling", async () => {
   const publications: CandidatePiSessionAppendFact[] = [];
   const channel: AcceptedFactWriter = {
+    publishSubagentCommand: async () => {
+      throw new Error("unused");
+    },
     publishToolCommand: async () => {
       throw new Error("unused");
     },
@@ -44,6 +47,9 @@ it("does not acknowledge a failed or mismatched durable append", async () => {
     .mockResolvedValueOnce({ mutationId: "different", accepted: true });
   const channel: AcceptedFactWriter = {
     mutate,
+    publishSubagentCommand: async () => {
+      throw new Error("unused");
+    },
     publishToolCommand: async () => {
       throw new Error("unused");
     },

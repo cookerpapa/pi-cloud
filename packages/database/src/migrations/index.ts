@@ -134,6 +134,7 @@ import * as opaqueConversationEntryIds from "./132_opaque_conversation_entry_ids
 import * as toolBindingRoutes from "./133_tool_binding_routes.ts";
 import * as executionPublications from "./134_execution_publications.ts";
 import * as messageDisplayCoverage from "./135_message_display_coverage.ts";
+import * as subagentControlLog from "./136_subagent_control_log.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -273,6 +274,7 @@ export const migrationProvider: MigrationProvider = {
       "133_tool_binding_routes": toolBindingRoutes,
       "134_execution_publications": executionPublications,
       "135_message_display_coverage": messageDisplayCoverage,
+      "136_subagent_control_log": subagentControlLog,
     };
   },
 };

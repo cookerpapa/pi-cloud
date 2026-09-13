@@ -80,7 +80,8 @@ export function parseKafkaAcceptedFact(value: string | Buffer): AcceptedFact {
   if (
     parsed.kind === "execution_opened" ||
     parsed.kind === "execution_seal" ||
-    parsed.kind === "tool_command"
+    parsed.kind === "tool_command" ||
+    parsed.kind === "subagent_command"
   )
     return parsed;
 

@@ -18,6 +18,7 @@ Browser → Control Plane → PostgreSQL ready Run
                                              Session Projector group
                                              ├─ PG semantic projection
                                              ├─ live view / SSE
+                                             ├─ Subagent admission / delivery → Worker Lanes
                                              └─ Tool command routing
                                                        ↓
                                              owning Tool executor → Cube
@@ -237,9 +238,19 @@ repopulate the cache or enter the sealed transcript. UNKNOWN never triggers
 automatic shell replay. Kafka fencing cannot undo an already-issued Cube request
 or roll back a running process.
 
-`TrustedToolRuntime` supplies code-owned Preview, Subagent and supervisor tools
-inside the Worker. These do not execute in Cube. Integration executors are a
-separate extension boundary; user-supplied Worker extensions are not supported.
+`TrustedToolRuntime` supplies thin, code-owned tool adapters. Subagent start,
+communication and cancellation requests append to Kafka; Projector persists
+idempotent admission and dispatch state, then routes native Lane operations to
+the owning Worker. Long preparation and result waits never block its partition
+handler. Result notifications use the Worker management channel, independently
+of the Provider HTTP proxy, rather than per-child status polling.
+
+Direct delegation creates no script or Cube. Workflow JavaScript runs in Cube
+through envd's bounded stdin/stdout bridge. Guest `runs.*` requests return to the
+owning Worker publication port; no PG/Kafka/model credentials enter the guest.
+The script's explicit return becomes the outer Tool Result. Variables and JS
+call stacks are not recovery checkpoints. Preview remains a fixed trusted
+platform adapter; user-supplied Worker extensions are not supported.
 
 ## Workspaces and development machines
 
@@ -279,12 +290,24 @@ search stays provider-native; verified GPT/DeepSeek actions and citations are
 stored in native assistant messages, with portable replay across providers.
 Image input/generation remain outside the current public feature boundary.
 
-The upstream pi-subagents contract is adapted to durable Lane Runs, not personas.
+The role-free Subagent tool uses Pi's public runtime/storage contracts and the
+community `runs.run`/`runs.all` programming model, not a CLI-emulation backend.
 Fresh context and inherited context are independent of shared/isolated Workspace
 selection. All active Lanes share one physical Session owner; PG holds durable
 parent/child communication and cancellation state. Defaults bound recursive depth
 to 4, total nodes to 32 and simultaneous descendants to 3. Isolated children use
 internal Workspace copies; the context/communication model is unchanged.
+Copies exclude active file/shell tool mutations, but do not claim atomic
+filesystem snapshots against user background processes. A workflow waiting for
+its child does not hold that copy barrier. Successful fork replies are idempotent
+within their owning binding; uncertain copy effects are not blindly replayed.
+
+Blocking supervisor requests remain supported through the same control log.
+Agent-input IDs identify native consumption, preventing a replayed notification
+from duplicating model context. Task completion is distinct from a progress or
+delivery receipt. This release uses foreground-owned tasks; `follow_up` queues
+input on an active Agent, and a closed task reports a missed delivery rather
+than silently spawning another one. Autonomous background wake is not implemented.
 
 Optional GitLab Issue intake uses ordinary Run admission after the user chooses
 an execution environment. The platform never clones or commits automatically.

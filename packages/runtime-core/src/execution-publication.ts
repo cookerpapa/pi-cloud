@@ -185,6 +185,14 @@ export class ExecutionPublicationBoundary {
     }
     if (fact.kind === "execution_opened") return true;
     if (authority.openedAt === null || record.offset <= authority.openedAt) return false;
+    if (fact.kind === "subagent_command") {
+      const lease = parseExecutionLease(fact.executionLease);
+      return (
+        lease.leaseId === leaseId &&
+        lease.attemptId === scope.attemptId &&
+        lease.fencingToken === scope.fencingToken
+      );
+    }
     if (fact.kind === "agent_event")
       return fact.event.sessionId === scope.sessionId && fact.event.turnId === scope.turnId;
     if (fact.kind === "pi_session_append") {

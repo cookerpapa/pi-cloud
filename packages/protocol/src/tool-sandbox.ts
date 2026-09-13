@@ -420,6 +420,16 @@ export const ToolSandboxOperationRequestSchema = Type.Union([
   Type.Object(
     {
       ...OperationEnvelope,
+      operation: Type.Literal("workflow.exec"),
+      script: Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES }),
+      cwd: ToolPathSchema,
+      timeoutMs: Type.Integer({ minimum: 100, maximum: 300_000 }),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...OperationEnvelope,
       operation: Type.Literal("bash.exec"),
       command: Type.String({ minLength: 1, maxLength: MAX_TOOL_COMMAND_BYTES }),
       cwd: ToolPathSchema,
@@ -474,6 +484,19 @@ export const ToolSandboxOperationRequestSchema = Type.Union([
 ]);
 
 export const ToolSandboxOperationResponseSchema = Type.Union([
+  Type.Object(
+    {
+      ...ToolSandboxEnvelope,
+      type: Type.Literal("tool_sandbox.operation_result"),
+      activationId: UuidSchema,
+      operationId: UuidSchema,
+      operation: Type.Literal("workflow.exec"),
+      ok: Type.Boolean(),
+      value: Type.Unknown(),
+      error: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
   Type.Object(
     {
       ...ToolSandboxEnvelope,

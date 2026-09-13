@@ -10,11 +10,13 @@ export {
   type StartCloudSubagentJobInput,
 } from "./postgres-subagent-job-provider.ts";
 export {
-  createCloudContactSupervisorTool,
-  createCloudSubagentSupervisorTool,
   PostgresSubagentSupervisorChannel,
   type CloudSupervisorRequest,
 } from "./postgres-subagent-supervisor-channel.ts";
+export {
+  createCloudContactSupervisorTool,
+  createCloudSubagentSupervisorTool,
+} from "./subagent-supervisor-tools.ts";
 export {
   PostgresTrustedToolRuntime,
   type PostgresTrustedToolRuntimeOptions,

@@ -942,6 +942,11 @@ export async function executeToolOperation(
   signal: AbortSignal,
   webProxy?: ToolWebProxyBootstrap,
 ): Promise<ToolSandboxOperationResponse> {
+  if (request.operation === "workflow.exec")
+    throw new ToolWorkerError(
+      "workflow_transport_required",
+      "Workflow execution requires the scoped duplex process transport",
+    );
   if (request.operation === "bash.exec") return executeBash(request, signal, webProxy);
   if (request.operation === "file.read") {
     const file = await readWorkspaceFile(request.path);

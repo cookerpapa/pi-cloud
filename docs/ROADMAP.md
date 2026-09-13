@@ -39,6 +39,8 @@
 
 ## Current release gate
 
+- [x] Log-driven Subagent starts, messages and cancellations; Cube-only workflow
+      scripts and Worker-native Lanes; [paid acceptance and boundaries](reports/log-driven-subagents-20260913.md).
 - [x] Internal conversation/admission module boundaries, shutdown admission
       regression and unified-Projector handoff tests; no new service or protocol.
 - [x] Roll out the consolidation after approved PiCloud build-cache cleanup

@@ -108,6 +108,53 @@ function scriptedStream(messages: string[], contexts: Context[] = []) {
   };
 }
 
+it("consumes concurrent Agent-input redelivery once and recognizes it after cold restore", async () => {
+  const storage = await createStorage(),
+    inputId = crypto.randomUUID();
+  const execute = async (prompt: string) => {
+    const contexts: Context[] = [];
+    let ready!: () => void, release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const runtime = new CloudAgentRuntime({
+      lane: "main",
+      ...(await withNativeSession(storage)),
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      streamFn: (_model, context) => {
+        contexts.push(structuredClone(context));
+        const stream = new MockAssistantStream();
+        const done = () =>
+          stream.push({ type: "done", reason: "stop", message: assistant("done") });
+        if (contexts.length === 1) {
+          release = done;
+          ready();
+        } else queueMicrotask(done);
+        return stream;
+      },
+    });
+    const running = runtime.run(prompt);
+    await started;
+    await Promise.all([
+      runtime.agentInput(inputId, "cross-agent-evidence", "steer"),
+      runtime.agentInput(inputId, "cross-agent-evidence", "steer"),
+    ]);
+    release();
+    await expect(running).resolves.toMatchObject({ kind: "completed" });
+    return contexts;
+  };
+  const first = await execute("initial");
+  expect(first).toHaveLength(2);
+  expect(JSON.stringify(first.at(-1)?.messages).match(/cross-agent-evidence/g)).toHaveLength(1);
+  expect(await storage.getEntry(`pc-agent-input-${inputId}`)).toMatchObject({ type: "message" });
+  const restored = await execute("continue");
+  expect(restored).toHaveLength(1);
+  expect(JSON.stringify(restored[0]?.messages).match(/cross-agent-evidence/g)).toHaveLength(1);
+});
+
 async function createStorage() {
   return PostgresPiSessionStorage.create({
     database,
