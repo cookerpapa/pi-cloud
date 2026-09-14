@@ -373,6 +373,7 @@ export class ControlPlaneStore {
       ownerUserId?: string;
       model?: SessionModelSelection;
     }> = {},
+    existingTransaction?: Transaction<Database>,
   ): Promise<SessionResource> {
     const sessionId = this.#idGenerator();
     const workingDirectory = execution.workingDirectory ?? "/workspace";
@@ -382,7 +383,7 @@ export class ControlPlaneStore {
         "Conversation working directory is invalid",
       );
     }
-    return this.#database.transaction().execute(async (transaction) => {
+    const create = async (transaction: Transaction<Database>): Promise<SessionResource> => {
       const policy = await this.#lockTenantPolicy(transaction);
       const workspace = await transaction
         .selectFrom("workspaces as workspace")
@@ -574,7 +575,10 @@ export class ControlPlaneStore {
         modelProfileId,
         createdAt: isoTimestamp(session.created_at),
       };
-    });
+    };
+    return existingTransaction === undefined
+      ? this.#database.transaction().execute(create)
+      : create(existingTransaction);
   }
 
   async modelCatalog(): Promise<ModelCatalogResource> {
@@ -1171,15 +1175,25 @@ export class ControlPlaneStore {
     sessionId: string,
     idempotencyKey: string,
     request: AcceptTurnRequest,
+    existingTransaction?: Transaction<Database>,
   ): Promise<AcceptedTurnResource> {
     const startedAt = performance.now();
     let outcome = "accepted";
     try {
       const fingerprint = turnRequestFingerprint(request);
       try {
-        return await this.#acceptNewTurn(sessionId, idempotencyKey, request, fingerprint);
+        return await this.#acceptNewTurn(
+          sessionId,
+          idempotencyKey,
+          request,
+          fingerprint,
+          existingTransaction,
+        );
       } catch (error) {
-        if (!isPostgresConstraint(error, "runs_session_idempotency_unique")) {
+        if (
+          existingTransaction !== undefined ||
+          !isPostgresConstraint(error, "runs_session_idempotency_unique")
+        ) {
           throw error;
         }
         const concurrentWinner = await this.#findAcceptedTurn(sessionId, idempotencyKey);
@@ -1411,10 +1425,11 @@ export class ControlPlaneStore {
     idempotencyKey: string,
     request: AcceptTurnRequest,
     fingerprint: string,
+    existingTransaction?: Transaction<Database>,
   ): Promise<AcceptedTurnResource> {
     const turnId = this.#idGenerator();
     const runId = this.#idGenerator();
-    return this.#database.transaction().execute(async (transaction) => {
+    const accept = async (transaction: Transaction<Database>): Promise<AcceptedTurnResource> => {
       const session = await transaction
         .selectFrom("sessions as session_row")
         .leftJoin("runs as replay_run", (join) =>
@@ -1664,7 +1679,10 @@ export class ControlPlaneStore {
         fingerprint,
         false,
       );
-    });
+    };
+    return existingTransaction === undefined
+      ? this.#database.transaction().execute(accept)
+      : accept(existingTransaction);
   }
 
   async #findAcceptedTurn(

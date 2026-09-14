@@ -83,7 +83,8 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | UI-14 | Blank-line streaming Markdown segmentation may split a loose list or a four-backtick fence | Candidate rendering mismatch; compare complete and streaming document semantics before changing the renderer |
 | SC-07 | Non-object GitLab webhook JSON raised TypeError before the intended shape rejection | Three payload-shape regressions reproduced 500-class errors; reject through the existing invalid-webhook contract |
 | SC-08 | Missing Workspace credential-service configuration fabricated a known placeholder token | Reproduced misleading Broker URL error; fail explicitly as unconfigured instead of sending a placeholder credential |
-| SC-09 | Issue coordinator reuses Sessions by title, can recreate missing Workspaces and forces thinking off | New source-confirmed lifecycle/configuration candidates; verify unrelated same-title Session and crash between creation/linking. Preserve existing PG queue/model ownership |
+| SC-09 | Issue coordinator reused Sessions by title, could recreate missing Workspaces and forced thinking off | Reproduced unrelated same-title Session reuse and the off override. Create native Session + accepted Run + job link in one existing PG transaction; require the selected Workspace and inherit model settings. Injected failure after Session creation rolls back both product/native roots and leaves no Run |
+| SC-10 | Retired Issue owner could mark the Webhook delivery failed after losing the job | Reproduced late failure overwriting delivery. Only project completion/failure when the owner-conditioned job update succeeds |
 | MUT-01 | Rebind and cancel check idempotency before acquiring their lifecycle row locks, then can reject on changed state | Candidate concurrent replay bug; reproduce with separate real PostgreSQL connections |
 | LIFE-03 | Active Lane cold-history waits use the shared writer signal, not the task's cancellation signal | Candidate blocked cancellation; trace Runtime abort and test projection lag without poisoning sibling Lanes |
 | CANCEL-01 | `abort()` was lost before the native Agent existed; cancellation during intent ACK still called the Tool | Reproduced model/effect calls after cancellation. Latched cancellation, checked the existing signal after intent commit, and kept aborted native outcome; unit regressions pass |
@@ -127,6 +128,8 @@ ARCH-02 is awaiting the owner. No real GitHub account or installation was probed
 Latest UI/resource slice: all 117 tests across 18 files pass, plus the actual
 Chrome presentation/interaction fixture (including rejected clipboard cleanup).
 These are local contract/browser tests, not paid model or deployed Cube acceptance.
+Control Plane follow-up: 134 tests passed, five real-PG-only checks skipped by
+the offline suite; those remain required for the dedicated PG validation stage.
 
 Local regression slices passed: three
 runtime-composition tests; 50 Worker/Runner/Harness tests; 12 auth/gateway tests;

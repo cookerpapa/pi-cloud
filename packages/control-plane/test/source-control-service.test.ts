@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { ToolBrokerClient } from "@pi-cloud/tool-broker/client";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { GitHubAppClient } from "../src/github-app-client.ts";
-import { SourceControlService } from "../src/source-control-service.ts";
+import { SourceControlService, SourceControlServiceError } from "../src/source-control-service.ts";
 import { SourceControlIssueCoordinator } from "../src/source-control-issue-coordinator.ts";
 import type { TenantRequestIdentity } from "../src/tenant-identity.ts";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
@@ -679,6 +679,17 @@ describe.sequential("source-control App boundary", () => {
       }),
     );
 
+    const unrelatedSession = await new ControlPlaneStore({
+      database,
+      tenantId: tenant.tenantId,
+      defaultModelProfileId: tenant.defaultModelProfileId,
+    }).createSession(
+      selectedWorkspace.projectId,
+      selectedWorkspace.workspaceId,
+      "Fix the insertion sort edge case",
+      "elastic",
+    );
+    const acceptedTurn = vi.spyOn(ControlPlaneStore.prototype, "acceptTurn");
     const coordinatorA = new SourceControlIssueCoordinator({
       database,
       sourceControl: service,
@@ -705,6 +716,70 @@ describe.sequential("source-control App boundary", () => {
       instanceId: "issue-coordinator-flow",
       environmentImageRevision: "test",
     });
+    const clone = vi.spyOn(service, "workspaceCloneUrlForJob").mockImplementationOnce(async () => {
+      await database
+        .updateTable("source_control_issue_jobs")
+        .set({ owner_id: "successor" })
+        .where("id", "=", jobs.jobs[0]!.jobId)
+        .execute();
+      throw new SourceControlServiceError(
+        "source_control_not_found",
+        "Late error from retired owner",
+      );
+    });
+    await coordinator.reconcileOnce();
+    expect
+      .soft(
+        await database
+          .selectFrom("source_control_webhook_deliveries")
+          .select("state")
+          .where("provider", "=", "github")
+          .where("delivery_id", "=", "delivery-1")
+          .executeTakeFirstOrThrow(),
+      )
+      .toEqual({ state: "accepted" });
+    clone.mockRestore();
+    await database
+      .updateTable("source_control_issue_jobs")
+      .set({ owner_id: null, lease_expires_at: null, available_at: new Date() })
+      .where("id", "=", jobs.jobs[0]!.jobId)
+      .execute();
+
+    const createSession = ControlPlaneStore.prototype.createSession;
+    const failCreation = vi
+      .spyOn(ControlPlaneStore.prototype, "createSession")
+      .mockImplementationOnce(async function (this: ControlPlaneStore, ...args) {
+        await createSession.apply(this, args);
+        throw new Error("Interrupted before job linking");
+      });
+    await coordinator.reconcileOnce();
+    failCreation.mockRestore();
+    expect(
+      await database
+        .selectFrom("sessions")
+        .select("id")
+        .where("tenant_id", "=", tenant.tenantId)
+        .execute(),
+    ).toEqual([{ id: unrelatedSession.sessionId }]);
+    expect(
+      await database
+        .selectFrom("pi_sessions")
+        .select("id")
+        .where("tenant_id", "=", tenant.tenantId)
+        .execute(),
+    ).toEqual([{ id: unrelatedSession.sessionId }]);
+    expect(
+      await database
+        .selectFrom("runs")
+        .select("id")
+        .where("tenant_id", "=", tenant.tenantId)
+        .execute(),
+    ).toEqual([]);
+    await database
+      .updateTable("source_control_issue_jobs")
+      .set({ available_at: new Date() })
+      .where("id", "=", jobs.jobs[0]!.jobId)
+      .execute();
     await expect(coordinator.reconcileOnce()).resolves.toBe(true);
     const queued = await database
       .selectFrom("source_control_issue_jobs")
@@ -712,6 +787,8 @@ describe.sequential("source-control App boundary", () => {
       .where("provider", "=", "github")
       .executeTakeFirstOrThrow();
     expect(queued).toMatchObject({ state: "queued" });
+    expect.soft(queued.session_id).not.toBe(unrelatedSession.sessionId);
+    expect.soft(acceptedTurn.mock.calls.at(-1)?.[2]).not.toHaveProperty("thinkingLevel");
     expect(queued.run_id).toMatch(/^[0-9a-f-]{36}$/);
     await database.transaction().execute(async (transaction) => {
       const run = await transaction

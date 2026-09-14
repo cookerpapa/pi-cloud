@@ -207,7 +207,9 @@ export class SourceControlIssueCoordinator {
       job.execution_mode === null ||
       job.sandbox_profile_key === null ||
       job.working_directory === null ||
-      job.started_by_user_id === null
+      job.started_by_user_id === null ||
+      job.project_id === null ||
+      job.workspace_id === null
     ) {
       throw new SourceControlServiceError(
         "source_control_operation_failed",
@@ -228,60 +230,14 @@ export class SourceControlIssueCoordinator {
         "Issue source repository is no longer connected",
       );
     }
-    const projectName = `Issue ${repository.full_name} #${String(job.issue_number)} ${job.id.slice(0, 8)}`;
-    let projectId = job.project_id;
-    let workspaceId = job.workspace_id;
-    if (projectId === null || workspaceId === null) {
-      const existing = await this.#database
-        .selectFrom("projects as project")
-        .innerJoin("workspaces as workspace", (join) =>
-          join
-            .onRef("workspace.tenant_id", "=", "project.tenant_id")
-            .onRef("workspace.project_id", "=", "project.id"),
-        )
-        .select(["project.id as projectId", "workspace.id as workspaceId"])
-        .where("project.tenant_id", "=", job.tenant_id)
-        .where("project.name", "=", projectName)
-        .where("project.deleted_at", "is", null)
-        .executeTakeFirst();
-      if (existing !== undefined) {
-        projectId = existing.projectId;
-        workspaceId = existing.workspaceId;
-      } else {
-        const created = await store.createProject({ name: projectName, source: { kind: "empty" } });
-        projectId = created.projectId;
-        workspaceId = created.workspaceId;
-      }
-      await this.#updateOwned(job.id, {
-        state: "provisioning",
-        project_id: projectId,
-        workspace_id: workspaceId,
-      });
-    }
-
-    const sessionTitle = job.session_title;
-    let sessionId = job.session_id;
-    if (sessionId === null) {
-      const existing = await this.#database
-        .selectFrom("sessions")
-        .select("id")
-        .where("tenant_id", "=", job.tenant_id)
-        .where("workspace_id", "=", workspaceId)
-        .where("title", "=", sessionTitle)
-        .where("session_kind", "=", "conversation")
-        .where("archived_at", "is", null)
-        .executeTakeFirst();
-      sessionId =
-        existing?.id ??
-        (
-          await store.createSession(projectId, workspaceId, sessionTitle, job.execution_mode, {
-            sandboxProfileKey: job.sandbox_profile_key,
-            workingDirectory: job.working_directory,
-            ownerUserId: identity.userId,
-          })
-        ).sessionId;
-      await this.#updateOwned(job.id, { state: "provisioning", session_id: sessionId });
-    }
+    const projectId = job.project_id;
+    const workspaceId = job.workspace_id;
+    const executionMode = job.execution_mode;
+    const execution = {
+      sandboxProfileKey: job.sandbox_profile_key,
+      workingDirectory: job.working_directory,
+      ownerUserId: identity.userId,
+    };
 
     const prompt = [
       `Resolve ${repository.provider === "gitlab" ? "GitLab" : "GitHub"} Issue #${String(job.issue_number)} in ${repository.full_name}.`,
@@ -296,16 +252,50 @@ export class SourceControlIssueCoordinator {
       "Issue body:",
       job.issue_body.length === 0 ? "(empty)" : job.issue_body,
     ].join("\n");
-    const accepted = await store.acceptTurn(sessionId, `source-control-issue-job-${job.id}`, {
-      prompt,
-      thinkingLevel: "off",
-    });
-    await this.#updateOwned(job.id, {
-      state: "queued",
-      run_id: accepted.runId,
-      owner_id: null,
-      lease_expires_at: null,
-      available_at: new Date(this.#clock().valueOf() + 2_000),
+    await this.#database.transaction().execute(async (transaction) => {
+      const owned = await transaction
+        .selectFrom("source_control_issue_jobs")
+        .select("session_id")
+        .where("id", "=", job.id)
+        .where("owner_id", "=", this.#instanceId)
+        .where("lease_expires_at", ">", this.#clock())
+        .where("state", "in", ["received", "provisioning"])
+        .forUpdate()
+        .executeTakeFirst();
+      if (owned === undefined) return;
+      // Session identity comes from the job, never a mutable/non-unique title.
+      // Its native root, accepted Run and job link commit or roll back together.
+      const sessionId =
+        owned.session_id ??
+        (
+          await store.createSession(
+            projectId,
+            workspaceId,
+            job.session_title,
+            executionMode,
+            execution,
+            transaction,
+          )
+        ).sessionId;
+      const accepted = await store.acceptTurn(
+        sessionId,
+        `source-control-issue-job-${job.id}`,
+        { prompt },
+        transaction,
+      );
+      await transaction
+        .updateTable("source_control_issue_jobs")
+        .set({
+          state: "queued",
+          session_id: sessionId,
+          run_id: accepted.runId,
+          owner_id: null,
+          lease_expires_at: null,
+          updated_at: this.#clock(),
+          available_at: new Date(this.#clock().valueOf() + 2_000),
+        })
+        .where("id", "=", job.id)
+        .executeTakeFirstOrThrow();
     });
   }
 
@@ -351,7 +341,7 @@ export class SourceControlIssueCoordinator {
   async #complete(job: NonNullable<ClaimedJob>): Promise<void> {
     const now = this.#clock();
     await this.#database.transaction().execute(async (transaction) => {
-      await transaction
+      const updated = await transaction
         .updateTable("source_control_issue_jobs")
         .set({
           state: "completed",
@@ -363,6 +353,7 @@ export class SourceControlIssueCoordinator {
         .where("id", "=", job.id)
         .where("owner_id", "=", this.#instanceId)
         .executeTakeFirstOrThrow();
+      if (updated.numUpdatedRows !== 1n) return;
       await transaction
         .updateTable("source_control_webhook_deliveries")
         .set({ state: "completed", settled_at: now })
@@ -378,7 +369,7 @@ export class SourceControlIssueCoordinator {
   ): Promise<void> {
     const now = this.#clock();
     await this.#database.transaction().execute(async (transaction) => {
-      await transaction
+      const updated = await transaction
         .updateTable("source_control_issue_jobs")
         .set({
           state: "failed",
@@ -391,7 +382,8 @@ export class SourceControlIssueCoordinator {
         })
         .where("id", "=", job.id)
         .where("owner_id", "=", this.#instanceId)
-        .execute();
+        .executeTakeFirstOrThrow();
+      if (updated.numUpdatedRows !== 1n) return;
       await transaction
         .updateTable("source_control_webhook_deliveries")
         .set({ state: "failed", failure_code: failure.code.slice(0, 128), settled_at: now })
@@ -457,10 +449,6 @@ export class SourceControlIssueCoordinator {
     jobId: string,
     values: Partial<{
       state: SourceControlIssueJobState;
-      project_id: string;
-      workspace_id: string;
-      session_id: string;
-      run_id: string;
       owner_id: string | null;
       lease_expires_at: Date | null;
       available_at: Date;
