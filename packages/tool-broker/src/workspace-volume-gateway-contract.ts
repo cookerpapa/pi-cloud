@@ -155,7 +155,6 @@ export type PersistentVolumeWorkspaceVolumeGatewayOptions = Readonly<{
 export type WorkspaceVolumeGitRunner = (
   args: readonly string[],
   options: {
-    cwd: string;
     credential?: Readonly<{
       provider: "github" | "gitlab";
       cloneUrl: string;

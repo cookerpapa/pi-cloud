@@ -229,6 +229,30 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
 }
 
 describe("Tool Broker authenticated RPC", () => {
+  it("closes its HTTP listener even when the provider teardown fails", async () => {
+    const broker = backend();
+    const failure = new Error("provider cleanup failed");
+    const close = vi.spyOn(broker, "close").mockRejectedValueOnce(failure);
+    const server = new ToolBrokerServer({
+      commands,
+      host: "127.0.0.1",
+      port: 0,
+      serviceToken: SERVICE_TOKEN,
+      broker,
+    });
+    servers.push(server);
+    const address = await server.listen();
+    try {
+      await expect(server.close()).rejects.toBe(failure);
+      expect.soft(server.address).toBeUndefined();
+      await expect(
+        fetch(`${address}/health/live`, { signal: AbortSignal.timeout(1000) }),
+      ).rejects.toThrow();
+    } finally {
+      close.mockRestore();
+    }
+  });
+
   it("routes Workspace-owned Git credential authorization without cloning", async () => {
     const server = new ToolBrokerServer({
       commands,

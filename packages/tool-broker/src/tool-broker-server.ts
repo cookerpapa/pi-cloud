@@ -327,10 +327,13 @@ export class ToolBrokerServer {
     this.#ready = false;
     for (const connection of this.#previewConnections) connection.destroy();
     clearInterval(this.#capacityMetrics);
-    await this.#broker.close();
-    if (this.#address !== undefined) {
-      this.#address = undefined;
-      await this.#server.close();
+    try {
+      await this.#broker.close();
+    } finally {
+      if (this.#address !== undefined) {
+        this.#address = undefined;
+        await this.#server.close();
+      }
     }
   }
 
@@ -389,7 +392,6 @@ export class ToolBrokerServer {
     request: FastifyRequest;
     spanName: string;
     operation: string;
-    kind: "sandbox" | "tool";
     run: () => Promise<T>;
   }): Promise<T> {
     const parent = parseTraceCarrier({
@@ -406,31 +408,17 @@ export class ToolBrokerServer {
         try {
           const result = await options.run();
           const duration = (performance.now() - startedAt) / 1_000;
-          if (options.kind === "sandbox") {
-            this.#metrics?.sandboxDuration.observe(
-              { operation: options.operation, outcome: "completed" },
-              duration,
-            );
-          } else {
-            this.#metrics?.toolDuration.observe(
-              { tool: options.operation, outcome: "completed" },
-              duration,
-            );
-          }
+          this.#metrics?.sandboxDuration.observe(
+            { operation: options.operation, outcome: "completed" },
+            duration,
+          );
           return result;
         } catch (error: unknown) {
           const duration = (performance.now() - startedAt) / 1_000;
-          if (options.kind === "sandbox") {
-            this.#metrics?.sandboxDuration.observe(
-              { operation: options.operation, outcome: "failed" },
-              duration,
-            );
-          } else {
-            this.#metrics?.toolDuration.observe(
-              { tool: options.operation, outcome: "failed" },
-              duration,
-            );
-          }
+          this.#metrics?.sandboxDuration.observe(
+            { operation: options.operation, outcome: "failed" },
+            duration,
+          );
           throw error;
         }
       },
@@ -630,7 +618,6 @@ export class ToolBrokerServer {
               request,
               spanName: "sandbox.reserve",
               operation: "reserve",
-              kind: "sandbox",
               run: () => this.#broker.create(message),
             });
           } catch (error: unknown) {
@@ -669,7 +656,6 @@ export class ToolBrokerServer {
             request,
             spanName: "sandbox.release",
             operation: "release",
-            kind: "sandbox",
             run: () => this.#broker.release(message),
           });
           this.#metrics?.sandboxActive.set(
@@ -688,7 +674,6 @@ export class ToolBrokerServer {
             request,
             spanName: "sandbox.stop",
             operation: "stop",
-            kind: "sandbox",
             run: () => this.#broker.stop(message.activationId, message.assignment),
           });
           this.#metrics?.sandboxActive.set(
@@ -713,7 +698,6 @@ export class ToolBrokerServer {
               request,
               spanName: "workspace.fork",
               operation: "workspace_fork",
-              kind: "sandbox",
               run: () => this.#broker.forkWorkspace(message),
             }),
           );
@@ -751,7 +735,6 @@ export class ToolBrokerServer {
               request,
               spanName: "workspace.list_directory",
               operation: "list_directory",
-              kind: "sandbox",
               run: () => this.#broker.listWorkspaceDirectory(message),
             }),
           );
@@ -762,7 +745,6 @@ export class ToolBrokerServer {
             request,
             spanName: "workspace.read_file",
             operation: "read_file",
-            kind: "sandbox",
             run: () => this.#broker.readWorkspaceFile(message),
           }),
         );
@@ -802,7 +784,6 @@ export class ToolBrokerServer {
               request,
               spanName: "source_control.credential",
               operation: message.type.replace("source_control.workspace_", "source_"),
-              kind: "sandbox",
               run: async () => {
                 if (message.type === "source_control.workspace_credential_authorize") {
                   const authorize = this.#broker.authorizeSourceCredential;
@@ -899,7 +880,6 @@ export class ToolBrokerServer {
           request,
           spanName: "tool.result",
           operation: "tool_result_read",
-          kind: "sandbox",
           // Tool execution is owned by operationId and the task's Session authority, not by
           // this particular HTTP connection. Explicit stop/cancel revokes it.
           run: () =>

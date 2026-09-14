@@ -49,6 +49,17 @@ import {
 
 const GIT_TIMEOUT_MS = 5 * 60_000;
 
+async function readAtMost(file: Awaited<ReturnType<typeof open>>, limit: number): Promise<Buffer> {
+  const buffer = Buffer.allocUnsafe(limit);
+  let length = 0;
+  while (length < limit) {
+    const { bytesRead } = await file.read(buffer, length, limit - length, null);
+    if (bytesRead === 0) break;
+    length += bytesRead;
+  }
+  return buffer.subarray(0, length);
+}
+
 function safeBrowsePath(value: string, allowEmpty: boolean): string {
   if (allowEmpty && value.length === 0) return "";
   const path = safeRelativeFile(value);
@@ -96,6 +107,7 @@ function trustedGitEnvironment(
     LANG: "C.UTF-8",
     LC_ALL: "C.UTF-8",
     GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_TERMINAL_PROMPT: "0",
   };
   for (const name of [
@@ -169,13 +181,25 @@ function storedCredentialUrl(value: string): URL {
 
 async function storedCredentials(path: string): Promise<URL[]> {
   let value: string;
+  let file: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    value = await readFile(path, "utf8");
+    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const metadata = await file.stat();
+    if (!metadata.isFile() || metadata.size > 256 * 1024) {
+      throw new WorkspaceVolumeGatewayError(
+        "source_control_credential_home_invalid",
+        "Workspace Git credential store was invalid",
+        false,
+      );
+    }
+    value = (await readAtMost(file, 256 * 1024 + 1)).toString("utf8");
   } catch (error: unknown) {
     if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
       return [];
     }
     throw error;
+  } finally {
+    await file?.close();
   }
   if (Buffer.byteLength(value, "utf8") > 256 * 1_024) {
     throw new WorkspaceVolumeGatewayError(
@@ -204,7 +228,6 @@ function credentialProvider(url: URL): "github" | "gitlab" | undefined {
 export function runTrustedWorkspaceGit(
   args: readonly string[],
   options: {
-    cwd: string;
     credential?: Readonly<{
       provider: "github" | "gitlab";
       cloneUrl: string;
@@ -219,7 +242,9 @@ export function runTrustedWorkspaceGit(
       "/usr/bin/git",
       [...args],
       {
-        cwd: options.cwd,
+        // A network credential probe must never discover a user-controlled
+        // .git/config (URL rewrites and custom SSH commands can execute code).
+        cwd: "/",
         env: trustedGitEnvironment(options.credential),
         encoding: "utf8",
         maxBuffer: 2 * 1_024 * 1_024,
@@ -460,44 +485,44 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       }
       const directory = await this.#validatedVolume(identity);
       const target = await this.#browseTarget(directory, input.rootPath, input.path, true);
-      const metadata = await lstat(target.absolute);
-      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
-        throw new WorkspaceVolumeGatewayError(
-          "workspace_directory_invalid",
-          "Workspace directory was unavailable",
-          false,
+      const handle = await this.#openBrowseTarget(target, true);
+      try {
+        const openedDirectory = `/proc/self/fd/${handle.fd}`;
+        const listed = (await readdir(openedDirectory, { withFileTypes: true }))
+          .filter((entry) => entry.name !== ".git" && entry.name !== WORKSPACE_GIT_CREDENTIALS_FILE)
+          .filter((entry) => entry.isDirectory() || entry.isFile() || entry.isSymbolicLink())
+          .sort((left, right) => left.name.localeCompare(right.name));
+        const entries = await Promise.all(
+          listed.slice(0, 4_096).map(async (entry) => {
+            const path =
+              target.relative.length === 0 ? entry.name : `${target.relative}/${entry.name}`;
+            if (entry.isSymbolicLink()) return { name: entry.name, path, kind: "symlink" as const };
+            if (entry.isDirectory()) return { name: entry.name, path, kind: "directory" as const };
+            const file = await lstat(join(openedDirectory, entry.name)).catch(
+              (error: NodeJS.ErrnoException) => {
+                if (error.code === "ENOENT") return undefined;
+                throw error;
+              },
+            );
+            if (!file) return undefined;
+            return {
+              name: entry.name,
+              path,
+              kind: "file" as const,
+              sizeBytes: file.size,
+              executable: (file.mode & 0o111) !== 0,
+            };
+          }),
         );
+        return {
+          entries: entries.filter(
+            (entry): entry is NonNullable<typeof entry> => entry !== undefined,
+          ),
+          truncated: listed.length > 4_096,
+        };
+      } finally {
+        await handle.close();
       }
-      const listed = (await readdir(target.absolute, { withFileTypes: true }))
-        .filter((entry) => entry.name !== ".git" && entry.name !== WORKSPACE_GIT_CREDENTIALS_FILE)
-        .filter((entry) => entry.isDirectory() || entry.isFile() || entry.isSymbolicLink())
-        .sort((left, right) => left.name.localeCompare(right.name));
-      const entries = await Promise.all(
-        listed.slice(0, 4_096).map(async (entry) => {
-          const path =
-            target.relative.length === 0 ? entry.name : `${target.relative}/${entry.name}`;
-          if (entry.isSymbolicLink()) return { name: entry.name, path, kind: "symlink" as const };
-          if (entry.isDirectory()) return { name: entry.name, path, kind: "directory" as const };
-          const file = await lstat(join(target.absolute, entry.name)).catch(
-            (error: NodeJS.ErrnoException) => {
-              if (error.code === "ENOENT") return undefined;
-              throw error;
-            },
-          );
-          if (!file) return undefined;
-          return {
-            name: entry.name,
-            path,
-            kind: "file" as const,
-            sizeBytes: file.size,
-            executable: (file.mode & 0o111) !== 0,
-          };
-        }),
-      );
-      return {
-        entries: entries.filter((entry): entry is NonNullable<typeof entry> => entry !== undefined),
-        truncated: listed.length > 4_096,
-      };
     });
   }
 
@@ -521,7 +546,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     return this.#withVolumeLock(identity.volumeId, async () => {
       const directory = await this.#validatedVolume(identity);
       const target = await this.#browseTarget(directory, input.rootPath, input.path, false);
-      const handle = await open(target.absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const handle = await this.#openBrowseTarget(target, false);
       try {
         const metadata = await handle.stat();
         if (!metadata.isFile() || metadata.size > input.maximumBytes) {
@@ -531,7 +556,14 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
             false,
           );
         }
-        const bytes = await handle.readFile();
+        const bytes = await readAtMost(handle, input.maximumBytes + 1);
+        if (bytes.length > input.maximumBytes) {
+          throw new WorkspaceVolumeGatewayError(
+            "workspace_file_invalid",
+            "Workspace file grew beyond its read limit",
+            false,
+          );
+        }
         return {
           bytes,
           sha256: createHash("sha256").update(bytes).digest("hex"),
@@ -576,42 +608,43 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     reason?: "credential_missing" | "credential_rejected" | "code_host_unreachable";
   }> {
     const identity = validatedIdentity(input);
-    return this.#withVolumeLock(identity.volumeId, async () => {
+    const credentialUrl = await this.#withVolumeLock(identity.volumeId, async () => {
       const directory = await this.#validatedVolume(identity);
       const credentialPath = join(
         directory,
         VOLUME_WORKSPACE_DIRECTORY,
         WORKSPACE_GIT_CREDENTIALS_FILE,
       );
-      const credentialUrl = (await storedCredentials(credentialPath)).find(
+      return (await storedCredentials(credentialPath)).find(
         (candidate) =>
           credentialOrigin(candidate.toString()) === input.origin &&
           credentialProvider(candidate) === input.provider,
       );
-      if (credentialUrl === undefined || credentialUrl.password.length < 16) {
-        return { authorized: false, reason: "credential_missing" };
-      }
-      try {
-        await this.#git(["ls-remote", input.verificationCloneUrl], {
-          cwd: join(directory, VOLUME_WORKSPACE_DIRECTORY),
-          credential: {
-            provider: input.provider,
-            cloneUrl: input.verificationCloneUrl,
-            accessToken: decodeURIComponent(credentialUrl.password),
-          },
-          retryable: true,
-        });
-        return { authorized: true };
-      } catch (error: unknown) {
-        return {
-          authorized: false,
-          reason:
-            error instanceof WorkspaceVolumeGatewayError && error.retryable
-              ? "code_host_unreachable"
-              : "credential_rejected",
-        };
-      }
     });
+    if (credentialUrl === undefined || credentialUrl.password.length < 16) {
+      return { authorized: false, reason: "credential_missing" };
+    }
+    // The probe uses only this credential value, not Workspace bytes. Do not
+    // hold a Volume lock or a PG lock connection through a remote network wait.
+    try {
+      await this.#git(["ls-remote", input.verificationCloneUrl], {
+        credential: {
+          provider: input.provider,
+          cloneUrl: input.verificationCloneUrl,
+          accessToken: decodeURIComponent(credentialUrl.password),
+        },
+        retryable: true,
+      });
+      return { authorized: true };
+    } catch (error: unknown) {
+      return {
+        authorized: false,
+        reason:
+          error instanceof WorkspaceVolumeGatewayError && error.retryable
+            ? "code_host_unreachable"
+            : "credential_rejected",
+      };
+    }
   }
 
   async listSourceCredentials(
@@ -925,12 +958,42 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
       : this.#distributedLock.withLock(volumeId, run);
   }
 
+  async #openBrowseTarget(
+    target: { absolute: string; root: string },
+    directory: boolean,
+  ): Promise<Awaited<ReturnType<typeof open>>> {
+    const handle = await open(
+      target.absolute,
+      constants.O_RDONLY |
+        constants.O_NOFOLLOW |
+        constants.O_NONBLOCK |
+        (directory ? constants.O_DIRECTORY : 0),
+    );
+    try {
+      // On the supported Linux host, inspect the opened object, not just the
+      // pathname checked before open. Guest directory renames must not redirect
+      // trusted reads into a different Volume. Directory reads keep this fd too.
+      const actual = await realpath(`/proc/self/fd/${handle.fd}`);
+      if (actual !== target.root && !actual.startsWith(`${target.root}${sep}`)) {
+        throw new WorkspaceVolumeGatewayError(
+          "workspace_path_escape",
+          "Workspace browser path escaped its selected root",
+          false,
+        );
+      }
+      return handle;
+    } catch (error) {
+      await handle.close();
+      throw error;
+    }
+  }
+
   async #browseTarget(
     directory: string,
     rootPathValue: string,
     pathValue: string,
     pathMayBeEmpty: boolean,
-  ): Promise<{ absolute: string; relative: string }> {
+  ): Promise<{ absolute: string; relative: string; root: string }> {
     const rootPath = safeBrowsePath(rootPathValue, true);
     const path = safeBrowsePath(pathValue, pathMayBeEmpty);
     const volumeRoot = await realpath(join(directory, VOLUME_WORKSPACE_DIRECTORY));
@@ -952,7 +1015,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         false,
       );
     }
-    return { absolute, relative: path };
+    return { absolute, relative: path, root: selectedRoot };
   }
 
   async #withVolumeLocks<T>(volumeIds: readonly string[], operation: () => Promise<T>): Promise<T> {

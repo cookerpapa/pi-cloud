@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import {
   lstat,
   mkdtemp,
@@ -21,6 +22,9 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return {
     ...actual,
     lstat: (...args: Parameters<typeof actual.lstat>) => Reflect.apply(actual.lstat, actual, args),
+    open: (...args: Parameters<typeof actual.open>) => Reflect.apply(actual.open, actual, args),
+    readdir: (...args: Parameters<typeof actual.readdir>) =>
+      Reflect.apply(actual.readdir, actual, args),
   };
 });
 import {
@@ -59,6 +63,227 @@ function identity(sessionId: string) {
 }
 
 describe("PersistentVolumeWorkspaceVolumeGateway", () => {
+  it("does not hold the Volume lock while waiting for a remote credential probe", async () => {
+    const workspaceRoot = await root();
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({
+      workspaceRoot,
+      gitRunner: async () => {
+        entered();
+        await blocked;
+        return { stdout: "", exitCode: 0 };
+      },
+    });
+    const scope = identity("nonblocking-credential-probe");
+    await mover.prepare(scope);
+    await mover.authorizeSourceCredential({
+      ...scope,
+      requestId: randomUUID(),
+      provider: "gitlab",
+      origin: "https://gitlab.invalid",
+      credentialMountPath: "/workspace",
+      accessToken: "test-probe-token",
+    });
+    const probe = mover.preflightSourceCredential({
+      ...scope,
+      requestId: randomUUID(),
+      provider: "gitlab",
+      origin: "https://gitlab.invalid",
+      credentialMountPath: "/workspace",
+      verificationCloneUrl: "https://gitlab.invalid/repo.git",
+    });
+    let listing: Promise<unknown> | undefined;
+    try {
+      await started;
+      let listed = false;
+      listing = mover.listDirectory({ ...scope, rootPath: "", path: "" }).then(() => {
+        listed = true;
+      });
+      await vi.waitFor(() => expect(listed).toBe(true), { timeout: 300 });
+    } finally {
+      release();
+      await probe;
+      await listing;
+      await mover.close();
+    }
+  });
+
+  it("enforces the read limit if a regular file grows after its stat", async () => {
+    const workspaceRoot = await root();
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const scope = identity("growing-file");
+    await mover.prepare(scope);
+    const target = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace", "code.txt");
+    await writeFile(target, "small");
+    const original = fileSystem.open;
+    const opening = vi.spyOn(fileSystem, "open").mockImplementation(async (...args) => {
+      const file = await Reflect.apply(original, fileSystem, args);
+      if (String(args[0]) === target) {
+        const stat = file.stat.bind(file);
+        file.stat = (async () => {
+          const result = await stat();
+          await writeFile(target, "x".repeat(128));
+          return result;
+        }) as typeof file.stat;
+      }
+      return file;
+    });
+    try {
+      await expect(
+        mover.readFile({ ...scope, rootPath: "", path: "code.txt", maximumBytes: 64 }),
+      ).rejects.toMatchObject({ code: "workspace_file_invalid" });
+    } finally {
+      opening.mockRestore();
+      await mover.close();
+    }
+  });
+
+  it("rejects a parent-directory swap between path validation and opening a file", async () => {
+    const workspaceRoot = await root(),
+      outside = await root();
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const scope = identity("file-parent-race");
+    await mover.prepare(scope);
+    const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
+    const directory = join(workspace, "src"),
+      target = join(directory, "code.txt");
+    await mkdir(directory);
+    await writeFile(target, "own code");
+    await writeFile(join(outside, "code.txt"), "outside fixture content");
+    const original = fileSystem.open;
+    let swapped = false;
+    const opening = vi.spyOn(fileSystem, "open").mockImplementation(async (...args) => {
+      if (String(args[0]) === target && !swapped) {
+        swapped = true;
+        await rename(directory, `${directory}-old`);
+        await symlink(outside, directory);
+      }
+      return Reflect.apply(original, fileSystem, args);
+    });
+    try {
+      await expect(
+        mover.readFile({ ...scope, rootPath: "", path: "src/code.txt", maximumBytes: 64 }),
+      ).rejects.toMatchObject({ code: "workspace_path_escape" });
+      expect(swapped).toBe(true);
+    } finally {
+      opening.mockRestore();
+      await mover.close();
+    }
+  });
+
+  it("lists the opened directory, not a replacement symlink installed during readdir", async () => {
+    const workspaceRoot = await root(),
+      outside = await root();
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const scope = identity("directory-parent-race");
+    await mover.prepare(scope);
+    const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
+    const directory = join(workspace, "src");
+    await mkdir(directory);
+    await writeFile(join(directory, "own.txt"), "own");
+    await writeFile(join(outside, "outside.txt"), "other fixture");
+    const original = fileSystem.readdir;
+    let swapped = false;
+    const listing = vi.spyOn(fileSystem, "readdir").mockImplementation(async (...args) => {
+      if (
+        !swapped &&
+        (String(args[0]) === directory || String(args[0]).startsWith("/proc/self/fd/"))
+      ) {
+        swapped = true;
+        await rename(directory, `${directory}-old`);
+        await symlink(outside, directory);
+      }
+      return Reflect.apply(original, fileSystem, args);
+    });
+    try {
+      await expect(
+        mover.listDirectory({ ...scope, rootPath: "", path: "src" }),
+      ).resolves.toMatchObject({ entries: [{ name: "own.txt" }] });
+      expect(swapped).toBe(true);
+    } finally {
+      listing.mockRestore();
+      await mover.close();
+    }
+  });
+
+  it("does not execute Workspace Git configuration during trusted credential preflight", async () => {
+    const workspaceRoot = await root();
+    const fixture = await root();
+    const marker = join(fixture, "workspace-config-executed");
+    const helper = join(fixture, "fake-ssh");
+    await writeFile(helper, `#!/bin/sh\n: > '${marker}'\nexit 1\n`, { mode: 0o700 });
+    let requests = 0;
+    const http = createServer((_request, response) => {
+      requests++;
+      response.writeHead(401).end();
+    });
+    await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+    const address = http.address() as { port: number };
+    const origin = `http://127.0.0.1:${address.port}`;
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const scope = identity("untrusted-git-config");
+    try {
+      await mover.prepare(scope);
+      const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
+      await exec("/usr/bin/git", ["init"], { cwd: workspace });
+      await exec("/usr/bin/git", ["config", "core.sshCommand", helper], { cwd: workspace });
+      await exec("/usr/bin/git", ["config", "url.ssh://fake-host/.insteadOf", `${origin}/`], {
+        cwd: workspace,
+      });
+      await mover.authorizeSourceCredential({
+        ...scope,
+        requestId: randomUUID(),
+        provider: "gitlab",
+        origin,
+        credentialMountPath: "/workspace",
+        accessToken: "test-preflight-credential",
+      });
+      await expect(
+        mover.preflightSourceCredential({
+          ...scope,
+          requestId: randomUUID(),
+          provider: "gitlab",
+          origin,
+          credentialMountPath: "/workspace",
+          verificationCloneUrl: `${origin}/repo.git`,
+        }),
+      ).resolves.toMatchObject({ authorized: false });
+      await expect.soft(lstat(marker)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(requests).toBeGreaterThan(0);
+    } finally {
+      await mover.close();
+      await new Promise<void>((resolve, reject) =>
+        http.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("does not follow a Workspace credential symlink outside its volume", async () => {
+    const workspaceRoot = await root(),
+      outside = await root();
+    const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
+    const scope = identity("credential-symlink");
+    await mover.prepare(scope);
+    const credential = join(outside, "fixture-credentials");
+    await writeFile(credential, "https://oauth2:owned-test-token@gitlab.invalid/\n");
+    const workspace = join(workspaceRoot, `picloud-posix-${scope.volumeId}`, "workspace");
+    await symlink(credential, join(workspace, ".git-credentials"));
+    await expect(
+      mover.listSourceCredentials({
+        ...scope,
+        requestId: randomUUID(),
+        credentialMountPath: "/workspace",
+      }),
+    ).rejects.toBeDefined();
+    await mover.close();
+  });
+
   it("does not fail the whole directory when a concurrently deleted file disappears", async () => {
     const workspaceRoot = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
@@ -70,7 +295,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await writeFile(join(directory, "code.py"), "print(42)");
     const original = fileSystem.lstat;
     const inspect = vi.spyOn(fileSystem, "lstat").mockImplementation(async (...args) => {
-      if (String(args[0]) === vanished) await rm(vanished);
+      if (String(args[0]).endsWith("/vanished.tmp")) await rm(vanished);
       return Reflect.apply(original, fileSystem, args);
     });
     try {
