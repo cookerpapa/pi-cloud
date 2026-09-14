@@ -357,6 +357,7 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
         "session.secret_sha256 as secretSha256",
         "session.expires_at as expiresAt",
         "session.revoked_at as revokedAt",
+        "session.last_used_at as lastUsedAt",
         "credential.username",
         "user_row.display_name as displayName",
         "tenant.slug as tenantSlug",
@@ -380,18 +381,23 @@ export class WebAuthenticationService implements TenantApiAuthenticator {
       return undefined;
     }
     const staleBoundary = new Date(now.valueOf() - LAST_USED_WRITE_INTERVAL_MS);
-    await this.#options.database
-      .updateTable("web_sessions")
-      .set({ last_used_at: now })
-      .where("session_id", "=", row.sessionId)
-      .where((expression) =>
-        expression.or([
-          expression("last_used_at", "is", null),
-          expression("last_used_at", "<", staleBoundary),
-        ]),
-      )
-      .executeTakeFirst()
-      .catch(() => undefined);
+    // Authentication is never cached; only skip a redundant usage write when
+    // the same authoritative read already contains a recent timestamp.
+    if (row.lastUsedAt === null || new Date(row.lastUsedAt) < staleBoundary) {
+      await this.#options.database
+        .updateTable("web_sessions")
+        .set({ last_used_at: now })
+        .where("session_id", "=", row.sessionId)
+        .where((expression) =>
+          expression.or([
+            expression("last_used_at", "is", null),
+            expression("last_used_at", "<", staleBoundary),
+          ]),
+        )
+        .executeTakeFirst()
+        // Usage metadata must not invalidate an already authenticated request.
+        .catch(() => undefined);
+    }
     return {
       credentialId: row.sessionId,
       tenantId: row.tenantId,

@@ -6,7 +6,7 @@ import type { AuthSessionResource, ProjectResource } from "@pi-cloud/protocol";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import type { FastifyInstance } from "fastify";
 import type { Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   PostgresTenantApiAuthenticator,
@@ -216,6 +216,34 @@ describe.sequential("product web authentication", () => {
       .executeTakeFirstOrThrow();
     expect(rotatedProfile).toMatchObject({ modelId: "deepseek-v4-pro", bindingVersion: "2" });
     expect(rotatedProfile.bindingVersion).toBe("2");
+  });
+
+  it("refreshes usage metadata only when stale without caching login authority", async () => {
+    let now = new Date();
+    const authentication = new WebAuthenticationService({
+      database,
+      enabled: true,
+      maximumTenants: 4,
+      tenantQuotas: { maximumProjects: 10, maximumSessions: 100 },
+      clock: () => now,
+    });
+    const issued = await authentication.login({ username: "alice.dev", password: PASSWORD });
+    await authentication.authenticate(issued.token);
+    const update = vi.spyOn(database, "updateTable");
+    try {
+      await expect(authentication.authenticate(issued.token)).resolves.toBeDefined();
+      await expect(authentication.authenticate(issued.token)).resolves.toBeDefined();
+      expect.soft(update).not.toHaveBeenCalled();
+      update.mockClear();
+      now = new Date(now.valueOf() + 5 * 60_000 + 1);
+      await expect(authentication.authenticate(issued.token)).resolves.toBeDefined();
+      await expect(authentication.authenticate(issued.token)).resolves.toBeDefined();
+      expect.soft(update).toHaveBeenCalledTimes(1);
+      await authentication.logout(issued.token);
+      await expect(authentication.authenticate(issued.token)).resolves.toBeUndefined();
+    } finally {
+      update.mockRestore();
+    }
   });
 
   it("uses generic login failures, rotates sessions, and revokes logout immediately", async () => {

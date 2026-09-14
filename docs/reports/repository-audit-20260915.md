@@ -56,6 +56,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | --- | --- | --- |
 | CP-01 | `main` provides an HTTP Steer backend factory, but runtime composition dropped it; the service used the local WebSocket path instead | Fixed by forwarding application options intact; API regression returned 503 before and 200 after, with no local Worker socket. Live multi-replica retest pending |
 | CP-02 | Admission metrics were dropped by runtime and module composition before reaching the store factory | Fixed wiring; API acceptance and resource-create histograms now observe samples. Same regression failed before, passes after |
+| AUTH-01 | Both authenticators awaited a usage UPDATE on every valid request, even within the five-minute refresh interval | Reproduced redundant SQL calls; use `last_used_at` from the authority read to skip fresh updates, preserving conditional concurrent refresh and uncached revocation checks. 12 auth/gateway tests and type check pass |
 | LIFE-01 | Worker creates/listens on Model Gateway, but records it for cleanup only after upstream health succeeds | Reproduced a live listener after failed startup. Register ownership before startup awaits (also the owned Kafka log); two Worker runtime tests and type check pass. Kafka partial-start failure still needs separate injection |
 | LIFE-02 | Control Plane orderly shutdown stops cleanup after the first rejected close | Candidate cleanup failure; inject rejection and verify remaining components close |
 | MEM-01 | Control Plane caches management clients by URL without eviction as Worker addresses churn | Candidate boundedness issue; inspect actual client ownership and churn behavior |
@@ -67,6 +68,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CANCEL-02 | A local pre-sampling abort was classified as an assistant completion missing a Cloud Step | Reproduced through Runner; recognize the explicit no-sampling cancellation without inventing a Step. Runner/Harness suite: 48 pass |
 | LIFE-04 | Worker Ready only checks local process/channel state, while a permanently failed publisher can block every future claim | Candidate health/liveness defect; distinguish transient provider unavailability from terminal publisher failure before proposing a fix |
 | CFG-01 | Producer startup checks partition count but not existing topic replication/retention policy | Verify actual settings and configuration contract in isolated broker tests |
+| MUT-02 | Tenant admission locks the smallest existing tenant UUID, which can change when a new tenant is inserted | Candidate concurrency-capacity race; reproduce overlapping registration transactions in real PostgreSQL |
 
 No architecture change proposed yet. Three runtime-composition tests, 48
 Runner/Harness tests and two Worker runtime tests passed; affected package type

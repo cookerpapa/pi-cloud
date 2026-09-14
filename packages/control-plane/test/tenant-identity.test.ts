@@ -2,7 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   PostgresTenantApiAuthenticator,
   generateTenantApiCredential,
@@ -117,6 +117,31 @@ describe.sequential("tenant API identity", () => {
       authenticator.authenticate(`${generated.token.slice(0, -1)}b`),
     ).resolves.toBeUndefined();
     await expect(authenticator.authenticate("short")).resolves.toBeUndefined();
+  });
+
+  it("skips usage-update round trips until the persisted timestamp needs refreshing", async () => {
+    const credential = generateTenantApiCredential(IDS.ownerCredential, "a".repeat(43));
+    let now = NOW;
+    const authenticator = new PostgresTenantApiAuthenticator({ database, clock: () => now });
+    const update = vi.spyOn(database, "updateTable");
+    try {
+      await expect(authenticator.authenticate(credential.token)).resolves.toBeDefined();
+      await expect(authenticator.authenticate(credential.token)).resolves.toBeDefined();
+      expect.soft(update).not.toHaveBeenCalled();
+      update.mockClear();
+      now = new Date(NOW.valueOf() + 5 * 60_000 + 1);
+      await expect(authenticator.authenticate(credential.token)).resolves.toBeDefined();
+      await expect(authenticator.authenticate(credential.token)).resolves.toBeDefined();
+      expect(update).toHaveBeenCalledTimes(1);
+      const usage = await database
+        .selectFrom("tenant_api_credentials")
+        .select("last_used_at")
+        .where("credential_id", "=", credential.credentialId)
+        .executeTakeFirstOrThrow();
+      expect(new Date(usage.last_used_at!)).toEqual(now);
+    } finally {
+      update.mockRestore();
+    }
   });
 
   it("rejects expired, revoked, and unknown credentials without blocking a disabled tenant's safety access", async () => {

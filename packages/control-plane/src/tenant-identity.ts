@@ -134,6 +134,7 @@ function credentialSelect() {
     "credential.secret_sha256 as secretSha256",
     "credential.expires_at as expiresAt",
     "credential.revoked_at as revokedAt",
+    "credential.last_used_at as lastUsedAt",
     "policy.default_model_profile_id as defaultModelProfileId",
   ] as const;
 }
@@ -184,21 +185,23 @@ export class PostgresTenantApiAuthenticator implements TenantApiAuthenticator {
     }
 
     const staleUsageBoundary = new Date(now.valueOf() - LAST_USED_WRITE_INTERVAL_MS);
-    // Usage metadata is intentionally best-effort. A burst of requests sharing
-    // one browser credential must not turn row-update contention into an auth
-    // outage after the digest and revocation checks already succeeded.
-    await this.#database
-      .updateTable("tenant_api_credentials")
-      .set({ last_used_at: now })
-      .where("credential_id", "=", row.credentialId)
-      .where((expression) =>
-        expression.or([
-          expression("last_used_at", "is", null),
-          expression("last_used_at", "<", staleUsageBoundary),
-        ]),
-      )
-      .executeTakeFirst()
-      .catch(() => undefined);
+    // Use the authoritative read above to avoid an empty UPDATE round trip on
+    // every request. The SQL predicate still coalesces concurrent refreshes.
+    if (row.lastUsedAt === null || new Date(row.lastUsedAt) < staleUsageBoundary) {
+      await this.#database
+        .updateTable("tenant_api_credentials")
+        .set({ last_used_at: now })
+        .where("credential_id", "=", row.credentialId)
+        .where((expression) =>
+          expression.or([
+            expression("last_used_at", "is", null),
+            expression("last_used_at", "<", staleUsageBoundary),
+          ]),
+        )
+        .executeTakeFirst()
+        // Usage metadata must not invalidate an already authenticated request.
+        .catch(() => undefined);
+    }
 
     return {
       credentialId: row.credentialId,
