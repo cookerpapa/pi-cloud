@@ -146,8 +146,17 @@ five external-PG-only checks skipped in that offline invocation. A dedicated rea
 PostgreSQL container then passed all nine queue/recovery cases plus concurrent
 Run settlement (10 tests, 12.10 seconds). All workspace type checks, the Web build,
 Chrome presentation interactions, documentation and Helm checks passed. Full
-package tests with the isolated PG fixture are still running. These are not paid
+package tests with the isolated PG fixture finished: 877 passed, one schema-ledger
+assertion still expected migration 138 and one live Cube test was disabled.
+Updated that assertion to migration 140 and explicitly checked the removed table
+and positive-exit column; all seven database tests then passed (878 corrected
+package cases in total, one live Cube case pending). Five acceptance timing-helper
+tests also passed. The isolated PG container and all its per-test databases were
+removed; no formal users, Sessions or machines were deleted. These are not paid
 model, deployed Cube or complete audit acceptance; production remains unchanged.
+The maintained fault evaluator also passed all 26 targeted cases; its current
+report distinguishes simulated protocol failures from actual local process kills.
+No result here certifies physical multi-node failure or paid model behavior.
 
 Remote CI passed completely at `aadcb725` ([run](https://github.com/cookerpapa/pi-cloud/actions/runs/34899010082)),
 including the quality, browser and image/security jobs. Later slices require their
