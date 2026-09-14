@@ -4,6 +4,8 @@ Date: 2026-09-14. Implementation base: `a4984f5f`; the tests below ran against
 the modified implementation worktree and migration 138, not unchanged `a4984f5f`.
 The generated latest reports record that Git base. One-host Compose, real
 CubeSandbox v0.6.0 KVM, RF3 Kafka, PostgreSQL and two Pi Workers were used.
+The implementation was committed as `34cc7aa7`; release images were rebuilt
+from that commit after the final equivalent release-request simplification.
 
 ## Changes
 
@@ -49,6 +51,11 @@ CubeSandbox v0.6.0 KVM, RF3 Kafka, PostgreSQL and two Pi Workers were used.
   child execution and HTTP preview. Release deletes machine storage and preserves
   the conversation until the test explicitly deletes it.
 
+Across this slice's paid checks, including the two failed test-prompt preflights,
+native assistant usage records totalled 129,997 input, 9,769 output and 586,772
+cache-read tokens (127 recorded assistant messages). These are observed usage
+fields, not an estimate of all upstream billing or an active-concurrency claim.
+
 The initial Subagent lazy test allowed the model to submit `tools:[]`; the
 platform correctly derived `none`. The test now explicitly enables unused Bash.
 The machine test also contained a retired `agent:"cloud-child"` workflow option;
@@ -75,5 +82,16 @@ long-context stress run.
 The migration intentionally removed 75 pre-existing obsolete runtime objects;
 recovery of those bytes requires a prior database backup. No Workspace/Session
 existed at cutover, and account/configuration data was not reset. Live scripts
-released their VMs and purged their Volumes. Final scoped database cleanup and
-account-digest verification are recorded before delivery.
+released their VMs and purged their Volumes. Seven temporary tenants and the
+three explicitly identified fixture projects in the bootstrap tenant were
+removed after all Runs/seals finished and physical purge was confirmed.
+Cleanup used the existing local PostgreSQL administrator and a transaction-local
+trigger bypass for cyclic fixture references; all surviving foreign keys were
+checked before commit. It added no production authorization bypass.
+
+Final checks found zero Runs, Sessions, native Session entries, Workspaces,
+development machines or Cube instances, with an empty Workspace Volume directory.
+All 35 original users remain. User rows, password-credential rows and model-profile
+rows have exactly the same aggregate digests as before this slice. No provider
+account or provider-side usage accounting was cleared. Kafka remains subject to
+its ordinary safe-retention policy; no live topic/offset reset was performed.
