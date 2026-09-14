@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(138);
+      expect(firstMigrationPass.rows).toHaveLength(140);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("138_direct_workspace_storage");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("140_confirmed_agent_exit");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -95,6 +95,7 @@ describe("current PiCloud schema", () => {
         "tenant_model_credentials",
         "model_routing_policies",
         "session_kafka_heads",
+        "source_control_installation_requests",
       ]) {
         expect(names.has(retired), `retired table ${retired} survived`).toBe(false);
       }
@@ -104,7 +105,7 @@ describe("current PiCloud schema", () => {
           from information_schema.columns
          where table_schema = 'public'
          and table_name in (
-           'workspaces', 'sessions', 'subagent_executions', 'turns', 'runs',
+           'workspaces', 'sessions', 'subagent_executions', 'turns', 'runs', 'run_attempts',
            'tenant_runtime_policies'
          )
       `.execute(database);
@@ -115,6 +116,7 @@ describe("current PiCloud schema", () => {
       expect(keys.has("runs.mailbox_position")).toBe(true);
       expect(keys.has("runs.request_sha256")).toBe(true);
       expect(keys.has("runs.available_at")).toBe(true);
+      expect(keys.has("run_attempts.agent_exited_at")).toBe(true);
       expect(keys.has("sessions.agent_revision_id")).toBe(true);
       expect(keys.has("sessions.desired_thinking_level")).toBe(true);
       expect(keys.has("sessions.desired_service_tier")).toBe(true);
@@ -149,7 +151,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("138_direct_workspace_storage");
+      expect(applied.rows.at(-1)?.name).toBe("140_confirmed_agent_exit");
 
       const sessionLogConstraint = await sql<{ definition: string }>`
         select pg_get_constraintdef(oid) as definition
