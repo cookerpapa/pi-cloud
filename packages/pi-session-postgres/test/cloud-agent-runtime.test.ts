@@ -278,6 +278,94 @@ afterAll(async () => {
 });
 
 describe.sequential("CloudAgentRuntime", () => {
+  it("remembers cancellation during bootstrap before the Pi Agent exists", async () => {
+    const storage = await createStorage();
+    const execution = await withNativeSession(storage);
+    const authority = new TestAuthority();
+    let entered!: () => void, release!: () => void;
+    const opening = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(authority, "assertCurrent").mockImplementationOnce(async () => {
+      entered();
+      await blocked;
+    });
+    const contexts: Context[] = [];
+    const runtime = new CloudAgentRuntime({
+      ...execution,
+      lane: "main",
+      authority,
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      streamFn: scriptedStream(["must not sample"], contexts),
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+    });
+    const pending = runtime.run("accepted before cancellation");
+    await opening;
+    runtime.abort();
+    release();
+    expect.soft(await pending).toMatchObject({ kind: "aborted" });
+    expect.soft(contexts).toHaveLength(0);
+    expect(authority.signal.aborted).toBe(false);
+    expect(JSON.stringify(await storage.findEntries())).toContain("accepted before cancellation");
+    expect(JSON.stringify(await storage.findEntries())).toContain("<turn_aborted>");
+    expect(await storage.findOpenOperations("main")).toEqual([]);
+  });
+
+  it("does not start an effect cancelled while its native intent is being committed", async () => {
+    const storage = await createStorage();
+    const execution = await withNativeSession(storage);
+    let effects = 0,
+      requests = 0;
+    const runtime = new CloudAgentRuntime({
+      ...execution,
+      lane: "main",
+      authority: new TestAuthority(),
+      model: getModel("openai", "gpt-4o-mini"),
+      systemPrompt: "test",
+      compaction: { enabled: false, reserveTokens: 100, keepRecentTokens: 100 },
+      tools: [
+        {
+          name: "mutate",
+          label: "Mutate",
+          description: "test effect",
+          parameters: { type: "object", properties: {} } as any,
+          async execute() {
+            effects++;
+            return { content: [{ type: "text", text: "effect" }], details: {} };
+          },
+        },
+      ],
+      streamFn: () => {
+        const stream = new MockAssistantStream();
+        const message: AssistantMessage =
+          requests++ === 0
+            ? {
+                ...assistant(""),
+                content: [
+                  { type: "toolCall", id: "cancelled-intent", name: "mutate", arguments: {} },
+                ],
+                stopReason: "toolUse",
+              }
+            : assistant("unexpected continuation");
+        queueMicrotask(() =>
+          stream.push({ type: "done", reason: message.stopReason as "toolUse" | "stop", message }),
+        );
+        return stream;
+      },
+      commitCheckpoint: async (operation, event) => {
+        if (event?.type === "tool_execution_start") runtime.abort();
+        await execution.commitCheckpoint(operation);
+      },
+    });
+    expect.soft(await runtime.run("cancel before the effect")).toMatchObject({ kind: "aborted" });
+    expect.soft(effects).toBe(0);
+    expect(requests).toBe(1);
+  });
+
   it("keeps frozen Cloud stream options while preserving the active call signal", async () => {
     const storage = await createStorage();
     const hostedPayload = (payload: unknown) => payload;

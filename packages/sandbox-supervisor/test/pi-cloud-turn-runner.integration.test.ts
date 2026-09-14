@@ -111,6 +111,71 @@ function deferred<T>() {
 }
 
 describe("PiCloudTurnRunner integration", () => {
+  it("reports cancellation before first sampling without inventing a Cloud Step", async () => {
+    const fake = new FakeModelServer({ scenarioSequence: ["text"] });
+    await fake.start();
+    const session = new Session(
+      new InMemorySessionStorage({ id: command.payload.sessionId, createdAt: Date.now() }),
+    );
+    const authority = new TestAuthority();
+    const controller = new AbortController();
+    const events: EventPublishMessage[] = [];
+    const turn = createCloudTurnContext(command);
+    const runner = new PiCloudTurnRunner({
+      resolveModelRuntime: () => ({
+        provider: "pi-cloud-fake",
+        modelId: "pi-cloud-fake",
+        baseUrl: fake.baseUrl,
+        api: "openai-completions",
+        apiKey: FAKE_MODEL_API_KEY,
+      }),
+      openSession: async () => {
+        controller.abort({
+          kind: "pi-cloud.turn-cancellation",
+          reason: "user_request",
+          gracePeriodMs: 0,
+        });
+        return { session, lane: "main", authority };
+      },
+      sandboxContinuity: {
+        continuityId: "never-activated",
+        continuity: "cold_restore",
+        environmentSha256: turn.environmentSha256,
+        workspaceBindingSha256: turn.workspaceBindingSha256,
+        toolPolicySha256: turn.toolPolicySha256,
+      },
+      createAgentTools: () => ({
+        tools: [],
+        systemPrompt: async (base) => base,
+        executeWorkflow: async () => {
+          throw new Error("No tools should start");
+        },
+        transformContext: async () => {
+          throw new Error("No sampling should start");
+        },
+        transformHeaders: async (headers = {}) => headers,
+      }),
+    });
+    try {
+      await expect(
+        runner.run(
+          command,
+          (event) => {
+            events.push(event);
+          },
+          controller.signal,
+        ),
+      ).rejects.toMatchObject({ name: "PiTurnCancelledError", reason: "user_request" });
+      expect(fake.observations).toHaveLength(0);
+      expect(events.some(({ payload }) => payload.event.type === "model.sampling.started")).toBe(
+        false,
+      );
+      expect(authority.closed).toBe(true);
+    } finally {
+      await fake.stop();
+    }
+  });
+
   it("does not reserve a physical Sandbox when registered local Tools remain unused", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-cloud-lazy-sandbox-"));
     const session = new Session(
@@ -123,9 +188,6 @@ describe("PiCloudTurnRunner integration", () => {
     const broker = {
       create,
       async refreshServices() {},
-      async capture() {
-        throw new Error("unused");
-      },
       async release() {
         throw new Error("unused");
       },
@@ -192,16 +254,9 @@ describe("PiCloudTurnRunner integration", () => {
       continuity: "warm_reuse" as const,
       continuityId: "development-runtime-1",
     }));
-    const capture = vi.fn(async () => ({
-      toolBrokerProtocolVersion: 1 as const,
-      type: "tool_sandbox.unused" as const,
-      requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      activationId: "99999999-9999-4999-8999-999999999999",
-    }));
     const release = vi.fn(async () => ({ retained: false }));
     const broker = {
       create,
-      capture,
       async refreshServices() {},
       release,
       async stop() {},
@@ -225,7 +280,6 @@ describe("PiCloudTurnRunner integration", () => {
         runner.run(developmentCommand, () => undefined, new AbortController().signal),
       ).resolves.toMatchObject({ stopReason: "stop" });
       expect(create).not.toHaveBeenCalled();
-      expect(capture).not.toHaveBeenCalled();
       expect(release).not.toHaveBeenCalled();
       expect(
         (await session.findEntriesOnBranch()).filter(
@@ -294,9 +348,6 @@ describe("PiCloudTurnRunner integration", () => {
         continuity: "warm_reuse" as const,
         continuityId: "development-runtime-1",
       }));
-      const capture = vi.fn(async () => {
-        throw new Error("A failed model response must not settle the development machine");
-      });
       const release = vi.fn(async () => {
         if (cleanupFails) throw new Error("cleanup transport unavailable");
         return { retained: true };
@@ -305,7 +356,6 @@ describe("PiCloudTurnRunner integration", () => {
       const modelLeaseRelease = vi.fn(async () => undefined);
       const broker = {
         create,
-        capture,
         release,
         stop,
         async refreshServices() {},
@@ -428,7 +478,6 @@ describe("PiCloudTurnRunner integration", () => {
           ).toBe(true);
         }
         expect(create).toHaveBeenCalledTimes(toolFails ? 1 : 0);
-        expect(capture).not.toHaveBeenCalled();
         if (toolFails)
           expect(release).toHaveBeenCalledWith(
             "99999999-9999-4999-8999-999999999998",

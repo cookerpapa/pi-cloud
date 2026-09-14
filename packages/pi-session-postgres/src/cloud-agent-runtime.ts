@@ -276,8 +276,8 @@ function preserveCompactionFacts(
  * PostgreSQL SessionStorage owns model context; Pi Agent owns only the active
  * in-memory loop. Complete messages are appended on message_end, while remote
  * Tools and Session writes share one opaque authority. The caller owns that
- * authority's lifetime so it can remain valid through Workspace and terminal
- * settlement after this in-memory loop stops.
+ * authority's lifetime so final native records and output closure can complete
+ * after this in-memory loop stops.
  */
 export class CloudAgentRuntime {
   readonly #options: CloudAgentRuntimeOptions;
@@ -286,7 +286,8 @@ export class CloudAgentRuntime {
   #agent: Agent | undefined;
   readonly #agentInputIds = new WeakMap<object, string>();
   readonly #queuedAgentInputs = new Set<string>();
-  #closed = false;
+  #started = false;
+  #abortRequested = false;
 
   constructor(options: CloudAgentRuntimeOptions) {
     if (options.models === undefined && options.streamFn === undefined) {
@@ -298,9 +299,9 @@ export class CloudAgentRuntime {
   }
 
   async run(text: string, images?: readonly ImageContent[]): Promise<CloudAgentRunResult> {
-    if (this.#closed) throw new Error("Cloud Agent Runtime is closed");
-    if (this.#agent !== undefined) throw new Error("Cloud Agent Runtime is already active");
+    if (this.#started) throw new Error("Cloud Agent Runtime has already started");
     if (text.trim().length === 0) throw new TypeError("Cloud Agent prompt must not be empty");
+    this.#started = true;
 
     const authority = this.#options.authority;
     const session = this.#options.session;
@@ -361,6 +362,7 @@ export class CloudAgentRuntime {
         ),
       );
       const streamFn: StreamFn = async (model, context, options) => {
+        options?.signal?.throwIfAborted();
         const release = await this.#options.acquireModelPermit?.(options?.signal);
         try {
           await authority.assertCurrent();
@@ -429,6 +431,7 @@ export class CloudAgentRuntime {
         },
         convertToLlm,
         transformContext: async (_messages, signal) => {
+          signal?.throwIfAborted();
           const path = initialPath ?? (await this.#loadBranch());
           initialPath = undefined;
           const current = await this.#compactIfNeeded(operationId, path, signal);
@@ -448,6 +451,9 @@ export class CloudAgentRuntime {
 
       let retryAttempt = 0;
       const unsubscribe = agent.subscribe(async (event) => {
+        // Pi allocates its per-call AbortController at agent_start. A cancel
+        // received during Session bootstrap must survive until that point.
+        if (event.type === "agent_start" && this.#abortRequested) agent.abort();
         let checkpointHandledEvent = false;
         if (event.type === "tool_execution_end" && this.#options.commitCheckpoint !== undefined) {
           completedTools.set(event.toolCallId, event);
@@ -604,7 +610,7 @@ export class CloudAgentRuntime {
         throw new Error("Pi Agent Loop settled without an assistant message");
       }
       const kind =
-        finalMessage.stopReason === "aborted"
+        this.#abortRequested || finalMessage.stopReason === "aborted"
           ? "aborted"
           : finalMessage.stopReason === "error"
             ? "failed"
@@ -687,7 +693,6 @@ export class CloudAgentRuntime {
     } finally {
       removeAuthorityAbort?.();
       this.#agent = undefined;
-      this.#closed = true;
     }
   }
 
@@ -718,6 +723,7 @@ export class CloudAgentRuntime {
   }
 
   abort(): void {
+    this.#abortRequested = true;
     this.#agent?.abort();
   }
 
@@ -964,12 +970,11 @@ export class CloudAgentRuntime {
             },
           );
         }
-        const result = await tool.execute(
-          toolCallId,
-          params,
-          combinedSignal(signal, authority.signal),
-          onUpdate,
-        );
+        const executionSignal = combinedSignal(signal, authority.signal);
+        // Intent ACK can race user cancellation; do not begin a new effect
+        // merely because its arguments were validated before that await.
+        executionSignal.throwIfAborted();
+        const result = await tool.execute(toolCallId, params, executionSignal, onUpdate);
         return result;
       },
     };

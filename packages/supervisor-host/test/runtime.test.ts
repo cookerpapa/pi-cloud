@@ -13,12 +13,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
 import type { Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   PRODUCTION_CANCELLATION_PROBE_PROMPT,
   resolveProductionSandboxScenario,
   PiWorkerRuntime,
+  TenantModelGateway,
   type SupervisorHostConfig,
   type SupervisorToolBroker,
   type SupervisorRunWorker,
@@ -315,6 +316,45 @@ describe("PiWorkerRuntime", () => {
       expect(ledger.state.history).toContainEqual(
         expect.objectContaining({ bootId: firstIdentity.bootId, status: "exited" }),
       );
+
+      await second.close();
+      const gateways: TenantModelGateway[] = [];
+      const startGateway = TenantModelGateway.prototype.start;
+      const started = vi
+        .spyOn(TenantModelGateway.prototype, "start")
+        .mockImplementation(async function (this: TenantModelGateway) {
+          await startGateway.call(this);
+          gateways.push(this);
+        });
+      const health = vi
+        .spyOn(TenantModelGateway.prototype, "checkProviderHealth")
+        .mockRejectedValueOnce(new Error("test upstream is unavailable"));
+      const failed = new PiWorkerRuntime({
+        config: {
+          ...baseConfig,
+          supervisorId: `${SUPERVISOR_ID}-failed`,
+          bootStateDirectory: join(root, "failed-boot"),
+        },
+        database,
+        toolBroker: runtimeToolBroker,
+        runWorkerFactory,
+        // Startup fails at model health, before any queue/log connection starts.
+        provisioningClient: {
+          async provision() {
+            return { accepted: true } as never;
+          },
+        },
+      });
+      try {
+        await expect(failed.start()).rejects.toMatchObject({ code: "pi_worker_start_failed" });
+        await failed.close();
+        expect(gateways).toHaveLength(1);
+        expect(() => gateways[0]!.listeningPort).toThrow("not listening");
+      } finally {
+        started.mockRestore();
+        health.mockRestore();
+        for (const gateway of gateways) await gateway.close();
+      }
     } finally {
       await second?.close().catch(() => undefined);
       await first?.close().catch(() => undefined);

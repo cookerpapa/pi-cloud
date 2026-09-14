@@ -384,9 +384,9 @@ export class PiWorkerRuntime {
         piTurnTimeoutMs: this.#config.piTurnTimeoutMs,
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
       });
+      this.#modelGateway = modelGateway;
       await modelGateway.start();
       await modelGateway.checkProviderHealth();
-      this.#modelGateway = modelGateway;
       const runWorkerIdentity = `postgres:${identity.supervisorId}:${identity.bootId}`;
       let executionLogs = this.#executionLogs;
       if (!executionLogs) {
@@ -400,12 +400,14 @@ export class PiWorkerRuntime {
           capacity: loadProducerCapacity(process.env),
           ...(this.#metrics ? { metrics: this.#metrics } : {}),
         });
-        await bus.start();
         executionLogs = new DirectExecutionLog(
           this.#database!,
           bus,
           loadProducerCapacity(process.env),
         );
+        this.#activeExecutionLogs = executionLogs;
+        this.#ownsExecutionLogs = true;
+        await bus.start();
       }
       this.#activeExecutionLogs = executionLogs;
       this.#ownsExecutionLogs = this.#executionLogs === undefined;

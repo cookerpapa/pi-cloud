@@ -435,6 +435,11 @@ export class PiAgentEventAdapter {
       }
       if (stopReason === undefined) return { kind: "ignored", sourceType: value.type };
       if (this.#activeSampling === undefined) {
+        // Pi emits a local aborted assistant when cancellation wins before
+        // sampling. There was no model request to complete or fabricate here.
+        if (stopReason === "aborted" && this.#cancellationReason !== undefined) {
+          return { kind: "ignored", sourceType: value.type };
+        }
         if (!this.#requireSamplingIdentity) {
           return { kind: "ignored", sourceType: value.type };
         }
