@@ -24,7 +24,7 @@ describe("GitHub App client", () => {
     expect(github.verifyWebhook(Buffer.from(`${body.toString()} `), signature)).toBe(false);
   });
 
-  it("mints a repository-scoped installation token without exposing it in the URL", async () => {
+  it("mints a metadata-only discovery token without exposing it in the URL", async () => {
     const requests: Array<{ url: string; authorization: string; body: unknown }> = [];
     const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       requests.push({
@@ -32,6 +32,7 @@ describe("GitHub App client", () => {
         authorization: new Headers(init?.headers).get("authorization") ?? "",
         body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
       });
+      if (init?.method !== "POST") return Response.json({ repositories: [] });
       return new Response(
         JSON.stringify({
           token: "ghs_repository_scoped_installation_token",
@@ -40,18 +41,53 @@ describe("GitHub App client", () => {
         { status: 201, headers: { "content-type": "application/json" } },
       );
     });
-    const token = await client(fetchImplementation).installationToken("77", "123456", {
-      contents: "read",
-    });
-    expect(token.token).toBe("ghs_repository_scoped_installation_token");
-    expect(requests).toHaveLength(1);
+    await client(fetchImplementation).repositories("77");
+    expect(requests).toHaveLength(2);
     expect(requests[0]!.url).toBe("https://api.github.com/app/installations/77/access_tokens");
-    expect(requests[0]!.url).not.toContain(token.token);
+    expect(
+      requests.every(
+        (request) => !request.url.includes("ghs_repository_scoped_installation_token"),
+      ),
+    ).toBe(true);
     expect(requests[0]!.authorization.split(".")).toHaveLength(3);
     expect(requests[0]!.body).toEqual({
-      repository_ids: [123456],
-      permissions: { contents: "read" },
+      permissions: { metadata: "read" },
     });
+  });
+
+  it("accepts read-only Issue intake without retired delivery permissions", async () => {
+    await expect(
+      client(async () =>
+        Response.json({
+          id: 77,
+          account: { id: 88, login: "example", type: "Organization" },
+          repository_selection: "selected",
+          permissions: { metadata: "read", issues: "read" },
+          suspended_at: null,
+        }),
+      ).installation("77"),
+    ).resolves.toMatchObject({ id: "77" });
+  });
+
+  it("stops reading an oversized response instead of buffering its entire body", async () => {
+    let pulls = 0;
+    let cancelled = false;
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (pulls++ < 32) controller.enqueue(new Uint8Array(256 * 1024));
+          else controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+    );
+    await expect(client(async () => response).installation("77")).rejects.toMatchObject({
+      code: "github_response_invalid",
+    });
+    expect(cancelled).toBe(true);
+    expect(pulls).toBeLessThan(32);
   });
 
   it("discovers all repositories with an installation token", async () => {

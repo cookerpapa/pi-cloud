@@ -4,6 +4,31 @@ import { GitLabProjectClient } from "../src/gitlab-project-client.ts";
 import { SourceControlCredentialVault } from "../src/source-control-credential-vault.ts";
 
 describe("GitLab project adapter", () => {
+  it("stops reading an oversized response instead of buffering its entire body", async () => {
+    let pulls = 0;
+    let cancelled = false;
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (pulls++ < 32) controller.enqueue(new Uint8Array(256 * 1024));
+          else controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+    );
+    const client = new GitLabProjectClient({
+      baseUrl: "https://gitlab.example.com",
+      accessToken: "fixture-project-token",
+      fetch: async () => response,
+    });
+    await expect(client.project("group/project")).rejects.toMatchObject({
+      code: "gitlab_response_invalid",
+    });
+    expect(cancelled).toBe(true);
+    expect(pulls).toBeLessThan(32);
+  });
   it("discovers one private project and reconciles its signed Webhook", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {

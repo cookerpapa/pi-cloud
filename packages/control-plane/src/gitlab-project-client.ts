@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { readCodeHostJson } from "./code-host-response.ts";
 
-const MAXIMUM_RESPONSE_BYTES = 4 * 1_024 * 1_024;
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export type GitLabProject = Readonly<{
@@ -87,37 +87,6 @@ export function canonicalGitLabBaseUrl(value: string): string {
   return url.origin;
 }
 
-async function responseJson(response: Response): Promise<unknown> {
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength > MAXIMUM_RESPONSE_BYTES) {
-    throw new GitLabProjectClientError(
-      "gitlab_response_invalid",
-      "GitLab response exceeded its byte limit",
-      false,
-    );
-  }
-  if (!response.ok) {
-    throw new GitLabProjectClientError(
-      response.status === 401 || response.status === 403
-        ? "gitlab_authorization_failed"
-        : response.status === 404
-          ? "gitlab_resource_not_found"
-          : "gitlab_request_failed",
-      "GitLab request failed",
-      response.status === 408 || response.status === 429 || response.status >= 500,
-    );
-  }
-  try {
-    return bytes.byteLength === 0 ? {} : (JSON.parse(bytes.toString("utf8")) as unknown);
-  } catch {
-    throw new GitLabProjectClientError(
-      "gitlab_response_invalid",
-      "GitLab returned invalid JSON",
-      false,
-    );
-  }
-}
-
 function parseProject(value: unknown, baseUrl: string): GitLabProject {
   const project = record(value);
   const namespace = record(project.namespace);
@@ -182,10 +151,6 @@ export class GitLabProjectClient {
     this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
-  get accessToken(): string {
-    return this.#accessToken;
-  }
-
   async project(project: string): Promise<GitLabProject> {
     const reference = bounded(project, "GitLab project", 511);
     return parseProject(
@@ -247,50 +212,6 @@ export class GitLabProjectClient {
       }
       throw error;
     }
-  }
-
-  async createMergeRequest(input: {
-    projectId: string;
-    title: string;
-    description: string;
-    sourceBranch: string;
-    targetBranch: string;
-  }): Promise<{ number: number; url: string }> {
-    const value = record(
-      await this.#request(`projects/${input.projectId}/merge_requests`, {
-        method: "POST",
-        body: JSON.stringify({
-          title: input.title,
-          description: input.description,
-          source_branch: input.sourceBranch,
-          target_branch: input.targetBranch,
-          remove_source_branch: false,
-        }),
-      }),
-    );
-    const number = Number(value.iid);
-    if (!Number.isSafeInteger(number) || number < 1) {
-      throw new GitLabProjectClientError(
-        "gitlab_response_invalid",
-        "GitLab MR number was invalid",
-        false,
-      );
-    }
-    return { number, url: bounded(value.web_url, "GitLab MR URL", 2_048) };
-  }
-
-  async findMergeRequest(input: {
-    projectId: string;
-    sourceBranch: string;
-  }): Promise<{ number: number; url: string } | undefined> {
-    const values = await this.#request(
-      `projects/${input.projectId}/merge_requests?scope=all&state=all&source_branch=${encodeURIComponent(input.sourceBranch)}&per_page=10`,
-    );
-    if (!Array.isArray(values) || values.length === 0) return undefined;
-    const value = record(values[0]);
-    const number = Number(value.iid);
-    if (!Number.isSafeInteger(number) || number < 1) return undefined;
-    return { number, url: bounded(value.web_url, "GitLab MR URL", 2_048) };
   }
 
   async createIssueNote(input: {
@@ -377,9 +298,8 @@ export class GitLabProjectClient {
   }
 
   async #request(path: string, init: RequestInit = {}): Promise<unknown> {
-    let response: Response;
     try {
-      response = await this.#fetch(new URL(path, this.#apiBaseUrl), {
+      const response = await this.#fetch(new URL(path, this.#apiBaseUrl), {
         ...init,
         headers: {
           accept: "application/json",
@@ -389,9 +309,10 @@ export class GitLabProjectClient {
         },
         signal: init.signal ?? AbortSignal.timeout(30_000),
       });
-    } catch {
+      return await readCodeHostJson(response, "GitLab", GitLabProjectClientError);
+    } catch (error) {
+      if (error instanceof GitLabProjectClientError) throw error;
       throw new GitLabProjectClientError("gitlab_unavailable", "GitLab is unavailable", true);
     }
-    return responseJson(response);
   }
 }

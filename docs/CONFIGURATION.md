@@ -247,11 +247,18 @@ its Webhook URL and put the configured credential-master-key entry in
 
 ### Optional GitHub App backend
 
+Do not enable the installation entry for users until the caller-to-installation
+authorization gap in [the current audit](reports/repository-audit-20260915.md)
+is resolved. A PiCloud login and installation callback state alone do not prove
+GitHub access. Environment-local GitHub credentials are a separate feature.
+
 Register one GitHub App for the PiCloud deployment. Configure its Setup URL as
 `https://<picloud-host>/v1/source-control/github/callback` and Webhook URL as
 `https://<picloud-host>/v1/source-control/github/webhook`. Grant repository
-permissions `Metadata: read`, `Contents: read & write`, `Issues: read & write`
-and `Pull requests: read & write`; subscribe to Issue and Issue-comment events.
+permissions `Metadata: read` and `Issues: read`; subscribe to Issue and
+Issue-comment events. Platform-driven PR creation, repository writes and Issue
+delivery are not part of this intake integration. See GitHub's
+[webhook permission requirements](https://docs.github.com/en/webhooks/webhook-events-and-payloads#issues).
 Generate a private key and a high-entropy Webhook secret, then add these
 restart-bound settings to the private runtime `.env`:
 

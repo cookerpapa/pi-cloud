@@ -5,9 +5,9 @@ import {
   timingSafeEqual,
   type KeyObject,
 } from "node:crypto";
+import { readCodeHostJson } from "./code-host-response.ts";
 
 const GITHUB_API_VERSION = "2022-11-28";
-const MAXIMUM_RESPONSE_BYTES = 4 * 1_024 * 1_024;
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -15,12 +15,6 @@ export type GitHubAppInstallation = Readonly<{
   id: string;
   account: Readonly<{ id: string; login: string; type: "User" | "Organization" | "Enterprise" }>;
   repositorySelection: "all" | "selected";
-  permissions: Readonly<{
-    metadata: "read";
-    contents: "write";
-    issues: "write";
-    pullRequests: "write";
-  }>;
   suspendedAt?: string;
 }>;
 
@@ -102,9 +96,7 @@ function parseInstallation(value: unknown): GitHubAppInstallation {
   const permissions = record(installation.permissions);
   if (
     permissions.metadata !== "read" ||
-    permissions.contents !== "write" ||
-    permissions.issues !== "write" ||
-    permissions.pull_requests !== "write"
+    (permissions.issues !== "read" && permissions.issues !== "write")
   ) {
     throw new GitHubAppClientError(
       "github_permissions_insufficient",
@@ -127,12 +119,6 @@ function parseInstallation(value: unknown): GitHubAppInstallation {
       type: accountType,
     },
     repositorySelection: selection,
-    permissions: {
-      metadata: "read",
-      contents: "write",
-      issues: "write",
-      pullRequests: "write",
-    },
     ...(typeof suspendedAt === "string" ? { suspendedAt } : {}),
   };
 }
@@ -164,37 +150,6 @@ function parseRepository(value: unknown): GitHubRepository {
     defaultBranch: boundedString(repository.default_branch, "GitHub default branch", 255),
     cloneUrl,
   };
-}
-
-async function boundedJson(response: Response): Promise<unknown> {
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength > MAXIMUM_RESPONSE_BYTES) {
-    throw new GitHubAppClientError(
-      "github_response_invalid",
-      "GitHub response exceeded its byte limit",
-      false,
-    );
-  }
-  if (!response.ok) {
-    throw new GitHubAppClientError(
-      response.status === 401 || response.status === 403
-        ? "github_authorization_failed"
-        : response.status === 404
-          ? "github_resource_not_found"
-          : "github_request_failed",
-      "GitHub request failed",
-      response.status === 408 || response.status === 429 || response.status >= 500,
-    );
-  }
-  try {
-    return bytes.byteLength === 0 ? {} : (JSON.parse(bytes.toString("utf8")) as unknown);
-  } catch {
-    throw new GitHubAppClientError(
-      "github_response_invalid",
-      "GitHub returned invalid JSON",
-      false,
-    );
-  }
 }
 
 export class GitHubAppClient {
@@ -252,34 +207,6 @@ export class GitHubAppClient {
     );
   }
 
-  async installationToken(
-    installationId: string,
-    repositoryId: string,
-    permissions: Readonly<Record<string, "read" | "write">>,
-  ): Promise<GitHubInstallationToken> {
-    const numericRepositoryId = Number(repositoryId);
-    if (!Number.isSafeInteger(numericRepositoryId) || numericRepositoryId < 1) {
-      throw new GitHubAppClientError(
-        "github_repository_id_unsupported",
-        "GitHub repository ID exceeds the supported numeric range",
-        false,
-      );
-    }
-    const value = record(
-      await this.#request(
-        `app/installations/${decimalId(installationId, "GitHub installation ID")}/access_tokens`,
-        { authorization: `Bearer ${this.#appJwt()}` },
-        {
-          method: "POST",
-          body: JSON.stringify({ repository_ids: [numericRepositoryId], permissions }),
-        },
-      ),
-    );
-    const token = boundedString(value.token, "GitHub installation token", 4_096);
-    const expiresAt = boundedString(value.expires_at, "GitHub token expiry", 64);
-    return { token, expiresAt };
-  }
-
   async repositories(installationId: string): Promise<readonly GitHubRepository[]> {
     const token = await this.#installationWideToken(installationId);
     const repositories: GitHubRepository[] = [];
@@ -304,118 +231,6 @@ export class GitHubAppClient {
       "GitHub installation exceeds the supported repository limit",
       false,
     );
-  }
-
-  async createPullRequest(input: {
-    installationId: string;
-    repositoryId: string;
-    owner: string;
-    repository: string;
-    title: string;
-    body: string;
-    head: string;
-    base: string;
-  }): Promise<{ number: number; url: string }> {
-    const token = await this.installationToken(input.installationId, input.repositoryId, {
-      pull_requests: "write",
-    });
-    const result = record(
-      await this.#request(
-        `repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repository)}/pulls`,
-        { authorization: `Bearer ${token.token}` },
-        {
-          method: "POST",
-          body: JSON.stringify({
-            title: input.title,
-            body: input.body,
-            head: input.head,
-            base: input.base,
-          }),
-        },
-      ),
-    );
-    const number = Number(result.number);
-    if (!Number.isSafeInteger(number) || number < 1) {
-      throw new GitHubAppClientError(
-        "github_response_invalid",
-        "GitHub PR number was invalid",
-        false,
-      );
-    }
-    return { number, url: boundedString(result.html_url, "GitHub PR URL", 2_048) };
-  }
-
-  async findPullRequest(input: {
-    installationId: string;
-    repositoryId: string;
-    owner: string;
-    repository: string;
-    head: string;
-  }): Promise<{ number: number; url: string } | undefined> {
-    const token = await this.installationToken(input.installationId, input.repositoryId, {
-      pull_requests: "read",
-    });
-    const values = await this.#request(
-      `repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repository)}/pulls?state=all&head=${encodeURIComponent(`${input.owner}:${input.head}`)}&per_page=10`,
-      { authorization: `Bearer ${token.token}` },
-    );
-    if (!Array.isArray(values) || values.length === 0) return undefined;
-    const result = record(values[0]);
-    const number = Number(result.number);
-    if (!Number.isSafeInteger(number) || number < 1) return undefined;
-    return { number, url: boundedString(result.html_url, "GitHub PR URL", 2_048) };
-  }
-
-  async createIssueComment(input: {
-    installationId: string;
-    repositoryId: string;
-    owner: string;
-    repository: string;
-    issueNumber: number;
-    body: string;
-  }): Promise<{ id: string }> {
-    const token = await this.installationToken(input.installationId, input.repositoryId, {
-      issues: "write",
-    });
-    const result = record(
-      await this.#request(
-        `repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repository)}/issues/${String(input.issueNumber)}/comments`,
-        { authorization: `Bearer ${token.token}` },
-        { method: "POST", body: JSON.stringify({ body: input.body }) },
-      ),
-    );
-    return { id: decimalId(result.id, "GitHub issue comment ID") };
-  }
-
-  async findIssueComment(input: {
-    installationId: string;
-    repositoryId: string;
-    owner: string;
-    repository: string;
-    issueNumber: number;
-    marker: string;
-  }): Promise<{ id: string } | undefined> {
-    const token = await this.installationToken(input.installationId, input.repositoryId, {
-      issues: "read",
-    });
-    const values = await this.#request(
-      `repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repository)}/issues/${String(input.issueNumber)}/comments?per_page=100&sort=created&direction=desc`,
-      { authorization: `Bearer ${token.token}` },
-    );
-    if (!Array.isArray(values)) {
-      throw new GitHubAppClientError(
-        "github_response_invalid",
-        "GitHub issue comment list was invalid",
-        false,
-      );
-    }
-    for (const value of values) {
-      const comment = record(value);
-      if (typeof comment.body === "string" && comment.body.includes(input.marker)) {
-        return { id: decimalId(comment.id, "GitHub issue comment ID") };
-      }
-    }
-    return undefined;
   }
 
   async #installationWideToken(installationId: string): Promise<GitHubInstallationToken> {
@@ -452,9 +267,8 @@ export class GitHubAppClient {
     headers: { authorization: string },
     init: RequestInit = {},
   ): Promise<unknown> {
-    let response: Response;
     try {
-      response = await this.#fetch(new URL(path, this.#apiBaseUrl), {
+      const response = await this.#fetch(new URL(path, this.#apiBaseUrl), {
         ...init,
         headers: {
           accept: "application/vnd.github+json",
@@ -466,9 +280,10 @@ export class GitHubAppClient {
         },
         signal: init.signal ?? AbortSignal.timeout(30_000),
       });
-    } catch {
+      return await readCodeHostJson(response, "GitHub", GitHubAppClientError);
+    } catch (error) {
+      if (error instanceof GitHubAppClientError) throw error;
       throw new GitHubAppClientError("github_unavailable", "GitHub is unavailable", true);
     }
-    return boundedJson(response);
   }
 }
