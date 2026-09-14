@@ -9,7 +9,11 @@ import { workspaceVolumeId } from "../packages/tool-broker/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
-import { isDurableAgentActivity } from "./lib/live-run-timing.mjs";
+import {
+  isDurableAgentActivity,
+  readWorkerModelTimings,
+  runStageTiming,
+} from "./lib/live-run-timing.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 if (process.env.PI_CLOUD_LIVE_SUBAGENT_CHECK !== "1") {
@@ -131,27 +135,27 @@ async function waitForRun(runId) {
 
 async function runTurn(sessionId, prompt) {
   const startedAt = performance.now();
+  const submittedWallAt = Date.now();
   const sequence = measurements.length + 1;
   let firstVisibleMs = null,
     firstTextMs = null;
   process.stdout.write(`subagent_live_turn_started ${sequence}\n`);
-  const accepted = await api.acceptTurn(
-    sessionId,
-    prompt,
-    newIdempotencyKey("subagent-live"),
-    "off",
-  );
+  const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("subagent-live"));
   const controller = new AbortController();
   const admissionMs = performance.now() - startedAt;
   const timer = setTimeout(() => controller.abort(), 10 * 60_000);
   const text = [];
   let terminal;
+  let firstAssistantTextEmittedAtMs, firstAssistantTextReceivedAtMs;
   const observeEvent = (event) => {
     if (event.turnId !== accepted.turnId) return;
     if (isDurableAgentActivity(event) && firstVisibleMs === null)
       firstVisibleMs = performance.now() - startedAt;
-    if (event.type === "assistant.text.delta" && firstTextMs === null)
+    if (event.type === "assistant.text.delta" && firstTextMs === null) {
       firstTextMs = performance.now() - startedAt;
+      firstAssistantTextEmittedAtMs = Date.parse(event.occurredAt);
+      firstAssistantTextReceivedAtMs = Date.now();
+    }
     if (event.type === "assistant.text.delta") text.push(event.payload.text);
     if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type)) {
       terminal = event;
@@ -184,11 +188,22 @@ async function runTurn(sessionId, prompt) {
     await waitForRun(accepted.runId);
     const timing = {
       sequence,
+      submittedWallAt,
       admissionMs,
       firstVisibleMs,
       firstTextMs,
       settledMs: performance.now() - startedAt,
     };
+    const transport = await readWorkerModelTimings([accepted.runId], submittedWallAt);
+    timing.stages = runStageTiming(
+      {
+        submittedWallAt,
+        firstAssistantTextMs: firstTextMs ?? undefined,
+        firstAssistantTextEmittedAtMs,
+        firstAssistantTextReceivedAtMs,
+      },
+      transport,
+    );
     measurements.push(timing);
     process.stdout.write(`subagent_live_turn_finished ${JSON.stringify(timing)}\n`);
     return { accepted, text: text.join("") };
@@ -377,6 +392,7 @@ function assertLaneBacked(evidence, rootPiSessionId) {
 }
 
 const suffix = `${Date.now().toString(36)}`;
+const testedRevision = await capture("git", ["rev-parse", "HEAD"]);
 const registration = await new PiCloudApi(fetchFromProduction).registerTenant(
   `subagent-${suffix}`.slice(0, 63),
   "Subagent production acceptance",
@@ -674,6 +690,7 @@ try {
 
   const report = {
     architecture: "log-driven-subagents-v1",
+    revision: testedRevision,
     timings: measurements,
     usage: JSON.parse(
       await psql(`select json_build_object(

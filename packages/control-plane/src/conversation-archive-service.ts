@@ -93,27 +93,37 @@ export class ConversationArchiveService {
         await this.#assertNoUnsettledTurns(transaction, tenantId, sessionId);
         let descendantSessionIds: string[] = [];
         if (request.archived) {
-          const descendants = await sql<{ id: string; state: string }>`
-            with recursive family as (
-              select child.id, child.state
-                from sessions child
-               where child.tenant_id = ${tenantId}::uuid
-                 and child.conversation_parent_session_id = ${sessionId}::uuid
-                 and child.session_kind = 'conversation'
-                 and child.archived_at is null
-              union
-              select child.id, child.state
-                from sessions child
-                join family parent on child.conversation_parent_session_id = parent.id
-               where child.tenant_id = ${tenantId}::uuid
-                 and child.session_kind = 'conversation'
-                 and child.archived_at is null
-            )
-            select id, state from family
-          `.execute(transaction);
-          descendantSessionIds = descendants.rows.map((row) => row.id);
+          const descendants = await this.#descendants(transaction, tenantId, sessionId);
+          descendantSessionIds = descendants.map((row) => row.id);
+          const lockedDescendants =
+            descendantSessionIds.length === 0
+              ? []
+              : await transaction
+                  .selectFrom("sessions")
+                  .select(["id", "state"])
+                  .where("tenant_id", "=", tenantId)
+                  .where("id", "in", descendantSessionIds)
+                  .orderBy("id")
+                  .forUpdate()
+                  .execute();
+          // A child may have forked while its row lock was being acquired. Do
+          // not archive a partial tree; the caller can retry the changed tree.
+          const currentDescendants =
+            descendantSessionIds.length === 0
+              ? []
+              : await this.#descendants(transaction, tenantId, sessionId);
+          const lockedIds = new Set(lockedDescendants.map((row) => row.id));
           if (
-            descendants.rows.some(
+            currentDescendants.length !== lockedIds.size ||
+            currentDescendants.some((row) => !lockedIds.has(row.id))
+          ) {
+            throw new ConversationArchiveError(
+              "conflict",
+              "Conversation tree changed during deletion; retry the request",
+            );
+          }
+          if (
+            lockedDescendants.some(
               (row) => row.state !== "cold" && row.state !== "idle" && row.state !== "failed",
             )
           ) {
@@ -247,6 +257,24 @@ export class ConversationArchiveService {
       }
       throw error;
     }
+  }
+
+  async #descendants(transaction: Transaction<Database>, tenantId: string, sessionId: string) {
+    return (
+      await sql<{ id: string }>`
+      with recursive family as (
+        select child.id from sessions child
+         where child.tenant_id = ${tenantId}::uuid
+           and child.conversation_parent_session_id = ${sessionId}::uuid
+           and child.session_kind = 'conversation' and child.archived_at is null
+        union
+        select child.id from sessions child join family parent
+          on child.conversation_parent_session_id = parent.id
+         where child.tenant_id = ${tenantId}::uuid
+           and child.session_kind = 'conversation' and child.archived_at is null
+      ) select id from family
+    `.execute(transaction)
+    ).rows;
   }
 
   async #assertNoUnsettledTurns(

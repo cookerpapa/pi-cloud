@@ -1,103 +1,63 @@
 {
   "accepted": true,
-  "piCloudRevision": "970ecc4a56ec354046291626e148187e7e9417f2",
+  "piCloudRevision": "74870892ac0b0a15fda906fe5546c38bb6dce812",
   "workingTreeDirty": true,
-  "checkedAt": "2026-09-14T06:04:09.018Z",
-  "account": "snake.acceptance.mu0u6zdz",
-  "sessionId": "45cb0b73-1a23-4152-9421-f7d74bf577e3",
-  "workspaceId": "545b9cc1-8846-4c6e-b4a9-fd51e5cc3c2a",
-  "developmentEnvironmentId": "bd9eb38b-f355-4c12-9090-67456d8f52ca",
-  "runId": "e684ac2a-3d2a-4c10-8fd9-def734b89a20",
-  "toolCalls": 16,
-  "toolPreparations": 16,
+  "checkedAt": "2026-09-14T09:06:42.514Z",
+  "account": "snake.acceptance.mu10pk5u",
+  "sessionId": "3f174eee-8cd5-46b9-8a68-7db8a83f73e9",
+  "workspaceId": "d16d1d0d-0b07-4dbc-8093-b5f4597e8dc0",
+  "developmentEnvironmentId": "c67dce66-bdc0-4ac8-a213-36727d6840e5",
+  "runId": "a394b688-7c3e-4b0d-88b1-82b4a292885c",
+  "toolCalls": 14,
+  "toolPreparations": 14,
   "preparationBrowser": {
-    "observed": 16,
+    "observed": 14,
     "spinner": true,
     "cleared": true
   },
   "previewToolUsed": true,
-  "firstDurableActivityMs": 1864,
-  "firstToolStartedMs": 8619,
-  "firstAssistantTextMs": 1864,
-  "settledMs": 43487,
+  "firstDurableActivityMs": 923,
+  "firstToolStartedMs": 1076,
+  "firstAssistantTextMs": 923,
+  "settledMs": 49241,
   "hostPreviewStatus": 200,
-  "previewOrigin": "http://p-8316b1491e7b09c1842ba4ea.preview.localhost:8080",
-  "previewRoute": "/v1/conversations/45cb0b73-1a23-4152-9421-f7d74bf577e3/preview/4173",
+  "previewOrigin": "http://p-ad8942272ac91574b831a18f.preview.localhost:8080",
+  "previewRoute": "/v1/conversations/3f174eee-8cd5-46b9-8a68-7db8a83f73e9/preview/4173",
   "browserInteraction": {
     "before": {
-      "headX": 8,
+      "headX": 10,
       "headY": 10,
       "score": 0,
       "running": false,
-      "tick": 0,
-      "paused": false,
-      "gameOver": false,
-      "snakeLength": 3,
-      "food": {
-        "x": 13,
-        "y": 8
-      },
-      "lastTickTime": 0
+      "tick": 0
     },
     "after": {
-      "headX": 8,
+      "headX": 10,
       "headY": 15,
       "score": 0,
       "running": true,
-      "tick": 5,
-      "paused": false,
-      "gameOver": false,
-      "snakeLength": 3,
-      "food": {
-        "x": 13,
-        "y": 8
-      },
-      "lastTickTime": 1181.5999999996275
+      "tick": 5
     },
     "paused": {
-      "headX": 8,
+      "headX": 10,
       "headY": 15,
       "score": 0,
       "running": false,
-      "tick": 5,
-      "paused": true,
-      "gameOver": false,
-      "snakeLength": 3,
-      "food": {
-        "x": 13,
-        "y": 8
-      },
-      "lastTickTime": 1181.5999999996275
+      "tick": 5
     },
     "pausedAfterWait": {
-      "headX": 8,
+      "headX": 10,
       "headY": 15,
       "score": 0,
       "running": false,
-      "tick": 5,
-      "paused": true,
-      "gameOver": false,
-      "snakeLength": 3,
-      "food": {
-        "x": 13,
-        "y": 8
-      },
-      "lastTickTime": 1181.5999999996275
+      "tick": 5
     },
     "reset": {
-      "headX": 8,
+      "headX": 10,
       "headY": 10,
       "score": 0,
       "running": false,
-      "tick": 0,
-      "paused": false,
-      "gameOver": false,
-      "snakeLength": 3,
-      "food": {
-        "x": 5,
-        "y": 1
-      },
-      "lastTickTime": 0
+      "tick": 0
     }
   },
   "screenshotCaptured": true,

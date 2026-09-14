@@ -10,6 +10,7 @@ import { DEFAULT_EXCLUSIVE_WORKING_DIRECTORY } from "../packages/protocol/src/in
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
+import { isDurableAgentActivity } from "./lib/live-run-timing.mjs";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -154,6 +155,7 @@ async function runCodingTurn(api, browser, sessionId) {
     if (event.turnId !== accepted.turnId) return;
     if (events.some((candidate) => candidate.eventId === event.eventId)) return;
     events.push(event);
+    if (isDurableAgentActivity(event)) firstDurableActivityAt ??= performance.now();
     if (event.type === "assistant.text.delta") {
       const observedAt = performance.now();
       firstDurableActivityAt ??= observedAt;

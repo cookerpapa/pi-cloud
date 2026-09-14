@@ -1,22 +1,39 @@
 {
   "accepted": true,
-  "piCloudRevision": "c2f2cc580e11571134e21be392b3ab6e7b3f29e4",
-  "checkedAt": "2026-09-08T17:26:44.746Z",
+  "piCloudRevision": "1da357d3cc79b6420ecd8c6e51d7c9133e418226",
+  "checkedAt": "2026-09-14T09:16:14.601Z",
   "browserCookieAuth": true,
   "latencyMs": {
     "pureChat": {
-      "accepted": 30,
-      "firstDurableActivity": 3817,
+      "accepted": 15,
+      "firstDurableActivity": 2570,
       "firstToolStarted": null,
-      "firstAssistantText": 3817,
-      "settled": 4541
+      "firstAssistantText": 2570,
+      "settled": 3018,
+      "stages": {
+        "firstModelDispatchMs": 166.422,
+        "providerRouteToFirstTextMs": 2393.872,
+        "parsedTextToPiEventMs": 0.706,
+        "piEventToClientTextMs": 9.014,
+        "firstTextFollowsEarlierSampling": false,
+        "nonProviderTtftMs": 176.142,
+        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; synchronized host clocks"
+      }
     },
     "coding": {
-      "accepted": 25,
-      "firstDurableActivity": 5568,
-      "firstToolStarted": 5568,
-      "firstAssistantText": 17666,
-      "settled": 18551
+      "accepted": 14,
+      "firstDurableActivity": 2723,
+      "firstToolStarted": 4736,
+      "firstAssistantText": 13576,
+      "settled": 14316,
+      "stages": {
+        "firstModelDispatchMs": 169.492,
+        "providerRouteToFirstTextMs": 3500.16,
+        "parsedTextToPiEventMs": 0.605,
+        "piEventToClientTextMs": 8.297,
+        "firstTextFollowsEarlierSampling": true,
+        "measurement": "API/SSE client receipt, not browser paint; provider route includes CLIProxyAPI; synchronized host clocks"
+      }
     }
   },
   "treeForkPrune": true,

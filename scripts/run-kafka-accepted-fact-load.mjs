@@ -31,6 +31,12 @@ const output = await new Promise((resolvePromise, rejectPromise) => {
       `${repositoryRoot}:/app:ro`,
       "--workdir",
       "/app",
+      ...(process.env.PI_CLOUD_KAFKA_LOAD_DURATION_MS === undefined
+        ? []
+        : [
+            "--env",
+            `PI_CLOUD_KAFKA_LOAD_DURATION_MS=${process.env.PI_CLOUD_KAFKA_LOAD_DURATION_MS}`,
+          ]),
       image,
       "node",
       "--import",

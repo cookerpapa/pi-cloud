@@ -7,6 +7,9 @@ import { KafkaAcceptedFactBus } from "../packages/runtime-core/src/kafka-accepte
 const brokers = ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"];
 const topic = `pi-cloud.accepted-fact-benchmark-${Date.now().toString(36)}`;
 const clientId = `pi-cloud-kafka-load-${randomUUID()}`;
+const durationMs = Number(process.env.PI_CLOUD_KAFKA_LOAD_DURATION_MS ?? 0);
+if (!Number.isSafeInteger(durationMs) || durationMs < 0 || durationMs > 180_000)
+  throw new Error("PI_CLOUD_KAFKA_LOAD_DURATION_MS must be between 0 and 180000");
 
 function percentile(values, fraction) {
   const sorted = [...values].sort((left, right) => left - right);
@@ -105,17 +108,25 @@ try {
     const seeds = Array.from({ length: configuration.sessions }, sessionSeed);
     const latencies = [];
     const startedAt = performance.now();
+    const timed = configuration.name === "sustained-1024" && durationMs > 0;
+    const deadline = startedAt + durationMs;
+    let events = 0;
     await mapConcurrent(seeds, configuration.concurrency, async (seed) => {
-      for (let sequence = 1; sequence <= configuration.eventsPerSession; sequence += 1) {
+      for (
+        let sequence = 1;
+        timed ? performance.now() < deadline : sequence <= configuration.eventsPerSession;
+        sequence += 1
+      ) {
         const eventStartedAt = performance.now();
         await bus.append(fact(seed, sequence, 256));
         latencies.push(performance.now() - eventStartedAt);
+        events++;
       }
     });
     const elapsedMs = performance.now() - startedAt;
-    const events = configuration.sessions * configuration.eventsPerSession;
     cases.push({
       ...configuration,
+      ...(timed ? { eventsPerSession: undefined, targetDurationMs: durationMs } : {}),
       events,
       elapsedMs: Number(elapsedMs.toFixed(3)),
       eventsPerSecond: Number(((events * 1_000) / elapsedMs).toFixed(2)),
@@ -131,7 +142,7 @@ try {
         totalMemoryGiB: Number((totalmem() / 1_024 ** 3).toFixed(2)),
         node: process.version,
       },
-      kafka: { brokers: 3, partitions: 32, replicas: 3, acknowledgements: "all" },
+      kafka: { topic, brokers: 3, partitions: 32, replicas: 3, acknowledgements: "all" },
       applicationMicrobatch: false,
       producerDeliveryReportMode: "batch",
       producerLanes: 4,

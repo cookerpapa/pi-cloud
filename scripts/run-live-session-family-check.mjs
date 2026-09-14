@@ -75,20 +75,33 @@ async function until(check, label, timeout = 180000) {
 const activeStates =
   "('claimed','provisioning','restoring','running','settling','cancel_requested')";
 assert.equal(
-  environment.PI_CLOUD_SUPERVISOR_CAPACITY,
+  process.env.PI_CLOUD_SUPERVISOR_CAPACITY ?? environment.PI_CLOUD_SUPERVISOR_CAPACITY,
   "2",
   "Set the acceptance Worker family capacity to 2",
 );
 assert.equal(
-  environment.PI_CLOUD_WORKER_MODEL_CONCURRENCY,
+  process.env.PI_CLOUD_WORKER_MODEL_CONCURRENCY ?? environment.PI_CLOUD_WORKER_MODEL_CONCURRENCY,
   "1",
   "Set the acceptance Worker model concurrency to 1",
 );
-assert.equal(environment.PI_CLOUD_SESSION_MODEL_CONCURRENCY, "1");
+assert.equal(
+  process.env.PI_CLOUD_SESSION_MODEL_CONCURRENCY ?? environment.PI_CLOUD_SESSION_MODEL_CONCURRENCY,
+  "1",
+);
 assert.equal(
   await sql(`select count(*) from runs where state in ${activeStates}`),
   "0",
   "Start only with a quiescent deployment",
+);
+// A stopped boot may remain in the control-channel grace interval. Do not
+// confuse its expiring registration with a second executing Worker.
+await until(
+  async () =>
+    (await sql(
+      "select count(*) from supervisor_connections where state='active' and expires_at>now()",
+    )) === "1",
+  "single-Worker registration convergence",
+  90_000,
 );
 const suffix = Date.now().toString(36);
 const registration = await new PiCloudApi(request).registerTenant(
@@ -130,12 +143,7 @@ async function session(name) {
 async function start(s, prompt, label) {
   const before = performance.now(),
     submittedWallAt = Date.now();
-  const accepted = await api.acceptTurn(
-    s.sessionId,
-    prompt,
-    newIdempotencyKey("family-live"),
-    "off",
-  );
+  const accepted = await api.acceptTurn(s.sessionId, prompt, newIdempotencyKey("family-live"));
   runs.push({ sessionId: s.sessionId, ...accepted });
   const timing = {
     label,

@@ -10,6 +10,11 @@ import { parseWorkspaceTerminalServerFrame } from "../packages/protocol/src/inde
 import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
+import {
+  isDurableAgentActivity,
+  readWorkerModelTimings,
+  runStageTiming,
+} from "./lib/live-run-timing.mjs";
 import WebSocket from "ws";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -159,6 +164,7 @@ async function runTurn({
   onToolStarted,
 }) {
   const submittedAt = performance.now();
+  const submittedWallAt = Date.now();
   const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("turn"), "off");
   const acceptedAt = performance.now();
   const controller = new AbortController();
@@ -168,14 +174,19 @@ async function runTurn({
   let firstDurableActivityAt;
   let firstToolStartedAt;
   let firstAssistantTextAt;
+  let firstAssistantTextEmittedAtMs, firstAssistantTextReceivedAtMs;
   let intervention;
   const observeEvent = (event) => {
     if (events.some((candidate) => candidate.eventId === event.eventId)) return;
     events.push(event);
     if (event.turnId !== accepted.turnId) return;
+    if (isDurableAgentActivity(event)) firstDurableActivityAt ??= performance.now();
     if (event.type === "assistant.text.delta") {
       const observedAt = performance.now();
-      firstDurableActivityAt ??= observedAt;
+      if (firstAssistantTextAt === undefined) {
+        firstAssistantTextEmittedAtMs = Date.parse(event.occurredAt);
+        firstAssistantTextReceivedAtMs = Date.now();
+      }
       firstAssistantTextAt ??= observedAt;
     }
     if (event.type === "tool.started") {
@@ -244,6 +255,8 @@ async function runTurn({
     if (expectTools) assert(firstToolStartedAt !== undefined, "Coding turn had no Tool start");
     const expectedRunState = expectedTerminal === "turn.cancelled" ? "cancelled" : "completed";
     await waitForRun(api, accepted.runId, [expectedRunState]);
+    const settledMs = Math.round(performance.now() - submittedAt);
+    const transport = await readWorkerModelTimings([accepted.runId], submittedWallAt);
     return {
       accepted,
       events,
@@ -258,7 +271,17 @@ async function runTurn({
         firstAssistantTextAt === undefined
           ? undefined
           : Math.round(firstAssistantTextAt - submittedAt),
-      settledMs: Math.round(performance.now() - submittedAt),
+      settledMs,
+      stages: runStageTiming(
+        {
+          submittedWallAt,
+          firstAssistantTextMs:
+            firstAssistantTextAt === undefined ? undefined : firstAssistantTextAt - submittedAt,
+          firstAssistantTextEmittedAtMs,
+          firstAssistantTextReceivedAtMs,
+        },
+        transport,
+      ),
     };
   } finally {
     clearTimeout(timer);
@@ -681,6 +704,7 @@ try {
         firstToolStarted: chat.firstToolStartedMs,
         firstAssistantText: chat.firstAssistantTextMs,
         settled: chat.settledMs,
+        stages: chat.stages,
       },
       coding: {
         accepted: coding.acceptedMs,
@@ -688,6 +712,7 @@ try {
         firstToolStarted: coding.firstToolStartedMs,
         firstAssistantText: coding.firstAssistantTextMs,
         settled: coding.settledMs,
+        stages: coding.stages,
       },
     },
     treeForkPrune: true,
