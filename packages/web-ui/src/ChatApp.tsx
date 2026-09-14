@@ -211,6 +211,7 @@ export default function ChatApp() {
   const [sessionModel, setSessionModel] = useState<SessionModelResource | null>(null);
   const [conversationLoading, setConversationLoading] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  const draftRevision = useRef(0);
   const [operation, setOperation] = useState<
     | "creating"
     | "submitting"
@@ -401,6 +402,7 @@ export default function ChatApp() {
     requestAnimationFrame(() => {
       const composer = composerRef.current;
       if (composer === null || composer.disabled) return;
+      if (document.activeElement === composer) return;
       composer.focus({ preventScroll: true });
       composer.setSelectionRange(composer.value.length, composer.value.length);
     });
@@ -775,17 +777,12 @@ export default function ChatApp() {
   async function logout(): Promise<void> {
     try {
       await api.logout();
-    } catch {
-      /* The local session is cleared even if logout races expiry. */
+    } catch (error) {
+      if (!(error instanceof PiCloudApiError && error.status === 401)) throw error;
     }
-    resetConversation();
-    setConversations([]);
-    setDelegatedSessions([]);
-    setWorkspaces([]);
-    setModelCatalog(null);
-    setNewConversationModel(null);
-    setIdentity(null);
-    setAuthPhase("anonymous");
+    // Discard every account-scoped cache and outstanding response together.
+    // A partial in-place reset can leak the previous account into the next login.
+    window.location.replace("/");
   }
 
   async function openConversationSession(
@@ -994,7 +991,6 @@ export default function ChatApp() {
           newIdempotencyKey("turn"),
         );
         update({ type: "turn.accepted", accepted, prompt: pendingInitialPrompt });
-        setPrompt("");
       }
       setPendingInitialPrompt(null);
     } catch (error: unknown) {
@@ -1147,6 +1143,7 @@ export default function ChatApp() {
   }
 
   async function submitTurn(): Promise<void> {
+    const submittedRevision = draftRevision.current;
     const text = prompt.trim();
     if (!text || !canMutate || !canQueue || operation !== null) return;
     setOperation("submitting");
@@ -1179,7 +1176,7 @@ export default function ChatApp() {
       const accepted = await api.acceptTurn(session.sessionId, text, newIdempotencyKey("turn"));
       update({ type: "turn.accepted", accepted, prompt: text });
       followConversationTail(true);
-      setPrompt("");
+      setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       void refreshConversations().catch(() => undefined);
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
@@ -1208,6 +1205,7 @@ export default function ChatApp() {
   }
 
   async function steerTurn(): Promise<void> {
+    const submittedRevision = draftRevision.current;
     const text = prompt.trim();
     if (
       state.session === null ||
@@ -1227,7 +1225,7 @@ export default function ChatApp() {
         text,
         newIdempotencyKey("steer"),
       );
-      setPrompt("");
+      setPrompt((current) => (draftRevision.current === submittedRevision ? "" : current));
       setSteerNotice(t("chat.steerAccepted"));
     } catch (error: unknown) {
       update({ type: "api.error", message: errorMessage(error, t) });
@@ -1342,7 +1340,7 @@ export default function ChatApp() {
   if (identity.platformAdministrator) {
     return (
       <Suspense fallback={<main className="product-loading-page" />}>
-        <AdminPage api={api} identity={identity} onLogout={() => void logout()} />
+        <AdminPage api={api} identity={identity} onLogout={logout} />
       </Suspense>
     );
   }
@@ -1430,7 +1428,7 @@ export default function ChatApp() {
           <footer className="product-account">
             <AccountMenu
               label={identity.username ?? identity.displayName}
-              onLogout={() => void logout()}
+              onLogout={logout}
               placement="up"
             />
           </footer>
@@ -1454,6 +1452,7 @@ export default function ChatApp() {
 
       <ConversationTreeNavigator
         loading={treeLoading}
+        onJump={() => followConversationTail(false)}
         onNavigate={(sessionId, target) => {
           const delegated = conversationTree?.delegatedSessions.find(
             (candidate) => candidate.sessionId === sessionId,
@@ -1562,7 +1561,11 @@ export default function ChatApp() {
             </button>
             <button
               className="product-workspace-button"
-              disabled={state.session === null || selectedDelegatedSession !== null}
+              disabled={
+                state.session === null ||
+                state.session.workspaceState === "missing" ||
+                selectedDelegatedSession !== null
+              }
               onClick={() => setInspectorOpen((value) => !value)}
               title={
                 selectedDelegatedSession === null
@@ -2174,6 +2177,8 @@ export default function ChatApp() {
               sessionId={state.session?.sessionId ?? null}
               workspaceId={state.project?.workspaceId ?? null}
               workspaceName={state.project?.name ?? null}
+              developmentEnvironmentId={state.session?.developmentEnvironmentId ?? null}
+              workingDirectory={state.session?.workingDirectory ?? "/workspace"}
             />
           ) : null}
         </div>
@@ -2186,8 +2191,12 @@ export default function ChatApp() {
             <textarea
               aria-label={t("chat.sendLabel")}
               disabled={!canMutate || !canQueue}
-              onChange={(event) => setPrompt(event.target.value)}
+              onChange={(event) => {
+                draftRevision.current++;
+                setPrompt(event.target.value);
+              }}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   void submitTurn();

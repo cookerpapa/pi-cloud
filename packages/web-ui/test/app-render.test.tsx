@@ -117,6 +117,8 @@ describe("product chat experience", () => {
         sessionId="10000000-0000-4000-8000-000000000001"
         workspaceId="10000000-0000-4000-8000-000000000002"
         workspaceName="order-service"
+        developmentEnvironmentId={null}
+        workingDirectory="/workspace"
       />,
     );
     expect(markup).toContain("WORKSPACE");

@@ -68,6 +68,8 @@ export function WorkspaceInspector({
   sessionId,
   workspaceId,
   workspaceName,
+  developmentEnvironmentId,
+  workingDirectory,
 }: {
   api: PiCloudApi;
   onClose: () => void;
@@ -76,6 +78,8 @@ export function WorkspaceInspector({
   sessionId: string | null;
   workspaceId: string | null;
   workspaceName: string | null;
+  developmentEnvironmentId: string | null;
+  workingDirectory: string;
 }) {
   const { t } = useI18n();
   const [entriesByDirectory, setEntriesByDirectory] = useState<
@@ -93,38 +97,13 @@ export function WorkspaceInspector({
   );
   const [fileLoading, setFileLoading] = useState(false);
   const [view, setView] = useState<"files" | "terminal">("files");
-  const [developmentEnvironmentId, setDevelopmentEnvironmentId] = useState<string | null>(null);
   const onErrorRef = useRef(onError);
   const loadGeneration = useRef(0);
+  const fileRequest = useRef(0);
 
   useEffect(() => {
     onErrorRef.current = onError;
   }, [onError]);
-
-  useEffect(() => {
-    if (workspaceId === null) {
-      setDevelopmentEnvironmentId(null);
-      return;
-    }
-    let cancelled = false;
-    void api
-      .listDevelopmentEnvironments()
-      .then((listed) => {
-        if (cancelled) return;
-        setDevelopmentEnvironmentId(
-          listed.environments.find(
-            (environment) =>
-              environment.workspaceId === workspaceId && environment.state === "running",
-          )?.environmentId ?? null,
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setDevelopmentEnvironmentId(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api, refreshSignal, workspaceId]);
 
   const loadDirectory = useCallback(
     async (path: string, generation: number): Promise<void> => {
@@ -152,6 +131,8 @@ export function WorkspaceInspector({
 
   const refresh = useCallback(async (): Promise<void> => {
     const generation = ++loadGeneration.current;
+    fileRequest.current++;
+    setLoadingDirectories(new Set());
     setEntriesByDirectory({});
     setExpandedDirectories(new Set());
     setSelectedFile(null);
@@ -164,11 +145,14 @@ export function WorkspaceInspector({
 
   useEffect(() => {
     setView("files");
+  }, [sessionId, workspaceId]);
+
+  useEffect(() => {
     void refresh();
     return () => {
       loadGeneration.current += 1;
     };
-  }, [refresh, refreshSignal]);
+  }, [refresh, refreshSignal, workspaceId]);
 
   async function toggleDirectory(path: string): Promise<void> {
     if (expandedDirectories.has(path)) {
@@ -188,23 +172,26 @@ export function WorkspaceInspector({
   async function openFile(file: WorkspaceDirectoryEntryResource): Promise<void> {
     if (sessionId === null || file.kind !== "file") return;
     const generation = loadGeneration.current;
+    const request = ++fileRequest.current;
     const previewable = canPreviewWorkspaceFile(file);
     setSelectedFile(file);
     setSelectedText(null);
     setSelectedBinary(false);
     setSelectedTooLarge(!previewable);
+    setFileLoading(previewable);
     if (!previewable) return;
-    setFileLoading(true);
     try {
       const result = await api.readWorkspaceFile(sessionId, file.path);
-      if (generation !== loadGeneration.current) return;
+      if (generation !== loadGeneration.current || request !== fileRequest.current) return;
       const text = decodedText(result.bytes);
       setSelectedText(text);
       setSelectedBinary(text === null);
     } catch (error: unknown) {
-      if (generation === loadGeneration.current) onErrorRef.current(message(error, t));
+      if (generation === loadGeneration.current && request === fileRequest.current)
+        onErrorRef.current(message(error, t));
     } finally {
-      if (generation === loadGeneration.current) setFileLoading(false);
+      if (generation === loadGeneration.current && request === fileRequest.current)
+        setFileLoading(false);
     }
   }
 
@@ -269,7 +256,7 @@ export function WorkspaceInspector({
         <div className="workspace-directory-body">
           <nav className="workspace-file-tree" aria-label={t("inspector.fileTree")}>
             <div className="workspace-root-row">
-              <strong>/workspace</strong>
+              <strong>{workingDirectory}</strong>
             </div>
             {rootLoading ? (
               <div className="workspace-empty">{t("inspector.loadingDirectory")}</div>

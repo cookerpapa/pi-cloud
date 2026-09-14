@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n, type UiLanguage } from "./i18n.tsx";
+import { errorMessage } from "./ui-errors.ts";
 
 export function AccountMenu({
   label,
@@ -7,12 +8,14 @@ export function AccountMenu({
   placement = "down",
 }: {
   label: string;
-  onLogout: () => void;
+  onLogout: () => void | Promise<void>;
   placement?: "up" | "down";
 }) {
   const { language, setLanguage, t } = useI18n();
   const [open, setOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -40,6 +43,21 @@ export function AccountMenu({
     setLanguage(value);
     setLanguageOpen(false);
     setOpen(false);
+  };
+
+  const logout = async (): Promise<void> => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setError(null);
+    try {
+      await onLogout();
+      setOpen(false);
+    } catch (caught) {
+      setError(errorMessage(caught, t));
+      setOpen(true);
+    } finally {
+      setLoggingOut(false);
+    }
   };
 
   return (
@@ -70,6 +88,11 @@ export function AccountMenu({
         </span>
       </button>
       <div className="product-account-menu-panel" hidden={!open} role="menu">
+        {error ? (
+          <div className="product-auth-error" role="alert">
+            {error}
+          </div>
+        ) : null}
         <div className="product-account-menu-language">
           <button
             aria-expanded={languageOpen}
@@ -103,14 +126,12 @@ export function AccountMenu({
         </div>
         <button
           className="product-account-menu-logout"
-          onClick={() => {
-            setOpen(false);
-            onLogout();
-          }}
+          disabled={loggingOut}
+          onClick={() => void logout()}
           role="menuitem"
           type="button"
         >
-          <span>{t("chat.logout")}</span>
+          <span>{loggingOut ? t("common.loading") : t("chat.logout")}</span>
           <span aria-hidden="true">↪</span>
         </button>
       </div>

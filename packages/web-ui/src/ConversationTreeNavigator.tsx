@@ -74,14 +74,12 @@ function TreeBranch({
   children,
   depth,
   activeTurnId,
-  currentSessionId,
   navigate,
 }: {
   branch: ConversationTreeBranchResource;
   children: ReadonlyMap<string, readonly ConversationTreeBranchResource[]>;
   depth: number;
   activeTurnId: string | null;
-  currentSessionId: string;
   navigate: (sessionId: string, target?: { turnId: string; entryId: string }) => void;
 }) {
   const { t } = useI18n();
@@ -91,12 +89,7 @@ function TreeBranch({
       {branch.parentSessionId === null && branch.kind === "conversation" ? null : (
         <button
           className={`product-tree-branch-label ${branch.kind}${branch.current ? " current" : ""}`}
-          onClick={() => {
-            const first = branch.entries[0];
-            if (first !== undefined) {
-              navigate(branch.sessionId, { turnId: first.turnId, entryId: first.entryId });
-            }
-          }}
+          onClick={() => navigate(branch.sessionId)}
           title={branch.kind === "subagent" ? t("chat.subagentTitle") : branch.title}
           type="button"
         >
@@ -119,7 +112,6 @@ function TreeBranch({
           activeTurnId={activeTurnId}
           branch={child}
           children={children}
-          currentSessionId={currentSessionId}
           depth={depth + 1}
           key={child.sessionId}
           navigate={navigate}
@@ -150,7 +142,6 @@ function TreeBranch({
                 activeTurnId={activeTurnId}
                 branch={child}
                 children={children}
-                currentSessionId={currentSessionId}
                 depth={depth + 1}
                 key={child.sessionId}
                 navigate={navigate}
@@ -170,6 +161,7 @@ export function ConversationTreeNavigator({
   scrollerRef,
   onViewChange,
   onNavigate,
+  onJump,
 }: {
   tree: ConversationTreeResource | null;
   view: ConversationTreeView;
@@ -177,6 +169,7 @@ export function ConversationTreeNavigator({
   scrollerRef: RefObject<HTMLElement | null>;
   onViewChange: (view: ConversationTreeView) => void;
   onNavigate: (sessionId: string, target?: { turnId: string; entryId: string }) => void;
+  onJump?: () => void;
 }) {
   const { t } = useI18n();
   const panel = useResizablePanel({
@@ -249,6 +242,7 @@ export function ConversationTreeNavigator({
       onNavigate(sessionId);
       return;
     }
+    onJump?.();
     const scroller = scrollerRef.current;
     const target =
       scroller === null
@@ -328,7 +322,6 @@ export function ConversationTreeNavigator({
               activeTurnId={activeTurnId}
               branch={root}
               children={children}
-              currentSessionId={tree!.currentSessionId}
               depth={0}
               navigate={navigate}
             />

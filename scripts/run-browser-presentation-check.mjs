@@ -15,6 +15,9 @@ import { createRoot } from "react-dom/client";
 import { ConversationTurn } from "/src/ConversationTurn.tsx";
 import { useResizablePanel } from "/src/use-resizable-panel.ts";
 import ChatApp from "/src/ChatApp.tsx";
+import { WorkspaceInspector } from "/src/WorkspaceInspector.tsx";
+import { WorkspaceTerminal } from "/src/WorkspaceTerminal.tsx";
+import { ConversationTreeNavigator } from "/src/ConversationTreeNavigator.tsx";
 import { PiCloudApi } from "/src/api.ts";
 import { I18nProvider } from "/src/i18n.tsx";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES, DEFAULT_NEW_CONVERSATION_MODEL } from "@pi-cloud/protocol";
@@ -42,6 +45,54 @@ window.renderTurn = (text, recoveredTextLength = 0) => root.render(
     items:[{kind:"text",key:"text:1",text,firstSequence:1,lastSequence:2,recoveredTextLength}]
   }})));
 window.turnBodies = [];
+const inspectorApi = {
+  listDevelopmentEnvironments:async()=>({environments:[]}),
+  listWorkspaceDirectory:async()=>({entries:[
+    {name:"a.txt",path:"a.txt",kind:"file",sizeBytes:10},
+    {name:"b.txt",path:"b.txt",kind:"file",sizeBytes:10},
+    {name:"large.bin",path:"large.bin",kind:"file",sizeBytes:1000000}
+  ],truncated:false}),
+  readWorkspaceFile:async(_session,path)=>new Promise(resolve=>{
+    window.fileReads[path]=text=>resolve({bytes:new TextEncoder().encode(text),contentType:"text/plain"});
+  }),
+};
+window.fileReads={};
+window.navigations=[]; window.jumpCount=0;
+const NativeWebSocket=window.WebSocket;
+window.terminalSockets=[];
+window.renderTerminal=()=>{
+  window.WebSocket=class extends EventTarget {
+    static OPEN=1; static CLOSED=3; static CONNECTING=0;
+    readyState=1;
+    constructor(url){super();this.url=url;window.terminalSockets.push(this);}
+    send(){}
+    close(){this.readyState=3;}
+  };
+  root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},React.createElement(WorkspaceTerminal,{
+    sessionId:'session-fixture',onError:()=>{}
+  })));
+};
+window.terminalReady=i=>terminalSockets[i].dispatchEvent(new MessageEvent('message',{data:JSON.stringify({
+  workspaceTerminalProtocolVersion:1,type:'workspace_terminal.ready',terminalId:'10000000-0000-4000-8000-000000000001',pid:1,workspaceRoot:'/workspace'
+})}));
+window.restoreWebSocket=()=>{window.WebSocket=NativeWebSocket;};
+window.renderNavigation=()=>{
+  const scroller=document.createElement('section'); scroller.id='fixture-scroller';
+  const anchor=document.createElement('div'); anchor.dataset.conversationTurnId='root-turn'; anchor.dataset.conversationEntryId='root-entry';
+  scroller.append(anchor); document.body.append(scroller);
+  const entry={entryId:'root-entry',turnId:'root-turn',role:'user',text:'Shared question',finalAssistant:false};
+  const tree={currentSessionId:'root-session',branches:[
+    {sessionId:'root-session',parentSessionId:null,kind:'conversation',title:'root',entries:[entry]},
+    {sessionId:'child-session',parentSessionId:'root-session',forkedFromEntryId:'root-entry',kind:'subagent',title:'child',entries:[]}
+  ],delegatedSessions:[]};
+  root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},React.createElement(ConversationTreeNavigator,{
+    tree,view:'full',loading:false,scrollerRef:{current:scroller},onViewChange:()=>{},
+    onNavigate:(...args)=>window.navigations.push(args),onJump:()=>window.jumpCount++
+  })));
+};
+window.renderInspector=(refreshSignal=0)=>root.render(React.createElement(I18nProvider,{initialLanguage:"en-US"},
+  React.createElement(WorkspaceInspector,{api:inspectorApi,sessionId:"session-fixture",workspaceId:"workspace-fixture",
+    workspaceName:"fixture",developmentEnvironmentId:null,workingDirectory:"/workspace",refreshSignal,onClose:()=>{},onError:()=>{}})));
 window.renderChat = () => {
   window.requestAnimationFrame = nativeRaf; window.cancelAnimationFrame = nativeCancelRaf;
   const sid = "10000000-0000-4000-8000-000000000001";
@@ -72,6 +123,9 @@ window.renderChat = () => {
   });
   const nativeFetch=window.fetch;
   window.fetch=async (url,init={})=>{
+    if(String(url)==="/v1/auth/logout") return window.rejectLogout
+      ? Response.json({error:{code:"conflict",message:"Fixture rejects logout"}},{status:503})
+      : Response.json({loggedOut:true});
     if(String(url).endsWith("/events")) return new Response(new ReadableStream({start(controller){
       init.signal?.addEventListener("abort",()=>controller.close(),{once:true});
     }}),{headers:{"content-type":"text/event-stream"}});
@@ -81,6 +135,11 @@ window.renderChat = () => {
     }
     if(String(url).endsWith("/turns")) {
       window.turnBodies.push(JSON.parse(init.body));
+      if(window.deferTurn) return new Promise(resolve=>{
+        window.finishTurn=()=>resolve(Response.json({turnId:"50000000-0000-4000-8000-000000000001",
+          sessionId:sid,runId:"60000000-0000-4000-8000-000000000001",mailboxPosition:1,
+          state:"queued",acceptedAt:new Date().toISOString(),replayed:false},{status:202}));
+      });
       // Capture the real request builder without creating a model Run.
       return Response.json({error:{code:"conflict",message:"Fixture does not execute models"}},{status:409});
     }
@@ -108,6 +167,19 @@ const server = await createServer({
       },
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
+          if (req.url === "/v1/identity") {
+            res.statusCode = 401;
+            res.setHeader("content-type", "application/json");
+            return res.end(
+              JSON.stringify({
+                error: { code: "authentication_required", message: "Login required" },
+              }),
+            );
+          }
+          if (req.url === "/v1/auth/providers") {
+            res.setHeader("content-type", "application/json");
+            return res.end(JSON.stringify({ local: { login: true, registration: true } }));
+          }
           if (req.url !== "/review.html") return next();
           res.setHeader("content-type", "text/html");
           res.end(
@@ -173,6 +245,15 @@ try {
         el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     };
     await fill(".product-composer textarea", "initial prompt");
+    await page.evaluate(
+      'document.querySelector(".product-composer textarea").dispatchEvent(new KeyboardEvent("keydown", {key:"Enter", isComposing:true, bubbles:true}))',
+    );
+    await page.wait(50);
+    assert.equal(
+      await page.evaluate('document.querySelector(".product-workspace-modal")!==null'),
+      false,
+      "IME confirmation must not submit the composer",
+    );
     await page.waitFor('!document.querySelector(".product-send-button").disabled');
     await page.evaluate('document.querySelector(".product-send-button").click()');
     await page.waitFor('document.querySelector(".product-execution-mode-choice input")');
@@ -231,6 +312,115 @@ try {
       [null, null, null],
       "Composer must use persisted Session settings, not an old per-Turn override",
     );
+    await page.evaluate("window.deferTurn=true");
+    await fill(".product-composer textarea", "submitted draft");
+    await page.waitFor('!document.querySelector(".product-send-button").disabled');
+    await page.evaluate('document.querySelector(".product-send-button").click()');
+    await page.waitFor("typeof window.finishTurn==='function'");
+    await fill(".product-composer textarea", "next draft");
+    await page.evaluate("finishTurn()");
+    await page.waitFor(
+      'document.querySelector(".product-user-bubble")?.textContent==="submitted draft"',
+    );
+    assert.equal(
+      await page.evaluate('document.querySelector(".product-composer textarea").value'),
+      "next draft",
+      "Acceptance must not clear text typed while the request was in flight",
+    );
+    await page.evaluate("renderInspector()");
+    await page.waitFor('document.querySelectorAll("button.workspace-tree-file").length===3');
+    await page.evaluate(
+      'document.querySelector("button.workspace-tree-file[title=\\"a.txt\\"]").click()',
+    );
+    await page.waitFor("typeof fileReads['a.txt']==='function'");
+    await page.evaluate(
+      'document.querySelector("button.workspace-tree-file[title=\\"b.txt\\"]").click()',
+    );
+    await page.waitFor("typeof fileReads['b.txt']==='function'");
+    await page.evaluate("fileReads['b.txt']('content B')");
+    await page.waitFor(
+      'document.querySelector(".workspace-file-preview code")?.textContent==="content B"',
+    );
+    await page.evaluate("fileReads['a.txt']('content A')");
+    await page.wait(50);
+    assert.equal(
+      await page.evaluate('document.querySelector(".workspace-file-preview code").textContent'),
+      "content B",
+      "A late file read must not replace the selected file's content",
+    );
+    await page.evaluate('document.querySelector(".workspace-view-tabs button:last-child").click()');
+    await page.waitFor('document.querySelector(".workspace-terminal-panel")');
+    await page.evaluate("renderInspector(1)");
+    await page.wait(100);
+    assert.equal(
+      await page.evaluate('document.querySelector(".workspace-terminal-panel")!==null'),
+      true,
+      "A Run completion refresh must not unmount the human terminal",
+    );
+    await page.evaluate("renderNavigation()");
+    await page.waitFor('document.querySelector(".product-tree-branch-label")');
+    await page.evaluate('document.querySelector(".product-tree-branch-label").click()');
+    assert.deepEqual(
+      await page.evaluate("navigations"),
+      [["child-session"]],
+      "An empty child branch must still be selectable",
+    );
+    await page.evaluate('document.querySelector(".product-tree-entry").click()');
+    assert.equal(
+      await page.evaluate("jumpCount"),
+      1,
+      "A local tree jump must stop automatic tail following",
+    );
+    await page.evaluate("document.getElementById('fixture-scroller').remove()");
+    await page.evaluate("renderTerminal()");
+    await page.waitFor('document.querySelector(".workspace-terminal-toolbar button")');
+    await page.evaluate(
+      'document.querySelector(".workspace-terminal-toolbar button").click();terminalReady(0)',
+    );
+    await page.waitFor(
+      'document.querySelector(".workspace-terminal-toolbar button").textContent==="Disconnect"',
+    );
+    await page.evaluate('document.querySelector(".workspace-terminal-toolbar button").click()');
+    await page.waitFor(
+      'document.querySelector(".workspace-terminal-toolbar button").textContent==="Connect terminal"',
+    );
+    await page.evaluate(
+      'document.querySelector(".workspace-terminal-toolbar button").click();terminalReady(1)',
+    );
+    await page.waitFor(
+      'document.querySelector(".workspace-terminal-toolbar button").textContent==="Disconnect"',
+    );
+    await page.evaluate("terminalSockets[0].dispatchEvent(new Event('close'))");
+    await page.wait(50);
+    assert.equal(
+      await page.evaluate(
+        'document.querySelector(".workspace-terminal-toolbar button").textContent',
+      ),
+      "Disconnect",
+      "A retired terminal socket must not disconnect its successor",
+    );
+    await page.evaluate("restoreWebSocket()");
+    await page.evaluate("renderChat(); window.rejectLogout=true");
+    await page.waitFor('document.querySelector(".product-account-menu-trigger")');
+    await page.evaluate('document.querySelector(".product-account-menu-trigger").click()');
+    await page.evaluate('document.querySelector(".product-account-menu-logout").click()');
+    await page.wait(100);
+    assert.equal(
+      await page.evaluate('document.querySelector(".product-shell")!==null'),
+      true,
+      "Failed logout must not pretend the HttpOnly login cookie was revoked",
+    );
+    await page.waitFor('document.querySelector(".product-account-menu [role=alert]")');
+    await page.evaluate(
+      "window.rejectLogout=false;document.querySelector('.product-account-menu-logout').click()",
+    );
+    await page.wait(500);
+    await page.waitFor('document.querySelector(".product-auth-card")');
+    assert.equal(
+      await page.evaluate("typeof window.fixtureReady"),
+      "undefined",
+      "Successful logout must discard the entire previous account's document state",
+    );
   });
   console.log(
     JSON.stringify({
@@ -242,6 +432,11 @@ try {
       pointerCancellation: true,
       composerSessionSettings: true,
       providerSwitchClearsFast: true,
+      compositionAndPendingDraft: true,
+      inspectorSelectionAndTerminalLifetime: true,
+      logoutLifecycle: true,
+      branchSelectionAndManualJump: true,
+      terminalSocketIsolation: true,
     }),
   );
 } finally {

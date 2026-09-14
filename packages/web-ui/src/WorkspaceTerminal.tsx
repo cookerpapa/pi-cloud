@@ -103,6 +103,7 @@ export function WorkspaceTerminal({
     }
     const terminal = terminalRef.current;
     if (terminal === null) return;
+    disconnect();
     terminal.reset();
     terminal.writeln(`\x1b[38;5;245m${tRef.current("terminal.starting")}\x1b[0m`);
     setState("connecting");
@@ -114,6 +115,7 @@ export function WorkspaceTerminal({
     );
     socketRef.current = socket;
     socket.addEventListener("message", (event) => {
+      if (socketRef.current !== socket) return;
       try {
         const frame = parseWorkspaceTerminalServerFrame(JSON.parse(String(event.data)) as unknown);
         if (frame.type === "workspace_terminal.ready") {
@@ -143,17 +145,19 @@ export function WorkspaceTerminal({
       }
     });
     socket.addEventListener("close", () => {
-      if (socketRef.current === socket) socketRef.current = null;
+      if (socketRef.current !== socket) return;
+      socketRef.current = null;
       if (stateRef.current === "ready" || stateRef.current === "connecting") {
         terminal.writeln(`\r\n\x1b[38;5;245m${tRef.current("terminal.closed")}\x1b[0m`);
         setState("disconnected");
       }
     });
     socket.addEventListener("error", () => {
+      if (socketRef.current !== socket) return;
       terminal.writeln(`\r\n\x1b[31m${tRef.current("terminal.connectionFailed")}\x1b[0m`);
       setState("failed");
     });
-  }, [environmentId, sessionId, setState, transmit]);
+  }, [disconnect, environmentId, sessionId, setState, transmit]);
 
   useEffect(() => {
     const host = hostRef.current;

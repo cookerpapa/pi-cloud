@@ -46,7 +46,7 @@ export function AdminPage({
 }: {
   api: PiCloudApi;
   identity: TenantIdentityResource;
-  onLogout: () => void;
+  onLogout: () => void | Promise<void>;
 }) {
   const { t } = useI18n();
   const [modelConfiguration, setModelConfiguration] = useState<ModelConfigurationResource | null>(
