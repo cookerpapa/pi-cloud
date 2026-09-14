@@ -23,6 +23,8 @@ import { sql, type Kysely } from "kysely";
 import { ControlPlaneStoreError } from "./control-plane-store.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
 
+type MachineOwner = Pick<TenantRequestIdentity, "tenantId" | "userId">;
+
 const MAXIMUM_ENVIRONMENTS = 100;
 const MAXIMUM_REDIRECTS = 3;
 const ABANDONED_REQUEST_AGE_MS = 5 * 60_000;
@@ -221,6 +223,36 @@ export class DevelopmentEnvironmentService {
       await this.#retireReleasedMachineWorkspace(environment, environment.id);
       retired += 1;
     }
+    const pendingReleases = await this.#database
+      .selectFrom("development_environment_operations as operation")
+      .innerJoin("development_environments as environment", (join) =>
+        join
+          .onRef("environment.tenant_id", "=", "operation.tenant_id")
+          .onRef("environment.id", "=", "operation.environment_id"),
+      )
+      .select([
+        "environment.id",
+        "environment.tenant_id as tenantId",
+        "environment.owner_user_id as userId",
+        "operation.idempotency_key as idempotencyKey",
+      ])
+      .where("operation.action", "=", "release")
+      .where("operation.result_state", "!=", "released")
+      .where("operation.created_at", "<", cutoff)
+      .orderBy("operation.created_at", "asc")
+      .orderBy("operation.id", "asc")
+      .limit(limit)
+      .execute();
+    for (const release of pendingReleases) {
+      try {
+        await this.action(release, release.id, release.idempotencyKey, { action: "release" });
+        retired += 1;
+      } catch (error: unknown) {
+        // One unreachable machine must not starve cleanup of other resources.
+        const code = error instanceof ControlPlaneStoreError ? error.code : "broker_unreachable";
+        process.stderr.write(`Development machine release retry failed: ${code}\n`);
+      }
+    }
     return retired;
   }
 
@@ -242,7 +274,7 @@ export class DevelopmentEnvironmentService {
   }
 
   async get(
-    identity: TenantRequestIdentity,
+    identity: MachineOwner,
     environmentId: string,
   ): Promise<DevelopmentEnvironmentResource> {
     const row = await this.#baseQuery(identity)
@@ -483,7 +515,7 @@ export class DevelopmentEnvironmentService {
   }
 
   async action(
-    identity: TenantRequestIdentity,
+    identity: MachineOwner,
     environmentId: string,
     idempotencyKey: string,
     request: DevelopmentEnvironmentActionRequest,
@@ -508,7 +540,7 @@ export class DevelopmentEnvironmentService {
       }
       const replay = await transaction
         .selectFrom("development_environment_operations")
-        .select("request_sha256")
+        .select(["request_sha256", "result_state"])
         .where("tenant_id", "=", identity.tenantId)
         .where("environment_id", "=", environmentId)
         .where("idempotency_key", "=", idempotencyKey)
@@ -520,7 +552,9 @@ export class DevelopmentEnvironmentService {
             "Idempotency key was reused for another environment action",
           );
         }
-        return true;
+        // A persisted request is not proof that its external effect completed.
+        // Release is irreversible and can be retried against the same machine.
+        if (request.action !== "release" || replay.result_state === "released") return true;
       }
       const alreadyReleased = request.action === "release" && environment.state === "released";
       const allowed =
@@ -528,7 +562,9 @@ export class DevelopmentEnvironmentService {
         (request.action === "resume" && environment.state === "paused") ||
         alreadyReleased ||
         (request.action === "release" &&
-          ["requested", "running", "paused", "failed", "unknown"].includes(environment.state));
+          ["requested", "running", "paused", "releasing", "failed", "unknown"].includes(
+            environment.state,
+          ));
       if (!allowed) {
         throw new ControlPlaneStoreError(
           "conflict",
@@ -541,7 +577,7 @@ export class DevelopmentEnvironmentService {
           .select("id")
           .where("tenant_id", "=", identity.tenantId)
           .where("workspace_id", "=", environment.workspaceId)
-          .where("state", "in", ["claimed", "running", "cancel_requested"])
+          .where("state", "not in", ["completed", "failed", "cancelled", "timed_out", "superseded"])
           .limit(1)
           .executeTakeFirst();
         if (
@@ -555,19 +591,21 @@ export class DevelopmentEnvironmentService {
           );
         }
       }
-      await transaction
-        .insertInto("development_environment_operations")
-        .values({
-          id: this.#id(),
-          tenant_id: identity.tenantId,
-          environment_id: environmentId,
-          actor_user_id: identity.userId,
-          idempotency_key: idempotencyKey,
-          action: request.action,
-          request_sha256: fingerprint,
-          result_state: environment.state,
-        })
-        .executeTakeFirstOrThrow();
+      if (replay === undefined) {
+        await transaction
+          .insertInto("development_environment_operations")
+          .values({
+            id: this.#id(),
+            tenant_id: identity.tenantId,
+            environment_id: environmentId,
+            actor_user_id: identity.userId,
+            idempotency_key: idempotencyKey,
+            action: request.action,
+            request_sha256: fingerprint,
+            result_state: environment.state,
+          })
+          .executeTakeFirstOrThrow();
+      }
       return alreadyReleased;
     });
     if (!replayed) {
@@ -607,6 +645,14 @@ export class DevelopmentEnvironmentService {
     }
     if (request.action === "release") {
       await this.#retireReleasedMachineWorkspace(identity, environmentId);
+      await this.#database
+        .updateTable("development_environment_operations")
+        .set({ result_state: "released" })
+        .where("tenant_id", "=", identity.tenantId)
+        .where("environment_id", "=", environmentId)
+        .where("action", "=", "release")
+        .where("result_state", "!=", "released")
+        .execute();
     }
     return this.get(identity, environmentId);
   }
@@ -767,7 +813,7 @@ export class DevelopmentEnvironmentService {
     }
   }
 
-  #baseQuery(identity: TenantRequestIdentity) {
+  #baseQuery(identity: MachineOwner) {
     return this.#database
       .selectFrom("development_environments as development")
       .innerJoin("projects as project", (join) =>
@@ -824,7 +870,7 @@ export class DevelopmentEnvironmentService {
   }
 
   async #lifecycle(
-    identity: TenantRequestIdentity,
+    identity: MachineOwner,
     environmentId: string,
     action: "pause" | "resume" | "release",
   ): Promise<void> {
@@ -840,7 +886,7 @@ export class DevelopmentEnvironmentService {
     });
   }
 
-  async #descriptor(identity: TenantRequestIdentity, environmentId: string) {
+  async #descriptor(identity: MachineOwner, environmentId: string) {
     const row = await this.#database
       .selectFrom("development_environments as development")
       .innerJoin("workspaces as workspace", (join) =>

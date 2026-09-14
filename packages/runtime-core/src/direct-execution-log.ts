@@ -12,7 +12,7 @@ import type {
   ExecutionLogWriter,
   ExecutionLogFactory,
   ExecutionLogOpenRequest,
-} from "./durable-event-store.ts";
+} from "./execution-log.ts";
 import { openExecutionPublication } from "./execution-publication.ts";
 import { prepareExecutionFact } from "./prepare-execution-fact.ts";
 import { DEFAULT_PRODUCER_CAPACITY, type ProducerCapacity } from "@pi-cloud/event-log";

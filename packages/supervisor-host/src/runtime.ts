@@ -5,7 +5,7 @@ import {
   PostgresWorkspaceSettlementStore,
   TtlRuntimeObjectStore,
 } from "@pi-cloud/runtime-core/workspace-settlement-runtime";
-import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/durable-event-store";
+import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
 import { DirectExecutionLog } from "@pi-cloud/runtime-core/direct-execution-log";
 import {
   KafkaAcceptedFactBus,

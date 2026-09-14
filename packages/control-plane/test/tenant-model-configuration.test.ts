@@ -1,3 +1,4 @@
+import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
@@ -190,6 +191,7 @@ describe.sequential("tenant model configuration", () => {
       ownerDisplayName: "Model Route HTTP",
     });
     const application = await createControlPlaneApplication({
+      eventRuntime: emptyEventRuntime(),
       database,
       tenantId: tenant.tenantId,
       defaultModelProfileId: tenant.defaultModelProfileId,

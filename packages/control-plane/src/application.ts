@@ -29,7 +29,7 @@ export type ControlPlaneApplicationOptions = Omit<
   supervisorProvisioningGateway?: SupervisorProvisioningGateway;
   productionHttpGateway?: ProductionHttpGateway;
   sessionEventStreamOptions?: SessionEventStreamOptions;
-  eventRuntime?: ControlPlaneEventRuntime;
+  eventRuntime: ControlPlaneEventRuntime;
   publicRegistration?: PublicTenantRegistrationConfiguration;
   workspaceBrowser?: TrustedWorkspaceBrowser;
   webAuthentication?: WebAuthenticationService;

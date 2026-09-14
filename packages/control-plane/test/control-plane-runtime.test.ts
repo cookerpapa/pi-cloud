@@ -1,3 +1,4 @@
+import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
@@ -5,7 +6,6 @@ import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
-  DurableEventStore,
   HashedBearerSupervisorAuthorizer,
   SessionEventHub,
   SandboxPreviewGateway,
@@ -136,6 +136,7 @@ describe.sequential("remote control-plane runtime composition", () => {
       allowInsecureInternalHttp: true,
     });
     const runtime = await createControlPlaneRuntime({
+      eventRuntime: emptyEventRuntime(),
       database,
       tenantId: IDS.tenant,
       defaultModelProfileId: IDS.profile,
@@ -183,7 +184,6 @@ describe.sequential("remote control-plane runtime composition", () => {
           )
         ).status,
       ).toBe(401);
-      expect(runtime.application.get(DurableEventStore)).toBe(runtime.eventStore);
       expect(runtime.application.get(SessionEventHub)).toBe(runtime.eventHub);
       await waitFor(() => activities.some((activity) => activity.type === "maintenance.completed"));
       expect(runtime.maintenance.state).toBe("running");

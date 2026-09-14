@@ -1,3 +1,4 @@
+import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
@@ -149,6 +150,7 @@ async function startGateway(options: {
       })
       .executeTakeFirstOrThrow();
     const application = await createControlPlaneApplication({
+      eventRuntime: emptyEventRuntime(),
       database,
       tenantId,
       defaultModelProfileId: profileId,

@@ -55,12 +55,10 @@ export class PostgresSessionExecutionAuthority implements ActiveExecutionAuthori
     if (this.#closed || this.#abort.signal.aborted) {
       throw new SessionError("storage", "Pi Session execution authority is no longer active");
     }
-    if (database || this.#validUntil === undefined) return this.#verify(database ?? this.#database);
-    if (this.#validUntil <= this.#clock()) {
-      const error = new SessionError("storage", "Observed execution lease expired");
-      this.#abort.abort(error);
-      throw error;
-    }
+    // Cold restore can outlive the first observation while the Worker heartbeat
+    // keeps renewing the real lease. An expired cache is not proof of owner loss.
+    if (database || this.#validUntil === undefined || this.#validUntil <= this.#clock())
+      return this.#verify(database ?? this.#database);
   }
 
   async #verify(authority: Kysely<Database>) {

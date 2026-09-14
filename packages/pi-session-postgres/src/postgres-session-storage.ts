@@ -600,35 +600,15 @@ export class PostgresPiSessionStorage implements SessionStorage<PiCloudPiSession
                   and session_id = ${this.#sessionId}::text
                   and type = 'message'
              )::text as message_count,
-             coalesce((
-               select sum((payload #>> '{usage,cacheRead}')::numeric)
-                 from pi_session_records
-                where tenant_id = ${this.#tenantId}::uuid
-                  and session_id = ${this.#sessionId}::text
-                  and type = 'usage'
-             ), 0)::text as cached_tokens,
-             coalesce((
-               select sum((payload #>> '{usage,input}')::numeric
-                        + (payload #>> '{usage,cacheWrite}')::numeric)
-                 from pi_session_records
-                where tenant_id = ${this.#tenantId}::uuid
-                  and session_id = ${this.#sessionId}::text
-                  and type = 'usage'
-             ), 0)::text as uncached_tokens,
-             coalesce((
-               select sum((payload #>> '{usage,totalTokens}')::numeric)
-                 from pi_session_records
-                where tenant_id = ${this.#tenantId}::uuid
-                  and session_id = ${this.#sessionId}::text
-                  and type = 'usage'
-             ), 0)::text as total_tokens,
-             coalesce((
-               select sum((payload #>> '{usage,cost,total}')::numeric)
-                 from pi_session_records
-                where tenant_id = ${this.#tenantId}::uuid
-                  and session_id = ${this.#sessionId}::text
-                  and type = 'usage'
-             ), 0)::text as cost_total
+             coalesce(sum((payload #>> '{usage,cacheRead}')::numeric),0)::text as cached_tokens,
+             coalesce(sum((payload #>> '{usage,input}')::numeric
+                        + (payload #>> '{usage,cacheWrite}')::numeric),0)::text as uncached_tokens,
+             coalesce(sum((payload #>> '{usage,totalTokens}')::numeric),0)::text as total_tokens,
+             coalesce(sum((payload #>> '{usage,cost,total}')::numeric),0)::text as cost_total
+        from pi_session_records
+       where tenant_id = ${this.#tenantId}::uuid
+         and session_id = ${this.#sessionId}::text
+         and type = 'usage'
     `.execute(this.#database);
     const row = result.rows[0];
     if (row === undefined)

@@ -8,7 +8,6 @@ import {
   type ControlPlaneApplicationOptions,
 } from "./application.ts";
 import { AssignmentReconciler } from "./assignment-reconciler.ts";
-import { DurableEventStore } from "@pi-cloud/runtime-core/durable-event-store";
 import type { LiveSessionTailSource } from "@pi-cloud/runtime-core/session-event-stream";
 import {
   SupervisorMaintenanceRuntime,
@@ -58,7 +57,7 @@ export type ControlPlaneRuntimeOptions = Omit<
   assignmentInventoryFactory: (identity: SupervisorBootIdentity) => SandboxAssignmentInventory;
   supervisorProvisioningGateway?: SupervisorProvisioningGateway;
   productionHttpGateway?: ProductionHttpGateway;
-  eventRuntime?: ControlPlaneApplicationOptions["eventRuntime"];
+  eventRuntime: ControlPlaneApplicationOptions["eventRuntime"];
   connectionManager?: ConnectionManagerConfiguration;
   controlChannelRouter?: ControlChannelConfiguration;
   gateway?: GatewayConfiguration;
@@ -144,8 +143,7 @@ export class ControlPlaneRuntime {
 export async function createControlPlaneRuntime(
   options: ControlPlaneRuntimeOptions,
 ): Promise<ControlPlaneRuntime> {
-  const eventHub = options.eventRuntime?.eventHub ?? new SessionEventHub();
-  const eventStore = options.eventRuntime?.eventStore ?? new DurableEventStore();
+  const { eventHub, eventStore } = options.eventRuntime;
   const controlChannelRouter = new WorkerControlChannelRouter(options.controlChannelRouter);
   const connectionManager = new SupervisorConnectionManager({
     ...options.connectionManager,
@@ -220,7 +218,6 @@ export async function createControlPlaneRuntime(
         ? {}
         : { sourceControlService: options.sourceControlService }),
       eventRuntime: {
-        ...(options.eventRuntime ?? {}),
         eventHub,
         eventStore,
       },

@@ -1,3 +1,4 @@
+import { SessionEventHub } from "@pi-cloud/runtime-core/session-event-hub";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import {
   ControlPlaneStore,
@@ -235,6 +236,12 @@ beforeAll(async () => {
   });
   foreignApiToken = foreign.credential.token;
   application = await createControlPlaneApplication({
+    eventRuntime: {
+      eventHub: new SessionEventHub(),
+      eventStore: {
+        snapshot: () => ({ canonicalThroughSequence: 0, highWaterMark: 0, events: [] }),
+      },
+    },
     database,
     productionHttpGateway: new ProductionHttpGateway({
       authenticator: new PostgresTenantApiAuthenticator({ database }),

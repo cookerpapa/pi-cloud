@@ -117,12 +117,7 @@ export {
   type ControlPlaneEventRuntime,
   type ControlPlaneModuleOptions,
 } from "./control-plane.module.ts";
-export {
-  DurableEventStore,
-  DurableEventStoreError,
-  type ExecutionLogFactory,
-  type DurableEventStoreErrorCode,
-} from "@pi-cloud/runtime-core/durable-event-store";
+export type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
 export { projectConversationTurnTranscript } from "@pi-cloud/runtime-core/conversation-turn-projection";
 export {
   AgentRunExecutionBackend,

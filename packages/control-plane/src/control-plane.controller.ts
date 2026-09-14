@@ -17,6 +17,7 @@ import {
   Res,
 } from "@nestjs/common";
 import {
+  ControlPlaneApiValidationError,
   parseAcceptTurnRequest,
   parseLoginAccountRequest,
   parseRegisterAccountRequest,
@@ -297,7 +298,7 @@ export class ControlPlaneController {
     @Res() reply: FastifyReply,
   ): Promise<void> {
     if (typeof state !== "string" || typeof installationId !== "string") {
-      throw new TypeError("GitHub installation callback is invalid");
+      throw new ControlPlaneApiValidationError("GitHub installation callback is invalid");
     }
     await this.sourceControl.completeGitHubInstall(
       this.tenantRequestContext.requireMutation(request),
@@ -510,7 +511,7 @@ export class ControlPlaneController {
     @Query("path") pathValue: unknown,
   ): Promise<DevelopmentEnvironmentDirectoryResource> {
     if (typeof pathValue !== "string") {
-      throw new Error("Machine directory path is required");
+      throw new ControlPlaneApiValidationError("Machine directory path is required");
     }
     return this.developmentEnvironments.directory(
       this.tenantRequestContext.resolve(request),
@@ -692,7 +693,9 @@ export class ControlPlaneController {
   ): Promise<WorkspaceDirectoryResource> {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
     const path = pathValue === undefined ? "" : pathValue;
-    if (typeof path !== "string") throw new TypeError("Workspace directory path is invalid");
+    if (typeof path !== "string") {
+      throw new ControlPlaneApiValidationError("Workspace directory path is invalid");
+    }
     const identity = this.tenantRequestContext.resolve(request);
     return this.workspaceBrowser.directory(identity.tenantId, sessionId, path, identity.userId);
   }
@@ -705,7 +708,9 @@ export class ControlPlaneController {
     @Res() reply: FastifyReply,
   ): Promise<void> {
     const sessionId = parseUuidPathParameter(sessionIdValue, "sessionId");
-    if (typeof path !== "string") throw new TypeError("Workspace file path is required");
+    if (typeof path !== "string") {
+      throw new ControlPlaneApiValidationError("Workspace file path is required");
+    }
     const identity = this.tenantRequestContext.resolve(request);
     const file = await this.workspaceBrowser.file(
       identity.tenantId,

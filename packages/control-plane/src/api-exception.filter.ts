@@ -2,7 +2,6 @@ import { Catch, type ArgumentsHost, type ExceptionFilter, HttpException } from "
 import { ControlPlaneApiValidationError, type ControlPlaneApiError } from "@pi-cloud/protocol";
 import type { FastifyReply } from "fastify";
 import { ControlPlaneStoreError } from "./control-plane-store.ts";
-import { DurableEventStoreError } from "@pi-cloud/runtime-core/durable-event-store";
 import { PublicTenantRegistrationError } from "./public-tenant-registration.ts";
 import { TenantRequestContextError } from "./tenant-request-context.ts";
 import { TenantModelConfigurationError } from "./tenant-model-configuration.ts";
@@ -120,17 +119,6 @@ export function mappedError(error: unknown): ErrorResponse {
         : error.code === "invalid_path" || error.code === "file_too_large"
           ? 400
           : 503;
-    return { status, body: { error: { code: error.code, message: error.message } } };
-  }
-  if (error instanceof DurableEventStoreError) {
-    const status =
-      error.code === "not_found"
-        ? 404
-        : error.code === "event_conflict"
-          ? 409
-          : error.code === "event_store_invariant"
-            ? 503
-            : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof HttpException) {

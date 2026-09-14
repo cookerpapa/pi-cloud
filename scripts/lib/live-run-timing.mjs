@@ -2,10 +2,21 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 const exec = promisify(execFile);
 
+/** Public durable activity, not optimistic UI or streamed Tool argument JSON. */
+export function isDurableAgentActivity(event) {
+  return [
+    "assistant.text.delta",
+    "assistant.tool_call.preparing",
+    "tool.started",
+    "provider.hosted_tool.started",
+  ].includes(event.type);
+}
+
 /** One-host acceptance helper. Only copy content-free transport records for the test Runs. */
 export async function readWorkerModelTimings(runIds, sinceMs) {
   const { stdout } = await exec("docker", [
     "ps",
+    "--all",
     "--filter",
     "label=com.docker.compose.project=pi-cloud-production",
     "--format",
@@ -41,6 +52,16 @@ export function runStageTiming(sample, requests) {
     sample.firstAssistantTextMs === undefined
   )
     return undefined;
+  if (sample.firstAssistantTextReceivedAtMs !== undefined) {
+    const clockStepMs =
+      sample.firstAssistantTextReceivedAtMs - sample.submittedWallAt - sample.firstAssistantTextMs;
+    if (Math.abs(clockStepMs) > 100)
+      return {
+        unavailable:
+          "Host wall clock changed during the Run; monotonic client durations remain valid",
+        clockStepMs,
+      };
+  }
   const text = requests.findLast(
     (request) =>
       request.firstTextMs !== undefined &&

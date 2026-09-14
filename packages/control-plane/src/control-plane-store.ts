@@ -1482,7 +1482,6 @@ export class ControlPlaneStore {
     idempotencyKey: string,
     request: AcceptTurnRequest,
     fingerprint: string,
-    validation?: { environmentVersionId: string; actorUserId: string },
   ): Promise<AcceptedTurnResource> {
     const turnId = this.#idGenerator();
     const runId = this.#idGenerator();
@@ -1560,6 +1559,46 @@ export class ControlPlaneStore {
           true,
         );
       }
+      if (session.execution_mode === "development_environment") {
+        if (session.development_environment_id === null) {
+          throw new ControlPlaneStoreError(
+            "control_plane_misconfigured",
+            "Development-machine Session has no environment identity",
+          );
+        }
+        // Lock the machine before its Workspace, in lifecycle-admission order.
+        const machine = await transaction
+          .selectFrom("development_environments")
+          .select("state")
+          .where("tenant_id", "=", this.#tenantId)
+          .where("id", "=", session.development_environment_id)
+          .where("workspace_id", "=", session.workspace_id)
+          .forShare()
+          .executeTakeFirst();
+        if (machine?.state !== "running") {
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Resume the development machine before sending a message",
+          );
+        }
+        // Use a fresh statement snapshot after acquiring the row lock: a release
+        // may have committed its intent while this transaction waited for it.
+        const releasing = await transaction
+          .selectFrom("development_environment_operations")
+          .select("id")
+          .where("tenant_id", "=", this.#tenantId)
+          .where("environment_id", "=", session.development_environment_id)
+          .where("action", "=", "release")
+          .where("result_state", "!=", "released")
+          .limit(1)
+          .executeTakeFirst();
+        if (releasing !== undefined) {
+          throw new ControlPlaneStoreError(
+            "conflict",
+            "Development machine release has been requested",
+          );
+        }
+      }
       const workspace = await transaction
         .selectFrom("workspaces as workspace")
         .leftJoin(
@@ -1579,6 +1618,9 @@ export class ControlPlaneStore {
         .where("workspace.tenant_id", "=", this.#tenantId)
         .where("workspace.id", "=", session.workspace_id)
         .where("workspace.deleted_at", "is", null)
+        // Keep this admission check valid until its queued Run commits. Shared
+        // readers may coexist; resource deletion must wait and see the new Run.
+        .forShare("workspace")
         .executeTakeFirst();
       if (workspace === undefined) {
         throw new ControlPlaneStoreError(
@@ -1588,27 +1630,6 @@ export class ControlPlaneStore {
       }
       if (session.archived_at !== null) {
         throw new ControlPlaneStoreError("conflict", "Archived Session cannot accept turns");
-      }
-      if (session.execution_mode === "development_environment") {
-        if (session.development_environment_id === null) {
-          throw new ControlPlaneStoreError(
-            "control_plane_misconfigured",
-            "Development-machine Session has no environment identity",
-          );
-        }
-        const developmentEnvironment = await transaction
-          .selectFrom("development_environments")
-          .select("state")
-          .where("tenant_id", "=", this.#tenantId)
-          .where("id", "=", session.development_environment_id)
-          .where("workspace_id", "=", session.workspace_id)
-          .executeTakeFirst();
-        if (developmentEnvironment?.state !== "running") {
-          throw new ControlPlaneStoreError(
-            "conflict",
-            "Resume the development machine before sending a message",
-          );
-        }
       }
       const workspaceBaseSettlementId =
         session.forked_from_session_id === null
@@ -1656,14 +1677,7 @@ export class ControlPlaneStore {
           "Session Tool grant is invalid",
         );
       }
-      const environment =
-        validation === undefined
-          ? await this.#activeEnvironmentForRun(transaction, session.project_id)
-          : await this.#environmentVersionForValidation(
-              transaction,
-              session.project_id,
-              validation.environmentVersionId,
-            );
+      const environment = await this.#activeEnvironmentForRun(transaction, session.project_id);
       await transaction
         .insertInto("turns")
         .values({
@@ -1686,30 +1700,6 @@ export class ControlPlaneStore {
           failure_retryable: null,
         })
         .executeTakeFirstOrThrow();
-
-      if (validation !== undefined) {
-        const active = await transaction
-          .selectFrom("environment_versions")
-          .select("id")
-          .where("tenant_id", "=", this.#tenantId)
-          .where("project_id", "=", session.project_id)
-          .where("active", "=", true)
-          .executeTakeFirstOrThrow();
-        await transaction
-          .insertInto("environment_operations")
-          .values({
-            id: this.#idGenerator(),
-            tenant_id: this.#tenantId,
-            project_id: session.project_id,
-            actor_user_id: validation.actorUserId,
-            kind: "validate",
-            from_environment_version_id: active.id,
-            to_environment_version_id: validation.environmentVersionId,
-            idempotency_key: idempotencyKey,
-            request_fingerprint: fingerprint,
-          })
-          .executeTakeFirstOrThrow();
-      }
 
       const run = await transaction
         .insertInto("runs")
@@ -2033,48 +2023,6 @@ export class ControlPlaneStore {
       ])
       .executeTakeFirstOrThrow();
     return environmentSnapshot(created);
-  }
-
-  async #environmentVersionForValidation(
-    transaction: Transaction<Database>,
-    projectId: string,
-    environmentVersionId: string,
-  ): Promise<EnvironmentRuntimeSnapshot> {
-    const row = await transaction
-      .selectFrom("environment_versions as environment")
-      .select([
-        "environment.id as environmentVersionId",
-        "environment.version_number as environmentVersionNumber",
-        "environment.profile_key as environmentProfileKey",
-        "environment.profile_version as environmentProfileVersion",
-        "environment.image_revision as environmentImageRevision",
-        "environment.spec_sha256 as environmentSpecSha256",
-        "environment.recipe as environmentRecipe",
-        "environment.recipe_sha256 as environmentRecipeSha256",
-        "environment.state as environmentState",
-        "environment.active as environmentActive",
-        "environment.created_at as environmentCreatedAt",
-        "environment.validated_at as environmentValidatedAt",
-      ])
-      .where("environment.tenant_id", "=", this.#tenantId)
-      .where("environment.project_id", "=", projectId)
-      .where("environment.id", "=", environmentVersionId)
-      .forUpdate()
-      .executeTakeFirst();
-    if (row === undefined) {
-      throw new ControlPlaneStoreError("not_found", "Environment version was not found");
-    }
-    if (row.environmentState === "failed") {
-      throw new ControlPlaneStoreError("conflict", "Failed environment version cannot be retried");
-    }
-    const snapshot = environmentSnapshot(row);
-    if (snapshot.imageRevision !== this.#environmentImageRevision) {
-      throw new ControlPlaneStoreError(
-        "conflict",
-        "Environment version is not served by the current deployment image",
-      );
-    }
-    return snapshot;
   }
 
   async #resolveModelSnapshot(

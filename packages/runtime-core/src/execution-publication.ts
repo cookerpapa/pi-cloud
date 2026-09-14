@@ -4,7 +4,7 @@ import { retryTransaction, type Database } from "@pi-cloud/database";
 import { parseExecutionReference } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { ExecutionPublication } from "./accepted-fact.ts";
-import type { ExecutionLogOpenRequest } from "./durable-event-store.ts";
+import type { ExecutionLogOpenRequest } from "./execution-log.ts";
 import type { KafkaAcceptedFactRecord } from "./kafka-accepted-fact-consumer.ts";
 import { recordFactProjection } from "./accepted-fact-recovery.ts";
 

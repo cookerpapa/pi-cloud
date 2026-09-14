@@ -491,6 +491,123 @@ describe("user-owned development environments", () => {
     ).resolves.toEqual({ count: "1" });
   });
 
+  it("does not destroy a machine used by a queued message before lazy Tool activation", async () => {
+    const machine = await service.create(identity, "queued-machine", {
+      name: "Queued message machine",
+      profileKey: "starter",
+    });
+    const session = await store.createSession(
+      machine.projectId,
+      machine.workspaceId,
+      "queued message",
+      "development_environment",
+      { ownerUserId: identity.userId, workingDirectory: "/home/user" },
+    );
+    const accepted = await store.acceptTurn(session.sessionId, "queued-message", {
+      prompt: "continue",
+    });
+    const destroyedBefore = destroys.mock.calls.length;
+    try {
+      await expect(
+        service.action(identity, machine.environmentId, "release-queued", {
+          action: "release",
+        }),
+      ).rejects.toMatchObject({ code: "conflict" });
+      expect(destroys.mock.calls.length).toBe(destroyedBefore);
+      await expect(service.get(identity, machine.environmentId)).resolves.toMatchObject({
+        state: "running",
+      });
+    } finally {
+      await database
+        .updateTable("runs")
+        .set({ state: "cancelled", settled_at: new Date() })
+        .where("id", "=", accepted.runId)
+        .execute();
+      await database
+        .updateTable("turns")
+        .set({ state: "cancelled", settled_at: new Date() })
+        .where("id", "=", accepted.turnId)
+        .execute();
+      await service.action(identity, machine.environmentId, "cleanup-queued", {
+        action: "release",
+      });
+    }
+  });
+
+  it.each(["request", "response", "restart"] as const)(
+    "recovers a release after lost %s without admitting new work",
+    async (failure) => {
+      const machine = await service.create(identity, `retry-release-machine-${failure}`, {
+        name: `Retry release machine ${failure}`,
+        profileKey: "starter",
+      });
+      const session = await store.createSession(
+        machine.projectId,
+        machine.workspaceId,
+        "release boundary",
+        "development_environment",
+        { ownerUserId: identity.userId, workingDirectory: "/home/user" },
+      );
+      const originalFetch = globalThis.fetch;
+      const destroyedBefore = destroys.mock.calls.length;
+      const fetchRequest = vi.spyOn(globalThis, "fetch").mockImplementationOnce(async (...args) => {
+        if (failure === "response") await (await originalFetch(...args)).arrayBuffer();
+        throw new Error("injected connection loss");
+      });
+      try {
+        await expect(
+          service.action(identity, machine.environmentId, "lost-release", {
+            action: "release",
+          }),
+        ).rejects.toThrow("injected connection loss");
+      } finally {
+        fetchRequest.mockRestore();
+      }
+      try {
+        await expect(
+          store.acceptTurn(session.sessionId, "after-release-intent", { prompt: "must not start" }),
+        ).rejects.toMatchObject({ code: "conflict" });
+        if (failure === "restart") {
+          const replacement = new DevelopmentEnvironmentService({
+            database,
+            terminalToken: TOKEN,
+            allowInsecureInternalHttp: true,
+            environmentImageRevision: IMAGE_REVISION,
+          });
+          try {
+            await expect(
+              replacement.reconcileLifecycle(new Date(Date.now() + 1_000)),
+            ).resolves.toBe(1);
+          } finally {
+            await replacement.close();
+          }
+        } else {
+          await expect(
+            service.action(identity, machine.environmentId, "lost-release", { action: "release" }),
+          ).resolves.toMatchObject({ state: "released" });
+        }
+        expect(destroys.mock.calls.length).toBe(destroyedBefore + 1);
+        await expect(service.get(identity, machine.environmentId)).resolves.toMatchObject({
+          state: "released",
+        });
+      } finally {
+        await database
+          .updateTable("runs")
+          .set({ state: "cancelled", settled_at: new Date() })
+          .where("session_id", "=", session.sessionId)
+          .execute();
+        await database
+          .updateTable("turns")
+          .set({ state: "cancelled", settled_at: new Date() })
+          .where("session_id", "=", session.sessionId)
+          .execute();
+        await service.action(identity, machine.environmentId, "cleanup-release-boundary", {
+          action: "release",
+        });
+      }
+    },
+  );
+
   it("retires an abandoned pre-provision request without creating a Cube", async () => {
     const projectId = "77777777-7777-4777-8777-777777777701";
     const abandonedWorkspaceId = "77777777-7777-4777-8777-777777777702";

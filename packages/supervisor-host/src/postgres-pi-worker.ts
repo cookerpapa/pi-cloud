@@ -153,6 +153,7 @@ export class PostgresPiWorker {
   #state: PostgresPiWorkerState = "idle";
   #controller: AbortController | undefined;
   #listener: Client | undefined;
+  #listenerOpening: Promise<void> | undefined;
   #loop: Promise<void> | undefined;
   readonly #queueWake = new PostgresQueueWake();
 
@@ -194,12 +195,16 @@ export class PostgresPiWorker {
     this.#state = "starting";
     this.#controller = new AbortController();
     try {
-      await this.#startListener();
+      this.#listenerOpening = this.#startListener();
+      await this.#listenerOpening;
+      this.#listenerOpening = undefined;
+      if (this.#controller.signal.aborted) throw new Error("Worker stopped during startup");
       this.#state = "running";
       this.#loop = this.#run(this.#controller.signal).finally(() => {
         if (this.#state !== "stopping") this.#state = "stopped";
       });
     } catch (error: unknown) {
+      this.#listenerOpening = undefined;
       this.#state = "stopped";
       await this.#listener?.end().catch(() => undefined);
       throw error;
@@ -216,6 +221,7 @@ export class PostgresPiWorker {
     this.#queueWake.notify();
     await this.#loop;
     this.#controller?.abort();
+    await this.#listenerOpening?.catch(() => undefined);
     await Promise.allSettled([...this.#activeRuns.values()].map((entry) => entry.execution));
     await this.#listener?.end().catch(() => undefined);
     this.#state = "stopped";
@@ -230,17 +236,52 @@ export class PostgresPiWorker {
   }
 
   async #startListener(): Promise<void> {
+    let disconnected = false;
     const listener = new Client({
       connectionString: this.#notificationConnectionString,
       application_name: `${this.#identity}-run-queue`,
+      connectionTimeoutMillis: 10_000,
+      query_timeout: 10_000,
+      keepAlive: true,
     });
     listener.on("notification", (message) => {
       if (message.channel === "pi_cloud_run_queue") this.#queueWake.notify();
     });
-    listener.on("error", (error) => this.#observeFailure("listen", error));
-    await listener.connect();
-    await listener.query("listen pi_cloud_run_queue");
-    this.#listener = listener;
+    listener.on("error", (error) => {
+      disconnected = true;
+      this.#observeFailure("listen", error);
+      if (this.#listener === listener) this.#listener = undefined;
+      void listener.end().catch(() => undefined);
+      this.#queueWake.notify();
+    });
+    listener.once("end", () => {
+      disconnected = true;
+      if (this.#listener === listener) {
+        this.#listener = undefined;
+        this.#queueWake.notify();
+      }
+    });
+    try {
+      await listener.connect();
+      await listener.query("listen pi_cloud_run_queue");
+      if (disconnected) throw new Error("Queue notification connection closed during setup");
+      if (this.#controller?.signal.aborted) await listener.end();
+      else this.#listener = listener;
+    } catch (error) {
+      await listener.end().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  #refreshListener(): void {
+    if (this.#listener || this.#listenerOpening || this.#controller?.signal.aborted) return;
+    // Polling still owns correctness while the session-bound LISTEN reconnects.
+    // Use the existing loop as the retry cadence, with only one connection attempt.
+    this.#listenerOpening = this.#startListener()
+      .catch((error) => this.#observeFailure("listen", error))
+      .finally(() => {
+        this.#listenerOpening = undefined;
+      });
   }
 
   async #run(signal: AbortSignal): Promise<void> {
@@ -249,6 +290,7 @@ export class PostgresPiWorker {
       (this.#state !== "stopping" || this.#activeRuns.size > 0 || this.#claiming)
     ) {
       const observedGeneration = this.#queueWake.generation;
+      this.#refreshListener();
       try {
         await this.#dispatchCancellations();
         await this.#fillCapacity();

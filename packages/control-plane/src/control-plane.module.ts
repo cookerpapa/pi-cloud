@@ -2,7 +2,6 @@ import { Module, type DynamicModule } from "@nestjs/common";
 import { ControlPlaneController } from "./control-plane.controller.ts";
 import type { ControlPlaneStoreOptions } from "./control-plane-store.ts";
 import { ControlPlaneStoreFactory } from "./control-plane-store-factory.ts";
-import { DurableEventStore } from "@pi-cloud/runtime-core/durable-event-store";
 import {
   PublicTenantRegistrationService,
   type PublicTenantRegistrationConfiguration,
@@ -36,7 +35,7 @@ export type ControlPlaneModuleOptions = Omit<
   "tenantId" | "defaultModelProfileId"
 > & {
   sessionEventStreamOptions?: SessionEventStreamOptions;
-  eventRuntime?: ControlPlaneEventRuntime;
+  eventRuntime: ControlPlaneEventRuntime;
   staticRequestIdentity?: TenantRequestIdentity;
   publicRegistration?: PublicTenantRegistrationConfiguration;
   workspaceBrowser?: TrustedWorkspaceBrowser;
@@ -59,8 +58,7 @@ export type ControlPlaneEventRuntime = {
 @Module({})
 export class ControlPlaneModule {
   static register(options: ControlPlaneModuleOptions): DynamicModule {
-    const eventHub = options.eventRuntime?.eventHub ?? new SessionEventHub();
-    const eventStore = options.eventRuntime?.eventStore ?? new DurableEventStore();
+    const { eventHub, eventStore } = options.eventRuntime;
     const conversationArchive = new ConversationArchiveService({
       database: options.database,
       ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
@@ -206,14 +204,12 @@ export class ControlPlaneModule {
           useValue: workspaceBrowser,
         },
         { provide: SessionEventHub, useValue: eventHub },
-        { provide: DurableEventStore, useValue: eventStore },
         {
           provide: SessionEventStream,
           useValue: new SessionEventStream(eventStore, eventHub, options.sessionEventStreamOptions),
         },
       ],
       exports: [
-        DurableEventStore,
         SessionEventHub,
         SessionEventStream,
         ConversationArchiveService,

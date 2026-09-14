@@ -11,6 +11,11 @@ import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { reviewedModel } from "../packages/protocol/src/model-catalog.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
+import {
+  isDurableAgentActivity,
+  readWorkerModelTimings,
+  runStageTiming,
+} from "./lib/live-run-timing.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 if (process.env.PI_CLOUD_LIVE_LONG_CONTEXT_CHECK !== "1") {
@@ -165,6 +170,8 @@ async function revokeAcceptanceCredential(registration) {
     "-T",
     "control-plane",
     "node",
+    "--import",
+    "tsx",
     "packages/control-plane/src/tenant-admin.ts",
     "revoke",
     "--tenant",
@@ -335,6 +342,7 @@ async function runEvidence(runId) {
 
 async function runTurn(sessionId, prompt, expectedTools) {
   const submittedAt = performance.now();
+  const submittedWallAt = Date.now();
   const accepted = await api.acceptTurn(sessionId, prompt, newIdempotencyKey("turn"));
   const controller = new AbortController();
   const timer = setTimeout(
@@ -344,6 +352,7 @@ async function runTurn(sessionId, prompt, expectedTools) {
   const events = [];
   const text = [];
   let firstTextAt;
+  let firstAssistantTextEmittedAtMs, firstAssistantTextReceivedAtMs;
   let firstResponseAt;
   let firstToolPreparingAt;
   let firstToolStartedAt;
@@ -353,18 +362,17 @@ async function runTurn(sessionId, prompt, expectedTools) {
     if (event.turnId !== accepted.turnId) return;
     if (events.some((candidate) => candidate.eventId === event.eventId)) return;
     events.push(event);
-    if (
-      event.type === "assistant.text.delta" ||
-      event.type === "assistant.tool_call.preparing" ||
-      event.type === "tool.started" ||
-      event.type === "provider.hosted_tool.started"
-    ) {
+    if (isDurableAgentActivity(event)) {
       firstResponseAt ??= performance.now();
     }
     if (event.type === "assistant.tool_call.preparing") firstToolPreparingAt ??= performance.now();
     if (event.type === "tool.started") firstToolStartedAt ??= performance.now();
     if (event.type === "assistant.text.delta") {
-      firstTextAt ??= performance.now();
+      if (firstTextAt === undefined) {
+        firstTextAt = performance.now();
+        firstAssistantTextEmittedAtMs = Date.parse(event.occurredAt);
+        firstAssistantTextReceivedAtMs = Date.now();
+      }
       text.push(event.payload.text);
     }
     if (
@@ -452,8 +460,19 @@ async function runTurn(sessionId, prompt, expectedTools) {
         compactionStartedAt = undefined;
       }
     }
+    const settledMs = Math.round(performance.now() - submittedAt);
+    const stages = runStageTiming(
+      {
+        submittedWallAt,
+        firstAssistantTextMs: firstTextAt === undefined ? undefined : firstTextAt - submittedAt,
+        firstAssistantTextEmittedAtMs,
+        firstAssistantTextReceivedAtMs,
+      },
+      await readWorkerModelTimings([accepted.runId], submittedWallAt),
+    );
     return {
       ...accepted,
+      stages,
       text: text.join(""),
       toolCalls,
       hostedSearches,
@@ -466,7 +485,7 @@ async function runTurn(sessionId, prompt, expectedTools) {
       firstToolStartedMs:
         firstToolStartedAt === undefined ? undefined : Math.round(firstToolStartedAt - submittedAt),
       firstTextMs: firstTextAt === undefined ? undefined : Math.round(firstTextAt - submittedAt),
-      settledMs: Math.round(performance.now() - submittedAt),
+      settledMs,
       eventCompactions,
     };
   } finally {
@@ -828,6 +847,7 @@ try {
         stopReason: turn.stopReason,
         toolCalls: turn.toolCalls,
         firstResponseMs: turn.firstResponseMs,
+        stages: turn.stages,
         firstToolPreparingMs: turn.firstToolPreparingMs,
         firstToolStartedMs: turn.firstToolStartedMs,
         firstTextMs: turn.firstTextMs,
@@ -1106,6 +1126,7 @@ try {
         markerRecovered: true,
         worker: recallEvidence.supervisorId,
         firstResponseMs: recall.firstResponseMs,
+        stages: recall.stages,
         firstTextMs: recall.firstTextMs,
         settledMs: recall.settledMs,
         usage: recallUsage,
@@ -1120,6 +1141,7 @@ try {
         runtimeId: postCompactionEvidence.runtimeId,
         toolCalls: postCompaction.toolCalls,
         firstResponseMs: postCompaction.firstResponseMs,
+        stages: postCompaction.stages,
         firstTextMs: postCompaction.firstTextMs,
         settledMs: postCompaction.settledMs,
         usage: postCompactionUsage,
@@ -1132,6 +1154,7 @@ try {
         sameCubeRuntimeRebound: true,
         toolCalls: crossWorker.toolCalls,
         firstResponseMs: crossWorker.firstResponseMs,
+        stages: crossWorker.stages,
         firstTextMs: crossWorker.firstTextMs,
         settledMs: crossWorker.settledMs,
         usage: crossWorkerUsage,
@@ -1148,6 +1171,7 @@ try {
         hostedSearches: providerSwitch.hostedSearches,
         markerRecovered: true,
         firstResponseMs: providerSwitch.firstResponseMs,
+        stages: providerSwitch.stages,
         firstTextMs: providerSwitch.firstTextMs,
         settledMs: providerSwitch.settledMs,
         usage: providerSwitchUsage,

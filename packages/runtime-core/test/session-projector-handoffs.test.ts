@@ -8,12 +8,15 @@ const f = vi.hoisted(() => ({
   accept: vi.fn(),
   project: vi.fn(),
   applies: vi.fn(),
+  parse: vi.fn(),
+  decode: undefined as undefined | ((value: Buffer) => any),
   handler: undefined as undefined | ((record: any, current?: () => boolean) => Promise<void>),
 }));
 vi.mock("@pi-cloud/event-log", () => ({
   KafkaLogConsumer: class {
-    constructor(options: { handler: typeof f.handler }) {
+    constructor(options: { handler: typeof f.handler; decode: typeof f.decode }) {
       f.handler = options.handler;
+      f.decode = options.decode;
     }
     async close() {}
   },
@@ -24,7 +27,7 @@ vi.mock("../src/kafka-accepted-fact.ts", () => ({
     async close() {}
   },
   kafkaProducerLane: () => 0,
-  parseKafkaAcceptedFact: JSON.parse,
+  parseKafkaAcceptedFact: f.parse,
 }));
 vi.mock("../src/execution-publication.ts", () => ({
   ExecutionPublicationBoundary: class {
@@ -56,6 +59,7 @@ beforeEach(() => {
   f.accept.mockReset().mockResolvedValue(true);
   f.project.mockReset().mockResolvedValue(undefined);
   f.applies.mockReset().mockResolvedValue(true);
+  f.parse.mockReset().mockImplementation(JSON.parse);
   route = vi.fn(async () => {});
   projector = new SessionProjector({
     database: {} as Kysely<Database>,
@@ -104,6 +108,20 @@ function deferred<T>() {
 }
 
 describe("Unified Projector handoff boundaries (transport/PG simulated)", () => {
+  it("decodes once and passes the same decoded record to projections without JSON round trips", async () => {
+    const r = record();
+    r.fact = f.decode!(Buffer.from(JSON.stringify(r.fact)));
+    expect(f.parse).toHaveBeenCalledOnce();
+    Object.defineProperty(r.fact, "toJSON", {
+      value: () => {
+        throw new Error("Decoded facts must not be reserialized");
+      },
+    });
+    await f.handler!(r);
+    expect(f.parse).toHaveBeenCalledOnce();
+    expect(f.project.mock.calls[0]![0]).toBe(r);
+    expect(route.mock.calls[0]![0]).toBe(r);
+  });
   it("does not expose or route a rejected publication", async () => {
     const display = vi.spyOn(projector.eventHub, "publish");
     f.accept.mockResolvedValue(false);

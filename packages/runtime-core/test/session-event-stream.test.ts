@@ -3,7 +3,7 @@ import type { ServerResponse } from "node:http";
 import type { ConversationDetailResource, PiCloudEvent } from "@pi-cloud/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionEventStream } from "../src/session-event-stream.ts";
-import { SessionEventHub } from "../src/session-event-hub.ts";
+import { SessionEventHub, SessionEventSubscription } from "../src/session-event-hub.ts";
 
 afterEach(() => vi.useRealTimers());
 
@@ -28,7 +28,29 @@ function response() {
 }
 
 describe("Session snapshot and live stream", () => {
-  it("keeps one pending read across idle heartbeats and delivers the next event once", async () => {
+  it("finishes each idle read at its heartbeat boundary instead of retaining wait reactions", async () => {
+    vi.useFakeTimers();
+    const subscription = new SessionEventSubscription("t", "s", () => {});
+    let settled = 0;
+    const first = subscription.next(10).then((result) => {
+      settled++;
+      return result;
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(settled).toBe(1);
+    expect(await first).toBe("heartbeat");
+    expect(vi.getTimerCount()).toBe(0);
+    for (let i = 0; i < 100; i++) {
+      const next = subscription.next(10);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(await next).toBe("heartbeat");
+    }
+    const pending = subscription.next(10);
+    subscription.close();
+    expect(await pending).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("keeps at most one pending read during idle heartbeats and delivers the next event once", async () => {
     vi.useFakeTimers();
     const hub = new SessionEventHub();
     const stream = new SessionEventStream(

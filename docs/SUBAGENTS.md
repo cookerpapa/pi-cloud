@@ -10,7 +10,9 @@ language; they do not configure Workers or Kafka.
 subagent({ action: "run", task: "Check the collision logic", context: "branch", workspace: "shared" })
 ```
 
-`fresh` starts from the task, `branch` inherits the frozen pre-delegation context.
+`fresh` starts from the task. `branch` inherits the frozen history before the
+current parent prompt, not intermediate reasoning or Tool results produced
+during that Run; pass any such findings explicitly in the child task.
 `shared` uses the parent environment; `isolated` prepares a separate Workspace
 copy. Optional `tools` narrows file/shell permissions; `[]` disables those tools,
 not hosted search or delegation. Direct tasks do not allocate Cube unless an

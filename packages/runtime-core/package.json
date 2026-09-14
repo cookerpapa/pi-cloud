@@ -10,7 +10,7 @@
     "./workspace-settlement-store": "./src/workspace-settlement-store.ts",
     "./canonical-pi-conversation": "./src/canonical-pi-conversation.ts",
     "./conversation-turn-projection": "./src/conversation-turn-projection.ts",
-    "./durable-event-store": "./src/durable-event-store.ts",
+    "./execution-log": "./src/execution-log.ts",
     "./accepted-fact": "./src/accepted-fact.ts",
     "./direct-execution-log": "./src/direct-execution-log.ts",
     "./session-projector": "./src/session-projector.ts",

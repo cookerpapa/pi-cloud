@@ -358,7 +358,7 @@ describe.sequential("Execution stream closure", () => {
         events: [],
       };
       await projector.project(parent.record(late, 14n));
-      await new PostgresPiSessionAppendProjector(db).project(late, true, parent.record(late, 14n));
+      await new PostgresPiSessionAppendProjector(db).project(late, parent.record(late, 14n));
       await projector.project(parent.record(parent.seal, 15n));
       expect(await parent.storage.getLog()).toHaveLength(closesWriter ? 3 : 4);
       expect(
@@ -500,9 +500,9 @@ describe.sequential("Execution stream closure", () => {
       items: [{ kind: "lane", lane: "main", leafId: target, create: false, seq: 1 }],
     };
     const record = f.record(fact, 80n);
-    await expect(
-      new PostgresPiSessionAppendProjector(db).project(fact, true, record),
-    ).rejects.toThrow("target is missing");
+    await expect(new PostgresPiSessionAppendProjector(db).project(fact, record)).rejects.toThrow(
+      "target is missing",
+    );
     expect(await f.storage.getLog()).toHaveLength(0);
     expect(
       await db
@@ -572,7 +572,7 @@ describe.sequential("Execution stream closure", () => {
         },
       ],
     };
-    await new PostgresPiSessionAppendProjector(measured).project(fact, true, f.record(fact, 10n));
+    await new PostgresPiSessionAppendProjector(measured).project(fact, f.record(fact, 10n));
     expect(statements.length).toBeLessThanOrEqual(17);
     expect(
       statements.filter((query) => query.startsWith('insert into "pi_session_entries"')),
@@ -671,7 +671,6 @@ describe.sequential("Execution stream closure", () => {
     // A stale consumer that already cached OPEN must also lose at the DB write boundary.
     await new PostgresPiSessionAppendProjector(db).project(
       late.fact as AcceptedPiSessionAppendFact,
-      true,
       late,
     );
     await tail.projectRecord(f.record(f.delta(1, "late conflicting sequence"), 14n));

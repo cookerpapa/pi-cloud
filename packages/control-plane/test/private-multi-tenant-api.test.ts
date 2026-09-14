@@ -1,3 +1,4 @@
+import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -122,6 +123,7 @@ beforeAll(async () => {
   ).token;
 
   application = await createControlPlaneApplication({
+    eventRuntime: emptyEventRuntime(),
     database,
     productionHttpGateway: new ProductionHttpGateway({
       authenticator: new PostgresTenantApiAuthenticator({ database, clock: () => NOW }),
@@ -361,6 +363,26 @@ describe.sequential("private multi-tenant HTTP boundary", () => {
       expect(response.json()).toMatchObject({ error: { code: "not_found" } });
       expect(response.body).not.toContain(tenantA.tenantId);
       expect(response.body).not.toContain("tenant-private prompt");
+    }
+  });
+
+  it("returns client errors for missing or repeated resource query parameters", async () => {
+    const paths = [
+      `/v1/sessions/${sessionA.sessionId}/workspace/file`,
+      `/v1/sessions/${sessionA.sessionId}/workspace/file?path=a&path=b`,
+      `/v1/sessions/${sessionA.sessionId}/workspace/directory?path=a&path=b`,
+      `/v1/development-environments/${projectA.workspaceId}/directory`,
+      `/v1/development-environments/${projectA.workspaceId}/directory?path=a&path=b`,
+      "/v1/source-control/github/callback?state=test",
+    ];
+    for (const url of paths) {
+      const response = await http.inject({
+        method: "GET",
+        url,
+        headers: authorization(memberAToken),
+      });
+      expect(response.statusCode, url).toBe(400);
+      expect(response.json()).toMatchObject({ error: { code: "invalid_request" } });
     }
   });
 

@@ -5,7 +5,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
-import { readWorkerModelTimings, runStageTiming } from "./lib/live-run-timing.mjs";
+import {
+  isDurableAgentActivity,
+  readWorkerModelTimings,
+  runStageTiming,
+} from "./lib/live-run-timing.mjs";
 
 if (process.env.PI_CLOUD_LIVE_FAMILY_CHECK !== "1")
   throw new Error("Set PI_CLOUD_LIVE_FAMILY_CHECK=1 for paid Session-family acceptance");
@@ -155,8 +159,7 @@ async function start(s, prompt, label) {
     text = "";
   const event = (e) => {
     if (e.turnId !== accepted.turnId) return;
-    if (["assistant.text.delta", "tool.preparing", "tool.started"].includes(e.type))
-      timing.firstVisibleMs ??= performance.now() - before;
+    if (isDurableAgentActivity(e)) timing.firstVisibleMs ??= performance.now() - before;
     if (e.type === "assistant.text.delta") {
       text += e.payload.text;
       timing.firstAssistantTextMs ??= performance.now() - before;
@@ -191,18 +194,7 @@ async function start(s, prompt, label) {
       assert(terminal, `Missing terminal: ${label}`);
       timing.completedMs = performance.now() - before;
       const transport = await readWorkerModelTimings([accepted.runId], submittedWallAt);
-      const clockStep =
-        timing.firstAssistantTextReceivedAtMs === undefined
-          ? 0
-          : timing.firstAssistantTextReceivedAtMs - submittedWallAt - timing.firstAssistantTextMs;
-      timing.stages =
-        Math.abs(clockStep) > 100
-          ? {
-              unavailable:
-                "Host wall clock changed during the Run; monotonic client durations remain valid",
-              clockStepMs: clockStep,
-            }
-          : runStageTiming(timing, transport);
+      timing.stages = runStageTiming(timing, transport);
       console.log(
         JSON.stringify({ event: "family_turn_finished", terminal: terminal.type, ...timing }),
       );

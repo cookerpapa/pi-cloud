@@ -1,3 +1,4 @@
+import { emptyEventRuntime } from "./fixtures/event-runtime.ts";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
@@ -69,6 +70,7 @@ beforeAll(async () => {
     initialModel: () => resolvePlatformInitialModel(database, platform.tenantId),
   });
   application = await createControlPlaneApplication({
+    eventRuntime: emptyEventRuntime(),
     database,
     webAuthentication,
     platformOperatorTenantId: platform.tenantId,

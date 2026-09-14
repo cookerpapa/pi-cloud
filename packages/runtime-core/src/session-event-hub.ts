@@ -71,15 +71,31 @@ export class SessionEventSubscription {
     this.#queuedWakes.push(wake);
   }
 
-  next(): Promise<SessionEventWake | undefined> {
+  next(): Promise<SessionEventWake | undefined>;
+  next(heartbeatMs: number): Promise<SessionEventWake | "heartbeat" | undefined>;
+  next(heartbeatMs?: number): Promise<SessionEventWake | "heartbeat" | undefined> {
     const wake = this.#queuedWakes.shift();
     if (wake !== undefined) return Promise.resolve(wake);
     if (this.#closed) return Promise.resolve(undefined);
     if (this.#pendingRead !== undefined) {
       throw new Error("Only one pending session-event read is allowed");
     }
-    return new Promise<SessionEventWake | undefined>((resolve) => {
-      this.#pendingRead = { resolve };
+    return new Promise<SessionEventWake | "heartbeat" | undefined>((resolve) => {
+      let timer: NodeJS.Timeout | undefined;
+      const settle = (wake: SessionEventWake | "heartbeat" | undefined) => {
+        clearTimeout(timer);
+        resolve(wake);
+      };
+      const pending = { resolve: settle };
+      this.#pendingRead = pending;
+      if (heartbeatMs !== undefined) {
+        timer = setTimeout(() => {
+          if (this.#pendingRead !== pending) return;
+          this.#pendingRead = undefined;
+          settle("heartbeat");
+        }, heartbeatMs);
+        timer.unref();
+      }
     });
   }
 

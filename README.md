@@ -30,10 +30,11 @@ for the execution contract and its recovery limits.
 
 ```mermaid
 flowchart TD
-  B["Browser"] <--> E["Caddy"]
-  subgraph CP["Control Plane service — one process"]
+  B["Browser / admin UI"] <--> E["Caddy: app / admin / isolated preview origins"]
+  subgraph CP["Control Plane replicas — API and Projector share a process"]
     API["Auth / Run admission / resources / model settings"]
     P["Session Projector — one Kafka consumer group"]
+    SC["Subagent controller: admission / mailbox / result delivery"]
     O["Seal Outbox relay"]
     G["Web Terminal / isolated Preview gateways"]
   end
@@ -57,7 +58,9 @@ flowchart TD
   O -->|"ordered execution seals"| K
   K --> P
   P -->|"semantic records + progress"| PG
-  P -->|"Subagent admission / Lane commands / input / result notifications"| W
+  P -->|"ordered Subagent facts"| SC
+  SC <-->|"durable child Run / mailbox state"| PG
+  SC <-->|"Lane preparation / control / result notifications"| W
   P -->|"Tool commands / seal / result receipt"| TB["Tool Broker"]
   TB <-->|"owner-direct results / workflow duplex IO"| W
   API -->|"resource lifecycle"| TB
@@ -69,6 +72,13 @@ flowchart TD
   TB --> VG["Workspace Volume Gateway"] --> V
   GL["Optional GitLab Issue intake"] -.-> API
 ```
+
+Solid arrows show logical calls or data flow, not additional services. Workers
+claim child Runs from the same PG queue as ordinary Runs; the Subagent controller
+wakes the owning Worker but does not run another scheduler. Workflow scripts run
+inside Cube and send `runs.*` requests back through the Worker → Kafka path.
+Operator monitoring and one-host network relays are optional/supporting paths,
+not transcript storage or execution authorities.
 
 PostgreSQL accepts user inputs and owns Run scheduling and execution authority.
 Workers pull ready Runs; notifications only reduce queue latency. A cold Session

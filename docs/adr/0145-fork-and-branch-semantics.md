@@ -20,9 +20,9 @@ something different from Pi.
   prompt that requested delegation.
 - Subagent Tool schemas, persisted context modes, product badges, tests and
   documentation expose only `fresh | branch`.
-- The PiCloud cloud adapter removes `branch` before invoking the upstream local
-  child runner. It preserves the upstream workflow engine but does not claim to
-  execute upstream's Session-file Fork operation.
+- Child admission creates a native Lane through the owning Worker. ADR-0166
+  replaced the old upstream-local-runner adapter; no CLI or Session-file Fork
+  is involved in delegated Branch mode.
 - “从此对话开始” / “Fork into a new conversation” remains a true
   `SessionRepo.fork`: it creates a new product Session and physical Pi Session
   with an independent `main` lane and lifecycle.
@@ -33,7 +33,9 @@ something different from Pi.
 ## Consequences
 
 - One word has one meaning across the UI, protocol and storage model.
-- Subagent branch creation remains O(1) in inherited history length.
+- Durable branch creation adds a Lane/anchor record instead of copying inherited
+  Entry rows. Preparing a child's bounded in-memory context still costs time
+  and memory proportional to that context; it is not an O(1) end-to-end claim.
 - Provider-private transcript sanitation that belongs to a true cross-Session
   Fork is not implied by Branch mode; normal Pi provider conversion still runs
   when a Child samples a model.

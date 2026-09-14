@@ -203,7 +203,7 @@ export class ExecutionStreamProjector {
     }
     if (fact.kind === "pi_session_append") {
       const through = displayCoverage(fact, prefix);
-      await this.#mutations.project(fact, true, record, through);
+      await this.#mutations.project(fact, record, through);
       if (through !== undefined) {
         prefix.cover(through);
         return { canonicalThroughSequence: through };

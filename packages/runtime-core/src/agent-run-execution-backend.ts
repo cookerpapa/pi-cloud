@@ -29,11 +29,7 @@ import {
   type TurnExecutionRequest,
   type TurnExecutionResult,
 } from "./run-executor.ts";
-import {
-  DurableEventStoreError,
-  type ExecutionLogWriter,
-  type ExecutionLogFactory,
-} from "./durable-event-store.ts";
+import type { ExecutionLogWriter, ExecutionLogFactory } from "./execution-log.ts";
 import {
   SessionLeaseCoordinator,
   SessionLeaseCoordinatorError,
@@ -120,9 +116,6 @@ function normalizeBackendError(error: unknown): TurnExecutionBackendError {
     return new TurnExecutionCancelledError(error.reason, error.forced);
   }
   if (error instanceof SessionLeaseCoordinatorError || error instanceof PiTurnError) {
-    return new TurnExecutionBackendError(error.code, error.message, error.retryable);
-  }
-  if (error instanceof DurableEventStoreError) {
     return new TurnExecutionBackendError(error.code, error.message, error.retryable);
   }
   if (error instanceof AgentRunSupervisorError) {

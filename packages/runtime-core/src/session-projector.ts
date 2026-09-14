@@ -61,7 +61,7 @@ export class SessionProjector {
       clientId:
         PREFIX + Buffer.from(new URL(options.advertisedBaseUrl).toString()).toString("base64url"),
       groupRecovery: true,
-      decode: (value) => JSON.parse(value.toString()) as AcceptedFact,
+      decode: parseKafkaAcceptedFact,
       replayOffsets: (bounds) => loadFactReplayOffsets(options.database, topic, bounds),
       onReset: () => {
         this.#projection.reset();
@@ -70,12 +70,11 @@ export class SessionProjector {
       },
       handler: async (record, current) => {
         if (!(await this.#publication.accept(record)) || current?.() === false) return;
-        const fact = parseKafkaAcceptedFact(JSON.stringify(record.fact));
-        const accepted = { ...record, fact };
-        const projected = await this.#projection.project(accepted);
+        const { fact } = record;
+        const projected = await this.#projection.project(record);
         if (current?.() === false) return;
         const applicable =
-          fact.kind === "execution_seal" || (await this.#projection.accepts(accepted));
+          fact.kind === "execution_seal" || (await this.#projection.accepts(record));
         if (current?.() === false) return;
         if (projected?.terminal) this.eventStore.accept(fact.scope.tenantId, projected.terminal);
         if (applicable) {
@@ -86,8 +85,8 @@ export class SessionProjector {
               fact.scope.sessionId,
               projected.canonicalThroughSequence,
             );
-          await options.toolCommands.consume(accepted, current);
-          await options.subagentCommands?.consume(accepted, current);
+          await options.toolCommands.consume(record, current);
+          await options.subagentCommands?.consume(record, current);
         }
       },
     });

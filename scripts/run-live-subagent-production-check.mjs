@@ -9,6 +9,7 @@ import { workspaceVolumeId } from "../packages/tool-broker/src/index.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
+import { isDurableAgentActivity } from "./lib/live-run-timing.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 if (process.env.PI_CLOUD_LIVE_SUBAGENT_CHECK !== "1") {
@@ -147,10 +148,7 @@ async function runTurn(sessionId, prompt) {
   let terminal;
   const observeEvent = (event) => {
     if (event.turnId !== accepted.turnId) return;
-    if (
-      ["assistant.text.delta", "tool.preparing", "tool.started"].includes(event.type) &&
-      firstVisibleMs === null
-    )
+    if (isDurableAgentActivity(event) && firstVisibleMs === null)
       firstVisibleMs = performance.now() - startedAt;
     if (event.type === "assistant.text.delta" && firstTextMs === null)
       firstTextMs = performance.now() - startedAt;
