@@ -2,7 +2,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import PQueue from "p-queue";
-import { fetch } from "undici";
+import { Agent, fetch } from "undici";
+
 import {
   MAXIMUM_REQUEST_BYTES,
   MAXIMUM_RESPONSE_BYTES,
@@ -32,6 +33,8 @@ import {
   type WorkspaceVolumeGatewaySourceCredentialListInput,
   type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
 } from "./workspace-volume-gateway-contract.ts";
+
+const internalDispatcher = new Agent();
 
 export type WorkspaceVolumeGatewayServerOptions = Readonly<{
   host: string;
@@ -457,6 +460,8 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
 
   async checkHealth(): Promise<void> {
     const response = await fetch(`${this.#baseUrl}/health/ready`, {
+      dispatcher: internalDispatcher,
+      redirect: "error",
       signal: AbortSignal.timeout(30_000),
     });
     await response.body?.cancel();
@@ -550,6 +555,8 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     executable: boolean;
   }> {
     const response = await fetch(`${this.#baseUrl}${WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH}`, {
+      dispatcher: internalDispatcher,
+      redirect: "error",
       method: "POST",
       headers: {
         authorization: `Bearer ${this.#serviceToken}`,
@@ -765,6 +772,8 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
 
   async #request(path: string, body: unknown): Promise<unknown> {
     const response = await fetch(`${this.#baseUrl}${path}`, {
+      dispatcher: internalDispatcher,
+      redirect: "error",
       method: "POST",
       headers: {
         authorization: `Bearer ${this.#serviceToken}`,

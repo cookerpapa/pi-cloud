@@ -35,7 +35,7 @@ import { GitHubAppClient } from "./github-app-client.ts";
 import { SourceControlService } from "./source-control-service.ts";
 import { SourceControlIssueCoordinator } from "./source-control-issue-coordinator.ts";
 import { SourceControlCredentialVault } from "./source-control-credential-vault.ts";
-import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
+import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 
 export async function closeControlPlaneResources(
   resources: readonly (() => unknown | Promise<unknown>)[],
@@ -83,6 +83,7 @@ export async function startControlPlane(): Promise<void> {
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let issueCoordinator: SourceControlIssueCoordinator | undefined;
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
+  let internalSourceControlDispatcher: Agent | undefined;
   let closePromise: Promise<void> | undefined;
   const close = (): Promise<void> => {
     return (closePromise ??= closeControlPlaneResources([
@@ -92,6 +93,7 @@ export async function startControlPlane(): Promise<void> {
       () => operationalMetrics?.close(),
       () => agentEvents?.close(),
       () => sourceControlDispatcher?.close(),
+      () => internalSourceControlDispatcher?.close(),
       () => database.destroy(),
       () => observability.close(),
     ]));
@@ -250,6 +252,9 @@ export async function startControlPlane(): Promise<void> {
     if (config.githubApp !== undefined || config.gitlabProject !== undefined) {
       sourceControlDispatcher = new EnvHttpProxyAgent();
     }
+    if (config.gitlabProject?.internalBaseUrl !== undefined) {
+      internalSourceControlDispatcher = new Agent();
+    }
     if (config.githubApp !== undefined) {
       const dispatcher = sourceControlDispatcher!;
       githubRuntime = {
@@ -284,7 +289,10 @@ export async function startControlPlane(): Promise<void> {
             fetch: (input: string | URL | Request, init?: RequestInit) =>
               undiciFetch(input as Parameters<typeof undiciFetch>[0], {
                 ...(init as Parameters<typeof undiciFetch>[1]),
-                dispatcher: sourceControlDispatcher!,
+                dispatcher:
+                  config.gitlabProject!.internalBaseUrl === undefined
+                    ? sourceControlDispatcher!
+                    : internalSourceControlDispatcher!,
               }) as unknown as Promise<Response>,
           };
     const sourceControlService = new SourceControlService({

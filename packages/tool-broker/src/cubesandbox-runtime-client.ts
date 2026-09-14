@@ -3,6 +3,8 @@ import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
 import { PREVIEW_ACCESS_TTL_MS } from "@pi-cloud/protocol";
 import { Duplex, Readable, Writable } from "node:stream";
 
+const controlDispatcher = new Agent();
+
 export const CUBESANDBOX_ENVD_PORT = 49_983;
 const CONNECT_PROTOCOL_VERSION = "1";
 const CONNECT_CONTENT_TYPE = "application/connect+json";
@@ -1239,6 +1241,8 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     allowNotFound = false,
   ): Promise<Awaited<ReturnType<typeof fetch>>> {
     const response = await fetch(`${this.#apiUrl}${path}`, {
+      dispatcher: controlDispatcher,
+      redirect: "error",
       method: init.method ?? "GET",
       headers: {
         authorization: `Bearer ${this.#apiKey}`,

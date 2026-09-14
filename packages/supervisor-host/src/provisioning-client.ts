@@ -4,6 +4,13 @@ import {
   type SupervisorBootProvisionRequest,
   type SupervisorBootProvisionResponse,
 } from "@pi-cloud/protocol";
+import { Agent, fetch as internalFetch } from "undici";
+
+const internalDispatcher = new Agent();
+const provisioningFetch: typeof fetch = async (url, init) =>
+  (await internalFetch(String(url), { ...init, dispatcher: internalDispatcher } as Parameters<
+    typeof internalFetch
+  >[1])) as unknown as Response;
 
 const DEFAULT_PROVISION_PATH = "/internal/v1/supervisor/boots";
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -74,7 +81,7 @@ export class SupervisorProvisioningClient {
       options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
       "requestTimeoutMs",
     );
-    this.#fetch = options.fetchImplementation ?? globalThis.fetch.bind(globalThis);
+    this.#fetch = options.fetchImplementation ?? provisioningFetch;
   }
 
   async provision(

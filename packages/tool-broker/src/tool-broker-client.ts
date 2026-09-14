@@ -34,6 +34,10 @@ import {
 } from "@pi-cloud/protocol";
 import { activeTraceCarrier } from "@pi-cloud/observability";
 import { randomUUID } from "node:crypto";
+import { Agent, fetch as internalFetch, type Response } from "undici";
+
+// Broker routes may be Pod IPs; they must not traverse the provider egress proxy.
+const internalDispatcher = new Agent();
 
 export const TOOL_BROKER_SERVICE_PATH = "/internal/v1/tool-broker";
 export const TOOL_BROKER_OPERATION_RESULT_PATH = "/internal/v1/tool-operation-result";
@@ -144,7 +148,9 @@ export class ToolBrokerClient {
   async checkHealth(): Promise<void> {
     let response: Response;
     try {
-      response = await fetch(new URL(TOOL_BROKER_READY_PATH, this.#baseUrl), {
+      response = await internalFetch(new URL(TOOL_BROKER_READY_PATH, this.#baseUrl), {
+        dispatcher: internalDispatcher,
+        redirect: "error",
         signal: AbortSignal.timeout(Math.min(this.#requestTimeoutMs, 10_000)),
       });
     } catch {
@@ -154,6 +160,7 @@ export class ToolBrokerClient {
         true,
       );
     }
+    await response.body?.cancel();
     if (!response.ok) {
       throw new ToolBrokerClientError("tool_broker_unavailable", "Tool Broker is not ready", true);
     }
@@ -516,7 +523,8 @@ export class ToolBrokerClient {
     let response: Response;
     try {
       const trace = activeTraceCarrier();
-      response = await fetch(new URL(path, this.#baseUrl), {
+      response = await internalFetch(new URL(path, this.#baseUrl), {
+        dispatcher: internalDispatcher,
         method,
         headers: {
           authorization: `Bearer ${bearer}`,

@@ -22,6 +22,9 @@ import { createWorkspaceSeed, encodeWorkspaceBlob } from "@pi-cloud/workspace-ru
 import { sql, type Kysely } from "kysely";
 import { ControlPlaneStoreError } from "./control-plane-store.ts";
 import type { TenantRequestIdentity } from "./tenant-identity.ts";
+import { Agent, fetch as internalFetch } from "undici";
+
+const internalDispatcher = new Agent();
 
 type MachineOwner = Pick<TenantRequestIdentity, "tenantId" | "userId">;
 
@@ -968,7 +971,9 @@ export class DevelopmentEnvironmentService {
       if (target.protocol === "http:" && !this.#allowInsecureInternalHttp) {
         throw new Error("Insecure Tool Broker development environment URL was rejected");
       }
-      const response = await fetch(target, {
+      const response = await internalFetch(target, {
+        dispatcher: internalDispatcher,
+        redirect: "error",
         method: "POST",
         headers: {
           authorization: `Bearer ${this.#terminalToken}`,

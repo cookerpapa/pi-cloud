@@ -18,12 +18,18 @@ import {
   type SandboxProvider,
 } from "@pi-cloud/tool-broker";
 import { sql, type Kysely } from "kysely";
+import * as undici from "undici";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { DevelopmentEnvironmentService } from "../src/development-environment-service.ts";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { SshAccessTicketService } from "../src/ssh-access-ticket-service.ts";
 import type { TenantRequestIdentity } from "../src/tenant-identity.ts";
+
+vi.mock("undici", async (importOriginal) => {
+  const original = await importOriginal<typeof import("undici")>();
+  return { ...original, fetch: vi.fn(original.fetch) };
+});
 
 const DOMAIN_ID = "sandbox-domain-development";
 const TOKEN = `development-environment-${"t".repeat(48)}`;
@@ -545,9 +551,9 @@ describe("user-owned development environments", () => {
         "development_environment",
         { ownerUserId: identity.userId, workingDirectory: "/home/user" },
       );
-      const originalFetch = globalThis.fetch;
+      const originalFetch = (await vi.importActual<typeof import("undici")>("undici")).fetch;
       const destroyedBefore = destroys.mock.calls.length;
-      const fetchRequest = vi.spyOn(globalThis, "fetch").mockImplementationOnce(async (...args) => {
+      const fetchRequest = vi.mocked(undici.fetch).mockImplementationOnce(async (...args) => {
         if (failure === "response") await (await originalFetch(...args)).arrayBuffer();
         throw new Error("injected connection loss");
       });
@@ -558,7 +564,7 @@ describe("user-owned development environments", () => {
           }),
         ).rejects.toThrow("injected connection loss");
       } finally {
-        fetchRequest.mockRestore();
+        fetchRequest.mockReset().mockImplementation(originalFetch);
       }
       try {
         await expect(

@@ -105,6 +105,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | OBS-02 | Trace status used a safe error code but exception events still exported the raw message/stack | Reproduced with a synthetic secret in an owned error. Export only classification, rethrow the original error to its caller |
 | CFG-02 | Control Plane parsed/mounted an unused dedicated PG notification URL | Deleted CP option/mount; Worker's actual LISTEN connection and bootstrap direct-PG settings remain |
 | CFG-03 | CP/Broker/Volume Gateway rejected group-readable secrets while Helm mounts them 0440 under fsGroup | CP and Broker loaders reproduced failure with owned 0440 fixtures; aligned process-group read permissions while rejecting group writes/world access/symlinks. 44 Bootstrap/Broker/cleanup regressions pass. Actual Kubernetes startup and Volume Gateway child-process check remain pending |
+| CFG-04 | Several private RPCs followed Node's global provider proxy, breaking Pod-IP/cluster routes | A real child process with an owned rejecting proxy reproduced Broker unavailability. Explicit direct dispatchers now cover Broker, Volume, Cube control, machine lifecycle and Worker enrollment; configured private GitLab routing is separate from public provider routing. A positive control confirms normal requests still use the proxy; 32 related regressions pass |
 | DEV-01 | Machine creation checks replay before tenant lock; pause/resume replay treats a recorded request as a completed effect | Candidate concurrent create / failed lifecycle replay errors; reproduce after Broker lifecycle review |
 | DEV-02 | Machine lifecycle descriptor requires an active Domain and non-failed environment profile, including release | Candidate inability to release resources in a drained/failed Domain/profile; check lifecycle contract and reproduce |
 | DEV-03 | Broker concurrent duplicate machine provisioning created two provider runtimes; simultaneous first task bindings chose the same binding ID | Both reproduced. Reuse existing per-Workspace provisioning critical section for machine provisioning/binding creation, not Tool execution. Concurrent parent/child bindings now stay distinct and reuse one runtime |
@@ -129,7 +130,6 @@ Architecture question ARCH-01 (asked, awaiting owner): should a Session quaranti
 after cancellation cleanup failure accept a new Turn after the old loop's exit and
 committed seal are confirmed? Existing behavior only permits Fork/prune. No old
 Run/Tool replay is proposed; ordinary failure-closure bugs are fixed independently.
-| CFG-04 | Helm CP sets global HTTP(S) proxy but no NO_PROXY; several private Broker requests use global fetch | Candidate internal routing through provider proxy; verify actual runtime/Node proxy contract in owned deployment test |
 
 GitHub's [setup-URL guidance](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-setup-url)
 explicitly requires checking the caller's access to the supplied installation;
