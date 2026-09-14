@@ -319,7 +319,7 @@ export class ToolBrokerClient {
   }
 
   async operationResult(
-    executionLease: string,
+    executionReference: string,
     activationId: string,
     operationId: string,
     signal?: AbortSignal,
@@ -327,7 +327,7 @@ export class ToolBrokerClient {
     const query = new URLSearchParams({ activationId, operationId });
     const response = await this.#request(
       `${TOOL_BROKER_OPERATION_RESULT_PATH}?${query}`,
-      executionLease,
+      executionReference,
       undefined,
       signal,
       0,
@@ -727,13 +727,13 @@ export class ReplicatedToolBrokerClient {
   }
 
   operationResult(
-    executionLease: string,
+    executionReference: string,
     activationId: string,
     operationId: string,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
     return this.#ownedClient(activationId).operationResult(
-      executionLease,
+      executionReference,
       activationId,
       operationId,
       signal,
@@ -792,7 +792,7 @@ export class ReplicatedToolBrokerClient {
     );
     const unique = new Map<string, SupervisorRuntimeAssignment>();
     for (const assignment of assignments.flat()) {
-      unique.set(`${assignment.containerId}\0${assignment.executionLease}`, assignment);
+      unique.set(`${assignment.containerId}\0${assignment.executionReference}`, assignment);
     }
     return [...unique.values()];
   }
@@ -849,7 +849,7 @@ export class ReplicatedToolBrokerClient {
       assignment.tenantId,
       assignment.workspaceId,
       assignment.sessionId,
-      assignment.executionLease,
+      assignment.executionReference,
     ].join("\0");
   }
 

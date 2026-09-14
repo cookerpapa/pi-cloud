@@ -86,7 +86,12 @@ export function validateDistributedDeploymentValues(values) {
   if (retentionMs < turnMs + 5 * 60_000) {
     throw new Error("Kafka retention can omit a recoverable Run");
   }
-  integer(runtime?.subagents?.maximumConcurrent, "Subagent concurrency");
+  const models = integer(runtime?.modelConcurrency, "Worker model concurrency");
+  const sessionModels = integer(runtime?.sessionModelConcurrency, "Session model concurrency");
+  if (sessionModels > models)
+    throw new Error("Session model concurrency cannot exceed the Worker model limit");
+  if (runtime?.subagents?.maximumConcurrent !== undefined)
+    throw new Error("Remove retired Subagent slot reservation");
   const queueWaitMs = integer(
     values.sandboxPlane?.volumeGatewayQueueWaitTimeoutMs,
     "Volume Gateway queue wait",

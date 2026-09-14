@@ -168,7 +168,7 @@ export {
   type RunExecutorOptions,
   type TurnExecutionBackend,
   type TurnExecutionAuthority,
-  type TurnExecutionLease,
+  type TurnExecutionReference,
   type TurnExecutionLifecycle,
   type TurnExecutionRequest,
   type TurnExecutionResult,

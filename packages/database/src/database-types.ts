@@ -636,7 +636,6 @@ export interface SessionTable {
   workspace_settlement_key: string | null;
   next_event_seq: GeneratedInt8;
   next_mailbox_position: GeneratedInt8;
-  last_fencing_token: GeneratedInt8;
   row_version: GeneratedInt8;
   current_workspace_settlement_id: GeneratedNullable<string>;
   forked_from_session_id: GeneratedNullable<string>;
@@ -801,10 +800,12 @@ export interface RunAttemptTable {
   attempt_number: number;
   state: RunAttemptState;
   claim_owner_id: string;
+  /** Startup claim deadline only. Bound tasks use their shared Session lease. */
   claim_expires_at: Timestamp;
   sandbox_id: string | null;
   lease_id: string | null;
   fencing_token: NullableInt8;
+  execution_released_at: GeneratedNullable<Date>;
   settlement_revision: string | null;
   failure_code: string | null;
   failure_message: string | null;
@@ -861,7 +862,7 @@ export interface SandboxTable {
   terminated_at: NullableTimestamp;
 }
 
-export interface SessionLeaseTable {
+export interface ActiveExecutionScopeTable {
   session_id: string;
   lease_id: string;
   sandbox_id: string;
@@ -873,6 +874,21 @@ export interface SessionLeaseTable {
   turn_id: string;
   attempt_id: string;
   last_event_seq: GeneratedInt8;
+  valid_until: Timestamp;
+  acquired_at: GeneratedTimestamp;
+  renewed_at: GeneratedTimestamp;
+  pi_session_id: string;
+  writer_id: string;
+  accepting_effects: boolean;
+}
+
+export interface SessionLeaseTable {
+  tenant_id: string;
+  pi_session_id: string;
+  lease_id: string;
+  sandbox_id: string;
+  writer_id: string;
+  fencing_token: Int8;
   valid_until: Timestamp;
   acquired_at: GeneratedTimestamp;
   renewed_at: GeneratedTimestamp;
@@ -1135,6 +1151,7 @@ export interface PiSessionTable {
   next_seq: GeneratedInt8;
   name: string | null;
   active_writer_id: GeneratedNullable<string>;
+  lease_epoch: GeneratedInt8;
 }
 
 export interface PiSessionLaneTable {
@@ -1268,6 +1285,7 @@ export interface Database {
   supervisor_hosts: SupervisorHostTable;
   sandbox_retirements: SandboxRetirementTable;
   session_leases: SessionLeaseTable;
+  active_execution_scopes: ActiveExecutionScopeTable;
   turn_control_requests: TurnControlRequestTable;
   conversation_fork_operations: ConversationForkOperationTable;
   session_terminal_events: SessionTerminalEventTable;

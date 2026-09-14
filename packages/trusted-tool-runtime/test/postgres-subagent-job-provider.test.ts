@@ -14,7 +14,7 @@ import {
   type NativeLaneSessionStorage,
   projectNativeSessionAppend,
 } from "@pi-cloud/pi-session-postgres";
-import { createExecutionLease, parseExecutionLease } from "@pi-cloud/protocol";
+import { createExecutionReference, parseExecutionReference } from "@pi-cloud/protocol";
 import { ExecutionStreamProjector, type AcceptedFact } from "@pi-cloud/runtime-core";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { PGlite } from "@electric-sql/pglite";
@@ -49,7 +49,7 @@ async function nativeLane(lane: string, turnId: string, lease?: string) {
       {
         lane,
         turnId,
-        attemptId: lease ? parseExecutionLease(lease).attemptId : crypto.randomUUID(),
+        attemptId: lease ? parseExecutionReference(lease).attemptId : crypto.randomUUID(),
       },
       {
         reader,
@@ -88,15 +88,15 @@ const nativeLanes = {
     return inherit ? (nativeByLease.get(lease)!.baseContext().at(-1)?.id ?? null) : null;
   },
   async createChildLane({
-    executionLease,
+    executionReference,
     lane,
     at,
   }: {
-    executionLease: string;
+    executionReference: string;
     lane: string;
     at: string | null;
   }) {
-    const parent = nativeByLease.get(executionLease)!;
+    const parent = nativeByLease.get(executionReference)!;
     if (!(await parent.getLanes()).some((l) => l.lane === lane)) await parent.createLane(lane, at);
   },
 };
@@ -118,8 +118,8 @@ async function projectSeal(runId: string) {
 const FENCE = 7;
 const PARENT_GRANT_ID = "90000000-0000-4000-8000-000000000001";
 
-function parentExecutionLease(): string {
-  return createExecutionLease(PARENT_GRANT_ID, parentAttemptId, FENCE);
+function parentExecutionReference(): string {
+  return createExecutionReference(PARENT_GRANT_ID, parentAttemptId, FENCE);
 }
 
 function assistant(text: string): AssistantMessage {
@@ -142,13 +142,10 @@ function assistant(text: string): AssistantMessage {
   };
 }
 
-async function activateChildRun(
-  childSessionId: string,
-  childRunId: string,
-  generation: number,
-): Promise<string> {
+async function activateChildRun(childSessionId: string, childRunId: string): Promise<string> {
   const attemptId = crypto.randomUUID();
-  const grantId = crypto.randomUUID();
+  const grantId = PARENT_GRANT_ID;
+  const generation = FENCE;
   const run = await database
     .selectFrom("runs")
     .select("turn_id")
@@ -203,7 +200,7 @@ async function activateChildRun(
       .where("child_run_id", "=", childRunId)
       .executeTakeFirstOrThrow();
   });
-  const lease = createExecutionLease(grantId, attemptId, generation);
+  const lease = createExecutionReference(grantId, attemptId, generation);
   const binding = await database
     .selectFrom("sessions")
     .select("pi_session_lane")
@@ -326,6 +323,24 @@ beforeAll(async () => {
     .where("id", "=", parentRunId)
     .executeTakeFirstOrThrow();
   parentTurnId = run.turn_id;
+  await database
+    .updateTable("pi_sessions")
+    .set({ lease_epoch: FENCE, active_writer_id: parentAttemptId })
+    .where("tenant_id", "=", tenantId)
+    .where("id", "=", parentSessionId)
+    .execute();
+  await database
+    .insertInto("session_leases")
+    .values({
+      tenant_id: tenantId,
+      pi_session_id: parentSessionId,
+      lease_id: PARENT_GRANT_ID,
+      sandbox_id: parentSandboxId,
+      writer_id: parentAttemptId,
+      fencing_token: FENCE,
+      valid_until: new Date(Date.now() + 60000),
+    })
+    .execute();
   await database.transaction().execute(async (transaction) => {
     await transaction
       .updateTable("runs")
@@ -363,7 +378,7 @@ beforeAll(async () => {
     waitProjected: async () => {},
     fail: async () => {},
   });
-  await nativeLane("main", parentTurnId, parentExecutionLease());
+  await nativeLane("main", parentTurnId, parentExecutionReference());
 }, 30_000);
 
 afterAll(async () => {
@@ -402,7 +417,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentExecutionLease: parentExecutionLease(),
+      parentExecutionReference: parentExecutionReference(),
       parentToolCallId: "subagent-tool-none",
       workflowRunId: "workflow-none",
       stepIndex: 0,
@@ -499,7 +514,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
   });
 
   it("branches Pi context, narrows tools and reads the terminal result from PostgreSQL", async () => {
-    const parentPi = await nativeLane("main", parentTurnId, parentExecutionLease());
+    const parentPi = await nativeLane("main", parentTurnId, parentExecutionReference());
     await parentPi.appendMessage({
       role: "user",
       content: "Delegate repository inspection",
@@ -520,7 +535,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentExecutionLease: parentExecutionLease(),
+      parentExecutionReference: parentExecutionReference(),
       parentToolCallId: "subagent-tool-shared",
       workflowRunId: "workflow-shared",
       stepIndex: 1,
@@ -691,7 +706,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         tenantId,
         parentSessionId,
         parentRunId,
-        parentExecutionLease: parentExecutionLease(),
+        parentExecutionReference: parentExecutionReference(),
         parentToolCallId: "subagent-development-shared",
         workflowRunId: "workflow-development-shared",
         stepIndex: 11,
@@ -759,7 +774,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentExecutionLease: parentExecutionLease(),
+      parentExecutionReference: parentExecutionReference(),
       parentToolCallId: "subagent-tool-isolated",
       workflowRunId: "workflow-isolated",
       stepIndex: 2,
@@ -780,7 +795,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           runId: parent.id,
           sessionId: parentSessionId,
           turnId: parent.turn_id,
-          executionLease: parentExecutionLease(),
+          executionReference: parentExecutionReference(),
         },
       },
     });
@@ -823,7 +838,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentExecutionLease: parentExecutionLease(),
+      parentExecutionReference: parentExecutionReference(),
       parentToolCallId: "subagent-tool-cancel",
       workflowRunId: "workflow-cancel",
       stepIndex: 3,
@@ -859,7 +874,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId,
       parentRunId,
-      parentExecutionLease: parentExecutionLease(),
+      parentExecutionReference: parentExecutionReference(),
       parentToolCallId: "subagent-tool-supervisor",
       workflowRunId: "workflow-supervisor",
       stepIndex: 4,
@@ -923,13 +938,13 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     const provider = new PostgresSubagentJobProvider({
       database,
       nativeLanes,
-      treePolicy: { maximumDepth: 4, maximumNodes: 32, maximumConcurrentSubagents: 32 },
+      treePolicy: { maximumDepth: 4, maximumNodes: 32 },
     });
     const started = await provider.start({
       tenantId,
       parentSessionId,
       parentRunId,
-      parentExecutionLease: parentExecutionLease(),
+      parentExecutionReference: parentExecutionReference(),
       parentToolCallId: "subagent-tool-fresh-supervisor",
       workflowRunId: "workflow-fresh-supervisor",
       stepIndex: 41,
@@ -998,13 +1013,13 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     const provider = new PostgresSubagentJobProvider({
       database,
       nativeLanes,
-      treePolicy: { maximumDepth: 2, maximumNodes: 32, maximumConcurrentSubagents: 32 },
+      treePolicy: { maximumDepth: 2, maximumNodes: 32 },
     });
     const child = await provider.start({
       tenantId,
       parentSessionId,
       parentRunId,
-      parentExecutionLease: parentExecutionLease(),
+      parentExecutionReference: parentExecutionReference(),
       parentToolCallId: "recursive-level-one",
       workflowRunId: "recursive-root-workflow",
       stepIndex: 0,
@@ -1013,7 +1028,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       contextMode: "branch",
       workspaceMode: "none",
     });
-    const childExecutionLease = await activateChildRun(child.childSessionId, child.childRunId, 11);
+    const childExecutionReference = await activateChildRun(child.childSessionId, child.childRunId);
     const childBinding = await database
       .selectFrom("sessions")
       .select(["pi_session_id as piSessionId", "pi_session_lane as piSessionLane"])
@@ -1029,7 +1044,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
     const childSession = await nativeLane(
       childBinding.piSessionLane,
       childTurn.turnId,
-      childExecutionLease,
+      childExecutionReference,
     );
     await childSession.view(childBinding.piSessionLane).appendMessage({
       role: "user",
@@ -1048,7 +1063,7 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       tenantId,
       parentSessionId: child.childSessionId,
       parentRunId: child.childRunId,
-      parentExecutionLease: childExecutionLease,
+      parentExecutionReference: childExecutionReference,
       parentToolCallId: "recursive-level-two",
       workflowRunId: "recursive-child-workflow",
       stepIndex: 0,
@@ -1144,17 +1159,16 @@ describe.sequential("PostgresSubagentJobProvider", () => {
       canSpawnChildren: false,
     });
 
-    const grandchildExecutionLease = await activateChildRun(
+    const grandchildExecutionReference = await activateChildRun(
       grandchild.childSessionId,
       grandchild.childRunId,
-      12,
     );
     await expect(
       provider.start({
         tenantId,
         parentSessionId: grandchild.childSessionId,
         parentRunId: grandchild.childRunId,
-        parentExecutionLease: grandchildExecutionLease,
+        parentExecutionReference: grandchildExecutionReference,
         parentToolCallId: "recursive-level-three",
         workflowRunId: "recursive-grandchild-workflow",
         stepIndex: 0,
@@ -1184,7 +1198,11 @@ describe.sequential("PostgresSubagentJobProvider", () => {
         tenantId,
         parentSessionId,
         parentRunId,
-        parentExecutionLease: createExecutionLease(PARENT_GRANT_ID, parentAttemptId, FENCE + 1),
+        parentExecutionReference: createExecutionReference(
+          PARENT_GRANT_ID,
+          parentAttemptId,
+          FENCE + 1,
+        ),
         parentToolCallId: "stale-tool",
         workflowRunId: "stale-workflow",
         stepIndex: 0,

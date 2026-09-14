@@ -85,6 +85,7 @@
     "browser:presentation:check": "node scripts/run-browser-presentation-check.mjs",
     "production:directory-picker-check": "node scripts/run-live-directory-picker-check.mjs",
     "production:subagents-check": "node --import tsx scripts/run-live-subagent-production-check.mjs",
+    "production:session-family-check": "node --import tsx scripts/run-live-session-family-check.mjs",
     "production:code-host-check": "node scripts/run-live-code-host-issue-check.mjs",
     "production:development-environment-check": "node scripts/run-live-development-environment-check.mjs",
     "production:semantic-check": "node scripts/run-live-cubesandbox-production-check.mjs",

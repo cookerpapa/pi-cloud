@@ -8,7 +8,7 @@ import {
   type RunState,
 } from "@pi-cloud/domain";
 import { randomUUID } from "node:crypto";
-import { parseExecutionLease } from "@pi-cloud/protocol";
+import { parseExecutionReference } from "@pi-cloud/protocol";
 import { sql, type Transaction } from "kysely";
 
 class RunAttemptLifecycleError extends Error {
@@ -26,7 +26,7 @@ export type CurrentRunAttemptIdentity = {
   tenantId: string;
   runId: string;
   attemptId: string;
-  executionLease?: string;
+  executionReference?: string;
 };
 
 type RunAttemptFailure = {
@@ -109,7 +109,7 @@ export async function transitionCurrentRunAttempt(
       "run.current_attempt_id as currentAttemptId",
       "run.workspace_id as workspaceId",
       "attempt.state as attemptState",
-      "attempt.lease_id as executionLeaseId",
+      "attempt.lease_id as executionReferenceId",
       "attempt.fencing_token as fencingToken",
     ])
     .where("run.tenant_id", "=", identity.tenantId)
@@ -120,16 +120,16 @@ export async function transitionCurrentRunAttempt(
   if (row === undefined || row.currentAttemptId !== identity.attemptId) {
     throw new RunAttemptLifecycleError("run_attempt_stale", "Run attempt is no longer current");
   }
-  if (identity.executionLease !== undefined) {
-    const grant = parseExecutionLease(identity.executionLease);
+  if (identity.executionReference !== undefined) {
+    const grant = parseExecutionReference(identity.executionReference);
     if (
       grant.attemptId !== identity.attemptId ||
-      row.executionLeaseId !== grant.leaseId ||
+      row.executionReferenceId !== grant.leaseId ||
       Number(row.fencingToken) !== grant.fencingToken
     ) {
       throw new RunAttemptLifecycleError(
         "run_attempt_stale",
-        "Run attempt ExecutionLease authority is stale",
+        "Run attempt ExecutionReference authority is stale",
       );
     }
   }

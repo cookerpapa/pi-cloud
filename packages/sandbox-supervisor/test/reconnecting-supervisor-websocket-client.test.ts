@@ -1,5 +1,4 @@
 import {
-  createExecutionLease,
   parseControlToSupervisorMessage,
   parseSupervisorToControlMessage,
   type SupervisorRegisteredMessage,
@@ -228,7 +227,7 @@ describe("ReconnectingSupervisorWebSocketClient", () => {
     expect(revocations).toBe(1);
   });
 
-  it("carries only the opaque ExecutionLease on Worker heartbeats", async () => {
+  it("carries only the opaque ExecutionReference on Worker heartbeats", async () => {
     const source: ReconnectingSupervisorControlRuntime = {
       ...runtime(),
       createHeartbeat(identity, acceptingAssignments = false) {
@@ -241,18 +240,13 @@ describe("ReconnectingSupervisorWebSocketClient", () => {
             ...identity,
             acceptingAssignments,
             maxConcurrentSessions: 2,
-            sessions: [
+            families: [
               {
-                sessionId: globalThis.crypto.randomUUID(),
-                turnId: globalThis.crypto.randomUUID(),
-                state: "running",
-                executionLease: createExecutionLease(
-                  globalThis.crypto.randomUUID(),
-                  globalThis.crypto.randomUUID(),
-                  7,
-                ),
-                lastProducedSeq: 2,
-                lastAcknowledgedSeq: 1,
+                tenantId: "tenant",
+                piSessionId: globalThis.crypto.randomUUID(),
+                leaseId: globalThis.crypto.randomUUID(),
+                writerId: globalThis.crypto.randomUUID(),
+                fencingToken: 7,
               },
             ],
           },
@@ -273,7 +267,7 @@ describe("ReconnectingSupervisorWebSocketClient", () => {
       },
       false,
     );
-    expect(heartbeat.payload.sessions).toEqual([]);
+    expect(heartbeat.payload.families).toEqual([]);
 
     harness.connections[0]!.connect(globalThis.crypto.randomUUID());
     await started;

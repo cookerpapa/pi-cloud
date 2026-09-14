@@ -40,16 +40,17 @@ flowchart TD
   E -->|"REST"| API
   E <-->|"Terminal / Preview"| G
   P -->|"snapshot-first SSE"| E
-  PG[("PostgreSQL: Run queue + Lease/Fence<br/>native Session log + query projections")]
+  PG[("PostgreSQL: Run queue + Session Lease/Fence<br/>native Session log + query projections")]
   API --> PG
   PG --> O
   subgraph WPOOL["Trusted Pi Worker pool"]
-    W["Pi SDK loops + Native Session Host<br/>concurrent main/Subagent Lanes"]
+    W["Session-family slots + Native Session Host<br/>concurrent Lanes / fair model permits"]
     M["Local Model Gateway"]
     W --> M
   end
   PG -->|"Workers claim; cold context restore"| W
   W -.->|"registration / control channel"| API
+  W -->|"one owner-lease renewal per active Session"| PG
   M --> C["CLIProxyAPI — provider credentials"]
   C --> L["GPT / DeepSeek + hosted search"]
   W -->|"direct append; acks=all"| K[("Kafka — RF=3")]
@@ -71,8 +72,9 @@ flowchart TD
 
 PostgreSQL accepts user inputs and owns Run scheduling and execution authority.
 Workers pull ready Runs; notifications only reduce queue latency. A cold Session
-occupies no slot. Active Lanes share one physical Session writer on one Worker,
-while their Agent Loops run concurrently. The Harness consumes a `SessionStorage`
+occupies no slot. Active Lanes share one physical Session writer and owner lease
+on one Worker. The family occupies one slot; model requests use a separate fair
+concurrency budget, released before waiting for Tools/children. The Harness consumes a `SessionStorage`
 port: active context is an acknowledged in-memory view; cold recovery loads the
 latest Compaction and active suffix, not lifetime JSONL.
 
@@ -168,10 +170,13 @@ npm run production:restore
 npm run production:down
 ```
 
-**Existing installations:** drain Runs and project predecessor seals/Outbox,
-apply migration 136, and deploy matching Worker, Control Plane/Projector and Broker
-images. Reload open browser pages for SSE v2. The v7 Kafka log, native history
-and Workspace bytes are preserved; there is no legacy snapshot decoder.
+**Existing installations:** this pre-release protocol cutover is not a rolling
+upgrade. Drain Runs, project all seals/Outbox, back up and release old runtime
+instances, then stop the old execution services. Apply migration 137 and deploy
+matching Worker, Control Plane/Projector and Broker images. New records use the
+v8 Kafka topic and task execution references; there is no old-wire decoder.
+PG semantic history, identities and configuration are not reset by migration.
+Remove the retired v7 topic only after confirming its complete projection.
 
 ## Kubernetes
 
@@ -186,7 +191,7 @@ npm run kubernetes:distributed:preflight -- --values values.yaml
 npm run kubernetes:distributed:deploy -- --values values.yaml
 ```
 
-KEDA scales Worker replicas from ready-Run backlog; PostgreSQL claim remains
+KEDA scales Worker replicas from active/starting/ready Session families; PostgreSQL claim remains
 the only scheduler. See [distributed deployment](docs/DISTRIBUTED_DEPLOYMENT.md).
 
 ## Verification

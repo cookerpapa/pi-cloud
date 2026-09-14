@@ -19,9 +19,9 @@ All Pi Workers claim directly from the same ready `runs` rows. PostgreSQL sends
 a notification to reduce idle latency, but a one-second poll is the recovery
 path. A narrow indexed query locks one candidate with `SKIP LOCKED`; only that
 Worker loads the immutable Run context and creates its Attempt. Before doing so
-it briefly locks the physical `pi_sessions` row: an unexpired Attempt owned by
-another Worker makes this candidate ineligible, while another Lane on the same
-Worker may proceed in parallel.
+it briefly locks the physical `pi_sessions` row: a Session lease owned by another
+Worker makes this candidate ineligible, while another Lane on the same Worker may
+proceed without reserving a second family slot.
 
 `RunExecutor` transactionally rechecks:
 
@@ -32,9 +32,12 @@ Worker may proceed in parallel.
 - all active Lanes of the physical Pi Session have this Worker as owner;
 - every requested predecessor execution seal for this product Session is projected.
 
-It creates a RunAttempt with a bounded claim lease. The Worker heartbeats that
-claim and obtains an opaque execution authority containing the current Attempt
-and fence. The raw authority is not placed in model context or Cube.
+It creates a RunAttempt with a startup claim deadline, then binds it to the
+physical Session's owner lease. The Worker renews that owner once per heartbeat;
+it does not renew a child task's startup deadline. Each task carries an
+`ExecutionReference`: the shared lease/epoch plus its own Attempt identity. The
+reference is never placed in model context or Cube. Task states/deadlines are
+managed independently; lack of child output does not imply owner loss.
 
 ## Pi and Tools
 
@@ -43,7 +46,7 @@ message. Pi may perform multiple model sampling steps. Pure chat never contacts
 Cube.
 
 Before that prompt is appended, the Worker compares the current execution
-World State with the newest persisted baseline. A renewed Tool lease on the same
+World State with the newest persisted baseline. A renewed Session lease on the same
 physical Cube keeps the same continuity identity. A new Cube around the same
 Workspace produces `sandbox_reset`; a different stable Workspace binding
 produces `workspace_changed`. Both are hidden Pi custom facts, never browser
@@ -51,8 +54,8 @@ messages or modifications to the user's text. Repeated context hooks on the
 same binding do not append another fact, and Compaction retains the newest
 material fact for recovery after Session ownership moves to another Worker.
 
-For a Tool call, the Worker presents the same Session lease used by the
-execution publication. Tool Broker verifies its expiry and fence together with the Tool
+For a Tool call, the Worker presents the task reference used by the
+execution publication. Tool Broker verifies the shared lease and active task together with the Tool
 binding, frozen Tool policy and Step context. The first binding lazily creates
 the Workspace-owned Cube; later bindings share it without provider rebind.
 Different Sessions may execute Tools concurrently in that Cube.
@@ -77,7 +80,7 @@ result is `UNKNOWN`.
 ## Events and terminal commit
 
 At opening, PG binds an immutable publication scope to the current
-ExecutionLease. The Worker appends the opening and subsequent records
+Session lease and task identity. The Worker appends the opening and subsequent records
 directly to Kafka. There is no Fact WebSocket or second renewable channel lease.
 One Projector group checks recorded scope and same-partition seals, applies native
 PG state, updates the live view and routes Tool commands to their owners.
@@ -102,11 +105,12 @@ remain distinct. Public Run state stays settling until its seal is projected.
 
 ## Cancellation and failure
 
-Cancellation revokes authority before trying to interrupt model/Tool work.
-Current authority is required for new admissions, Tools and terminal state.
-The existing maintenance loop also retires expired Run leases on healthy Workers.
-It conditionally removes only that lease and publishes its seal; it neither
-quarantines the boot nor kills unrelated Sessions. Already admitted shell effects
+Cancellation stops that task's new effects before trying to interrupt model/Tool
+work; it does not release siblings' shared owner lease. Task state and current
+Session authority are required for effects. The maintenance loop retires every
+task of an expired physical Session, while leaving unrelated Sessions on that
+Worker alone. The shared lease is removed only after its task scopes drain.
+Already admitted shell effects
 remain UNKNOWN. SQL-only lifecycle retries cannot re-execute the Agent Loop.
 An execution seal in the same Kafka partition closes a retired Attempt. A delayed
 Worker producer can still append its old record, but if it arrives after the seal both

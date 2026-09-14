@@ -18,7 +18,7 @@ export class NativeSessionLogPublisher {
     return {
       publish: async (items, events = []) => {
         if (this.#closed) throw new Error("Pi Session append publisher is closed");
-        const channel = this.#channels.resolve(scope.executionLease);
+        const channel = this.#channels.resolve(scope.executionReference);
         if (!channel) throw new Error("Pi Session Fact Stream is unavailable");
         const mutationId = crypto.randomUUID(),
           started = performance.now();

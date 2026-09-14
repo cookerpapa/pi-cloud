@@ -23,7 +23,7 @@ Broker has no model credential.
 ### Tenant and stale-Worker isolation
 
 Every product read/write includes tenant ownership. PG issues one immutable
-publication scope under the current ExecutionLease. Records are not signed:
+publication scope under the current ExecutionReference. Records are not signed:
 trusted Workers publish directly on private Kafka. Projector checks scope and ordered
 opening/seal boundaries before native state, UI or command dispatch. There is no
 second channel lease or per-token authority query. Old data can reach Kafka after

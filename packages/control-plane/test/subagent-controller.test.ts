@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import {
-  createExecutionLease,
+  createExecutionReference,
   type SubagentHostRequest,
   type SubagentControlResult,
   type SubagentControlRequest,
@@ -59,7 +59,7 @@ function controller() {
     sendInput: async (input) => {
       inputs.push(input);
     },
-    treePolicy: { maximumDepth: 4, maximumNodes: 32, maximumConcurrentSubagents: 8 },
+    treePolicy: { maximumDepth: 4, maximumNodes: 32 },
   });
   hosts.push(value);
   return value;
@@ -81,7 +81,7 @@ function command(
       piSessionId: sessionId,
       writerId: attemptId,
     },
-    executionLease: lease,
+    executionReference: lease,
     toolCallId: workflowId,
     workflowId,
     request,
@@ -154,7 +154,7 @@ beforeAll(async () => {
   const sandboxId = crypto.randomUUID();
   attemptId = crypto.randomUUID();
   const leaseId = crypto.randomUUID();
-  lease = createExecutionLease(leaseId, attemptId, 1);
+  lease = createExecutionReference(leaseId, attemptId, 1);
   await db
     .insertInto("sandboxes")
     .values({
@@ -450,6 +450,40 @@ describe("ordered Subagent admission and delivery", () => {
     expect((await response(send.factId)).ok).toBe(false);
     expect(inputs.some((input) => input.requestId === send.factId)).toBe(false);
   });
+  it("reconciles a terminal child after controller replacement without a surviving result reader", async () => {
+    const host = controller(),
+      fact = start("abandoned-child");
+    await consume(host, fact);
+    const child = (await response(fact.factId)).result!;
+    await host.close();
+    await db
+      .updateTable("runs")
+      .set({
+        state: "failed",
+        settled_at: new Date(),
+        failure_code: "assignment_lost",
+        failure_message: "Worker was lost",
+        failure_retryable: false,
+      })
+      .where("id", "=", child.childRunId as string)
+      .execute();
+    const replacement = controller();
+    replacement.wake();
+    await vi.waitFor(
+      async () => {
+        const row = await db
+          .selectFrom("subagent_executions")
+          .select(["state", "failure_code", "settled_at"])
+          .where("id", "=", child.executionId as string)
+          .executeTakeFirstOrThrow();
+        expect(row.state).toBe("failed");
+        expect(row.failure_code).toBe("assignment_lost");
+        expect(row.settled_at).not.toBeNull();
+      },
+      { timeout: 5000, interval: 20 },
+    );
+  });
+
   it("does not let a full page of pending mailbox inputs starve later control requests", async () => {
     const host = controller(),
       fact = start("waiting-page");

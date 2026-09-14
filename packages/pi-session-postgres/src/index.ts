@@ -27,8 +27,8 @@ export {
 } from "./session-mutation.ts";
 export type { ActiveExecutionAuthority, ExecutionAuthority } from "./execution-authority.ts";
 export {
-  PostgresRunExecutionAuthority,
-  type PostgresRunExecutionAuthorityOptions,
+  PostgresSessionExecutionAuthority,
+  type PostgresSessionExecutionAuthorityOptions,
 } from "./postgres-execution-authority.ts";
 export {
   CloudAgentRuntime,

@@ -34,9 +34,9 @@ import type {
   SourceControlWorkspaceCredentialResponse,
 } from "@pi-cloud/protocol";
 import {
-  createExecutionLease,
+  createExecutionReference,
   parseCloudToolCapabilitySnapshot,
-  parseExecutionLease,
+  parseExecutionReference,
 } from "@pi-cloud/protocol";
 import {
   canonicalEnvironmentRecipeJson,
@@ -58,6 +58,7 @@ import {
   type WorkspaceRuntimeReservation,
   type WorkspaceRuntimeStateRepository,
   type DevelopmentEnvironmentReservation,
+  type OrphanedWorkspaceRuntime,
 } from "./workspace-runtime-state-repository.ts";
 import type {
   SandboxHttpServiceRegistry,
@@ -235,7 +236,7 @@ function sameAssignment(left: ToolSandboxAssignment, right: ToolSandboxAssignmen
     left.runId === right.runId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
-    left.executionLease === right.executionLease
+    left.executionReference === right.executionReference
   );
 }
 
@@ -287,14 +288,14 @@ function sameSupervisorAssignment(
     left.runId === right.runId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
-    left.executionLease === right.executionLease
+    left.executionReference === right.executionReference
   );
 }
 
 function terminalAssignment(
   terminalId: string,
   input: Pick<WorkspaceTerminalOpenInput, "tenantId" | "projectId" | "workspaceId" | "sessionId">,
-  executionLease: string,
+  executionReference: string,
 ): ToolSandboxAssignment {
   return {
     tenantId: input.tenantId,
@@ -306,7 +307,7 @@ function terminalAssignment(
     runId: terminalId,
     sessionId: input.sessionId,
     turnId: terminalId,
-    executionLease,
+    executionReference,
   };
 }
 
@@ -326,7 +327,7 @@ function developmentEnvironmentAssignment(
     runId: input.environmentId,
     sessionId: input.environmentId,
     turnId: input.environmentId,
-    executionLease: createExecutionLease(
+    executionReference: createExecutionReference(
       input.environmentId,
       input.environmentId,
       input.generation,
@@ -1057,7 +1058,7 @@ export class ToolBroker {
         true,
       );
     }
-    const assignment = terminalAssignment(terminalId, input, reservation.executionLease);
+    const assignment = terminalAssignment(terminalId, input, reservation.executionReference);
     let admitted = false;
     let handle: SandboxHandle | undefined;
     let terminal: SandboxTerminalSession | undefined;
@@ -1333,7 +1334,7 @@ export class ToolBroker {
 
     const activationId = validActivationId(
       runtime.initialBindingIssued
-        ? parseExecutionLease(request.assignment.executionLease).attemptId
+        ? parseExecutionReference(request.assignment.executionReference).attemptId
         : runtime.physicalActivationId,
     );
     if (this.#toolBindings.has(activationId) || runtime.bindingIds.has(activationId)) {
@@ -1416,7 +1417,7 @@ export class ToolBroker {
       type: "tool_sandbox.reserved",
       requestId: request.requestId,
       activationId,
-      executionLease: request.assignment.executionLease,
+      executionReference: request.assignment.executionReference,
       ownerBaseUrl: this.#ownerBaseUrl,
       workspaceRoot: request.toolRoot,
       continuity: runtime.handle === undefined ? "cold_restore" : "warm_reuse",
@@ -1461,7 +1462,7 @@ export class ToolBroker {
     const activationId = validActivationId(
       environment.bindingIds.size === 0
         ? physicalActivationId
-        : parseExecutionLease(request.assignment.executionLease).attemptId,
+        : parseExecutionReference(request.assignment.executionReference).attemptId,
     );
     if (this.#toolBindings.has(activationId) || environment.bindingIds.has(activationId)) {
       throw new ToolBrokerError(
@@ -1536,7 +1537,7 @@ export class ToolBroker {
       type: "tool_sandbox.reserved",
       requestId: request.requestId,
       activationId,
-      executionLease: request.assignment.executionLease,
+      executionReference: request.assignment.executionReference,
       ownerBaseUrl: this.#ownerBaseUrl,
       workspaceRoot: request.toolRoot,
       continuity: "warm_reuse",
@@ -1545,11 +1546,11 @@ export class ToolBroker {
   }
 
   async execute(
-    executionLease: string,
+    executionReference: string,
     request: ToolSandboxOperationRequest,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
-    const activation = this.#authorizedBinding(request.activationId, executionLease);
+    const activation = this.#authorizedBinding(request.activationId, executionReference);
     const elasticRuntime = activation.elasticRuntime;
     if (activation.exclusiveOperation || elasticRuntime?.exclusiveOperation) {
       throw new ToolBrokerError(
@@ -1732,16 +1733,16 @@ export class ToolBroker {
   async attachWorkflow(
     activationId: string,
     operationId: string,
-    executionLease: string,
+    executionReference: string,
     send: (frame: WorkflowFrame) => void,
     signal: AbortSignal,
   ) {
-    this.assertToolResultReader(activationId, executionLease);
+    this.assertToolResultReader(activationId, executionReference);
     return this.#workflowChannels.attach(activationId, operationId, send, signal);
   }
 
-  assertToolResultReader(activationId: string, executionLease: string): void {
-    this.#authorizedBinding(activationId, executionLease);
+  assertToolResultReader(activationId: string, executionReference: string): void {
+    this.#authorizedBinding(activationId, executionReference);
   }
 
   async refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void> {
@@ -2177,7 +2178,7 @@ export class ToolBroker {
     for (const assignment of [...providerAssignments, ...durableAssignments].filter(
       (candidate) => !retainedRuntimeIds.has(candidate.containerId),
     )) {
-      assignments.set(`${assignment.containerId}\0${assignment.executionLease}`, assignment);
+      assignments.set(`${assignment.containerId}\0${assignment.executionReference}`, assignment);
     }
     return [...assignments.values()];
   }
@@ -2501,9 +2502,12 @@ export class ToolBroker {
     }
   }
 
-  #authorizedBinding(activationId: string, executionLease: string): ManagedToolBinding {
+  #authorizedBinding(activationId: string, executionReference: string): ManagedToolBinding {
     const activation = this.#toolBindings.get(activationId);
-    if (activation === undefined || activation.assignment.executionLease !== executionLease) {
+    if (
+      activation === undefined ||
+      activation.assignment.executionReference !== executionReference
+    ) {
       throw new ToolBrokerError(
         "stale_session_lease",
         "Tool binding operation used a stale Session lease",
@@ -2679,18 +2683,7 @@ export class ToolBroker {
 
   async #reapOrphanedWorkspaceRuntimes(): Promise<void> {
     const orphaned = await this.#stateRepository.claimOrphanedWorkspaceRuntimes(16);
-    for (const orphan of orphaned) {
-      try {
-        await this.#provider.destroyRuntime(orphan.activationId, orphan.assignment);
-        await this.#stateRepository.setWorkspaceRuntimeState(orphan.activationId, "released");
-      } catch (error: unknown) {
-        await this.#stateRepository
-          .setWorkspaceRuntimeState(orphan.activationId, "unknown", {
-            failureCode: operationFailureCode(error),
-          })
-          .catch(() => undefined);
-      }
-    }
+    for (const orphan of orphaned) await this.#retireWorkspaceRuntime(orphan);
   }
 
   async #reapUnboundWorkspaceRuntimes(minimumUnboundAgeMs?: number): Promise<void> {
@@ -2698,13 +2691,34 @@ export class ToolBroker {
       16,
       minimumUnboundAgeMs,
     );
-    for (const orphan of orphaned) {
-      const local = this.#toolBindings.get(orphan.activationId);
-      if (local !== undefined) this.#revokeBinding(orphan.activationId);
-      this.#admission.release(orphan.activationId);
+    for (const orphan of orphaned) await this.#retireWorkspaceRuntime(orphan);
+  }
+
+  async #retireWorkspaceRuntime(orphan: OrphanedWorkspaceRuntime): Promise<void> {
+    // A physical Cube can have many task bindings, none named after the original
+    // activation after warm reuse. Retire the physical identity in every local
+    // index before a successor is allowed to reserve the same Workspace.
+    await this.#serializeWorkspaceRuntimeProvisioning(orphan.assignment, async () => {
+      let handle: SandboxHandle | undefined;
+      for (const [id, binding] of this.#toolBindings) {
+        const runtime = binding.elasticRuntime;
+        if (runtime?.physicalActivationId !== orphan.activationId) continue;
+        for (const operation of binding.operations.values()) operation.controller.abort();
+        handle ??= runtime.handle;
+        runtime.bindingIds.delete(id);
+        this.#revokeBinding(id);
+      }
+      const key = workspaceIdentityKey(orphan.assignment);
+      const warm = this.#warm.get(key);
+      if (warm?.physicalActivationId === orphan.activationId) {
+        handle ??= warm.handle;
+        this.#warm.delete(key);
+      }
       try {
         await this.#provider.destroyRuntime(orphan.activationId, orphan.assignment);
+        if (handle) await this.#serviceRegistry?.endRuntime(handle.runtimeId);
         await this.#stateRepository.setWorkspaceRuntimeState(orphan.activationId, "released");
+        this.#admission.release(orphan.activationId);
       } catch (error: unknown) {
         await this.#stateRepository
           .setWorkspaceRuntimeState(orphan.activationId, "unknown", {
@@ -2712,7 +2726,7 @@ export class ToolBroker {
           })
           .catch(() => undefined);
       }
-    }
+    });
   }
 
   async #reapOrphanedTerminals(): Promise<void> {
@@ -2721,7 +2735,7 @@ export class ToolBroker {
       const assignment = terminalAssignment(
         terminal.terminalId,
         terminal,
-        createExecutionLease(terminal.terminalId, terminal.terminalId, terminal.fencingToken),
+        createExecutionReference(terminal.terminalId, terminal.terminalId, terminal.fencingToken),
       );
       try {
         await this.#provider.destroyRuntime(terminal.terminalId, assignment);

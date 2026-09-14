@@ -590,7 +590,7 @@ export class SupervisorConnectionManager {
       );
     }
     this.#validateAuthority(authority, parsed.payload);
-    if (parsed.payload.sessions.length === 0) {
+    if (parsed.payload.families.length === 0) {
       const now = validDate(this.#clock);
       const expiresAt = new Date(now.valueOf() + this.#heartbeatTimeoutMs);
       const updated = await this.#database
@@ -624,7 +624,7 @@ export class SupervisorConnectionManager {
         payload: {
           acknowledgedMessageId: parsed.messageId,
           connectionId: parsed.payload.connectionId,
-          executionLeaseRenewals: [],
+          familyLeaseRenewals: [],
         },
       });
       if (acknowledgement.type !== "supervisor.heartbeat.ack") {
@@ -636,7 +636,7 @@ export class SupervisorConnectionManager {
       }
       return acknowledgement;
     }
-    const coordinator = await this.executionLeaseCoordinator(
+    const coordinator = await this.executionReferenceCoordinator(
       parsed.payload.connectionId,
       authority,
     );
@@ -661,7 +661,7 @@ export class SupervisorConnectionManager {
     await this.#currentConnection(connectionId, authority);
   }
 
-  async executionLeaseCoordinator(
+  async executionReferenceCoordinator(
     connectionId: string,
     authority: SupervisorTransportAuthority,
   ): Promise<SessionLeaseCoordinator> {
@@ -1054,21 +1054,14 @@ export class SupervisorConnectionManager {
     now: Date,
   ): Promise<boolean> {
     const freshnessBoundary = new Date(now.valueOf() - this.#heartbeatTimeoutMs);
-    const attempt = await database
-      .selectFrom("run_attempts")
-      .select("id")
+    const lease = await database
+      .selectFrom("session_leases")
+      .select("lease_id")
       .where("sandbox_id", "=", sandboxId)
-      .where("state", "in", [
-        "provisioning",
-        "restoring",
-        "running",
-        "settling",
-        "cancel_requested",
-      ])
-      .where("claim_expires_at", ">", now)
-      .where("last_heartbeat_at", ">", freshnessBoundary)
+      .where("valid_until", ">", now)
+      .where("renewed_at", ">", freshnessBoundary)
       .executeTakeFirst();
-    return attempt !== undefined;
+    return lease !== undefined;
   }
 
   async #claimRetirement(now: Date): Promise<RetirementClaim | undefined> {

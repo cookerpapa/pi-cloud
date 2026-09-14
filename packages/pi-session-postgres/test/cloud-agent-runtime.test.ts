@@ -108,6 +108,23 @@ function scriptedStream(messages: string[], contexts: Context[] = []) {
   };
 }
 
+function modelAdmissionProbe() {
+  const state = { active: 0, acquired: 0, released: 0 };
+  return {
+    state,
+    acquire: async () => {
+      expect(state.active).toBe(0);
+      state.active++;
+      state.acquired++;
+      return () => {
+        expect(state.active).toBe(1);
+        state.active--;
+        state.released++;
+      };
+    },
+  };
+}
+
 it("consumes concurrent Agent-input redelivery once and recognizes it after cold restore", async () => {
   const storage = await createStorage(),
     inputId = crypto.randomUUID();
@@ -504,6 +521,7 @@ describe.sequential("CloudAgentRuntime", () => {
       const authority = new TestAuthority();
       let request = 0;
       let executed = false;
+      const admission = modelAdmissionProbe();
       const checkpoints: Array<{
         operation: PiSessionMutationOperation;
         sourceEvent: CloudAgentRuntimeEvent;
@@ -516,6 +534,7 @@ describe.sequential("CloudAgentRuntime", () => {
         lane: "main",
         ...execution,
         authority,
+        acquireModelPermit: admission.acquire,
         model: getModel("openai", "gpt-4o-mini"),
         systemPrompt: "test",
         tools: [
@@ -529,6 +548,7 @@ describe.sequential("CloudAgentRuntime", () => {
               additionalProperties: false,
             } as any,
             async execute() {
+              expect(admission.state.active).toBe(0);
               expect(reads).toHaveBeenCalledTimes(cached ? 0 : 1);
               expect(checkpoints.map(({ sourceEvent }) => sourceEvent.type)).toEqual([
                 "sampling_start",
@@ -556,6 +576,7 @@ describe.sequential("CloudAgentRuntime", () => {
           },
         ],
         streamFn: (_model, context) => {
+          expect(admission.state.active).toBe(1);
           if (request > 0) {
             expect(
               context.messages.some(
@@ -601,6 +622,7 @@ describe.sequential("CloudAgentRuntime", () => {
       });
 
       expect(await runtime.run("change it")).toMatchObject({ kind: "completed" });
+      expect(admission.state).toEqual({ active: 0, acquired: 2, released: 2 });
       expect(executed).toBe(true);
       expect(reads).toHaveBeenCalledTimes(cached ? 0 : 2);
       const [tool] = await storage.findRecords({ type: "tool_started" });
@@ -1119,9 +1141,14 @@ describe.sequential("CloudAgentRuntime", () => {
       const contexts: Context[] = [];
       const model = { ...getModel("openai", "gpt-4o-mini"), contextWindow: 256 };
       const stream = scriptedStream(["after compaction"], contexts);
+      const admission = modelAdmissionProbe();
       const models = {
-        streamSimple: stream,
+        streamSimple: (model: unknown, context: Context) => {
+          expect(admission.state.active).toBe(1);
+          return stream(model, context);
+        },
         async completeSimple() {
+          expect(admission.state.active).toBe(1);
           return assistant("summary of earlier work");
         },
       } as unknown as Models;
@@ -1132,6 +1159,7 @@ describe.sequential("CloudAgentRuntime", () => {
         authority: new TestAuthority(),
         model,
         models,
+        acquireModelPermit: admission.acquire,
         systemPrompt: "test",
         compaction: { enabled: true, reserveTokens: 32, keepRecentTokens: 32 },
         onEvent(event) {
@@ -1140,6 +1168,7 @@ describe.sequential("CloudAgentRuntime", () => {
       });
 
       await runtime.run("continue after compacting");
+      expect(admission.state).toEqual({ active: 0, acquired: 2, released: 2 });
       expect((await storage.findEntries({ type: "compaction" })).length).toBe(1);
       expect(events.some((event) => event.type === "compaction_start")).toBe(true);
       const completedCompaction = events.find(
@@ -1171,9 +1200,11 @@ describe.sequential("CloudAgentRuntime", () => {
         usage: { ...assistant("").usage, input: 50000, totalTokens: 50001 },
       });
       let sampling = 0;
+      const admission = modelAdmissionProbe();
       const runtime = new CloudAgentRuntime({
         session,
         lane: "main",
+        acquireModelPermit: admission.acquire,
         authority: new TestAuthority(),
         model: { ...getModel("openai", "gpt-4o-mini"), contextWindow: 256 },
         models: {
@@ -1193,6 +1224,9 @@ describe.sequential("CloudAgentRuntime", () => {
         compaction: { enabled: true, reserveTokens: 32, keepRecentTokens: 32 },
       });
       const result = await runtime.run("continue safely");
+      expect(admission.state.active).toBe(0);
+      expect(admission.state.acquired).toBeGreaterThan(0);
+      expect(admission.state.released).toBe(admission.state.acquired);
       expect(result.kind).toBe("failed");
       expect(result.error?.message).toMatch(/Compaction (summary exhausted|returned an empty)/);
       expect(sampling).toBe(0);

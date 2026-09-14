@@ -4,8 +4,8 @@ import type { Database } from "@pi-cloud/database";
 import type { AcceptedSubagentCommand } from "@pi-cloud/runtime-core/accepted-fact";
 import type { KafkaAcceptedFactRecord } from "@pi-cloud/runtime-core/kafka-accepted-fact-consumer";
 import {
-  createExecutionLease,
-  parseExecutionLease,
+  createExecutionReference,
+  parseExecutionReference,
   type SubagentHostRequest,
   type SubagentControlResult,
   type ToolBrokerWorkspaceForkRequest,
@@ -66,7 +66,7 @@ export class SubagentController {
       forkWorkspace:
         options.forkWorkspace ??
         ((request) =>
-          this.#host<ToolBrokerWorkspaceForkResponse>(request.sourceAssignment.executionLease, {
+          this.#host<ToolBrokerWorkspaceForkResponse>(request.sourceAssignment.executionReference, {
             action: "fork_workspace",
             request,
           })),
@@ -75,9 +75,9 @@ export class SubagentController {
           throw new Error("The Worker must freeze the Child context anchor");
         },
         createChildLane: (input) =>
-          this.#host(input.executionLease, {
+          this.#host(input.executionReference, {
             action: "prepare_lane",
-            executionLease: input.executionLease,
+            executionReference: input.executionReference,
             lane: input.lane,
             anchor: input.at,
           }),
@@ -90,7 +90,7 @@ export class SubagentController {
 
   async #host<T = void>(lease: string, request: SubagentHostRequest): Promise<T> {
     if (this.options.deliver) return (await this.options.deliver(lease, request)) as T;
-    const identity = parseExecutionLease(lease);
+    const identity = parseExecutionReference(lease);
     const route = await this.options.database
       .selectFrom("run_attempts as a")
       .innerJoin("sandboxes as s", "s.id", "a.sandbox_id")
@@ -231,7 +231,7 @@ export class SubagentController {
       tenantId: command.scope.tenantId,
       parentSessionId: command.scope.sessionId,
       parentRunId: command.scope.runId,
-      parentExecutionLease: command.executionLease,
+      parentExecutionReference: command.executionReference,
       parentToolCallId: command.toolCallId,
       workflowRunId: command.workflowId,
       stepIndex: Number(row.ordinal),
@@ -267,6 +267,9 @@ export class SubagentController {
     if (this.#reapRequested || Date.now() - this.#lastReap > 60_000) {
       this.#reapRequested = false;
       this.#lastReap = Date.now();
+      // A dead parent cannot poll its child result. Reconcile terminal child
+      // Runs on seals/startup too, so resource cleanup never depends on a reader.
+      await this.#jobs.reapStalePreparations();
       await this.#retireChildren();
     }
     const available = 128 - this.#inflight.size;
@@ -383,9 +386,9 @@ export class SubagentController {
       return true;
     }
     if (row.response) {
-      await this.#host(command.executionLease, {
+      await this.#host(command.executionReference, {
         action: "result",
-        executionLease: command.executionLease,
+        executionReference: command.executionReference,
         response: row.response as unknown as SubagentControlResult,
       });
       await this.options.database
@@ -403,7 +406,10 @@ export class SubagentController {
         if (child.state === "preparing")
           child = await this.#jobs.prepareChild(this.#startInput(command, row), child);
         if (child.state === "queued")
-          await this.#host(command.executionLease, { action: "schedule", runId: child.childRunId });
+          await this.#host(command.executionReference, {
+            action: "schedule",
+            runId: child.childRunId,
+          });
         result = object(child);
       } else if (command.request.action === "contact") {
         if (!row.supervisor_request_id) return;
@@ -637,14 +643,14 @@ export class SubagentController {
         delivery: request.delivery,
       });
     else {
-      const lease = createExecutionLease(
+      const lease = createExecutionReference(
         target.lease_id,
         target.attemptId,
         Number(target.fencing_token),
       );
       await this.#host(lease, {
         action: "input",
-        executionLease: lease,
+        executionReference: lease,
         runId: target.id,
         requestId: row.id,
         message: text,

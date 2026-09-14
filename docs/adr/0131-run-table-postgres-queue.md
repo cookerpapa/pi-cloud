@@ -19,7 +19,7 @@ must remain.
 PostgreSQL explicitly supports `FOR UPDATE SKIP LOCKED` for queue-like tables.
 Graphile Worker and pg-boss validate the same job-table, partial-index,
 LISTEN/NOTIFY-hint and polling-fallback pattern. Adopting either framework as a
-second job authority would duplicate PiCloud's RunAttempt, ExecutionLease,
+second job authority would duplicate PiCloud's RunAttempt, ExecutionReference,
 fence, cancellation and unknown-effect semantics, so PiCloud adopts the
 database pattern rather than another runtime state machine.
 

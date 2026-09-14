@@ -3,8 +3,8 @@ import type { Duplex } from "node:stream";
 import {
   isExpectedDefaultToolchain,
   parseEnvironmentToolchainReport,
-  createExecutionLease,
-  parseExecutionLease,
+  createExecutionReference,
+  parseExecutionReference,
   parseToolBrokerListWorkspaceDirectoryResponse,
   parseToolBrokerReadWorkspaceFileResponse,
   parseToolBrokerResponse,
@@ -156,7 +156,7 @@ const METADATA = Object.freeze({
 const ASSIGNMENT_METADATA_PREFIX = "picloud.workspace-runtime.v1.";
 
 function fencingToken(assignment: ToolSandboxAssignment): number {
-  return parseExecutionLease(assignment.executionLease).fencingToken;
+  return parseExecutionReference(assignment.executionReference).fencingToken;
 }
 
 type CubeAssignmentMetadata = Readonly<{
@@ -402,7 +402,7 @@ function assignmentMetadata(
   imageRevision: string,
   bindingSha256: string,
 ): Readonly<Record<string, string>> {
-  const execution = parseExecutionLease(assignment.executionLease);
+  const execution = parseExecutionReference(assignment.executionReference);
   const current: CubeAssignmentMetadata = {
     workspaceRuntimeId: activationId,
     tenantId: assignment.tenantId,
@@ -458,7 +458,7 @@ function sameAssignment(left: ToolSandboxAssignment, right: ToolSandboxAssignmen
     left.runId === right.runId &&
     left.sessionId === right.sessionId &&
     left.turnId === right.turnId &&
-    left.executionLease === right.executionLease
+    left.executionReference === right.executionReference
   );
 }
 
@@ -601,7 +601,11 @@ function assignmentFromMetadata(
     runId: current.runId,
     sessionId: current.sessionId,
     turnId: current.turnId,
-    executionLease: createExecutionLease(current.leaseId, current.attemptId, current.fencingToken),
+    executionReference: createExecutionReference(
+      current.leaseId,
+      current.attemptId,
+      current.fencingToken,
+    ),
   };
 }
 
@@ -630,7 +634,7 @@ function supervisorAssignment(
     workspaceId: assignment.workspaceId,
     sessionId: assignment.sessionId,
     turnId: assignment.turnId,
-    executionLease: assignment.executionLease,
+    executionReference: assignment.executionReference,
   };
 }
 
@@ -650,7 +654,7 @@ function sameRuntimeAssignment(
     actual.workspaceId === expected.workspaceId &&
     actual.sessionId === expected.sessionId &&
     actual.turnId === expected.turnId &&
-    actual.executionLease === expected.executionLease
+    actual.executionReference === expected.executionReference
   );
 }
 

@@ -20,7 +20,7 @@ export class SubagentControlClient {
   constructor(readonly resolvePublisher: (lease: string) => SubagentCommandPublisher | undefined) {}
 
   async request(input: {
-    executionLease: string;
+    executionReference: string;
     toolCallId: string;
     workflowId: string;
     request: SubagentControlRequest;
@@ -29,20 +29,20 @@ export class SubagentControlClient {
   }): Promise<Record<string, unknown>> {
     if (this.#closed) throw new Error("Subagent control client is closed");
     input.signal?.throwIfAborted();
-    const publisher = this.resolvePublisher(input.executionLease);
+    const publisher = this.resolvePublisher(input.executionReference);
     if (!publisher) throw new Error("Subagent execution log is unavailable");
     const requestId = randomUUID();
     let fail!: (error: Error) => void;
     const result = new Promise<Record<string, unknown>>((resolve, reject) => {
       fail = reject;
-      this.#pending.set(requestId, { lease: input.executionLease, resolve, reject });
+      this.#pending.set(requestId, { lease: input.executionReference, resolve, reject });
     });
     // Abort/publication can fail before the caller starts waiting for the response.
     void result.catch(() => {});
     const abort = () => fail(new Error("Subagent control request was interrupted"));
     input.signal?.addEventListener("abort", abort, { once: true });
     const command: CandidateSubagentCommand = {
-      executionLease: input.executionLease,
+      executionReference: input.executionReference,
       requestId,
       toolCallId: input.toolCallId,
       workflowId: input.workflowId,
@@ -59,10 +59,11 @@ export class SubagentControlClient {
     }
   }
 
-  receive(executionLease: string, response: SubagentControlResult): void {
+  receive(executionReference: string, response: SubagentControlResult): void {
     const pending = this.#pending.get(response.requestId);
     if (!pending) return; // Duplicate delivery or a departed invocation.
-    if (pending.lease !== executionLease) throw new Error("Subagent response authority mismatch");
+    if (pending.lease !== executionReference)
+      throw new Error("Subagent response authority mismatch");
     if (response.ok) pending.resolve(response.result ?? {});
     else pending.reject(new Error(response.error ?? "Subagent command failed"));
   }

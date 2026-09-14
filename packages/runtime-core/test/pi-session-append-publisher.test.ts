@@ -10,7 +10,7 @@ const scope = {
   writerId: "writer",
   turnId: "turn",
   runId: "run",
-  executionLease: "lease",
+  executionReference: "lease",
 };
 it("finishes at Kafka ACK without a PG client, receipt reader or polling", async () => {
   const publications: CandidatePiSessionAppendFact[] = [];

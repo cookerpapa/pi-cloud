@@ -449,7 +449,7 @@ describe.sequential("authenticated supervisor WebSocket transport", () => {
               connectionId: uuid(),
               acceptingAssignments: true,
               maxConcurrentSessions: 1,
-              sessions: [],
+              families: [],
             },
           }),
         ),

@@ -176,16 +176,16 @@ describe.sequential("Run queue authority", () => {
       },
     });
 
-    const firstExecution = executor.dispatchNext("conversation");
+    const firstExecution = executor.dispatchNext();
     await started;
-    await expect(executor.dispatchNext("conversation")).resolves.toEqual({ status: "idle" });
+    await expect(executor.dispatchNext()).resolves.toEqual({ status: "idle" });
     releaseFirst();
     await expect(firstExecution).resolves.toMatchObject({
       status: "completed",
       runId: first.runId,
     });
     // Business completion is not the output handoff boundary.
-    await expect(executor.dispatchNext("conversation")).resolves.toEqual({ status: "idle" });
+    await expect(executor.dispatchNext()).resolves.toEqual({ status: "idle" });
     const seal = await database
       .selectFrom("outbox")
       .select("payload")
@@ -198,7 +198,7 @@ describe.sequential("Run queue authority", () => {
       partition: 0,
       offset: 0n,
     });
-    await expect(executor.dispatchNext("conversation")).resolves.toMatchObject({
+    await expect(executor.dispatchNext()).resolves.toMatchObject({
       status: "completed",
       runId: second.runId,
     });
@@ -258,7 +258,7 @@ describe.sequential("Run queue authority", () => {
       executionAuthority: authority,
       backend: {
         async cancel(request, lifecycle) {
-          await lifecycle.started({ executionLease: "test-cancellation-authority" });
+          await lifecycle.started({ executionReference: "test-cancellation-authority" });
           interrupt();
           return { reason: request.reason, forced: false };
         },
@@ -331,10 +331,7 @@ describe.sequential("Run queue authority", () => {
       claimOwnerId: "competing-worker-2",
       backend,
     });
-    const results = await Promise.all([
-      firstWorker.dispatchNext("conversation"),
-      secondWorker.dispatchNext("conversation"),
-    ]);
+    const results = await Promise.all([firstWorker.dispatchNext(), secondWorker.dispatchNext()]);
     expect(results.every((result) => result.status === "completed")).toBe(true);
     expect(observed).toEqual(new Set([left.runId, right.runId]));
   });

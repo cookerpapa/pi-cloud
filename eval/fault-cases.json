@@ -24,11 +24,11 @@
       "invariant": "Duplicate delivery does not execute one Agent command twice."
     },
     {
-      "id": "stale-execution-lease",
+      "id": "stale-execution-reference",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/agent-run-supervisor.test.ts",
       "test": "retains the high-water fencing token after a pre-start release",
-      "invariant": "A released Worker cannot reuse an obsolete ExecutionLease."
+      "invariant": "A released task cannot reuse its execution reference under a retired Session owner."
     },
     {
       "id": "stale-accepted-fact-authority",

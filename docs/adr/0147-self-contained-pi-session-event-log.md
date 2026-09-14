@@ -50,7 +50,7 @@ their Workspace runs, or which Tools they receive.
   settlement; it does not acquire a lifetime row per token fragment.
 - Subagent `context=branch` creates a Lane at the declared parent Entry.
   `context=fresh` creates a Lane at `null` and appends only the concrete Child
-  task. Both use the same Lane lifecycle, Run queue and ExecutionLease model.
+  task. Both use the same Lane lifecycle, Run queue and ExecutionReference model.
 - Parent/Child communication remains the orchestration-plane supervisor
   protocol keyed by Subagent execution identity. It neither depends on nor
   mutates Lane ancestry. Context, communication, Workspace placement and Tool

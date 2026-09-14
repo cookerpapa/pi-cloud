@@ -4,7 +4,7 @@ import {
   MAX_TOOL_OUTPUT_BYTES,
   MAX_WORKSPACE_BLOB_BYTES,
   parseEnvironmentValidationReport,
-  parseExecutionLease,
+  parseExecutionReference,
 } from "@pi-cloud/protocol";
 import {
   type CapturedEnvironmentWorkspaceSettlement,
@@ -189,7 +189,7 @@ export class PostgresWorkspaceSettlementStore implements WorkspaceSettlementStor
       );
     }
     const artifactId = this.#idGenerator();
-    const execution = parseExecutionLease(command.payload.executionLease);
+    const execution = parseExecutionReference(command.payload.executionReference);
     const digest = sha256(output.bytes);
     const safe = [
       "tool-outputs",
@@ -233,7 +233,7 @@ export class PostgresWorkspaceSettlementStore implements WorkspaceSettlementStor
     baseRevision: string | null,
     settlement: CapturedEnvironmentWorkspaceSettlement,
   ): Promise<SavedWorkspaceSettlement> {
-    const execution = parseExecutionLease(command.payload.executionLease);
+    const execution = parseExecutionReference(command.payload.executionReference);
     const environment = parseEnvironmentValidationReport(settlement.environment);
     if (
       environment.profileKey !== command.payload.environment.profileKey ||
@@ -508,10 +508,10 @@ export class PostgresWorkspaceSettlementStore implements WorkspaceSettlementStor
     rowVersion: string;
     currentSettlementId: string | null;
   }> {
-    const execution = parseExecutionLease(command.payload.executionLease);
+    const execution = parseExecutionReference(command.payload.executionReference);
     let query = transaction
       .selectFrom("sessions as session_row")
-      .innerJoin("session_leases as grant", "grant.session_id", "session_row.id")
+      .innerJoin("active_execution_scopes as grant", "grant.session_id", "session_row.id")
       .innerJoin("workspaces as workspace_row", (join) =>
         join
           .onRef("workspace_row.tenant_id", "=", "session_row.tenant_id")
@@ -550,7 +550,6 @@ export class PostgresWorkspaceSettlementStore implements WorkspaceSettlementStor
         "session_row.row_version as rowVersion",
         "session_head_artifact.object_key as workspaceKey",
         "session_row.current_workspace_settlement_id as currentSettlementId",
-        "session_row.last_fencing_token as sessionExecutionGeneration",
         "session_row.state as sessionState",
         "turn_row.state as turnState",
         "run_row.id as runId",
@@ -583,7 +582,6 @@ export class PostgresWorkspaceSettlementStore implements WorkspaceSettlementStor
       row.grantId !== execution.leaseId ||
       row.executionId !== execution.attemptId ||
       Number(row.generation) !== execution.fencingToken ||
-      Number(row.sessionExecutionGeneration) !== execution.fencingToken ||
       row.sessionState !== "running" ||
       row.turnState !== "running" ||
       row.runId !== command.payload.runId ||
@@ -604,7 +602,7 @@ export class PostgresWorkspaceSettlementStore implements WorkspaceSettlementStor
     ) {
       throw new WorkspaceSettlementStoreError(
         "stale_session_lease",
-        "Settlement operation does not own the current ExecutionLease",
+        "Settlement operation does not own the current ExecutionReference",
         false,
       );
     }

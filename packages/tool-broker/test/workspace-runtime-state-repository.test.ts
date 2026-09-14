@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { createExecutionLease } from "@pi-cloud/protocol";
+import { createExecutionReference } from "@pi-cloud/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import { PostgresWorkspaceRuntimeStateRepository } from "../src/index.ts";
 import { CubePersistentCapsuleCodec } from "../src/cube-persistent-capsule.ts";
@@ -139,6 +139,18 @@ describe("PostgreSQL Tool Broker ownership", () => {
       })
       .execute();
 
+    await database
+      .insertInto("pi_sessions")
+      .values(
+        [rootSessionId, childSessionId, unrelatedSessionId].map((id) => ({
+          tenant_id: tenantId,
+          id,
+          created_at_ms: Date.now(),
+          parent_session_id: null,
+          name: null,
+        })),
+      )
+      .execute();
     const repository = new PostgresWorkspaceRuntimeStateRepository({
       database,
       sandboxDomainId: "sandbox-domain-0001",
@@ -161,7 +173,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         runId: "20000000-0000-4000-8000-000000000032",
         sessionId: rootSessionId,
         turnId: forkTurnId,
-        executionLease: createExecutionLease(
+        executionReference: createExecutionReference(
           "20000000-0000-4000-8000-000000000009",
           activationAttemptId,
           1,
@@ -182,23 +194,6 @@ describe("PostgreSQL Tool Broker ownership", () => {
         active_sessions: 1,
       })
       .executeTakeFirstOrThrow();
-    await database
-      .insertInto("session_leases")
-      .values({
-        session_id: rootSessionId,
-        lease_id: "20000000-0000-4000-8000-000000000009",
-        sandbox_id: activation.assignment.sandboxId,
-        fencing_token: 1,
-        tenant_id: tenantId,
-        project_id: projectId,
-        workspace_id: workspaceId,
-        run_id: activation.assignment.runId,
-        turn_id: forkTurnId,
-        attempt_id: activationAttemptId,
-        last_event_seq: 0,
-        valid_until: new Date(Date.now() + 60_000),
-      })
-      .executeTakeFirstOrThrow();
     await expect(
       repository.reserveTerminal({
         terminalId: "20000000-0000-4000-8000-000000000021",
@@ -210,7 +205,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
       }),
     ).resolves.toEqual({
       status: "reserved",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "20000000-0000-4000-8000-000000000021",
         "20000000-0000-4000-8000-000000000021",
         1,
@@ -218,11 +213,11 @@ describe("PostgreSQL Tool Broker ownership", () => {
     });
     await expect(
       database
-        .selectFrom("sessions")
-        .select("last_fencing_token")
+        .selectFrom("pi_sessions")
+        .select("lease_epoch")
         .where("id", "=", rootSessionId)
         .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({ last_fencing_token: "0" });
+    ).resolves.toEqual({ lease_epoch: "0" });
     await repository.setTerminalState("20000000-0000-4000-8000-000000000021", "released");
     await expect(
       database
@@ -258,8 +253,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .insertInto("sessions")
       .values({
         id: delegatedSessionId,
-        pi_session_id: delegatedSessionId,
-        pi_session_lane: "main",
+        pi_session_id: rootSessionId,
+        pi_session_lane: "child",
         tenant_id: tenantId,
         project_id: projectId,
         workspace_id: workspaceId,
@@ -366,6 +361,37 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .where("id", "=", childRunId)
       .executeTakeFirstOrThrow();
     await database
+      .updateTable("run_attempts")
+      .set({
+        lease_id: "20000000-0000-4000-8000-000000000009",
+        sandbox_id: activation.assignment.sandboxId,
+        fencing_token: 1,
+      })
+      .where("id", "in", [activationAttemptId, childAttemptId])
+      .execute();
+    await database
+      .updateTable("run_attempts")
+      .set({ native_writer_anchor_id: activationAttemptId })
+      .where("id", "=", childAttemptId)
+      .execute();
+    await database
+      .updateTable("pi_sessions")
+      .set({ lease_epoch: 1, active_writer_id: activationAttemptId })
+      .where("id", "=", rootSessionId)
+      .execute();
+    await database
+      .insertInto("session_leases")
+      .values({
+        tenant_id: tenantId,
+        pi_session_id: rootSessionId,
+        lease_id: "20000000-0000-4000-8000-000000000009",
+        sandbox_id: activation.assignment.sandboxId,
+        writer_id: activationAttemptId,
+        fencing_token: 1,
+        valid_until: new Date(Date.now() + 60000),
+      })
+      .execute();
+    await database
       .insertInto("subagent_executions")
       .values({
         id: "20000000-0000-4000-8000-000000000036",
@@ -399,27 +425,15 @@ describe("PostgreSQL Tool Broker ownership", () => {
         runId: childRunId,
         sessionId: delegatedSessionId,
         turnId: childTurnId,
-        executionLease: createExecutionLease(
-          "20000000-0000-4000-8000-000000000038",
+        executionReference: createExecutionReference(
+          "20000000-0000-4000-8000-000000000009",
           childAttemptId,
-          2,
+          1,
         ),
       },
       turnContextSha256: "2".repeat(64),
       attemptContextSha256: "3".repeat(64),
     } as const;
-    await database
-      .updateTable("session_leases")
-      .set({
-        session_id: delegatedSessionId,
-        lease_id: "20000000-0000-4000-8000-000000000038",
-        fencing_token: 2,
-        run_id: childRunId,
-        turn_id: childTurnId,
-        attempt_id: childAttemptId,
-      })
-      .where("lease_id", "=", "20000000-0000-4000-8000-000000000009")
-      .executeTakeFirstOrThrow();
     await expect(repository.reserve(childActivation)).resolves.toEqual({ status: "reserved" });
     // Persistent machines can reuse a physical binding ID in later Attempts.
     // Routing must retain exact Attempt/boot identity, not overwrite by VM ID.
@@ -460,18 +474,6 @@ describe("PostgreSQL Tool Broker ownership", () => {
     ).resolves.toBe("started");
     await repository.settleOperation("20000000-0000-4000-8000-000000000041", "succeeded");
     await repository.setWorkspaceRuntimeState(activation.activationId, "active");
-    await database
-      .updateTable("session_leases")
-      .set({
-        session_id: rootSessionId,
-        lease_id: "20000000-0000-4000-8000-000000000009",
-        fencing_token: 1,
-        run_id: activation.assignment.runId,
-        turn_id: forkTurnId,
-        attempt_id: activationAttemptId,
-      })
-      .where("lease_id", "=", "20000000-0000-4000-8000-000000000038")
-      .executeTakeFirstOrThrow();
     await expect(repository.reserve(activation)).resolves.toEqual({ status: "reserved" });
     await expect(
       database

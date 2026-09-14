@@ -29,7 +29,7 @@ export class DurableEventStoreError extends Error {
 }
 
 export type ExecutionLogOpenRequest = Readonly<{
-  executionLease: string;
+  executionReference: string;
   sessionId: string;
   piSession: Readonly<{ id: string; lane: string; writerId: string }>;
   turnId: string;
@@ -85,7 +85,7 @@ export class DurableEventStore implements ExecutionLogFactory {
         const publication = parseSupervisorToControlMessage(value);
         if (
           publication.type !== "event.publish" ||
-          publication.payload.executionLease !== request.executionLease ||
+          publication.payload.executionReference !== request.executionReference ||
           publication.payload.event.sessionId !== request.sessionId ||
           publication.payload.event.turnId !== request.turnId
         ) {
@@ -103,7 +103,7 @@ export class DurableEventStore implements ExecutionLogFactory {
           type: "event.ack",
           payload: {
             sessionId: publication.payload.event.sessionId,
-            executionLease: publication.payload.executionLease,
+            executionReference: publication.payload.executionReference,
             acknowledgedThroughSeq,
           },
         });

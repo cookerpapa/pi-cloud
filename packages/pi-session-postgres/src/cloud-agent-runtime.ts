@@ -78,6 +78,7 @@ export type CloudAgentRuntimeOptions = Readonly<{
   model: Model<Api>;
   models?: Models;
   streamFn?: StreamFn;
+  acquireModelPermit?: (signal?: AbortSignal) => Promise<() => void>;
   systemPrompt: string | (() => string | Promise<string>);
   tools?: readonly AgentTool[];
   thinkingLevel?: ThinkingLevel;
@@ -360,52 +361,61 @@ export class CloudAgentRuntime {
         ),
       );
       const streamFn: StreamFn = async (model, context, options) => {
-        await authority.assertCurrent();
-        assistantAttempt += 1;
-        pendingAssistantEntryId = this.#id();
-        await this.#appendItems(
-          [
-            {
-              kind: "append_record",
-              record: {
-                id: this.#id(),
-                lane,
-                type: "step_attempt",
-                runId: operationId,
-                step: "assistant",
-                attempt: assistantAttempt,
-                resultEntryId: pendingAssistantEntryId,
+        const release = await this.#options.acquireModelPermit?.(options?.signal);
+        try {
+          await authority.assertCurrent();
+          assistantAttempt += 1;
+          pendingAssistantEntryId = this.#id();
+          await this.#appendItems(
+            [
+              {
+                kind: "append_record",
+                record: {
+                  id: this.#id(),
+                  lane,
+                  type: "step_attempt",
+                  runId: operationId,
+                  step: "assistant",
+                  attempt: assistantAttempt,
+                  resultEntryId: pendingAssistantEntryId,
+                },
               },
-            },
-          ],
-          { type: "sampling_start" },
-        );
-        const headers = {
-          ...(this.#options.streamOptions?.headers ?? {}),
-          ...(options?.headers ?? {}),
-        };
-        const transformedHeaders = await this.#options.transformHeaders?.(headers);
-        const effectiveOptions: SimpleStreamOptions = {
-          ...options,
-          ...this.#options.streamOptions,
-          ...(options?.signal === undefined ? {} : { signal: options.signal }),
-          headers: transformedHeaders ?? headers,
-        };
-        const callerOnPayload = effectiveOptions.onPayload;
-        if (this.#options.transformProviderPayload !== undefined) {
-          effectiveOptions.onPayload = async (payload, targetModel) => {
-            const callerResult = await callerOnPayload?.(payload, targetModel);
-            return this.#options.transformProviderPayload!(
-              callerResult ?? payload,
-              context,
-              targetModel,
-            );
+            ],
+            { type: "sampling_start" },
+          );
+          const headers = {
+            ...(this.#options.streamOptions?.headers ?? {}),
+            ...(options?.headers ?? {}),
           };
+          const transformedHeaders = await this.#options.transformHeaders?.(headers);
+          const effectiveOptions: SimpleStreamOptions = {
+            ...options,
+            ...this.#options.streamOptions,
+            ...(options?.signal === undefined ? {} : { signal: options.signal }),
+            headers: transformedHeaders ?? headers,
+          };
+          const callerOnPayload = effectiveOptions.onPayload;
+          if (this.#options.transformProviderPayload !== undefined) {
+            effectiveOptions.onPayload = async (payload, targetModel) => {
+              const callerResult = await callerOnPayload?.(payload, targetModel);
+              return this.#options.transformProviderPayload!(
+                callerResult ?? payload,
+                context,
+                targetModel,
+              );
+            };
+          }
+          const stream = await (this.#options.streamFn?.(model, context, effectiveOptions) ??
+            this.#options.models!.streamSimple(model, context, effectiveOptions));
+          void stream.result().then(
+            () => release?.(),
+            () => release?.(),
+          );
+          return stream;
+        } catch (error) {
+          release?.();
+          throw error;
         }
-        return (
-          this.#options.streamFn?.(model, context, effectiveOptions) ??
-          this.#options.models!.streamSimple(model, context, effectiveOptions)
-        );
       };
 
       const agent = new Agent({
@@ -865,6 +875,7 @@ export class CloudAgentRuntime {
       throw new Error("Automatic compaction requires Pi Models");
     }
     const transformHeaders = this.#options.transformHeaders;
+    const acquire = this.#options.acquireModelPermit;
     return new Proxy(models, {
       get(target, property, receiver) {
         if (property !== "completeSimple") {
@@ -876,29 +887,34 @@ export class CloudAgentRuntime {
           context: Parameters<Models["completeSimple"]>[1],
           options?: SimpleStreamOptions,
         ) => {
-          const headers = transformHeaders
-            ? await transformHeaders({ ...(options?.headers ?? {}) })
-            : options?.headers;
-          const response = await target.completeSimple(model, context, {
-            ...options,
-            ...(headers ? { headers } : {}),
-          });
-          // Pi 0.84 accepts a length-limited/empty summary as success. Replacing
-          // the branch with it would discard recoverable conversation context.
-          const hasText = response.content.some(
-            (part) => part.type === "text" && part.text.trim().length > 0,
-          );
-          if (response.stopReason === "length" || (response.stopReason === "stop" && !hasText)) {
-            return {
-              ...response,
-              stopReason: "error" as const,
-              errorMessage:
-                response.stopReason === "length"
-                  ? "Compaction summary exhausted its output budget; previous context was preserved"
-                  : "Compaction returned an empty summary; previous context was preserved",
-            };
+          const release = await acquire?.(options?.signal);
+          try {
+            const headers = transformHeaders
+              ? await transformHeaders({ ...(options?.headers ?? {}) })
+              : options?.headers;
+            const response = await target.completeSimple(model, context, {
+              ...options,
+              ...(headers ? { headers } : {}),
+            });
+            // Pi 0.84 accepts a length-limited/empty summary as success. Replacing
+            // the branch with it would discard recoverable conversation context.
+            const hasText = response.content.some(
+              (part) => part.type === "text" && part.text.trim().length > 0,
+            );
+            if (response.stopReason === "length" || (response.stopReason === "stop" && !hasText)) {
+              return {
+                ...response,
+                stopReason: "error" as const,
+                errorMessage:
+                  response.stopReason === "length"
+                    ? "Compaction summary exhausted its output budget; previous context was preserved"
+                    : "Compaction returned an empty summary; previous context was preserved",
+              };
+            }
+            return response;
+          } finally {
+            release?.();
           }
-          return response;
         };
       },
     });

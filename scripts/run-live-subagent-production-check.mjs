@@ -214,6 +214,8 @@ async function executionEvidence(parentRunId) {
       'parentWorker', parent_attempt.claim_owner_id,
       'childWorker', child_attempt.claim_owner_id,
       'sameWorker', parent_attempt.claim_owner_id = child_attempt.claim_owner_id,
+      'sameOwnerLease', parent_attempt.lease_id = child_attempt.lease_id
+        and parent_attempt.fencing_token = child_attempt.fencing_token,
       'piSessionId', child.pi_session_id,
       'piSessionLane', child.pi_session_lane,
       'contextBaseEntryId', execution.pi_context_base_entry_id,
@@ -281,6 +283,8 @@ async function recursiveTreeEvidence(rootRunId) {
       'rootWorker', root_attempt.claim_owner_id,
       'childWorker', child_attempt.claim_owner_id,
       'sameWorker', root_attempt.claim_owner_id = child_attempt.claim_owner_id,
+      'sameOwnerLease', root_attempt.lease_id = child_attempt.lease_id
+        and root_attempt.fencing_token = child_attempt.fencing_token,
       'piSessionId', child.pi_session_id,
       'piSessionLane', child.pi_session_lane,
       'contextBaseEntryId', execution.pi_context_base_entry_id
@@ -307,6 +311,8 @@ async function parallelExecutionEvidence(parentRunId) {
       'childWorker', child_attempt.claim_owner_id,
       'sameWorker', parent_attempt.claim_owner_id = child_attempt.claim_owner_id,
       'piSessionId', child.pi_session_id,
+      'sameOwnerLease', parent_attempt.lease_id = child_attempt.lease_id
+        and parent_attempt.fencing_token = child_attempt.fencing_token,
       'piSessionLane', child.pi_session_lane,
       'contextBaseEntryId', execution.pi_context_base_entry_id,
       'childPhysicalSessionExists', exists (
@@ -369,6 +375,7 @@ function assertLaneBacked(evidence, rootPiSessionId) {
   assert.equal(evidence.inheritedReferenceCount, 0);
   assert(evidence.childOwnedEntryCount > 0);
   assert.equal(evidence.sameWorker, true);
+  assert.equal(evidence.sameOwnerLease, true);
 }
 
 const suffix = `${Date.now().toString(36)}`;
@@ -511,6 +518,7 @@ try {
   assert(recursiveEvidence.every((execution) => execution.childRunState === "completed"));
   assert(recursiveEvidence.every((execution) => execution.piSessionId === session.sessionId));
   assert(recursiveEvidence.every((execution) => execution.sameWorker === true));
+  assert(recursiveEvidence.every((execution) => execution.sameOwnerLease === true));
   assert(
     recursiveEvidence.every((execution) =>
       /^subagent-[0-9a-f-]{36}$/u.test(execution.piSessionLane),

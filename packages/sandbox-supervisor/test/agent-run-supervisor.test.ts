@@ -6,7 +6,7 @@ import type {
   SteerTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import {
-  createExecutionLease,
+  createExecutionReference,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
@@ -36,6 +36,9 @@ function command(
     grantId?: string;
     generation?: number;
     sessionId?: string;
+    piSessionId?: string;
+    lane?: string;
+    attemptId?: string;
   } = {},
 ): ExecuteTurnCommandMessage {
   return {
@@ -50,16 +53,16 @@ function command(
       workspaceId: "workspace-1",
       sessionId: overrides.sessionId ?? "session-1",
       piSession: {
-        id: overrides.sessionId ?? "session-1",
-        lane: "main",
+        id: overrides.piSessionId ?? overrides.sessionId ?? "session-1",
+        lane: overrides.lane ?? "main",
         writerId: "00000000-0000-4000-8000-000000000001",
       },
       runId: overrides.runId ?? "40000000-0000-4000-8000-000000000001",
       turnId: "turn-1",
       agentId: "root",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         overrides.grantId ?? IDS.lease,
-        "50000000-0000-4000-8000-000000000001",
+        overrides.attemptId ?? "50000000-0000-4000-8000-000000000001",
         overrides.generation ?? 1,
       ),
       nextEventSeq: 1,
@@ -116,7 +119,7 @@ function cancellation(target: ExecuteTurnCommandMessage = command()): CancelTurn
       runId: target.payload.runId,
       turnId: target.payload.turnId,
       agentId: target.payload.agentId,
-      executionLease: target.payload.executionLease,
+      executionReference: target.payload.executionReference,
       reason: "user_request",
       gracePeriodMs: 50,
     },
@@ -140,7 +143,7 @@ function steer(target: ExecuteTurnCommandMessage = command()): SteerTurnCommandM
       runId: target.payload.runId,
       turnId: target.payload.turnId,
       agentId: target.payload.agentId,
-      executionLease: target.payload.executionLease,
+      executionReference: target.payload.executionReference,
       text: "Inspect the boundary condition first.",
     },
   };
@@ -239,7 +242,7 @@ describe("AgentRunSupervisor", () => {
     });
   });
 
-  it("rejects runner events with a mismatched ExecutionLease", async () => {
+  it("rejects runner events with a mismatched ExecutionReference", async () => {
     const badRunner: SupervisorTurnRunner = {
       async run(value, publishEvent) {
         const event = {
@@ -248,7 +251,7 @@ describe("AgentRunSupervisor", () => {
           sentAt: "2026-07-18T08:00:00.000Z",
           type: "event.publish",
           payload: {
-            executionLease: createExecutionLease(
+            executionReference: createExecutionReference(
               IDS.lease2,
               "50000000-0000-4000-8000-000000000001",
               2,
@@ -285,7 +288,7 @@ describe("AgentRunSupervisor", () => {
           sentAt: "2026-07-18T08:00:00.000Z",
           type: "event.publish",
           payload: {
-            executionLease: value.payload.executionLease,
+            executionReference: value.payload.executionReference,
             event: {
               schemaVersion: 1,
               eventId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -310,7 +313,7 @@ describe("AgentRunSupervisor", () => {
       type: "event.ack",
       payload: {
         sessionId: message.payload.event.sessionId,
-        executionLease: message.payload.executionLease,
+        executionReference: message.payload.executionReference,
         acknowledgedThroughSeq: 2,
       },
     }));
@@ -330,7 +333,7 @@ describe("AgentRunSupervisor", () => {
             sentAt: "2026-07-18T08:00:00.000Z",
             type: "event.publish",
             payload: {
-              executionLease: value.payload.executionLease,
+              executionReference: value.payload.executionReference,
               event: {
                 schemaVersion: 1,
                 eventId: `bbbbbbbb-bbbb-4bbb-8bbb-${String(seq).padStart(12, "0")}`,
@@ -356,7 +359,7 @@ describe("AgentRunSupervisor", () => {
       type: "event.ack",
       payload: {
         sessionId: message.payload.event.sessionId,
-        executionLease: message.payload.executionLease,
+        executionReference: message.payload.executionReference,
         acknowledgedThroughSeq: message.payload.event.seq,
       },
     }));
@@ -458,14 +461,13 @@ describe("AgentRunSupervisor", () => {
       connectionId: IDS.connection,
     });
 
-    expect(heartbeat.payload.sessions).toEqual([
+    expect(heartbeat.payload.families).toEqual([
       {
-        sessionId: "session-1",
-        turnId: "turn-1",
-        state: "running",
-        executionLease: command().payload.executionLease,
-        lastProducedSeq: 0,
-        lastAcknowledgedSeq: 0,
+        tenantId: "tenant-1",
+        piSessionId: "session-1",
+        leaseId: IDS.lease,
+        writerId: command().payload.piSession.writerId,
+        fencingToken: 1,
       },
     ]);
     expect(
@@ -477,10 +479,10 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
-          executionLeaseRenewals: [
+          familyLeaseRenewals: [
             {
-              sessionId: "session-1",
-              executionLease: command().payload.executionLease,
+              leaseId: IDS.lease,
+              fencingToken: 1,
               validUntil: "2026-07-18T08:01:00.000Z",
             },
           ],
@@ -492,9 +494,64 @@ describe("AgentRunSupervisor", () => {
       revokedSessionIds: [],
     });
 
-    prepared.revokeLease();
+    prepared.revokeExecution();
     await expect(execution).rejects.toMatchObject({ reason: "session_lease_revoked" });
     expect(supervisor.activeSessionCount).toBe(0);
+  });
+
+  it("uses one family slot/renewal and cancels only the requested sibling task", async () => {
+    const signals = new Map<string, AbortSignal>();
+    const runtime = new AgentRunSupervisor({
+      maxConcurrentSessions: 1,
+      runner: {
+        run: async (value, _publish, signal) => {
+          signals.set(value.payload.sessionId, signal);
+          return new Promise((_resolve, reject) =>
+            signal.addEventListener(
+              "abort",
+              () =>
+                reject(
+                  new PiTurnCancelledError(
+                    (signal.reason as { reason: "user_request" }).reason,
+                    false,
+                  ),
+                ),
+              { once: true },
+            ),
+          );
+        },
+      },
+    });
+    const parentCommand = command(),
+      childCommand = command({
+        runId: IDS.command2,
+        attemptId: IDS.command2,
+        sessionId: "child-scope",
+        piSessionId: "session-1",
+        lane: "child",
+      });
+    const parent = runtime.prepare(parentCommand, rejectUnexpectedEvent),
+      child = runtime.prepare(childCommand, rejectUnexpectedEvent);
+    expect(child.ack.payload.status).toBe("accepted");
+    const parentRun = parent.run(),
+      childRun = child.run();
+    void parentRun.catch(() => {});
+    void childRun.catch(() => {});
+    expect(runtime.activeSessionCount).toBe(1);
+    expect(
+      runtime.createHeartbeat({
+        supervisorId: "supervisor-1",
+        bootId: IDS.boot,
+        connectionId: IDS.connection,
+      }).payload.families,
+    ).toHaveLength(1);
+    const cancelled = runtime.prepareCancellation(cancellation(childCommand));
+    await cancelled.run();
+    await expect(childRun).rejects.toBeInstanceOf(PiTurnCancelledError);
+    expect(signals.get("session-1")?.aborted).toBe(false);
+    expect(runtime.activeSessionCount).toBe(1);
+    parent.revokeExecution();
+    await expect(parentRun).rejects.toBeInstanceOf(PiTurnCancelledError);
   });
 
   it("batches every active session into one supervisor heartbeat", async () => {
@@ -535,7 +592,7 @@ describe("AgentRunSupervisor", () => {
       connectionId: IDS.connection,
     });
 
-    expect(heartbeat.payload.sessions.map((value) => value.sessionId).sort()).toEqual([
+    expect(heartbeat.payload.families.map((value) => value.piSessionId).sort()).toEqual([
       "session-1",
       "session-2",
     ]);
@@ -548,9 +605,9 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
-          executionLeaseRenewals: heartbeat.payload.sessions.map((value) => ({
-            sessionId: value.sessionId,
-            executionLease: value.executionLease,
+          familyLeaseRenewals: heartbeat.payload.families.map((value) => ({
+            leaseId: value.leaseId,
+            fencingToken: value.fencingToken,
             validUntil: "2026-07-18T08:01:00.000Z",
           })),
         },
@@ -561,8 +618,8 @@ describe("AgentRunSupervisor", () => {
       revokedSessionIds: [],
     });
 
-    first.revokeLease();
-    second.revokeLease();
+    first.revokeExecution();
+    second.revokeExecution();
     await Promise.all(executions.map((execution) => expect(execution).rejects.toBeDefined()));
     expect(supervisor.activeSessionCount).toBe(0);
   });
@@ -603,7 +660,7 @@ describe("AgentRunSupervisor", () => {
         payload: {
           acknowledgedMessageId: heartbeat.messageId,
           connectionId: IDS.connection,
-          executionLeaseRenewals: [],
+          familyLeaseRenewals: [],
         },
       }),
     ).toEqual({
@@ -636,7 +693,7 @@ describe("AgentRunSupervisor", () => {
     const execution = prepared.run();
     void execution.catch(() => undefined);
 
-    prepared.revokeLease();
+    prepared.revokeExecution();
     releaseRunner?.();
     await expect(execution).rejects.toMatchObject({
       code: "session_lease_revocation_not_confirmed",

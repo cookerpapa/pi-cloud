@@ -40,7 +40,8 @@ to the parent as the existing Subagent Tool result; other Child history is not
 implicitly merged into the parent lane.
 
 The logical Child execution scope remains the Run, event, cancellation, UI and
-ExecutionLease identity. The accepted Pi mutation protocol separately carries
+task-reference identity. Ownership now uses the shared physical-Session lease
+defined in ADR-0167. The accepted Pi mutation protocol separately carries
 the physical Pi Session target. PG freezes this binding when publication opens;
 the trusted Worker stamps it and Projector checks its attribution and ordered
 closure. Projector does not recheck an expired lease after durable acceptance.

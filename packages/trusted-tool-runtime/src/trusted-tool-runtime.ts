@@ -74,7 +74,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
       if ("target" in request)
         await requests.get(JSON.stringify([toolCallId, request.target]))?.published;
       return this.options.control.request({
-        executionLease: scope.executionLease,
+        executionReference: scope.executionReference,
         toolCallId,
         workflowId: toolCallId,
         request,
@@ -124,7 +124,7 @@ export class PostgresTrustedToolRuntime implements TrustedToolRuntime {
         return previous.promise;
       }
       const anchor = this.options.nativeLanes.childAnchor(
-        scope.executionLease,
+        scope.executionReference,
         task.context === "branch",
       );
       let published!: () => void, failed!: (error: unknown) => void;

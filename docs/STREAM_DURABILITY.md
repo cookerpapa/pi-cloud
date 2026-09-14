@@ -26,7 +26,7 @@ S requires no browser-provided cursor
 
 Kafka ACK is persistence, not automatic acceptance. An old Worker may still
 append a record after its seal; Projector rejects its application.
-Publication scope is recorded once under the current ExecutionLease. Cached
+Publication scope is recorded once under the current ExecutionReference. Cached
 scope/opening checks replace remote per-record authority admission, not the sole PG
 authority. Only the exact PG-requested seal is valid. Normal closure affects one
 Run/Lane; uncertain shared native-writer failure also fences its sibling Lanes.

@@ -2,7 +2,7 @@ import { FAKE_MODEL_API_KEY, FakeModelServer } from "@pi-cloud/fake-model-server
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  createExecutionLease,
+  createExecutionReference,
   type AgentModelRuntime,
   type EventPublishMessage,
   type ExecuteTurnCommandMessage,
@@ -52,7 +52,7 @@ const command: ExecuteTurnCommandMessage = {
     runId: "44444444-4444-4444-8444-444444444444",
     turnId: "turn-1",
     agentId: "root",
-    executionLease: createExecutionLease(
+    executionReference: createExecutionReference(
       "33333333-3333-4333-8333-333333333333",
       "55555555-5555-4555-8555-555555555555",
       7,
@@ -186,7 +186,7 @@ describe("PiCloudTurnRunner integration", () => {
       type: "tool_sandbox.reserved" as const,
       requestId: request.requestId,
       activationId: "99999999-9999-4999-8999-999999999999",
-      executionLease: request.assignment.executionLease,
+      executionReference: request.assignment.executionReference,
       ownerBaseUrl: "http://tool-broker.test",
       workspaceRoot: "/home/user/project",
       continuity: "warm_reuse" as const,
@@ -288,7 +288,7 @@ describe("PiCloudTurnRunner integration", () => {
         type: "tool_sandbox.reserved" as const,
         requestId: request.requestId,
         activationId: "99999999-9999-4999-8999-999999999998",
-        executionLease: request.assignment.executionLease,
+        executionReference: request.assignment.executionReference,
         ownerBaseUrl: "http://tool-broker.test",
         workspaceRoot: "/home/user/project",
         continuity: "warm_reuse" as const,

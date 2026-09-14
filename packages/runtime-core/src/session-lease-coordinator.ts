@@ -1,15 +1,16 @@
 import type { Database } from "@pi-cloud/database";
-import { transitionSandbox, type SandboxState } from "@pi-cloud/domain";
+import { releaseExecutionScope, releaseIdleSessionLease } from "./worker-family-capacity.ts";
+import { transitionSandbox } from "@pi-cloud/domain";
 import {
   parseControlToSupervisorMessage,
-  createExecutionLease,
-  parseExecutionLease,
+  createExecutionReference,
+  parseExecutionReference,
   parseSupervisorToControlMessage,
   type SupervisorHeartbeatAckMessage,
 } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type {
-  TurnExecutionLease,
+  TurnExecutionReference,
   TurnExecutionAuthority,
   TurnExecutionRequest,
 } from "./run-executor.ts";
@@ -64,7 +65,7 @@ function positiveInteger(value: number, name: string): number {
 function validDate(clock: () => Date): Date {
   const value = clock();
   if (!(value instanceof Date) || Number.isNaN(value.valueOf())) {
-    throw new TypeError("ExecutionLease coordinator clock must return a valid Date");
+    throw new TypeError("ExecutionReference coordinator clock must return a valid Date");
   }
   return value;
 }
@@ -98,7 +99,6 @@ function requireUuid(value: string, name: string): string {
   return value;
 }
 
-const ACTIVE_SESSION_STATES = new Set(["running", "cancelling"]);
 type CurrentAssignmentRequest = Pick<
   TurnExecutionRequest,
   "tenantId" | "projectId" | "workspaceId" | "sessionId" | "runId" | "turnId" | "attemptId"
@@ -171,268 +171,100 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
 
   async renewFromHeartbeat(value: unknown): Promise<SupervisorHeartbeatAckMessage> {
     const heartbeat = parseSupervisorToControlMessage(value);
-    if (heartbeat.type !== "supervisor.heartbeat") {
+    if (heartbeat.type !== "supervisor.heartbeat")
       throw new SessionLeaseCoordinatorError(
         "invalid_heartbeat",
-        "ExecutionLease renewal requires a supervisor heartbeat",
+        "Session renewal requires a Worker heartbeat",
         false,
       );
-    }
-    if (heartbeat.payload.connectionId !== this.#heartbeatConnectionId) {
+    if (heartbeat.payload.connectionId !== this.#heartbeatConnectionId)
       throw new SessionLeaseCoordinatorError(
         "stale_connection",
-        "Supervisor heartbeat connection is stale",
+        "Worker heartbeat connection is stale",
         false,
       );
-    }
-    const now = validDate(this.#clock);
-    const validUntil = new Date(now.valueOf() + this.#leaseDurationMs);
-    const executionLeaseRenewals = await this.#database
-      .transaction()
-      .execute(async (transaction) => {
-        const sandbox = await transaction
-          .selectFrom("sandboxes")
-          .select([
-            "supervisor_id",
-            "boot_id",
-            "state",
-            "max_concurrent_sessions",
-            "active_sessions",
-          ])
-          .where("id", "=", this.#sandboxId)
-          .executeTakeFirst();
-        if (
-          sandbox === undefined ||
-          sandbox.supervisor_id !== heartbeat.payload.supervisorId ||
-          sandbox.boot_id !== heartbeat.payload.bootId ||
-          sandbox.max_concurrent_sessions !== heartbeat.payload.maxConcurrentSessions ||
-          (sandbox.state !== "ready" && sandbox.state !== "leased")
-        ) {
-          throw new SessionLeaseCoordinatorError(
-            "stale_supervisor",
-            "Supervisor heartbeat identity is stale",
-            false,
-          );
-        }
-        const connection = await this.#currentRegisteredConnection(
-          transaction,
-          {
-            supervisorId: heartbeat.payload.supervisorId,
-            bootId: heartbeat.payload.bootId,
-          },
-          now,
+    const now = validDate(this.#clock),
+      validUntil = new Date(now.valueOf() + this.#leaseDurationMs);
+    const renewals = await this.#database.transaction().execute(async (tx) => {
+      const worker = await tx
+        .selectFrom("sandboxes")
+        .selectAll()
+        .where("id", "=", this.#sandboxId)
+        .executeTakeFirst();
+      if (
+        !worker ||
+        worker.supervisor_id !== heartbeat.payload.supervisorId ||
+        worker.boot_id !== heartbeat.payload.bootId ||
+        worker.max_concurrent_sessions !== heartbeat.payload.maxConcurrentSessions ||
+        !["ready", "leased"].includes(worker.state)
+      )
+        throw new SessionLeaseCoordinatorError(
+          "stale_supervisor",
+          "Worker heartbeat identity is stale",
           false,
         );
-        if (connection !== undefined) {
-          await transaction
-            .updateTable("supervisor_connections")
-            .set({
-              accepting_assignments: heartbeat.payload.acceptingAssignments,
-              last_heartbeat_at: now,
-              expires_at: new Date(now.valueOf() + this.#connectionGuard!.heartbeatTimeoutMs),
-            })
-            .where("connection_id", "=", this.#heartbeatConnectionId)
-            .where("state", "=", "active")
-            .executeTakeFirstOrThrow();
-        }
-
-        const observations: Array<{
-          observation: (typeof heartbeat.payload.sessions)[number];
-          identity: ReturnType<typeof parseExecutionLease>;
-        }> = [];
-        const seenGrantIds = new Set<string>();
-        for (const observation of heartbeat.payload.sessions) {
-          if (observation.turnId === null || !ACTIVE_SESSION_STATES.has(observation.state)) {
-            continue;
-          }
-          let identity;
-          try {
-            identity = parseExecutionLease(observation.executionLease);
-          } catch {
-            continue;
-          }
-          if (seenGrantIds.has(identity.leaseId)) continue;
-          seenGrantIds.add(identity.leaseId);
-          observations.push({ observation, identity });
-        }
-
-        // Child appends/settlement lock their own Attempt before the common
-        // writer anchor. A heartbeat must take children before that anchor too.
-        // Worker capacity is updated LAST, matching lease acquisition/release.
-        if (observations.length)
-          await transaction
-            .selectFrom("run_attempts")
-            .select("id")
-            .where(
-              "id",
-              "in",
-              observations.map((o) => o.identity.attemptId),
-            )
-            .orderBy("native_writer_id")
-            .orderBy(sql<number>`case when id=native_writer_id then 1 else 0 end`)
-            .orderBy("id")
-            .forNoKeyUpdate()
-            .execute();
-        const grants =
-          observations.length === 0
-            ? []
-            : await transaction
-                .selectFrom("session_leases as grant")
-                .innerJoin("run_attempts as execution", "execution.id", "grant.attempt_id")
-                .select([
-                  "grant.lease_id as grantId",
-                  "grant.fencing_token as generation",
-                  "grant.valid_until as validUntil",
-                  "grant.turn_id as turnId",
-                  "grant.attempt_id as executionId",
-                  "grant.session_id as sessionId",
-                  "execution.state as executionState",
-                  "execution.lease_id as boundGrantId",
-                  "execution.fencing_token as boundGeneration",
-                ])
-                .where(
-                  "grant.lease_id",
-                  "in",
-                  observations.map(({ identity }) => identity.leaseId),
-                )
-                .where("grant.sandbox_id", "=", this.#sandboxId)
-                .orderBy("grant.lease_id", "asc")
-                .forNoKeyUpdate("grant")
-                .execute();
-        const grantById = new Map(grants.map((grant) => [grant.grantId, grant]));
-        const accepted: Array<{
-          observation: (typeof heartbeat.payload.sessions)[number];
-          identity: ReturnType<typeof parseExecutionLease>;
-          lastAcknowledgedSeq: number;
-        }> = [];
-        for (const { observation, identity } of observations) {
-          const grant = grantById.get(identity.leaseId);
-          if (grant === undefined) continue;
-          const generation = safeInteger(grant.generation, "ExecutionLease generation");
-          if (
-            grant.executionId !== identity.attemptId ||
-            grant.sessionId !== observation.sessionId ||
-            grant.turnId !== observation.turnId ||
-            generation !== identity.fencingToken ||
-            grant.boundGrantId !== identity.leaseId ||
-            safeInteger(grant.boundGeneration ?? -1, "bound ExecutionLease generation") !==
-              generation ||
-            new Date(grant.validUntil).valueOf() <= now.valueOf() ||
-            ["completed", "failed", "cancelled", "timed_out", "superseded"].includes(
-              grant.executionState,
-            ) ||
-            observation.lastAcknowledgedSeq > observation.lastProducedSeq
-          ) {
-            continue;
-          }
-          accepted.push({
-            observation,
-            identity,
-            lastAcknowledgedSeq: observation.lastAcknowledgedSeq,
-          });
-        }
-        if (accepted.length > 0) {
-          const values = accepted.map(({ observation, identity, lastAcknowledgedSeq }) => ({
-            grantId: identity.leaseId,
-            executionId: identity.attemptId,
-            generation: identity.fencingToken,
-            sessionId: observation.sessionId,
-            lastAcknowledgedSeq,
-          }));
-          const renewedGrants = await sql<{ id: string }>`
-            with renewal as (
-              select * from jsonb_to_recordset(${JSON.stringify(values)}::jsonb) as item(
-                "grantId" uuid,
-                "executionId" uuid,
-                generation bigint,
-                "sessionId" uuid,
-                "lastAcknowledgedSeq" bigint
-              )
-            )
-            update session_leases as authority
-               set valid_until = ${validUntil}, renewed_at = ${now}
-              from renewal
-             where authority.lease_id = renewal."grantId"
-               and authority.attempt_id = renewal."executionId"
-               and authority.fencing_token = renewal.generation
-               and authority.session_id = renewal."sessionId"
-               and authority.valid_until > ${now}
-            returning authority.lease_id as id
-          `.execute(transaction);
-          const renewedAttempts = await sql<{ id: string }>`
-            with renewal as (
-              select * from jsonb_to_recordset(${JSON.stringify(values)}::jsonb) as item(
-                "grantId" uuid,
-                "executionId" uuid,
-                generation bigint,
-                "sessionId" uuid,
-                "lastAcknowledgedSeq" bigint
-              )
-            )
-            update run_attempts as execution
-               set claim_expires_at = ${validUntil},
-                   last_heartbeat_at = ${now},
-                   last_event_seq = greatest(execution.last_event_seq, renewal."lastAcknowledgedSeq"),
-                   updated_at = ${now}
-              from renewal
-             where execution.id = renewal."executionId"
-               and execution.lease_id = renewal."grantId"
-               and execution.fencing_token = renewal.generation
-            returning execution.id
-          `.execute(transaction);
-          if (
-            renewedGrants.rows.length !== accepted.length ||
-            renewedAttempts.rows.length !== accepted.length
-          ) {
-            throw new SessionLeaseCoordinatorError(
-              "session_lease_invariant",
-              "Set-oriented ExecutionLease renewal lost a current execution",
-              false,
-            );
-          }
-        }
-        const renewals: SupervisorHeartbeatAckMessage["payload"]["executionLeaseRenewals"] =
-          accepted.map(({ observation }) => ({
-            sessionId: observation.sessionId,
-            executionLease: observation.executionLease,
-            validUntil: validUntil.toISOString(),
-          }));
-        const refreshed = await transaction
-          .updateTable("sandboxes")
-          .set({ updated_at: now })
-          .where("id", "=", this.#sandboxId)
-          .where("boot_id", "=", heartbeat.payload.bootId)
-          .where("state", "in", ["ready", "leased"])
-          .where("max_concurrent_sessions", "=", heartbeat.payload.maxConcurrentSessions)
-          .executeTakeFirst();
-        if (refreshed.numUpdatedRows !== 1n)
-          throw new SessionLeaseCoordinatorError(
-            "stale_supervisor",
-            "Supervisor retired during heartbeat",
-            false,
-          );
-        return renewals;
-      });
-
-    const acknowledgement = parseControlToSupervisorMessage({
+      const connection = await this.#currentRegisteredConnection(
+        tx,
+        { supervisorId: worker.supervisor_id, bootId: worker.boot_id },
+        now,
+        false,
+      );
+      if (connection)
+        await tx
+          .updateTable("supervisor_connections")
+          .set({
+            accepting_assignments: heartbeat.payload.acceptingAssignments,
+            last_heartbeat_at: now,
+            expires_at: new Date(now.valueOf() + this.#connectionGuard!.heartbeatTimeoutMs),
+          })
+          .where("connection_id", "=", this.#heartbeatConnectionId)
+          .where("state", "=", "active")
+          .execute();
+      // One update per physical Session. Task progress/timeouts are not owner liveness.
+      const families = heartbeat.payload.families;
+      const rows =
+        families.length === 0
+          ? []
+          : (
+              await sql<{ lease_id: string; fencing_token: string }>`
+        with reported as (
+          select * from jsonb_to_recordset(${JSON.stringify(families)}::jsonb)
+            as x("tenantId" uuid,"piSessionId" text,"leaseId" uuid,"writerId" uuid,"fencingToken" bigint)
+        )
+        update session_leases l set valid_until=${validUntil}, renewed_at=${now}
+          from reported p,run_attempts w
+         where l.lease_id=p."leaseId" and l.tenant_id=p."tenantId" and l.pi_session_id=p."piSessionId"
+           and l.writer_id=p."writerId" and l.fencing_token=p."fencingToken" and l.sandbox_id=${this.#sandboxId}::uuid
+           and l.valid_until>${now} and w.id=l.writer_id
+           and w.native_writer_failed_at is null and w.native_writer_sealed_at is null
+        returning l.lease_id,l.fencing_token
+      `.execute(tx)
+            ).rows;
+      await tx
+        .updateTable("sandboxes")
+        .set({ updated_at: now })
+        .where("id", "=", this.#sandboxId)
+        .execute();
+      return rows.map((r) => ({
+        leaseId: r.lease_id,
+        fencingToken: Number(r.fencing_token),
+        validUntil: validUntil.toISOString(),
+      }));
+    });
+    const ack = parseControlToSupervisorMessage({
       protocolVersion: 1,
       messageId: this.#idGenerator(),
       sentAt: now.toISOString(),
       type: "supervisor.heartbeat.ack",
       payload: {
         acknowledgedMessageId: heartbeat.messageId,
-        connectionId: this.#heartbeatConnectionId,
-        executionLeaseRenewals,
+        connectionId: heartbeat.payload.connectionId,
+        familyLeaseRenewals: renewals,
       },
     });
-    if (acknowledgement.type !== "supervisor.heartbeat.ack") {
-      throw new SessionLeaseCoordinatorError(
-        "invalid_heartbeat_ack",
-        "ExecutionLease renewal acknowledgement was invalid",
-        false,
-      );
-    }
-    return acknowledgement;
+    if (ack.type !== "supervisor.heartbeat.ack")
+      throw new Error("Invalid heartbeat acknowledgement");
+    return ack;
   }
 
   async quarantineSandbox(): Promise<void> {
@@ -456,277 +288,193 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     });
   }
 
-  async acquire(request: TurnExecutionRequest): Promise<TurnExecutionLease> {
+  async acquire(request: TurnExecutionRequest): Promise<TurnExecutionReference> {
     const now = validDate(this.#clock);
-    return this.#database.transaction().execute(async (transaction) => {
-      const session = await transaction
+    return this.#database.transaction().execute(async (tx) => {
+      const session = await tx
         .selectFrom("sessions")
-        .select([
-          "tenant_id",
-          "project_id",
-          "workspace_id",
-          "pi_session_id",
-          "state",
-          "last_fencing_token",
-        ])
+        .selectAll()
         .where("id", "=", request.sessionId)
         .forUpdate()
         .executeTakeFirst();
       if (
-        session === undefined ||
+        !session ||
         session.tenant_id !== request.tenantId ||
         session.project_id !== request.projectId ||
         session.workspace_id !== request.workspaceId ||
         session.pi_session_id !== request.piSessionId
-      ) {
+      )
         throw new SessionLeaseCoordinatorError(
           "session_unavailable",
           "Session is unavailable for execution",
           false,
         );
-      }
-      if (session.state !== "cold" && session.state !== "idle") {
+      if (!["cold", "idle"].includes(session.state))
         throw new SessionLeaseCoordinatorError(
           "invalid_state",
-          "Session is not ready for an execution lease",
+          "Session is not ready for execution",
           true,
         );
-      }
-      await lockPiSessionWorkerOwnership(transaction, request.tenantId, request.piSessionId);
-      if (this.#connectionGuard !== undefined) {
-        const guardedSandbox = await transaction
-          .selectFrom("sandboxes")
-          .select(["supervisor_id", "boot_id"])
-          .where("id", "=", this.#sandboxId)
-          .executeTakeFirst();
-        if (guardedSandbox === undefined) {
-          throw new SessionLeaseCoordinatorError(
-            "sandbox_unavailable",
-            "Execution sandbox is unavailable",
-            true,
-          );
-        }
-        await this.#currentRegisteredConnection(
-          transaction,
-          {
-            supervisorId: guardedSandbox.supervisor_id,
-            bootId: guardedSandbox.boot_id,
-          },
-          now,
-          true,
-        );
-      }
-
-      const runAttempt = await transaction
-        .selectFrom("runs as run")
-        .innerJoin("run_attempts as attempt", (join) =>
-          join
-            .onRef("attempt.run_id", "=", "run.id")
-            .onRef("attempt.id", "=", "run.current_attempt_id"),
-        )
+      await lockPiSessionWorkerOwnership(tx, request.tenantId, request.piSessionId);
+      const attempt = await tx
+        .selectFrom("run_attempts as a")
+        .innerJoin("runs as r", "r.current_attempt_id", "a.id")
         .select([
-          "run.state as runState",
-          "run.current_attempt_id as currentAttemptId",
-          "attempt.state as attemptState",
-          "attempt.sandbox_id as sandboxId",
-          "attempt.lease_id as executionLeaseId",
-          "attempt.fencing_token as fencingToken",
-          "attempt.claim_owner_id as claimOwnerId",
-          "attempt.claim_expires_at as claimExpiresAt",
+          "a.id",
+          "a.state",
+          "a.lease_id",
+          "a.claim_expires_at",
+          "a.claim_owner_id",
+          "a.native_writer_id",
+          "r.state as runState",
         ])
-        .where("run.tenant_id", "=", request.tenantId)
-        .where("run.id", "=", request.runId)
-        .where("run.session_id", "=", request.sessionId)
-        .where("run.turn_id", "=", request.turnId)
-        .where("attempt.id", "=", request.attemptId)
-        .forUpdate(["run", "attempt"])
+        .where("a.id", "=", request.attemptId)
+        .where("r.id", "=", request.runId)
+        .where("r.session_id", "=", request.sessionId)
+        .where("r.turn_id", "=", request.turnId)
+        .where("a.tenant_id", "=", request.tenantId)
+        .forUpdate(["a", "r"])
         .executeTakeFirst();
       if (
-        runAttempt === undefined ||
-        runAttempt.currentAttemptId !== request.attemptId ||
-        runAttempt.runState !== "claimed" ||
-        runAttempt.attemptState !== "claimed" ||
-        new Date(runAttempt.claimExpiresAt).valueOf() <= now.valueOf() ||
-        runAttempt.sandboxId !== null ||
-        runAttempt.executionLeaseId !== null ||
-        runAttempt.fencingToken !== null
-      ) {
+        !attempt ||
+        attempt.state !== "claimed" ||
+        attempt.runState !== "claimed" ||
+        attempt.lease_id ||
+        attempt.claim_expires_at <= now ||
+        attempt.native_writer_id !== request.piSessionWriterId
+      )
         throw new SessionLeaseCoordinatorError(
           "stale_attempt",
-          "Run attempt is unavailable for execution",
+          "Run claim is unavailable for execution",
           false,
         );
-      }
-      const conflictingWorker = await conflictingPiSessionWorker(transaction, {
+      const conflict = await conflictingPiSessionWorker(tx, {
         tenantId: request.tenantId,
         piSessionId: request.piSessionId,
-        expectedWorkerId: runAttempt.claimOwnerId,
+        expectedWorkerId: attempt.claim_owner_id,
         now,
       });
-      if (conflictingWorker !== undefined) {
+      if (conflict)
         throw new SessionLeaseCoordinatorError(
           "pi_session_owner_conflict",
-          "Pi Session is active on another Worker",
+          "Session belongs to another Worker",
           true,
         );
-      }
-
-      const existing = await transaction
-        .selectFrom("session_leases")
-        .selectAll()
-        .where("session_id", "=", request.sessionId)
-        .forUpdate()
-        .executeTakeFirst();
-      if (existing !== undefined) {
-        if (new Date(existing.valid_until).valueOf() > now.valueOf()) {
-          throw new SessionLeaseCoordinatorError(
-            "session_lease_conflict",
-            "Session already has a current ExecutionLease",
-            true,
-          );
-        }
-        await this.#releaseGrantRow(
-          transaction,
-          existing.session_id,
-          existing.lease_id,
-          existing.sandbox_id,
-          existing.fencing_token,
-          now,
-        );
-      }
-
-      const sandbox = await transaction
+      const worker = await tx
         .selectFrom("sandboxes")
-        .select([
-          "id",
-          "supervisor_id",
-          "boot_id",
-          "state",
-          "active_sessions",
-          "max_concurrent_sessions",
-        ])
+        .selectAll()
         .where("id", "=", this.#sandboxId)
         .forNoKeyUpdate()
         .executeTakeFirst();
-      if (sandbox === undefined || (sandbox.state !== "ready" && sandbox.state !== "leased")) {
+      if (!worker || !["ready", "leased"].includes(worker.state))
         throw new SessionLeaseCoordinatorError(
           "sandbox_unavailable",
-          "Execution sandbox is unavailable",
+          "Worker is unavailable",
           true,
         );
-      }
-      if (sandbox.active_sessions >= sandbox.max_concurrent_sessions) {
-        throw new SessionLeaseCoordinatorError(
-          "capacity",
-          "Execution sandbox is at capacity",
-          true,
-        );
-      }
       await this.#currentRegisteredConnection(
-        transaction,
-        { supervisorId: sandbox.supervisor_id, bootId: sandbox.boot_id },
+        tx,
+        { supervisorId: worker.supervisor_id, bootId: worker.boot_id },
         now,
         true,
       );
-
-      const previousGeneration = safeInteger(
-        session.last_fencing_token,
-        "Session execution generation",
-      );
-      const generation = previousGeneration + 1;
-      if (!Number.isSafeInteger(generation)) {
-        throw new SessionLeaseCoordinatorError(
-          "session_lease_invariant",
-          "Session execution generation is exhausted",
-          false,
-        );
-      }
-      const grantId = this.#idGenerator();
-      const executionLease = createExecutionLease(grantId, request.attemptId, generation);
-      const lastEventSeq = safeInteger(request.nextEventSeq, "Run next event sequence") - 1;
-      if (lastEventSeq < 0) {
-        throw new SessionLeaseCoordinatorError(
-          "session_lease_invariant",
-          "Run next event sequence must be positive",
-          false,
-        );
-      }
-      const validUntil = new Date(now.valueOf() + this.#leaseDurationMs);
-
-      const sessionUpdate = await transaction
-        .updateTable("sessions")
-        .set({
-          last_fencing_token: generation,
-          row_version: sql<string>`${sql.ref("row_version")} + 1`,
-          updated_at: now,
-        })
-        .where("id", "=", request.sessionId)
+      let lease = await tx
+        .selectFrom("session_leases")
+        .selectAll()
         .where("tenant_id", "=", request.tenantId)
-        .where("last_fencing_token", "=", session.last_fencing_token)
+        .where("pi_session_id", "=", request.piSessionId)
         .executeTakeFirst();
-      expectOne(sessionUpdate.numUpdatedRows, "advancing a Session execution generation");
-
-      await transaction
-        .insertInto("session_leases")
-        .values({
-          session_id: request.sessionId,
-          lease_id: grantId,
-          sandbox_id: sandbox.id,
-          fencing_token: generation,
-          tenant_id: request.tenantId,
-          project_id: request.projectId,
-          workspace_id: request.workspaceId,
-          run_id: request.runId,
-          turn_id: request.turnId,
-          attempt_id: request.attemptId,
-          last_event_seq: lastEventSeq,
-          valid_until: validUntil,
-          acquired_at: now,
-          renewed_at: now,
-        })
-        .executeTakeFirstOrThrow();
-
-      const nextSandboxState =
-        sandbox.state === "ready" ? transitionSandbox(sandbox.state, "leased") : sandbox.state;
-      const sandboxUpdate = await transaction
+      if (
+        lease &&
+        (lease.sandbox_id !== worker.id ||
+          lease.writer_id !== request.piSessionWriterId ||
+          lease.valid_until <= now)
+      )
+        throw new SessionLeaseCoordinatorError(
+          "session_lease_conflict",
+          "Previous Session owner must finish closure before takeover",
+          true,
+        );
+      const newFamily = !lease;
+      if (!lease) {
+        if (worker.active_sessions >= worker.max_concurrent_sessions)
+          throw new SessionLeaseCoordinatorError(
+            "capacity",
+            "Worker Session capacity is full",
+            true,
+          );
+        const physical = await tx
+          .selectFrom("pi_sessions")
+          .select("lease_epoch")
+          .where("tenant_id", "=", request.tenantId)
+          .where("id", "=", request.piSessionId)
+          .executeTakeFirstOrThrow();
+        const epoch = Number(physical.lease_epoch) + 1;
+        if (!Number.isSafeInteger(epoch)) throw new Error("Session execution epoch exhausted");
+        await tx
+          .updateTable("pi_sessions")
+          .set({ lease_epoch: epoch })
+          .where("tenant_id", "=", request.tenantId)
+          .where("id", "=", request.piSessionId)
+          .execute();
+        lease = await tx
+          .insertInto("session_leases")
+          .values({
+            tenant_id: request.tenantId,
+            pi_session_id: request.piSessionId,
+            lease_id: this.#idGenerator(),
+            sandbox_id: worker.id,
+            writer_id: request.piSessionWriterId,
+            fencing_token: epoch,
+            valid_until: new Date(now.valueOf() + this.#leaseDurationMs),
+            acquired_at: now,
+            renewed_at: now,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+      }
+      await tx
+        .updateTable("sessions")
+        .set({ row_version: sql<string>`row_version+1`, updated_at: now })
+        .where("id", "=", request.sessionId)
+        .execute();
+      await tx
         .updateTable("sandboxes")
         .set({
-          state: nextSandboxState,
-          active_sessions: sandbox.active_sessions + 1,
+          state: "leased",
+          active_sessions: worker.active_sessions + (newFamily ? 1 : 0),
           updated_at: now,
         })
-        .where("id", "=", sandbox.id)
-        .where("state", "=", sandbox.state)
-        .where("active_sessions", "=", sandbox.active_sessions)
-        .executeTakeFirst();
-      expectOne(sandboxUpdate.numUpdatedRows, "reserving sandbox capacity");
-
-      const attemptUpdate = await transaction
+        .where("id", "=", worker.id)
+        .execute();
+      const bound = await tx
         .updateTable("run_attempts")
         .set({
-          sandbox_id: sandbox.id,
-          lease_id: grantId,
-          fencing_token: generation,
-          claim_expires_at: validUntil,
-          last_heartbeat_at: now,
+          sandbox_id: worker.id,
+          lease_id: lease.lease_id,
+          fencing_token: lease.fencing_token,
+          execution_released_at: null,
           updated_at: now,
         })
-        .where("tenant_id", "=", request.tenantId)
-        .where("run_id", "=", request.runId)
         .where("id", "=", request.attemptId)
         .where("state", "=", "claimed")
-        .where("sandbox_id", "is", null)
+        .where("lease_id", "is", null)
         .executeTakeFirst();
-      expectOne(attemptUpdate.numUpdatedRows, "binding a Run Session lease");
-
-      return { executionLease };
+      expectOne(bound.numUpdatedRows, "binding a task to its Session lease");
+      return {
+        executionReference: createExecutionReference(
+          lease.lease_id,
+          request.attemptId,
+          Number(lease.fencing_token),
+        ),
+      };
     });
   }
 
   async assertCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionLease,
+    acknowledgement: TurnExecutionReference,
     now: Date,
   ): Promise<void> {
     await this.#currentGrant(transaction, request, acknowledgement, now, true);
@@ -735,7 +483,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   async assertCurrentOrExpired(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionLease,
+    acknowledgement: TurnExecutionReference,
     now: Date,
   ): Promise<void> {
     await this.#currentGrant(transaction, request, acknowledgement, now, false);
@@ -743,7 +491,7 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
 
   async assertCurrentGrant(
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionLease,
+    acknowledgement: TurnExecutionReference,
   ): Promise<void> {
     const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
@@ -751,12 +499,12 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     });
   }
 
-  async currentAssignment(request: CurrentAssignmentRequest): Promise<TurnExecutionLease> {
+  async currentAssignment(request: CurrentAssignmentRequest): Promise<TurnExecutionReference> {
     const now = validDate(this.#clock);
     return this.#database.transaction().execute(async (transaction) => {
       const session = await transaction
         .selectFrom("sessions")
-        .select(["tenant_id", "project_id", "workspace_id", "state", "last_fencing_token"])
+        .select(["tenant_id", "project_id", "workspace_id", "state"])
         .where("id", "=", request.sessionId)
         .forUpdate()
         .executeTakeFirst();
@@ -781,13 +529,14 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
       }
 
       const grant = await transaction
-        .selectFrom("session_leases")
+        .selectFrom("active_execution_scopes")
         .selectAll()
         .where("session_id", "=", request.sessionId)
-        .forUpdate()
         .executeTakeFirst();
       const generation =
-        grant === undefined ? -1 : safeInteger(grant.fencing_token, "ExecutionLease fencing token");
+        grant === undefined
+          ? -1
+          : safeInteger(grant.fencing_token, "ExecutionReference fencing token");
       if (
         grant === undefined ||
         grant.sandbox_id !== this.#sandboxId ||
@@ -797,17 +546,16 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
         grant.run_id !== request.runId ||
         grant.turn_id !== request.turnId ||
         grant.attempt_id !== request.attemptId ||
-        new Date(grant.valid_until).valueOf() <= now.valueOf() ||
-        generation !== safeInteger(session.last_fencing_token, "Session execution generation")
+        new Date(grant.valid_until).valueOf() <= now.valueOf()
       ) {
         throw new SessionLeaseCoordinatorError(
           "stale_session_lease",
-          "ExecutionLease is stale",
+          "ExecutionReference is stale",
           false,
         );
       }
       return {
-        executionLease: createExecutionLease(grant.lease_id, grant.attempt_id, generation),
+        executionReference: createExecutionReference(grant.lease_id, grant.attempt_id, generation),
       };
     });
   }
@@ -815,24 +563,23 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
   async releaseCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionLease,
+    acknowledgement: TurnExecutionReference,
     now: Date,
   ): Promise<void> {
-    const grant = await this.#currentGrant(transaction, request, acknowledgement, now, false);
-    const identity = parseExecutionLease(acknowledgement.executionLease);
-    await this.#releaseGrantRow(
-      transaction,
-      request.sessionId,
-      identity.leaseId,
-      grant.sandbox_id,
-      identity.fencingToken,
+    await this.#currentGrant(transaction, request, acknowledgement, now, false);
+    const identity = parseExecutionReference(acknowledgement.executionReference);
+    await releaseExecutionScope(transaction, {
+      tenantId: request.tenantId,
+      attemptId: identity.attemptId,
+      leaseId: identity.leaseId,
+      fencingToken: identity.fencingToken,
       now,
-    );
+    });
   }
 
   async releaseAcquired(
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionLease,
+    acknowledgement: TurnExecutionReference,
   ): Promise<void> {
     const now = validDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
@@ -840,28 +587,50 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     });
   }
 
+  async releaseUnboundClaim(
+    tx: Transaction<Database>,
+    request: TurnExecutionRequest,
+    now: Date,
+  ): Promise<void> {
+    await lockPiSessionWorkerOwnership(tx, request.tenantId, request.piSessionId);
+    const lease = await tx
+      .selectFrom("session_leases")
+      .select("lease_id")
+      .where("tenant_id", "=", request.tenantId)
+      .where("pi_session_id", "=", request.piSessionId)
+      .where("writer_id", "=", request.piSessionWriterId)
+      .where("sandbox_id", "=", this.#sandboxId)
+      .executeTakeFirst();
+    if (lease) await releaseIdleSessionLease(tx, lease.lease_id, now);
+  }
+
   async #currentGrant(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    acknowledgement: TurnExecutionLease,
+    acknowledgement: TurnExecutionReference,
     now: Date,
     requireUnexpired: boolean,
   ) {
-    const identity = parseExecutionLease(acknowledgement.executionLease);
+    const identity = parseExecutionReference(acknowledgement.executionReference);
     if (identity.attemptId !== request.attemptId) {
       throw new SessionLeaseCoordinatorError(
         "stale_session_lease",
-        "ExecutionLease belongs to another Run execution",
+        "ExecutionReference belongs to another Run execution",
         false,
       );
     }
-    const grant = await transaction
+    await transaction
       .selectFrom("session_leases")
+      .select("lease_id")
+      .where("lease_id", "=", identity.leaseId)
+      .forKeyShare()
+      .executeTakeFirst();
+    const grant = await transaction
+      .selectFrom("active_execution_scopes")
       .selectAll()
       .where("session_id", "=", request.sessionId)
       .where("lease_id", "=", identity.leaseId)
       .where("fencing_token", "=", String(identity.fencingToken))
-      .forUpdate()
       .executeTakeFirst();
     if (
       grant === undefined ||
@@ -876,64 +645,11 @@ export class SessionLeaseCoordinator implements TurnExecutionAuthority {
     ) {
       throw new SessionLeaseCoordinatorError(
         "stale_session_lease",
-        "ExecutionLease is stale",
+        "ExecutionReference is stale",
         false,
       );
     }
     return grant;
-  }
-
-  async #releaseGrantRow(
-    transaction: Transaction<Database>,
-    sessionId: string,
-    grantId: string,
-    sandboxId: string,
-    generation: string | number | bigint,
-    now: Date,
-  ): Promise<void> {
-    const sandbox = await transaction
-      .selectFrom("sandboxes")
-      .select(["state", "active_sessions"])
-      .where("id", "=", sandboxId)
-      // RunAttempt updates can already hold FK KEY SHARE locks on this row.
-      // Only counters/state change here; upgrading both finishers to UPDATE
-      // deadlocks. NO KEY UPDATE still serializes capacity writers.
-      .forNoKeyUpdate()
-      .executeTakeFirst();
-    if (
-      sandbox === undefined ||
-      sandbox.active_sessions < 1 ||
-      (sandbox.state !== "leased" && sandbox.state !== "draining" && sandbox.state !== "failed")
-    ) {
-      throw new SessionLeaseCoordinatorError(
-        "session_lease_invariant",
-        "ExecutionLease references an unavailable sandbox reservation",
-        false,
-      );
-    }
-
-    const deleted = await transaction
-      .deleteFrom("session_leases")
-      .where("session_id", "=", sessionId)
-      .where("lease_id", "=", grantId)
-      .where("sandbox_id", "=", sandboxId)
-      .where("fencing_token", "=", String(generation))
-      .executeTakeFirst();
-    expectOne(deleted.numDeletedRows, "releasing an ExecutionLease");
-
-    const remaining = sandbox.active_sessions - 1;
-    let nextState: SandboxState = sandbox.state;
-    if (remaining === 0 && sandbox.state === "leased") {
-      nextState = transitionSandbox(sandbox.state, "ready");
-    }
-    const sandboxUpdate = await transaction
-      .updateTable("sandboxes")
-      .set({ state: nextState, active_sessions: remaining, updated_at: now })
-      .where("id", "=", sandboxId)
-      .where("state", "=", sandbox.state)
-      .where("active_sessions", "=", sandbox.active_sessions)
-      .executeTakeFirst();
-    expectOne(sandboxUpdate.numUpdatedRows, "releasing sandbox capacity");
   }
 
   async #currentRegisteredConnection(

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  createExecutionLease,
+  createExecutionReference,
   parseControlToSupervisorMessage,
   type SteerTurnCommandMessage,
 } from "@pi-cloud/protocol";
@@ -34,7 +34,7 @@ const ASSIGNMENT = {
   workspaceId: "10000000-0000-4000-8000-000000000008",
   sessionId: "10000000-0000-4000-8000-000000000004",
   turnId: "10000000-0000-4000-8000-000000000005",
-  executionLease: createExecutionLease(
+  executionReference: createExecutionReference(
     "10000000-0000-4000-8000-000000000006",
     "10000000-0000-4000-8000-000000000007",
     3,
@@ -50,7 +50,7 @@ const PROTOCOL_ASSIGNMENT = {
   workspaceId: ASSIGNMENT.workspaceId,
   sessionId: ASSIGNMENT.sessionId,
   turnId: ASSIGNMENT.turnId,
-  executionLease: ASSIGNMENT.executionLease,
+  executionReference: ASSIGNMENT.executionReference,
 };
 
 const roots: string[] = [];
@@ -231,7 +231,7 @@ describe("trusted Supervisor management boundary", () => {
         runId: "10000000-0000-4000-8000-000000000013",
         turnId: ASSIGNMENT.turnId,
         agentId: "root",
-        executionLease: ASSIGNMENT.executionLease,
+        executionReference: ASSIGNMENT.executionReference,
         text: "Inspect the current failure before continuing.",
       },
     });

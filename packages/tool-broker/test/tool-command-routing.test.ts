@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { createExecutionLease, type AcceptedToolCommand } from "@pi-cloud/protocol";
+import { createExecutionReference, type AcceptedToolCommand } from "@pi-cloud/protocol";
 import {
   ToolCommandRouter,
   httpToolLogDelivery,
@@ -153,7 +153,7 @@ describe("sharded Tool routing", () => {
       instanceId = randomUUID(),
       token = "r".repeat(64),
       serviceToken = "s".repeat(64);
-    const executionLease = createExecutionLease(c.scope.leaseId, c.scope.attemptId, 1);
+    const executionReference = createExecutionReference(c.scope.leaseId, c.scope.attemptId, 1);
     const execute = vi.fn(async () => ({
       toolBrokerProtocolVersion: 1 as const,
       type: "tool_sandbox.operation_result" as const,
@@ -171,7 +171,7 @@ describe("sharded Tool routing", () => {
         execute,
         ownsToolBinding: (id) => id === c.request.activationId,
         assertToolResultReader: (id, lease) => {
-          if (id !== c.request.activationId || lease !== executionLease)
+          if (id !== c.request.activationId || lease !== executionReference)
             throw new Error("not owner");
         },
       },
@@ -203,7 +203,7 @@ describe("sharded Tool routing", () => {
     const baseUrl = await server.listen(),
       route = { instanceId, baseUrl, bindingId: c.request.activationId };
     const frame = { instanceId, topic: "test", partition: 0, offset: "1", fact: c };
-    for (const credential of [serviceToken, executionLease]) {
+    for (const credential of [serviceToken, executionReference]) {
       const response = await fetch(new URL(TOOL_BROKER_LOG_DELIVERY_PATH, baseUrl), {
         method: "POST",
         headers: { authorization: `Bearer ${credential}`, "content-type": "application/json" },
@@ -221,7 +221,7 @@ describe("sharded Tool routing", () => {
         `/internal/v1/tool-operation-result?activationId=${c.request.activationId}&operationId=${c.request.operationId}`,
         baseUrl,
       ),
-      { headers: { authorization: `Bearer ${executionLease}` } },
+      { headers: { authorization: `Bearer ${executionReference}` } },
     );
     expect(response.status).toBe(200);
     expect(JSON.stringify(await response.json()).length).toBeGreaterThan(96 * 1024);

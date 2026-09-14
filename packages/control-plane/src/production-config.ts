@@ -39,7 +39,6 @@ export type ProductionControlPlaneConfig = {
   subagentTreePolicy: {
     maximumDepth: number;
     maximumNodes: number;
-    maximumConcurrentSubagents: number;
   };
   supervisorManagementBaseUrlTemplates: readonly string[];
   allowInsecureInternalHttp: boolean;
@@ -505,13 +504,6 @@ export async function loadProductionControlPlaneConfig(
     subagentTreePolicy: {
       maximumDepth: integerValue(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH", 4, 1, 64),
       maximumNodes: integerValue(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_NODES", 32, 1, 10_000),
-      maximumConcurrentSubagents: integerValue(
-        environment,
-        "PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT",
-        3,
-        1,
-        1_000,
-      ),
     },
     supervisorManagementBaseUrlTemplates: managementUrlTemplates(
       required(environment, "PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES"),

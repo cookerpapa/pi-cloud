@@ -83,7 +83,10 @@ configured minimum Workers continue polling PostgreSQL.
 Workers use rolling replacement and a long termination grace so active Runs can
 settle or lose authority safely. Correctness does not depend on a stable Worker
 ordinal or local Session cache. A replacement may acquire a Session after its
-previous owner's Attempts expire; stale ExecutionLeases cannot commit effects.
+previous owner's Session lease expires and every affected task closure projects;
+stale execution references cannot commit effects. A task timeout alone does not
+transfer the physical Session. The migration-137 wire cutover requires drained,
+matching-version services; ordinary subsequent same-protocol rollouts can drain.
 
 Before claiming high availability, test on the actual storage/network stack:
 

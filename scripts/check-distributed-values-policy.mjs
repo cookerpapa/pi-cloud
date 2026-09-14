@@ -24,7 +24,8 @@ const valid = {
     image: { repository: "registry.internal/pi-cloud/worker", tag: "release-1" },
     lifecycle: { terminationGracePeriodSeconds: 1_320 },
     runtime: {
-      subagents: { maximumConcurrent: 3 },
+      modelConcurrency: 4,
+      sessionModelConcurrency: 4,
       timeouts: {
         toolBrokerRequestMs: 360_000,
         modelCapabilityTtlMs: 900_000,

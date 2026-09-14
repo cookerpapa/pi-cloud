@@ -34,7 +34,7 @@ export type SubagentControlRequest =
     }>;
 
 export type CandidateSubagentCommand = Readonly<{
-  executionLease: string;
+  executionReference: string;
   requestId: string;
   toolCallId: string;
   workflowId: string;
@@ -57,7 +57,7 @@ export interface SubagentCommandPublisher {
 export type SubagentHostRequest =
   | Readonly<{
       action: "input";
-      executionLease: string;
+      executionReference: string;
       runId: string;
       requestId: string;
       message: string;
@@ -66,14 +66,14 @@ export type SubagentHostRequest =
   | Readonly<{ action: "fork_workspace"; request: ToolBrokerWorkspaceForkRequest }>
   | Readonly<{
       action: "prepare_lane";
-      executionLease: string;
+      executionReference: string;
       lane: string;
       anchor: string | null;
     }>
   | Readonly<{ action: "schedule"; runId: string }>
   | Readonly<{
       action: "result";
-      executionLease: string;
+      executionReference: string;
       response: SubagentControlResult;
     }>;
 

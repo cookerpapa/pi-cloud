@@ -15,7 +15,7 @@ import {
 } from "./environment.ts";
 import { CloudToolCapabilitySnapshotSchema, CloudToolNameSchema } from "./tool-capabilities.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
-import { ExecutionLeaseSchema } from "./execution-lease.ts";
+import { ExecutionReferenceSchema } from "./execution-reference.ts";
 
 export const MAX_TOOL_COMMAND_BYTES = 64 * 1_024;
 export const MAX_TOOL_FILE_BYTES = 512 * 1_024;
@@ -93,7 +93,7 @@ export const ToolSandboxAssignmentSchema = Type.Object(
     runId: OpaqueIdSchema,
     sessionId: OpaqueIdSchema,
     turnId: OpaqueIdSchema,
-    executionLease: ExecutionLeaseSchema,
+    executionReference: ExecutionReferenceSchema,
   },
   { additionalProperties: false },
 );
@@ -124,7 +124,7 @@ export const ToolSandboxCreateResponseSchema = Type.Object(
     type: Type.Literal("tool_sandbox.reserved"),
     requestId: UuidSchema,
     activationId: UuidSchema,
-    executionLease: ExecutionLeaseSchema,
+    executionReference: ExecutionReferenceSchema,
     ownerBaseUrl: Type.String({ minLength: 8, maxLength: 2_048 }),
     workspaceRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     continuity: Type.Union([Type.Literal("cold_restore"), Type.Literal("warm_reuse")]),

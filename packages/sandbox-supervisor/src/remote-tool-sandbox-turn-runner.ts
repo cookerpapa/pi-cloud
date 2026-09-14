@@ -9,7 +9,7 @@ import {
 import {
   type ExecuteTurnCommandMessage,
   modelSamplingHeaders,
-  parseExecutionLease,
+  parseExecutionReference,
   type ToolSandboxAssignment,
   type ToolSandboxCaptureResponse,
   type ToolSandboxCreateRequest,
@@ -123,6 +123,10 @@ export type RemoteToolSandboxTurnRunnerOptions = {
     }>,
   ) => Promise<readonly TrustedAgentTool[]> | readonly TrustedAgentTool[];
   runAttemptPhaseObserver?: RunAttemptPhaseObserver;
+  acquireModelPermit?: (
+    command: ExecuteTurnCommandMessage,
+    signal?: AbortSignal,
+  ) => Promise<() => void>;
   requestTimeoutMs?: number;
   turnTimeoutMs?: number;
   idGenerator?: () => string;
@@ -141,7 +145,7 @@ function assignment(
     runId: command.payload.runId,
     sessionId: command.payload.sessionId,
     turnId: command.payload.turnId,
-    executionLease: command.payload.executionLease,
+    executionReference: command.payload.executionReference,
   };
 }
 
@@ -178,6 +182,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #publishToolCommand: RemoteToolSandboxTurnRunnerOptions["publishToolCommand"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
   readonly #runAttemptPhaseObserver: RunAttemptPhaseObserver | undefined;
+  readonly #acquireModelPermit: RemoteToolSandboxTurnRunnerOptions["acquireModelPermit"];
   readonly #requestTimeoutMs: number | undefined;
   readonly #turnTimeoutMs: number | undefined;
   readonly #idGenerator: () => string;
@@ -187,7 +192,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     string,
     {
       ready: Promise<PiCloudTurnRunner>;
-      executionLease: string;
+      executionReference: string;
       resolve: (runner: PiCloudTurnRunner) => void;
       reject: (error: Error) => void;
     }
@@ -205,6 +210,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#publishToolCommand = options.publishToolCommand;
     this.#createTrustedTools = options.createTrustedTools;
     this.#runAttemptPhaseObserver = options.runAttemptPhaseObserver;
+    this.#acquireModelPermit = options.acquireModelPermit;
     this.#requestTimeoutMs = options.requestTimeoutMs;
     this.#turnTimeoutMs = options.turnTimeoutMs;
     this.#idGenerator = options.idGenerator ?? (() => globalThis.crypto.randomUUID());
@@ -238,7 +244,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       ready,
       resolve: resolveRunner,
       reject: rejectRunner,
-      executionLease: command.payload.executionLease,
+      executionReference: command.payload.executionReference,
     };
     this.#activePiRunners.set(command.payload.runId, slot);
     try {
@@ -250,7 +256,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           : { parent: command.payload.traceContext }),
         attributes: {
           "pi_cloud.run.id": command.payload.runId,
-          "pi_cloud.execution.id": parseExecutionLease(command.payload.executionLease).attemptId,
+          "pi_cloud.execution.id": parseExecutionReference(command.payload.executionReference)
+            .attemptId,
           "pi_cloud.session.id": command.payload.sessionId,
         },
         run: () => this.#run(command, publishEvent, signal, slot.resolve),
@@ -293,11 +300,11 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     id: string,
     text: string,
     delivery: "notify" | "steer" | "follow_up",
-    executionLease: string,
+    executionReference: string,
   ): Promise<void> {
     const slot = this.#activePiRunners.get(runId);
     if (!slot) throw new Error("Target Agent is not running on this Worker");
-    if (slot.executionLease !== executionLease)
+    if (slot.executionReference !== executionReference)
       throw new Error("Target Agent input authority mismatch");
     const runner = await slot.ready;
     if (this.#activePiRunners.get(runId) !== slot)
@@ -681,7 +688,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         sandboxContinuity: {
           continuityId:
             activation?.continuityId ??
-            parseExecutionLease(command.payload.executionLease).attemptId,
+            parseExecutionReference(command.payload.executionReference).attemptId,
           continuity: activation?.continuity ?? "cold_restore",
           environmentSha256: cloudTurn.environmentSha256,
           workspaceBindingSha256: cloudTurn.workspaceBindingSha256,
@@ -717,6 +724,12 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             }),
       };
       const runner = new PiCloudTurnRunner({
+        ...(this.#acquireModelPermit
+          ? {
+              acquireModelPermit: (signal?: AbortSignal) =>
+                this.#acquireModelPermit!(command, signal),
+            }
+          : {}),
         ...commonRunnerOptions,
         createAgentTools: ({ toolOutputDirectory, stepWorldState, captureSamplingStep }) => {
           if (toolFree) {
@@ -823,7 +836,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
                 operationResultUrl: this.#broker.operationResultUrlFor(active.activationId),
               };
             },
-            executionLease: toolAssignment.executionLease,
+            executionReference: toolAssignment.executionReference,
             turnContextSha256: cloudTurn.sha256,
             attemptContextSha256: cloudAttempt.sha256,
             allowedTools: cloudTurn.context.tools.names,

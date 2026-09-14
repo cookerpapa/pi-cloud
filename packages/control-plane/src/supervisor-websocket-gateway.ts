@@ -238,7 +238,7 @@ export class SupervisorWebSocketGateway {
         true,
       );
     }
-    return this.#manager.executionLeaseCoordinator(
+    return this.#manager.executionReferenceCoordinator(
       context.registeredConnectionId,
       context.authority,
     );

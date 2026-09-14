@@ -51,7 +51,7 @@ export type AgentRunExecutionBackendOptions = {
   metrics?: PiCloudMetrics;
 };
 
-type TrackedLeaseExecution = {
+type TrackedExecution = {
   prepared: ReturnType<AgentRunSupervisor["prepare"]>;
   execution: Promise<TurnExecutionResult>;
   writer: ExecutionLogWriter;
@@ -165,7 +165,7 @@ function validateEventAck(eventMessage: EventPublishMessage, value: unknown): Ev
   if (
     parsed.type !== "event.ack" ||
     parsed.payload.sessionId !== eventMessage.payload.event.sessionId ||
-    parsed.payload.executionLease !== eventMessage.payload.executionLease ||
+    parsed.payload.executionReference !== eventMessage.payload.executionReference ||
     parsed.payload.acknowledgedThroughSeq !== eventMessage.payload.event.seq
   ) {
     throw new TurnExecutionBackendError(
@@ -194,7 +194,7 @@ function validateAck(
     parsed.payload.requestId !== request.runId ||
     parsed.payload.sessionId !== request.sessionId ||
     parsed.payload.turnId !== request.turnId ||
-    parsed.payload.executionLease !== command.payload.executionLease
+    parsed.payload.executionReference !== command.payload.executionReference
   ) {
     throw new TurnExecutionBackendError(
       "backend_protocol_violation",
@@ -222,7 +222,7 @@ function validateCancellationAck(
     parsed.payload.requestId !== request.controlRequestId ||
     parsed.payload.sessionId !== request.target.sessionId ||
     parsed.payload.turnId !== request.target.turnId ||
-    parsed.payload.executionLease !== command.payload.executionLease
+    parsed.payload.executionReference !== command.payload.executionReference
   ) {
     throw new TurnCancellationBackendError(
       "backend_protocol_violation",
@@ -243,7 +243,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   readonly #heartbeatIntervalMs: number;
   readonly #onUnexpectedError: ((error: unknown) => void) | undefined;
   readonly #metrics: PiCloudMetrics | undefined;
-  readonly #trackedLeaseExecutions = new Map<string, TrackedLeaseExecution>();
+  readonly #trackedExecutions = new Map<string, TrackedExecution>();
   #heartbeatAbort: AbortController | undefined;
   #heartbeatTask: Promise<void> | undefined;
   #heartbeatFailure: TurnExecutionBackendError | undefined;
@@ -267,10 +267,10 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     request: TurnExecutionRequest,
     lifecycle: TurnExecutionLifecycle,
   ): Promise<TurnExecutionResult> {
-    let acknowledgement: { executionLease: string } | undefined;
+    let acknowledgement: { executionReference: string } | undefined;
     let executionLog: ExecutionLogWriter | undefined;
     let prepared: ReturnType<AgentRunSupervisor["prepare"]> | undefined;
-    let tracked: TrackedLeaseExecution | undefined;
+    let tracked: TrackedExecution | undefined;
     let durableStarted = false;
 
     try {
@@ -279,7 +279,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       );
       executionLog = await this.#measurePreparation("log_open", () =>
         this.#executionLogs.open({
-          executionLease: acknowledgement!.executionLease,
+          executionReference: acknowledgement!.executionReference,
           sessionId: request.sessionId,
           piSession: {
             id: request.piSessionId,
@@ -309,7 +309,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           runId: request.runId,
           turnId: request.turnId,
           agentId: "root",
-          executionLease: acknowledgement.executionLease,
+          executionReference: acknowledgement.executionReference,
           nextEventSeq: positiveSafeInteger(request.nextEventSeq, "next event sequence"),
           agent: request.agent,
           input: { kind: "prompt", text: request.input.prompt },
@@ -350,7 +350,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         const eventMessage = parseSupervisorToControlMessage(message);
         if (
           eventMessage.type !== "event.publish" ||
-          eventMessage.payload.executionLease !== acknowledgement?.executionLease ||
+          eventMessage.payload.executionReference !== acknowledgement?.executionReference ||
           eventMessage.payload.event.sessionId !== request.sessionId ||
           eventMessage.payload.event.turnId !== request.turnId
         ) {
@@ -380,7 +380,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       await this.#measurePreparation("durable_started", () => lifecycle.started(acknowledgement));
       durableStarted = true;
       const execution = prepared.run();
-      tracked = this.#registerGrantExecution(request.sessionId, prepared, execution, executionLog);
+      tracked = this.#registerExecution(request.sessionId, prepared, execution, executionLog);
       try {
         let result: TurnExecutionResult;
         try {
@@ -395,7 +395,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
         try {
           await this.#closeTrackedChannel(tracked);
         } finally {
-          await this.#unregisterGrantExecution(request.sessionId, tracked);
+          await this.#unregisterExecution(request.sessionId, tracked);
         }
       }
     } catch (error: unknown) {
@@ -467,7 +467,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           runId: request.target.runId,
           turnId: request.target.turnId,
           agentId: "root",
-          executionLease: acknowledgement.executionLease,
+          executionReference: acknowledgement.executionReference,
           reason: request.reason,
           gracePeriodMs: request.gracePeriodMs,
         },
@@ -492,7 +492,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
 
       await lifecycle.started(acknowledgement);
       const result = await prepared.run();
-      const tracked = this.#trackedLeaseExecutions.get(request.target.sessionId);
+      const tracked = this.#trackedExecutions.get(request.target.sessionId);
       if (tracked !== undefined) await this.#closeTrackedChannel(tracked);
       return result;
     } catch (error: unknown) {
@@ -500,46 +500,43 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
     }
   }
 
-  #registerGrantExecution(
+  #registerExecution(
     sessionId: string,
     prepared: ReturnType<AgentRunSupervisor["prepare"]>,
     execution: Promise<TurnExecutionResult>,
     writer: ExecutionLogWriter,
-  ): TrackedLeaseExecution {
-    const tracked: TrackedLeaseExecution = { prepared, execution, writer };
-    if (this.#trackedLeaseExecutions.has(sessionId)) {
+  ): TrackedExecution {
+    const tracked: TrackedExecution = { prepared, execution, writer };
+    if (this.#trackedExecutions.has(sessionId)) {
       tracked.failure = new TurnExecutionBackendError(
         "session_lease_monitor_invariant",
-        "Session already had a tracked ExecutionLease",
+        "Session already had a tracked ExecutionReference",
         false,
         true,
       );
-      prepared.revokeLease();
+      prepared.revokeExecution();
       return tracked;
     }
-    this.#trackedLeaseExecutions.set(sessionId, tracked);
+    this.#trackedExecutions.set(sessionId, tracked);
     if (this.#heartbeatFailure !== undefined) {
       tracked.failure = this.#heartbeatFailure;
-      prepared.revokeLease();
+      prepared.revokeExecution();
     } else {
       this.#startHeartbeatTask();
     }
     return tracked;
   }
 
-  #closeTrackedChannel(tracked: TrackedLeaseExecution): Promise<void> {
+  #closeTrackedChannel(tracked: TrackedExecution): Promise<void> {
     tracked.writerClosing ??= tracked.writer.close();
     return tracked.writerClosing;
   }
 
-  async #unregisterGrantExecution(
-    sessionId: string,
-    tracked: TrackedLeaseExecution,
-  ): Promise<void> {
-    if (this.#trackedLeaseExecutions.get(sessionId) === tracked) {
-      this.#trackedLeaseExecutions.delete(sessionId);
+  async #unregisterExecution(sessionId: string, tracked: TrackedExecution): Promise<void> {
+    if (this.#trackedExecutions.get(sessionId) === tracked) {
+      this.#trackedExecutions.delete(sessionId);
     }
-    if (this.#trackedLeaseExecutions.size !== 0) return;
+    if (this.#trackedExecutions.size !== 0) return;
     this.#heartbeatAbort?.abort();
     await this.#heartbeatTask;
   }
@@ -552,7 +549,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       if (this.#heartbeatTask === task) {
         this.#heartbeatTask = undefined;
         this.#heartbeatAbort = undefined;
-        if (this.#trackedLeaseExecutions.size > 0 && this.#heartbeatFailure === undefined) {
+        if (this.#trackedExecutions.size > 0 && this.#heartbeatFailure === undefined) {
           this.#startHeartbeatTask();
         }
       }
@@ -563,7 +560,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
   async #runHeartbeatTask(signal: AbortSignal): Promise<void> {
     try {
       const identity = await this.#leaseCoordinator.heartbeatIdentity();
-      while (!signal.aborted && this.#trackedLeaseExecutions.size > 0) {
+      while (!signal.aborted && this.#trackedExecutions.size > 0) {
         const heartbeat = this.#supervisor.createHeartbeat(identity);
         let acknowledgement;
         for (let attempt = 1; ; attempt += 1) {
@@ -585,7 +582,7 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
           );
         }
         for (const sessionId of result.revokedSessionIds) {
-          const tracked = this.#trackedLeaseExecutions.get(sessionId);
+          const tracked = this.#trackedExecutions.get(sessionId);
           if (tracked !== undefined) tracked.failure = this.#leaseRenewalFailure();
         }
         await wait(this.#heartbeatIntervalMs, signal);
@@ -596,19 +593,19 @@ export class AgentRunExecutionBackend implements TurnExecutionBackend, TurnCance
       const failure = this.#leaseRenewalFailure();
       this.#heartbeatFailure = failure;
       await this.#leaseCoordinator.quarantineSandbox().catch(() => undefined);
-      const trackedLeaseExecutions = [...this.#trackedLeaseExecutions.values()];
-      for (const tracked of trackedLeaseExecutions) {
+      const trackedExecutions = [...this.#trackedExecutions.values()];
+      for (const tracked of trackedExecutions) {
         tracked.failure = failure;
-        tracked.prepared.revokeLease();
+        tracked.prepared.revokeExecution();
       }
-      await Promise.allSettled(trackedLeaseExecutions.map((tracked) => tracked.execution));
+      await Promise.allSettled(trackedExecutions.map((tracked) => tracked.execution));
     }
   }
 
   #leaseRenewalFailure(): TurnExecutionBackendError {
     return new TurnExecutionBackendError(
       "session_lease_renewal_failed",
-      "ExecutionLease renewal failed and the runtime was revoked",
+      "ExecutionReference renewal failed and the runtime was revoked",
       false,
       true,
     );

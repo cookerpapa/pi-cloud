@@ -113,10 +113,10 @@ it("retires an expired Run on a healthy Worker without stopping its other Sessio
     expect(
       await db
         .selectFrom("session_leases")
-        .select("session_id")
+        .select("pi_session_id")
         .where("sandbox_id", "=", workerId)
         .execute(),
-    ).toEqual([{ session_id: b.sessionId }]);
+    ).toEqual([{ pi_session_id: b.sessionId }]);
     expect(await store.getRun(first.runId)).toMatchObject({ state: "settling" });
     const row = await db
       .selectFrom("outbox")

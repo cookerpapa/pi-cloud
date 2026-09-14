@@ -20,7 +20,7 @@ export type CandidatePiSessionAppendFact = Readonly<{
     writerId: string;
     turnId: string;
     runId: string;
-    executionLease: string;
+    executionReference: string;
   }>;
   items: readonly PiCommittedItem[];
   events: readonly PiCloudEvent[];
@@ -100,7 +100,7 @@ export type AcceptedSubagentCommand = Readonly<{
   kind: "subagent_command";
   factId: string;
   scope: AcceptedFactScope;
-  executionLease: string;
+  executionReference: string;
   toolCallId: string;
   workflowId: string;
   request: SubagentControlRequest;
@@ -132,7 +132,7 @@ export interface PiSessionLogAppender {
 }
 
 export interface ActiveExecutionLogResolver {
-  resolve(executionLease: string): AcceptedFactWriter | undefined;
+  resolve(executionReference: string): AcceptedFactWriter | undefined;
   checkHealth(): Promise<void>;
 }
 

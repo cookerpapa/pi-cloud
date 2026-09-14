@@ -38,7 +38,12 @@ protocol, record the decision under `docs/adr/` before implementation.
 - Use Pi's public tool/extension APIs rather than patching its agent loop.
 - Persist commands before acknowledging them.
 - Use idempotency keys, leases, and fencing tokens for distributed mutations.
-- Preserve per-session ordering without dedicating a process or OS thread to a cold session.
+- One physical Pi Session owns one renewable execution lease/epoch and one Worker
+  family slot. Child Lanes retain task identity/cancellation, not separate leases.
+  Model-request permits are local, fair and held only through provider completion;
+  never reserve the same permit while waiting for a child or Tool.
+- Preserve per-Lane task ordering and one physical-Session writer without
+  dedicating a process or OS thread to a cold session.
 - PostgreSQL is the sole Run/control authority. Active Pi Session writes are
   fully stamped by one physical-Session writer and acknowledged through R=3
   Kafka; PostgreSQL materializes the exact native log for cold reads and long-term

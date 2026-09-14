@@ -117,7 +117,7 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   resolveOperationTarget?: () =>
     | Promise<Readonly<{ operationResultUrl: string; activationId: string }>>
     | Readonly<{ operationResultUrl: string; activationId: string }>;
-  executionLease: string;
+  executionReference: string;
   turnContextSha256: string;
   attemptContextSha256: string;
   allowedTools?: CloudToolCapabilitySnapshot;
@@ -192,7 +192,7 @@ function validateRuntimeConfiguration(
   }
   const resolveOperationTarget = async () =>
     staticTarget ?? validateOperationTarget(await candidate.resolveOperationTarget!());
-  const executionLease = candidate.executionLease;
+  const executionReference = candidate.executionReference;
   const turnContextSha256 = candidate.turnContextSha256;
   const attemptContextSha256 = candidate.attemptContextSha256;
   const remainingToolCalls = candidate.remainingToolCalls;
@@ -207,7 +207,7 @@ function validateRuntimeConfiguration(
     candidate.allowedTools ?? [...CLOUD_TOOL_NAMES],
   );
   if (
-    !/^pcel1_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionLease) ||
+    !/^pcer1_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionReference) ||
     !/^[0-9a-f]{64}$/.test(turnContextSha256) ||
     !/^[0-9a-f]{64}$/.test(attemptContextSha256) ||
     typeof candidate.captureStepContext !== "function" ||
@@ -253,7 +253,7 @@ function validateRuntimeConfiguration(
   return {
     publishToolCommand: candidate.publishToolCommand,
     resolveOperationTarget,
-    executionLease,
+    executionReference,
     turnContextSha256,
     attemptContextSha256,
     allowedTools,
@@ -485,7 +485,7 @@ function registerTrustedRemoteTools(
     });
     signal?.throwIfAborted();
     await runtime.publishToolCommand({
-      executionLease: runtime.executionLease,
+      executionReference: runtime.executionReference,
       toolCallId,
       request: candidate,
       occurredAt: new Date().toISOString(),
@@ -505,7 +505,7 @@ function registerTrustedRemoteTools(
       if (!workflowCall) throw new Error("Workflow host bridge is unavailable");
       return readWorkflowResult({
         resultUrl,
-        executionLease: runtime.executionLease,
+        executionReference: runtime.executionReference,
         activationId: target.activationId,
         operationId: candidate.operationId,
         call: workflowCall,
@@ -517,7 +517,7 @@ function registerTrustedRemoteTools(
       const response = await fetch(resultUrl, {
         method: "GET",
         headers: {
-          authorization: `Bearer ${runtime.executionLease}`,
+          authorization: `Bearer ${runtime.executionReference}`,
           "content-type": "application/json",
           ...(runtime.traceparent === undefined ? {} : { traceparent: runtime.traceparent }),
           ...(runtime.tracestate === undefined ? {} : { tracestate: runtime.tracestate }),

@@ -135,6 +135,7 @@ import * as toolBindingRoutes from "./133_tool_binding_routes.ts";
 import * as executionPublications from "./134_execution_publications.ts";
 import * as messageDisplayCoverage from "./135_message_display_coverage.ts";
 import * as subagentControlLog from "./136_subagent_control_log.ts";
+import * as physicalSessionLeases from "./137_physical_session_leases.ts";
 
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
@@ -275,6 +276,7 @@ export const migrationProvider: MigrationProvider = {
       "134_execution_publications": executionPublications,
       "135_message_display_coverage": messageDisplayCoverage,
       "136_subagent_control_log": subagentControlLog,
+      "137_physical_session_leases": physicalSessionLeases,
     };
   },
 };

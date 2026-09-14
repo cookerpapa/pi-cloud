@@ -9,7 +9,7 @@ CubeSandbox KVM is the only untrusted execution backend.
 
 ```text
 Browser → Control Plane → PostgreSQL ready Run
-                            ↓ claim + ExecutionLease
+                            ↓ claim + shared Session lease
                          Pi Worker
                          ├─ native Session Host / concurrent Lanes
                          ├─ Model Gateway → CLIProxyAPI → Provider
@@ -56,15 +56,21 @@ Cold Sessions have no Worker affinity or permanent process. Successful claims
 wake the next free slot; LISTEN/NOTIFY reduces idle latency and periodic polling
 covers missed wakeups. There is no Temporal or competing dispatcher.
 
-An active physical Session has one Worker-local native log writer, while main
-and Child Agent Loops run concurrently. Only native append order is shared.
-Child slots are reserved independently so a waiting Parent cannot occupy every
-slot its descendants need. KEDA scales from the PG ready-Run backlog; Cube
-compute capacity scales separately from Pi Worker slots.
+An active physical Session occupies one Worker slot and has one native writer
+and one owner lease, while main and Child Agent Loops run concurrently. Model
+requests share a separate, abortable, round-robin budget keyed by physical Session;
+Tools/child waits hold no model permit. Tree depth and total nodes remain bounded.
+KEDA counts active/ready physical families, not descendant Run rows. Cube compute
+capacity scales independently. Draining rejects new families but finishes existing
+families, including their newly delegated children.
 
-The current ExecutionLease identifies one Attempt and its monotonic Session
-fence. Heartbeats renew that authority. Losing a Worker/Run lease requests an
-ordered seal; the successor cannot read context until closure is projected.
+`session_leases` has one row per `(tenant_id, pi_session_id)`. Its ID and monotonic
+`pi_sessions.lease_epoch` identify an ownership period. Heartbeats renew each
+family once; quiet tasks do not lose separate leases. Each RunAttempt carries a
+task `ExecutionReference` (shared lease/epoch plus Attempt ID), not another lease.
+The read-only `active_execution_scopes` view combines task state with owner authority
+for executor checks. Task cancellation closes that task; lost ownership retires
+the family, and a successor waits for all affected ordered closures to project.
 Workspace access across different Sessions is deliberately ordinary user-managed
 Linux concurrency, not a scheduling lock or tenant concurrency quota.
 
@@ -91,7 +97,7 @@ still stops on lease loss to avoid wasted work. A normally drained Run closes
 only its execution; uncertain native publication also closes its shared writer
 incarnation. Unrelated Sessions and later writer incarnations stay independent.
 
-The code-owned topic is `pi-cloud.execution-log.v7`. Physical Pi Session ID is
+The code-owned topic is `pi-cloud.execution-log.v8`. Physical Pi Session ID is
 the immutable partition key, shared by all Lanes and control boundaries. Do not
 change its partition count in place. Producers use RF3/acks-all and bounded
 pending bytes/records, respecting transport backpressure. Worker opening/drain
@@ -295,7 +301,9 @@ community `runs.run`/`runs.all` programming model, not a CLI-emulation backend.
 Fresh context and inherited context are independent of shared/isolated Workspace
 selection. All active Lanes share one physical Session owner; PG holds durable
 parent/child communication and cancellation state. Defaults bound recursive depth
-to 4, total nodes to 32 and simultaneous descendants to 3. Isolated children use
+to 4 and total descendants to 32. Worker and per-Session model request limits
+default to 4; children are not rejected merely because another child is waiting.
+Isolated children use
 internal Workspace copies; the context/communication model is unchanged.
 Copies exclude active file/shell tool mutations, but do not claim atomic
 filesystem snapshots against user background processes. A workflow waiting for
@@ -329,7 +337,7 @@ PiCloud deployment or local-account login.
 | guest processes/memory | the live Cube or a surviving native VM snapshot |
 | model account credentials/selection | CLIProxyAPI |
 
-Worker replicas add Agent Loop slots; Projector replicas divide Kafka partitions;
+Worker replicas add Session-family slots; Projector replicas divide Kafka partitions;
 Tool executors and Cube nodes add execution capacity. Cross-owner result and SSE
 routes remain explicit. No Cell, worker-affinity queue or second scheduler is
 required. See [run lifecycle](RUN_LIFECYCLE.md), [crash contracts](STREAM_DURABILITY.md)

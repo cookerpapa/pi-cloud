@@ -43,7 +43,7 @@ user-visible Run:
 - Tool failures and Cube lifecycle/admission capacity;
 - Workspace Volume Gateway queue, latency, rejection and cleanup backlog;
 - Kafka consumer health and Gateway incomplete-tail sessions/events/bytes;
-- direct Kafka Producer queue occupancy/rejections and Run-lease failures;
+- direct Kafka Producer queue occupancy/rejections and Session-owner lease failures;
 - settled terminal events still waiting to reach Kafka.
 
 The Control Plane samples PostgreSQL and Kafka/Gateway state every ten seconds. These
@@ -57,12 +57,16 @@ Prometheus scrapes four application endpoint groups:
 | Service | Internal endpoint | Main signals |
 | --- | --- | --- |
 | Control Plane | `control-plane:9464/metrics` | queue, event/session projection, cleanup, admission, process |
-| Pi Workers | `*:9465/metrics` | active Runs, model/Run latency, tokens, process |
+| Pi Workers | `*:9465/metrics` | active Session families/Lanes, model permits/wait, Run latency, tokens, process |
 | Tool Broker | `tool-broker:9466/metrics` | Cube lifecycle, Tool calls, admission, result-cache bytes/releases, process |
 | Workspace Volume Gateway | `workspace-volume-gateway:9469/metrics` | storage queue, latency, rejection, process |
 
-`pi_cloud_active_runs` counts Worker execution slots. The Pi adapter no longer
-counts the same Run a second time. `pi_cloud_queued_runs` is sampled from the
+`pi_cloud_active_session_families` counts occupied Worker slots;
+`pi_cloud_active_runs` counts the active Lane tasks within those families.
+`pi_cloud_model_permits_active` and `_waiting`, plus
+`pi_cloud_model_permit_wait_seconds`, distinguish provider work from local model
+admission. A task waiting for a child/Tool holds no model permit.
+`pi_cloud_queued_runs` is sampled from the
 shared PostgreSQL Run queue rather than inferred from a local Worker.
 
 Transport capacity signals are process-local and should be summed across replicas:
@@ -83,7 +87,7 @@ Transport capacity signals are process-local and should be summed across replica
   `pi_cloud_session_view_read_seconds` distinguish cold branch loads from
   committed in-memory snapshots. `pi_cloud_session_view_storage_bytes_total`
   estimates materialized Entry JSON bytes, not PostgreSQL wire traffic. There
-  are no Session-ID labels; cached context is released at Run completion.
+  are no Session-ID labels; the shared writer is retained while its family is active.
 
 The Session Projector runs in Control Plane and uses its authenticated metrics
 endpoint. There is no separate Projector metrics service or renewable output-stream lease.

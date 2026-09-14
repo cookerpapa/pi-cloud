@@ -92,7 +92,7 @@ describe("Control Channel process fault", () => {
             ...identity,
             acceptingAssignments,
             maxConcurrentSessions: 1,
-            sessions: [],
+            families: [],
           },
         });
         if (message.type !== "supervisor.heartbeat") throw new Error("Heartbeat was invalid");

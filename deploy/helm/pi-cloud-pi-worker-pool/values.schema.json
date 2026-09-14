@@ -58,7 +58,7 @@
         "maxReplicas",
         "pollingIntervalSeconds",
         "cooldownSeconds",
-        "targetQueuedRunsPerReplica",
+        "targetSessionsPerReplica",
         "scaleDownStabilizationSeconds",
         "scaleDownPeriodSeconds"
       ],
@@ -86,7 +86,7 @@
           "minimum": 60,
           "maximum": 7200
         },
-        "targetQueuedRunsPerReplica": {
+        "targetSessionsPerReplica": {
           "type": "integer",
           "minimum": 1,
           "maximum": 1000
@@ -252,15 +252,24 @@
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowInsecureInternalHttp", "subagents", "runtimeObjectCache", "timeouts"],
+      "required": [
+        "allowInsecureInternalHttp",
+        "modelConcurrency",
+        "sessionModelConcurrency",
+        "subagents",
+        "runtimeObjectCache",
+        "timeouts"
+      ],
       "properties": {
+        "modelConcurrency": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "sessionModelConcurrency": { "type": "integer", "minimum": 1, "maximum": 1000 },
         "allowInsecureInternalHttp": {
           "type": "boolean"
         },
         "subagents": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["maximumDepth", "maximumNodes", "maximumConcurrent"],
+          "required": ["maximumDepth", "maximumNodes"],
           "properties": {
             "maximumDepth": {
               "type": "integer",
@@ -271,11 +280,6 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 10000
-            },
-            "maximumConcurrent": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 1000
             }
           }
         },

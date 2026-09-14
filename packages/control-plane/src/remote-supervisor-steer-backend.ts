@@ -60,14 +60,14 @@ function sameCommandIdentity(
     requestId: string;
     sessionId: string;
     turnId: string;
-    executionLease: string;
+    executionReference: string;
   },
 ): boolean {
   return (
     value.requestId === command.payload.controlRequestId &&
     value.sessionId === command.payload.sessionId &&
     value.turnId === command.payload.turnId &&
-    value.executionLease === command.payload.executionLease
+    value.executionReference === command.payload.executionReference
   );
 }
 
@@ -210,7 +210,10 @@ export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
     }
   }
 
-  #command(request: TurnSteerRequest, grant: { executionLease: string }): SteerTurnCommandMessage {
+  #command(
+    request: TurnSteerRequest,
+    grant: { executionReference: string },
+  ): SteerTurnCommandMessage {
     const parsed = parseControlToSupervisorMessage({
       protocolVersion: 1,
       messageId: this.#idGenerator(),
@@ -227,7 +230,7 @@ export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
         runId: request.target.runId,
         turnId: request.target.turnId,
         agentId: this.#agentId,
-        executionLease: grant.executionLease,
+        executionReference: grant.executionReference,
         text: request.text,
       },
     });
@@ -267,7 +270,7 @@ export class RemoteSupervisorSteerBackend implements TurnSteerBackend {
         requestId: command.payload.controlRequestId,
         sessionId: command.payload.sessionId,
         turnId: command.payload.turnId,
-        executionLease: command.payload.executionLease,
+        executionReference: command.payload.executionReference,
         acknowledgedMessageId: acknowledgement.messageId,
       },
     });

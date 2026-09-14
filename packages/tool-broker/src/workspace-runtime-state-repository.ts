@@ -6,8 +6,8 @@ import type {
   WorkspaceTerminalState,
 } from "@pi-cloud/database";
 import {
-  createExecutionLease,
-  parseExecutionLease,
+  createExecutionReference,
+  parseExecutionReference,
   type SupervisorRuntimeAssignment,
   type ToolSandboxAssignment,
 } from "@pi-cloud/protocol";
@@ -27,7 +27,7 @@ export type WorkspaceRuntimeReservation = {
 };
 
 function executionIdentity(assignment: ToolSandboxAssignment | SupervisorRuntimeAssignment) {
-  return parseExecutionLease(assignment.executionLease);
+  return parseExecutionReference(assignment.executionReference);
 }
 
 export type WorkspaceRuntimeReservationResult =
@@ -55,7 +55,7 @@ export type WorkspaceTerminalReservation = Readonly<{
 export type WorkspaceTerminalReservationResult =
   | {
       status: "reserved";
-      executionLease: string;
+      executionReference: string;
       workspaceRuntimeId?: string;
     }
   | { status: "redirect"; ownerBaseUrl: string }
@@ -271,11 +271,11 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       currentActivation === undefined
         ? input.terminalId
         : executionIdentity(currentActivation.assignment).attemptId;
-    const executionLease = createExecutionLease(input.terminalId, executionId, generation);
+    const executionReference = createExecutionReference(input.terminalId, executionId, generation);
     this.#terminals.set(input.terminalId, { ...input, fencingToken: generation });
     return {
       status: "reserved",
-      executionLease,
+      executionReference,
       ...(currentActivation === undefined
         ? {}
         : { workspaceRuntimeId: currentActivation.activationId }),
@@ -679,7 +679,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         claimDevelopmentEnvironment = liveDevelopmentEnvironment.agent_activation_id === null;
       }
       const authority = await transaction
-        .selectFrom("session_leases")
+        .selectFrom("active_execution_scopes")
         .select([
           "tenant_id",
           "project_id",
@@ -690,6 +690,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "sandbox_id",
         ])
         .where("lease_id", "=", execution.leaseId)
+        .where("accepting_effects", "=", true)
         .where("attempt_id", "=", execution.attemptId)
         .where(
           sql<boolean>`exists(select 1 from run_attempts a join run_attempts writer on writer.id=a.native_writer_id
@@ -710,7 +711,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       ) {
         throw new WorkspaceRuntimeStateRepositoryError(
           "ownership_lost",
-          "Tool binding reserve used a stale ExecutionLease",
+          "Tool binding reserve used a stale ExecutionReference",
         );
       }
       const existing = await transaction
@@ -928,13 +929,16 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         );
       }
       const session = await transaction
-        .selectFrom("sessions")
-        .select(["id", "last_fencing_token"])
-        .where("tenant_id", "=", input.tenantId)
-        .where("id", "=", input.sessionId)
-        .where("workspace_id", "=", input.workspaceId)
-        .where("archived_at", "is", null)
-        .forUpdate()
+        .selectFrom("sessions as s")
+        .innerJoin("pi_sessions as p", (join) =>
+          join.onRef("p.tenant_id", "=", "s.tenant_id").onRef("p.id", "=", "s.pi_session_id"),
+        )
+        .select(["s.id", "p.lease_epoch"])
+        .where("s.tenant_id", "=", input.tenantId)
+        .where("s.id", "=", input.sessionId)
+        .where("s.workspace_id", "=", input.workspaceId)
+        .where("s.archived_at", "is", null)
+        .forUpdate("s")
         .executeTakeFirst();
       if (session === undefined) {
         throw new WorkspaceRuntimeStateRepositoryError(
@@ -1015,7 +1019,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         return { status: "capacity" };
       }
       const currentFence = Math.max(
-        Number(session.last_fencing_token),
+        Number(session.lease_epoch),
         activation === undefined ? 0 : Number(activation.fencing_token),
       );
       const generation = currentFence + 1;
@@ -1047,14 +1051,14 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           updated_at: now,
         })
         .executeTakeFirstOrThrow();
-      const executionLease = createExecutionLease(
+      const executionReference = createExecutionReference(
         input.terminalId,
         activation?.attempt_id ?? input.terminalId,
         generation,
       );
       return {
         status: "reserved",
-        executionLease,
+        executionReference,
         ...(activation === undefined
           ? {}
           : { workspaceRuntimeId: activation.workspace_runtime_id }),
@@ -1668,7 +1672,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       const execution = executionIdentity(assignment);
       const activation = await transaction
         .selectFrom("tool_broker_workspace_runtimes as activation")
-        .innerJoin("session_leases as authority", (join) =>
+        .innerJoin("active_execution_scopes as authority", (join) =>
           join
             .onRef("authority.tenant_id", "=", "activation.tenant_id")
             .onRef("authority.project_id", "=", "activation.project_id")
@@ -1679,6 +1683,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("activation.owner_instance_id", "=", this.#instanceId)
         .where("activation.state", "in", ["reserved", "materializing", "active"])
         .where("authority.lease_id", "=", execution.leaseId)
+        .where("authority.accepting_effects", "=", true)
         .where("authority.attempt_id", "=", execution.attemptId)
         .where(
           sql<boolean>`exists(select 1 from run_attempts a join run_attempts writer on writer.id=a.native_writer_id
@@ -1812,7 +1817,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           runId: row.run_id,
           sessionId: row.session_id,
           turnId: row.turn_id,
-          executionLease: createExecutionLease(
+          executionReference: createExecutionReference(
             row.lease_id,
             row.attempt_id,
             Number(row.fencing_token),
@@ -1864,7 +1869,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where(
           sql<boolean>`not exists (
             select 1
-              from session_leases authority
+              from active_execution_scopes authority
              where authority.tenant_id = ${sql.ref("activation.tenant_id")}
                and authority.project_id = ${sql.ref("activation.project_id")}
                and authority.workspace_id = ${sql.ref("activation.workspace_id")}
@@ -1912,7 +1917,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           runId: row.run_id,
           sessionId: row.session_id,
           turnId: row.turn_id,
-          executionLease: createExecutionLease(
+          executionReference: createExecutionReference(
             row.lease_id,
             row.attempt_id,
             Number(row.fencing_token),
@@ -1962,7 +1967,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       .where("sandbox_domain_id", "=", this.#sandboxDomainId)
       .where("sandbox_id", "=", sandboxId)
       // Warm process worlds are owned by the Tool Broker, not by the expired
-      // Supervisor Run lease. Publishing them through Supervisor inventory
+      // Supervisor Session lease. Publishing them through Supervisor inventory
       // makes AssignmentReconciler misclassify and destroy them as orphans.
       .where("state", "=", "active")
       .where("runtime_id", "is not", null)
@@ -1978,7 +1983,11 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       workspaceId: row.workspace_id,
       sessionId: row.session_id,
       turnId: row.turn_id,
-      executionLease: createExecutionLease(row.lease_id, row.attempt_id, Number(row.fencing_token)),
+      executionReference: createExecutionReference(
+        row.lease_id,
+        row.attempt_id,
+        Number(row.fencing_token),
+      ),
     }));
   }
 

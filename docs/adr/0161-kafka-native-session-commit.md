@@ -30,8 +30,9 @@ All facts for a physical Pi Session use one Kafka partition key, including its
 Lane UI events, Tool commands and seals. Transport and unified projection follow
 [ADR-0163](0163-direct-log-and-unified-projector.md). A native writer
 incarnation is identified by the first RunAttempt ID of that active ownership
-period; this is log identity, not another lease/credential. Every member retains
-its own existing ExecutionLease and Tool admission checks.
+period; this is log identity, not another lease/credential. Members share one
+physical-Session owner lease and carry separate task references for admission,
+as specified by [ADR-0167](0167-session-family-capacity.md).
 
 A verified drained logical stream may seal its Run independently, preserving
 normal Child completion/cancellation. An unconfirmed stream or uncertain native

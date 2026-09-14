@@ -29,7 +29,7 @@ const command = {
     tenantId: "tenant-1",
     sessionId: "session-1",
     runId: "run-1",
-    executionLease: "unused-until-tool-execution",
+    executionReference: "unused-until-tool-execution",
     model: {
       provider: "deepseek",
       modelId: "deepseek-v4-flash",

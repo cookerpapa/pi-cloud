@@ -3,44 +3,44 @@ import {
   type RunCancellationExecutionResult,
   RunCancellationExecutor,
 } from "@pi-cloud/runtime-core/run-cancellation-executor";
-import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
+import {
+  RunExecutor,
+  type RunClaimAdmission,
+  type RunClaimReference,
+} from "@pi-cloud/runtime-core/run-executor";
+import { getHeapStatistics } from "node:v8";
 import type { Kysely } from "kysely";
 import { Client } from "pg";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
 
-type ExecutionReference = {
-  runId: string;
-  subagent: boolean;
-};
+export type ExecutionReference = { runId: string; tenantId: string; piSessionId: string };
+export const familyKey = (r: Pick<ExecutionReference, "tenantId" | "piSessionId">): string =>
+  `${r.tenantId}:${r.piSessionId}`;
 
-export function selectPiWorkerProbeKinds(
+export function familyAdmission(
   active: readonly ExecutionReference[],
-  maximumConcurrentRuns: number,
-  maximumConcurrentSubagents: number,
-): boolean[] {
-  positiveInteger(maximumConcurrentRuns, "maximumConcurrentRuns");
-  positiveInteger(maximumConcurrentSubagents, "maximumConcurrentSubagents");
-  if (maximumConcurrentSubagents >= maximumConcurrentRuns) {
-    throw new TypeError("Subagent capacity must leave at least one conversation slot");
-  }
-  const activeParents = active.filter((entry) => !entry.subagent).length;
-  const activeSubagents = active.length - activeParents;
-  const maximumParents = maximumConcurrentRuns - maximumConcurrentSubagents;
-  const parentSlots = Math.max(0, maximumParents - activeParents);
-  const subagentSlots = Math.max(0, maximumConcurrentSubagents - activeSubagents);
-  return [...(parentSlots > 0 ? [false] : []), ...(subagentSlots > 0 ? [true] : [])];
+  capacity: number,
+  maximumLanesPerFamily: number,
+  memoryHeadroom = true,
+): RunClaimAdmission {
+  const counts = new Map<string, number>();
+  for (const r of active) counts.set(familyKey(r), (counts.get(familyKey(r)) ?? 0) + 1);
+  return {
+    ...(counts.size < capacity && memoryHeadroom ? {} : { allowedFamilyKeys: [...counts.keys()] }),
+    blockedFamilyKeys: [...counts]
+      .filter(([, count]) => count >= maximumLanesPerFamily)
+      .map(([key]) => key),
+  };
 }
 
-export function canScheduleOwnedSubagent(
-  runId: string,
-  active: readonly ExecutionReference[],
-  maximumConcurrentSubagents: number,
-): boolean {
-  positiveInteger(maximumConcurrentSubagents, "maximumConcurrentSubagents");
+export function workerMemoryHeadroom(): boolean {
+  const heap = getHeapStatistics();
+  const memory = process.memoryUsage();
+  const constrained = process.constrainedMemory();
   return (
-    !active.some((entry) => entry.runId === runId) &&
-    active.filter((entry) => entry.subagent).length < maximumConcurrentSubagents
+    memory.heapUsed < heap.heap_size_limit * 0.85 &&
+    (constrained === 0 || memory.rss < constrained * 0.85)
   );
 }
 
@@ -88,8 +88,10 @@ export type PostgresPiWorkerOptions = {
   database: Kysely<Database>;
   notificationConnectionString: string;
   identity: string;
-  maximumConcurrentRuns: number;
-  maximumConcurrentSubagents: number;
+  maximumActiveFamilies: number;
+  maximumLanesPerFamily: number;
+  memoryHeadroom?: () => boolean;
+  onCapacity?: (sample: { families: number; lanes: number }) => void;
   pollIntervalMs?: number;
   runExecutor: RunExecutor;
   cancellationExecutor: RunCancellationExecutor;
@@ -132,8 +134,10 @@ export class PostgresPiWorker {
   readonly #database: Kysely<Database>;
   readonly #notificationConnectionString: string;
   readonly #identity: string;
-  readonly #maximumConcurrentRuns: number;
-  readonly #maximumConcurrentSubagents: number;
+  readonly #maximumActiveFamilies: number;
+  readonly #maximumLanesPerFamily: number;
+  readonly #memoryHeadroom: () => boolean;
+  readonly #onCapacity: NonNullable<PostgresPiWorkerOptions["onCapacity"]>;
   readonly #pollIntervalMs: number;
   readonly #runExecutor: RunExecutor;
   readonly #cancellationExecutor: RunCancellationExecutor;
@@ -143,9 +147,9 @@ export class PostgresPiWorker {
     ((operation: "listen" | "claim" | "execute" | "cancel", error: unknown) => void) | undefined;
   readonly #activeRuns = new Map<
     string,
-    Readonly<{ execution: Promise<void>; subagent: boolean; runId?: string }>
+    Readonly<{ execution: Promise<void>; reference?: RunClaimReference }>
   >();
-  readonly #claimingKinds = new Set<boolean>();
+  #claiming = false;
   #state: PostgresPiWorkerState = "idle";
   #controller: AbortController | undefined;
   #listener: Client | undefined;
@@ -160,17 +164,16 @@ export class PostgresPiWorker {
       8_192,
     );
     this.#identity = bounded(options.identity, "identity", 256);
-    this.#maximumConcurrentRuns = positiveInteger(
-      options.maximumConcurrentRuns,
-      "maximumConcurrentRuns",
+    this.#maximumActiveFamilies = positiveInteger(
+      options.maximumActiveFamilies,
+      "maximumActiveFamilies",
     );
-    this.#maximumConcurrentSubagents = positiveInteger(
-      options.maximumConcurrentSubagents,
-      "maximumConcurrentSubagents",
+    this.#maximumLanesPerFamily = positiveInteger(
+      options.maximumLanesPerFamily,
+      "maximumLanesPerFamily",
     );
-    if (this.#maximumConcurrentSubagents >= this.#maximumConcurrentRuns) {
-      throw new TypeError("Subagent capacity must leave at least one conversation slot");
-    }
+    this.#memoryHeadroom = options.memoryHeadroom ?? workerMemoryHeadroom;
+    this.#onCapacity = options.onCapacity ?? (() => {});
     this.#pollIntervalMs = positiveInteger(
       options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
       "pollIntervalMs",
@@ -210,9 +213,9 @@ export class PostgresPiWorker {
     }
     if (this.#state === "stopped") return;
     this.#state = "stopping";
-    this.#controller?.abort();
     this.#queueWake.notify();
     await this.#loop;
+    this.#controller?.abort();
     await Promise.allSettled([...this.#activeRuns.values()].map((entry) => entry.execution));
     await this.#listener?.end().catch(() => undefined);
     this.#state = "stopped";
@@ -220,21 +223,9 @@ export class PostgresPiWorker {
 
   scheduleOwnedSubagent(runId: string): boolean {
     bounded(runId, "Subagent runId", 256);
-    if (this.#state !== "running" || !this.#canClaimRuns()) return false;
-    const active = [...this.#activeRuns.entries()].map(([activeRunId, entry]) => ({
-      runId: entry.runId ?? activeRunId,
-      subagent: entry.subagent,
-    }));
-    if (!canScheduleOwnedSubagent(runId, active, this.#maximumConcurrentSubagents)) return false;
-    const execution = (async () => {
-      if (this.#state !== "running" || !this.#canClaimRuns()) return;
-      if (!(await this.#admitRunClaims())) return;
-      await this.#executeRun(runId);
-    })().finally(() => {
-      this.#activeRuns.delete(runId);
-      this.#queueWake.notify();
-    });
-    this.#activeRuns.set(runId, { execution, subagent: true });
+    if (!["running", "stopping"].includes(this.#state) || !this.#canClaimRuns()) return false;
+    // A hint, not a second bypass around admission. All Lanes use the same probe.
+    this.#queueWake.notify();
     return true;
   }
 
@@ -253,7 +244,10 @@ export class PostgresPiWorker {
   }
 
   async #run(signal: AbortSignal): Promise<void> {
-    while (!signal.aborted) {
+    while (
+      !signal.aborted &&
+      (this.#state !== "stopping" || this.#activeRuns.size > 0 || this.#claiming)
+    ) {
       const observedGeneration = this.#queueWake.generation;
       try {
         await this.#dispatchCancellations();
@@ -265,42 +259,46 @@ export class PostgresPiWorker {
     }
   }
 
-  async #fillCapacity(): Promise<void> {
-    if (!this.#canClaimRuns()) return;
-    const slots = selectPiWorkerProbeKinds(
-      [...this.#activeRuns.entries()].map(([runId, entry]) => ({
-        runId: entry.runId ?? runId,
-        subagent: entry.subagent,
-      })),
-      this.#maximumConcurrentRuns,
-      this.#maximumConcurrentSubagents,
+  #activeReferences(): RunClaimReference[] {
+    return [...this.#activeRuns.values()].flatMap((entry) =>
+      entry.reference ? [entry.reference] : [],
     );
-    if (slots.length === 0 || !(await this.#admitRunClaims())) return;
-    for (const subagent of [false, true]) {
-      if (!slots.includes(subagent) || this.#claimingKinds.has(subagent)) continue;
-      this.#claimingKinds.add(subagent);
-      const slotId = `slot:${globalThis.crypto.randomUUID()}`;
-      let claimed = false;
-      let awaitingClaim = true;
-      const execution = this.#executeNext(subagent, (runId) => {
-        awaitingClaim = false;
-        this.#claimingKinds.delete(subagent);
+  }
+  #observeCapacity(): void {
+    const active = this.#activeReferences();
+    this.#onCapacity({ families: new Set(active.map(familyKey)).size, lanes: active.length });
+  }
+  async #fillCapacity(): Promise<void> {
+    if (this.#claiming || !this.#canClaimRuns()) return;
+    if (!(await this.#admitRunClaims()) || !this.#canClaimRuns()) return;
+    const admission = familyAdmission(
+      this.#activeReferences(),
+      this.#maximumActiveFamilies,
+      this.#maximumLanesPerFamily,
+      this.#state === "running" && this.#memoryHeadroom(),
+    );
+    if (admission.allowedFamilyKeys?.length === 0) return;
+    this.#claiming = true;
+    const slotId = globalThis.crypto.randomUUID();
+    let claimed = false;
+    const execution = this.#runExecutor
+      .dispatchNext(admission, (reference) => {
+        claimed = true;
         const active = this.#activeRuns.get(slotId);
-        if (active) this.#activeRuns.set(slotId, { ...active, runId });
-        // A successful claim fills capacity immediately; an empty probe does
-        // not wake all remaining free slots to repeat the same empty query.
+        if (active) this.#activeRuns.set(slotId, { ...active, reference });
+        this.#claiming = false;
+        this.#observeCapacity();
         this.#queueWake.notify();
       })
-        .then((value) => {
-          claimed = value;
-        })
-        .finally(() => {
-          if (awaitingClaim) this.#claimingKinds.delete(subagent);
-          this.#activeRuns.delete(slotId);
-          if (claimed) this.#queueWake.notify();
-        });
-      this.#activeRuns.set(slotId, { execution, subagent });
-    }
+      .then(() => {})
+      .catch((error) => this.#observeFailure("execute", error))
+      .finally(() => {
+        if (!claimed) this.#claiming = false;
+        this.#activeRuns.delete(slotId);
+        this.#observeCapacity();
+        if (claimed) this.#queueWake.notify();
+      });
+    this.#activeRuns.set(slotId, { execution });
   }
 
   async #dispatchCancellations(): Promise<void> {
@@ -315,27 +313,6 @@ export class PostgresPiWorker {
         }
       }),
     );
-  }
-
-  async #executeRun(runId: string): Promise<void> {
-    try {
-      await this.#runExecutor.dispatchRun(runId);
-    } catch (error: unknown) {
-      this.#observeFailure("execute", error);
-    }
-  }
-
-  async #executeNext(subagent: boolean, onClaimed: (runId: string) => void): Promise<boolean> {
-    try {
-      const result = await this.#runExecutor.dispatchNext(
-        subagent ? "subagent" : "conversation",
-        onClaimed,
-      );
-      return result.status !== "idle";
-    } catch (error: unknown) {
-      this.#observeFailure("execute", error);
-      return false;
-    }
   }
 
   async #cancellationReferences(): Promise<CancellationReference[]> {
@@ -357,7 +334,7 @@ export class PostgresPiWorker {
       .where("cancellation.state", "in", ["pending", "dispatched"])
       .where("attempt.claim_owner_id", "=", this.#identity)
       .where("attempt.state", "in", ["provisioning", "restoring", "running", "settling"])
-      .limit(this.#maximumConcurrentRuns)
+      .limit(this.#maximumActiveFamilies * this.#maximumLanesPerFamily)
       .execute();
   }
 

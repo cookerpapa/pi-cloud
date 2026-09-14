@@ -1,42 +1,31 @@
 import { describe, expect, it } from "vitest";
-import {
-  PostgresQueueWake,
-  canScheduleOwnedSubagent,
-  selectPiWorkerProbeKinds,
-} from "../src/postgres-pi-worker.ts";
+import { PostgresQueueWake, familyAdmission } from "../src/postgres-pi-worker.ts";
 
-describe("PostgreSQL Pi Worker admission", () => {
-  it("reserves the declared Lane capacity for owner-local Subagent children", () => {
-    const parents = [{ runId: "parent-1", subagent: false }];
-    expect(selectPiWorkerProbeKinds([], 4, 3)).toEqual([false, true]);
-    expect(selectPiWorkerProbeKinds([], 128, 16)).toEqual([false, true]);
-    expect(selectPiWorkerProbeKinds(parents, 4, 3)).toEqual([true]);
+describe("Session-family admission", () => {
+  const task = (piSessionId: string, n: number) => ({
+    runId: "task-" + n,
+    tenantId: "tenant",
+    piSessionId,
   });
-
-  it("bounds conversation and Child lanes independently", () => {
-    const active = [1, 2, 3].map((index) => ({
-      runId: `parent-${index}`,
-      subagent: false,
-    }));
-    expect(selectPiWorkerProbeKinds(active, 6, 3)).toEqual([true]);
-    expect(() => selectPiWorkerProbeKinds([], 3, 3)).toThrow(
-      "leave at least one conversation slot",
-    );
+  it("counts many same-family Lanes once", () => {
+    const active = Array.from({ length: 8 }, (_, n) => task("a", n));
+    expect(familyAdmission(active, 2, 33)).toEqual({ blockedFamilyKeys: [] });
+    expect(familyAdmission([...active, task("b", 9)], 2, 33)).toEqual({
+      allowedFamilyKeys: ["tenant:a", "tenant:b"],
+      blockedFamilyKeys: [],
+    });
   });
-
-  it("admits an owned Child only while this Worker has Child capacity", () => {
-    expect(canScheduleOwnedSubagent("child", [{ runId: "parent", subagent: false }], 1)).toBe(true);
-    expect(
-      canScheduleOwnedSubagent(
-        "child",
-        [
-          { runId: "parent", subagent: false },
-          { runId: "other-child", subagent: true },
-        ],
-        1,
-      ),
-    ).toBe(false);
-    expect(canScheduleOwnedSubagent("child", [{ runId: "child", subagent: true }], 1)).toBe(false);
+  it("bounds resident Lanes separately and stops new families at a soft memory watermark", () => {
+    const active = [task("a", 1), task("a", 2)];
+    expect(familyAdmission(active, 4, 2)).toEqual({ blockedFamilyKeys: ["tenant:a"] });
+    expect(familyAdmission(active, 4, 33, false)).toEqual({
+      allowedFamilyKeys: ["tenant:a"],
+      blockedFamilyKeys: [],
+    });
+  });
+  it("releases the family slot only after its final Lane leaves", () => {
+    expect(familyAdmission([task("a", 2)], 1, 33).allowedFamilyKeys).toEqual(["tenant:a"]);
+    expect(familyAdmission([], 1, 33).allowedFamilyKeys).toBeUndefined();
   });
 });
 

@@ -52,14 +52,25 @@ spec:
         name: {{ include "pi-cloud-pi-worker-pool.name" . }}-postgres
       metadata:
         query: >-
-          SELECT (
-            (SELECT COUNT(*) FROM runs
-              WHERE state IN ('queued', 'claimed') AND available_at <= now())
-            +
-            (SELECT COUNT(*) FROM turn_control_requests
-              WHERE kind = 'cancel' AND state IN ('pending', 'dispatched')
-                AND available_at <= now())
-          )::double precision
-        targetQueryValue: {{ .Values.autoscaling.targetQueuedRunsPerReplica | quote }}
+          SELECT COUNT(*)::double precision FROM (
+            SELECT tenant_id, pi_session_id FROM session_leases WHERE valid_until > now()
+            UNION
+            SELECT s.tenant_id, s.pi_session_id FROM runs r
+              JOIN sessions s ON s.id=r.session_id
+              JOIN agent_revisions agent ON agent.id=r.agent_revision_id
+              WHERE r.state='queued' AND r.available_at<=now()
+                AND s.session_kind='conversation' AND agent.runtime_kind='pi_sdk'
+                AND NOT EXISTS (SELECT 1 FROM sessions peer JOIN runs old ON old.session_id=peer.id
+                  JOIN run_attempts a ON a.run_id=old.id
+                  WHERE peer.tenant_id=s.tenant_id AND peer.pi_session_id=s.pi_session_id
+                    AND a.output_seal_id IS NOT NULL AND a.output_sealed_at IS NULL)
+            UNION
+            SELECT s.tenant_id, s.pi_session_id FROM runs r JOIN sessions s ON s.id=r.session_id
+              JOIN run_attempts a ON a.id=r.current_attempt_id
+              JOIN agent_revisions agent ON agent.id=r.agent_revision_id
+              WHERE r.state='claimed' AND a.lease_id IS NULL AND a.claim_expires_at>now()
+                AND agent.runtime_kind='pi_sdk'
+          ) AS families
+        targetQueryValue: {{ .Values.autoscaling.targetSessionsPerReplica | quote }}
         activationTargetQueryValue: "0"
 {{- end }}

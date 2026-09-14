@@ -77,7 +77,7 @@ function clientOptions(
       const heartbeat = options.runtime.createHeartbeat(identity, acceptingAssignments);
       return {
         ...heartbeat,
-        payload: { ...heartbeat.payload, sessions: [] },
+        payload: { ...heartbeat.payload, families: [] },
       };
     },
     applyHeartbeatAcknowledgement(heartbeat, acknowledgement) {

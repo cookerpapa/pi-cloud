@@ -1,19 +1,19 @@
 import type { CandidateFact, AcceptedFact, ExecutionPublication } from "./accepted-fact.ts";
 
 export function prepareExecutionFact(
-  scope: ExecutionPublication["scope"] & { executionLease: string },
+  scope: ExecutionPublication["scope"] & { executionReference: string },
   candidate: CandidateFact,
 ): AcceptedFact {
   if (candidate.kind === "subagent_command") {
     const command = candidate.command;
-    if (command.executionLease !== scope.executionLease)
-      throw new Error("Subagent command does not belong to its ExecutionLease");
-    const { leaseId: _lease, piSessionLane: _lane, executionLease, ...identity } = scope;
+    if (command.executionReference !== scope.executionReference)
+      throw new Error("Subagent command does not belong to its ExecutionReference");
+    const { leaseId: _lease, piSessionLane: _lane, executionReference, ...identity } = scope;
     return {
       kind: "subagent_command",
       factId: command.requestId,
       scope: identity,
-      executionLease,
+      executionReference,
       toolCallId: command.toolCallId,
       workflowId: command.workflowId,
       request: command.request,
@@ -22,8 +22,8 @@ export function prepareExecutionFact(
   }
   if (candidate.kind === "tool_command") {
     const command = candidate.command;
-    if (command.executionLease !== scope.executionLease) {
-      throw new Error("Tool command does not belong to its ExecutionLease");
+    if (command.executionReference !== scope.executionReference) {
+      throw new Error("Tool command does not belong to its ExecutionReference");
     }
     return {
       kind: "tool_command",
@@ -48,11 +48,11 @@ export function prepareExecutionFact(
   if (candidate.kind === "agent_event") {
     const publication = candidate.publication;
     if (
-      publication.payload.executionLease !== scope.executionLease ||
+      publication.payload.executionReference !== scope.executionReference ||
       publication.payload.event.sessionId !== scope.sessionId ||
       publication.payload.event.turnId !== scope.turnId
     ) {
-      throw new Error("Agent event candidate does not belong to its ExecutionLease");
+      throw new Error("Agent event candidate does not belong to its ExecutionReference");
     }
     return {
       kind: "agent_event",
@@ -73,7 +73,7 @@ export function prepareExecutionFact(
   }
   const mutation = candidate.mutation;
   if (
-    mutation.scope.executionLease !== scope.executionLease ||
+    mutation.scope.executionReference !== scope.executionReference ||
     mutation.scope.tenantId !== scope.tenantId ||
     mutation.scope.sessionId !== scope.sessionId ||
     mutation.scope.piSessionId !== scope.piSessionId ||
@@ -82,7 +82,7 @@ export function prepareExecutionFact(
     mutation.scope.runId !== scope.runId ||
     mutation.scope.turnId !== scope.turnId
   ) {
-    throw new Error("Pi Session mutation candidate does not belong to its ExecutionLease");
+    throw new Error("Pi Session mutation candidate does not belong to its ExecutionReference");
   }
   const operationLanes = mutation.items.flatMap((item) =>
     item.kind === "entry"
@@ -104,7 +104,7 @@ export function prepareExecutionFact(
       (event) => event.sessionId !== scope.sessionId || event.turnId !== scope.turnId,
     )
   ) {
-    throw new Error("Pi Session checkpoint event does not belong to its ExecutionLease");
+    throw new Error("Pi Session checkpoint event does not belong to its ExecutionReference");
   }
   return {
     kind: "pi_session_append",

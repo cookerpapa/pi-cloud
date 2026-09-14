@@ -1,6 +1,6 @@
 import {
   parseControlToSupervisorMessage,
-  parseExecutionLease,
+  parseExecutionReference,
   parseSupervisorToControlMessage,
   type CommandAckMessage,
   type CancelTurnCommandMessage,
@@ -33,7 +33,7 @@ export type PreparedTurnExecution = {
   run(): Promise<PiTurnResult>;
   lastAcknowledgedEventSeq(): number;
   releaseBeforeStart(): void;
-  revokeLease(): void;
+  revokeExecution(): void;
 };
 
 export type AgentRunHeartbeatIdentity = {
@@ -76,6 +76,7 @@ export type RevokedSupervisorAssignments = {
 export type AgentRunSupervisorOptions = {
   runner: SupervisorTurnRunner;
   maxConcurrentSessions?: number;
+  maximumLanesPerFamily?: number;
   clock?: () => Date;
   idGenerator?: () => string;
 };
@@ -155,14 +156,22 @@ function sameSteerIdentity(left: SteerTurnCommandMessage, right: SteerTurnComman
 export class AgentRunSupervisor {
   readonly #runner: SupervisorTurnRunner;
   readonly #maxConcurrentSessions: number;
+  readonly #maximumLanesPerFamily: number;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
   readonly #currentBySession = new Map<string, Assignment>();
   readonly #byRun = new Map<string, Assignment>();
   readonly #cancellationsByRequest = new Map<string, Cancellation>();
   readonly #steersByRequest = new Map<string, Steer>();
-  readonly #highestGenerationBySession = new Map<string, number>();
+  readonly #highestEpochByFamily = new Map<
+    string,
+    { epoch: number; leaseId: string; writerId: string }
+  >();
   constructor(options: AgentRunSupervisorOptions) {
+    this.#maximumLanesPerFamily = positiveInteger(
+      options.maximumLanesPerFamily ?? 33,
+      "maximumLanesPerFamily",
+    );
     this.#runner = options.runner;
     this.#maxConcurrentSessions = positiveInteger(
       options.maxConcurrentSessions ?? 1,
@@ -173,7 +182,11 @@ export class AgentRunSupervisor {
   }
 
   get activeSessionCount(): number {
-    return this.#currentBySession.size;
+    return new Set(
+      [...this.#currentBySession.values()].map(
+        (a) => `${a.command.payload.tenantId}:${a.command.payload.piSession.id}`,
+      ),
+    ).size;
   }
 
   async waitUntilAssignmentsSettled(): Promise<void> {
@@ -214,7 +227,7 @@ export class AgentRunSupervisor {
         continue;
       }
       if (assignment.state === "running" || assignment.state === "cancelling") {
-        this.#revokeLease(assignment);
+        this.#revokeExecution(assignment);
         revokedExecutions += 1;
       }
     }
@@ -225,18 +238,26 @@ export class AgentRunSupervisor {
     identity: AgentRunHeartbeatIdentity,
     acceptingAssignments = true,
   ): SupervisorHeartbeatMessage {
-    const sessions = [...this.#currentBySession.values()]
-      .filter((assignment) => assignment.state === "running" || assignment.state === "cancelling")
-      .map((assignment) => {
-        return {
-          sessionId: assignment.command.payload.sessionId,
-          turnId: assignment.command.payload.turnId,
-          state: assignment.state === "cancelling" ? ("cancelling" as const) : ("running" as const),
-          executionLease: assignment.command.payload.executionLease,
-          lastProducedSeq: assignment.lastProducedSeq,
-          lastAcknowledgedSeq: assignment.lastAcknowledgedSeq,
-        };
-      });
+    const families = [
+      ...new Map(
+        [...this.#currentBySession.values()]
+          .filter((a) => a.state === "running" || a.state === "cancelling")
+          .map((a) => {
+            const p = a.command.payload,
+              ref = parseExecutionReference(p.executionReference);
+            return [
+              ref.leaseId,
+              {
+                tenantId: p.tenantId,
+                piSessionId: p.piSession.id,
+                leaseId: ref.leaseId,
+                writerId: p.piSession.writerId,
+                fencingToken: ref.fencingToken,
+              },
+            ] as const;
+          }),
+      ).values(),
+    ];
     const message = parseSupervisorToControlMessage({
       protocolVersion: 1,
       messageId: this.#idGenerator(),
@@ -246,7 +267,7 @@ export class AgentRunSupervisor {
         ...identity,
         acceptingAssignments,
         maxConcurrentSessions: this.#maxConcurrentSessions,
-        sessions,
+        families,
       },
     });
     if (message.type !== "supervisor.heartbeat") {
@@ -272,34 +293,31 @@ export class AgentRunSupervisor {
     }
     this.#assertHeartbeatRenewalScope(heartbeat, acknowledgement);
 
-    const renewalBySession = new Map(
-      acknowledgement.payload.executionLeaseRenewals.map((renewal) => [renewal.sessionId, renewal]),
+    const renewals = new Map(
+      acknowledgement.payload.familyLeaseRenewals.map((r) => [r.leaseId, r]),
     );
-    let renewedAssignments = 0;
-    let revokedAssignments = 0;
+    const observed = new Map(heartbeat.payload.families.map((f) => [f.leaseId, f]));
+    let renewedAssignments = 0,
+      revokedAssignments = 0;
     const revokedSessionIds: string[] = [];
     const now = validDate(this.#clock).valueOf();
-    for (const observation of heartbeat.payload.sessions) {
-      const assignment = this.#currentBySession.get(observation.sessionId);
+    for (const assignment of this.#currentBySession.values()) {
+      const ref = parseExecutionReference(assignment.command.payload.executionReference);
+      const sent = observed.get(ref.leaseId);
+      if (!sent || sent.fencingToken !== ref.fencingToken) continue;
+      const renewal = renewals.get(ref.leaseId);
       if (
-        assignment === undefined ||
-        assignment.command.payload.executionLease !== observation.executionLease
-      ) {
-        continue;
-      }
-      const renewal = renewalBySession.get(observation.sessionId);
-      if (
-        renewal !== undefined &&
-        renewal.executionLease === observation.executionLease &&
-        new Date(renewal.validUntil).valueOf() > now
+        renewal &&
+        renewal.fencingToken === ref.fencingToken &&
+        Date.parse(renewal.validUntil) > now
       ) {
         assignment.leaseValidUntil = renewal.validUntil;
-        renewedAssignments += 1;
+        renewedAssignments++;
         continue;
       }
-      this.#revokeLease(assignment);
-      revokedAssignments += 1;
-      revokedSessionIds.push(observation.sessionId);
+      this.#revokeExecution(assignment);
+      revokedAssignments++;
+      revokedSessionIds.push(assignment.command.payload.sessionId);
     }
     return { renewedAssignments, revokedAssignments, revokedSessionIds };
   }
@@ -328,10 +346,19 @@ export class AgentRunSupervisor {
       return this.#rejected(command, "unsupported", "Only prompt input is supported", false);
     }
 
-    const generation = parseExecutionLease(command.payload.executionLease).fencingToken;
-    const highestGeneration = this.#highestGenerationBySession.get(command.payload.sessionId) ?? 0;
+    const reference = parseExecutionReference(command.payload.executionReference);
+    const generation = reference.fencingToken;
+    const familyKey = `${command.payload.tenantId}:${command.payload.piSession.id}`;
+    const previousOwner = this.#highestEpochByFamily.get(familyKey);
+    const highestGeneration = previousOwner?.epoch ?? 0;
     const current = this.#currentBySession.get(command.payload.sessionId);
-    if (generation <= highestGeneration && highestGeneration > 0) {
+    if (
+      generation < highestGeneration ||
+      (generation === highestGeneration &&
+        previousOwner &&
+        (previousOwner.leaseId !== reference.leaseId ||
+          previousOwner.writerId !== command.payload.piSession.writerId))
+    ) {
       return this.#rejected(
         command,
         "stale_session_lease",
@@ -339,10 +366,39 @@ export class AgentRunSupervisor {
         false,
       );
     }
-    if (current === undefined && this.#currentBySession.size >= this.#maxConcurrentSessions) {
-      return this.#rejected(command, "capacity", "Supervisor capacity is full", true);
-    }
+    const key = (payload: ExecuteTurnCommandMessage["payload"]) =>
+      `${payload.tenantId}:${payload.piSession.id}`;
+    const family = key(command.payload);
+    const families = [...this.#currentBySession.values()].map((a) => key(a.command.payload));
+    if (
+      current === undefined &&
+      !families.includes(family) &&
+      new Set(families).size >= this.#maxConcurrentSessions
+    )
+      return this.#rejected(command, "capacity", "Supervisor Session capacity is full", true);
+    if (
+      current === undefined &&
+      families.filter((k) => k === family).length >= this.#maximumLanesPerFamily
+    )
+      return this.#rejected(command, "capacity", "Supervisor family Lane capacity is full", true);
 
+    if (
+      current &&
+      generation === highestGeneration &&
+      ["prepared", "running", "cancelling"].includes(current.state)
+    )
+      return this.#rejected(command, "capacity", "Lane already has an active task", true);
+    if (generation > highestGeneration)
+      for (const prior of this.#currentBySession.values()) {
+        if (
+          key(prior.command.payload) === family &&
+          parseExecutionReference(prior.command.payload.executionReference).fencingToken <
+            generation
+        ) {
+          this.#revokeExecution(prior);
+          prior.state = "superseded";
+        }
+      }
     if (current !== undefined) current.state = "superseded";
     const assignment: Assignment = {
       command,
@@ -352,7 +408,11 @@ export class AgentRunSupervisor {
       lastProducedSeq: command.payload.nextEventSeq - 1,
       lastAcknowledgedSeq: command.payload.nextEventSeq - 1,
     };
-    this.#highestGenerationBySession.set(command.payload.sessionId, generation);
+    this.#highestEpochByFamily.set(familyKey, {
+      epoch: generation,
+      leaseId: reference.leaseId,
+      writerId: command.payload.piSession.writerId,
+    });
     this.#currentBySession.set(command.payload.sessionId, assignment);
     this.#byRun.set(command.payload.runId, assignment);
     return this.#prepared(assignment, "accepted");
@@ -404,7 +464,7 @@ export class AgentRunSupervisor {
       command.payload.sessionId !== target.sessionId ||
       command.payload.turnId !== target.turnId ||
       command.payload.agentId !== target.agentId ||
-      command.payload.executionLease !== target.executionLease
+      command.payload.executionReference !== target.executionReference
     ) {
       return this.#rejectedCancellation(
         command,
@@ -466,7 +526,7 @@ export class AgentRunSupervisor {
       command.payload.runId !== target.runId ||
       command.payload.turnId !== target.turnId ||
       command.payload.agentId !== target.agentId ||
-      command.payload.executionLease !== target.executionLease
+      command.payload.executionReference !== target.executionReference
     ) {
       return this.#rejectedSteer(
         command,
@@ -487,7 +547,7 @@ export class AgentRunSupervisor {
       run: () => this.#run(assignment),
       lastAcknowledgedEventSeq: () => assignment.lastAcknowledgedSeq,
       releaseBeforeStart: () => this.#releaseBeforeStart(assignment),
-      revokeLease: () => this.#revokeLease(assignment),
+      revokeExecution: () => this.#revokeExecution(assignment),
     };
   }
 
@@ -502,7 +562,7 @@ export class AgentRunSupervisor {
       run: () => Promise.reject(new AgentRunSupervisorError(code, "Rejected command cannot run")),
       lastAcknowledgedEventSeq: () => command.payload.nextEventSeq - 1,
       releaseBeforeStart: () => undefined,
-      revokeLease: () => undefined,
+      revokeExecution: () => undefined,
     };
   }
 
@@ -580,7 +640,7 @@ export class AgentRunSupervisor {
             : command.payload.controlRequestId,
         sessionId: command.payload.sessionId,
         turnId: command.payload.turnId,
-        executionLease: command.payload.executionLease,
+        executionReference: command.payload.executionReference,
         ...result,
       },
     });
@@ -648,7 +708,7 @@ export class AgentRunSupervisor {
             );
           }
           if (
-            message.payload.executionLease !== assignment.command.payload.executionLease ||
+            message.payload.executionReference !== assignment.command.payload.executionReference ||
             message.payload.event.seq <= assignment.lastProducedSeq
           ) {
             throw new AgentRunSupervisorError(
@@ -669,7 +729,7 @@ export class AgentRunSupervisor {
           }
           if (
             acknowledgement.payload.sessionId !== message.payload.event.sessionId ||
-            acknowledgement.payload.executionLease !== message.payload.executionLease ||
+            acknowledgement.payload.executionReference !== message.payload.executionReference ||
             acknowledgement.payload.acknowledgedThroughSeq !== message.payload.event.seq
           ) {
             throw new AgentRunSupervisorError(
@@ -688,12 +748,10 @@ export class AgentRunSupervisor {
     heartbeat: SupervisorHeartbeatMessage,
     acknowledgement: SupervisorHeartbeatAckMessage,
   ): void {
-    const observed = new Map(
-      heartbeat.payload.sessions.map((session) => [session.sessionId, session]),
-    );
-    for (const renewal of acknowledgement.payload.executionLeaseRenewals) {
-      const observation = observed.get(renewal.sessionId);
-      if (observation === undefined || observation.executionLease !== renewal.executionLease) {
+    const observed = new Map(heartbeat.payload.families.map((family) => [family.leaseId, family]));
+    for (const renewal of acknowledgement.payload.familyLeaseRenewals) {
+      const observation = observed.get(renewal.leaseId);
+      if (observation === undefined || observation.fencingToken !== renewal.fencingToken) {
         throw new AgentRunSupervisorError(
           "invalid_heartbeat_ack",
           "Heartbeat acknowledgement renewed an unobserved assignment",
@@ -702,7 +760,7 @@ export class AgentRunSupervisor {
     }
   }
 
-  #revokeLease(assignment: Assignment): void {
+  #revokeExecution(assignment: Assignment): void {
     if (
       (assignment.state !== "running" && assignment.state !== "cancelling") ||
       assignment.abortController.signal.aborted

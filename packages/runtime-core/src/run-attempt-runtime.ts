@@ -1,6 +1,6 @@
 import type { Database } from "@pi-cloud/database";
 import type { ExecuteTurnCommandMessage } from "@pi-cloud/protocol";
-import { parseExecutionLease } from "@pi-cloud/protocol";
+import { parseExecutionReference } from "@pi-cloud/protocol";
 import type {
   RunAttemptExecutionPhase,
   RunAttemptPhaseObserver,
@@ -39,7 +39,7 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
     phase: RunAttemptExecutionPhase,
   ): Promise<void> {
     const now = validDate(this.#clock);
-    const execution = parseExecutionLease(command.payload.executionLease);
+    const execution = parseExecutionReference(command.payload.executionReference);
     await this.#database.transaction().execute(async (transaction) => {
       await transitionCurrentRunAttempt(
         transaction,
@@ -47,7 +47,7 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
           tenantId: command.payload.tenantId,
           runId: command.payload.runId,
           attemptId: execution.attemptId,
-          executionLease: command.payload.executionLease,
+          executionReference: command.payload.executionReference,
         },
         {
           runState: phase,
@@ -63,7 +63,7 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
 
   async settlementCommitted(command: ExecuteTurnCommandMessage, revision: string): Promise<void> {
     const now = validDate(this.#clock);
-    const execution = parseExecutionLease(command.payload.executionLease);
+    const execution = parseExecutionReference(command.payload.executionReference);
     await this.#database.transaction().execute(async (transaction) => {
       await transitionCurrentRunAttempt(
         transaction,
@@ -71,7 +71,7 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
           tenantId: command.payload.tenantId,
           runId: command.payload.runId,
           attemptId: execution.attemptId,
-          executionLease: command.payload.executionLease,
+          executionReference: command.payload.executionReference,
         },
         {
           runState: "settling",

@@ -1,5 +1,5 @@
 import {
-  createExecutionLease,
+  createExecutionReference,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
@@ -53,7 +53,7 @@ function command(
       runId: "10000000-0000-4000-8000-000000000006",
       turnId: "10000000-0000-4000-8000-000000000007",
       agentId: "root",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "10000000-0000-4000-8000-000000000008",
         "10000000-0000-4000-8000-000000000009",
         1,

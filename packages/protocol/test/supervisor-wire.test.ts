@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PiCloudWireProtocolError,
-  createExecutionLease,
+  createExecutionReference,
   createPiCloudEventFactory,
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
   DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
@@ -28,7 +28,7 @@ const IDS = {
 };
 
 const SENT_AT = "2026-07-18T08:00:00.000Z";
-const EXECUTION_LEASE = createExecutionLease(IDS.lease, IDS.attempt, 7);
+const EXECUTION_LEASE = createExecutionReference(IDS.lease, IDS.attempt, 7);
 
 function envelope(messageId = IDS.message) {
   return {
@@ -48,7 +48,7 @@ function executionIdentity() {
     runId: IDS.run,
     turnId: "turn-1",
     agentId: "root",
-    executionLease: EXECUTION_LEASE,
+    executionReference: EXECUTION_LEASE,
   } as const;
 }
 
@@ -82,7 +82,7 @@ function commandResultIdentity() {
     requestId: IDS.command,
     sessionId: "session-1",
     turnId: "turn-1",
-    executionLease: EXECUTION_LEASE,
+    executionReference: EXECUTION_LEASE,
     commitMessageId: IDS.commit,
   } as const;
 }
@@ -118,14 +118,13 @@ function heartbeat() {
       connectionId: IDS.connection,
       acceptingAssignments: true,
       maxConcurrentSessions: 4,
-      sessions: [
+      families: [
         {
-          sessionId: "session-1",
-          turnId: "turn-1",
-          state: "running",
-          executionLease: EXECUTION_LEASE,
-          lastProducedSeq: 12,
-          lastAcknowledgedSeq: 10,
+          tenantId: "tenant-1",
+          piSessionId: "session-1",
+          leaseId: IDS.lease,
+          writerId: IDS.attempt,
+          fencingToken: 7,
         },
       ],
     },
@@ -268,7 +267,7 @@ describe("supervisor/control-plane wire protocol", () => {
       ...envelope(),
       type: "event.publish",
       payload: {
-        executionLease: EXECUTION_LEASE,
+        executionReference: EXECUTION_LEASE,
         event,
       },
     } as const;
@@ -299,7 +298,7 @@ describe("supervisor/control-plane wire protocol", () => {
       type: "event.rejected",
       payload: {
         sessionId: "session-1",
-        executionLease: EXECUTION_LEASE,
+        executionReference: EXECUTION_LEASE,
         rejectedSeq: 11,
         code: "stale_session_lease",
         retryable: false,
@@ -324,7 +323,7 @@ describe("supervisor/control-plane wire protocol", () => {
         requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionLease: EXECUTION_LEASE,
+        executionReference: EXECUTION_LEASE,
         status: "accepted",
       },
     } as const;
@@ -341,7 +340,7 @@ describe("supervisor/control-plane wire protocol", () => {
         requestId: IDS.command,
         sessionId: "session-1",
         turnId: "turn-1",
-        executionLease: EXECUTION_LEASE,
+        executionReference: EXECUTION_LEASE,
         acknowledgedMessageId: IDS.message,
       },
     } as const;
@@ -398,7 +397,7 @@ describe("supervisor/control-plane wire protocol", () => {
     ).toThrow(PiCloudWireProtocolError);
   });
 
-  it("checks heartbeat capacity, uniqueness, and sequence observations", () => {
+  it("checks family heartbeat capacity and uniqueness, without task-progress observations", () => {
     const message = heartbeat();
     expect(parseSupervisorToControlMessage(message)).toEqual(message);
 
@@ -407,10 +406,7 @@ describe("supervisor/control-plane wire protocol", () => {
         ...message,
         payload: {
           ...message.payload,
-          sessions: [
-            ...message.payload.sessions,
-            { ...message.payload.sessions[0], turnId: "turn-2" },
-          ],
+          families: [...message.payload.families, { ...message.payload.families[0] }],
         },
       }),
     ).toThrow("duplicate sessionId");
@@ -420,10 +416,10 @@ describe("supervisor/control-plane wire protocol", () => {
         ...message,
         payload: {
           ...message.payload,
-          sessions: [{ ...message.payload.sessions[0], lastAcknowledgedSeq: 13 }],
+          families: [{ ...message.payload.families[0], lastAcknowledgedSeq: 13 }],
         },
       }),
-    ).toThrow("acknowledges beyond its produced sequence");
+    ).toThrow(PiCloudWireProtocolError);
 
     expect(() =>
       parseSupervisorToControlMessage({
@@ -453,10 +449,10 @@ describe("supervisor/control-plane wire protocol", () => {
       payload: {
         acknowledgedMessageId: IDS.message,
         connectionId: IDS.connection,
-        executionLeaseRenewals: [
+        familyLeaseRenewals: [
           {
-            sessionId: "session-1",
-            executionLease: EXECUTION_LEASE,
+            leaseId: IDS.lease,
+            fencingToken: 7,
             validUntil: "2026-07-18T08:01:00.000Z",
           },
         ],
@@ -476,9 +472,9 @@ describe("supervisor/control-plane wire protocol", () => {
         ...heartbeatAck,
         payload: {
           ...heartbeatAck.payload,
-          executionLeaseRenewals: [
-            heartbeatAck.payload.executionLeaseRenewals[0],
-            heartbeatAck.payload.executionLeaseRenewals[0],
+          familyLeaseRenewals: [
+            heartbeatAck.payload.familyLeaseRenewals[0],
+            heartbeatAck.payload.familyLeaseRenewals[0],
           ],
         },
       }),
@@ -491,7 +487,7 @@ describe("supervisor/control-plane wire protocol", () => {
       type: "event.ack",
       payload: {
         sessionId: "session-1",
-        executionLease: EXECUTION_LEASE,
+        executionReference: EXECUTION_LEASE,
         acknowledgedThroughSeq: 12,
       },
     } as const;

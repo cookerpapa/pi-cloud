@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { WebSocket } from "ws";
 import {
-  createExecutionLease,
+  createExecutionReference,
   TOOL_WORKFLOW_PATH,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
@@ -10,7 +10,7 @@ import { ToolBrokerServer, type ToolBrokerBackend } from "../src/tool-broker-ser
 it("upgrades the real workflow endpoint and transports a large correlated reply", async () => {
   const activationId = crypto.randomUUID(),
     operationId = crypto.randomUUID();
-  const lease = createExecutionLease(crypto.randomUUID(), crypto.randomUUID(), 1);
+  const lease = createExecutionReference(crypto.randomUUID(), crypto.randomUUID(), 1);
   const payload = "x".repeat(256 * 1024);
   let resolveResult!: (result: ToolSandboxOperationResponse) => void;
   const result = new Promise<ToolSandboxOperationResponse>((resolve) => {

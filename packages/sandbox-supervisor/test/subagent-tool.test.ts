@@ -82,7 +82,7 @@ describe("Subagent control result correlation", () => {
     const client = new SubagentControlClient(() => ({
       publishSubagentCommand: async (c) => {
         command = c;
-        client.receive(c.executionLease, {
+        client.receive(c.executionReference, {
           requestId: c.requestId,
           ok: true,
           result: { state: "completed" },
@@ -95,7 +95,7 @@ describe("Subagent control result correlation", () => {
     let finished = false;
     const result = client
       .request({
-        executionLease: "lease",
+        executionReference: "lease",
         toolCallId: "tool",
         workflowId: "workflow",
         request: { action: "status", target: "child" },
@@ -119,7 +119,7 @@ describe("Subagent control result correlation", () => {
       },
     }));
     const result = client.request({
-      executionLease: "lease",
+      executionReference: "lease",
       toolCallId: "tool",
       workflowId: "workflow",
       request: { action: "wait", target: "child" },
@@ -136,7 +136,7 @@ describe("Subagent control result correlation", () => {
     const client = new SubagentControlClient(() => ({ publishSubagentCommand: async () => {} }));
     const controller = new AbortController();
     const result = client.request({
-      executionLease: "lease",
+      executionReference: "lease",
       toolCallId: "tool",
       workflowId: "workflow",
       request: { action: "wait", target: "child" },
@@ -147,7 +147,7 @@ describe("Subagent control result correlation", () => {
     client.close();
     await expect(
       client.request({
-        executionLease: "lease",
+        executionReference: "lease",
         toolCallId: "tool",
         workflowId: "workflow",
         request: { action: "wait", target: "child" },

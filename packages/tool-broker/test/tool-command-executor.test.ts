@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  createExecutionLease,
+  createExecutionReference,
   type AcceptedToolCommand,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
@@ -46,7 +46,7 @@ function command(): AcceptedToolCommand {
   };
 }
 const lease = (c: AcceptedToolCommand) =>
-  createExecutionLease(c.scope.leaseId, c.scope.attemptId, c.scope.fencingToken);
+  createExecutionReference(c.scope.leaseId, c.scope.attemptId, c.scope.fencingToken);
 const record = <T extends { kind: string; scope: { attemptId: string } }>(
   fact: T,
   offset = 0n,

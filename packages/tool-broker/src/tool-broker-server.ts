@@ -876,10 +876,10 @@ export class ToolBrokerServer {
     });
 
     this.#server.get(TOOL_BROKER_OPERATION_RESULT_PATH, async (request, reply) => {
-      const executionLease = bearer(request.headers.authorization);
+      const executionReference = bearer(request.headers.authorization);
       if (
-        executionLease === undefined ||
-        !/^pcel1_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionLease)
+        executionReference === undefined ||
+        !/^pcer1_[0-9a-f]{32}_[0-9a-f]{32}_[1-9][0-9]{0,15}$/.test(executionReference)
       ) {
         await reply.code(401).send({
           error: {
@@ -914,9 +914,10 @@ export class ToolBrokerServer {
           spanName: "tool.result",
           operation: "tool_result_read",
           kind: "sandbox",
-          // Tool execution is owned by operationId and the Run lease, not by
+          // Tool execution is owned by operationId and the task's Session authority, not by
           // this particular HTTP connection. Explicit stop/cancel revokes it.
-          run: () => this.#commands.waitResult(executionLease, activationId, operationId, signal),
+          run: () =>
+            this.#commands.waitResult(executionReference, activationId, operationId, signal),
         });
         this.#metrics?.sandboxActive.set(
           { provider: this.#broker.providerId },

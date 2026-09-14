@@ -29,7 +29,8 @@ export type SupervisorHostConfig = {
   databaseMaxConnections: number;
   subagentMaximumDepth: number;
   subagentMaximumNodes: number;
-  subagentMaximumConcurrent: number;
+  modelConcurrency: number;
+  familyModelConcurrency: number;
   toolBrokerBaseUrls: readonly string[];
   toolBrokerRequestTimeoutMs: number;
   trustedWorkspaceDirectory: string;
@@ -305,26 +306,33 @@ export async function loadSupervisorHostConfig(
     1,
     10_000,
   );
-  const subagentMaximumConcurrent = integerValue(
+  if (environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT !== undefined)
+    throw new TypeError(
+      "PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT was removed; configure Worker/Session model concurrency instead",
+    );
+  const modelConcurrency = integerValue(
     environment,
-    "PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT",
-    3,
+    "PI_CLOUD_WORKER_MODEL_CONCURRENCY",
+    4,
     1,
-    1_000,
+    1000,
   );
-  if (subagentMaximumConcurrent > subagentMaximumNodes) {
-    throw new TypeError("Subagent concurrency cannot exceed the Subagent node budget");
-  }
+  const familyModelConcurrency = integerValue(
+    environment,
+    "PI_CLOUD_SESSION_MODEL_CONCURRENCY",
+    Math.min(4, modelConcurrency),
+    1,
+    modelConcurrency,
+  );
   const databaseUrl = await secret(environment, "DATABASE_URL", allowInlineSecrets);
   const databaseNotificationUrl =
     (await optionalSecret(environment, "DATABASE_NOTIFICATION_URL", allowInlineSecrets)) ??
     databaseUrl;
   const maxConcurrentSessions = integerValue(environment, "PI_CLOUD_SUPERVISOR_CAPACITY", 4, 1, 16);
-  if (subagentMaximumConcurrent >= maxConcurrentSessions) {
+  if (maxConcurrentSessions * (subagentMaximumNodes + 1) > 1000)
     throw new TypeError(
-      "Pi Worker capacity must leave at least one conversation slot after reserving Subagent lanes",
+      "Session capacity times (Subagent node budget + 1) cannot exceed the Worker task inventory limit of 1000",
     );
-  }
   const databaseMaxConnections = integerValue(
     environment,
     "PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS",
@@ -406,7 +414,8 @@ export async function loadSupervisorHostConfig(
     databaseMaxConnections,
     subagentMaximumDepth: integerValue(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH", 4, 1, 64),
     subagentMaximumNodes,
-    subagentMaximumConcurrent,
+    modelConcurrency,
+    familyModelConcurrency,
     toolBrokerBaseUrls: internalServiceBaseUrls(
       required(environment, "PI_CLOUD_TOOL_BROKER_URLS"),
       allowInsecureInternalHttp,

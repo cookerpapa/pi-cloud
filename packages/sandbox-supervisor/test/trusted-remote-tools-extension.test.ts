@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { validateToolArguments } from "@earendil-works/pi-ai";
-import { createExecutionLease, type CandidateToolCommand } from "@pi-cloud/protocol";
+import { createExecutionReference, type CandidateToolCommand } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -15,7 +15,7 @@ import {
 const ACTIVE_TOOLS = ["read", "write", "edit", "bash"] as const;
 const TURN_CONTEXT_SHA256 = "b".repeat(64);
 const ATTEMPT_CONTEXT_SHA256 = "e".repeat(64);
-const EXECUTION_LEASE = createExecutionLease(
+const EXECUTION_LEASE = createExecutionReference(
   "10000000-0000-4000-8000-000000000010",
   "10000000-0000-4000-8000-000000000011",
   1,
@@ -71,7 +71,7 @@ const BASE_CONFIGURATION = {
   },
   operationResultUrl: "http://127.0.0.1:4999/v1/tool-operations",
   activationId: "10000000-0000-4000-8000-000000000001",
-  executionLease: EXECUTION_LEASE,
+  executionReference: EXECUTION_LEASE,
   turnContextSha256: TURN_CONTEXT_SHA256,
   attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
   captureStepContext: createStepCapture(),
@@ -254,7 +254,7 @@ describe("trusted remote tools extension governance", () => {
       publishToolCommand: BASE_CONFIGURATION.publishToolCommand,
       operationResultUrl: "http://127.0.0.1:4999/v1/tool-operations",
       activationId: "10000000-0000-4000-8000-000000000099",
-      executionLease: EXECUTION_LEASE,
+      executionReference: EXECUTION_LEASE,
       turnContextSha256: TURN_CONTEXT_SHA256,
       attemptContextSha256: ATTEMPT_CONTEXT_SHA256,
       captureStepContext: createStepCapture(),

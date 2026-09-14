@@ -37,6 +37,10 @@ export class PiCloudMetrics {
   readonly runClaimDuration: Histogram<"outcome">;
   readonly tenantAdmissionLockWait: Histogram;
   readonly activeRuns: Gauge;
+  readonly activeSessionFamilies: Gauge;
+  readonly modelPermitsActive: Gauge;
+  readonly modelPermitsWaiting: Gauge;
+  readonly modelPermitWait: Histogram;
   readonly queuedRuns: Gauge;
   readonly terminalEventOutboxPending: Gauge;
   readonly workspaceStoragePurgePending: Gauge;
@@ -261,6 +265,27 @@ export class PiCloudMetrics {
     this.activeRuns = new Gauge({
       name: "pi_cloud_active_runs",
       help: "Active Runs in this process",
+      registers: [this.registry],
+    });
+    this.activeSessionFamilies = new Gauge({
+      name: "pi_cloud_active_session_families",
+      help: "Active physical Pi Sessions on this Worker",
+      registers: [this.registry],
+    });
+    this.modelPermitsActive = new Gauge({
+      name: "pi_cloud_model_permits_active",
+      help: "Current provider requests, excluding tool and child waits",
+      registers: [this.registry],
+    });
+    this.modelPermitsWaiting = new Gauge({
+      name: "pi_cloud_model_permits_waiting",
+      help: "Requests waiting for fair local admission",
+      registers: [this.registry],
+    });
+    this.modelPermitWait = new Histogram({
+      name: "pi_cloud_model_permit_wait_seconds",
+      help: "Local model admission wait, separate from provider latency",
+      buckets: DURATION_BUCKETS,
       registers: [this.registry],
     });
     this.queuedRuns = new Gauge({

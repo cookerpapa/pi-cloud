@@ -177,8 +177,10 @@ spec:
               value: {{ .Values.runtime.subagents.maximumDepth | quote }}
             - name: PI_CLOUD_SUBAGENT_MAXIMUM_NODES
               value: {{ .Values.runtime.subagents.maximumNodes | quote }}
-            - name: PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT
-              value: {{ .Values.runtime.subagents.maximumConcurrent | quote }}
+            - name: PI_CLOUD_WORKER_MODEL_CONCURRENCY
+              value: {{ .Values.runtime.modelConcurrency | quote }}
+            - name: PI_CLOUD_SESSION_MODEL_CONCURRENCY
+              value: {{ .Values.runtime.sessionModelConcurrency | quote }}
             - name: PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY
               value: /workspace
             - name: PI_CLOUD_BOOT_STATE_DIRECTORY

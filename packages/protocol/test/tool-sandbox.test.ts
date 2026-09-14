@@ -5,7 +5,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
-  createExecutionLease,
+  createExecutionReference,
   parseToolBrokerRequest,
   parseToolBrokerResponse,
   parseToolSandboxOperationRequest,
@@ -35,7 +35,7 @@ const assignment = {
   runId: "run-tool-protocol",
   sessionId: "session-tool-protocol",
   turnId: "turn-tool-protocol",
-  executionLease: createExecutionLease(
+  executionReference: createExecutionReference(
     "10000000-0000-4000-8000-000000000003",
     "10000000-0000-4000-8000-000000000003",
     9,
@@ -69,7 +69,7 @@ describe("Tool Sandbox protocol", () => {
       requestId: "10000000-0000-4000-8000-000000000004",
       activationId: "10000000-0000-4000-8000-000000000005",
       ownerBaseUrl: "http://tool-broker-0:4300",
-      executionLease: assignment.executionLease,
+      executionReference: assignment.executionReference,
       workspaceRoot: "/workspace",
       continuity: "cold_restore",
       continuityId: "10000000-0000-4000-8000-000000000005",
@@ -85,7 +85,7 @@ describe("Tool Sandbox protocol", () => {
         requestId: response.requestId,
         activationId: response.activationId,
         ownerBaseUrl: response.ownerBaseUrl,
-        executionLease: response.executionLease,
+        executionReference: response.executionReference,
         workspaceRoot: "/workspace",
       }),
     ).toThrow(ToolSandboxProtocolError);

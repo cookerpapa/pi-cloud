@@ -34,6 +34,7 @@ import {
   type ReconnectingSupervisorWebSocketClientStop,
 } from "@pi-cloud/sandbox-supervisor";
 import { PostgresTrustedToolRuntime } from "@pi-cloud/trusted-tool-runtime";
+import { FamilyModelPermits } from "./family-model-permits.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql, type Kysely } from "kysely";
 import { SupervisorBootLedger, type SupervisorHostBootIdentity } from "./boot-ledger.ts";
@@ -182,6 +183,7 @@ export class PiWorkerRuntime {
   #client: ReconnectingSupervisorWebSocketClient | undefined;
   #managementServer: SupervisorManagementServer | undefined;
   #modelGateway: TenantModelGateway | undefined;
+  #modelPermits: FamilyModelPermits | undefined;
   #runWorker: SupervisorRunWorker | undefined;
   #runClaimReadiness: RunClaimReadinessMonitor | undefined;
   #closing: Promise<void> | undefined;
@@ -196,15 +198,6 @@ export class PiWorkerRuntime {
       options.config.maxConcurrentSessions > 16
     ) {
       throw new TypeError("Pi SDK Worker runtime capacity must be between 1 and 16");
-    }
-    if (
-      !Number.isSafeInteger(options.config.subagentMaximumConcurrent) ||
-      options.config.subagentMaximumConcurrent < 1 ||
-      options.config.subagentMaximumConcurrent >= options.config.maxConcurrentSessions
-    ) {
-      throw new TypeError(
-        "Pi SDK Worker Subagent capacity must leave at least one conversation slot",
-      );
     }
     if (
       !Number.isSafeInteger(options.config.databaseMaxConnections) ||
@@ -324,7 +317,7 @@ export class PiWorkerRuntime {
         if (!this.#nativeSessions || !this.#subagentControl)
           throw new Error("Subagent runtime is not ready");
         if (command.action === "input") {
-          if (!this.#nativeSessions.hasLease(command.executionLease) || !this.#agentRunner)
+          if (!this.#nativeSessions.hasExecution(command.executionReference) || !this.#agentRunner)
             throw Object.assign(new Error("Target Agent execution is not ready on this Worker"), {
               retryable: true,
             });
@@ -333,18 +326,18 @@ export class PiWorkerRuntime {
             command.requestId,
             command.message,
             command.delivery,
-            command.executionLease,
+            command.executionReference,
           );
         } else if (command.action === "fork_workspace") {
           return this.#toolBroker.forkWorkspace(command.request);
         } else if (command.action === "prepare_lane") {
           await this.#nativeSessions.createChildLane({
-            executionLease: command.executionLease,
+            executionReference: command.executionReference,
             lane: command.lane,
             at: command.anchor,
           });
         } else if (command.action === "result") {
-          this.#subagentControl.receive(command.executionLease, command.response);
+          this.#subagentControl.receive(command.executionReference, command.response);
         } else {
           this.#runWorker?.scheduleOwnedSubagent?.(command.runId);
         }
@@ -495,12 +488,26 @@ export class PiWorkerRuntime {
         treePolicy: {
           maximumDepth: this.#config.subagentMaximumDepth,
           maximumNodes: this.#config.subagentMaximumNodes,
-          maximumConcurrentSubagents: this.#config.subagentMaximumConcurrent,
         },
       });
+      const modelPermits = new FamilyModelPermits({
+        maximum: this.#config.modelConcurrency,
+        perFamily: this.#config.familyModelConcurrency,
+        onWait: (ms) => this.#metrics?.modelPermitWait.observe(ms / 1000),
+        onChange: (sample) => {
+          this.#metrics?.modelPermitsActive.set(sample.active);
+          this.#metrics?.modelPermitsWaiting.set(sample.waiting);
+        },
+      });
+      this.#modelPermits = modelPermits;
       const runner = new RemoteToolSandboxTurnRunner({
+        acquireModelPermit: (command, signal) =>
+          modelPermits.acquire(
+            `${command.payload.tenantId}:${command.payload.piSession.id}`,
+            signal,
+          ),
         publishToolCommand: (command) => {
-          const channel = executionLogResolver(executionLogs).resolve(command.executionLease);
+          const channel = executionLogResolver(executionLogs).resolve(command.executionReference);
           if (!channel) throw new Error("Tool command Fact Stream is unavailable");
           return channel.publishToolCommand(command);
         },
@@ -518,7 +525,7 @@ export class PiWorkerRuntime {
               turnId: command.payload.turnId,
               runId: command.payload.runId,
             },
-            executionLease: command.payload.executionLease,
+            executionReference: command.payload.executionReference,
             writerId: command.payload.piSession.writerId,
             publisher: sessionMutationProducer.scoped({
               tenantId: command.payload.tenantId,
@@ -528,7 +535,7 @@ export class PiWorkerRuntime {
               writerId: command.payload.piSession.writerId,
               turnId: command.payload.turnId,
               runId: command.payload.runId,
-              executionLease: command.payload.executionLease,
+              executionReference: command.payload.executionReference,
             }),
           }),
         createTrustedTools: (command, context) => trustedTools.create({ command, ...context }),
@@ -546,6 +553,7 @@ export class PiWorkerRuntime {
       const runSupervisor = new AgentRunSupervisor({
         runner,
         maxConcurrentSessions: this.#config.maxConcurrentSessions,
+        maximumLanesPerFamily: this.#config.subagentMaximumNodes + 1,
       });
       this.#runSupervisor = runSupervisor;
       client = new ReconnectingSupervisorWebSocketClient({
@@ -586,9 +594,11 @@ export class PiWorkerRuntime {
         database: this.#database,
         notificationConnectionString: this.#config.databaseNotificationUrl,
         identity: runWorkerIdentity,
-        maximumConcurrentRuns: this.#config.maxConcurrentSessions,
-        maximumConcurrentSubagents: this.#config.subagentMaximumConcurrent,
-        canClaimRuns: () => this.#state === "ready" && client?.state === "connected",
+        maximumActiveFamilies: this.#config.maxConcurrentSessions,
+        maximumLanesPerFamily: this.#config.subagentMaximumNodes + 1,
+        onCapacity: (sample) => this.#metrics?.activeSessionFamilies.set(sample.families),
+        canClaimRuns: () =>
+          (this.#state === "ready" || this.#state === "draining") && client?.state === "connected",
         admitRunClaims: async () => runClaimReadiness.ready,
         runExecutor: new RunExecutor({
           database: this.#database,
@@ -654,6 +664,7 @@ export class PiWorkerRuntime {
     // owner replacement still uses stopCurrentBoot(), which revokes immediately.
     await this.#runWorker?.stop().catch(() => undefined);
     await this.#runSupervisor?.waitUntilAssignmentsSettled().catch(() => undefined);
+    this.#modelPermits?.close();
     this.#nativeSessions?.close();
     this.#subagentControl?.close();
     await this.#client?.stop().catch(() => undefined);

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { retryTransaction, type Database } from "@pi-cloud/database";
-import { parseExecutionLease } from "@pi-cloud/protocol";
+import { parseExecutionReference } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import type { ExecutionPublication } from "./accepted-fact.ts";
 import type { ExecutionLogOpenRequest } from "./durable-event-store.ts";
@@ -13,11 +13,11 @@ export async function openExecutionPublication(
   database: Kysely<Database>,
   request: ExecutionLogOpenRequest,
 ): Promise<ExecutionPublication> {
-  const lease = parseExecutionLease(request.executionLease);
+  const lease = parseExecutionReference(request.executionReference);
   return retryTransaction(database, async (tx) => {
     const row = await tx
       .selectFrom("run_attempts as a")
-      .innerJoin("session_leases as l", "l.attempt_id", "a.id")
+      .innerJoin("active_execution_scopes as l", "l.attempt_id", "a.id")
       .innerJoin("sessions as s", "s.id", "l.session_id")
       .innerJoin("run_attempts as w", "w.id", "a.native_writer_id")
       .select([
@@ -38,6 +38,7 @@ export async function openExecutionPublication(
       .where("l.lease_id", "=", lease.leaseId)
       .where("l.fencing_token", "=", String(lease.fencingToken))
       .where("l.valid_until", ">", sql<Date>`clock_timestamp()`)
+      .where("l.accepting_effects", "=", true)
       .forNoKeyUpdate("a")
       .executeTakeFirst();
     if (
@@ -186,7 +187,7 @@ export class ExecutionPublicationBoundary {
     if (fact.kind === "execution_opened") return true;
     if (authority.openedAt === null || record.offset <= authority.openedAt) return false;
     if (fact.kind === "subagent_command") {
-      const lease = parseExecutionLease(fact.executionLease);
+      const lease = parseExecutionReference(fact.executionReference);
       return (
         lease.leaseId === leaseId &&
         lease.attemptId === scope.attemptId &&

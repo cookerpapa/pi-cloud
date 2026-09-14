@@ -7,7 +7,7 @@ import type {
 } from "@pi-cloud/database";
 import {
   parseCloudToolCapabilitySnapshot,
-  parseExecutionLease,
+  parseExecutionReference,
   type CloudToolCapabilitySnapshot,
   type ToolBrokerWorkspaceForkRequest,
   type ToolBrokerWorkspaceForkResponse,
@@ -20,7 +20,7 @@ export type StartCloudSubagentJobInput = Readonly<{
   tenantId: string;
   parentSessionId: string;
   parentRunId: string;
-  parentExecutionLease: string;
+  parentExecutionReference: string;
   parentToolCallId: string;
   workflowRunId: string;
   stepIndex: number;
@@ -55,7 +55,6 @@ export type CloudSubagentJobResult = CloudSubagentJobHandle &
 export type CloudSubagentTreePolicy = Readonly<{
   maximumDepth: number;
   maximumNodes: number;
-  maximumConcurrentSubagents: number;
 }>;
 
 export type CloudSubagentTreeContext = Readonly<{
@@ -70,7 +69,6 @@ export type CloudSubagentTreeContext = Readonly<{
 export const DEFAULT_CLOUD_SUBAGENT_TREE_POLICY: CloudSubagentTreePolicy = Object.freeze({
   maximumDepth: 4,
   maximumNodes: 32,
-  maximumConcurrentSubagents: 3,
 });
 
 export class PostgresSubagentJobError extends Error {
@@ -88,9 +86,9 @@ type IsolatedWorkspaceForker = (
   request: ToolBrokerWorkspaceForkRequest,
 ) => Promise<ToolBrokerWorkspaceForkResponse>;
 export interface NativeSubagentLanes {
-  childAnchor(executionLease: string, inherit: boolean): string | null;
+  childAnchor(executionReference: string, inherit: boolean): string | null;
   createChildLane(input: {
-    executionLease: string;
+    executionReference: string;
     lane: string;
     at: string | null;
   }): Promise<void>;
@@ -128,7 +126,7 @@ function safeStep(value: number): number {
 }
 
 function requestSha256(input: StartCloudSubagentJobInput, tools: readonly string[]): string {
-  const parentExecution = parseExecutionLease(input.parentExecutionLease);
+  const parentExecution = parseExecutionReference(input.parentExecutionReference);
   return createHash("sha256")
     .update(
       JSON.stringify({
@@ -224,9 +222,6 @@ export class PostgresSubagentJobProvider {
         throw new TypeError(`Subagent tree policy ${name} is invalid`);
       }
     }
-    if (treePolicy.maximumConcurrentSubagents > treePolicy.maximumNodes) {
-      throw new TypeError("Subagent tree concurrency exceeds its node budget");
-    }
     this.#treePolicy = { ...treePolicy };
   }
 
@@ -242,7 +237,7 @@ export class PostgresSubagentJobProvider {
       nonEmpty(input.systemPrompt, "Subagent system prompt", 100_000);
     }
     safeStep(input.stepIndex);
-    const parentGrant = parseExecutionLease(input.parentExecutionLease);
+    const parentGrant = parseExecutionReference(input.parentExecutionReference);
     if (input.contextMode !== "fresh" && input.contextMode !== "branch") {
       throw new TypeError("Subagent context mode is invalid");
     }
@@ -294,7 +289,7 @@ export class PostgresSubagentJobProvider {
           "parent_run.agent_revision_id as agentRevisionId",
           "parent_run.tool_capability_snapshot as parentTools",
           "parent_attempt.state as attemptState",
-          "parent_attempt.lease_id as executionLeaseId",
+          "parent_attempt.lease_id as executionReferenceId",
           "parent_attempt.fencing_token as fencingToken",
           "parent_attempt.output_sealed_at as outputSealedAt",
           "parent_session.id as sessionId",
@@ -375,7 +370,7 @@ export class PostgresSubagentJobProvider {
         parent.outputSealedAt !== null ||
         parent.runState !== "running" ||
         parent.attemptState !== "running" ||
-        parent.executionLeaseId !== parentGrant.leaseId ||
+        parent.executionReferenceId !== parentGrant.leaseId ||
         Number(parent.fencingToken) !== parentGrant.fencingToken
       ) {
         throw new PostgresSubagentJobError(
@@ -438,28 +433,10 @@ export class PostgresSubagentJobProvider {
         .where("tenant_id", "=", input.tenantId)
         .where("root_run_id", "=", treeContext.rootRunId)
         .executeTakeFirstOrThrow();
-      const activeTreeNodes = await transaction
-        .selectFrom("subagent_executions as execution")
-        .innerJoin("runs as child_run", (join) =>
-          join
-            .onRef("child_run.tenant_id", "=", "execution.tenant_id")
-            .onRef("child_run.id", "=", "execution.child_run_id"),
-        )
-        .select(({ fn }) => fn.countAll<string>().as("count"))
-        .where("execution.tenant_id", "=", input.tenantId)
-        .where("execution.root_run_id", "=", treeContext.rootRunId)
-        .where("child_run.state", "in", ["queued", "claimed", "running"])
-        .executeTakeFirstOrThrow();
       if (Number(treeNodes.count) >= this.#treePolicy.maximumNodes) {
         throw new PostgresSubagentJobError(
           "subagent_tree_node_budget_exhausted",
           `Subagent tree node limit ${String(this.#treePolicy.maximumNodes)} was reached`,
-        );
-      }
-      if (Number(activeTreeNodes.count) >= this.#treePolicy.maximumConcurrentSubagents) {
-        throw new PostgresSubagentJobError(
-          "subagent_tree_concurrency_exhausted",
-          `Subagent tree concurrency limit ${String(this.#treePolicy.maximumConcurrentSubagents)} was reached`,
         );
       }
 
@@ -486,7 +463,7 @@ export class PostgresSubagentJobProvider {
         input.contextAnchor !== undefined
           ? input.contextAnchor
           : this.#nativeLanes.childAnchor(
-              input.parentExecutionLease,
+              input.parentExecutionReference,
               input.contextMode === "branch",
             );
       const childSessionId = this.#id();
@@ -669,7 +646,7 @@ export class PostgresSubagentJobProvider {
     input: StartCloudSubagentJobInput,
     pending: CloudSubagentJobHandle,
   ): Promise<CloudSubagentJobHandle> {
-    const parentGrant = parseExecutionLease(input.parentExecutionLease);
+    const parentGrant = parseExecutionReference(input.parentExecutionReference);
     const activation = input.parentActivation;
     const forkWorkspace = this.#forkWorkspace;
     const target = await this.#database
@@ -693,7 +670,7 @@ export class PostgresSubagentJobProvider {
     if (target.state !== "preparing") return { ...pending, state: target.state };
     try {
       await this.#nativeLanes.createChildLane({
-        executionLease: input.parentExecutionLease,
+        executionReference: input.parentExecutionReference,
         lane: target.lane,
         at: target.anchor,
       });
@@ -709,7 +686,7 @@ export class PostgresSubagentJobProvider {
           activation.assignment.projectId !== target.projectId ||
           activation.assignment.workspaceId === target.workspaceId ||
           activation.assignment.sessionId !== input.parentSessionId ||
-          activation.assignment.executionLease !== input.parentExecutionLease
+          activation.assignment.executionReference !== input.parentExecutionReference
         ) {
           throw new PostgresSubagentJobError(
             "workspace_fork_identity_invalid",
@@ -743,7 +720,7 @@ export class PostgresSubagentJobProvider {
             "parent_run.state as runState",
             "parent_run.current_attempt_id as attemptId",
             "parent_attempt.state as attemptState",
-            "parent_attempt.lease_id as executionLeaseId",
+            "parent_attempt.lease_id as executionReferenceId",
             "parent_attempt.fencing_token as fencingToken",
           ])
           .where("parent_run.tenant_id", "=", input.tenantId)
@@ -764,7 +741,7 @@ export class PostgresSubagentJobProvider {
           authority?.runState !== "running" ||
           authority.attemptState !== "running" ||
           authority.attemptId !== parentGrant.attemptId ||
-          authority.executionLeaseId !== parentGrant.leaseId ||
+          authority.executionReferenceId !== parentGrant.leaseId ||
           Number(authority.fencingToken) !== parentGrant.fencingToken
         ) {
           throw new PostgresSubagentJobError(
@@ -937,6 +914,7 @@ export class PostgresSubagentJobProvider {
         })
         .where("tenant_id", "=", tenantId)
         .where("id", "=", executionId)
+        .where("state", "in", ["preparing", "queued", "running"])
         .executeTakeFirst();
       if (terminal && row.workspaceMode === "isolated" && row.childWorkspaceId !== null) {
         const workspace = await transaction

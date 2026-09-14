@@ -197,7 +197,7 @@ pi-workers:
     maxReplicas: 32
     pollingIntervalSeconds: 5
     cooldownSeconds: 900
-    targetQueuedRunsPerReplica: 4
+    targetSessionsPerReplica: 4
     scaleDownStabilizationSeconds: 900
     scaleDownPeriodSeconds: 600
   lifecycle:
@@ -226,10 +226,11 @@ pi-workers:
     metricsTokenKey: metrics-token
   runtime:
     allowInsecureInternalHttp: true
+    modelConcurrency: 4
+    sessionModelConcurrency: 4
     subagents:
       maximumDepth: 4
       maximumNodes: 32
-      maximumConcurrent: 3
     runtimeObjectCache: { ttlMs: 600000, maximumEntries: 512, maximumBytes: 33554432 }
     timeouts:
       toolBrokerRequestMs: 360000

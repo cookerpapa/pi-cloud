@@ -215,7 +215,8 @@ describe("PiWorkerRuntime", () => {
       databaseMaxConnections: 6,
       subagentMaximumDepth: 4,
       subagentMaximumNodes: 32,
-      subagentMaximumConcurrent: 3,
+      modelConcurrency: 4,
+      familyModelConcurrency: 4,
       toolBrokerBaseUrls: ["http://tool-broker.test:4300/"],
       toolBrokerRequestTimeoutMs: 300_000,
       trustedWorkspaceDirectory: root,
@@ -331,8 +332,8 @@ describe("PiWorkerRuntime", () => {
         .executeTakeFirstOrThrow();
       expect(activeCredential.boot_id).toBe(secondIdentity.bootId);
       expect(runWorkerOptions).toHaveLength(2);
-      expect(runWorkerOptions.map((options) => options.maximumConcurrentRuns)).toEqual([4, 4]);
-      expect(runWorkerOptions.map((options) => options.maximumConcurrentSubagents)).toEqual([3, 3]);
+      expect(runWorkerOptions.map((options) => options.maximumActiveFamilies)).toEqual([4, 4]);
+      expect(runWorkerOptions.map((options) => options.maximumLanesPerFamily)).toEqual([33, 33]);
       expect(runWorkerOptions.map((options) => options.canClaimRuns?.())).toEqual([false, true]);
       await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
       toolBrokerHealthy = false;

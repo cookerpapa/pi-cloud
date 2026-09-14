@@ -1,5 +1,5 @@
 import type { Database } from "@pi-cloud/database";
-import { parseExecutionLease } from "@pi-cloud/protocol";
+import { parseExecutionReference } from "@pi-cloud/protocol";
 import {
   SessionError,
   type LaneRecord,
@@ -12,7 +12,7 @@ import {
   type NativeViewRead,
 } from "./native-session-writer.ts";
 import { PostgresPiSessionStorage } from "./postgres-session-storage.ts";
-import { PostgresRunExecutionAuthority } from "./postgres-execution-authority.ts";
+import { PostgresSessionExecutionAuthority } from "./postgres-execution-authority.ts";
 import type { PiSessionAppendPublisher } from "./session-mutation.ts";
 import type { PostgresPiSessionEntryPayloadCache } from "./session-entry-payload-cache.ts";
 export type CloudAgentExecutionScope = Readonly<{
@@ -27,7 +27,7 @@ export type CloudAgentExecutionScope = Readonly<{
 export type NativeSessionOpen = {
   scope: CloudAgentExecutionScope;
   writerId: string;
-  executionLease: string;
+  executionReference: string;
   publisher: PiSessionAppendPublisher;
 };
 
@@ -38,7 +38,11 @@ export class PostgresNativeSessionHost {
   readonly #cache: PostgresPiSessionEntryPayloadCache | undefined;
   readonly #onViewRead: ((sample: NativeViewRead) => void) | undefined;
   readonly #writers = new Map<string, Promise<NativeSessionWriter>>();
-  readonly #leases = new Map<string, NativeLaneSessionStorage>();
+  readonly #executions = new Map<string, NativeLaneSessionStorage>();
+  readonly #owners = new Map<
+    string,
+    { authority: PostgresSessionExecutionAuthority; references: number }
+  >();
   readonly #reaper: NodeJS.Timeout;
   #closed = false;
 
@@ -152,15 +156,37 @@ export class PostgresNativeSessionHost {
 
   async open(input: NativeSessionOpen) {
     if (this.#closed) throw new Error("Native Session host is closed");
-    const { scope, executionLease, publisher } = input;
-    const authority = new PostgresRunExecutionAuthority({
-      database: this.#database,
-      tenantId: scope.tenantId,
-      sessionId: scope.sessionId,
-      runId: scope.runId,
-      turnId: scope.turnId,
-      executionLease,
-    });
+    const { scope, executionReference, publisher } = input;
+    const ref = parseExecutionReference(executionReference);
+    const ownerKey = `${scope.tenantId}:${scope.piSessionId}:${ref.leaseId}:${ref.fencingToken}:${input.writerId}`;
+    let owner = this.#owners.get(ownerKey);
+    if (!owner) {
+      owner = {
+        references: 0,
+        authority: new PostgresSessionExecutionAuthority({
+          database: this.#database,
+          tenantId: scope.tenantId,
+          piSessionId: scope.piSessionId,
+          leaseId: ref.leaseId,
+          fencingToken: ref.fencingToken,
+          writerId: input.writerId,
+        }),
+      };
+      this.#owners.set(ownerKey, owner);
+    }
+    owner.references++;
+    const { authority } = owner;
+    const local = new AbortController();
+    let released = false;
+    const releaseOwner = async () => {
+      if (released) return;
+      released = true;
+      local.abort(new Error("Task execution scope closed"));
+      if (--owner.references === 0) {
+        this.#owners.delete(ownerKey);
+        await authority.close();
+      }
+    };
     let lane: NativeLaneSessionStorage | undefined;
     try {
       await authority.assertCurrent();
@@ -209,7 +235,7 @@ export class PostgresNativeSessionHost {
         {
           lane: scope.piSessionLane,
           turnId: scope.turnId,
-          attemptId: parseExecutionLease(executionLease).attemptId,
+          attemptId: parseExecutionReference(executionReference).attemptId,
         },
         {
           branch,
@@ -226,7 +252,7 @@ export class PostgresNativeSessionHost {
         },
         publisher,
       );
-      this.#leases.set(executionLease, lane);
+      this.#executions.set(executionReference, lane);
       const recoveries = await this.#database
         .selectFrom("session_terminal_events as terminal")
         .innerJoin("turns as turn", "turn.id", "terminal.turn_id")
@@ -250,7 +276,7 @@ export class PostgresNativeSessionHost {
         );
       authority.start();
       const storage = lane;
-      const signal = AbortSignal.any([authority.signal, writer.signal]);
+      const signal = AbortSignal.any([authority.signal, writer.signal, local.signal]);
       return {
         session: storage.asSession(),
         lane: scope.piSessionLane,
@@ -262,32 +288,32 @@ export class PostgresNativeSessionHost {
             await authority.assertCurrent();
           },
           close: async () => {
-            this.#leases.delete(executionLease);
+            this.#executions.delete(executionReference);
             storage.close();
-            await authority.close();
+            await releaseOwner();
           },
         },
       };
     } catch (error) {
-      this.#leases.delete(executionLease);
+      this.#executions.delete(executionReference);
       lane?.close();
-      await authority.close();
+      await releaseOwner();
       throw error;
     }
   }
 
-  childAnchor(executionLease: string, inherit: boolean) {
-    const parent = this.#leases.get(executionLease);
+  childAnchor(executionReference: string, inherit: boolean) {
+    const parent = this.#executions.get(executionReference);
     if (!parent || parent.closed) throw new Error("Parent native Session writer is unavailable");
     return inherit ? (parent.baseContext().at(-1)?.id ?? null) : null;
   }
-  hasLease(executionLease: string): boolean {
-    const lane = this.#leases.get(executionLease);
+  hasExecution(executionReference: string): boolean {
+    const lane = this.#executions.get(executionReference);
     return !!lane && !lane.closed;
   }
 
-  async createChildLane(input: { executionLease: string; lane: string; at: string | null }) {
-    const parent = this.#leases.get(input.executionLease);
+  async createChildLane(input: { executionReference: string; lane: string; at: string | null }) {
+    const parent = this.#executions.get(input.executionReference);
     if (!parent || parent.closed) throw new Error("Parent native Session writer is unavailable");
     const existing = (await parent.getLanes()).find((lane) => lane.lane === input.lane);
     if (existing) {
@@ -301,5 +327,7 @@ export class PostgresNativeSessionHost {
     this.#closed = true;
     clearInterval(this.#reaper);
     this.#writers.clear();
+    for (const { authority } of this.#owners.values()) void authority.close();
+    this.#owners.clear();
   }
 }

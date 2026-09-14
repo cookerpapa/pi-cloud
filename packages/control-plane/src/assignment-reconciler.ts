@@ -1,4 +1,9 @@
 import type { Database } from "@pi-cloud/database";
+import {
+  countWorkerLeaseFamilies,
+  releaseExecutionScope,
+  releaseIdleSessionLease,
+} from "@pi-cloud/runtime-core/worker-family-capacity";
 import { retryTransaction } from "@pi-cloud/database";
 import {
   transitionRun,
@@ -16,7 +21,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
 import { transitionCurrentRunAttempt } from "@pi-cloud/runtime-core/run-attempt-state";
 import { requestExecutionStreamSeal } from "@pi-cloud/runtime-core/execution-stream-seal";
-import { createExecutionLease, parseExecutionLease } from "@pi-cloud/protocol";
+import { createExecutionReference, parseExecutionReference } from "@pi-cloud/protocol";
 
 const ASSIGNMENT_LOST = "assignment_lost";
 const ASSIGNMENT_LOST_MESSAGE =
@@ -59,7 +64,7 @@ export class AssignmentReconcilerError extends Error {
 
 type DurableAssignment = {
   sessionId: string;
-  executionLease: string;
+  executionReference: string;
   validUntil: Date;
   runId: string;
   turnId: string;
@@ -96,7 +101,8 @@ function safeInteger(value: string | number | bigint, name: string): number {
 
 function sameLease(runtime: SandboxRuntimeAssignment, durable: DurableAssignment): boolean {
   return (
-    runtime.sessionId === durable.sessionId && runtime.executionLease === durable.executionLease
+    runtime.sessionId === durable.sessionId &&
+    runtime.executionReference === durable.executionReference
   );
 }
 
@@ -140,17 +146,25 @@ export class AssignmentReconciler {
     this.#clock = options.clock ?? (() => new Date());
   }
 
-  /** An expired Run lease is sufficient authority for semantic retirement. A
-   * healthy boot must not retain a lost Run forever. Do not inspect/kill other
-   * assignments or quarantine the boot; late facts/commands meet its Kafka seal. */
+  /** An expired Session lease retires every task of that owner incarnation.
+   * Do not kill unrelated families on a healthy Worker; late effects meet the
+   * ordered closure. The limit counts families, never individual child tasks. */
   async retireExpiredAssignments(
     limit = DEFAULT_RECONCILIATION_LIMIT,
   ): Promise<AssignmentReconciliationResult> {
     const now = validDate(this.#clock),
       result = emptyResult(0);
-    const targets = (await this.#loadDurableAssignments())
-      .filter((a) => a.validUntil <= now)
-      .slice(0, positiveInteger(limit, "limit"));
+    await this.#releaseIdleFamilies(now);
+    const expired = (await this.#loadDurableAssignments()).filter((a) => a.validUntil <= now);
+    const families = new Set(
+      [...new Set(expired.map((a) => parseExecutionReference(a.executionReference).leaseId))].slice(
+        0,
+        positiveInteger(limit, "limit"),
+      ),
+    );
+    const targets = expired.filter((a) =>
+      families.has(parseExecutionReference(a.executionReference).leaseId),
+    );
     for (const target of targets) {
       const finalized = await retryTransaction(this.#database, async (tx) => {
         const outcome = await this.#finalizeLease(tx, target, validDate(this.#clock), true);
@@ -161,58 +175,6 @@ export class AssignmentReconciler {
       else if (finalized !== "skipped") result.settledAssignments++;
     }
     return result;
-  }
-
-  async reconcileExpiredAssignments(
-    limit = DEFAULT_RECONCILIATION_LIMIT,
-  ): Promise<AssignmentReconciliationResult> {
-    const boundedLimit = positiveInteger(limit, "limit");
-    const now = validDate(this.#clock);
-    try {
-      const runtimes = await this.#inventory.listAssignments();
-      const sandbox = await this.#loadSandboxIdentity();
-      this.#assertRuntimeScope(runtimes, sandbox);
-      const durableAssignments = await this.#loadDurableAssignments();
-      const targets = durableAssignments
-        .filter((assignment) => assignment.validUntil.valueOf() <= now.valueOf())
-        .slice(0, boundedLimit);
-      const targetKeys = new Set(targets.map((assignment) => assignment.executionLease));
-      const orphans = runtimes.filter(
-        (runtime) => !durableAssignments.some((assignment) => sameAssignment(runtime, assignment)),
-      );
-      const targetRuntimes = runtimes.filter((runtime) =>
-        targets.some(
-          (assignment) =>
-            targetKeys.has(runtime.executionLease) && sameAssignment(runtime, assignment),
-        ),
-      );
-      const toTerminate = [
-        ...new Map(
-          [...orphans, ...targetRuntimes].map((runtime) => [runtime.runtimeId, runtime]),
-        ).values(),
-      ];
-      for (const runtime of toTerminate) {
-        await this.#inventory.terminateAndConfirmAbsent(runtime);
-      }
-
-      const result = emptyResult(runtimes.length);
-      result.terminatedRuntimes = toTerminate.length;
-      result.orphanRuntimes = orphans.length;
-      await this.#database.transaction().execute(async (transaction) => {
-        for (const target of targets) {
-          const finalized = await this.#finalizeLease(transaction, target, now, true);
-          if (finalized === "requeued") result.requeuedAssignments += 1;
-          if (finalized === "settled" || finalized === "released") {
-            result.settledAssignments += 1;
-          }
-        }
-        await this.#synchronizeCapacity(transaction, now);
-      });
-      return result;
-    } catch (error: unknown) {
-      await this.#quarantineSandbox(now).catch(() => undefined);
-      throw this.#normalizeError(error);
-    }
   }
 
   async retireSandbox(): Promise<SandboxRetirementResult> {
@@ -305,7 +267,7 @@ export class AssignmentReconciler {
 
   async #loadDurableAssignments(): Promise<DurableAssignment[]> {
     const grants = await this.#database
-      .selectFrom("session_leases")
+      .selectFrom("active_execution_scopes")
       .select([
         "session_id",
         "lease_id",
@@ -320,7 +282,7 @@ export class AssignmentReconciler {
       .execute();
     return grants.map((grant) => ({
       sessionId: grant.session_id,
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         grant.lease_id,
         grant.attempt_id,
         safeInteger(grant.fencing_token, "fencing token"),
@@ -337,7 +299,7 @@ export class AssignmentReconciler {
     now: Date,
     requireExpired: boolean,
   ): Promise<Finalization> {
-    const execution = parseExecutionLease(candidate.executionLease);
+    const execution = parseExecutionReference(candidate.executionReference);
     // Match lifecycle lock order before touching the lease. A stale candidate
     // must not hold a new owner's lease while waiting for its Run rows.
     const current = await transaction
@@ -354,10 +316,9 @@ export class AssignmentReconciler {
       .executeTakeFirst();
     if (!current) return "skipped";
     const grant = await transaction
-      .selectFrom("session_leases")
+      .selectFrom("active_execution_scopes")
       .select(["lease_id", "attempt_id", "sandbox_id", "fencing_token", "valid_until"])
       .where("session_id", "=", candidate.sessionId)
-      .forUpdate()
       .executeTakeFirst();
     if (
       grant === undefined ||
@@ -585,25 +546,42 @@ export class AssignmentReconciler {
   }
 
   async #deleteLease(
-    transaction: Transaction<Database>,
+    tx: Transaction<Database>,
     assignment: DurableAssignment,
-    _now: Date,
+    now: Date,
   ): Promise<void> {
-    const execution = parseExecutionLease(assignment.executionLease);
-    const deleted = await transaction
-      .deleteFrom("session_leases")
-      .where("session_id", "=", assignment.sessionId)
-      .where("lease_id", "=", execution.leaseId)
+    const ref = parseExecutionReference(assignment.executionReference);
+    const row = await tx
+      .selectFrom("runs")
+      .select("tenant_id")
+      .where("id", "=", assignment.runId)
+      .executeTakeFirstOrThrow();
+    await releaseExecutionScope(tx, {
+      tenantId: row.tenant_id,
+      attemptId: ref.attemptId,
+      leaseId: ref.leaseId,
+      fencingToken: ref.fencingToken,
+      now,
+    });
+  }
+
+  async #releaseIdleFamilies(now: Date): Promise<void> {
+    const leases = await this.#database
+      .selectFrom("session_leases")
+      .selectAll()
       .where("sandbox_id", "=", this.#sandboxId)
-      .where("fencing_token", "=", String(execution.fencingToken))
-      .executeTakeFirst();
-    if (deleted.numDeletedRows !== 1n) {
-      throw new AssignmentReconcilerError(
-        "stale_assignment",
-        "Assignment changed while it was being reconciled",
-        true,
-      );
-    }
+      .execute();
+    for (const lease of leases)
+      await retryTransaction(this.#database, async (tx) => {
+        await tx
+          .selectFrom("pi_sessions")
+          .select("id")
+          .where("tenant_id", "=", lease.tenant_id)
+          .where("id", "=", lease.pi_session_id)
+          .forUpdate()
+          .executeTakeFirst();
+        await releaseIdleSessionLease(tx, lease.lease_id, now);
+      });
   }
 
   async #finalizeRetirement(
@@ -620,7 +598,7 @@ export class AssignmentReconciler {
         }
       }
       const remaining = await transaction
-        .selectFrom("session_leases")
+        .selectFrom("active_execution_scopes")
         .select((expression) => expression.fn.countAll<string>().as("count"))
         .where("sandbox_id", "=", this.#sandboxId)
         .executeTakeFirstOrThrow();
@@ -667,12 +645,7 @@ export class AssignmentReconciler {
       .where("id", "=", this.#sandboxId)
       .forNoKeyUpdate()
       .executeTakeFirstOrThrow();
-    const remaining = await transaction
-      .selectFrom("session_leases")
-      .select((expression) => expression.fn.countAll<string>().as("count"))
-      .where("sandbox_id", "=", this.#sandboxId)
-      .executeTakeFirstOrThrow();
-    const activeSessions = safeInteger(remaining.count, "sandbox active assignment count");
+    const activeSessions = await countWorkerLeaseFamilies(transaction, this.#sandboxId);
     let nextState = sandbox.state;
     if (sandbox.state === "ready" && activeSessions > 0) {
       nextState = transitionSandbox(sandbox.state, "leased");

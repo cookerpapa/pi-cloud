@@ -16,7 +16,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { randomUUID } from "node:crypto";
 import type {
   TurnExecutionAuthority,
-  TurnExecutionLease,
+  TurnExecutionReference,
   TurnExecutionRequest,
 } from "./run-executor.ts";
 import { transitionCurrentRunAttempt } from "./run-attempt-state.ts";
@@ -37,7 +37,7 @@ export type TurnCancellationRequest = {
 };
 
 export type TurnCancellationLifecycle = {
-  started(grant: TurnExecutionLease): Promise<void>;
+  started(grant: TurnExecutionReference): Promise<void>;
 };
 
 export type TurnCancellationResult = {
@@ -241,14 +241,14 @@ export class RunCancellationExecutor {
     if (claim === undefined) return { status: "idle" };
 
     let started = false;
-    let acknowledgement: TurnExecutionLease | undefined;
+    let acknowledgement: TurnExecutionReference | undefined;
     let startedPromise: Promise<void> | undefined;
     let startFailure: unknown;
     const lifecycle: TurnCancellationLifecycle = {
       started: (candidate) => {
         if (
           startedPromise !== undefined &&
-          candidate.executionLease !== acknowledgement?.executionLease
+          candidate.executionReference !== acknowledgement?.executionReference
         ) {
           return Promise.reject(
             new RunCancellationExecutorInvariantError(
@@ -521,7 +521,7 @@ export class RunCancellationExecutor {
 
   async #markStarted(
     claim: ClaimedCancellation,
-    acknowledgement: TurnExecutionLease,
+    acknowledgement: TurnExecutionReference,
   ): Promise<void> {
     const now = safeDate(this.#clock);
     await this.#database.transaction().execute(async (transaction) => {
@@ -617,7 +617,7 @@ export class RunCancellationExecutor {
 
   async #complete(
     claim: ClaimedCancellation,
-    acknowledgement: TurnExecutionLease,
+    acknowledgement: TurnExecutionReference,
     result: TurnCancellationResult,
   ): Promise<void> {
     const now = safeDate(this.#clock);

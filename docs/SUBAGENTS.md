@@ -51,6 +51,12 @@ consumption state, and the Worker Session Host owns all active Lanes and native
 sequence allocation. Ordinary child output uses the same native log as parent
 output. Internal notifications never use the public model egress proxy.
 
+A family occupies one Worker slot and one owner lease. Child Runs keep task
+identities, not independently renewed leases. Quiet tasks are managed by task/
+model/Tool deadlines. Actual model requests (including Compaction) take a fair
+permit and release it before waiting for children or Tools. Cancelling one task
+does not revoke the common owner; losing the owner retires the whole family.
+
 Duplicate delivery cannot create another child or duplicate a consumed Agent
 message. Lost notifications are redelivered from persisted state. Seals and
 native Tool completion retire unfinished owned work, except an explicit

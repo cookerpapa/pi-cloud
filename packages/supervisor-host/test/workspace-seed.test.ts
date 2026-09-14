@@ -9,7 +9,7 @@ import {
 import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  createExecutionLease,
+  createExecutionReference,
   type ExecuteTurnCommandMessage,
 } from "@pi-cloud/protocol";
 import { parseWorkspaceSeed } from "@pi-cloud/workspace-runtime";
@@ -55,7 +55,7 @@ function command(tenantId: string = IDS.tenant): ExecuteTurnCommandMessage {
       runId: IDS.run,
       turnId: IDS.turn,
       agentId: "root",
-      executionLease: createExecutionLease(IDS.lease, IDS.attempt, 1),
+      executionReference: createExecutionReference(IDS.lease, IDS.attempt, 1),
       nextEventSeq: 1,
       agent: {
         revisionId: "84041f7b-5052-4abf-8bfd-16adf083c67e",

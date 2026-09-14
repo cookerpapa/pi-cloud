@@ -7,12 +7,12 @@ export {
   type ReviewedModel,
 } from "./model-catalog.ts";
 export {
-  ExecutionLeaseSchema,
-  createExecutionLease,
-  parseExecutionLease,
-  type ExecutionLease,
-  type ExecutionLeaseIdentity,
-} from "./execution-lease.ts";
+  ExecutionReferenceSchema,
+  createExecutionReference,
+  parseExecutionReference,
+  type ExecutionReference,
+  type ExecutionReferenceIdentity,
+} from "./execution-reference.ts";
 
 export {
   TOOL_BROKER_SANDBOX_PREVIEW_PATH,

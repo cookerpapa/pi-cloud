@@ -1,10 +1,6 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import {
-  PiCloudEventSchema,
-  SessionStateSchema,
-  TurnCancellationReasonSchema,
-} from "./event-envelope.ts";
+import { PiCloudEventSchema, TurnCancellationReasonSchema } from "./event-envelope.ts";
 import {
   NonNegativeSafeIntegerSchema,
   OpaqueIdSchema,
@@ -17,7 +13,7 @@ import {
 import { EnvironmentRuntimeSnapshotSchema } from "./environment.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
 import { CloudToolCapabilitySnapshotSchema } from "./tool-capabilities.ts";
-import { ExecutionLeaseSchema } from "./execution-lease.ts";
+import { ExecutionReferenceSchema } from "./execution-reference.ts";
 import { AgentRevisionSnapshotSchema } from "./agent-runtime.ts";
 
 export const TWO_PHASE_COMMAND_CAPABILITY = "command.two_phase.v1";
@@ -38,7 +34,7 @@ const CommandIdentityProperties = {
   runId: UuidSchema,
   turnId: OpaqueIdSchema,
   agentId: OpaqueIdSchema,
-  executionLease: ExecutionLeaseSchema,
+  executionReference: ExecutionReferenceSchema,
 };
 
 const PiSessionLaneBindingSchema = Type.Object(
@@ -238,7 +234,7 @@ const CommandAckIdentityProperties = {
   requestId: UuidSchema,
   sessionId: OpaqueIdSchema,
   turnId: OpaqueIdSchema,
-  executionLease: ExecutionLeaseSchema,
+  executionReference: ExecutionReferenceSchema,
 };
 
 const AcceptedCommandAckPayloadSchema = Type.Object(
@@ -388,7 +384,7 @@ export const EventPublishMessageSchema = Type.Object(
     type: Type.Literal("event.publish"),
     payload: Type.Object(
       {
-        executionLease: ExecutionLeaseSchema,
+        executionReference: ExecutionReferenceSchema,
         event: PiCloudEventSchema,
       },
       { additionalProperties: false },
@@ -404,7 +400,7 @@ export const EventAckMessageSchema = Type.Object(
     payload: Type.Object(
       {
         sessionId: OpaqueIdSchema,
-        executionLease: ExecutionLeaseSchema,
+        executionReference: ExecutionReferenceSchema,
         acknowledgedThroughSeq: PositiveSafeIntegerSchema,
       },
       { additionalProperties: false },
@@ -420,7 +416,7 @@ export const EventRejectedMessageSchema = Type.Object(
     payload: Type.Object(
       {
         sessionId: OpaqueIdSchema,
-        executionLease: ExecutionLeaseSchema,
+        executionReference: ExecutionReferenceSchema,
         rejectedSeq: PositiveSafeIntegerSchema,
         code: Type.Literal("stale_session_lease"),
         retryable: Type.Literal(false),
@@ -433,12 +429,11 @@ export const EventRejectedMessageSchema = Type.Object(
 
 const HeartbeatSessionSchema = Type.Object(
   {
-    sessionId: OpaqueIdSchema,
-    turnId: Type.Union([OpaqueIdSchema, Type.Null()]),
-    state: SessionStateSchema,
-    executionLease: ExecutionLeaseSchema,
-    lastProducedSeq: NonNegativeSafeIntegerSchema,
-    lastAcknowledgedSeq: NonNegativeSafeIntegerSchema,
+    tenantId: OpaqueIdSchema,
+    piSessionId: OpaqueIdSchema,
+    leaseId: UuidSchema,
+    writerId: UuidSchema,
+    fencingToken: PositiveSafeIntegerSchema,
   },
   { additionalProperties: false },
 );
@@ -454,7 +449,7 @@ export const SupervisorHeartbeatMessageSchema = Type.Object(
         connectionId: UuidSchema,
         acceptingAssignments: Type.Boolean(),
         maxConcurrentSessions: PositiveSafeIntegerSchema,
-        sessions: Type.Array(HeartbeatSessionSchema, { maxItems: 1_000 }),
+        families: Type.Array(HeartbeatSessionSchema, { maxItems: 1_000 }),
       },
       { additionalProperties: false },
     ),
@@ -462,10 +457,10 @@ export const SupervisorHeartbeatMessageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const ExecutionLeaseRenewalSchema = Type.Object(
+const FamilyLeaseRenewalSchema = Type.Object(
   {
-    sessionId: OpaqueIdSchema,
-    executionLease: ExecutionLeaseSchema,
+    leaseId: UuidSchema,
+    fencingToken: PositiveSafeIntegerSchema,
     validUntil: UtcTimestampSchema,
   },
   { additionalProperties: false },
@@ -479,7 +474,7 @@ export const SupervisorHeartbeatAckMessageSchema = Type.Object(
       {
         acknowledgedMessageId: UuidSchema,
         connectionId: UuidSchema,
-        executionLeaseRenewals: Type.Array(ExecutionLeaseRenewalSchema, { maxItems: 1_000 }),
+        familyLeaseRenewals: Type.Array(FamilyLeaseRenewalSchema, { maxItems: 1_000 }),
       },
       { additionalProperties: false },
     ),
@@ -586,19 +581,19 @@ export function parseSupervisorToControlMessage(value: unknown): SupervisorToCon
   }
 
   if (message.type === "supervisor.heartbeat") {
-    if (message.payload.sessions.length > message.payload.maxConcurrentSessions) {
+    if (message.payload.families.length > message.payload.maxConcurrentSessions) {
       throw new PiCloudWireProtocolError(
-        "supervisor.heartbeat sessions exceed maxConcurrentSessions",
+        "supervisor.heartbeat families exceed maxConcurrentSessions",
       );
     }
-    assertUniqueSessionIds(message.payload.sessions, "supervisor.heartbeat sessions");
-    for (const session of message.payload.sessions) {
-      if (session.lastAcknowledgedSeq > session.lastProducedSeq) {
-        throw new PiCloudWireProtocolError(
-          `supervisor.heartbeat session ${session.sessionId} acknowledges beyond its produced sequence`,
-        );
-      }
-    }
+    assertUniqueSessionIds(
+      message.payload.families.map((f) => ({ sessionId: `${f.tenantId}:${f.piSessionId}` })),
+      "supervisor.heartbeat families",
+    );
+    assertUniqueSessionIds(
+      message.payload.families.map((f) => ({ sessionId: f.leaseId })),
+      "supervisor.heartbeat lease IDs",
+    );
   }
 
   return message;
@@ -622,8 +617,8 @@ export function parseControlToSupervisorMessage(value: unknown): ControlToSuperv
 
   if (message.type === "supervisor.heartbeat.ack") {
     assertUniqueSessionIds(
-      message.payload.executionLeaseRenewals,
-      "supervisor.heartbeat.ack executionLeaseRenewals",
+      message.payload.familyLeaseRenewals.map((f) => ({ sessionId: f.leaseId })),
+      "supervisor.heartbeat.ack familyLeaseRenewals",
     );
   }
 

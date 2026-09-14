@@ -96,11 +96,12 @@ then recreate affected services with `npm run production:up`.
 
 | Variable | Default | Meaning |
 | --- | ---: | --- |
-| `PI_CLOUD_SUPERVISOR_CAPACITY` | `4` | total Agent Lane operations per Compose Worker; Subagent capacity is reserved from this total |
+| `PI_CLOUD_SUPERVISOR_CAPACITY` | `4` | active physical Session families per Worker; all delegated Lanes share their family's slot |
 | `PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS` | `4` | bounded PostgreSQL pool per Compose Worker; tune independently from slots |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH` | `4` | recursive Agent-tree depth |
 | `PI_CLOUD_SUBAGENT_MAXIMUM_NODES` | `32` | total descendants per root Run |
-| `PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT` | `3` | active descendants per root Run, also the reserved Child-slot count per Worker |
+| `PI_CLOUD_WORKER_MODEL_CONCURRENCY` | `4` | simultaneous provider requests across the Worker, including Compaction |
+| `PI_CLOUD_SESSION_MODEL_CONCURRENCY` | `4` | simultaneous provider requests per physical Session; cannot exceed the Worker limit |
 | `PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES` | `3` | active Cubes owned by the one-host Broker; leaves two elastic slots beside one starter development machine |
 | `PI_CLOUD_TOOL_RESULT_CACHE_BYTES` | `67108864` | per-Broker completed response retry-cache budget (encoded bytes); native Kafka Tool Results release bodies; overflow drops oldest retry copies without re-executing effects; excludes in-flight/HTTP buffers; Helm: `sandboxPlane.toolResultCacheBytes` |
 | `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous executing operations per one-host Broker (standalone/Helm default 32); distinct from physical Cube allocations |
@@ -113,24 +114,28 @@ then recreate affected services with `npm run production:up`.
 | `PI_CLOUD_TOOL_BROKER_OWNERSHIP_LEASE_MS` | `15000` | Broker replica ownership lease |
 | `PI_CLOUD_TOOL_BROKER_OWNERSHIP_HEARTBEAT_MS` | `5000` | Broker ownership heartbeat |
 
-Worker capacity must leave room for a root Run and its configured active
-children. Subagent depth/node/concurrency settings apply to both Projector
-admission and Worker capacity; Compose shares the variables, and Helm's control
-plane reads the same `pi-workers.runtime.subagents` values. Internal Worker management
+Session capacity and model concurrency are separate. Subagent depth/node settings
+apply to both Projector admission and Worker bounds; Compose shares the variables,
+and Helm reads the same `pi-workers.runtime.subagents` values. Model limits are
+`runtime.modelConcurrency` and `runtime.sessionModelConcurrency`. Internal Worker management
 RPC uses a dedicated direct connection pool, not the Provider HTTP proxy.
 The Worker database pool is intentionally not proportional to slots:
-one connection can serve many model-waiting Runs. For Kubernetes, start near
-half the slot count with a floor of four, observe pool wait time, and use a
+one connection can serve many model-waiting Runs. Start with four per Worker,
+observe pool wait time under the configured model/Lane concurrency, and use a
 connection proxy before multiplying connections across many replicas. Broker
 heartbeat must leave more than one missed interval before lease expiry.
 `production:config` rejects incoherent lease combinations.
 
-The default `4` total slots minus `3` reserved Child slots leaves **one ordinary
-conversation slot per Worker**. Raising the total provides more ordinary Run
-capacity; it does not automatically enlarge the database pool or container memory.
-Slots count active asynchronous Agent Loops, not dedicated database connections.
-Size them against the context/output workload and process memory, not merely the
-number of simultaneous HTTP submissions. Several Worker processes can share a host.
+The default admits four active families, not one parent plus three children.
+Models are served round-robin between ready families. Waiting for a Tool, child
+or supervisor holds no model permit. Depth/node limits still bound the number
+of resident tasks; capacity × (node limit + 1) must fit the 1,000-task inventory.
+At 85% of the Node heap limit or reported constrained-memory RSS limit, the Worker
+stops admitting new families but can finish existing families. This is a soft
+admission watermark, not an OOM guarantee. Size memory for contexts, serialization
+and output, not just model inference or the number of HTTP submissions.
+`PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT` is removed and rejected rather than silently
+interpreted as a new limit. Several Worker processes may share a host.
 
 ### Streaming and Workspace operations
 

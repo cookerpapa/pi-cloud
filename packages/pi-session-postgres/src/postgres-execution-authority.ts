@@ -1,16 +1,15 @@
 import type { Database } from "@pi-cloud/database";
-import { parseExecutionLease } from "@pi-cloud/protocol";
 import { SessionError } from "@earendil-works/pi-agent-core";
 import type { Kysely, Transaction } from "kysely";
 import type { ActiveExecutionAuthority } from "./execution-authority.ts";
 
-export type PostgresRunExecutionAuthorityOptions = {
+export type PostgresSessionExecutionAuthorityOptions = {
   database: Kysely<Database>;
   tenantId: string;
-  sessionId: string;
-  runId: string;
-  turnId: string;
-  executionLease: string;
+  piSessionId: string;
+  leaseId: string;
+  writerId: string;
+  fencingToken: number;
   clock?: () => Date;
   pollIntervalMs?: number;
 };
@@ -24,13 +23,10 @@ function positiveInteger(value: number, name: string): number {
 
 /** Cloud liveness watch. Step checks use only the observed lease deadline;
  * Ordered Projector closure and Tool Broker guard the actual effects. */
-export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
+export class PostgresSessionExecutionAuthority implements ActiveExecutionAuthority {
   readonly #database: Kysely<Database>;
   readonly #tenantId: string;
-  readonly #sessionId: string;
-  readonly #runId: string;
-  readonly #turnId: string;
-  readonly #executionLease: ReturnType<typeof parseExecutionLease>;
+  readonly #identity: PostgresSessionExecutionAuthorityOptions;
   readonly #clock: () => Date;
   readonly #pollIntervalMs: number;
   readonly #abort = new AbortController();
@@ -38,13 +34,10 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
   #closed = false;
   #validUntil: Date | undefined;
 
-  constructor(options: PostgresRunExecutionAuthorityOptions) {
+  constructor(options: PostgresSessionExecutionAuthorityOptions) {
     this.#database = options.database;
     this.#tenantId = options.tenantId;
-    this.#sessionId = options.sessionId;
-    this.#runId = options.runId;
-    this.#turnId = options.turnId;
-    this.#executionLease = parseExecutionLease(options.executionLease);
+    this.#identity = options;
     this.#clock = options.clock ?? (() => new Date());
     this.#pollIntervalMs = positiveInteger(options.pollIntervalMs ?? 1_000, "pollIntervalMs");
   }
@@ -54,7 +47,7 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
   }
 
   start(): void {
-    if (this.#closed) throw new Error("PostgreSQL Run execution authority is closed");
+    if (this.#closed) throw new Error("PostgreSQL Session execution authority is closed");
     this.#watch ??= this.#watchCurrent();
   }
 
@@ -73,16 +66,13 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
   async #verify(authority: Kysely<Database>) {
     const row = await authority
       .selectFrom("session_leases")
-      .innerJoin("run_attempts as attempt", "attempt.id", "session_leases.attempt_id")
-      .innerJoin("run_attempts as writer", "writer.id", "attempt.native_writer_id")
+      .innerJoin("run_attempts as writer", "writer.id", "session_leases.writer_id")
       .select("session_leases.valid_until")
-      .where("session_leases.lease_id", "=", this.#executionLease.leaseId)
-      .where("session_leases.attempt_id", "=", this.#executionLease.attemptId)
-      .where("session_leases.fencing_token", "=", String(this.#executionLease.fencingToken))
+      .where("session_leases.lease_id", "=", this.#identity.leaseId)
+      .where("session_leases.writer_id", "=", this.#identity.writerId)
+      .where("session_leases.fencing_token", "=", String(this.#identity.fencingToken))
       .where("session_leases.tenant_id", "=", this.#tenantId)
-      .where("session_leases.session_id", "=", this.#sessionId)
-      .where("session_leases.run_id", "=", this.#runId)
-      .where("session_leases.turn_id", "=", this.#turnId)
+      .where("session_leases.pi_session_id", "=", this.#identity.piSessionId)
       .where("valid_until", ">", this.#clock())
       .where("writer.native_writer_failed_at", "is", null)
       .where("writer.native_writer_sealed_at", "is", null)
@@ -90,7 +80,7 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
     if (row === undefined) {
       const error = new SessionError(
         "storage",
-        "Pi Session mutation was rejected by a stale ExecutionLease",
+        "Pi Session mutation was rejected by a stale ExecutionReference",
       );
       this.#abort.abort(error);
       throw error;
@@ -101,7 +91,7 @@ export class PostgresRunExecutionAuthority implements ActiveExecutionAuthority {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
-    this.#abort.abort(new Error("PostgreSQL Run execution authority closed"));
+    this.#abort.abort(new Error("PostgreSQL Session execution authority closed"));
     await this.#watch;
   }
 

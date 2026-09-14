@@ -43,7 +43,7 @@ it("streams many sequential workflow calls without retaining completed replies",
     await expect(
       readWorkflowResult({
         resultUrl,
-        executionLease: "test",
+        executionReference: "test",
         activationId,
         operationId,
         signal: AbortSignal.timeout(5000),

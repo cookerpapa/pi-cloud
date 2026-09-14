@@ -1,7 +1,7 @@
 import type { ToolSandboxOperationRequest } from "./tool-sandbox.ts";
 
 export type CandidateToolCommand = Readonly<{
-  executionLease: string;
+  executionReference: string;
   toolCallId: string;
   request: ToolSandboxOperationRequest;
   occurredAt: string;

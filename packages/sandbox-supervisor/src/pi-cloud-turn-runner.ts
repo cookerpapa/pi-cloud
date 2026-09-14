@@ -71,6 +71,7 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   ) => Promise<PiModelRuntimeConfig> | PiModelRuntimeConfig;
   openSession: (command: ExecuteTurnCommandMessage) => Promise<PiCloudSessionHandle>;
   modelRuntimePool?: PiModelRuntimePool;
+  acquireModelPermit?: (signal?: AbortSignal) => Promise<() => void>;
   metrics?: PiCloudMetrics;
   createAgentTools: (context: {
     toolOutputDirectory: string;
@@ -560,7 +561,7 @@ export class PiCloudTurnRunner {
             sentAt: validDate(this.#clock).toISOString(),
             type: "event.publish",
             payload: {
-              executionLease: command.payload.executionLease,
+              executionReference: command.payload.executionReference,
               event,
             },
           });
@@ -771,6 +772,9 @@ export class PiCloudTurnRunner {
           }
         };
         const runtime = new CloudAgentRuntime({
+          ...(this.#options.acquireModelPermit
+            ? { acquireModelPermit: this.#options.acquireModelPermit }
+            : {}),
           session: sessionHandle.session,
           idGenerator: () => sessionHandle.session.idGenerator.next(),
           lane: sessionHandle.lane,

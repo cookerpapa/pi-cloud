@@ -101,7 +101,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                 runId: request.runId,
               };
               const channel = await service.open({
-                executionLease: grant.executionLease,
+                executionReference: grant.executionReference,
                 sessionId: request.sessionId,
                 turnId: request.turnId,
                 nextEventSeq: Number(request.nextEventSeq),
@@ -111,15 +111,15 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                   writerId: request.piSessionWriterId,
                 },
               });
-              channels.set(grant.executionLease, channel);
+              channels.set(grant.executionReference, channel);
               const session = await host.open({
                 scope,
                 writerId: request.piSessionWriterId,
-                executionLease: grant.executionLease,
+                executionReference: grant.executionReference,
                 publisher: publisher.scoped({
                   ...scope,
                   writerId: request.piSessionWriterId,
-                  executionLease: grant.executionLease,
+                  executionReference: grant.executionReference,
                 }),
               });
               await db.transaction().execute((tx) =>
@@ -129,7 +129,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                     tenantId: request.tenantId,
                     runId: request.runId,
                     attemptId: request.attemptId,
-                    executionLease: grant.executionLease,
+                    executionReference: grant.executionReference,
                   },
                   {
                     runState: "running",
@@ -223,7 +223,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                     sentAt: new Date().toISOString(),
                     type: "event.publish",
                     payload: {
-                      executionLease: grant.executionLease,
+                      executionReference: grant.executionReference,
                       event: {
                         schemaVersion: 1,
                         eventId: id,
@@ -250,7 +250,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
                     tenantId: request.tenantId,
                     parentSessionId: request.sessionId,
                     parentRunId: request.runId,
-                    parentExecutionLease: grant.executionLease,
+                    parentExecutionReference: grant.executionReference,
                     parentToolCallId: "delegate",
                     workflowRunId: "workflow",
                     stepIndex: 0,
@@ -319,7 +319,7 @@ it("runs claimed Parent/Child Lanes with PG projection paused, then cold-restore
               } finally {
                 await session.authority.close();
                 await channel.close();
-                channels.delete(grant.executionLease);
+                channels.delete(grant.executionReference);
               }
               return { stopReason: "stop" };
             } catch (error) {

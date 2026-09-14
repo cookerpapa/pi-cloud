@@ -26,12 +26,12 @@ Runs do not own that Cube. Each Tool-using Run receives an independently fenced
 ```text
 Workspace
 └── elastic runtime: one physical Cube
-    ├── Tool binding A: Session A / Run A / ExecutionLease A
-    ├── Tool binding B: Session B / Run B / ExecutionLease B
+    ├── Tool binding A: Session A / Run A / ExecutionReference A
+    ├── Tool binding B: Session B / Run B / ExecutionReference B
     └── optional human terminal
 ```
 
-The Broker validates every binding's current `ExecutionLease`, frozen Tool set,
+The Broker validates every binding's current `ExecutionReference`, frozen Tool set,
 Turn context and Step context before dispatch. Multiple bindings may execute
 inside the same Cube concurrently. They run as the same unprivileged guest user
 and observe ordinary Linux file, process and port-conflict semantics.

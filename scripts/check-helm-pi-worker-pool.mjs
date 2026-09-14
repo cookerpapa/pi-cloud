@@ -48,16 +48,15 @@ assert.equal(
 );
 assert.equal(environment.PI_CLOUD_SUPERVISOR_CAPACITY, "4");
 assert.equal(environment.PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS, "8");
-assert.equal(environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT, "3");
-assert(
-  Number(environment.PI_CLOUD_SUPERVISOR_CAPACITY) >
-    Number(environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT),
-);
+assert.equal(environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT, undefined);
+assert.equal(environment.PI_CLOUD_WORKER_MODEL_CONCURRENCY, "4");
+assert.equal(environment.PI_CLOUD_SESSION_MODEL_CONCURRENCY, "4");
 
 const scaler = find("ScaledObject");
 assert(scaler);
 assert.equal(scaler.spec.triggers[0].type, "postgresql");
 assert.match(scaler.spec.triggers[0].metadata.query, /FROM runs/i);
-assert.match(scaler.spec.triggers[0].metadata.query, /turn_control_requests/);
+assert.match(scaler.spec.triggers[0].metadata.query, /pi_session_id/);
+assert.match(scaler.spec.triggers[0].metadata.query, /session_leases/);
 assert(find("TriggerAuthentication"));
 process.stdout.write("Pi Worker Helm chart uses the shared PostgreSQL queue and passed.\n");

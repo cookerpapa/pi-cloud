@@ -22,7 +22,7 @@ export type WorkflowExecutor = (
 /** Owner-direct duplex result delivery; guest calls still publish through the Worker WAL. */
 export async function readWorkflowResult(input: {
   resultUrl: URL;
-  executionLease: string;
+  executionReference: string;
   operationId: string;
   activationId: string;
   call: WorkflowHostCall;
@@ -34,7 +34,7 @@ export async function readWorkflowResult(input: {
   url.pathname = TOOL_WORKFLOW_PATH;
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   const socket = new WebSocket(url, {
-    headers: { authorization: `Bearer ${input.executionLease}` },
+    headers: { authorization: `Bearer ${input.executionReference}` },
     maxPayload: 5 * 1024 * 1024,
   });
   const controller = new AbortController();

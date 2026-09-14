@@ -70,7 +70,7 @@ A GitLab or GitHub Webhook creates an `awaiting_claim` Issue request and never
 starts a model call. Any authorized PiCloud tenant user may add or remove a
 non-exclusive human claim. Claims are an
 idempotent expression of intent, not a scheduler lock and not an Agent
-ExecutionLease. A claimant explicitly starts the request by choosing a new
+ExecutionReference. A claimant explicitly starts the request by choosing a new
 Issue-dedicated elastic Workspace/profile, a compatible existing Workspace, or
 a directory under `/home/user` in one owned running cloud development machine.
 The claimant also names the conversation.

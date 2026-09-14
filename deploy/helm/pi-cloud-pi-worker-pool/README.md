@@ -7,9 +7,9 @@ latency hint; PostgreSQL remains the queue and Run/Attempt authority.
 Workers never execute model-generated code. `read/write/edit/bash` cross the
 Tool Broker and execute in CubeSandbox. A Worker PVC contains only its boot
 ledger. Pi SessionStorage is durable PostgreSQL state. Workers publish both
-browser-visible events and complete Session mutations through authenticated
-Control Plane Ingest endpoints; they have no direct Kafka credentials or
-network requirement.
+browser-visible events and complete Session mutations directly to private Kafka.
+One Projector group drives PG history, live views and Tool routing. There is no
+Control Plane Ingest relay in this path.
 
 ## Required Secret
 
@@ -46,9 +46,13 @@ helm upgrade --install pi-workers \
 ```
 
 Manual scaling changes `workerPool.replicas`. With KEDA installed, enable
-`autoscaling.enabled`; the PostgreSQL scaler reads only the ready Run backlog
-and targets `targetQueuedRunsPerReplica`. Every Worker still revalidates the
-Run/Attempt lease and fence before effects, so duplicate wakeups are harmless.
+`autoscaling.enabled`; the PostgreSQL scaler counts distinct active/ready physical
+Sessions and targets `targetSessionsPerReplica`. Descendant Run counts cannot
+create replicas that cannot own those Lanes. `workerPool.capacity` counts families;
+`runtime.modelConcurrency` and `runtime.sessionModelConcurrency` limit actual
+provider requests separately. Every family shares one renewed owner lease;
+task references and operation state prevent stale effects. Scale-in drains
+owned families, including their descendants, without taking new families.
 
 The default NetworkPolicy allows DNS and the configured trusted ports only.
 Validate rendered manifests with `npm run helm:check` before deployment.

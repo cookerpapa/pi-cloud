@@ -5,10 +5,10 @@ import type {
   ToolSandboxOperationRequest,
 } from "@pi-cloud/protocol";
 import {
-  createExecutionLease,
+  createExecutionReference,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
-  parseExecutionLease,
+  parseExecutionReference,
 } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
 import { Duplex, PassThrough, Writable } from "node:stream";
@@ -55,7 +55,7 @@ const assignment: ToolSandboxAssignment = {
   runId: "command-provider-test",
   sessionId: "session-provider-test",
   turnId: "turn-provider-test",
-  executionLease: createExecutionLease(
+  executionReference: createExecutionReference(
     "10000000-0000-4000-8000-000000000003",
     "10000000-0000-4000-8000-000000000003",
     5,
@@ -391,7 +391,7 @@ describe("provider-backed Tool Tool Broker", () => {
       runId: "second-shared-workspace-run",
       sessionId: "second-shared-workspace-session",
       turnId: "second-shared-workspace-turn",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "20000000-0000-4000-8000-000000000022",
         "20000000-0000-4000-8000-000000000023",
         6,
@@ -416,7 +416,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(secondResolved).toBe(true);
     const second = await secondReservation;
     expect(second.activationId).toBe(
-      parseExecutionLease(siblingAssignment.executionLease).attemptId,
+      parseExecutionReference(siblingAssignment.executionReference).attemptId,
     );
     await manager.stop(ACTIVATION_ID, assignment);
     await manager.stop(second.activationId, siblingAssignment);
@@ -456,7 +456,10 @@ describe("provider-backed Tool Tool Broker", () => {
       continuityId: "66666666-6666-4666-8666-666666666666",
     });
     await expect(
-      manager.execute(assignment.executionLease, operation("21111111-1111-4111-8111-111111111111")),
+      manager.execute(
+        assignment.executionReference,
+        operation("21111111-1111-4111-8111-111111111111"),
+      ),
     ).resolves.toMatchObject({ exitCode: 0 });
     await manager.capture(agent.activationId, assignment, "21111111-1111-4111-8111-111111111112");
     await expect(
@@ -495,7 +498,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...assignment,
       turnId: "21111111-1111-4111-8111-111111111114",
       runId: "second-development-environment-run",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "21111111-1111-4111-8111-111111111116",
         "21111111-1111-4111-8111-111111111115",
         3,
@@ -536,7 +539,7 @@ describe("provider-backed Tool Tool Broker", () => {
       rows: 24,
       cols: 100,
     });
-    await manager.execute(secondAssignment.executionLease, {
+    await manager.execute(secondAssignment.executionReference, {
       ...operation("21111111-1111-4111-8111-111111111118"),
       activationId: secondAgent.activationId,
     });
@@ -612,7 +615,7 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-child",
       runId: "command-provider-test-child",
       turnId: "turn-provider-test-child",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "21600000-0000-4000-8000-000000000002",
         "21600000-0000-4000-8000-000000000003",
         1,
@@ -625,14 +628,16 @@ describe("provider-backed Tool Tool Broker", () => {
       executionMode: "development_environment",
     });
     expect(parent.activationId).toBe(ACTIVATION_ID);
-    expect(child.activationId).toBe(parseExecutionLease(childAssignment.executionLease).attemptId);
+    expect(child.activationId).toBe(
+      parseExecutionReference(childAssignment.executionReference).attemptId,
+    );
     expect(child.continuityId).toBe(parent.continuityId);
     expect(fixture.listDirectory).not.toHaveBeenCalled();
-    await manager.execute(assignment.executionLease, {
+    await manager.execute(assignment.executionReference, {
       ...operation("21600000-0000-4000-8000-000000000005"),
       activationId: parent.activationId,
     });
-    await manager.execute(childAssignment.executionLease, {
+    await manager.execute(childAssignment.executionReference, {
       ...operation("21600000-0000-4000-8000-000000000006"),
       activationId: child.activationId,
     });
@@ -768,10 +773,16 @@ describe("provider-backed Tool Tool Broker", () => {
     );
     fixture.exec.mockRejectedValueOnce(failure);
     await expect(
-      manager.execute(assignment.executionLease, operation("63111111-1111-4111-8111-111111111112")),
+      manager.execute(
+        assignment.executionReference,
+        operation("63111111-1111-4111-8111-111111111112"),
+      ),
     ).rejects.toBe(failure);
     await expect(
-      manager.execute(assignment.executionLease, operation("63111111-1111-4111-8111-111111111113")),
+      manager.execute(
+        assignment.executionReference,
+        operation("63111111-1111-4111-8111-111111111113"),
+      ),
     ).rejects.toBe(failure);
     expect(fixture.exec).toHaveBeenCalledTimes(1);
     expect(settleOperation).toHaveBeenCalledWith(expect.anything(), "unknown", failure.code);
@@ -825,7 +836,7 @@ describe("provider-backed Tool Tool Broker", () => {
       executionMode: "development_environment",
     });
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("62111111-1111-4111-8111-111111111112"),
     );
 
@@ -928,7 +939,7 @@ describe("provider-backed Tool Tool Broker", () => {
     const agent = await manager.create(createRequest);
     expect(agent.activationId).toBe(ACTIVATION_ID);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("21500000-0000-4000-8000-000000000001"),
     );
     await manager.release({
@@ -965,7 +976,7 @@ describe("provider-backed Tool Tool Broker", () => {
       override async reserveTerminal(input: { terminalId: string }) {
         return {
           status: "reserved" as const,
-          executionLease: createExecutionLease(
+          executionReference: createExecutionReference(
             input.terminalId,
             "30000000-0000-4000-8000-000000000001",
             2,
@@ -985,7 +996,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const created = await manager.create({ ...createRequest, workspaceRevision: "1".repeat(64) });
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("31000000-0000-4000-8000-000000000001"),
     );
     await manager.release({
@@ -1016,7 +1027,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...assignment,
       runId: "command-provider-test-terminal-shared",
       turnId: "turn-provider-test-terminal-shared",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "31000000-0000-4000-8000-000000000003",
         "31000000-0000-4000-8000-000000000003",
         7,
@@ -1028,7 +1039,7 @@ describe("provider-backed Tool Tool Broker", () => {
       assignment: terminalRunAssignment,
       workspaceRevision: "1".repeat(64),
     });
-    await manager.execute(terminalRunAssignment.executionLease, {
+    await manager.execute(terminalRunAssignment.executionReference, {
       ...operation("31000000-0000-4000-8000-000000000005"),
       activationId: terminalRun.activationId,
     });
@@ -1057,7 +1068,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const created = await manager.create({ ...createRequest, workspaceRevision: "1".repeat(64) });
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("32000000-0000-4000-8000-000000000001"),
     );
     await expect(
@@ -1083,7 +1094,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const created = await manager.create({ ...createRequest, workspaceRevision: "1".repeat(64) });
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("32000000-0000-4000-8000-000000000001"),
     );
     await manager.release({
@@ -1142,7 +1153,7 @@ describe("provider-backed Tool Tool Broker", () => {
     const created = await manager.create(createRequest);
     expect(created).toMatchObject({
       activationId: ACTIVATION_ID,
-      executionLease: assignment.executionLease,
+      executionReference: assignment.executionReference,
       continuity: "cold_restore",
     });
     expect(fixture.createSpec).toBeUndefined();
@@ -1151,13 +1162,13 @@ describe("provider-backed Tool Tool Broker", () => {
     ).resolves.toMatchObject({ type: "tool_sandbox.unused" });
 
     await expect(
-      manager.execute(assignment.executionLease, {
+      manager.execute(assignment.executionReference, {
         ...operation("10000000-0000-4000-8000-000000000011"),
         turnContextSha256: "d".repeat(64),
       }),
     ).rejects.toMatchObject({ code: "turn_context_mismatch" });
     await expect(
-      manager.execute(assignment.executionLease, {
+      manager.execute(assignment.executionReference, {
         ...operation("10000000-0000-4000-8000-000000000021"),
         attemptContextSha256: "d".repeat(64),
       }),
@@ -1166,7 +1177,7 @@ describe("provider-backed Tool Tool Broker", () => {
 
     await expect(
       manager.execute(
-        createExecutionLease(
+        createExecutionReference(
           "90000000-0000-4000-8000-000000000001",
           "90000000-0000-4000-8000-000000000002",
           99,
@@ -1175,7 +1186,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ),
     ).rejects.toMatchObject({ code: "stale_session_lease" });
     const request = operation("10000000-0000-4000-8000-000000000013");
-    await expect(manager.execute(assignment.executionLease, request)).resolves.toMatchObject({
+    await expect(manager.execute(assignment.executionReference, request)).resolves.toMatchObject({
       exitCode: 0,
     });
     expect(fixture.createSpec).toMatchObject({
@@ -1184,18 +1195,18 @@ describe("provider-backed Tool Tool Broker", () => {
         tenantId: assignment.tenantId,
         sessionId: assignment.sessionId,
         turnId: assignment.turnId,
-        executionLease: assignment.executionLease,
+        executionReference: assignment.executionReference,
       },
       policy: { network: { mode: "public_web_proxy_private_denied" } },
     });
     expect(fixture.createSpec).not.toHaveProperty("capability");
     // Completed bodies belong to the command consumer, not the execution map.
     // A direct repeat hits the durable operation ledger and must not replay.
-    await expect(manager.execute(assignment.executionLease, request)).rejects.toMatchObject({
+    await expect(manager.execute(assignment.executionReference, request)).rejects.toMatchObject({
       code: "tool_operation_outcome_unknown",
     });
     await expect(
-      manager.execute(assignment.executionLease, { ...request, command: "whoami" }),
+      manager.execute(assignment.executionReference, { ...request, command: "whoami" }),
     ).rejects.toMatchObject({ code: "tool_operation_outcome_unknown" });
     expect(fixture.exec).toHaveBeenCalledTimes(1);
 
@@ -1204,17 +1215,22 @@ describe("provider-backed Tool Tool Broker", () => {
       stepContextSequence: 2,
       stepContextSha256: "b".repeat(64),
     };
-    await expect(manager.execute(assignment.executionLease, secondStep)).resolves.toMatchObject({
-      exitCode: 0,
-    });
-    await expect(manager.execute(assignment.executionLease, request)).rejects.toMatchObject({
+    await expect(manager.execute(assignment.executionReference, secondStep)).resolves.toMatchObject(
+      {
+        exitCode: 0,
+      },
+    );
+    await expect(manager.execute(assignment.executionReference, request)).rejects.toMatchObject({
       code: "step_context_mismatch",
     });
     await expect(
-      manager.execute(assignment.executionLease, operation("10000000-0000-4000-8000-000000000019")),
+      manager.execute(
+        assignment.executionReference,
+        operation("10000000-0000-4000-8000-000000000019"),
+      ),
     ).rejects.toMatchObject({ code: "step_context_mismatch" });
     await expect(
-      manager.execute(assignment.executionLease, {
+      manager.execute(assignment.executionReference, {
         ...secondStep,
         operationId: "10000000-0000-4000-8000-000000000020",
         stepContextSha256: "c".repeat(64),
@@ -1227,7 +1243,7 @@ describe("provider-backed Tool Tool Broker", () => {
       handle: {
         assignment: {
           tenantId: assignment.tenantId,
-          executionLease: assignment.executionLease,
+          executionReference: assignment.executionReference,
         },
       },
     });
@@ -1235,7 +1251,10 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(fixture.stopped).toBe(true);
     expect(manager.activeCount).toBe(0);
     await expect(
-      manager.execute(assignment.executionLease, operation("10000000-0000-4000-8000-000000000014")),
+      manager.execute(
+        assignment.executionReference,
+        operation("10000000-0000-4000-8000-000000000014"),
+      ),
     ).rejects.toMatchObject({ code: "stale_session_lease" });
   });
 
@@ -1253,7 +1272,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const created = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("10000000-0000-4000-8000-000000000031"),
     );
     expect(observe).not.toHaveBeenCalled();
@@ -1282,10 +1301,13 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.create({ ...createRequest, allowedTools: ["read"] });
 
     await expect(
-      manager.execute(assignment.executionLease, operation("10000000-0000-4000-8000-000000000041")),
+      manager.execute(
+        assignment.executionReference,
+        operation("10000000-0000-4000-8000-000000000041"),
+      ),
     ).rejects.toMatchObject({ code: "tool_not_granted" });
     await expect(
-      manager.execute(assignment.executionLease, {
+      manager.execute(assignment.executionReference, {
         ...operation("10000000-0000-4000-8000-000000000042"),
         toolName: "read",
       }),
@@ -1308,7 +1330,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: "workspace-provider-test-second",
       sessionId: "session-provider-test-second",
       turnId: "turn-provider-test-second",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "20000000-0000-4000-8000-000000000003",
         "20000000-0000-4000-8000-000000000003",
         6,
@@ -1321,10 +1343,10 @@ describe("provider-backed Tool Tool Broker", () => {
       assignment: secondAssignment,
     });
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("20000000-0000-4000-8000-000000000012"),
     );
-    const waiting = manager.execute(secondAssignment.executionLease, {
+    const waiting = manager.execute(secondAssignment.executionReference, {
       ...operation("20000000-0000-4000-8000-000000000013"),
       activationId: second.activationId,
     });
@@ -1362,7 +1384,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...assignment,
       workspaceId: "workspace-shutdown-waiter",
       sessionId: "session-shutdown-waiter",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "20000000-0000-4000-8000-000000000003",
         "20000000-0000-4000-8000-000000000003",
         6,
@@ -1374,7 +1396,7 @@ describe("provider-backed Tool Tool Broker", () => {
       assignment: otherAssignment,
     });
     const waiting = manager
-      .execute(otherAssignment.executionLease, {
+      .execute(otherAssignment.executionReference, {
         ...operation("20000000-0000-4000-8000-000000000013"),
         activationId: second.activationId,
       })
@@ -1398,7 +1420,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const active = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("20000000-0000-4000-8000-000000000050"),
     );
     expect(manager.admittedCount).toBe(1);
@@ -1438,7 +1460,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: "workspace-provider-test-aborted",
       sessionId: "session-provider-test-aborted",
       turnId: "turn-provider-test-aborted",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "30000000-0000-4000-8000-000000000003",
         "30000000-0000-4000-8000-000000000003",
         7,
@@ -1451,12 +1473,12 @@ describe("provider-backed Tool Tool Broker", () => {
       assignment: secondAssignment,
     });
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("30000000-0000-4000-8000-000000000012"),
     );
     const controller = new AbortController();
     const waiting = manager.execute(
-      second.executionLease,
+      second.executionReference,
       {
         ...operation("30000000-0000-4000-8000-000000000013"),
         activationId: second.activationId,
@@ -1482,7 +1504,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const first = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("10000000-0000-4000-8000-000000000018"),
     );
     await manager.release({
@@ -1502,7 +1524,7 @@ describe("provider-backed Tool Tool Broker", () => {
       sandboxId: "20000000-0000-4000-8000-000000000021",
       runId: "command-provider-test-next",
       turnId: "turn-provider-test-next",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "10000000-0000-4000-8000-000000000020",
         "10000000-0000-4000-8000-000000000020",
         6,
@@ -1517,7 +1539,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(second.activationId).not.toBe(first.activationId);
     expect(second.continuity).toBe("warm_reuse");
     expect(second.continuityId).toBe(first.continuityId);
-    await manager.execute(nextAssignment.executionLease, {
+    await manager.execute(nextAssignment.executionReference, {
       ...operation("10000000-0000-4000-8000-000000000022"),
       activationId: second.activationId,
     });
@@ -1535,7 +1557,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const parent = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("73300000-0000-4000-8000-000000000001"),
     );
     const childAssignment = {
@@ -1543,7 +1565,7 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-subagent",
       runId: "command-provider-test-subagent",
       turnId: "turn-provider-test-subagent",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "73300000-0000-4000-8000-000000000002",
         "73300000-0000-4000-8000-000000000002",
         8,
@@ -1558,8 +1580,11 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(child).toMatchObject({ continuity: "warm_reuse" });
     expect(child.activationId).not.toBe(parent.activationId);
     await Promise.all([
-      manager.execute(assignment.executionLease, operation("73300000-0000-4000-8000-000000000004")),
-      manager.execute(childAssignment.executionLease, {
+      manager.execute(
+        assignment.executionReference,
+        operation("73300000-0000-4000-8000-000000000004"),
+      ),
+      manager.execute(childAssignment.executionReference, {
         ...operation("73300000-0000-4000-8000-000000000005"),
         activationId: child.activationId,
       }),
@@ -1579,7 +1604,10 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceRevision: "2".repeat(64),
     });
     await expect(
-      manager.execute(assignment.executionLease, operation("73300000-0000-4000-8000-000000000007")),
+      manager.execute(
+        assignment.executionReference,
+        operation("73300000-0000-4000-8000-000000000007"),
+      ),
     ).resolves.toMatchObject({ operation: "bash.exec" });
     expect(fixture.createCount).toBe(1);
     expect(fixture.settle).toHaveBeenCalledTimes(1);
@@ -1594,7 +1622,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const parent = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("73400000-0000-4000-8000-000000000001"),
     );
     const forked = await manager.forkWorkspace({
@@ -1616,7 +1644,10 @@ describe("provider-backed Tool Tool Broker", () => {
       targetSettlementRevision: "b".repeat(64),
     });
     await expect(
-      manager.execute(assignment.executionLease, operation("73400000-0000-4000-8000-000000000005")),
+      manager.execute(
+        assignment.executionReference,
+        operation("73400000-0000-4000-8000-000000000005"),
+      ),
     ).resolves.toMatchObject({ exitCode: 0 });
     expect(fixture.forkWorkspace).toHaveBeenCalledTimes(1);
     await manager.stop(parent.activationId, assignment);
@@ -1647,7 +1678,7 @@ describe("provider-backed Tool Tool Broker", () => {
       script: "await runs.run('child', {task:'inspect'})",
       timeoutMs: 10000,
     };
-    const running = manager.execute(assignment.executionLease, request);
+    const running = manager.execute(assignment.executionReference, request);
     let observed!: () => void;
     const waiting = new Promise<void>((resolve) => {
       observed = resolve;
@@ -1656,7 +1687,7 @@ describe("provider-backed Tool Tool Broker", () => {
     const bridge = await manager.attachWorkflow(
       parent.activationId,
       request.operationId,
-      assignment.executionLease,
+      assignment.executionReference,
       (frame) => {
         if (frame.type === "call") observed();
       },
@@ -1697,7 +1728,7 @@ describe("provider-backed Tool Tool Broker", () => {
       await gate;
       return execute(...args);
     });
-    const writing = manager.execute(assignment.executionLease, operation(crypto.randomUUID()));
+    const writing = manager.execute(assignment.executionReference, operation(crypto.randomUUID()));
     await startedPromise;
     await expect(manager.forkWorkspace(fork)).rejects.toMatchObject({
       code: "workspace_runtime_busy",
@@ -1717,6 +1748,61 @@ describe("provider-backed Tool Tool Broker", () => {
     await manager.stop(parent.activationId, assignment);
   });
 
+  it("retires every binding of an orphaned shared Cube before a replacement is allocated", async () => {
+    vi.useFakeTimers();
+    const fixture = providerFixture();
+    const repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const ids = [ACTIVATION_ID, SECOND_ACTIVATION_ID];
+    const manager = testBroker({
+      provider: fixture.provider,
+      stateRepository: repository,
+      idGenerator: () => ids.shift()!,
+    });
+    try {
+      const initial = await manager.create(createRequest);
+      await manager.execute(assignment.executionReference, operation(crypto.randomUUID()));
+      await manager.release({
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.release",
+        requestId: crypto.randomUUID(),
+        activationId: initial.activationId,
+        assignment,
+        disposition: "keep_warm",
+        workspaceRevision: "a".repeat(64),
+      });
+      const task = (id: string): ToolSandboxAssignment => ({
+        ...assignment,
+        runId: id,
+        turnId: id,
+        executionReference: createExecutionReference(crypto.randomUUID(), id, 6),
+      });
+      const parent = task(crypto.randomUUID()),
+        child = task(crypto.randomUUID());
+      const a = await manager.create({ ...createRequest, assignment: parent });
+      const b = await manager.create({ ...createRequest, assignment: child });
+      expect(a.activationId).not.toBe(initial.activationId);
+      expect(b.activationId).not.toBe(initial.activationId);
+      expect(manager.reservedCount).toBe(2);
+      vi.spyOn(repository, "claimUnboundWorkspaceRuntimes").mockResolvedValueOnce([
+        { activationId: initial.activationId, assignment },
+      ]);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(manager.reservedCount).toBe(0);
+      expect(manager.admittedCount).toBe(0);
+      expect(manager.ownsToolBinding(a.activationId)).toBe(false);
+      expect(manager.ownsToolBinding(b.activationId)).toBe(false);
+      const next = await manager.create({
+        ...createRequest,
+        assignment: task(crypto.randomUUID()),
+      });
+      expect(next.activationId).toBe(SECOND_ACTIVATION_ID);
+      expect(next.continuity).toBe("cold_restore");
+    } finally {
+      await manager.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("expires every elastic warm runtime at the deployment TTL", async () => {
     const fixture = providerFixture();
     let now = 1_000;
@@ -1728,7 +1814,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const first = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("71000000-0000-4000-8000-000000000001"),
     );
     await manager.release({
@@ -1764,7 +1850,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const created = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("72000000-0000-4000-8000-000000000001"),
     );
     await manager.release({
@@ -1805,7 +1891,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const first = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("73500000-0000-4000-8000-000000000001"),
     );
     await manager.release({
@@ -1823,7 +1909,7 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-conversation-child",
       runId: "command-provider-test-conversation-child",
       turnId: "turn-provider-test-conversation-child",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "73500000-0000-4000-8000-000000000003",
         "73500000-0000-4000-8000-000000000003",
         6,
@@ -1838,7 +1924,9 @@ describe("provider-backed Tool Tool Broker", () => {
 
     expect(fixture.stopped).toBe(false);
     expect(stateRepository.released).not.toContain(first.activationId);
-    expect(second.activationId).toBe(parseExecutionLease(nextAssignment.executionLease).attemptId);
+    expect(second.activationId).toBe(
+      parseExecutionReference(nextAssignment.executionReference).attemptId,
+    );
     expect(second.continuity).toBe("warm_reuse");
     expect(fixture.createCount).toBe(1);
     await manager.stop(second.activationId, nextAssignment);
@@ -1861,7 +1949,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const persistent = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("74000000-0000-4000-8000-000000000001"),
     );
     await manager.release({
@@ -1880,7 +1968,7 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-ordinary",
       runId: "command-provider-test-ordinary",
       turnId: "turn-provider-test-ordinary",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "74000000-0000-4000-8000-000000000003",
         "74000000-0000-4000-8000-000000000003",
         6,
@@ -1891,7 +1979,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "74000000-0000-4000-8000-000000000004",
       assignment: ordinaryAssignment,
     });
-    await manager.execute(ordinaryAssignment.executionLease, {
+    await manager.execute(ordinaryAssignment.executionReference, {
       ...operation("74000000-0000-4000-8000-000000000005"),
       activationId: ordinary.activationId,
     });
@@ -1912,7 +2000,7 @@ describe("provider-backed Tool Tool Broker", () => {
       sessionId: "session-provider-test-new-demand",
       runId: "command-provider-test-new-demand",
       turnId: "turn-provider-test-new-demand",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "74000000-0000-4000-8000-000000000007",
         "74000000-0000-4000-8000-000000000007",
         7,
@@ -1923,7 +2011,7 @@ describe("provider-backed Tool Tool Broker", () => {
       requestId: "74000000-0000-4000-8000-000000000008",
       assignment: demandAssignment,
     });
-    await manager.execute(demandAssignment.executionLease, {
+    await manager.execute(demandAssignment.executionReference, {
       ...operation("74000000-0000-4000-8000-000000000009"),
       activationId: demand.activationId,
     });
@@ -1933,7 +2021,7 @@ describe("provider-backed Tool Tool Broker", () => {
       ...assignment,
       runId: "command-provider-test-persistent-after-pressure",
       turnId: "turn-provider-test-persistent-after-pressure",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "74000000-0000-4000-8000-000000000010",
         "74000000-0000-4000-8000-000000000010",
         8,
@@ -1977,7 +2065,7 @@ describe("provider-backed Tool Tool Broker", () => {
       runId: "command-provider-test-concurrent-sibling",
       sessionId: "session-provider-test-concurrent-sibling",
       turnId: "turn-provider-test-concurrent-sibling",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "61000000-0000-4000-8000-000000000001",
         "61000000-0000-4000-8000-000000000001",
         6,
@@ -1999,11 +2087,14 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(secondResolved).toBe(true);
     const second = await secondPromise;
     expect(second.activationId).toBe(
-      parseExecutionLease(siblingAssignment.executionLease).attemptId,
+      parseExecutionReference(siblingAssignment.executionReference).attemptId,
     );
     await Promise.all([
-      manager.execute(assignment.executionLease, operation("61000000-0000-4000-8000-000000000003")),
-      manager.execute(siblingAssignment.executionLease, {
+      manager.execute(
+        assignment.executionReference,
+        operation("61000000-0000-4000-8000-000000000003"),
+      ),
+      manager.execute(siblingAssignment.executionReference, {
         ...operation("61000000-0000-4000-8000-000000000004"),
         activationId: second.activationId,
       }),
@@ -2030,7 +2121,7 @@ describe("provider-backed Tool Tool Broker", () => {
       runId: "command-provider-test-runtime-loss",
       sessionId: "session-provider-test-runtime-loss",
       turnId: "turn-provider-test-runtime-loss",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "62000000-0000-4000-8000-000000000001",
         "62000000-0000-4000-8000-000000000001",
         6,
@@ -2043,10 +2134,13 @@ describe("provider-backed Tool Tool Broker", () => {
     });
 
     await expect(
-      manager.execute(assignment.executionLease, operation("62000000-0000-4000-8000-000000000003")),
+      manager.execute(
+        assignment.executionReference,
+        operation("62000000-0000-4000-8000-000000000003"),
+      ),
     ).rejects.toMatchObject({ code: "cubesandbox_tool_result_unknown" });
     await expect(
-      manager.execute(siblingAssignment.executionLease, {
+      manager.execute(siblingAssignment.executionReference, {
         ...operation("62000000-0000-4000-8000-000000000004"),
         activationId: second.activationId,
       }),
@@ -2083,7 +2177,7 @@ describe("provider-backed Tool Tool Broker", () => {
     const created = await manager.create(createRequest);
     const controller = new AbortController();
     const executing = manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("63000000-0000-4000-8000-000000000001"),
       controller.signal,
     );
@@ -2106,7 +2200,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const first = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("50000000-0000-4000-8000-000000000012"),
     );
     await manager.release({
@@ -2127,7 +2221,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: "workspace-provider-test-capacity-eviction",
       sessionId: "session-provider-test-capacity-eviction",
       turnId: "turn-provider-test-capacity-eviction",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "50000000-0000-4000-8000-000000000014",
         "50000000-0000-4000-8000-000000000014",
         6,
@@ -2139,7 +2233,7 @@ describe("provider-backed Tool Tool Broker", () => {
       assignment: nextAssignment,
     });
     await expect(
-      manager.execute(nextAssignment.executionLease, {
+      manager.execute(nextAssignment.executionReference, {
         ...operation("50000000-0000-4000-8000-000000000016"),
         activationId: second.activationId,
       }),
@@ -2165,7 +2259,7 @@ describe("provider-backed Tool Tool Broker", () => {
       workspaceId: assignment.workspaceId,
       sessionId: assignment.sessionId,
       turnId: assignment.turnId,
-      executionLease: assignment.executionLease,
+      executionReference: assignment.executionReference,
     };
     fixture.provider.listAssignments = async () => [runtimeAssignment];
     const manager = testBroker({
@@ -2174,7 +2268,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     const created = await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("41000000-0000-4000-8000-000000000001"),
     );
     await manager.release({
@@ -2203,7 +2297,7 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     await manager.create(createRequest);
     await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation("10000000-0000-4000-8000-000000000016"),
     );
     await expect(manager.stop(ACTIVATION_ID, assignment)).rejects.toMatchObject({
@@ -2212,7 +2306,10 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(manager.activeCount).toBe(0);
     expect(manager.admittedCount).toBe(1);
     await expect(
-      manager.execute(assignment.executionLease, operation("10000000-0000-4000-8000-000000000015")),
+      manager.execute(
+        assignment.executionReference,
+        operation("10000000-0000-4000-8000-000000000015"),
+      ),
     ).rejects.toMatchObject({ code: "stale_session_lease" });
     fixture.provider.destroyRuntime = async () => {};
     await manager.stop(ACTIVATION_ID, assignment);

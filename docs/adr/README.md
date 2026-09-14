@@ -10,6 +10,8 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0167](0167-session-family-capacity.md) — active physical-Session capacity
+   and independent model-request fairness; implementation/acceptance in progress.
 1. [ADR-0166](0166-log-driven-subagents.md) — Projector-admitted Subagent control,
    Worker-native Lanes and Cube-isolated workflows.
 1. [ADR-0165](0165-message-level-display-and-framed-snapshots.md) — idempotent
@@ -43,8 +45,6 @@ Read the documents in this order:
 1. [ADR-0147](0147-self-contained-pi-session-event-log.md) — one
    self-contained append-only semantic log per physical Pi Session, with
    rebuildable query projections and context-independent Subagent communication.
-1. [ADR-0146](0146-single-owner-pi-session-lanes.md) — one active Worker owns
-   every Lane of a physical Pi Session.
 1. [ADR-0145](0145-fork-and-branch-semantics.md) — Fork creates an independent
    Session; delegated inherited context is a Branch/Lane.
 1. [ADR-0144](0144-subagent-pi-session-lanes.md) — shared Pi Session Entry
@@ -77,8 +77,6 @@ Read the documents in this order:
    execution queue, typed Cancel/Steer control requests and terminal-only Outbox.
 1. [ADR-0130](0130-user-managed-workspace-concurrency.md) — same-Session FIFO
    with user-managed concurrency across Sessions, terminals and shared files.
-1. [ADR-0124](0124-session-lease-fencing-authority.md) — one durable Session
-   lease with a monotonically increasing fence across every Run effect boundary.
 1. [ADR-0123](0123-isolated-preview-origins.md) — target-scoped capabilities
    and independent browser origins for untrusted application Preview.
 1. [ADR-0120](0120-exclusive-full-vm-authority.md) — exclusive Cube full-VM

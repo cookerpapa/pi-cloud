@@ -96,7 +96,7 @@ function protocolAssignment(value: SandboxRuntimeAssignment): SupervisorRuntimeA
     workspaceId: value.workspaceId,
     sessionId: value.sessionId,
     turnId: value.turnId,
-    executionLease: value.executionLease,
+    executionReference: value.executionReference,
   };
 }
 
@@ -111,7 +111,7 @@ function runtimeAssignment(value: SupervisorRuntimeAssignment): SandboxRuntimeAs
     workspaceId: value.workspaceId,
     sessionId: value.sessionId,
     turnId: value.turnId,
-    executionLease: value.executionLease,
+    executionReference: value.executionReference,
   };
 }
 
@@ -357,7 +357,7 @@ export class HttpSupervisorSteerBackend implements TurnSteerBackend {
         runId: request.target.runId,
         turnId: request.target.turnId,
         agentId: "root",
-        executionLease: grant.executionLease,
+        executionReference: grant.executionReference,
         text: request.text,
       },
     });

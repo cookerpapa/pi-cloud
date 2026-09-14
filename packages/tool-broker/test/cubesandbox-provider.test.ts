@@ -1,7 +1,7 @@
 import {
   canonicalEnvironmentRecipeJson,
-  createExecutionLease,
-  parseExecutionLease,
+  createExecutionReference,
+  parseExecutionReference,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   type ToolSandboxAssignment,
@@ -68,7 +68,7 @@ const assignment: ToolSandboxAssignment = {
   runId: "command-cube-test",
   sessionId: "session-cube-test",
   turnId: "turn-cube-test",
-  executionLease: createExecutionLease(
+  executionReference: createExecutionReference(
     "10000000-0000-4000-8000-000000000004",
     "10000000-0000-4000-8000-000000000003",
     7,
@@ -628,7 +628,7 @@ describe("CubeSandbox Provider contract", () => {
     });
     expect(runtime.creates).toHaveLength(0);
     const response = await manager.execute(
-      assignment.executionLease,
+      assignment.executionReference,
       operation(reserved.activationId),
     );
     expect(response).toMatchObject({ operation: "bash.exec", exitCode: 0 });
@@ -661,7 +661,7 @@ describe("CubeSandbox Provider contract", () => {
       tenantId: assignment.tenantId,
       workspaceId: assignment.workspaceId,
       sourceSessionId: assignment.sessionId,
-      fencingToken: parseExecutionLease(assignment.executionLease).fencingToken,
+      fencingToken: parseExecutionReference(assignment.executionReference).fencingToken,
       imageRevision: environment.imageRevision,
       environmentSpecSha256: environment.specSha256,
     });
@@ -738,7 +738,7 @@ describe("CubeSandbox Provider contract", () => {
       ...assignment,
       runId: "command-cube-test-idle",
       turnId: "turn-cube-test-idle",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "10000000-0000-4000-8000-000000000029",
         "10000000-0000-4000-8000-000000000028",
         9,
@@ -780,7 +780,7 @@ describe("CubeSandbox Provider contract", () => {
       sandboxId: "20000000-0000-4000-8000-000000000031",
       runId: "command-cube-test-2",
       turnId: "turn-cube-test-2",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "10000000-0000-4000-8000-000000000031",
         "10000000-0000-4000-8000-000000000030",
         11,
@@ -801,10 +801,12 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       workspaceRevision: "a".repeat(64),
     });
-    expect(next.activationId).toBe(parseExecutionLease(nextAssignment.executionLease).attemptId);
+    expect(next.activationId).toBe(
+      parseExecutionReference(nextAssignment.executionReference).attemptId,
+    );
     expect(next.activationId).not.toBe(reserved.activationId);
     expect(next.continuity).toBe("warm_reuse");
-    await manager.execute(nextAssignment.executionLease, {
+    await manager.execute(nextAssignment.executionReference, {
       ...operation(next.activationId),
       operationId: "10000000-0000-4000-8000-000000000033",
     });
@@ -861,10 +863,10 @@ describe("CubeSandbox Provider contract", () => {
       // Fencing tokens are monotonic within a Session. Another Session in the
       // same Workspace has an independent fence sequence and may legitimately
       // begin at the same value as the checkpoint's source Session.
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "20000000-0000-4000-8000-000000000045",
         "20000000-0000-4000-8000-000000000044",
-        parseExecutionLease(assignment.executionLease).fencingToken,
+        parseExecutionReference(assignment.executionReference).fencingToken,
       ),
     };
     const restored = await provider.create({
@@ -927,9 +929,9 @@ describe("CubeSandbox Provider contract", () => {
       activationId: ACTIVATION_ID,
       assignment: {
         ...assignment,
-        executionLease: createExecutionLease(
+        executionReference: createExecutionReference(
           "20000000-0000-4000-8000-000000000050",
-          parseExecutionLease(assignment.executionLease).attemptId,
+          parseExecutionReference(assignment.executionReference).attemptId,
           41,
         ),
       },
@@ -944,7 +946,7 @@ describe("CubeSandbox Provider contract", () => {
       sessionId: "session-cube-subagent",
       runId: "command-cube-subagent",
       turnId: "turn-cube-subagent",
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "20000000-0000-4000-8000-000000000053",
         "20000000-0000-4000-8000-000000000052",
         1,
@@ -1074,10 +1076,10 @@ describe("CubeSandbox Provider contract", () => {
         assignment: {
           ...assignment,
           tenantId: "another-tenant",
-          executionLease: createExecutionLease(
+          executionReference: createExecutionReference(
             "20000000-0000-4000-8000-000000000060",
-            parseExecutionLease(assignment.executionLease).attemptId,
-            parseExecutionLease(assignment.executionLease).fencingToken + 1,
+            parseExecutionReference(assignment.executionReference).attemptId,
+            parseExecutionReference(assignment.executionReference).fencingToken + 1,
           ),
         },
         environment,
@@ -1137,10 +1139,10 @@ describe("CubeSandbox Provider contract", () => {
     });
     const upgradedAssignment = {
       ...assignment,
-      executionLease: createExecutionLease(
+      executionReference: createExecutionReference(
         "20000000-0000-4000-8000-000000000061",
-        parseExecutionLease(assignment.executionLease).attemptId,
-        parseExecutionLease(assignment.executionLease).fencingToken + 1,
+        parseExecutionReference(assignment.executionReference).attemptId,
+        parseExecutionReference(assignment.executionReference).fencingToken + 1,
       ),
     };
     const upgradedHandle = await upgradedProvider.create({

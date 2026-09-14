@@ -74,12 +74,19 @@ export type TurnExecutionRequest = {
   traceContext?: TraceContext;
 };
 
-export type TurnExecutionLease = {
-  executionLease: string;
+export type TurnExecutionReference = {
+  executionReference: string;
 };
 
+export type RunClaimReference = Pick<TurnExecutionRequest, "runId" | "tenantId" | "piSessionId">;
+export type RunClaimAdmission = Readonly<{
+  /** Undefined admits a new family; an empty array admits none. */
+  allowedFamilyKeys?: readonly string[];
+  blockedFamilyKeys: readonly string[];
+}>;
+
 export type TurnExecutionLifecycle = {
-  started(grant?: TurnExecutionLease): Promise<void>;
+  started(grant?: TurnExecutionReference): Promise<void>;
 };
 
 export type TurnExecutionResult = {
@@ -95,22 +102,27 @@ export interface TurnExecutionBackend {
 }
 
 export interface TurnExecutionAuthority {
+  releaseUnboundClaim?(
+    transaction: Transaction<Database>,
+    request: TurnExecutionRequest,
+    now: Date,
+  ): Promise<void>;
   assertCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    grant: TurnExecutionLease,
+    grant: TurnExecutionReference,
     now: Date,
   ): Promise<void>;
   assertCurrentOrExpired?(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    grant: TurnExecutionLease,
+    grant: TurnExecutionReference,
     now: Date,
   ): Promise<void>;
   releaseCurrent(
     transaction: Transaction<Database>,
     request: TurnExecutionRequest,
-    grant: TurnExecutionLease,
+    grant: TurnExecutionReference,
     now: Date,
   ): Promise<void>;
 }
@@ -368,29 +380,29 @@ export class RunExecutor {
    * owns transactional admission and lifecycle commits; it never chooses
    * between tenants, Sessions, or Runs.
    */
-  async dispatchRun(runId: string): Promise<RunExecutionResult> {
+  async dispatchRun(runId: string, admission?: RunClaimAdmission): Promise<RunExecutionResult> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(runId)) {
       throw new TypeError("runId must be a UUID");
     }
-    return this.#dispatch(runId.toLowerCase());
+    return this.#dispatch(runId.toLowerCase(), admission);
   }
 
   async dispatchNext(
-    sessionKind: "conversation" | "subagent",
-    onClaimed?: (runId: string) => void,
+    admission?: RunClaimAdmission,
+    onClaimed?: (reference: RunClaimReference) => void,
   ): Promise<RunExecutionResult> {
-    return this.#dispatch(undefined, sessionKind, onClaimed);
+    return this.#dispatch(undefined, admission, onClaimed);
   }
 
   async #dispatch(
     runId?: string,
-    sessionKind?: "conversation" | "subagent",
-    onClaimed?: (runId: string) => void,
+    admission?: RunClaimAdmission,
+    onClaimed?: (reference: RunClaimReference) => void,
   ): Promise<RunExecutionResult> {
     const claimStartedAt = performance.now();
     let claim: ClaimedTurn | undefined;
     try {
-      claim = await this.#claimNext(runId, sessionKind);
+      claim = await this.#claimNext(runId, admission);
       this.#metrics?.runClaimDuration.observe(
         { outcome: claim === undefined ? "idle" : "claimed" },
         (performance.now() - claimStartedAt) / 1_000,
@@ -403,7 +415,7 @@ export class RunExecutor {
       throw error;
     }
     if (!claim) return { status: "idle" };
-    onClaimed?.(claim.request.runId);
+    onClaimed?.(claim.request);
 
     const observedAt = safeDate(this.#clock).valueOf();
     this.#metrics?.queueWait.observe(Math.max(0, observedAt - claim.queuedAt.valueOf()) / 1_000);
@@ -421,7 +433,7 @@ export class RunExecutor {
         },
         run: async () => {
           let started = false;
-          let acknowledgement: TurnExecutionLease | undefined;
+          let acknowledgement: TurnExecutionReference | undefined;
           let startedPromise: Promise<void> | undefined;
           let startFailure: unknown;
           const lifecycle: TurnExecutionLifecycle = {
@@ -435,7 +447,7 @@ export class RunExecutor {
               }
               if (
                 startedPromise !== undefined &&
-                candidate?.executionLease !== acknowledgement?.executionLease
+                candidate?.executionReference !== acknowledgement?.executionReference
               ) {
                 return Promise.reject(
                   new RunExecutorInvariantError("Execution acknowledgement changed after start"),
@@ -574,9 +586,26 @@ export class RunExecutor {
     });
   }
 
+  #familyAdmission(alias: string, admission?: RunClaimAdmission) {
+    if (!admission) return sql<boolean>`true`;
+    const key = sql<string>`concat(${sql.ref(`${alias}.tenant_id`)}::text, ':', ${sql.ref(`${alias}.pi_session_id`)})`;
+    return sql<boolean>`(${admission.allowedFamilyKeys === undefined ? sql`true` : sql`${key} = any(${[...admission.allowedFamilyKeys]}::text[])`})
+      and not (${key} = any(${[...admission.blockedFamilyKeys]}::text[]))`;
+  }
+
+  #taskOwnerAvailable(runAlias: string, now: Date) {
+    // Delegated work belongs to a live parent task, not merely to historical
+    // Session ancestry. A departed parent's queued child cannot start a new owner.
+    return sql<boolean>`not exists(select 1 from subagent_executions e
+      where e.child_run_id=${sql.ref(`${runAlias}.id`)} and not exists(
+        select 1 from active_execution_scopes parent where parent.attempt_id=e.parent_attempt_id
+          and parent.run_id=e.parent_run_id and parent.accepting_effects and parent.valid_until>${now}
+      ))`;
+  }
+
   async #claimNext(
     runId?: string,
-    sessionKind?: "conversation" | "subagent",
+    admission?: RunClaimAdmission,
   ): Promise<ClaimedTurn | undefined> {
     const now = safeDate(this.#clock);
     const leaseUntil = new Date(now.valueOf() + this.#claimLeaseMs);
@@ -612,7 +641,8 @@ export class RunExecutor {
               and pending.output_seal_id is not null and pending.output_sealed_at is null
           )`,
           )
-          .where("candidate_session.session_kind", "=", sessionKind!)
+          .where(this.#familyAdmission("candidate_session", admission))
+          .where(this.#taskOwnerAvailable("candidate", now))
           .where("candidate_policy.enabled", "=", true)
           .where("candidate_agent.runtime_kind", "=", this.#agentRuntimeKind)
           .where(
@@ -621,6 +651,7 @@ export class RunExecutor {
               sql.ref("candidate_session.pi_session_id"),
               this.#claimOwnerId,
               now,
+              sql.ref("candidate.id"),
             ),
           )
           .where(
@@ -719,9 +750,8 @@ export class RunExecutor {
         .whereRef("session_row.agent_revision_id", "=", "run.agent_revision_id")
         .where("run.available_at", "<=", now)
         .where("run.id", "=", selectedRunId)
-        .$if(sessionKind !== undefined, (query) =>
-          query.where("session_row.session_kind", "=", sessionKind!),
-        )
+        .where(this.#familyAdmission("session_row", admission))
+        .where(this.#taskOwnerAvailable("run", now))
         .where("run.state", "in", ["queued", "claimed"])
         .where(
           sql<boolean>`not exists (
@@ -737,6 +767,7 @@ export class RunExecutor {
             sql.ref("session_row.pi_session_id"),
             this.#claimOwnerId,
             now,
+            sql.ref("run.id"),
           ),
         )
         .where(
@@ -1044,7 +1075,7 @@ export class RunExecutor {
 
   async #markStarted(
     claim: ClaimedTurn,
-    acknowledgement: TurnExecutionLease | undefined,
+    acknowledgement: TurnExecutionReference | undefined,
   ): Promise<void> {
     const now = safeDate(this.#clock);
     await retryTransaction(this.#database, async (transaction) => {
@@ -1121,7 +1152,7 @@ export class RunExecutor {
   async #complete(
     claim: ClaimedTurn,
     result: TurnExecutionResult,
-    acknowledgement: TurnExecutionLease | undefined,
+    acknowledgement: TurnExecutionReference | undefined,
   ): Promise<void> {
     const now = safeDate(this.#clock);
     const terminalEventId = this.#idGenerator();
@@ -1240,7 +1271,7 @@ export class RunExecutor {
     claim: ClaimedTurn,
     started: boolean,
     failure: ExecutionFailure,
-    acknowledgement: TurnExecutionLease | undefined,
+    acknowledgement: TurnExecutionReference | undefined,
   ): Promise<RunExecutionResult> {
     const now = safeDate(this.#clock);
     const shouldRetry = !started && failure.retryable && claim.attempt < this.#maxAttempts;
@@ -1460,6 +1491,8 @@ export class RunExecutor {
           );
         }
       }
+      if (acknowledgement === undefined)
+        await this.#executionAuthority?.releaseUnboundClaim?.(transaction, claim.request, now);
     });
 
     if (shouldRetry) {

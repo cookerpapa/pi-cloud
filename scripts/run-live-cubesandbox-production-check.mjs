@@ -649,7 +649,7 @@ async function terminateLogicalSandbox(logicalSandboxId, sessionId, required) {
               'workspaceId', workspace_id,
               'sessionId', session_id,
               'turnId', turn_id,
-              'executionLease', 'pcel1_' || replace(lease_id::text, '-', '') ||
+              'executionReference', 'pcer1_' || replace(lease_id::text, '-', '') ||
                 '_' || replace(attempt_id::text, '-', '') || '_' || fencing_token::text
             )::text
        from tool_broker_workspace_runtimes

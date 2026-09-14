@@ -99,6 +99,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Capacity
 
+- [x] ADR-0167: replace fixed parent/child slots with physical-Session families;
+      align PG/local admission, heartbeat and KEDA; fair, abortable model permits
+      including Compaction; paid multi-family and recursive acceptance.
+      [Acceptance](reports/session-family-acceptance.md).
 - [x] ADR-0163: direct Worker append, cached publication scope and one
       Projector group for PG/live/Tool projections; validate cross-replica SSE,
       live Projector/Worker failure and publication throughput.
@@ -114,8 +118,8 @@ Volume architecture. Historical experiments remain in Git history.
       Kafka consumption into the Session Projector while retaining positioned
       command delivery. [Earlier routing acceptance](reports/tool-command-sharding.md).
 
-- [x] Replace per-free-Slot scans with one concurrent claim probe per queue kind;
-      wake immediately after a successful claim and preserve Child capacity.
+- [x] Replace per-free-Slot scans and separate root/child queues with one claim
+      probe per Worker; wake immediately and admit descendants within owned families.
 - [ ] Measure AcceptedFact producer p50/p95/p99 with 1/16/64/128 active Sessions.
 - [ ] Measure Gateway live-tail bytes per active Turn and 2,000/10,000 SSE
       connections.
@@ -179,11 +183,11 @@ Volume architecture. Historical experiments remain in Git history.
       Worker-owned native Lanes, event-driven result delivery, isolated Cube
       workflow scripts; remove CLI emulation and validate the cutover live.
 - [x] Bind every delegated execution scope to a unique lane in its root Pi
-      Session while retaining independent Run, event and ExecutionLease identity.
+      Session while retaining independent Run, event and task-reference identity.
 - [x] Keep every active Lane of one physical Pi Session on one Worker, while
       preserving cold-Session reassignment after authority expiry.
-- [ ] Measure shared Pi Session sequence-row contention at the maximum supported
-      concurrent Child count before raising the default tree concurrency.
+- [ ] Measure shared Session writer/Projector throughput at the maximum supported
+      child count before raising the default tree and model concurrency.
 - [x] Remove persona/role profiles from the cloud contract and keep one
       task-based Subagent Tool, with no CLI or fake Session adapter.
 - [x] Keep context inheritance, Workspace placement and local Tool grants

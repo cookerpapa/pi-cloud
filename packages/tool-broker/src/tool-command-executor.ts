@@ -6,8 +6,8 @@ export type ToolLogRecord<T> = Readonly<{
   offset: bigint;
 }>;
 import {
-  createExecutionLease,
-  parseExecutionLease,
+  createExecutionReference,
+  parseExecutionReference,
   parseToolSandboxOperationRequest,
   type AcceptedToolCommand,
   type ToolSandboxOperationResponse,
@@ -223,7 +223,7 @@ export class ToolCommandExecutor {
         const started = performance.now();
         try {
           const result = await this.#broker.execute(
-            createExecutionLease(
+            createExecutionReference(
               command.scope.leaseId,
               command.scope.attemptId,
               command.scope.fencingToken,
@@ -298,16 +298,16 @@ export class ToolCommandExecutor {
   }
 
   async waitResult(
-    executionLease: string,
+    executionReference: string,
     activationId: string,
     operationId: string,
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
-    this.#broker.assertToolResultReader(activationId, executionLease);
+    this.#broker.assertToolResultReader(activationId, executionReference);
     signal?.throwIfAborted();
     const read = (): Outcome | undefined => {
-      this.#broker.assertToolResultReader(activationId, executionLease);
-      if (this.#isSealed(parseExecutionLease(executionLease).attemptId))
+      this.#broker.assertToolResultReader(activationId, executionReference);
+      if (this.#isSealed(parseExecutionReference(executionReference).attemptId))
         throw new ToolBrokerError(
           "tool_command_sealed",
           "Tool command belongs to a closed execution",

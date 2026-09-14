@@ -331,7 +331,7 @@ export class TurnSteeringService {
           .onRef("attempt.run_id", "=", "run.id")
           .onRef("attempt.id", "=", "run.current_attempt_id"),
       )
-      .innerJoin("session_leases as lease", "lease.session_id", "session_row.id")
+      .innerJoin("active_execution_scopes as lease", "lease.session_id", "session_row.id")
       .select([
         "turn.state as turnState",
         "session_row.state as sessionState",

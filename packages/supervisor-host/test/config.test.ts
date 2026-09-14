@@ -106,7 +106,8 @@ describe("Supervisor host production configuration", () => {
       databaseMaxConnections: 7,
       subagentMaximumDepth: 4,
       subagentMaximumNodes: 32,
-      subagentMaximumConcurrent: 3,
+      modelConcurrency: 4,
+      familyModelConcurrency: 4,
       databaseNotificationUrl: "postgresql://picloud:secret@postgres:5432/picloud",
       managementPort: 4100,
       managementAdvertisedBaseUrl: "http://supervisor-production-1:4100/",
@@ -157,7 +158,7 @@ describe("Supervisor host production configuration", () => {
         PI_CLOUD_SUBAGENT_MAXIMUM_NODES: "2",
         PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT: "3",
       }),
-    ).rejects.toThrow("Subagent concurrency");
+    ).rejects.toThrow("was removed");
     await expect(
       loadSupervisorHostConfig({
         ...environment,
@@ -173,7 +174,7 @@ describe("Supervisor host production configuration", () => {
 
     await expect(
       loadSupervisorHostConfig({ ...environment, PI_CLOUD_SUPERVISOR_CAPACITY: "2" }),
-    ).rejects.toThrow("leave at least one conversation slot");
+    ).resolves.toMatchObject({ maxConcurrentSessions: 2 });
     await expect(
       loadSupervisorHostConfig({ ...environment, PI_CLOUD_SUPERVISOR_CAPACITY: "16" }),
     ).resolves.toMatchObject({ maxConcurrentSessions: 16, databaseMaxConnections: 16 });

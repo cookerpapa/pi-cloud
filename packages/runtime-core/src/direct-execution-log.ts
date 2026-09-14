@@ -35,7 +35,8 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
     await this.bus.checkHealth();
   }
   async open(request: ExecutionLogOpenRequest): Promise<ExecutionLogWriter> {
-    if (this.#writers.has(request.executionLease)) throw new Error("Execution writer already open");
+    if (this.#writers.has(request.executionReference))
+      throw new Error("Execution writer already open");
     const permit = await openExecutionPublication(this.database, request);
     const { leaseId: _leaseId, piSessionLane: _lane, ...scope } = permit.scope;
     const opening: ExecutionOpenedFact = {
@@ -54,7 +55,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       if (closing || failure)
         return Promise.reject(failure ?? new Error("Execution writer closed"));
       const fact = prepareExecutionFact(
-        { ...permit.scope, executionLease: request.executionLease },
+        { ...permit.scope, executionReference: request.executionReference },
         candidate,
       );
       const bytes = Buffer.byteLength(JSON.stringify(fact));
@@ -99,7 +100,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           type: "event.ack",
           payload: {
             sessionId: request.sessionId,
-            executionLease: request.executionLease,
+            executionReference: request.executionReference,
             acknowledgedThroughSeq,
           },
         };
@@ -120,7 +121,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
       close: async () => {
         closing = true;
         await tail;
-        this.#writers.delete(request.executionLease);
+        this.#writers.delete(request.executionReference);
         if (failure) throw failure;
         await this.database
           .updateTable("run_attempts")
@@ -130,7 +131,7 @@ export class DirectExecutionLog implements ExecutionLogFactory, ActiveExecutionL
           .execute();
       },
     };
-    this.#writers.set(request.executionLease, writer);
+    this.#writers.set(request.executionReference, writer);
     return writer;
   }
   async close() {

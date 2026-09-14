@@ -51,19 +51,12 @@ export function validateProductionRuntimeEnvironment(environment) {
   integer(environment, "PI_CLOUD_SUPERVISOR_DATABASE_MAX_CONNECTIONS", 4, 2, 64);
   integer(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH", 4, 1, 64);
   const subagentNodes = integer(environment, "PI_CLOUD_SUBAGENT_MAXIMUM_NODES", 32, 1, 10_000);
-  const subagentConcurrent = integer(
-    environment,
-    "PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT",
-    3,
-    1,
-    1_000,
-  );
-  if (subagentConcurrent > subagentNodes) {
-    throw new Error("Subagent concurrency cannot exceed the Subagent node budget");
-  }
-  if (subagentConcurrent >= workerCapacity) {
-    throw new Error("Worker capacity must leave at least one conversation slot");
-  }
+  if (environment.PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT !== undefined)
+    throw new Error("Remove PI_CLOUD_SUBAGENT_MAXIMUM_CONCURRENT; capacity is now Session-based");
+  const models = integer(environment, "PI_CLOUD_WORKER_MODEL_CONCURRENCY", 4, 1, 1000);
+  integer(environment, "PI_CLOUD_SESSION_MODEL_CONCURRENCY", Math.min(4, models), 1, models);
+  if (workerCapacity * (subagentNodes + 1) > 1000)
+    throw new Error("Worker task inventory cannot exceed 1000 Lanes");
   const queueWaitMs = integer(
     environment,
     "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_QUEUE_WAIT_TIMEOUT_MS",
