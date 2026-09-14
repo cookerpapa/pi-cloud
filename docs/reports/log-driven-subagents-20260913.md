@@ -86,3 +86,21 @@ this change does not claim to reconstruct an absent full VM.
 High-severity dependency audit passed. Two existing moderate findings in the
 Vitest development dependency graph remain; this report does not claim zero
 dependency advisories.
+
+## Approved follow-up cleanup — 2026-09-14
+
+The user subsequently approved deleting the original failed machine, its Volume
+and associated old history. Release and conversation deletion used the normal
+API. Cube still held one node reference for the Volume despite zero instances,
+zero active snapshot bindings and no matching mount or guest hypervisor process.
+Only that Volume's stale count was corrected, then Cube's native Volume API/plugin
+removed its files. PG confirmed storage purge before related history was removed.
+This was scoped maintenance, not a new compatibility or recovery code path.
+
+Final inventory: zero Sessions, Runs, Projects, Workspaces, development machines
+and native Session-log rows. All 35 users remain. User/password, model-profile
+and platform-configuration fingerprints are unchanged. Configured Code Host
+connections, current Cube templates and provider credentials were preserved.
+The temporary maintenance credential was revoked and removed. Deleted history
+and Volume files have no application-level undo; Kafka follows existing safe
+retention rather than a shared-topic reset. Worker slot semantics were not changed.
