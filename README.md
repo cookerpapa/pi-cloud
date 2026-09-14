@@ -42,34 +42,34 @@ flowchart TD
   E <-->|"Terminal / Preview"| G
   P -->|"snapshot-first SSE"| E
   PG[("PostgreSQL: Run queue + Session Lease/Fence<br/>native Session log + query projections")]
-  API --> PG
+  API -->|"SQL: input + Run + frozen model settings"| PG
   PG --> O
   subgraph WPOOL["Trusted Pi Worker pool"]
-    W["Session-family slots + Native Session Host<br/>concurrent Lanes / fair model permits"]
+    W["PiCloud Harness + Pi SDK<br/>Session Host / concurrent Lanes / Compaction<br/>family slots + fair model permits"]
     M["Local Model Gateway"]
     W --> M
   end
-  PG -->|"Workers claim; cold context restore"| W
-  W -.->|"registration / control channel"| API
+  PG -->|"SQL claim + LISTEN wakeup<br/>native context + accepted Turn configuration"| W
+  W -.->|"WebSocket registration / control<br/>HTTP management"| API
   W -->|"one owner-lease renewal per active Session"| PG
-  M --> C["CLIProxyAPI — provider credentials"]
-  C --> L["GPT / DeepSeek + hosted search"]
+  M -->|"HTTP model requests"| C["CLIProxyAPI — model credentials / account routing"]
+  C <-->|"Provider stream + native search events / citations"| L["GPT / DeepSeek + hosted search"]
   W -->|"direct append; acks=all"| K[("Kafka — RF=3")]
   O -->|"ordered execution seals"| K
   K --> P
-  P -->|"semantic records + progress"| PG
+  P -->|"SQL transaction: semantic log + coverage / closure"| PG
   P -->|"ordered Subagent facts"| SC
   SC <-->|"durable child Run / mailbox state"| PG
-  SC <-->|"Lane preparation / control / result notifications"| W
-  P -->|"Tool commands / seal / result receipt"| TB["Tool Broker"]
-  TB <-->|"owner-direct results / workflow duplex IO"| W
+  SC <-->|"HTTP Lane / input / result notifications"| W
+  P -->|"HTTP Tool commands / seal / result receipt"| TB["Tool Broker"]
+  TB <-->|"HTTP binding / result reads<br/>WebSocket workflow IO"| W
   API -->|"resource lifecycle"| TB
   G --> TB
   S["SSH client"] --> SG["SSH Gateway"] --> TB
   TB --> CC["Cube control plane<br/>internal MySQL / Redis"]
-  CC --> VM["Cubelet / KVM microVM"]
+  CC --> VM["Cubelet / KVM microVM<br/>file / shell Tools and workflow JavaScript"]
   VM <--> V["Cube Volume Plugin / persistent POSIX storage"]
-  TB --> VG["Workspace Volume Gateway"] --> V
+  TB -->|"HTTP live file access / copy / delete"| VG["Workspace Volume Gateway"] --> V
   GL["Optional GitLab Issue intake"] -.-> API
 ```
 
@@ -80,13 +80,25 @@ inside Cube and send `runs.*` requests back through the Worker → Kafka path.
 Operator monitoring and one-host network relays are optional/supporting paths,
 not transcript storage or execution authorities.
 
-PostgreSQL accepts user inputs and owns Run scheduling and execution authority.
-Workers pull ready Runs; notifications only reduce queue latency. A cold Session
-occupies no slot. Active Lanes share one physical Session writer and owner lease
-on one Worker. The family occupies one slot; model requests use a separate fair
-concurrency budget, released before waiting for Tools/children. The Harness consumes a `SessionStorage`
-port: active context is an acknowledged in-memory view; cold recovery loads the
-latest Compaction and active suffix, not lifetime JSONL.
+PostgreSQL accepts input before acknowledging it. Workers claim ready Runs from
+the same queue; notifications only reduce idle latency. A cold Session occupies
+no slot. All active Lanes of one physical Pi Session share one Worker and owner
+lease. A later Turn can move to another Worker once that ownership ends; an
+active child is not independently placed on a different Worker. Each family
+uses one slot, while model calls use separate permits released before Tool/child
+waits. Cold restore loads native context from the latest Compaction, not lifetime
+JSONL. Compaction itself runs in the trusted Harness through the model route.
+Workers call the embedded SDK rather than starting a Pi CLI process per message.
+Delegated child views use separate Lanes in the same native Session; a human
+conversation Fork creates an independent native Session.
+
+Model selection is not Worker-local state: `sessions` holds the desired
+provider/model/reasoning/Fast selection, and acceptance freezes it in `turns`.
+The claimant reads that Turn snapshot. The current UI/API requires queued/running
+Turns to finish before changing selection. CLIProxyAPI owns model-account
+credentials and routing, not the conversation's chosen model. Hosted search runs
+at the provider; activity and supported native search/citation history return
+through the Worker adapter and the same execution log.
 
 Workers stamp native records before appending directly to Kafka. One partitioned
 Projector group checks recorded openings/seals, projects complete semantic data to
@@ -116,13 +128,26 @@ Cube effects may remain UNKNOWN: this is semantic recovery, not exactly-once she
 execution or restoration of lost process memory. Kafka retention follows safe PG
 recovery progress plus a grace interval; token fragments do not become PG rows.
 
-Workspace files belong to persistent Cube Volumes, without per-Run object
-archives or Workspace settlement heads. Tool output is bounded, not archived. Development-machine snapshots
-are node-affine; deleting compute does not delete conversations. Cube's internal
-MySQL/Redis manage Cube, not PiCloud Runs. Provider account credentials remain in
-CLIProxyAPI. Optional GitLab and Prometheus/Grafana/Alertmanager/Jaeger integrations
-are outside the core scheduling/log authorities. One-host relays supply network
-reachability, not additional event-processing stages.
+Workspace files belong to persistent Cube Volumes, without per-Run archives or
+settlement heads. Sessions can share an elastic Workspace and its warm Cube;
+user-owned machines have an independent lifecycle and Sessions select directories
+inside them. Machine snapshots are node-affine. Deleting a resource preserves its
+conversations but requires rebinding before further work. Browsing reads current
+files; it does not invoke the Agent or replay its log. Raw Tool output is bounded,
+not archived. Cube's MySQL/Redis manage Cube, not PiCloud Runs.
+
+| Concern | Source of truth / disposable state |
+| --- | --- |
+| Resource ownership, Run queue, Session Lease/Fence, model selection | PostgreSQL |
+| Accepted output before safe reclamation | Kafka |
+| Long-term native Session history and cold restore | Durable PostgreSQL projection |
+| Active Lane context and browser streaming tail | Rebuildable Worker / Projector memory |
+| Workspace files / running processes | Volume / live Cube or surviving VM snapshot |
+| Model-account credentials | CLIProxyAPI |
+
+Optional GitLab and Prometheus/Grafana/Alertmanager/Jaeger integrations are outside
+the scheduling/log authorities. One-host relays supply network reachability,
+not additional event-processing stages.
 
 See [Architecture](docs/ARCHITECTURE.md), [Run lifecycle](docs/RUN_LIFECYCLE.md),
 [stream durability](docs/STREAM_DURABILITY.md) and
