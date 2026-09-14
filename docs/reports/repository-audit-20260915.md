@@ -121,6 +121,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | LOCK-01 | Volume advisory-lock connection failure is detected after the filesystem callback completes | Needs real PG disconnect + fork/delete interleaving proof; do not change storage/authority semantics without discussion if a local atomic-filesystem fix is insufficient |
 | MEM-02 | Supervisor retained completed Assignments and publisher contexts, plus command/control bookkeeping | Reproduced 64 completed synthetic Runs retaining all 64 publishers and ~65 MiB of owned buffers with zero active Sessions. Clear the publisher at completion/pre-start release: zero publishers and ~1 MiB remain; completed duplicate commands still reuse their outcome. Long-term command/control/epoch bookkeeping retention remains under review |
 | LIFE-06 | A synchronous Runner startup throw bypassed the common completion cleanup and stranded its slot | Reproduced active count remaining 1. Make the event-boundary method async so synchronous and asynchronous failures share finalization; regression passes |
+| LIFE-07 | Worker entrypoint acquired observability/DB before its cleanup scope; constructor failures leaked acquired resources and secondary errors were swallowed | Three regressions failed before. One ordered cleanup path covers partial acquisition, preserves primary/cleanup errors, and removes signal listeners; four lifecycle tests pass |
 | TIME-01 | Lease/claim timestamps are captured before potentially blocked SQL updates | Probe delayed renewal versus actual expiry/seal with real PG; do not silently change the authority clock model |
 
 Architecture question ARCH-01 (asked, awaiting owner): should a Session quarantined
@@ -132,6 +133,10 @@ Run/Tool replay is proposed; ordinary failure-closure bugs are fixed independent
 GitHub's [setup-URL guidance](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-setup-url)
 explicitly requires checking the caller's access to the supplied installation;
 ARCH-02 is awaiting the owner. No real GitHub account or installation was probed.
+
+Remote CI passed completely at `aadcb725` ([run](https://github.com/cookerpapa/pi-cloud/actions/runs/34899010082)),
+including the quality, browser and image/security jobs. Later slices require their
+own final rerun; this is not evidence that paid end-to-end validation is finished.
 
 Latest UI/resource slice: all 117 tests across 18 files pass, plus the actual
 Chrome presentation/interaction fixture (including rejected clipboard cleanup).
