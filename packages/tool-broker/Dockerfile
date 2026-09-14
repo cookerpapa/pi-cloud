@@ -1,4 +1,8 @@
-FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS dependencies
+FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS os-base
+COPY scripts/install-node-os-security-updates.sh /tmp/install-node-os-security-updates.sh
+RUN sh /tmp/install-node-os-security-updates.sh && rm /tmp/install-node-os-security-updates.sh
+
+FROM os-base AS dependencies
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org
 ENV npm_config_registry=${NPM_CONFIG_REGISTRY}
 WORKDIR /app
@@ -14,7 +18,7 @@ COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.
 RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts \
     && npm cache clean --force
 
-FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
+FROM os-base
 ARG PI_CLOUD_VERSION=development
 ARG PI_CLOUD_REVISION=unknown
 LABEL org.opencontainers.image.title="PiCloud Tool Broker" \
