@@ -1675,20 +1675,6 @@ body.product-panel-resizing {
 .product-tool-body .product-tool-output code {
   font: inherit;
 }
-.product-tool-stream-cursor {
-  display: inline-block;
-  width: 6px;
-  height: 1.05em;
-  margin-left: 2px;
-  animation: product-tool-cursor 0.8s steps(2, jump-none) infinite;
-  background: #aaa0e5;
-  vertical-align: -0.15em;
-}
-@keyframes product-tool-cursor {
-  50% {
-    opacity: 0;
-  }
-}
 .product-tool-source .hljs-comment,
 .product-tool-source .hljs-quote,
 .product-markdown .hljs-comment,

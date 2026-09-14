@@ -8,6 +8,7 @@ import type {
   WorkspaceSummaryResource,
 } from "@pi-cloud/protocol";
 import { newIdempotencyKey, PiCloudApi, PiCloudApiError } from "./api.ts";
+import { validMachineDirectory } from "@pi-cloud/protocol";
 import { useI18n } from "./i18n.tsx";
 import { WorkspaceDirectoryPicker } from "./WorkspaceDirectoryPicker.tsx";
 import { CodeHostConnectionsModal } from "./CodeHostConnectionsModal.tsx";
@@ -758,7 +759,6 @@ export function ResourceManagementPage({
                       {t("chat.create.chooseDirectory")}
                     </button>
                   </div>
-                  <small>{t("sourceControl.workingDirectoryHelp")}</small>
                 </label>
               </>
             )}
@@ -792,7 +792,7 @@ export function ResourceManagementPage({
                   issueSessionTitle.trim().length === 0 ||
                   (issueExecutionMode === "development_environment" &&
                     (issueEnvironmentId.length === 0 ||
-                      !issueWorkingDirectory.startsWith("/home/user/")))
+                      !validMachineDirectory(issueWorkingDirectory)))
                 }
                 type="submit"
               >

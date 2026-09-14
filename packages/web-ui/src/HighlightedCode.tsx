@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 type SourceHighlightModule = typeof import("./source-highlight.ts");
 type SourceHighlightResult = ReturnType<SourceHighlightModule["highlightSource"]>;
@@ -28,13 +28,11 @@ export function HighlightedCode({
   path = null,
   language = null,
   className,
-  suffix,
 }: {
   text: string;
   path?: string | null;
   language?: string | null;
   className?: string;
-  suffix?: ReactNode;
 }) {
   const highlighter = useSourceHighlighter();
   const highlighted: SourceHighlightResult =
@@ -59,7 +57,6 @@ export function HighlightedCode({
           dangerouslySetInnerHTML={{ __html: highlighted.html }}
         />
       )}
-      {suffix}
     </code>
   );
 }

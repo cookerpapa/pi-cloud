@@ -121,7 +121,9 @@ export function highlightLanguage(
 ): { language: string; html: string } | null {
   if (languageHint === null) return null;
   const normalized = languageHint.toLowerCase().replace(/^language-/u, "");
-  const language = LANGUAGE_ALIASES[normalized];
+  const language = Object.hasOwn(languages, normalized)
+    ? (normalized as keyof typeof languages)
+    : LANGUAGE_ALIASES[normalized];
   return language === undefined ? null : highlightKnownLanguage(text, language);
 }
 

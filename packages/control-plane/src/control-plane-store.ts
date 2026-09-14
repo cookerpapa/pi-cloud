@@ -36,6 +36,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
   DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
   parseCloudToolCapabilitySnapshot,
+  validMachineDirectory,
 } from "@pi-cloud/protocol";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
@@ -110,25 +111,6 @@ type TenantRuntimePolicy = {
 type AssignedSandboxDomain = {
   id: string;
 };
-
-function validMachineDirectory(path: string): boolean {
-  if (
-    path.length < 1 ||
-    path.length > 4_096 ||
-    !path.startsWith("/") ||
-    /[\u0000-\u001f\u007f]/.test(path) ||
-    (path.length > 1 && path.endsWith("/"))
-  ) {
-    return false;
-  }
-  return (
-    path === "/" ||
-    path
-      .slice(1)
-      .split("/")
-      .every((part) => part !== "" && part !== "." && part !== "..")
-  );
-}
 
 function isPostgresConstraint(error: unknown, constraint: string): boolean {
   return (

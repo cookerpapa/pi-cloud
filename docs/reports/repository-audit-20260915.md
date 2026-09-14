@@ -71,6 +71,16 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | UI-08 | Run completion refresh unmounted the human terminal; Inspector inferred machine identity by fetching its entire catalog | Browser reproduced unmount. Separate file refresh from terminal lifetime; pass exact Session binding/directory, refresh files on Workspace change, remove redundant catalog lookup |
 | UI-09 | Old terminal WebSocket callbacks changed the replacement connection's state | Browser with controlled socket lifecycle reproduced late-close disconnect. Ignore retired socket callbacks and close prior transport before reconnect |
 | UI-10 | Empty child labels did nothing; local tree jumps did not notify tail-following logic | Browser reproduced both. Labels select the branch independently of entries; explicit local-jump callback stops auto-follow |
+| UI-11 | Failed directory reads left Choose enabled; navigation could race directory creation | Browser reproduced stale selection. Only a loaded directory is selectable; disable navigation during the owned create operation |
+| UI-12 | Fenced `python`/`rust` and four other registered language names had no highlighting; edit deletion was treated as missing text | Six highlighting and one deletion regression failed before; recognize registered names and preserve empty replacement strings. Removed unreachable Tool-stream cursor and suffix plumbing |
+| UI-13 | Clipboard fallback left a hidden textarea and lost focus on rejection; SSH bypassed the HTTP-capable copy helper | Browser reproduced retained textarea/lost focus. Always remove and restore focus; use the existing helper for SSH and surface failures |
+| SC-01 | Issue start retained a home-subdirectory restriction despite full-VM directory selection | Reproduced rejection of `/home/user`. Share ordinary Session path validation; `/home/user`, `/srv/issue-project`, `/` pass and malformed paths still fail. Removed stale UI guidance |
+| SC-02 | GitLab refresh replaces the internal clone address with the public address; mixed-provider credential context always considers the GitLab workspace origin | Source-confirmed candidates; reproduce with isolated provider fixtures |
+| SC-03 | Claim-note sync clears its pending bit before the external effect | Candidate lost notification after process death; validate crash and concurrent claim ordering before choosing the smallest durable fix |
+| SC-04 | Issue credential authorization omits the owned-machine user check used by ordinary Code Host connections | Candidate same-tenant machine ownership bypass; reproduce without real credentials/network |
+| SC-05 | Single-Issue mutation responses search only the newest 100 jobs; list query fetches unused large Issue bodies | Candidate old-job failure and query amplification; test with more than 100 jobs |
+| SC-06 | Optional GitHub App callback validates PiCloud state but not caller access to the supplied installation | Architecture decision ARCH-02 requested: disable the App installation entry or add GitHub user authorization; environment-local credentials are separate and remain unchanged |
+| UI-14 | Blank-line streaming Markdown segmentation may split a loose list or a four-backtick fence | Candidate rendering mismatch; compare complete and streaming document semantics before changing the renderer |
 | MUT-01 | Rebind and cancel check idempotency before acquiring their lifecycle row locks, then can reject on changed state | Candidate concurrent replay bug; reproduce with separate real PostgreSQL connections |
 | LIFE-03 | Active Lane cold-history waits use the shared writer signal, not the task's cancellation signal | Candidate blocked cancellation; trace Runtime abort and test projection lag without poisoning sibling Lanes |
 | CANCEL-01 | `abort()` was lost before the native Agent existed; cancellation during intent ACK still called the Tool | Reproduced model/effect calls after cancellation. Latched cancellation, checked the existing signal after intent commit, and kept aborted native outcome; unit regressions pass |
@@ -107,7 +117,15 @@ committed seal are confirmed? Existing behavior only permits Fork/prune. No old
 Run/Tool replay is proposed; ordinary failure-closure bugs are fixed independently.
 | CFG-04 | Helm CP sets global HTTP(S) proxy but no NO_PROXY; several private Broker requests use global fetch | Candidate internal routing through provider proxy; verify actual runtime/Node proxy contract in owned deployment test |
 
-No architecture change proposed yet. Local regression slices passed: three
+GitHub's [setup-URL guidance](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-setup-url)
+explicitly requires checking the caller's access to the supplied installation;
+ARCH-02 is awaiting the owner. No real GitHub account or installation was probed.
+
+Latest UI/resource slice: all 117 tests across 18 files pass, plus the actual
+Chrome presentation/interaction fixture (including rejected clipboard cleanup).
+These are local contract/browser tests, not paid model or deployed Cube acceptance.
+
+Local regression slices passed: three
 runtime-composition tests; 50 Worker/Runner/Harness tests; 12 auth/gateway tests;
 69 Broker/admission/Tool-result/bootstrap/shutdown/monitoring tests. These slices
 overlap earlier runs and are not a full-suite total. Native storage package: 92

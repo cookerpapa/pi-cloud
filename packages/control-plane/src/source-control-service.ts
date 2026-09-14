@@ -16,6 +16,7 @@ import type {
   StartSourceControlIssueJobRequest,
 } from "@pi-cloud/protocol";
 import { ToolBrokerClient } from "@pi-cloud/tool-broker/client";
+import { validMachineDirectory } from "@pi-cloud/protocol";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
@@ -849,17 +850,10 @@ export class SourceControlService {
         projectId = workspace.projectId;
         workspaceId = request.workspaceId;
       } else {
-        if (
-          !request.workingDirectory.startsWith("/home/user/") ||
-          request.workingDirectory.endsWith("/") ||
-          request.workingDirectory
-            .slice("/home/user/".length)
-            .split("/")
-            .some((segment) => segment.length === 0 || segment === "." || segment === "..")
-        ) {
+        if (!validMachineDirectory(request.workingDirectory)) {
           throw new SourceControlServiceError(
             "source_control_conflict",
-            "Choose an Issue work directory inside the cloud development machine home directory",
+            "Choose an absolute directory in the cloud development machine",
           );
         }
         const environment = await transaction

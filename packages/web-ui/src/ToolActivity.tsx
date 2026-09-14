@@ -68,13 +68,11 @@ function ExpandableToolText({
   direction,
   className,
   sourcePath = null,
-  streaming = false,
 }: {
   text: string;
   direction: "head" | "tail";
   className: string;
   sourcePath?: string | null;
-  streaming?: boolean;
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -97,13 +95,7 @@ function ExpandableToolText({
         </button>
       ) : null}
       <pre className={className}>
-        <HighlightedCode
-          path={sourcePath}
-          suffix={
-            streaming ? <span aria-hidden="true" className="product-tool-stream-cursor" /> : null
-          }
-          text={visible}
-        />
+        <HighlightedCode path={sourcePath} text={visible} />
       </pre>
       {omitted > 0 && !expanded && direction === "head" ? (
         <button type="button" onClick={() => setExpanded(true)}>
@@ -236,9 +228,9 @@ function editValues(input: JsonRecord | null): readonly { oldText: string; newTe
   if (!Array.isArray(input?.edits)) return [];
   return input.edits.flatMap((value) => {
     const edit = objectValue(value);
-    const oldText = stringValue(edit?.oldText);
-    const newText = stringValue(edit?.newText);
-    return oldText === null || newText === null ? [] : [{ oldText, newText }];
+    const oldText = edit?.oldText;
+    const newText = edit?.newText;
+    return typeof oldText === "string" && typeof newText === "string" ? [{ oldText, newText }] : [];
   });
 }
 

@@ -83,6 +83,7 @@ export function WorkspaceDirectoryPicker({
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setListing(null);
     setError(null);
     setNewFolderOpen(false);
     setNewFolderName("");
@@ -164,7 +165,7 @@ export function WorkspaceDirectoryPicker({
         <div className="product-directory-toolbar">
           <button
             aria-label={t("directory.up")}
-            disabled={directory === "/" || loading}
+            disabled={directory === "/" || loading || creating}
             onClick={() => setDirectory(parent(directory))}
             title={t("directory.up")}
             type="button"
@@ -172,13 +173,18 @@ export function WorkspaceDirectoryPicker({
             ←
           </button>
           <nav className="product-directory-address" aria-label={t("directory.location")}>
-            <button onClick={() => setDirectory("/")} type="button">
+            <button disabled={creating} onClick={() => setDirectory("/")} type="button">
               /
             </button>
             {parts.map((part, index) => {
               const target = `/${parts.slice(0, index + 1).join("/")}`;
               return (
-                <button key={target} onClick={() => setDirectory(target)} type="button">
+                <button
+                  disabled={creating}
+                  key={target}
+                  onClick={() => setDirectory(target)}
+                  type="button"
+                >
                   <span aria-hidden="true">›</span>
                   {part}
                 </button>
@@ -187,7 +193,7 @@ export function WorkspaceDirectoryPicker({
           </nav>
           <button
             className="product-directory-new-folder"
-            disabled={loading || creating}
+            disabled={loading || creating || listing === null}
             onClick={() => setNewFolderOpen((open) => !open)}
             type="button"
           >
@@ -227,6 +233,7 @@ export function WorkspaceDirectoryPicker({
             {places.map((place) => (
               <button
                 className={directory === place.path ? "active" : ""}
+                disabled={creating}
                 key={place.path}
                 onClick={() => setDirectory(place.path)}
                 type="button"
@@ -256,6 +263,7 @@ export function WorkspaceDirectoryPicker({
                 return (
                   <button
                     aria-disabled={!selectable}
+                    disabled={creating}
                     aria-selected={selectedDirectory === entry.path}
                     className={`product-directory-entry product-directory-entry-${entry.kind}${
                       selectedDirectory === entry.path ? " selected" : ""
@@ -296,7 +304,7 @@ export function WorkspaceDirectoryPicker({
           </button>
           <button
             className="product-primary-button"
-            disabled={loading || creating || selectedDirectory.length === 0}
+            disabled={loading || creating || listing === null || selectedDirectory.length === 0}
             onClick={() => onChoose(selectedDirectory)}
             type="button"
           >

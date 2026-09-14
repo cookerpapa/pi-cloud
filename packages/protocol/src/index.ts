@@ -148,6 +148,7 @@ export {
   DevelopmentEnvironmentTerminalOpenRequestSchema,
   DevelopmentEnvironmentProtocolError,
   DEFAULT_EXCLUSIVE_WORKING_DIRECTORY,
+  validMachineDirectory,
   DEVELOPMENT_ENVIRONMENT_PROFILES,
   DevelopmentEnvironmentProfileKeySchema,
   parseDevelopmentEnvironmentBrokerRequest,

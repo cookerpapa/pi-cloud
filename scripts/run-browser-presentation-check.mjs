@@ -17,9 +17,11 @@ import { useResizablePanel } from "/src/use-resizable-panel.ts";
 import ChatApp from "/src/ChatApp.tsx";
 import { WorkspaceInspector } from "/src/WorkspaceInspector.tsx";
 import { WorkspaceTerminal } from "/src/WorkspaceTerminal.tsx";
+import { WorkspaceDirectoryPicker } from "/src/WorkspaceDirectoryPicker.tsx";
 import { ConversationTreeNavigator } from "/src/ConversationTreeNavigator.tsx";
 import { PiCloudApi } from "/src/api.ts";
 import { I18nProvider } from "/src/i18n.tsx";
+import { copyMessageText } from "/src/MessageCopyButton.tsx";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES, DEFAULT_NEW_CONVERSATION_MODEL } from "@pi-cloud/protocol";
 import "/src/product.css";
 
@@ -45,6 +47,7 @@ window.renderTurn = (text, recoveredTextLength = 0) => root.render(
     items:[{kind:"text",key:"text:1",text,firstSequence:1,lastSequence:2,recoveredTextLength}]
   }})));
 window.turnBodies = [];
+window.copyFixtureText=copyMessageText;
 const inspectorApi = {
   listDevelopmentEnvironments:async()=>({environments:[]}),
   listWorkspaceDirectory:async()=>({entries:[
@@ -57,6 +60,19 @@ const inspectorApi = {
   }),
 };
 window.fileReads={};
+window.renderDirectoryPicker=()=>{
+  window.directoryLoads={};window.chosenDirectories=[];
+  const api={
+    listDevelopmentEnvironmentDirectory:(_environment,path)=>new Promise((resolve,reject)=>{
+      window.directoryLoads[path]={resolve,reject};
+    }),
+    createDevelopmentEnvironmentDirectory:()=>new Promise(resolve=>{window.finishDirectoryCreate=resolve;})
+  };
+  root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},React.createElement(WorkspaceDirectoryPicker,{
+    api,environmentId:'machine',initialDirectory:'/home/user',workspaceName:'machine',onCancel:()=>{},
+    onChoose:path=>window.chosenDirectories.push(path)
+  })));
+};
 window.navigations=[]; window.jumpCount=0;
 const NativeWebSocket=window.WebSocket;
 window.terminalSockets=[];
@@ -400,6 +416,65 @@ try {
       "A retired terminal socket must not disconnect its successor",
     );
     await page.evaluate("restoreWebSocket()");
+    await page.evaluate("renderDirectoryPicker()");
+    await page.waitFor("directoryLoads['/home/user']");
+    await page.evaluate("directoryLoads['/home/user'].reject(new Error('Directory unavailable'))");
+    await page.waitFor("document.querySelector('.product-directory-picker .product-form-error')");
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-directory-picker footer .product-primary-button').disabled",
+      ),
+      true,
+      "A failed directory listing must not leave a selectable stale directory",
+    );
+    await page.evaluate("document.querySelector('.product-directory-address button').click()");
+    await page.waitFor("directoryLoads['/']");
+    await page.evaluate("directoryLoads['/'].resolve({path:'/',entries:[],truncated:false})");
+    await page.waitFor("!document.querySelector('.product-directory-new-folder').disabled");
+    await page.evaluate("document.querySelector('.product-directory-new-folder').click()");
+    await fill(".product-directory-create input", "project");
+    await page.evaluate(
+      "document.querySelector('.product-directory-create .product-primary-button').click()",
+    );
+    await page.waitFor("typeof finishDirectoryCreate==='function'");
+    await page.evaluate("document.querySelector('.product-directory-places button').click()");
+    assert.equal(
+      await page.evaluate(
+        "document.querySelector('.product-directory-selection code').textContent",
+      ),
+      "/",
+      "Navigation cannot race a pending directory creation",
+    );
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-directory-places button').disabled"),
+      true,
+    );
+    await page.evaluate(
+      "finishDirectoryCreate({path:'/',entries:[{name:'project',path:'/project',kind:'directory'}],truncated:false})",
+    );
+    await page.waitFor(
+      "document.querySelector('.product-directory-selection code').textContent==='/project'",
+    );
+    const clipboardFailure = await page.evaluate(`(async()=>{
+      const descriptor=Object.getOwnPropertyDescriptor(navigator,'clipboard');
+      const nativeExec=document.execCommand;
+      const active=document.createElement('input');document.body.append(active);active.focus();
+      Object.defineProperty(navigator,'clipboard',{configurable:true,value:undefined});
+      document.execCommand=()=>{throw new Error('Copy rejected');};
+      const count=document.querySelectorAll('textarea').length;
+      try {
+        let error;try {await copyFixtureText('private copy fixture');} catch(caught){error=caught.message;}
+        return {error,extraTextareas:document.querySelectorAll('textarea').length-count,focusRestored:document.activeElement===active};
+      } finally {
+        document.execCommand=nativeExec;active.remove();
+        if(descriptor)Object.defineProperty(navigator,'clipboard',descriptor);else delete navigator.clipboard;
+      }
+    })()`);
+    assert.deepEqual(clipboardFailure, {
+      error: "Copy rejected",
+      extraTextareas: 0,
+      focusRestored: true,
+    });
     await page.evaluate("renderChat(); window.rejectLogout=true");
     await page.waitFor('document.querySelector(".product-account-menu-trigger")');
     await page.evaluate('document.querySelector(".product-account-menu-trigger").click()');
@@ -437,6 +512,7 @@ try {
       logoutLifecycle: true,
       branchSelectionAndManualJump: true,
       terminalSocketIsolation: true,
+      directoryPickerLifecycle: true,
     }),
   );
 } finally {

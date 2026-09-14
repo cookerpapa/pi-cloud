@@ -518,55 +518,58 @@ describe("product chat experience", () => {
     expect(markup).toContain("耗时 0.0s");
   });
 
-  it("renders read output as source and edit input as a compact diff", () => {
-    const readMarkup = renderToStaticMarkup(
-      <ToolActivity
-        item={{
-          kind: "tool",
-          key: "tool:read-1",
-          toolCallId: "read-1",
-          toolName: "read",
-          input: { path: "/workspace/main.ts", offset: 10, limit: 20 },
-          output: "export const answer = 42;",
-          status: "completed",
-          firstSequence: 1,
-          lastSequence: 2,
-          startedAt: "2026-08-24T00:00:00.000Z",
-          completedAt: "2026-08-24T00:00:00.100Z",
-        }}
-      />,
-    );
-    expect(readMarkup).toContain("<strong>read</strong>");
-    expect(readMarkup).toContain("/workspace/main.ts");
-    expect(readMarkup).toContain("L10 +20");
-    expect(readMarkup).toContain("export const answer = 42;");
+  it.each(["return 42;", ""])(
+    "renders read output and an edit to %j as a compact diff",
+    (replacement) => {
+      const readMarkup = renderToStaticMarkup(
+        <ToolActivity
+          item={{
+            kind: "tool",
+            key: "tool:read-1",
+            toolCallId: "read-1",
+            toolName: "read",
+            input: { path: "/workspace/main.ts", offset: 10, limit: 20 },
+            output: "export const answer = 42;",
+            status: "completed",
+            firstSequence: 1,
+            lastSequence: 2,
+            startedAt: "2026-08-24T00:00:00.000Z",
+            completedAt: "2026-08-24T00:00:00.100Z",
+          }}
+        />,
+      );
+      expect(readMarkup).toContain("<strong>read</strong>");
+      expect(readMarkup).toContain("/workspace/main.ts");
+      expect(readMarkup).toContain("L10 +20");
+      expect(readMarkup).toContain("export const answer = 42;");
 
-    const editMarkup = renderToStaticMarkup(
-      <ToolActivity
-        item={{
-          kind: "tool",
-          key: "tool:edit-1",
-          toolCallId: "edit-1",
-          toolName: "edit",
-          input: {
-            path: "/workspace/main.ts",
-            edits: [{ oldText: "return 41;", newText: "return 42;" }],
-          },
-          output: "Successfully edited /workspace/main.ts",
-          status: "completed",
-          firstSequence: 3,
-          lastSequence: 4,
-          startedAt: "2026-08-24T00:00:00.000Z",
-          completedAt: "2026-08-24T00:00:00.100Z",
-        }}
-      />,
-    );
-    expect(editMarkup).toContain("product-diff-removed");
-    expect(editMarkup).toContain("return 41;");
-    expect(editMarkup).toContain("product-diff-added");
-    expect(editMarkup).toContain("return 42;");
-    expect(editMarkup).not.toContain("Successfully edited");
-  });
+      const editMarkup = renderToStaticMarkup(
+        <ToolActivity
+          item={{
+            kind: "tool",
+            key: "tool:edit-1",
+            toolCallId: "edit-1",
+            toolName: "edit",
+            input: {
+              path: "/workspace/main.ts",
+              edits: [{ oldText: "return 41;", newText: replacement }],
+            },
+            output: "Successfully edited /workspace/main.ts",
+            status: "completed",
+            firstSequence: 3,
+            lastSequence: 4,
+            startedAt: "2026-08-24T00:00:00.000Z",
+            completedAt: "2026-08-24T00:00:00.100Z",
+          }}
+        />,
+      );
+      expect(editMarkup).toContain("product-diff-removed");
+      expect(editMarkup).toContain("return 41;");
+      expect(editMarkup).toContain("product-diff-added");
+      expect(editMarkup).toContain(replacement);
+      expect(editMarkup).not.toContain("Successfully edited");
+    },
+  );
 
   it("folds adjacent completed Tools into one stable activity row", () => {
     const groupedTurn: TurnView = {

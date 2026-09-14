@@ -15,11 +15,15 @@ export async function copyMessageText(text: string): Promise<void> {
   textarea.setAttribute("readonly", "");
   textarea.style.position = "fixed";
   textarea.style.opacity = "0";
+  const active = document.activeElement;
   document.body.append(textarea);
-  textarea.select();
-  const copied = document.execCommand("copy");
-  textarea.remove();
-  if (!copied) throw new Error("Browser copy command was rejected");
+  try {
+    textarea.select();
+    if (!document.execCommand("copy")) throw new Error("Browser copy command was rejected");
+  } finally {
+    textarea.remove();
+    if (active instanceof HTMLElement) active.focus({ preventScroll: true });
+  }
 }
 
 export function MessageCopyButton({

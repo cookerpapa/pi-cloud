@@ -32,6 +32,7 @@ import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
 import { AccountMenu } from "./AccountMenu.tsx";
 import { AuthScreen } from "./AuthScreen.tsx";
 import { ConversationTreeNavigator } from "./ConversationTreeNavigator.tsx";
+import { copyMessageText } from "./MessageCopyButton.tsx";
 import { ConversationTurn } from "./ConversationTurn.tsx";
 import {
   conversationExportFilename,
@@ -1949,14 +1950,22 @@ export default function ChatApp() {
               <p className="product-resource-boundary-note">{t("chat.ssh.warning")}</p>
               <footer>
                 <button
-                  onClick={() => void navigator.clipboard.writeText(sshTicket.oneLineCommand)}
+                  onClick={() =>
+                    void copyMessageText(sshTicket.oneLineCommand).catch((error: unknown) => {
+                      update({ type: "api.error", message: errorMessage(error, t) });
+                    })
+                  }
                   type="button"
                 >
                   {t("chat.ssh.copyCommand")}
                 </button>
                 <button
                   className="product-primary-button"
-                  onClick={() => void navigator.clipboard.writeText(sshTicket.password)}
+                  onClick={() =>
+                    void copyMessageText(sshTicket.password).catch((error: unknown) => {
+                      update({ type: "api.error", message: errorMessage(error, t) });
+                    })
+                  }
                   type="button"
                 >
                   {t("chat.ssh.copyPassword")}

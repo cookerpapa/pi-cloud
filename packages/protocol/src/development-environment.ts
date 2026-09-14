@@ -16,6 +16,24 @@ export const TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_PATH =
 export const TOOL_BROKER_DEVELOPMENT_ENVIRONMENT_TERMINAL_PATH =
   "/internal/v1/development-environment-terminal" as const;
 
+export function validMachineDirectory(path: string): boolean {
+  if (
+    path.length < 1 ||
+    path.length > 4_096 ||
+    !path.startsWith("/") ||
+    /[\u0000-\u001f\u007f]/.test(path) ||
+    (path.length > 1 && path.endsWith("/"))
+  )
+    return false;
+  return (
+    path === "/" ||
+    path
+      .slice(1)
+      .split("/")
+      .every((part) => part !== "" && part !== "." && part !== "..")
+  );
+}
+
 const DevelopmentEnvironmentBrokerStateSchema = Type.Union([
   Type.Literal("provisioning"),
   Type.Literal("running"),

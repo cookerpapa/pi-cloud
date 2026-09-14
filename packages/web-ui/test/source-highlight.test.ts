@@ -30,4 +30,9 @@ describe("source highlighting", () => {
     expect(highlightLanguage("echo ready", "shell")?.language).toBe("bash");
     expect(highlightLanguage("plain", "unknown-language")).toBeNull();
   });
+
+  it.each(["python", "rust", "ruby", "markdown", "csharp", "kotlin"])(
+    "recognizes the registered fenced language %s, not only its file extension",
+    (language) => expect(highlightLanguage("example", language)?.language).toBe(language),
+  );
 });

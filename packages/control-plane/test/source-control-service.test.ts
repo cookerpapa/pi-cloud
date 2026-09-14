@@ -240,6 +240,88 @@ describe.sequential("source-control App boundary", () => {
     vi.spyOn(service, "preflightIssueGitCredential").mockResolvedValue({
       authorized: true,
     });
+    const machineWorkspace = await new ControlPlaneStore({
+      database,
+      tenantId: tenant.tenantId,
+      defaultModelProfileId: tenant.defaultModelProfileId,
+    }).createProject({ name: "Issue machine", source: { kind: "empty" } });
+    const machineId = randomUUID();
+    const brokerId = randomUUID();
+    await database
+      .insertInto("tool_broker_instances")
+      .values({
+        instance_id: brokerId,
+        sandbox_domain_id: "sandbox-domain-gitlab-workspace",
+        owner_base_url: "http://broker.invalid:4301",
+        state: "ready",
+        lease_expires_at: new Date(Date.now() + 60_000),
+        last_heartbeat_at: new Date(),
+      })
+      .execute();
+    await database
+      .updateTable("workspaces")
+      .set({ workspace_kind: "development_environment" })
+      .where("id", "=", machineWorkspace.workspaceId)
+      .execute();
+    await database
+      .insertInto("development_environments")
+      .values({
+        id: machineId,
+        tenant_id: tenant.tenantId,
+        owner_user_id: tenant.ownerUserId,
+        project_id: machineWorkspace.projectId,
+        workspace_id: machineWorkspace.workspaceId,
+        sandbox_domain_id: "sandbox-domain-gitlab-workspace",
+        state: "running",
+        owner_instance_id: brokerId,
+        owner_base_url: "http://broker.invalid:4301",
+        runtime_id: "fixture-runtime",
+        runtime_name: "fixture-runtime",
+        idempotency_key: "issue-machine",
+        request_sha256: "a".repeat(64),
+        profile_key: "starter",
+        cpu_count: 1,
+        memory_mib: 2048,
+        system_disk_gib: 8,
+      })
+      .execute();
+    for (const workingDirectory of ["/home/user", "/srv/issue-project", "/"]) {
+      await expect(
+        service.startIssueJob(claimant, pendingJob.jobId, {
+          executionMode: "development_environment",
+          sessionTitle: "Machine issue",
+          developmentEnvironmentId: machineId,
+          workingDirectory,
+        }),
+      ).resolves.toMatchObject({ state: "received" });
+      const row = await database
+        .selectFrom("source_control_issue_jobs")
+        .select("working_directory")
+        .where("id", "=", pendingJob.jobId)
+        .executeTakeFirstOrThrow();
+      expect(row.working_directory).toBe(workingDirectory);
+      await database
+        .updateTable("source_control_issue_jobs")
+        .set({ state: "awaiting_claim" })
+        .where("id", "=", pendingJob.jobId)
+        .execute();
+    }
+    for (const workingDirectory of [
+      "relative",
+      "/home/user/../other",
+      "/srv//project",
+      "/srv/",
+      "/srv/\u0000",
+    ]) {
+      await expect(
+        service.startIssueJob(claimant, pendingJob.jobId, {
+          executionMode: "development_environment",
+          sessionTitle: "Invalid path",
+          developmentEnvironmentId: machineId,
+          workingDirectory,
+        }),
+      ).rejects.toMatchObject({ code: "source_control_conflict" });
+    }
     await expect(
       service.startIssueJob(claimant, pendingJob.jobId, {
         executionMode: "elastic",
