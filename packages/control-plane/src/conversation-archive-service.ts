@@ -75,7 +75,6 @@ export class ConversationArchiveService {
             "workspace_id",
             "execution_mode",
             "archived_at",
-            "current_workspace_settlement_id",
             "conversation_parent_session_id",
           ])
           .where("tenant_id", "=", tenantId)
@@ -235,8 +234,6 @@ export class ConversationArchiveService {
             session_id: sessionId,
             kind,
             idempotency_key: idempotencyKey,
-            from_settlement_id: session.current_workspace_settlement_id,
-            to_settlement_id: session.current_workspace_settlement_id,
             source_session_id: null,
           })
           .executeTakeFirstOrThrow();
@@ -244,9 +241,6 @@ export class ConversationArchiveService {
           operationId,
           kind,
           sessionId,
-          ...(session.current_workspace_settlement_id === null
-            ? {}
-            : { settlementId: session.current_workspace_settlement_id }),
           replayed: false,
           createdAt: now.toISOString(),
         };
@@ -303,13 +297,7 @@ export class ConversationArchiveService {
   ): Promise<WorkspaceOperationResource | undefined> {
     const row = await transaction
       .selectFrom("workspace_operations as operation")
-      .select([
-        "operation.id",
-        "operation.kind",
-        "operation.session_id",
-        "operation.to_settlement_id",
-        "operation.created_at",
-      ])
+      .select(["operation.id", "operation.kind", "operation.session_id", "operation.created_at"])
       .where("operation.tenant_id", "=", tenantId)
       .where("operation.session_id", "=", sessionId)
       .where("operation.idempotency_key", "=", idempotencyKey)
@@ -325,7 +313,6 @@ export class ConversationArchiveService {
       operationId: row.id,
       kind: expectedKind,
       sessionId: row.session_id,
-      ...(row.to_settlement_id === null ? {} : { settlementId: row.to_settlement_id }),
       replayed: true,
       createdAt: iso(row.created_at),
     };

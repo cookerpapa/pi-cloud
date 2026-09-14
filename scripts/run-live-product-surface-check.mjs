@@ -491,6 +491,41 @@ try {
   assert(Buffer.from(source.bytes).toString("utf8").includes("def add"));
   progress("real coding, Tool execution and Workspace source browsing passed");
 
+  const largeOutput = await runTurn({
+    api,
+    browser,
+    sessionId: session.sessionId,
+    expectTools: true,
+    prompt: [
+      "Use exactly one bash call to run this command, without redirecting or filtering its output:",
+      `python3 -c 'print("BEGIN-BOUNDED-OUTPUT"); print("x" * 150000); print("END-BOUNDED-OUTPUT")'`,
+      "After the Tool returns, reply briefly. Do not repeat the command and do not create a file.",
+    ].join(" "),
+  });
+  const storedResult = JSON.parse(
+    await psql(`select payload->'message' from pi_session_entries
+    where session_id='${session.sessionId}' and turn_id='${largeOutput.accepted.turnId}'
+      and payload->'message'->>'role'='toolResult' order by seq desc limit 1`),
+  );
+  const storedText = storedResult.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  assert(Buffer.byteLength(storedText) < 65536);
+  assert(storedText.includes("BEGIN-BOUNDED-OUTPUT") && storedText.includes("END-BOUNDED-OUTPUT"));
+  assert(storedText.includes("omitted output is not archived"));
+  assert(!storedText.includes("preserved as the tool-output artifact"));
+  assert(!largeOutput.events.some((event) => event.payload?.outputArtifact !== undefined));
+  assert.equal(
+    await psql(
+      "select count(*) from pg_tables where schemaname='public' and tablename in ('runtime_objects','workspace_settlements','artifacts')",
+    ),
+    "0",
+  );
+  progress(
+    "large Tool output stayed bounded in native history without an archive or recovery link",
+  );
+
   const terminal = await openTerminal(session.sessionId, browser.cookieHeader);
   assert.equal(terminal.ready, true);
   assert(terminal.output.includes("TERMINAL-SURFACE-OK"));
@@ -717,6 +752,7 @@ try {
     },
     treeForkPrune: true,
     workspaceBrowserEntries: directory.entries.length,
+    boundedToolOutputWithoutArchive: true,
     terminal: true,
     terminalAgentConcurrency: true,
     sharedWorkspaceConcurrentSessions: true,

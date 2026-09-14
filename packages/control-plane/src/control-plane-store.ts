@@ -404,28 +404,10 @@ export class ControlPlaneStore {
       const policy = await this.#lockTenantPolicy(transaction);
       const workspace = await transaction
         .selectFrom("workspaces as workspace")
-        .leftJoin(
-          "workspace_settlements as current_settlement",
-          "current_settlement.id",
-          "workspace.current_workspace_settlement_id",
-        )
-        .leftJoin(
-          "artifacts as settlement_artifact",
-          "settlement_artifact.id",
-          "current_settlement.settlement_artifact_id",
-        )
-        .leftJoin(
-          "runtime_objects as workspace_settlement",
-          "workspace_settlement.object_key",
-          "settlement_artifact.object_key",
-        )
         .select([
           "workspace.id",
           "workspace.project_id",
           "workspace.workspace_kind as workspaceKind",
-          "workspace.current_workspace_settlement_id as currentSettlementId",
-          "settlement_artifact.object_key as workspaceSettlementKey",
-          "workspace_settlement.object_key as durableWorkspaceSettlementKey",
         ])
         .where("workspace.tenant_id", "=", this.#tenantId)
         .where("workspace.project_id", "=", projectId)
@@ -446,12 +428,6 @@ export class ControlPlaneStore {
           "conflict",
           "Conversation execution mode does not match the selected storage resource",
         );
-      }
-      if (
-        workspace.currentSettlementId !== null &&
-        workspace.durableWorkspaceSettlementKey === null
-      ) {
-        throw new ControlPlaneStoreError("not_found", "Project workspace was not found");
       }
       const sessionCount = await transaction
         .selectFrom("sessions")
@@ -571,8 +547,6 @@ export class ControlPlaneStore {
           execution_mode: executionMode,
           sandbox_profile_key: sandboxProfileKey,
           working_directory: workingDirectory,
-          workspace_settlement_key: workspace.workspaceSettlementKey,
-          current_workspace_settlement_id: workspace.currentSettlementId,
         })
         .returning([
           "id",
@@ -723,21 +697,6 @@ export class ControlPlaneStore {
           .onRef("project.tenant_id", "=", "workspace.tenant_id")
           .onRef("project.id", "=", "workspace.project_id"),
       )
-      .leftJoin(
-        "workspace_settlements as current_settlement",
-        "current_settlement.id",
-        "workspace.current_workspace_settlement_id",
-      )
-      .leftJoin(
-        "artifacts as settlement_artifact",
-        "settlement_artifact.id",
-        "current_settlement.settlement_artifact_id",
-      )
-      .leftJoin(
-        "runtime_objects as workspace_settlement",
-        "workspace_settlement.object_key",
-        "settlement_artifact.object_key",
-      )
       .leftJoin("sessions as session_row", (join) =>
         join
           .onRef("session_row.tenant_id", "=", "workspace.tenant_id")
@@ -760,12 +719,6 @@ export class ControlPlaneStore {
       .where("workspace.tenant_id", "=", this.#tenantId)
       .where("workspace.workspace_kind", "=", "user")
       .where("workspace.deleted_at", "is", null)
-      .where((expression) =>
-        expression.or([
-          expression("workspace.current_workspace_settlement_id", "is", null),
-          expression("workspace_settlement.object_key", "is not", null),
-        ]),
-      )
       .groupBy(["workspace.id", "workspace.project_id", "project.name", "project.created_at"])
       .orderBy("lastActiveAt", "desc")
       .orderBy("workspace.id", "desc")
@@ -1148,7 +1101,6 @@ export class ControlPlaneStore {
         .select([
           "workspace.id",
           "workspace.project_id as projectId",
-          "workspace.current_workspace_settlement_id as currentSettlementId",
           "project.name as workspaceName",
         ])
         .where("workspace.tenant_id", "=", this.#tenantId)
@@ -1183,8 +1135,6 @@ export class ControlPlaneStore {
         .set({
           project_id: target.projectId,
           workspace_id: target.id,
-          current_workspace_settlement_id: target.currentSettlementId,
-          workspace_settlement_key: null,
           execution_mode: "elastic",
           development_environment_id: null,
           working_directory: "/workspace",
@@ -1393,9 +1343,6 @@ export class ControlPlaneStore {
           claimOwnerId: attempt.claim_owner_id,
           claimExpiresAt: isoTimestamp(attempt.claim_expires_at),
           ...(attempt.sandbox_id === null ? {} : { sandboxId: attempt.sandbox_id }),
-          ...(attempt.settlement_revision === null
-            ? {}
-            : { settlementRevision: attempt.settlement_revision }),
           ...(attemptFailure === undefined ? {} : { failure: attemptFailure }),
           claimedAt: isoTimestamp(attempt.claimed_at),
           ...(optionalTimestamp(attempt.provisioning_at) === undefined
@@ -1510,8 +1457,6 @@ export class ControlPlaneStore {
           "session_row.sandbox_profile_key",
           "session_row.next_event_seq",
           "session_row.next_mailbox_position",
-          "session_row.current_workspace_settlement_id",
-          "session_row.workspace_settlement_key",
           "session_row.forked_from_session_id",
           "session_row.tool_capabilities",
           "session_row.archived_at",
@@ -1601,20 +1546,7 @@ export class ControlPlaneStore {
       }
       const workspace = await transaction
         .selectFrom("workspaces as workspace")
-        .leftJoin(
-          "workspace_settlements as current_settlement",
-          "current_settlement.id",
-          "workspace.current_workspace_settlement_id",
-        )
-        .leftJoin(
-          "artifacts as settlement_artifact",
-          "settlement_artifact.id",
-          "current_settlement.settlement_artifact_id",
-        )
-        .select([
-          "workspace.current_workspace_settlement_id as currentSettlementId",
-          "settlement_artifact.object_key as workspaceSettlementKey",
-        ])
+        .select("workspace.id")
         .where("workspace.tenant_id", "=", this.#tenantId)
         .where("workspace.id", "=", session.workspace_id)
         .where("workspace.deleted_at", "is", null)
@@ -1630,27 +1562,6 @@ export class ControlPlaneStore {
       }
       if (session.archived_at !== null) {
         throw new ControlPlaneStoreError("conflict", "Archived Session cannot accept turns");
-      }
-      const workspaceBaseSettlementId =
-        session.forked_from_session_id === null
-          ? workspace.currentSettlementId
-          : session.current_workspace_settlement_id;
-      const workspaceSettlementKey =
-        session.forked_from_session_id === null
-          ? workspace.workspaceSettlementKey
-          : session.workspace_settlement_key;
-      if (workspaceSettlementKey !== null) {
-        const durableWorkspaceSettlement = await transaction
-          .selectFrom("runtime_objects")
-          .select("object_key")
-          .where("object_key", "=", workspaceSettlementKey)
-          .executeTakeFirst();
-        if (durableWorkspaceSettlement === undefined) {
-          throw new ControlPlaneStoreError(
-            "conflict",
-            "Workspace settlement is unavailable; create a new Workspace",
-          );
-        }
       }
       if (!TURN_ACCEPTING_SESSION_STATES.has(session.state)) {
         throw new ControlPlaneStoreError(
@@ -1727,7 +1638,6 @@ export class ControlPlaneStore {
             0,
             positiveSafeInteger(session.next_event_seq, "Next event sequence") - 1,
           ),
-          workspace_base_settlement_id: workspaceBaseSettlementId,
           idempotency_key: idempotencyKey,
           state: "queued",
           current_attempt_id: null,
@@ -1746,8 +1656,6 @@ export class ControlPlaneStore {
         .updateTable("sessions")
         .set({
           next_mailbox_position: sql<string>`${sql.ref("next_mailbox_position")} + 1`,
-          current_workspace_settlement_id: workspaceBaseSettlementId,
-          workspace_settlement_key: workspaceSettlementKey,
           row_version: sql<string>`${sql.ref("row_version")} + 1`,
           updated_at: sql<Date>`now()`,
         })

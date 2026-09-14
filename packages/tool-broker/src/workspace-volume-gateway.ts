@@ -10,7 +10,6 @@ export {
   type WorkspaceVolumeGatewayForkInput,
   type WorkspaceVolumeGatewayLock,
   type WorkspaceVolumeGatewayPrepareInput,
-  type WorkspaceVolumeGatewaySettleInput,
   type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
   type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
   type WorkspaceVolumeGatewayVolumeIdentity,

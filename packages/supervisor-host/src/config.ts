@@ -35,9 +35,6 @@ export type SupervisorHostConfig = {
   toolBrokerRequestTimeoutMs: number;
   trustedWorkspaceDirectory: string;
   bootStateDirectory: string;
-  runtimeObjectCacheTtlMs: number;
-  runtimeObjectCacheMaximumEntries: number;
-  runtimeObjectCacheMaximumBytes: number;
   modelGatewayHost: string;
   modelGatewayPort: number;
   modelGatewayAdvertisedBaseUrl: string;
@@ -424,27 +421,6 @@ export async function loadSupervisorHostConfig(
     toolBrokerRequestTimeoutMs,
     trustedWorkspaceDirectory: required(environment, "PI_CLOUD_TRUSTED_WORKSPACE_DIRECTORY"),
     bootStateDirectory: required(environment, "PI_CLOUD_BOOT_STATE_DIRECTORY"),
-    runtimeObjectCacheTtlMs: integerValue(
-      environment,
-      "PI_CLOUD_RUNTIME_OBJECT_CACHE_TTL_MS",
-      10 * 60_000,
-      1_000,
-      60 * 60_000,
-    ),
-    runtimeObjectCacheMaximumEntries: integerValue(
-      environment,
-      "PI_CLOUD_RUNTIME_OBJECT_CACHE_MAXIMUM_ENTRIES",
-      512,
-      1,
-      16_384,
-    ),
-    runtimeObjectCacheMaximumBytes: integerValue(
-      environment,
-      "PI_CLOUD_RUNTIME_OBJECT_CACHE_MAXIMUM_BYTES",
-      32 * 1_024 * 1_024,
-      1_024,
-      512 * 1_024 * 1_024,
-    ),
     modelGatewayHost: bounded(
       environment.PI_CLOUD_MODEL_GATEWAY_HOST ?? "127.0.0.1",
       "PI_CLOUD_MODEL_GATEWAY_HOST",

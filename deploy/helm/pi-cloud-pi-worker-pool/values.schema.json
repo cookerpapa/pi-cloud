@@ -257,7 +257,6 @@
         "modelConcurrency",
         "sessionModelConcurrency",
         "subagents",
-        "runtimeObjectCache",
         "timeouts"
       ],
       "properties": {
@@ -280,28 +279,6 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 10000
-            }
-          }
-        },
-        "runtimeObjectCache": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["ttlMs", "maximumEntries", "maximumBytes"],
-          "properties": {
-            "ttlMs": {
-              "type": "integer",
-              "minimum": 1000,
-              "maximum": 3600000
-            },
-            "maximumEntries": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100000
-            },
-            "maximumBytes": {
-              "type": "integer",
-              "minimum": 1048576,
-              "maximum": 1073741824
             }
           }
         },

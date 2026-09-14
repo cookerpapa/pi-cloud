@@ -1,10 +1,5 @@
 import { SubagentControlClient } from "@pi-cloud/sandbox-supervisor";
 import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
-import {
-  type RuntimeObjectStore,
-  PostgresWorkspaceSettlementStore,
-  TtlRuntimeObjectStore,
-} from "@pi-cloud/runtime-core/workspace-settlement-runtime";
 import type { ExecutionLogFactory } from "@pi-cloud/runtime-core/execution-log";
 import { DirectExecutionLog } from "@pi-cloud/runtime-core/direct-execution-log";
 import {
@@ -59,7 +54,6 @@ export type PiWorkerRuntimeState =
 export type PiWorkerRuntimeOptions = {
   config: SupervisorHostConfig;
   database?: Kysely<Database>;
-  objectStore: RuntimeObjectStore & { checkHealth(): Promise<void>; destroy(): void };
   provisioningClient?: Pick<SupervisorProvisioningClient, "provision">;
   toolBroker?: SupervisorToolBroker;
   idGenerator?: () => string;
@@ -93,7 +87,6 @@ export type SupervisorToolBroker = Pick<
   | "operationResultUrlFor"
   | "checkHealth"
   | "create"
-  | "capture"
   | "refreshServices"
   | "release"
   | "stop"
@@ -109,9 +102,7 @@ export const PRODUCTION_CANCELLATION_PROBE_PROMPT = "pi-cloud://acceptance/cance
 
 export function resolveProductionSandboxScenario({
   command,
-  restoring,
 }: AgentTurnScenarioContext): AgentTurnScenario {
-  if (restoring) return "java_followup";
   if (
     command.payload.input.kind === "prompt" &&
     command.payload.input.text.startsWith("pi-cloud-eval://")
@@ -150,10 +141,6 @@ export class PiWorkerRuntime {
   readonly #config: SupervisorHostConfig;
   readonly #database: Kysely<Database>;
   readonly #ownsDatabase: boolean;
-  readonly #objectStore: RuntimeObjectStore & {
-    checkHealth(): Promise<void>;
-    destroy(): void;
-  };
   readonly #provisioningClient: Pick<SupervisorProvisioningClient, "provision">;
   readonly #toolBroker: SupervisorToolBroker;
   readonly #idGenerator: () => string;
@@ -214,7 +201,6 @@ export class PiWorkerRuntime {
         maxConnections: options.config.databaseMaxConnections,
       });
     this.#ownsDatabase = options.database === undefined;
-    this.#objectStore = options.objectStore;
     this.#provisioningClient =
       options.provisioningClient ??
       new SupervisorProvisioningClient({
@@ -312,7 +298,6 @@ export class PiWorkerRuntime {
         }
       },
       assignmentInventory: this.#toolBroker,
-      artifactStore: this.#objectStore,
       subagentCommand: async (command) => {
         if (!this.#nativeSessions || !this.#subagentControl)
           throw new Error("Subagent runtime is not ready");
@@ -365,7 +350,7 @@ export class PiWorkerRuntime {
     this.#managementServer = managementServer;
     try {
       await managementServer.listen();
-      await Promise.all([sql`select 1`.execute(this.#database), this.#objectStore.checkHealth()]);
+      await sql`select 1`.execute(this.#database);
 
       const secret = connectionSecret(this.#connectionSecretGenerator());
       const request: SupervisorBootProvisionRequest = {
@@ -382,25 +367,6 @@ export class PiWorkerRuntime {
       };
       await this.#provisioningClient.provision(request);
 
-      const cachedRuntimeObjects = new TtlRuntimeObjectStore({
-        objectStore: this.#objectStore,
-        ttlMs: this.#config.runtimeObjectCacheTtlMs,
-        maximumEntries: this.#config.runtimeObjectCacheMaximumEntries,
-        maximumBytes: this.#config.runtimeObjectCacheMaximumBytes,
-        ...(this.#metrics === undefined
-          ? {}
-          : {
-              observe: (event) => {
-                this.#metrics!.runtimeObjectCacheAccess.inc({ result: event.result });
-                this.#metrics!.runtimeObjectCacheEntries.set(event.entries);
-                this.#metrics!.runtimeObjectCacheBytes.set(event.bytes);
-              },
-            }),
-      });
-      const settlementStore = new PostgresWorkspaceSettlementStore({
-        database: this.#database,
-        objectStore: cachedRuntimeObjects,
-      });
       const workspaceSeedResolver = new PostgresWorkspaceSeedResolver({
         database: this.#database,
       });
@@ -514,7 +480,6 @@ export class PiWorkerRuntime {
         broker: this.#toolBroker,
         runtimeIdentity: identity,
         trustedWorkspaceDirectory: this.#config.trustedWorkspaceDirectory,
-        settlementStore,
         openAgentSession: (command) =>
           nativeSessions.open({
             scope: {
@@ -676,7 +641,6 @@ export class PiWorkerRuntime {
     if (this.#ownsExecutionLogs) {
       await this.#activeExecutionLogs?.close?.().catch(() => undefined);
     }
-    this.#objectStore.destroy();
     if (this.#ownsDatabase) await this.#database.destroy();
     if (this.#state !== "failed") this.#state = "stopped";
   }

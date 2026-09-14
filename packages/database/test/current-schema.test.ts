@@ -23,9 +23,9 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(137);
+      expect(firstMigrationPass.rows).toHaveLength(138);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("137_physical_session_leases");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("138_direct_workspace_storage");
       const leaseColumns = await sql<{
         column_name: string;
       }>`select column_name from information_schema.columns where table_name='session_leases'`.execute(
@@ -48,6 +48,8 @@ describe("current PiCloud schema", () => {
            and table_type = 'BASE TABLE'
       `.execute(database);
       const names = new Set(tables.rows.map((row) => row.table_name));
+      for (const retired of ["workspace_settlements", "runtime_objects", "artifacts"])
+        expect(names.has(retired)).toBe(false);
       for (const required of [
         "runs",
         "run_attempts",
@@ -68,8 +70,6 @@ describe("current PiCloud schema", () => {
         "agent_definitions",
         "agent_revisions",
         "source_control_issue_claims",
-        "workspace_settlements",
-        "runtime_objects",
       ]) {
         expect(names.has(required), `missing current table ${required}`).toBe(true);
       }
@@ -149,7 +149,7 @@ describe("current PiCloud schema", () => {
       const applied = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(applied.rows.at(-1)?.name).toBe("137_physical_session_leases");
+      expect(applied.rows.at(-1)?.name).toBe("138_direct_workspace_storage");
 
       const sessionLogConstraint = await sql<{ definition: string }>`
         select pg_get_constraintdef(oid) as definition

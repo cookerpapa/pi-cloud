@@ -1040,10 +1040,6 @@ try {
     ),
   );
   assert(testsDirectory.entries.some((entry) => entry.path === "tests/test_sorting_elementary.py"));
-  const finalWorkspaceSettlementId = await psql(
-    `select current_workspace_settlement_id::text from sessions where id = '${session.sessionId}'`,
-  );
-  assert(finalWorkspaceSettlementId.length > 0);
   const compactions = rounds.flatMap((round) => round.eventCompactions);
   const totalUsage = [
     ...rounds.map((round) => round.usage),
@@ -1094,7 +1090,6 @@ try {
       marker,
       codingTurnsUntilRequiredCompactions: rounds.length,
       requiredCompactions,
-      finalWorkspaceSettlementId,
       visibleFilesInCheckedDirectories:
         algolabDirectory.entries.length + testsDirectory.entries.length,
     },

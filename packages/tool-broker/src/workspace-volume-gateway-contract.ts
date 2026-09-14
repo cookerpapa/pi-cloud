@@ -18,7 +18,6 @@ export const VOLUME_METADATA_DIRECTORY = ".pi-cloud-runtime";
 export const VOLUME_WORKSPACE_DIRECTORY = "workspace";
 export const WORKSPACE_GIT_CREDENTIALS_FILE = ".git-credentials";
 export const VOLUME_GENERATION_FILE = "generation";
-export const VOLUME_SETTLEMENT_FILE = "settlement";
 export const VOLUME_DELETE_FILE = "delete-authorized";
 export function volumeDeleteMarker(volumeId: string, generation: string): string {
   return `pi-cloud-volume-delete-v1\n${volumeId}\n${generation}\n`;
@@ -27,7 +26,6 @@ export const MAXIMUM_REQUEST_BYTES = 32 * 1_024;
 export const MAXIMUM_RESPONSE_BYTES = 8 * 1_024 * 1_024;
 
 export const WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH = "/v1/workspaces/prepare";
-export const WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH = "/v1/workspaces/settle";
 export const WORKSPACE_VOLUME_GATEWAY_FORK_PATH = "/v1/workspaces/fork";
 export const WORKSPACE_VOLUME_GATEWAY_LIST_DIRECTORY_PATH = "/v1/workspaces/list-directory";
 export const WORKSPACE_VOLUME_GATEWAY_READ_FILE_PATH = "/v1/workspaces/read-file";
@@ -55,13 +53,6 @@ export type WorkspaceVolumeGatewayIdentity = WorkspaceVolumeGatewayVolumeIdentit
 
 export type WorkspaceVolumeGatewayPrepareInput = WorkspaceVolumeGatewayIdentity;
 
-export type WorkspaceVolumeGatewaySettleInput = WorkspaceVolumeGatewayIdentity &
-  Readonly<{
-    activationId: string;
-    fencingToken: number;
-    bindingSha256: string;
-  }>;
-
 export type WorkspaceVolumeGatewayPathInput = WorkspaceVolumeGatewayIdentity &
   Readonly<{
     rootPath: string;
@@ -86,7 +77,6 @@ export type WorkspaceVolumeGatewayForkInput = Readonly<{
   sourceWorkspaceId: string;
   sourceSessionId: string;
   sourceVolumeId: string;
-  expectedSourceSettlementRevision: string;
   targetWorkspaceId: string;
   targetSessionId: string;
   targetVolumeId: string;
@@ -121,10 +111,9 @@ export type WorkspaceVolumeGatewaySourceCredentialDisconnectInput = WorkspaceVol
 export interface WorkspaceVolumeGateway {
   checkHealth(): Promise<void>;
   prepare(input: WorkspaceVolumeGatewayPrepareInput): Promise<{ attached: boolean }>;
-  settle(input: WorkspaceVolumeGatewaySettleInput): Promise<{ settlementRevision: string }>;
   fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
-    sourceSettlementRevision: string;
-    targetSettlementRevision: string;
+    sourceVolumeGeneration: string;
+    targetVolumeGeneration: string;
   }>;
   listDirectory(
     input: WorkspaceVolumeGatewayPathInput,
@@ -183,7 +172,7 @@ export type VolumeState = Readonly<{
   workspaceId: string;
   volumeId: string;
   volumeGeneration: string;
-  forkedFrom?: Readonly<{ workspaceId: string; settlementRevision: string }>;
+  forkedFrom?: Readonly<{ workspaceId: string; volumeGeneration: string }>;
 }>;
 
 export class WorkspaceVolumeGatewayError extends Error {

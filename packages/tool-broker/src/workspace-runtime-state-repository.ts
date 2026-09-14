@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   Database,
   DevelopmentEnvironmentState,
@@ -23,7 +24,6 @@ export type WorkspaceRuntimeReservation = {
   turnContextSha256: string;
   attemptContextSha256: string;
   environmentSha256: string;
-  workspaceRevision?: string;
 };
 
 function executionIdentity(assignment: ToolSandboxAssignment | SupervisorRuntimeAssignment) {
@@ -40,7 +40,6 @@ export type WorkspaceRuntimeReservationResult =
 export type OrphanedWorkspaceRuntime = Readonly<{
   activationId: string;
   assignment: ToolSandboxAssignment;
-  workspaceRevision?: string;
 }>;
 
 export type WorkspaceTerminalReservation = Readonly<{
@@ -153,7 +152,7 @@ export interface WorkspaceRuntimeStateRepository {
   setWorkspaceRuntimeState(
     activationId: string,
     state: ToolBrokerWorkspaceRuntimeState,
-    detail?: { handle?: SandboxHandle; workspaceRevision?: string; failureCode?: string },
+    detail?: { handle?: SandboxHandle; failureCode?: string },
   ): Promise<void>;
   beginOperation(
     workspaceRuntimeId: string,
@@ -371,7 +370,7 @@ export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   async setWorkspaceRuntimeState(
     activationId: string,
     state: ToolBrokerWorkspaceRuntimeState,
-    _detail?: { handle?: SandboxHandle; workspaceRevision?: string; failureCode?: string },
+    _detail?: { handle?: SandboxHandle; failureCode?: string },
   ): Promise<void> {
     if (state === "released") this.#activations.delete(activationId);
   }
@@ -836,7 +835,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         turn_context_sha256: input.turnContextSha256,
         attempt_context_sha256: input.attemptContextSha256,
         environment_sha256: input.environmentSha256,
-        workspace_revision: input.workspaceRevision ?? null,
         runtime_id: null,
         runtime_name: null,
         state: "reserved",
@@ -884,7 +882,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
             turn_context_sha256: input.turnContextSha256,
             attempt_context_sha256: input.attemptContextSha256,
             environment_sha256: input.environmentSha256,
-            workspace_revision: input.workspaceRevision ?? null,
             runtime_id: null,
             runtime_name: null,
             state: "reserved",
@@ -965,7 +962,6 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           "attempt_id",
           "lease_id",
           "fencing_token",
-          "workspace_revision",
         ])
         .where("tenant_id", "=", input.tenantId)
         .where("workspace_id", "=", input.workspaceId)
@@ -1629,20 +1625,17 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   async setWorkspaceRuntimeState(
     activationId: string,
     state: ToolBrokerWorkspaceRuntimeState,
-    detail: { handle?: SandboxHandle; workspaceRevision?: string; failureCode?: string } = {},
+    detail: { handle?: SandboxHandle; failureCode?: string } = {},
   ): Promise<void> {
     const now = validDate(this.#clock);
     const updated = await this.#database.transaction().execute(async (transaction) => {
       await this.#assertCurrentOwner(transaction, now);
-      return transaction
+      const result = await transaction
         .updateTable("tool_broker_workspace_runtimes")
         .set({
           state,
           runtime_id: detail.handle?.runtimeId ?? null,
           runtime_name: detail.handle?.runtimeName ?? null,
-          ...(detail.workspaceRevision === undefined
-            ? {}
-            : { workspace_revision: detail.workspaceRevision }),
           failure_code: failureCode(detail.failureCode),
           updated_at: now,
         })
@@ -1650,6 +1643,40 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .where("owner_instance_id", "=", this.#instanceId)
         .where("state", "!=", "released")
         .executeTakeFirst();
+      if (result.numUpdatedRows === 1n && state === "active" && detail.handle !== undefined) {
+        const { assignment, environment, environmentValidation } = detail.handle;
+        // Activation evidence is independent of file persistence. The conditional
+        // update records it once per environment version, not on every Tool/Run.
+        const validated = await transaction
+          .updateTable("environment_versions")
+          .set({ state: "validated", failure_code: null, validated_at: now, updated_at: now })
+          .where("tenant_id", "=", assignment.tenantId)
+          .where("project_id", "=", assignment.projectId)
+          .where("id", "=", environment.environmentVersionId)
+          .where("spec_sha256", "=", environmentValidation.specSha256)
+          .where("recipe_sha256", "=", environmentValidation.recipeSha256)
+          .where("image_revision", "=", environmentValidation.imageRevision)
+          .where("state", "!=", "validated")
+          .returning("id")
+          .executeTakeFirst();
+        if (validated !== undefined)
+          await transaction
+            .insertInto("environment_validations")
+            .values({
+              id: randomUUID(),
+              tenant_id: assignment.tenantId,
+              project_id: assignment.projectId,
+              environment_version_id: validated.id,
+              run_id: null,
+              attempt_id: null,
+              status: "validated",
+              report: environmentValidation,
+              failure_code: null,
+              validated_at: now,
+            })
+            .executeTakeFirstOrThrow();
+      }
+      return result;
     });
     if (updated.numUpdatedRows !== 1n) {
       throw new WorkspaceRuntimeStateRepositoryError(

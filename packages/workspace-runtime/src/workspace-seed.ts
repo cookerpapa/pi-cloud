@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, posix, resolve } from "node:path";
 import { TextDecoder } from "node:util";
-import { parseWorkspaceVolumeSettlement } from "./workspace-volume-settlement.ts";
 import { WorkspaceRuntimeError } from "./workspace-error.ts";
 
 export const MAX_WORKSPACE_SEED_FILES = 512;
@@ -77,9 +76,6 @@ function decodeCanonicalBase64(value: string): Buffer {
 }
 
 export function parseWorkspaceSeed(seed: Uint8Array): WorkspaceSeedFileContent[] {
-  if (parseWorkspaceVolumeSettlement(seed) !== undefined) {
-    throw seedError("Provider Workspace settlement does not contain portable file bytes");
-  }
   if (seed.byteLength < 1 || seed.byteLength > MAX_WORKSPACE_SEED_BYTES) {
     throw seedError("Workspace seed is outside its byte limit");
   }
@@ -204,7 +200,6 @@ export async function restoreWorkspaceSeed(
 }
 
 export function validateWorkspacePayload(seed: Uint8Array): void {
-  if (parseWorkspaceVolumeSettlement(seed) !== undefined) return;
   parseWorkspaceSeed(seed);
 }
 

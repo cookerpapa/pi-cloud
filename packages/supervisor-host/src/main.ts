@@ -1,5 +1,4 @@
 import { createDatabase } from "@pi-cloud/database";
-import { PostgresRuntimeObjectStore } from "@pi-cloud/runtime-core/workspace-settlement-runtime";
 import { startServiceObservability } from "@pi-cloud/observability";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
@@ -39,11 +38,9 @@ export async function startSupervisorHost(): Promise<void> {
     connectionString: config.databaseUrl,
     maxConnections: config.databaseMaxConnections,
   });
-  const objectStore = new PostgresRuntimeObjectStore(database);
   const runtime = new PiWorkerRuntime({
     config,
     database,
-    objectStore,
     metrics: observability.metrics,
   });
   try {

@@ -11,7 +11,6 @@ import {
   RoutedHttpSupervisorOwnerBoundary,
 } from "./http-supervisor-management.ts";
 import { SessionLeaseCoordinator } from "@pi-cloud/runtime-core/session-lease-coordinator";
-import { PostgresRuntimeObjectStore } from "@pi-cloud/runtime-core/postgres-runtime-object-store";
 import { SessionProjector } from "@pi-cloud/runtime-core/session-projector";
 import { ToolCommandRouter, httpToolLogDelivery } from "@pi-cloud/tool-broker/command-router";
 import { PostgresToolCommandRoutes } from "@pi-cloud/tool-broker/command-routes";
@@ -62,7 +61,6 @@ export async function startControlPlane(): Promise<void> {
     defaultMetricsPort: 9464,
   });
   const database = createDatabase({ connectionString: config.databaseUrl, maxConnections: 12 });
-  const objectStore = new PostgresRuntimeObjectStore(database);
   const controlPlaneInstanceId = randomUUID();
   let agentEvents: SessionProjector | undefined;
   let runtime: ControlPlaneRuntime | undefined;
@@ -131,7 +129,6 @@ export async function startControlPlane(): Promise<void> {
       sessionTtlMs: config.webSessionTtlMs,
       platformOperatorTenantId: config.platformOperatorTenantId,
     });
-    await objectStore.checkHealth();
     const managementClients = new Map<string, HttpSupervisorManagementClient>();
     const resolveManagementClient = async (identity: {
       supervisorId: string;
@@ -363,7 +360,6 @@ export async function startControlPlane(): Promise<void> {
       await operationalMetrics?.close();
       await activeAgentEvents.close();
       await sourceControlDispatcher?.close();
-      objectStore.destroy();
       await database.destroy();
       await observability.close();
     };
@@ -382,7 +378,6 @@ export async function startControlPlane(): Promise<void> {
     await operationalMetrics?.close().catch(() => undefined);
     await agentEvents?.close().catch(() => undefined);
     await sourceControlDispatcher?.close().catch(() => undefined);
-    objectStore.destroy();
     await database.destroy();
     await observability.close().catch(() => undefined);
     throw error;

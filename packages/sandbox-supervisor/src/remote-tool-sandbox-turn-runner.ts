@@ -11,16 +11,10 @@ import {
   modelSamplingHeaders,
   parseExecutionReference,
   type ToolSandboxAssignment,
-  type ToolSandboxCaptureResponse,
   type ToolSandboxCreateRequest,
   type ToolSandboxCreateResponse,
 } from "@pi-cloud/protocol";
-import {
-  decodeWorkspaceBlob,
-  encodeWorkspaceBlob,
-  parseWorkspaceVolumeSettlement,
-  parseWorkspaceSeed,
-} from "@pi-cloud/workspace-runtime";
+import { encodeWorkspaceBlob, parseWorkspaceSeed } from "@pi-cloud/workspace-runtime";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { SupervisorTurnRunner } from "./agent-run-supervisor.ts";
@@ -35,11 +29,6 @@ import {
   PiSettlementGateController,
   settlementGatePolicyFromCommand,
 } from "./pi-settlement-gate.ts";
-import {
-  validateLoadedWorkspaceSettlement,
-  type LoadedWorkspaceSettlement,
-  type WorkspaceSettlementStore,
-} from "./workspace-settlement.ts";
 import {
   validateSandboxRuntimeIdentity,
   type SandboxRuntimeIdentity,
@@ -66,12 +55,6 @@ export function projectInstructionsFromWorkspaceSeed(
   seed: Uint8Array | undefined,
 ): string | undefined {
   if (seed === undefined) return undefined;
-  if (parseWorkspaceVolumeSettlement(seed) !== undefined) {
-    // The persistent-volume reference contains no file bytes. The trusted
-    // Runner reads project instructions only after the Volume is attached
-    // through the Tool boundary.
-    return undefined;
-  }
   const file = parseWorkspaceSeed(seed).find((entry) => entry.path === "AGENTS.md");
   if (file === undefined) return undefined;
   const bounded = file.content.subarray(0, MAX_PROJECT_INSTRUCTIONS_BYTES);
@@ -88,15 +71,10 @@ export function projectInstructionsFromWorkspaceSeed(
 export interface ToolBrokerBoundary {
   refreshServices(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
   create(request: ToolSandboxCreateRequest): Promise<ToolSandboxCreateResponse>;
-  capture(
-    activationId: string,
-    assignment: ToolSandboxAssignment,
-  ): Promise<ToolSandboxCaptureResponse>;
   release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition:
-      { kind: "detach" } | { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
+    disposition: { kind: "detach" } | { kind: "keep_warm" } | { kind: "destroy" },
   ): Promise<{ retained: boolean }>;
   stop(activationId: string, assignment: ToolSandboxAssignment): Promise<void>;
   operationResultUrlFor(activationId: string): string;
@@ -109,7 +87,6 @@ export type RemoteToolSandboxTurnRunnerOptions = {
   scenario?: AgentTurnScenario | AgentTurnScenarioResolver;
   modelRuntimeLeaseResolver?: TrustedModelRuntimeLeaseResolver;
   workspaceSeedResolver?: AgentWorkspaceSeedResolver;
-  settlementStore?: WorkspaceSettlementStore;
   openAgentSession: (command: ExecuteTurnCommandMessage) => Promise<PiCloudSessionHandle>;
   publishToolCommand?: import("@pi-cloud/protocol").ToolCommandPublisher["publishToolCommand"];
   createTrustedTools?: (
@@ -177,7 +154,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
   readonly #scenario: AgentTurnScenario | AgentTurnScenarioResolver;
   readonly #modelRuntimeLeaseResolver: TrustedModelRuntimeLeaseResolver | undefined;
   readonly #workspaceSeedResolver: AgentWorkspaceSeedResolver | undefined;
-  readonly #settlementStore: WorkspaceSettlementStore | undefined;
   readonly #openAgentSession: RemoteToolSandboxTurnRunnerOptions["openAgentSession"];
   readonly #publishToolCommand: RemoteToolSandboxTurnRunnerOptions["publishToolCommand"];
   readonly #createTrustedTools: RemoteToolSandboxTurnRunnerOptions["createTrustedTools"];
@@ -205,7 +181,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     this.#scenario = options.scenario ?? "java_repair";
     this.#modelRuntimeLeaseResolver = options.modelRuntimeLeaseResolver;
     this.#workspaceSeedResolver = options.workspaceSeedResolver;
-    this.#settlementStore = options.settlementStore;
     this.#openAgentSession = options.openAgentSession;
     this.#publishToolCommand = options.publishToolCommand;
     this.#createTrustedTools = options.createTrustedTools;
@@ -338,41 +313,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
       );
     }
 
-    let loadedSettlement: LoadedWorkspaceSettlement | undefined;
-    if (this.#settlementStore !== undefined) {
-      const restoreStartedAt = performance.now();
-      try {
-        loadedSettlement = validateLoadedWorkspaceSettlement(
-          await this.#settlementStore.load(command),
-        );
-        this.#metrics?.workspaceSettlementRestoreDuration.observe(
-          { outcome: loadedSettlement === undefined ? "empty" : "completed" },
-          (performance.now() - restoreStartedAt) / 1_000,
-        );
-      } catch (error: unknown) {
-        this.#metrics?.workspaceSettlementRestoreDuration.observe(
-          { outcome: "failed" },
-          (performance.now() - restoreStartedAt) / 1_000,
-        );
-        throw safePiError(
-          error,
-          "settlement_load_failed",
-          "The Workspace settlement could not be loaded",
-        );
-      }
-    }
-    if (loadedSettlement !== undefined && this.#runAttemptPhaseObserver !== undefined) {
-      try {
-        await this.#runAttemptPhaseObserver.transition(command, "restoring");
-      } catch (error: unknown) {
-        throw safePiError(
-          error,
-          "run_phase_persist_failed",
-          "Run restore phase could not be persisted",
-        );
-      }
-    }
-
     let workspaceSeed: Uint8Array | undefined;
     if (this.#workspaceSeedResolver !== undefined) {
       try {
@@ -385,10 +325,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         );
       }
     }
-    const projectInstructions = projectInstructionsFromWorkspaceSeed(
-      loadedSettlement?.reference ?? workspaceSeed,
-    );
-    const cloudTurn = createCloudTurnContext(command, loadedSettlement?.workspaceRevision);
+    const projectInstructions = projectInstructionsFromWorkspaceSeed(workspaceSeed);
+    const cloudTurn = createCloudTurnContext(command);
     const toolFree = cloudTurn.context.tools.names.length === 0;
 
     const usesEmbeddedFake =
@@ -418,9 +356,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
     }
 
     const scenario =
-      typeof this.#scenario === "function"
-        ? this.#scenario({ command, restoring: loadedSettlement !== undefined })
-        : this.#scenario;
+      typeof this.#scenario === "function" ? this.#scenario({ command }) : this.#scenario;
     const toolAssignment = assignment(command, this.#runtimeIdentity);
     const cloudAttempt = createCloudAttemptContext({
       command,
@@ -443,23 +379,10 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         workspaceSeed === undefined
           ? { kind: "sample_java" }
           : { kind: "bundle", bundle: encodeWorkspaceBlob(workspaceSeed) },
-      ...(loadedSettlement === undefined
-        ? {}
-        : {
-            ...(loadedSettlement.reference === undefined
-              ? {}
-              : {
-                  workspaceSettlement: encodeWorkspaceBlob(loadedSettlement.reference),
-                }),
-            ...(loadedSettlement.workspaceRevision === undefined
-              ? {}
-              : { workspaceRevision: loadedSettlement.workspaceRevision }),
-          }),
     };
     let activation: ToolSandboxCreateResponse | undefined;
     let activationPromise: Promise<ToolSandboxCreateResponse> | undefined;
     let fakeModel: FakeModelServer | undefined;
-    let retainedWorkspaceRevision: string | undefined;
     let completedSuccessfully = false;
     let executionError: unknown;
     let toolRuntimeFailure: PiTurnError | undefined;
@@ -580,75 +503,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
               hostedTools: modelRuntimeLease!.runtime.hostedTools,
               serviceTier: modelRuntimeLease!.runtime.serviceTier,
             };
-      const onSettled: NonNullable<PiCloudTurnRunnerOptions["onSettled"]> = async () => {
+      const onSettled = () => {
         if (toolRuntimeFailure !== undefined) throw toolRuntimeFailure;
-        if (activation === undefined) {
-          retainedWorkspaceRevision = loadedSettlement?.workspaceRevision;
-          return;
-        }
-        const settlementStartedAt = performance.now();
-        const captured = await this.#broker
-          .capture(activation.activationId, toolAssignment)
-          .catch((error: unknown) => {
-            this.#metrics?.workspaceSettlementDuration.observe(
-              { outcome: "failed" },
-              (performance.now() - settlementStartedAt) / 1_000,
-            );
-            throw safePiError(
-              error,
-              "workspace_settlement_capture_failed",
-              "The Tool Workspace settlement could not be captured",
-            );
-          });
-        if (captured.type === "tool_sandbox.unused") {
-          retainedWorkspaceRevision = loadedSettlement?.workspaceRevision;
-          this.#metrics?.workspaceSettlementDuration.observe(
-            { outcome: "completed" },
-            (performance.now() - settlementStartedAt) / 1_000,
-          );
-          return;
-        }
-        if (this.#runAttemptPhaseObserver !== undefined) {
-          try {
-            await this.#runAttemptPhaseObserver.transition(command, "settling");
-          } catch (error: unknown) {
-            throw safePiError(
-              error,
-              "run_phase_persist_failed",
-              "Run settlement phase could not be persisted",
-            );
-          }
-        }
-        if (this.#settlementStore !== undefined) {
-          try {
-            const saved = await this.#settlementStore.save(
-              command,
-              loadedSettlement?.revision ?? null,
-              {
-                reference: decodeWorkspaceBlob(captured.settlement),
-                environment: captured.environment,
-              },
-            );
-            retainedWorkspaceRevision = saved.workspaceRevision;
-            await this.#runAttemptPhaseObserver?.settlementCommitted(command, saved.revision);
-            this.#metrics?.workspaceSettlementDuration.observe(
-              { outcome: "completed" },
-              (performance.now() - settlementStartedAt) / 1_000,
-            );
-          } catch (error: unknown) {
-            this.#metrics?.workspaceSettlementDuration.observe(
-              { outcome: "failed" },
-              (performance.now() - settlementStartedAt) / 1_000,
-            );
-            throw safePiError(
-              error,
-              "settlement_save_failed",
-              "The settled settlement could not be committed",
-            );
-          }
-        } else {
-          retainedWorkspaceRevision = captured.settlement.sha256;
-        }
       };
       const settlementPolicy = settlementGatePolicyFromCommand(command);
       const settlementGate =
@@ -679,12 +535,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
         openSession: this.#openAgentSession,
         modelRuntimePool: this.#modelRuntimePool,
         ...(this.#metrics === undefined ? {} : { metrics: this.#metrics }),
-        ...(this.#settlementStore?.saveToolOutput === undefined
-          ? {}
-          : {
-              persistToolOutputArtifact: (output: { toolCallId: string; bytes: Uint8Array }) =>
-                this.#settlementStore!.saveToolOutput!(command, output),
-            }),
         sandboxContinuity: {
           continuityId:
             activation?.continuityId ??
@@ -692,7 +542,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
           continuity: activation?.continuity ?? "cold_restore",
           environmentSha256: cloudTurn.environmentSha256,
           workspaceBindingSha256: cloudTurn.workspaceBindingSha256,
-          committedWorkspaceRevision: loadedSettlement?.workspaceRevision ?? null,
           toolPolicySha256: cloudTurn.toolPolicySha256,
         },
         onSettled,
@@ -731,7 +580,7 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             }
           : {}),
         ...commonRunnerOptions,
-        createAgentTools: ({ toolOutputDirectory, stepWorldState, captureSamplingStep }) => {
+        createAgentTools: ({ stepWorldState, captureSamplingStep }) => {
           if (toolFree) {
             let stepSequence = 0;
             let currentStep: Awaited<ReturnType<typeof captureSamplingStep>>["step"] | undefined;
@@ -864,7 +713,6 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             },
             remainingToolCalls: command.payload.budgets?.remainingToolCalls ?? 128,
             maximumToolOutputBytes: command.payload.budgets?.maximumToolOutputBytes ?? 65_536,
-            toolOutputDirectory,
             workingDirectory: command.payload.workingDirectory,
             ...(projectInstructions === undefined ? {} : { projectInstructions }),
             ...(downstreamTrace === undefined
@@ -938,15 +786,8 @@ export class RemoteToolSandboxTurnRunner implements SupervisorTurnRunner {
             cleanupError = error;
           });
       } else if (activation !== undefined && completedSuccessfully && !signal.aborted) {
-        const disposition =
-          retainedWorkspaceRevision === undefined
-            ? ({ kind: "destroy" } as const)
-            : ({
-                kind: "keep_warm",
-                workspaceRevision: retainedWorkspaceRevision,
-              } as const);
         await this.#broker
-          .release(activation.activationId, toolAssignment, disposition)
+          .release(activation.activationId, toolAssignment, { kind: "keep_warm" })
           .catch((error: unknown) => {
             cleanupError = error;
           });

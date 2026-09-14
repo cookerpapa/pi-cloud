@@ -551,23 +551,17 @@ async function listLogicalSandboxAssignments(logicalSandboxId) {
   );
 }
 
-async function workspaceSettlementEvidence(runId) {
+async function workspaceFileEvidence(runId) {
   const value = await psql(
-    `select settlement.tenant_id::text || '|' || settlement.workspace_id::text || '|' || artifact.size_bytes
-       from workspace_settlements settlement
-       join artifacts artifact on artifact.id = settlement.settlement_artifact_id
-      where settlement.run_id = ${sqlLiteral(runId)}
-        and settlement.state = 'settled'`,
+    `select tenant_id::text || '|' || workspace_id::text from runs where id = ${sqlLiteral(runId)}`,
   );
-  const [tenantId, workspaceId, artifactBytesValue] = value.split("|");
-  assert(tenantId && workspaceId && artifactBytesValue);
-  const artifactBytes = Number(artifactBytesValue);
-  assert(Number.isSafeInteger(artifactBytes) && artifactBytes > 0);
-  const { workspacePath } = workspaceVolumePath(tenantId, workspaceId, "settlement-evidence");
+  const [tenantId, workspaceId] = value.split("|");
+  assert(tenantId && workspaceId);
+  const { workspacePath } = workspaceVolumePath(tenantId, workspaceId, "file-evidence");
   const volumeFileCount = (
     await readdir(workspacePath, { recursive: true, withFileTypes: true })
   ).filter((entry) => entry.isFile()).length;
-  return { volumeFileCount, artifactBytes };
+  return { volumeFileCount };
 }
 
 async function workspaceRuntimeEvidence(workspaceId) {
@@ -1048,17 +1042,13 @@ try {
   const firstToolBindingId = await toolBindingForRun(firstCoding.accepted.runId);
   const firstCodingLatency = await runLatencyEvidence(firstCoding.accepted.runId);
   assert(firstUsage.requests > 0 && firstUsage.outputTokens > 0);
-  const firstSettlementId = await psql(
-    `select current_workspace_settlement_id::text from sessions where id = ${sqlLiteral(session.sessionId)}`,
-  );
-  assert(firstSettlementId.length > 0, "First coding Run did not settle the Workspace");
   const { workspacePath } = workspaceVolumePath(tenantId, session.workspaceId, session.sessionId);
   const firstSource = await readFile(resolve(workspacePath, "counting_sort.py"), "utf8");
   assert(
     firstSource.includes("def counting_sort") && /negative/u.test(firstSource.toLowerCase()),
-    "First persistent Workspace settlement omitted counting_sort.py code",
+    "First persistent Workspace omitted counting_sort.py code",
   );
-  progress("first persistent Workspace Volume revision was verified in place");
+  progress("first persistent Workspace Volume files was verified in place");
   const firstWorkspaceRuntime = await workspaceRuntimeEvidence(session.workspaceId);
   assert.equal(firstWorkspaceRuntime.state, "warm");
   assert.deepEqual(
@@ -1137,17 +1127,6 @@ try {
   const processCheckUsage = await runUsageEvidence(processCheck.accepted.runId);
   await waitForRunningCubeSession(session.sessionId);
   progress("background process survived cross-Run Tool bindings on one warm Workspace Cube");
-  const finalSettlementId = await psql(
-    `select current_workspace_settlement_id::text from sessions where id = ${sqlLiteral(session.sessionId)}`,
-  );
-  assert(finalSettlementId.length > 0);
-  assert.notEqual(finalSettlementId, firstSettlementId);
-  const workspaceSettlementCount = Number(
-    await psql(
-      `select count(*)::text from workspace_settlements where session_id = ${sqlLiteral(session.sessionId)}`,
-    ),
-  );
-  assert(Number.isSafeInteger(workspaceSettlementCount) && workspaceSettlementCount >= 2);
   const finalSource = await readFile(resolve(workspacePath, "counting_sort.py"), "utf8");
   assert(finalSource.includes("counting_sort"));
   assert(
@@ -1242,22 +1221,18 @@ try {
       "Use bash and work in the current empty workspace.",
       "In one foreground bash command, use Python to create a directory named large-fixture containing exactly 1024 numbered text files; each file must contain its own number and a repeated deterministic payload.",
       "Count regular files under large-fixture and require the count to equal 1024.",
-      "Write settlement-marker.txt in the workspace root containing exactly LARGE-SETTLEMENT-OK.",
+      "Write volume-marker.txt in the workspace root containing exactly LARGE-VOLUME-OK.",
       "Do not use the network, do not start a background process, and report the measured file count.",
     ].join(" "),
     true,
   );
-  progress("large Workspace Run completed and committed its persistent Volume revision");
+  progress("large Workspace Run completed and persisted its files");
   const largeFirstUsage = await runUsageEvidence(largeFirst.accepted.runId);
-  const largeFirstWorkspace = await workspaceSettlementEvidence(largeFirst.accepted.runId);
+  const largeFirstWorkspace = await workspaceFileEvidence(largeFirst.accepted.runId);
   const largeFirstRuntime = await workspaceRuntimeEvidence(largeSession.workspaceId);
   assert(
     largeFirstWorkspace.volumeFileCount > 512,
     "Large-workspace Run did not create the requested persistent files",
-  );
-  assert(
-    largeFirstWorkspace.artifactBytes <= 64 * 1_024,
-    "Cube persistent Volume settlement was not lightweight",
   );
   await terminateWarmCubeSession(largeFirst.accepted.runId, largeSession.sessionId);
   await waitForNoCubeSession(largeSession.sessionId);
@@ -1268,14 +1243,14 @@ try {
     [
       "Continue from the existing persistent Workspace Volume and make exactly one bash Tool call.",
       "Do not recreate the fixture.",
-      "In that one command: read settlement-marker.txt and require it to equal LARGE-SETTLEMENT-OK; count regular files under the existing large-fixture directory and require the count to equal 1024; verify two numbered files contain their own numbers; write restore-proof.txt containing the marker and measured count; then read restore-proof.txt back.",
+      "In that one command: read volume-marker.txt and require it to equal LARGE-VOLUME-OK; count regular files under the existing large-fixture directory and require the count to equal 1024; verify two numbered files contain their own numbers; write restore-proof.txt containing the marker and measured count; then read restore-proof.txt back.",
       "After that Tool result, do not call another Tool and reply exactly RESTORE-VERIFIED.",
     ].join(" "),
     true,
   );
   progress("large persistent Workspace Volume attached to a fresh Cube KVM");
   const largeFollowUpUsage = await runUsageEvidence(largeFollowUp.accepted.runId);
-  const largeFollowUpWorkspace = await workspaceSettlementEvidence(largeFollowUp.accepted.runId);
+  const largeFollowUpWorkspace = await workspaceFileEvidence(largeFollowUp.accepted.runId);
   const largeFollowUpRuntime = await workspaceRuntimeEvidence(largeSession.workspaceId);
   assert(largeFollowUpWorkspace.volumeFileCount > 512);
   assert.equal(largeFirst.activations.length, 1);
@@ -1355,7 +1330,6 @@ try {
       backgroundProcessSurvived: true,
       authenticatedHttpPreviewPassed: true,
       workspaceRestored: true,
-      workspaceSettlements: workspaceSettlementCount,
       finalWorkspaceFileBytes: Buffer.byteLength(finalSource, "utf8"),
     },
     workspaceIsolation: gitPlacement,
@@ -1369,7 +1343,6 @@ try {
       followUpRunId: largeFollowUp.accepted.runId,
       firstFileCount: largeFirstWorkspace.volumeFileCount,
       restoredFileCount: largeFollowUpWorkspace.volumeFileCount,
-      volumeReferenceBytes: largeFirstWorkspace.artifactBytes,
       sourceSandboxDestroyed: true,
       persistentVolumeRetained: true,
       volumeId: workspaceVolumeId({

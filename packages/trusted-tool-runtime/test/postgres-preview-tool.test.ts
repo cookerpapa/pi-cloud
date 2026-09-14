@@ -82,7 +82,6 @@ describe("trusted Preview Tool", () => {
         workspace_id: workspaceId,
         desired_model_profile_id: profileId,
         state: "idle",
-        workspace_settlement_key: null,
       })
       .execute();
     await database

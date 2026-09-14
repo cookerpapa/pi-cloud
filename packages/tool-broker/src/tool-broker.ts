@@ -10,7 +10,6 @@ import type {
   EnvironmentRuntimeSnapshot,
   SupervisorRuntimeAssignment,
   ToolSandboxAssignment,
-  ToolSandboxCaptureResponse,
   ToolSandboxCreateRequest,
   ToolSandboxCreateResponse,
   ToolSandboxOperationRequest,
@@ -111,7 +110,7 @@ type ManagedToolBinding = {
       controller: AbortController;
     }>
   >;
-  seenCaptureIds: Set<string>;
+
   forks?: Map<string, { hash: string; result: Promise<ToolBrokerWorkspaceForkResponse> }>;
   elasticRuntime?: ManagedElasticRuntime;
   developmentEnvironmentId?: string;
@@ -127,7 +126,6 @@ type ManagedElasticRuntime = {
   initialBindingIssued: boolean;
   activeOperations: number;
   exclusiveOperation: boolean;
-  workspaceRevision: string;
   environment: EnvironmentRuntimeSnapshot;
   sandboxProfileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;
   expiresAt: number;
@@ -1310,9 +1308,6 @@ export class ToolBroker {
           assignment: request.assignment,
           environment: request.environment,
           workspaceSeed: request.workspaceSeed,
-          ...(request.workspaceSettlement === undefined
-            ? {}
-            : { workspaceSettlement: request.workspaceSettlement }),
           policy: this.#provider.defaultPolicy,
           toolRoot: request.toolRoot,
           sandboxProfileKey: request.sandboxProfileKey,
@@ -1322,7 +1317,6 @@ export class ToolBroker {
         initialBindingIssued: false,
         activeOperations: 0,
         exclusiveOperation: false,
-        workspaceRevision: request.workspaceRevision ?? "0".repeat(64),
         environment: request.environment,
         sandboxProfileKey: request.sandboxProfileKey,
         expiresAt: Number.POSITIVE_INFINITY,
@@ -1360,9 +1354,6 @@ export class ToolBroker {
           }),
         )
         .digest("hex"),
-      ...(request.workspaceRevision === undefined
-        ? {}
-        : { workspaceRevision: request.workspaceRevision }),
     };
     const reservation = await this.#stateRepository.reserve(reservationInput);
     if (reservation.status === "redirect") {
@@ -1405,7 +1396,6 @@ export class ToolBroker {
       activeOperations: 0,
       exclusiveOperation: false,
       operations: new Map(),
-      seenCaptureIds: new Set(),
     });
     if (runtime.handle !== undefined) {
       await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "active", {
@@ -1486,9 +1476,6 @@ export class ToolBroker {
           }),
         )
         .digest("hex"),
-      ...(request.workspaceRevision === undefined
-        ? {}
-        : { workspaceRevision: request.workspaceRevision }),
     };
     const reservation = await this.#stateRepository.reserve(reservationInput);
     if (reservation.status === "redirect")
@@ -1516,9 +1503,6 @@ export class ToolBroker {
         assignment: request.assignment,
         environment: request.environment,
         workspaceSeed: request.workspaceSeed,
-        ...(request.workspaceSettlement === undefined
-          ? {}
-          : { workspaceSettlement: request.workspaceSettlement }),
         policy: this.#provider.defaultPolicy,
         toolRoot: request.toolRoot,
         sandboxProfileKey: request.sandboxProfileKey,
@@ -1529,7 +1513,7 @@ export class ToolBroker {
       activeOperations: 0,
       exclusiveOperation: false,
       operations: new Map(),
-      seenCaptureIds: new Set(),
+
       developmentEnvironmentId: environment.reservation.environmentId,
     });
     return {
@@ -1758,34 +1742,6 @@ export class ToolBroker {
     await this.#observeHttpServices(activation, handle, randomUUID(), discovery);
   }
 
-  async capture(
-    activationId: string,
-    assignment: ToolSandboxAssignment,
-    requestId: string,
-  ): Promise<ToolSandboxCaptureResponse> {
-    const activation = this.#ownedBinding(activationId, assignment);
-    if (activation.seenCaptureIds.has(requestId)) {
-      throw new ToolBrokerError(
-        "tool_capture_replay",
-        "Tool binding settlement ID was already used",
-        false,
-      );
-    }
-    activation.seenCaptureIds.add(requestId);
-    if (!activation.usedPhysicalRuntime) {
-      return {
-        toolBrokerProtocolVersion: 1,
-        type: "tool_sandbox.unused",
-        requestId,
-        activationId,
-      };
-    }
-    return this.#provider.settle(await this.#materialize(activation), requestId, {
-      activationId,
-      assignment,
-    });
-  }
-
   async forkWorkspace(
     request: ToolBrokerWorkspaceForkRequest,
   ): Promise<ToolBrokerWorkspaceForkResponse> {
@@ -1851,8 +1807,8 @@ export class ToolBroker {
           requestId: request.requestId,
           sourceActivationId: request.sourceActivationId,
           targetWorkspaceId: request.target.workspaceId,
-          sourceSettlementRevision: forked.sourceSettlementRevision,
-          targetSettlementRevision: forked.targetSettlementRevision,
+          sourceVolumeGeneration: forked.sourceVolumeGeneration,
+          targetVolumeGeneration: forked.targetVolumeGeneration,
         };
       } catch (error) {
         if (error instanceof ToolBrokerError && !error.retryable) throw error;
@@ -1941,7 +1897,6 @@ export class ToolBroker {
     }
     this.#revokeBinding(request.activationId);
     runtime.bindingIds.delete(request.activationId);
-    if ("workspaceRevision" in request) runtime.workspaceRevision = request.workspaceRevision;
     runtime.lastUsedAt = this.#now();
     if (runtime.bindingIds.size > 0) {
       return {
@@ -1972,7 +1927,6 @@ export class ToolBroker {
       this.#warm.set(runtime.workspaceKey, runtime);
       await this.#stateRepository.setWorkspaceRuntimeState(runtime.physicalActivationId, "warm", {
         handle: runtime.handle,
-        workspaceRevision: runtime.workspaceRevision,
       });
       await this.#enforceWarmLimit();
       return {
@@ -2846,7 +2800,6 @@ export class ToolBroker {
             "warm",
             {
               ...(workspaceRuntime.handle === undefined ? {} : { handle: workspaceRuntime.handle }),
-              workspaceRevision: workspaceRuntime.workspaceRevision,
             },
           );
         }

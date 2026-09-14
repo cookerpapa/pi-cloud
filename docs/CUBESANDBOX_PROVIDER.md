@@ -50,10 +50,10 @@ selected environment's GitLab/GitHub origin connections. It is excluded from
 product source browsing while remaining readable to untrusted code in that
 environment, like credentials on an ordinary developer machine.
 
-At a fenced settlement boundary, the trusted Volume gateway flushes the
-Workspace and records only a provider settlement revision. PostgreSQL advances
-the Workspace settlement with compare-and-swap. No file-tree walk or second
-archive of Workspace bytes occurs.
+The filesystem owns file durability independently of Run completion. There is
+no per-Run capture, reference object or Workspace settlement head in PostgreSQL.
+Initialization and live reads address the bound Volume directly. Isolated
+Workspace copies record source Volume generation, not a file-content version.
 
 A Workspace-owned Cube runtime may remain warm for one deployment-bounded TTL.
 Its processes, sockets and PTYs survive only while that exact runtime

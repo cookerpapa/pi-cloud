@@ -124,9 +124,6 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         continuityId: ACTIVATION_ID,
       };
     },
-    async capture() {
-      throw new Error("unused");
-    },
     async forkWorkspace(request) {
       return {
         toolBrokerProtocolVersion: 1,
@@ -134,8 +131,8 @@ function backend(ownerBaseUrl = "http://tool-broker.invalid"): ToolBrokerBackend
         requestId: request.requestId,
         sourceActivationId: request.sourceActivationId,
         targetWorkspaceId: request.target.workspaceId,
-        sourceSettlementRevision: "a".repeat(64),
-        targetSettlementRevision: "b".repeat(64),
+        sourceVolumeGeneration: "a".repeat(64),
+        targetVolumeGeneration: "b".repeat(64),
       };
     },
     async release(request) {
@@ -612,7 +609,6 @@ describe("Tool Broker authenticated RPC", () => {
 
     await client.release(child.activationId, childAssignment, {
       kind: "keep_warm",
-      workspaceRevision: "a".repeat(64),
     });
     expect(client.operationResultUrlFor(parent.activationId)).toBe(
       new URL("/internal/v1/tool-operation-result", ownerBaseUrl).toString(),
@@ -620,7 +616,6 @@ describe("Tool Broker authenticated RPC", () => {
     await expect(
       client.release(parent.activationId, assignment, {
         kind: "keep_warm",
-        workspaceRevision: "b".repeat(64),
       }),
     ).resolves.toMatchObject({ activationId: parent.activationId });
     expect(() => client.operationResultUrlFor(parent.activationId)).toThrow(

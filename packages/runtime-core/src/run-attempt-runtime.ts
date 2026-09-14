@@ -60,29 +60,4 @@ export class PostgresRunAttemptPhaseObserver implements RunAttemptPhaseObserver 
       );
     });
   }
-
-  async settlementCommitted(command: ExecuteTurnCommandMessage, revision: string): Promise<void> {
-    const now = validDate(this.#clock);
-    const execution = parseExecutionReference(command.payload.executionReference);
-    await this.#database.transaction().execute(async (transaction) => {
-      await transitionCurrentRunAttempt(
-        transaction,
-        {
-          tenantId: command.payload.tenantId,
-          runId: command.payload.runId,
-          attemptId: execution.attemptId,
-          executionReference: command.payload.executionReference,
-        },
-        {
-          runState: "settling",
-          attemptState: "settling",
-          reason: "settlement_committed",
-          settlementRevision: revision,
-          now,
-          heartbeat: true,
-          transitionId: this.#idGenerator(),
-        },
-      );
-    });
-  }
 }

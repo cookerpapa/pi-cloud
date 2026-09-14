@@ -20,7 +20,6 @@ import {
   type SupervisorManagementResponse,
   type SupervisorRuntimeAssignment,
   type ToolSandboxAssignment,
-  type ToolSandboxCaptureResponse,
   type ToolSandboxCreateRequest,
   type ToolSandboxCreateResponse,
   type ToolSandboxOperationResponse,
@@ -220,68 +219,20 @@ export class ToolBrokerClient {
     }
   }
 
-  async capture(
-    activationId: string,
-    assignment: ToolSandboxAssignment,
-  ): Promise<ToolSandboxCaptureResponse> {
-    const requestId = this.#idGenerator();
-    const response = await this.#service({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.capture",
-      requestId,
-      activationId,
-      assignment,
-    });
-    if (
-      (response.type !== "tool_sandbox.captured" && response.type !== "tool_sandbox.unused") ||
-      response.requestId !== requestId ||
-      response.activationId !== activationId
-    ) {
-      throw new ToolBrokerClientError(
-        "tool_broker_protocol_error",
-        "Tool Broker capture response did not match",
-        false,
-      );
-    }
-    return response;
-  }
-
   async release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition:
-      { kind: "detach" } | { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
+    disposition: { kind: "detach" } | { kind: "keep_warm" } | { kind: "destroy" },
   ): Promise<ToolSandboxReleaseResponse> {
     const requestId = this.#idGenerator();
-    const response = await this.#service(
-      disposition.kind === "keep_warm"
-        ? {
-            toolBrokerProtocolVersion: 1,
-            type: "tool_sandbox.release",
-            requestId,
-            activationId,
-            assignment,
-            disposition: disposition.kind,
-            workspaceRevision: disposition.workspaceRevision,
-          }
-        : disposition.kind === "detach"
-          ? {
-              toolBrokerProtocolVersion: 1,
-              type: "tool_sandbox.release",
-              requestId,
-              activationId,
-              assignment,
-              disposition: "detach",
-            }
-          : {
-              toolBrokerProtocolVersion: 1,
-              type: "tool_sandbox.release",
-              requestId,
-              activationId,
-              assignment,
-              disposition: "destroy",
-            },
-    );
+    const response = await this.#service({
+      toolBrokerProtocolVersion: 1,
+      type: "tool_sandbox.release",
+      requestId,
+      activationId,
+      assignment,
+      disposition: disposition.kind,
+    });
     if (
       response.type !== "tool_sandbox.released" ||
       response.requestId !== requestId ||
@@ -699,17 +650,10 @@ export class ReplicatedToolBrokerClient {
     return this.#ownedClient(activationId).refreshServices(activationId, assignment);
   }
 
-  capture(
-    activationId: string,
-    assignment: ToolSandboxAssignment,
-  ): Promise<ToolSandboxCaptureResponse> {
-    return this.#ownedClient(activationId).capture(activationId, assignment);
-  }
-
   async release(
     activationId: string,
     assignment: ToolSandboxAssignment,
-    disposition: { kind: "keep_warm"; workspaceRevision: string } | { kind: "destroy" },
+    disposition: { kind: "keep_warm" } | { kind: "destroy" },
   ): Promise<ToolSandboxReleaseResponse> {
     try {
       return await this.#ownedClient(activationId).release(activationId, assignment, disposition);

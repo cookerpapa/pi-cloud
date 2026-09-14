@@ -27,11 +27,6 @@ export class PiCloudMetrics {
   readonly sessionViewReads: Counter<"source">;
   readonly sessionViewReadDuration: Histogram<"source">;
   readonly sessionViewStorageBytes: Counter;
-  readonly workspaceSettlementDuration: Histogram<"outcome">;
-  readonly workspaceSettlementRestoreDuration: Histogram<"outcome">;
-  readonly runtimeObjectCacheAccess: Counter<"result">;
-  readonly runtimeObjectCacheEntries: Gauge;
-  readonly runtimeObjectCacheBytes: Gauge;
   readonly cancellationDuration: Histogram<"outcome">;
   readonly turnAdmissionDuration: Histogram<"outcome">;
   readonly runClaimDuration: Histogram<"outcome">;
@@ -203,36 +198,6 @@ export class PiCloudMetrics {
       name: "pi_cloud_tool_transport_rejected_total",
       help: "Process-local Tool transport capacity rejections",
       labelNames: ["reason"],
-      registers: [this.registry],
-    });
-    this.workspaceSettlementDuration = new Histogram({
-      name: "pi_cloud_workspace_settlement_duration_seconds",
-      help: "Workspace settlement capture and commit duration",
-      labelNames: ["outcome"],
-      buckets: DURATION_BUCKETS,
-      registers: [this.registry],
-    });
-    this.workspaceSettlementRestoreDuration = new Histogram({
-      name: "pi_cloud_workspace_settlement_restore_duration_seconds",
-      help: "Workspace settlement validation and reference restoration duration",
-      labelNames: ["outcome"],
-      buckets: DURATION_BUCKETS,
-      registers: [this.registry],
-    });
-    this.runtimeObjectCacheAccess = new Counter({
-      name: "pi_cloud_runtime_object_cache_access_total",
-      help: "Worker-local immutable runtime object cache operations",
-      labelNames: ["result"],
-      registers: [this.registry],
-    });
-    this.runtimeObjectCacheEntries = new Gauge({
-      name: "pi_cloud_runtime_object_cache_entries",
-      help: "Objects held by the Worker-local immutable runtime object cache",
-      registers: [this.registry],
-    });
-    this.runtimeObjectCacheBytes = new Gauge({
-      name: "pi_cloud_runtime_object_cache_bytes",
-      help: "Bytes held by the Worker-local immutable runtime object cache",
       registers: [this.registry],
     });
     this.cancellationDuration = new Histogram({

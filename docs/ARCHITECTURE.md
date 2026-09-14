@@ -265,6 +265,11 @@ physical Cube. Different Sessions receive independently fenced Tool bindings to
 that same environment. Files, ports and processes are shared intentionally. Human
 terminals may use it concurrently. Pure chat does not reserve compute. Ordinary
 directory/file browsing reads current bytes, not a per-Run file index or archive.
+No runtime object or Workspace settlement head is required to start a Run or
+retain compute. Environment validation is recorded at activation. Oversized
+raw Tool output is not archived; the native result contains bounded output and
+truncation guidance. Independent copies use physical Volume identity, not
+a synthetic per-Run content revision.
 
 A user-owned development machine is allocated independently, with a selected
 CPU/memory/disk template. It retains node-affine full-VM state and has its own home

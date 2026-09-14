@@ -7,12 +7,7 @@ import {
   type ToolSandboxAssignment,
   type ToolSandboxOperationRequest,
 } from "@pi-cloud/protocol";
-import {
-  createWorkspaceSeed,
-  decodeWorkspaceBlob,
-  encodeWorkspaceBlob,
-  parseWorkspaceVolumeSettlement,
-} from "@pi-cloud/workspace-runtime";
+import { createWorkspaceSeed, encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
 import { createHash } from "node:crypto";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
@@ -110,10 +105,9 @@ function fakeWorkspaceVolumeGateway(): WorkspaceVolumeGateway {
       volumes.add(volumeId);
       return { attached };
     }),
-    settle: vi.fn(async () => ({ settlementRevision: "a".repeat(64) })),
     fork: vi.fn(async () => ({
-      sourceSettlementRevision: "a".repeat(64),
-      targetSettlementRevision: "c".repeat(64),
+      sourceVolumeGeneration: "a".repeat(64),
+      targetVolumeGeneration: "c".repeat(64),
     })),
     listDirectory: vi.fn(async () => ({
       entries: [
@@ -408,7 +402,7 @@ function operation(activationId: string): ToolSandboxOperationRequest {
 }
 
 describe("CubeSandbox Provider contract", () => {
-  it("executes and settles a verified warm handle without a control-plane GET", async () => {
+  it("executes a verified warm handle without a control-plane GET", async () => {
     const runtime = new FakeCubeRuntimeClient(),
       volume = fakeWorkspaceVolumeGateway();
     const provider = testCubeProvider({
@@ -431,9 +425,6 @@ describe("CubeSandbox Provider contract", () => {
     await expect(provider.exec(handle, operation(handle.activationId))).resolves.toMatchObject({
       operation: "bash.exec",
       exitCode: 0,
-    });
-    await expect(provider.settle(handle, crypto.randomUUID())).resolves.toMatchObject({
-      type: "tool_sandbox.captured",
     });
     expect(inspect).not.toHaveBeenCalled();
     // Lifecycle identity validation remains authoritative when explicitly inspecting.
@@ -637,35 +628,6 @@ describe("CubeSandbox Provider contract", () => {
     expect(runtime.creates[0]?.metadata).not.toHaveProperty("host-mount");
     const activeAssignments = await manager.listAssignments(assignment.sandboxId);
     expect(activeAssignments).toEqual([]);
-    const captured = await manager.capture(
-      reserved.activationId,
-      assignment,
-      "10000000-0000-4000-8000-000000000021",
-    );
-    expect(captured).toMatchObject({
-      type: "tool_sandbox.captured",
-      environment: {
-        isolationBoundary: "microvm",
-        runtime: "cubesandbox-kvm",
-        readOnlyRootFilesystem: false,
-      },
-    });
-    if (captured.type !== "tool_sandbox.captured") {
-      throw new Error("CubeSandbox capture response was missing");
-    }
-    const checkpoint = parseWorkspaceVolumeSettlement(decodeWorkspaceBlob(captured.settlement));
-    expect(checkpoint).toMatchObject({
-      providerId: "cubesandbox",
-      settlementRevision: "a".repeat(64),
-      activationId: reserved.activationId,
-      tenantId: assignment.tenantId,
-      workspaceId: assignment.workspaceId,
-      sourceSessionId: assignment.sessionId,
-      fencingToken: parseExecutionReference(assignment.executionReference).fencingToken,
-      imageRevision: environment.imageRevision,
-      environmentSpecSha256: environment.specSha256,
-    });
-    expect(Buffer.from(captured.settlement.data, "base64").toString("utf8")).not.toContain("pcch_");
     const materialized = await manager.readWorkspaceFile({
       toolBrokerProtocolVersion: 1,
       type: "workspace.read_file",
@@ -726,7 +688,6 @@ describe("CubeSandbox Provider contract", () => {
       activationId: reserved.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "a".repeat(64),
     });
     expect(released.retained).toBe(true);
     expect(runtime.destroyed).toEqual([]);
@@ -757,7 +718,6 @@ describe("CubeSandbox Provider contract", () => {
       executionMode: "elastic",
       environment,
       workspaceSeed: { kind: "sample_java" },
-      workspaceRevision: "a".repeat(64),
     });
     expect(idle.continuity).toBe("warm_reuse");
     await expect(
@@ -768,7 +728,6 @@ describe("CubeSandbox Provider contract", () => {
         activationId: idle.activationId,
         assignment: idleAssignment,
         disposition: "keep_warm",
-        workspaceRevision: "a".repeat(64),
       }),
     ).resolves.toMatchObject({ retained: true });
     expect(runtime.creates).toHaveLength(1);
@@ -799,7 +758,6 @@ describe("CubeSandbox Provider contract", () => {
       executionMode: "elastic",
       environment,
       workspaceSeed: { kind: "sample_java" },
-      workspaceRevision: "a".repeat(64),
     });
     expect(next.activationId).toBe(
       parseExecutionReference(nextAssignment.executionReference).attemptId,
@@ -827,7 +785,7 @@ describe("CubeSandbox Provider contract", () => {
     await manager.close();
   });
 
-  it("reattaches a settled Workspace Volume to another Session with an independent fence", async () => {
+  it("reattaches a persistent Workspace Volume to another Session with an independent fence", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const workspaceVolumeGateway = fakeWorkspaceVolumeGateway();
     const provider = testCubeProvider({
@@ -844,11 +802,6 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       policy: provider.defaultPolicy,
     });
-    const captured = await provider.settle(first, "10000000-0000-4000-8000-000000000040");
-    expect(captured.type).toBe("tool_sandbox.captured");
-    if (captured.type !== "tool_sandbox.captured") {
-      throw new Error("CubeSandbox capture response was missing");
-    }
     await provider.destroy(first);
 
     const nextActivationId = "20000000-0000-4000-8000-000000000041";
@@ -874,7 +827,6 @@ describe("CubeSandbox Provider contract", () => {
       assignment: nextAssignment,
       environment,
       workspaceSeed: { kind: "sample_java" },
-      workspaceSettlement: captured.settlement,
       policy: provider.defaultPolicy,
     });
     expect(runtime.creates).toHaveLength(2);
@@ -939,29 +891,13 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       policy: provider.defaultPolicy,
     });
-    await provider.settle(parent, "10000000-0000-4000-8000-000000000051");
 
-    const childAssignment: ToolSandboxAssignment = {
-      ...assignment,
-      sessionId: "session-cube-subagent",
-      runId: "command-cube-subagent",
-      turnId: "turn-cube-subagent",
-      executionReference: createExecutionReference(
-        "20000000-0000-4000-8000-000000000053",
-        "20000000-0000-4000-8000-000000000052",
-        1,
-      ),
-    };
     const childBindingId = "20000000-0000-4000-8000-000000000054";
     await expect(
       provider.exec(parent, { ...operation(ACTIVATION_ID), activationId: childBindingId }),
     ).resolves.toMatchObject({
       type: "tool_sandbox.operation_result",
       exitCode: 0,
-    });
-    await provider.settle(parent, "10000000-0000-4000-8000-000000000055", {
-      activationId: childBindingId,
-      assignment: childAssignment,
     });
     await expect(provider.inspect(parent)).resolves.toMatchObject({ state: "running" });
     expect(runtime.creates).toHaveLength(1);
@@ -1001,8 +937,8 @@ describe("CubeSandbox Provider contract", () => {
       },
     });
     expect(forked).toMatchObject({
-      sourceSettlementRevision: "a".repeat(64),
-      targetSettlementRevision: "c".repeat(64),
+      sourceVolumeGeneration: "a".repeat(64),
+      targetVolumeGeneration: "c".repeat(64),
     });
     expect(gateway.fork).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1015,91 +951,6 @@ describe("CubeSandbox Provider contract", () => {
     ).resolves.toMatchObject({ exitCode: 0 });
     expect(runtime.creates).toHaveLength(1);
     await provider.destroy(forked.sourceHandle);
-    await provider.close();
-  });
-
-  it("captures a lightweight persistent Volume reference for a Cube Workspace", async () => {
-    const runtime = new FakeCubeRuntimeClient();
-    const provider = testCubeProvider({
-      templateId: "pi-cloud-tool-v1",
-      imageRevision: "development",
-      webProxy: WEB_PROXY,
-      runtimeClient: runtime,
-      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
-    });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
-    const captured = await provider.settle(handle, "10000000-0000-4000-8000-000000000049");
-    expect(captured.type).toBe("tool_sandbox.captured");
-    if (captured.type !== "tool_sandbox.captured") {
-      throw new Error("CubeSandbox capture response was missing");
-    }
-    expect(parseWorkspaceVolumeSettlement(decodeWorkspaceBlob(captured.settlement))).toMatchObject({
-      settlementRevision: "a".repeat(64),
-      tenantId: assignment.tenantId,
-      workspaceId: assignment.workspaceId,
-      sourceSessionId: assignment.sessionId,
-    });
-    await provider.destroy(handle);
-    await provider.close();
-  });
-
-  it("rejects a persistent Volume reference when tenant or fence is stale", async () => {
-    const runtime = new FakeCubeRuntimeClient();
-    const provider = testCubeProvider({
-      templateId: "pi-cloud-tool-v1",
-      imageRevision: "development",
-      webProxy: WEB_PROXY,
-      runtimeClient: runtime,
-      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
-    });
-    const handle = await provider.create({
-      activationId: ACTIVATION_ID,
-      assignment,
-      environment,
-      workspaceSeed: { kind: "sample_java" },
-      policy: provider.defaultPolicy,
-    });
-    const captured = await provider.settle(handle, "10000000-0000-4000-8000-000000000046");
-    expect(captured.type).toBe("tool_sandbox.captured");
-    if (captured.type !== "tool_sandbox.captured") {
-      throw new Error("CubeSandbox capture response was missing");
-    }
-    await expect(
-      provider.create({
-        activationId: "20000000-0000-4000-8000-000000000047",
-        assignment: {
-          ...assignment,
-          tenantId: "another-tenant",
-          executionReference: createExecutionReference(
-            "20000000-0000-4000-8000-000000000060",
-            parseExecutionReference(assignment.executionReference).attemptId,
-            parseExecutionReference(assignment.executionReference).fencingToken + 1,
-          ),
-        },
-        environment,
-        workspaceSeed: { kind: "sample_java" },
-        workspaceSettlement: captured.settlement,
-        policy: provider.defaultPolicy,
-      }),
-    ).rejects.toMatchObject({ code: "cubesandbox_volume_reference_invalid" });
-    await expect(
-      provider.create({
-        activationId: "20000000-0000-4000-8000-000000000048",
-        assignment,
-        environment,
-        workspaceSeed: { kind: "sample_java" },
-        workspaceSettlement: captured.settlement,
-        policy: provider.defaultPolicy,
-      }),
-    ).rejects.toMatchObject({ code: "cubesandbox_volume_reference_invalid" });
-    expect(runtime.creates).toHaveLength(1);
-    await provider.destroy(handle);
     await provider.close();
   });
 
@@ -1118,13 +969,6 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
       policy: originalProvider.defaultPolicy,
     });
-    const captured = await originalProvider.settle(
-      originalHandle,
-      "10000000-0000-4000-8000-000000000049",
-    );
-    if (captured.type !== "tool_sandbox.captured") {
-      throw new Error("CubeSandbox capture response was missing");
-    }
     await originalProvider.destroy(originalHandle);
     await originalProvider.close();
 
@@ -1150,7 +994,6 @@ describe("CubeSandbox Provider contract", () => {
       assignment: upgradedAssignment,
       environment: { ...environment, imageRevision: "next-deployment" },
       workspaceSeed: { kind: "sample_java" },
-      workspaceSettlement: captured.settlement,
       policy: upgradedProvider.defaultPolicy,
     });
     expect(upgradedVolumeGateway.prepare).toHaveBeenCalledWith(

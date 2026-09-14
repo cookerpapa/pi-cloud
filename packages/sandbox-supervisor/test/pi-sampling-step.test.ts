@@ -14,7 +14,7 @@ function capture(sequence: number) {
           sandbox: { status: "inactive" as const, continuitySha256: null },
           environmentSha256: "c".repeat(64),
           workspaceBindingSha256: "f".repeat(64),
-          committedWorkspaceRevision: null,
+
           toolPolicySha256: "d".repeat(64),
         },
       },

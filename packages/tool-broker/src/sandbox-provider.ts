@@ -2,14 +2,12 @@ import type {
   AgentWorkspaceSeed,
   EnvironmentRuntimeSnapshot,
   EnvironmentValidationReport,
-  WorkspaceBlob,
   ToolBrokerListWorkspaceDirectoryRequest,
   ToolBrokerListWorkspaceDirectoryResponse,
   ToolBrokerReadWorkspaceFileRequest,
   ToolBrokerReadWorkspaceFileResponse,
   SupervisorRuntimeAssignment,
   ToolSandboxAssignment,
-  ToolSandboxCaptureResponse,
   ToolSandboxOperationRequest,
   ToolSandboxOperationResponse,
   ToolBrokerWorkspaceForkRequest,
@@ -69,7 +67,6 @@ export type SandboxCreateSpec = Readonly<{
   assignment: ToolSandboxAssignment;
   environment: EnvironmentRuntimeSnapshot;
   workspaceSeed: AgentWorkspaceSeed;
-  workspaceSettlement?: WorkspaceBlob;
   policy: SandboxPolicy;
   toolRoot?: string;
   lifetime?: "development_environment";
@@ -91,8 +88,8 @@ export type SandboxHandle = Readonly<{
 
 export type SandboxWorkspaceForkResult = Readonly<{
   sourceHandle: SandboxHandle;
-  sourceSettlementRevision: string;
-  targetSettlementRevision: string;
+  sourceVolumeGeneration: string;
+  targetVolumeGeneration: string;
 }>;
 
 export type SandboxHttpServiceDiscovery = Readonly<{
@@ -246,11 +243,6 @@ export interface SandboxProvider {
     path: string,
     name: string,
   ): Promise<SandboxDirectoryListing>;
-  settle(
-    handle: SandboxHandle,
-    requestId: string,
-    binding?: Readonly<{ activationId: string; assignment: ToolSandboxAssignment }>,
-  ): Promise<ToolSandboxCaptureResponse>;
   forkWorkspace?(
     handle: SandboxHandle,
     request: ToolBrokerWorkspaceForkRequest,

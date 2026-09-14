@@ -10,7 +10,6 @@ export type AgentTurnScenario =
 
 export type AgentTurnScenarioContext = {
   command: ExecuteTurnCommandMessage;
-  restoring: boolean;
 };
 
 export type AgentTurnScenarioResolver = (context: AgentTurnScenarioContext) => AgentTurnScenario;

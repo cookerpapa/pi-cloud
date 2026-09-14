@@ -2,7 +2,6 @@ export { createDatabase, type CreateDatabaseOptions } from "./client.ts";
 export { retryTransaction } from "./retry-transaction.ts";
 
 export {
-  type ArtifactKind,
   type TurnControlRequestKind,
   type TurnControlRequestState,
   type ConversationPruneOperationTable,

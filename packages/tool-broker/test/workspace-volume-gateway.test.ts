@@ -102,7 +102,7 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     expect(identity("session-a").volumeId).toBe(identity("session-b").volumeId);
   });
 
-  it("reattaches files while Run settlement records only a lightweight revision", async () => {
+  it("reattaches current files without a per-Run settlement", async () => {
     const workspaceRoot = await root();
     const mover = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const first = identity("session-a");
@@ -113,14 +113,6 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await mkdir(join(workspace, "src"), { recursive: true });
     await writeFile(join(workspace, "src", "answer.txt"), "one\n");
     await writeFile(join(workspace, "src", "answer.txt"), "two\n");
-
-    const captured = await mover.settle({
-      ...first,
-      activationId: randomUUID(),
-      fencingToken: 1,
-      bindingSha256: "a".repeat(64),
-    });
-    expect(captured.settlementRevision).toMatch(/^[0-9a-f]{64}$/);
 
     const replacement = new PersistentVolumeWorkspaceVolumeGateway({ workspaceRoot });
     const second = identity("session-b");
@@ -197,12 +189,6 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await mover.prepare(source);
     const sourceRoot = join(workspaceRoot, `picloud-posix-${source.volumeId}`, "workspace");
     await writeFile(join(sourceRoot, "answer.txt"), "parent-v1\n");
-    const captured = await mover.settle({
-      ...source,
-      activationId: randomUUID(),
-      fencingToken: 1,
-      bindingSha256: "a".repeat(64),
-    });
     const target = {
       tenantId: source.tenantId,
       workspaceId: "workspace-volume-isolated",
@@ -220,7 +206,6 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
       sourceWorkspaceId: source.workspaceId,
       sourceSessionId: source.sessionId,
       sourceVolumeId: source.volumeId,
-      expectedSourceSettlementRevision: captured.settlementRevision,
       targetWorkspaceId: target.workspaceId,
       targetSessionId: target.sessionId,
       targetVolumeId: target.volumeId,
@@ -234,6 +219,16 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
         "utf8",
       ),
     ).resolves.toBe("parent-v1\n");
+    // A retry keeps the original copy, but a deleted/recreated source is not
+    // the same physical resource even when tenant/Workspace IDs are unchanged.
+    await rm(join(workspaceRoot, `picloud-posix-${source.volumeId}`), {
+      recursive: true,
+      force: true,
+    });
+    await mover.prepare(source);
+    await expect(mover.fork(request)).rejects.toMatchObject({
+      code: "workspace_fork_target_conflict",
+    });
   });
 
   it("rejects an unbound Cube workspace that already contains user bytes", async () => {
@@ -414,13 +409,6 @@ describe("PersistentVolumeWorkspaceVolumeGateway", () => {
     await expect(readFile(credentialPath, "utf8")).resolves.not.toContain(
       "glpat_second_site_secret",
     );
-    const settlement = await mover.settle({
-      ...bound,
-      activationId: randomUUID(),
-      fencingToken: 1,
-      bindingSha256: "a".repeat(64),
-    });
-    expect(settlement.settlementRevision).toMatch(/^[0-9a-f]{64}$/);
     expect(observedTokens).toEqual(["ghs_process_scoped_secret"]);
     expect(observedVerificationUrls).toEqual(["https://git.internal.example/private-repo.git"]);
   });
@@ -440,13 +428,10 @@ describe("HttpWorkspaceVolumeGateway", () => {
       async prepare() {
         return { attached: true };
       },
-      async settle() {
-        return { settlementRevision: "2".repeat(64) };
-      },
       async fork() {
         return {
-          sourceSettlementRevision: "2".repeat(64),
-          targetSettlementRevision: "3".repeat(64),
+          sourceVolumeGeneration: "2".repeat(64),
+          targetVolumeGeneration: "3".repeat(64),
         };
       },
       async listDirectory() {
@@ -477,13 +462,6 @@ describe("HttpWorkspaceVolumeGateway", () => {
     const address = await server.listen();
     const client = new HttpWorkspaceVolumeGateway({ baseUrl: address, serviceToken });
     try {
-      const settlement = await client.settle({
-        ...identity("session-large-index"),
-        activationId: randomUUID(),
-        fencingToken: 1,
-        bindingSha256: "3".repeat(64),
-      });
-      expect(settlement.settlementRevision).toBe("2".repeat(64));
       await expect(
         client.listDirectory({ ...identity("session-large-index"), rootPath: "", path: "src" }),
       ).resolves.toMatchObject({

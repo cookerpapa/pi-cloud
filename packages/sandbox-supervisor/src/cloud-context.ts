@@ -42,7 +42,7 @@ export type CloudTurnContext = Readonly<{
     specSha256: string;
     recipeSha256: string;
   }>;
-  workspace: Readonly<{ baseRevision: string | null; workingDirectory: string }>;
+  workspace: Readonly<{ workingDirectory: string }>;
   sandbox: Readonly<{
     executionMode: ExecuteTurnCommandMessage["payload"]["executionMode"];
     profileKey: ExecuteTurnCommandMessage["payload"]["sandboxProfileKey"];
@@ -89,7 +89,6 @@ export type CloudStepWorldState = Readonly<{
   }>;
   environmentSha256: string;
   workspaceBindingSha256: string;
-  committedWorkspaceRevision: string | null;
   toolPolicySha256: string;
 }>;
 
@@ -134,10 +133,7 @@ function validSha256(value: string, name: string): string {
 }
 
 /** Captures the immutable, credential-free logical Turn contract. */
-export function createCloudTurnContext(
-  command: ExecuteTurnCommandMessage,
-  workspaceBaseRevision: string | undefined,
-): FrozenCloudTurn {
+export function createCloudTurnContext(command: ExecuteTurnCommandMessage): FrozenCloudTurn {
   const { payload } = command;
   const context = freezeContext<CloudTurnContext>({
     schemaVersion: CLOUD_TURN_CONTEXT_SCHEMA_VERSION,
@@ -161,7 +157,6 @@ export function createCloudTurnContext(
       recipeSha256: payload.environment.recipeSha256,
     },
     workspace: {
-      baseRevision: workspaceBaseRevision ?? null,
       workingDirectory: payload.workingDirectory,
     },
     sandbox: {
@@ -237,7 +232,6 @@ export function createCloudStepContext(input: {
       sandbox: { ...input.worldState.sandbox },
       environmentSha256: input.worldState.environmentSha256,
       workspaceBindingSha256: input.worldState.workspaceBindingSha256,
-      committedWorkspaceRevision: input.worldState.committedWorkspaceRevision,
       toolPolicySha256: input.worldState.toolPolicySha256,
     },
   });

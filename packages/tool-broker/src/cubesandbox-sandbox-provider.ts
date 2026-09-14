@@ -7,7 +7,6 @@ import {
   parseExecutionReference,
   parseToolBrokerListWorkspaceDirectoryResponse,
   parseToolBrokerReadWorkspaceFileResponse,
-  parseToolBrokerResponse,
   parseToolSandboxOperationResponse,
   parseToolWorkerOutput,
   type EnvironmentValidationReport,
@@ -19,7 +18,6 @@ import {
   type ToolBrokerWorkspaceForkRequest,
   type SupervisorRuntimeAssignment,
   type ToolSandboxAssignment,
-  type ToolSandboxCaptureResponse,
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
   type ToolWorkerInput,
@@ -35,12 +33,6 @@ import {
 } from "@pi-cloud/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { isIPv4 } from "node:net";
-import {
-  createWorkspaceVolumeSettlement,
-  decodeWorkspaceBlob,
-  encodeWorkspaceBlob,
-  parseWorkspaceVolumeSettlement,
-} from "@pi-cloud/workspace-runtime";
 import {
   CubeRuntimeClientError,
   CubeApplicationPortError,
@@ -200,7 +192,6 @@ type CubeActivation = {
   evidence: CubeRuntimeEvidence;
   toolchain: EnvironmentToolchainReport;
   seenOperationIds: Set<string>;
-  seenCaptureIds: Set<string>;
   bindingSha256: string;
   authorityEpoch: number;
   state: "running" | "quiesced" | "idle" | "paused";
@@ -873,26 +864,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const volumeReference =
-      spec.workspaceSettlement === undefined
-        ? undefined
-        : parseWorkspaceVolumeSettlement(decodeWorkspaceBlob(spec.workspaceSettlement));
-    if (
-      spec.workspaceSettlement !== undefined &&
-      (volumeReference === undefined ||
-        volumeReference.tenantId !== spec.assignment.tenantId ||
-        volumeReference.workspaceId !== spec.assignment.workspaceId ||
-        volumeReference.volumeId !== workspaceVolumeId(spec.assignment) ||
-        volumeReference.environmentSpecSha256 !== spec.environment.specSha256 ||
-        (volumeReference.sourceSessionId === spec.assignment.sessionId &&
-          fencingToken(spec.assignment) <= volumeReference.fencingToken))
-    ) {
-      throw new ToolBrokerError(
-        "cubesandbox_volume_reference_invalid",
-        "Persistent Workspace Volume reference did not match the requested Workspace, environment or Session fence",
-        false,
-      );
-    }
     const exclusiveMachine = spec.lifetime === "development_environment";
     const toolRoot = spec.toolRoot ?? (exclusiveMachine ? "/home/user" : "/workspace");
     const bindingSha256 = physicalBindingSha256(
@@ -978,9 +949,7 @@ export class CubeSandboxProvider implements SandboxProvider {
               toolRoot,
               environment: spec.environment,
               workspaceSeed: spec.workspaceSeed,
-              ...(prepared.attached
-                ? { workspaceAttach: { recipeCommands: volumeReference?.recipeCommands ?? [] } }
-                : {}),
+              ...(prepared.attached ? { workspaceAttach: { recipeCommands: [] } } : {}),
               webProxy: this.#webProxy,
             },
           },
@@ -1039,7 +1008,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         evidence,
         toolchain,
         seenOperationIds: new Set(),
-        seenCaptureIds: new Set(),
         bindingSha256,
         authorityEpoch: fencingToken(spec.assignment),
         state: "running",
@@ -1630,7 +1598,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       evidence,
       toolchain,
       seenOperationIds: new Set(),
-      seenCaptureIds: new Set(),
       bindingSha256: raw.bindingSha256,
       authorityEpoch: raw.authorityEpoch as number,
       state,
@@ -1696,68 +1663,13 @@ export class CubeSandboxProvider implements SandboxProvider {
     this.#activations.delete(handle.activationId);
   }
 
-  async settle(
-    handle: SandboxHandle,
-    requestId: string,
-    binding: Readonly<{ activationId: string; assignment: ToolSandboxAssignment }> = {
-      activationId: handle.activationId,
-      assignment: handle.assignment,
-    },
-  ): Promise<ToolSandboxCaptureResponse> {
-    const activation = this.#dataOwned(handle);
-    if (activation.seenCaptureIds.has(requestId)) {
-      throw new ToolBrokerError("tool_capture_replay", "Tool capture ID was already used", false);
-    }
-    activation.seenCaptureIds.add(requestId);
-    const volume = await this.#workspaceVolumeGateway.settle({
-      tenantId: binding.assignment.tenantId,
-      workspaceId: binding.assignment.workspaceId,
-      sessionId: binding.assignment.sessionId,
-      volumeId: activation.volumeId,
-      activationId: handle.activationId,
-      bindingSha256: activation.bindingSha256,
-      fencingToken: fencingToken(binding.assignment),
-    });
-    const settlement = encodeWorkspaceBlob(
-      createWorkspaceVolumeSettlement({
-        volumeId: activation.volumeId,
-        settlementRevision: volume.settlementRevision,
-        activationId: handle.activationId,
-        tenantId: binding.assignment.tenantId,
-        workspaceId: binding.assignment.workspaceId,
-        sourceSessionId: binding.assignment.sessionId,
-        bindingSha256: activation.bindingSha256,
-        fencingToken: fencingToken(binding.assignment),
-        imageRevision: this.#imageRevision,
-        environmentSpecSha256: handle.environment.specSha256,
-        recipeCommands: activation.toolchain.recipeCommands,
-      }),
-    );
-    const parsed = parseToolBrokerResponse({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.captured",
-      requestId,
-      activationId: binding.activationId,
-      settlement,
-      environment: handle.environmentValidation,
-    });
-    if (parsed.type !== "tool_sandbox.captured") {
-      throw new ToolBrokerError(
-        "cubesandbox_protocol_error",
-        "CubeSandbox returned the wrong persistent Volume reference",
-        false,
-      );
-    }
-    return parsed;
-  }
-
   async forkWorkspace(
     handle: SandboxHandle,
     request: ToolBrokerWorkspaceForkRequest,
   ): Promise<{
     sourceHandle: SandboxHandle;
-    sourceSettlementRevision: string;
-    targetSettlementRevision: string;
+    sourceVolumeGeneration: string;
+    targetVolumeGeneration: string;
   }> {
     if (
       request.sourceAssignment.tenantId !== handle.assignment.tenantId ||
@@ -1774,46 +1686,23 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const captured = await this.settle(handle, request.requestId, {
-      activationId: request.sourceActivationId,
-      assignment: request.sourceAssignment,
-    });
-    if (captured.type !== "tool_sandbox.captured") {
-      throw new ToolBrokerError(
-        "workspace_fork_capture_invalid",
-        "Parent Workspace did not produce an isolated fork boundary",
-        true,
-      );
-    }
-    const source = parseWorkspaceVolumeSettlement(decodeWorkspaceBlob(captured.settlement));
-    if (source === undefined) {
-      throw new ToolBrokerError(
-        "workspace_fork_capture_invalid",
-        "Parent Workspace fork boundary was invalid",
-        false,
-      );
-    }
+    const source = this.#dataOwned(handle);
     const targetVolumeId = workspaceVolumeId(request.target);
-    try {
-      await this.#client.ensureVolume(targetVolumeId, "picloud-posix");
-      const forked = await this.#workspaceVolumeGateway.fork({
-        tenantId: request.target.tenantId,
-        sourceWorkspaceId: handle.assignment.workspaceId,
-        sourceSessionId: handle.assignment.sessionId,
-        sourceVolumeId: source.volumeId,
-        expectedSourceSettlementRevision: source.settlementRevision,
-        targetWorkspaceId: request.target.workspaceId,
-        targetSessionId: request.target.sessionId,
-        targetVolumeId,
-      });
-      return {
-        sourceHandle: handle,
-        sourceSettlementRevision: forked.sourceSettlementRevision,
-        targetSettlementRevision: forked.targetSettlementRevision,
-      };
-    } catch (error: unknown) {
-      throw error;
-    }
+    await this.#client.ensureVolume(targetVolumeId, "picloud-posix");
+    const forked = await this.#workspaceVolumeGateway.fork({
+      tenantId: request.target.tenantId,
+      sourceWorkspaceId: handle.assignment.workspaceId,
+      sourceSessionId: handle.assignment.sessionId,
+      sourceVolumeId: source.volumeId,
+      targetWorkspaceId: request.target.workspaceId,
+      targetSessionId: request.target.sessionId,
+      targetVolumeId,
+    });
+    return {
+      sourceHandle: handle,
+      sourceVolumeGeneration: forked.sourceVolumeGeneration,
+      targetVolumeGeneration: forked.targetVolumeGeneration,
+    };
   }
 
   async stop(handle: SandboxHandle): Promise<void> {

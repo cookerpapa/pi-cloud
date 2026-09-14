@@ -73,7 +73,6 @@ export type ToolBrokerBackend = Pick<
   ToolBroker,
   | "checkHealth"
   | "create"
-  | "capture"
   | "refreshServices"
   | "forkWorkspace"
   | "release"
@@ -663,19 +662,6 @@ export class ToolBrokerServer {
             requestId: message.requestId,
             activationId: message.activationId,
           });
-          return;
-        }
-        if (message.type === "tool_sandbox.capture") {
-          await reply.code(200).send(
-            await this.#observed({
-              request,
-              spanName: "sandbox.capture",
-              operation: "capture",
-              kind: "sandbox",
-              run: () =>
-                this.#broker.capture(message.activationId, message.assignment, message.requestId),
-            }),
-          );
           return;
         }
         if (message.type === "tool_sandbox.release") {

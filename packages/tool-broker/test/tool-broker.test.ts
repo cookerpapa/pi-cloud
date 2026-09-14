@@ -127,26 +127,10 @@ function providerFixture() {
   const discoverHttpServices = vi.fn<NonNullable<SandboxProvider["discoverHttpServices"]>>(
     async () => ({ listeningPorts: [], httpServices: [] }),
   );
-  const settle = vi.fn<SandboxProvider["settle"]>(async (handle, requestId, binding) => {
-    const bytes = Buffer.from("workspace", "utf8");
-    return {
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.captured",
-      requestId,
-      activationId: binding?.activationId ?? handle.activationId,
-      settlement: {
-        encoding: "base64",
-        sha256: createHash("sha256").update(bytes).digest("hex"),
-        sizeBytes: bytes.byteLength,
-        data: bytes.toString("base64"),
-      },
-      environment: environmentValidation,
-    };
-  });
   const forkWorkspace = vi.fn<NonNullable<SandboxProvider["forkWorkspace"]>>(async (handle) => ({
     sourceHandle: handle,
-    sourceSettlementRevision: "a".repeat(64),
-    targetSettlementRevision: "b".repeat(64),
+    sourceVolumeGeneration: "a".repeat(64),
+    targetVolumeGeneration: "b".repeat(64),
   }));
   const listWorkspaceDirectory = vi.fn<NonNullable<SandboxProvider["listWorkspaceDirectory"]>>(
     async (request) => ({
@@ -258,7 +242,6 @@ function providerFixture() {
     probeExecution,
     adoptPersistentCapsule,
     detachPersistent,
-    settle,
     forkWorkspace,
     listWorkspaceDirectory,
     readWorkspaceFile,
@@ -305,7 +288,6 @@ function providerFixture() {
     provider,
     exec,
     discoverHttpServices,
-    settle,
     forkWorkspace,
     listWorkspaceDirectory,
     readWorkspaceFile,
@@ -461,7 +443,6 @@ describe("provider-backed Tool Tool Broker", () => {
         operation("21111111-1111-4111-8111-111111111111"),
       ),
     ).resolves.toMatchObject({ exitCode: 0 });
-    await manager.capture(agent.activationId, assignment, "21111111-1111-4111-8111-111111111112");
     await expect(
       manager.release({
         toolBrokerProtocolVersion: 1,
@@ -473,7 +454,6 @@ describe("provider-backed Tool Tool Broker", () => {
       }),
     ).resolves.toMatchObject({ retained: true });
     expect(fixture.createCount).toBe(1);
-    expect(fixture.settle).toHaveBeenCalledTimes(1);
     await expect(
       manager.browseDevelopmentEnvironment({
         developmentEnvironmentProtocolVersion: 1,
@@ -543,11 +523,6 @@ describe("provider-backed Tool Tool Broker", () => {
       ...operation("21111111-1111-4111-8111-111111111118"),
       activationId: secondAgent.activationId,
     });
-    await manager.capture(
-      secondAgent.activationId,
-      secondAssignment,
-      "21111111-1111-4111-8111-111111111119",
-    );
     await manager.stop(secondAgent.activationId, secondAssignment);
     expect(fixture.createCount).toBe(1);
     expect(fixture.destroyed).toBe(false);
@@ -889,7 +864,6 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     expect(binding.activationId).toBe(ACTIVATION_ID);
     expect(fixture.listDirectory).not.toHaveBeenCalled();
-    expect(fixture.settle).not.toHaveBeenCalled();
     expect(fixture.stopped).toBe(false);
     expect(fixture.destroyed).toBe(false);
     await manager.release({
@@ -949,7 +923,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: agent.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "1".repeat(64),
     });
     expect(fixture.createCount).toBe(1);
     await terminal.close();
@@ -994,7 +967,7 @@ describe("provider-backed Tool Tool Broker", () => {
         return () => ids.shift()!;
       })(),
     });
-    const created = await manager.create({ ...createRequest, workspaceRevision: "1".repeat(64) });
+    const created = await manager.create({ ...createRequest });
     await manager.execute(
       assignment.executionReference,
       operation("31000000-0000-4000-8000-000000000001"),
@@ -1006,7 +979,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: created.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "1".repeat(64),
     });
 
     const terminal = await manager.openTerminal({
@@ -1037,7 +1009,6 @@ describe("provider-backed Tool Tool Broker", () => {
       ...createRequest,
       requestId: "31000000-0000-4000-8000-000000000004",
       assignment: terminalRunAssignment,
-      workspaceRevision: "1".repeat(64),
     });
     await manager.execute(terminalRunAssignment.executionReference, {
       ...operation("31000000-0000-4000-8000-000000000005"),
@@ -1050,7 +1021,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: terminalRun.activationId,
       assignment: terminalRunAssignment,
       disposition: "keep_warm",
-      workspaceRevision: "2".repeat(64),
     });
     expect(fixture.createCount).toBe(1);
 
@@ -1066,7 +1036,7 @@ describe("provider-backed Tool Tool Broker", () => {
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
-    const created = await manager.create({ ...createRequest, workspaceRevision: "1".repeat(64) });
+    const created = await manager.create({ ...createRequest });
     await manager.execute(
       assignment.executionReference,
       operation("32000000-0000-4000-8000-000000000001"),
@@ -1079,7 +1049,6 @@ describe("provider-backed Tool Tool Broker", () => {
         activationId: created.activationId,
         assignment,
         disposition: "keep_warm",
-        workspaceRevision: "1".repeat(64),
       }),
     ).resolves.toMatchObject({ retained: true });
     expect(fixture.stopped).toBe(false);
@@ -1092,7 +1061,7 @@ describe("provider-backed Tool Tool Broker", () => {
       provider: fixture.provider,
       idGenerator: () => ACTIVATION_ID,
     });
-    const created = await manager.create({ ...createRequest, workspaceRevision: "1".repeat(64) });
+    const created = await manager.create({ ...createRequest });
     await manager.execute(
       assignment.executionReference,
       operation("32000000-0000-4000-8000-000000000001"),
@@ -1104,7 +1073,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: created.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "1".repeat(64),
     });
 
     const connection = await manager.openPreviewConnection({
@@ -1157,9 +1125,6 @@ describe("provider-backed Tool Tool Broker", () => {
       continuity: "cold_restore",
     });
     expect(fixture.createSpec).toBeUndefined();
-    await expect(
-      manager.capture(ACTIVATION_ID, assignment, "10000000-0000-4000-8000-000000000017"),
-    ).resolves.toMatchObject({ type: "tool_sandbox.unused" });
 
     await expect(
       manager.execute(assignment.executionReference, {
@@ -1514,7 +1479,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: first.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "a".repeat(64),
     });
 
     const nextAssignment: ToolSandboxAssignment = {
@@ -1534,7 +1498,6 @@ describe("provider-backed Tool Tool Broker", () => {
       ...createRequest,
       requestId: "10000000-0000-4000-8000-000000000021",
       assignment: nextAssignment,
-      workspaceRevision: "a".repeat(64),
     });
     expect(second.activationId).not.toBe(first.activationId);
     expect(second.continuity).toBe("warm_reuse");
@@ -1575,7 +1538,6 @@ describe("provider-backed Tool Tool Broker", () => {
       ...createRequest,
       requestId: "73300000-0000-4000-8000-000000000003",
       assignment: childAssignment,
-      workspaceRevision: "1".repeat(64),
     });
     expect(child).toMatchObject({ continuity: "warm_reuse" });
     expect(child.activationId).not.toBe(parent.activationId);
@@ -1589,11 +1551,6 @@ describe("provider-backed Tool Tool Broker", () => {
         activationId: child.activationId,
       }),
     ]);
-    await manager.capture(
-      child.activationId,
-      childAssignment,
-      "73300000-0000-4000-8000-000000000008",
-    );
     await manager.release({
       toolBrokerProtocolVersion: 1,
       type: "tool_sandbox.release",
@@ -1601,7 +1558,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: child.activationId,
       assignment: childAssignment,
       disposition: "keep_warm",
-      workspaceRevision: "2".repeat(64),
     });
     await expect(
       manager.execute(
@@ -1610,7 +1566,6 @@ describe("provider-backed Tool Tool Broker", () => {
       ),
     ).resolves.toMatchObject({ operation: "bash.exec" });
     expect(fixture.createCount).toBe(1);
-    expect(fixture.settle).toHaveBeenCalledTimes(1);
     await manager.stop(parent.activationId, assignment);
   });
 
@@ -1640,8 +1595,8 @@ describe("provider-backed Tool Tool Broker", () => {
     });
     expect(forked).toMatchObject({
       type: "workspace.forked",
-      sourceSettlementRevision: "a".repeat(64),
-      targetSettlementRevision: "b".repeat(64),
+      sourceVolumeGeneration: "a".repeat(64),
+      targetVolumeGeneration: "b".repeat(64),
     });
     await expect(
       manager.execute(
@@ -1768,7 +1723,6 @@ describe("provider-backed Tool Tool Broker", () => {
         activationId: initial.activationId,
         assignment,
         disposition: "keep_warm",
-        workspaceRevision: "a".repeat(64),
       });
       const task = (id: string): ToolSandboxAssignment => ({
         ...assignment,
@@ -1824,7 +1778,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: first.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "e".repeat(64),
     });
 
     now += 60_000;
@@ -1860,7 +1813,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: created.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "f".repeat(64),
     });
 
     stateRepository.retired = true;
@@ -1901,7 +1853,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: first.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "1".repeat(64),
     });
 
     const nextAssignment = {
@@ -1919,7 +1870,6 @@ describe("provider-backed Tool Tool Broker", () => {
       ...createRequest,
       requestId: "73500000-0000-4000-8000-000000000004",
       assignment: nextAssignment,
-      workspaceRevision: "1".repeat(64),
     });
 
     expect(fixture.stopped).toBe(false);
@@ -1959,7 +1909,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: persistent.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "2".repeat(64),
     });
 
     const ordinaryAssignment: ToolSandboxAssignment = {
@@ -1990,7 +1939,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: ordinary.activationId,
       assignment: ordinaryAssignment,
       disposition: "keep_warm",
-      workspaceRevision: "3".repeat(64),
     });
     expect(manager.warmCount).toBe(1);
 
@@ -2031,7 +1979,6 @@ describe("provider-backed Tool Tool Broker", () => {
       ...createRequest,
       requestId: "74000000-0000-4000-8000-000000000011",
       assignment: persistentNextAssignment,
-      workspaceRevision: "2".repeat(64),
     });
     expect(persistentAgain.continuity).toBe("cold_restore");
     await manager.stop(persistentAgain.activationId, persistentNextAssignment);
@@ -2210,7 +2157,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: first.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "c".repeat(64),
     });
     expect(manager.warmCount).toBe(1);
     expect(manager.admittedCount).toBe(1);
@@ -2278,7 +2224,6 @@ describe("provider-backed Tool Tool Broker", () => {
       activationId: created.activationId,
       assignment,
       disposition: "keep_warm",
-      workspaceRevision: "b".repeat(64),
     });
 
     await expect(manager.listAssignments(assignment.sandboxId)).resolves.toEqual([]);

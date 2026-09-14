@@ -42,7 +42,6 @@ export type RunAttemptTransitionInput = {
   now: Date;
   failure?: RunAttemptFailure;
   stopReason?: string;
-  settlementRevision?: string;
   claimExpiresAt?: Date;
   heartbeat?: boolean;
   transitionId?: string;
@@ -93,9 +92,6 @@ export async function transitionCurrentRunAttempt(
 ): Promise<void> {
   const now = validDate(input.now, "Run attempt transition clock");
   const reason = validReason(input.reason);
-  if (input.settlementRevision !== undefined && !/^[0-9a-f]{64}$/.test(input.settlementRevision)) {
-    throw new TypeError("Run attempt settlement revision is invalid");
-  }
   const row = await transaction
     .selectFrom("runs as run")
     .innerJoin("run_attempts as attempt", (join) =>
@@ -107,7 +103,6 @@ export async function transitionCurrentRunAttempt(
       "run.state as runState",
       "run.row_version as runVersion",
       "run.current_attempt_id as currentAttemptId",
-      "run.workspace_id as workspaceId",
       "attempt.state as attemptState",
       "attempt.lease_id as executionReferenceId",
       "attempt.fencing_token as fencingToken",
@@ -154,9 +149,6 @@ export async function transitionCurrentRunAttempt(
       ...phaseTimestamp(attemptState, now),
       ...(input.claimExpiresAt === undefined ? {} : { claim_expires_at: input.claimExpiresAt }),
       ...(input.heartbeat === true ? { last_heartbeat_at: now } : {}),
-      ...(input.settlementRevision === undefined
-        ? {}
-        : { settlement_revision: input.settlementRevision }),
       failure_code: input.failure?.code ?? null,
       failure_message: input.failure?.message ?? null,
       failure_retryable: input.failure?.retryable ?? null,
@@ -196,107 +188,6 @@ export async function transitionCurrentRunAttempt(
     .where("row_version", "=", row.runVersion)
     .executeTakeFirst();
   expectOne(runUpdate.numUpdatedRows, "Updating a run");
-
-  if (terminalRun) {
-    if (runState === "completed") {
-      const settlement = await transaction
-        .updateTable("workspace_settlements")
-        .set({ state: "settled", settled_at: now })
-        .where("tenant_id", "=", identity.tenantId)
-        .where("run_id", "=", identity.runId)
-        .where("attempt_id", "=", identity.attemptId)
-        .where("state", "=", "staged")
-        .returning(["id", "workspace_id", "session_id", "settlement_artifact_id"])
-        .executeTakeFirst();
-      if (settlement !== undefined) {
-        const artifacts = await transaction
-          .selectFrom("artifacts")
-          .select(["id", "object_key"])
-          .where("tenant_id", "=", identity.tenantId)
-          .where("id", "=", settlement.settlement_artifact_id)
-          .execute();
-        const workspaceKey = artifacts.find(
-          (artifact) => artifact.id === settlement.settlement_artifact_id,
-        )?.object_key;
-        if (workspaceKey === undefined) {
-          throw new RunAttemptLifecycleError(
-            "workspace_settlement_corrupt",
-            "Settled Workspace settlement artifacts are missing",
-          );
-        }
-        const workspaceHead = await transaction
-          .updateTable("workspaces")
-          .set({
-            current_workspace_settlement_id: settlement.id,
-            row_version: sql<string>`${sql.ref("row_version")} + 1`,
-            updated_at: now,
-          })
-          .where("tenant_id", "=", identity.tenantId)
-          .where("id", "=", settlement.workspace_id)
-          .executeTakeFirst();
-        expectOne(workspaceHead.numUpdatedRows, "Recording the last-settled Workspace settlement");
-        const conversationUpdate = await transaction
-          .updateTable("sessions")
-          .set({
-            current_workspace_settlement_id: settlement.id,
-            workspace_settlement_key: workspaceKey,
-            row_version: sql<string>`${sql.ref("row_version")} + 1`,
-            updated_at: now,
-          })
-          .where("tenant_id", "=", identity.tenantId)
-          .where("id", "=", settlement.session_id)
-          .executeTakeFirst();
-        expectOne(conversationUpdate.numUpdatedRows, "Advancing the Session Workspace settlement");
-      }
-    } else {
-      await transaction
-        .updateTable("workspace_settlements")
-        .set({ state: "abandoned" })
-        .where("tenant_id", "=", identity.tenantId)
-        .where("run_id", "=", identity.runId)
-        .where("attempt_id", "=", identity.attemptId)
-        .where("state", "=", "staged")
-        .execute();
-      const session = await transaction
-        .selectFrom("sessions as session_row")
-        .leftJoin(
-          "workspace_settlements as settlement",
-          "settlement.id",
-          "session_row.current_workspace_settlement_id",
-        )
-        .leftJoin("artifacts as workspace", "workspace.id", "settlement.settlement_artifact_id")
-        .select([
-          "session_row.id",
-          "session_row.current_workspace_settlement_id as currentSettlementId",
-          "workspace.object_key as workspaceKey",
-        ])
-        .where("session_row.tenant_id", "=", identity.tenantId)
-        .where(
-          "session_row.id",
-          "=",
-          sql<string>`(select session_id from runs where id = ${identity.runId})`,
-        )
-        .executeTakeFirst();
-      if (session !== undefined) {
-        if (session.currentSettlementId !== null && session.workspaceKey === null) {
-          throw new RunAttemptLifecycleError(
-            "workspace_settlement_corrupt",
-            "Current Workspace settlement artifact is missing",
-          );
-        }
-        await transaction
-          .updateTable("sessions")
-          .set({
-            workspace_settlement_key: session.workspaceKey,
-            row_version: sql<string>`${sql.ref("row_version")} + 1`,
-            updated_at: now,
-          })
-          .where("tenant_id", "=", identity.tenantId)
-          .where("id", "=", session.id)
-          .executeTakeFirstOrThrow();
-      }
-    }
-  }
 
   if (row.attemptState !== attemptState) {
     await transaction

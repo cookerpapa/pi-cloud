@@ -1,7 +1,13 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { createExecutionReference } from "@pi-cloud/protocol";
+import {
+  createExecutionReference,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+  parseEnvironmentValidationReport,
+} from "@pi-cloud/protocol";
+import type { SandboxHandle } from "../src/sandbox-provider.ts";
 import { afterEach, describe, expect, it } from "vitest";
 import { PostgresWorkspaceRuntimeStateRepository } from "../src/index.ts";
 import { CubePersistentCapsuleCodec } from "../src/cube-persistent-capsule.ts";
@@ -94,7 +100,6 @@ describe("PostgreSQL Tool Broker ownership", () => {
           workspace_id: workspaceId,
           desired_model_profile_id: profileId,
           state: "idle" as const,
-          workspace_settlement_key: null,
         })),
       )
       .execute();
@@ -132,7 +137,7 @@ describe("PostgreSQL Tool Broker ownership", () => {
         workspace_id: workspaceId,
         desired_model_profile_id: profileId,
         state: "idle",
-        workspace_settlement_key: null,
+
         conversation_parent_session_id: rootSessionId,
         conversation_fork_turn_id: forkTurnId,
         conversation_fork_entry_id: "20000000-0000-4000-8000-000000000016",
@@ -244,6 +249,8 @@ describe("PostgreSQL Tool Broker ownership", () => {
         profile_version: "1",
         image_revision: "test",
         spec_sha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630",
+        recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+        recipe_sha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
         state: "validated",
         active: true,
         validated_at: new Date(),
@@ -261,7 +268,6 @@ describe("PostgreSQL Tool Broker ownership", () => {
         desired_model_profile_id: profileId,
         state: "running",
         session_kind: "subagent",
-        workspace_settlement_key: null,
       })
       .executeTakeFirstOrThrow();
     await database
@@ -417,7 +423,60 @@ describe("PostgreSQL Tool Broker ownership", () => {
       .executeTakeFirstOrThrow();
 
     await expect(repository.reserve(activation)).resolves.toEqual({ status: "reserved" });
-    await repository.setWorkspaceRuntimeState(activation.activationId, "active");
+    await database
+      .updateTable("environment_versions")
+      .set({ state: "pending", validated_at: null })
+      .where("id", "=", environmentId)
+      .execute();
+    const environment = {
+      environmentVersionId: environmentId,
+      versionNumber: 1,
+      profileKey: "pi-cloud-fullstack" as const,
+      profileVersion: "1" as const,
+      imageRevision: "test",
+      specSha256: "e4195cfc4c9e79286d47618d704dbe32dd4141eaa0ce21d82f72699e360f9630" as const,
+      recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+      recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+    };
+    const report = parseEnvironmentValidationReport({
+      profileKey: environment.profileKey,
+      profileVersion: environment.profileVersion,
+      imageRevision: environment.imageRevision,
+      specSha256: environment.specSha256,
+      recipeSha256: environment.recipeSha256,
+      isolationBoundary: "microvm",
+      runtime: "cubesandbox-kvm",
+      networkMode: "public_web_proxy_private_denied",
+      runAsUser: "1000:1000",
+      readOnlyRootFilesystem: false,
+      recipeCommands: [],
+      tools: [
+        { name: "node", version: "v24.18.0" },
+        { name: "java", version: "17.0.19" },
+        { name: "python", version: "3.11.2" },
+        { name: "git", version: "2.39.5" },
+      ],
+    });
+    const handle: SandboxHandle = {
+      providerApiVersion: 1,
+      providerId: "cubesandbox",
+      activationId: activation.activationId,
+      runtimeId: activation.activationId,
+      runtimeName: "validation-test",
+      workspaceRoot: "/workspace",
+      assignment: activation.assignment,
+      environment,
+      environmentValidation: report,
+    };
+    await repository.setWorkspaceRuntimeState(activation.activationId, "active", { handle });
+    await repository.setWorkspaceRuntimeState(activation.activationId, "active", { handle });
+    const reports = await database
+      .selectFrom("environment_validations")
+      .selectAll()
+      .where("environment_version_id", "=", environmentId)
+      .execute();
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({ report, run_id: null, attempt_id: null });
     const childActivation = {
       ...activation,
       assignment: {

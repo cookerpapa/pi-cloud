@@ -136,7 +136,6 @@ async function seed(database: Kysely<Database>, toolBrokerBaseUrl: string): Prom
       workspace_id: IDS.workspace,
       desired_model_profile_id: IDS.profile,
       state: "idle",
-      workspace_settlement_key: null,
     })
     .execute();
   await database

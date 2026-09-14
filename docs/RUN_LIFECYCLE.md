@@ -135,7 +135,7 @@ without retaining scarce admission capacity.
 Run table queue        at-least-once wakeup + transactional claim
 Pi Session mutation    Recorded publication scope + Kafka + idempotent PostgreSQL projection
 Tool start              no blind retry; UNKNOWN if ambiguous
-Workspace settlement    fenced last observation; persistent Volume owns bytes
+Workspace files         persistent Volume; independent of Run completion
 terminal Run commit     idempotent current-Attempt transaction
 Cube create/delete      idempotent reconcile
 live AcceptedFact       Recorded publication scope + Kafka acks=all + Projector fact-id/sequence projection

@@ -113,9 +113,6 @@ describe("Supervisor host production configuration", () => {
       managementAdvertisedBaseUrl: "http://supervisor-production-1:4100/",
       toolBrokerBaseUrls: ["http://tool-broker:4300/"],
       trustedWorkspaceDirectory: "/workspace",
-      runtimeObjectCacheTtlMs: 600_000,
-      runtimeObjectCacheMaximumEntries: 512,
-      runtimeObjectCacheMaximumBytes: 32 * 1_024 * 1_024,
       modelGatewayUpstreamConnectTimeoutMs: 120_000,
       modelGatewayUpstreamIdleTimeoutMs: 300_000,
     });

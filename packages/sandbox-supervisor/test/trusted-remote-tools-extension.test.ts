@@ -2,7 +2,7 @@ import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-age
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { createExecutionReference, type CandidateToolCommand } from "@pi-cloud/protocol";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -35,7 +35,7 @@ function createStepCapture() {
         sandbox: { status: "inactive" as const, continuitySha256: null },
         environmentSha256: "c".repeat(64),
         workspaceBindingSha256: "f".repeat(64),
-        committedWorkspaceRevision: null,
+
         toolPolicySha256: "d".repeat(64),
       },
     };
@@ -77,7 +77,7 @@ const BASE_CONFIGURATION = {
   captureStepContext: createStepCapture(),
   remainingToolCalls: 0,
   maximumToolOutputBytes: 1_024,
-  toolOutputDirectory: "/tmp/pi-cloud-tool-output-test",
+
   workingDirectory: "/workspace",
   traceparent: "00-11111111111111111111111111111111-2222222222222222-01",
 } as const;
@@ -131,7 +131,7 @@ describe("trusted remote tools extension governance", () => {
     expect(bash.description).toContain("use cd inside command");
   });
 
-  it("redacts Code Host tokens and authenticated URLs before model context or artifacts", () => {
+  it("redacts Code Host tokens and authenticated URLs before model context", () => {
     const source = Buffer.from(
       "https://oauth2:glpat-super-secret-token@gitlab.example.com/group/repo.git\n" +
         "github_pat_abcdefghijklmnopqrstuvwxyz123456\n",
@@ -260,7 +260,7 @@ describe("trusted remote tools extension governance", () => {
       captureStepContext: createStepCapture(),
       remainingToolCalls: 0,
       maximumToolOutputBytes: 1_024,
-      toolOutputDirectory: "/tmp/pi-cloud-sdk-tool-output-test",
+
       workingDirectory: "/workspace",
       projectInstructions: "SDK activation-local instructions.",
     });
@@ -534,7 +534,7 @@ describe("trusted remote tools extension governance", () => {
         createTrustedRemoteToolsExtension({
           ...BASE_CONFIGURATION,
           remainingToolCalls: 1,
-          toolOutputDirectory: directory,
+
           projectInstructions: "Prefer deterministic tests.",
         }),
         pi,
@@ -570,17 +570,13 @@ describe("trusted remote tools extension governance", () => {
           () => undefined,
           undefined as never,
         );
-      const artifact = resolve(
-        directory,
-        `${createHash("sha256").update("tool-call-large-read").digest("hex")}.output`,
-      );
-      expect(await readFile(artifact)).toEqual(Buffer.from("x".repeat(2_048)));
+      expect(await readdir(directory)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
 
-  it("selects one recoverable head-tail Bash preview from the original output", async () => {
+  it("selects one bounded head-tail Bash preview without archiving from the original output", async () => {
     const directory = await mkdtemp(resolve(tmpdir(), "pi-cloud-bash-preview-test-"));
     try {
       const registered: ToolDefinition[] = [];
@@ -632,7 +628,6 @@ describe("trusted remote tools extension governance", () => {
         createTrustedRemoteToolsExtension({
           ...BASE_CONFIGURATION,
           remainingToolCalls: 1,
-          toolOutputDirectory: directory,
         }),
         pi,
       );
@@ -655,13 +650,9 @@ describe("trusted remote tools extension governance", () => {
       expect(Buffer.byteLength(preview, "utf8")).toBeLessThanOrEqual(1_024);
       expect(preview).toContain("BEGIN-");
       expect(preview).toContain("FINAL-COMPILER-ERROR");
-      expect(preview).toContain("complete output is preserved as the tool-output artifact");
+      expect(preview).toContain("omitted output is not archived");
       expect(result.details?.truncation).toBeUndefined();
-      const artifact = resolve(
-        directory,
-        `${createHash("sha256").update("tool-call-large-bash").digest("hex")}.output`,
-      );
-      expect(await readFile(artifact)).toEqual(original);
+      expect(await readdir(directory)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -275,17 +275,15 @@ async function runTurn(sessionId, prompt) {
 
 async function runEvidence(runId) {
   const row = await psql(
-    `select s.supervisor_id || '|' ||
-            coalesce(r.workspace_base_settlement_id::text, '') || '|' ||
-            coalesce(a.settlement_revision, '')
+    `select s.supervisor_id
        from runs r
        join run_attempts a on a.id = r.current_attempt_id
        join sandboxes s on s.id = a.sandbox_id
       where r.id = ${sqlLiteral(runId)}`,
   );
-  const [supervisorId, baseWorkspaceSettlementId, settlementRevision] = row.split("|");
+  const supervisorId = row;
   assert(supervisorId, `Run ${runId} has no Supervisor assignment`);
-  return { supervisorId, baseWorkspaceSettlementId, settlementRevision };
+  return { supervisorId };
 }
 
 async function activeWorkers() {

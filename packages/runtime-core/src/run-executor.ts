@@ -731,9 +731,6 @@ export class RunExecutor {
           "session_row.project_id as projectId",
           "session_row.workspace_id as workspaceId",
           "session_row.next_event_seq as nextEventSeq",
-          "session_row.current_workspace_settlement_id as sessionWorkspaceSettlementId",
-          "session_row.forked_from_session_id as forkedFromSessionId",
-          "workspace_row.current_workspace_settlement_id as currentWorkspaceSettlementId",
           "run.id as runId",
           "run.trace_id as traceId",
           "run.tool_capability_snapshot as toolCapabilitySnapshot",
@@ -924,10 +921,6 @@ export class RunExecutor {
         }
       }
       const transitionId = this.#idGenerator();
-      const workspaceBaseSettlementId =
-        row.forkedFromSessionId === null
-          ? row.currentWorkspaceSettlementId
-          : row.sessionWorkspaceSettlementId;
       const claimed = await sql<{
         attemptCount: number;
         transitionCount: number;
@@ -957,7 +950,6 @@ export class RunExecutor {
                  available_at = ${leaseUntil},
                  current_attempt_id = ${attemptId}::uuid,
                  attempt_count = ${attemptNumber},
-                 workspace_base_settlement_id = ${workspaceBaseSettlementId}::uuid,
                  stop_reason = null,
                  failure_code = null,
                  failure_message = null,

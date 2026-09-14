@@ -54,14 +54,12 @@ export type CredentialKind = "oauth" | "api_key" | "brokered";
 export type TurnInputKind = "prompt";
 export type TurnControlRequestKind = "cancel" | "steer";
 export type TurnControlRequestState = DomainTurnControlRequestState;
-export type ArtifactKind = "workspace_settlement" | "tool_output" | "report" | "crash_bundle";
 export type SupervisorConnectionState = "active" | "superseded" | "fenced";
 export type SupervisorConnectionCloseReason = "reconnected" | "heartbeat_timeout" | "new_boot";
 export type SandboxRetirementReason = "heartbeat_timeout" | "new_boot";
 export type SandboxRetirementState = "pending" | "claimed" | "blocked" | "completed";
 export type TenantApiCredentialRole = "owner" | "member" | "viewer";
 export type WorkspaceSeedKind = "empty" | "sample_java";
-export type WorkspaceSettlementOrigin = "settlement" | "fork" | "migration" | "promotion";
 export type WorkspaceOperationKind = "fork" | "rollback" | "archive" | "unarchive" | "promote";
 export type ModelRequestState = "reserved" | "completed" | "failed" | "aborted" | "budget_denied";
 export type EnvironmentVersionState = "pending" | "validated" | "failed";
@@ -292,7 +290,6 @@ export interface ToolBrokerWorkspaceRuntimeTable {
   turn_context_sha256: string;
   attempt_context_sha256: string;
   environment_sha256: string;
-  workspace_revision: string | null;
   runtime_id: string | null;
   runtime_name: string | null;
   state: ToolBrokerWorkspaceRuntimeState;
@@ -552,8 +549,8 @@ export interface EnvironmentValidationTable {
   tenant_id: string;
   project_id: string;
   environment_version_id: string;
-  run_id: string;
-  attempt_id: string;
+  run_id: string | null;
+  attempt_id: string | null;
   status: EnvironmentValidationStatus;
   report: JsonObject | null;
   failure_code: string | null;
@@ -568,7 +565,6 @@ export interface WorkspaceTable {
   seed_kind: Generated<WorkspaceSeedKind>;
   workspace_kind: Generated<WorkspaceKind>;
   parent_workspace_id: GeneratedNullable<string>;
-  current_workspace_settlement_id: GeneratedNullable<string>;
   row_version: GeneratedInt8;
   deleted_at: NullableTimestamp;
   storage_purged_at: NullableTimestamp;
@@ -633,11 +629,9 @@ export interface SessionTable {
   sandbox_profile_key: Generated<SandboxProfileKey>;
   session_kind: Generated<SessionKind>;
   tool_capabilities: GeneratedJsonArray;
-  workspace_settlement_key: string | null;
   next_event_seq: GeneratedInt8;
   next_mailbox_position: GeneratedInt8;
   row_version: GeneratedInt8;
-  current_workspace_settlement_id: GeneratedNullable<string>;
   forked_from_session_id: GeneratedNullable<string>;
   conversation_parent_session_id: GeneratedNullable<string>;
   conversation_fork_turn_id: GeneratedNullable<string>;
@@ -772,7 +766,6 @@ export interface RunTable {
   agent_system_prompt: GeneratedNullable<string>;
   tool_capability_snapshot: GeneratedJsonArray;
   conversation_base_seq: GeneratedInt8;
-  workspace_base_settlement_id: GeneratedNullable<string>;
   idempotency_key: string;
   mailbox_position: Int8;
   request_sha256: string;
@@ -806,7 +799,6 @@ export interface RunAttemptTable {
   lease_id: string | null;
   fencing_token: NullableInt8;
   execution_released_at: GeneratedNullable<Date>;
-  settlement_revision: string | null;
   failure_code: string | null;
   failure_message: string | null;
   failure_retryable: boolean | null;
@@ -1008,48 +1000,12 @@ export interface OutboxTable {
   last_error: string | null;
 }
 
-export interface ArtifactTable {
-  id: string;
-  tenant_id: string;
-  session_id: string;
-  turn_id: string | null;
-  kind: ArtifactKind;
-  run_id: GeneratedNullable<string>;
-  file_name: GeneratedNullable<string>;
-  media_type: GeneratedNullable<string>;
-  object_key: string;
-  sha256: string;
-  size_bytes: Int8;
-  created_at: GeneratedTimestamp;
-}
-
-export interface WorkspaceSettlementTable {
-  id: string;
-  tenant_id: string;
-  workspace_id: string;
-  session_id: string;
-  settlement_number: number;
-  parent_settlement_id: string | null;
-  source_settlement_id: string | null;
-  origin_kind: WorkspaceSettlementOrigin;
-  run_id: string | null;
-  attempt_id: string | null;
-  turn_id: string | null;
-  settlement_artifact_id: string;
-  revision: string;
-  state: "staged" | "settled" | "abandoned";
-  created_at: GeneratedTimestamp;
-  settled_at: NullableTimestamp;
-}
-
 export interface WorkspaceOperationTable {
   id: string;
   tenant_id: string;
   session_id: string;
   kind: WorkspaceOperationKind;
   idempotency_key: string;
-  from_settlement_id: string | null;
-  to_settlement_id: string | null;
   source_session_id: string | null;
   created_at: GeneratedTimestamp;
 }
@@ -1224,14 +1180,6 @@ export interface PiSessionLogTable {
   append_id: string | null;
 }
 
-export interface RuntimeObjectTable {
-  object_key: string;
-  bytes: Uint8Array;
-  sha256: string;
-  size_bytes: Int8;
-  created_at: GeneratedTimestamp;
-}
-
 export interface Database {
   accepted_fact_projection_offsets: { topic: string; partition: number; next_offset: Int8 };
   agent_definitions: AgentDefinitionTable;
@@ -1265,7 +1213,6 @@ export interface Database {
   environment_validations: EnvironmentValidationTable;
   environment_operations: EnvironmentOperationTable;
   workspaces: WorkspaceTable;
-  workspace_settlements: WorkspaceSettlementTable;
   workspace_operations: WorkspaceOperationTable;
   workspace_delete_operations: WorkspaceDeleteOperationTable;
   credential_bindings: CredentialBindingTable;
@@ -1290,7 +1237,6 @@ export interface Database {
   conversation_fork_operations: ConversationForkOperationTable;
   session_terminal_events: SessionTerminalEventTable;
   outbox: OutboxTable;
-  artifacts: ArtifactTable;
   usage_ledger: UsageLedgerTable;
   model_rates: ModelRateTable;
   model_requests: ModelRequestTable;
@@ -1304,5 +1250,4 @@ export interface Database {
   pi_session_records: PiSessionRecordTable;
   pi_session_labels: PiSessionLabelTable;
   pi_session_log: PiSessionLogTable;
-  runtime_objects: RuntimeObjectTable;
 }

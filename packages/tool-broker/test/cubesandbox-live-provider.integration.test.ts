@@ -8,7 +8,6 @@ import {
   type ToolSandboxOperationRequest,
   type ToolSandboxOperationResponse,
 } from "@pi-cloud/protocol";
-import { decodeWorkspaceBlob, parseWorkspaceVolumeSettlement } from "@pi-cloud/workspace-runtime";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
@@ -593,19 +592,6 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           ),
         ).toBe("public-egress-ok");
 
-        const captured = await manager.capture(first.activationId, firstAssignment, randomUUID());
-        expect(captured.type).toBe("tool_sandbox.captured");
-        if (captured.type !== "tool_sandbox.captured") {
-          throw new Error("CubeSandbox live Workspace capture was missing");
-        }
-        const checkpoint = parseWorkspaceVolumeSettlement(decodeWorkspaceBlob(captured.settlement));
-        expect(checkpoint).toMatchObject({
-          providerId: "cubesandbox",
-          tenantId: firstAssignment.tenantId,
-          workspaceId: firstAssignment.workspaceId,
-          fencingToken: parseExecutionReference(firstAssignment.executionReference).fencingToken,
-          settlementRevision: expect.stringMatching(/^[0-9a-f]{64}$/),
-        });
         await expect(
           manager.listWorkspaceDirectory({
             toolBrokerProtocolVersion: 1,
@@ -654,7 +640,6 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           requestId: randomUUID(),
           assignment: restoredFirstAssignment,
           workspaceSeed: { kind: "sample_java" },
-          workspaceSettlement: captured.settlement,
         });
         activationIds.add(first.activationId);
         expect(
@@ -694,13 +679,6 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           ),
         ).trim();
         expect(backgroundPid).toMatch(/^[1-9][0-9]*$/);
-        const secondCaptured = await manager.capture(
-          second.activationId,
-          secondAssignment,
-          randomUUID(),
-        );
-        expect(secondCaptured.type).toBe("tool_sandbox.captured");
-        const warmRevision = "c".repeat(64);
         await expect(
           manager.release({
             toolBrokerProtocolVersion: 1,
@@ -709,7 +687,6 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
             activationId: second.activationId,
             assignment: secondAssignment,
             disposition: "keep_warm",
-            workspaceRevision: warmRevision,
           }),
         ).resolves.toMatchObject({ retained: true });
         await expect(
@@ -741,7 +718,6 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           ...secondRequest,
           requestId: randomUUID(),
           assignment: reboundAssignment,
-          workspaceRevision: warmRevision,
         });
         expect(
           output(

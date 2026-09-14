@@ -31,7 +31,7 @@ function continuity(
     continuity: kind,
     environmentSha256: ENVIRONMENT_SHA256,
     workspaceBindingSha256,
-    committedWorkspaceRevision: null,
+
     toolPolicySha256: TOOL_POLICY_SHA256,
   } as const;
 }

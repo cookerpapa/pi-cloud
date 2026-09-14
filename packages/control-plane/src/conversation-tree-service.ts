@@ -1152,8 +1152,6 @@ export class ConversationTreeService {
             "execution_mode",
             "sandbox_profile_key",
             "working_directory",
-            "workspace_settlement_key",
-            "current_workspace_settlement_id",
             "conversation_fork_entry_id",
             "archived_at",
           ])
@@ -1275,8 +1273,6 @@ export class ConversationTreeService {
             execution_mode: source.execution_mode,
             sandbox_profile_key: source.sandbox_profile_key,
             working_directory: source.working_directory,
-            workspace_settlement_key: source.workspace_settlement_key,
-            current_workspace_settlement_id: source.current_workspace_settlement_id,
             conversation_parent_session_id: sourceSessionId,
             conversation_fork_turn_id: request.turnId,
             conversation_fork_entry_id: request.entryId,

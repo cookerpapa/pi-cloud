@@ -29,8 +29,7 @@ import {
   type WriteOperations,
 } from "@earendil-works/pi-coding-agent";
 import { createHash, randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { extname, isAbsolute, resolve, sep } from "node:path";
+import { extname } from "node:path";
 import type { FrozenCloudStep } from "./cloud-context.ts";
 import type { PiWorldStateModelMessage } from "./pi-sandbox-continuity.ts";
 import {
@@ -143,7 +142,6 @@ export type TrustedRemoteToolsRuntimeConfiguration = {
   ) => void | Promise<void>;
   remainingToolCalls: number;
   maximumToolOutputBytes: number;
-  toolOutputDirectory: string;
   workingDirectory: string;
   projectInstructions?: string;
   traceparent?: string;
@@ -197,12 +195,10 @@ function validateRuntimeConfiguration(
   const attemptContextSha256 = candidate.attemptContextSha256;
   const remainingToolCalls = candidate.remainingToolCalls;
   const maximumToolOutputBytes = candidate.maximumToolOutputBytes;
-  const configuredToolOutputDirectory = candidate.toolOutputDirectory;
   const workingDirectory = candidate.workingDirectory;
   const projectInstructions = candidate.projectInstructions;
   const traceparent = candidate.traceparent;
   const tracestate = candidate.tracestate;
-  const toolOutputDirectory = resolve(configuredToolOutputDirectory);
   const allowedTools = parseCloudToolCapabilitySnapshot(
     candidate.allowedTools ?? [...CLOUD_TOOL_NAMES],
   );
@@ -221,9 +217,6 @@ function validateRuntimeConfiguration(
     !Number.isSafeInteger(maximumToolOutputBytes) ||
     maximumToolOutputBytes < 1_024 ||
     maximumToolOutputBytes > 1_048_576 ||
-    !isAbsolute(configuredToolOutputDirectory) ||
-    toolOutputDirectory !== configuredToolOutputDirectory ||
-    toolOutputDirectory === "/" ||
     !workingDirectory.startsWith("/") ||
     workingDirectory.length > 4_096 ||
     /[\u0000-\u001f\u007f]/.test(workingDirectory)
@@ -266,7 +259,6 @@ function validateRuntimeConfiguration(
       : { onToolOperationUnavailable: candidate.onToolOperationUnavailable }),
     remainingToolCalls,
     maximumToolOutputBytes,
-    toolOutputDirectory,
     workingDirectory,
     ...(projectInstructions === undefined ? {} : { projectInstructions }),
     ...(traceparent === undefined ? {} : { traceparent }),
@@ -288,10 +280,10 @@ function utf8Tail(value: Buffer, maximumBytes: number): Buffer {
   return value.subarray(start);
 }
 
-function modelOutputPreview(value: Buffer, maximumBytes: number, toolCallId: string): Buffer {
+function modelOutputPreview(value: Buffer, maximumBytes: number): Buffer {
   if (value.byteLength <= maximumBytes) return value;
   const marker = Buffer.from(
-    `\n\n[PiCloud omitted the middle of this output from model context. The complete output is preserved as the tool-output artifact for tool call ${toolCallId}. Rerun a focused command with tail, grep, or sed to inspect omitted sections.]\n\n`,
+    `\n\n[PiCloud omitted the middle of this output from model context. The omitted output is not archived. For large outputs, write to a Workspace file and inspect it with focused reads. Do not rerun commands with uncertain side effects just to recover output.]\n\n`,
     "utf8",
   );
   const bodyBytes = Math.max(0, maximumBytes - marker.byteLength);
@@ -582,20 +574,6 @@ function registerTrustedRemoteTools(
     return parsed;
   };
 
-  const preserveLargeOutput = async (
-    toolCallId: string,
-    value: Buffer,
-    maximumInlineBytes = runtime.maximumToolOutputBytes,
-  ): Promise<void> => {
-    if (value.byteLength <= maximumInlineBytes) return;
-    const fileName = `${createHash("sha256").update(toolCallId, "utf8").digest("hex")}.output`;
-    const target = resolve(runtime.toolOutputDirectory, fileName);
-    if (!target.startsWith(`${runtime.toolOutputDirectory}${sep}`)) {
-      throw new Error("tool_artifact_path_invalid: Tool output artifact path escaped");
-    }
-    await writeFile(target, value, { flag: "wx", mode: 0o600 });
-  };
-
   const readOperations = (toolName: "read" | "edit", toolCallId: string): ReadOperations => ({
     readFile: async (path) => {
       try {
@@ -604,11 +582,6 @@ function registerTrustedRemoteTools(
         if (response.type === "tool_sandbox.operation_failed") throwFailure(response);
         if (response.operation !== "file.read") throw new Error("Tool response kind changed");
         const content = canonicalBase64(response.content);
-        await preserveLargeOutput(
-          toolCallId,
-          content,
-          Math.min(runtime.maximumToolOutputBytes, DEFAULT_MAX_BYTES),
-        );
         return content;
       } catch (error: unknown) {
         throw errorForPi(error);
@@ -738,12 +711,11 @@ function registerTrustedRemoteTools(
         if (response.operation !== "bash.exec") throw new Error("Tool response kind changed");
         const fullOutput = redactToolSecrets(orderedBashOutput(response));
         const maximumModelBytes = Math.min(runtime.maximumToolOutputBytes, DEFAULT_MAX_BYTES);
-        await preserveLargeOutput(toolCallId, fullOutput, maximumModelBytes);
         // Pi's Bash tool applies its own tail truncation at DEFAULT_MAX_BYTES.
         // Keeping this preview at or below that boundary ensures Pi receives
         // the head/tail preview selected from the original output instead of
         // truncating an already-truncated prefix a second time.
-        const output = modelOutputPreview(fullOutput, maximumModelBytes, toolCallId);
+        const output = modelOutputPreview(fullOutput, maximumModelBytes);
         if (output.byteLength > 0) onData(output);
         return { exitCode: response.exitCode };
       } catch (error: unknown) {
@@ -761,7 +733,7 @@ function registerTrustedRemoteTools(
     const platformContext = [
       "## PiCloud execution context",
       `All file and command tools operate inside the selected machine directory ${runtime.workingDirectory}.`,
-      "Large tool results are bounded in model context and preserved as tenant-scoped artifacts.",
+      "Large tool results are bounded in model context; omitted output is not archived.",
       "GitLab/GitHub authentication is already configured through Git's credential helper when the user connects a Code Host.",
       "Always use credential-free HTTPS clone and remote URLs. Never read .git-credentials or embed a token in a command, URL, output, file, or Git remote.",
     ].join("\n");
@@ -856,8 +828,7 @@ function registerTrustedRemoteTools(
           }
           const range = canonicalBase64(response.content);
           const maximumInlineBytes = Math.min(runtime.maximumToolOutputBytes, DEFAULT_MAX_BYTES);
-          await preserveLargeOutput(id, range, maximumInlineBytes);
-          let output = modelOutputPreview(range, maximumInlineBytes, id).toString("utf8");
+          let output = modelOutputPreview(range, maximumInlineBytes).toString("utf8");
           if (response.nextOffsetLine !== undefined) {
             output += `\n\n[Showing lines ${response.startLine}-${response.endLine}. Use offset=${response.nextOffsetLine} to continue.]`;
           }

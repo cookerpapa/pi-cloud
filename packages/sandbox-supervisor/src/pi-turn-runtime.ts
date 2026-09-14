@@ -31,17 +31,6 @@ export function resolveCompactionReserveTokens(
   return Math.max(policyReserveTokens, config.contextWindow - config.autoCompactTokenLimit);
 }
 
-export type PiToolOutputCapture = {
-  toolCallId: string;
-  bytes: Uint8Array;
-};
-
-export type PiToolOutputArtifact = {
-  artifactId: string;
-  sha256: string;
-  sizeBytes: number;
-};
-
 export type PiTurnResult = {
   stopReason: string;
   /** Highest Agent event durably acknowledged by the Kafka AcceptedFact authority. */

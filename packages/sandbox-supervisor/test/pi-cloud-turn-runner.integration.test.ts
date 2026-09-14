@@ -165,7 +165,7 @@ describe("PiCloudTurnRunner integration", () => {
         workingDirectory: "/home/user/project",
       },
     };
-    const turn = createCloudTurnContext(developmentCommand, undefined);
+    const turn = createCloudTurnContext(developmentCommand);
     const session = new Session(
       new InMemorySessionStorage({
         id: developmentCommand.payload.sessionId,
@@ -177,7 +177,7 @@ describe("PiCloudTurnRunner integration", () => {
       sandbox: { status: "active", continuityId: "development-runtime-1" },
       environmentSha256: turn.environmentSha256,
       workspaceBindingSha256: turn.workspaceBindingSha256,
-      committedWorkspaceRevision: null,
+
       toolPolicySha256: turn.toolPolicySha256,
     });
     const authority = new TestAuthority();
@@ -265,7 +265,7 @@ describe("PiCloudTurnRunner integration", () => {
           },
         },
       };
-      const turn = createCloudTurnContext(developmentCommand, undefined);
+      const turn = createCloudTurnContext(developmentCommand);
       const session = new Session(
         new InMemorySessionStorage({
           id: developmentCommand.payload.sessionId,
@@ -277,7 +277,7 @@ describe("PiCloudTurnRunner integration", () => {
         sandbox: { status: "active", continuityId: "development-runtime-1" },
         environmentSha256: turn.environmentSha256,
         workspaceBindingSha256: turn.workspaceBindingSha256,
-        committedWorkspaceRevision: null,
+
         toolPolicySha256: turn.toolPolicySha256,
       });
       const authority = new TestAuthority();
@@ -562,7 +562,7 @@ describe("PiCloudTurnRunner integration", () => {
       const events: EventPublishMessage[] = [];
       const checkpointOperations: PiSessionMutationOperation[] = [];
       const checkpointEvents: PiCloudEvent[] = [];
-      const turn = createCloudTurnContext(command, undefined);
+      const turn = createCloudTurnContext(command);
       const attempt = createCloudAttemptContext({
         command,
         runtimeIdentity: {
@@ -626,7 +626,7 @@ describe("PiCloudTurnRunner integration", () => {
           continuity: "cold_restore",
           environmentSha256: turn.environmentSha256,
           workspaceBindingSha256: turn.workspaceBindingSha256,
-          committedWorkspaceRevision: null,
+
           toolPolicySha256: turn.toolPolicySha256,
         },
         subscribeHostedActivity(listener) {

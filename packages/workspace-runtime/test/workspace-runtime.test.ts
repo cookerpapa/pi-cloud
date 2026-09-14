@@ -3,12 +3,9 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  createWorkspaceVolumeSettlement,
   decodeWorkspaceBlob,
   encodeWorkspaceBlob,
   createWorkspaceSeed,
-  parseWorkspaceSeed,
-  parseWorkspaceVolumeSettlement,
   restoreWorkspaceSeed,
 } from "../src/index.ts";
 
@@ -60,50 +57,5 @@ describe("shared workspace runtime", () => {
     );
     await expect(readFile(resolve(target, "stale.txt"), "utf8")).rejects.toThrow();
     expect((await stat(resolve(target, "test.sh"))).mode & 0o111).not.toBe(0);
-  });
-
-  it("round-trips a lightweight Workspace Volume settlement without indexing files", () => {
-    const settlement = createWorkspaceVolumeSettlement({
-      volumeId: `pcw-${"a".repeat(48)}`,
-      settlementRevision: "f".repeat(64),
-      activationId: "10000000-0000-4000-8000-000000000001",
-      tenantId: "tenant-volume",
-      workspaceId: "workspace-volume",
-      sourceSessionId: "session-volume",
-      bindingSha256: "b".repeat(64),
-      fencingToken: 9,
-      imageRevision: "development",
-      environmentSpecSha256: "c".repeat(64),
-      recipeCommands: [],
-    });
-    expect(parseWorkspaceVolumeSettlement(settlement)).toMatchObject({
-      settlementRevision: "f".repeat(64),
-      tenantId: "tenant-volume",
-      workspaceId: "workspace-volume",
-      sourceSessionId: "session-volume",
-      fencingToken: 9,
-    });
-    expect(() => parseWorkspaceSeed(settlement)).toThrow(/portable file bytes/);
-
-    const invalid = JSON.parse(Buffer.from(settlement).toString("utf8"));
-    invalid.fencingToken = 0;
-    expect(() => createWorkspaceVolumeSettlement(invalid)).toThrow(/reference is invalid/);
-
-    const withUnexpectedField = JSON.parse(Buffer.from(settlement).toString("utf8")) as Record<
-      string,
-      unknown
-    >;
-    withUnexpectedField.untrusted = true;
-    expect(
-      parseWorkspaceVolumeSettlement(Buffer.from(JSON.stringify(withUnexpectedField))),
-    ).toBeUndefined();
-
-    const previousLayout = {
-      ...(JSON.parse(Buffer.from(settlement).toString("utf8")) as Record<string, unknown>),
-      format: "pi-cloud.workspace-volume-reference.v0",
-    };
-    expect(
-      parseWorkspaceVolumeSettlement(Buffer.from(JSON.stringify(previousLayout))),
-    ).toBeUndefined();
   });
 });

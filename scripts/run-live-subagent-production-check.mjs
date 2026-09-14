@@ -438,7 +438,7 @@ try {
     session.sessionId,
     [
       "Call the subagent Tool exactly once and do not call any file or bash Tool yourself.",
-      'Use subagent with action:"run", context:"fresh", workspace:"shared", task:"Do not call any local Tool. Reply exactly SUBAGENT-LAZY-OK".',
+      'Use subagent with action:"run", context:"fresh", workspace:"shared", tools:["bash"], task:"Do not call any local Tool. Reply exactly SUBAGENT-LAZY-OK". Keep the bash capability enabled but unused; do not pass tools:[].',
       "After it finishes, reply with SUBAGENT-LAZY-OK.",
     ].join(" "),
   );

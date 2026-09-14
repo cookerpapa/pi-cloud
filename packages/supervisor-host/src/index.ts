@@ -9,7 +9,6 @@ export {
   SUPERVISOR_HOST_LIVE_PATH,
   SUPERVISOR_HOST_READY_PATH,
   SUPERVISOR_MANAGEMENT_PATH,
-  SUPERVISOR_ARTIFACT_READ_PATH,
   SupervisorManagementServer,
   SupervisorManagementServerError,
   type SupervisorManagementServerOptions,

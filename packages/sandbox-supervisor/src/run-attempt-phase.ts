@@ -8,5 +8,4 @@ export type RunAttemptExecutionPhase = "restoring" | "running" | "settling";
  */
 export interface RunAttemptPhaseObserver {
   transition(command: ExecuteTurnCommandMessage, phase: RunAttemptExecutionPhase): Promise<void>;
-  settlementCommitted(command: ExecuteTurnCommandMessage, revision: string): Promise<void>;
 }

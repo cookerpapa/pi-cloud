@@ -119,7 +119,6 @@ describe("WorkspaceVolumeDeletionReaper", () => {
           turn_context_sha256: "b".repeat(64),
           attempt_context_sha256: "c".repeat(64),
           environment_sha256: "d".repeat(64),
-          workspace_revision: null,
           runtime_id: "runtime-delete",
           runtime_name: "CubeSandbox",
           state: "warm",

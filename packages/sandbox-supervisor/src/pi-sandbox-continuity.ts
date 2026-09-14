@@ -44,7 +44,6 @@ export type PiRuntimeWorldState = Readonly<{
   }>;
   environmentSha256: string;
   workspaceBindingSha256: string;
-  committedWorkspaceRevision: string | null;
   toolPolicySha256: string;
 }>;
 
@@ -53,7 +52,6 @@ export type PiSandboxContinuity = Readonly<{
   continuity: "cold_restore" | "warm_reuse";
   environmentSha256: string;
   workspaceBindingSha256: string;
-  committedWorkspaceRevision: string | null;
   toolPolicySha256: string;
 }>;
 
@@ -94,8 +92,6 @@ function runtimeWorldState(entry: {
     (sandboxCandidate.continuityId !== null && typeof sandboxCandidate.continuityId !== "string") ||
     !sha256(candidate.environmentSha256) ||
     !sha256(candidate.workspaceBindingSha256) ||
-    (candidate.committedWorkspaceRevision !== null &&
-      !sha256(candidate.committedWorkspaceRevision)) ||
     !sha256(candidate.toolPolicySha256)
   ) {
     return undefined;
@@ -108,7 +104,6 @@ function runtimeWorldState(entry: {
     },
     environmentSha256: candidate.environmentSha256,
     workspaceBindingSha256: candidate.workspaceBindingSha256,
-    committedWorkspaceRevision: candidate.committedWorkspaceRevision,
     toolPolicySha256: candidate.toolPolicySha256,
   };
 }
@@ -247,7 +242,6 @@ export class PiSessionWorldStateController {
         },
         environmentSha256: state.environmentSha256,
         workspaceBindingSha256: state.workspaceBindingSha256,
-        committedWorkspaceRevision: state.committedWorkspaceRevision,
         toolPolicySha256: state.toolPolicySha256,
       },
       modelMessages: [...this.#messagesAppendedDuringRun],
@@ -279,7 +273,6 @@ export class PiSessionWorldStateController {
       },
       environmentSha256: this.#continuity.environmentSha256,
       workspaceBindingSha256: this.#continuity.workspaceBindingSha256,
-      committedWorkspaceRevision: this.#continuity.committedWorkspaceRevision,
       toolPolicySha256: this.#continuity.toolPolicySha256,
     };
   }

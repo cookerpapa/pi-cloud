@@ -116,7 +116,8 @@ Cube effects may remain UNKNOWN: this is semantic recovery, not exactly-once she
 execution or restoration of lost process memory. Kafka retention follows safe PG
 recovery progress plus a grace interval; token fragments do not become PG rows.
 
-Workspace files belong to persistent Cube Volumes. Development-machine snapshots
+Workspace files belong to persistent Cube Volumes, without per-Run object
+archives or Workspace settlement heads. Tool output is bounded, not archived. Development-machine snapshots
 are node-affine; deleting compute does not delete conversations. Cube's internal
 MySQL/Redis manage Cube, not PiCloud Runs. Provider account credentials remain in
 CLIProxyAPI. Optional GitLab and Prometheus/Grafana/Alertmanager/Jaeger integrations
@@ -182,7 +183,7 @@ npm run production:down
 
 **Existing installations:** this pre-release protocol cutover is not a rolling
 upgrade. Drain Runs, project all seals/Outbox, back up and release old runtime
-instances, then stop the old execution services. Apply migration 137 and deploy
+instances, then stop the old execution services. Apply migrations through 138 and deploy
 matching Worker, Control Plane/Projector and Broker images. New records use the
 v8 Kafka topic and task execution references; there is no old-wire decoder.
 PG semantic history, identities and configuration are not reset by migration.

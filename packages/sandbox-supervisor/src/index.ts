@@ -8,8 +8,6 @@ export {
   type PiModelRuntimeConfig,
   type PiCancellationSignal,
   type PiEventPublisher,
-  type PiToolOutputArtifact,
-  type PiToolOutputCapture,
   type PiTurnResult,
 } from "./pi-turn-runtime.ts";
 export {
@@ -132,19 +130,6 @@ export {
   type RunAttemptExecutionPhase,
   type RunAttemptPhaseObserver,
 } from "./run-attempt-phase.ts";
-
-export {
-  decodeWorkspaceSettlement,
-  encodeWorkspaceSettlement,
-  validateLoadedWorkspaceSettlement,
-  type CapturedWorkspaceSettlement,
-  type CapturedEnvironmentWorkspaceSettlement,
-  type CapturedToolOutput,
-  type LoadedWorkspaceSettlement,
-  type WorkspaceSettlementStore,
-  type SavedWorkspaceSettlement,
-  type SavedToolOutputArtifact,
-} from "./workspace-settlement.ts";
 
 export { validateWorkspacePayload } from "./workspace-seed.ts";
 

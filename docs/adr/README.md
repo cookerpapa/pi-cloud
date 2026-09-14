@@ -10,6 +10,9 @@ revision-bound reports, not as alternate production backends.
 
 Read the documents in this order:
 
+1. [ADR-0168](0168-direct-workspace-storage.md) — direct Volume/full-VM file
+   storage and live browsing, without per-Run objects or raw Tool-output archives.
+
 1. [ADR-0167](0167-session-family-capacity.md) — active physical-Session capacity
    and independent model-request fairness; implementation/acceptance in progress.
 1. [ADR-0166](0166-log-driven-subagents.md) — Projector-admitted Subagent control,
@@ -65,8 +68,6 @@ Read the documents in this order:
    Issue intake and environment-scoped Code Host connections.
 1. [ADR-0136](0136-workspace-owned-elastic-runtime.md) — one physical elastic
    Cube per Workspace with independently fenced concurrent Tool bindings.
-1. [ADR-0135](0135-live-workspace-browser-and-lightweight-settlement.md) —
-   lightweight Volume settlement and live, directory-scoped Workspace reads.
 1. [ADR-0134](0134-user-managed-git-workspaces.md) — ordinary user-visible Git
    state with no platform Diff or post-Run commit/push.
 1. [ADR-0133](0133-versioned-agent-identity-and-native-session-storage.md) —

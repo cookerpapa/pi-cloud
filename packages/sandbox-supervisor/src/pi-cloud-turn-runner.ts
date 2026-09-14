@@ -3,7 +3,6 @@ import {
   MODEL_STEP_SEQUENCE_HEADER,
   MODEL_STEP_SHA256_HEADER,
   createPiCloudEventFactory,
-  MAX_TOOL_OUTPUT_BYTES,
   parseSupervisorToControlMessage,
   type PiCloudEvent,
   type PiCloudEventBody,
@@ -22,10 +21,6 @@ import type { AgentMessage, Session } from "@earendil-works/pi-agent-core";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ProviderHeaders } from "@earendil-works/pi-ai";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
-import { createHash } from "node:crypto";
-import { lstat, mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
 import { PiAgentEventAdapter } from "./pi-agent-event-adapter.ts";
 import {
   PI_WORLD_STATE_ENTRY_PROJECTORS,
@@ -45,8 +40,6 @@ import {
   type PiCancellationSignal,
   type PiEventPublisher,
   type PiModelRuntimeConfig,
-  type PiToolOutputArtifact,
-  type PiToolOutputCapture,
   type PiTurnResult,
 } from "./pi-turn-runtime.ts";
 import type { TrustedRemoteAgentTools } from "./trusted-remote-tools-extension.ts";
@@ -74,7 +67,6 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   acquireModelPermit?: (signal?: AbortSignal) => Promise<() => void>;
   metrics?: PiCloudMetrics;
   createAgentTools: (context: {
-    toolOutputDirectory: string;
     stepWorldState: PiSessionWorldStateController;
     captureSamplingStep: (
       createFresh: () => Promise<Omit<PiSamplingStepCapture, "samplingAttempt">>,
@@ -83,7 +75,6 @@ export type PiCloudTurnRunnerOptions = Readonly<{
   }) => TrustedRemoteAgentTools;
   sandboxContinuity: PiSandboxContinuity;
   onSettled?: () => Promise<void> | void;
-  persistToolOutputArtifact?: (output: PiToolOutputCapture) => Promise<PiToolOutputArtifact>;
   observeEvent?: (event: CloudAgentRuntimeEvent) => void;
   subscribeHostedActivity?: ProviderHostedActivitySubscriber;
   subscribeHostedTranscript?: ProviderHostedTranscriptSubscriber;
@@ -508,11 +499,8 @@ export class PiCloudTurnRunner {
       const model = modelRuntime.getModel(config.provider, config.modelId);
       if (model === undefined)
         throw new PiTurnError("invalid_model_runtime", "Configured model is unavailable", false);
-      let toolOutputDirectoryForCleanup: string | undefined;
 
       try {
-        const toolOutputDirectory = await mkdtemp(resolve(tmpdir(), "pi-cloud-tool-output-"));
-        toolOutputDirectoryForCleanup = toolOutputDirectory;
         const eventFactory = createPiCloudEventFactory(
           {
             sessionId: command.payload.sessionId,
@@ -571,43 +559,6 @@ export class PiCloudTurnRunner {
         };
 
         let pendingSamplingStart: PiCloudEvent | undefined;
-        const preparePublicEvent = async (publicEvent: PiCloudEvent): Promise<PiCloudEvent> => {
-          if (
-            publicEvent.type === "tool.completed" &&
-            this.#options.persistToolOutputArtifact !== undefined
-          ) {
-            const artifactPath = resolve(
-              toolOutputDirectory,
-              `${createHash("sha256").update(publicEvent.payload.toolCallId, "utf8").digest("hex")}.output`,
-            );
-            const metadata = await lstat(artifactPath).catch((error: unknown) =>
-              isRecord(error) && error.code === "ENOENT" ? undefined : Promise.reject(error),
-            );
-            if (metadata !== undefined) {
-              if (
-                !metadata.isFile() ||
-                metadata.isSymbolicLink() ||
-                metadata.size > MAX_TOOL_OUTPUT_BYTES
-              ) {
-                throw new PiTurnError(
-                  "tool_output_artifact_invalid",
-                  "Trusted Tool output artifact was invalid",
-                  false,
-                );
-              }
-              const artifact = await this.#options.persistToolOutputArtifact({
-                toolCallId: publicEvent.payload.toolCallId,
-                bytes: await readFile(artifactPath),
-              });
-              publicEvent = {
-                ...publicEvent,
-                payload: { ...publicEvent.payload, outputArtifact: artifact },
-              };
-            }
-          }
-          return publicEvent;
-        };
-
         const publishMapped = async (
           source: unknown,
         ): Promise<ReturnType<PiAgentEventAdapter["adapt"]>> => {
@@ -636,7 +587,7 @@ export class PiCloudTurnRunner {
             samplingSteps.cancelScheduledRetry();
           }
           if (outcome.kind === "mapped") {
-            await publishEvent(eventMessage(await preparePublicEvent(outcome.event)));
+            await publishEvent(eventMessage(outcome.event));
           }
           return outcome;
         };
@@ -709,7 +660,6 @@ export class PiCloudTurnRunner {
           else scheduleTextFlush();
         };
         const tools = this.#options.createAgentTools({
-          toolOutputDirectory,
           stepWorldState: worldState,
           captureSamplingStep: async (createFresh, captureOptions) => {
             const captured = await samplingSteps.captureAsync(createFresh);
@@ -895,7 +845,7 @@ export class PiCloudTurnRunner {
                   }
                   await sessionHandle.mutationPublisher!.mutate(
                     operation,
-                    outcome.kind === "mapped" ? [await preparePublicEvent(outcome.event)] : [],
+                    outcome.kind === "mapped" ? [outcome.event] : [],
                   );
                   observeRuntimeEvent(sourceEvent);
                 },
@@ -994,9 +944,6 @@ export class PiCloudTurnRunner {
         }
       } finally {
         await sessionHandle.authority.close();
-        if (toolOutputDirectoryForCleanup !== undefined) {
-          await rm(toolOutputDirectoryForCleanup, { recursive: true, force: true });
-        }
       }
     } finally {
       modelRuntimeLease.release();

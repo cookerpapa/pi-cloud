@@ -18,11 +18,9 @@ import { dirname, join, resolve, sep } from "node:path";
 import { isIPv4 } from "node:net";
 import {
   SHA256_PATTERN,
-  UUID_PATTERN,
   VOLUME_GENERATION_FILE,
   VOLUME_GENERATION_PATTERN,
   VOLUME_METADATA_DIRECTORY,
-  VOLUME_SETTLEMENT_FILE,
   VOLUME_DELETE_FILE,
   volumeDeleteMarker,
   VOLUME_WORKSPACE_DIRECTORY,
@@ -42,7 +40,6 @@ import {
   type WorkspaceVolumeGatewayPathInput,
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewayReadFileInput,
-  type WorkspaceVolumeGatewaySettleInput,
   type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
   type WorkspaceVolumeGatewaySourceCredentialDisconnectInput,
   type WorkspaceVolumeGatewaySourceCredentialListInput,
@@ -344,39 +341,10 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     });
   }
 
-  async settle(input: WorkspaceVolumeGatewaySettleInput): Promise<{ settlementRevision: string }> {
-    const identity = validatedIdentity(input);
-    if (
-      !UUID_PATTERN.test(input.activationId) ||
-      !Number.isSafeInteger(input.fencingToken) ||
-      input.fencingToken < 1 ||
-      !SHA256_PATTERN.test(input.bindingSha256)
-    ) {
-      throw new WorkspaceVolumeGatewayError(
-        "workspace_settlement_fence_invalid",
-        "Workspace settlement fence was invalid",
-        false,
-      );
-    }
-    return this.#withVolumeLock(identity.volumeId, async () => {
-      const directory = await this.#validatedVolume(identity);
-      const settlementRevision = randomBytes(32).toString("hex");
-      await this.#writeSettlementRevision(directory, settlementRevision);
-      return { settlementRevision };
-    });
-  }
-
   async fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
-    sourceSettlementRevision: string;
-    targetSettlementRevision: string;
+    sourceVolumeGeneration: string;
+    targetVolumeGeneration: string;
   }> {
-    if (!SHA256_PATTERN.test(input.expectedSourceSettlementRevision)) {
-      throw new WorkspaceVolumeGatewayError(
-        "workspace_fork_settlement_invalid",
-        "Workspace fork source settlement was invalid",
-        false,
-      );
-    }
     const source = validatedIdentity({
       tenantId: input.tenantId,
       workspaceId: input.sourceWorkspaceId,
@@ -399,6 +367,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     return this.#withVolumeLocks([source.volumeId, target.volumeId], async () => {
       await this.checkHealth();
       const sourceDirectory = await this.#validatedVolume(source);
+      const sourceGeneration = (await this.#readVolumeGeneration(sourceDirectory))!;
       const targetDirectory = await this.#ensureVolumeDirectory(target.volumeId);
       const existingState = await this.#readState(targetDirectory);
       const existingGeneration = await this.#readVolumeGeneration(targetDirectory);
@@ -411,7 +380,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
           existingState.volumeId !== target.volumeId ||
           existingState.volumeGeneration !== existingGeneration ||
           existingState.forkedFrom?.workspaceId !== source.workspaceId ||
-          existingState.forkedFrom.settlementRevision !== input.expectedSourceSettlementRevision
+          existingState.forkedFrom.volumeGeneration !== sourceGeneration
         ) {
           throw new WorkspaceVolumeGatewayError(
             "workspace_fork_target_conflict",
@@ -419,26 +388,10 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
             false,
           );
         }
-        const targetSettlementRevision = await this.#readSettlementRevision(targetDirectory);
-        if (targetSettlementRevision === undefined) {
-          throw new WorkspaceVolumeGatewayError(
-            "workspace_fork_target_conflict",
-            "Workspace fork target settlement was missing",
-            false,
-          );
-        }
         return {
-          sourceSettlementRevision: existingState.forkedFrom.settlementRevision,
-          targetSettlementRevision,
+          sourceVolumeGeneration: sourceGeneration,
+          targetVolumeGeneration: existingGeneration,
         };
-      }
-      const sourceSettlementRevision = await this.#readSettlementRevision(sourceDirectory);
-      if (sourceSettlementRevision !== input.expectedSourceSettlementRevision) {
-        throw new WorkspaceVolumeGatewayError(
-          "workspace_fork_source_settlement_changed",
-          "Workspace settlement changed before the isolated fork was copied",
-          true,
-        );
       }
       const targetEntries = await readdir(targetDirectory);
       const pristine =
@@ -467,7 +420,6 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         const generationPath = join(temporary, VOLUME_METADATA_DIRECTORY, VOLUME_GENERATION_FILE);
         await rm(generationPath, { force: true });
         await writeFile(generationPath, `${volumeGeneration}\n`, { mode: 0o400, flag: "wx" });
-        const targetSettlementRevision = randomBytes(32).toString("hex");
         await this.#writeState(temporary, {
           schemaVersion: 2,
           tenantId: target.tenantId,
@@ -476,15 +428,14 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
           volumeGeneration,
           forkedFrom: {
             workspaceId: source.workspaceId,
-            settlementRevision: sourceSettlementRevision,
+            volumeGeneration: sourceGeneration,
           },
         });
-        await this.#writeSettlementRevision(temporary, targetSettlementRevision);
         await rm(targetDirectory, { recursive: true, force: true });
         await rename(temporary, targetDirectory);
         return {
-          sourceSettlementRevision,
-          targetSettlementRevision,
+          sourceVolumeGeneration: sourceGeneration,
+          targetVolumeGeneration: volumeGeneration,
         };
       } finally {
         await rm(temporary, { recursive: true, force: true }).catch(() => undefined);
@@ -957,8 +908,8 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         value.forkedFrom !== undefined &&
         (!isRecord(value.forkedFrom) ||
           typeof value.forkedFrom.workspaceId !== "string" ||
-          typeof value.forkedFrom.settlementRevision !== "string" ||
-          !SHA256_PATTERN.test(value.forkedFrom.settlementRevision))
+          typeof value.forkedFrom.volumeGeneration !== "string" ||
+          !SHA256_PATTERN.test(value.forkedFrom.volumeGeneration))
       )
         return undefined;
       return value as unknown as VolumeState;
@@ -972,28 +923,6 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
     return this.#distributedLock === undefined
       ? run()
       : this.#distributedLock.withLock(volumeId, run);
-  }
-
-  async #writeSettlementRevision(directory: string, revision: string): Promise<void> {
-    const target = join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_SETTLEMENT_FILE);
-    const temporary = `${target}.tmp-${process.pid}-${randomBytes(8).toString("hex")}`;
-    try {
-      await writeFile(temporary, `${revision}\n`, { mode: 0o600, flag: "wx" });
-      await rename(temporary, target);
-    } finally {
-      await rm(temporary, { force: true }).catch(() => undefined);
-    }
-  }
-
-  async #readSettlementRevision(directory: string): Promise<string | undefined> {
-    try {
-      const value = (
-        await readFile(join(directory, VOLUME_METADATA_DIRECTORY, VOLUME_SETTLEMENT_FILE), "utf8")
-      ).trim();
-      return SHA256_PATTERN.test(value) ? value : undefined;
-    } catch {
-      return undefined;
-    }
   }
 
   async #browseTarget(

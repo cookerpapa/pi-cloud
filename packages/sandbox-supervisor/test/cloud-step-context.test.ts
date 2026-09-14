@@ -79,16 +79,16 @@ const runtimeIdentity = {
 
 describe("Cloud Turn, Attempt and sampling Step contexts", () => {
   it("keeps the logical Turn stable while rotating Attempt ownership", () => {
-    const first = createCloudTurnContext(command, "c".repeat(64));
-    const repeated = createCloudTurnContext(command, "c".repeat(64));
-    const changedWorkspace = createCloudTurnContext(command, "d".repeat(64));
-    const changedRetention = createCloudTurnContext(
-      {
-        ...command,
-        payload: { ...command.payload, executionMode: "development_environment" },
-      },
-      "c".repeat(64),
-    );
+    const first = createCloudTurnContext(command);
+    const repeated = createCloudTurnContext(command);
+    const changedWorkspace = createCloudTurnContext({
+      ...command,
+      payload: { ...command.payload, workingDirectory: "/workspace/other" },
+    });
+    const changedRetention = createCloudTurnContext({
+      ...command,
+      payload: { ...command.payload, executionMode: "development_environment" },
+    });
     const retryCommand: ExecuteTurnCommandMessage = {
       ...command,
       messageId: "20000000-0000-4000-8000-000000000001",
@@ -102,7 +102,7 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
         ),
       },
     };
-    const retriedTurn = createCloudTurnContext(retryCommand, "c".repeat(64));
+    const retriedTurn = createCloudTurnContext(retryCommand);
     const firstAttempt = createCloudAttemptContext({
       command,
       runtimeIdentity,
@@ -132,7 +132,7 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
   });
 
   it("captures a distinct immutable Step for every provider request", () => {
-    const turn = createCloudTurnContext(command, "c".repeat(64));
+    const turn = createCloudTurnContext(command);
     const attempt = createCloudAttemptContext({
       command,
       runtimeIdentity,
@@ -142,7 +142,7 @@ describe("Cloud Turn, Attempt and sampling Step contexts", () => {
       sandbox: { status: "active" as const, continuitySha256: "e".repeat(64) },
       environmentSha256: turn.environmentSha256,
       workspaceBindingSha256: turn.workspaceBindingSha256,
-      committedWorkspaceRevision: "c".repeat(64),
+
       toolPolicySha256: turn.toolPolicySha256,
     };
     const first = createCloudStepContext({

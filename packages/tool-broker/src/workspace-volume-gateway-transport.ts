@@ -13,7 +13,6 @@ import {
   WORKSPACE_VOLUME_GATEWAY_PREPARE_DELETE_PATH,
   WORKSPACE_VOLUME_GATEWAY_FINALIZE_DELETE_PATH,
   WORKSPACE_VOLUME_GATEWAY_PREPARE_PATH,
-  WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_AUTHORIZE_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_DISCONNECT_PATH,
   WORKSPACE_VOLUME_GATEWAY_SOURCE_CREDENTIAL_LIST_PATH,
@@ -27,7 +26,6 @@ import {
   type WorkspaceVolumeGatewayPathInput,
   type WorkspaceVolumeGatewayPrepareInput,
   type WorkspaceVolumeGatewayReadFileInput,
-  type WorkspaceVolumeGatewaySettleInput,
   type WorkspaceVolumeDirectoryEntry,
   type WorkspaceVolumeGatewaySourceCredentialAuthorizeInput,
   type WorkspaceVolumeGatewaySourceCredentialDisconnectInput,
@@ -48,7 +46,6 @@ export type WorkspaceVolumeGatewayServerOptions = Readonly<{
 
 type WorkspaceVolumeGatewayOperation =
   | "prepare"
-  | "settle"
   | "fork"
   | "list_directory"
   | "read_file"
@@ -160,15 +157,6 @@ export class WorkspaceVolumeGatewayServer {
       try {
         return await this.#run("prepare", () =>
           this.#gateway.prepare(request.body as WorkspaceVolumeGatewayPrepareInput),
-        );
-      } catch (error: unknown) {
-        return this.#failure(reply, error);
-      }
-    });
-    this.#server.post(WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH, async (request, reply) => {
-      try {
-        return await this.#run("settle", () =>
-          this.#gateway.settle(request.body as WorkspaceVolumeGatewaySettleInput),
         );
       } catch (error: unknown) {
         return this.#failure(reply, error);
@@ -487,36 +475,19 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
     }>;
   }
 
-  async settle(input: WorkspaceVolumeGatewaySettleInput): Promise<{ settlementRevision: string }> {
-    const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_SETTLE_PATH, input);
-    if (
-      !isRecord(response) ||
-      Object.keys(response).length !== 1 ||
-      typeof response.settlementRevision !== "string" ||
-      !/^[0-9a-f]{64}$/.test(response.settlementRevision)
-    ) {
-      throw new WorkspaceVolumeGatewayError(
-        "workspace_volume_gateway_response_invalid",
-        "Workspace Volume Gateway response was invalid",
-        false,
-      );
-    }
-    return { settlementRevision: response.settlementRevision };
-  }
-
   async fork(input: WorkspaceVolumeGatewayForkInput): Promise<{
-    sourceSettlementRevision: string;
-    targetSettlementRevision: string;
+    sourceVolumeGeneration: string;
+    targetVolumeGeneration: string;
   }> {
     const response = await this.#request(WORKSPACE_VOLUME_GATEWAY_FORK_PATH, input);
     if (
       !isRecord(response) ||
       Object.keys(response).sort().join("\0") !==
-        ["sourceSettlementRevision", "targetSettlementRevision"].sort().join("\0") ||
-      typeof response.sourceSettlementRevision !== "string" ||
-      !/^[0-9a-f]{64}$/.test(response.sourceSettlementRevision) ||
-      typeof response.targetSettlementRevision !== "string" ||
-      !/^[0-9a-f]{64}$/.test(response.targetSettlementRevision)
+        ["sourceVolumeGeneration", "targetVolumeGeneration"].sort().join("\0") ||
+      typeof response.sourceVolumeGeneration !== "string" ||
+      !/^[0-9a-f]{64}$/.test(response.sourceVolumeGeneration) ||
+      typeof response.targetVolumeGeneration !== "string" ||
+      !/^[0-9a-f]{64}$/.test(response.targetVolumeGeneration)
     ) {
       throw new WorkspaceVolumeGatewayError(
         "workspace_volume_gateway_response_invalid",
@@ -525,8 +496,8 @@ export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
       );
     }
     return {
-      sourceSettlementRevision: response.sourceSettlementRevision,
-      targetSettlementRevision: response.targetSettlementRevision,
+      sourceVolumeGeneration: response.sourceVolumeGeneration,
+      targetVolumeGeneration: response.targetVolumeGeneration,
     };
   }
 

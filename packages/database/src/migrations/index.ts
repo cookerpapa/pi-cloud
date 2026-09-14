@@ -1,3 +1,4 @@
+import * as directWorkspaceStorage from "./138_direct_workspace_storage.ts";
 import type { MigrationProvider } from "kysely/migration";
 import * as initialControlPlane from "./001_initial_control_plane.ts";
 import * as durableEventDelivery from "./002_durable_event_delivery.ts";
@@ -277,6 +278,7 @@ export const migrationProvider: MigrationProvider = {
       "135_message_display_coverage": messageDisplayCoverage,
       "136_subagent_control_log": subagentControlLog,
       "137_physical_session_leases": physicalSessionLeases,
+      "138_direct_workspace_storage": directWorkspaceStorage,
     };
   },
 };

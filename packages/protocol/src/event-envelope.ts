@@ -260,16 +260,6 @@ const ToolCompletedEventSchema = Type.Object(
         stepSequence: Type.Optional(PositiveSafeIntegerSchema),
         stepSha256: Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })),
         samplingAttempt: Type.Optional(PositiveSafeIntegerSchema),
-        outputArtifact: Type.Optional(
-          Type.Object(
-            {
-              artifactId: UuidSchema,
-              sha256: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-              sizeBytes: Type.Integer({ minimum: 1, maximum: 1_048_576 }),
-            },
-            { additionalProperties: false },
-          ),
-        ),
       },
       { additionalProperties: false },
     ),

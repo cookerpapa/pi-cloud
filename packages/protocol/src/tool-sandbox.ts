@@ -1,6 +1,6 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { AgentWorkspaceSeedSchema, WorkspaceBlobSchema } from "./agent-runtime.ts";
+import { AgentWorkspaceSeedSchema } from "./agent-runtime.ts";
 import {
   OpaqueIdSchema,
   PositiveSafeIntegerSchema,
@@ -11,7 +11,6 @@ import {
   EnvironmentRuntimeSnapshotSchema,
   EnvironmentRecipeCommandResultSchema,
   EnvironmentToolchainReportSchema,
-  EnvironmentValidationReportSchema,
 } from "./environment.ts";
 import { CloudToolCapabilitySnapshotSchema, CloudToolNameSchema } from "./tool-capabilities.ts";
 import { DevelopmentEnvironmentProfileKeySchema } from "./development-environment-profile.ts";
@@ -112,8 +111,6 @@ export const ToolSandboxCreateRequestSchema = Type.Object(
     toolRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     environment: EnvironmentRuntimeSnapshotSchema,
     workspaceSeed: AgentWorkspaceSeedSchema,
-    workspaceSettlement: Type.Optional(WorkspaceBlobSchema),
-    workspaceRevision: Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })),
   },
   { additionalProperties: false },
 );
@@ -143,40 +140,6 @@ export const ToolSandboxCreateRedirectResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ToolSandboxCaptureRequestSchema = Type.Object(
-  {
-    ...ToolSandboxEnvelope,
-    type: Type.Literal("tool_sandbox.capture"),
-    requestId: UuidSchema,
-    activationId: UuidSchema,
-    assignment: ToolSandboxAssignmentSchema,
-  },
-  { additionalProperties: false },
-);
-
-export const ToolSandboxCaptureResponseSchema = Type.Union([
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.captured"),
-      requestId: UuidSchema,
-      activationId: UuidSchema,
-      settlement: WorkspaceBlobSchema,
-      environment: EnvironmentValidationReportSchema,
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.unused"),
-      requestId: UuidSchema,
-      activationId: UuidSchema,
-    },
-    { additionalProperties: false },
-  ),
-]);
-
 export const ToolBrokerWorkspaceForkRequestSchema = Type.Object(
   {
     ...ToolSandboxEnvelope,
@@ -204,48 +167,27 @@ export const ToolBrokerWorkspaceForkResponseSchema = Type.Object(
     requestId: UuidSchema,
     sourceActivationId: UuidSchema,
     targetWorkspaceId: UuidSchema,
-    sourceSettlementRevision: Sha256Schema,
-    targetSettlementRevision: Sha256Schema,
+    sourceVolumeGeneration: Sha256Schema,
+    targetVolumeGeneration: Sha256Schema,
   },
   { additionalProperties: false },
 );
 
-export const ToolSandboxReleaseRequestSchema = Type.Union([
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.release"),
-      requestId: UuidSchema,
-      activationId: UuidSchema,
-      assignment: ToolSandboxAssignmentSchema,
-      disposition: Type.Literal("detach"),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.release"),
-      requestId: UuidSchema,
-      activationId: UuidSchema,
-      assignment: ToolSandboxAssignmentSchema,
-      disposition: Type.Literal("keep_warm"),
-      workspaceRevision: Type.String({ pattern: "^[0-9a-f]{64}$" }),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...ToolSandboxEnvelope,
-      type: Type.Literal("tool_sandbox.release"),
-      requestId: UuidSchema,
-      activationId: UuidSchema,
-      assignment: ToolSandboxAssignmentSchema,
-      disposition: Type.Literal("destroy"),
-    },
-    { additionalProperties: false },
-  ),
-]);
+export const ToolSandboxReleaseRequestSchema = Type.Object(
+  {
+    ...ToolSandboxEnvelope,
+    type: Type.Literal("tool_sandbox.release"),
+    requestId: UuidSchema,
+    activationId: UuidSchema,
+    assignment: ToolSandboxAssignmentSchema,
+    disposition: Type.Union([
+      Type.Literal("detach"),
+      Type.Literal("keep_warm"),
+      Type.Literal("destroy"),
+    ]),
+  },
+  { additionalProperties: false },
+);
 
 export const ToolSandboxReleaseResponseSchema = Type.Object(
   {
@@ -378,7 +320,6 @@ export const ToolBrokerRequestSchema = Type.Union([
     { additionalProperties: false },
   ),
   ToolSandboxCreateRequestSchema,
-  ToolSandboxCaptureRequestSchema,
   ToolSandboxReleaseRequestSchema,
   ToolSandboxStopRequestSchema,
   ToolBrokerWorkspaceForkRequestSchema,
@@ -396,7 +337,6 @@ export const ToolBrokerResponseSchema = Type.Union([
   ),
   ToolSandboxCreateResponseSchema,
   ToolSandboxCreateRedirectResponseSchema,
-  ToolSandboxCaptureResponseSchema,
   ToolSandboxReleaseResponseSchema,
   ToolSandboxStopResponseSchema,
   ToolBrokerWorkspaceForkResponseSchema,
@@ -651,8 +591,6 @@ export type ToolSandboxCreateResponse = Static<typeof ToolSandboxCreateResponseS
 export type ToolSandboxCreateRedirectResponse = Static<
   typeof ToolSandboxCreateRedirectResponseSchema
 >;
-export type ToolSandboxCaptureRequest = Static<typeof ToolSandboxCaptureRequestSchema>;
-export type ToolSandboxCaptureResponse = Static<typeof ToolSandboxCaptureResponseSchema>;
 export type ToolSandboxReleaseRequest = Static<typeof ToolSandboxReleaseRequestSchema>;
 export type ToolSandboxReleaseResponse = Static<typeof ToolSandboxReleaseResponseSchema>;
 export type ToolSandboxStopRequest = Static<typeof ToolSandboxStopRequestSchema>;

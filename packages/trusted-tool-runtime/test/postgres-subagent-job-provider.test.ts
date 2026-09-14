@@ -311,7 +311,7 @@ beforeAll(async () => {
       sandbox_id: parentSandboxId,
       lease_id: PARENT_GRANT_ID,
       fencing_token: FENCE,
-      settlement_revision: null,
+
       failure_code: null,
       failure_message: null,
       failure_retryable: null,
@@ -772,8 +772,8 @@ describe.sequential("PostgresSubagentJobProvider", () => {
           requestId: request.requestId,
           sourceActivationId: request.sourceActivationId,
           targetWorkspaceId: request.target.workspaceId,
-          sourceSettlementRevision: "a".repeat(64),
-          targetSettlementRevision: "b".repeat(64),
+          sourceVolumeGeneration: "a".repeat(64),
+          targetVolumeGeneration: "b".repeat(64),
         };
       },
     });

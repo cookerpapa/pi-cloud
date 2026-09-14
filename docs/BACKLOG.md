@@ -5,6 +5,10 @@ Volume architecture. Historical experiments remain in Git history.
 
 ## Reliability
 
+- [x] ADR-0168: remove Workspace settlement/object dependencies and raw Tool
+      archives; keep direct Volume/full-VM storage, activation validation and
+      isolated copies. [Implementation and paid acceptance](reports/direct-workspace-storage-20260914.md).
+
 - [ ] Complete the September 14 whole-repository/user-flow review, continuing the
       earlier campaign. Current slice removes duplicate Projector decode and
       unused writers, bounds SSE heartbeat waits, repairs Worker notification

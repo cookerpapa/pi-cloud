@@ -129,11 +129,11 @@
       "invariant": "An ambiguous Tool transport never blindly replays an arbitrary command."
     },
     {
-      "id": "stale-workspace-settlement",
+      "id": "recreated-volume-copy-source",
       "workspace": "@pi-cloud/tool-broker",
-      "file": "test/cubesandbox-provider.test.ts",
-      "test": "rejects a persistent Volume reference when tenant or fence is stale",
-      "invariant": "A stale or foreign settlement cannot become the Workspace head."
+      "file": "test/workspace-volume-gateway.test.ts",
+      "test": "creates an idempotent isolated Volume copy that no longer follows the parent",
+      "invariant": "A copied Workspace stays independent, and a recreated source Volume cannot be mistaken for the original resource."
     },
     {
       "id": "cancel-stop-failure",

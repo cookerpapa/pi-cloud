@@ -145,17 +145,12 @@ p99 of 10.874/19.441/24.438ms. This excludes Projector, PostgreSQL, model, Cube
 and browser work and is not an active-Agent concurrency claim. Its temporary
 topic was deleted.
 
-One architecture inconsistency requires an owner decision before implementation.
-A scoped destructive probe removed only a test Workspace's small settlement
-object while preserving its persistent Volume. The file browser still read the
-marker from the Volume, but the Workspace disappeared from the list and even a
-tool-less Turn returned `409 Workspace settlement is unavailable`. Thus the
-implementation currently makes both the Volume and `runtime_objects` availability
-authorities, contrary to the maintained single-byte-authority model. Recommended
-cutover: retain bytes only in the Volume, store bounded/reconstructible settlement
-metadata in PostgreSQL, and have Volume Gateway return its current revision at
-attach instead of requiring an object download. Do not mask this with an empty
-Workspace fallback.
+The Workspace availability inconsistency was reproduced by removing only a test
+settlement object while retaining its real Volume: browsing still worked, but
+listing and even tool-less admission failed. The owner approved removing both
+the per-Run settlement and unused Tool-output archive instead of replacing the
+object with another revision head. ADR-0168 implements that cutover; the isolated
+copy contract now uses physical Volume generation. See the [follow-up acceptance](direct-workspace-storage-20260914.md).
 
 All ten tenants created by this campaign were removed after confirming zero
 active Runs/leases/machines, zero Cube instances, purged Workspace storage and

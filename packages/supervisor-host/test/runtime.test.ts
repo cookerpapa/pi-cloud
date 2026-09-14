@@ -70,36 +70,12 @@ afterAll(async () => {
   await pglite?.close();
 });
 
-function objectStore() {
-  let destroyed = false;
-  return {
-    async checkHealth() {
-      if (destroyed) throw new Error("destroyed");
-    },
-    async put() {
-      throw new Error("unused");
-    },
-    async get() {
-      throw new Error("unused");
-    },
-    async delete() {
-      throw new Error("unused");
-    },
-    destroy() {
-      destroyed = true;
-    },
-  };
-}
-
 function toolBroker(): SupervisorToolBroker {
   return {
     async refreshServices() {},
     operationResultUrlFor: () => "http://tool-broker.test/internal/v1/tool-operation",
     async checkHealth() {},
     async create() {
-      throw new Error("unused");
-    },
-    async capture() {
       throw new Error("unused");
     },
     async forkWorkspace() {
@@ -121,9 +97,8 @@ function toolBroker(): SupervisorToolBroker {
 
 describe("PiWorkerRuntime", () => {
   it("keeps the production fixture closed while providing a deterministic cancellation probe", () => {
-    const context = (text: string, restoring = false) =>
+    const context = (text: string) =>
       ({
-        restoring,
         command: { payload: { input: { kind: "prompt", text } } },
       }) as AgentTurnScenarioContext;
 
@@ -133,9 +108,6 @@ describe("PiWorkerRuntime", () => {
     expect(resolveProductionSandboxScenario(context(PRODUCTION_CANCELLATION_PROBE_PROMPT))).toBe(
       "tool_hold",
     );
-    expect(
-      resolveProductionSandboxScenario(context(PRODUCTION_CANCELLATION_PROBE_PROMPT, true)),
-    ).toBe("java_followup");
   });
 
   it("provisions a fresh generation, registers after recovery, and never reuses boot identity", async () => {
@@ -221,9 +193,6 @@ describe("PiWorkerRuntime", () => {
       toolBrokerRequestTimeoutMs: 300_000,
       trustedWorkspaceDirectory: root,
       bootStateDirectory: join(root, "boot"),
-      runtimeObjectCacheTtlMs: 600_000,
-      runtimeObjectCacheMaximumEntries: 512,
-      runtimeObjectCacheMaximumBytes: 32 * 1_024 * 1_024,
       modelGatewayHost: "127.0.0.1",
       modelGatewayPort: 0,
       modelGatewayAdvertisedBaseUrl: "http://model-gateway.test:4200",
@@ -242,7 +211,7 @@ describe("PiWorkerRuntime", () => {
             maxConcurrentSessions: 17,
           },
           database,
-          objectStore: objectStore(),
+
           toolBroker: runtimeToolBroker,
           runWorkerFactory,
         }),
@@ -255,7 +224,7 @@ describe("PiWorkerRuntime", () => {
             databaseMaxConnections: 65,
           },
           database,
-          objectStore: objectStore(),
+
           toolBroker: runtimeToolBroker,
           runWorkerFactory,
         }),
@@ -266,7 +235,7 @@ describe("PiWorkerRuntime", () => {
       first = new PiWorkerRuntime({
         config: baseConfig,
         database,
-        objectStore: objectStore(),
+
         toolBroker: runtimeToolBroker,
         runWorkerFactory,
         executionLogs: {
@@ -294,7 +263,7 @@ describe("PiWorkerRuntime", () => {
       second = new PiWorkerRuntime({
         config: baseConfig,
         database,
-        objectStore: objectStore(),
+
         toolBroker: runtimeToolBroker,
         runWorkerFactory,
         executionLogs: {
