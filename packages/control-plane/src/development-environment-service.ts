@@ -302,7 +302,7 @@ export class DevelopmentEnvironmentService {
         "Exclusive machine must be running before browsing its filesystem",
       );
     }
-    const descriptor = await this.#descriptor(identity, environmentId);
+    const descriptor = await this.#machineRoute(identity, environmentId);
     const result = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.directory",
@@ -334,7 +334,7 @@ export class DevelopmentEnvironmentService {
         "Exclusive machine must be running before changing its filesystem",
       );
     }
-    const descriptor = await this.#descriptor(identity, environmentId);
+    const descriptor = await this.#machineRoute(identity, environmentId);
     const result = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.create_directory",
@@ -846,7 +846,7 @@ export class DevelopmentEnvironmentService {
   }
 
   async #provision(identity: TenantRequestIdentity, environmentId: string): Promise<void> {
-    const descriptor = await this.#descriptor(identity, environmentId);
+    const descriptor = await this.#provisionDescriptor(identity, environmentId);
     const result = await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.provision",
@@ -877,7 +877,7 @@ export class DevelopmentEnvironmentService {
     environmentId: string,
     action: "pause" | "resume" | "release",
   ): Promise<void> {
-    const descriptor = await this.#descriptor(identity, environmentId);
+    const descriptor = await this.#machineRoute(identity, environmentId);
     await this.#send(descriptor.domainId, descriptor.toolBrokerBaseUrl, {
       developmentEnvironmentProtocolVersion: 1,
       type: "development_environment.lifecycle",
@@ -889,7 +889,23 @@ export class DevelopmentEnvironmentService {
     });
   }
 
-  async #descriptor(identity: MachineOwner, environmentId: string) {
+  // Managing existing compute is independent of whether the Domain/profile is
+  // accepting new allocations. Ownership and the Broker's effect checks remain.
+  async #machineRoute(identity: MachineOwner, environmentId: string) {
+    const route = await this.#database
+      .selectFrom("development_environments as machine")
+      .innerJoin("sandbox_domains as domain", "domain.id", "machine.sandbox_domain_id")
+      .select(["domain.id as domainId", "domain.tool_broker_base_url as toolBrokerBaseUrl"])
+      .where("machine.tenant_id", "=", identity.tenantId)
+      .where("machine.owner_user_id", "=", identity.userId)
+      .where("machine.id", "=", environmentId)
+      .executeTakeFirst();
+    if (!route)
+      throw new ControlPlaneStoreError("not_found", "Development environment was not found");
+    return route;
+  }
+
+  async #provisionDescriptor(identity: MachineOwner, environmentId: string) {
     const row = await this.#database
       .selectFrom("development_environments as development")
       .innerJoin("workspaces as workspace", (join) =>

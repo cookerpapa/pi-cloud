@@ -537,6 +537,61 @@ describe("user-owned development environments", () => {
     }
   });
 
+  it.each(["drained-domain", "failed-profile"])(
+    "releases the physical machine despite %s, without depending on new-allocation policy",
+    async (failure) => {
+      const machine = await service.create(identity, `release-${failure}`, {
+        name: failure,
+        profileKey: "starter",
+      });
+      const destroyedBefore = destroys.mock.calls.length;
+      try {
+        if (failure === "drained-domain") {
+          await database
+            .updateTable("sandbox_domains")
+            .set({ state: "disabled" })
+            .where("id", "=", DOMAIN_ID)
+            .execute();
+        } else {
+          await database
+            .updateTable("environment_versions")
+            .set({ state: "failed", failure_code: "test-profile-failure", validated_at: null })
+            .where("project_id", "=", machine.projectId)
+            .execute();
+        }
+        await expect(
+          service.directory(identity, machine.environmentId, "/home"),
+        ).resolves.toMatchObject({ path: "/home" });
+        await expect(
+          service.createDirectory(identity, machine.environmentId, {
+            path: "/home",
+            name: "still-usable",
+          }),
+        ).resolves.toMatchObject({ entries: [{ name: "still-usable", kind: "directory" }] });
+        expect(
+          await service.action(identity, machine.environmentId, `release-${failure}`, {
+            action: "release",
+          }),
+        ).toMatchObject({ state: "released" });
+        expect(destroys.mock.calls.length).toBe(destroyedBefore + 1);
+      } finally {
+        await database
+          .updateTable("sandbox_domains")
+          .set({ state: "active" })
+          .where("id", "=", DOMAIN_ID)
+          .execute();
+        await database
+          .updateTable("environment_versions")
+          .set({ state: "validated", failure_code: null, validated_at: new Date() })
+          .where("project_id", "=", machine.projectId)
+          .execute();
+        await service.action(identity, machine.environmentId, `cleanup-${failure}`, {
+          action: "release",
+        });
+      }
+    },
+  );
+
   it.each(["request", "response", "restart"] as const)(
     "recovers a release after lost %s without admitting new work",
     async (failure) => {
