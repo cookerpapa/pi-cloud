@@ -11,7 +11,8 @@ function json(value: unknown): string {
 }
 
 function codeBlock(language: string, value: string): string {
-  const longest = Math.max(3, ...[...value.matchAll(/`+/g)].map((match) => match[0].length + 1));
+  let longest = 3;
+  for (const match of value.matchAll(/`+/g)) longest = Math.max(longest, match[0].length + 1);
   const fence = "`".repeat(longest);
   return `${fence}${language}\n${value}\n${fence}`;
 }

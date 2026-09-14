@@ -1,16 +1,37 @@
 import type { ConversationDetailResource } from "@pi-cloud/protocol";
+import {
+  DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
+  DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
+  DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+  DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+} from "@pi-cloud/protocol";
 import { describe, expect, it } from "vitest";
 import {
   conversationExportFilename,
   conversationExportMarkdown,
 } from "../src/conversation-export.ts";
 
-const conversation = {
+const conversation: ConversationDetailResource = {
   project: {
     projectId: "10000000-0000-4000-8000-000000000001",
     workspaceId: "10000000-0000-4000-8000-000000000002",
     name: "export-project",
-    workspaceState: "available",
+    createdAt: "2026-08-26T00:00:00.000Z",
+    source: { kind: "empty", status: "ready" },
+    environment: {
+      environmentVersionId: "10000000-0000-4000-8000-000000000010",
+      versionNumber: 1,
+      profileKey: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_KEY,
+      profileVersion: DEFAULT_PROJECT_ENVIRONMENT_PROFILE_VERSION,
+      specSha256: DEFAULT_PROJECT_ENVIRONMENT_SPEC_SHA256,
+      recipe: DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
+      recipeSha256: DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
+      imageRevision: "fixture",
+      state: "pending",
+      active: true,
+      createdAt: "2026-08-26T00:00:00.000Z",
+    },
   },
   session: {
     sessionId: "10000000-0000-4000-8000-000000000003",
@@ -20,10 +41,12 @@ const conversation = {
     state: "idle",
     executionMode: "elastic",
     workingDirectory: "/workspace",
-    workspaceState: "available",
-    sessionKind: "conversation",
+    workspaceState: "attached",
+    sandboxProfileKey: "standard",
+    modelProfileId: "10000000-0000-4000-8000-000000000009",
     createdAt: "2026-08-26T00:00:00.000Z",
     updatedAt: "2026-08-26T00:01:00.000Z",
+    lastActiveAt: "2026-08-26T00:01:00.000Z",
   },
   inheritedMessages: [],
   turns: [
@@ -72,9 +95,39 @@ const conversation = {
     },
   ],
   historyTruncated: false,
-} as unknown as ConversationDetailResource;
+};
 
 describe("canonical conversation Markdown export", () => {
+  it("exports a large code payload without spreading every backtick run into function arguments", () => {
+    const value = "`a` ".repeat(70_000);
+    const withCode: ConversationDetailResource = {
+      ...conversation,
+      turns: [
+        {
+          ...conversation.turns[0]!,
+          transcript: {
+            ...conversation.turns[0]!.transcript!,
+            items: [
+              {
+                kind: "tool",
+                toolCallId: "large-write",
+                toolName: "write",
+                input: { path: "fixture.js", content: value },
+                output: "done",
+                status: "completed",
+                firstSequence: 1,
+                lastSequence: 2,
+                startedAt: "2026-08-26T00:00:00.000Z",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    expect(conversationExportMarkdown(withCode, new Date("2026-08-26T00:00:00.000Z"))).toContain(
+      value,
+    );
+  });
   it("exports terminal canonical messages and Tool details without live deltas", () => {
     const markdown = conversationExportMarkdown(conversation, new Date("2026-08-26T01:02:03.000Z"));
     expect(markdown).toContain('schema: "pi-cloud.session-export.v1"');
