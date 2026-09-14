@@ -45,8 +45,16 @@ export async function startMetricsEndpoint(options: {
         .end("unauthorized\n");
       return;
     }
-    const body = await options.registry.metrics();
-    response.writeHead(200, { "content-type": options.registry.contentType }).end(body);
+    try {
+      const body = await options.registry.metrics();
+      response.writeHead(200, { "content-type": options.registry.contentType }).end(body);
+    } catch {
+      // A collector failure is a failed scrape, not an unhandled rejection
+      // which can terminate the application being monitored.
+      response
+        .writeHead(503, { "content-type": "text/plain; charset=utf-8" })
+        .end("metrics unavailable\n");
+    }
   });
   await new Promise<void>((resolvePromise, rejectPromise) => {
     server.once("error", rejectPromise);

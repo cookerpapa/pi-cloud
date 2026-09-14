@@ -337,6 +337,70 @@ function operation(
 }
 
 describe("provider-backed Tool Tool Broker", () => {
+  it("does not retain a destroyed development handle when state publication fails", async () => {
+    const fixture = providerFixture();
+    const repository = new InMemoryWorkspaceRuntimeStateRepository();
+    vi.spyOn(repository, "setDevelopmentEnvironmentState").mockRejectedValueOnce(
+      new Error("state commit rejected"),
+    );
+    const manager = testBroker({ provider: fixture.provider, stateRepository: repository });
+    try {
+      await expect(
+        manager.provisionDevelopmentEnvironment({
+          developmentEnvironmentProtocolVersion: 1,
+          type: "development_environment.provision",
+          requestId: crypto.randomUUID(),
+          environmentId: ACTIVATION_ID,
+          tenantId: assignment.tenantId,
+          userId: "fixture-user",
+          projectId: assignment.projectId,
+          workspaceId: assignment.workspaceId,
+          generation: 1,
+          profileKey: "standard",
+          environment,
+          workspaceSeed: { kind: "sample_java" },
+        }),
+      ).rejects.toThrow("state commit rejected");
+      expect(fixture.destroyed).toBe(true);
+      expect(manager.admittedCount).toBe(0);
+      expect(manager.activeCount).toBe(0);
+    } finally {
+      await manager.close();
+    }
+  });
+
+  it("coalesces concurrent provisioning of the same development machine", async () => {
+    const fixture = providerFixture();
+    const manager = testBroker({ provider: fixture.provider });
+    const request: Parameters<ToolBroker["provisionDevelopmentEnvironment"]>[0] = {
+      developmentEnvironmentProtocolVersion: 1,
+      type: "development_environment.provision",
+      requestId: crypto.randomUUID(),
+      environmentId: ACTIVATION_ID,
+      tenantId: assignment.tenantId,
+      userId: "fixture-user",
+      projectId: assignment.projectId,
+      workspaceId: assignment.workspaceId,
+      generation: 1,
+      profileKey: "standard",
+      environment,
+      workspaceSeed: { kind: "sample_java" },
+    };
+    try {
+      const responses = await Promise.all([
+        manager.provisionDevelopmentEnvironment(request),
+        manager.provisionDevelopmentEnvironment({ ...request, requestId: crypto.randomUUID() }),
+      ]);
+      expect(responses.every((response) => response.type === "development_environment.state")).toBe(
+        true,
+      );
+      expect(fixture.createCount).toBe(1);
+      expect(manager.admittedCount).toBe(1);
+    } finally {
+      await manager.close();
+    }
+  });
+
   it("keeps global resource reconciliation off the reservation critical path", async () => {
     const fixture = providerFixture();
     const repository = new InMemoryWorkspaceRuntimeStateRepository();
@@ -581,7 +645,7 @@ describe("provider-backed Tool Tool Broker", () => {
       environment,
       workspaceSeed: { kind: "sample_java" },
     });
-    const parent = await manager.create({
+    const parentPending = manager.create({
       ...createRequest,
       executionMode: "development_environment",
     });
@@ -596,12 +660,15 @@ describe("provider-backed Tool Tool Broker", () => {
         1,
       ),
     };
-    const child = await manager.create({
-      ...createRequest,
-      requestId: "21600000-0000-4000-8000-000000000004",
-      assignment: childAssignment,
-      executionMode: "development_environment",
-    });
+    const [parent, child] = await Promise.all([
+      parentPending,
+      manager.create({
+        ...createRequest,
+        requestId: "21600000-0000-4000-8000-000000000004",
+        assignment: childAssignment,
+        executionMode: "development_environment",
+      }),
+    ]);
     expect(parent.activationId).toBe(ACTIVATION_ID);
     expect(child.activationId).toBe(
       parseExecutionReference(childAssignment.executionReference).attemptId,
@@ -2261,7 +2328,7 @@ describe("provider-backed Tool Tool Broker", () => {
     expect(manager.admittedCount).toBe(0);
   });
 
-  it("loads only the CubeSandbox deployment configuration", async () => {
+  it.each([0o600, 0o440])("loads CubeSandbox deployment secrets with mode %i", async (mode) => {
     const directory = await mkdtemp(join(tmpdir(), "pi-cloud-manager-config-"));
     const tokenPath = join(directory, "manager-token");
     try {
@@ -2286,6 +2353,15 @@ describe("provider-backed Tool Tool Broker", () => {
         mode: 0o600,
       });
       await chmod(databaseUrlPath, 0o600);
+      for (const path of [
+        tokenPath,
+        terminalTokenPath,
+        cubeKeyPath,
+        workspaceVolumeGatewayTokenPath,
+        persistentStateKeyPath,
+        databaseUrlPath,
+      ])
+        await chmod(path, mode);
       await expect(
         loadToolBrokerConfig({
           DATABASE_URL_FILE: databaseUrlPath,

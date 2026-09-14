@@ -92,8 +92,12 @@ export async function withSpan<T>(options: {
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (error: unknown) {
-        span.setStatus({ code: SpanStatusCode.ERROR, message: safeErrorCode(error) });
-        span.recordException(error instanceof Error ? error : new Error("unknown_error"));
+        const code = safeErrorCode(error);
+        span.setStatus({ code: SpanStatusCode.ERROR, message: code });
+        // Transport exceptions can include URLs, headers and request bodies.
+        // Export classification, never the raw message/stack; callers still
+        // receive the original exception for local handling.
+        span.recordException({ name: "Error", message: code });
         throw error;
       } finally {
         span.end();

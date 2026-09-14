@@ -23,10 +23,6 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
   subPath: {{ .Values.external.database.secretKey }}
   readOnly: true
 - name: platform-secrets
-  mountPath: /run/pi-cloud-secrets/database-notification-url
-  subPath: {{ .Values.external.database.notificationSecretKey }}
-  readOnly: true
-- name: platform-secrets
   mountPath: /run/pi-cloud-secrets/supervisor-enrollment-token
   subPath: supervisor-enrollment-token
   readOnly: true

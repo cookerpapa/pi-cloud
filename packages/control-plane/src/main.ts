@@ -37,6 +37,21 @@ import { SourceControlIssueCoordinator } from "./source-control-issue-coordinato
 import { SourceControlCredentialVault } from "./source-control-credential-vault.ts";
 import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 
+export async function closeControlPlaneResources(
+  resources: readonly (() => unknown | Promise<unknown>)[],
+): Promise<void> {
+  const errors: unknown[] = [];
+  // Keep the drain order, but a failed close must not leak unrelated resources.
+  for (const close of resources) {
+    try {
+      await close();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, "Control Plane resource cleanup failed");
+}
+
 async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Promise<void> {
   const profile = await database
     .selectFrom("tenant_runtime_policies as policy")
@@ -68,7 +83,19 @@ export async function startControlPlane(): Promise<void> {
   let operationalMetrics: OperationalMetricsSampler | undefined;
   let issueCoordinator: SourceControlIssueCoordinator | undefined;
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
-  let closing = false;
+  let closePromise: Promise<void> | undefined;
+  const close = (): Promise<void> => {
+    return (closePromise ??= closeControlPlaneResources([
+      () => issueCoordinator?.close(),
+      () => runtime?.close(),
+      () => developmentEnvironmentService?.close(),
+      () => operationalMetrics?.close(),
+      () => agentEvents?.close(),
+      () => sourceControlDispatcher?.close(),
+      () => database.destroy(),
+      () => observability.close(),
+    ]));
+  };
   const subagents = new SubagentController({
     database,
     managementToken: config.supervisorManagementToken,
@@ -129,7 +156,6 @@ export async function startControlPlane(): Promise<void> {
       sessionTtlMs: config.webSessionTtlMs,
       platformOperatorTenantId: config.platformOperatorTenantId,
     });
-    const managementClients = new Map<string, HttpSupervisorManagementClient>();
     const resolveManagementClient = async (identity: {
       supervisorId: string;
       bootId: string;
@@ -146,16 +172,13 @@ export async function startControlPlane(): Promise<void> {
       if (host === undefined) {
         throw new Error("Supervisor management identity is not registered");
       }
-      let client = managementClients.get(host.management_base_url);
-      if (client === undefined) {
-        client = new HttpSupervisorManagementClient({
-          baseUrl: host.management_base_url,
-          managementToken: config.supervisorManagementToken,
-          allowInsecureHttp: config.allowInsecureInternalHttp,
-        });
-        managementClients.set(host.management_base_url, client);
-      }
-      return client;
+      // Connections are pooled by the shared HTTP dispatcher; this object owns
+      // no transport resources and need not retain every historical Worker URL.
+      return new HttpSupervisorManagementClient({
+        baseUrl: host.management_base_url,
+        managementToken: config.supervisorManagementToken,
+        allowInsecureHttp: config.allowInsecureInternalHttp,
+      });
     };
     const resolveSteerBackend = async (sandboxId: string): Promise<HttpSupervisorSteerBackend> => {
       const identity = await database
@@ -351,18 +374,6 @@ export async function startControlPlane(): Promise<void> {
       `PiCloud production control plane listening on ${config.host}:${String(config.port)}\n`,
     );
 
-    const close = async (): Promise<void> => {
-      if (closing) return;
-      closing = true;
-      await issueCoordinator?.close();
-      await runtime?.close();
-      await developmentEnvironmentService?.close();
-      await operationalMetrics?.close();
-      await activeAgentEvents.close();
-      await sourceControlDispatcher?.close();
-      await database.destroy();
-      await observability.close();
-    };
     const closeAfterSignal = (): void => {
       void close().catch(() => {
         process.exitCode = 1;
@@ -371,15 +382,13 @@ export async function startControlPlane(): Promise<void> {
     process.once("SIGINT", closeAfterSignal);
     process.once("SIGTERM", closeAfterSignal);
   } catch (error: unknown) {
-    closing = true;
-    await issueCoordinator?.close().catch(() => undefined);
-    await runtime?.close().catch(() => undefined);
-    await developmentEnvironmentService?.close().catch(() => undefined);
-    await operationalMetrics?.close().catch(() => undefined);
-    await agentEvents?.close().catch(() => undefined);
-    await sourceControlDispatcher?.close().catch(() => undefined);
-    await database.destroy();
-    await observability.close().catch(() => undefined);
+    try {
+      await close();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Control Plane startup and cleanup failed", {
+        cause: error,
+      });
+    }
     throw error;
   }
 }

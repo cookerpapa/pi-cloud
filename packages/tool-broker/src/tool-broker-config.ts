@@ -124,7 +124,9 @@ async function readSecret(path: string): Promise<string> {
     const metadata = await handle.stat();
     if (
       !metadata.isFile() ||
-      (metadata.mode & 0o077) !== 0 ||
+      (metadata.mode & 0o137) !== 0 ||
+      ((metadata.mode & 0o040) !== 0 &&
+        ![process.getegid?.(), ...(process.getgroups?.() ?? [])].includes(metadata.gid)) ||
       metadata.size < 32 ||
       metadata.size > 4_096
     ) {
@@ -149,7 +151,9 @@ async function readCubeApiKey(path: string): Promise<string> {
     const metadata = await handle.stat();
     if (
       !metadata.isFile() ||
-      (metadata.mode & 0o077) !== 0 ||
+      (metadata.mode & 0o137) !== 0 ||
+      ((metadata.mode & 0o040) !== 0 &&
+        ![process.getegid?.(), ...(process.getgroups?.() ?? [])].includes(metadata.gid)) ||
       metadata.size < 32 ||
       metadata.size > 4_096
     ) {
@@ -181,7 +185,13 @@ async function readDatabaseUrl(path: string): Promise<string> {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const metadata = await handle.stat();
-    if (!metadata.isFile() || (metadata.mode & 0o077) !== 0 || metadata.size > 4_096) {
+    if (
+      !metadata.isFile() ||
+      (metadata.mode & 0o137) !== 0 ||
+      ((metadata.mode & 0o040) !== 0 &&
+        ![process.getegid?.(), ...(process.getgroups?.() ?? [])].includes(metadata.gid)) ||
+      metadata.size > 4_096
+    ) {
       throw new TypeError("Tool Broker database URL file is not private and bounded");
     }
     const value = (await handle.readFile("utf8")).replace(/\r?\n$/, "");

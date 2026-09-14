@@ -304,20 +304,21 @@ export class ToolCommandExecutor {
     signal?: AbortSignal,
   ): Promise<ToolSandboxOperationResponse> {
     this.#broker.assertToolResultReader(activationId, executionReference);
+    const { attemptId } = parseExecutionReference(executionReference);
     signal?.throwIfAborted();
     const read = (): Outcome | undefined => {
       this.#broker.assertToolResultReader(activationId, executionReference);
-      if (this.#isSealed(parseExecutionReference(executionReference).attemptId))
+      if (this.#isSealed(attemptId))
         throw new ToolBrokerError(
           "tool_command_sealed",
           "Tool command belongs to a closed execution",
           false,
         );
       const outcome = this.#results.get(operationId);
-      if (outcome && outcome.activationId !== activationId)
+      if (outcome && (outcome.activationId !== activationId || outcome.attemptId !== attemptId))
         throw new ToolBrokerError(
           "tool_command_identity_mismatch",
-          "Tool result belongs to another binding",
+          "Tool result belongs to another execution",
           false,
         );
       if (outcome?.retired)

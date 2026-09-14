@@ -14,7 +14,6 @@ export type ProductionControlPlaneEnvironment = Readonly<Record<string, string |
 
 export type ProductionControlPlaneConfig = {
   databaseUrl: string;
-  databaseNotificationUrl: string;
   kafkaBrokers: readonly string[];
   kafkaPartitions: number;
   kafkaReplicas: number;
@@ -316,7 +315,9 @@ async function readSecretFile(path: string, name: string): Promise<string> {
     const metadata = await handle.stat();
     if (
       !metadata.isFile() ||
-      (metadata.mode & 0o077) !== 0 ||
+      (metadata.mode & 0o137) !== 0 ||
+      ((metadata.mode & 0o040) !== 0 &&
+        ![process.getegid?.(), ...(process.getgroups?.() ?? [])].includes(metadata.gid)) ||
       metadata.size < 1 ||
       metadata.size > MAX_SECRET_BYTES
     ) {
@@ -354,7 +355,13 @@ async function privatePem(path: string): Promise<string> {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const metadata = await handle.stat();
-    if (!metadata.isFile() || (metadata.mode & 0o077) !== 0 || metadata.size > 64 * 1_024) {
+    if (
+      !metadata.isFile() ||
+      (metadata.mode & 0o137) !== 0 ||
+      ((metadata.mode & 0o040) !== 0 &&
+        ![process.getegid?.(), ...(process.getgroups?.() ?? [])].includes(metadata.gid)) ||
+      metadata.size > 64 * 1_024
+    ) {
       throw new TypeError("GitHub App private key file is invalid");
     }
     const value = await handle.readFile("utf8");
@@ -392,11 +399,6 @@ export async function loadProductionControlPlaneConfig(
     "PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID",
   );
   const databaseUrl = await loadProductionDatabaseUrl(environment);
-  const databaseNotificationUrl =
-    environment.PI_CLOUD_DATABASE_NOTIFICATION_URL_FILE === undefined &&
-    environment.PI_CLOUD_DATABASE_NOTIFICATION_URL === undefined
-      ? databaseUrl
-      : await secret(environment, "PI_CLOUD_DATABASE_NOTIFICATION_URL", allowInlineSecrets);
   const githubFields = [
     environment.PI_CLOUD_GITHUB_APP_ID,
     environment.PI_CLOUD_GITHUB_APP_SLUG,
@@ -420,7 +422,6 @@ export async function loadProductionControlPlaneConfig(
   const gitlabEnabled = booleanValue(environment, "PI_CLOUD_GITLAB_ENABLED");
   return {
     databaseUrl,
-    databaseNotificationUrl,
     projectorAdvertisedBaseUrl: managementUrl(
       environment.PI_CLOUD_PROJECTOR_ADVERTISED_URL ??
         `http://${required(environment, "POD_IP").includes(":") ? `[${environment.POD_IP}]` : environment.POD_IP}:${environment.PORT ?? "3000"}`,

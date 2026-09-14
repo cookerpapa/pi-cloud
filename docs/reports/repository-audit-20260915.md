@@ -58,8 +58,8 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | CP-02 | Admission metrics were dropped by runtime and module composition before reaching the store factory | Fixed wiring; API acceptance and resource-create histograms now observe samples. Same regression failed before, passes after |
 | AUTH-01 | Both authenticators awaited a usage UPDATE on every valid request, even within the five-minute refresh interval | Reproduced redundant SQL calls; use `last_used_at` from the authority read to skip fresh updates, preserving conditional concurrent refresh and uncached revocation checks. 12 auth/gateway tests and type check pass |
 | LIFE-01 | Worker creates/listens on Model Gateway, but records it for cleanup only after upstream health succeeds | Reproduced a live listener after failed startup. Register ownership before startup awaits (also the owned Kafka log); two Worker runtime tests and type check pass. Kafka partial-start failure still needs separate injection |
-| LIFE-02 | Control Plane orderly shutdown stops cleanup after the first rejected close | Candidate cleanup failure; inject rejection and verify remaining components close |
-| MEM-01 | Control Plane caches management clients by URL without eviction as Worker addresses churn | Candidate boundedness issue; inspect actual client ownership and churn behavior |
+| LIFE-02 | Control Plane orderly shutdown stopped cleanup after the first rejected close | Reproduced skipped Projector/DB/metrics closes. Share one ordered teardown on startup failure and shutdown; attempt every close and surface aggregated errors. Two lifecycle regressions pass |
+| MEM-01 | Control Plane cached management wrappers for every historical Worker URL | Removed unused object cache: wrappers hold no connections and already share the HTTP dispatcher; no routing/authority change |
 | RESTORE-01 | Investigated whether open fetches already-reconciled interruption prefixes | Ruled out: native projection clears the prefix and migration 131 provides a pending-only partial index; no extra cache or query rewrite added |
 | UI-01 | Product/admin origin detection and redirects hard-code ports 8080/8081 | Source-confirmed configuration assumption; test supported custom deployment ports |
 | MUT-01 | Rebind and cancel check idempotency before acquiring their lifecycle row locks, then can reject on changed state | Candidate concurrent replay bug; reproduce with separate real PostgreSQL connections |
@@ -69,10 +69,22 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | LIFE-04 | Worker Ready only checks local process/channel state, while a permanently failed publisher can block every future claim | Candidate health/liveness defect; distinguish transient provider unavailability from terminal publisher failure before proposing a fix |
 | CFG-01 | Producer startup checks partition count but not existing topic replication/retention policy | Verify actual settings and configuration contract in isolated broker tests |
 | MUT-02 | Tenant admission locks the smallest existing tenant UUID, which can change when a new tenant is inserted | Candidate concurrency-capacity race; reproduce overlapping registration transactions in real PostgreSQL |
+| OBS-01 | Rejected metric collection escaped a native HTTP async callback | Reproduced a hanging scrape plus unhandled rejection. Return 503 for that scrape; next scrape succeeds |
+| OBS-02 | Trace status used a safe error code but exception events still exported the raw message/stack | Reproduced with a synthetic secret in an owned error. Export only classification, rethrow the original error to its caller |
+| CFG-02 | Control Plane parsed/mounted an unused dedicated PG notification URL | Deleted CP option/mount; Worker's actual LISTEN connection and bootstrap direct-PG settings remain |
+| CFG-03 | CP/Broker/Volume Gateway rejected group-readable secrets while Helm mounts them 0440 under fsGroup | CP and Broker loaders reproduced failure with owned 0440 fixtures; aligned process-group read permissions while rejecting group writes/world access/symlinks. 44 Bootstrap/Broker/cleanup regressions pass. Actual Kubernetes startup and Volume Gateway child-process check remain pending |
+| DEV-01 | Machine creation checks replay before tenant lock; pause/resume replay treats a recorded request as a completed effect | Candidate concurrent create / failed lifecycle replay errors; reproduce after Broker lifecycle review |
+| DEV-02 | Machine lifecycle descriptor requires an active Domain and non-failed environment profile, including release | Candidate inability to release resources in a drained/failed Domain/profile; check lifecycle contract and reproduce |
+| DEV-03 | Broker concurrent duplicate machine provisioning created two provider runtimes; simultaneous first task bindings chose the same binding ID | Both reproduced. Reuse existing per-Workspace provisioning critical section for machine provisioning/binding creation, not Tool execution. Concurrent parent/child bindings now stay distinct and reuse one runtime |
+| DEV-04 | Machine handle entered the ready map before durable state publication; failure destroyed the VM but retained that handle | Reproduced phantom active count. Publish PG state before installing the ready handle; clean failure no longer advertises a destroyed runtime |
+| TOOL-01 | A reused persistent-machine binding could return a cached response belonging to an earlier Attempt | Reproduced by delaying old-body retirement while rebinding. Match the reader Attempt as well as binding ID; no PG round trip added |
+| CLEAN-01 | Binding-local `materializing` was never written; old terminal-capacity transfer path had no reachable caller | Removed the field/branches/transfer method and its dead-feature test. Physical runtime materialization and concurrent Tool execution remain |
+| CFG-04 | Helm CP sets global HTTP(S) proxy but no NO_PROXY; several private Broker requests use global fetch | Candidate internal routing through provider proxy; verify actual runtime/Node proxy contract in owned deployment test |
 
-No architecture change proposed yet. Three runtime-composition tests, 48
-Runner/Harness tests and two Worker runtime tests passed; affected package type
-checks passed. No paid/live
+No architecture change proposed yet. Local regression slices passed: three
+runtime-composition tests; 50 Worker/Runner/Harness tests; 12 auth/gateway tests;
+69 Broker/admission/Tool-result/bootstrap/shutdown/monitoring tests. These slices
+overlap earlier runs and are not a full-suite total. Affected type checks passed. No paid/live
 test was run in this campaign yet. Fixes are not deployed to the running stack yet.
 Architecture-level issues block only their own modifications; continue
 independent review and verification while awaiting the owner.

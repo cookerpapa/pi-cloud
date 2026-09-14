@@ -29,7 +29,13 @@ async function secret(path: string): Promise<string> {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const metadata = await handle.stat();
-    if (!metadata.isFile() || (metadata.mode & 0o077) !== 0 || metadata.size > 8_192) {
+    if (
+      !metadata.isFile() ||
+      (metadata.mode & 0o137) !== 0 ||
+      ((metadata.mode & 0o040) !== 0 &&
+        ![process.getegid?.(), ...(process.getgroups?.() ?? [])].includes(metadata.gid)) ||
+      metadata.size > 8_192
+    ) {
       throw new TypeError("Secret file is invalid");
     }
     return (await handle.readFile("utf8")).replace(/\r?\n$/, "");

@@ -67,7 +67,6 @@ spec:
             - { name: PI_CLOUD_TOOL_DISPATCH_TOKEN_FILE, value: /run/pi-cloud-secrets/tool-dispatch-token }
             - { name: PORT, value: "3000" }
             - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
-            - { name: PI_CLOUD_DATABASE_NOTIFICATION_URL_FILE, value: /run/pi-cloud-secrets/database-notification-url }
             - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ join "," .Values.global.kafka.brokers | quote }} }
             - { name: PI_CLOUD_KAFKA_REPLICAS, value: {{ .Values.global.kafka.replicas | quote }} }
             - { name: PI_CLOUD_KAFKA_PARTITIONS, value: {{ .Values.global.kafka.partitions | quote }} }

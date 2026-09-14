@@ -176,16 +176,11 @@ describe.sequential("production bootstrap and configuration", () => {
     );
   });
 
-  it("keeps the runtime tenant-neutral while bootstrap reads its private API token", async () => {
+  it.each([0o600, 0o440])("loads private deployment secrets with mode %i", async (mode) => {
     const root = await mkdtemp(join(tmpdir(), "pi-cloud-control-config-"));
     roots.push(root);
     const environment = {
       DATABASE_URL_FILE: await secret(root, "database", "postgresql://db.invalid/picloud"),
-      PI_CLOUD_DATABASE_NOTIFICATION_URL_FILE: await secret(
-        root,
-        "database-notifications",
-        "postgresql://postgres-direct.invalid/picloud",
-      ),
       PI_CLOUD_API_TOKEN_FILE: await secret(
         root,
         "api",
@@ -235,10 +230,12 @@ describe.sequential("production bootstrap and configuration", () => {
       PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP: "true",
       HOST: "0.0.0.0",
     };
+    for (const [key, value] of Object.entries(environment)) {
+      if (key.endsWith("_FILE")) await chmod(value, mode);
+    }
     const runtime = await loadProductionControlPlaneConfig(environment);
     expect(runtime).toMatchObject({
       databaseUrl: "postgresql://db.invalid/picloud",
-      databaseNotificationUrl: "postgresql://postgres-direct.invalid/picloud",
       kafkaBrokers: ["kafka-1:9092", "kafka-2:9092"],
       kafkaReplicas: 1,
       supervisorIdPrefix: "pi-worker-",
@@ -270,6 +267,7 @@ describe.sequential("production bootstrap and configuration", () => {
     await writeFile(githubPrivateKeyPath, privateKey.export({ type: "pkcs8", format: "pem" }), {
       mode: 0o600,
     });
+    await chmod(githubPrivateKeyPath, mode);
     const githubRuntime = await loadProductionControlPlaneConfig({
       ...environment,
       PI_CLOUD_PUBLIC_ORIGIN_BASE_URL: "https://picloud.example.com",

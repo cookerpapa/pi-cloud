@@ -50,9 +50,6 @@ export class SandboxAdmission {
   restore(id: string, assignment: ToolSandboxAssignment) {
     this.#assigned.set(id, assignment);
   }
-  transfer(from: string, to: string, assignment: ToolSandboxAssignment) {
-    if (this.#assigned.delete(from)) this.#assigned.set(to, assignment);
-  }
 
   #assertOpen(signal?: AbortSignal) {
     if (this.#closed)

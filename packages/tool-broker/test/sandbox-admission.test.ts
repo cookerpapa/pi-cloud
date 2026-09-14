@@ -70,16 +70,6 @@ describe("Broker physical Sandbox admission", () => {
     capacity.close();
   });
 
-  it("transfers a counted runtime without allocating or releasing a physical slot", async () => {
-    const capacity = new SandboxAdmission(1, async () => false);
-    capacity.restore("terminal", assignment);
-    capacity.transfer("terminal", "binding", assignment);
-    expect(capacity.has("terminal")).toBe(false);
-    expect(capacity.has("binding")).toBe(true);
-    expect(capacity.size).toBe(1);
-    capacity.close();
-  });
-
   it("accounts for an in-flight adoption finishing during shutdown without reopening admission", async () => {
     const capacity = new SandboxAdmission(1, async () => false);
     capacity.close();

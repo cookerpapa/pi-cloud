@@ -1,6 +1,6 @@
 import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   PiCloudMetrics,
   activeTraceCarrier,
@@ -18,6 +18,56 @@ beforeAll(() => provider.register());
 afterAll(async () => provider.shutdown());
 
 describe("PiCloud observability primitives", () => {
+  it("does not export raw exception messages or stacks containing request secrets", async () => {
+    const failure = Object.assign(new Error("upstream rejected Bearer test-secret-value"), {
+      code: "upstream_rejected",
+    });
+    await expect(
+      withSpan({
+        serviceName: "test",
+        name: "failed.request",
+        run: () => {
+          throw failure;
+        },
+      }),
+    ).rejects.toBe(failure);
+    const span = exporter.getFinishedSpans().at(-1)!;
+    expect(JSON.stringify({ status: span.status, events: span.events })).not.toContain(
+      "test-secret-value",
+    );
+    expect(span.status.message).toBe("upstream_rejected");
+    expect(span.events[0]?.attributes?.["exception.message"]).toBe("upstream_rejected");
+  });
+
+  it("contains a failed metric collection to that scrape and can serve the next one", async () => {
+    const metrics = new PiCloudMetrics("scrape-failure");
+    const endpoint = await startMetricsEndpoint({
+      host: "127.0.0.1",
+      port: 0,
+      token: "m".repeat(32),
+      registry: metrics.registry,
+    });
+    const collect = vi
+      .spyOn(metrics.registry, "metrics")
+      .mockRejectedValueOnce(new Error("test-private-collector-error"));
+    const request = () =>
+      fetch(`http://127.0.0.1:${endpoint.port}/metrics`, {
+        headers: { authorization: `Bearer ${"m".repeat(32)}` },
+        signal: AbortSignal.timeout(1000),
+      });
+    try {
+      const failed = await request();
+      expect(failed.status).toBe(503);
+      expect(await failed.text()).not.toContain("test-private-collector-error");
+      const recovered = await request();
+      expect(recovered.status).toBe(200);
+      await recovered.text();
+    } finally {
+      collect.mockRestore();
+      await endpoint.close();
+    }
+  });
+
   it("propagates one W3C trace across nested service spans", async () => {
     const root = virtualRunTraceCarrier("1".repeat(32), "2".repeat(16));
     let childCarrier;

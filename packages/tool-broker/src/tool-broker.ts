@@ -98,7 +98,6 @@ type ManagedToolBinding = {
   spec: Parameters<SandboxProvider["create"]>[0];
   reservation: WorkspaceRuntimeReservation;
   handle?: SandboxHandle;
-  materializing?: Promise<SandboxHandle>;
   usedPhysicalRuntime: boolean;
   activeOperations: number;
   exclusiveOperation: boolean;
@@ -560,6 +559,15 @@ export class ToolBroker {
   async provisionDevelopmentEnvironment(
     request: DevelopmentEnvironmentProvisionRequest,
   ): Promise<DevelopmentEnvironmentBrokerResponse> {
+    return this.#serializeWorkspaceRuntimeProvisioning(
+      developmentEnvironmentAssignment(request),
+      () => this.#provisionDevelopmentEnvironment(request),
+    );
+  }
+
+  async #provisionDevelopmentEnvironment(
+    request: DevelopmentEnvironmentProvisionRequest,
+  ): Promise<DevelopmentEnvironmentBrokerResponse> {
     if (
       this.#provider.openTerminal === undefined ||
       this.#provider.pause === undefined ||
@@ -660,16 +668,16 @@ export class ToolBroker {
           false,
         );
       }
+      const runtimeCapsule = await this.#persistentCapsule(handle);
+      await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "running", {
+        handle,
+        ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
+      });
       this.#developmentEnvironments.set(request.environmentId, {
         reservation,
         assignment,
         handle,
         bindingIds: new Set(),
-      });
-      const runtimeCapsule = await this.#persistentCapsule(handle);
-      await this.#stateRepository.setDevelopmentEnvironmentState(request.environmentId, "running", {
-        handle,
-        ...(runtimeCapsule === undefined ? {} : { runtimeCapsule }),
       });
       return {
         developmentEnvironmentProtocolVersion: 1,
@@ -1229,11 +1237,11 @@ export class ToolBroker {
 
   async create(request: ToolSandboxCreateRequest): Promise<ToolSandboxCreateResponse> {
     this.#assertCreateEnvironment(request);
-    return request.executionMode === "elastic"
-      ? this.#serializeWorkspaceRuntimeProvisioning(request.assignment, () =>
-          this.#createElasticBinding(request),
-        )
-      : this.#createDevelopmentEnvironmentBinding(request);
+    return this.#serializeWorkspaceRuntimeProvisioning(request.assignment, () =>
+      request.executionMode === "elastic"
+        ? this.#createElasticBinding(request)
+        : this.#createDevelopmentEnvironmentBinding(request),
+    );
   }
 
   #assertCreateEnvironment(request: ToolSandboxCreateRequest): void {
@@ -1781,7 +1789,6 @@ export class ToolBroker {
     if (
       activation.exclusiveOperation ||
       activation.activeOperations - waitingHere !== 0 ||
-      activation.materializing !== undefined ||
       elasticRuntime?.exclusiveOperation ||
       (elasticRuntime?.activeOperations ?? 0) - waitingPeers !== 0 ||
       elasticRuntime?.materializing !== undefined
@@ -1852,10 +1859,7 @@ export class ToolBroker {
         false,
       );
     }
-    let handle = activation.handle;
-    if (activation.materializing !== undefined) {
-      handle = await activation.materializing.catch(() => undefined);
-    }
+    const handle = activation.handle;
     this.#revokeBinding(request.activationId);
     const environmentId = activation.developmentEnvironmentId;
     const environment =
@@ -1995,10 +1999,7 @@ export class ToolBroker {
       const operations = [...activation.operations.values()];
       for (const operation of operations) operation.controller.abort();
       await Promise.allSettled(operations.map((operation) => operation.result));
-      const handle =
-        activation.materializing === undefined
-          ? activation.handle
-          : await activation.materializing.catch(() => undefined);
+      const handle = activation.handle;
       this.#toolBindings.delete(activationId);
       environment?.bindingIds.delete(activationId);
       if (environment !== undefined && environment.bindingIds.size > 0) return;
@@ -2328,10 +2329,7 @@ export class ToolBroker {
           .filter((binding): binding is ManagedToolBinding => binding !== undefined);
         if (bindings.length > 0) {
           for (const binding of bindings) {
-            detachableHandle =
-              binding.materializing === undefined
-                ? (binding.handle ?? detachableHandle)
-                : ((await binding.materializing.catch(() => undefined)) ?? detachableHandle);
+            detachableHandle = binding.handle ?? detachableHandle;
             this.#toolBindings.delete(binding.activationId);
           }
           environment.handle = detachableHandle;
@@ -2802,19 +2800,6 @@ export class ToolBroker {
               ...(workspaceRuntime.handle === undefined ? {} : { handle: workspaceRuntime.handle }),
             },
           );
-        }
-        await this.#stateRepository.setTerminalState(terminalId, "released");
-        return;
-      }
-      const borrower = [...this.#toolBindings.entries()].find(
-        ([, activation]) => activation.elasticRuntime?.workspaceTerminalId === terminalId,
-      );
-      if (borrower !== undefined) {
-        const [activationId, activation] = borrower;
-        if (activation.elasticRuntime !== undefined) {
-          delete activation.elasticRuntime.workspaceTerminalId;
-        } else {
-          this.#admission.transfer(terminalId, activationId, activation.assignment);
         }
         await this.#stateRepository.setTerminalState(terminalId, "released");
         return;

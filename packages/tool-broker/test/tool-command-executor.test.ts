@@ -103,6 +103,26 @@ function receipt(c: AcceptedToolCommand) {
 }
 
 describe("Kafka-driven Tool command execution", () => {
+  it("does not deliver an earlier attempt's response after a machine binding is reused", async () => {
+    const f = fixture(),
+      earlier = command();
+    f.own(earlier);
+    f.consumer.consume(record(earlier));
+    await f.consumer.waitResult(
+      lease(earlier),
+      earlier.request.activationId,
+      earlier.request.operationId,
+    );
+    const later = { ...earlier, scope: { ...earlier.scope, attemptId: crypto.randomUUID() } };
+    // A persistent machine can lend its physical binding ID to the next Run;
+    // the old retry body may still be present until its receipt/seal is routed.
+    f.own(later);
+    await expect(
+      f.consumer.waitResult(lease(later), later.request.activationId, earlier.request.operationId),
+    ).rejects.toMatchObject({ code: "tool_command_identity_mismatch" });
+    expect(f.execute).toHaveBeenCalledOnce();
+  });
+
   it("retires sibling responses and refuses later commands after a native writer seal", async () => {
     const f = fixture(),
       parent = command(),
