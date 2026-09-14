@@ -2,6 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import type { AgentTurnScenarioContext } from "@pi-cloud/sandbox-supervisor";
+import { AcceptedFactPublisherFailedError } from "@pi-cloud/runtime-core/accepted-fact";
 import {
   PostgresSupervisorCredentialAuthorizer,
   SupervisorBootProvisioner,
@@ -162,6 +163,7 @@ describe("PiWorkerRuntime", () => {
       return runWorker();
     };
     let toolBrokerHealthy = true;
+    let publisherFailure: Error | undefined;
     const runtimeToolBroker: SupervisorToolBroker = {
       ...toolBroker(),
       async checkHealth() {
@@ -243,13 +245,17 @@ describe("PiWorkerRuntime", () => {
           async open() {
             throw new Error("unused");
           },
-          async checkHealth() {},
+          async checkHealth() {
+            if (publisherFailure) throw publisherFailure;
+          },
         },
         sessionMutationProducer: {
           scoped() {
             return { async publish() {} };
           },
-          async checkHealth() {},
+          async checkHealth() {
+            if (publisherFailure) throw publisherFailure;
+          },
           async close() {},
         },
         provisioningClient: { provision: (request) => provisioner.provision(request) },
@@ -271,7 +277,9 @@ describe("PiWorkerRuntime", () => {
           async open() {
             throw new Error("unused");
           },
-          async checkHealth() {},
+          async checkHealth() {
+            if (publisherFailure) throw publisherFailure;
+          },
         },
         sessionMutationProducer: {
           scoped() {
@@ -316,6 +324,36 @@ describe("PiWorkerRuntime", () => {
       expect(ledger.state.history).toContainEqual(
         expect.objectContaining({ bootId: firstIdentity.bootId, status: "exited" }),
       );
+
+      publisherFailure = new Error("temporary metadata outage");
+      await vi.waitFor(
+        async () => {
+          await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(false);
+        },
+        { timeout: 2_000, interval: 25 },
+      );
+      expect(second.state).toBe("ready");
+      publisherFailure = undefined;
+      await vi.waitFor(
+        async () => {
+          await expect(runWorkerOptions[1]?.admitRunClaims?.()).resolves.toBe(true);
+        },
+        { timeout: 2_000, interval: 25 },
+      );
+      let terminal: string | undefined;
+      void second.waitUntilTerminal().then((reason) => {
+        terminal = reason;
+      });
+      publisherFailure = new AcceptedFactPublisherFailedError(
+        new Error("producer stream destroyed"),
+      );
+      await vi.waitFor(() => expect(terminal).toBe("connection_failed"), {
+        timeout: 2_000,
+        interval: 25,
+      });
+      expect(second.state).toBe("failed");
+      expect(second.terminalFailureCode).toBe("event_publisher_failed");
+      publisherFailure = undefined;
 
       await second.close();
       const gateways: TenantModelGateway[] = [];

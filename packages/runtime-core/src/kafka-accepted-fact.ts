@@ -8,7 +8,7 @@ import {
 } from "@platformatic/kafka";
 import { parsePiCloudEvent } from "@pi-cloud/protocol";
 import type { AcceptedFact, AcceptedFactBus, AcceptedFactReceipt } from "./accepted-fact.ts";
-import { AcceptedFactCapacityError } from "./accepted-fact.ts";
+import { AcceptedFactCapacityError, AcceptedFactPublisherFailedError } from "./accepted-fact.ts";
 import type { PiCloudMetrics } from "@pi-cloud/observability";
 
 import { once } from "node:events";
@@ -298,11 +298,10 @@ export class KafkaAcceptedFactBus implements AcceptedFactBus {
   }
 
   async checkHealth(): Promise<void> {
-    if (
-      !this.#started ||
-      this.#streamFailure !== undefined ||
-      !(await this.#admin.listTopics()).includes(this.#topic)
-    ) {
+    if (this.#streamFailure !== undefined) {
+      throw new AcceptedFactPublisherFailedError(this.#streamFailure);
+    }
+    if (!this.#started || !(await this.#admin.listTopics()).includes(this.#topic)) {
       throw new Error("Kafka AcceptedFactBus is unhealthy");
     }
   }

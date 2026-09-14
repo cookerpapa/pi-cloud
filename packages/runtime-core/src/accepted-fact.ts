@@ -120,6 +120,15 @@ export class AcceptedFactCapacityError extends Error {
   }
 }
 
+export class AcceptedFactPublisherFailedError extends Error {
+  readonly code = "event_publisher_failed";
+  readonly retryable = false;
+  constructor(cause: Error) {
+    super("AcceptedFact publisher cannot be reused", { cause });
+    this.name = "AcceptedFactPublisherFailedError";
+  }
+}
+
 export interface AcceptedFactBus {
   append(fact: AcceptedFact): Promise<AcceptedFactReceipt>;
   checkHealth(): Promise<void>;

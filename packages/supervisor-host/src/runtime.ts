@@ -7,7 +7,10 @@ import {
   loadProducerCapacity,
 } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 import { NativeSessionLogPublisher } from "@pi-cloud/runtime-core/native-session-log-publisher";
-import type { ActiveExecutionLogResolver } from "@pi-cloud/runtime-core/accepted-fact";
+import {
+  AcceptedFactPublisherFailedError,
+  type ActiveExecutionLogResolver,
+} from "@pi-cloud/runtime-core/accepted-fact";
 import { AgentRunExecutionBackend } from "@pi-cloud/runtime-core/agent-run-execution-backend";
 import { RunExecutor } from "@pi-cloud/runtime-core/run-executor";
 import { PostgresRunAttemptPhaseObserver } from "@pi-cloud/runtime-core/run-attempt-runtime";
@@ -282,7 +285,8 @@ export class PiWorkerRuntime {
       readiness: () =>
         this.#state === "ready" &&
         client?.state === "connected" &&
-        this.#runWorker?.state === "running",
+        this.#runWorker?.state === "running" &&
+        this.#runClaimReadiness?.ready === true,
       stopCurrentBoot: async () => {
         if (this.#state === "draining" || this.#state === "stopped") return;
         this.#state = "draining";
@@ -423,7 +427,18 @@ export class PiWorkerRuntime {
       this.#sessionMutationProducer = sessionMutationProducer;
       const runClaimReadiness = new RunClaimReadinessMonitor({
         check: async () => {
-          await Promise.all([executionLogs.checkHealth?.(), modelGateway.checkProviderHealth()]);
+          try {
+            await Promise.all([executionLogs.checkHealth?.(), modelGateway.checkProviderHealth()]);
+          } catch (error) {
+            if (error instanceof AcceptedFactPublisherFailedError && this.#state === "ready") {
+              this.#terminalFailureCode = error.code;
+              this.#state = "failed";
+              this.#client?.setAcceptingAssignments(false);
+              this.#runSupervisor?.revokeAllAssignments();
+              this.#settleTerminal("connection_failed");
+            }
+            throw error;
+          }
         },
       });
       await runClaimReadiness.start();

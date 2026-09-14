@@ -1,7 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Writable } from "node:stream";
 
-const transport = vi.hoisted(() => ({ streams: [] as ControlledStream[] }));
+const transport = vi.hoisted(() => ({
+  streams: [] as ControlledStream[],
+  metadataUnavailable: false,
+}));
 class ControlledStream extends Writable {
   writes: unknown[] = [];
   callbacks: Array<() => void> = [];
@@ -28,6 +31,7 @@ class ControlledStream extends Writable {
 vi.mock("@platformatic/kafka", () => ({
   Admin: class {
     async listTopics() {
+      if (transport.metadataUnavailable) throw new Error("temporary metadata outage");
       return ["test"];
     }
     async metadata() {
@@ -49,11 +53,13 @@ vi.mock("@platformatic/kafka", () => ({
 }));
 import { KafkaAcceptedFactBus, kafkaProducerLane } from "../src/kafka-accepted-fact.ts";
 import type { AcceptedFact } from "../src/accepted-fact.ts";
+import { AcceptedFactPublisherFailedError } from "../src/accepted-fact.ts";
 import { loadProducerCapacity } from "@pi-cloud/event-log";
 
 const buses: KafkaAcceptedFactBus[] = [];
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 afterEach(async () => {
+  transport.metadataUnavailable = false;
   for (const stream of transport.streams) stream.destroy(new Error("test shutdown"));
   for (const bus of buses.splice(0)) await bus.close().catch(() => undefined);
   transport.streams.length = 0;
@@ -164,6 +170,17 @@ it("fails pending receipts on stream error or bounded close instead of fabricati
   expect(await first).toBeInstanceOf(Error);
   expect(await queued).toBeInstanceOf(Error);
   expect(bus.statistics()).toMatchObject({ pendingFacts: 0, pendingBytes: 0 });
+});
+
+it("distinguishes a destroyed publisher from a temporary metadata outage", async () => {
+  const bus = await fixture();
+  transport.metadataUnavailable = true;
+  await expect(bus.checkHealth()).rejects.not.toBeInstanceOf(AcceptedFactPublisherFailedError);
+  transport.metadataUnavailable = false;
+  await expect(bus.checkHealth()).resolves.toBeUndefined();
+  transport.streams[0]!.destroy(new Error("publisher failed"));
+  await tick();
+  await expect(bus.checkHealth()).rejects.toBeInstanceOf(AcceptedFactPublisherFailedError);
 });
 
 it("uses one producer capacity configuration contract", () => {
