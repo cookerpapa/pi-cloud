@@ -487,7 +487,16 @@ function applyEvent(state: SessionViewState, event: PiCloudEvent): SessionViewSt
       event.type === "model.sampling.completed" &&
       (event.payload.outcome === "failed" || event.payload.outcome === "aborted")
     ) {
-      return { ...turn, items: turn.items.filter((item) => item.kind !== "tool_preparing") };
+      return {
+        ...turn,
+        items: turn.items
+          .filter((item) => item.kind !== "tool_preparing")
+          .map((item) =>
+            item.kind === "hosted_search" && item.status === "running"
+              ? { ...item, status: "failed" as const, lastSequence: event.seq }
+              : item,
+          ),
+      };
     }
     if (event.type === "turn.completed") {
       return {

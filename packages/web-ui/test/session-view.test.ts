@@ -119,6 +119,49 @@ function preparedState(): SessionViewState {
 }
 
 describe("session transcript reducer", () => {
+  it.each(["failed", "aborted"] as const)(
+    "does not turn a %s sampling search into a successful search at Run completion",
+    (outcome) => {
+      const events: PiCloudEvent[] = [
+        envelope(1, {
+          type: "provider.hosted_tool.started",
+          payload: { toolName: "web_search", activityId: "interrupted-search" },
+        }),
+        envelope(2, {
+          type: "assistant.tool_call.preparing",
+          payload: { toolName: "write", toolCallId: "interrupted-write" },
+        }),
+        envelope(3, {
+          type: "model.sampling.completed",
+          payload: {
+            stepSequence: 1,
+            stepSha256: "a".repeat(64),
+            samplingAttempt: 1,
+            outcome,
+            stopReason: outcome === "failed" ? "error" : "aborted",
+          },
+        }),
+      ];
+      const ui = events.reduce(
+        (state, event) => sessionViewReducer(state, { type: "stream.event", event }),
+        preparedState(),
+      );
+      const snapshot = projectConversationTurnTranscript(events);
+      expect(ui.turns[0]!.items).toMatchObject([
+        { kind: "hosted_search", status: "failed", lastSequence: 3 },
+      ]);
+      expect(snapshot.items).toMatchObject([
+        { kind: "hosted_search", status: "failed", lastSequence: 3 },
+      ]);
+      const terminal = envelope(4, { type: "turn.completed", payload: { stopReason: "stop" } });
+      expect(
+        sessionViewReducer(ui, { type: "stream.event", event: terminal }).turns[0]!.items[0],
+      ).toMatchObject({ status: "failed" });
+      expect(projectConversationTurnTranscript([terminal], snapshot).items[0]).toMatchObject({
+        status: "failed",
+      });
+    },
+  );
   it("does not undo a streamed terminal when the input acceptance reply arrives later", () => {
     const terminalEvents: PiCloudEvent[] = [
       envelope(1, { type: "turn.completed", payload: { stopReason: "stop" } }),

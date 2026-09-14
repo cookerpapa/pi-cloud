@@ -229,6 +229,19 @@ export function projectConversationTurnTranscript(
       else items[index] = completed;
       continue;
     }
+    if (
+      event.type === "model.sampling.completed" &&
+      (event.payload.outcome === "failed" || event.payload.outcome === "aborted")
+    ) {
+      for (let index = items.length - 1; index >= 0; index--) {
+        const item = items[index]!;
+        if (item.kind === "tool_preparing") items.splice(index, 1);
+        else if (item.kind === "hosted_search" && item.status === "running") {
+          items[index] = { ...item, status: "failed", lastSequence: event.seq };
+        }
+      }
+      continue;
+    }
     if (event.type === "model.sampling.retry.scheduled") {
       items.push({
         kind: "retry",
