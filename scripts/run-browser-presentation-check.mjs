@@ -15,6 +15,9 @@ import { createRoot } from "react-dom/client";
 import { ConversationTurn } from "/src/ConversationTurn.tsx";
 import { useResizablePanel } from "/src/use-resizable-panel.ts";
 import ChatApp from "/src/ChatApp.tsx";
+import { AdminPage } from "/src/AdminPage.tsx";
+import { AccountMenu } from "/src/AccountMenu.tsx";
+import { Markdown } from "/src/Markdown.tsx";
 import { WorkspaceInspector } from "/src/WorkspaceInspector.tsx";
 import { WorkspaceTerminal } from "/src/WorkspaceTerminal.tsx";
 import { WorkspaceDirectoryPicker } from "/src/WorkspaceDirectoryPicker.tsx";
@@ -48,6 +51,14 @@ window.renderTurn = (text, recoveredTextLength = 0, status = "running") => root.
   }})));
 window.turnBodies = [];
 window.copyFixtureText=copyMessageText;
+window.renderAdmin=()=>root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},React.createElement(AdminPage,{
+  api:{getCubeProxyConfiguration:()=>new Promise(()=>{}),getModelConfiguration:()=>new Promise(()=>{})},
+  identity:{displayName:'Fixture administrator',platformAdministrator:true},onLogout:()=>{}
+})));
+window.renderMarkdownLanguage=()=>root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},
+  React.createElement(AccountMenu,{label:'Fixture',onLogout:()=>{}}),
+  React.createElement(Markdown,{children:'![fixture](https://images.invalid/fixture.png)'}),
+));
 const inspectorApi = {
   listDevelopmentEnvironments:async()=>({environments:[]}),
   listWorkspaceDirectory:async()=>({entries:[
@@ -490,6 +501,80 @@ try {
       extraTextareas: 0,
       focusRestored: true,
     });
+    await page.send("Emulation.setDeviceMetricsOverride", {
+      width: 400,
+      height: 550,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await page.evaluate("renderChat()");
+    await page.waitFor("document.querySelector('.product-main')");
+    const mobileChat = await page.evaluate(
+      "document.querySelector('.product-main').clientHeight===innerHeight",
+    );
+    await page.evaluate("renderAdmin()");
+    await page.waitFor("document.querySelector('.product-admin-page')");
+    const adminScroll = await page.evaluate(
+      "document.querySelector('.product-admin-page').clientHeight===innerHeight",
+    );
+    await page.evaluate("document.querySelector('.product-account-menu-trigger').click()");
+    await page.evaluate(
+      "document.querySelector('.product-account-menu-language > button').click()",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-account-language-submenu button').click()",
+    );
+    await page.waitFor("document.documentElement.lang==='zh-CN'");
+    const adminTranslated = await page.evaluate(
+      "document.querySelector('.product-admin-service-grid a span').textContent.includes('管理订阅')",
+    );
+    await page.evaluate("renderMarkdownLanguage()");
+    await page.waitFor("document.querySelector('.product-image-placeholder')");
+    // The provider may be reused by React; select English before checking the transition.
+    await page.evaluate("document.querySelector('.product-account-menu-trigger').click()");
+    await page.evaluate(
+      "document.querySelector('.product-account-menu-language > button').click()",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-account-language-submenu button:last-child').click()",
+    );
+    await page.waitFor("document.documentElement.lang==='en-US'");
+    const markdownEnglish = await page.evaluate(
+      "document.querySelector('.product-image-placeholder').textContent.includes('Image')",
+    );
+    await page.evaluate("document.querySelector('.product-account-menu-trigger').click()");
+    await page.evaluate(
+      "document.querySelector('.product-account-menu-language > button').click()",
+    );
+    await page.evaluate(
+      "document.querySelector('.product-account-language-submenu button').click()",
+    );
+    await page.waitFor("document.documentElement.lang==='zh-CN'");
+    const markdownTranslated = await page.evaluate(
+      "document.querySelector('.product-image-placeholder').textContent.includes('图片')",
+    );
+    assert.deepEqual(
+      { adminTranslated, markdownEnglish, markdownTranslated },
+      { adminTranslated: true, markdownEnglish: true, markdownTranslated: true },
+    );
+    await page.evaluate("renderDirectoryPicker()");
+    await page.waitFor("directoryLoads['/home/user']");
+    await page.evaluate(
+      "directoryLoads['/home/user'].resolve({path:'/home/user',entries:[],truncated:false})",
+    );
+    await page.waitFor(
+      "!document.querySelector('.product-directory-picker footer .product-primary-button').disabled",
+    );
+    const directoryChoice = await page.evaluate(`(()=>{
+      const button=document.querySelector('.product-directory-picker footer .product-primary-button');
+      const rect=button.getBoundingClientRect();
+      return rect.bottom<=innerHeight && document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2)===button;
+    })()`);
+    assert.deepEqual(
+      { mobileChat, adminScroll, directoryChoice },
+      { mobileChat: true, adminScroll: true, directoryChoice: true },
+    );
+    await page.send("Emulation.clearDeviceMetricsOverride");
     await page.evaluate("renderChat(); window.rejectLogout=true");
     await page.waitFor('document.querySelector(".product-account-menu-trigger")');
     await page.evaluate('document.querySelector(".product-account-menu-trigger").click()');
@@ -528,6 +613,7 @@ try {
       branchSelectionAndManualJump: true,
       terminalSocketIsolation: true,
       directoryPickerLifecycle: true,
+      responsivePageScrolling: true,
     }),
   );
 } finally {

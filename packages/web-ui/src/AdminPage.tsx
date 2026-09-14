@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { REVIEWED_MODELS } from "@pi-cloud/protocol";
 import type {
   CubeProxyConfigurationResource,
@@ -62,28 +62,25 @@ export function AdminPage({
   const [cubeProxyUrl, setCubeProxyUrl] = useState("");
   const [settingsSaving, setSettingsSaving] = useState<"model" | "proxy" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const managementLinks = useMemo(
-    () => [
-      {
-        title: t("admin.providerGateway"),
-        description: t("admin.providerGatewayDescription"),
-        href: operatorUrl(8318, "/management.html"),
-      },
-      { title: "Grafana", description: t("admin.grafanaDescription"), href: operatorUrl(3001) },
-      {
-        title: "Prometheus",
-        description: t("admin.prometheusDescription"),
-        href: operatorUrl(9090),
-      },
-      {
-        title: "Alertmanager",
-        description: t("admin.alertmanagerDescription"),
-        href: operatorUrl(9093),
-      },
-      { title: "Jaeger", description: t("admin.jaegerDescription"), href: operatorUrl(16686) },
-    ],
-    [t],
-  );
+  const managementLinks = [
+    {
+      title: t("admin.providerGateway"),
+      description: t("admin.providerGatewayDescription"),
+      href: operatorUrl(8318, "/management.html"),
+    },
+    { title: "Grafana", description: t("admin.grafanaDescription"), href: operatorUrl(3001) },
+    {
+      title: "Prometheus",
+      description: t("admin.prometheusDescription"),
+      href: operatorUrl(9090),
+    },
+    {
+      title: "Alertmanager",
+      description: t("admin.alertmanagerDescription"),
+      href: operatorUrl(9093),
+    },
+    { title: "Jaeger", description: t("admin.jaegerDescription"), href: operatorUrl(16686) },
+  ];
 
   useEffect(() => {
     let cancelled = false;

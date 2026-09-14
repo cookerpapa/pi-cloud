@@ -1,7 +1,7 @@
 # PiCloud Web UI
 
 This package is the browser product for PiCloud. It talks only to the public
-REST, resumable SSE and brokered Terminal endpoints; it never opens Pi,
+REST, snapshot-first SSE and brokered Terminal endpoints; it never opens Pi,
 PostgreSQL, Cube or provider credentials directly.
 
 ## Current behavior
@@ -9,18 +9,24 @@ PostgreSQL, Cube or provider credentials directly.
 - username/password registration and HttpOnly-cookie login;
 - tenant-scoped named Workspaces and conversations;
 - resizable conversation list and focused/full Pi Session tree;
-- typed, read-only Subagent child Sessions with context/Workspace-mode labels;
+- read-only Subagent Lane views with context/Workspace-mode labels;
 - ordered assistant, Tool and lifecycle rendering from durable SSE;
 - active Turn cancellation and steer;
 - conversation forks, recursive subtree deletion and settled-answer tail
   pruning;
-- committed Workspace directory/source view, authenticated service preview and
+- live Workspace directory/source view, authenticated service preview and
   a brokered xterm terminal;
 - a separate administrator settings product for model and Cube proxy policy.
 
 Tail pruning changes conversation context only. It retains the selected final
 Assistant entry, hides later Turns/branches/Subagents and lets the next Pi Run
-continue from that entry. Workspace files remain at their current revision.
+continue from that entry. Workspace files are unchanged.
+
+SSE opens with complete history plus the already-durable pending text, then
+follows new output without a browser cursor. The frontend animates only new
+text. Markdown uses the existing remark/GFM parser with stable complete blocks;
+settlement does not replace already-rendered paragraphs. Model selection stays
+in the composer and persists through the API, not in browser-only state.
 
 All public resources and events are validated with `@pi-cloud/protocol` before
 entering React state. Markdown raw HTML is disabled, remote images are inert,

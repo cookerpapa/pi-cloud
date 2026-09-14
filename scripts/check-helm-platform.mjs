@@ -36,8 +36,16 @@ const environment = Object.fromEntries(
     .map((entry) => [entry.name, String(entry.value)]),
 );
 assert.equal(
-  environment.PI_CLOUD_DATABASE_NOTIFICATION_URL_FILE,
-  "/run/pi-cloud-secrets/database-notification-url",
+  controlPlane.spec.template.spec.containers[0].env.some(
+    (entry) => entry.name === "PI_CLOUD_DATABASE_NOTIFICATION_URL_FILE",
+  ),
+  false,
+);
+assert.equal(
+  controlPlane.spec.template.spec.containers[0].volumeMounts.some(
+    (mount) => mount.mountPath === "/run/pi-cloud-secrets/database-notification-url",
+  ),
+  false,
 );
 assert.match(environment.PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES, /\{supervisorId\}/);
 assert(find("StatefulSet", "pi-cloud-pi-worker-primary-v1"));
@@ -58,6 +66,7 @@ const customDatabaseKeys = parseAllDocuments(
   .map((document) => document.toJSON())
   .filter(Boolean);
 for (const [kind, name, key] of [
+  ["Deployment", "pi-cloud-control-plane", "pooled-database"],
   ["StatefulSet", "pi-cloud-tool-broker", "pooled-database"],
   ["Deployment", "pi-cloud-workspace-volume-gateway", "direct-database"],
 ]) {

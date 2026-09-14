@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { HighlightedCode } from "./HighlightedCode.tsx";
-import { useI18n, type Translate } from "./i18n.tsx";
+import { useI18n } from "./i18n.tsx";
 
 function MarkdownCode({ className, children }: { className?: string; children?: ReactNode }) {
   const text = String(children ?? "").replace(/\n$/u, "");
@@ -19,13 +19,8 @@ function MarkdownCode({ className, children }: { className?: string; children?: 
   );
 }
 
-const StableMarkdownBody = memo(function StableMarkdownBody({
-  text,
-  t,
-}: {
-  text: string;
-  t: Translate;
-}) {
+const StableMarkdownBody = memo(function StableMarkdownBody({ text }: { text: string }) {
+  const { t } = useI18n();
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -91,7 +86,6 @@ export function Markdown({
   children: string;
   streaming?: boolean;
 }) {
-  const { t } = useI18n();
   const parsed = useRef<{ text: string; blocks: readonly string[] }>({ text: "", blocks: [] });
   const blocks = useMemo(() => {
     if (parsed.current.text === children && parsed.current.blocks.length > 0) {
@@ -104,7 +98,7 @@ export function Markdown({
   return (
     <div className="product-markdown">
       {blocks.map((block, index) => (
-        <StableMarkdownBody key={`markdown-block:${String(index)}`} t={t} text={block} />
+        <StableMarkdownBody key={`markdown-block:${String(index)}`} text={block} />
       ))}
     </div>
   );

@@ -411,16 +411,13 @@ body.product-panel-resizing {
 }
 
 .product-new-chat {
+  border: 1px solid #363636 !important;
   width: 100%;
   padding: 10px 11px;
   border-radius: 9px;
   color: #e7e7e7;
   font-size: 13px;
   text-align: left;
-}
-
-.product-new-chat {
-  border: 1px solid #363636 !important;
 }
 
 .product-new-chat span {
@@ -2071,27 +2068,6 @@ body.product-panel-resizing {
   font-size: 11px;
 }
 
-.product-workspace-selection {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 10px;
-}
-
-.product-workspace-delete {
-  display: grid;
-  justify-items: end;
-  gap: 5px;
-}
-
-.product-workspace-delete small {
-  max-width: 180px;
-  color: #9b7777;
-  font-size: 10px;
-  line-height: 1.35;
-  text-align: right;
-}
-
 .product-danger-button {
   min-height: 43px;
   padding: 9px 12px;
@@ -2110,21 +2086,6 @@ body.product-panel-resizing {
 .product-danger-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
-}
-
-@media (max-width: 560px) {
-  .product-workspace-selection {
-    grid-template-columns: 1fr;
-  }
-
-  .product-workspace-delete {
-    justify-items: stretch;
-  }
-
-  .product-workspace-delete small {
-    max-width: none;
-    text-align: left;
-  }
 }
 
 .product-workspace-modal .product-choice-card {
@@ -2160,13 +2121,6 @@ body.product-panel-resizing {
   font-size: 11px;
 }
 
-.product-choice-warning {
-  margin: 0;
-  color: #c68158;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
 .product-settings-section {
   display: grid;
   gap: 12px;
@@ -2197,7 +2151,7 @@ body.product-panel-resizing {
 
 .product-admin-page {
   width: 100%;
-  min-height: 100dvh;
+  height: 100dvh;
   overflow: auto;
   background:
     radial-gradient(circle at 15% 0%, rgba(118, 100, 209, 0.16), transparent 30%), #151515;
@@ -2834,9 +2788,6 @@ body.product-panel-resizing {
 }
 
 @media (max-width: 900px) {
-  .product-shell {
-    display: block;
-  }
   .product-sidebar {
     position: fixed;
     inset: 0 auto 0 0;
@@ -3149,8 +3100,11 @@ body.product-panel-resizing {
 
 .product-directory-explorer {
   display: grid;
-  min-height: 390px;
+  height: 390px;
+  min-height: 0;
+  flex: 1 1 auto;
   grid-template-columns: 176px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -3229,7 +3183,7 @@ body.product-panel-resizing {
 }
 
 .product-directory-browser {
-  min-height: 340px;
+  min-height: 0;
   overflow: auto;
   display: grid;
   align-content: start;
@@ -3356,6 +3310,7 @@ body.product-panel-resizing {
   }
   .product-directory-explorer {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .product-directory-places {
     display: flex;
@@ -3567,16 +3522,6 @@ body.product-panel-resizing {
 
 .product-environment-create .product-primary-button {
   min-width: 92px;
-}
-
-.product-source-control-section .product-resource-create {
-  display: grid;
-  grid-template-columns: minmax(190px, 1.2fr) minmax(160px, 1fr) minmax(200px, 1.2fr) auto;
-}
-
-.product-source-control-section .product-resource-create .product-primary-button {
-  align-self: end;
-  min-height: 42px;
 }
 
 .product-issue-job-list {

@@ -168,7 +168,7 @@ describe("session transcript reducer", () => {
     expect(activeTurn(state)?.mailboxPosition).toBe(1);
   });
 
-  it("loads bounded historical prompt metadata before replaying its durable suffix", () => {
+  it("loads bounded historical prompt metadata before live updates", () => {
     const conversation: ConversationDetailResource = {
       project,
       inheritedMessages: [],
