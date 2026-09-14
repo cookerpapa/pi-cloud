@@ -80,7 +80,7 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | SC-04 | Issue credential authorization omitted the machine owner check used by ordinary Code Host connections | Reproduced successful preflight as another user in the same tenant. Share the existing ownership check before credential requests |
 | SC-05 | Single-Issue mutation responses searched only the newest 100 jobs; list query fetched unused large Issue bodies | Reproduced durable claim followed by not-found after 101 newer jobs. Filter detail by tenant/ID and select only public summary columns; no Issue bodies in list reads |
 | SC-06 | Optional GitHub App callback validates PiCloud state but not caller access to the supplied installation | Architecture decision ARCH-02 requested: disable the App installation entry or add GitHub user authorization; environment-local credentials are separate and remain unchanged |
-| UI-14 | Blank-line streaming Markdown segmentation may split a loose list or a four-backtick fence | Candidate rendering mismatch; compare complete and streaming document semantics before changing the renderer |
+| UI-14 | Blank-line segmentation split lists, four-backtick fences and indented code; settlement replaced already-rendered paragraphs | Four rendering failures and a Chrome DOM-replacement failure reproduced. Use the same remark/GFM parser, retain the two unresolved suffix blocks, invalidate reference-dependent blocks, and keep nodes at settlement. Every-character prefix checks pass for six syntax cases |
 | SC-07 | Non-object GitLab webhook JSON raised TypeError before the intended shape rejection | Three payload-shape regressions reproduced 500-class errors; reject through the existing invalid-webhook contract |
 | SC-08 | Missing Workspace credential-service configuration fabricated a known placeholder token | Reproduced misleading Broker URL error; fail explicitly as unconfigured instead of sending a placeholder credential |
 | SC-09 | Issue coordinator reused Sessions by title, could recreate missing Workspaces and forced thinking off | Reproduced unrelated same-title Session reuse and the off override. Create native Session + accepted Run + job link in one existing PG transaction; require the selected Workspace and inherit model settings. Injected failure after Session creation rolls back both product/native roots and leaves no Run |
@@ -130,6 +130,12 @@ ARCH-02 is awaiting the owner. No real GitHub account or installation was probed
 Latest UI/resource slice: all 117 tests across 18 files pass, plus the actual
 Chrome presentation/interaction fixture (including rejected clipboard cleanup).
 These are local contract/browser tests, not paid model or deployed Cube acceptance.
+Markdown follow-up: 126 Web tests and Chrome interaction checks pass. Synthetic
+Node parser measurements (not end-to-end latency): parsing the whole 10,192-character
+document each update had p50 18.96 ms; incremental suffix updates on a 10–11K
+document had p50 0.41 ms / p95 1.12 ms. At 50–51K characters, incremental p50
+0.73 ms / p95 1.24 ms. A single very large unresolved block still costs proportional
+parsing work; these measurements do not claim constant-time arbitrary Markdown.
 Control Plane follow-up: 134 tests passed, five real-PG-only checks skipped by
 the offline suite; those remain required for the dedicated PG validation stage.
 

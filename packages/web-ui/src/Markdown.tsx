@@ -1,6 +1,8 @@
-import { memo, useMemo, type ReactNode } from "react";
+import { memo, useMemo, useRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import { HighlightedCode } from "./HighlightedCode.tsx";
 import { useI18n, type Translate } from "./i18n.tsx";
 
@@ -53,31 +55,33 @@ const StableMarkdownBody = memo(function StableMarkdownBody({
   );
 });
 
-export function streamingMarkdownBlocks(text: string): readonly string[] {
+const markdownParser = unified().use(remarkParse).use(remarkGfm);
+
+export function streamingMarkdownBlocks(
+  text: string,
+  previous?: { text: string; blocks: readonly string[] },
+): readonly string[] {
   if (text.length === 0) return [];
+  // A later reference definition can change earlier links/footnotes.
   if (/^\s*\[[^\]]+\]:\s*\S+/mu.test(text)) return [text];
-  const blocks: string[] = [];
-  let start = 0;
-  let offset = 0;
-  let fence: "```" | "~~~" | null = null;
-  for (const match of text.matchAll(/.*(?:\n|$)/gu)) {
-    const line = match[0];
-    if (line.length === 0) continue;
-    offset += line.length;
-    const trimmed = line.trimStart();
-    if (fence === null) {
-      if (trimmed.startsWith("```")) fence = "```";
-      else if (trimmed.startsWith("~~~")) fence = "~~~";
-    } else if (trimmed.startsWith(fence)) {
-      fence = null;
-    }
-    if (fence === null && /^\s*$/u.test(line)) {
-      blocks.push(text.slice(start, offset));
-      start = offset;
-    }
-  }
-  if (start < text.length) blocks.push(text.slice(start));
-  return blocks;
+  // A partial new list marker may merge with the preceding list once completed.
+  const stable =
+    previous !== undefined && text.startsWith(previous.text) ? previous.blocks.slice(0, -2) : [];
+  const stableLength = stable.reduce((length, block) => length + block.length, 0);
+  const tail = text.slice(stableLength);
+  const tree = markdownParser.parse(tail);
+  if (tree.children.length === 0) return [...stable, tail];
+  const starts = tree.children.map((node) => {
+    const start = node.position!.start;
+    // Retain indentation: it is syntax, particularly for indented code.
+    return start.offset! - start.column + 1;
+  });
+  return [
+    ...stable,
+    ...starts.map((start, index) =>
+      tail.slice(index === 0 ? 0 : start, starts[index + 1] ?? tail.length),
+    ),
+  ];
 }
 
 export function Markdown({
@@ -88,18 +92,19 @@ export function Markdown({
   streaming?: boolean;
 }) {
   const { t } = useI18n();
-  const blocks = useMemo(
-    () => (streaming ? streamingMarkdownBlocks(children) : [children]),
-    [children, streaming],
-  );
+  const parsed = useRef<{ text: string; blocks: readonly string[] }>({ text: "", blocks: [] });
+  const blocks = useMemo(() => {
+    if (parsed.current.text === children && parsed.current.blocks.length > 0) {
+      return parsed.current.blocks;
+    }
+    const blocks = streaming ? streamingMarkdownBlocks(children, parsed.current) : [children];
+    parsed.current = { text: children, blocks };
+    return blocks;
+  }, [children, streaming]);
   return (
     <div className="product-markdown">
       {blocks.map((block, index) => (
-        <StableMarkdownBody
-          key={streaming ? `stream-block:${String(index)}` : "final"}
-          t={t}
-          text={block}
-        />
+        <StableMarkdownBody key={`markdown-block:${String(index)}`} t={t} text={block} />
       ))}
     </div>
   );

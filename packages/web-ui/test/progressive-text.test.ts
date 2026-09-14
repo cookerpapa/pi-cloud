@@ -1,8 +1,49 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { initialProgressiveText, nextProgressiveTextIndex } from "../src/ConversationTurn.tsx";
-import { streamingMarkdownBlocks } from "../src/Markdown.tsx";
+import { Markdown, streamingMarkdownBlocks } from "../src/Markdown.tsx";
 
 describe("progressive durable text presentation", () => {
+  it.each([
+    "Intro\n\n1. First\n\n2. Second\n\n3. Third\n\nEnd",
+    "Intro\n\n- Item\n\n  Continued paragraph\n\n- Second item",
+    "Intro\n\n````md\nCode starts\n```\n\nStill code\n````\n\nTail",
+    "Intro\n\n    indented code\n\n    more code\n\nEnd",
+    "One\n\nTwo [ref][r]\n\nThree\n\n[r]: https://example.test",
+    "One\n\n> quoted\n\n> second\n\nEnd",
+  ])("keeps incremental parsing equivalent at every prefix of %j", (text) => {
+    const render = (parts: readonly string[]) =>
+      parts
+        .map((children) =>
+          renderToStaticMarkup(
+            createElement(ReactMarkdown, { children, remarkPlugins: [remarkGfm] }),
+          ),
+        )
+        .join("")
+        .replace(/>\n+</g, "><");
+    let previous = { text: "", blocks: [] as readonly string[] };
+    for (let end = 1; end <= text.length; end++) {
+      const prefix = text.slice(0, end);
+      const blocks = streamingMarkdownBlocks(prefix, previous);
+      expect(blocks.join("")).toBe(prefix);
+      expect(render(blocks), `prefix ${end}: ${prefix}`).toBe(render([prefix]));
+      previous = { text: prefix, blocks };
+    }
+  });
+  it.each([
+    "1. First\n\n2. Second\n\n3. Third",
+    "- Item\n\n  Continued paragraph\n\n- Second item",
+    "````md\nCode starts\n```\n\nStill code\n````\n\nTail",
+    "Intro\n\n    indented code\n\n    more code",
+    "Heading\n=======\n\nParagraph [link][r]\n\n[r]: https://example.test",
+  ])("preserves complete Markdown semantics while streaming %j", (text) => {
+    const render = (streaming: boolean) =>
+      renderToStaticMarkup(createElement(Markdown, { streaming, children: text }));
+    expect(render(true).replace(/>\n+</g, "><")).toBe(render(false).replace(/>\n+</g, "><"));
+  });
   it("reveals a durable batch through many small animation frames", () => {
     const text = "这是一段已经由 Kafka 确认、但需要在浏览器中平滑展示的中文文本。".repeat(80);
     let index = 0;

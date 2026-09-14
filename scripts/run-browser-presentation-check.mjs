@@ -40,10 +40,10 @@ function Panel() {
 }
 const root = createRoot(document.getElementById("root"));
 window.renderPanel = () => root.render(React.createElement(React.StrictMode, null, React.createElement(Panel)));
-window.renderTurn = (text, recoveredTextLength = 0) => root.render(
+window.renderTurn = (text, recoveredTextLength = 0, status = "running") => root.render(
   React.createElement(React.StrictMode, null, React.createElement(ConversationTurn, {turn:{
     runId:"run",turnId:"turn",mailboxPosition:null,prompt:"Question",acceptedAt:null,
-    status:"running",startedSequence:1,terminalSequence:null,stopReason:null,failure:null,cancellation:null,
+    status,startedSequence:1,terminalSequence:null,stopReason:null,failure:null,cancellation:null,
     items:[{kind:"text",key:"text:1",text,firstSequence:1,lastSequence:2,recoveredTextLength}]
   }})));
 window.turnBodies = [];
@@ -242,6 +242,21 @@ try {
     assert.equal(
       await page.evaluate('document.querySelector(".product-agent-answer").textContent'),
       target.slice(0, 4000),
+    );
+    const settledText = "First paragraph.\n\nSecond paragraph.";
+    await page.evaluate(`renderTurn(${JSON.stringify(settledText)},${settledText.length})`);
+    await page.waitFor("document.querySelectorAll('.product-agent-answer p').length===2");
+    await page.evaluate(
+      "window.stableParagraph=document.querySelector('.product-agent-answer p');undefined",
+    );
+    await page.evaluate(
+      `renderTurn(${JSON.stringify(settledText)},${settledText.length},'completed')`,
+    );
+    await page.waitFor("document.querySelector('.product-answer-actions')");
+    assert.equal(
+      await page.evaluate("document.querySelector('.product-agent-answer p')===stableParagraph"),
+      true,
+      "Settlement must not replace already-rendered Markdown nodes",
     );
     await page.evaluate("renderPanel()");
     await page.waitFor('document.querySelector("#panel")');
