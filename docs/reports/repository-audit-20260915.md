@@ -119,7 +119,8 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 | FILE-03 | Browser path validation could race a parent-directory replacement before open/readdir | Reproduced outside fixture content/names. Validate the opened Linux descriptor and retain it for listing; bound reads if files grow after stat. Volume regression suite passes |
 | PERF-01 | Git preflight held the Volume lock/PG lock connection during remote network wait | Reproduced blocked directory access; release after reading the credential, then perform the independent network probe |
 | LOCK-01 | Volume advisory-lock connection failure is detected after the filesystem callback completes | Needs real PG disconnect + fork/delete interleaving proof; do not change storage/authority semantics without discussion if a local atomic-filesystem fix is insufficient |
-| MEM-02 | Supervisor retains completed Assignments and their prompt/publisher closures in `byRun`, plus completed control requests | Source-confirmed retention; measure owned synthetic traffic and preserve duplicate/no-replay semantics when reducing retained state |
+| MEM-02 | Supervisor retained completed Assignments and publisher contexts, plus command/control bookkeeping | Reproduced 64 completed synthetic Runs retaining all 64 publishers and ~65 MiB of owned buffers with zero active Sessions. Clear the publisher at completion/pre-start release: zero publishers and ~1 MiB remain; completed duplicate commands still reuse their outcome. Long-term command/control/epoch bookkeeping retention remains under review |
+| LIFE-06 | A synchronous Runner startup throw bypassed the common completion cleanup and stranded its slot | Reproduced active count remaining 1. Make the event-boundary method async so synchronous and asynchronous failures share finalization; regression passes |
 | TIME-01 | Lease/claim timestamps are captured before potentially blocked SQL updates | Probe delayed renewal versus actual expiry/seal with real PG; do not silently change the authority clock model |
 
 Architecture question ARCH-01 (asked, awaiting owner): should a Session quarantined
@@ -141,8 +142,13 @@ document each update had p50 18.96 ms; incremental suffix updates on a 10–11K
 document had p50 0.41 ms / p95 1.12 ms. At 50–51K characters, incremental p50
 0.73 ms / p95 1.24 ms. A single very large unresolved block still costs proportional
 parsing work; these measurements do not claim constant-time arbitrary Markdown.
-Control Plane follow-up: 134 tests passed, five real-PG-only checks skipped by
-the offline suite; those remain required for the dedicated PG validation stage.
+Control Plane follow-up: 134 tests passed, five real-PG-only checks initially
+skipped by the offline suite and subsequently exercised below.
+The dedicated PostgreSQL run subsequently passed all six checks across Workspace
+admission/deletion races, concurrent settlement and indexed native-context queries
+(16.26 s suite wall time). This is database integration, not full-stack recovery
+or paid model validation. Its databases were dropped by the fixtures; the sole
+owned test container and anonymous data volume were removed (absence verified).
 
 Local regression slices passed: three
 runtime-composition tests; 50 Worker/Runner/Harness tests; 12 auth/gateway tests;

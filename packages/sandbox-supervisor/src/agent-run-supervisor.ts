@@ -86,7 +86,8 @@ type AssignmentState =
 
 type Assignment = {
   command: ExecuteTurnCommandMessage;
-  publishEvent: (message: EventPublishMessage) => Promise<EventAckMessage> | EventAckMessage;
+  publishEvent:
+    ((message: EventPublishMessage) => Promise<EventAckMessage> | EventAckMessage) | undefined;
   abortController: AbortController;
   state: AssignmentState;
   runPromise?: Promise<PiTurnResult>;
@@ -685,6 +686,8 @@ export class AgentRunSupervisor {
         },
       )
       .finally(() => {
+        // Keep duplicate outcome bookkeeping without retaining the publisher's runtime context.
+        assignment.publishEvent = undefined;
         if (this.#currentBySession.get(assignment.command.payload.sessionId) === assignment) {
           this.#currentBySession.delete(assignment.command.payload.sessionId);
         }
@@ -692,7 +695,7 @@ export class AgentRunSupervisor {
     return assignment.runPromise;
   }
 
-  #runWithDurableEventBoundary(assignment: Assignment): Promise<PiTurnResult> {
+  async #runWithDurableEventBoundary(assignment: Assignment): Promise<PiTurnResult> {
     return this.#runner
       .run(
         assignment.command,
@@ -719,7 +722,7 @@ export class AgentRunSupervisor {
           assignment.lastProducedSeq = message.payload.event.seq;
           let acknowledgement: EventAckMessage;
           try {
-            acknowledgement = await assignment.publishEvent(message);
+            acknowledgement = await assignment.publishEvent!(message);
           } catch (error: unknown) {
             throw new AgentRunSupervisorError(
               "invalid_event_delivery",
@@ -866,6 +869,7 @@ export class AgentRunSupervisor {
 
   #releaseBeforeStart(assignment: Assignment): void {
     if (assignment.state !== "prepared") return;
+    assignment.publishEvent = undefined;
     if (this.#currentBySession.get(assignment.command.payload.sessionId) === assignment) {
       this.#currentBySession.delete(assignment.command.payload.sessionId);
     }

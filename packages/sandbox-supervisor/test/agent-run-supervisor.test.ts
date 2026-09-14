@@ -11,6 +11,7 @@ import {
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import {
   AgentRunSupervisor,
   PiTurnCancelledError,
@@ -33,7 +34,7 @@ const IDS = {
 function command(
   overrides: {
     runId?: string;
-    grantId?: string;
+    leaseId?: string;
     generation?: number;
     sessionId?: string;
     piSessionId?: string;
@@ -61,7 +62,7 @@ function command(
       turnId: "turn-1",
       agentId: "root",
       executionReference: createExecutionReference(
-        overrides.grantId ?? IDS.lease,
+        overrides.leaseId ?? IDS.lease,
         overrides.attemptId ?? "50000000-0000-4000-8000-000000000001",
         overrides.generation ?? 1,
       ),
@@ -163,6 +164,43 @@ function rejectUnexpectedEvent(): never {
 }
 
 describe("AgentRunSupervisor", () => {
+  it("releases a slot when the runner throws before returning a promise", async () => {
+    const supervisor = new AgentRunSupervisor({
+      runner: {
+        run() {
+          throw new Error("synchronous startup failure");
+        },
+      },
+    });
+    const prepared = supervisor.prepare(command(), rejectUnexpectedEvent);
+    await expect(async () => prepared.run()).rejects.toThrow("synchronous startup failure");
+    expect(supervisor.activeSessionCount).toBe(0);
+  });
+
+  it("does not retain a completed Run's publisher and its runtime context", () => {
+    const source = `
+      import {AgentRunSupervisor} from ${JSON.stringify(new URL("../src/agent-run-supervisor.ts", import.meta.url).href)};
+      import {setImmediate as tick} from 'node:timers/promises';
+      const supervisor=new AgentRunSupervisor({runner:{run:async()=>({stopReason:'stop'})}});
+      const template=${JSON.stringify(command())};
+      const references=[];
+      async function complete(i){
+        const context=new Uint8Array(1024);
+        const publisher=()=>{throw new Error(String(context.length));};
+        references.push(new WeakRef(publisher));
+        await supervisor.prepare({...template,payload:{...template.payload,runId:'40000000-0000-4000-8000-'+String(i).padStart(12,'0')}},publisher).run();
+      }
+      for(let i=0;i<16;i++)await complete(i);
+      for(let i=0;i<5;i++){await tick();global.gc();}
+      console.log(JSON.stringify({retained:references.filter(ref=>ref.deref()!==undefined).length,active:supervisor.activeSessionCount}));
+    `;
+    const result = execFileSync(
+      process.execPath,
+      ["--expose-gc", "--import", "tsx", "--input-type=module", "-e", source],
+      { encoding: "utf8", timeout: 10_000 },
+    );
+    expect(JSON.parse(result)).toEqual({ retained: 0, active: 0 });
+  });
   it("returns a side-effect-free ACK and starts the runner only after run", async () => {
     const runner = new RecordingRunner();
     const supervisor = new AgentRunSupervisor({ runner });
@@ -185,6 +223,9 @@ describe("AgentRunSupervisor", () => {
 
     expect(duplicate.ack.payload.status).toBe("duplicate");
     await Promise.all([first.run(), duplicate.run()]);
+    const settledDuplicate = supervisor.prepare(command(), rejectUnexpectedEvent);
+    expect(settledDuplicate.ack.payload.status).toBe("duplicate");
+    await expect(settledDuplicate.run()).resolves.toEqual({ stopReason: "stop", lastEventSeq: 0 });
     expect(runner.calls).toHaveLength(1);
   });
 
@@ -208,7 +249,7 @@ describe("AgentRunSupervisor", () => {
     const runner = new RecordingRunner();
     const supervisor = new AgentRunSupervisor({ runner });
     const current = supervisor.prepare(
-      command({ grantId: IDS.lease2, generation: 2 }),
+      command({ leaseId: IDS.lease2, generation: 2 }),
       rejectUnexpectedEvent,
     );
     current.releaseBeforeStart();
@@ -229,7 +270,7 @@ describe("AgentRunSupervisor", () => {
     const overflow = supervisor.prepare(
       command({
         runId: IDS.command2,
-        grantId: IDS.lease2,
+        leaseId: IDS.lease2,
         sessionId: "session-2",
       }),
       rejectUnexpectedEvent,
@@ -323,7 +364,7 @@ describe("AgentRunSupervisor", () => {
     );
   });
 
-  it("allows public-event sequence gaps occupied by atomic Session checkpoint Facts", async () => {
+  it("allows public-event sequence gaps occupied by native Session records", async () => {
     const publishingRunner: SupervisorTurnRunner = {
       async run(value, publishEvent) {
         for (const seq of [1, 3]) {
@@ -578,7 +619,7 @@ describe("AgentRunSupervisor", () => {
     const second = supervisor.prepare(
       command({
         runId: IDS.command2,
-        grantId: IDS.lease2,
+        leaseId: IDS.lease2,
         generation: 2,
         sessionId: "session-2",
       }),
