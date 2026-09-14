@@ -9,13 +9,10 @@ Volume architecture. Historical experiments remain in Git history.
       archives; keep direct Volume/full-VM storage, activation validation and
       isolated copies. [Implementation and paid acceptance](reports/direct-workspace-storage-20260914.md).
 
-- [ ] Complete the September 14 whole-repository/user-flow review, continuing the
-      earlier campaign. Current slice removes duplicate Projector decode and
-      unused writers, bounds SSE heartbeat waits, repairs Worker notification
-      recovery and closes resource-deletion/admission races. Baseline paid
-      multi-round/search/Compaction tests passed; full coverage and post-change
-      live/UI/load/fault acceptance remain in progress.
-      [Current evidence and open measurements](reports/full-review-20260914.md).
+- [ ] Complete the renewed September 15 repository audit and system validation:
+      hash/range-based code coverage, real combinations, browser paint latency,
+      scoped cleanup and resume update only after completion.
+      [Current work record](reports/repository-audit-20260915.md).
 
 - [x] Separate conversation reads from command/resource writes and physical
       Sandbox admission from Broker lifecycle. Close admission before shutdown;

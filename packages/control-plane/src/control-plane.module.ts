@@ -77,6 +77,7 @@ export class ControlPlaneModule {
     });
     const controlPlaneStores = new ControlPlaneStoreFactory({
       database: options.database,
+      ...(options.metrics === undefined ? {} : { metrics: options.metrics }),
       ...(options.environmentImageRevision === undefined
         ? {}
         : { environmentImageRevision: options.environmentImageRevision }),

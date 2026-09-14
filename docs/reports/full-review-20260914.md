@@ -1,7 +1,8 @@
 # Whole-repository review and user-flow acceptance
 
-Base revision: `c9a3b333`. Status: **in progress**. This document is not a
-claim of whole-repository coverage or completed live acceptance.
+Base revision: `c9a3b333`. Status: historical partial campaign, continued by the
+[September 15 audit](repository-audit-20260915.md). This document is not a claim
+of whole-repository coverage or completed live acceptance.
 
 ## Scope and invariants
 

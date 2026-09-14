@@ -143,90 +143,49 @@ export class ControlPlaneRuntime {
 export async function createControlPlaneRuntime(
   options: ControlPlaneRuntimeOptions,
 ): Promise<ControlPlaneRuntime> {
-  const { eventHub, eventStore } = options.eventRuntime;
-  const controlChannelRouter = new WorkerControlChannelRouter(options.controlChannelRouter);
+  const {
+    controlPlaneInstanceId,
+    supervisorAuthorizer,
+    supervisorOwnerBoundary,
+    assignmentInventoryFactory,
+    connectionManager: connectionOptions,
+    controlChannelRouter: channelOptions,
+    gateway: gatewayOptions,
+    maintenance: maintenanceOptions,
+    ...applicationOptions
+  } = options;
+  const { eventHub, eventStore } = applicationOptions.eventRuntime;
+  const controlChannelRouter = new WorkerControlChannelRouter(channelOptions);
   const connectionManager = new SupervisorConnectionManager({
-    ...options.connectionManager,
+    ...connectionOptions,
     database: options.database,
-    controlPlaneInstanceId: options.controlPlaneInstanceId,
-    ownerBoundary: options.supervisorOwnerBoundary,
+    controlPlaneInstanceId,
+    ownerBoundary: supervisorOwnerBoundary,
     assignmentRetirerFactory: (identity) =>
       new AssignmentReconciler({
         database: options.database,
         sandboxId: identity.sandboxId,
-        inventory: options.assignmentInventoryFactory(identity),
+        inventory: assignmentInventoryFactory(identity),
       }),
   });
   const gateway = new SupervisorWebSocketGateway({
-    ...options.gateway,
+    ...gatewayOptions,
     manager: connectionManager,
-    authorizer: options.supervisorAuthorizer,
+    authorizer: supervisorAuthorizer,
     controlChannelRouter,
   });
   const maintenance = new SupervisorMaintenanceRuntime({
-    ...options.maintenance,
+    ...maintenanceOptions,
     maintenanceRunner: connectionManager,
   });
 
   let application: NestFastifyApplication | undefined;
   try {
     application = await createControlPlaneApplication({
-      database: options.database,
-      ...(options.tenantId === undefined ? {} : { tenantId: options.tenantId }),
-      ...(options.defaultModelProfileId === undefined
-        ? {}
-        : { defaultModelProfileId: options.defaultModelProfileId }),
-      ...(options.environmentImageRevision === undefined
-        ? {}
-        : { environmentImageRevision: options.environmentImageRevision }),
-      ...(options.idGenerator === undefined ? {} : { idGenerator: options.idGenerator }),
+      // Application options cross this boundary unchanged: selecting them by
+      // hand previously dropped the non-local Steer transport and metrics.
+      ...applicationOptions,
       supervisorWebSocketGateway: gateway,
-      ...(options.supervisorProvisioningGateway === undefined
-        ? {}
-        : { supervisorProvisioningGateway: options.supervisorProvisioningGateway }),
-      ...(options.productionHttpGateway === undefined
-        ? {}
-        : { productionHttpGateway: options.productionHttpGateway }),
-      ...(options.publicRegistration === undefined
-        ? {}
-        : { publicRegistration: options.publicRegistration }),
-      ...(options.webAuthentication === undefined
-        ? {}
-        : { webAuthentication: options.webAuthentication }),
-      ...(options.platformOperatorTenantId === undefined
-        ? {}
-        : { platformOperatorTenantId: options.platformOperatorTenantId }),
-      ...(options.platformModelSourceTenantId === undefined
-        ? {}
-        : { platformModelSourceTenantId: options.platformModelSourceTenantId }),
-      ...(options.cubeEgressConfigToken === undefined
-        ? {}
-        : { cubeEgressConfigToken: options.cubeEgressConfigToken }),
-      ...(options.workspaceTerminalGateway === undefined
-        ? {}
-        : { workspaceTerminalGateway: options.workspaceTerminalGateway }),
-      ...(options.sandboxPreviewGateway === undefined
-        ? {}
-        : { sandboxPreviewGateway: options.sandboxPreviewGateway }),
-      ...(options.developmentEnvironmentService === undefined
-        ? {}
-        : { developmentEnvironmentService: options.developmentEnvironmentService }),
-      ...(options.sshAccessTicketService === undefined
-        ? {}
-        : { sshAccessTicketService: options.sshAccessTicketService }),
-      ...(options.sourceControlService === undefined
-        ? {}
-        : { sourceControlService: options.sourceControlService }),
-      eventRuntime: {
-        eventHub,
-        eventStore,
-      },
-      ...(options.sessionEventStreamOptions === undefined
-        ? {}
-        : { sessionEventStreamOptions: options.sessionEventStreamOptions }),
-      ...(options.workspaceBrowser === undefined
-        ? {}
-        : { workspaceBrowser: options.workspaceBrowser }),
     });
   } catch (error: unknown) {
     gateway.shutdown();

@@ -54,16 +54,19 @@ Do not subtract unrelated sampling intervals or invalid cross-host wall clocks.
 
 | ID | Observation | Status / next proof |
 | --- | --- | --- |
-| CP-01 | `main` provides an HTTP Steer backend factory, but runtime composition drops it; the service uses the local WebSocket path instead | Source-confirmed wiring defect; reproduce request on a replica without the Worker connection |
-| CP-02 | Admission metrics are dropped by runtime and module composition before reaching the store factory | Source-confirmed wiring defect; assert metric observation through the public API |
+| CP-01 | `main` provides an HTTP Steer backend factory, but runtime composition dropped it; the service used the local WebSocket path instead | Fixed by forwarding application options intact; API regression returned 503 before and 200 after, with no local Worker socket. Live multi-replica retest pending |
+| CP-02 | Admission metrics were dropped by runtime and module composition before reaching the store factory | Fixed wiring; API acceptance and resource-create histograms now observe samples. Same regression failed before, passes after |
 | LIFE-01 | Worker creates/listens on Model Gateway, but records it for cleanup only after upstream health succeeds | Candidate startup leak; fail a local fake provider health check and inspect listener cleanup |
 | LIFE-02 | Control Plane orderly shutdown stops cleanup after the first rejected close | Candidate cleanup failure; inject rejection and verify remaining components close |
 | MEM-01 | Control Plane caches management clients by URL without eviction as Worker addresses churn | Candidate boundedness issue; inspect actual client ownership and churn behavior |
-| RESTORE-01 | Native host fetches all unpruned interruption prefixes on every open, including already reconciled history | Candidate restore amplification; measure long interrupted histories and deduplication before changing query |
+| RESTORE-01 | Investigated whether open fetches already-reconciled interruption prefixes | Ruled out: native projection clears the prefix and migration 131 provides a pending-only partial index; no extra cache or query rewrite added |
 | UI-01 | Product/admin origin detection and redirects hard-code ports 8080/8081 | Source-confirmed configuration assumption; test supported custom deployment ports |
+| MUT-01 | Rebind and cancel check idempotency before acquiring their lifecycle row locks, then can reject on changed state | Candidate concurrent replay bug; reproduce with separate real PostgreSQL connections |
+| LIFE-03 | Active Lane cold-history waits use the shared writer signal, not the task's cancellation signal | Candidate blocked cancellation; trace Runtime abort and test projection lag without poisoning sibling Lanes |
 
-No architecture change proposed yet. Reproducers and regression results remain
-pending. Architecture-level issues block only their own modifications; continue
+No architecture change proposed yet. Three runtime-composition tests and the
+Control Plane type check passed. No paid/live test was run in this campaign yet.
+Architecture-level issues block only their own modifications; continue
 independent review and verification while awaiting the owner.
 
 ## Resources and final gate
