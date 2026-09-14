@@ -3,7 +3,8 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createHmac, generateKeyPairSync, randomUUID } from "node:crypto";
 import type { Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { ToolBrokerClient } from "@pi-cloud/tool-broker/client";
 import { createPrivateTenant } from "../src/tenant-administration.ts";
 import { GitHubAppClient } from "../src/github-app-client.ts";
 import { SourceControlService } from "../src/source-control-service.ts";
@@ -13,6 +14,20 @@ import { ControlPlaneStore } from "../src/control-plane-store.ts";
 import { SourceControlCredentialVault } from "../src/source-control-credential-vault.ts";
 
 vi.setConfig({ hookTimeout: 30_000, testTimeout: 30_000 });
+afterEach(() => vi.restoreAllMocks());
+
+function stubCredentialBroker() {
+  return vi
+    .spyOn(ToolBrokerClient.prototype, "preflightSourceCredential")
+    .mockImplementation(async (request) => ({
+      sourceControlProtocolVersion: 1,
+      type: "source_control.workspace_credential_result",
+      requestId: request.requestId,
+      workspaceId: request.workspaceId,
+      origin: request.origin,
+      authorized: true,
+    }));
+}
 
 let pglite: PGlite;
 let socket: PGLiteSocketServer;
@@ -53,6 +68,30 @@ function identity(tenant: Awaited<ReturnType<typeof createPrivateTenant>>): Tena
 }
 
 describe.sequential("source-control App boundary", () => {
+  it.each(["null", "[]", "123"])(
+    "rejects a non-object GitLab payload %s before repository lookup",
+    async (body) => {
+      const service = new SourceControlService({
+        database,
+        gitlab: {
+          vault: new SourceControlCredentialVault(Buffer.alloc(32, 7).toString("base64url")),
+          webhookUrl: "https://picloud.example.com/webhook",
+          publicOrigin: "https://picloud.example.com",
+          issueLabel: "picloud",
+        },
+      });
+      await expect(
+        service.acceptGitLabWebhook({
+          deliveryId: "invalid-shape",
+          eventName: "Issue Hook",
+          instance: "https://gitlab.example.com",
+          timestamp: undefined,
+          signature: undefined,
+          rawBody: Buffer.from(body),
+        }),
+      ).rejects.toMatchObject({ code: "source_control_webhook_invalid" });
+    },
+  );
   it("connects a private GitLab project and accepts one signed Issue label delivery", async () => {
     const tenant = await createPrivateTenant(database, {
       slug: "gitlab-source-control-owner",
@@ -62,7 +101,10 @@ describe.sequential("source-control App boundary", () => {
     let rejectClaimNotes = false;
     const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith("/api/v4/projects/group%2Fprivate-repo")) {
+      if (
+        url.endsWith("/api/v4/projects/group%2Fprivate-repo") ||
+        url.endsWith("/api/v4/projects/501")
+      ) {
         return new Response(
           JSON.stringify({
             id: 501,
@@ -97,6 +139,8 @@ describe.sequential("source-control App boundary", () => {
     });
     const service = new SourceControlService({
       database,
+      workspaceServiceToken: "source-control-fixture-private-service-token-0000",
+      allowInsecureInternalHttp: true,
       gitlab: {
         vault: new SourceControlCredentialVault(Buffer.alloc(32, 9).toString("base64url")),
         webhookUrl: "https://picloud.example.com/v1/source-control/gitlab/webhook",
@@ -122,16 +166,22 @@ describe.sequential("source-control App boundary", () => {
       .where("tenant_id", "=", tenant.tenantId)
       .executeTakeFirstOrThrow();
     expect(JSON.stringify(credentialRow)).not.toContain("glpat-private-project-token");
-    await expect(
-      database
-        .selectFrom("source_control_repositories")
-        .select(["provider_base_url", "clone_url"])
-        .where("tenant_id", "=", tenant.tenantId)
-        .executeTakeFirstOrThrow(),
-    ).resolves.toEqual({
-      provider_base_url: "https://gitlab.example.com",
-      clone_url: "https://gitlab.internal.example.com/group/private-repo.git",
-    });
+    await service.refreshInstallation(
+      identity(tenant),
+      configured.installations[0]!.installationId,
+    );
+    await expect
+      .soft(
+        database
+          .selectFrom("source_control_repositories")
+          .select(["provider_base_url", "clone_url"])
+          .where("tenant_id", "=", tenant.tenantId)
+          .executeTakeFirstOrThrow(),
+      )
+      .resolves.toEqual({
+        provider_base_url: "https://gitlab.example.com",
+        clone_url: "https://gitlab.internal.example.com/group/private-repo.git",
+      });
 
     const payload = Buffer.from(
       JSON.stringify({
@@ -237,9 +287,13 @@ describe.sequential("source-control App boundary", () => {
       tenantId: tenant.tenantId,
       defaultModelProfileId: tenant.defaultModelProfileId,
     }).createProject({ name: "Existing GitLab Issue Workspace", source: { kind: "empty" } });
-    vi.spyOn(service, "preflightIssueGitCredential").mockResolvedValue({
-      authorized: true,
-    });
+    await expect(
+      new SourceControlService({ database }).listCodeHostConnections(
+        claimant,
+        selectedWorkspace.workspaceId,
+      ),
+    ).rejects.toMatchObject({ code: "source_control_unavailable" });
+    const credentialBroker = stubCredentialBroker();
     const machineWorkspace = await new ControlPlaneStore({
       database,
       tenantId: tenant.tenantId,
@@ -285,6 +339,17 @@ describe.sequential("source-control App boundary", () => {
         system_disk_gib: 8,
       })
       .execute();
+    await expect
+      .soft(
+        service.preflightIssueGitCredential(
+          secondClaimant,
+          pendingJob.jobId,
+          machineWorkspace.workspaceId,
+        ),
+      )
+      .rejects.toMatchObject({ code: "source_control_authorization_denied" });
+    expect.soft(credentialBroker).not.toHaveBeenCalled();
+    credentialBroker.mockClear();
     for (const workingDirectory of ["/home/user", "/srv/issue-project", "/"]) {
       await expect(
         service.startIssueJob(claimant, pendingJob.jobId, {
@@ -364,6 +429,37 @@ describe.sequential("source-control App boundary", () => {
     ).resolves.toEqual({ claim_sync_pending: false });
     await database
       .updateTable("source_control_issue_jobs")
+      .set({ state: "awaiting_claim" })
+      .where("id", "=", pendingJob.jobId)
+      .execute();
+    for (let index = 0; index < 101; index++) {
+      const newer = JSON.parse(payload.toString()) as { object_attributes: { iid: number } };
+      newer.object_attributes.iid = 1000 + index;
+      const rawBody = Buffer.from(JSON.stringify(newer));
+      const newerId = `newer-${index}`;
+      const newerSignature = `v1,${createHmac(
+        "sha256",
+        Buffer.from(signingToken.slice(6), "base64"),
+      )
+        .update(Buffer.concat([Buffer.from(`${newerId}.${timestamp}.`), rawBody]))
+        .digest("base64")}`;
+      await service.acceptGitLabWebhook({
+        deliveryId: newerId,
+        eventName: "Issue Hook",
+        instance: "https://gitlab.example.com",
+        timestamp,
+        signature: newerSignature,
+        rawBody,
+      });
+    }
+    expect((await service.listIssueJobs(claimant)).jobs).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ jobId: pendingJob.jobId })]),
+    );
+    await expect(service.claimIssueJob(claimant, pendingJob.jobId)).resolves.toMatchObject({
+      claimedByCurrentUser: true,
+    });
+    await database
+      .updateTable("source_control_issue_jobs")
       .set({ state: "cancelled", settled_at: new Date(), updated_at: new Date() })
       .where("tenant_id", "=", tenant.tenantId)
       .executeTakeFirstOrThrow();
@@ -431,6 +527,15 @@ describe.sequential("source-control App boundary", () => {
     const webhookSecret = "github-source-control-test-webhook-secret";
     const service = new SourceControlService({
       database,
+      workspaceServiceToken: "source-control-fixture-private-service-token-0000",
+      allowInsecureInternalHttp: true,
+      gitlab: {
+        vault: new SourceControlCredentialVault(Buffer.alloc(32, 8).toString("base64url")),
+        webhookUrl: "https://picloud.example.com/v1/source-control/gitlab/webhook",
+        publicOrigin: "https://picloud.example.com",
+        issueLabel: "picloud",
+        workspaceBaseUrl: "https://gitlab.workspace.example.com",
+      },
       github: {
         appSlug: "picloud-test",
         issueLabel: "picloud",
@@ -555,9 +660,7 @@ describe.sequential("source-control App boundary", () => {
       { ...identity(tenant), username: "source.control.owner" },
       jobs.jobs[0]!.jobId,
     );
-    vi.spyOn(service, "preflightIssueGitCredential").mockResolvedValue({
-      authorized: true,
-    });
+    const credentialBroker = stubCredentialBroker();
     await service.startIssueJob(
       { ...identity(tenant), username: "source.control.owner" },
       jobs.jobs[0]!.jobId,
@@ -567,6 +670,13 @@ describe.sequential("source-control App boundary", () => {
         sandboxProfileKey: "standard",
         workspaceId: selectedWorkspace.workspaceId,
       },
+    );
+    expect.soft(credentialBroker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "github",
+        origin: "https://github.com",
+        verificationCloneUrl: "https://github.com/example/private-repo.git",
+      }),
     );
 
     const coordinatorA = new SourceControlIssueCoordinator({

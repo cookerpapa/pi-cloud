@@ -67,12 +67,7 @@ export type GitLabProjectRuntime = Readonly<{
 }>;
 
 function internalGitLabCloneUrl(cloneUrl: string, internalBaseUrl: string | undefined): string {
-  if (internalBaseUrl === undefined) return cloneUrl;
-  const source = new URL(cloneUrl);
-  const target = new URL(internalBaseUrl);
-  target.pathname = source.pathname;
-  target.search = source.search;
-  return target.toString();
+  return internalBaseUrl === undefined ? cloneUrl : cloneUrlAtOrigin(cloneUrl, internalBaseUrl);
 }
 
 function cloneUrlAtOrigin(cloneUrl: string, origin: string): string {
@@ -202,7 +197,7 @@ export class SourceControlService {
   readonly #database: Kysely<Database>;
   readonly #github: GitHubAppRuntime | undefined;
   readonly #gitlab: GitLabProjectRuntime | undefined;
-  readonly #workspaceServiceToken: string;
+  readonly #workspaceServiceToken: string | undefined;
   readonly #allowInsecureInternalHttp: boolean;
   readonly #clock: () => Date;
   readonly #idGenerator: () => string;
@@ -219,9 +214,7 @@ export class SourceControlService {
     this.#database = options.database;
     this.#github = options.github;
     this.#gitlab = options.gitlab;
-    this.#workspaceServiceToken =
-      options.workspaceServiceToken ??
-      "source-control-disabled-workspace-service-token-000000000000000";
+    this.#workspaceServiceToken = options.workspaceServiceToken;
     this.#allowInsecureInternalHttp = options.allowInsecureInternalHttp ?? false;
     this.#clock = options.clock ?? (() => new Date());
     this.#idGenerator = options.idGenerator ?? randomUUID;
@@ -593,7 +586,10 @@ export class SourceControlService {
               full_name: project.fullName,
               private: project.private,
               default_branch: project.defaultBranch,
-              clone_url: project.cloneUrl,
+              clone_url: internalGitLabCloneUrl(
+                project.cloneUrl,
+                this.#requireGitLab().internalBaseUrl,
+              ),
               state: "active",
               updated_at: this.#clock(),
             })
@@ -629,7 +625,10 @@ export class SourceControlService {
     }
   }
 
-  async listIssueJobs(identity: TenantRequestIdentity): Promise<SourceControlIssueJobListResource> {
+  async listIssueJobs(
+    identity: TenantRequestIdentity,
+    jobId?: string,
+  ): Promise<SourceControlIssueJobListResource> {
     const rows = await this.#database
       .selectFrom("source_control_issue_jobs as job")
       .innerJoin("source_control_repositories as repository", (join) =>
@@ -637,14 +636,26 @@ export class SourceControlService {
           .onRef("repository.tenant_id", "=", "job.tenant_id")
           .onRef("repository.id", "=", "job.repository_id"),
       )
-      .selectAll("job")
       .select([
+        "job.id",
+        "job.repository_id",
+        "job.issue_number",
+        "job.issue_title",
+        "job.issue_url",
+        "job.state",
+        "job.session_id",
+        "job.run_id",
+        "job.failure_message",
+        "job.created_at",
+        "job.updated_at",
         "repository.full_name as repository_full_name",
         "repository.provider as repository_provider",
         "repository.provider_base_url as repository_provider_base_url",
       ])
       .where("job.tenant_id", "=", identity.tenantId)
+      .$if(jobId !== undefined, (query) => query.where("job.id", "=", jobId!))
       .orderBy("job.created_at", "desc")
+      .orderBy("job.id", "desc")
       .limit(100)
       .execute();
     const claims =
@@ -1012,7 +1023,7 @@ export class SourceControlService {
         "GitLab Webhook payload is invalid",
       );
     }
-    const providerRepositoryId = decimalId(record(payload.project)?.id);
+    const providerRepositoryId = decimalId(record(payload?.project)?.id);
     if (payload === undefined || providerRepositoryId === undefined) {
       throw new SourceControlServiceError(
         "source_control_webhook_invalid",
@@ -1642,11 +1653,16 @@ export class SourceControlService {
         "Selected Workspace cannot be authorized for this Issue repository",
       );
     }
+    if (row.workspaceKind === "development_environment") {
+      await this.#assertMachineOwner(identity, workspaceId);
+    }
     return {
       repository: row,
       userCloneUrl: cloneUrlAtOrigin(
         row.clone_url,
-        this.#gitlab?.workspaceBaseUrl ?? row.provider_base_url,
+        row.provider === "gitlab"
+          ? (this.#gitlab?.workspaceBaseUrl ?? row.provider_base_url)
+          : row.provider_base_url,
       ),
       verificationCloneUrl: row.clone_url,
       credentialMountPath:
@@ -1695,6 +1711,12 @@ export class SourceControlService {
   }
 
   #toolBroker(baseUrl: string): ToolBrokerClient {
+    if (this.#workspaceServiceToken === undefined) {
+      throw new SourceControlServiceError(
+        "source_control_unavailable",
+        "Workspace credential service is not configured",
+      );
+    }
     return new ToolBrokerClient({
       baseUrl,
       serviceToken: this.#workspaceServiceToken,
@@ -1718,19 +1740,7 @@ export class SourceControlService {
       );
     }
     if (workspace.workspaceKind === "development_environment") {
-      const environment = await this.#database
-        .selectFrom("development_environments")
-        .select("owner_user_id as ownerUserId")
-        .where("tenant_id", "=", identity.tenantId)
-        .where("workspace_id", "=", workspaceId)
-        .where("state", "!=", "released")
-        .executeTakeFirst();
-      if (environment?.ownerUserId !== identity.userId) {
-        throw new SourceControlServiceError(
-          "source_control_authorization_denied",
-          "Code Host environment does not belong to this user",
-        );
-      }
+      await this.#assertMachineOwner(identity, workspaceId);
     }
     return {
       toolBrokerBaseUrl: await this.#workspaceToolBroker(identity.tenantId, workspaceId),
@@ -1739,6 +1749,22 @@ export class SourceControlService {
           ? ("/home/user" as const)
           : ("/workspace" as const),
     };
+  }
+
+  async #assertMachineOwner(identity: TenantRequestIdentity, workspaceId: string): Promise<void> {
+    const environment = await this.#database
+      .selectFrom("development_environments")
+      .select("owner_user_id as ownerUserId")
+      .where("tenant_id", "=", identity.tenantId)
+      .where("workspace_id", "=", workspaceId)
+      .where("state", "!=", "released")
+      .executeTakeFirst();
+    if (environment?.ownerUserId !== identity.userId) {
+      throw new SourceControlServiceError(
+        "source_control_authorization_denied",
+        "Code Host environment does not belong to this user",
+      );
+    }
   }
 
   #codeHostOrigin(provider: "github" | "gitlab", value: string): string {
@@ -2095,9 +2121,7 @@ export class SourceControlService {
     identity: TenantRequestIdentity,
     jobId: string,
   ): Promise<SourceControlIssueJobResource> {
-    const job = (await this.listIssueJobs(identity)).jobs.find(
-      (candidate) => candidate.jobId === jobId,
-    );
+    const job = (await this.listIssueJobs(identity, jobId)).jobs[0];
     if (job === undefined) {
       throw new SourceControlServiceError(
         "source_control_not_found",
