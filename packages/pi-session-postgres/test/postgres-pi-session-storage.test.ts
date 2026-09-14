@@ -277,7 +277,7 @@ describe.sequential("PostgresPiSessionStorage", () => {
     await expect(storage.getName()).resolves.toBe("durable session");
   });
 
-  it("forks by reference without copying inherited JSON payloads", async () => {
+  it("shares Fork query payloads while retaining a self-contained destination log", async () => {
     const entryPayloadCache = new PostgresPiSessionEntryPayloadCache({
       maximumBytes: 1024 * 1024,
       maximumEntryBytes: 256 * 1024,
@@ -363,7 +363,7 @@ describe.sequential("PostgresPiSessionStorage", () => {
     );
   });
 
-  it("matches Pi branch ordering, bounds, filters and limits in one recursive query", async () => {
+  it("matches Pi branch ordering, bounds, filters and limits", async () => {
     const sessionId = "d1000000-0000-4000-8000-000000000030";
     const storage = await PostgresPiSessionStorage.create({
       database,

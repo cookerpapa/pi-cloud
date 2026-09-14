@@ -302,9 +302,6 @@ export class NativeLaneSessionStorage implements SessionStorage {
   get signal() {
     return this.#writer.signal;
   }
-  get reader() {
-    return this.#reader;
-  }
   close() {
     this.#closed = true;
     this.#writer.release(this);

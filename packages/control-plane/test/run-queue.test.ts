@@ -1,11 +1,14 @@
 import { createDatabase, runMigrations, type Database } from "@pi-cloud/database";
 import { RunExecutor, type TurnExecutionBackend } from "@pi-cloud/runtime-core/run-executor";
 import { TurnExecutionCancelledError } from "@pi-cloud/runtime-core/run-executor";
-import { RunCancellationExecutor } from "@pi-cloud/runtime-core/run-cancellation-executor";
+import {
+  RunCancellationExecutor,
+  TurnCancellationBackendError,
+} from "@pi-cloud/runtime-core/run-cancellation-executor";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { sql, type Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { ExecutionStreamProjector } from "../../runtime-core/src/execution-stream-projection.ts";
 import { parseKafkaAcceptedFact } from "../../runtime-core/src/kafka-accepted-fact.ts";
@@ -49,6 +52,94 @@ afterAll(async () => {
 });
 
 describe.sequential("Run queue authority", () => {
+  it("seals the output and releases task authority when acknowledged cancellation fails", async () => {
+    const project = await store.createProject({
+      name: "cancel-failure",
+      source: { kind: "empty" },
+    });
+    await database
+      .updateTable("environment_versions")
+      .set({ state: "validated", validated_at: new Date() })
+      .where("id", "=", project.environment.environmentVersionId)
+      .execute();
+    const session = await store.createSession(
+      project.projectId,
+      project.workspaceId,
+      "Cancellation failure",
+      "elastic",
+    );
+    const accepted = await store.acceptTurn(session.sessionId, "cancel-failure-target", {
+      prompt: "wait",
+    });
+    let started!: () => void, interrupt!: () => void;
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const interrupted = new Promise<void>((resolve) => {
+      interrupt = resolve;
+    });
+    const executor = new RunExecutor({
+      database,
+      claimOwnerId: "cancel-failure-worker",
+      backend: {
+        async execute(_request, lifecycle) {
+          await lifecycle.started();
+          started();
+          await interrupted;
+          throw new TurnExecutionCancelledError("user_request", false);
+        },
+      },
+    });
+    const execution = executor.dispatchRun(accepted.runId);
+    await running;
+    await store.acceptTurnCancellation(session.sessionId, accepted.turnId, "cancel-failed", {});
+    const authority = { async assertCurrent() {}, releaseCurrent: vi.fn(async () => {}) };
+    const cancellation = new RunCancellationExecutor({
+      database,
+      executionAuthority: authority,
+      backend: {
+        async cancel(_request, lifecycle) {
+          await lifecycle.started({ executionReference: "test-cancellation-authority" });
+          interrupt();
+          throw new TurnCancellationBackendError(
+            "cleanup_failed",
+            "Cleanup was not confirmed",
+            false,
+          );
+        },
+      },
+    });
+    const [outcome] = await Promise.all([
+      cancellation.dispatchTargetRun(accepted.runId),
+      execution,
+    ]);
+    expect(outcome).toMatchObject({
+      status: "failed",
+      phase: "after_start",
+      failureCode: "cleanup_failed",
+    });
+    expect.soft(authority.releaseCurrent).toHaveBeenCalledOnce();
+    const seals = await database
+      .selectFrom("outbox")
+      .select("payload")
+      .where("aggregate_type", "=", "session_terminal_event")
+      .where(sql<boolean>`payload #>> '{scope,runId}' = ${accepted.runId}`)
+      .execute();
+    expect(seals).toHaveLength(1);
+    await new ExecutionStreamProjector(database).project({
+      fact: parseKafkaAcceptedFact(JSON.stringify(seals[0]!.payload)),
+      topic: "cancel-failure-seal-test",
+      partition: 0,
+      offset: 0n,
+    });
+    const terminal = await database
+      .selectFrom("session_terminal_events")
+      .select("type")
+      .where("run_id", "=", accepted.runId)
+      .executeTakeFirstOrThrow();
+    expect(terminal.type).toBe("turn.failed");
+  });
+
   it("retries a rolled-back terminal commit without re-executing the Agent Loop", async () => {
     const project = await store.createProject({
       name: "terminal-retry",

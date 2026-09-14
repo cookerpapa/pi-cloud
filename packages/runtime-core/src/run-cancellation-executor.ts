@@ -302,7 +302,7 @@ export class RunCancellationExecutor {
         }
         throw startFailure;
       }
-      return this.#recordFailure(claim, started, normalizeFailure(error));
+      return this.#recordFailure(claim, started, normalizeFailure(error), acknowledgement);
     }
 
     await this.#complete(claim, acknowledgement, result);
@@ -752,6 +752,7 @@ export class RunCancellationExecutor {
     claim: ClaimedCancellation,
     started: boolean,
     failure: CancellationFailure,
+    acknowledgement?: TurnExecutionReference,
   ): Promise<RunCancellationExecutionResult> {
     const now = safeDate(this.#clock);
     const shouldRetry = !started && failure.retryable && claim.attempt < this.#maxAttempts;
@@ -803,6 +804,11 @@ export class RunCancellationExecutor {
       expectOne(cancellationUpdate.numUpdatedRows, "failing a cancellation request");
 
       if (started) {
+        if (!acknowledgement) {
+          throw new RunCancellationExecutorInvariantError(
+            "Started cancellation lost its authority",
+          );
+        }
         if (
           rows.runState !== "cancel_requested" ||
           rows.turnState !== "cancelling" ||
@@ -859,6 +865,31 @@ export class RunCancellationExecutor {
           .where("state", "=", rows.sessionState)
           .executeTakeFirst();
         expectOne(sessionUpdate.numUpdatedRows, "failing a cancelling session");
+        // Failure is still a terminal outcome. Omitting its closure leaves
+        // the live projection waiting and the task lease stranded indefinitely.
+        await requestExecutionStreamSeal(transaction, {
+          tenantId: claim.request.target.tenantId,
+          sessionId: claim.request.target.sessionId,
+          turnId: claim.request.target.turnId,
+          runId: claim.request.target.runId,
+          agentId: "root",
+          body: {
+            type: "turn.failed",
+            payload: {
+              code: failure.code,
+              message: failure.safeMessage,
+              retryable: false,
+            },
+          },
+          now,
+          eventId: this.#idGenerator(),
+        });
+        await this.#executionAuthority.releaseCurrent(
+          transaction,
+          claim.request.target,
+          acknowledgement,
+          now,
+        );
       }
     });
 
